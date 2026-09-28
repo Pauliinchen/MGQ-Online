@@ -2,6 +2,7 @@
 //  SessionTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-09-29: Read the join code and party from the described state
 //      Paulinchen  2026-09-28: Created
 //
 //----------------------------------------------------------------
@@ -60,15 +61,13 @@ public sealed class SessionTests
 
         host.Host("3.06", "host team", FreePort());
         var code = AwaitCode(host);
-        var advertisedParty = host.Advertised?.PartyId;
-        Assert.Equal(advertisedParty, Message.Decode(host.Describe())["party"]);
+        var advertisedParty = Message.Decode(host.Describe())["party"];
+        Assert.NotEmpty(advertisedParty);
         guest.Join(code, "3.06", "guest team");
 
         var hostSide = AwaitSettled(host);
         var guestSide = AwaitSettled(guest);
 
-        Assert.Equal((advertisedParty!, "Guest"), host.Connected);
-        Assert.Equal((advertisedParty!, "Host"), guest.Connected);
         Assert.Equal("open", hostSide["link"]);
         Assert.Equal("open", guestSide["link"]);
         Assert.Equal("host", hostSide["role"]);
@@ -84,7 +83,6 @@ public sealed class SessionTests
 
         AwaitLink(host, "closed");
         Assert.False(host.Send("anyone there?"));
-        Assert.Null(host.Connected);
         Assert.Equal(string.Empty, Message.Decode(host.Describe())["party"]);
     }
 
@@ -134,8 +132,9 @@ public sealed class SessionTests
         AwaitCode(host);
         host.Cancel();
 
-        Assert.Equal("idle", Message.Decode(host.Describe())["state"]);
-        Assert.Null(host.Advertised);
+        var state = Message.Decode(host.Describe());
+        Assert.Equal("idle", state["state"]);
+        Assert.Equal(string.Empty, state["code"]);
     }
 
     /// <summary>
@@ -195,9 +194,9 @@ public sealed class SessionTests
 
         while (DateTime.UtcNow < deadline)
         {
-            if (host.Advertised is { } hosted)
+            if (Message.Decode(host.Describe())["code"] is { Length: > 0 } code)
             {
-                return hosted.Code;
+                return code;
             }
 
             Thread.Sleep(20);

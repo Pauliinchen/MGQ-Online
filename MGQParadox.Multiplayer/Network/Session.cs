@@ -2,6 +2,7 @@
 //  Session.cs
 //
 //  Changelog:
+//      Paulinchen  2026-09-29: Removed Advertised and Connected, which only the tests read
 //      Paulinchen  2026-09-28: Created
 //
 //----------------------------------------------------------------
@@ -188,37 +189,6 @@ internal sealed class Session
     /// How long the friend may stay silent before the link counts as dropped.
     /// </summary>
     public TimeSpan DropTimeout { get; init; } = TimeSpan.FromSeconds(10);
-
-    /// <summary>
-    /// The party and join code while hosting with a join code, which the game script hands to the Discord mod.
-    /// </summary>
-    public (string PartyId, string Code)? Advertised
-    {
-        get
-        {
-            lock (_gate)
-            {
-                return _state == SessionState.Hosting && _joinCode != null && _partyId != null ? (_partyId, _joinCode) : null;
-            }
-        }
-    }
-
-    /// <summary>
-    /// The party on Discord and the friend's name, while the link to the friend is open.
-    /// </summary>
-    /// <remarks>
-    /// Both games take the party from the join code's token, so Discord sees them in the same party.
-    /// </remarks>
-    public (string PartyId, string Friend)? Connected
-    {
-        get
-        {
-            lock (_gate)
-            {
-                return _link?.State == LinkState.Open && _partyId != null ? (_partyId, _opponent ?? DefaultPlayerName) : null;
-            }
-        }
-    }
 
     /// <summary>
     /// Takes the player's name, which the Discord mod knows, sent along with every later team.
