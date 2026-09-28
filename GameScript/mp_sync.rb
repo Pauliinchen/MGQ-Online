@@ -2,7 +2,8 @@
 #  mp_sync.rb
 #
 #  Changelog:
-#      Paulinchen  2026-09-29: Checked the link without the friend's team
+#      Paulinchen  2026-09-29: Ended the guest's turn, so every command phase chooses anew
+#                            - Checked the link without the friend's team
 #      Paulinchen  2026-09-28: Created
 #
 #----------------------------------------------------------------
@@ -1247,10 +1248,13 @@ module MGQ_MpSync
     # @param scene [Scene_Battle] The battle.
     def self.play_until_commands(scene)
       event = Playback.run(scene)
-      return scene.start_party_command_selection unless event
-      return MGQ_MpSync.friend_gone(scene) if event[0] == :gone
+      return MGQ_MpSync.friend_gone(scene) if event && event[0] == :gone
+      return guest_end(event[1]) if event
 
-      guest_end(event[1])
+      # The guest's own battle never reaches the turn's end, and a command phase started in the
+      # middle of one keeps the last turn's actions and skips every command.
+      BattleManager.turn_end
+      scene.start_party_command_selection
     end
 
     # Ends the guest's battle the way the host's ended, seen from the other side.
