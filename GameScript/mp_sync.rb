@@ -2,7 +2,8 @@
 #  mp_sync.rb
 #
 #  Changelog:
-#      Paulinchen  2026-09-29: Broke a live battle off for both players when the host's recording stops
+#      Paulinchen  2026-09-29: Offered to leave the battle when a wait drags on
+#                            - Broke a live battle off for both players when the host's recording stops
 #                            - Stopped a recording when the live battle finishes
 #                            - Recorded the hit and defeat effects the game starts without the setter
 #                            - Ended the guest's turn, so every command phase chooses anew
@@ -720,8 +721,8 @@ module MGQ_MpSync
     # Plays the host's stream until its next command phase or the battle's end.
     #
     # @param scene [Scene_Battle] The battle.
-    # @return [Array, nil] The "end" event when the battle ended, an ending of Channel.ending when it
-    #   ended early, nil at the next command phase.
+    # @return [Array, nil] The "end" event when the battle ended, an ending of Channel.ending or
+    #   [:left] when it ended early, nil at the next command phase.
     def self.run(scene)
       @events ||= []
       quiet = 0
@@ -738,6 +739,8 @@ module MGQ_MpSync
 
           quiet += 1
           window ||= Waiting.open("Waiting for #{MGQ_MpSync.player}...") if quiet == QUIET_FRAMES
+          return [:left] if window && Waiting.leave?(window, quiet - QUIET_FRAMES)
+
           scene.send(:update_for_wait)
           next
         end
@@ -958,18 +961,44 @@ module MGQ_MpSync
     end
   end
 
-  # The box that says what the game waits for.
+  # The box that says what the game waits for, and offers to leave the battle when the wait drags on.
   module Waiting
+    # Width of the box.
+    WIDTH = 360
+
+    # Height of the box, two lines.
+    HEIGHT = 72
+
+    # Frames a wait lasts before the box offers to leave the battle, ten seconds. Offered later, the
+    # key that moved the last message on never leaves by chance.
+    LEAVE_FRAMES = 600
+
+    # What the box says once it offers to leave.
+    LEAVE_TEXT = "Cancel leaves the battle."
+
     # Opens the box.
     #
     # @param text [String] What the game waits for.
     # @return [Window_Base] The box.
     def self.open(text)
-      width = 360
-      window = Window_Base.new((Graphics.width - width) / 2, 120, width, 48)
+      window = Window_Base.new((Graphics.width - WIDTH) / 2, 120, WIDTH, HEIGHT)
       window.z = 250
-      window.contents.draw_text(0, 0, window.contents.width, window.contents.height, text, 1)
+      window.contents.draw_text(0, 0, window.contents.width, window.line_height, text, 1)
       window
+    end
+
+    # Offers to leave the battle once the wait lasted LEAVE_FRAMES, and tells whether the player took it.
+    #
+    # @param window [Window_Base] The box.
+    # @param frames [Integer] Frames the box has been open.
+    # @return [Boolean] Whether the player leaves the battle.
+    def self.leave?(window, frames)
+      return false if frames < LEAVE_FRAMES
+
+      if frames == LEAVE_FRAMES
+        window.contents.draw_text(0, window.line_height, window.contents.width, window.line_height, LEAVE_TEXT, 1)
+      end
+      Input.trigger?(:B)
     end
 
     # Closes a box.
@@ -980,14 +1009,16 @@ module MGQ_MpSync
       nil
     end
 
-    # Waits, with the box open, until the block has an answer or the battle ended early.
+    # Waits, with the box open, until the block has an answer, the battle ended early or the player
+    # left it.
     #
     # @param scene [Scene_Battle] The battle.
     # @param text [String] What the game waits for.
     # @yieldreturn [String, nil] The answer, nil to wait on.
-    # @return [String, Symbol] The answer, or an ending of Channel.ending.
+    # @return [String, Symbol] The answer, an ending of Channel.ending, or :left when the player left.
     def self.wait_for(scene, text)
       window = nil
+      frames = 0
       loop do
         answer = yield
         return answer if answer
@@ -996,6 +1027,9 @@ module MGQ_MpSync
         return ending if ending
 
         window ||= open(text)
+        frames += 1
+        return :left if leave?(window, frames)
+
         scene.send(:update_for_wait)
       end
     ensure
@@ -1372,10 +1406,12 @@ module MGQ_MpSync
     # Ends the battle before its course did.
     #
     # @param scene [Scene_Battle] The battle.
-    # @param reason [Symbol] An ending of Channel.ending.
+    # @param reason [Symbol] :left when this player left, or an ending of Channel.ending.
     # @return [Boolean] true when the battle goes on with the computer, see MGQ_MpSync.friend_gone.
     def self.end_early(scene, reason)
       case reason
+      when :left
+        forfeit(scene)
       when :forfeit
         $game_message.add("#{MGQ_MpSync.player} forfeited.")
         BattleManager.process_victory

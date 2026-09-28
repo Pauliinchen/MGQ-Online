@@ -57,7 +57,9 @@ included. Only the Frontline fights: the Party command, which swaps in
 the backline, is gone during a PvP battle. Escape gives the battle up
 at once, and Give Up is off. Battle messages move on by themselves, so
 neither of you waits for the other to press a key. If your friend leaves
-or the connection breaks, you win. A defeated character of your friend
+or the connection breaks, you win. When you have waited for your friend
+for 10 seconds, Cancel lets you leave the battle, which also gives it
+up. A defeated character of your friend
 stays as a see-through grey silhouette, since their team can still
 revive it; it cannot be targeted meanwhile. Nothing carries over: no
 EXP, gold or items, no defeat scene, and your save, the Library and

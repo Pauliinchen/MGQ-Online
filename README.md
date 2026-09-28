@@ -35,7 +35,7 @@ Press **F11** on the map to open the PvP battle screen.
 - **Join:** copy your friend's join code and pick *Join with the copied code*, or accept their Discord invite.
 - **Fight your own team:** a mirror match against your own Frontline, without any network.
 
-Only the Frontline fights. Escape gives the battle up at once, Give Up is off, and if your friend leaves or the connection breaks, you win. Nothing carries over: your save, the Library and affection are put back exactly as they were before.
+Only the Frontline fights. Escape gives the battle up at once, Give Up is off, and if your friend leaves or the connection breaks, you win. When you have waited for your friend for 10 seconds, Cancel lets you leave the battle, which also gives it up. Nothing carries over: your save, the Library and affection are put back exactly as they were before.
 
 While the mod is installed, the game keeps running when its window is in the background, so neither player holds the other up.
 
