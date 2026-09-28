@@ -3,7 +3,7 @@
 ## Layout
 
 ```
-MGQ-Paradox-Multiplayer.slnx          Visual Studio solution
+MGQ-Paradox-Multiplayer-Mod.slnx      Visual Studio solution
 Directory.Build.targets               puts vswhere.exe on the PATH, which the NativeAOT link needs
 GameScript/Multiplayer.rb             Ruby, what every way of playing together shares
 GameScript/mp_sync.rb                 Ruby, live battles: the host computes, the guest plays back
