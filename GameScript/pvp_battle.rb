@@ -2,7 +2,8 @@
 #  pvp_battle.rb
 #
 #  Changelog:
-#      Paulinchen  2026-09-29: Started the friend's characters' sprite effects through the setter the guest's stream records
+#      Paulinchen  2026-09-29: Closed the link of a live battle that a reset interrupted
+#                            - Started the friend's characters' sprite effects through the setter the guest's stream records
 #                            - Polled the connection without the friend's team
 #      Paulinchen  2026-09-28: Created
 #
@@ -1510,9 +1511,11 @@ module MGQ_PvpBattle
       format(RESULTS.fetch(@result, "The PvP battle against %s's team ended."), @opponent)
     end
 
-    # Drops a battle a reset interrupted. The title screen makes the save's objects anew, but keeps
-    # the Library, system switches and affection all saves share, so those are put back.
+    # Drops a battle a reset interrupted, and closes the link of a live one, so the friend's game
+    # stops waiting. The title screen makes the save's objects anew, but keeps the Library, system
+    # switches and affection all saves share, so those are put back.
     def self.forget
+      MGQ_MpSync.finish if defined?(MGQ_MpSync)
       self.globals = Marshal.load(@globals) if @globals
     rescue => e
       MGQ_PvpBattle.log("could not put the shared data back after a reset: #{e.class}: #{e.message}")

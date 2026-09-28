@@ -2,7 +2,8 @@
 #  mp_sync.rb
 #
 #  Changelog:
-#      Paulinchen  2026-09-29: Recorded the hit and defeat effects the game starts without the setter
+#      Paulinchen  2026-09-29: Stopped a recording when the live battle finishes
+#                            - Recorded the hit and defeat effects the game starts without the setter
 #                            - Ended the guest's turn, so every command phase chooses anew
 #                            - Checked the link without the friend's team
 #      Paulinchen  2026-09-28: Created
@@ -115,8 +116,11 @@ module MGQ_MpSync
     recording
   end
 
-  # Ends the live battle and closes the link. Called by the mode when it puts the game back.
+  # Ends the live battle and closes the link, and stops a recording. Called by the mode when it puts
+  # the game back, and after a reset.
   def self.finish
+    Recorder.stop
+    @record_next = false
     return unless @role
 
     @role = nil
@@ -625,6 +629,12 @@ module MGQ_MpSync
     def self.value_fields(battler)
       [battler.hp, battler.mhp, battler.mp, battler.mmp, battler.tp.to_i,
        battler.states.map(&:id).sort, Array(battler.instance_variable_get(:@buffs)).map(&:to_i)]
+    end
+
+    # Stops recording without sending or writing what is left, such as after a reset.
+    def self.stop
+      @active = false
+      @events = []
     end
 
     # Stops recording after an error, which stays in InGame.log.
