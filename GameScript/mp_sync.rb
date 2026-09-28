@@ -2,7 +2,8 @@
 #  mp_sync.rb
 #
 #  Changelog:
-#      Paulinchen  2026-09-29: Ended the guest's turn, so every command phase chooses anew
+#      Paulinchen  2026-09-29: Recorded the hit and defeat effects the game starts without the setter
+#                            - Ended the guest's turn, so every command phase chooses anew
 #                            - Checked the link without the friend's team
 #      Paulinchen  2026-09-28: Created
 #
@@ -547,6 +548,18 @@ module MGQ_MpSync
       event("time_stop", *current)
     end
 
+    # Records a sprite effect a battler starts, after the battlers' values, since the guest needs a
+    # hit's HP and a defeat's death before it shows the effect.
+    #
+    # @param battler [Game_Battler] The battler.
+    # @param effect [Symbol, nil] The effect, nil for none.
+    def self.sprite_effect(battler, effect)
+      return unless active? && effect
+
+      values
+      event("battler.sprite_effect_type", battler, effect)
+    end
+
     # Names the battler who speaks.
     #
     # @return [Game_Battler, nil] The battler whose line the game is showing.
@@ -962,8 +975,12 @@ module MGQ_MpSync
     AUDIO_METHODS = [:se_play, :me_play, :bgm_play, :bgs_play, :se_stop, :me_stop, :bgm_stop, :bgs_stop,
                      :me_fade, :bgm_fade, :bgs_fade, :start_over_drive, :end_over_drive]
 
-    # What a battler starts on its sprite. The sprite clears it again once taken, which is not recorded.
-    BATTLER_SETTERS = [:animation_id=, :animation_mirror=, :sprite_effect_type=]
+    # The animation a battler starts on its sprite. The sprite clears it again once taken, which is not recorded.
+    ANIMATION_SETTERS = [:animation_id=, :animation_mirror=]
+
+    # Where the game starts a hit's and a defeat's sprite effect, by writing the battler's field
+    # directly, which the setter's hook never sees.
+    EFFECT_METHODS = [:perform_damage_effect, :perform_collapse_effect]
 
     # The scene's waits, which set the battle's pace.
     SCENE_WAITS = [:wait, :abs_wait, :wait_for_animation, :wait_for_effect, :wait_for_message]
@@ -1038,14 +1055,19 @@ module MGQ_MpSync
 
     # Animations, sprite effects and the skill name.
     def self.battlers
-      BATTLER_SETTERS.each do |name|
+      ANIMATION_SETTERS.each do |name|
         kind = "battler.#{name.to_s.chomp('=')}"
-        record_before(Game_Battler, name) do |battler, args|
-          next nil unless args[0] && args[0] != 0
-
-          # The guest needs a hit's HP and a defeat's death before it shows the effect.
-          Recorder.values if name == :sprite_effect_type
-          [kind, battler, args[0]]
+        record_before(Game_Battler, name) { |battler, args| [kind, battler, args[0]] if args[0] && args[0] != 0 }
+      end
+      wrap(Game_Battler, :sprite_effect_type=) do |battler, args, original|
+        Recorder.sprite_effect(battler, args[0])
+        original.call
+      end
+      [Game_Actor, Game_Enemy].product(EFFECT_METHODS).each do |owner, name|
+        wrap(owner, name) do |battler, _args, original|
+          result = original.call
+          Recorder.sprite_effect(battler, battler.sprite_effect_type)
+          result
         end
       end
       record_before(Game_Unit, :display_skill_name=) do |unit, args|

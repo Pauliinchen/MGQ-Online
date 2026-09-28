@@ -2,7 +2,8 @@
 #  pvp_battle.rb
 #
 #  Changelog:
-#      Paulinchen  2026-09-29: Polled the connection without the friend's team
+#      Paulinchen  2026-09-29: Started the friend's characters' sprite effects through the setter the guest's stream records
+#                            - Polled the connection without the friend's team
 #      Paulinchen  2026-09-28: Created
 #
 #----------------------------------------------------------------
@@ -840,15 +841,18 @@ module MGQ_PvpBattle
     end
 
     # Flashes and sounds like a hit monster instead of shaking the screen.
+    #
+    # This and perform_collapse_effect start the effect through the setter, which a live battle
+    # records for the guest.
     def perform_damage_effect
-      @sprite_effect_type = :blink
+      self.sprite_effect_type = :blink
       Sound.play_enemy_damage
     end
 
     # Flashes and sounds like a defeated monster, but stays on the battlefield as a silhouette, since
     # the friend's team can still bring it back.
     def perform_collapse_effect
-      @sprite_effect_type = :whiten
+      self.sprite_effect_type = :whiten
       Sound.play_enemy_collapse
     end
 
