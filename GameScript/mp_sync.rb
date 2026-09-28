@@ -2,7 +2,8 @@
 #  mp_sync.rb
 #
 #  Changelog:
-#      Paulinchen  2026-09-29: Stopped a recording when the live battle finishes
+#      Paulinchen  2026-09-29: Broke a live battle off for both players when the host's recording stops
+#                            - Stopped a recording when the live battle finishes
 #                            - Recorded the hit and defeat effects the game starts without the setter
 #                            - Ended the guest's turn, so every command phase chooses anew
 #                            - Checked the link without the friend's team
@@ -88,6 +89,7 @@ module MGQ_MpSync
     @role = state["role"].to_sym
     @player = MGQ_Multiplayer.clean(state["opponent"])
     @solo = false
+    @broken = false
     @battle_running = false
     Channel.reset
     log("live battle as #{@role}")
@@ -124,10 +126,32 @@ module MGQ_MpSync
     return unless @role
 
     @role = nil
+    @broken = false
     @battle_running = false
     MGQ_Multiplayer::Link.cancel
   rescue => e
     log("finish failed: #{e.class}: #{e.message}")
+  end
+
+  # Breaks the live battle off without a winner, once something went wrong on either side.
+  #
+  # @param reason [String] What went wrong, for InGame.log.
+  # @param tell_friend [Boolean] Whether the friend's game still has to hear of it.
+  def self.break_off(reason, tell_friend = true)
+    return if @broken || !@role
+
+    @broken = true
+    log("the live battle broke off: #{reason}")
+    Channel.post("broken") if tell_friend
+  rescue => e
+    log("break-off failed: #{e.class}: #{e.message}")
+  end
+
+  # Tells whether the live battle broke off.
+  #
+  # @return [Boolean] Whether either game broke the live battle off.
+  def self.broken?
+    @broken ? true : false
   end
 
   # Tells whether a live battle runs.
@@ -336,6 +360,20 @@ module MGQ_MpSync
 
       @checked = 0
       @gone = MGQ_Multiplayer::Link.status["link"] != "open"
+    end
+
+    # Reports why the friend's game will send nothing more for the battle, taking a forfeit or
+    # break-off that arrived.
+    #
+    # @return [Symbol, nil] :forfeit when the friend forfeited, :broken when either game broke the
+    #   battle off, :gone when the link ended, nil while the battle goes on.
+    def self.ending
+      return :forfeit if take("forfeit")
+
+      MGQ_MpSync.break_off("#{MGQ_MpSync.player}'s game broke it off", false) if take("broken")
+      return :broken if MGQ_MpSync.broken?
+
+      gone? ? :gone : nil
     end
 
     # Counts the waiting messages of a kind.
@@ -637,12 +675,14 @@ module MGQ_MpSync
       @events = []
     end
 
-    # Stops recording after an error, which stays in InGame.log.
+    # Stops recording after an error, which stays in InGame.log, and breaks a live battle off, since
+    # the guest sees nothing but the stream.
     #
     # @param error [Exception] The error.
     def self.stop_after(error)
       @active = false
       MGQ_MpSync.log("recording stopped: #{error.class}: #{error.message}")
+      MGQ_MpSync.break_off("the host's recording stopped") if @sink == :link
     end
   end
 
@@ -680,7 +720,8 @@ module MGQ_MpSync
     # Plays the host's stream until its next command phase or the battle's end.
     #
     # @param scene [Scene_Battle] The battle.
-    # @return [Array, nil] The "end" event when the battle ended, nil at the next command phase.
+    # @return [Array, nil] The "end" event when the battle ended, an ending of Channel.ending when it
+    #   ended early, nil at the next command phase.
     def self.run(scene)
       @events ||= []
       quiet = 0
@@ -692,7 +733,8 @@ module MGQ_MpSync
         event = next_event
 
         unless event
-          return [:gone] if Channel.gone?
+          ending = Channel.ending
+          return [ending] if ending
 
           quiet += 1
           window ||= Waiting.open("Waiting for #{MGQ_MpSync.player}...") if quiet == QUIET_FRAMES
@@ -938,18 +980,20 @@ module MGQ_MpSync
       nil
     end
 
-    # Waits, with the box open, until the block has an answer or the link ended.
+    # Waits, with the box open, until the block has an answer or the battle ended early.
     #
     # @param scene [Scene_Battle] The battle.
     # @param text [String] What the game waits for.
-    # @yieldreturn [Object, nil] The answer, nil to wait on.
-    # @return [Object, nil] The answer, nil when the link ended first.
+    # @yieldreturn [String, nil] The answer, nil to wait on.
+    # @return [String, Symbol] The answer, or an ending of Channel.ending.
     def self.wait_for(scene, text)
       window = nil
       loop do
         answer = yield
         return answer if answer
-        return nil if Channel.gone?
+
+        ending = Channel.ending
+        return ending if ending
 
         window ||= open(text)
         scene.send(:update_for_wait)
@@ -1235,12 +1279,12 @@ module MGQ_MpSync
     # The host waits for the guest's battle, then streams its own.
     #
     # @param scene [Scene_Battle] The battle.
-    # @return [Boolean] Whether the battle starts, false when it ended because the friend is gone.
+    # @return [Boolean] Whether the battle starts, false when it ended early.
     def self.host_start(scene)
       MGQ_MpSync.show_everything
       Channel.post("ready", MGQ_MpSync.names)
       ready = Waiting.wait_for(scene, "Waiting for #{MGQ_MpSync.player}...") { Channel.take("ready") }
-      return MGQ_MpSync.friend_gone(scene) unless ready
+      return end_early(scene, ready) if ready.is_a?(Symbol)
 
       Recorder.start(:link)
       true
@@ -1256,7 +1300,7 @@ module MGQ_MpSync
       $game_party.instance_variable_set(:@in_battle, true)
       Channel.post("ready", MGQ_MpSync.names)
       names = Waiting.wait_for(scene, "Waiting for #{MGQ_MpSync.player}...") { Channel.take("ready") }
-      return MGQ_MpSync.friend_gone(scene) unless names
+      return end_early(scene, names) if names.is_a?(Symbol)
 
       Names.setup(names)
       play_until_commands(scene)
@@ -1280,7 +1324,7 @@ module MGQ_MpSync
     # @param scene [Scene_Battle] The battle.
     def self.play_until_commands(scene)
       event = Playback.run(scene)
-      return MGQ_MpSync.friend_gone(scene) if event && event[0] == :gone
+      return end_early(scene, event[0]) if event && event[0].is_a?(Symbol)
       return guest_end(event[1]) if event
 
       # The guest's own battle never reaches the turn's end, and a command phase started in the
@@ -1307,37 +1351,41 @@ module MGQ_MpSync
     # @param scene [Scene_Battle] The battle.
     # @return [Boolean] Whether the turn goes on.
     def self.host_commands(scene)
-      text = "Waiting for #{MGQ_MpSync.player}'s commands..."
-      answer = Waiting.wait_for(scene, text) do
-        commands = Channel.take("commands")
-        commands ? [:commands, commands] : (Channel.take("forfeit") ? [:forfeit] : nil)
-      end
+      commands = Waiting.wait_for(scene, "Waiting for #{MGQ_MpSync.player}'s commands...") { Channel.take("commands") }
+      return end_early(scene, commands) if commands.is_a?(Symbol)
 
-      return MGQ_MpSync.friend_gone(scene) unless answer
-
-      if answer[0] == :forfeit
-        $game_message.add("#{MGQ_MpSync.player} forfeited.")
-        BattleManager.process_victory
-        return false
-      end
-
-      Commands.apply(answer[1])
+      Commands.apply(commands)
       true
     end
 
-    # Ends the battle when the friend forfeited or left while this game is not waiting for them,
-    # such as while its player chooses commands. Called by the battle's every frame.
+    # Ends the battle when it ended early while this game is not waiting for the friend, such as
+    # while its player chooses commands. Called by the battle's every frame.
     #
     # @param scene [Scene_Battle] The battle.
     def self.watch(scene)
       return if MGQ_MpSync.solo? || scene.send(:scene_changing?) || BattleManager.battle_end?
 
-      if Channel.take("forfeit")
+      ending = Channel.ending
+      end_early(scene, ending) if ending
+    end
+
+    # Ends the battle before its course did.
+    #
+    # @param scene [Scene_Battle] The battle.
+    # @param reason [Symbol] An ending of Channel.ending.
+    # @return [Boolean] true when the battle goes on with the computer, see MGQ_MpSync.friend_gone.
+    def self.end_early(scene, reason)
+      case reason
+      when :forfeit
         $game_message.add("#{MGQ_MpSync.player} forfeited.")
         BattleManager.process_victory
-      elsif Channel.gone?
-        MGQ_MpSync.friend_gone(scene)
+      when :broken
+        $game_message.add("The live battle broke off.")
+        BattleManager.process_abort
+      else
+        return MGQ_MpSync.friend_gone(scene)
       end
+      false
     end
 
     # Escape ends a live battle as lost, without the chance of failing.

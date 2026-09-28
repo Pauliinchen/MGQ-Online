@@ -2,7 +2,8 @@
 #  pvp_battle.rb
 #
 #  Changelog:
-#      Paulinchen  2026-09-29: Closed the link of a live battle that a reset interrupted
+#      Paulinchen  2026-09-29: Said on the map when a live battle broke off
+#                            - Closed the link of a live battle that a reset interrupted
 #                            - Started the friend's characters' sprite effects through the setter the guest's stream records
 #                            - Polled the connection without the friend's team
 #      Paulinchen  2026-09-28: Created
@@ -1342,6 +1343,9 @@ module MGQ_PvpBattle
     # What the map says when the battle could not start.
     FAILED = "The battle could not start, Multiplayer\\InGame.log says why."
 
+    # What the map says after a live battle broke off without a winner.
+    BROKEN = "The PvP battle against %s's team broke off, Multiplayer\\InGame.log says why."
+
     # What the map says after a mirror match, by the game's battle result.
     MIRROR_RESULTS = {
       0 => "You beat your own team!",
@@ -1478,6 +1482,7 @@ module MGQ_PvpBattle
     # Puts the game back as it was before the battle and says how it went. Called when the map
     # starts again.
     def self.restore
+      @broken = defined?(MGQ_MpSync) && MGQ_MpSync.broken?
       MGQ_MpSync.finish if defined?(MGQ_MpSync)
       return unless @snapshot
 
@@ -1506,6 +1511,7 @@ module MGQ_PvpBattle
     # @return [String] What the map says about how the battle went.
     def self.result_text
       return FAILED if @failed
+      return format(BROKEN, @opponent) if @broken
       return MIRROR_RESULTS.fetch(@result, "The mirror match ended.") if @mirror
 
       format(RESULTS.fetch(@result, "The PvP battle against %s's team ended."), @opponent)
