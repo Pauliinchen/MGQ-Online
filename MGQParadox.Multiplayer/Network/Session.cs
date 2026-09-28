@@ -2,7 +2,8 @@
 //  Session.cs
 //
 //  Changelog:
-//      Paulinchen  2026-09-29: Removed Advertised and Connected, which only the tests read
+//      Paulinchen  2026-09-29: Let Describe leave the friend's team out
+//                            - Removed Advertised and Connected, which only the tests read
 //      Paulinchen  2026-09-28: Created
 //
 //----------------------------------------------------------------
@@ -365,8 +366,9 @@ internal sealed class Session
     /// <summary>
     /// Describes the exchange for the game script.
     /// </summary>
-    /// <returns><c>state</c> and whichever of <c>code</c>, <c>invite</c>, <c>error</c>, <c>opponent</c>, <c>link</c>, <c>role</c> and <c>party</c> apply, then the friend's team once it arrived.</returns>
-    public string Describe()
+    /// <param name="includeTeam">Whether the friend's team comes along once it arrived.</param>
+    /// <returns><c>state</c> and whichever of <c>code</c>, <c>invite</c>, <c>error</c>, <c>opponent</c>, <c>link</c>, <c>role</c> and <c>party</c> apply, then the friend's team when asked for and arrived.</returns>
+    public string Describe(bool includeTeam = true)
     {
         lock (_gate)
         {
@@ -382,7 +384,7 @@ internal sealed class Session
                 new(PartyHeader, (_state == SessionState.Hosting && _joinCode != null) || _link?.State == LinkState.Open ? _partyId : null),
             };
 
-            return new Message(headers, _state == SessionState.Received ? _opponentTeam ?? string.Empty : string.Empty).Encode();
+            return new Message(headers, includeTeam && _state == SessionState.Received ? _opponentTeam ?? string.Empty : string.Empty).Encode();
         }
     }
 

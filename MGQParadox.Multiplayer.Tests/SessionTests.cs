@@ -2,7 +2,8 @@
 //  SessionTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-09-29: Read the join code and party from the described state
+//      Paulinchen  2026-09-29: Added a test for the state without the team
+//                            - Read the join code and party from the described state
 //      Paulinchen  2026-09-28: Created
 //
 //----------------------------------------------------------------
@@ -84,6 +85,30 @@ public sealed class SessionTests
         AwaitLink(host, "closed");
         Assert.False(host.Send("anyone there?"));
         Assert.Equal(string.Empty, Message.Decode(host.Describe())["party"]);
+    }
+
+    /// <summary>
+    /// Asserts that the state without the team carries the same headers as the full one, but no team.
+    /// </summary>
+    [Fact]
+    public void DescribeWithoutTeam_LeavesOnlyTheTeamOut()
+    {
+        var host = NewSession("Host");
+        var guest = NewSession("Guest");
+
+        host.Host("3.06", "host team", FreePort());
+        guest.Join(AwaitCode(host), "3.06", "guest team");
+        AwaitSettled(host);
+
+        var full = Message.Decode(host.Describe());
+        var status = Message.Decode(host.Describe(includeTeam: false));
+
+        Assert.Equal("guest team", full.Team);
+        Assert.Equal(string.Empty, status.Team);
+        Assert.Equal(full["state"], status["state"]);
+        Assert.Equal(full["opponent"], status["opponent"]);
+        Assert.Equal(full["link"], status["link"]);
+        Assert.Equal(full["role"], status["role"]);
     }
 
     /// <summary>

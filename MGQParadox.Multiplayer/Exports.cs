@@ -2,7 +2,8 @@
 //  Exports.cs
 //
 //  Changelog:
-//      Paulinchen  2026-09-29: Took an empty message instead of leaving it to block the ones behind it
+//      Paulinchen  2026-09-29: Added mp_status, the state without the friend's team
+//                            - Took an empty message instead of leaving it to block the ones behind it
 //      Paulinchen  2026-09-28: Created
 //
 //----------------------------------------------------------------
@@ -230,6 +231,27 @@ internal static unsafe class Exports
         catch (Exception ex)
         {
             Log.Write($"mp_state failed: {ex}");
+            return 0;
+        }
+    }
+
+    /// <summary>
+    /// Hands out how the connection stands, without what the friend handed over, for the checks the
+    /// game script makes many times a second.
+    /// </summary>
+    /// <param name="buffer">Receives the state, UTF-8 and null-terminated.</param>
+    /// <param name="size">The size of the buffer in bytes.</param>
+    /// <returns>The length of the state, or its length negated when the buffer is too small, 0 when it failed.</returns>
+    [UnmanagedCallersOnly(EntryPoint = "mp_status", CallConvs = [typeof(CallConvStdcall)])]
+    public static int Status(byte* buffer, int size)
+    {
+        try
+        {
+            return Copy(Session.Current.Describe(includeTeam: false), buffer, size);
+        }
+        catch (Exception ex)
+        {
+            Log.Write($"mp_status failed: {ex}");
             return 0;
         }
     }

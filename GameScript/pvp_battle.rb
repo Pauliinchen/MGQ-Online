@@ -2,6 +2,7 @@
 #  pvp_battle.rb
 #
 #  Changelog:
+#      Paulinchen  2026-09-29: Polled the connection without the friend's team
 #      Paulinchen  2026-09-28: Created
 #
 #----------------------------------------------------------------
@@ -82,7 +83,7 @@ module MGQ_PvpBattle
     return if @frames < POLL_INTERVAL
 
     @frames = 0
-    look_at(MGQ_Multiplayer::Link.state)
+    look_at(MGQ_Multiplayer::Link.status)
   rescue => e
     @frames = 0
     log("map check failed: #{e.class}: #{e.message}")
@@ -90,10 +91,11 @@ module MGQ_PvpBattle
 
   # Acts on how the exchange stands, seen from the map.
   #
-  # @param state [Hash] The state, see MGQ_Multiplayer::Link.state.
+  # @param state [Hash] The state without the friend's team, see MGQ_Multiplayer::Link.status.
   def self.look_at(state)
     case state["state"]
     when "received"
+      state = MGQ_Multiplayer::Link.state
       live = defined?(MGQ_MpSync) && MGQ_MpSync.join(state)
       MGQ_Multiplayer::Link.cancel unless live
       begin_battle(state)
@@ -1655,7 +1657,7 @@ class Scene_PvpLobby < Scene_MenuBase
   # Shows how the exchange stands, and goes back to the map once the friend's team arrived, which
   # starts the battle there.
   def refresh_state
-    @state = MGQ_Multiplayer::Link.state
+    @state = MGQ_Multiplayer::Link.status
     @info_window.show(MGQ_PvpBattle::Lobby.lines_for(@state))
     @command_window.state = @state
     return_scene if @state["state"] == "received"

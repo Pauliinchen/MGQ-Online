@@ -2,6 +2,7 @@
 #  mp_sync.rb
 #
 #  Changelog:
+#      Paulinchen  2026-09-29: Checked the link without the friend's team
 #      Paulinchen  2026-09-28: Created
 #
 #----------------------------------------------------------------
@@ -328,7 +329,7 @@ module MGQ_MpSync
       return false if @checked < LINK_CHECK_FRAMES
 
       @checked = 0
-      @gone = MGQ_Multiplayer::Link.state["link"] != "open"
+      @gone = MGQ_Multiplayer::Link.status["link"] != "open"
     end
 
     # Counts the waiting messages of a kind.

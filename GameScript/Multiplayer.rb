@@ -2,6 +2,7 @@
 #  Multiplayer.rb
 #
 #  Changelog:
+#      Paulinchen  2026-09-29: Added Link.status, which leaves the friend's team out, for the frequent checks
 #      Paulinchen  2026-09-28: Created
 #
 #----------------------------------------------------------------
@@ -119,6 +120,9 @@ module MGQ_Multiplayer
     # A larger state asks for a larger buffer.
     STATE_SIZE = 70_000
 
+    # Bytes the DLL may write the connection's state without the friend's team into at first.
+    STATUS_SIZE = 1_024
+
     # Bytes the DLL may write a message into at first. A larger message asks for a larger buffer.
     MESSAGE_SIZE = 4_096
 
@@ -210,6 +214,15 @@ module MGQ_Multiplayer
     #   ("host" or "guest") and "party" apply, what the friend handed over under :payload.
     def self.state
       text = read('mp_state', STATE_SIZE)
+      text.empty? ? { "state" => "idle", :payload => "" } : parse(text)
+    end
+
+    # Reads how the connection stands without what the friend handed over, cheap enough for checks
+    # many times a second.
+    #
+    # @return [Hash] See state, with an empty :payload.
+    def self.status
+      text = read('mp_status', STATUS_SIZE)
       text.empty? ? { "state" => "idle", :payload => "" } : parse(text)
     end
 
@@ -381,7 +394,7 @@ module MGQ_Multiplayer
 
       invite = MGQ_Discord::Bridge.take_invite
       Link.receive_invite(invite) if invite
-      report(Link.state)
+      report(Link.status)
     rescue => e
       Log.write("discord hand-over failed: #{e.class}: #{e.message}")
     end
@@ -396,7 +409,7 @@ module MGQ_Multiplayer
 
     # Hands the connection to the Discord mod, unless it did not change since the last time.
     #
-    # @param state [Hash] How the connection stands, see Link.state.
+    # @param state [Hash] How the connection stands, see Link.status.
     def self.report(state)
       party = state["party"]
       current =
