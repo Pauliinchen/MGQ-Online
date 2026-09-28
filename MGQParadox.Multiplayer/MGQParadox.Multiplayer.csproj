@@ -1,0 +1,46 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Publish assembles the release layout in Shipping\, see docs/DEVELOPER.md. -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <AssemblyName>Multiplayer</AssemblyName>
+    <RootNamespace>MGQParadox.Multiplayer</RootNamespace>
+    <Product>Monster Girl Quest! Paradox RPG Multiplayer</Product>
+    <Version>0.0.0-dev</Version>
+
+    <!-- The game is a 32-bit process and only loads a native DLL of its own kind. -->
+    <PublishAot>true</PublishAot>
+    <RuntimeIdentifier>win-x86</RuntimeIdentifier>
+    <InvariantGlobalization>true</InvariantGlobalization>
+
+    <PackageDir>$([MSBuild]::NormalizeDirectory($(MSBuildProjectDirectory), .., Shipping))</PackageDir>
+    <ZipFile>$(MSBuildProjectDirectory)\bin\$(Configuration)\MGQ-Paradox-Multiplayer-$(Version).zip</ZipFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="MGQParadox.Multiplayer.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ModFile Include="..\package\Multiplayer\*" />
+    <PatchFile Include="..\GameScript\*.rb" />
+
+    <None Include="@(ModFile)" Link="Shipped\Multiplayer\%(Filename)%(Extension)" />
+    <None Include="@(PatchFile)" Link="Shipped\Patch\%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <Target Name="AssemblePackage" AfterTargets="Publish">
+    <RemoveDir Directories="$(PackageDir)" />
+    <Copy SourceFiles="$(PublishDir)$(AssemblyName).dll;@(ModFile)" DestinationFolder="$(PackageDir)Multiplayer" />
+    <Copy SourceFiles="@(PatchFile)" DestinationFolder="$(PackageDir)Patch" />
+    <Message Importance="high" Text="$(MSBuildProjectName) -> $(PackageDir)" />
+  </Target>
+
+  <Target Name="ZipPackage" AfterTargets="AssemblePackage" Condition="'$(Configuration)' == 'Release'">
+    <ZipDirectory SourceDirectory="$(PackageDir)" DestinationFile="$(ZipFile)" Overwrite="true" />
+  </Target>
+
+</Project>

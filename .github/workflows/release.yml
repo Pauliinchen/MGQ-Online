@@ -1,0 +1,61 @@
+# Publishing a release on GitHub (tag e.g. v1.0.0) builds the mod and attaches
+# MGQ-Paradox-Multiplayer-<version>.zip to that release. Nothing to upload by hand.
+#
+# Run it by hand from the Actions tab with a release's tag to build and attach the zip again, for
+# example after a failed run. It builds the code at that tag with this workflow from main, so the
+# release and its tag stay as they are.
+name: Release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag of the published release, e.g. v0.1.0
+        required: true
+
+permissions:
+  contents: write   # needed to attach the zip to the release
+
+jobs:
+  build:
+    runs-on: windows-latest
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.TAG }}
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      # The tests run 32-bit like the game, so they need the x86 runtime next to the x64 SDK. A
+      # failing test ends the job here, before a zip is built.
+      - name: Install the x86 .NET runtime
+        shell: pwsh
+        run: |
+          Invoke-WebRequest https://dot.net/v1/dotnet-install.ps1 -OutFile dotnet-install.ps1
+          ./dotnet-install.ps1 -Channel 10.0 -Runtime dotnet -Architecture x86 -InstallDir "${env:ProgramFiles(x86)}\dotnet"
+
+      # setup-dotnet points DOTNET_ROOT at the x64 install, which a 32-bit app would follow and fail
+      # to load. DOTNET_ROOT_X86 comes first for a 32-bit app.
+      - name: Test
+        env:
+          DOTNET_ROOT_X86: C:\Program Files (x86)\dotnet
+        run: dotnet run --project MGQParadox.Multiplayer.Tests
+
+      # The runner's Visual Studio brings the C++ linker NativeAOT needs for the DLL.
+      - name: Publish (Release publishes also zip the package)
+        shell: pwsh
+        run: |
+          $version = $env:TAG.TrimStart("v")
+          dotnet publish MGQParadox.Multiplayer -c Release -p:Version=$version
+
+      - name: Attach zip to the release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload $env:TAG (Get-ChildItem MGQParadox.Multiplayer/bin/Release/*.zip).FullName --clobber

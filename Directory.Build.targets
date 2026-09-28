@@ -1,0 +1,26 @@
+<Project>
+
+  <!--
+    Visual Studio 18's VsDevCmd.bat runs vswhere.exe from the current folder, which fails under
+    MSBuild. NativeAOT then cannot find the linker, so the installer folder goes on the PATH.
+  -->
+  <PropertyGroup>
+    <VsInstallerDir>$(MSBuildProgramFiles32)\Microsoft Visual Studio\Installer</VsInstallerDir>
+  </PropertyGroup>
+
+  <Target Name="PutVsWhereOnPath" BeforeTargets="PrepareForPublish" Condition="Exists('$(VsInstallerDir)\vswhere.exe')">
+    <PrependToPath Directory="$(VsInstallerDir)" />
+  </Target>
+
+  <UsingTask TaskName="PrependToPath" TaskFactory="RoslynCodeTaskFactory" AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll">
+    <ParameterGroup>
+      <Directory Required="true" />
+    </ParameterGroup>
+    <Task>
+      <Code Type="Fragment" Language="cs">
+        Environment.SetEnvironmentVariable("PATH", Directory + ";" + Environment.GetEnvironmentVariable("PATH"));
+      </Code>
+    </Task>
+  </UsingTask>
+
+</Project>

@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="MGQParadox.Multiplayer/MGQParadox.Multiplayer.csproj" />
+  <Project Path="MGQParadox.Multiplayer.Tests/MGQParadox.Multiplayer.Tests.csproj" />
+</Solution>

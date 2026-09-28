@@ -1,0 +1,151 @@
+# Developer notes
+
+## Layout
+
+```
+MGQ-Paradox-Multiplayer.slnx          Visual Studio solution
+Directory.Build.targets               puts vswhere.exe on the PATH, which the NativeAOT link needs
+GameScript/Multiplayer.rb             Ruby, what every way of playing together shares
+GameScript/mp_sync.rb                 Ruby, live battles: the host computes, the guest plays back
+GameScript/pvp_battle.rb              Ruby, friend battles against a friend's team or a mirror match
+MGQParadox.Multiplayer/               C# NativeAOT project -> Multiplayer.dll, and the package
+MGQParadox.Multiplayer.Tests/         xUnit tests of the DLL, 32-bit like it
+package/Multiplayer/                  static files shipped as-is
+Shipping/                             publish output, git-ignored
+docs/DEVELOPER.md                     this file
+.github/workflows/release.yml         tests, builds and attaches the zip on release
+```
+
+**Scripts.** Patch folder mods, shipped as `Patch/*.rb`. The mod loader loads them sorted, capitals first, so after `Discord_RPC.rb` of the Discord mod: `Multiplayer.rb`, then `mp_sync.rb`, then `pvp_battle.rb`. A file may only use what loaded before it at load time; later files are reached at run time (`defined?`).
+
+| File | Module | What it is |
+|---|---|---|
+| `Multiplayer.rb` | `MGQ_Multiplayer` | The foundation every mode shares: `Log` (`Multiplayer/InGame.log`), `Link` (the DLL's `mp_*` functions), `Background` (keeps the game running while another window is in front, and has `Input` report no buttons meanwhile), `Key` (F-keys the game's `Input` does not know), `Discord` (the bridge client, see below). |
+| `mp_sync.rb` | `MGQ_MpSync` | Live battles, for any mode: `join` makes the next battle live, `battle_started` marks it running, `finish` ends it and closes the link, `record_to_file` has the next battle record itself. Knows nothing of friend battles. |
+| `pvp_battle.rb` | `MGQ_PvpBattle` | Friend battles: the friend battle screen (F11), the team exchange, the rebuilt characters, the mirror match. Drives `MGQ_MpSync`. |
+
+**`MGQParadox.Multiplayer/`** builds `Multiplayer.dll`: C# compiled with NativeAOT into a native 32-bit DLL, because the game is a 32-bit process. Players need no .NET installed.
+
+| Path | What it is |
+|---|---|
+| `Exports.cs` | The functions `Multiplayer.rb` calls: `mp_start`, `mp_keep_running`, `mp_set_player_name`, `mp_host`, `mp_join_invite`, `mp_join_clipboard`, `mp_receive_invite`, `mp_cancel`, `mp_copy_code`, `mp_state`, `mp_send` and `mp_receive`. Nothing may throw out of them. |
+| `Network/` | The connection: `Session` (hosting, joining, the first exchange, the state the script reads), `Link` (the connection that stays open), `JoinCode`, `Frame`, `Message`, `NetworkAddresses`. |
+| `GameWindow.cs` | Keeps the game running while another application is active, see [Background](#background). |
+| `Clipboard.cs` | The join code on the clipboard. |
+| `Log.cs`, `ModFolder.cs`, `NativeMethods.cs` | `Multiplayer.log` in the `Multiplayer` folder, which the DLL finds by its own path. |
+
+## Build and test
+
+You need the .NET 10 SDK and the Visual Studio workload **Desktop development with C++**, whose linker NativeAOT uses.
+
+Publishing the DLL project assembles the complete release layout in `Shipping/` at the repository root. Copy its content into a game folder to install or update the mod there:
+
+```
+Multiplayer/  Multiplayer.dll  README.txt
+Patch/        Multiplayer.rb  mp_sync.rb  pvp_battle.rb
+```
+
+- **Publish, not build:** only a publish runs NativeAOT, so a plain build gives no usable DLL.
+
+  ```powershell
+  dotnet publish MGQParadox.Multiplayer -c Release -p:Version=0.1.0
+  ```
+
+- **Release publishes** also zip it: `bin/Release/MGQ-Paradox-Multiplayer-<Version>.zip`.
+- **Every publish replaces `Shipping/`.** Close the game before copying it over an install: `Multiplayer.dll` is locked while the game runs.
+- **Logs:** `Multiplayer.log` (the DLL) and `InGame.log` (in-game errors), both in the `Multiplayer` folder.
+
+### Tests
+
+`MGQParadox.Multiplayer.Tests` covers the DLL without the game: the join code, frames and messages, the link (messages both ways, pings keeping a quiet link open, goodbye, silence, oversized messages) and whole exchanges between two sessions over loopback, including the party both sides name. It builds into an executable that runs itself:
+
+```powershell
+dotnet run --project MGQParadox.Multiplayer.Tests
+```
+
+The tests run 32-bit like the game and need the x86 .NET 10 runtime (`C:\Program Files (x86)\dotnet`); with `DOTNET_ROOT` pointing at the x64 install they need `DOTNET_ROOT_X86` pointing at the x86 one. The scripts are not covered; they only run inside the game.
+
+## Conventions
+
+- **File headers.** Every `.cs` and `.rb` file starts with a header block listing the file name and a changelog, newest entry first. Entries by the same author on the same day are grouped. Only changes after the first commit are recorded; before that, a file carries just `Created`.
+- **Documentation comments.** Every type and member is documented: XML comments in C#, YARD-style comments in Ruby. The summary is mandatory, parameters and return values whenever they apply, and remarks only where they add something. Keep them short, and always describe the current state.
+- **Inline comments.** Kept to a minimum, only where the code cannot say something itself: a constraint, a trap, or the failure a line prevents.
+- **Names.** Magic strings and numbers get a named constant.
+- **Language.** Code, comments and documentation are English.
+
+## Releasing
+
+1. Push your changes.
+2. On GitHub, go to **Releases → Draft a new release**, create a tag like `v0.1.0`, write the notes, and click **Publish**.
+3. The *Release* workflow runs the tests, builds the mod and attaches `MGQ-Paradox-Multiplayer-0.1.0.zip` to that release. If the run failed, fix the cause on `main`, then start **Actions → Release → Run workflow** with the release's tag.
+
+## Runtime
+
+- **Nothing blocks the game.** The DLL's threads run the network; every export returns at once.
+- **Nothing throws into the game.** Every export and the DLL's threads catch everything; an exception escaping them would end the game.
+- **The connection.** Hosting listens on port 47625 (`MGQ_Multiplayer::PORT`); the first frames swap what each game hands over (a friend battle's team) and then stay open as the link, which carries the modes' own messages (`mp_send`, `mp_receive`). The link pings after 2 s without another frame, counts as `closed` after a goodbye and as `dropped` after 10 s of silence, which a running game never lets happen. `mp_state` describes it: `state`, `code`, `invite`, `error`, `opponent`, `link`, `role`, `party`, then the payload.
+
+### Background
+
+RGSS pauses a game whose window is not in front: RGSS301.dll keeps the last `WM_ACTIVATEAPP`'s flag and its frame loop waits while it says inactive. A live battle cannot wait for either player, so `GameWindow` subclasses the game's window (class `RGSS Player`) and tells RGSS the game is always active; `Multiplayer.rb` turns it on at start (`mp_keep_running`). The keyboard only reaches the window in front, but gamepads reach every game, so `Background.guard_input` has `Input` report no buttons while another window is in front. It wraps `Input` once the first scene starts, since the game's plugins, the gamepad one among them, load after the Patch folder. Each `Input.update` asks Windows once whether the game is in front, since the game's `Graphics.frame_count` raises until the game first sets it.
+
+## Discord (optional)
+
+The [Discord Rich Presence](https://github.com/Pauliinchen/MGQ-Paradox-Discord-Rich-Presence) mod, when installed, shows the connection on the player's profile and brings Discord's invites. The two mods only meet in its `MGQ_Discord::Bridge` (version 1), which `MGQ_Multiplayer::Discord` checks for (`available?`) and otherwise leaves alone; the join code on the clipboard works without it.
+
+- **Every 30 frames** (`Discord.tick`, a `Graphics.update` hook) the script hands over the connection when it changed: `Bridge.hosting(party, join_code)`, `Bridge.connected(party, friend)` or `Bridge.idle`. The Discord mod then shows `Waiting for a friend (1 of 2)` with the join code as the invite's join secret, or `Playing with <Friend> (2 of 2)`, in a party both games name after a hash of the join code's token (`party` in `mp_state`).
+- **Invites** the player accepted in Discord come back through `Bridge.take_invite` and go to `mp_receive_invite`, where they wait for the friend battle screen like before. Friends who ask to join are let in by the Discord mod while it hears of hosting.
+- **The player's name** on Discord (`Bridge.player_name`) goes to `mp_set_player_name` before every host or join, so the friend sees it; without the Discord mod it is "A friend".
+- **Status fields:** `pvp_battle.rb` registers `Bridge.add_status`, which adds `friend_battle_with=<Friend>` or `friend_battle=mirror` for the Discord mod's first line.
+
+**Dialogue boxes.** The [Battle Dialogue](https://github.com/Pauliinchen/MGQ-Paradox-Mod-Collection/tree/main/Battle_Dialogue) mod of the MGQ-Paradox-Mod-Collection, when installed, shows every battle's messages in boxes at the screen's sides instead of the message window, so neither side of a live battle waits for a key. `mp_sync.rb` hands it each message the host's battle showed, with the speaker from the stream (`Battle_Dialogue.speaking`, `Battle_Dialogue.take_message`). Without it, a live battle's messages stay in the message window, which moves on by itself after 90 frames on both sides.
+
+## Friend battles (`pvp_battle.rb`)
+
+Two games swap their Frontline's builds, then fight the same battle live (see [Live battles](#live-battles-mp_syncrb)), each player commanding their own team; on the host, the friend's characters are rebuilt as real characters and take the friend's commands. A **mirror match** fights the player's own team the same way, played by the computer, without any network.
+
+**Flow.** F11 on the map (`MGQ_PvpBattle::KEY_CODE`, read with `GetAsyncKeyState` while the game window is in front (`MGQ_Multiplayer::Background.in_front?`), since the game's `Input` knows only F5 to F9 and all are taken, F8 by the game's message hiding) opens `Scene_FriendLobby` (named without "Battle", which `GameState.scene` reads as a fight). *Host* calls `mp_host` with the team, *Join with the copied code* `mp_join_clipboard`, *Accept the Discord invite* `mp_join_invite`. The map and the screen poll `mp_state` every 20 frames; once it says `received`, the map starts the battle. *Fight your own team* returns to the map, which starts a mirror match: the player's own `Team.build`, read back through `Team.parse`, so it meets exactly what a friend would.
+
+**Exchange (DLL, `Network/`).** `Session.Current` holds the state; threads of an earlier start (a generation) change nothing.
+- The host listens on port 47625 (`PORT`, IPv6 dual-mode), collects its addresses (`NetworkAddresses`: IPv6, the public IPv4 from api.ipify.org, then home network and VPN addresses) and writes the **join code** (`JoinCode`): `mgqfb1;<token>;<port>;<address>,<address>…`, at most 128 characters (Discord's join secret), numbers only so joining never looks up a name. It goes on the clipboard (`Clipboard`) and, while hosting, into the activity as party and join secret (through the Discord bridge, see below).
+- The guest connects to all addresses at once and keeps the first that answers. Each side sends one **frame** (`Frame`: `MGQFB1`, length, UTF-8, at most 256 KB; four late-game builds take about 35 KB) holding a `Message`: `key=value` headers (`token`, `game`, `player`, or `refused`), an empty line, the team. The host checks the token and the `game` fingerprint and answers with its team. The connection then stays open as the **link** (`Link`) that a live battle will need: `kind=game` frames carry the game script's own text both ways (`mp_send`, and `mp_receive`, which the game script polls), `kind=ping` goes out after 2 s without another frame, and `kind=bye` says goodbye. A reader and a writer thread of its own keep the game from ever waiting on the network. The link counts as `closed` after a goodbye and as `dropped` when the connection breaks or stays silent for 10 s, which the pings of a game still running never let happen; `mp_state` reports it as `link`. Cancelling or starting anew closes it, so the friend battle without a live battle still ends it at once.
+- Discord invites and the profile: see [Discord](#discord-optional).
+
+**Team (`Team`, `Items`).** A line per Frontline member, the **build** rather than its results: `member=` then, split by `;`, the actor id; personal level; job; race; every job and race level (`id:level`); the eight stat growths from items; the skills learned; the abilities learned and the abilities set (`skill type:id.id`); the equipment per slot; the eight stats plus hit, evasion and critical in per mille as the sender sees them, for the self-check; then what of the sender's *save* the character reads: the counters `Team::COUNTERS` (battles fought, the character's Library counts, affection) and the switches its battle start states wait for that are on. Equipment (`Items`): `w<id>`/`a<id>` for a database item, `s…` for a socket item with its gems, `e…` for an enchanted item with its rolls (rarity, upgrade, sockets, variance, enchantments, stat rolls, trait rolls, gems), which the receiver turns into its own copy and lets the game remake the traits from (`reset_data`, as on loading a save). Only numbers leave the game, never the save format, since loading someone else's Marshal data can run code. The receiver takes only ids its own data has, and logs a line or item it cannot read. `Team.game` is the team format (`Team::FORMAT`) plus the sizes of the databases, which must match, since ids and fields differ between versions. The format was checked by writing and reading back real Part 1 and late-game parties (socket and enchanted equipment, 1,136 skills, 182 job and race levels) outside the game.
+
+**Rebuilt characters (`Opponent`).** Each friend's character is a `Game_Actor` subclass made for its actor id and given the build (`rebuild`): job, race, levels (and the matching EXP), stat growth, skills, abilities, equipment, then the game's own `refresh` and `recover_all`. As a real character it has every trait of its equipment, gems, abilities, job and race: pre-battle spells and the other automatic skills, passives, and the stat boosts only a battle applies. It answers for the enemy side where the game assumes the player's party (audited: the battle scripts' references to `$game_party`, `$game_actors`, `actor?`/`enemy?` and Luka):
+- allies `$game_troop`, enemies `$game_party`, its index in the troop, always a battle member;
+- drawn as a sprite (`use_sprite?`), picture by `Pictures`, placed side by side at the screen's bottom;
+- `luca?` false, so Luka's binding, giving up and temptation stay with the player's Luka;
+- `booster_actor_exist_param` counts its own side, where the game counts `$game_party.members`;
+- the hit effect of a monster (blink) instead of shaking the screen, and on defeat a monster's flash and sound (`:whiten`) instead of its collapse: it stays on the battlefield and turns grey and see-through once that flash ends (`Sprite_Battler#update`: the game marks it `dead?` when the hit lands, before the battle log tells of the defeat, so a `:whiten` effect while dead starts the silhouette; the opacity is set every frame, since every sprite effect makes it opaque again when it starts), since its team can revive it. It stays dead to the game, so every target choice (`Game_Unit#random_target`, the enemy window, all-enemy scopes) skips it as it skips dead monsters;
+- the monster data the battle's code reads of the enemy side (`enemy`, `enemy_id`, `friend`, `lose_event_id`, `escape_level`, `escape_not_count?`, `steal_list`, `boss?`, `hide_name`, `lefx`), with no rewards or recruiting; any other method only monsters have is answered by the monster stand-in (`method_missing`) and logged once, so a call the audit missed does not end the game mid-battle;
+- the extra accessory slot when the sender had it (6 slots sent), where the game reads a switch of the receiver's save;
+- enchanted equipment even while the receiver's save has enchanting off (`NWConst::Sw::ENCHANT_OFF`, which `equippable?` reads), since the game's `refresh` would take it off: `equippable?` turns the switch off for the check;
+- the sender's save where the game reads the receiver's for a character (fields 12 and 13): the damage boosts of `booster_ex_count` (battles fought in the save, the character's Library counts of carries, defeated enemies, times down, orgasms and steals, its affection), `love` itself, and the battle start states that wait for a switch (`auto_state_with_switch`), which `on_battle_start` adds or removes to match the switches that were on in the sender's save. A mirror match cannot show any of these, since both sides read the same save;
+- actions from the game's own actor auto-battle (`make_auto_battle_actions`), which targets its `opponents_unit` and checks what is usable;
+- no action without a target: skills aimed at one sex only, or at Luka only while they bind (`ext_scope`), find none in a team without one, which the game never had to handle since only monsters use them on the party, and the battle log then names a target that is not there (`replace_ext_character` fails on `nil`). A `Scene_Battle#use_item` hook shows the game's own "is watching the situation" line instead (`Battle.targetless?`), for both teams;
+- the conditions of its automatic skills (pre-battle spells, counters, turn start and end) from its own side (`firing_auto_skills` through a `BattleManager._auto_skill_per` hook): the game checks `$game_party` for "an ally of these ids" and "an ally has this state". A mirror match cannot show this, since both teams are the same. Which automatic skill fires is random (`rand < per`, and a `sample` among skills of the same priority), so a mirror match's pre-battle states, and the element rates they change, differ between the two sides.
+
+What stays as the player's side is harmless in a friend battle or undone by the snapshot: gold and items spent on skills, Library counters, the local actor of the same id that `Game_Actor#refresh` touches. `Battle.check` logs where a rebuilt character's stats or rates differ from the sender's; both measure outside of battle. A mirror match also writes `Multiplayer/Mirror Match.log` (`MirrorReport`): each character next to its rebuild, once outside of battle and once when the first turn starts (a `BattleManager.turn_start` hook), after pre-battle spells and battle-only boosts: the 8 stats, 10 extra and 10 special rates, max SP, levels, job and race, element rates and states that differ from normal, states resisted, states on the character, skills, set abilities and equipment with gems, every differing value marked.
+
+**Battle (`Opponents`, `Battle`).** An empty troop is appended to `$data_troops` for the battle only; after `BattleManager.setup`, the rebuilt characters are put into `$game_troop`'s `@enemies` and the escape ratio is made again. Picture: the full picture the Library shows (`NWConst::Library::ACTOR_IMAGE`, 640 × 480 in Graphics/Pictures), at full size, cut to the box around its visible pixels (sampled every 4th pixel, reading them all is too slow) down to the picture's bottom edge, which stands at the screen's bottom like the game's own full-size monsters; the face, enlarged, when there is none. The Library's pictures are the same files as the monsters' battle pictures and the largest the game has; shrunk, they turn jagged, since RGSS scales without smoothing. Drawn by `Pictures.stand_in_for` through `Sprite_Battler#update_bitmap`; their HP bars through `Sprite_Battler#update`, since the HP bar plugin only draws for `Game_Enemy`. The battle runs in the game's own battle replay mode (`$game_temp.in_memory_battle`: no EXP, gold, drops, recruiting or autosave) with *can lose* (defeat revives and returns to the map); `Game_Troop`'s EXP, gold and drop totals are 0 for other mods such as a victory screen. It also turns on the switch that removes the battle's *Party* command (`NWConst::Sw::FORBID_BATTLE_SHIFT_CHANGE`, 27), so only the Frontline fights, and the switch *No Seduction* (86), which ends common event 6 before it runs a monster's **ero offer** (the low-HP offer of an H-scene for giving up, common event 2000 + enemy id) or conversation. Before it, `Battle.start` Marshals the save contents plus `$game_library`, `$game_system_switches` and `$game_global_system`; the `Scene_Map#start` hook extracts them again and removes the troop, the way the game's own Retry restores a battle. This also undoes whatever rebuilding the characters touched.
+
+**Nothing reaches the disk.** The game writes the system save (Library, system switches, affection) at every scene change (`Scene_Base#pre_terminate` → `SaveSystemData.auto_save`) and when it closes, so the battle scene's end would write the battle's changes before the map puts the snapshot back. While a friend battle runs, hooks on `DataManager.save_system` (`Battle.as_before_for_system`) and on `save_game_without_rescue`, `auto_save_game_without_rescue` and `save_game_backup_without_rescue` (`Battle.as_before_for_save`) swap in the snapshot for the write and swap back after it. A reset (F12) during a battle goes to the title screen, which makes the save's objects anew but keeps the shared ones; `Battle.forget` puts those back. The restore also drops the notices of medals earned in the battle (`$game_temp`'s `@gain_medals`, the medals themselves are in the Library) and the game's Retry data of the battle (`BattleManager`'s `@retry_data`). The feature caches (`CacheActorFeatures`, `CacheUniq`) are keyed by object, not by actor id, so a rebuilt character never shares an entry with the player's character of the same id.
+
+## Live battles (`mp_sync.rb`)
+
+**First version.** Both players command their own team. The host's game computes the battle and streams what it shows; the guest's game plays that back and sends its commands. Each game sees its own team as the party, so the two would draw their random numbers in a different order if both computed. When the teams arrive over an open link, `pvp_battle.rb` calls `MGQ_MpSync.join`, which takes the role the DLL reports (`role=host` or `guest`), and keeps the link instead of cancelling it; `Battle.start` calls `MGQ_MpSync.battle_started` as it calls the battle scene, and `Battle.restore` calls `MGQ_MpSync.finish`, which closes the link. A mirror match calls `MGQ_MpSync.record_to_file` instead of joining.
+- **Messages** (`Channel`) are the game script's own: a kind on the first line (`ready`, `commands`, `events`, `forfeit`), the rest after it. Values travel as `Wire` lines, tab-separated typed tokens (`i5`, `sText` with `\t`, `\n` and `\` escaped, `@a0` for a battler, `k12` a skill, `t3` an item, `[` … `]` an array), never as Ruby code or Marshal data. The guest only calls the methods its lists name, takes picture names without a path and waits of at most 10 s.
+- **Start:** both battle scenes send `ready` and wait for the other's (`Waiting`, "Waiting for <Player>..."). The host's `ready` carries its party's and troop's names, which the guest swaps for its own in every text (`Names`: the host's characters are the guest's enemies, named with their owner), but not in a speaker's name box (`\n<Name>`). The host turns its skip settings off for the battle (`SKIP_SETTINGS`), since the guest sees only what the host's battle shows; the snapshot puts them back.
+- **Host:** `Recorder` streams every event every 10 frames, with each battler's HP, MP, SP, states and buffs when they changed: before and after every action, after every hit (`apply_item_effects`, which counters and reflections go through too) and before every sprite effect, so the guest has a hit's HP and a defeat's death before it shows them; at every command phase every battler's, which corrects whatever the guest missed. On the guest, a host's character that falls with an actor's collapse is an enemy, so its collapse becomes the defeat flash its silhouette starts from (`Playback.sprite_effect`). The stream also carries a `commands` marker where the host's command phase starts and an `end` marker in `process_victory`, `process_defeat` or `process_abort`. At each turn's start the host waits for the guest's `commands` (`Live.host_commands`) and gives them to the friend's characters (`Commands.apply`: skill or item, id, target index; a troop is the other game's party in the same order, so an index means the same member). A character without commands keeps the computer's choice. The friend's characters use items from the friend's bag, so `Opponent` checks no item count and uses none up.
+- **Guest:** never runs battle logic. `battle_start` and `turn_start` send its `ready` or its `commands` (`Commands.build`) and play the stream (`Playback.run`) until the next `commands` marker or the end, and `judge_win_loss` never ends the battle on its own. Animations are only started on the guest's battlers, unless the guest holds its skip key, since the host's recorded waits that follow keep the pace and the game's own animation methods would wait a second time. When four or more sends of the stream wait (`BEHIND_SENDS`), the guest skips waits and animations until it caught up. A message goes into a box as soon as its last line arrived. Values are set directly (`@hp`, `@states`, …), with no side effects of adding a state. The host's end is turned around (`Live.guest_end`). While it plays a turn, the guest keeps its party's status windows up (`@battle_actor_status_windows_show`), which the game shows only during its own turn logic. Time stop (the game's *over drive*, `Game_Party#od_turn` and `od_user`, which decide who may act) travels as a `time_stop` event whenever it changes, and its darkening and music fade as `Game_Screen#od_fadein`/`od_fadeout` and `Audio.start_over_drive`/`end_over_drive`.
+- **Rules:** Escape ends the battle at once as a forfeit (`Live.forfeit`), which also sends `forfeit`; Give Up is off (`can_giveup?`). Both sides watch for the friend's `forfeit` and for the link ending every frame of `Scene_Battle#update` (`Live.watch`), so a forfeit or a friend who leaves ends the battle while a player chooses commands too. No message holds either player up: the Battle Dialogue mod, when installed, shows them in boxes (see below), and one the message window shows moves on by itself after 90 frames (`Window_Message#input_pause`). When the link ends, the remaining player wins; `DROPOUT = :computer` lets the computer play the friend's team on the host instead.
+- **Mirror matches** record into `Multiplayer/Battle Recording.log` instead, one `Wire` line per event after its frame.
+
+`Hooks.install` puts the hooks in once the first scene starts (a `SceneManager.run` hook), since the game's plugins load after the Patch folder and `Promestein2` defines `Scene_Battle#battle_start`, `Scene_Battle#turn_start` and `Window_BattleLog#add_text` anew, which drops a hook installed before it. `Hooks.wrap` keeps each wrapped method under a name of its own, since `turn_start` is wrapped twice. What the stream carries: the battle log's primitives (`add_text`, `replace_text`, `back_one`, `back_to`, `clear`, `clear_popup`), `PopupResults#push`, messages with their face and speaker (`process_skill_word` and `process_down_word` set it, since a line names its speaker only by name, which both teams can share), pictures of the troop screen (cut-ins; erases only of pictures that were shown), its shakes, flashes and tone changes, every `Audio` call (the log plays some sounds directly), animations as `show_animation` is asked for them, before it checks the skip key, sprite effects, the skill name, turns, actions and the scene's waits.
+
+**Not yet in the live battle:** effects turned around for the other side (a hit on the host's character shakes the host's screen, which on the guest's is a hit on an enemy), a confirmation before Escape, and the computer taking over the host's team when the host leaves.
+
+**Not covered yet:** reserve members and levelling the two teams.
+

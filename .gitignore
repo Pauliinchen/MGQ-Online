@@ -1,0 +1,11 @@
+# Visual Studio
+.vs/
+bin/
+obj/
+*.user
+
+# publish output, the release layout ready to copy into a game folder
+Shipping/
+
+# runtime files, in case the game is ever pointed at this folder while testing
+*.log
