@@ -2,6 +2,7 @@
 //  Exports.cs
 //
 //  Changelog:
+//      Paulinchen  2026-09-29: Took an empty message instead of leaving it to block the ones behind it
 //      Paulinchen  2026-09-28: Created
 //
 //----------------------------------------------------------------
@@ -257,7 +258,7 @@ internal static unsafe class Exports
     /// </summary>
     /// <param name="buffer">Receives the message, UTF-8 and null-terminated.</param>
     /// <param name="size">The size of the buffer in bytes.</param>
-    /// <returns>The message's length, or its length negated when the buffer is too small, 0 while none waits.</returns>
+    /// <returns>The message's length, or its length negated when the buffer is too small, 0 while none waits or for an empty one.</returns>
     [UnmanagedCallersOnly(EntryPoint = "mp_receive", CallConvs = [typeof(CallConvStdcall)])]
     public static int Receive(byte* buffer, int size)
     {
@@ -270,7 +271,9 @@ internal static unsafe class Exports
 
             var length = Copy(message, buffer, size);
 
-            if (length > 0)
+            // An empty message reads as none waiting, but it has to be taken all the same, or it
+            // would block every message behind it.
+            if (length >= 0)
             {
                 Session.Current.TakeMessage();
             }
