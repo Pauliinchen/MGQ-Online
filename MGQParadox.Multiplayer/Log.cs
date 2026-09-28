@@ -2,6 +2,7 @@
 //  Log.cs
 //
 //  Changelog:
+//      Paulinchen  2026-09-29: Kept the game and network threads from writing at once
 //      Paulinchen  2026-09-28: Created
 //
 //----------------------------------------------------------------
@@ -27,6 +28,14 @@ internal static class Log
     private static string FilePath => ModFolder.PathOf("Multiplayer.log");
 
     /// <summary>
+    /// Keeps the game thread and the network threads from writing at once.
+    /// </summary>
+    /// <remarks>
+    /// Two writes at once fail with the file in use, which would lose the very line that says why a link dropped.
+    /// </remarks>
+    private static readonly object Gate = new();
+
+    /// <summary>
     /// Appends a line, prefixed with the time of day.
     /// </summary>
     /// <param name="message">The line to append.</param>
@@ -36,7 +45,10 @@ internal static class Log
 
         try
         {
-            File.AppendAllText(FilePath, $"{time}  {message}\r\n", Encoding.UTF8);
+            lock (Gate)
+            {
+                File.AppendAllText(FilePath, $"{time}  {message}\r\n", Encoding.UTF8);
+            }
         }
         catch
         {
@@ -51,9 +63,12 @@ internal static class Log
     {
         try
         {
-            if (File.Exists(FilePath) && new FileInfo(FilePath).Length > maxBytes)
+            lock (Gate)
             {
-                File.Delete(FilePath);
+                if (File.Exists(FilePath) && new FileInfo(FilePath).Length > maxBytes)
+                {
+                    File.Delete(FilePath);
+                }
             }
         }
         catch
