@@ -92,7 +92,7 @@ public sealed class MessageTests
     public void Frame_DropsOversizedFrames()
     {
         using var stream = new MemoryStream();
-        stream.Write("MGQFB1"u8);
+        stream.Write("MGQMP1"u8);
         stream.Write(System.BitConverter.GetBytes(Frame.MaxBodyBytes + 1));
         stream.Position = 0;
 

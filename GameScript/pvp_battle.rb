@@ -13,10 +13,10 @@
 # connection and mp_sync.rb for the live battle, which the mod loader loads first. It must never
 # interrupt the game, so every entry point rescues.
 module MGQ_PvpBattle
-  # Turns friend battles off without uninstalling them.
+  # Turns PvP battles off without uninstalling them.
   ENABLED = true
 
-  # Windows' code of the key on the map that opens the friend battle screen, F11. The game's own
+  # Windows' code of the key on the map that opens the PvP battle screen, F11. The game's own
   # keys F5 to F9 are all taken, F8 by the game's message hiding.
   KEY_CODE = 0x7A
 
@@ -39,7 +39,7 @@ module MGQ_PvpBattle
     !Scene_Map.method_defined?(:mgq_pvp_battle_update_scene)
   end
 
-  # @return [Boolean] whether friend battles are on and the Multiplayer mod's DLL is installed
+  # @return [Boolean] whether PvP battles are on and the Multiplayer mod's DLL is installed
   def self.available?
     ENABLED && MGQ_Multiplayer.available?
   end
@@ -57,7 +57,7 @@ module MGQ_PvpBattle
     @mirror_requested = true
   end
 
-  # Opens the friend battle screen when the key is pressed, starts a requested mirror match, starts
+  # Opens the PvP battle screen when the key is pressed, starts a requested mirror match, starts
   # the battle once the friend's team arrived, and opens the screen for a Discord invite. Called by
   # the map while nothing else runs.
   def self.on_map
@@ -67,7 +67,7 @@ module MGQ_PvpBattle
     return if $game_map.interpreter.running? || $game_player.moving?
 
     if pressed
-      SceneManager.call(Scene_FriendLobby)
+      SceneManager.call(Scene_PvpLobby)
       return
     end
 
@@ -98,10 +98,10 @@ module MGQ_PvpBattle
       begin_battle(state)
     when "failed"
       MGQ_Multiplayer::Link.cancel
-      $game_message.add("Friend battle: #{state['error']}")
+      $game_message.add("PvP battle: #{state['error']}")
     else
       invited = state["invite"] == "1"
-      SceneManager.call(Scene_FriendLobby) if invited && !@invite_shown
+      SceneManager.call(Scene_PvpLobby) if invited && !@invite_shown
       @invite_shown = invited
     end
   end
@@ -129,15 +129,15 @@ module MGQ_PvpBattle
     Battle.start(MIRROR_NAME, Team.parse(Team.build), true)
   end
 
-  # The fields the Discord mod publishes about friend battles, through its bridge. The Discord mod
+  # The fields the Discord mod publishes about PvP battles, through its bridge. The Discord mod
   # hears of hosting and the connection with the friend from Multiplayer.rb.
   #
   # @param scene [String] what the game is showing, see MGQ_Discord::GameState.scene
-  # @return [Hash] the fields, none outside a friend battle
+  # @return [Hash] the fields, none outside a PvP battle
   def self.status_fields(scene)
     return {} unless Battle.running? && scene == "battle"
 
-    Battle.mirror? ? { "friend_battle" => "mirror" } : { "friend_battle_with" => Battle.opponent }
+    Battle.mirror? ? { "pvp_battle" => "mirror" } : { "pvp_battle_with" => Battle.opponent }
   end
 
   # The team two games swap: each Frontline member's build as plain numbers, which the other game
@@ -630,7 +630,7 @@ module MGQ_PvpBattle
       0
     end
 
-    # @return [Boolean] always, running from a friend battle counts as no escape
+    # @return [Boolean] always, running from a PvP battle counts as no escape
     def escape_not_count?
       true
     end
@@ -844,7 +844,7 @@ module MGQ_PvpBattle
     end
 
     # The condition of an automatic skill, seen from the friend's side: 1 an ally of these ids
-    # fights along, 2 an enemy of these monster ids is there, which a friend battle has none of,
+    # fights along, 2 an enemy of these monster ids is there, which a PvP battle has none of,
     # 3 an ally has one of these states, 4 an enemy has one, 5 the character itself has one.
     #
     # @param type [Integer] the condition
@@ -881,7 +881,7 @@ module MGQ_PvpBattle
   # which the rebuilt characters are put into.
   module Opponents
     # The troop's name.
-    TROOP_NAME = "Friend battle"
+    TROOP_NAME = "PvP battle"
 
     # Adds the troop.
     #
@@ -1214,7 +1214,7 @@ module MGQ_PvpBattle
     # What the map says after the battle, by the game's battle result.
     RESULTS = {
       0 => "You beat %s's team!",
-      1 => "You left the friend battle against %s's team.",
+      1 => "You left the PvP battle against %s's team.",
       2 => "%s's team won.",
     }
 
@@ -1244,7 +1244,7 @@ module MGQ_PvpBattle
       attr_reader :opponent
     end
 
-    # @return [Boolean] whether a friend battle runs, until the map put the game back
+    # @return [Boolean] whether a PvP battle runs, until the map put the game back
     def self.running?
       @snapshot ? true : false
     end
@@ -1364,7 +1364,7 @@ module MGQ_PvpBattle
       $game_temp.clear_common_event
       # Medals earned in the battle are gone with the Library's, so their notices are too.
       $game_temp.instance_variable_set(:@gain_medals, @medals || [])
-      # The game's Retry would start the friend battle again from its own snapshot.
+      # The game's Retry would start the PvP battle again from its own snapshot.
       BattleManager.instance_variable_set(:@retry_data, nil)
       Opponents.remove
       $game_player.refresh
@@ -1379,7 +1379,7 @@ module MGQ_PvpBattle
       return FAILED if @failed
       return MIRROR_RESULTS.fetch(@result, "The mirror match ended.") if @mirror
 
-      format(RESULTS.fetch(@result, "The friend battle against %s's team ended."), @opponent)
+      format(RESULTS.fetch(@result, "The PvP battle against %s's team ended."), @opponent)
     end
 
     # Drops a battle a reset interrupted. The title screen makes the save's objects anew, but keeps
@@ -1406,7 +1406,7 @@ module MGQ_PvpBattle
     end
 
     # Runs a write of the system save with the shared data as it was before the battle, while a
-    # friend battle runs. The game writes it at every scene change and when it closes.
+    # PvP battle runs. The game writes it at every scene change and when it closes.
     def self.as_before_for_system
       return yield unless running?
 
@@ -1420,7 +1420,7 @@ module MGQ_PvpBattle
     end
 
     # Runs a write of a save file with the save and the shared data as they were before the
-    # battle, while a friend battle runs, so nothing of the friend's team or the battle reaches it.
+    # battle, while a PvP battle runs, so nothing of the friend's team or the battle reaches it.
     def self.as_before_for_save
       return yield unless running?
 
@@ -1436,7 +1436,7 @@ module MGQ_PvpBattle
     end
   end
 
-  # What the friend battle screen says about the exchange.
+  # What the PvP battle screen says about the exchange.
   module Lobby
     # What the screen says before anything started.
     INTRO = [
@@ -1463,11 +1463,11 @@ module MGQ_PvpBattle
               when "received"
                 ["Your friend's team arrived."]
               when "failed"
-                ["The friend battle broke off:", state["error"].to_s]
+                ["The PvP battle broke off:", state["error"].to_s]
               else
                 INTRO
               end
-      state["invite"] == "1" ? ["A Discord invite to a friend battle is waiting."] + lines : lines
+      state["invite"] == "1" ? ["A Discord invite to a PvP battle is waiting."] + lines : lines
     end
 
     # The commands the screen offers.
@@ -1484,7 +1484,7 @@ module MGQ_PvpBattle
       when "joining"
         commands.push(["Stop joining", :stop])
       else
-        commands.push(["Host a friend battle", :host], ["Join with the copied code", :join_clipboard])
+        commands.push(["Host a PvP battle", :host], ["Join with the copied code", :join_clipboard])
         commands.push(["Fight your own team", :mirror])
       end
 
@@ -1493,16 +1493,16 @@ module MGQ_PvpBattle
   end
 end
 
-# The friend battle screen, opened from the map with F11 (MGQ_PvpBattle::KEY_CODE) or by a
+# The PvP battle screen, opened from the map with F11 (MGQ_PvpBattle::KEY_CODE) or by a
 # Discord invite.
 #
 # Named without "Battle", which the Discord mod reads as being in a fight.
-class Scene_FriendLobby < Scene_MenuBase
+class Scene_PvpLobby < Scene_MenuBase
   # Creates the windows and reads the exchange.
   def start
     super
-    @info_window = Window_FriendLobbyInfo.new
-    @command_window = Window_FriendLobbyCommand.new(@info_window.height)
+    @info_window = Window_PvpLobbyInfo.new
+    @command_window = Window_PvpLobbyCommand.new(@info_window.height)
     @command_window.set_handler(:host, method(:on_host))
     @command_window.set_handler(:join_clipboard, method(:on_join_clipboard))
     @command_window.set_handler(:join_invite, method(:on_join_invite))
@@ -1585,8 +1585,8 @@ class Scene_FriendLobby < Scene_MenuBase
   end
 end
 
-# The lines above the friend battle screen's commands.
-class Window_FriendLobbyInfo < Window_Base
+# The lines above the PvP battle screen's commands.
+class Window_PvpLobbyInfo < Window_Base
   # Lines the window has room for.
   LINES = 4
 
@@ -1610,8 +1610,8 @@ class Window_FriendLobbyInfo < Window_Base
   end
 end
 
-# The friend battle screen's commands, which follow how the exchange stands.
-class Window_FriendLobbyCommand < Window_Command
+# The PvP battle screen's commands, which follow how the exchange stands.
+class Window_PvpLobbyCommand < Window_Command
   # Width of the window.
   WIDTH = 360
 
@@ -1665,7 +1665,7 @@ if MGQ_PvpBattle.hookable?
         MGQ_PvpBattle.on_map unless scene_changing?
       end
 
-      # The map starts again after a friend battle, and the game is put back first, so the map is
+      # The map starts again after a PvP battle, and the game is put back first, so the map is
       # built from what it was before.
       alias mgq_pvp_battle_start start
       def start
@@ -1706,7 +1706,7 @@ if MGQ_PvpBattle.hookable?
     MGQ_PvpBattle.log("use_item hook FAILED: #{e.class}: #{e.message}")
   end
 
-  # A friend battle gives no EXP, gold or drops. The game already skips them, but other mods, such
+  # A PvP battle gives no EXP, gold or drops. The game already skips them, but other mods, such
   # as a victory screen, read the troop's totals anyway, which the friend's characters cannot give.
   begin
     class Game_Troop
@@ -1774,7 +1774,7 @@ if MGQ_PvpBattle.hookable?
     MGQ_PvpBattle.log("battler picture hooks FAILED: #{e.class}: #{e.message}")
   end
 
-  # Nothing of a friend battle reaches the disk: while one runs, every save write gets the save
+  # Nothing of a PvP battle reaches the disk: while one runs, every save write gets the save
   # and the shared data as they were before it. The system save is written at every scene change
   # and when the game closes, the others only if something saves in the middle of a battle.
   begin

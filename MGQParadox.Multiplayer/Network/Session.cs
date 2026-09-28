@@ -20,7 +20,7 @@ namespace MGQParadox.Multiplayer.Network;
 
 /// <summary>
 /// The connection with a friend: hosting until a guest arrives, or joining a host, swapping what
-/// each game hands over (a friend battle's team) over a direct connection, which then stays open as
+/// each game hands over (a PvP battle's team) over a direct connection, which then stays open as
 /// a <see cref="Link"/> for playing together.
 /// </summary>
 /// <remarks>
@@ -258,7 +258,7 @@ internal sealed class Session
             _listener = listener;
         }
 
-        StartThread("FriendBattleHost", () => Serve(generation, listener, game, team, port));
+        StartThread("MultiplayerHost", () => Serve(generation, listener, game, team, port));
     }
 
     /// <summary>
@@ -304,7 +304,7 @@ internal sealed class Session
                 return;
             }
 
-            StartThread("FriendBattleJoin", () => Visit(generation, code, game, team));
+            StartThread("MultiplayerJoin", () => Visit(generation, code, game, team));
         }
     }
 

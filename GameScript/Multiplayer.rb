@@ -114,7 +114,7 @@ module MGQ_Multiplayer
   # Multiplayer/Multiplayer.dll's functions: hosting, joining, the first exchange of what each game
   # hands over, and the messages that follow, all running on threads of the DLL's own.
   module Link
-    # Bytes the DLL may write the connection's state into at first, a friend battle's team included.
+    # Bytes the DLL may write the connection's state into at first, a PvP battle's team included.
     # A larger state asks for a larger buffer.
     STATE_SIZE = 70_000
 

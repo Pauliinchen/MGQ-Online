@@ -146,7 +146,7 @@ public sealed class SessionTests
     {
         var guest = NewSession("Guest");
 
-        guest.ReceiveInvite("mgqfb1;abcdefghjk;1;127.0.0.1");
+        guest.ReceiveInvite("mgqmp1;abcdefghjk;1;127.0.0.1");
         Assert.Equal("1", Message.Decode(guest.Describe())["invite"]);
 
         guest.JoinInvite("3.06", "guest team");

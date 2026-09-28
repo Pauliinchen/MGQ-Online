@@ -32,7 +32,7 @@ public sealed class JoinCodeTests
         var text = code.ToText();
         var parsed = JoinCode.Parse(text);
 
-        Assert.Equal("mgqfb1;abcdefghjk;47625;2001:db8::7,203.0.113.7,192.168.1.20", text);
+        Assert.Equal("mgqmp1;abcdefghjk;47625;2001:db8::7,203.0.113.7,192.168.1.20", text);
         Assert.NotNull(parsed);
         Assert.Equal(Token, parsed.Token);
         Assert.Equal(47625, parsed.Port);
@@ -65,12 +65,12 @@ public sealed class JoinCodeTests
     [InlineData(null)]
     [InlineData("")]
     [InlineData("hello")]
-    [InlineData("mgqfb1;abcdefghjk;47625;")]
-    [InlineData("mgqfb1;abcdefghjk;0;203.0.113.7")]
-    [InlineData("mgqfb1;abcdefghjk;70000;203.0.113.7")]
-    [InlineData("mgqfb1;short;47625;203.0.113.7")]
-    [InlineData("mgqfb1;abcdefghjk;47625;example.com")]
-    [InlineData("mgqfb2;abcdefghjk;47625;203.0.113.7")]
+    [InlineData("mgqmp1;abcdefghjk;47625;")]
+    [InlineData("mgqmp1;abcdefghjk;0;203.0.113.7")]
+    [InlineData("mgqmp1;abcdefghjk;70000;203.0.113.7")]
+    [InlineData("mgqmp1;short;47625;203.0.113.7")]
+    [InlineData("mgqmp1;abcdefghjk;47625;example.com")]
+    [InlineData("mgqmp2;abcdefghjk;47625;203.0.113.7")]
     public void Parse_TurnsDownAnythingElse(string? text) => Assert.Null(JoinCode.Parse(text));
 
     /// <summary>
@@ -78,7 +78,7 @@ public sealed class JoinCodeTests
     /// </summary>
     [Fact]
     public void Parse_IgnoresSurroundingWhiteSpace() =>
-        Assert.NotNull(JoinCode.Parse("  mgqfb1;abcdefghjk;47625;203.0.113.7\r\n"));
+        Assert.NotNull(JoinCode.Parse("  mgqmp1;abcdefghjk;47625;203.0.113.7\r\n"));
 
     /// <summary>
     /// Asserts that new tokens read as tokens and differ.
@@ -90,6 +90,6 @@ public sealed class JoinCodeTests
         var second = JoinCode.NewToken();
 
         Assert.NotEqual(first, second);
-        Assert.NotNull(JoinCode.Parse($"mgqfb1;{first};47625;203.0.113.7"));
+        Assert.NotNull(JoinCode.Parse($"mgqmp1;{first};47625;203.0.113.7"));
     }
 }

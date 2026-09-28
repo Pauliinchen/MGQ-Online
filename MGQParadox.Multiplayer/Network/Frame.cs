@@ -35,7 +35,7 @@ internal static class Frame
     /// <summary>
     /// Starts every frame, and changes whenever the exchange changes.
     /// </summary>
-    private static readonly byte[] Marker = "MGQFB1"u8.ToArray();
+    private static readonly byte[] Marker = "MGQMP1"u8.ToArray();
 
     /// <summary>
     /// Sends one frame.

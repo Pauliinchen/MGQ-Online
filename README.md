@@ -1,6 +1,6 @@
 # MGQ Paradox Multiplayer
 
-Play Monster Girl Quest! Paradox RPG together with a friend over a direct connection. So far: **friend battles**, in which your Frontline fights your friend's Frontline live, each of you commanding your own team. Overworld and co-op play are planned on the same connection.
+Play Monster Girl Quest! Paradox RPG together with a friend over a direct connection. So far: **PvP battles**, in which your Frontline fights your friend's Frontline live, each of you commanding your own team. Overworld and co-op play are planned on the same connection.
 
 ## Requirements
 
@@ -27,9 +27,9 @@ Patch\pvp_battle.rb
 
 To uninstall, delete the `Multiplayer` folder and the three scripts in `Patch`.
 
-## Friend battles
+## PvP battles
 
-Press **F11** on the map to open the friend battle screen.
+Press **F11** on the map to open the PvP battle screen.
 
 - **Host:** your game waits for a friend and puts a join code on your clipboard. Send it to your friend, or invite them through the **+** in a Discord chat when the Discord mod is installed.
 - **Join:** copy your friend's join code and pick *Join with the copied code*, or accept their Discord invite.

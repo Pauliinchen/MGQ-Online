@@ -36,7 +36,7 @@ internal sealed record JoinCode(string Token, int Port, IReadOnlyList<string> Ad
     /// <summary>
     /// Starts every code, and changes whenever the exchange changes.
     /// </summary>
-    private const string Prefix = "mgqfb1";
+    private const string Prefix = "mgqmp1";
 
     /// <summary>
     /// Separates the prefix, token, port and address list.

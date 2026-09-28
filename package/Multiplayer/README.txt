@@ -2,7 +2,7 @@ Monster Girl Quest! Paradox RPG - Multiplayer
 =============================================
 
 Play Monster Girl Quest! Paradox RPG together with a friend over a direct
-connection. So far: friend battles, in which your Frontline fights your
+connection. So far: PvP battles, in which your Frontline fights your
 friend's Frontline live, each of you commanding your own team.
 
 
@@ -46,15 +46,15 @@ the background, so neither player holds the other up. A gamepad does
 nothing meanwhile.
 
 
-FRIEND BATTLES (TEST)
----------------------
+PVP BATTLES (TEST)
+------------------
 Fight a friend's Frontline live: your games swap their Frontline, then
 you both fight the same battle, each commanding your own team. The
 hosting game works the battle out and the other shows what happened. The
 team you meet is your friend's characters as they are, with their jobs,
 races, equipment, gems and abilities, pre-battle spells and passives
 included. Only the Frontline fights: the Party command, which swaps in
-the backline, is gone during a friend battle. Escape gives the battle up
+the backline, is gone during a PvP battle. Escape gives the battle up
 at once, and Give Up is off. Battle messages move on by themselves, so
 neither of you waits for the other to press a key. If your friend leaves
 or the connection breaks, you win. A defeated character of your friend
@@ -63,9 +63,9 @@ revive it; it cannot be targeted meanwhile. Nothing carries over: no
 EXP, gold or items, no defeat scene, and your save, the Library and
 affection are put back exactly as they were before.
 
-Press F11 on the map to open the friend battle screen.
+Press F11 on the map to open the PvP battle screen.
 
-- Host a friend battle: your game waits for a friend. Send them the join
+- Host a PvP battle: your game waits for a friend. Send them the join
   code, which is put on your clipboard, or, with the Discord mod,
   invite them through the + in a Discord chat ("Invite to play").
 - Your friend copies your join code and picks "Join with the copied

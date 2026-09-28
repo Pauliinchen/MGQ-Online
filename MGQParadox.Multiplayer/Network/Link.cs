@@ -84,8 +84,8 @@ internal sealed class Link
         client.SendTimeout = (int)dropTimeout.TotalMilliseconds;
 
         var stream = client.GetStream();
-        StartThread("FriendBattleLinkRead", () => ReadAll(stream));
-        StartThread("FriendBattleLinkWrite", () => WriteAll(stream));
+        StartThread("MultiplayerLinkRead", () => ReadAll(stream));
+        StartThread("MultiplayerLinkWrite", () => WriteAll(stream));
     }
 
     /// <summary>
