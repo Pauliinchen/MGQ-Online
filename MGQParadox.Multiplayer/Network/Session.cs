@@ -24,9 +24,8 @@ namespace MGQParadox.Multiplayer.Network;
 /// a <see cref="Link"/> for playing together.
 /// </summary>
 /// <remarks>
-/// The game script starts and polls <see cref="Current"/> from the game's thread, the network runs
-/// on threads of its own. Every start makes a new generation, so a thread of an earlier one changes
-/// nothing once it wakes up.
+/// Every start makes a new generation, so a network thread of an earlier one changes nothing once
+/// it wakes up.
 /// </remarks>
 internal sealed class Session
 {
@@ -421,7 +420,7 @@ internal sealed class Session
     /// Hosts until a guest brings the code, or the session moves on.
     /// </summary>
     /// <remarks>
-    /// Catches everything. An exception escaping this thread would end the whole game.
+    /// Catches everything, since an exception escaping this thread would end the whole game.
     /// </remarks>
     /// <param name="generation">The session this thread belongs to.</param>
     /// <param name="listener">The listener, which stopping ends the wait.</param>
@@ -532,7 +531,7 @@ internal sealed class Session
     /// Joins a host and swaps teams with it.
     /// </summary>
     /// <remarks>
-    /// Catches everything. An exception escaping this thread would end the whole game.
+    /// Catches everything, since an exception escaping this thread would end the whole game.
     /// </remarks>
     /// <param name="generation">The session this thread belongs to.</param>
     /// <param name="code">The host's join code.</param>
@@ -763,7 +762,7 @@ internal sealed class Session
     }
 
     /// <summary>
-    /// Ends whatever ran and starts a new generation. Called under <see cref="_gate"/>.
+    /// Ends whatever ran and starts a new generation, under <see cref="_gate"/>.
     /// </summary>
     /// <remarks>
     /// A waiting invite survives, only <see cref="Cancel"/> and joining it clear it.

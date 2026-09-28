@@ -7,15 +7,10 @@
 #----------------------------------------------------------------
 
 # Live battles, in which two players each command their own team: the host's game computes the
-# battle and streams what it shows, the guest's game plays that back and sends its commands. Each
-# game sees its own team as the party, so the two would draw their random numbers in a different
-# order if both computed. A mode, such as pvp_battle.rb, starts and ends it through join,
-# battle_started and finish. Needs Multiplayer.rb, which the mod loader loads first. It must never
-# interrupt the game, so every entry point rescues.
+# battle and streams what it shows, the guest's game plays that back and sends its commands.
 #
-# A battle the mode asks to record (record_to_file) writes what it shows into
-# Multiplayer/Battle Recording.log, which tells whether the stream covers everything a battle puts
-# on screen.
+# Each game sees its own team as the party, so the two would draw their random numbers in a
+# different order if both computed.
 module MGQ_MpSync
   # File inside the Multiplayer folder that a recorded battle writes into.
   RECORDING_FILE = "Battle Recording.log"
@@ -49,10 +44,14 @@ module MGQ_MpSync
                    :skip_battle_start_skill_effect, :skip_skill_effect]
 
   class << self
-    # @return [Symbol, nil] :host or :guest during a live battle, nil otherwise
+    # The side this game plays in a live battle.
+    #
+    # @return [Symbol, nil] :host or :guest during a live battle, nil otherwise.
     attr_reader :role
 
-    # @return [String] the friend's name
+    # The friend who plays the other side.
+    #
+    # @return [String] The friend's name.
     attr_reader :player
   end
 
@@ -61,14 +60,14 @@ module MGQ_MpSync
   # A second copy of this script would wrap the same methods under the same names, and each hook
   # would then call itself until the stack overflows.
   #
-  # @return [Boolean] false when the hooks are in place already
+  # @return [Boolean] false when the hooks are in place already.
   def self.hookable?
     !SceneManager.respond_to?(:mgq_mp_sync_run)
   end
 
   # Writes a line to the Multiplayer mod's InGame.log.
   #
-  # @param message [String] the line
+  # @param message [String] The line.
   def self.log(message)
     MGQ_Multiplayer::Log.write("sync: #{message}")
   rescue
@@ -77,8 +76,8 @@ module MGQ_MpSync
   # Makes the next battle live, when the link to the friend stands. The mode calls battle_started
   # once that battle starts.
   #
-  # @param state [Hash] how the connection stands, see MGQ_Multiplayer::Link.state
-  # @return [Boolean] whether the battle is live, false for a battle of its own on each side
+  # @param state [Hash] How the connection stands, see MGQ_Multiplayer::Link.state.
+  # @return [Boolean] Whether the battle is live, false for a battle of its own on each side.
   def self.join(state)
     return false unless state["link"] == "open" && %w(host guest).include?(state["role"])
 
@@ -104,7 +103,9 @@ module MGQ_MpSync
     @record_next = true
   end
 
-  # @return [Boolean] whether the battle starting now is to be recorded, asked once per battle
+  # Takes the request to record the battle starting now.
+  #
+  # @return [Boolean] Whether the battle starting now is to be recorded, asked once per battle.
   def self.take_file_recording
     recording = @record_next ? true : false
     @record_next = false
@@ -122,22 +123,30 @@ module MGQ_MpSync
     log("finish failed: #{e.class}: #{e.message}")
   end
 
-  # @return [Boolean] whether a live battle runs
+  # Tells whether a live battle runs.
+  #
+  # @return [Boolean] Whether a live battle runs.
   def self.live?
     @role && @battle_running ? true : false
   end
 
-  # @return [Boolean] whether this game computes the live battle
+  # Tells whether this game is the host.
+  #
+  # @return [Boolean] Whether this game computes the live battle.
   def self.host?
     live? && @role == :host
   end
 
-  # @return [Boolean] whether this game plays the live battle back
+  # Tells whether this game is the guest.
+  #
+  # @return [Boolean] Whether this game plays the live battle back.
   def self.guest?
     live? && @role == :guest
   end
 
-  # @return [Boolean] whether the friend left and the computer plays their team instead
+  # Tells whether the computer took over the friend's team.
+  #
+  # @return [Boolean] Whether the friend left and the computer plays their team instead.
   def self.solo?
     @solo ? true : false
   end
@@ -149,8 +158,8 @@ module MGQ_MpSync
 
   # Ends the battle once the friend is gone: won, or played on by the computer on the host.
   #
-  # @param scene [Scene_Battle] the battle
-  # @return [Boolean] true when the battle goes on with the computer
+  # @param scene [Scene_Battle] The battle.
+  # @return [Boolean] true when the battle goes on with the computer.
   def self.friend_gone(scene)
     log("the link to #{@player} ended")
 
@@ -180,18 +189,18 @@ module MGQ_MpSync
     # Writes values.
     #
     # @param values [Array] nil, true, false, numbers, symbols, texts, battlers, skills, items,
-    #   colors, tones and arrays of these
-    # @return [String] the line
+    #   colors, tones and arrays of these.
+    # @return [String] The line.
     def self.line(values)
       values.map { |value| tokens(value) }.flatten.join("\t")
     end
 
     # Reads a line.
     #
-    # @param line [String] the line
-    # @yieldparam ref [String] a battler's reference, such as "a0"
-    # @yieldreturn [Game_Battler, nil] the battler it names
-    # @return [Array, nil] the values, nil when the line is broken
+    # @param line [String] The line.
+    # @yieldparam ref [String] A battler's reference, such as "a0".
+    # @yieldreturn [Game_Battler, nil] The battler it names.
+    # @return [Array, nil] The values, nil when the line is broken.
     def self.parse(line, &battler)
       stack = [[]]
       line.split("\t").each do |token|
@@ -209,8 +218,10 @@ module MGQ_MpSync
       stack.size == 1 ? stack[0] : nil
     end
 
-    # @param value [Object] a value
-    # @return [Array<String>] its tokens
+    # Turns a value into tokens.
+    #
+    # @param value [Object] A value.
+    # @return [Array<String>] Its tokens.
     def self.tokens(value)
       case value
       when nil then ["~"]
@@ -229,10 +240,12 @@ module MGQ_MpSync
       end
     end
 
-    # @param kind [String] the token's first character
-    # @param rest [String] the rest of the token
-    # @yieldparam ref [String] a battler's reference
-    # @return [Object] the value, nil for anything unknown
+    # Reads a value back from a token.
+    #
+    # @param kind [String] The token's first character.
+    # @param rest [String] The rest of the token.
+    # @yieldparam ref [String] A battler's reference.
+    # @return [Object] The value, nil for anything unknown.
     def self.value(kind, rest)
       case kind
       when "+" then true
@@ -249,22 +262,28 @@ module MGQ_MpSync
       end
     end
 
-    # @param text [String] numbers joined by ","
-    # @param count [Integer] how many are needed
-    # @return [Array<Float>] the numbers, 0 for those missing
+    # Reads a list of numbers.
+    #
+    # @param text [String] Numbers joined by ",".
+    # @param count [Integer] How many are needed.
+    # @return [Array<Float>] The numbers, 0 for those missing.
     def self.numbers(text, count)
       values = text.split(",").first(count).map(&:to_f)
       values + [0.0] * (count - values.size)
     end
 
-    # @param text [String] a text
-    # @return [String] the text without tabs or line breaks
+    # Escapes a text for a token.
+    #
+    # @param text [String] A text.
+    # @return [String] The text without tabs or line breaks.
     def self.escape(text)
       text.gsub(/[\\\t\n\r]/) { |character| ESCAPES[character] }
     end
 
-    # @param text [String] an escaped text
-    # @return [String] the text
+    # Reads an escaped text back.
+    #
+    # @param text [String] An escaped text.
+    # @return [String] The text.
     def self.unescape(text)
       text.gsub(/\\[\\tnr]/) { |escape| UNESCAPES[escape] }
     end
@@ -282,17 +301,17 @@ module MGQ_MpSync
 
     # Sends a message.
     #
-    # @param kind [String] what it is
-    # @param body [String] the rest
-    # @return [Boolean] whether it went out
+    # @param kind [String] What it is.
+    # @param body [String] The rest.
+    # @return [Boolean] Whether it went out.
     def self.post(kind, body = "")
       MGQ_Multiplayer::Link.post("#{kind}\n#{body}")
     end
 
     # Takes the oldest message of a kind that arrived.
     #
-    # @param kind [String] the kind
-    # @return [String, nil] its body, nil while none arrived
+    # @param kind [String] The kind.
+    # @return [String, nil] Its body, nil while none arrived.
     def self.take(kind)
       poll
       index = @messages.index { |message| message[0] == kind }
@@ -301,7 +320,7 @@ module MGQ_MpSync
 
     # Reports whether the link to the friend has ended, asking the DLL every LINK_CHECK_FRAMES calls.
     #
-    # @return [Boolean]
+    # @return [Boolean] Whether the link has ended.
     def self.gone?
       return true if @gone
 
@@ -312,8 +331,10 @@ module MGQ_MpSync
       @gone = MGQ_Multiplayer::Link.state["link"] != "open"
     end
 
-    # @param kind [String] a kind of message
-    # @return [Integer] how many of that kind arrived and wait
+    # Counts the waiting messages of a kind.
+    #
+    # @param kind [String] A kind of message.
+    # @return [Integer] How many of that kind arrived and wait.
     def self.pending(kind)
       poll
       @messages.count { |message| message[0] == kind }
@@ -335,7 +356,7 @@ module MGQ_MpSync
   module Commands
     # Writes the guest's commands.
     #
-    # @return [String] the commands
+    # @return [String] The commands.
     def self.build
       commands = $game_party.battle_members.map do |actor|
         actor.actions.select(&:item).map do |action|
@@ -348,7 +369,7 @@ module MGQ_MpSync
     # Gives the friend's characters on the host the guest's commands. A character without any
     # keeps what the computer chose.
     #
-    # @param body [String] the commands
+    # @param body [String] The commands.
     def self.apply(body)
       values = Wire.parse(body.to_s)
       commands = values && values[0]
@@ -363,9 +384,11 @@ module MGQ_MpSync
       end
     end
 
-    # @param battler [Game_Battler] the character
-    # @param command [Array] "skill" or "item", the id and the target's index
-    # @return [Game_Action, nil] the action, nil for a command it cannot read
+    # Turns a friend's command into an action.
+    #
+    # @param battler [Game_Battler] The character.
+    # @param command [Array] "skill" or "item", the id and the target's index.
+    # @return [Game_Action, nil] The action, nil for a command it cannot read.
     def self.action(battler, command)
       kind, id, target = command
       return nil unless command.is_a?(Array) && id.is_a?(Integer) && target.is_a?(Integer)
@@ -388,7 +411,7 @@ module MGQ_MpSync
   module Names
     # Learns the names from the host's side.
     #
-    # @param body [String] the host's party and troop names, see MGQ_MpSync.names
+    # @param body [String] The host's party and troop names, see MGQ_MpSync.names.
     def self.setup(body)
       values = Wire.parse(body.to_s) || []
       party, troop = values
@@ -401,8 +424,8 @@ module MGQ_MpSync
 
     # Swaps the names in a text.
     #
-    # @param text [String] the host's text
-    # @return [String] the guest's text
+    # @param text [String] The host's text.
+    # @return [String] The guest's text.
     def self.swap(text)
       @pattern ? text.gsub(@pattern) { |name| @swaps[name] } : text
     end
@@ -410,14 +433,16 @@ module MGQ_MpSync
     # Swaps the names in a message, but not in its speaker's name box, which names a character
     # without its owner on either side.
     #
-    # @param text [String] the host's message line
-    # @return [String] the guest's message line
+    # @param text [String] The host's message line.
+    # @return [String] The guest's message line.
     def self.swap_message(text)
       text.split(/(\\n<[^>]*>)/).map { |part| part =~ /\A\\n</ ? part : swap(part) }.join
     end
 
-    # @param name [Object] a name of the host's side
-    # @param battler [Game_Battler, nil] the guest's battler of the same place
+    # Pairs a name of the host's side with the guest's battler.
+    #
+    # @param name [Object] A name of the host's side.
+    # @param battler [Game_Battler, nil] The guest's battler of the same place.
     def self.add(name, battler)
       @swaps[name] = battler.name if name.is_a?(String) && !name.empty? && battler && name != battler.name
     end
@@ -433,7 +458,7 @@ module MGQ_MpSync
 
     # Reports whether the battle on screen is recorded.
     #
-    # @return [Boolean]
+    # @return [Boolean] Whether the battle is recorded.
     def self.active?
       @active ? true : false
     end
@@ -441,7 +466,7 @@ module MGQ_MpSync
     # Starts recording a battle.
     #
     # @param sink [Symbol] :link to stream it to the guest, :file to write it over the last
-    #   mirror match's recording
+    #   mirror match's recording.
     def self.start(sink)
       @active = true
       @sink = sink
@@ -456,7 +481,7 @@ module MGQ_MpSync
 
     # Ends the recording and sends or writes what is left.
     #
-    # @param result [Integer] the game's battle result
+    # @param result [Integer] The game's battle result.
     def self.finish(result)
       return unless active?
 
@@ -477,8 +502,8 @@ module MGQ_MpSync
 
     # Records an event.
     #
-    # @param kind [String] what happened
-    # @param fields [Array] its values, see Wire.line
+    # @param kind [String] What happened.
+    # @param fields [Array] Its values, see Wire.line.
     def self.event(kind, *fields)
       return unless active?
 
@@ -493,7 +518,7 @@ module MGQ_MpSync
     # them, every SEND_FRAMES frames, so the guest can tell by the sends waiting how far behind it is.
     #
     # @param full [Boolean] true to record every battler's, which corrects anything the guest
-    #   missed; the host does at every command phase
+    #   missed; the host does at every command phase.
     def self.values(full = false)
       return unless active?
 
@@ -520,15 +545,17 @@ module MGQ_MpSync
       event("time_stop", *current)
     end
 
-    # @return [Game_Battler, nil] the battler whose line the game is showing
+    # Names the battler who speaks.
+    #
+    # @return [Game_Battler, nil] The battler whose line the game is showing.
     def self.speaker
       @speaker
     end
 
     # Marks a battler as the speaker of the lines the block shows.
     #
-    # @param battler [Game_Battler] the battler
-    # @return [Object] what the block returns
+    # @param battler [Game_Battler] The battler.
+    # @return [Object] What the block returns.
     def self.speaking(battler)
       @speaker = battler
       yield
@@ -538,8 +565,8 @@ module MGQ_MpSync
 
     # Names a battler by its side and place, "a0" for the party's first, "e0" for the troop's.
     #
-    # @param battler [Game_Battler] a battler, or the stand-in the game uses for automatic skills
-    # @return [String] the reference, "?" for a battler outside both
+    # @param battler [Game_Battler] A battler, or the stand-in the game uses for automatic skills.
+    # @return [String] The reference, "?" for a battler outside both.
     def self.ref(battler)
       battler = battler.observer if defined?(Game_Master) && battler.is_a?(Game_Master)
       party = $game_party.battle_members.index(battler)
@@ -562,18 +589,24 @@ module MGQ_MpSync
       @events = []
     end
 
-    # @return [Array] the host's settings that leave parts of a battle unshown
+    # Reads the host's display settings.
+    #
+    # @return [Array] The host's settings that leave parts of a battle unshown.
     def self.display_settings
       (SKIP_SETTINGS + [:bt_wait]).map { |key| "#{key}=#{$game_system.conf[key].inspect}" }
     end
 
-    # @return [Array<Game_Battler>] every battler of the battle
+    # Lists the battlers of the battle.
+    #
+    # @return [Array<Game_Battler>] Every battler of the battle.
     def self.battlers
       $game_party.battle_members + $game_troop.members
     end
 
-    # @param battler [Game_Battler] the battler
-    # @return [Array] its HP and maximum, MP and maximum, SP, state ids and buffs
+    # Reads the values the stream carries of a battler.
+    #
+    # @param battler [Game_Battler] The battler.
+    # @return [Array] Its HP and maximum, MP and maximum, SP, state ids and buffs.
     def self.value_fields(battler)
       [battler.hp, battler.mhp, battler.mp, battler.mmp, battler.tp.to_i,
        battler.states.map(&:id).sort, Array(battler.instance_variable_get(:@buffs)).map(&:to_i)]
@@ -581,7 +614,7 @@ module MGQ_MpSync
 
     # Stops recording after an error, which stays in InGame.log.
     #
-    # @param error [Exception] the error
+    # @param error [Exception] The error.
     def self.stop_after(error)
       @active = false
       MGQ_MpSync.log("recording stopped: #{error.class}: #{error.message}")
@@ -621,8 +654,8 @@ module MGQ_MpSync
 
     # Plays the host's stream until its next command phase or the battle's end.
     #
-    # @param scene [Scene_Battle] the battle
-    # @return [Array, nil] the "end" event when the battle ended, nil at the next command phase
+    # @param scene [Scene_Battle] The battle.
+    # @return [Array, nil] The "end" event when the battle ended, nil at the next command phase.
     def self.run(scene)
       @events ||= []
       quiet = 0
@@ -661,7 +694,9 @@ module MGQ_MpSync
       @failed = {}
     end
 
-    # @return [Array, nil] the next event of the host's stream, nil while none arrived
+    # Takes the next event of the host's stream.
+    #
+    # @return [Array, nil] The next event of the host's stream, nil while none arrived.
     def self.next_event
       while @events.empty?
         body = Channel.take("events")
@@ -675,8 +710,10 @@ module MGQ_MpSync
       @events.shift
     end
 
-    # @param ref [String] a battler of the host's side, such as "a0"
-    # @return [Game_Battler, nil] the guest's battler in its place
+    # Finds the guest's battler for a reference of the host's side.
+    #
+    # @param ref [String] A battler of the host's side, such as "a0".
+    # @return [Game_Battler, nil] The guest's battler in its place.
     def self.battler(ref)
       return nil unless ref =~ /\A([ae])(\d{1,2})\z/
 
@@ -685,8 +722,8 @@ module MGQ_MpSync
 
     # Plays one event. An event that fails is left out and logged once per kind.
     #
-    # @param scene [Scene_Battle] the battle
-    # @param event [Array] the event's kind and values
+    # @param scene [Scene_Battle] The battle.
+    # @param event [Array] The event's kind and values.
     def self.play(scene, event)
       kind, *args = event
       method = kind.split(".", 2)[1]
@@ -730,8 +767,8 @@ module MGQ_MpSync
     # Starts a sprite effect the host started. The host's characters fall with an actor's collapse,
     # but on the guest they are the enemy side, which stays as a silhouette after the defeat flash.
     #
-    # @param battler [Game_Battler, nil] the guest's battler
-    # @param effect [Symbol] the effect
+    # @param battler [Game_Battler, nil] The guest's battler.
+    # @param effect [Symbol] The effect.
     def self.sprite_effect(battler, effect)
       return unless battler && SPRITE_EFFECTS.include?(effect)
 
@@ -739,20 +776,22 @@ module MGQ_MpSync
       battler.sprite_effect_type = collapse && $game_troop.members.include?(battler) ? :whiten : effect
     end
 
-    # @param scene [Scene_Battle] the battle
-    # @return [Window_BattleLog] its battle log
+    # Finds the battle log of a battle scene.
+    #
+    # @param scene [Scene_Battle] The battle.
+    # @return [Window_BattleLog] Its battle log.
     def self.log_window(scene)
       scene.instance_variable_get(:@log_window)
     end
 
     # Shows a line a character says, with its face.
     #
-    # @param speaker [Game_Battler, nil] who says it, which decides the side of its box
-    # @param face_name [String] the face file
-    # @param face_index [Integer] the face in the file
-    # @param background [Integer] the window's background
-    # @param position [Integer] the window's position
-    # @param text [String] the line
+    # @param speaker [Game_Battler, nil] Who says it, which decides the side of its box.
+    # @param face_name [String] The face file.
+    # @param face_index [Integer] The face in the file.
+    # @param background [Integer] The window's background.
+    # @param position [Integer] The window's position.
+    # @param text [String] The line.
     def self.message(speaker, face_name, face_index, background, position, text)
       @speaker = speaker
       $game_message.face_name = face_name.to_s
@@ -773,8 +812,8 @@ module MGQ_MpSync
 
     # Changes a picture, such as a cut-in.
     #
-    # @param method [String] what the host did with it
-    # @param args [Array] the picture's number, then the method's arguments
+    # @param method [String] What the host did with it.
+    # @param args [Array] The picture's number, then the method's arguments.
     def self.picture(method, args)
       number = args[0].to_i
       return unless PICTURE_METHODS.include?(method) && number > 0 && number <= 100
@@ -787,10 +826,10 @@ module MGQ_MpSync
     # catch up. It only starts it: the host's recorded waits that follow keep the pace, and the
     # game's own animation methods would wait a second time.
     #
-    # @param scene [Scene_Battle] the battle
-    # @param subject [Game_Battler, nil] who acts, whose weapons an attack animation shows
-    # @param targets [Array] the targets
-    # @param animation_id [Integer] the animation, below 0 for the subject's attack animation
+    # @param scene [Scene_Battle] The battle.
+    # @param subject [Game_Battler, nil] Who acts, whose weapons an attack animation shows.
+    # @param targets [Array] The targets.
+    # @param animation_id [Integer] The animation, below 0 for the subject's attack animation.
     def self.animation(scene, subject, targets, animation_id)
       return if behind? || scene.send(:battle_show_skip?)
 
@@ -805,7 +844,9 @@ module MGQ_MpSync
       end
     end
 
-    # @return [Boolean] whether the host's stream piled up, so the guest skips waits to catch up
+    # Tells whether the guest fell behind the host's stream.
+    #
+    # @return [Boolean] Whether the host's stream piled up, so the guest skips waits to catch up.
     def self.behind?
       Channel.pending("events") >= BEHIND_SENDS
     end
@@ -813,9 +854,9 @@ module MGQ_MpSync
     # Waits the way the host's battle waited, at the guest's own battle speed, unless it has to
     # catch up.
     #
-    # @param scene [Scene_Battle] the battle
-    # @param method [String] the wait
-    # @param duration [Integer, nil] its frames, for a timed wait
+    # @param scene [Scene_Battle] The battle.
+    # @param method [String] The wait.
+    # @param duration [Integer, nil] Its frames, for a timed wait.
     def self.wait(scene, method, duration)
       return if behind?
 
@@ -828,14 +869,14 @@ module MGQ_MpSync
 
     # Gives a battler the values the host computed.
     #
-    # @param battler [Game_Battler, nil] the guest's battler
-    # @param hp [Integer] its HP
-    # @param _mhp [Integer] its maximum HP on the host
-    # @param mp [Integer] its MP
-    # @param _mmp [Integer] its maximum MP on the host
-    # @param tp [Integer] its SP
-    # @param states [Array<Integer>] its state ids
-    # @param buffs [Array<Integer>] its buffs
+    # @param battler [Game_Battler, nil] The guest's battler.
+    # @param hp [Integer] Its HP.
+    # @param _mhp [Integer] Its maximum HP on the host.
+    # @param mp [Integer] Its MP.
+    # @param _mmp [Integer] Its maximum MP on the host.
+    # @param tp [Integer] Its SP.
+    # @param states [Array<Integer>] Its state ids.
+    # @param buffs [Array<Integer>] Its buffs.
     def self.values(battler, hp, _mhp, mp, _mmp, tp, states, buffs)
       return unless battler
 
@@ -854,8 +895,8 @@ module MGQ_MpSync
   module Waiting
     # Opens the box.
     #
-    # @param text [String] what the game waits for
-    # @return [Window_Base] the box
+    # @param text [String] What the game waits for.
+    # @return [Window_Base] The box.
     def self.open(text)
       width = 360
       window = Window_Base.new((Graphics.width - width) / 2, 120, width, 48)
@@ -866,8 +907,7 @@ module MGQ_MpSync
 
     # Closes a box.
     #
-    # @param window [Window_Base, nil] the box
-    # @return [nil]
+    # @param window [Window_Base, nil] The box.
     def self.close(window)
       window.dispose if window && !window.disposed?
       nil
@@ -875,10 +915,10 @@ module MGQ_MpSync
 
     # Waits, with the box open, until the block has an answer or the link ended.
     #
-    # @param scene [Scene_Battle] the battle
-    # @param text [String] what the game waits for
-    # @yieldreturn [Object, nil] the answer, nil to wait on
-    # @return [Object, nil] the answer, nil when the link ended first
+    # @param scene [Scene_Battle] The battle.
+    # @param text [String] What the game waits for.
+    # @yieldreturn [Object, nil] The answer, nil to wait on.
+    # @return [Object, nil] The answer, nil when the link ended first.
     def self.wait_for(scene, text)
       window = nil
       loop do
@@ -894,13 +934,15 @@ module MGQ_MpSync
     end
   end
 
-  # @return [String] the names of this game's party and troop, which the guest swaps for its own
+  # Lists the names the guest swaps.
+  #
+  # @return [String] The names of this game's party and troop, which the guest swaps for its own.
   def self.names
     Wire.line([$game_party.battle_members.map(&:name), $game_troop.members.map(&:name)])
   end
 
-  # The game hooks. Each runs the original and returns its result unchanged, unless a live
-  # battle's side takes the method over.
+  # The game hooks, which run the original and return its result unless a live battle's side takes
+  # the method over.
   #
   # The game's plugins load after the Patch folder and some define battle methods anew, which drops
   # a hook installed before them, so the hooks go in once the first scene starts.
@@ -945,8 +987,9 @@ module MGQ_MpSync
     end
 
     # Messages with their face and speaker, such as the lines characters say when they use a skill
-    # or fall. A line names its speaker by name only, which both teams can share. In a live battle
-    # a message moves on by itself.
+    # or fall, which move on by themselves in a live battle.
+    #
+    # A line names its speaker by name only, which both teams can share.
     def self.messages
       record_before(Game_Message, :add) do |message, args|
         ["message", Recorder.speaker, message.face_name, message.face_index, message.background, message.position, *args]
@@ -1119,11 +1162,11 @@ module MGQ_MpSync
 
     # Records an event before the original runs.
     #
-    # @param owner [Module] the class that has the method
-    # @param name [Symbol] the method
-    # @yieldparam object [Object] the object the method runs on
-    # @yieldparam args [Array] the method's arguments
-    # @yieldreturn [Array, nil] the event's kind and fields, nil to record nothing
+    # @param owner [Module] The class that has the method.
+    # @param name [Symbol] The method.
+    # @yieldparam object [Object] The object the method runs on.
+    # @yieldparam args [Array] The method's arguments.
+    # @yieldreturn [Array, nil] The event's kind and fields, nil to record nothing.
     def self.record_before(owner, name, &event)
       wrap(owner, name) do |object, args, original|
         if Recorder.active?
@@ -1137,12 +1180,12 @@ module MGQ_MpSync
     # Wraps a method in a block that decides when the original runs. Every wrap keeps the method it
     # wraps under a name of its own, since a method can be wrapped twice.
     #
-    # @param owner [Module] the class that has the method
-    # @param name [Symbol] the method
-    # @yieldparam object [Object] the object the method runs on
-    # @yieldparam args [Array] the method's arguments
-    # @yieldparam original [Proc] runs the original with the arguments and returns its result
-    # @yieldreturn [Object] what the method returns
+    # @param owner [Module] The class that has the method.
+    # @param name [Symbol] The method.
+    # @yieldparam object [Object] The object the method runs on.
+    # @yieldparam args [Array] The method's arguments.
+    # @yieldparam original [Proc] Runs the original with the arguments and returns its result.
+    # @yieldreturn [Object] What the method returns.
     def self.wrap(owner, name, &body)
       @wraps = (@wraps || 0) + 1
       original = :"mgq_mp_sync_#{name.to_s.gsub(/[=?!]/, '_')}_#{@wraps}"
@@ -1157,8 +1200,8 @@ module MGQ_MpSync
   module Live
     # The host waits for the guest's battle, then streams its own.
     #
-    # @param scene [Scene_Battle] the battle
-    # @return [Boolean] whether the battle starts, false when it ended because the friend is gone
+    # @param scene [Scene_Battle] The battle.
+    # @return [Boolean] Whether the battle starts, false when it ended because the friend is gone.
     def self.host_start(scene)
       MGQ_MpSync.show_everything
       Channel.post("ready", MGQ_MpSync.names)
@@ -1171,7 +1214,7 @@ module MGQ_MpSync
 
     # The guest waits for the host's battle, then plays its start.
     #
-    # @param scene [Scene_Battle] the battle
+    # @param scene [Scene_Battle] The battle.
     def self.guest_start(scene)
       Playback.reset
       # The game marks the party as fighting in on_battle_start, which the guest leaves out with the
@@ -1187,7 +1230,7 @@ module MGQ_MpSync
 
     # The guest sends its commands and plays the host's turn.
     #
-    # @param scene [Scene_Battle] the battle
+    # @param scene [Scene_Battle] The battle.
     def self.guest_turn(scene)
       scene.instance_variable_get(:@party_command_window).close
       scene.instance_variable_get(:@actor_command_window).close
@@ -1200,7 +1243,7 @@ module MGQ_MpSync
     # The guest plays the host's stream, then lets its player choose or ends the battle as the
     # host's ended.
     #
-    # @param scene [Scene_Battle] the battle
+    # @param scene [Scene_Battle] The battle.
     def self.play_until_commands(scene)
       event = Playback.run(scene)
       return scene.start_party_command_selection unless event
@@ -1211,7 +1254,7 @@ module MGQ_MpSync
 
     # Ends the guest's battle the way the host's ended, seen from the other side.
     #
-    # @param result [String] how the host's battle ended
+    # @param result [String] How the host's battle ended.
     def self.guest_end(result)
       case result
       when "process_victory" then BattleManager.process_defeat
@@ -1224,8 +1267,8 @@ module MGQ_MpSync
 
     # The host waits for the guest's commands and gives them to the friend's characters.
     #
-    # @param scene [Scene_Battle] the battle
-    # @return [Boolean] whether the turn goes on
+    # @param scene [Scene_Battle] The battle.
+    # @return [Boolean] Whether the turn goes on.
     def self.host_commands(scene)
       text = "Waiting for #{MGQ_MpSync.player}'s commands..."
       answer = Waiting.wait_for(scene, text) do
@@ -1248,7 +1291,7 @@ module MGQ_MpSync
     # Ends the battle when the friend forfeited or left while this game is not waiting for them,
     # such as while its player chooses commands. Called by the battle's every frame.
     #
-    # @param scene [Scene_Battle] the battle
+    # @param scene [Scene_Battle] The battle.
     def self.watch(scene)
       return if MGQ_MpSync.solo? || scene.send(:scene_changing?) || BattleManager.battle_end?
 
@@ -1262,7 +1305,7 @@ module MGQ_MpSync
 
     # Escape ends a live battle as lost, without the chance of failing.
     #
-    # @param scene [Scene_Battle] the battle
+    # @param scene [Scene_Battle] The battle.
     def self.forfeit(scene)
       scene.instance_variable_get(:@info_viewport).visible = false
       Channel.post("forfeit")
@@ -1272,10 +1315,14 @@ module MGQ_MpSync
 end
 
 if MGQ_MpSync.hookable?
-  # The game's plugins are all in once the first scene starts, so the hooks go in then.
   begin
     class << SceneManager
       alias mgq_mp_sync_run run
+
+      # Installs the battle hooks, then runs the game.
+      #
+      # The game's plugins load after the Patch folder and define battle methods anew, so the hooks
+      # go in once every plugin is in.
       def run
         MGQ_MpSync::Hooks.install rescue nil
         mgq_mp_sync_run

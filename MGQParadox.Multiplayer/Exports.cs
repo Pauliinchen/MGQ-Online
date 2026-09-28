@@ -19,7 +19,7 @@ namespace MGQParadox.Multiplayer;
 /// The functions GameScript/Multiplayer.rb calls through Win32API.
 /// </summary>
 /// <remarks>
-/// Nothing may throw out of these. An exception crossing into the game ends it.
+/// Nothing may throw out of these, since an exception crossing into the game ends it.
 /// </remarks>
 internal static unsafe class Exports
 {

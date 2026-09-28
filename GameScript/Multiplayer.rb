@@ -7,11 +7,10 @@
 #----------------------------------------------------------------
 
 # What every way of playing together shares: the connection with a friend through
-# Multiplayer/Multiplayer.dll, which runs the network on threads of its own, the game running on
-# while its window is in the background, keys the game's own Input does not know, and the Discord
-# mod, when it is installed, which shows the connection and brings invites. The modes, such as
-# pvp_battle.rb, build on it; the mod loader loads this file first. It must never interrupt the
-# game, so every entry point rescues.
+# Multiplayer/Multiplayer.dll, the game running on while its window is in the background, keys the
+# game's own Input does not know, and the Discord mod, when it is installed.
+#
+# It must never interrupt the game, so every entry point rescues.
 module MGQ_Multiplayer
   # Turns the mod off without uninstalling it.
   ENABLED = true
@@ -36,12 +35,14 @@ module MGQ_Multiplayer
   # A second copy of this script would wrap the same methods under the same names, and each hook
   # would then call itself until the stack overflows.
   #
-  # @return [Boolean] false when the hooks are in place already
+  # @return [Boolean] false when the hooks are in place already.
   def self.hookable?
     !SceneManager.respond_to?(:mgq_multiplayer_run)
   end
 
-  # @return [Boolean] whether the mod is on and its DLL is in the mod folder
+  # Tells whether the mod can run.
+  #
+  # @return [Boolean] Whether the mod is on and its DLL is in the mod folder.
   def self.available?
     ENABLED && File.exist?(path(DLL))
   end
@@ -60,8 +61,8 @@ module MGQ_Multiplayer
 
   # Builds the path of a file inside the mod folder.
   #
-  # @param name [String] the file name, relative to the mod folder
-  # @return [String] the full path
+  # @param name [String] The file name, relative to the mod folder.
+  # @return [String] The full path.
   def self.path(name)
     "#{game_dir}/#{MOD_DIR}/#{name}"
   end
@@ -70,7 +71,7 @@ module MGQ_Multiplayer
   #
   # Asked of Windows, the working directory is wherever a shortcut or Steam started the game.
   #
-  # @return [String] the folder, with forward slashes
+  # @return [String] The folder, with forward slashes.
   def self.game_dir
     @game_dir ||= begin
       buffer = "\0" * 512
@@ -83,8 +84,8 @@ module MGQ_Multiplayer
 
   # Keeps a name someone else chose short, on one line and free of message codes.
   #
-  # @param name [String, nil] the name
-  # @return [String] the name, "A friend" when nothing is left of it
+  # @param name [String, nil] The name.
+  # @return [String] The name, "A friend" when nothing is left of it.
   def self.clean(name)
     cleaned = name.to_s.gsub(/[\x00-\x1f\\]/, "").strip[0, MAX_NAME_LENGTH]
     cleaned.empty? ? "A friend" : cleaned
@@ -101,7 +102,7 @@ module MGQ_Multiplayer
 
     # Appends a line, prefixed with the time.
     #
-    # @param message [String] the line to append
+    # @param message [String] The line to append.
     def self.write(message)
       return if @lines >= MAX_LINES
       @lines += 1
@@ -128,15 +129,15 @@ module MGQ_Multiplayer
 
     # Keeps the game running while another application is active.
     #
-    # @return [Boolean] whether the game keeps running
+    # @return [Boolean] Whether the game keeps running.
     def self.keep_running
       function('mp_keep_running', 'v').call == 1
     end
 
     # Starts hosting.
     #
-    # @param game [String] what tells this game version's data from another's
-    # @param payload [String] what the friend gets, such as the player's team
+    # @param game [String] What tells this game version's data from another's.
+    # @param payload [String] What the friend gets, such as the player's team.
     def self.host(game, payload)
       Discord.share_player_name
       function('mp_host', 'ppl').call(game + "\0", payload + "\0", PORT)
@@ -144,8 +145,8 @@ module MGQ_Multiplayer
 
     # Joins the host of the invite that is waiting.
     #
-    # @param game [String] what tells this game version's data from another's
-    # @param payload [String] what the friend gets, such as the player's team
+    # @param game [String] What tells this game version's data from another's.
+    # @param payload [String] What the friend gets, such as the player's team.
     def self.join_invite(game, payload)
       Discord.share_player_name
       function('mp_join_invite', 'pp').call(game + "\0", payload + "\0")
@@ -153,8 +154,8 @@ module MGQ_Multiplayer
 
     # Joins the host whose join code is on the clipboard.
     #
-    # @param game [String] what tells this game version's data from another's
-    # @param payload [String] what the friend gets, such as the player's team
+    # @param game [String] What tells this game version's data from another's.
+    # @param payload [String] What the friend gets, such as the player's team.
     def self.join_clipboard(game, payload)
       Discord.share_player_name
       function('mp_join_clipboard', 'pp').call(game + "\0", payload + "\0")
@@ -162,14 +163,14 @@ module MGQ_Multiplayer
 
     # Keeps the join code of an invite the player accepted in Discord, until they join with it.
     #
-    # @param join_code [String] the join code
+    # @param join_code [String] The join code.
     def self.receive_invite(join_code)
       function('mp_receive_invite', 'p').call(join_code + "\0")
     end
 
     # Tells the DLL the player's name, which the friend sees.
     #
-    # @param name [String] the name
+    # @param name [String] The name.
     def self.set_player_name(name)
       function('mp_set_player_name', 'p').call(name + "\0")
     end
@@ -179,22 +180,24 @@ module MGQ_Multiplayer
       function('mp_cancel', 'v').call
     end
 
-    # @return [Boolean] whether the clipboard holds the join code again
+    # Puts the join code on the clipboard again.
+    #
+    # @return [Boolean] Whether the clipboard holds the join code again.
     def self.copy_code
       function('mp_copy_code', 'v').call == 1
     end
 
     # Sends a message to the friend.
     #
-    # @param text [String] the message
-    # @return [Boolean] false without an open link, or when the message is too long
+    # @param text [String] The message.
+    # @return [Boolean] false without an open link, or when the message is too long.
     def self.post(text)
       function('mp_send', 'p').call(text + "\0") == 1
     end
 
     # Takes the oldest message from the friend.
     #
-    # @return [String, nil] the message, nil while none waits
+    # @return [String, nil] The message, nil while none waits.
     def self.next_message
       text = read('mp_receive', MESSAGE_SIZE)
       text.empty? ? nil : text.force_encoding("UTF-8")
@@ -204,7 +207,7 @@ module MGQ_Multiplayer
     #
     # @return [Hash] "state" ("idle", "hosting", "joining", "received" or "failed") and whichever
     #   of "code", "invite", "error", "opponent", "link" ("open", "closed" or "dropped"), "role"
-    #   ("host" or "guest") and "party" apply, what the friend handed over under :payload
+    #   ("host" or "guest") and "party" apply, what the friend handed over under :payload.
     def self.state
       text = read('mp_state', STATE_SIZE)
       text.empty? ? { "state" => "idle", :payload => "" } : parse(text)
@@ -212,8 +215,8 @@ module MGQ_Multiplayer
 
     # Reads the DLL's description of the connection: key=value lines, an empty line, the payload.
     #
-    # @param text [String] the description
-    # @return [Hash] see state
+    # @param text [String] The description.
+    # @return [Hash] See state.
     def self.parse(text)
       head, payload = text.force_encoding("UTF-8").split("\n\n", 2)
       state = { :payload => payload.to_s }
@@ -228,9 +231,9 @@ module MGQ_Multiplayer
 
     # Calls an export that writes a text into a buffer, again with a larger buffer when asked for one.
     #
-    # @param name [String] the export
-    # @param size [Integer] the buffer's size at first
-    # @return [String] the text as bytes, "" when there is none
+    # @param name [String] The export.
+    # @param size [Integer] The buffer's size at first.
+    # @return [String] The text as bytes, "" when there is none.
     def self.read(name, size)
       buffer = "\0" * size
       length = function(name, 'pl').call(buffer, buffer.size)
@@ -244,9 +247,11 @@ module MGQ_Multiplayer
       length > 0 ? buffer.force_encoding("ASCII-8BIT")[0, length] : ""
     end
 
-    # @param name [String] the exported function
-    # @param arguments [String] its arguments, in Win32API notation
-    # @return [Win32API] the function, loaded once
+    # Loads an export of the DLL.
+    #
+    # @param name [String] The exported function.
+    # @param arguments [String] Its arguments, in Win32API notation.
+    # @return [Win32API] The function, loaded once.
     def self.function(name, arguments)
       @functions ||= {}
       @functions[name] ||= Win32API.new(MGQ_Multiplayer.path(DLL), name, arguments, 'l')
@@ -268,7 +273,6 @@ module MGQ_Multiplayer
     end
 
     # Has Input report no buttons while another window is in front, once the game keeps running.
-    # Calling it again does nothing.
     #
     # The keyboard only reaches the window in front, but gamepads reach every game, so a pad played
     # in another game would play this one too.
@@ -290,10 +294,9 @@ module MGQ_Multiplayer
       end
     end
 
-    # Asks Windows whether the window in front belongs to this game. Called by Input.update, once
-    # per frame.
+    # Asks Windows whether the window in front belongs to this game, once per frame.
     #
-    # The game's Graphics.frame_count raises until the game first sets it, so it cannot count frames.
+    # Input.update calls it, since the game's Graphics.frame_count raises until the game first sets it.
     def self.refresh
       @in_front = Windows.game_in_front?
     rescue
@@ -302,7 +305,7 @@ module MGQ_Multiplayer
 
     # Reports whether the window in front belongs to this game, as Windows said at the last Input.update.
     #
-    # @return [Boolean] true while the input is not guarded or Windows cannot tell
+    # @return [Boolean] true while the input is not guarded or Windows cannot tell.
     def self.in_front?
       @in_front != false
     end
@@ -318,8 +321,8 @@ module MGQ_Multiplayer
     # Windows reports the key whichever window has the focus, so a press in another window is
     # ignored.
     #
-    # @param code [Integer] Windows' code of the key, such as 0x7A for F11
-    # @return [Boolean]
+    # @param code [Integer] Windows' code of the key, such as 0x7A for F11.
+    # @return [Boolean] Whether the key went down.
     def self.pressed?(code)
       @down ||= {}
       down = (Windows.api('user32', 'GetAsyncKeyState', 'i', 'i').call(code) & DOWN) != 0
@@ -331,18 +334,22 @@ module MGQ_Multiplayer
 
   # The Windows functions the script calls directly.
   module Windows
-    # @return [Boolean] whether the window in front belongs to this game
+    # Asks Windows whether the game is in front.
+    #
+    # @return [Boolean] Whether the window in front belongs to this game.
     def self.game_in_front?
       owner = [0].pack('L')
       api('user32', 'GetWindowThreadProcessId', 'lp', 'l').call(api('user32', 'GetForegroundWindow', 'v', 'l').call, owner)
       owner.unpack('L')[0] == api('kernel32', 'GetCurrentProcessId', 'v', 'l').call
     end
 
-    # @param library [String] the Windows library
-    # @param name [String] the function
-    # @param arguments [String] its arguments, in Win32API notation
-    # @param result [String] its result, in Win32API notation
-    # @return [Win32API] the function, loaded once
+    # Loads a Windows function.
+    #
+    # @param library [String] The Windows library.
+    # @param name [String] The function.
+    # @param arguments [String] Its arguments, in Win32API notation.
+    # @param result [String] Its result, in Win32API notation.
+    # @return [Win32API] The function, loaded once.
     def self.api(library, name, arguments, result)
       @functions ||= {}
       @functions[name] ||= Win32API.new(library, name, arguments, result)
@@ -356,7 +363,9 @@ module MGQ_Multiplayer
     # The bridge version this script speaks, see MGQ_Discord::Bridge.
     BRIDGE_VERSION = 1
 
-    # @return [Boolean] whether the Discord mod is installed and speaks this script's bridge version
+    # Tells whether the Discord mod can take the connection.
+    #
+    # @return [Boolean] Whether the Discord mod is installed and speaks this script's bridge version.
     def self.available?
       defined?(MGQ_Discord::Bridge) && MGQ_Discord::Bridge::VERSION == BRIDGE_VERSION && MGQ_Discord::Bridge.available? ? true : false
     end
@@ -387,7 +396,7 @@ module MGQ_Multiplayer
 
     # Hands the connection to the Discord mod, unless it did not change since the last time.
     #
-    # @param state [Hash] how the connection stands, see Link.state
+    # @param state [Hash] How the connection stands, see Link.state.
     def self.report(state)
       party = state["party"]
       current =
@@ -419,11 +428,14 @@ MGQ_Multiplayer.start
 # mod's part never raises.
 
 if MGQ_Multiplayer.hookable?
-  # Graphics.update runs every frame in every scene, so the Discord mod hears of the connection
-  # wherever the player is.
   begin
     class << Graphics
       alias mgq_multiplayer_graphics_update update
+
+      # Draws the frame, then tells the Discord mod how the connection stands.
+      #
+      # Graphics.update runs every frame in every scene, so the Discord mod hears of the connection
+      # wherever the player is.
       def update
         mgq_multiplayer_graphics_update
         MGQ_Multiplayer::Discord.tick
@@ -433,11 +445,14 @@ if MGQ_Multiplayer.hookable?
     MGQ_Multiplayer::Log.write("Graphics hook FAILED: #{e.class}: #{e.message}")
   end
 
-  # The game's plugins load after the Patch folder, the gamepad one wrapping Input, so the input
-  # guard wraps Input once the first scene starts and every plugin is in.
   begin
     class << SceneManager
       alias mgq_multiplayer_run run
+
+      # Guards the input, then runs the game.
+      #
+      # The game's plugins load after the Patch folder, the gamepad one wrapping Input, so the
+      # guard wraps Input once every plugin is in.
       def run
         MGQ_Multiplayer::Background.guard_input rescue nil
         mgq_multiplayer_run

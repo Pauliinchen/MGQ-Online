@@ -25,8 +25,8 @@ internal static class NetworkAddresses
     /// Answers with the public IPv4 address it was asked from, as plain text.
     /// </summary>
     /// <remarks>
-    /// Behind a router the PC only knows its home network address, so an outside service has to
-    /// tell the public one. It sees nothing but that address.
+    /// Behind a router the PC only knows its home network address, so an outside service, which sees
+    /// nothing but that address, has to tell the public one.
     /// </remarks>
     private const string PublicAddressUrl = "https://api.ipify.org";
 

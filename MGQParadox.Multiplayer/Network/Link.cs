@@ -20,8 +20,8 @@ namespace MGQParadox.Multiplayer.Network;
 /// messages of a live battle both ways.
 /// </summary>
 /// <remarks>
-/// Threads of its own read and write, so the game never waits on the network. They also ping while
-/// nothing else is sent, since a player may take long over a turn and silence means a lost friend.
+/// Its threads ping while nothing else is sent, since a player may take long over a turn and
+/// silence means a lost friend.
 /// </remarks>
 internal sealed class Link
 {
@@ -151,7 +151,7 @@ internal sealed class Link
     /// Reads frames until the link ends.
     /// </summary>
     /// <remarks>
-    /// Catches everything. An exception escaping this thread would end the whole game.
+    /// Catches everything, since an exception escaping this thread would end the whole game.
     /// </remarks>
     /// <param name="stream">The connection's stream.</param>
     private void ReadAll(NetworkStream stream)
@@ -190,7 +190,7 @@ internal sealed class Link
     /// Writes the waiting frames, and a ping whenever none came for a while, until the link ends.
     /// </summary>
     /// <remarks>
-    /// Catches everything. An exception escaping this thread would end the whole game.
+    /// Catches everything, since an exception escaping this thread would end the whole game.
     /// </remarks>
     /// <param name="stream">The connection's stream.</param>
     private void WriteAll(NetworkStream stream)

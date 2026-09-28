@@ -17,7 +17,7 @@ namespace MGQParadox.Multiplayer.Network;
 /// two games and the state the game script reads.
 /// </summary>
 /// <remarks>
-/// The team is the game script's own text. The DLL only carries it, so it never reads a line of it.
+/// The team is the game script's own text, which the DLL only carries and never reads.
 /// </remarks>
 internal sealed class Message
 {

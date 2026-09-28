@@ -6,12 +6,11 @@
 #
 #----------------------------------------------------------------
 
-# Fights a friend's team: two games swap their Frontline's builds once, through a Discord invite or
-# a join code on the clipboard, then each fights the other's team, rebuilt as real characters and
-# played by the computer. A mirror match fights the player's own team the same way. The battle
-# changes nothing, the game is put back as it was once it ends. Needs Multiplayer.rb for the
-# connection and mp_sync.rb for the live battle, which the mod loader loads first. It must never
-# interrupt the game, so every entry point rescues.
+# PvP battles: two games swap their Frontline's builds, then fight the same battle live, each player
+# commanding their own team, and the game is put back as it was once it ends. A mirror match fights
+# the player's own team, played by the computer.
+#
+# It must never interrupt the game, so every entry point rescues.
 module MGQ_PvpBattle
   # Turns PvP battles off without uninstalling them.
   ENABLED = true
@@ -34,19 +33,21 @@ module MGQ_PvpBattle
   # A second copy of this script would wrap the same methods under the same names, and each hook
   # would then call itself until the stack overflows.
   #
-  # @return [Boolean] false when the hooks are in place already
+  # @return [Boolean] false when the hooks are in place already.
   def self.hookable?
     !Scene_Map.method_defined?(:mgq_pvp_battle_update_scene)
   end
 
-  # @return [Boolean] whether PvP battles are on and the Multiplayer mod's DLL is installed
+  # Tells whether PvP battles can run.
+  #
+  # @return [Boolean] Whether PvP battles are on and the Multiplayer mod's DLL is installed.
   def self.available?
     ENABLED && MGQ_Multiplayer.available?
   end
 
   # Writes a line to the Multiplayer mod's InGame.log.
   #
-  # @param message [String] the line
+  # @param message [String] The line.
   def self.log(message)
     MGQ_Multiplayer::Log.write("pvp battle: #{message}")
   rescue
@@ -89,7 +90,7 @@ module MGQ_PvpBattle
 
   # Acts on how the exchange stands, seen from the map.
   #
-  # @param state [Hash] the state, see MGQ_Multiplayer::Link.state
+  # @param state [Hash] The state, see MGQ_Multiplayer::Link.state.
   def self.look_at(state)
     case state["state"]
     when "received"
@@ -108,7 +109,7 @@ module MGQ_PvpBattle
 
   # Starts the battle against the friend's team that arrived.
   #
-  # @param state [Hash] the state, see MGQ_Multiplayer::Link.state
+  # @param state [Hash] The state, see MGQ_Multiplayer::Link.state.
   def self.begin_battle(state)
     opponent = MGQ_Multiplayer.clean(state["opponent"])
     members = Team.parse(state[:payload])
@@ -132,8 +133,8 @@ module MGQ_PvpBattle
   # The fields the Discord mod publishes about PvP battles, through its bridge. The Discord mod
   # hears of hosting and the connection with the friend from Multiplayer.rb.
   #
-  # @param scene [String] what the game is showing, see MGQ_Discord::GameState.scene
-  # @return [Hash] the fields, none outside a PvP battle
+  # @param scene [String] What the game is showing, see MGQ_Discord::GameState.scene.
+  # @return [Hash] The fields, none outside a PvP battle.
   def self.status_fields(scene)
     return {} unless Battle.running? && scene == "battle"
 
@@ -144,19 +145,7 @@ module MGQ_PvpBattle
   # turns back into the character from its own data. Nothing of the save format leaves the game,
   # since loading someone else's save data can run code.
   module Team
-    # Starts every member line. The fields after it, split by ";":
-    #   0 actor id, 1 personal level, 2 job, 3 race,
-    #   4 the levels of every job and race as id:level,
-    #   5 the eight stat growths from items,
-    #   6 the skills learned,
-    #   7 the abilities learned and 8 the abilities set, as skill type:id.id,
-    #   9 the equipment per slot, see Items,
-    #   10 the eight stats and 11 the hit, evasion and critical rates in per mille, as the sender
-    #   sees them, which the receiver compares its rebuild with,
-    #   12 the counters some abilities multiply damage by (see COUNTERS),
-    #   13 the switches, on in the sender's save, that the character's battle start states wait for.
-    # Fields 12 and 13 are the sender's save, not the character, which the receiver's save would
-    # otherwise stand in for.
+    # Starts every member line.
     PREFIX = "member="
 
     # Fields of a member line.
@@ -196,7 +185,7 @@ module MGQ_PvpBattle
     # between versions, and this mod's team format from another's. Only equal ones may swap teams,
     # since the ids and fields must mean the same things.
     #
-    # @return [String] the fingerprint
+    # @return [String] The fingerprint.
     def self.game
       sizes = [$data_actors, $data_classes, $data_skills, $data_items, $data_enemies, $data_states].map(&:size)
       "#{FORMAT}:#{sizes.join(',')}"
@@ -204,15 +193,21 @@ module MGQ_PvpBattle
 
     # Writes the player's Frontline.
     #
-    # @return [String] a member line per party member
+    # @return [String] A member line per party member.
     def self.build
       $game_party.battle_members.first(TEAM_SIZE).map { |actor| line_of(actor) }.join("\n")
     end
 
-    # Writes a member.
+    # Writes a member as PREFIX and its fields, split by ";": 0 actor id, 1 personal level, 2 job,
+    # 3 race, 4 every job and race level as id:level, 5 the stat growths from items, 6 the skills
+    # learned, 7 the abilities learned and 8 set as skill type:id.id, 9 the equipment per slot (see
+    # Items), 10 the stats and 11 the rates in per mille as the sender sees them, 12 the COUNTERS and
+    # 13 the switches on that the character's battle start states wait for.
     #
-    # @param actor [Game_Actor] the party member
-    # @return [String] the member line, see PREFIX
+    # Fields 12 and 13 come from the sender's save, which the receiver's save would stand in for.
+    #
+    # @param actor [Game_Actor] The party member.
+    # @return [String] The member line.
     def self.line_of(actor)
       fields = [
         actor.id,
@@ -233,9 +228,11 @@ module MGQ_PvpBattle
       PREFIX + fields.join(";")
     end
 
-    # @param actor [Game_Actor] the party member
-    # @param counter [Symbol] one of COUNTERS
-    # @return [Integer] the counter in this save, 0 where the game lacks it
+    # Reads a save counter of a party member.
+    #
+    # @param actor [Game_Actor] The party member.
+    # @param counter [Symbol] One of COUNTERS.
+    # @return [Integer] The counter in this save, 0 where the game lacks it.
     def self.counter_of(actor, counter)
       case counter
       when :battle_count then $game_system.battle_count.to_i
@@ -246,24 +243,28 @@ module MGQ_PvpBattle
       0
     end
 
-    # @param actor [Game_Actor] the party member
-    # @return [Array<Integer>] the switches its battle start states wait for that are on in this save
+    # Lists the switches a party member's battle start states wait for.
+    #
+    # @param actor [Game_Actor] The party member.
+    # @return [Array<Integer>] The switches its battle start states wait for that are on in this save.
     def self.switches_on(actor)
       actor.send(:auto_state_with_switch).keys.select { |switch_id| $game_switches[switch_id] }
     rescue
       []
     end
 
-    # @param table [Hash, nil] ability ids by skill type
-    # @return [String] the table as skill type:id.id, joined by ","
+    # Writes an ability table.
+    #
+    # @param table [Hash, nil] Ability ids by skill type.
+    # @return [String] The table as skill type:id.id, joined by ",".
     def self.groups(table)
       (table || {}).map { |stype_id, ids| "#{stype_id}:#{Array(ids).compact.join('.')}" }.join(",")
     end
 
     # Reads a friend's team, taking only what this game's data knows.
     #
-    # @param text [String] the team, see build
-    # @return [Array<Member>] the members, none when nothing was readable
+    # @param text [String] The team, see build.
+    # @return [Array<Member>] The members, none when nothing was readable.
     def self.parse(text)
       members = []
 
@@ -283,8 +284,8 @@ module MGQ_PvpBattle
 
     # Reads a member line.
     #
-    # @param line [String] the line, see PREFIX
-    # @return [Member, nil] the member, nil when the line is none or names no actor of this game
+    # @param line [String] The line, see PREFIX.
+    # @return [Member, nil] The member, nil when the line is none or names no actor of this game.
     def self.parse_member(line)
       return nil unless line.start_with?(PREFIX)
 
@@ -309,38 +310,50 @@ module MGQ_PvpBattle
         numbers(fields[13]).select { |id| id > 0 })
     end
 
-    # @return [Integer] the highest personal level of this game
+    # Reads the highest personal level of this game.
+    #
+    # @return [Integer] The highest personal level of this game.
     def self.max_base_level
       defined?(NWConst::Actor::MAX_BASE_LEVEL) ? NWConst::Actor::MAX_BASE_LEVEL : 9999
     end
 
-    # @param text [String, nil] a field
-    # @return [Integer, nil] its number, nil when it is none
+    # Reads a number field.
+    #
+    # @param text [String, nil] A field.
+    # @return [Integer, nil] Its number, nil when it is none.
     def self.number(text)
       text.to_s =~ NUMBER ? text.to_i : nil
     end
 
-    # @param text [String] numbers joined by ","
-    # @return [Array<Integer>] the numbers, at most MAX_ENTRIES
+    # Reads a list of numbers.
+    #
+    # @param text [String] Numbers joined by ",".
+    # @return [Array<Integer>] The numbers, at most MAX_ENTRIES.
     def self.numbers(text)
       text.to_s.split(",").first(MAX_ENTRIES).map { |value| number(value) }.compact
     end
 
-    # @param id [Integer, nil] a job or race id
-    # @return [Integer, nil] the id, nil when this game's data lacks it
+    # Checks a job or race id against this game's data.
+    #
+    # @param id [Integer, nil] A job or race id.
+    # @return [Integer, nil] The id, nil when this game's data lacks it.
     def self.known_class(id)
       id && id > 0 && $data_classes[id] ? id : nil
     end
 
-    # @param id [Integer] a skill id
-    # @return [Boolean] whether this game's data has that skill
+    # Checks a skill id against this game's data.
+    #
+    # @param id [Integer] A skill id.
+    # @return [Boolean] Whether this game's data has that skill.
     def self.known_skill?(id)
       skill = id > 0 && $data_skills[id]
       skill && !skill.name.empty? ? true : false
     end
 
-    # @param text [String] id:level pairs joined by ","
-    # @return [Hash] the levels by job or race id
+    # Reads a list of job or race levels.
+    #
+    # @param text [String] id:level pairs joined by ",".
+    # @return [Hash] The levels by job or race id.
     def self.level_list(text)
       text.to_s.split(",").first(MAX_ENTRIES).each_with_object({}) do |pair, levels|
         id, level = pair.split(":").map { |value| number(value) }
@@ -348,8 +361,10 @@ module MGQ_PvpBattle
       end
     end
 
-    # @param text [String] skill type:id.id groups joined by ","
-    # @return [Hash] the ability ids by skill type
+    # Reads an ability table.
+    #
+    # @param text [String] Skill type:id.id groups joined by ",".
+    # @return [Hash] The ability ids by skill type.
     def self.ability_table(text)
       text.to_s.split(",").first(MAX_ENTRIES).each_with_object({}) do |group, table|
         stype, ids = group.split(":", 2)
@@ -361,12 +376,9 @@ module MGQ_PvpBattle
     end
   end
 
-  # Equipment as text and back: "" for an empty slot, w<id> or a<id> for a weapon or armor, s in
-  # front for a socket item followed by .<gems>, e in front for an enchanted item followed by
-  # .<rarity>.<upgrade>.<sockets>.<variance>.<enchantments>.<stat rolls>.<trait rolls>.<gems>. Lists
-  # inside are joined by "+", rolls in per mille, a trait roll as enchantment:formula:roll:value.
+  # Equipment as text and back.
   #
-  # Socket and enchanted items are one of a kind, so the receiver makes its own copy from these,
+  # Socket and enchanted items are one of a kind, so the receiver makes its own copy from the text,
   # the way the game remakes an enchanted item's traits from its rolls when a save loads.
   module Items
     # A weapon or armor of the database.
@@ -384,8 +396,13 @@ module MGQ_PvpBattle
     # Trait rolls an enchanted item takes at most.
     MAX_ROLLS = 500
 
-    # @param item [RPG::EquipItem, nil] an equipped item
-    # @return [String] the item as text
+    # Writes an equipped item: "" for an empty slot, w<id> or a<id> for a weapon or armor, s in front
+    # for a socket item followed by .<gems>, e in front for an enchanted item followed by
+    # .<rarity>.<upgrade>.<sockets>.<variance>.<enchantments>.<stat rolls>.<trait rolls>.<gems>,
+    # lists joined by "+", rolls in per mille and a trait roll as enchantment:formula:roll:value.
+    #
+    # @param item [RPG::EquipItem, nil] An equipped item.
+    # @return [String] The item as text.
     def self.write(item)
       return "" unless item
 
@@ -396,9 +413,11 @@ module MGQ_PvpBattle
       "#{kind}#{item.id}"
     end
 
-    # @param item [Enchant_Item] an enchanted item
-    # @param kind [String] "w" or "a"
-    # @return [String] the item as text
+    # Writes an enchanted item.
+    #
+    # @param item [Enchant_Item] An enchanted item.
+    # @param kind [String] "w" or "a".
+    # @return [String] The item as text.
     def self.enchanted_text(item, kind)
       rolls = []
       (item.enchants_variance || {}).each do |enchant_id, formulas|
@@ -418,16 +437,18 @@ module MGQ_PvpBattle
        gems_text(item)].join(".")
     end
 
-    # @param item [RPG::EquipItem] a socket or enchanted item
-    # @return [String] its gems' item ids joined by "+", 0 for an empty socket
+    # Writes the gems of an item.
+    #
+    # @param item [RPG::EquipItem] A socket or enchanted item.
+    # @return [String] Its gems' item ids joined by "+", 0 for an empty socket.
     def self.gems_text(item)
       Array(item.instance_variable_get(:@stones)).map(&:to_i).join("+")
     end
 
     # Makes an item from its text.
     #
-    # @param text [String] the item as text, see write
-    # @return [RPG::EquipItem, nil] the item, nil for an empty slot or one this game's data lacks
+    # @param text [String] The item as text, see write.
+    # @return [RPG::EquipItem, nil] The item, nil for an empty slot or one this game's data lacks.
     def self.read(text)
       if (match = PLAIN.match(text))
         base(match[1], match[2].to_i)
@@ -441,9 +462,11 @@ module MGQ_PvpBattle
       nil
     end
 
-    # @param kind [String] "w" or "a"
-    # @param id [Integer] the item's id in the database
-    # @return [RPG::EquipItem, nil] the item, nil when this game's data lacks it
+    # Finds a database item.
+    #
+    # @param kind [String] "w" or "a".
+    # @param id [Integer] The item's id in the database.
+    # @return [RPG::EquipItem, nil] The item, nil when this game's data lacks it.
     def self.base(kind, id)
       table = kind == "w" ? $data_weapons : $data_armors
       return nil unless id > 0 && id < table.size
@@ -452,9 +475,11 @@ module MGQ_PvpBattle
       item && !item.name.empty? ? item : nil
     end
 
-    # @param base [RPG::EquipItem, nil] the item the socket item is made of
-    # @param gems [String] its gems' item ids
-    # @return [RPG::EquipItem, nil] the socket item, the base itself when it has no sockets
+    # Makes this game's copy of a socket item.
+    #
+    # @param base [RPG::EquipItem, nil] The item the socket item is made of.
+    # @param gems [String] Its gems' item ids.
+    # @return [RPG::EquipItem, nil] The socket item, the base itself when it has no sockets.
     def self.socket_item(base, gems)
       return base unless base && base.socket?
 
@@ -463,9 +488,11 @@ module MGQ_PvpBattle
       item
     end
 
-    # @param base [RPG::EquipItem, nil] the item the enchanted item is made of
-    # @param match [MatchData] its text, see ENCHANTED
-    # @return [RPG::EquipItem, nil] the enchanted item, the base itself when it cannot be enchanted
+    # Makes this game's copy of an enchanted item.
+    #
+    # @param base [RPG::EquipItem, nil] The item the enchanted item is made of.
+    # @param match [MatchData] Its text, see ENCHANTED.
+    # @return [RPG::EquipItem, nil] The enchanted item, the base itself when it cannot be enchanted.
     def self.enchanted_item(base, match)
       return base unless base && base.need_enchant?
 
@@ -485,8 +512,10 @@ module MGQ_PvpBattle
       item
     end
 
-    # @param text [String] enchantment:formula:roll:value entries joined by "+"
-    # @return [Hash] the rolls by enchantment, formula and roll
+    # Reads the trait rolls of an enchanted item.
+    #
+    # @param text [String] enchantment:formula:roll:value entries joined by "+".
+    # @return [Hash] The rolls by enchantment, formula and roll.
     def self.trait_rolls(text)
       text.split("+").first(MAX_ROLLS).each_with_object({}) do |entry, rolls|
         enchant_id, formula_id, variance_id, value = entry.split(":").map(&:to_i)
@@ -496,23 +525,22 @@ module MGQ_PvpBattle
       end
     end
 
-    # @param text [String] item ids joined by "+", 0 for an empty socket
-    # @param count [Integer] the item's sockets
-    # @return [Array<Integer, nil>] a gem id or nil per socket
+    # Reads the gems of an item.
+    #
+    # @param text [String] Item ids joined by "+", 0 for an empty socket.
+    # @param count [Integer] The item's sockets.
+    # @return [Array<Integer, nil>] A gem id or nil per socket.
     def self.gem_list(text, count)
       ids = text.split("+").first(count).map { |value| id = value.to_i; id > 0 && $data_items[id] ? id : nil }
       ids + [nil] * (count - ids.size)
     end
   end
 
-  # One of the friend's characters, rebuilt from its build as a real character of this game, fighting
-  # on the enemy side and played by the game's own auto-battle.
+  # One of the friend's characters, rebuilt from its build as a real character of this game and
+  # fighting on the enemy side, where it answers what the battle's code asks only of monsters.
   #
-  # A character rather than a monster, so its equipment, gems, abilities, job and race give it all
-  # their traits: pre-battle spells, passives, counters and the stat boosts only a battle applies.
-  # The battle's code takes every character for the player's own, so it answers for the enemy side
-  # where that matters: its allies and enemies, its place in the troop, its picture, party-wide
-  # boosts, and Luka's own mechanics, which only the player's Luka has.
+  # A character rather than a monster gets all the traits of its equipment, gems, abilities, job and
+  # race, such as pre-battle spells, passives and the stat boosts only a battle applies.
   class Opponent < Game_Actor
     # Equipment slots without the extra accessory slot.
     BASIC_SLOT_COUNT = 5
@@ -540,8 +568,10 @@ module MGQ_PvpBattle
     # The letter and plural mark the game gives monsters of the same name.
     attr_accessor :letter, :plural
 
-    # @param member [Team::Member] the character's build
-    # @param player [String] who the character belongs to
+    # Rebuilds a friend's character.
+    #
+    # @param member [Team::Member] The character's build.
+    # @param player [String] Who the character belongs to.
     def initialize(member, player)
       super(member.actor_id)
       @member = member
@@ -553,94 +583,128 @@ module MGQ_PvpBattle
       rebuild
     end
 
-    # @return [String] the character's name with its owner's, like "Alice (<player>)"
+    # Names the character with its owner.
+    #
+    # @return [String] The character's name with its owner's, like "Alice (<player>)".
     def name
       "#{actor.name} (#{@player})"
     end
 
-    # @return [String] the name, which the battle's "X appears!" lines read
+    # Names the character without its owner.
+    #
+    # @return [String] The name, which the battle's "X appears!" lines read.
     def original_name
       name
     end
 
-    # @return [Game_Troop] the friend's team
+    # Returns the character's own side.
+    #
+    # @return [Game_Troop] The friend's team.
     def friends_unit
       $game_troop
     end
 
-    # @return [Game_Party] the player's party
+    # Returns the side the character fights.
+    #
+    # @return [Game_Party] The player's party.
     def opponents_unit
       $game_party
     end
 
-    # @return [Integer, nil] the place in the troop, which targeting uses
+    # Finds the character's place in the troop.
+    #
+    # @return [Integer, nil] The place in the troop, which targeting uses.
     def index
       $game_troop.members.index(self)
     end
 
-    # @return [Boolean] always, the troop is all it fights in
+    # Tells whether the character fights.
+    #
+    # @return [Boolean] Always, the troop is all it fights in.
     def battle_member?
       true
     end
 
-    # @return [Boolean] always, it is drawn like a monster
+    # Tells whether the character is drawn as a sprite.
+    #
+    # @return [Boolean] Always, it is drawn like a monster.
     def use_sprite?
       true
     end
 
-    # @return [Integer] how far in front its picture is drawn
+    # Returns the character's drawing order.
+    #
+    # @return [Integer] How far in front its picture is drawn.
     def screen_z
       100
     end
 
-    # @return [String] no battle picture of its own, Pictures draws the Library's
+    # Returns the character's battle picture.
+    #
+    # @return [String] No battle picture of its own, Pictures draws the Library's.
     def battler_name
       ""
     end
 
-    # @return [Integer] no hue change
+    # Returns the hue of the character's battle picture.
+    #
+    # @return [Integer] No hue change.
     def battler_hue
       0
     end
 
-    # @return [Boolean] never, Luka's mechanics (binding, giving up) belong to the player's Luka
+    # Tells whether the character is Luka.
+    #
+    # @return [Boolean] Never, Luka's mechanics (binding, giving up) belong to the player's Luka.
     def luca?
       false
     end
 
     # A stand-in for the monster data the battle's code reads of the enemy side.
     #
-    # @return [RPG::Enemy] a monster without rewards, notes or recruiting
+    # @return [RPG::Enemy] A monster without rewards, notes or recruiting.
     def enemy
       @enemy ||= Opponents.enemy_data(name)
     end
 
-    # @return [Integer] the character's actor id, which enemy HP bars and the Library read
+    # Returns the id enemy code reads.
+    #
+    # @return [Integer] The character's actor id, which enemy HP bars and the Library read.
     def enemy_id
       id
     end
 
-    # @return [Integer] no affection, which the target window shows for monsters
+    # Returns the affection enemy code reads.
+    #
+    # @return [Integer] No affection, which the target window shows for monsters.
     def friend
       0
     end
 
-    # @return [Integer] no defeat scene
+    # Returns the defeat scene enemy code reads.
+    #
+    # @return [Integer] No defeat scene.
     def lose_event_id
       0
     end
 
-    # @return [Boolean] always, running from a PvP battle counts as no escape
+    # Tells whether running away is left out of the escape count.
+    #
+    # @return [Boolean] Always, running from a PvP battle counts as no escape.
     def escape_not_count?
       true
     end
 
-    # @return [Hash] nothing to steal
+    # Lists what can be stolen from the character.
+    #
+    # @return [Hash] Nothing to steal.
     def steal_list
       { 1 => [], 2 => [], 3 => [], 4 => [] }
     end
 
-    # @return [Integer] how hard it is to run from, which the escape chance reads of every enemy
+    # Returns the escape level enemy code reads.
+    #
+    # @return [Integer] How hard it is to run from, which the escape chance reads of every enemy.
     def escape_level
       enemy.escape_level
     end
@@ -648,7 +712,7 @@ module MGQ_PvpBattle
     # Has the extra accessory slot when the friend's game had it. The game reads a switch of the
     # save for it, which the player's game may not have turned on yet.
     #
-    # @return [Boolean]
+    # @return [Boolean] Whether the character has the extra accessory slot.
     def extra_accessory_slot?
       @member ? @member.equips.size > BASIC_SLOT_COUNT : super
     end
@@ -656,8 +720,8 @@ module MGQ_PvpBattle
     # Allows enchanted equipment, which the game takes off while the player's save has enchanting
     # off (NWConst::Sw::ENCHANT_OFF). The friend's game let the character wear it.
     #
-    # @param item [RPG::BaseItem] the item
-    # @return [Boolean] whether the character may wear it
+    # @param item [RPG::BaseItem] The item.
+    # @return [Boolean] Whether the character may wear it.
     def equippable?(item)
       switch_id = defined?(NWConst::Sw::ENCHANT_OFF) && NWConst::Sw::ENCHANT_OFF
       return super unless switch_id && $game_switches[switch_id] && item.is_a?(RPG::EquipItem) && item.enchant_item?
@@ -673,26 +737,28 @@ module MGQ_PvpBattle
     # Takes items from the friend's bag, which this game cannot see: in a live battle the friend
     # chooses them, and their own game counts what they have.
     #
-    # @param item [RPG::Item] the item
-    # @return [Boolean] whether the character may use it now
+    # @param item [RPG::Item] The item.
+    # @return [Boolean] Whether the character may use it now.
     def item_conditions_met?(item)
       usable_item_conditions_met?(item)
     end
 
     # Uses up nothing of the player's bag for an item of the friend's.
     #
-    # @param _item [RPG::Item] the item
+    # @param _item [RPG::Item] The item.
     def consume_item(_item)
     end
 
-    # @return [Integer] its affection in the friend's save, which skill formulas and damage boosts read
+    # Returns the character's affection.
+    #
+    # @return [Integer] Its affection in the friend's save, which skill formulas and damage boosts read.
     def love
       @member ? @member.counters[Team::COUNTERS.index(:love)] : super
     end
 
     # Multiplies damage by the counters of the friend's save, where the game reads the player's.
     #
-    # @return [Float] the boost
+    # @return [Float] The boost.
     def booster_ex_count
       return super unless @member
 
@@ -719,9 +785,9 @@ module MGQ_PvpBattle
     # Answers what the battle's code asks only monsters, from the monster stand-in, and logs it
     # once. A question the audit missed would otherwise end the game in the middle of a battle.
     #
-    # @param name [Symbol] the method
-    # @param args [Array] its arguments
-    # @return [Object] the stand-in's answer
+    # @param name [Symbol] The method.
+    # @param args [Array] Its arguments.
+    # @return [Object] The stand-in's answer.
     def method_missing(name, *args, &block)
       return super unless Game_Enemy.method_defined?(name) && enemy.respond_to?(name)
 
@@ -731,32 +797,40 @@ module MGQ_PvpBattle
       enemy.send(name, *args, &block)
     end
 
-    # @param name [Symbol] the method
-    # @param include_private [Boolean] whether private methods count
-    # @return [Boolean] whether method_missing answers it
+    # Tells whether method_missing answers a method.
+    #
+    # @param name [Symbol] The method.
+    # @param include_private [Boolean] Whether private methods count.
+    # @return [Boolean] Whether method_missing answers it.
     def respond_to_missing?(name, include_private = false)
       (Game_Enemy.method_defined?(name) && enemy.respond_to?(name)) || super
     end
 
-    # @return [Boolean] never a boss, which the enemy HP bars read
+    # Tells whether the character is a boss.
+    #
+    # @return [Boolean] Never a boss, which the enemy HP bars read.
     def boss?
       false
     end
 
-    # @return [Boolean] never hides its name, which the enemy HP bars read
+    # Tells whether the character's name is hidden.
+    #
+    # @return [Boolean] Never hides its name, which the enemy HP bars read.
     def hide_name
       false
     end
 
-    # @return [Integer] no shift of its HP bar
+    # Returns the shift of the character's HP bar.
+    #
+    # @return [Integer] No shift of its HP bar.
     def lefx
       0
     end
 
     # Boosts a stat for each character on its own side, where the game counts the player's party.
     #
-    # @param param_id [Integer] the stat
-    # @return [Float] the boost
+    # @param param_id [Integer] The stat.
+    # @return [Float] The boost.
     def booster_actor_exist_param(param_id)
       return 1.0 unless (2..7).include?(param_id)
 
@@ -780,8 +854,8 @@ module MGQ_PvpBattle
     # holds and whose chance comes up, like the game does, with "ally" and "enemy" seen from the
     # friend's side. The game checks the player's party for allies.
     #
-    # @param skills [Array<Hash>] the automatic skills, with :condition_type, :condition_ids and :per
-    # @return [Array<Hash>] those that fire
+    # @param skills [Array<Hash>] The automatic skills, with :condition_type, :condition_ids and :per.
+    # @return [Array<Hash>] Those that fire.
     def firing_auto_skills(skills)
       own = $game_troop.members
       skills.select do |skill|
@@ -802,7 +876,7 @@ module MGQ_PvpBattle
     # Uses a skill or item, and logs the first ones of the battle, which tells what the computer
     # picks for the character.
     #
-    # @param item [RPG::UsableItem] the skill or item
+    # @param item [RPG::UsableItem] The skill or item.
     def use_item(item)
       super
       Battle.log_action(self, item)
@@ -810,7 +884,7 @@ module MGQ_PvpBattle
 
     # Compares the rebuild with what the friend's game showed of the character.
     #
-    # @return [Array<String>] the stats and rates that differ, none when the rebuild matches
+    # @return [Array<String>] The stats and rates that differ, none when the rebuild matches.
     def differences
       stats = (0...Team::PARAM_COUNT).map { |id| [Vocab.param(id), param(id).to_i, @member.params[id]] }
       rates = (0...Team::RATE_COUNT).map do |id|
@@ -847,10 +921,10 @@ module MGQ_PvpBattle
     # fights along, 2 an enemy of these monster ids is there, which a PvP battle has none of,
     # 3 an ally has one of these states, 4 an enemy has one, 5 the character itself has one.
     #
-    # @param type [Integer] the condition
-    # @param ids [Array<Integer>] the actor, monster or state ids it names
-    # @param own [Array<Game_Battler>] the friend's team
-    # @return [Boolean] whether it holds
+    # @param type [Integer] The condition.
+    # @param ids [Array<Integer>] The actor, monster or state ids it names.
+    # @param own [Array<Game_Battler>] The friend's team.
+    # @return [Boolean] Whether it holds.
     def auto_skill_condition_met?(type, ids, own)
       case type
       when 1
@@ -869,9 +943,11 @@ module MGQ_PvpBattle
       end
     end
 
-    # @param stypes [Array<Integer>] every skill type of abilities
-    # @param sent [Hash] the build's ability ids by skill type
-    # @return [Hash] ability ids for every skill type, none where the build has none
+    # Completes an ability table for every skill type.
+    #
+    # @param stypes [Array<Integer>] Every skill type of abilities.
+    # @param sent [Hash] The build's ability ids by skill type.
+    # @return [Hash] Ability ids for every skill type, none where the build has none.
     def ability_table(stypes, sent)
       stypes.each_with_object({}) { |stype_id, table| table[stype_id] = (sent[stype_id] || []).dup }
     end
@@ -885,7 +961,7 @@ module MGQ_PvpBattle
 
     # Adds the troop.
     #
-    # @return [Integer] its troop id
+    # @return [Integer] Its troop id.
     def self.add_troop
       remove
       @troops_size = $data_troops.size
@@ -909,9 +985,9 @@ module MGQ_PvpBattle
     # Rebuilds the friend's characters and stands them side by side at the screen's bottom, where
     # the game stands its own full-size monsters.
     #
-    # @param members [Array<Team::Member>] the friend's team
-    # @param player [String] the friend's name
-    # @return [Array<Opponent>] the characters, without those that could not be rebuilt
+    # @param members [Array<Team::Member>] The friend's team.
+    # @param player [String] The friend's name.
+    # @return [Array<Opponent>] The characters, without those that could not be rebuilt.
     def self.build(members, player)
       opponents = members.map do |member|
         begin
@@ -934,8 +1010,8 @@ module MGQ_PvpBattle
     #
     # A copy of a monster of the game's own, so every field that code reads is present.
     #
-    # @param name [String] the character's name
-    # @return [RPG::Enemy] the monster
+    # @param name [String] The character's name.
+    # @return [RPG::Enemy] The monster.
     def self.enemy_data(name)
       enemy = $data_enemies.find { |candidate| candidate && !candidate.name.empty? }.dup
       enemy.id = 0
@@ -950,8 +1026,7 @@ module MGQ_PvpBattle
   # The pictures of the friend's characters: the full picture the Library shows of each, at full
   # size and cut to the character, or the face when there is none.
   #
-  # The Library's pictures are the same files as the monsters' battle pictures, 640 x 480, and the
-  # game has no larger ones. Shrunk, they turn jagged, since the game scales without smoothing.
+  # Shrunk, they would turn jagged, since the game has no larger ones and scales without smoothing.
   module Pictures
     # Pixels skipped between two looked at when finding where a picture's character is. Looking at
     # every pixel of a Library picture takes too long in the game.
@@ -960,14 +1035,16 @@ module MGQ_PvpBattle
     # How much a face is enlarged when it stands in for a picture.
     FACE_ZOOM = 2
 
-    # Faces in a row of a face file, and rows.
+    # Faces in a row of a face file.
     FACE_COLUMNS = 4
+
+    # Rows of faces in a face file.
     FACE_ROWS = 2
 
     # The picture of one of the friend's characters.
     #
-    # @param battler [Game_Battler] a battler of the battle
-    # @return [Bitmap, nil] the picture, nil for every other battler
+    # @param battler [Game_Battler] A battler of the battle.
+    # @return [Bitmap, nil] The picture, nil for every other battler.
     def self.stand_in_for(battler)
       return nil unless battler.is_a?(MGQ_PvpBattle::Opponent)
 
@@ -984,8 +1061,8 @@ module MGQ_PvpBattle
     # Cuts the character out of the picture the Library shows of it, down to the picture's bottom
     # edge, so it stands where the game stands its own full-size monsters.
     #
-    # @param actor_id [Integer] the character
-    # @return [Bitmap, nil] the picture, nil when the Library has none
+    # @param actor_id [Integer] The character.
+    # @return [Bitmap, nil] The picture, nil when the Library has none.
     def self.library_picture(actor_id)
       image = defined?(NWConst::Library::ACTOR_IMAGE) && NWConst::Library::ACTOR_IMAGE[actor_id]
       return nil unless image.is_a?(Array)
@@ -1000,8 +1077,8 @@ module MGQ_PvpBattle
 
     # Finds where the character is on a picture: the box around its visible pixels.
     #
-    # @param sheet [Bitmap] the picture
-    # @return [Rect] the box, the whole picture when nothing on it is visible
+    # @param sheet [Bitmap] The picture.
+    # @return [Rect] The box, the whole picture when nothing on it is visible.
     def self.character_area(sheet)
       left, top, right, bottom = sheet.width, sheet.height, -1, -1
 
@@ -1025,8 +1102,8 @@ module MGQ_PvpBattle
 
     # Cuts a character's face out of its face file and enlarges it.
     #
-    # @param actor_id [Integer] the character
-    # @return [Bitmap, nil] the face, nil without a face file
+    # @param actor_id [Integer] The character.
+    # @return [Bitmap, nil] The face, nil without a face file.
     def self.face(actor_id)
       actor = $data_actors[actor_id]
       return nil if actor.face_name.to_s.empty?
@@ -1064,13 +1141,15 @@ module MGQ_PvpBattle
     # Ends a row whose two values differ.
     MARK = "  <-- differs"
 
-    # Width of a row's label and of each value.
+    # Width of a row's label.
     LABEL_WIDTH = 26
+
+    # Width of each value of a row.
     VALUE_WIDTH = 20
 
     # Writes the first section, outside of battle, over the last match's report.
     #
-    # @param opponents [Array<Opponent>] the rebuilt characters, already in the troop
+    # @param opponents [Array<Opponent>] The rebuilt characters, already in the troop.
     def self.start(opponents)
       @pairs = opponents.map { |rebuilt| [$game_party.battle_members.find { |actor| actor.id == rebuilt.id }, rebuilt] }
       @pairs.reject! { |yours, _| yours.nil? }
@@ -1089,8 +1168,8 @@ module MGQ_PvpBattle
 
     # Writes a section: every character next to its rebuild.
     #
-    # @param mode [String] "wb" to start the file anew, "ab" to add to it
-    # @param title [String] the section's title
+    # @param mode [String] "wb" to start the file anew, "ab" to add to it.
+    # @param title [String] The section's title.
     def self.write(mode, title)
       blocks = @pairs.map { |yours, rebuilt| block(yours, rebuilt) }
       differences = blocks.inject(0) { |sum, (_, count)| sum + count }
@@ -1102,9 +1181,9 @@ module MGQ_PvpBattle
 
     # Compares a character with its rebuild.
     #
-    # @param yours [Game_Actor] the player's character
-    # @param rebuilt [Opponent] its rebuild
-    # @return [Array] the lines, and how many values differ
+    # @param yours [Game_Actor] The player's character.
+    # @param rebuilt [Opponent] Its rebuild.
+    # @return [Array] The lines, and how many values differ.
     def self.block(yours, rebuilt)
       rows = rows_for(yours, rebuilt)
       lines = ["-- #{yours.name} (actor #{yours.id})", row("", "yours", "rebuilt", false)]
@@ -1112,9 +1191,11 @@ module MGQ_PvpBattle
       [lines + [""], rows.count { |_, mine, theirs| mine != theirs }]
     end
 
-    # @param yours [Game_Actor] the player's character
-    # @param rebuilt [Opponent] its rebuild
-    # @return [Array<Array>] a label and both values per row
+    # Compares a character with its rebuild.
+    #
+    # @param yours [Game_Actor] The player's character.
+    # @param rebuilt [Opponent] Its rebuild.
+    # @return [Array<Array>] A label and both values per row.
     def self.rows_for(yours, rebuilt)
       rows = (0...8).map { |id| [Vocab.param(id), yours.param(id).to_i, rebuilt.param(id).to_i] }
       rows += XPARAM_NAMES.each_with_index.map { |name, id| [name, percent(yours.xparam(id)), percent(rebuilt.xparam(id))] }
@@ -1133,7 +1214,11 @@ module MGQ_PvpBattle
       rows + equipment_rows(yours, rebuilt)
     end
 
-    # @return [Array<Array>] the element rates either of the two has other than 100%
+    # Compares the element rates.
+    #
+    # @param yours [Game_Actor] The player's character.
+    # @param rebuilt [Opponent] Its rebuild.
+    # @return [Array<Array>] The element rates either of the two has other than 100%.
     def self.element_rows(yours, rebuilt)
       (1...$data_system.elements.size).map do |id|
         mine = percent(yours.element_rate(id))
@@ -1142,7 +1227,11 @@ module MGQ_PvpBattle
       end.compact
     end
 
-    # @return [Array<Array>] how many states each resists, and each state whose rate differs
+    # Compares the state rates.
+    #
+    # @param yours [Game_Actor] The player's character.
+    # @param rebuilt [Opponent] Its rebuild.
+    # @return [Array<Array>] How many states each resists, and each state whose rate differs.
     def self.state_rows(yours, rebuilt)
       ids = (1...$data_states.size).select { |id| $data_states[id] }
       rows = [["States resisted", ids.count { |id| yours.state_resist?(id) }, ids.count { |id| rebuilt.state_resist?(id) }]]
@@ -1154,14 +1243,21 @@ module MGQ_PvpBattle
       rows
     end
 
-    # @return [Array<Array>] each equipment slot's item, with its gems
+    # Compares the equipment.
+    #
+    # @param yours [Game_Actor] The player's character.
+    # @param rebuilt [Opponent] Its rebuild.
+    # @return [Array<Array>] Each equipment slot's item, with its gems.
     def self.equipment_rows(yours, rebuilt)
       [yours.equips.size, rebuilt.equips.size].max.times.map do |slot|
         ["Slot #{slot}", item_text(yours.equips[slot]), item_text(rebuilt.equips[slot])]
       end
     end
 
-    # @return [String] the item's base name, then its gems' ids, "-" for an empty slot
+    # Writes an item for the report.
+    #
+    # @param item [RPG::EquipItem, nil] The item in a slot.
+    # @return [String] The item's base name, then its gems' ids, "-" for an empty slot.
     def self.item_text(item)
       return "-" unless item
 
@@ -1170,34 +1266,55 @@ module MGQ_PvpBattle
       gems.empty? ? base.name : "#{base.name} [#{gems.join(' ')}]"
     end
 
-    # @return [String] the state's rate, "resisted" when resisted
+    # Writes a state rate for the report.
+    #
+    # @param battler [Game_Battler] The battler.
+    # @param id [Integer] The state.
+    # @return [String] The state's rate, "resisted" when resisted.
     def self.state_value(battler, id)
       battler.state_resist?(id) ? "resisted" : percent(battler.state_rate(id))
     end
 
-    # @return [String] the states on the battler right now, by name
+    # Lists the states on a battler.
+    #
+    # @param battler [Game_Battler] The battler.
+    # @return [String] The states on the battler right now, by name.
     def self.state_names(battler)
       names = battler.states.map(&:name)
       names.empty? ? "-" : names.join(", ")
     end
 
-    # @return [String] personal, job and race level
+    # Writes the levels of a battler.
+    #
+    # @param battler [Game_Battler] The battler.
+    # @return [String] Personal, job and race level.
     def self.levels(battler)
       "#{battler.base_level}/#{battler.class_level}/#{battler.tribe_level}"
     end
 
-    # @param ids [Array<Integer>] skill or ability ids
-    # @return [String] the first of them, "-" for none
+    # Writes skill or ability ids for the report.
+    #
+    # @param ids [Array<Integer>] Skill or ability ids.
+    # @return [String] The first eight of them, "-" for none.
     def self.ids_text(ids)
       ids.empty? ? "-" : ids.first(8).join(" ")
     end
 
-    # @return [String] a rate as a percentage
+    # Writes a rate for the report.
+    #
+    # @param rate [Float] A rate, 1.0 for 100%.
+    # @return [String] A rate as a percentage.
     def self.percent(rate)
       format("%.1f%%", rate.to_f * 100)
     end
 
-    # @return [String] one row: label and both values, marked when they differ
+    # Writes a row of the report.
+    #
+    # @param label [String] What the row compares.
+    # @param mine [Object] The player's character's value.
+    # @param theirs [Object] The rebuild's value.
+    # @param differs [Boolean] Whether to mark the row.
+    # @return [String] One row: label and both values, marked when they differ.
     def self.row(label, mine, theirs, differs)
       label.to_s.ljust(LABEL_WIDTH) + mine.to_s.rjust(VALUE_WIDTH) + "  " + theirs.to_s.rjust(VALUE_WIDTH) + (differs ? MARK : "")
     end
@@ -1205,11 +1322,8 @@ module MGQ_PvpBattle
 
   # The battle against the friend's team, and putting the game back afterwards.
   #
-  # The game's own battle replay mode keeps EXP, gold, drops, recruiting and the autosave out, and
-  # losing only returns to the map. What the battle still changes, the snapshot taken before it
-  # undoes: the save's contents and the Library, affection and switches all saves share. Rebuilding
-  # the friend's characters touches the player's party and characters too, which the snapshot
-  # undoes as well.
+  # The game's own battle replay mode keeps EXP, gold, drops, recruiting and the autosave out, and a
+  # snapshot undoes the rest, including the data all saves share.
   module Battle
     # What the map says after the battle, by the game's battle result.
     RESULTS = {
@@ -1240,25 +1354,31 @@ module MGQ_PvpBattle
     LOGGED_ACTIONS = 12
 
     class << self
-      # @return [String] the friend whose team is fought
+      # The friend whose team is fought.
+      #
+      # @return [String] The friend whose team is fought.
       attr_reader :opponent
     end
 
-    # @return [Boolean] whether a PvP battle runs, until the map put the game back
+    # Tells whether a PvP battle runs.
+    #
+    # @return [Boolean] Whether a PvP battle runs, until the map put the game back.
     def self.running?
       @snapshot ? true : false
     end
 
-    # @return [Boolean] whether the running battle is a mirror match
+    # Tells whether the running battle is a mirror match.
+    #
+    # @return [Boolean] Whether the running battle is a mirror match.
     def self.mirror?
       @mirror ? true : false
     end
 
     # Starts the battle from the map.
     #
-    # @param opponent [String] the friend's name
-    # @param members [Array<Team::Member>] the friend's team
-    # @param mirror [Boolean] whether it is the player's own team
+    # @param opponent [String] The friend's name.
+    # @param members [Array<Team::Member>] The friend's team.
+    # @param mirror [Boolean] Whether it is the player's own team.
     def self.start(opponent, members, mirror)
       @snapshot = Marshal.dump(DataManager.make_save_contents)
       @globals = Marshal.dump(globals)
@@ -1300,7 +1420,7 @@ module MGQ_PvpBattle
     #
     # Both sides measure outside of battle, so only a difference in the rebuild shows.
     #
-    # @param opponents [Array<Opponent>] the rebuilt characters, already in the troop
+    # @param opponents [Array<Opponent>] The rebuilt characters, already in the troop.
     def self.check(opponents)
       opponents.each do |opponent|
         differences = opponent.differences
@@ -1313,11 +1433,11 @@ module MGQ_PvpBattle
     # Reports whether a battler's action needs a target but finds none.
     #
     # Some skills aim only at one sex or, when they bind, only at Luka, which the game only ever
-    # lets monsters use on the player's party. A team without such a target leaves them with
-    # none, and the battle log would name a target that is not there.
+    # lets monsters use on the player's party, so the battle log would name a target that is not
+    # there.
     #
-    # @param subject [Game_Battler] the battler about to act
-    # @return [Boolean]
+    # @param subject [Game_Battler] The battler about to act.
+    # @return [Boolean] Whether the action finds no target.
     def self.targetless?(subject)
       action = subject && subject.current_action
       item = action && action.item
@@ -1331,8 +1451,8 @@ module MGQ_PvpBattle
 
     # Logs an action of one of the friend's characters, with its HP, the first LOGGED_ACTIONS of a battle.
     #
-    # @param battler [Opponent] the character
-    # @param item [RPG::UsableItem] the skill or item it used
+    # @param battler [Opponent] The character.
+    # @param item [RPG::UsableItem] The skill or item it used.
     def self.log_action(battler, item)
       @logged_actions = (@logged_actions || 0) + 1
       return if @logged_actions > LOGGED_ACTIONS
@@ -1343,7 +1463,7 @@ module MGQ_PvpBattle
 
     # Notes how the battle ended. Called by the game when it does.
     #
-    # @param result [Integer] 0 won, 1 left, 2 lost
+    # @param result [Integer] 0 won, 1 left, 2 lost.
     def self.finished(result)
       @result = result
     end
@@ -1374,7 +1494,9 @@ module MGQ_PvpBattle
       MGQ_PvpBattle.log("could not put the game back: #{e.class}: #{e.message}")
     end
 
-    # @return [String] what the map says about how the battle went
+    # Tells how the battle went.
+    #
+    # @return [String] What the map says about how the battle went.
     def self.result_text
       return FAILED if @failed
       return MIRROR_RESULTS.fetch(@result, "The mirror match ended.") if @mirror
@@ -1394,13 +1516,17 @@ module MGQ_PvpBattle
       $game_temp.in_memory_battle = false if $game_temp
     end
 
-    # @return [Array] the data all saves share: the Library, the system switches and the global
-    #   system, which holds the affection
+    # Reads the data all saves share.
+    #
+    # @return [Array] The data all saves share: the Library, the system switches and the global
+    #   system, which holds the affection.
     def self.globals
       [$game_library, $game_system_switches, $game_global_system]
     end
 
-    # @param values [Array] the data all saves share, see globals
+    # Puts back the data all saves share.
+    #
+    # @param values [Array] The data all saves share, see globals.
     def self.globals=(values)
       $game_library, $game_system_switches, $game_global_system = values
     end
@@ -1446,8 +1572,10 @@ module MGQ_PvpBattle
       "Or fight your own team in a mirror match.",
     ]
 
-    # @param state [Hash] the exchange, see MGQ_Multiplayer::Link.state
-    # @return [Array<String>] the lines to show
+    # Describes how the exchange stands.
+    #
+    # @param state [Hash] The exchange, see MGQ_Multiplayer::Link.state.
+    # @return [Array<String>] The lines to show.
     def self.lines_for(state)
       lines = case state["state"]
               when "hosting"
@@ -1472,8 +1600,8 @@ module MGQ_PvpBattle
 
     # The commands the screen offers.
     #
-    # @param state [Hash] the exchange, see MGQ_Multiplayer::Link.state
-    # @return [Array<Array>] a name and a symbol per command
+    # @param state [Hash] The exchange, see MGQ_Multiplayer::Link.state.
+    # @return [Array<Array>] A name and a symbol per command.
     def self.commands_for(state)
       commands = []
       commands.push(["Accept the Discord invite", :join_invite]) if state["invite"] == "1"
@@ -1598,7 +1726,7 @@ class Window_PvpLobbyInfo < Window_Base
 
   # Draws the lines, if they changed.
   #
-  # @param lines [Array<String>] the lines
+  # @param lines [Array<String>] The lines.
   def show(lines)
     return if lines == @lines
 
@@ -1615,21 +1743,25 @@ class Window_PvpLobbyCommand < Window_Command
   # Width of the window.
   WIDTH = 360
 
-  # @param y [Integer] the top edge, below the lines
+  # Creates the command window.
+  #
+  # @param y [Integer] The top edge, below the lines.
   def initialize(y)
     @state = { "state" => "idle" }
     super(0, y)
     self.x = (Graphics.width - width) / 2
   end
 
-  # @return [Integer] the window's width
+  # Returns the window's width.
+  #
+  # @return [Integer] The window's width.
   def window_width
     WIDTH
   end
 
   # Offers the commands of a state, if they changed.
   #
-  # @param state [Hash] the exchange, see MGQ_Multiplayer::Link.state
+  # @param state [Hash] The exchange, see MGQ_Multiplayer::Link.state.
   def state=(state)
     commands = MGQ_PvpBattle::Lobby.commands_for(state)
     return if commands == @commands
@@ -1655,19 +1787,24 @@ end
 # raises.
 
 if MGQ_PvpBattle.hookable?
-  # The map checks for the key and the exchange where the game checks its own keys: only while no
-  # event, message or scene change is in the way.
   begin
     class Scene_Map
       alias mgq_pvp_battle_update_scene update_scene
+
+      # Updates the map, then checks for the key and the exchange.
+      #
+      # The game checks its own keys here too, only while no event, message or scene change is in
+      # the way.
       def update_scene
         mgq_pvp_battle_update_scene
         MGQ_PvpBattle.on_map unless scene_changing?
       end
 
-      # The map starts again after a PvP battle, and the game is put back first, so the map is
-      # built from what it was before.
       alias mgq_pvp_battle_start start
+
+      # Puts the game back after a PvP battle, then starts the map.
+      #
+      # The map starts again after a PvP battle, so it is built from the game as it was before.
       def start
         MGQ_PvpBattle::Battle.restore if MGQ_PvpBattle::Battle.running?
         mgq_pvp_battle_start
@@ -1677,10 +1814,13 @@ if MGQ_PvpBattle.hookable?
     MGQ_PvpBattle.log("map hooks FAILED: #{e.class}: #{e.message}")
   end
 
-  # The title screen interrupts a battle only through a reset, which loads the game data anew.
   begin
     class Scene_Title
       alias mgq_pvp_battle_start start
+
+      # Forgets a PvP battle a reset interrupted, then starts the title screen.
+      #
+      # The title screen interrupts a battle only through a reset, which loads the game data anew.
       def start
         MGQ_PvpBattle::Battle.forget
         mgq_pvp_battle_start
@@ -1690,10 +1830,13 @@ if MGQ_PvpBattle.hookable?
     MGQ_PvpBattle.log("title hook FAILED: #{e.class}: #{e.message}")
   end
 
-  # An action without a target is left out the way the game leaves out one without a skill.
   begin
     class Scene_Battle
       alias mgq_pvp_battle_use_item use_item
+
+      # Leaves out an action without a target the way the game leaves out one without a skill.
+      #
+      # @return [Object] The original's result, true for an action left out.
       def use_item
         if MGQ_PvpBattle::Battle.running? && MGQ_PvpBattle::Battle.targetless?(@subject)
           @log_window.display_target_empty(@subject)
@@ -1706,8 +1849,8 @@ if MGQ_PvpBattle.hookable?
     MGQ_PvpBattle.log("use_item hook FAILED: #{e.class}: #{e.message}")
   end
 
-  # A PvP battle gives no EXP, gold or drops. The game already skips them, but other mods, such
-  # as a victory screen, read the troop's totals anyway, which the friend's characters cannot give.
+  # Other mods, such as a victory screen, read the troop's totals even though the game skips them
+  # in a PvP battle, and the friend's characters cannot give them.
   begin
     class Game_Troop
       [:exp_total, :class_exp_total, :gold_total].select { |name| method_defined?(name) }.each do |name|
@@ -1718,6 +1861,10 @@ if MGQ_PvpBattle.hookable?
       end
 
       alias mgq_pvp_battle_make_drop_items make_drop_items
+
+      # Drops nothing in a PvP battle.
+      #
+      # @return [Array<RPG::BaseItem>] The drops, none in a PvP battle.
       def make_drop_items
         MGQ_PvpBattle::Battle.running? ? [] : mgq_pvp_battle_make_drop_items
       end
@@ -1726,10 +1873,11 @@ if MGQ_PvpBattle.hookable?
     MGQ_PvpBattle.log("troop hooks FAILED: #{e.class}: #{e.message}")
   end
 
-  # The friend's characters show the Library's picture. The original runs only for other battlers.
   begin
     class Sprite_Battler
       alias mgq_pvp_battle_update_bitmap update_bitmap
+
+      # Shows the Library's picture for the friend's characters, the original for other battlers.
       def update_bitmap
         stand_in = MGQ_PvpBattle::Pictures.stand_in_for(@battler)
         return mgq_pvp_battle_update_bitmap unless stand_in
@@ -1737,12 +1885,14 @@ if MGQ_PvpBattle.hookable?
         self.bitmap = stand_in if bitmap != stand_in
       end
 
-      # The game's enemy HP bars only draw for monsters, so the friend's characters get theirs here.
-      # A dead one turns into a grey, see-through silhouette once its defeat flash ends, and back
-      # once it is revived. The game marks it dead when the hit lands, before the battle log tells
-      # of the defeat, so the flash rather than death starts the silhouette. Every sprite effect
-      # makes the picture opaque again when it starts, so the silhouette's opacity is set every frame.
       alias mgq_pvp_battle_update update
+
+      # Draws the HP bar of a friend's character, which the game draws only for monsters, and turns
+      # a dead one into a grey, see-through silhouette once its defeat flash ends.
+      #
+      # The game marks a character dead as the hit lands, before the battle log tells of it, and
+      # every sprite effect makes the picture opaque again, so the flash starts the silhouette and
+      # its opacity is set every frame.
       def update
         mgq_pvp_battle_update
         return unless @battler.is_a?(MGQ_PvpBattle::Opponent)
@@ -1774,12 +1924,18 @@ if MGQ_PvpBattle.hookable?
     MGQ_PvpBattle.log("battler picture hooks FAILED: #{e.class}: #{e.message}")
   end
 
-  # Nothing of a PvP battle reaches the disk: while one runs, every save write gets the save
-  # and the shared data as they were before it. The system save is written at every scene change
-  # and when the game closes, the others only if something saves in the middle of a battle.
+  # Nothing of a PvP battle reaches the disk: while one runs, every save write gets the save and
+  # the shared data as they were before it.
   begin
     class << DataManager
       alias mgq_pvp_battle_save_system save_system
+
+      # Writes the system save as it was before a running PvP battle.
+      #
+      # The game writes it at every scene change and when it closes, so a battle's end would write
+      # the battle's changes before the map puts the game back.
+      #
+      # @return [Object] The original's result.
       def save_system
         MGQ_PvpBattle::Battle.as_before_for_system { mgq_pvp_battle_save_system }
       end
@@ -1797,11 +1953,15 @@ if MGQ_PvpBattle.hookable?
     MGQ_PvpBattle.log("save hooks FAILED: #{e.class}: #{e.message}")
   end
 
-  # The friend's characters check the conditions of their automatic skills from their own side. The
-  # original runs only for other battlers.
   begin
     class << BattleManager
       alias mgq_pvp_battle_auto_skill_per _auto_skill_per
+
+      # Picks the automatic skills that fire, from the friend's side for the friend's characters.
+      #
+      # @param skills [Array<Hash>] The automatic skills to check.
+      # @param battler [Game_Battler] Who has them.
+      # @return [Array<Hash>] Those that fire.
       def _auto_skill_per(skills, battler)
         return mgq_pvp_battle_auto_skill_per(skills, battler) unless battler.is_a?(MGQ_PvpBattle::Opponent)
 
@@ -1812,10 +1972,11 @@ if MGQ_PvpBattle.hookable?
     MGQ_PvpBattle.log("automatic skill hook FAILED: #{e.class}: #{e.message}")
   end
 
-  # A mirror match's report adds how both teams look once the first turn starts.
   begin
     class << BattleManager
       alias mgq_pvp_battle_turn_start turn_start
+
+      # Starts the turn, then adds to a mirror match's report how both teams look.
       def turn_start
         mgq_pvp_battle_turn_start
         MGQ_PvpBattle::MirrorReport.turn_started if MGQ_PvpBattle::Battle.running?

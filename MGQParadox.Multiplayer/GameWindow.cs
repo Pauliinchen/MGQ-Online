@@ -38,10 +38,11 @@ internal static unsafe partial class GameWindow
     private static nint previousProcedure;
 
     /// <summary>
-    /// Keeps the game running while another application is active. Calling it again does nothing.
+    /// Keeps the game running while another application is active, once.
     /// </summary>
     /// <remarks>
-    /// RGSS301.dll learns of it only from WM_ACTIVATEAPP, and its frame loop waits while the last one said inactive.
+    /// RGSS301.dll learns of it only from WM_ACTIVATEAPP, and its frame loop waits while the last
+    /// one said inactive.
     /// </remarks>
     /// <returns><see langword="true"/> when the game keeps running.</returns>
     public static bool KeepRunning()
