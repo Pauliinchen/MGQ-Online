@@ -2,7 +2,8 @@
 //  Exports.cs
 //
 //  Changelog:
-//      Paulinchen  2026-09-29: Added the mp_world_* functions for entering a world and passing messages there
+//      Paulinchen  2026-09-29: Added mp_new_id, which hands out a random id for the player
+//                            - Added the mp_world_* functions for entering a world and passing messages there
 //                            - Dropped the port from mp_host, since hosting waits at the relay
 //                            - Added mp_status, the state without the friend's team
 //                            - Took an empty message instead of leaving it to block the ones behind it
@@ -15,6 +16,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Text;
 using MGQParadox.Multiplayer.Network;
 
@@ -32,6 +34,11 @@ internal static unsafe class Exports
     /// Size at which the log starts over.
     /// </summary>
     private const long MaxLogBytes = 200_000;
+
+    /// <summary>
+    /// Size of an id from <see cref="NewId"/> before it is written as hexadecimal.
+    /// </summary>
+    private const int IdBytes = 16;
 
     /// <summary>
     /// Finds the mod folder and starts the log. Calling it again does nothing harmful.
@@ -307,6 +314,26 @@ internal static unsafe class Exports
         catch (Exception ex)
         {
             Log.Write($"mp_receive failed: {ex}");
+            return 0;
+        }
+    }
+
+    /// <summary>
+    /// Makes an id nobody else has, such as the one that tells a player's game from the others in a world.
+    /// </summary>
+    /// <param name="buffer">Receives 32 lowercase hexadecimal characters, UTF-8 and null-terminated.</param>
+    /// <param name="size">The size of the buffer in bytes.</param>
+    /// <returns>The id's length, or its length negated when the buffer is too small, 0 when it failed.</returns>
+    [UnmanagedCallersOnly(EntryPoint = "mp_new_id", CallConvs = [typeof(CallConvStdcall)])]
+    public static int NewId(byte* buffer, int size)
+    {
+        try
+        {
+            return Copy(Convert.ToHexString(RandomNumberGenerator.GetBytes(IdBytes)).ToLowerInvariant(), buffer, size);
+        }
+        catch (Exception ex)
+        {
+            Log.Write($"mp_new_id failed: {ex}");
             return 0;
         }
     }

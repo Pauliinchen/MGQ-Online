@@ -2,7 +2,8 @@
 #  Multiplayer.rb
 #
 #  Changelog:
-#      Paulinchen  2026-09-29: Found the mod folder relative to the game's folder, which works in a folder named with characters outside ASCII
+#      Paulinchen  2026-09-29: Added Player, the player's id and name, which PvP battles pass on when Discord knows no name
+#                            - Found the mod folder relative to the game's folder, which works in a folder named with characters outside ASCII
 #                            - Hosted without a port, since games meet at the relay
 #                            - Added Link.status, which leaves the friend's team out, for the frequent checks
 #      Paulinchen  2026-09-28: Created
@@ -102,6 +103,88 @@ module MGQ_Multiplayer
     end
   end
 
+  # Files of key=value lines, such as Multiplayer/Player.ini.
+  module Ini
+    # Reads a file.
+    #
+    # @param path [String] The file.
+    # @return [Hash] The values by key, empty when the file is missing or unreadable.
+    def self.read(path)
+      values = {}
+      return values unless File.exist?(path)
+
+      File.open(path, "rb") { |file| file.read }.force_encoding("UTF-8").split(/\r?\n/).each do |line|
+        key, value = line.split("=", 2)
+        values[key.strip] = value.strip if value
+      end
+      values
+    rescue => e
+      Log.write("could not read #{path}: #{e.class}: #{e.message}")
+      {}
+    end
+
+    # Writes a file, replacing it.
+    #
+    # @param path [String] The file.
+    # @param values [Hash] The values by key, each kept on its line.
+    # @return [Boolean] Whether the file was written.
+    def self.write(path, values)
+      lines = values.map { |key, value| "#{key}=#{value.to_s.gsub(/[\r\n]/, ' ')}\n" }
+      File.open(path, "wb") { |file| file.write(lines.join) }
+      true
+    rescue => e
+      Log.write("could not write #{path}: #{e.class}: #{e.message}")
+      false
+    end
+  end
+
+  # Who plays this game: an id that tells it from every other player's, kept in
+  # Multiplayer/Player.ini, and the name the others see.
+  module Player
+    # File that keeps the id and the chosen name, inside the mod folder.
+    FILE = "Player.ini"
+
+    # Reads the player's id, making one the first time.
+    #
+    # @return [String] The id, "" when none could be made.
+    def self.id
+      values = load
+      if values["id"].to_s.empty?
+        values["id"] = Link.new_id
+        Ini.write(MGQ_Multiplayer.path(FILE), values) unless values["id"].empty?
+      end
+      values["id"].to_s
+    end
+
+    # Reads the name the others see: the one the player chose for Multiplayer, or else their name on Discord.
+    #
+    # @return [String, nil] The name, nil while the player chose none and Discord told none.
+    def self.name
+      chosen = load["name"].to_s
+      return MGQ_Multiplayer.clean(chosen) unless chosen.empty?
+
+      discord = Discord.player_name
+      discord && !discord.empty? ? MGQ_Multiplayer.clean(discord) : nil
+    end
+
+    # Keeps the name the player chose, which replaces their name on Discord.
+    #
+    # @param name [String] The name.
+    def self.name=(name)
+      values = load
+      values["name"] = MGQ_Multiplayer.clean(name)
+      Ini.write(MGQ_Multiplayer.path(FILE), values)
+      @values = values
+    end
+
+    # Reads Player.ini once.
+    #
+    # @return [Hash] The values by key.
+    def self.load
+      @values ||= Ini.read(MGQ_Multiplayer.path(FILE))
+    end
+  end
+
   # Multiplayer/Multiplayer.dll's functions: hosting, joining, the first exchange of what each game
   # hands over, and the messages that follow, all running on threads of the DLL's own.
   module Link
@@ -166,6 +249,13 @@ module MGQ_Multiplayer
     # @param name [String] The name.
     def self.set_player_name(name)
       function('mp_set_player_name', 'p').call(name + "\0")
+    end
+
+    # Makes an id nobody else has.
+    #
+    # @return [String] 32 lowercase hexadecimal characters, "" when it failed.
+    def self.new_id
+      read('mp_new_id', 64)
     end
 
     # Stops hosting or joining, closes the link, forgets what arrived and turns down a waiting invite.
@@ -388,12 +478,22 @@ module MGQ_Multiplayer
       Log.write("discord hand-over failed: #{e.class}: #{e.message}")
     end
 
-    # Tells the DLL the player's name on Discord, which the friend sees.
+    # Tells the DLL the player's name, which the friend sees: the one on Discord, or the one the
+    # player chose for Multiplayer.
     def self.share_player_name
-      name = available? && MGQ_Discord::Bridge.player_name
+      name = Player.name
       Link.set_player_name(name) if name
     rescue => e
       Log.write("player name failed: #{e.class}: #{e.message}")
+    end
+
+    # Reads the player's name on Discord.
+    #
+    # @return [String, nil] The name, nil without the Discord mod or until Discord told it.
+    def self.player_name
+      available? ? MGQ_Discord::Bridge.player_name : nil
+    rescue
+      nil
     end
 
     # Hands the connection to the Discord mod, unless it did not change since the last time.
