@@ -2,7 +2,8 @@
 //  Session.cs
 //
 //  Changelog:
-//      Paulinchen  2026-09-29: Began every connection with the guest's salt, so each connection encrypts with a key of its own
+//      Paulinchen  2026-09-29: Tried the relay room again after 10 s the first time, since the relay may still hold the host's last connection
+//                            - Began every connection with the guest's salt, so each connection encrypts with a key of its own
 //                            - Met the friend at the relay only, dropping the listener, the addresses and the direct way
 //                            - Offered the join code once the host waits at the relay, and failed hosting when the relay is out of reach
 //                            - Told a join code of another mod version from no join code
@@ -234,7 +235,13 @@ internal sealed class Session
     public TimeSpan RelayPairTimeout { get; init; } = TimeSpan.FromSeconds(10);
 
     /// <summary>
-    /// How long a host waits before it tries a relay again that it lost.
+    /// How long a host waits before it first tries to enter its relay room again, once the relay
+    /// turned it away or was lost.
+    /// </summary>
+    public TimeSpan RelayFirstRetry { get; init; } = TimeSpan.FromSeconds(10);
+
+    /// <summary>
+    /// How long a host waits between its later tries to enter its relay room again.
     /// </summary>
     public TimeSpan RelayRetry { get; init; } = TimeSpan.FromSeconds(30);
 
@@ -507,14 +514,18 @@ internal sealed class Session
                     return;
                 }
 
-                // A friend may hold the code already, so a relay lost on the way is tried again.
+                // A friend may hold the code already, so the room is entered again: soon at first, since
+                // the relay may still hold this host's last connection, then less often.
+                var retry = reportedUnreachable ? RelayRetry : RelayFirstRetry;
+
                 if (IsHosting(generation) && !reportedUnreachable)
                 {
-                    Log.Write($"relay {Relays.Current} lost, trying again every {RelayRetry.TotalSeconds:0} s: {ex.GetBaseException().Message}");
+                    Log.Write($"relay {Relays.Current} did not let this game back into its room, trying again in {RelayFirstRetry.TotalSeconds:0} s, "
+                        + $"then every {RelayRetry.TotalSeconds:0} s: {ex.GetBaseException().Message}");
                     reportedUnreachable = true;
                 }
 
-                PauseWhileHosting(generation, RelayRetry);
+                PauseWhileHosting(generation, retry);
             }
             finally
             {
