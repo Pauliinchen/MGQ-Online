@@ -2,7 +2,8 @@
 #  mp_actions.rb
 #
 #  Changelog:
-#      Paulinchen  2026-09-29: Left room right above the player's head for their ping
+#      Paulinchen  2026-09-29: Showed the chat box's text as it is typed
+#                            - Left room right above the player's head for their ping
 #                            - Added chat, opened with T or the wheel: a bubble above the sender and a log at the bottom left
 #                            - Opened an action wheel with B, which invites, accepts, leaves the party, and holds chat and duels
 #                            - Created
@@ -277,7 +278,8 @@ module MGQ_MpActions
       else
         return if char =~ /[[:cntrl:]]/
 
-        @typed.length < MAX_LENGTH ? @typed << char : Sound.play_buzzer
+        # A new string, not an appended one, so the chat box sees the text changed.
+        @typed.length < MAX_LENGTH ? @typed += char : Sound.play_buzzer
       end
     end
 
