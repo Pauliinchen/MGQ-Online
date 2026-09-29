@@ -20,7 +20,7 @@ mods, you have it.
    https://mgq.miraheze.org/wiki/Paradox_mods#Patch.rb_(enable_Type_1_mods)
 
 Optional, but recommended:
-- Discord Rich Presence 1.5.0 or later
+- Discord Rich Presence 1.5.1 or later
   (github.com/Pauliinchen/MGQ-Paradox-Discord-Rich-Presence): invite your
   friend through Discord instead of sending a join code, and show on your
   profile who you're playing with.

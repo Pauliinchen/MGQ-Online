@@ -9,7 +9,7 @@ Play Monster Girl Quest! Paradox RPG together with a friend over the internet, w
 
 Optional:
 
-- [Discord Rich Presence](https://github.com/Pauliinchen/MGQ-Paradox-Discord-Rich-Presence) 1.5.0 or later: invite your friend through Discord instead of sending a join code, and show on your profile who you're playing with.
+- [Discord Rich Presence](https://github.com/Pauliinchen/MGQ-Paradox-Discord-Rich-Presence) 1.5.1 or later: invite your friend through Discord instead of sending a join code, and show on your profile who you're playing with.
 - [Battle Dialogue](https://github.com/Pauliinchen/MGQ-Paradox-Mod-Collection/tree/main/Battle_Dialogue): shows what characters say in boxes at the screen's sides, so neither of you waits for the other to press a key.
 
 ## Install
