@@ -2,7 +2,8 @@
 //  NetworkAddresses.cs
 //
 //  Changelog:
-//      Paulinchen  2026-09-29: Offered global IPv6 addresses ahead of unique local, VPN and Teredo ones
+//      Paulinchen  2026-09-29: Offered one IPv6 address per adapter, so the IPv4 ones fit into the join code
+//                            - Offered global IPv6 addresses ahead of unique local, VPN and Teredo ones
 //      Paulinchen  2026-09-28: Created
 //
 //----------------------------------------------------------------
@@ -45,53 +46,66 @@ internal static class NetworkAddresses
     /// <summary>
     /// Puts the addresses in the order the join code offers them: global IPv6 ones (reachable without
     /// port forwarding more often than not), the public IPv4 address, the home network and VPN IPv4
-    /// ones, then the other IPv6 ones, such as unique local, VPN and Teredo addresses.
+    /// ones, then the other IPv6 ones, such as unique local, VPN and Teredo addresses. Each adapter
+    /// offers one IPv6 address of each kind, a lasting one ahead of a temporary one.
     /// </summary>
     /// <remarks>
-    /// The join code has room for only a few addresses, so one that works only inside a private network
-    /// must not push a global one out.
+    /// The join code has room for only a few addresses, and an adapter often holds three global IPv6
+    /// ones that all lead to the same PC, which would push the IPv4 addresses out.
     /// </remarks>
-    /// <param name="local">This PC's addresses, IPv6 ones given out for good ahead of temporary ones.</param>
+    /// <param name="local">This PC's addresses, in the order the adapters list them.</param>
     /// <param name="publicIPv4">The public IPv4 address, or <see langword="null"/> when unknown.</param>
     /// <returns>The addresses, written as numbers, each once.</returns>
-    internal static IReadOnlyList<string> Order(IEnumerable<IPAddress> local, string? publicIPv4)
+    internal static IReadOnlyList<string> Order(IEnumerable<LocalAddress> local, string? publicIPv4)
     {
         var all = local.ToList();
-        var ipv6 = all.Where(address => address.AddressFamily == AddressFamily.InterNetworkV6).ToList();
-        var addresses = ipv6.Where(IsGlobal).Select(Written).ToList();
+        var ipv6 = all.Where(entry => entry.Address.AddressFamily == AddressFamily.InterNetworkV6).ToList();
+        var addresses = OnePerAdapter(ipv6.Where(entry => IsGlobal(entry.Address))).ToList();
 
         if (publicIPv4 != null)
         {
             addresses.Add(publicIPv4);
         }
 
-        addresses.AddRange(all.Where(address => address.AddressFamily == AddressFamily.InterNetwork).Select(Written));
-        addresses.AddRange(ipv6.Where(address => !IsGlobal(address)).Select(Written));
+        addresses.AddRange(all.Where(entry => entry.Address.AddressFamily == AddressFamily.InterNetwork).Select(entry => Written(entry.Address)));
+        addresses.AddRange(OnePerAdapter(ipv6.Where(entry => !IsGlobal(entry.Address))));
 
         return addresses.Distinct().ToList();
     }
 
     /// <summary>
+    /// Picks one address per adapter, a lasting one ahead of a temporary one.
+    /// </summary>
+    /// <param name="addresses">The addresses of one kind.</param>
+    /// <returns>The picked addresses, written as numbers, in the order their adapters came.</returns>
+    private static IEnumerable<string> OnePerAdapter(IEnumerable<LocalAddress> addresses) =>
+        addresses
+            .GroupBy(entry => entry.Adapter)
+            .Select(adapter => adapter.OrderBy(entry => entry.Temporary).First())
+            .Select(entry => Written(entry.Address));
+
+    /// <summary>
     /// Collects the addresses of the network adapters that are up, leaving out those only this PC
     /// or its cable neighbour could use.
     /// </summary>
-    /// <returns>The addresses, IPv6 ones given out for good ahead of temporary ones.</returns>
-    private static IEnumerable<IPAddress> LocalAddresses()
+    /// <returns>The addresses, in the order the adapters list them.</returns>
+    private static IEnumerable<LocalAddress> LocalAddresses()
     {
-        var unicast = new List<UnicastIPAddressInformation>();
+        var addresses = new List<LocalAddress>();
 
         foreach (var adapter in NetworkInterface.GetAllNetworkInterfaces())
         {
-            if (adapter.OperationalStatus == OperationalStatus.Up && adapter.NetworkInterfaceType != NetworkInterfaceType.Loopback)
+            if (adapter.OperationalStatus != OperationalStatus.Up || adapter.NetworkInterfaceType == NetworkInterfaceType.Loopback)
             {
-                unicast.AddRange(adapter.GetIPProperties().UnicastAddresses);
+                continue;
             }
+
+            addresses.AddRange(adapter.GetIPProperties().UnicastAddresses
+                .Where(entry => IsReachable(entry.Address))
+                .Select(entry => new LocalAddress(entry.Address, adapter.Id, OperatingSystem.IsWindows() && entry.SuffixOrigin == SuffixOrigin.Random)));
         }
 
-        return unicast
-            .Where(entry => IsReachable(entry.Address))
-            .OrderBy(entry => OperatingSystem.IsWindows() && entry.SuffixOrigin == SuffixOrigin.Random)
-            .Select(entry => entry.Address);
+        return addresses;
     }
 
     /// <summary>
