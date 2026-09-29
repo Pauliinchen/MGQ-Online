@@ -2,7 +2,8 @@
 //  WorldSession.cs
 //
 //  Changelog:
-//      Paulinchen  2026-09-29: Created
+//      Paulinchen  2026-09-29: Entered as the player the game script set, and stopped for good once the world was deleted or the player removed
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -11,6 +12,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Net;
 using System.Text;
 using System.Threading;
 
@@ -88,6 +90,36 @@ internal sealed class WorldSession
     private const string NoWorldCode = "There is no world code to enter the world with.";
 
     /// <summary>
+    /// Why a world cannot be entered before the game script said who plays.
+    /// </summary>
+    private const string NoPlayer = "The game has not said who plays yet.";
+
+    /// <summary>
+    /// Why a world its creator deleted cannot be entered.
+    /// </summary>
+    private const string Deleted = "This world no longer exists: its creator deleted it.";
+
+    /// <summary>
+    /// Why a world the creator removed the player from cannot be entered.
+    /// </summary>
+    private const string Removed = "The world's creator removed you from it.";
+
+    /// <summary>
+    /// Why a world cannot be entered whose token no longer fits, as when it was made anew under the same id.
+    /// </summary>
+    private const string TokenMismatch = "The password this game remembers no longer fits this world.";
+
+    /// <summary>
+    /// The close code of a connection whose player the creator removed.
+    /// </summary>
+    private const int RemovedClose = 4009;
+
+    /// <summary>
+    /// The close code of the connections of a world its creator deleted.
+    /// </summary>
+    private const int DeletedClose = 4010;
+
+    /// <summary>
     /// How many entries the inbox holds at most, so a game that stops reading cannot run out of memory.
     /// </summary>
     private const int MaxInbox = 10_000;
@@ -153,6 +185,11 @@ internal sealed class WorldSession
     public Func<string, Uri?> RelayAddress { get; init; } = Relays.AddressOf;
 
     /// <summary>
+    /// Tells who plays: the game script's <see cref="Player"/>, or another for tests that run several players at once.
+    /// </summary>
+    public Func<(string Key, string Name)?> Playing { get; init; } = () => Player.Key is { } key && Player.Name is { } name ? (key, name) : null;
+
+    /// <summary>
     /// How long the connection stays quiet before it sends a keep-alive.
     /// </summary>
     public TimeSpan KeepAliveInterval { get; init; } = TimeSpan.FromSeconds(25);
@@ -193,9 +230,15 @@ internal sealed class WorldSession
                 _error = NoWorldCode;
                 opened = false;
             }
+            else if (Playing() is not { } player)
+            {
+                _state = WorldState.Failed;
+                _error = NoPlayer;
+                opened = false;
+            }
             else
             {
-                StartThread("MultiplayerWorld", () => Run(generation, world));
+                StartThread("MultiplayerWorld", () => Run(generation, world, player.Key, player.Name));
                 opened = true;
             }
         }
@@ -279,7 +322,9 @@ internal sealed class WorldSession
     /// </remarks>
     /// <param name="generation">The open this thread belongs to.</param>
     /// <param name="world">The world.</param>
-    private void Run(int generation, WorldCode world)
+    /// <param name="playerKey">The player's key.</param>
+    /// <param name="playerName">The player's name.</param>
+    private void Run(int generation, WorldCode world, string playerKey, string playerName)
     {
         if (RelayAddress(world.Relay) is not { } relay)
         {
@@ -288,6 +333,7 @@ internal sealed class WorldSession
         }
 
         var room = Relays.WorldRoomOf(world.Token);
+        var authKey = WorldKeys.AuthKeyOf(world.Token);
         var retries = 0;
 
         while (IsCurrent(generation))
@@ -297,11 +343,17 @@ internal sealed class WorldSession
 
             try
             {
-                channel = RelayWorldChannel.Connect(relay, room, world.Seats, ConnectTimeout, out var full);
+                channel = RelayWorldChannel.Connect(relay, room, playerKey, playerName, authKey, ConnectTimeout, out var refusal);
 
                 if (channel == null)
                 {
-                    Wait(generation, WorldFull);
+                    if (FinalReasonFor(refusal) is { } reason)
+                    {
+                        Fail(generation, reason);
+                        return;
+                    }
+
+                    Wait(generation, refusal == HttpStatusCode.Conflict ? WorldFull : RelayUnreachable);
                 }
                 else
                 {
@@ -314,6 +366,12 @@ internal sealed class WorldSession
                     }
 
                     Serve(generation, connection);
+
+                    if (channel.CloseCode is RemovedClose or DeletedClose)
+                    {
+                        Fail(generation, channel.CloseCode == RemovedClose ? Removed : Deleted);
+                        return;
+                    }
                 }
             }
             catch (Exception ex)
@@ -334,6 +392,20 @@ internal sealed class WorldSession
             Pause(generation, RetryDelays[Math.Min(retries++, RetryDelays.Length - 1)]);
         }
     }
+
+    /// <summary>
+    /// Tells why the relay refused the game for good, as opposed to for now.
+    /// </summary>
+    /// <param name="refusal">The HTTP status the relay refused the game with.</param>
+    /// <returns>The reason, or <see langword="null"/> when trying again may help.</returns>
+    private static string? FinalReasonFor(HttpStatusCode? refusal) => refusal switch
+    {
+        HttpStatusCode.NotFound => Deleted,
+        HttpStatusCode.Forbidden => Removed,
+        HttpStatusCode.Unauthorized => TokenMismatch,
+        HttpStatusCode.BadRequest => "The relay turned the request down. Update the mod.",
+        _ => null,
+    };
 
     /// <summary>
     /// Reads what the relay sends until the connection ends.

@@ -2,7 +2,8 @@
 //  Exports.cs
 //
 //  Changelog:
-//      Paulinchen  2026-09-29: Added mp_new_id, which hands out a random id for the player
+//      Paulinchen  2026-09-29: Added mp_set_player, mp_player_id, the mp_dir_* functions of the world directory and the keyboard's mp_typing and mp_take_typed, dropping the world code functions the directory replaces
+//                            - Added mp_new_id, which hands out a random id for the player
 //                            - Added the mp_world_* functions for entering a world and passing messages there
 //                            - Dropped the port from mp_host, since hosting waits at the relay
 //                            - Added mp_status, the state without the friend's team
@@ -339,24 +340,41 @@ internal static unsafe class Exports
     }
 
     /// <summary>
-    /// Makes the code of a new world, with a new token and the relay this version meets at.
+    /// Takes who plays in worlds: the key from Multiplayer/Player.ini and the name the others see.
     /// </summary>
-    /// <param name="seats">How many games the world seats at once, 2 to 32.</param>
-    /// <param name="buffer">Receives the world code, UTF-8 and null-terminated.</param>
-    /// <param name="size">The size of the buffer in bytes.</param>
-    /// <returns>The code's length, or its length negated when the buffer is too small, 0 for seats out of range or when it failed.</returns>
-    [UnmanagedCallersOnly(EntryPoint = "mp_world_new_code", CallConvs = [typeof(CallConvStdcall)])]
-    public static int WorldNewCode(int seats, byte* buffer, int size)
+    /// <param name="key">The player's key, 32 lowercase hexadecimal characters, UTF-8 and null-terminated.</param>
+    /// <param name="name">The player's name, UTF-8 and null-terminated.</param>
+    /// <returns>1 when taken, 0 when the key or name is not as it must be or it failed.</returns>
+    [UnmanagedCallersOnly(EntryPoint = "mp_set_player", CallConvs = [typeof(CallConvStdcall)])]
+    public static int SetPlayer(byte* key, byte* name)
     {
         try
         {
-            return seats is >= WorldCode.MinSeats and <= WorldCode.MaxSeats
-                ? Copy(new WorldCode(JoinCode.NewToken(), Relays.Current, seats).ToText(), buffer, size)
-                : 0;
+            return Player.Set(Text(key), Text(name)) ? 1 : 0;
         }
         catch (Exception ex)
         {
-            Log.Write($"mp_world_new_code failed: {ex}");
+            Log.Write($"mp_set_player failed: {ex}");
+            return 0;
+        }
+    }
+
+    /// <summary>
+    /// Hands out the id everyone sees for the player, as the world directory lists it.
+    /// </summary>
+    /// <param name="buffer">Receives 32 lowercase hexadecimal characters, UTF-8 and null-terminated.</param>
+    /// <param name="size">The size of the buffer in bytes.</param>
+    /// <returns>The id's length, or its length negated when the buffer is too small, 0 before the player was set or when it failed.</returns>
+    [UnmanagedCallersOnly(EntryPoint = "mp_player_id", CallConvs = [typeof(CallConvStdcall)])]
+    public static int PlayerId(byte* buffer, int size)
+    {
+        try
+        {
+            return Player.Key is { } key ? Copy(WorldKeys.PlayerIdOf(key), buffer, size) : 0;
+        }
+        catch (Exception ex)
+        {
+            Log.Write($"mp_player_id failed: {ex}");
             return 0;
         }
     }
@@ -383,45 +401,202 @@ internal static unsafe class Exports
     }
 
     /// <summary>
-    /// Reads the world code on the clipboard.
+    /// Fetches the world list again. Returns at once, the directory is asked on a thread of its own.
     /// </summary>
-    /// <param name="buffer">Receives <c>code=</c> the world code, or <c>error=</c> why there is none, UTF-8 and null-terminated.</param>
-    /// <param name="size">The size of the buffer in bytes.</param>
-    /// <returns>The text's length, or its length negated when the buffer is too small, 0 when it failed.</returns>
-    [UnmanagedCallersOnly(EntryPoint = "mp_world_read_clipboard", CallConvs = [typeof(CallConvStdcall)])]
-    public static int WorldReadClipboard(byte* buffer, int size)
+    /// <returns>1 when asked, 0 when it failed.</returns>
+    [UnmanagedCallersOnly(EntryPoint = "mp_dir_refresh", CallConvs = [typeof(CallConvStdcall)])]
+    public static int DirectoryRefresh()
     {
         try
         {
-            var text = Clipboard.GetText();
-            var header = WorldCode.Parse(text) is { } world
-                ? new KeyValuePair<string, string?>("code", world.ToText())
-                : new KeyValuePair<string, string?>("error", NoWorldCodeReason(text));
-
-            return Copy(new Message([header]).Encode(), buffer, size);
+            WorldDirectory.Current.Refresh();
+            return 1;
         }
         catch (Exception ex)
         {
-            Log.Write($"mp_world_read_clipboard failed: {ex}");
+            Log.Write($"mp_dir_refresh failed: {ex}");
             return 0;
         }
     }
 
     /// <summary>
-    /// Puts a world code on the clipboard, to hand it to a friend.
+    /// Hands out the world list as it stands, see <see cref="WorldDirectory.DescribeList"/>.
     /// </summary>
-    /// <param name="code">The world code, UTF-8 and null-terminated.</param>
-    /// <returns>1 when the clipboard holds it, 0 otherwise.</returns>
-    [UnmanagedCallersOnly(EntryPoint = "mp_world_copy_code", CallConvs = [typeof(CallConvStdcall)])]
-    public static int WorldCopyCode(byte* code)
+    /// <param name="buffer">Receives the list, UTF-8 and null-terminated.</param>
+    /// <param name="size">The size of the buffer in bytes.</param>
+    /// <returns>The list's length, or its length negated when the buffer is too small, 0 when it failed.</returns>
+    [UnmanagedCallersOnly(EntryPoint = "mp_dir_list", CallConvs = [typeof(CallConvStdcall)])]
+    public static int DirectoryList(byte* buffer, int size)
     {
         try
         {
-            return WorldCode.Parse(Text(code)) is { } world && Clipboard.SetText(world.ToText()) ? 1 : 0;
+            return Copy(WorldDirectory.Current.DescribeList(), buffer, size);
         }
         catch (Exception ex)
         {
-            Log.Write($"mp_world_copy_code failed: {ex}");
+            Log.Write($"mp_dir_list failed: {ex}");
+            return 0;
+        }
+    }
+
+    /// <summary>
+    /// Makes a world, locked with its password, in the directory. Returns at once; the world code
+    /// follows in <c>mp_dir_action</c>.
+    /// </summary>
+    /// <param name="name">The world's name, UTF-8 and null-terminated.</param>
+    /// <param name="password">The password others enter it with, UTF-8 and null-terminated.</param>
+    /// <param name="seats">How many games it seats at once, 2 to 32.</param>
+    /// <returns>1 when started, 0 while another action runs, for seats out of range or when it failed.</returns>
+    [UnmanagedCallersOnly(EntryPoint = "mp_dir_create", CallConvs = [typeof(CallConvStdcall)])]
+    public static int DirectoryCreate(byte* name, byte* password, int seats)
+    {
+        try
+        {
+            return seats is >= WorldCode.MinSeats and <= WorldCode.MaxSeats && WorldDirectory.Current.Create(Text(name), Text(password), seats) ? 1 : 0;
+        }
+        catch (Exception ex)
+        {
+            Log.Write($"mp_dir_create failed: {ex}");
+            return 0;
+        }
+    }
+
+    /// <summary>
+    /// Opens a world's lock with its password. Returns at once; the world code follows in <c>mp_dir_action</c>.
+    /// </summary>
+    /// <param name="id">The world, UTF-8 and null-terminated.</param>
+    /// <param name="seats">How many games it seats, as the list says.</param>
+    /// <param name="password">The password, UTF-8 and null-terminated.</param>
+    /// <returns>1 when started, 0 while another action runs or when it failed.</returns>
+    [UnmanagedCallersOnly(EntryPoint = "mp_dir_unlock", CallConvs = [typeof(CallConvStdcall)])]
+    public static int DirectoryUnlock(byte* id, int seats, byte* password)
+    {
+        try
+        {
+            return WorldDirectory.Current.Unlock(Text(id), seats, Text(password)) ? 1 : 0;
+        }
+        catch (Exception ex)
+        {
+            Log.Write($"mp_dir_unlock failed: {ex}");
+            return 0;
+        }
+    }
+
+    /// <summary>
+    /// Deletes a world for everyone, which only its creator may. Returns at once.
+    /// </summary>
+    /// <param name="id">The world, UTF-8 and null-terminated.</param>
+    /// <returns>1 when started, 0 while another action runs or when it failed.</returns>
+    [UnmanagedCallersOnly(EntryPoint = "mp_dir_delete", CallConvs = [typeof(CallConvStdcall)])]
+    public static int DirectoryDelete(byte* id)
+    {
+        try
+        {
+            return WorldDirectory.Current.Delete(Text(id)) ? 1 : 0;
+        }
+        catch (Exception ex)
+        {
+            Log.Write($"mp_dir_delete failed: {ex}");
+            return 0;
+        }
+    }
+
+    /// <summary>
+    /// Removes a player from a world and keeps them out, which only its creator may. Returns at once.
+    /// </summary>
+    /// <param name="id">The world, UTF-8 and null-terminated.</param>
+    /// <param name="target">The player's id, UTF-8 and null-terminated.</param>
+    /// <returns>1 when started, 0 while another action runs or when it failed.</returns>
+    [UnmanagedCallersOnly(EntryPoint = "mp_dir_ban", CallConvs = [typeof(CallConvStdcall)])]
+    public static int DirectoryBan(byte* id, byte* target)
+    {
+        try
+        {
+            return WorldDirectory.Current.Ban(Text(id), Text(target)) ? 1 : 0;
+        }
+        catch (Exception ex)
+        {
+            Log.Write($"mp_dir_ban failed: {ex}");
+            return 0;
+        }
+    }
+
+    /// <summary>
+    /// Hands out how the running or last directory action stands, see <see cref="WorldDirectory.DescribeAction"/>.
+    /// </summary>
+    /// <param name="buffer">Receives the state, UTF-8 and null-terminated.</param>
+    /// <param name="size">The size of the buffer in bytes.</param>
+    /// <returns>The state's length, or its length negated when the buffer is too small, 0 when it failed.</returns>
+    [UnmanagedCallersOnly(EntryPoint = "mp_dir_action", CallConvs = [typeof(CallConvStdcall)])]
+    public static int DirectoryAction(byte* buffer, int size)
+    {
+        try
+        {
+            return Copy(WorldDirectory.Current.DescribeAction(), buffer, size);
+        }
+        catch (Exception ex)
+        {
+            Log.Write($"mp_dir_action failed: {ex}");
+            return 0;
+        }
+    }
+
+    /// <summary>
+    /// Forgets the last directory action once its result was taken.
+    /// </summary>
+    /// <returns>1 when done, 0 when it failed.</returns>
+    [UnmanagedCallersOnly(EntryPoint = "mp_dir_clear", CallConvs = [typeof(CallConvStdcall)])]
+    public static int DirectoryClear()
+    {
+        try
+        {
+            WorldDirectory.Current.ClearAction();
+            return 1;
+        }
+        catch (Exception ex)
+        {
+            Log.Write($"mp_dir_clear failed: {ex}");
+            return 0;
+        }
+    }
+
+    /// <summary>
+    /// Starts or stops taking what the player types into the game's window.
+    /// </summary>
+    /// <param name="on">1 to take it, 0 to stop.</param>
+    /// <returns>1 when done, 0 when it failed.</returns>
+    [UnmanagedCallersOnly(EntryPoint = "mp_typing", CallConvs = [typeof(CallConvStdcall)])]
+    public static int Typing(int on)
+    {
+        try
+        {
+            Keyboard.SetActive(on != 0);
+            return 1;
+        }
+        catch (Exception ex)
+        {
+            Log.Write($"mp_typing failed: {ex}");
+            return 0;
+        }
+    }
+
+    /// <summary>
+    /// Hands out what was typed since the last call, see <see cref="Keyboard.Take"/>.
+    /// </summary>
+    /// <param name="buffer">Receives <c>keys=</c> the number of keys that went down, then the typed characters, UTF-8 and null-terminated.</param>
+    /// <param name="size">The size of the buffer in bytes.</param>
+    /// <returns>The text's length, or its length negated when the buffer is too small, 0 when it failed.</returns>
+    [UnmanagedCallersOnly(EntryPoint = "mp_take_typed", CallConvs = [typeof(CallConvStdcall)])]
+    public static int TakeTyped(byte* buffer, int size)
+    {
+        try
+        {
+            var (text, keys) = Keyboard.Take();
+            return Copy(new Message([new("keys", keys.ToString(System.Globalization.CultureInfo.InvariantCulture))], text).Encode(), buffer, size);
+        }
+        catch (Exception ex)
+        {
+            Log.Write($"mp_take_typed failed: {ex}");
             return 0;
         }
     }
@@ -535,16 +710,6 @@ internal static unsafe class Exports
             return 0;
         }
     }
-
-    /// <summary>
-    /// Tells why a text is no world code, for the player.
-    /// </summary>
-    /// <param name="text">The text.</param>
-    /// <returns>The reason.</returns>
-    private static string NoWorldCodeReason(string? text) =>
-        JoinCode.Parse(text) != null ? "This is a PvP join code. Press F11 on the map to join a PvP battle with it."
-        : JoinCode.IsOfAnyVersion(text) ? "This world code comes from another version of the mod. Both of you need the same version."
-        : "There is no world code on the clipboard. Ask a player of the world to copy theirs.";
 
     /// <summary>
     /// Writes a text into a buffer of the game script.

@@ -2,7 +2,8 @@
 //  WorldSessionTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-09-29: Created
+//      Paulinchen  2026-09-29: Made every world in the directory first, and covered deleted worlds, removed players and a missing player
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -30,7 +31,7 @@ public sealed class WorldSessionTests
     public void Games_TakeSeatsAndHearOfEachOther()
     {
         using var relay = new TestRelay();
-        var code = NewCode(4);
+        var code = MakeWorld(relay, 4);
         var first = NewSession(relay.Address);
         var second = NewSession(relay.Address);
 
@@ -59,7 +60,7 @@ public sealed class WorldSessionTests
     public void Messages_GoToEveryoneOrToOneSeat()
     {
         using var relay = new TestRelay();
-        var code = NewCode(4);
+        var code = MakeWorld(relay, 4);
         var games = new[] { NewSession(relay.Address), NewSession(relay.Address), NewSession(relay.Address) };
 
         foreach (var game in games)
@@ -98,7 +99,7 @@ public sealed class WorldSessionTests
     public void Leaving_FreesTheSeatAndClosingForgetsEverything()
     {
         using var relay = new TestRelay();
-        var code = NewCode(4);
+        var code = MakeWorld(relay, 4);
         var first = NewSession(relay.Address);
         var second = NewSession(relay.Address);
 
@@ -129,7 +130,7 @@ public sealed class WorldSessionTests
     public void FullWorld_WaitsUntilASeatIsFree()
     {
         using var relay = new TestRelay();
-        var code = NewCode(2);
+        var code = MakeWorld(relay, 2);
         var first = NewSession(relay.Address);
         var second = NewSession(relay.Address);
         var third = NewSession(relay.Address);
@@ -159,7 +160,7 @@ public sealed class WorldSessionTests
     public void CutConnection_ComesBackByItself()
     {
         using var relay = new TestRelay();
-        var code = NewCode(4);
+        var code = MakeWorld(relay, 4);
         var first = NewSession(relay.Address);
         var second = NewSession(relay.Address);
 
@@ -202,20 +203,113 @@ public sealed class WorldSessionTests
     }
 
     /// <summary>
+    /// Asserts that a world its creator deletes, or that was never in the directory, ends the session for good, with a reason.
+    /// </summary>
+    [Fact]
+    public void DeletedWorld_EndsForGood()
+    {
+        using var relay = new TestRelay();
+        var code = MakeWorld(relay, 4);
+        var guest = NewSession(relay.Address);
+
+        guest.Open(code);
+        AwaitState(guest, "open");
+        WorldDirectoryTests.Act(Creator(relay), directory => directory.Delete(Relays.WorldRoomOf(WorldCode.Parse(code)!.Token)));
+
+        var ended = AwaitError(guest);
+        Assert.Equal("failed", ended["state"]);
+        Assert.Contains("deleted", ended["error"]);
+
+        var stranger = NewSession(relay.Address);
+        stranger.Open(NewCode(4));
+        Assert.Contains("no longer exists", AwaitError(stranger)["error"]);
+    }
+
+    /// <summary>
+    /// Asserts that a player the creator removes is closed for good, with a reason, while the others stay.
+    /// </summary>
+    [Fact]
+    public void RemovedPlayer_EndsForGood()
+    {
+        using var relay = new TestRelay();
+        var code = MakeWorld(relay, 4);
+        var world = Relays.WorldRoomOf(WorldCode.Parse(code)!.Token);
+        var removedKey = WorldDirectoryTests.PlayerKey(7);
+        var removed = NewSession(relay.Address, removedKey);
+        var staying = NewSession(relay.Address);
+
+        removed.Open(code);
+        staying.Open(code);
+        AwaitState(removed, "open");
+        AwaitState(staying, "open");
+        WorldDirectoryTests.Act(Creator(relay), directory => directory.Ban(world, WorldKeys.PlayerIdOf(removedKey)));
+
+        var ended = AwaitError(removed);
+        Assert.Equal("failed", ended["state"]);
+        Assert.Contains("removed", ended["error"]);
+        Assert.Equal("open", Message.Decode(staying.Describe())["state"]);
+
+        var again = NewSession(relay.Address, removedKey);
+        again.Open(code);
+        Assert.Contains("removed", AwaitError(again)["error"]);
+        staying.Close();
+    }
+
+    /// <summary>
+    /// Asserts that a session without a player cannot open a world.
+    /// </summary>
+    [Fact]
+    public void NoPlayer_CannotOpen()
+    {
+        var session = new WorldSession { RelayAddress = _ => null, Playing = () => null };
+
+        Assert.False(session.Open(NewCode(4)));
+        Assert.Contains("who plays", Message.Decode(session.Describe())["error"]);
+    }
+
+    /// <summary>
+    /// Counts the players the tests make, so each session plays as another.
+    /// </summary>
+    private static int players;
+
+    /// <summary>
     /// Creates a session that reaches only the test relay and tries again quickly.
     /// </summary>
     /// <param name="relay">The relay every id leads to, or <see langword="null"/> for none.</param>
+    /// <param name="key">The player's key, a new player's unless given.</param>
     /// <returns>The session.</returns>
-    private static WorldSession NewSession(Uri? relay) => new()
+    private static WorldSession NewSession(Uri? relay, string? key = null)
     {
-        RelayAddress = _ => relay,
-        RetryDelays = [TimeSpan.FromMilliseconds(100)],
-        KeepAliveInterval = TimeSpan.FromSeconds(1),
-        SilenceTimeout = TimeSpan.FromSeconds(5),
-    };
+        var player = key ?? WorldDirectoryTests.PlayerKey(100 + Interlocked.Increment(ref players));
+
+        return new WorldSession
+        {
+            RelayAddress = _ => relay,
+            Playing = () => (player, $"Player {player[^3..]}"),
+            RetryDelays = [TimeSpan.FromMilliseconds(100)],
+            KeepAliveInterval = TimeSpan.FromSeconds(1),
+            SilenceTimeout = TimeSpan.FromSeconds(5),
+        };
+    }
 
     /// <summary>
-    /// Makes the code of a new world.
+    /// Makes a world in the test relay's directory.
+    /// </summary>
+    /// <param name="relay">The test relay.</param>
+    /// <param name="seats">The world's seats.</param>
+    /// <returns>The world's code.</returns>
+    private static string MakeWorld(TestRelay relay, int seats) =>
+        WorldDirectoryTests.Act(Creator(relay), directory => directory.Create("Test World", "secret", seats))["code"];
+
+    /// <summary>
+    /// Makes the directory client of the tests' world creator.
+    /// </summary>
+    /// <param name="relay">The test relay.</param>
+    /// <returns>The directory.</returns>
+    private static WorldDirectory Creator(TestRelay relay) => WorldDirectoryTests.NewDirectory(relay, WorldDirectoryTests.CreatorKey, "Creator");
+
+    /// <summary>
+    /// Makes the code of a world the directory does not know.
     /// </summary>
     /// <param name="seats">The world's seats.</param>
     /// <returns>The code.</returns>

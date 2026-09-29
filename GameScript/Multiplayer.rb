@@ -2,7 +2,8 @@
 #  Multiplayer.rb
 #
 #  Changelog:
-#      Paulinchen  2026-09-29: Added Player, the player's id and name, which PvP battles pass on when Discord knows no name
+#      Paulinchen  2026-09-29: Told the DLL the player's key and name for worlds, and read typing from the keyboard through it
+#                            - Added Player, the player's id and name, which PvP battles pass on when Discord knows no name
 #                            - Found the mod folder relative to the game's folder, which works in a folder named with characters outside ASCII
 #                            - Hosted without a port, since games meet at the relay
 #                            - Added Link.status, which leaves the friend's team out, for the frequent checks
@@ -175,6 +176,19 @@ module MGQ_Multiplayer
       values["name"] = MGQ_Multiplayer.clean(name)
       Ini.write(MGQ_Multiplayer.path(FILE), values)
       @values = values
+      share
+    end
+
+    # Tells the DLL who plays, once the player has a name.
+    #
+    # @return [Boolean] Whether the DLL knows who plays.
+    def self.share
+      name = self.name
+      key = id
+      name && !key.empty? ? Link.set_player(key, name) : false
+    rescue => e
+      Log.write("could not tell the DLL who plays: #{e.class}: #{e.message}")
+      false
     end
 
     # Reads Player.ini once.
@@ -256,6 +270,41 @@ module MGQ_Multiplayer
     # @return [String] 32 lowercase hexadecimal characters, "" when it failed.
     def self.new_id
       read('mp_new_id', 64)
+    end
+
+    # Tells the DLL who plays in worlds.
+    #
+    # @param key [String] The player's key.
+    # @param name [String] The player's name.
+    # @return [Boolean] Whether the DLL took them.
+    def self.set_player(key, name)
+      function('mp_set_player', 'pp').call(key + "\0", name + "\0") == 1
+    end
+
+    # Reads the id everyone sees for the player, as the world directory lists it.
+    #
+    # @return [String] The id, "" before the player was set.
+    def self.player_id
+      read('mp_player_id', 64)
+    end
+
+    # Starts or stops taking what the player types on the keyboard.
+    #
+    # @param on [Boolean] Whether to take it.
+    def self.typing(on)
+      function('mp_typing', 'l').call(on ? 1 : 0)
+    end
+
+    # Takes what the player typed since the last call.
+    #
+    # @return [Array] The typed characters, Enter, Backspace and Escape among them as "\r", "\b"
+    #   and "\e"; and how many keys went down.
+    def self.take_typed
+      text = read('mp_take_typed', 1024)
+      return ["", 0] if text.empty?
+
+      state = parse(text)
+      [state[:payload], state["keys"].to_i]
     end
 
     # Stops hosting or joining, closes the link, forgets what arrived and turns down a waiting invite.

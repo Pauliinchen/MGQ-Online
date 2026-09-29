@@ -2,7 +2,8 @@
 //  RelayWorldChannel.cs
 //
 //  Changelog:
-//      Paulinchen  2026-09-29: Created
+//      Paulinchen  2026-09-29: Entered with the player's key and name and the world's auth key, and told how the relay refused or closed
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -66,21 +67,28 @@ internal sealed class RelayWorldChannel : IDisposable
     }
 
     /// <summary>
+    /// How the relay closed the connection, such as 4009 when the creator removed the player, once it did.
+    /// </summary>
+    public int? CloseCode => (int?)_socket.CloseStatus;
+
+    /// <summary>
     /// Connects to a world room.
     /// </summary>
     /// <param name="relay">The relay's address.</param>
     /// <param name="room">The world room, see <see cref="Relays.WorldRoomOf"/>.</param>
-    /// <param name="seats">The world's number of seats, which sets up an empty room.</param>
+    /// <param name="playerKey">The player's key, which the relay turns into the player's id.</param>
+    /// <param name="playerName">The player's name, which the directory lists.</param>
+    /// <param name="authKey">The key that proves the game holds the world's token, see <see cref="WorldKeys.AuthKeyOf"/>.</param>
     /// <param name="timeout">How long connecting may take.</param>
-    /// <param name="full">Set when the relay turned the game away because every seat is taken.</param>
-    /// <returns>The channel, or <see langword="null"/> when the world is full.</returns>
-    /// <exception cref="WebSocketException">The relay could not be reached or turned the connection down for another reason.</exception>
-    public static RelayWorldChannel? Connect(Uri relay, string room, int seats, TimeSpan timeout, out bool full)
+    /// <param name="refusal">The HTTP status the relay refused the game with, such as 409 when every seat is taken.</param>
+    /// <returns>The channel, or <see langword="null"/> when the relay refused the game.</returns>
+    /// <exception cref="WebSocketException">The relay could not be reached.</exception>
+    public static RelayWorldChannel? Connect(Uri relay, string room, string playerKey, string playerName, string authKey, TimeSpan timeout, out HttpStatusCode? refusal)
     {
         var socket = new ClientWebSocket();
         socket.Options.CollectHttpResponseDetails = true;
-        var address = new Uri(relay, $"/v1/world/{room}?seats={seats}");
-        full = false;
+        var address = new Uri(relay, $"/v1/world/{room}?player={playerKey}&name={Uri.EscapeDataString(playerName)}&auth={authKey}");
+        refusal = null;
 
         try
         {
@@ -88,10 +96,10 @@ internal sealed class RelayWorldChannel : IDisposable
             socket.ConnectAsync(address, cancel.Token).GetAwaiter().GetResult();
             return new RelayWorldChannel(socket);
         }
-        catch (WebSocketException) when (socket.HttpStatusCode == HttpStatusCode.Conflict)
+        catch (WebSocketException) when (socket.HttpStatusCode is >= HttpStatusCode.BadRequest and < HttpStatusCode.InternalServerError)
         {
+            refusal = socket.HttpStatusCode;
             socket.Dispose();
-            full = true;
             return null;
         }
         catch

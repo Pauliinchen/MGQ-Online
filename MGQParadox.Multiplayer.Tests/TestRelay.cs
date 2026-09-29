@@ -2,7 +2,8 @@
 //  TestRelay.cs
 //
 //  Changelog:
-//      Paulinchen  2026-09-29: Seated games in world rooms, and cut them on request
+//      Paulinchen  2026-09-29: Kept a world directory, and seated only its players, closing those the creator removes or deletes the world of
+//                            - Seated games in world rooms, and cut them on request
 //                            - Created
 //
 //----------------------------------------------------------------
@@ -14,7 +15,9 @@ using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Net.WebSockets;
+using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -23,8 +26,9 @@ namespace MGQParadox.Multiplayer.Tests;
 /// <summary>
 /// A relay inside the test process, following the protocol of Relay/README.md as far as the tests
 /// need: one host and one guest per room, <c>paired</c> once both are in, <c>ping</c> answered with
-/// <c>pong</c>, binary messages passed on, and the other side closed when one leaves; and world rooms
-/// that seat games, tell who comes and goes, and pass messages on with the sender's seat in front.
+/// <c>pong</c>, binary messages passed on, and the other side closed when one leaves; a world
+/// directory; and world rooms that seat the directory's players, tell who comes and goes, and pass
+/// messages on with the sender's seat in front.
 /// </summary>
 internal sealed class TestRelay : IDisposable
 {
@@ -34,14 +38,29 @@ internal sealed class TestRelay : IDisposable
     private const int PeerLeft = 4006;
 
     /// <summary>
+    /// The close code of a player the creator removed.
+    /// </summary>
+    private const int Removed = 4009;
+
+    /// <summary>
+    /// The close code of the players of a world its creator deleted.
+    /// </summary>
+    private const int Deleted = 4010;
+
+    /// <summary>
     /// The target seat of a world message meant for every other game.
     /// </summary>
     private const int Everyone = 255;
 
     /// <summary>
-    /// The games of each world room by seat, and the room's number of seats.
+    /// The games of each world room by seat.
     /// </summary>
-    private readonly Dictionary<string, (int Capacity, SortedDictionary<int, Peer?> Seats)> _worlds = new();
+    private readonly Dictionary<string, SortedDictionary<int, Peer?>> _worlds = new();
+
+    /// <summary>
+    /// The directory's worlds by id.
+    /// </summary>
+    private readonly Dictionary<string, DirectoryWorld> _directory = new();
 
     /// <summary>
     /// Serves the WebSockets, on a free port of this PC.
@@ -99,7 +118,7 @@ internal sealed class TestRelay : IDisposable
         {
             lock (_gate)
             {
-                return _worlds.Values.Sum(world => world.Seats.Values.Count(peer => peer != null));
+                return _worlds.Values.Sum(seats => seats.Values.Count(peer => peer != null));
             }
         }
     }
@@ -113,7 +132,7 @@ internal sealed class TestRelay : IDisposable
 
         lock (_gate)
         {
-            seated = _worlds.Values.SelectMany(world => world.Seats.Values).OfType<Peer>().ToArray();
+            seated = _worlds.Values.SelectMany(seats => seats.Values).OfType<Peer>().ToArray();
         }
 
         // Outside the gate, since a cut game may leave its seat on this very thread.
@@ -132,7 +151,7 @@ internal sealed class TestRelay : IDisposable
 
         lock (_gate)
         {
-            foreach (var peer in _rooms.Values.SelectMany(room => room.Values).Concat(_worlds.Values.SelectMany(world => world.Seats.Values)).OfType<Peer>())
+            foreach (var peer in _rooms.Values.SelectMany(room => room.Values).Concat(_worlds.Values.SelectMany(seats => seats.Values)).OfType<Peer>())
             {
                 peer.Socket.Abort();
             }
@@ -184,9 +203,15 @@ internal sealed class TestRelay : IDisposable
     {
         var parts = context.Request.Url!.AbsolutePath.Trim('/').Split('/');
 
-        if (context.Request.IsWebSocketRequest && parts is [_, "world", _] && int.TryParse(context.Request.QueryString["seats"], out var seats))
+        if (!context.Request.IsWebSocketRequest && parts is ["v1", "worlds", ..])
         {
-            await ServeWorldAsync(context, parts[2], seats);
+            await ServeDirectoryAsync(context, parts);
+            return;
+        }
+
+        if (context.Request.IsWebSocketRequest && parts is [_, "world", _])
+        {
+            await ServeWorldAsync(context, parts[2]);
             return;
         }
 
@@ -255,21 +280,172 @@ internal sealed class TestRelay : IDisposable
     }
 
     /// <summary>
-    /// Seats a game in its world room and passes its messages on until it leaves.
+    /// Answers the world directory's requests.
+    /// </summary>
+    /// <param name="context">The request.</param>
+    /// <param name="parts">The path's parts, "v1" and "worlds" first.</param>
+    /// <returns>Completes once answered.</returns>
+    private async Task ServeDirectoryAsync(HttpListenerContext context, string[] parts)
+    {
+        var method = context.Request.HttpMethod;
+        using var reader = new StreamReader(context.Request.InputStream, Encoding.UTF8);
+        var body = method == "POST" ? JsonNode.Parse(await reader.ReadToEndAsync()) : null;
+        List<Peer> toClose = [];
+        var closeCode = 0;
+        (int Status, JsonNode Body) answer;
+
+        lock (_gate)
+        {
+            answer = parts switch
+            {
+                ["v1", "worlds"] when method == "GET" => (200, new JsonObject { ["worlds"] = new JsonArray(_directory.Select(entry => ListedWorld(entry.Key, entry.Value)).ToArray()) }),
+                ["v1", "worlds"] when method == "POST" => Create(body!),
+                ["v1", "worlds", var id, "lock"] when _directory.TryGetValue(id, out var world) => (200, world.Lock.DeepClone()),
+                ["v1", "worlds", var id, "delete"] when CreatorOf(id, body) is { } world => Delete(id, toClose, out closeCode),
+                ["v1", "worlds", var id, "ban"] when CreatorOf(id, body) is { } world => Ban(id, world, body!["target"]!.GetValue<string>(), toClose, out closeCode),
+                ["v1", "worlds", var id, _] when _directory.ContainsKey(id) => (403, Error("only the world's creator may do this")),
+                _ => (404, Error("there is no such world")),
+            };
+        }
+
+        foreach (var peer in toClose)
+        {
+            await peer.CloseAsync(closeCode);
+        }
+
+        var bytes = Encoding.UTF8.GetBytes(answer.Body.ToJsonString());
+        context.Response.StatusCode = answer.Status;
+        context.Response.ContentType = "application/json";
+        await context.Response.OutputStream.WriteAsync(bytes);
+        context.Response.Close();
+    }
+
+    /// <summary>
+    /// Makes a world in the directory. Called with the gate held.
+    /// </summary>
+    /// <param name="body">The new world.</param>
+    /// <returns>The answer.</returns>
+    private (int, JsonNode) Create(JsonNode body)
+    {
+        var id = body["id"]!.GetValue<string>();
+
+        if (_directory.ContainsKey(id))
+        {
+            return (409, Error("a world with this id exists"));
+        }
+
+        var creator = PlayerIdOf(body["player"]!.GetValue<string>());
+        var creatorName = body["playerName"]!.GetValue<string>();
+        _directory[id] = new DirectoryWorld(
+            body["name"]!.GetValue<string>(), body["seats"]!.GetValue<int>(), creator, creatorName, body["authHash"]!.GetValue<string>(), body["lock"]!.DeepClone())
+        {
+            Members = { [creator] = creatorName },
+        };
+
+        return (201, new JsonObject { ["id"] = id });
+    }
+
+    /// <summary>
+    /// Deletes a world and closes its games. Called with the gate held.
+    /// </summary>
+    /// <param name="id">The world.</param>
+    /// <param name="toClose">Receives the games to close.</param>
+    /// <param name="closeCode">Receives their close code.</param>
+    /// <returns>The answer.</returns>
+    private (int, JsonNode) Delete(string id, List<Peer> toClose, out int closeCode)
+    {
+        _directory.Remove(id);
+        toClose.AddRange(_worlds.TryGetValue(id, out var seats) ? seats.Values.OfType<Peer>() : []);
+        closeCode = Deleted;
+        return (200, new JsonObject { ["deleted"] = id });
+    }
+
+    /// <summary>
+    /// Removes a player from a world, keeps them out and closes their games. Called with the gate held.
+    /// </summary>
+    /// <param name="id">The world.</param>
+    /// <param name="world">The world's entry.</param>
+    /// <param name="target">The player's id.</param>
+    /// <param name="toClose">Receives the games to close.</param>
+    /// <param name="closeCode">Receives their close code.</param>
+    /// <returns>The answer.</returns>
+    private (int, JsonNode) Ban(string id, DirectoryWorld world, string target, List<Peer> toClose, out int closeCode)
+    {
+        world.Members.Remove(target);
+        world.Bans.Add(target);
+        toClose.AddRange(_worlds.TryGetValue(id, out var seats) ? seats.Values.OfType<Peer>().Where(peer => peer.PlayerId == target) : []);
+        closeCode = Removed;
+        return (200, new JsonObject { ["removed"] = target });
+    }
+
+    /// <summary>
+    /// Finds a world whose creator's key a request carries. Called with the gate held.
+    /// </summary>
+    /// <param name="id">The world.</param>
+    /// <param name="body">The request's body.</param>
+    /// <returns>The world, or <see langword="null"/> when there is none or the key is not the creator's.</returns>
+    private DirectoryWorld? CreatorOf(string id, JsonNode? body) =>
+        _directory.TryGetValue(id, out var world) && body?["player"]?.GetValue<string>() is { } key && PlayerIdOf(key) == world.CreatorId ? world : null;
+
+    /// <summary>
+    /// Writes a world as the directory lists it. Called with the gate held.
+    /// </summary>
+    /// <param name="id">The world.</param>
+    /// <param name="world">The world's entry.</param>
+    /// <returns>The world.</returns>
+    private JsonNode ListedWorld(string id, DirectoryWorld world)
+    {
+        var online = _worlds.TryGetValue(id, out var seats) ? seats.Values.OfType<Peer>().Select(peer => peer.PlayerId).ToHashSet() : [];
+        var members = world.Members.Select(member => (JsonNode)new JsonObject { ["id"] = member.Key, ["name"] = member.Value, ["online"] = online.Contains(member.Key) });
+
+        return new JsonObject
+        {
+            ["id"] = id,
+            ["name"] = world.Name,
+            ["seats"] = world.Seats,
+            ["creator"] = new JsonObject { ["id"] = world.CreatorId, ["name"] = world.CreatorName },
+            ["online"] = online.Count,
+            ["created"] = 0,
+            ["active"] = 0,
+            ["members"] = new JsonArray(members.ToArray()),
+        };
+    }
+
+    /// <summary>
+    /// Seats one of the directory's players in its world room and passes its messages on until it leaves.
     /// </summary>
     /// <param name="context">The request.</param>
     /// <param name="roomId">The world room.</param>
-    /// <param name="requested">The seats the game asks for, which count only in an empty room.</param>
     /// <returns>Completes once the game left.</returns>
-    private async Task ServeWorldAsync(HttpListenerContext context, string roomId, int requested)
+    private async Task ServeWorldAsync(HttpListenerContext context, string roomId)
     {
+        var query = context.Request.QueryString;
+        var playerId = PlayerIdOf(query["player"] ?? string.Empty);
         int seat;
         int[] others;
 
         lock (_gate)
         {
-            var world = _worlds.TryGetValue(roomId, out var existing) ? existing : _worlds[roomId] = (requested, new SortedDictionary<int, Peer?>());
-            seat = Enumerable.Range(0, world.Capacity).FirstOrDefault(free => !world.Seats.ContainsKey(free), -1);
+            if (!_directory.TryGetValue(roomId, out var world))
+            {
+                Refuse(context, 404);
+                return;
+            }
+
+            if (Hash(query["auth"] ?? string.Empty) != world.AuthHash)
+            {
+                Refuse(context, 401);
+                return;
+            }
+
+            if (world.Bans.Contains(playerId))
+            {
+                Refuse(context, 403);
+                return;
+            }
+
+            var seats = _worlds.TryGetValue(roomId, out var existing) ? existing : _worlds[roomId] = new SortedDictionary<int, Peer?>();
+            seat = Enumerable.Range(0, world.Seats).FirstOrDefault(free => !seats.ContainsKey(free), -1);
 
             if (seat < 0)
             {
@@ -278,15 +454,16 @@ internal sealed class TestRelay : IDisposable
             }
 
             // Held while the handshake runs, so no other game takes the seat meanwhile.
-            world.Seats[seat] = null;
-            others = world.Seats.Keys.Where(taken => taken != seat).ToArray();
+            seats[seat] = null;
+            others = seats.Keys.Where(taken => taken != seat).ToArray();
+            world.Members[playerId] = query["name"] ?? "?";
         }
 
-        var peer = new Peer((await context.AcceptWebSocketAsync(null)).WebSocket);
+        var peer = new Peer((await context.AcceptWebSocketAsync(null)).WebSocket) { PlayerId = playerId };
 
         lock (_gate)
         {
-            _worlds[roomId].Seats[seat] = peer;
+            _worlds[roomId][seat] = peer;
         }
 
         await peer.SendAsync(Encoding.UTF8.GetBytes(string.Join(' ', new[] { "seat", seat.ToString() }.Concat(others.Select(other => other.ToString())))), WebSocketMessageType.Text);
@@ -323,11 +500,14 @@ internal sealed class TestRelay : IDisposable
         {
             lock (_gate)
             {
-                _worlds[roomId].Seats.Remove(seat);
-
-                if (_worlds[roomId].Seats.Count == 0)
+                if (_worlds.TryGetValue(roomId, out var seats))
                 {
-                    _worlds.Remove(roomId);
+                    seats.Remove(seat);
+
+                    if (seats.Count == 0)
+                    {
+                        _worlds.Remove(roomId);
+                    }
                 }
             }
 
@@ -348,11 +528,32 @@ internal sealed class TestRelay : IDisposable
     {
         lock (_gate)
         {
-            return _worlds.TryGetValue(roomId, out var world)
-                ? world.Seats.Where(entry => entry.Key != seat && entry.Value != null).Select(entry => (entry.Key, entry.Value!)).ToArray()
+            return _worlds.TryGetValue(roomId, out var seats)
+                ? seats.Where(entry => entry.Key != seat && entry.Value != null).Select(entry => (entry.Key, entry.Value!)).ToArray()
                 : [];
         }
     }
+
+    /// <summary>
+    /// Writes a directory error.
+    /// </summary>
+    /// <param name="reason">Why.</param>
+    /// <returns>The error's body.</returns>
+    private static JsonNode Error(string reason) => new JsonObject { ["error"] = reason };
+
+    /// <summary>
+    /// Makes a player's id from their key, as the relay does.
+    /// </summary>
+    /// <param name="key">The player's key.</param>
+    /// <returns>The id.</returns>
+    private static string PlayerIdOf(string key) => Hash($"mgqmp player {key}")[..32];
+
+    /// <summary>
+    /// Hashes a text with SHA-256, as the relay does.
+    /// </summary>
+    /// <param name="text">The text.</param>
+    /// <returns>64 lowercase hexadecimal characters.</returns>
+    private static string Hash(string text) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text))).ToLowerInvariant();
 
     /// <summary>
     /// Finds the other peer of a room.
@@ -450,6 +651,34 @@ internal sealed class TestRelay : IDisposable
         public WebSocket Socket { get; } = socket;
 
         /// <summary>
+        /// The id of the player a world room seated, empty in a room.
+        /// </summary>
+        public string PlayerId { get; init; } = string.Empty;
+
+        /// <summary>
+        /// Closes the peer's connection with a close code, taking its turn like a send.
+        /// </summary>
+        /// <param name="code">The close code.</param>
+        /// <returns>Completes once the close went out.</returns>
+        public async Task CloseAsync(int code)
+        {
+            await _sending.WaitAsync();
+
+            try
+            {
+                await Socket.CloseOutputAsync((WebSocketCloseStatus)code, "closed by the directory", CancellationToken.None);
+            }
+            catch
+            {
+                // The peer left already.
+            }
+            finally
+            {
+                _sending.Release();
+            }
+        }
+
+        /// <summary>
         /// Sends a message, ignoring a peer that is gone.
         /// </summary>
         /// <param name="data">The message.</param>
@@ -472,5 +701,57 @@ internal sealed class TestRelay : IDisposable
                 _sending.Release();
             }
         }
+    }
+
+    /// <summary>
+    /// A world in the directory.
+    /// </summary>
+    /// <param name="name">The world's name.</param>
+    /// <param name="seats">How many games it seats.</param>
+    /// <param name="creatorId">The creator's player id.</param>
+    /// <param name="creatorName">The creator's name.</param>
+    /// <param name="authHash">The hash of its auth key.</param>
+    /// <param name="worldLock">Its locked token.</param>
+    private sealed class DirectoryWorld(string name, int seats, string creatorId, string creatorName, string authHash, JsonNode worldLock)
+    {
+        /// <summary>
+        /// The world's name.
+        /// </summary>
+        public string Name { get; } = name;
+
+        /// <summary>
+        /// How many games it seats.
+        /// </summary>
+        public int Seats { get; } = seats;
+
+        /// <summary>
+        /// The creator's player id.
+        /// </summary>
+        public string CreatorId { get; } = creatorId;
+
+        /// <summary>
+        /// The creator's name.
+        /// </summary>
+        public string CreatorName { get; } = creatorName;
+
+        /// <summary>
+        /// The hash of its auth key.
+        /// </summary>
+        public string AuthHash { get; } = authHash;
+
+        /// <summary>
+        /// Its locked token.
+        /// </summary>
+        public JsonNode Lock { get; } = worldLock;
+
+        /// <summary>
+        /// Everyone who ever joined, by player id, with their names.
+        /// </summary>
+        public Dictionary<string, string> Members { get; } = [];
+
+        /// <summary>
+        /// The ids of the players the creator removed.
+        /// </summary>
+        public HashSet<string> Bans { get; } = [];
     }
 }
