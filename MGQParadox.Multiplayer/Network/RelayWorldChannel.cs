@@ -2,7 +2,8 @@
 //  RelayWorldChannel.cs
 //
 //  Changelog:
-//      Paulinchen  2026-09-29: Entered with the player's key and name and the world's auth key, and told how the relay refused or closed
+//      Paulinchen  2026-09-29: Named the relay's answer to a ping, which times the round trip
+//                            - Entered with the player's key and name and the world's auth key, and told how the relay refused or closed
 //                            - Created
 //
 //----------------------------------------------------------------
@@ -38,7 +39,12 @@ internal sealed class RelayWorldChannel : IDisposable
     public const int MaxMessageBytes = IFrameChannel.MaxFrameBytes + 1;
 
     /// <summary>
-    /// What keeps an idle connection open, which the relay answers without waking the room.
+    /// The relay's answer to a ping.
+    /// </summary>
+    public const string Pong = "pong";
+
+    /// <summary>
+    /// What keeps an idle connection open and times the round trip, which the relay answers without waking the room.
     /// </summary>
     private const string Ping = "ping";
 
@@ -146,7 +152,7 @@ internal sealed class RelayWorldChannel : IDisposable
     }
 
     /// <summary>
-    /// Sends a keep-alive, which the relay answers with a text of its own.
+    /// Sends a ping, which the relay answers with <see cref="Pong"/>.
     /// </summary>
     /// <param name="timeout">How long sending may take.</param>
     public void SendPing(TimeSpan timeout)

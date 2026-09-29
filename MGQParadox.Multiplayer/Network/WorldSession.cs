@@ -2,7 +2,8 @@
 //  WorldSession.cs
 //
 //  Changelog:
-//      Paulinchen  2026-09-29: Entered as the player the game script set, and stopped for good once the world was deleted or the player removed
+//      Paulinchen  2026-09-29: Pinged the relay every few seconds and told the round trip as the ping
+//                            - Entered as the player the game script set, and stopped for good once the world was deleted or the player removed
 //                            - Created
 //
 //----------------------------------------------------------------
@@ -10,6 +11,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
 using System.Net;
@@ -68,6 +70,11 @@ internal sealed class WorldSession
     /// Why the world cannot be entered right now.
     /// </summary>
     private const string ErrorHeader = "error";
+
+    /// <summary>
+    /// The last round trip to the relay in milliseconds, in the state.
+    /// </summary>
+    private const string PingHeader = "ping";
 
     /// <summary>
     /// Why the game waits when every seat is taken.
@@ -190,9 +197,9 @@ internal sealed class WorldSession
     public Func<(string Key, string Name)?> Playing { get; init; } = () => Player.Key is { } key && Player.Name is { } name ? (key, name) : null;
 
     /// <summary>
-    /// How long the connection stays quiet before it sends a keep-alive.
+    /// How often the connection pings the relay, which times the round trip and keeps it open.
     /// </summary>
-    public TimeSpan KeepAliveInterval { get; init; } = TimeSpan.FromSeconds(25);
+    public TimeSpan PingInterval { get; init; } = TimeSpan.FromSeconds(5);
 
     /// <summary>
     /// How long the relay may stay silent before the connection counts as broken.
@@ -297,16 +304,18 @@ internal sealed class WorldSession
     /// <summary>
     /// Describes the connection for the game script.
     /// </summary>
-    /// <returns><c>state</c>, and whichever of <c>seat</c>, <c>others</c> and <c>error</c> apply.</returns>
+    /// <returns><c>state</c>, and whichever of <c>seat</c>, <c>others</c>, <c>ping</c> and <c>error</c> apply.</returns>
     public string Describe()
     {
         lock (_gate)
         {
+            var ping = _state == WorldState.Open ? _connection?.Ping : null;
             var headers = new KeyValuePair<string, string?>[]
             {
                 new(StateHeader, _state.ToString().ToLowerInvariant()),
                 new(SeatHeader, _seat >= 0 ? _seat.ToString(CultureInfo.InvariantCulture) : null),
                 new(OthersHeader, _state == WorldState.Open ? SeatList(_others) : null),
+                new(PingHeader, ping is { } milliseconds ? milliseconds.ToString(CultureInfo.InvariantCulture) : null),
                 new(ErrorHeader, _error),
             };
 
@@ -358,7 +367,7 @@ internal sealed class WorldSession
                 else
                 {
                     connectedAt = DateTime.UtcNow;
-                    var connection = new Connection(channel, new WorldCipher(world.Token), KeepAliveInterval);
+                    var connection = new Connection(channel, new WorldCipher(world.Token), PingInterval);
 
                     if (!Adopt(generation, connection))
                     {
@@ -440,9 +449,15 @@ internal sealed class WorldSession
     /// </summary>
     /// <param name="generation">The open this belongs to.</param>
     /// <param name="connection">The connection.</param>
-    /// <param name="text">The text, such as <c>seat 2 0 1</c>, <c>in 3</c> or <c>out 0</c>.</param>
+    /// <param name="text">The text, such as <c>seat 2 0 1</c>, <c>in 3</c>, <c>out 0</c> or <c>pong</c>.</param>
     private void TakeText(int generation, Connection connection, string text)
     {
+        if (text == RelayWorldChannel.Pong)
+        {
+            connection.TakePong();
+            return;
+        }
+
         var words = text.Split(' ');
         var seats = words.Skip(1).Select(word => int.TryParse(word, NumberStyles.None, CultureInfo.InvariantCulture, out var seat) ? seat : -1).ToArray();
 
@@ -689,9 +704,9 @@ internal sealed class WorldSession
         private readonly BlockingCollection<(int Target, byte[] Plain)> _outbox = new();
 
         /// <summary>
-        /// How long the writer waits for a frame before it sends a keep-alive.
+        /// How often the writer pings the relay.
         /// </summary>
-        private readonly TimeSpan _keepAlive;
+        private readonly TimeSpan _pingInterval;
 
         /// <summary>
         /// This game's seat on this connection, -1 until the relay told it.
@@ -699,17 +714,45 @@ internal sealed class WorldSession
         private int _seat = -1;
 
         /// <summary>
+        /// When the ping that waits for its pong went out, as a <see cref="Stopwatch"/> timestamp; 0 while none waits.
+        /// </summary>
+        private long _pingSent;
+
+        /// <summary>
+        /// The last round trip to the relay in milliseconds, -1 before the first pong.
+        /// </summary>
+        private int _ping = -1;
+
+        /// <summary>
         /// Starts writing on a new connection.
         /// </summary>
         /// <param name="channel">The channel, which the session disposes.</param>
         /// <param name="cipher">The connection's cipher.</param>
-        /// <param name="keepAlive">How long the writer waits before it sends a keep-alive.</param>
-        public Connection(RelayWorldChannel channel, WorldCipher cipher, TimeSpan keepAlive)
+        /// <param name="pingInterval">How often the writer pings the relay.</param>
+        public Connection(RelayWorldChannel channel, WorldCipher cipher, TimeSpan pingInterval)
         {
             Channel = channel;
             Cipher = cipher;
-            _keepAlive = keepAlive;
+            _pingInterval = pingInterval;
             StartThread("MultiplayerWorldWrite", WriteAll);
+        }
+
+        /// <summary>
+        /// The last round trip to the relay in milliseconds, <see langword="null"/> before the first pong.
+        /// </summary>
+        public int? Ping => Volatile.Read(ref _ping) is var ping and >= 0 ? ping : null;
+
+        /// <summary>
+        /// Times the round trip of the ping that waited for this pong.
+        /// </summary>
+        public void TakePong()
+        {
+            var sent = Interlocked.Exchange(ref _pingSent, 0);
+
+            if (sent != 0)
+            {
+                Volatile.Write(ref _ping, (int)Math.Min(int.MaxValue, Stopwatch.GetElapsedTime(sent).TotalMilliseconds));
+            }
         }
 
         /// <summary>
@@ -766,7 +809,7 @@ internal sealed class WorldSession
         }
 
         /// <summary>
-        /// Sends the queued frames, and a keep-alive whenever none came for a while, until the connection stops.
+        /// Sends the queued frames, and a ping at once and then every ping interval, until the connection stops.
         /// </summary>
         /// <remarks>
         /// Catches everything, since an exception escaping this thread would end the whole game. Only
@@ -776,16 +819,26 @@ internal sealed class WorldSession
         {
             try
             {
+                var nextPing = Stopwatch.GetTimestamp();
+
                 while (!_outbox.IsCompleted)
                 {
-                    if (_outbox.TryTake(out var frame, _keepAlive))
+                    var wait = Stopwatch.GetElapsedTime(Stopwatch.GetTimestamp(), nextPing);
+
+                    if (wait > TimeSpan.Zero)
                     {
-                        Channel.Send(frame.Target, Cipher.Seal(Seat, frame.Plain), SendTimeout);
+                        if (_outbox.TryTake(out var frame, wait))
+                        {
+                            Channel.Send(frame.Target, Cipher.Seal(Seat, frame.Plain), SendTimeout);
+                        }
+
+                        continue;
                     }
-                    else if (!_outbox.IsCompleted)
-                    {
-                        Channel.SendPing(SendTimeout);
-                    }
+
+                    // A ping whose pong never came is given up, so the next one times anew.
+                    Volatile.Write(ref _pingSent, Stopwatch.GetTimestamp());
+                    Channel.SendPing(SendTimeout);
+                    nextPing = Stopwatch.GetTimestamp() + (long)(_pingInterval.TotalSeconds * Stopwatch.Frequency);
                 }
             }
             catch (Exception ex)

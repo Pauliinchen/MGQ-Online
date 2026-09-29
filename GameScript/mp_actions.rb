@@ -2,7 +2,8 @@
 #  mp_actions.rb
 #
 #  Changelog:
-#      Paulinchen  2026-09-29: Added chat, opened with T or the wheel: a bubble above the sender and a log at the bottom left
+#      Paulinchen  2026-09-29: Left room right above the player's head for their ping
+#                            - Added chat, opened with T or the wheel: a bubble above the sender and a log at the bottom left
 #                            - Opened an action wheel with B, which invites, accepts, leaves the party, and holds chat and duels
 #                            - Created
 #
@@ -33,6 +34,9 @@ module MGQ_MpActions
 
   # Color of the invite line above a ghost's name and above the player's own head.
   INVITE_COLOR = Color.new(255, 224, 128)
+
+  # Pixels kept free right above the player's head, where mp_overworld.rb shows their ping.
+  HEAD_ROOM = 16
 
   # A choice of the action wheel.
   #
@@ -615,7 +619,7 @@ class Sprite_MpOwnLine < Sprite
     return unless visible
 
     self.x = sprite.x
-    self.y = sprite.y - sprite.height - HEIGHT
+    self.y = sprite.y - sprite.height - MGQ_MpActions::HEAD_ROOM - HEIGHT
     return if text == @shown
 
     @shown = text
@@ -655,7 +659,7 @@ class Sprite_MpActionWheel < Sprite
   WIDTH = (PLAYER_SIDE + BOX_WIDTH) * 2
 
   # Row of the wheel's picture at the player's feet.
-  FEET = BOX_HEIGHT + GAP + PLAYER_HEIGHT
+  FEET = BOX_HEIGHT + GAP + MGQ_MpActions::HEAD_ROOM + PLAYER_HEIGHT
 
   # Height of the wheel's picture.
   HEIGHT = FEET + GAP + BOX_HEIGHT
@@ -749,8 +753,8 @@ class Sprite_MpChatBubble < Sprite
   # Pixels above a ghost's feet that its bubble points at: over its name and the line above it.
   GHOST_LIFT = 92
 
-  # Pixels above the player's feet that their bubble points at: over the line above their head.
-  OWN_LIFT = 72
+  # Pixels above the player's feet that their bubble points at: over their ping and the line above it.
+  OWN_LIFT = 88
 
   # Height of the tail below the bubble.
   TAIL = 5

@@ -2,7 +2,8 @@
 //  WorldSessionTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-09-29: Made every world in the directory first, and covered deleted worlds, removed players and a missing player
+//      Paulinchen  2026-09-29: Covered the ping an open connection tells
+//                            - Made every world in the directory first, and covered deleted worlds, removed players and a missing player
 //                            - Created
 //
 //----------------------------------------------------------------
@@ -51,6 +52,25 @@ public sealed class WorldSessionTests
 
         first.Close();
         second.Close();
+    }
+
+    /// <summary>
+    /// Asserts that an open connection tells its round trip to the relay as the ping.
+    /// </summary>
+    [Fact]
+    public void OpenConnection_TellsItsPing()
+    {
+        using var relay = new TestRelay();
+        var session = NewSession(relay.Address);
+
+        session.Open(MakeWorld(relay, 2));
+        var state = Await(session, described => described["ping"].Length > 0, "a ping");
+
+        Assert.Equal("open", state["state"]);
+        Assert.InRange(int.Parse(state["ping"], System.Globalization.CultureInfo.InvariantCulture), 0, (int)Patience.TotalMilliseconds);
+
+        session.Close();
+        Assert.Equal(string.Empty, Message.Decode(session.Describe())["ping"]);
     }
 
     /// <summary>
@@ -287,7 +307,7 @@ public sealed class WorldSessionTests
             RelayAddress = _ => relay,
             Playing = () => (player, $"Player {player[^3..]}"),
             RetryDelays = [TimeSpan.FromMilliseconds(100)],
-            KeepAliveInterval = TimeSpan.FromSeconds(1),
+            PingInterval = TimeSpan.FromSeconds(1),
             SilenceTimeout = TimeSpan.FromSeconds(5),
         };
     }

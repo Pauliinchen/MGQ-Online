@@ -2,7 +2,8 @@
 #  mp_overworld.rb
 #
 #  Changelog:
-#      Paulinchen  2026-09-29: Left parties to mp_actions.rb, which it asks through Actions
+#      Paulinchen  2026-09-29: Showed each player's ping, the own above the player's head and the others' beside their names
+#                            - Left parties to mp_actions.rb, which it asks through Actions
 #                            - Created
 #
 #----------------------------------------------------------------
@@ -55,6 +56,15 @@ module MGQ_MpOverworld
 
   # Bytes the DLL may write an inbox entry into at first.
   ENTRY_SIZE = 4096
+
+  # Milliseconds a ping must differ from the one the others know before they are told again.
+  PING_STEP = 20
+
+  # Share of the ping the others know that a new ping must differ by, too, before they are told again.
+  PING_SHARE = 0.25
+
+  # Colors of a ping, by the most milliseconds each stands for; above them all, the last.
+  PING_COLORS = [[100, Color.new(128, 255, 128)], [200, Color.new(255, 224, 96)], [nil, Color.new(255, 112, 96)]]
 
   # Reports whether the hooks can be installed.
   #
@@ -224,6 +234,7 @@ module MGQ_MpOverworld
         "speed" => $game_player.real_move_speed,
         "hidden" => $game_player.transparent ? 1 : 0,
         "scene" => scene,
+        "ping" => Ping.told,
       }.merge(Actions.state_fields)
     end
 
@@ -381,6 +392,7 @@ module MGQ_MpOverworld
 
       @frames = 0
       state = Link.status
+      Ping.take(state["ping"])
       @problem =
         case state["state"]
         when "reconnecting" then "Reconnecting . . ."
@@ -394,6 +406,50 @@ module MGQ_MpOverworld
     # @return [Array<String>] The lines, the connection's problem first.
     def self.lines
       ([@problem] + @notices.map { |text, _| text }).compact
+    end
+  end
+
+  # The player's ping: the round trip to the relay, which the DLL times every few seconds. The
+  # player sees each new one; the others are told only once it moved noticeably, since every
+  # message counts against the relay's free plan.
+  module Ping
+    @measured = nil
+    @told = ""
+
+    # Takes the ping the connection's status tells.
+    #
+    # @param text [String, nil] The milliseconds, nil or empty while there is no connection.
+    def self.take(text)
+      @measured = text.to_s.empty? ? nil : text.to_i
+      return if @measured.nil?
+
+      told = @told.empty? ? nil : @told.to_i
+      @told = @measured.to_s if told.nil? || (@measured - told).abs >= [PING_STEP, told * PING_SHARE].max
+    end
+
+    # The last ping measured.
+    #
+    # @return [Integer, nil] The milliseconds, nil while there is no connection.
+    def self.measured
+      @measured
+    end
+
+    # The ping the others are told.
+    #
+    # @return [String] The milliseconds, empty before the first.
+    def self.told
+      @told
+    end
+
+    # Writes a ping as it shows, with the color that says how good it is.
+    #
+    # @param ping [String, Integer, nil] The milliseconds.
+    # @return [Array, nil] The text and its color, nil for no ping.
+    def self.label(ping)
+      return nil if ping.to_s.empty?
+
+      milliseconds = ping.to_i
+      ["#{milliseconds} ms", PING_COLORS.find { |most, _| most.nil? || milliseconds <= most }[1]]
     end
   end
 
@@ -487,6 +543,12 @@ class Sprite_MpGhostLabel < Sprite
   # Color of a party member's name.
   MEMBER_COLOR = Color.new(128, 255, 128)
 
+  # Font size of the ping after the name.
+  PING_SIZE = 14
+
+  # Room between the name and the ping.
+  PING_GAP = 6
+
   # Creates the label, empty.
   #
   # @param viewport [Viewport] The map's viewport of characters.
@@ -508,7 +570,7 @@ class Sprite_MpGhostLabel < Sprite
     self.y = sprite.y - sprite.height - LINE * 2 + 4
     self.visible = sprite.visible && sprite.opacity > 0 && state["hidden"].to_i != 1
     above = MGQ_MpOverworld::Actions.label_line(peer)
-    drawn = [state["name"], state["scene"], peer.member, above]
+    drawn = [state["name"], state["scene"], state["ping"], peer.member, above]
     return if drawn == @shown
 
     @shown = drawn
@@ -516,7 +578,8 @@ class Sprite_MpGhostLabel < Sprite
     bitmap.font.size = 18
     bitmap.font.outline = true
     line(0, above[0], above[1]) if above
-    draw_name(state["name"].to_s, MGQ_MpOverworld::STATE_ICONS[state["scene"]], peer.member ? MEMBER_COLOR : Color.new(255, 255, 255))
+    draw_name(state["name"].to_s, MGQ_MpOverworld::STATE_ICONS[state["scene"]], peer.member ? MEMBER_COLOR : Color.new(255, 255, 255),
+              MGQ_MpOverworld::Ping.label(state["ping"]))
   end
 
   # Draws a centered line of text.
@@ -529,14 +592,23 @@ class Sprite_MpGhostLabel < Sprite
     bitmap.draw_text(0, row * LINE, WIDTH, LINE, text, 1)
   end
 
-  # Draws the name on the lower line, and the icon before it.
+  # Draws the name on the lower line, the icon before it and the ping after it.
   #
   # @param name [String] The player's name.
   # @param icon [Integer, nil] The icon's index in the game's icon set, nil for none.
   # @param color [Color] The name's color.
-  def draw_name(name, icon, color)
-    width = [bitmap.text_size(name).width, WIDTH - 28].min
-    left = (WIDTH - width - (icon ? 26 : 0)) / 2
+  # @param ping [Array, nil] The ping's text and color, nil for none.
+  def draw_name(name, icon, color, ping)
+    ping_width = 0
+    if ping
+      bitmap.font.size = PING_SIZE
+      ping_width = bitmap.text_size(ping[0]).width
+      bitmap.font.size = 18
+    end
+
+    after = ping ? PING_GAP + ping_width : 0
+    width = [bitmap.text_size(name).width, WIDTH - 28 - after].min
+    left = (WIDTH - width - (icon ? 26 : 0) - after) / 2
 
     if icon
       iconset = Cache.system("Iconset")
@@ -546,9 +618,60 @@ class Sprite_MpGhostLabel < Sprite
 
     bitmap.font.color = color
     bitmap.draw_text(left, LINE, width, LINE, name)
+    return unless ping
+
+    bitmap.font.size = PING_SIZE
+    bitmap.font.color = ping[1]
+    bitmap.draw_text(left + width + PING_GAP, LINE, ping_width, LINE, ping[0])
   end
 
   # Frees the label's picture.
+  def dispose
+    bitmap.dispose
+    super
+  end
+end
+
+# The player's own ping, right above their head.
+class Sprite_MpOwnPing < Sprite
+  # Width of the ping.
+  WIDTH = 80
+
+  # Height of the ping, the room it takes above the head.
+  HEIGHT = 16
+
+  # Creates the ping, empty.
+  #
+  # @param viewport [Viewport] The map's viewport of characters.
+  def initialize(viewport)
+    super(viewport)
+    self.bitmap = Bitmap.new(WIDTH, HEIGHT)
+    self.ox = WIDTH / 2
+    self.z = 250
+    @shown = nil
+  end
+
+  # Draws the ping, if it changed, above the player's sprite.
+  #
+  # @param sprite [Sprite_Character, nil] The player's sprite.
+  def show(sprite)
+    ping = MGQ_MpOverworld.in_world? ? MGQ_MpOverworld::Ping.label(MGQ_MpOverworld::Ping.measured) : nil
+    self.visible = !ping.nil? && !sprite.nil? && sprite.visible && sprite.opacity > 0
+    return unless visible
+
+    self.x = sprite.x
+    self.y = sprite.y - sprite.height - HEIGHT
+    return if ping[0] == @shown
+
+    @shown = ping[0]
+    bitmap.clear
+    bitmap.font.size = Sprite_MpGhostLabel::PING_SIZE
+    bitmap.font.outline = true
+    bitmap.font.color = ping[1]
+    bitmap.draw_text(0, 0, WIDTH, HEIGHT, ping[0], 1)
+  end
+
+  # Frees the ping's picture.
   def dispose
     bitmap.dispose
     super
@@ -642,16 +765,18 @@ if MGQ_MpOverworld.hookable?
     class Spriteset_Map
       alias mgq_mp_overworld_update update
 
-      # Updates the map's sprites, then the ghosts', their labels and the status line.
+      # Updates the map's sprites, then the ghosts', their labels, the player's own ping and the status line.
       def update
         mgq_mp_overworld_update
         mgq_mp_overworld_update_ghosts
       end
 
-      # Keeps a sprite and label per ghost on this map, and the status line.
+      # Keeps a sprite and label per ghost on this map, the player's own ping and the status line.
       def mgq_mp_overworld_update_ghosts
         @mgq_mp_ghosts ||= {}
         @mgq_mp_status ||= Sprite_MpWorldStatus.new(@viewport3)
+        @mgq_mp_own_ping ||= Sprite_MpOwnPing.new(@viewport1)
+        @mgq_mp_own_ping.show(@character_sprites.find { |sprite| sprite.character.equal?($game_player) })
         peers = MGQ_MpOverworld.ghosts
 
         @mgq_mp_ghosts.keys.each do |ghost|
@@ -677,12 +802,12 @@ if MGQ_MpOverworld.hookable?
 
       alias mgq_mp_overworld_dispose dispose
 
-      # Frees the ghosts' sprites and the status line, then the map's.
+      # Frees the ghosts' sprites, the player's own ping and the status line, then the map's.
       def dispose
         (@mgq_mp_ghosts || {}).values.flatten.each { |sprite| sprite.dispose }
         @mgq_mp_ghosts = nil
-        @mgq_mp_status.dispose if @mgq_mp_status
-        @mgq_mp_status = nil
+        [@mgq_mp_status, @mgq_mp_own_ping].compact.each { |sprite| sprite.dispose }
+        @mgq_mp_status = @mgq_mp_own_ping = nil
         mgq_mp_overworld_dispose
       end
     end

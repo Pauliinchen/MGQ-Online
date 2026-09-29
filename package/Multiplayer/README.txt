@@ -110,8 +110,10 @@ Multiplayer\Worlds, apart from your own game. On the map, the other
 players on the same map walk around with their names above them, and an
 icon for what they do: fighting, talking, in a menu, the inventory or
 their equipment, shopping, at the casino, in the Library, sailing,
-flying, or away from the game. They walk through
-everything and trigger nothing. PvP battles (F11) are off in a world.
+flying, or away from the game. Their ping shows after their name, and
+yours right above your head: green up to 100 ms, yellow up to 200 ms,
+red beyond. They walk through everything and trigger nothing. PvP
+battles (F11) are off in a world.
 
 The action wheel: press B on the map to open it around your character.
 Pick a choice with the arrow keys and take it with the confirm button; B
