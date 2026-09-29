@@ -2,12 +2,13 @@
 #  mp_actions.rb
 #
 #  Changelog:
-#      Paulinchen  2026-09-29: Opened an action wheel with B, which invites, accepts, leaves the party, and holds chat and duels
+#      Paulinchen  2026-09-29: Added chat, opened with T or the wheel: a bubble above the sender and a log at the bottom left
+#                            - Opened an action wheel with B, which invites, accepts, leaves the party, and holds chat and duels
 #                            - Created
 #
 #----------------------------------------------------------------
 
-# What players of a world do together on the map: the action wheel, and parties so far. It builds
+# What players of a world do together on the map: the action wheel, parties and chat. It builds
 # on mp_overworld.rb, which knows the other players and their messages, and which asks this script,
 # through the functions at the top of MGQ_MpActions, what to add to the player's state, what to
 # show above a ghost's name, and to take the messages that are not states.
@@ -19,6 +20,10 @@ module MGQ_MpActions
   # Windows' code of the key that opens and closes the action wheel: B, which neither the game's
   # Input nor its gamepad plugin reads.
   WHEEL_KEY = 0x42
+
+  # Windows' code of the key that opens the chat: T, which neither the game's Input nor its gamepad
+  # plugin reads.
+  CHAT_KEY = 0x54
 
   # Tiles another player may be away, on the same map, to be invited or to accept.
   NEAR_TILES = 2
@@ -61,6 +66,16 @@ module MGQ_MpActions
     defined?(MGQ_MpOverworld) && MGQ_MpOverworld.in_world? ? true : false
   end
 
+  # Tells every other game of the world something, through mp_overworld.rb.
+  #
+  # @param fields [Hash] The message's fields, which must leave out "map", since that marks a state.
+  # @return [Boolean] Whether it went out.
+  def self.tell(fields)
+    return false unless defined?(MGQ_MpOverworld)
+
+    MGQ_MpOverworld::Link.send_to(-1, MGQ_MpOverworld::Me.encode(fields))
+  end
+
   # Shows a notice at the bottom left of the map, through mp_overworld.rb.
   #
   # @param text [String] The notice.
@@ -82,13 +97,24 @@ module MGQ_MpActions
     { "party" => Party.id.to_s, "invite" => Party.inviting? ? 1 : 0 }
   end
 
-  # Lets an invite run out, closes the wheel once the map is left, and forgets everything once no
-  # world is open. Called by mp_overworld.rb every frame in every scene.
+  # Lets invites, bubbles and chat lines run out, closes the wheel and the chat box once the map is
+  # left, and forgets everything once no world is open. Called by mp_overworld.rb every frame in
+  # every scene.
   #
   # @param in_world [Boolean] Whether a world is open.
   def self.tick(in_world)
-    Wheel.close unless in_world && SceneManager.scene.is_a?(Scene_Map)
-    in_world ? Party.count_down : Party.reset
+    unless in_world && SceneManager.scene.is_a?(Scene_Map)
+      Wheel.close
+      Chat.stop_typing
+    end
+
+    if in_world
+      Party.count_down
+      Chat.count_down
+    else
+      Party.reset
+      Chat.reset
+    end
   end
 
   # Takes a message of another game that is no state. Called by mp_overworld.rb.
@@ -96,6 +122,7 @@ module MGQ_MpActions
   # @param peer [MGQ_MpOverworld::Peers::Peer, nil] Who sent it, nil before their first state.
   # @param message [Hash] The message's fields.
   def self.take(peer, message)
+    Chat.receive(peer, message) if message["chat"]
   end
 
   # Notices what another player's new state means for the party. Called by mp_overworld.rb.
@@ -135,27 +162,216 @@ module MGQ_MpActions
       :UP => Party.join_or_invite_option,
       :RIGHT => Option.new("Duel", nil, "Duels come in a later version."),
       :DOWN => Party.leave_option,
-      :LEFT => Option.new("Chat", nil, "Chat comes in a later version."),
+      :LEFT => Option.new("Chat (T)", Chat.available? ? lambda { Chat.start_typing } : nil, "Chat needs the keyboard, which cannot reach the game."),
     }
   end
 
-  # Opens, steers or closes the action wheel on the map. Called by the map every frame, so a press
-  # of the wheel key is seen once.
+  # Opens, steers or closes the action wheel and the chat box on the map. Called by the map every
+  # frame, so a press of either key is seen once.
   def self.on_map
-    pressed = MGQ_Multiplayer::Key.pressed?(WHEEL_KEY)
+    wheel_key = MGQ_Multiplayer::Key.pressed?(WHEEL_KEY)
+    chat_key = MGQ_Multiplayer::Key.pressed?(CHAT_KEY)
     unless in_world? && !$game_map.interpreter.running? && !$game_message.busy?
       Wheel.close
+      Chat.stop_typing
       return
     end
 
-    if Wheel.open?
-      Wheel.update(pressed)
-    elsif pressed
+    if Chat.typing?
+      Chat.update_typing
+    elsif Wheel.open?
+      Wheel.update(wheel_key)
+    elsif wheel_key
       Wheel.open
+    elsif chat_key && Chat.available?
+      Sound.play_ok
+      Chat.start_typing
     end
   rescue => e
-    log("action wheel failed: #{e.class}: #{e.message}")
+    log("action wheel or chat failed: #{e.class}: #{e.message}")
     Wheel.close
+    Chat.stop_typing
+  end
+
+  # The chat: a line typed on the keyboard goes to every player of the world, shows in a bubble
+  # above the sender while they are on the same map, and in the chat log at the bottom left.
+  module Chat
+    # Characters a chat line may have.
+    MAX_LENGTH = 120
+
+    # Chat lines kept for the log.
+    KEPT = 50
+
+    # Frames a chat line stays in the log, ten seconds, unless the chat box is open.
+    LOG_FRAMES = 600
+
+    # Frames a bubble stays, six seconds.
+    BUBBLE_FRAMES = 360
+
+    @log = []
+    @bubbles = {}
+    @typed = nil
+
+    # Reports whether the keyboard reaches the game, which only happens once its window is hooked.
+    #
+    # @return [Boolean] Whether it does.
+    def self.available?
+      MGQ_Multiplayer::Background.running?
+    end
+
+    # Reports whether the chat box is open.
+    #
+    # @return [Boolean] Whether it is.
+    def self.typing?
+      !@typed.nil?
+    end
+
+    # The text in the chat box.
+    #
+    # @return [String, nil] The text, nil while the box is closed.
+    def self.typed
+      @typed
+    end
+
+    # Opens the chat box, which holds the buttons, so keys that type move nobody.
+    def self.start_typing
+      @typed = ""
+      MGQ_Multiplayer::Link.typing(true)
+      MGQ_Multiplayer::Capture.start(:chat)
+    end
+
+    # Closes the chat box, if it is open, and gives the buttons back.
+    def self.stop_typing
+      return unless typing?
+
+      @typed = nil
+      MGQ_Multiplayer::Link.typing(false)
+      MGQ_Multiplayer::Capture.stop(:chat)
+    end
+
+    # Types what came from the keyboard since the last frame.
+    def self.update_typing
+      text, _keys = MGQ_Multiplayer::Link.take_typed
+      text.each_char do |char|
+        type(char)
+        break unless typing?
+      end
+    end
+
+    # Types one character: Enter sends, Escape closes, Backspace removes the last one.
+    #
+    # @param char [String] The character.
+    def self.type(char)
+      case char
+      when "\r"
+        send_typed
+      when "\e"
+        stop_typing
+        Sound.play_cancel
+      when "\b"
+        @typed = @typed[0...-1]
+      else
+        return if char =~ /[[:cntrl:]]/
+
+        @typed.length < MAX_LENGTH ? @typed << char : Sound.play_buzzer
+      end
+    end
+
+    # Sends the chat box's text, closing the box; an empty box just closes.
+    def self.send_typed
+      text = @typed.strip
+      stop_typing
+      return if text.empty?
+
+      if MGQ_MpActions.tell("chat" => text, "name" => MGQ_Multiplayer::Player.name.to_s)
+        add(:me, MGQ_Multiplayer::Player.name.to_s, text)
+      else
+        Sound.play_buzzer
+        MGQ_MpActions.notice("The message could not be sent.")
+      end
+    end
+
+    # Takes another player's chat line.
+    #
+    # @param peer [MGQ_MpOverworld::Peers::Peer, nil] Who sent it, nil before their first state.
+    # @param message [Hash] The message, the line under "chat".
+    def self.receive(peer, message)
+      text = message["chat"].to_s.gsub(/[[:cntrl:]]/, "").strip[0, MAX_LENGTH]
+      return if text.empty?
+
+      add(peer ? peer.seat : nil, peer ? peer.state["name"] : message["name"], text)
+    end
+
+    # Adds a chat line to the log, and to the sender's bubble.
+    #
+    # @param sender [Integer, Symbol, nil] The sender's seat, :me for the player, nil for no bubble.
+    # @param name [String] The sender's name.
+    # @param text [String] The line.
+    def self.add(sender, name, text)
+      @log.push(["#{name}: #{text}", LOG_FRAMES])
+      @log.shift while @log.size > KEPT
+      @bubbles[sender] = [text, BUBBLE_FRAMES] unless sender.nil?
+    end
+
+    # Lets log lines and bubbles run out. Called every frame.
+    def self.count_down
+      @log.each { |entry| entry[1] -= 1 if entry[1] > 0 }
+      @bubbles.each_value { |bubble| bubble[1] -= 1 }
+      @bubbles.reject! { |_, bubble| bubble[1] <= 0 }
+    end
+
+    # Forgets the log and the bubbles and closes the box, as when the world closes.
+    def self.reset
+      stop_typing
+      @log.clear
+      @bubbles.clear
+    end
+
+    # Lists the log's lines to show: all kept while the chat box is open, else the recent ones.
+    #
+    # @return [Array<String>] The lines, oldest first.
+    def self.log_lines
+      @log.select { |_, left| typing? || left > 0 }.map { |line, _| line }
+    end
+
+    # Tells what a sender's bubble says.
+    #
+    # @param sender [Integer, Symbol] The sender's seat, :me for the player.
+    # @return [String, nil] The line, nil for no bubble.
+    def self.bubble(sender)
+      @bubbles[sender] && @bubbles[sender][0]
+    end
+
+    # Lists who has a bubble now.
+    #
+    # @return [Array<Integer, Symbol>] Their seats, :me for the player.
+    def self.senders
+      @bubbles.keys
+    end
+
+    # Breaks a text into lines that fit a width.
+    #
+    # @param bitmap [Bitmap] A bitmap with the font the lines are drawn in.
+    # @param text [String] The text.
+    # @param width [Integer] The width in pixels.
+    # @return [Array<String>] The lines.
+    def self.wrap(bitmap, text, width)
+      lines = [""]
+      text.split(" ").each do |word|
+        candidate = lines.last.empty? ? word : "#{lines.last} #{word}"
+        if bitmap.text_size(candidate).width <= width
+          lines[-1] = candidate
+          next
+        end
+
+        lines.push("") unless lines.last.empty?
+        word.each_char do |char|
+          lines.push("") if bitmap.text_size(lines.last + char).width > width && !lines.last.empty?
+          lines[-1] += char
+        end
+      end
+      lines
+    end
   end
 
   # The action wheel: four choices around the player, picked with the arrows and taken with the
@@ -516,6 +732,172 @@ class Sprite_MpActionWheel < Sprite
   end
 end
 
+# A chat bubble above a player's head: their last chat line, cut after three lines.
+class Sprite_MpChatBubble < Sprite
+  # Widest the bubble gets.
+  WIDTH = 240
+
+  # Height of one line.
+  LINE = 20
+
+  # Lines the bubble shows at most.
+  MAX_LINES = 3
+
+  # Room between the text and the bubble's edge.
+  PAD = 6
+
+  # Pixels above a ghost's feet that its bubble points at: over its name and the line above it.
+  GHOST_LIFT = 92
+
+  # Pixels above the player's feet that their bubble points at: over the line above their head.
+  OWN_LIFT = 72
+
+  # Height of the tail below the bubble.
+  TAIL = 5
+
+  # The bubble's fill.
+  FILL = Color.new(255, 255, 255, 230)
+
+  # The bubble's edge.
+  EDGE = Color.new(40, 40, 40, 230)
+
+  # The text's color.
+  INK = Color.new(20, 20, 20)
+
+  # Creates the bubble, hidden.
+  #
+  # @param viewport [Viewport] The map's viewport of characters.
+  def initialize(viewport)
+    super(viewport)
+    self.bitmap = Bitmap.new(WIDTH, LINE * MAX_LINES + PAD * 2 + TAIL)
+    self.ox = WIDTH / 2
+    self.oy = bitmap.height
+    self.z = 260
+    self.visible = false
+    @shown = nil
+  end
+
+  # Draws the bubble, if its line changed, with its tail at a point above a character.
+  #
+  # @param text [String, nil] The line, nil to hide the bubble.
+  # @param x [Integer] Where the tail points, across the screen.
+  # @param y [Integer] Where the tail points, down the screen.
+  def show(text, x, y)
+    self.visible = !text.nil?
+    return unless visible
+
+    self.x = x
+    self.y = y
+    return if text == @shown
+
+    @shown = text
+    draw(text)
+  end
+
+  # Draws the bubble around a line, bottom-aligned so the tail stays put.
+  #
+  # @param text [String] The line.
+  def draw(text)
+    bitmap.clear
+    bitmap.font.size = 16
+    bitmap.font.outline = false
+    bitmap.font.color = INK
+    lines = MGQ_MpActions::Chat.wrap(bitmap, text, WIDTH - PAD * 2)
+    lines = lines[0, MAX_LINES - 1] + ["#{lines[MAX_LINES - 1]} . . ."] if lines.size > MAX_LINES
+    width = [lines.map { |line| bitmap.text_size(line).width }.max + PAD * 2, 24].max
+    width = [width, WIDTH].min
+    height = lines.size * LINE + PAD * 2
+    left = (WIDTH - width) / 2
+    top = bitmap.height - TAIL - height
+
+    bitmap.fill_rect(left, top, width, height, EDGE)
+    bitmap.fill_rect(left + 1, top + 1, width - 2, height - 2, FILL)
+    TAIL.times { |row| bitmap.fill_rect(WIDTH / 2 - (TAIL - row), top + height - 1 + row, (TAIL - row) * 2, 1, row == 0 ? FILL : EDGE) }
+    lines.each_with_index { |line, row| bitmap.draw_text(left + PAD, top + PAD + row * LINE, width - PAD * 2, LINE, line, 1) }
+  end
+
+  # Frees the bubble's picture.
+  def dispose
+    bitmap.dispose
+    super
+  end
+end
+
+# The chat log at the bottom left, above the world's status line, with the chat box below it while
+# the player types.
+class Sprite_MpChatLog < Sprite
+  # Width of the log.
+  WIDTH = 400
+
+  # Height of one row.
+  ROW = 22
+
+  # Rows of chat lines.
+  ROWS = 6
+
+  # Room the world's status line keeps at the bottom of the screen.
+  STATUS_ROOM = 96
+
+  # Background while the chat box is open.
+  BACK = Color.new(0, 0, 0, 120)
+
+  # Color of the chat box's hint.
+  HINT = Color.new(180, 180, 180)
+
+  # Creates the log, empty.
+  #
+  # @param viewport [Viewport] The map's topmost viewport.
+  def initialize(viewport)
+    super(viewport)
+    self.bitmap = Bitmap.new(WIDTH, ROW * (ROWS + 1))
+    self.x = 8
+    self.y = Graphics.height - STATUS_ROOM - bitmap.height
+    self.z = 200
+    @shown = nil
+  end
+
+  # Draws the log and the chat box, if they changed.
+  def update
+    super
+    chat = MGQ_MpActions::Chat
+    lines = MGQ_MpActions.in_world? ? chat.log_lines.last(ROWS) : []
+    drawn = [lines, chat.typed]
+    return if drawn == @shown
+
+    @shown = drawn
+    bitmap.clear
+    bitmap.font.size = 18
+    bitmap.font.outline = true
+    bitmap.fill_rect(bitmap.rect, BACK) if chat.typing?
+    rows = lines.map { |line| chat.wrap(bitmap, line, WIDTH - 8) }.flatten.last(ROWS)
+    rows.each_with_index { |row, index| bitmap.draw_text(4, (ROWS - rows.size + index) * ROW, WIDTH - 8, ROW, row) }
+    draw_box(chat.typed) if chat.typing?
+  end
+
+  # Draws the chat box on the bottom row: the text's end with a cursor, or a hint while it is empty.
+  #
+  # @param text [String] The text typed.
+  def draw_box(text)
+    y = ROWS * ROW
+    if text.empty?
+      bitmap.font.color = HINT
+      bitmap.draw_text(4, y, WIDTH - 8, ROW, "Type a message. Enter sends, Esc closes.")
+      bitmap.font.color = Color.new(255, 255, 255)
+      return
+    end
+
+    shown = "> #{text}_"
+    shown = shown[1..-1] while shown.size > 1 && bitmap.text_size(shown).width > WIDTH - 8
+    bitmap.draw_text(4, y, WIDTH - 8, ROW, shown)
+  end
+
+  # Frees the log's picture.
+  def dispose
+    bitmap.dispose
+    super
+  end
+end
+
 # Game hooks.
 #
 # Each wraps a game method: the original runs first, and the mod's part never raises.
@@ -542,28 +924,55 @@ if MGQ_MpActions.hookable?
       alias mgq_mp_actions_update update
       alias mgq_mp_actions_dispose dispose
 
-      # Updates the map's sprites, then the line above the player's own head and the wheel.
+      # Updates the map's sprites, then the line above the player's own head, the wheel and the chat.
       def update
         mgq_mp_actions_update
         mgq_mp_actions_update_sprites
       end
 
-      # Keeps the line above the player's own head and the action wheel around them.
+      # Keeps the line above the player's own head, the action wheel around them, the chat bubbles
+      # and the chat log.
       def mgq_mp_actions_update_sprites
         @mgq_mp_own_line ||= Sprite_MpOwnLine.new(@viewport1)
         @mgq_mp_wheel ||= Sprite_MpActionWheel.new(@viewport3)
+        @mgq_mp_chat_log ||= Sprite_MpChatLog.new(@viewport3)
         player = @character_sprites.find { |sprite| sprite.character.equal?($game_player) }
         @mgq_mp_own_line.show(player)
         @mgq_mp_wheel.show(player)
+        @mgq_mp_chat_log.update
+        mgq_mp_actions_update_bubbles
       rescue => e
         MGQ_MpActions.log("action sprites failed: #{e.class}: #{e.message}") unless @mgq_mp_actions_failed
         @mgq_mp_actions_failed = true
       end
 
-      # Frees the line above the player's own head and the wheel, then the map's sprites.
+      # Keeps a bubble per player with a recent chat line, above them while they are on this map.
+      def mgq_mp_actions_update_bubbles
+        @mgq_mp_bubbles ||= {}
+        chat = MGQ_MpActions::Chat
+        senders = MGQ_MpActions.in_world? ? chat.senders : []
+        (@mgq_mp_bubbles.keys - senders).each { |sender| @mgq_mp_bubbles.delete(sender).dispose }
+
+        senders.each do |sender|
+          bubble = @mgq_mp_bubbles[sender] ||= Sprite_MpChatBubble.new(@viewport1)
+          if sender == :me
+            character, lift = $game_player, Sprite_MpChatBubble::OWN_LIFT
+            character = nil if MGQ_MpActions::Wheel.open?
+          else
+            peer = MGQ_MpOverworld::Peers.at(sender)
+            character, lift = peer && peer.ghost, Sprite_MpChatBubble::GHOST_LIFT
+          end
+
+          shown = character && !character.transparent
+          bubble.show(shown ? chat.bubble(sender) : nil, shown ? character.screen_x : 0, shown ? character.screen_y - lift : 0)
+        end
+      end
+
+      # Frees the line above the player's own head, the wheel and the chat, then the map's sprites.
       def dispose
-        [@mgq_mp_own_line, @mgq_mp_wheel].compact.each { |sprite| sprite.dispose }
-        @mgq_mp_own_line = @mgq_mp_wheel = nil
+        [@mgq_mp_own_line, @mgq_mp_wheel, @mgq_mp_chat_log].compact.each { |sprite| sprite.dispose }
+        (@mgq_mp_bubbles || {}).each_value { |sprite| sprite.dispose }
+        @mgq_mp_own_line = @mgq_mp_wheel = @mgq_mp_chat_log = @mgq_mp_bubbles = nil
         mgq_mp_actions_dispose
       end
     end

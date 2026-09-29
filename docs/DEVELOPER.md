@@ -6,7 +6,7 @@
 MGQ-Paradox-Multiplayer-Mod.slnx      Visual Studio solution
 Directory.Build.targets               puts vswhere.exe on the PATH, which the NativeAOT link needs
 GameScript/Multiplayer.rb             Ruby, what every way of playing together shares
-GameScript/mp_actions.rb              Ruby, what players of a world do together on the map: action wheel, parties
+GameScript/mp_actions.rb              Ruby, what players of a world do together on the map: action wheel, parties, chat
 GameScript/mp_overworld.rb            Ruby, the other players of a world on the map, as ghosts
 GameScript/mp_sync.rb                 Ruby, live battles: the host computes, the guest plays back
 GameScript/mp_world.rb                Ruby, worlds: the world screen, and each world's own saves
@@ -24,7 +24,7 @@ docs/DEVELOPER.md                     this file
 | File | Module | What it is |
 |---|---|---|
 | `Multiplayer.rb` | `MGQ_Multiplayer` | The foundation every mode shares: `Log` (`Multiplayer/InGame.log`), `Link` (the DLL's `mp_*` functions), `Background` (keeps the game running while another window is in front, and has `Input` report no buttons meanwhile), `Key` (F-keys the game's `Input` does not know), `Capture` (takes the buttons away from the game while a screen of the mod reads them), `Discord` (the bridge client, see below). |
-| `mp_actions.rb` | `MGQ_MpActions` | What players of a world do together on the map: the action wheel and parties so far (see [Actions](#actions-mp_actionsrb)). Reaches `MGQ_MpOverworld` at run time. |
+| `mp_actions.rb` | `MGQ_MpActions` | What players of a world do together on the map: the action wheel, parties and chat (see [Actions](#actions-mp_actionsrb)). Reaches `MGQ_MpOverworld` at run time. |
 | `mp_sync.rb` | `MGQ_MpSync` | Live battles, for any mode: `join` makes the next battle live, `battle_started` marks it running, `finish` ends it and closes the link, `record_to_file` has the next battle record itself. Knows nothing of PvP battles. |
 | `mp_overworld.rb` | `MGQ_MpOverworld` | The other players of the open world on the map: what each game tells the others, the ghosts, their name labels and the status line (see [On the map](#on-the-map-mp_overworldrb)). Reaches `MGQ_MpWorld` and `MGQ_MpActions` at run time. |
 | `mp_world.rb` | `MGQ_MpWorld` | Worlds: the Multiplayer command on the title screen, the world screen, each world's folder with its saves and system save (see [Worlds](#worlds-mp_worldrb)). |
@@ -157,9 +157,17 @@ While a world is open, a `Graphics.update` hook runs every frame in every scene:
 
 - Up: accept the invite of a player nearby (`NEAR_TILES`, 2, on the same map) who is outside the party, else invite the players nearby who are outside it.
 - Down: leave the party, or stop an invite nobody took.
-- Left: chat, right: duel, both grey until they exist.
+- Left: chat, grey while the keyboard cannot reach the game (`Background.running?`).
+- Right: duel, grey until duels exist.
+
+The wheel opens on the first choice that can be taken, clockwise from the top.
 
 **Parties** (`Party`). Every state message also carries the player's party id (`party`) and whether they invite (`invite`), so a party needs no message of its own. Inviting lasts 15 s (`INVITE_FRAMES`) and makes a party of one with a new id, which the invite line above the player's own head (`Sprite_MpOwnLine`) and above their ghost on the others' screens shows. Accepting takes the inviter's id. A game sees another join its party when their message carries its id (`Party.observe`), which also ends its invite. An invite nobody took forgets its party of one, and leaving the world leaves the party. Ghosts outside the party are see-through (`STRANGER_OPACITY`), party members' names green. `Party.members` lists them for co-op battles, which do not exist yet.
+
+**Chat** (`Chat`). T (`CHAT_KEY`, 0x54) or the wheel opens the chat box, which takes the keyboard through `mp_typing`/`mp_take_typed` like the world screen's text box, and holds the buttons (`Capture`), so keys that type move nobody. Enter sends, Escape closes, a line has at most 120 characters (`MAX_LENGTH`). A line goes to everyone as its own message, `chat=<line>` and `name=<sender>` without a `map`, so `mp_overworld.rb` hands it to `MGQ_MpActions.take` rather than taking it for a state; the name covers a line that arrives before its sender's first state. Every line, the player's own included:
+
+- joins the chat log (`Sprite_MpChatLog`) at the bottom left, above the status line, for 10 s (`LOG_FRAMES`); the open chat box shows the last lines, wrapped, with the box on the row below;
+- shows for 6 s (`BUBBLE_FRAMES`) in a bubble (`Sprite_MpChatBubble`) above the sender, while their ghost is on the player's map, placed from the character's `screen_x`/`screen_y`, so it needs no sprite of `mp_overworld.rb`.
 
 ## PvP battles (`pvp_battle.rb`)
 

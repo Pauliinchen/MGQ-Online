@@ -43,7 +43,9 @@ Each world keeps its own saves, Library, medals and affection in `Multiplayer\Wo
 
 **On the map**, the other players on the same map walk around as they do, with their names above them and an icon for what they do: fighting, talking or watching an event, in a menu, the inventory or their equipment, shopping, at the casino, in the Library, sailing, flying, or away from the game. They walk through everything and trigger nothing. The bottom left of the screen tells who joined and left, and when the connection is being restored. PvP battles (F11) are off while you are in a world.
 
-**The action wheel:** press **B** on the map to open it around your character. Pick a choice with the arrow keys and take it with the confirm button; **B** or cancel closes the wheel. Choices you cannot take right now are grey and tell you why. Chat and duels are shown already and come in a later version.
+**The action wheel:** press **B** on the map to open it around your character. Pick a choice with the arrow keys and take it with the confirm button; **B** or cancel closes the wheel. Choices you cannot take right now are grey and tell you why. Duels are shown already and come in a later version.
+
+**Chat:** press **T**, or pick *Chat* in the wheel, and type on the keyboard; **Enter** sends, **Esc** closes. Your line goes to everyone in the world: it shows in a speech bubble above your head for the players on your map, and in the chat log at the bottom left of the map for everyone.
 
 **Parties:** players outside your party are slightly see-through. Stand next to another player, open the wheel and pick *Invite to a party*; "Invites to a party (B)" then shows above your head on their screen for 15 seconds, and when they open the wheel next to you and pick *Accept*, you form a party. Party members are fully visible and their names are green. *Leave the party* at the bottom of the wheel leaves it. Battles fought together as a party are planned.
 
