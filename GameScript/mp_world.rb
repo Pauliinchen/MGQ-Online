@@ -787,6 +787,7 @@ class Scene_MpWorlds < Scene_MenuBase
     elsif @entry.listed.online >= @entry.listed.seats
       Sound.play_buzzer
       say("#{@entry.name} is full right now.")
+      back_to_list
     else
       ask_text(:password, "The password of #{@entry.name}", "", true, MGQ_MpWorld::MAX_PASSWORD_CHARS)
     end
@@ -797,6 +798,7 @@ class Scene_MpWorlds < Scene_MenuBase
     favourite = MGQ_MpWorld::Favourites.toggle(@entry.id)
     say(favourite ? "#{@entry.name} is a favourite now." : "#{@entry.name} is no longer a favourite.")
     look_at_list
+    back_to_list
   end
 
   # Opens the list of the chosen world's players to remove one.
@@ -831,6 +833,7 @@ class Scene_MpWorlds < Scene_MenuBase
     when :delete_saves
       say(@entry.local.delete ? "Your saves of #{@entry.name} were deleted." : "Your saves of #{@entry.name} could not be deleted.")
       look_at_list
+      back_to_list
     end
   end
 
@@ -860,7 +863,8 @@ class Scene_MpWorlds < Scene_MenuBase
 
     unless yield
       Sound.play_buzzer
-      return say("Another request is still running. Try again in a moment.")
+      say("Another request is still running. Try again in a moment.")
+      return back_to_list
     end
 
     @busy = kind
