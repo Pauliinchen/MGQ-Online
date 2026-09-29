@@ -2,7 +2,8 @@
 //  Session.cs
 //
 //  Changelog:
-//      Paulinchen  2026-09-29: Ignored invites while hosting, counting them for the game script
+//      Paulinchen  2026-09-29: Swapped teams in encrypted frames over a frame channel, the join code's token no longer sent
+//                            - Ignored invites while hosting, counting them for the game script
 //                            - Logged what the join code offers and how each of the host's addresses went
 //                            - Told a guest without IPv6 why it cannot reach a host that offers only IPv6
 //                            - Let Describe leave the friend's team out
@@ -498,30 +499,25 @@ internal sealed class Session
 
         try
         {
-            var stream = Open(client);
+            var channel = Open(client);
+            var cipher = new FrameCipher(token, host: true);
 
-            if (Frame.Read(stream) is not { } text)
+            // A guest whose first frame does not decrypt holds another join code, so it is turned away unanswered.
+            if (ReceiveMessage(channel, cipher) is not { } guest)
             {
-                return false;
-            }
-
-            var guest = Message.Decode(text);
-
-            if (guest[Message.Token] != token)
-            {
-                Frame.Write(stream, Refusal("The join code is out of date, ask for a new one."));
+                Log.Write("turned a guest away, their join code is out of date or someone else's");
                 return false;
             }
 
             if (guest[Message.Game] != game)
             {
-                Frame.Write(stream, Refusal(DifferentGame));
+                SendMessage(channel, cipher, Refusal(DifferentGame));
                 Fail(generation, DifferentGame);
                 return true;
             }
 
-            Frame.Write(stream, TeamMessage(team));
-            linked = Receive(generation, guest[Message.Player], guest.Team, client, token);
+            SendMessage(channel, cipher, TeamMessage(team));
+            linked = Receive(generation, guest[Message.Player], guest.Team, channel, cipher, token);
             return true;
         }
         catch (Exception ex)
@@ -557,23 +553,21 @@ internal sealed class Session
                 return;
             }
 
-            var stream = Open(client);
+            var channel = Open(client);
+            var cipher = new FrameCipher(code.Token, host: false);
             var headers = new KeyValuePair<string, string?>[]
             {
-                new(Message.Token, code.Token),
                 new(Message.Game, game),
                 new(Message.Player, Volatile.Read(ref _playerName)),
             };
 
-            Frame.Write(stream, new Message(headers, team).Encode());
+            SendMessage(channel, cipher, new Message(headers, team).Encode());
 
-            if (Frame.Read(stream) is not { } text)
+            if (ReceiveMessage(channel, cipher) is not { } host)
             {
-                Fail(generation, "Your friend's game did not answer.");
+                Fail(generation, "Your friend's game did not answer. Is the join code still the one it hosts with?");
                 return;
             }
-
-            var host = Message.Decode(text);
 
             if (host[Message.Refused].Length > 0)
             {
@@ -581,7 +575,7 @@ internal sealed class Session
                 return;
             }
 
-            linked = Receive(generation, host[Message.Player], host.Team, client, code.Token);
+            linked = Receive(generation, host[Message.Player], host.Team, channel, cipher, code.Token);
         }
         catch (Exception ex)
         {
@@ -666,16 +660,34 @@ internal sealed class Session
     };
 
     /// <summary>
-    /// Opens a connection's stream with the exchange's timeouts.
+    /// Opens a connection as a frame channel with the exchange's timeouts.
     /// </summary>
-    /// <param name="client">The connection.</param>
-    /// <returns>The stream.</returns>
-    private static NetworkStream Open(TcpClient client)
+    /// <param name="client">The connection, which the channel then owns.</param>
+    /// <returns>The channel.</returns>
+    private static IFrameChannel Open(TcpClient client)
     {
-        client.ReceiveTimeout = (int)ExchangeTimeout.TotalMilliseconds;
-        client.SendTimeout = (int)ExchangeTimeout.TotalMilliseconds;
-        return client.GetStream();
+        var channel = new TcpFrameChannel(client);
+        channel.SetTimeout(ExchangeTimeout);
+        return channel;
     }
+
+    /// <summary>
+    /// Encrypts a message of the exchange and sends it.
+    /// </summary>
+    /// <param name="channel">The connection.</param>
+    /// <param name="cipher">The exchange's cipher.</param>
+    /// <param name="text">The message's text.</param>
+    private static void SendMessage(IFrameChannel channel, FrameCipher cipher, string text) =>
+        channel.Send(cipher.Seal(Encoding.UTF8.GetBytes(text)));
+
+    /// <summary>
+    /// Receives a message of the exchange and decrypts it.
+    /// </summary>
+    /// <param name="channel">The connection.</param>
+    /// <param name="cipher">The exchange's cipher.</param>
+    /// <returns>The message, or <see langword="null"/> when none came or it failed its check.</returns>
+    private static Message? ReceiveMessage(IFrameChannel channel, FrameCipher cipher) =>
+        channel.Receive() is { } frame && cipher.Open(frame) is { } text ? Message.Decode(Encoding.UTF8.GetString(text)) : null;
 
     /// <summary>
     /// Listens on a port, over IPv6 and IPv4 at once where the PC has IPv6.
@@ -742,10 +754,11 @@ internal sealed class Session
     /// <param name="generation">The session the team belongs to.</param>
     /// <param name="player">Who sent it.</param>
     /// <param name="team">The team.</param>
-    /// <param name="client">The connection the team came over.</param>
+    /// <param name="channel">The connection the team came over.</param>
+    /// <param name="cipher">The exchange's cipher, which the link goes on with.</param>
     /// <param name="token">The join code's token, which names the party.</param>
     /// <returns><see langword="true"/> when the link took the connection over.</returns>
-    private bool Receive(int generation, string player, string team, TcpClient client, string token)
+    private bool Receive(int generation, string player, string team, IFrameChannel channel, FrameCipher cipher, string token)
     {
         lock (_gate)
         {
@@ -758,7 +771,7 @@ internal sealed class Session
             _opponent = Cleaned(player) is { Length: > 0 } cleaned ? cleaned : DefaultPlayerName;
             _opponentTeam = team;
             _joinCode = null;
-            _link = new Link(client, PingInterval, DropTimeout);
+            _link = new Link(channel, cipher, PingInterval, DropTimeout);
             _partyId = PartyIdOf(token);
             StopListening();
         }

@@ -2,6 +2,7 @@
 //  Link.cs
 //
 //  Changelog:
+//      Paulinchen  2026-09-29: Carried encrypted frames over any frame channel instead of a TCP connection
 //      Paulinchen  2026-09-28: Created
 //
 //----------------------------------------------------------------
@@ -9,7 +10,6 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Net.Sockets;
 using System.Text;
 using System.Threading;
 
@@ -46,9 +46,14 @@ internal sealed class Link
     private const int HeaderBytes = 16;
 
     /// <summary>
-    /// The connection.
+    /// The connection, which the link owns.
     /// </summary>
-    private readonly TcpClient _client;
+    private readonly IFrameChannel _channel;
+
+    /// <summary>
+    /// Encrypts the frames going out and checks the frames coming in.
+    /// </summary>
+    private readonly FrameCipher _cipher;
 
     /// <summary>
     /// How long the writer waits for a message before it pings.
@@ -61,8 +66,11 @@ internal sealed class Link
     private readonly ConcurrentQueue<string> _inbox = new();
 
     /// <summary>
-    /// The frames waiting for the writer.
+    /// The frames waiting for the writer, not yet encrypted.
     /// </summary>
+    /// <remarks>
+    /// Only the writer thread encrypts, pings included, so frames go out in the order their counters say.
+    /// </remarks>
     private readonly BlockingCollection<string> _outbox = new();
 
     /// <summary>
@@ -73,19 +81,19 @@ internal sealed class Link
     /// <summary>
     /// Takes over a connection and starts reading and writing on it.
     /// </summary>
-    /// <param name="client">The connection, which the link closes when it ends.</param>
+    /// <param name="channel">The connection, which the link closes when it ends.</param>
+    /// <param name="cipher">The cipher the team swap used, whose counters go on.</param>
     /// <param name="pingInterval">How long the link stays quiet before it pings.</param>
     /// <param name="dropTimeout">How long the other game may stay silent before the link counts as dropped.</param>
-    public Link(TcpClient client, TimeSpan pingInterval, TimeSpan dropTimeout)
+    public Link(IFrameChannel channel, FrameCipher cipher, TimeSpan pingInterval, TimeSpan dropTimeout)
     {
-        _client = client;
+        _channel = channel;
+        _cipher = cipher;
         _pingInterval = pingInterval;
-        client.ReceiveTimeout = (int)dropTimeout.TotalMilliseconds;
-        client.SendTimeout = (int)dropTimeout.TotalMilliseconds;
+        channel.SetTimeout(dropTimeout);
 
-        var stream = client.GetStream();
-        StartThread("MultiplayerLinkRead", () => ReadAll(stream));
-        StartThread("MultiplayerLinkWrite", () => WriteAll(stream));
+        StartThread("MultiplayerLinkRead", ReadAll);
+        StartThread("MultiplayerLinkWrite", WriteAll);
     }
 
     /// <summary>
@@ -100,7 +108,7 @@ internal sealed class Link
     /// <returns><see langword="false"/> when the link has ended or the message is too long for a frame.</returns>
     public bool Send(string text)
     {
-        if (State != LinkState.Open || Encoding.UTF8.GetByteCount(text) > Frame.MaxBodyBytes - HeaderBytes)
+        if (State != LinkState.Open || Encoding.UTF8.GetByteCount(text) > Frame.MaxBodyBytes - HeaderBytes - FrameCipher.Overhead)
         {
             return false;
         }
@@ -153,20 +161,25 @@ internal sealed class Link
     /// <remarks>
     /// Catches everything, since an exception escaping this thread would end the whole game.
     /// </remarks>
-    /// <param name="stream">The connection's stream.</param>
-    private void ReadAll(NetworkStream stream)
+    private void ReadAll()
     {
         try
         {
             while (State == LinkState.Open)
             {
-                if (Frame.Read(stream) is not { } text)
+                if (_channel.Receive() is not { } frame)
                 {
                     End(LinkState.Dropped, "the connection ended");
                     return;
                 }
 
-                var message = Message.Decode(text);
+                if (_cipher.Open(frame) is not { } text)
+                {
+                    End(LinkState.Dropped, "a frame failed its check");
+                    return;
+                }
+
+                var message = Message.Decode(Encoding.UTF8.GetString(text));
 
                 switch (message[Message.Kind])
                 {
@@ -192,8 +205,7 @@ internal sealed class Link
     /// <remarks>
     /// Catches everything, since an exception escaping this thread would end the whole game.
     /// </remarks>
-    /// <param name="stream">The connection's stream.</param>
-    private void WriteAll(NetworkStream stream)
+    private void WriteAll()
     {
         try
         {
@@ -201,7 +213,7 @@ internal sealed class Link
             {
                 if (_outbox.TryTake(out var frame, _pingInterval))
                 {
-                    Frame.Write(stream, frame);
+                    Write(frame);
                 }
                 else if (_outbox.IsCompleted)
                 {
@@ -209,7 +221,7 @@ internal sealed class Link
                 }
                 else
                 {
-                    Frame.Write(stream, Encode(PingKind));
+                    Write(Encode(PingKind));
                 }
             }
         }
@@ -219,9 +231,15 @@ internal sealed class Link
         }
         finally
         {
-            _client.Dispose();
+            _channel.Dispose();
         }
     }
+
+    /// <summary>
+    /// Encrypts a frame and sends it. Called by the writer thread only.
+    /// </summary>
+    /// <param name="frame">The frame's text.</param>
+    private void Write(string frame) => _channel.Send(_cipher.Seal(Encoding.UTF8.GetBytes(frame)));
 
     /// <summary>
     /// Ends the link from this side's threads and closes the connection. Only the first end counts.
@@ -237,7 +255,7 @@ internal sealed class Link
 
         Log.Write($"link {state.ToString().ToLowerInvariant()}, {reason}");
         _outbox.CompleteAdding();
-        _client.Dispose();
+        _channel.Dispose();
     }
 
     /// <summary>

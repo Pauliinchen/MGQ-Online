@@ -2,7 +2,8 @@
 //  SessionTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-09-29: Added a test for invites while hosting
+//      Paulinchen  2026-09-29: Added a test for a guest with another join code's token
+//                            - Added a test for invites while hosting
 //                            - Added a test for the state without the team
 //                            - Read the join code and party from the described state
 //      Paulinchen  2026-09-28: Created
@@ -131,6 +132,29 @@ public sealed class SessionTests
         Assert.Equal("failed", guestSide["state"]);
         Assert.Contains("another version", guestSide["error"]);
         Assert.Equal(string.Empty, guestSide.Team);
+    }
+
+    /// <summary>
+    /// Asserts that a guest with another join code's token is turned away without learning anything,
+    /// and the host goes on hosting.
+    /// </summary>
+    [Fact]
+    public void AnotherToken_IsTurnedAway()
+    {
+        var host = NewSession("Host");
+        var guest = NewSession("Guest");
+
+        host.Host("3.06", "host team", FreePort());
+        var fields = AwaitCode(host).Split(';');
+        fields[1] = "zzzzzzzzzz";
+        guest.Join(string.Join(";", fields), "3.06", "guest team");
+
+        var guestSide = AwaitSettled(guest);
+
+        Assert.Equal("failed", guestSide["state"]);
+        Assert.Contains("did not answer", guestSide["error"]);
+        Assert.Equal(string.Empty, guestSide.Team);
+        Assert.Equal("hosting", Message.Decode(host.Describe())["state"]);
     }
 
     /// <summary>

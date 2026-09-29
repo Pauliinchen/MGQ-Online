@@ -2,6 +2,7 @@
 //  Message.cs
 //
 //  Changelog:
+//      Paulinchen  2026-09-29: Dropped the token header, since decrypting the first frame proves the join code
 //      Paulinchen  2026-09-28: Created
 //
 //----------------------------------------------------------------
@@ -21,11 +22,6 @@ namespace MGQParadox.Multiplayer.Network;
 /// </remarks>
 internal sealed class Message
 {
-    /// <summary>
-    /// The token of the join code, which the guest sends.
-    /// </summary>
-    public const string Token = "token";
-
     /// <summary>
     /// What tells the game data of one game version from another's.
     /// </summary>

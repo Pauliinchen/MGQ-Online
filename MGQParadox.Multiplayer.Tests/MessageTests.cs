@@ -2,6 +2,7 @@
 //  MessageTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-09-29: Covered frames of bytes, and dropping frames of the earlier exchange
 //      Paulinchen  2026-09-28: Created
 //
 //----------------------------------------------------------------
@@ -61,17 +62,18 @@ public sealed class MessageTests
     }
 
     /// <summary>
-    /// Asserts that a frame carries its text through a stream.
+    /// Asserts that a frame carries its body through a stream.
     /// </summary>
     [Fact]
-    public void Frame_CarriesTheText()
+    public void Frame_CarriesTheBody()
     {
         using var stream = new MemoryStream();
+        var body = new byte[] { 0, 1, 2, 250, 255 };
 
-        Frame.Write(stream, "player=Guest\n\nmember=1");
+        Frame.Write(stream, body);
         stream.Position = 0;
 
-        Assert.Equal("player=Guest\n\nmember=1", Frame.Read(stream));
+        Assert.Equal(body, Frame.Read(stream));
     }
 
     /// <summary>
@@ -92,7 +94,7 @@ public sealed class MessageTests
     public void Frame_DropsOversizedFrames()
     {
         using var stream = new MemoryStream();
-        stream.Write("MGQMP1"u8);
+        stream.Write("MGQMP2"u8);
         stream.Write(System.BitConverter.GetBytes(Frame.MaxBodyBytes + 1));
         stream.Position = 0;
 
@@ -100,13 +102,28 @@ public sealed class MessageTests
     }
 
     /// <summary>
-    /// Asserts that writing a text over the limit fails instead of sending it.
+    /// Asserts that writing a body over the limit fails instead of sending it.
     /// </summary>
     [Fact]
-    public void Frame_RefusesToWriteOversizedTexts()
+    public void Frame_RefusesToWriteOversizedBodies()
     {
         using var stream = new MemoryStream();
 
-        Assert.Throws<InvalidDataException>(() => Frame.Write(stream, new string('a', Frame.MaxBodyBytes + 1)));
+        Assert.Throws<InvalidDataException>(() => Frame.Write(stream, new byte[Frame.MaxBodyBytes + 1]));
+    }
+
+    /// <summary>
+    /// Asserts that a frame of the earlier, unencrypted exchange is dropped.
+    /// </summary>
+    [Fact]
+    public void Frame_DropsFramesOfTheEarlierExchange()
+    {
+        using var stream = new MemoryStream();
+        stream.Write("MGQMP1"u8);
+        stream.Write(System.BitConverter.GetBytes(1));
+        stream.WriteByte(0);
+        stream.Position = 0;
+
+        Assert.Null(Frame.Read(stream));
     }
 }

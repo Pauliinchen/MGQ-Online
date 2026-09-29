@@ -2,6 +2,7 @@
 //  LinkTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-09-29: Built the links from frame channels and ciphers, and covered frames of another join code
 //      Paulinchen  2026-09-28: Created
 //
 //----------------------------------------------------------------
@@ -20,6 +21,11 @@ namespace MGQParadox.Multiplayer.Tests;
 /// </summary>
 public sealed class LinkTests
 {
+    /// <summary>
+    /// The join code token both sides of a test link share.
+    /// </summary>
+    private const string Token = "abcdefghjk";
+
     /// <summary>
     /// How long the links in these tests stay quiet before they ping.
     /// </summary>
@@ -93,10 +99,29 @@ public sealed class LinkTests
         var (listener, port) = Listen();
         using var silent = new TcpClient();
         silent.Connect(IPAddress.Loopback, port);
-        var link = new Link(listener.AcceptTcpClient(), PingInterval, DropTimeout);
+        var link = NewLink(listener.AcceptTcpClient(), Token, host: true);
         listener.Stop();
 
         AwaitState(link, LinkState.Dropped);
+    }
+
+    /// <summary>
+    /// Asserts that frames made with another join code drop the link, and none of them reaches the game.
+    /// </summary>
+    [Fact]
+    public void FramesOfAnotherJoinCode_DropTheLink()
+    {
+        var (listener, port) = Listen();
+        var client = new TcpClient();
+        client.Connect(IPAddress.Loopback, port);
+        var host = NewLink(listener.AcceptTcpClient(), Token, host: true);
+        listener.Stop();
+        var stranger = NewLink(client, "zzzzzzzzzz", host: false);
+
+        stranger.Send("forfeit");
+
+        AwaitState(host, LinkState.Dropped);
+        Assert.Null(host.Peek());
     }
 
     /// <summary>
@@ -120,10 +145,20 @@ public sealed class LinkTests
         var (listener, port) = Listen();
         var client = new TcpClient();
         client.Connect(IPAddress.Loopback, port);
-        var host = new Link(listener.AcceptTcpClient(), PingInterval, DropTimeout);
+        var host = NewLink(listener.AcceptTcpClient(), Token, host: true);
         listener.Stop();
-        return (host, new Link(client, PingInterval, DropTimeout));
+        return (host, NewLink(client, Token, host: false));
     }
+
+    /// <summary>
+    /// Makes a link over a connection, encrypted with a join code's token.
+    /// </summary>
+    /// <param name="client">The connection.</param>
+    /// <param name="token">The token.</param>
+    /// <param name="host">Whether this side hosts.</param>
+    /// <returns>The link.</returns>
+    private static Link NewLink(TcpClient client, string token, bool host) =>
+        new(new TcpFrameChannel(client), new FrameCipher(token, host), PingInterval, DropTimeout);
 
     /// <summary>
     /// Listens on a free port of the loopback address.

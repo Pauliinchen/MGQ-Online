@@ -2,51 +2,50 @@
 //  Frame.cs
 //
 //  Changelog:
+//      Paulinchen  2026-09-29: Carried bytes instead of text, since every frame is encrypted now
 //      Paulinchen  2026-09-28: Created
 //
 //----------------------------------------------------------------
 
 using System;
 using System.IO;
-using System.Text;
 
 namespace MGQParadox.Multiplayer.Network;
 
 /// <summary>
-/// One message on the connection between two games: a marker, the length and the UTF-8 text.
+/// One message on a direct connection between two games: a marker, the length and the body, an
+/// encrypted frame (see <see cref="FrameCipher"/>).
 /// </summary>
 /// <remarks>
 /// The port is open to the internet, so anything without the marker or longer than
-/// <see cref="MaxBodyBytes"/> is dropped before a byte of it is decoded.
+/// <see cref="MaxBodyBytes"/> is dropped before a byte of it is read.
 /// </remarks>
 internal static class Frame
 {
     /// <summary>
-    /// Longest text a frame may carry. Four late-game builds, with every skill, ability and piece of
+    /// Longest body a frame may carry. Four late-game builds, with every skill, ability and piece of
     /// enchanted equipment, take about 35 KB.
     /// </summary>
     public const int MaxBodyBytes = 256 * 1024;
 
     /// <summary>
-    /// Size of the length ahead of the text.
+    /// Size of the length ahead of the body.
     /// </summary>
     private const int LengthSize = 4;
 
     /// <summary>
     /// Starts every frame, and changes whenever the exchange changes.
     /// </summary>
-    private static readonly byte[] Marker = "MGQMP1"u8.ToArray();
+    private static readonly byte[] Marker = "MGQMP2"u8.ToArray();
 
     /// <summary>
     /// Sends one frame.
     /// </summary>
     /// <param name="stream">The connection.</param>
-    /// <param name="text">The text, at most <see cref="MaxBodyBytes"/> in UTF-8.</param>
-    /// <exception cref="InvalidDataException">The text is too long.</exception>
-    public static void Write(Stream stream, string text)
+    /// <param name="body">The body, at most <see cref="MaxBodyBytes"/>.</param>
+    /// <exception cref="InvalidDataException">The body is too long.</exception>
+    public static void Write(Stream stream, ReadOnlySpan<byte> body)
     {
-        var body = Encoding.UTF8.GetBytes(text);
-
         if (body.Length > MaxBodyBytes)
         {
             throw new InvalidDataException($"A frame carries at most {MaxBodyBytes} bytes, not {body.Length}.");
@@ -56,7 +55,7 @@ internal static class Frame
 
         Marker.CopyTo(frame, 0);
         BitConverter.GetBytes(body.Length).CopyTo(frame, Marker.Length);
-        body.CopyTo(frame, Marker.Length + LengthSize);
+        body.CopyTo(frame.AsSpan(Marker.Length + LengthSize));
 
         stream.Write(frame, 0, frame.Length);
         stream.Flush();
@@ -66,8 +65,8 @@ internal static class Frame
     /// Receives one frame.
     /// </summary>
     /// <param name="stream">The connection, whose own timeout ends a wait.</param>
-    /// <returns>The text, or <see langword="null"/> when the connection ended or sent something else.</returns>
-    public static string? Read(Stream stream)
+    /// <returns>The body, or <see langword="null"/> when the connection ended or sent something else.</returns>
+    public static byte[]? Read(Stream stream)
     {
         var header = new byte[Marker.Length + LengthSize];
 
@@ -85,7 +84,7 @@ internal static class Frame
 
         var body = new byte[length];
 
-        return TryReadExactly(stream, body) ? Encoding.UTF8.GetString(body) : null;
+        return TryReadExactly(stream, body) ? body : null;
     }
 
     /// <summary>
