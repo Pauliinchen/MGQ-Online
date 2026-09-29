@@ -9,8 +9,10 @@ commanding your own team.
 
 REQUIREMENT
 -----------
-Monster Girl Quest! Paradox RPG 3.06 with the English translation. Both
-games need the same version of the game and of this mod.
+Monster Girl Quest! Paradox RPG 3.06, with or without the English
+translation. Both games need the same version of the game and of this
+mod. A translated and an untranslated game can play together; each
+shows the battle in its own language.
 
 This is a Patch folder mod ("Type 1"), so the community's mod loader must
 be installed: download "Patch.rb (enable Type 1 mods)" from the MGQ wiki

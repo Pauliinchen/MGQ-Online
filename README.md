@@ -4,7 +4,7 @@ Play Monster Girl Quest! Paradox RPG together with a friend over the internet, w
 
 ## Requirements
 
-- Monster Girl Quest! Paradox RPG 3.06 with the English translation, the same version on both sides.
+- Monster Girl Quest! Paradox RPG 3.06, the same version on both sides, with or without the English translation. A translated and an untranslated game can play together; each shows the battle in its own language.
 - The community's mod loader: the `Patch.rb` from [*Patch.rb (enable Type 1 mods)*](https://mgq.miraheze.org/wiki/Paradox_mods#Patch.rb_(enable_Type_1_mods)) on the MGQ wiki, in your `Patch` folder.
 
 Optional:
