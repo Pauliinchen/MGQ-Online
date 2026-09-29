@@ -2,7 +2,8 @@
 #  mp_sync.rb
 #
 #  Changelog:
-#      Paulinchen  2026-09-29: Offered to leave the battle when a wait drags on
+#      Paulinchen  2026-09-29: Kept the untranslated game's speaker lines out of the name swap, and showed a translated host's name boxes as such lines on an untranslated guest
+#                            - Offered to leave the battle when a wait drags on
 #                            - Broke a live battle off for both players when the host's recording stops
 #                            - Stopped a recording when the live battle finishes
 #                            - Recorded the hit and defeat effects the game starts without the setter
@@ -455,6 +456,12 @@ module MGQ_MpSync
   # characters are the guest's enemies, named with their owner, and the guest's characters are
   # its own, named without.
   module Names
+    # A speaker's name box of the translation's message system, "\n<Name>".
+    NAME_BOX = /\\n[1-5cr]?<[^>]*>/i
+
+    # The untranslated game's speaker line, the name in brackets opening a message: "【Name】".
+    NAME_LINE = /\A【[^】]*】/
+
     # Learns the names from the host's side.
     #
     # @param body [String] The host's party and troop names, see MGQ_MpSync.names.
@@ -476,13 +483,25 @@ module MGQ_MpSync
       @pattern ? text.gsub(@pattern) { |name| @swaps[name] } : text
     end
 
-    # Swaps the names in a message, but not in its speaker's name box, which names a character
-    # without its owner on either side.
+    # Swaps the names in a message, but not in its speaker's name box or speaker line, which name a
+    # character without its owner on either side.
     #
     # @param text [String] The host's message line.
     # @return [String] The guest's message line.
     def self.swap_message(text)
-      text.split(/(\\n<[^>]*>)/).map { |part| part =~ /\A\\n</ ? part : swap(part) }.join
+      speaker = Regexp.union(NAME_BOX, NAME_LINE)
+      text.split(/(#{speaker})/).map { |part| part =~ /\A#{speaker}\z/ ? part : swap(part) }.join
+    end
+
+    # Writes a translated host's name box as the untranslated game's speaker line when this game has
+    # no name box, which would show the code as text.
+    #
+    # @param text [String] A message line.
+    # @return [String] The line as this game shows it.
+    def self.readable(text)
+      return text if defined?(Window_NameMessage)
+
+      text.sub(NAME_BOX) { |box| "【#{box[/<(.*)>/, 1]}】\n" }
     end
 
     # Pairs a name of the host's side with the guest's battler.
@@ -868,7 +887,7 @@ module MGQ_MpSync
       $game_message.face_index = face_index.to_i
       $game_message.background = background.to_i
       $game_message.position = position.to_i
-      $game_message.add(Names.swap_message(text.to_s))
+      $game_message.add(Names.readable(Names.swap_message(text.to_s)))
     end
 
     # Puts a message whose last line arrived into a box of the Battle Dialogue mod of the
