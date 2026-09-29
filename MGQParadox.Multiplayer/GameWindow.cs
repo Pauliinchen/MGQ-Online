@@ -2,6 +2,7 @@
 //  GameWindow.cs
 //
 //  Changelog:
+//      Paulinchen  2026-09-29: Passed key presses and typed characters on to Keyboard while a text screen wants them
 //      Paulinchen  2026-09-28: Created
 //
 //----------------------------------------------------------------
@@ -31,6 +32,21 @@ internal static unsafe partial class GameWindow
     /// WM_ACTIVATEAPP, which tells a window that its application became active or inactive.
     /// </summary>
     private const uint ActivateApp = 0x1C;
+
+    /// <summary>
+    /// WM_KEYDOWN, a key going down.
+    /// </summary>
+    private const uint KeyDown = 0x0100;
+
+    /// <summary>
+    /// WM_CHAR, a character Windows made from a key press.
+    /// </summary>
+    private const uint Character = 0x0102;
+
+    /// <summary>
+    /// WM_SYSKEYDOWN, a key going down while Alt is held, as with AltGr.
+    /// </summary>
+    private const uint SystemKeyDown = 0x0104;
 
     /// <summary>
     /// The window procedure that was in place before, which gets every message on.
@@ -95,7 +111,8 @@ internal static unsafe partial class GameWindow
     }
 
     /// <summary>
-    /// Hands every message on, telling the game its application is active whenever Windows says either.
+    /// Hands every message on, telling the game its application is active whenever Windows says
+    /// either, and passing what is typed to <see cref="Keyboard"/> while it wants it.
     /// </summary>
     /// <param name="window">The game's window.</param>
     /// <param name="message">The message.</param>
@@ -108,6 +125,17 @@ internal static unsafe partial class GameWindow
         if (message == ActivateApp)
         {
             wParam = 1;
+        }
+        else if (Keyboard.Active)
+        {
+            if (message == Character)
+            {
+                Keyboard.TakeCharacter((char)wParam);
+            }
+            else if (message is KeyDown or SystemKeyDown)
+            {
+                Keyboard.TakeKey((uint)wParam, (uint)(lParam >> 16) & 0xFF);
+            }
         }
 
         return CallWindowProcW(previousProcedure, window, message, wParam, lParam);
