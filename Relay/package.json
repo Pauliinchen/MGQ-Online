@@ -1,7 +1,7 @@
 {
   "name": "mgq-paradox-multiplayer-relay",
   "private": true,
-  "description": "Passes the Multiplayer mod's encrypted frames between two games.",
+  "description": "Passes the Multiplayer mod's encrypted frames between games.",
   "type": "module",
   "engines": {
     "node": ">=22"

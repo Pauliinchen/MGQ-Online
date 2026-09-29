@@ -2,6 +2,7 @@
 #  wrangler.toml
 #
 #  Changelog:
+#      Paulinchen  2026-09-29: Added the world rooms' Durable Object
 #      Paulinchen  2026-09-29: Created
 #
 #----------------------------------------------------------------
@@ -13,11 +14,19 @@ compatibility_date = "2026-09-01"
 workers_dev = true
 preview_urls = false
 
-# One Durable Object per room, SQLite backed, the only kind the free plan offers.
+# One Durable Object per room and per world room, SQLite backed, the only kind the free plan offers.
 [[durable_objects.bindings]]
 name = "ROOMS"
 class_name = "Room"
 
+[[durable_objects.bindings]]
+name = "WORLDS"
+class_name = "World"
+
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["Room"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["World"]

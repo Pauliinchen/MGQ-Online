@@ -2,6 +2,7 @@
 //  relay.js
 //
 //  Changelog:
+//      Paulinchen  2026-09-29: Added world rooms, which seat up to 32 games and pass each message to one or all of the others
 //      Paulinchen  2026-09-29: Created
 //
 //----------------------------------------------------------------
@@ -9,6 +10,10 @@
 // The relay's rules, the same on every server: which requests it takes, who may join a room, how
 // fast and how large messages may be, and when a room ends. It keeps no state and touches no
 // socket, so a thin layer per platform (Cloudflare, Node) can store the peers its own way.
+//
+// A room pairs one host with one guest, for a PvP battle. A world room seats several games that
+// play in the same world; each gets a seat number, which the relay puts in front of every message
+// it passes on, since it cannot read who sent what.
 
 /**
  * The protocol version the relay speaks, the first part of every room's path.
@@ -36,6 +41,31 @@ export const PING = "ping";
 export const PONG = "pong";
 
 /**
+ * What a world room tells a game that took a seat: its own seat, then the seats already taken.
+ */
+export const SEAT = "seat";
+
+/**
+ * What a world room tells the others when a game took a seat.
+ */
+export const IN = "in";
+
+/**
+ * What a world room tells the others when a game left its seat.
+ */
+export const OUT = "out";
+
+/**
+ * The target seat of a world message meant for every other game in the room.
+ */
+export const EVERYONE = 255;
+
+/**
+ * How many games a world room may seat, as the first game into the room asks for.
+ */
+export const WORLD_SEATS = Object.freeze({ min: 2, max: 32 });
+
+/**
  * The limits every room keeps.
  */
 export const LIMITS = Object.freeze({
@@ -47,6 +77,9 @@ export const LIMITS = Object.freeze({
   // How long a host may wait alone, and how long a room may last at all.
   hostWaitMs: 30 * 60 * 1000,
   roomLifetimeMs: 2 * 60 * 60 * 1000,
+  // How long one connection to a world room may last. Games come and go there, so each connection
+  // ends on its own, and the game connects again.
+  worldConnectionMs: 2 * 60 * 60 * 1000,
 });
 
 /**
@@ -61,6 +94,8 @@ export const CLOSE = Object.freeze({
   waitedTooLong: 4004,
   roomExpired: 4005,
   peerLeft: 4006,
+  worldFull: 4007,
+  connectionExpired: 4008,
 });
 
 /**
@@ -70,20 +105,35 @@ export const CLOSE = Object.freeze({
 const ROOM_ID = /^[0-9a-f]{32}$/;
 
 /**
- * Reads the room and role a request asks for.
+ * The number of seats a game asks a world room for, one or two digits.
+ */
+const SEATS = /^[0-9]{1,2}$/;
+
+/**
+ * Reads the room a request asks for: a room with its role, or a world room with its seats.
  *
- * @param {URL} url The request's address, such as /v1/room/<room id>?role=host.
- * @returns {{roomId: string, role: string} | {error: string}} The room and role, or why the request is refused.
+ * @param {URL} url The request's address, such as /v1/room/<room id>?role=host or /v1/world/<room id>?seats=4.
+ * @returns {{kind: "room", roomId: string, role: string} | {kind: "world", roomId: string, seats: number} | {error: string}} The room, or why the request is refused.
  */
 export function parseRoute(url) {
   const parts = url.pathname.split("/").filter((part) => part.length > 0);
 
-  if (parts.length !== 3 || parts[0] !== VERSION || parts[1] !== "room") {
-    return { error: `the address must be /${VERSION}/room/<room id>` };
+  if (parts.length !== 3 || parts[0] !== VERSION || (parts[1] !== "room" && parts[1] !== "world")) {
+    return { error: `the address must be /${VERSION}/room/<room id> or /${VERSION}/world/<room id>` };
   }
 
   if (!ROOM_ID.test(parts[2])) {
     return { error: "the room id must be 32 lowercase hexadecimal characters" };
+  }
+
+  if (parts[1] === "world") {
+    const seats = url.searchParams.get("seats") ?? "";
+
+    if (!SEATS.test(seats) || Number(seats) < WORLD_SEATS.min || Number(seats) > WORLD_SEATS.max) {
+      return { error: `the seats must be a number from ${WORLD_SEATS.min} to ${WORLD_SEATS.max}` };
+    }
+
+    return { kind: "world", roomId: parts[2], seats: Number(seats) };
   }
 
   const role = url.searchParams.get("role");
@@ -92,7 +142,7 @@ export function parseRoute(url) {
     return { error: "the role must be host or guest" };
   }
 
-  return { roomId: parts[2], role };
+  return { kind: "room", roomId: parts[2], role };
 }
 
 /**
@@ -183,4 +233,114 @@ export function nextDeadline(peers, limits = LIMITS) {
   const roomEnds = Math.min(...peers.map((peer) => peer.joinedAt)) + limits.roomLifetimeMs;
 
   return peers.length === 1 && peers[0].role === "host" ? Math.min(roomEnds, peers[0].joinedAt + limits.hostWaitMs) : roomEnds;
+}
+
+/**
+ * Tells how many seats a world room has: as many as the games in it were given, or as the
+ * newcomer asks for when the room is empty.
+ *
+ * @param {{capacity: number}[]} peers The records of the games in the room.
+ * @param {number} requested The seats the newcomer asks for.
+ * @returns {number} The room's seats.
+ */
+export function worldCapacity(peers, requested) {
+  return peers.length > 0 ? peers[0].capacity : requested;
+}
+
+/**
+ * Finds the seat a game takes in a world room: the lowest one free.
+ *
+ * @param {{seat: number}[]} peers The records of the games in the room.
+ * @param {number} capacity The room's seats.
+ * @returns {{seat: number, refusal: null} | {seat: null, refusal: {code: number, reason: string}}} The seat, or why the game may not join.
+ */
+export function takeSeat(peers, capacity) {
+  const taken = new Set(peers.map((peer) => peer.seat));
+
+  for (let seat = 0; seat < capacity; seat++) {
+    if (!taken.has(seat)) {
+      return { seat, refusal: null };
+    }
+  }
+
+  return { seat: null, refusal: { code: CLOSE.worldFull, reason: "the world is full" } };
+}
+
+/**
+ * Makes the record a game carries while it holds a seat in a world room.
+ *
+ * @param {number} seat The game's seat.
+ * @param {number} capacity The room's seats.
+ * @param {number} now The current time in milliseconds.
+ * @param {typeof LIMITS} [limits] The limits.
+ * @returns {{seat: number, capacity: number, joinedAt: number, allowance: number, refilledAt: number}} The record, with a full message allowance.
+ */
+export function newWorldPeer(seat, capacity, now, limits = LIMITS) {
+  return { seat, capacity, joinedAt: now, allowance: limits.burst, refilledAt: now };
+}
+
+/**
+ * Writes what a game is told once it took its seat.
+ *
+ * @param {number} seat The game's seat.
+ * @param {number[]} others The seats of the games already in the room, in any order.
+ * @returns {string} The text, such as "seat 2 0 1", with the others in ascending order.
+ */
+export function seatText(seat, others) {
+  return [SEAT, seat, ...[...others].sort((a, b) => a - b)].join(" ");
+}
+
+/**
+ * Writes what the other games are told when a game took or left a seat.
+ *
+ * @param {string} change IN or OUT.
+ * @param {number} seat The seat.
+ * @returns {string} The text, such as "in 2".
+ */
+export function seatChangeText(change, seat) {
+  return `${change} ${seat}`;
+}
+
+/**
+ * Reads where a game's world message goes, and turns it into what the others receive: the same
+ * bytes with the sender's seat in place of the target.
+ *
+ * @param {number} sender The sending game's seat.
+ * @param {Uint8Array} message The message: the target seat, or EVERYONE, then the payload.
+ * @returns {{target: number | null, forwarded: Uint8Array, refusal: null} | {refusal: {code: number, reason: string}}} The target seat, null for everyone, and the message to pass on; or why the message is refused.
+ */
+export function routeWorldMessage(sender, message) {
+  if (message.length === 0) {
+    return { refusal: { code: CLOSE.badRequest, reason: "a world message starts with its target seat" } };
+  }
+
+  const forwarded = Uint8Array.from(message);
+  forwarded[0] = sender;
+  return { target: message[0] === EVERYONE ? null : message[0], forwarded, refusal: null };
+}
+
+/**
+ * Finds the games in a world room whose connection lasted too long.
+ *
+ * @param {{joinedAt: number}[]} peers The records of the games in the room.
+ * @param {number} now The current time in milliseconds.
+ * @param {typeof LIMITS} [limits] The limits.
+ * @returns {{index: number, code: number, reason: string}[]} The games to close, by their place in peers.
+ */
+export function worldOverdue(peers, now, limits = LIMITS) {
+  return peers
+    .map((peer, index) => ({ index, due: now - peer.joinedAt >= limits.worldConnectionMs }))
+    .filter((entry) => entry.due)
+    .map(({ index }) => ({ index, code: CLOSE.connectionExpired, reason: "the connection lasted too long" }));
+}
+
+/**
+ * Tells when the relay has to look at a world room's deadlines next.
+ *
+ * @param {{joinedAt: number}[]} peers The records of the games in the room.
+ * @param {typeof LIMITS} [limits] The limits.
+ * @returns {number | null} The time in milliseconds of the next deadline, or null for an empty room.
+ */
+export function nextWorldDeadline(peers, limits = LIMITS) {
+  return peers.length === 0 ? null : Math.min(...peers.map((peer) => peer.joinedAt)) + limits.worldConnectionMs;
 }
