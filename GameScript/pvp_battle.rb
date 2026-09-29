@@ -2,7 +2,9 @@
 #  pvp_battle.rb
 #
 #  Changelog:
-#      Paulinchen  2026-09-29: Said on the PvP battle screen when the friend's team came through the relay
+#      Paulinchen  2026-09-29: Stopped asking for an open port and naming the way the team came, since every team comes through the relay
+#                            - Said that a host is reaching the relay until its join code is ready
+#                            - Said on the PvP battle screen when the friend's team came through the relay
 #                            - Said when a Discord invite arrived while hosting and was ignored
 #                            - Joined the host of an accepted Discord invite at once, loading the last save at the title screen
 #                            - Said on the map when a live battle broke off
@@ -1655,14 +1657,14 @@ module MGQ_PvpBattle
         if state["code"]
           ["Hosting, waiting for a friend . . .",
            "Invite them through the + in a Discord chat, or send them the",
-           "join code, which is on your clipboard. Port #{MGQ_Multiplayer::PORT} has to be open."]
+           "join code, which is on your clipboard."]
         else
-          ["Hosting . . . finding this PC's addresses."]
+          ["Hosting . . . reaching the relay."]
         end
       when "joining"
         ["Joining . . . swapping teams with your friend."]
       when "received"
-        [state["via"] == "relay" ? "Your friend's team arrived through the relay." : "Your friend's team arrived."]
+        ["Your friend's team arrived."]
       when "failed"
         ["The PvP battle broke off:", state["error"].to_s]
       else

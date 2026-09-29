@@ -2,7 +2,8 @@
 //  RelayFrameChannel.cs
 //
 //  Changelog:
-//      Paulinchen  2026-09-29: Created
+//      Paulinchen  2026-09-29: Measured messages against the frame channel's longest frame
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -17,8 +18,7 @@ namespace MGQParadox.Multiplayer.Network;
 
 /// <summary>
 /// A connection between two games through a relay room, which carries each frame as one binary
-/// WebSocket message. Both games connect out to the relay, which works where neither could reach
-/// the other directly.
+/// WebSocket message. Both games connect out to the relay, so neither needs an open port.
 /// </summary>
 /// <remarks>
 /// The relay speaks the protocol in Relay/README.md; it passes binary messages on unchanged and
@@ -220,7 +220,7 @@ internal sealed class RelayFrameChannel : IFrameChannel
 
             message.Write(buffer, 0, part.Count);
 
-            if (message.Length > Frame.MaxBodyBytes)
+            if (message.Length > IFrameChannel.MaxFrameBytes)
             {
                 return null;
             }

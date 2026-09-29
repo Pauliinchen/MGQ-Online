@@ -20,11 +20,6 @@
     <ZipFile>$(MSBuildProjectDirectory)\bin\$(Configuration)\MGQ-Paradox-Multiplayer-$(Version).zip</ZipFile>
   </PropertyGroup>
 
-  <!-- -p:ForceRelay=true builds a test DLL that never joins directly, to try the relay on one PC. -->
-  <PropertyGroup Condition="'$(ForceRelay)' == 'true'">
-    <DefineConstants>$(DefineConstants);FORCE_RELAY</DefineConstants>
-  </PropertyGroup>
-
   <ItemGroup>
     <InternalsVisibleTo Include="MGQParadox.Multiplayer.Tests" />
   </ItemGroup>

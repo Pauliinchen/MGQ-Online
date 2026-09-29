@@ -2,7 +2,8 @@
 //  Exports.cs
 //
 //  Changelog:
-//      Paulinchen  2026-09-29: Added mp_status, the state without the friend's team
+//      Paulinchen  2026-09-29: Dropped the port from mp_host, since hosting waits at the relay
+//                            - Added mp_status, the state without the friend's team
 //                            - Took an empty message instead of leaving it to block the ones behind it
 //      Paulinchen  2026-09-28: Created
 //
@@ -98,14 +99,13 @@ internal static unsafe class Exports
     /// </summary>
     /// <param name="game">What tells this game version's data from another's, UTF-8 and null-terminated.</param>
     /// <param name="payload">What the friend gets, such as the player's team, UTF-8 and null-terminated.</param>
-    /// <param name="port">The port to listen on.</param>
     /// <returns>1 when started, 0 when it failed.</returns>
     [UnmanagedCallersOnly(EntryPoint = "mp_host", CallConvs = [typeof(CallConvStdcall)])]
-    public static int Host(byte* game, byte* payload, int port)
+    public static int Host(byte* game, byte* payload)
     {
         try
         {
-            Session.Current.Host(Text(game), Text(payload), port);
+            Session.Current.Host(Text(game), Text(payload));
             return 1;
         }
         catch (Exception ex)

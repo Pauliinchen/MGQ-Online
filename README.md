@@ -40,18 +40,18 @@ Only the Frontline fights. Escape gives the battle up at once, Give Up is off, a
 
 ## Connection
 
-Your games first try to reach each other directly. When that fails, for example because one of you has no IPv6 and the other shares a public IPv4 address with other customers (DS-Lite, CGNAT), they meet at the mod's **relay**, which passes their data on. Neither of you has to change a router setting or install anything.
+Your games meet at the mod's **relay**, a small server that passes their data on. Both only connect out to it, which works on any internet connection, so neither of you has to open a port, change a router setting or install anything.
 
 - **Private:** everything your games send each other is encrypted with a key from the join code. The relay never gets that key: it passes on data it cannot read and keeps nothing.
-- **Direct is quicker:** a direct connection needs no detour. If you like, forward TCP port 47625 to the hosting PC; Windows asks whether `Game.exe` may use the network the first time you host, allow it.
-- **Addresses:** the join code carries the host's IP addresses, so your friend's game sees yours. To find your public one, your game asks api.ipify.org once per hosting.
+- **No addresses:** the join code holds a random token and the relay's name, so your friend's game never learns your IP address.
 
 While the mod is installed, the game keeps running when its window is in the background, so neither player holds the other up.
 
 ## Troubleshooting
 
 - **"Your friend's game is not hosting with this join code any more":** your friend stopped hosting, or hosted again, which makes a new join code. Ask for the new one.
-- **"Neither your friend's game nor the relay could be reached":** your internet connection is down, or something blocks the game from going online, such as a firewall. `Multiplayer\Multiplayer.log` says what each attempt answered.
+- **"The relay could not be reached":** your internet connection is down, or something blocks the game from going online, such as a firewall. `Multiplayer\Multiplayer.log` says what the relay answered.
+- **"This join code comes from another version of the mod":** one of you has an older version; both need the same one.
 - **"Your friend's game uses a relay this version does not know":** your friend has a newer version of the mod; update yours.
 - **Logs:** `Multiplayer\InGame.log` only appears when something went wrong inside the game; `Multiplayer\Multiplayer.log` tells what the connection did. Please attach both when [opening an issue](https://github.com/Pauliinchen/MGQ-Paradox-Multiplayer-Mod/issues).
 

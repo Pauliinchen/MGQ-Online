@@ -2,20 +2,19 @@
 //  MessageTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-09-29: Covered frames of bytes, and dropping frames of the earlier exchange
+//      Paulinchen  2026-09-29: Dropped the frame tests, which went with the direct connection
+//                            - Covered frames of bytes, and dropping frames of the earlier exchange
 //      Paulinchen  2026-09-28: Created
 //
 //----------------------------------------------------------------
 
 using System.Collections.Generic;
-using System.IO;
-using System.Text;
 using MGQParadox.Multiplayer.Network;
 
 namespace MGQParadox.Multiplayer.Tests;
 
 /// <summary>
-/// Covers the messages two games swap and the frames that carry them.
+/// Covers the messages two games swap.
 /// </summary>
 public sealed class MessageTests
 {
@@ -59,71 +58,5 @@ public sealed class MessageTests
 
         Assert.Equal("\n", new Message(headers).Encode());
         Assert.Equal(string.Empty, Message.Decode("\n")[Message.Player]);
-    }
-
-    /// <summary>
-    /// Asserts that a frame carries its body through a stream.
-    /// </summary>
-    [Fact]
-    public void Frame_CarriesTheBody()
-    {
-        using var stream = new MemoryStream();
-        var body = new byte[] { 0, 1, 2, 250, 255 };
-
-        Frame.Write(stream, body);
-        stream.Position = 0;
-
-        Assert.Equal(body, Frame.Read(stream));
-    }
-
-    /// <summary>
-    /// Asserts that anything without the frame's marker is dropped.
-    /// </summary>
-    [Fact]
-    public void Frame_DropsForeignData()
-    {
-        using var stream = new MemoryStream(Encoding.ASCII.GetBytes("GET / HTTP/1.1\r\nHost: example.com\r\n\r\n"));
-
-        Assert.Null(Frame.Read(stream));
-    }
-
-    /// <summary>
-    /// Asserts that a frame claiming more than the limit is dropped before anything is read of it.
-    /// </summary>
-    [Fact]
-    public void Frame_DropsOversizedFrames()
-    {
-        using var stream = new MemoryStream();
-        stream.Write("MGQMP2"u8);
-        stream.Write(System.BitConverter.GetBytes(Frame.MaxBodyBytes + 1));
-        stream.Position = 0;
-
-        Assert.Null(Frame.Read(stream));
-    }
-
-    /// <summary>
-    /// Asserts that writing a body over the limit fails instead of sending it.
-    /// </summary>
-    [Fact]
-    public void Frame_RefusesToWriteOversizedBodies()
-    {
-        using var stream = new MemoryStream();
-
-        Assert.Throws<InvalidDataException>(() => Frame.Write(stream, new byte[Frame.MaxBodyBytes + 1]));
-    }
-
-    /// <summary>
-    /// Asserts that a frame of the earlier, unencrypted exchange is dropped.
-    /// </summary>
-    [Fact]
-    public void Frame_DropsFramesOfTheEarlierExchange()
-    {
-        using var stream = new MemoryStream();
-        stream.Write("MGQMP1"u8);
-        stream.Write(System.BitConverter.GetBytes(1));
-        stream.WriteByte(0);
-        stream.Position = 0;
-
-        Assert.Null(Frame.Read(stream));
     }
 }

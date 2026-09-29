@@ -2,7 +2,8 @@
 //  Link.cs
 //
 //  Changelog:
-//      Paulinchen  2026-09-29: Carried encrypted frames over any frame channel instead of a TCP connection
+//      Paulinchen  2026-09-29: Measured messages against the frame channel's longest frame
+//                            - Carried encrypted frames over any frame channel instead of a TCP connection
 //      Paulinchen  2026-09-28: Created
 //
 //----------------------------------------------------------------
@@ -108,7 +109,7 @@ internal sealed class Link
     /// <returns><see langword="false"/> when the link has ended or the message is too long for a frame.</returns>
     public bool Send(string text)
     {
-        if (State != LinkState.Open || Encoding.UTF8.GetByteCount(text) > Frame.MaxBodyBytes - HeaderBytes - FrameCipher.Overhead)
+        if (State != LinkState.Open || Encoding.UTF8.GetByteCount(text) > IFrameChannel.MaxFrameBytes - HeaderBytes - FrameCipher.Overhead)
         {
             return false;
         }

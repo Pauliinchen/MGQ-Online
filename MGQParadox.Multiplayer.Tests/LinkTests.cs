@@ -2,24 +2,23 @@
 //  LinkTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-09-29: Built the links from frame channels and ciphers, and covered frames of another join code
+//      Paulinchen  2026-09-29: Linked the games through the test relay, since the direct connection is gone
+//                            - Built the links from frame channels and ciphers, and covered frames of another join code
 //      Paulinchen  2026-09-28: Created
 //
 //----------------------------------------------------------------
 
 using System;
-using System.Net;
-using System.Net.Sockets;
 using System.Threading;
 using MGQParadox.Multiplayer.Network;
 
 namespace MGQParadox.Multiplayer.Tests;
 
 /// <summary>
-/// Covers the link between two games after the team swap, over a connection on this PC's loopback
-/// address, with short timings so a test takes a moment only.
+/// Covers the link between two games after the team swap, through a room of a relay inside this
+/// process, with short timings so a test takes a moment only.
 /// </summary>
-public sealed class LinkTests
+public sealed class LinkTests : IDisposable
 {
     /// <summary>
     /// The join code token both sides of a test link share.
@@ -40,6 +39,16 @@ public sealed class LinkTests
     /// How long a test waits for the other side.
     /// </summary>
     private static readonly TimeSpan Patience = TimeSpan.FromSeconds(10);
+
+    /// <summary>
+    /// The relay the test's games meet at.
+    /// </summary>
+    private readonly TestRelay _relay = new();
+
+    /// <summary>
+    /// Stops the test's relay.
+    /// </summary>
+    public void Dispose() => _relay.Dispose();
 
     /// <summary>
     /// Asserts that messages arrive in order in both directions.
@@ -96,13 +105,11 @@ public sealed class LinkTests
     [Fact]
     public void Silence_DropsTheLink()
     {
-        var (listener, port) = Listen();
-        using var silent = new TcpClient();
-        silent.Connect(IPAddress.Loopback, port);
-        var link = NewLink(listener.AcceptTcpClient(), Token, host: true);
-        listener.Stop();
+        var (hostChannel, silentGuest) = PairedChannels();
+        var link = NewLink(hostChannel, Token, host: true);
 
         AwaitState(link, LinkState.Dropped);
+        silentGuest.Dispose();
     }
 
     /// <summary>
@@ -111,12 +118,9 @@ public sealed class LinkTests
     [Fact]
     public void FramesOfAnotherJoinCode_DropTheLink()
     {
-        var (listener, port) = Listen();
-        var client = new TcpClient();
-        client.Connect(IPAddress.Loopback, port);
-        var host = NewLink(listener.AcceptTcpClient(), Token, host: true);
-        listener.Stop();
-        var stranger = NewLink(client, "zzzzzzzzzz", host: false);
+        var (hostChannel, strangerChannel) = PairedChannels();
+        var host = NewLink(hostChannel, Token, host: true);
+        var stranger = NewLink(strangerChannel, "zzzzzzzzzz", host: false);
 
         stranger.Send("forfeit");
 
@@ -132,44 +136,44 @@ public sealed class LinkTests
     {
         var (host, _) = LinkedPair();
 
-        Assert.False(host.Send(new string('x', Frame.MaxBodyBytes)));
+        Assert.False(host.Send(new string('x', IFrameChannel.MaxFrameBytes)));
         Assert.Equal(LinkState.Open, host.State);
     }
 
     /// <summary>
-    /// Connects two links over the loopback address.
+    /// Connects two links through the test relay.
     /// </summary>
     /// <returns>The host's and the guest's link.</returns>
-    private static (Link Host, Link Guest) LinkedPair()
+    private (Link Host, Link Guest) LinkedPair()
     {
-        var (listener, port) = Listen();
-        var client = new TcpClient();
-        client.Connect(IPAddress.Loopback, port);
-        var host = NewLink(listener.AcceptTcpClient(), Token, host: true);
-        listener.Stop();
-        return (host, NewLink(client, Token, host: false));
+        var (host, guest) = PairedChannels();
+        return (NewLink(host, Token, host: true), NewLink(guest, Token, host: false));
+    }
+
+    /// <summary>
+    /// Puts a host and a guest into the same room of the test relay.
+    /// </summary>
+    /// <returns>The host's and the guest's connection, both paired.</returns>
+    private (RelayFrameChannel Host, RelayFrameChannel Guest) PairedChannels()
+    {
+        var room = Relays.RoomOf(Token);
+        var host = RelayFrameChannel.Connect(_relay.Address, room, host: true, Patience);
+        var guest = RelayFrameChannel.Connect(_relay.Address, room, host: false, Patience);
+
+        Assert.True(host.WaitForPartner(Patience));
+        Assert.True(guest.WaitForPartner(Patience));
+        return (host, guest);
     }
 
     /// <summary>
     /// Makes a link over a connection, encrypted with a join code's token.
     /// </summary>
-    /// <param name="client">The connection.</param>
+    /// <param name="channel">The connection.</param>
     /// <param name="token">The token.</param>
     /// <param name="host">Whether this side hosts.</param>
     /// <returns>The link.</returns>
-    private static Link NewLink(TcpClient client, string token, bool host) =>
-        new(new TcpFrameChannel(client), new FrameCipher(token, host), PingInterval, DropTimeout);
-
-    /// <summary>
-    /// Listens on a free port of the loopback address.
-    /// </summary>
-    /// <returns>The started listener and its port.</returns>
-    private static (TcpListener Listener, int Port) Listen()
-    {
-        var listener = new TcpListener(IPAddress.Loopback, 0);
-        listener.Start();
-        return (listener, ((IPEndPoint)listener.LocalEndpoint).Port);
-    }
+    private static Link NewLink(IFrameChannel channel, string token, bool host) =>
+        new(channel, new FrameCipher(token, host), PingInterval, DropTimeout);
 
     /// <summary>
     /// Waits until a message arrived.

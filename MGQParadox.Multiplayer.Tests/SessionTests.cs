@@ -2,7 +2,8 @@
 //  SessionTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-09-29: Covered joining through the relay, the direct way winning, and failing at the relay
+//      Paulinchen  2026-09-29: Met at the test relay in every test, and covered an unreachable or unknown relay and codes of other versions
+//                            - Covered joining through the relay, the direct way winning, and failing at the relay
 //                            - Added a test for a guest with another join code's token
 //                            - Added a test for invites while hosting
 //                            - Added a test for the state without the team
@@ -21,26 +22,40 @@ namespace MGQParadox.Multiplayer.Tests;
 
 /// <summary>
 /// Covers the team exchange between a hosting and a joining game, both inside this process and
-/// connected over this PC's loopback address.
+/// meeting at a relay inside it too.
 /// </summary>
 public sealed class SessionTests
 {
+    /// <summary>
+    /// A join code of this version whose host is nowhere.
+    /// </summary>
+    private const string CodeWithoutHost = "mgqmp2;abcdefghjkmnpqrs;r1";
+
+    /// <summary>
+    /// A join code of the first version of the mod.
+    /// </summary>
+    private const string FirstVersionCode = "mgqmp1;abcdefghjk;47625;203.0.113.7";
+
     /// <summary>
     /// How long a test waits for the other side.
     /// </summary>
     private static readonly TimeSpan Patience = TimeSpan.FromSeconds(20);
 
     /// <summary>
-    /// Asserts that host and guest end up with each other's team and name.
+    /// Asserts that host and guest end up with each other's team and name, and that the join code
+    /// names nothing but its token and relay.
     /// </summary>
     [Fact]
     public void HostAndGuest_SwapTeams()
     {
-        var host = NewSession("Host");
-        var guest = NewSession("Guest");
+        using var relay = new TestRelay();
+        var host = NewSession("Host", relay.Address);
+        var guest = NewSession("Guest", relay.Address);
 
-        host.Host("3.06", "host team", FreePort());
-        guest.Join(AwaitCode(host), "3.06", "guest team");
+        host.Host("3.06", "host team");
+        var code = AwaitCode(host);
+        Assert.Matches("^mgqmp2;[a-z2-9]{16};r1$", code);
+        guest.Join(code, "3.06", "guest team");
 
         var hostSide = AwaitSettled(host);
         var guestSide = AwaitSettled(guest);
@@ -60,10 +75,11 @@ public sealed class SessionTests
     [Fact]
     public void AfterTheSwap_TheLinkCarriesMessages()
     {
-        var host = NewSession("Host");
-        var guest = NewSession("Guest");
+        using var relay = new TestRelay();
+        var host = NewSession("Host", relay.Address);
+        var guest = NewSession("Guest", relay.Address);
 
-        host.Host("3.06", "host team", FreePort());
+        host.Host("3.06", "host team");
         var code = AwaitCode(host);
         var advertisedParty = Message.Decode(host.Describe())["party"];
         Assert.NotEmpty(advertisedParty);
@@ -82,6 +98,8 @@ public sealed class SessionTests
         Assert.Equal("ready", AwaitMessage(host));
         host.TakeMessage();
         Assert.Null(host.PeekMessage());
+        Assert.True(host.Send("turn\n1"));
+        Assert.Equal("turn\n1", AwaitMessage(guest));
 
         guest.Cancel();
 
@@ -96,10 +114,11 @@ public sealed class SessionTests
     [Fact]
     public void DescribeWithoutTeam_LeavesOnlyTheTeamOut()
     {
-        var host = NewSession("Host");
-        var guest = NewSession("Guest");
+        using var relay = new TestRelay();
+        var host = NewSession("Host", relay.Address);
+        var guest = NewSession("Guest", relay.Address);
 
-        host.Host("3.06", "host team", FreePort());
+        host.Host("3.06", "host team");
         guest.Join(AwaitCode(host), "3.06", "guest team");
         AwaitSettled(host);
 
@@ -120,10 +139,11 @@ public sealed class SessionTests
     [Fact]
     public void DifferentGames_AreTurnedAway()
     {
-        var host = NewSession("Host");
-        var guest = NewSession("Guest");
+        using var relay = new TestRelay();
+        var host = NewSession("Host", relay.Address);
+        var guest = NewSession("Guest", relay.Address);
 
-        host.Host("3.06", "host team", FreePort());
+        host.Host("3.06", "host team");
         guest.Join(AwaitCode(host), "2.41", "guest team");
 
         var hostSide = AwaitSettled(host);
@@ -136,54 +156,6 @@ public sealed class SessionTests
     }
 
     /// <summary>
-    /// Asserts that a host without any address reaches its guest through the relay, which then
-    /// carries the link both ways.
-    /// </summary>
-    [Fact]
-    public void WithoutAddresses_TheRelayCarriesEverything()
-    {
-        using var relay = new TestRelay();
-        var host = NewSession("Host", relay.Address, offerAddresses: false);
-        var guest = NewSession("Guest", relay.Address);
-
-        host.Host("3.06", "host team", FreePort());
-        var code = AwaitCode(host);
-        Assert.Empty(JoinCode.Parse(code)!.Addresses);
-        guest.Join(code, "3.06", "guest team");
-
-        var hostSide = AwaitSettled(host);
-        var guestSide = AwaitSettled(guest);
-
-        Assert.Equal("received", hostSide["state"]);
-        Assert.Equal("relay", hostSide["via"]);
-        Assert.Equal("guest team", hostSide.Team);
-        Assert.Equal("relay", guestSide["via"]);
-        Assert.Equal("host team", guestSide.Team);
-        Assert.True(guest.Send("ready"));
-        Assert.Equal("ready", AwaitMessage(host));
-        Assert.True(host.Send("turn\n1"));
-        Assert.Equal("turn\n1", AwaitMessage(guest));
-    }
-
-    /// <summary>
-    /// Asserts that a guest takes the direct way when the host answers there in time, even with a
-    /// relay at hand.
-    /// </summary>
-    [Fact]
-    public void ReachableHost_IsJoinedDirectly()
-    {
-        using var relay = new TestRelay();
-        var host = NewSession("Host", relay.Address);
-        var guest = NewSession("Guest", relay.Address);
-
-        host.Host("3.06", "host team", FreePort());
-        guest.Join(AwaitCode(host), "3.06", "guest team");
-
-        Assert.Equal("direct", AwaitSettled(guest)["via"]);
-        Assert.Equal("direct", AwaitSettled(host)["via"]);
-    }
-
-    /// <summary>
     /// Asserts that a guest finding the relay but no host in the room is told the host no longer hosts.
     /// </summary>
     [Fact]
@@ -192,7 +164,7 @@ public sealed class SessionTests
         using var relay = new TestRelay();
         var guest = NewSession("Guest", relay.Address);
 
-        guest.Join("mgqmp2;abcdefghjkmnpqrs;1;r1;", "3.06", "guest team");
+        guest.Join(CodeWithoutHost, "3.06", "guest team");
 
         var guestSide = AwaitSettled(guest);
         Assert.Equal("failed", guestSide["state"]);
@@ -200,18 +172,47 @@ public sealed class SessionTests
     }
 
     /// <summary>
-    /// Asserts that a guest reaching neither the host nor the relay says both.
+    /// Asserts that a guest who cannot reach the relay says so.
     /// </summary>
     [Fact]
-    public void NeitherHostNorRelay_SaysSo()
+    public void UnreachableRelay_FailsJoining()
     {
         var guest = NewSession("Guest", new Uri($"ws://127.0.0.1:{FreePort()}"));
 
-        guest.Join("mgqmp2;abcdefghjkmnpqrs;1;r1;", "3.06", "guest team");
+        guest.Join(CodeWithoutHost, "3.06", "guest team");
 
         var guestSide = AwaitSettled(guest);
         Assert.Equal("failed", guestSide["state"]);
-        Assert.Contains("Neither", guestSide["error"]);
+        Assert.Contains("relay could not be reached", guestSide["error"]);
+    }
+
+    /// <summary>
+    /// Asserts that a host who cannot reach the relay fails without ever offering a join code.
+    /// </summary>
+    [Fact]
+    public void UnreachableRelay_FailsHosting()
+    {
+        var host = NewSession("Host", new Uri($"ws://127.0.0.1:{FreePort()}"));
+
+        host.Host("3.06", "host team");
+
+        var hostSide = AwaitSettled(host);
+        Assert.Contains("relay could not be reached", hostSide["error"]);
+        Assert.Equal(string.Empty, hostSide["code"]);
+        Assert.Equal(string.Empty, hostSide["party"]);
+    }
+
+    /// <summary>
+    /// Asserts that a join code naming a relay this version does not know says so.
+    /// </summary>
+    [Fact]
+    public void UnknownRelay_SaysSo()
+    {
+        var guest = NewSession("Guest", relay: null);
+
+        guest.Join(CodeWithoutHost, "3.06", "guest team");
+
+        Assert.Contains("does not know", AwaitSettled(guest)["error"]);
     }
 
     /// <summary>
@@ -221,10 +222,10 @@ public sealed class SessionTests
     public void Cancel_LeavesTheRelayRoom()
     {
         using var relay = new TestRelay();
-        var host = NewSession("Host", relay.Address, offerAddresses: false);
+        var host = NewSession("Host", relay.Address);
         var guest = NewSession("Guest", relay.Address);
 
-        host.Host("3.06", "host team", FreePort());
+        host.Host("3.06", "host team");
         var code = AwaitCode(host);
         AwaitRoom(relay, 1);
         host.Cancel();
@@ -235,24 +236,24 @@ public sealed class SessionTests
     }
 
     /// <summary>
-    /// Asserts that a guest with another join code's token is turned away without learning anything,
-    /// and the host goes on hosting.
+    /// Asserts that a guest with another join code's token ends up in another relay room, learns
+    /// nothing of the host, and the host goes on hosting.
     /// </summary>
     [Fact]
-    public void AnotherToken_IsTurnedAway()
+    public void AnotherToken_FindsNoHost()
     {
-        var host = NewSession("Host");
-        var guest = NewSession("Guest");
+        using var relay = new TestRelay();
+        var host = NewSession("Host", relay.Address);
+        var guest = NewSession("Guest", relay.Address);
 
-        host.Host("3.06", "host team", FreePort());
+        host.Host("3.06", "host team");
         var fields = AwaitCode(host).Split(';');
         fields[1] = "zzzzzzzzzzzzzzzz";
         guest.Join(string.Join(";", fields), "3.06", "guest team");
 
         var guestSide = AwaitSettled(guest);
 
-        Assert.Equal("failed", guestSide["state"]);
-        Assert.Contains("did not answer", guestSide["error"]);
+        Assert.Contains("not hosting", guestSide["error"]);
         Assert.Equal(string.Empty, guestSide.Team);
         Assert.Equal("hosting", Message.Decode(host.Describe())["state"]);
     }
@@ -263,11 +264,28 @@ public sealed class SessionTests
     [Fact]
     public void Join_WithoutACode_Fails()
     {
-        var guest = NewSession("Guest");
+        var guest = NewSession("Guest", relay: null);
 
         guest.Join("no code", "3.06", "guest team");
 
-        Assert.Equal("failed", Message.Decode(guest.Describe())["state"]);
+        var state = Message.Decode(guest.Describe());
+        Assert.Equal("failed", state["state"]);
+        Assert.Contains("no join code", state["error"]);
+    }
+
+    /// <summary>
+    /// Asserts that joining with a join code of another mod version fails at once and says why.
+    /// </summary>
+    [Fact]
+    public void Join_WithACodeOfAnotherVersion_SaysSo()
+    {
+        var guest = NewSession("Guest", relay: null);
+
+        guest.Join(FirstVersionCode, "3.06", "guest team");
+
+        var state = Message.Decode(guest.Describe());
+        Assert.Equal("failed", state["state"]);
+        Assert.Contains("another version of the mod", state["error"]);
     }
 
     /// <summary>
@@ -276,9 +294,10 @@ public sealed class SessionTests
     [Fact]
     public void Cancel_StopsHosting()
     {
-        var host = NewSession("Host");
+        using var relay = new TestRelay();
+        var host = NewSession("Host", relay.Address);
 
-        host.Host("3.06", "host team", FreePort());
+        host.Host("3.06", "host team");
         AwaitCode(host);
         host.Cancel();
 
@@ -293,13 +312,32 @@ public sealed class SessionTests
     [Fact]
     public void Invite_WaitsUntilJoined()
     {
-        var guest = NewSession("Guest");
+        var guest = NewSession("Guest", relay: null);
 
-        guest.ReceiveInvite("mgqmp2;abcdefghjkmnpqrs;1;r1;127.0.0.1");
+        guest.ReceiveInvite(CodeWithoutHost);
         Assert.Equal("1", Message.Decode(guest.Describe())["invite"]);
 
         guest.JoinInvite("3.06", "guest team");
         Assert.Equal(string.Empty, Message.Decode(guest.Describe())["invite"]);
+    }
+
+    /// <summary>
+    /// Asserts that an invite with a join code of another mod version waits too, so joining it can
+    /// say why it fails, while an invite without any join code is ignored.
+    /// </summary>
+    [Fact]
+    public void Invite_OfAnotherVersion_Waits()
+    {
+        var guest = NewSession("Guest", relay: null);
+
+        guest.ReceiveInvite("not a join code");
+        Assert.Equal(string.Empty, Message.Decode(guest.Describe())["invite"]);
+
+        guest.ReceiveInvite(FirstVersionCode);
+        Assert.Equal("1", Message.Decode(guest.Describe())["invite"]);
+
+        guest.JoinInvite("3.06", "guest team");
+        Assert.Contains("another version of the mod", Message.Decode(guest.Describe())["error"]);
     }
 
     /// <summary>
@@ -309,11 +347,12 @@ public sealed class SessionTests
     [Fact]
     public void Invite_IsIgnoredWhileHosting()
     {
-        var host = NewSession("Host");
+        using var relay = new TestRelay();
+        var host = NewSession("Host", relay.Address);
 
-        host.Host("3.06", "host team", FreePort());
+        host.Host("3.06", "host team");
         AwaitCode(host);
-        host.ReceiveInvite("mgqmp2;abcdefghjkmnpqrs;1;r1;127.0.0.1");
+        host.ReceiveInvite(CodeWithoutHost);
 
         var hosting = Message.Decode(host.Describe());
         Assert.Equal("hosting", hosting["state"]);
@@ -321,7 +360,7 @@ public sealed class SessionTests
         Assert.Equal("1", hosting["ignored"]);
 
         host.Cancel();
-        host.ReceiveInvite("mgqmp2;abcdefghjkmnpqrs;1;r1;127.0.0.1");
+        host.ReceiveInvite(CodeWithoutHost);
 
         var idle = Message.Decode(host.Describe());
         Assert.Equal("1", idle["invite"]);
@@ -333,17 +372,14 @@ public sealed class SessionTests
     /// </summary>
     /// <param name="player">The player's name.</param>
     /// <param name="relay">The relay every id leads to, or <see langword="null"/> for none.</param>
-    /// <param name="offerAddresses">Whether a host offers the loopback address, or no address at all.</param>
     /// <returns>The session.</returns>
-    private static Session NewSession(string player, Uri? relay = null, bool offerAddresses = true)
+    private static Session NewSession(string player, Uri? relay)
     {
         var session = new Session
         {
-            FindAddresses = () => offerAddresses ? new[] { IPAddress.Loopback.ToString() } : Array.Empty<string>(),
             CopyToClipboard = _ => false,
             ReadClipboard = () => null,
             RelayAddress = _ => relay,
-            RelayDelay = TimeSpan.FromMilliseconds(100),
             RelayPairTimeout = TimeSpan.FromSeconds(2),
         };
 

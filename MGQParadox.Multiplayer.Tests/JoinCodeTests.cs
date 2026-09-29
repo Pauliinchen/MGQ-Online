@@ -2,12 +2,12 @@
 //  JoinCodeTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-09-29: Covered version 2 of the join code, with its relay and longer token
+//      Paulinchen  2026-09-29: Covered the join code of token and relay only, and telling codes of other versions
+//                            - Covered version 2 of the join code, with its relay and longer token
 //      Paulinchen  2026-09-28: Created
 //
 //----------------------------------------------------------------
 
-using System.Linq;
 using MGQParadox.Multiplayer.Network;
 
 namespace MGQParadox.Multiplayer.Tests;
@@ -28,51 +28,17 @@ public sealed class JoinCodeTests
     [Fact]
     public void ToText_ReadsBack()
     {
-        var code = new JoinCode(Token, 47625, "r1", new[] { "2001:db8::7", "203.0.113.7", "192.168.1.20" });
+        var code = new JoinCode(Token, "r1");
 
         var text = code.ToText();
-        var parsed = JoinCode.Parse(text);
 
-        Assert.Equal("mgqmp2;abcdefghjkmnpqrs;47625;r1;2001:db8::7,203.0.113.7,192.168.1.20", text);
-        Assert.NotNull(parsed);
-        Assert.Equal(Token, parsed.Token);
-        Assert.Equal(47625, parsed.Port);
-        Assert.Equal("r1", parsed.Relay);
-        Assert.Equal(code.Addresses, parsed.Addresses);
+        Assert.Equal("mgqmp2;abcdefghjkmnpqrs;r1", text);
+        Assert.Equal(code, JoinCode.Parse(text));
     }
 
     /// <summary>
-    /// Asserts that a code without any address reads back, since the relay alone can reach the host.
-    /// </summary>
-    [Fact]
-    public void ToText_ReadsBackWithoutAddresses()
-    {
-        var text = new JoinCode(Token, 47625, "r1", []).ToText();
-
-        Assert.Equal("mgqmp2;abcdefghjkmnpqrs;47625;r1;", text);
-        Assert.Empty(JoinCode.Parse(text)!.Addresses);
-    }
-
-    /// <summary>
-    /// Asserts that a code never outgrows Discord's join secret, leaving out the addresses that do
-    /// not fit but keeping shorter ones after them.
-    /// </summary>
-    [Fact]
-    public void ToText_FitsIntoAJoinSecret()
-    {
-        var addresses = Enumerable.Range(0, 3).Select(index => $"2001:db8:aaaa:bbbb:cccc:dddd:eeee:{index:x4}")
-                                  .Append("10.0.0.1")
-                                  .ToArray();
-
-        var text = new JoinCode(Token, 47625, "r1", addresses).ToText();
-
-        Assert.True(text.Length <= JoinCode.MaxLength);
-        Assert.EndsWith(",10.0.0.1", text);
-    }
-
-    /// <summary>
-    /// Asserts that anything but a version 2 join code is turned down, host names and codes of the
-    /// earlier version included, so joining never looks a name up.
+    /// Asserts that anything but a join code of this version is turned down, codes of earlier
+    /// versions and of this version's first draft with port and addresses included.
     /// </summary>
     /// <param name="text">The text.</param>
     [Theory]
@@ -80,14 +46,13 @@ public sealed class JoinCodeTests
     [InlineData("")]
     [InlineData("hello")]
     [InlineData("mgqmp1;abcdefghjk;47625;203.0.113.7")]
-    [InlineData("mgqmp2;abcdefghjkmnpqrs;0;r1;203.0.113.7")]
-    [InlineData("mgqmp2;abcdefghjkmnpqrs;70000;r1;203.0.113.7")]
-    [InlineData("mgqmp2;abcdefghjk;47625;r1;203.0.113.7")]
-    [InlineData("mgqmp2;abcdefghjkmnpqrs;47625;r1;example.com")]
-    [InlineData("mgqmp2;abcdefghjkmnpqrs;47625;;203.0.113.7")]
-    [InlineData("mgqmp2;abcdefghjkmnpqrs;47625;R1;203.0.113.7")]
-    [InlineData("mgqmp2;abcdefghjkmnpqrs;47625;relay/r1;203.0.113.7")]
-    [InlineData("mgqmp2;abcdefghjkmnpqrs;47625;203.0.113.7")]
+    [InlineData("mgqmp2;abcdefghjkmnpqrs;47625;r1;203.0.113.7")]
+    [InlineData("mgqmp2;abcdefghjk;r1")]
+    [InlineData("mgqmp2;ABCDEFGHJKMNPQRS;r1")]
+    [InlineData("mgqmp2;abcdefghjkmnpqrs;")]
+    [InlineData("mgqmp2;abcdefghjkmnpqrs;R1")]
+    [InlineData("mgqmp2;abcdefghjkmnpqrs;relay/r1")]
+    [InlineData("mgqmp2;abcdefghjkmnpqrs;relayfour")]
     public void Parse_TurnsDownAnythingElse(string? text) => Assert.Null(JoinCode.Parse(text));
 
     /// <summary>
@@ -95,7 +60,20 @@ public sealed class JoinCodeTests
     /// </summary>
     [Fact]
     public void Parse_IgnoresSurroundingWhiteSpace() =>
-        Assert.NotNull(JoinCode.Parse("  mgqmp2;abcdefghjkmnpqrs;47625;r1;203.0.113.7\r\n"));
+        Assert.NotNull(JoinCode.Parse("  mgqmp2;abcdefghjkmnpqrs;r1\r\n"));
+
+    /// <summary>
+    /// Asserts that codes of every version count as join codes, and nothing else does.
+    /// </summary>
+    [Fact]
+    public void IsOfAnyVersion_KnowsEveryVersion()
+    {
+        Assert.True(JoinCode.IsOfAnyVersion("mgqmp2;abcdefghjkmnpqrs;r1"));
+        Assert.True(JoinCode.IsOfAnyVersion(" mgqmp1;abcdefghjk;47625;203.0.113.7"));
+        Assert.True(JoinCode.IsOfAnyVersion("mgqmp9;anything"));
+        Assert.False(JoinCode.IsOfAnyVersion("hello"));
+        Assert.False(JoinCode.IsOfAnyVersion(null));
+    }
 
     /// <summary>
     /// Asserts that new tokens read as tokens and differ.
@@ -107,7 +85,7 @@ public sealed class JoinCodeTests
         var second = JoinCode.NewToken();
 
         Assert.NotEqual(first, second);
-        Assert.NotNull(JoinCode.Parse($"mgqmp2;{first};47625;r1;203.0.113.7"));
+        Assert.NotNull(JoinCode.Parse($"mgqmp2;{first};r1"));
     }
 
     /// <summary>

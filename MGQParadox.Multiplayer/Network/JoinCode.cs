@@ -2,54 +2,43 @@
 //  JoinCode.cs
 //
 //  Changelog:
-//      Paulinchen  2026-09-29: Named the host's relay and lengthened the token, as version 2
+//      Paulinchen  2026-09-29: Named only the token and the relay, since games meet at the relay only
+//                            - Told a code of another mod version from no code at all
+//                            - Named the host's relay and lengthened the token, as version 2
 //      Paulinchen  2026-09-28: Created
 //
 //----------------------------------------------------------------
 
 using System;
-using System.Collections.Generic;
-using System.Globalization;
 using System.Linq;
-using System.Net;
 using System.Security.Cryptography;
-using System.Text;
 
 namespace MGQParadox.Multiplayer.Network;
 
 /// <summary>
-/// What a guest needs to reach a hosting game: a one-time token, the port, the host's relay and the
-/// host's addresses.
+/// What a guest needs to reach a hosting game: a one-time token and the relay the host waits at.
 /// </summary>
 /// <remarks>
-/// It travels as Discord's join secret or through the clipboard, so it is plain text of at most
-/// <see cref="MaxLength"/> characters.
+/// It travels as Discord's join secret or through the clipboard, so it is short plain text.
 /// </remarks>
 /// <param name="Token">The one-time token, which the frames' key and the relay room come from.</param>
-/// <param name="Port">The port the host listens on.</param>
 /// <param name="Relay">The id of the relay the host waits at, see <see cref="Relays"/>.</param>
-/// <param name="Addresses">The host's addresses, the most promising first, possibly none.</param>
-internal sealed record JoinCode(string Token, int Port, string Relay, IReadOnlyList<string> Addresses)
+internal sealed record JoinCode(string Token, string Relay)
 {
-    /// <summary>
-    /// Longest join secret Discord accepts.
-    /// </summary>
-    public const int MaxLength = 128;
-
     /// <summary>
     /// Starts every code, and changes whenever the exchange changes.
     /// </summary>
     public const string Prefix = "mgqmp2";
 
     /// <summary>
-    /// Separates the prefix, token, port, relay and address list.
+    /// Starts the codes of every version of the mod.
     /// </summary>
-    private const char FieldSeparator = ';';
+    private const string AnyVersionPrefix = "mgqmp";
 
     /// <summary>
-    /// Separates the addresses.
+    /// Separates the prefix, token and relay.
     /// </summary>
-    private const char AddressSeparator = ',';
+    private const char FieldSeparator = ';';
 
     /// <summary>
     /// Length of a new token, about 79 bits, so nobody can find the token by trying from a relay room.
@@ -74,34 +63,13 @@ internal sealed record JoinCode(string Token, int Port, string Relay, IReadOnlyL
         new(Enumerable.Range(0, TokenLength).Select(_ => TokenAlphabet[RandomNumberGenerator.GetInt32(TokenAlphabet.Length)]).ToArray());
 
     /// <summary>
-    /// Writes the code, leaving out the addresses that no longer fit.
+    /// Writes the code.
     /// </summary>
-    /// <returns>The code, at most <see cref="MaxLength"/> characters.</returns>
-    public string ToText()
-    {
-        var code = new StringBuilder()
-            .Append(Prefix).Append(FieldSeparator)
-            .Append(Token).Append(FieldSeparator)
-            .Append(Port.ToString(CultureInfo.InvariantCulture)).Append(FieldSeparator)
-            .Append(Relay).Append(FieldSeparator);
-        var first = true;
-
-        foreach (var address in Addresses)
-        {
-            var entry = first ? address : AddressSeparator + address;
-
-            if (code.Length + entry.Length <= MaxLength)
-            {
-                code.Append(entry);
-                first = false;
-            }
-        }
-
-        return code.ToString();
-    }
+    /// <returns>The code.</returns>
+    public string ToText() => string.Join(FieldSeparator, Prefix, Token, Relay);
 
     /// <summary>
-    /// Reads a code, accepting nothing but addresses written as numbers, so joining never looks up a name.
+    /// Reads a code.
     /// </summary>
     /// <param name="text">The code, surrounding white space allowed.</param>
     /// <returns>The code, or <see langword="null"/> when the text is none.</returns>
@@ -109,25 +77,18 @@ internal sealed record JoinCode(string Token, int Port, string Relay, IReadOnlyL
     {
         var fields = (text ?? string.Empty).Trim().Split(FieldSeparator);
 
-        if (fields.Length != 5 || fields[0] != Prefix || !IsToken(fields[1]) || !IsRelay(fields[3]))
-        {
-            return null;
-        }
-
-        if (!int.TryParse(fields[2], NumberStyles.None, CultureInfo.InvariantCulture, out var port) || port is < 1 or > 65535)
-        {
-            return null;
-        }
-
-        var addresses = fields[4].Length == 0 ? Array.Empty<string>() : fields[4].Split(AddressSeparator);
-
-        if (addresses.Any(address => !IPAddress.TryParse(address, out _)))
-        {
-            return null;
-        }
-
-        return new JoinCode(fields[1], port, fields[3], addresses);
+        return fields.Length == 3 && fields[0] == Prefix && IsToken(fields[1]) && IsRelay(fields[2])
+            ? new JoinCode(fields[1], fields[2])
+            : null;
     }
+
+    /// <summary>
+    /// Reports whether a text looks like a join code of any version of the mod, this one included.
+    /// </summary>
+    /// <param name="text">The text.</param>
+    /// <returns><see langword="true"/> when it starts like one.</returns>
+    public static bool IsOfAnyVersion(string? text) =>
+        (text ?? string.Empty).TrimStart().StartsWith(AnyVersionPrefix, StringComparison.Ordinal);
 
     /// <summary>
     /// Reports whether a text could be a token <see cref="NewToken"/> made.

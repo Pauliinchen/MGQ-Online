@@ -2,7 +2,8 @@
 #  Multiplayer.rb
 #
 #  Changelog:
-#      Paulinchen  2026-09-29: Added Link.status, which leaves the friend's team out, for the frequent checks
+#      Paulinchen  2026-09-29: Hosted without a port, since games meet at the relay
+#                            - Added Link.status, which leaves the friend's team out, for the frequent checks
 #      Paulinchen  2026-09-28: Created
 #
 #----------------------------------------------------------------
@@ -21,9 +22,6 @@ module MGQ_Multiplayer
 
   # File name of the DLL inside the mod folder.
   DLL = "Multiplayer.dll"
-
-  # Port a hosting game listens on, which a router has to forward to it.
-  PORT = 47625
 
   # Frames between two hand-overs to the Discord mod, half a second at 60 frames per second.
   DISCORD_FRAMES = 30
@@ -144,7 +142,7 @@ module MGQ_Multiplayer
     # @param payload [String] What the friend gets, such as the player's team.
     def self.host(game, payload)
       Discord.share_player_name
-      function('mp_host', 'ppl').call(game + "\0", payload + "\0", PORT)
+      function('mp_host', 'pp').call(game + "\0", payload + "\0")
     end
 
     # Joins the host of the invite that is waiting.

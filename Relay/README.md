@@ -1,6 +1,6 @@
 # Relay
 
-Passes the Multiplayer mod's frames between two games that cannot reach each other directly, for example when one player's connection has no public IPv4 of its own (DS-Lite, CGNAT) and the other has no IPv6. The games try each other directly first; the relay is the fallback.
+Passes the Multiplayer mod's frames between two games. The games never connect to each other directly: many home connections cannot be reached from outside (DS-Lite, CGNAT, no IPv6, no forwarded port), but every one can connect out, so both games connect out to the relay.
 
 The relay never sees a battle: the games encrypt every frame with a key derived from the join code, which the relay never gets. It sees a room id, message sizes and timing, stores nothing and keeps no content.
 

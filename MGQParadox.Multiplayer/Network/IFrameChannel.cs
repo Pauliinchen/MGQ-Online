@@ -2,7 +2,8 @@
 //  IFrameChannel.cs
 //
 //  Changelog:
-//      Paulinchen  2026-09-29: Created
+//      Paulinchen  2026-09-29: Took over the longest frame from Frame, which went with the direct connection
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -20,6 +21,12 @@ namespace MGQParadox.Multiplayer.Network;
 internal interface IFrameChannel : IDisposable
 {
     /// <summary>
+    /// Longest frame a channel carries. Four late-game builds, with every skill, ability and piece of
+    /// enchanted equipment, take about 35 KB.
+    /// </summary>
+    public const int MaxFrameBytes = 256 * 1024;
+
+    /// <summary>
     /// Sets how long sending or receiving one frame may take before the connection counts as broken.
     /// </summary>
     /// <param name="timeout">The time.</param>
@@ -28,7 +35,7 @@ internal interface IFrameChannel : IDisposable
     /// <summary>
     /// Sends one frame.
     /// </summary>
-    /// <param name="frame">The frame, at most <see cref="Frame.MaxBodyBytes"/>.</param>
+    /// <param name="frame">The frame, at most <see cref="MaxFrameBytes"/>.</param>
     void Send(ReadOnlySpan<byte> frame);
 
     /// <summary>
