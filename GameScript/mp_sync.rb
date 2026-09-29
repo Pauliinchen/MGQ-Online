@@ -2,7 +2,8 @@
 #  mp_sync.rb
 #
 #  Changelog:
-#      Paulinchen  2026-09-29: Streamed the battle log's lines, the skill lines and names and who appears as calls the guest makes in its own game's language
+#      Paulinchen  2026-09-29: Sent the start of a command phase before the host's own, which the host skips when none of its characters can act
+#                            - Streamed the battle log's lines, the skill lines and names and who appears as calls the guest makes in its own game's language
 #                            - Kept the untranslated game's speaker lines out of the name swap, and showed a translated host's name boxes as such lines on an untranslated guest
 #                            - Offered to leave the battle when a wait drags on
 #                            - Broke a live battle off for both players when the host's recording stops
@@ -622,6 +623,7 @@ module MGQ_MpSync
     def self.start(sink)
       @active = true
       @sink = sink
+      @command_phase = false
       @frame = 0
       @events = []
       @values = {}
@@ -685,6 +687,25 @@ module MGQ_MpSync
       time_stop
     rescue => e
       stop_after(e)
+    end
+
+    # Records the start of a command phase once, with every battler's values, and sends it at once.
+    # With none of its characters able to act, the host's game skips its own commands and waits for
+    # the guest's within the same call, so the guest must hear of the phase before.
+    def self.command_phase
+      return unless active? && !@command_phase
+
+      @command_phase = true
+      values(true)
+      event("commands")
+      flush
+    rescue => e
+      stop_after(e)
+    end
+
+    # Ends the command phase, so the next one is recorded. Called as a turn starts.
+    def self.turn_started
+      @command_phase = false
     end
 
     # Records how long time stands still and for whom, when it changed. It decides who may act,
@@ -1415,20 +1436,24 @@ module MGQ_MpSync
     # The battle's course as the host records it: turns, actions, animations and waits, with the
     # values after each action.
     def self.course
-      record_before(Scene_Battle, :turn_start) { |_scene, _args| ["turn", $game_troop.turn_count + 1] }
+      wrap(Scene_Battle, :turn_start) do |_scene, _args, original|
+        Recorder.turn_started
+        Recorder.event("turn", $game_troop.turn_count + 1)
+        original.call
+      end
 
       # Recorded before the game checks the skip key, which leaves the animation out on this screen only.
       record_before(Scene_Battle, :show_animation) do |scene, args|
         ["animation", scene.instance_variable_get(:@subject), args[0], args[1]]
       end
 
-      wrap(Scene_Battle, :turn_end) do |scene, _args, original|
-        Recorder.event("turn_end")
-        result = original.call
-        Recorder.values(true)
-        Recorder.event("commands") unless scene.send(:scene_changing?)
-        Recorder.flush if Recorder.active?
-        result
+      record_before(Scene_Battle, :turn_end) { |_scene, _args| ["turn_end"] }
+
+      # The game also comes back here after a party change or a menu in the same phase, which
+      # Recorder.command_phase records only once.
+      wrap(Scene_Battle, :start_party_command_selection) do |scene, _args, original|
+        Recorder.command_phase unless scene.send(:scene_changing?)
+        original.call
       end
 
       wrap(Scene_Battle, :apply_item_effects) do |_scene, _args, original|
@@ -1485,10 +1510,7 @@ module MGQ_MpSync
         else
           Recorder.start(:file) if MGQ_MpSync.take_file_recording
           Recorder.values
-          result = original.call
-          Recorder.values(true)
-          Recorder.event("commands") unless scene.send(:scene_changing?)
-          result
+          original.call
         end
       end
 
