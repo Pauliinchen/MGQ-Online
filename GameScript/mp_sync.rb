@@ -2,7 +2,8 @@
 #  mp_sync.rb
 #
 #  Changelog:
-#      Paulinchen  2026-09-29: Kept the untranslated game's speaker lines out of the name swap, and showed a translated host's name boxes as such lines on an untranslated guest
+#      Paulinchen  2026-09-29: Streamed the battle log's lines, the skill lines and names and who appears as calls the guest makes in its own game's language
+#                            - Kept the untranslated game's speaker lines out of the name swap, and showed a translated host's name boxes as such lines on an untranslated guest
 #                            - Offered to leave the battle when a wait drags on
 #                            - Broke a live battle off for both players when the host's recording stops
 #                            - Stopped a recording when the live battle finishes
@@ -219,13 +220,33 @@ module MGQ_MpSync
     # Longest symbol taken from the other game. Symbols are never freed.
     SYMBOL_PATTERN = /\A\w{1,40}\z/
 
+    # What a decoded action offers: its kind, such as :count or :chain_action, which is all the
+    # game's display code reads of it.
+    ActionKind = Struct.new(:symbol)
+
     # Writes values.
     #
-    # @param values [Array] nil, true, false, numbers, symbols, texts, battlers, skills, items,
-    #   colors, tones and arrays of these.
+    # @param values [Array] See encodable?.
     # @return [String] The line.
     def self.line(values)
       values.map { |value| tokens(value) }.flatten.join("\t")
+    end
+
+    # Tells whether a value travels as itself rather than as its text.
+    #
+    # @param value [Object] A value.
+    # @return [Boolean] Whether it is nil, true, false, a number, a symbol, a text, a battler, a
+    #   skill, item, state, weapon or armor of the database, an equipped item, an action, an action
+    #   result, a color, a tone, or an array of these.
+    def self.encodable?(value)
+      case value
+      when nil, true, false, Integer, Float, Symbol, String, Game_Battler, Game_Action, Game_ActionResult,
+           RPG::Skill, RPG::Item, RPG::State, RPG::Weapon, RPG::Armor, Color, Tone
+        true
+      when Game_BaseItem then encodable?(value.object)
+      when Array then value.all? { |item| encodable?(item) }
+      else false
+      end
     end
 
     # Reads a line.
@@ -237,13 +258,19 @@ module MGQ_MpSync
     def self.parse(line, &battler)
       stack = [[]]
       line.split("\t").each do |token|
-        if token == "["
+        case token
+        when "[", "{"
           stack.push([])
-        elsif token == "]"
+        when "]"
           return nil if stack.size < 2
 
           inner = stack.pop
           stack.last << inner
+        when "}"
+          return nil if stack.size < 2
+
+          fields = stack.pop
+          stack.last << result(fields)
         else
           stack.last << value(token[0, 1], token[1..-1].to_s, &battler)
         end
@@ -264,13 +291,43 @@ module MGQ_MpSync
       when Float then ["f#{value}"]
       when Symbol then [":#{escape(value.to_s)}"]
       when Game_Battler then ["@#{Recorder.ref(value)}"]
+      when Game_Action then ["x#{value.symbol}"]
+      when Game_ActionResult then result_tokens(value)
+      when Game_BaseItem then ["g#{tokens(value.object)[0]}"]
       when RPG::Skill then ["k#{value.id}"]
       when RPG::Item then ["t#{value.id}"]
+      when RPG::State then ["z#{value.id}"]
+      when RPG::Weapon then ["w#{value.id}"]
+      when RPG::Armor then ["a#{value.id}"]
       when Color then ["c#{[value.red, value.green, value.blue, value.alpha].map(&:to_i).join(',')}"]
       when Tone then ["n#{[value.red, value.green, value.blue, value.gray].map(&:to_i).join(',')}"]
       when Array then ["["] + value.map { |item| tokens(item) }.flatten + ["]"]
       else ["s#{escape(value.to_s)}"]
       end
+    end
+
+    # Turns an action result into tokens: its fields as name and value, those that travel.
+    #
+    # @param result [Game_ActionResult] The result.
+    # @return [Array<String>] Its tokens.
+    def self.result_tokens(result)
+      fields = result.instance_variables.map do |name|
+        field = result.instance_variable_get(name)
+        encodable?(field) ? tokens(name.to_s.delete("@").to_sym) + tokens(field) : []
+      end
+      ["{"] + fields.flatten + ["}"]
+    end
+
+    # Makes an action result of its fields.
+    #
+    # @param fields [Array] Names and values, taking turns.
+    # @return [Game_ActionResult] The result.
+    def self.result(fields)
+      result = Game_ActionResult.new(nil)
+      fields.each_slice(2) do |name, field|
+        result.instance_variable_set(:"@#{name}", field) if name.is_a?(Symbol)
+      end
+      result
     end
 
     # Reads a value back from a token.
@@ -279,7 +336,7 @@ module MGQ_MpSync
     # @param rest [String] The rest of the token.
     # @yieldparam ref [String] A battler's reference.
     # @return [Object] The value, nil for anything unknown.
-    def self.value(kind, rest)
+    def self.value(kind, rest, &battler)
       case kind
       when "+" then true
       when "-" then false
@@ -288,11 +345,38 @@ module MGQ_MpSync
       when ":" then (text = unescape(rest)) =~ SYMBOL_PATTERN ? text.to_sym : nil
       when "s" then unescape(rest)
       when "@" then block_given? ? yield(rest) : nil
-      when "k" then (id = rest.to_i) > 0 ? $data_skills[id] : nil
-      when "t" then (id = rest.to_i) > 0 ? $data_items[id] : nil
+      when "x" then ActionKind.new(rest =~ SYMBOL_PATTERN ? rest.to_sym : nil)
+      when "g" then base_item(value(rest[0, 1].to_s, rest[1..-1].to_s))
+      when "k" then data($data_skills, rest)
+      when "t" then data($data_items, rest)
+      when "z" then data($data_states, rest)
+      when "w" then data($data_weapons, rest)
+      when "a" then data($data_armors, rest)
       when "c" then Color.new(*numbers(rest, 4))
       when "n" then Tone.new(*numbers(rest, 4))
       end
+    end
+
+    # Finds an entry of the database.
+    #
+    # @param table [Array] The database.
+    # @param rest [String] The entry's id.
+    # @return [RPG::BaseItem, nil] The entry, nil for an id the database lacks.
+    def self.data(table, rest)
+      id = rest.to_i
+      id > 0 ? table[id] : nil
+    end
+
+    # Wraps a database entry the way the game keeps an equipped or stolen item.
+    #
+    # @param item [RPG::BaseItem, nil] The entry.
+    # @return [Game_BaseItem, nil] The wrapped entry, nil without one.
+    def self.base_item(item)
+      return nil unless item
+
+      wrapped = Game_BaseItem.new
+      wrapped.object = item
+      wrapped
     end
 
     # Reads a list of numbers.
@@ -521,6 +605,9 @@ module MGQ_MpSync
     # Events kept before a mirror match writes them to the file.
     FLUSH_EVENTS = 200
 
+    # Seeds a call's random choices are drawn from.
+    SEED_RANGE = 1 << 30
+
     # Reports whether the battle on screen is recorded.
     #
     # @return [Boolean] Whether the battle is recorded.
@@ -565,12 +652,12 @@ module MGQ_MpSync
       flush if @sink == :link && @frame % SEND_FRAMES == 0
     end
 
-    # Records an event.
+    # Records an event, unless a call that the guest makes itself is running.
     #
     # @param kind [String] What happened.
     # @param fields [Array] Its values, see Wire.line.
     def self.event(kind, *fields)
-      return unless active?
+      return unless active? && !muted?
 
       line = Wire.line([kind] + fields)
       @events << (@sink == :file ? "#{@frame.to_s.rjust(6)}\t#{line}" : line)
@@ -585,7 +672,7 @@ module MGQ_MpSync
     # @param full [Boolean] true to record every battler's, which corrects anything the guest
     #   missed; the host does at every command phase.
     def self.values(full = false)
-      return unless active?
+      return unless active? && !muted?
 
       @values = {} if full
       battlers.each do |battler|
@@ -610,13 +697,81 @@ module MGQ_MpSync
       event("time_stop", *current)
     end
 
+    # Records a call the guest makes itself with its own game's texts: the method and its
+    # arguments, the action results it reads and the seed its random choices come from, such as
+    # the line a character says. What the call does is left out of the recording, since the
+    # guest's call does the same. A call with an argument that cannot travel is recorded as what
+    # it does instead.
+    #
+    # @param receiver [String] "log" for the battle log, "scene" for the battle.
+    # @param name [String] The method.
+    # @param args [Array] Its arguments.
+    # @param subject [Game_Battler, nil] Who acts, which a call of the battle reads.
+    # @return [Object] What the block returns.
+    def self.call(receiver, name, args, subject = nil)
+      return yield unless active? && !muted? && Wire.encodable?(args)
+
+      values
+      seed = rand(SEED_RANGE)
+      event("call", receiver, name.to_s, seed, subject, results_of(args), *args)
+      seeded(seed) { muted { yield } }
+    end
+
+    # Records an event and leaves out what the block does, which the guest does its own way.
+    #
+    # @param kind [String] What happened.
+    # @return [Object] What the block returns.
+    def self.instead(kind)
+      event(kind)
+      muted { yield }
+    end
+
+    # Leaves out every event the block records.
+    #
+    # @return [Object] What the block returns.
+    def self.muted
+      @muted = (@muted || 0) + 1
+      yield
+    ensure
+      @muted -= 1
+    end
+
+    # Tells whether events are left out.
+    #
+    # @return [Boolean] Whether a call the guest makes itself is running.
+    def self.muted?
+      (@muted || 0) > 0
+    end
+
+    # Runs a block with the random numbers following a seed, so the guest's call makes the same
+    # random choices, then goes on with random numbers the seed does not predict.
+    #
+    # @param seed [Integer] The seed.
+    # @return [Object] What the block returns.
+    def self.seeded(seed)
+      resume = rand(SEED_RANGE)
+      srand(seed)
+      yield
+    ensure
+      srand(resume)
+    end
+
+    # Lists the action results of the battlers among a call's arguments, which the battle log reads.
+    #
+    # @param args [Array] The arguments.
+    # @return [Array<Array>] Each battler with its result.
+    def self.results_of(args)
+      battlers = args.flatten.select { |arg| arg.is_a?(Game_Battler) }.uniq
+      battlers.map { |battler| [battler, battler.result] }.select { |_, result| result.is_a?(Game_ActionResult) }
+    end
+
     # Records a sprite effect a battler starts, after the battlers' values, since the guest needs a
     # hit's HP and a defeat's death before it shows the effect.
     #
     # @param battler [Game_Battler] The battler.
     # @param effect [Symbol, nil] The effect, nil for none.
     def self.sprite_effect(battler, effect)
-      return unless active? && effect
+      return unless active? && !muted? && effect
 
       values
       event("battler.sprite_effect_type", battler, effect)
@@ -818,6 +973,10 @@ module MGQ_MpSync
       method = kind.split(".", 2)[1]
 
       case kind
+      when "call"
+        call(scene, *args)
+      when "emerge"
+        emerge(scene)
       when /\Alog\./
         log_window(scene).send(method, *args.map { |arg| arg.is_a?(String) ? Names.swap(arg) : arg }) if LOG_METHODS.include?(method)
       when "popup"
@@ -851,6 +1010,67 @@ module MGQ_MpSync
       @failed ||= {}
       MGQ_MpSync.log("could not play #{kind}: #{e.class}: #{e.message}") unless @failed[kind]
       @failed[kind] = true
+    end
+
+    # Makes a call the host recorded with this game's own texts, see Recorder.call: the battle log
+    # or the battle writes the line in this game's language, with the host's action results and
+    # random choices. Its waits are skipped while the guest catches up.
+    #
+    # @param scene [Scene_Battle] The battle.
+    # @param receiver [String] "log" or "scene".
+    # @param name [String] The method.
+    # @param seed [Integer] The seed of the host's random choices.
+    # @param subject [Game_Battler, nil] Who acts.
+    # @param results [Array<Array>] Battlers with their action results.
+    # @param args [Array] The method's arguments.
+    def self.call(scene, receiver, name, seed, subject, results, *args)
+      return unless callable?(receiver, name)
+
+      Array(results).each do |battler, result|
+        battler.instance_variable_set(:@result, result) if battler && result.is_a?(Game_ActionResult)
+      end
+      earlier = scene.instance_variable_get(:@subject)
+      begin
+        scene.instance_variable_set(:@subject, subject) if receiver == "scene"
+        @in_call = true
+        srand(seed.to_i)
+        (receiver == "log" ? log_window(scene) : scene).send(name, *args)
+      ensure
+        @in_call = false
+        srand
+        scene.instance_variable_set(:@subject, earlier)
+      end
+    end
+
+    # Tells whether a recorded call names a method the host may have the guest call.
+    #
+    # @param receiver [String] "log" or "scene".
+    # @param name [String] The method.
+    # @return [Boolean] Whether the guest makes the call.
+    def self.callable?(receiver, name)
+      case receiver
+      when "log" then name =~ Hooks::LOG_CALL && Window_BattleLog.method_defined?(name) ? true : false
+      when "scene" then Hooks::SCENE_CALLS.include?(name.to_s.to_sym)
+      else false
+      end
+    end
+
+    # Tells whether the guest skips a wait of a call it makes, since it fell behind the host's stream.
+    #
+    # @return [Boolean] Whether the wait is skipped.
+    def self.skip_wait?
+      @in_call && behind? ? true : false
+    end
+
+    # Says which of the host's characters appear, in this game's language, as the host's battle
+    # did at its start.
+    #
+    # @param scene [Scene_Battle] The battle.
+    def self.emerge(scene)
+      $game_troop.enemy_names.each { |name| $game_message.add(format(Vocab::Emerge, name)) }
+      @speaker = nil
+      show_message
+      scene.send(:wait_for_message)
     end
 
     # Starts a sprite effect the host started. The host's characters fall with an actor's collapse,
@@ -1092,12 +1312,22 @@ module MGQ_MpSync
     # The scene's waits, which set the battle's pace.
     SCENE_WAITS = [:wait, :abs_wait, :wait_for_animation, :wait_for_effect, :wait_for_message]
 
+    # The battle log's methods that write a line of their own, which the guest calls itself.
+    LOG_CALL = /\Adisplay_\w+\z/
+
+    # The battle's methods the guest calls itself: the line a character says with a skill, with its
+    # cut-in, and the skill's name at the top.
+    SCENE_CALLS = [:process_skill_word, :display_skill_name]
+
+    # The scene's waits a call the guest makes itself skips while the guest catches up.
+    SKIPPABLE_WAITS = [:wait, :abs_wait]
+
     # Installs the hooks, a failing group alone left out. Calling it again does nothing.
     def self.install
       return if @installed
       @installed = true
 
-      [:battle_log, :messages, :pictures, :audio, :battlers, :course, :live].each do |group|
+      [:battle_log, :messages, :pictures, :audio, :battlers, :course, :live, :calls].each do |group|
         begin
           send(group)
         rescue => e
@@ -1288,6 +1518,33 @@ module MGQ_MpSync
 
       wrap(BattleManager.singleton_class, :can_giveup?) do |_manager, _args, original|
         MGQ_MpSync.live? ? false : original.call
+      end
+    end
+
+    # The calls whose lines each game writes in its own language: the host records them as calls,
+    # the guest makes them itself. See Recorder.call.
+    def self.calls
+      Window_BattleLog.instance_methods(false).map(&:to_s).grep(LOG_CALL).each do |name|
+        wrap(Window_BattleLog, name.to_sym) do |_log, args, original|
+          Recorder.call("log", name, args) { original.call }
+        end
+      end
+
+      SCENE_CALLS.select { |name| Scene_Battle.method_defined?(name) }.each do |name|
+        wrap(Scene_Battle, name) do |scene, args, original|
+          Recorder.call("scene", name, args, scene.instance_variable_get(:@subject)) { original.call }
+        end
+      end
+
+      # Who appears is named with each game's own names, so the guest names the host's characters.
+      wrap(BattleManager.singleton_class, :battle_start) do |_manager, _args, original|
+        Recorder.instead("emerge") { original.call }
+      end
+
+      SKIPPABLE_WAITS.select { |name| Scene_Battle.method_defined?(name) }.each do |name|
+        wrap(Scene_Battle, name) do |_scene, _args, original|
+          original.call unless Playback.skip_wait?
+        end
       end
     end
 
