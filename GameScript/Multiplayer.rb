@@ -2,7 +2,8 @@
 #  Multiplayer.rb
 #
 #  Changelog:
-#      Paulinchen  2026-09-29: Added Capture, which takes the buttons away from the game while a screen of the mod reads them
+#      Paulinchen  2026-09-29: Said in $mgq_text_input while the player types, so other mods' hotkeys stay quiet
+#                            - Added Capture, which takes the buttons away from the game while a screen of the mod reads them
 #                            - Told whether the game's window is hooked, which the keyboard needs
 #                            - Told the DLL the player's key and name for worlds, and read typing from the keyboard through it
 #                            - Added Player, the player's id and name, which PvP battles pass on when Discord knows no name
@@ -290,10 +291,13 @@ module MGQ_Multiplayer
       read('mp_player_id', 64)
     end
 
-    # Starts or stops taking what the player types on the keyboard.
+    # Starts or stops taking what the player types on the keyboard, and says so in
+    # $mgq_text_input, which other mods' hotkeys read from Windows check, since the capture of
+    # the game's Input cannot reach them.
     #
     # @param on [Boolean] Whether to take it.
     def self.typing(on)
+      $mgq_text_input = on
       function('mp_typing', 'l').call(on ? 1 : 0)
     end
 
