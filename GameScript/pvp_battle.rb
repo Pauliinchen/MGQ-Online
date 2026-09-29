@@ -2,7 +2,8 @@
 #  pvp_battle.rb
 #
 #  Changelog:
-#      Paulinchen  2026-09-29: Stopped asking for an open port and naming the way the team came, since every team comes through the relay
+#      Paulinchen  2026-09-29: Joined an invite accepted after a failed exchange instead of turning it down with the failure
+#                            - Stopped asking for an open port and naming the way the team came, since every team comes through the relay
 #                            - Said that a host is reaching the relay until its join code is ready
 #                            - Said on the PvP battle screen when the friend's team came through the relay
 #                            - Said when a Discord invite arrived while hosting and was ignored
@@ -113,8 +114,13 @@ module MGQ_PvpBattle
       MGQ_Multiplayer::Link.cancel unless live
       begin_battle(state)
     when "failed"
-      MGQ_Multiplayer::Link.cancel
-      $game_message.add("PvP battle: #{state['error']}")
+      # Cancelling would turn down an invite the player accepted since, which makes the failure old news.
+      if join_invite(state)
+        SceneManager.call(Scene_PvpLobby)
+      else
+        MGQ_Multiplayer::Link.cancel
+        $game_message.add("PvP battle: #{state['error']}")
+      end
     else
       SceneManager.call(Scene_PvpLobby) if join_invite(state)
     end
