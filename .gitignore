@@ -9,3 +9,7 @@ Shipping/
 
 # runtime files, in case the game is ever pointed at this folder while testing
 *.log
+
+# the relay's installed packages and wrangler's local state
+node_modules/
+.wrangler/

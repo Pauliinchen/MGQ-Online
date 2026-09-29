@@ -1,0 +1,21 @@
+{
+  "name": "mgq-paradox-multiplayer-relay",
+  "private": true,
+  "description": "Passes the Multiplayer mod's encrypted frames between two games that cannot reach each other directly.",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test \"core/*.test.js\" \"node/*.test.js\"",
+    "start": "node node/server.js",
+    "dev:cloudflare": "wrangler dev --config cloudflare/wrangler.toml",
+    "deploy:cloudflare": "wrangler deploy --config cloudflare/wrangler.toml"
+  },
+  "dependencies": {
+    "ws": "^8.22.0"
+  },
+  "devDependencies": {
+    "wrangler": "^4.143.0"
+  }
+}

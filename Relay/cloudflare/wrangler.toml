@@ -1,0 +1,23 @@
+#----------------------------------------------------------------
+#  wrangler.toml
+#
+#  Changelog:
+#      Paulinchen  2026-09-29: Created
+#
+#----------------------------------------------------------------
+
+# The relay's Worker, reachable at relay.mgqmp.workers.dev once deployed.
+name = "relay"
+main = "worker.js"
+compatibility_date = "2026-09-01"
+workers_dev = true
+preview_urls = false
+
+# One Durable Object per room, SQLite backed, the only kind the free plan offers.
+[[durable_objects.bindings]]
+name = "ROOMS"
+class_name = "Room"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Room"]
