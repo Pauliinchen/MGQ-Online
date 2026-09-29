@@ -2,7 +2,8 @@
 #  Multiplayer.rb
 #
 #  Changelog:
-#      Paulinchen  2026-09-29: Told the DLL the player's key and name for worlds, and read typing from the keyboard through it
+#      Paulinchen  2026-09-29: Told whether the game's window is hooked, which the keyboard needs
+#                            - Told the DLL the player's key and name for worlds, and read typing from the keyboard through it
 #                            - Added Player, the player's id and name, which PvP battles pass on when Discord knows no name
 #                            - Found the mod folder relative to the game's folder, which works in a folder named with characters outside ASCII
 #                            - Hosted without a port, since games meet at the relay
@@ -411,6 +412,14 @@ module MGQ_Multiplayer
       Log.write("could not keep the game running in the background") unless @running
     rescue => e
       Log.write("background start failed: #{e.class}: #{e.message}")
+    end
+
+    # Reports whether the DLL hooked the game's window, which keeps the game running and passes on
+    # what the player types.
+    #
+    # @return [Boolean] Whether the window is hooked.
+    def self.running?
+      @running == true
     end
 
     # Has Input report no buttons while another window is in front, once the game keeps running.

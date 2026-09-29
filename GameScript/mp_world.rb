@@ -970,8 +970,9 @@ class Scene_MpWorlds < Scene_MenuBase
   end
 end
 
-# The text screen, for names and passwords: the typed text, with its purpose where a character's
-# face would be, and the game's own letters below for gamepads. The keyboard types too.
+# The text screen, for names and passwords: the typed text in a box, with its purpose where a
+# character's face would be. The keyboard types into it; the game's own letters appear below once
+# a gamepad is used, or from the start when the keyboard cannot reach the game.
 class Scene_MpText < Scene_MenuBase
   # Sets what the text is for and how it looks.
   #
@@ -988,7 +989,7 @@ class Scene_MpText < Scene_MenuBase
     @max_chars = max_chars
   end
 
-  # Creates the windows and starts taking what is typed.
+  # Creates the windows and starts taking what is typed, the letters hidden while the keyboard works.
   def start
     super
     @edit_window = Window_MpTextEdit.new(@caption, @default, @masked, @max_chars)
@@ -996,20 +997,53 @@ class Scene_MpText < Scene_MenuBase
     @input_window.set_handler(:ok, method(:on_input_ok))
     @input_window.set_handler(:cancel, method(:on_input_cancel))
     MGQ_Multiplayer::Link.typing(true)
+    MGQ_Multiplayer::Background.running? ? hide_letters : show_letters
   end
 
-  # Types what came from the keyboard, then lets the letters take a gamepad's buttons.
+  # Types what came from the keyboard, then lets the letters take a gamepad's buttons, showing
+  # them once a button is pressed that did not come from the keyboard.
   #
   # A key that types also moves the game's own buttons, such as Z for OK, so the letters ignore
   # the buttons in a frame the keyboard was used.
   def update
     text, keys = MGQ_Multiplayer::Link.take_typed
-    @input_window.keyboard_used = keys > 0 || !text.empty?
+    keyboard = keys > 0 || !text.empty?
+    @input_window.keyboard_used = keyboard
+
+    if !keyboard && !@input_window.visible && gamepad_pressed?
+      show_letters
+      # The press that showed the letters picks nothing.
+      @input_window.keyboard_used = true
+    end
+
     text.each_char do |char|
       type(char)
       break if scene_changing?
     end
     super
+  end
+
+  # Reports whether a button or direction was pressed this frame, as only a gamepad does without keys going down.
+  #
+  # @return [Boolean] Whether one was.
+  def gamepad_pressed?
+    [:C, :B, :A].any? { |button| Input.trigger?(button) } || Input.dir4 != 0
+  end
+
+  # Hides the letters and puts the box in the middle of the screen.
+  def hide_letters
+    @input_window.hide
+    @input_window.deactivate
+    @edit_window.hint = "Type on the keyboard. Enter confirms, Esc goes back."
+    @edit_window.y = (Graphics.height - @edit_window.height) / 2
+  end
+
+  # Shows the letters below the box, for a gamepad.
+  def show_letters
+    @edit_window.hint = nil
+    @edit_window.y = @input_window.y - @edit_window.height - 8
+    @input_window.show
+    @input_window.activate
   end
 
   # Types one character: Enter confirms, Escape leaves, Backspace removes the last one.
@@ -1385,9 +1419,22 @@ class Window_MpTextEdit < Window_NameEdit
     0
   end
 
-  # Draws the caption where the game draws a character's face.
+  # Shows a hint below the text, or none.
+  #
+  # @param hint [String, nil] The hint.
+  def hint=(hint)
+    @hint = hint
+    refresh
+  end
+
+  # Draws the caption where the game draws a character's face, and the hint at the bottom.
   def draw_actor_face(*)
     draw_text(0, 0, contents_width, line_height, @caption, 1)
+    return unless @hint
+
+    change_color(normal_color, false)
+    draw_text(0, contents_height - line_height, contents_width, line_height, @hint, 1)
+    change_color(normal_color)
   end
 
   # Draws one character, as a star for a password.
