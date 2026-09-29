@@ -95,6 +95,14 @@ The mod loader stays for your other mods.
 
 TROUBLESHOOTING
 ---------------
+- "Your friend's game could not be reached": the host's port 47625 is not
+  reachable. Forward it in the router. Many cable and fibre connections
+  share one public IPv4 address with other customers (DS-Lite, CGNAT), so
+  forwarding is impossible there; use IPv6 or a virtual network instead.
+- "Your friend's game offers only IPv6, which your connection lacks": the
+  host can only be reached over IPv6, and the joining PC has none. Join the
+  same virtual network (Tailscale, ZeroTier, Radmin VPN), or let the one
+  with IPv6 join the other.
 - Multiplayer\InGame.log only appears if something went wrong inside the
   game, Multiplayer\Multiplayer.log tells what the connection did. Include
   both when reporting a problem.

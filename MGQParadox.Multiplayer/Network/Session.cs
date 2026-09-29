@@ -2,7 +2,9 @@
 //  Session.cs
 //
 //  Changelog:
-//      Paulinchen  2026-09-29: Let Describe leave the friend's team out
+//      Paulinchen  2026-09-29: Logged what the join code offers and how each of the host's addresses went
+//                            - Told a guest without IPv6 why it cannot reach a host that offers only IPv6
+//                            - Let Describe leave the friend's team out
 //                            - Removed Advertised and Connected, which only the tests read
 //      Paulinchen  2026-09-28: Created
 //
@@ -412,13 +414,15 @@ internal sealed class Session
             }
 
             var token = JoinCode.NewToken();
+            var code = new JoinCode(token, port, addresses).ToText();
 
-            if (!Advertise(generation, new JoinCode(token, port, addresses).ToText(), token))
+            if (!Advertise(generation, code, token))
             {
                 return;
             }
 
-            Log.Write($"hosting on port {port}, clipboard {(CopyJoinCode() ? "holds the code" : "unavailable")}");
+            var offered = JoinCode.Parse(code)!.Addresses.Select(address => IPAddress.Parse(address).AddressFamily);
+            Log.Write($"hosting on port {port}, the code offers {ConnectAttempt.Count(offered)}, clipboard {(CopyJoinCode() ? "holds the code" : "unavailable")}");
 
             while (IsCurrent(generation))
             {
@@ -516,11 +520,12 @@ internal sealed class Session
 
         try
         {
-            client = ConnectToAny(code);
+            client = ConnectToAny(code, out var attempts);
 
             if (client == null)
             {
-                Fail(generation, "Your friend's game could not be reached. Is it still hosting, with the port open?");
+                Log.Write($"no address of the host answered: {ConnectAttempt.Summary(attempts)}");
+                Fail(generation, ConnectAttempt.Message(attempts));
                 return;
             }
 
@@ -567,12 +572,28 @@ internal sealed class Session
     /// Tries every address of a join code at once and keeps the first connection that succeeds.
     /// </summary>
     /// <param name="code">The join code.</param>
+    /// <param name="outcomes">How each address went, for the log and the message when none answered.</param>
     /// <returns>The connection, or <see langword="null"/> when no address answered in time.</returns>
-    private static TcpClient? ConnectToAny(JoinCode code)
+    private static TcpClient? ConnectToAny(JoinCode code, out IReadOnlyList<ConnectAttempt> outcomes)
     {
         var addresses = code.Addresses.Select(IPAddress.Parse).ToList();
-        var clients = addresses.Select(address => new TcpClient(address.AddressFamily)).ToList();
-        var attempts = clients.Select((client, index) => client.ConnectAsync(addresses[index], code.Port)).ToList();
+        var clients = new TcpClient?[addresses.Count];
+        var attempts = new Task[addresses.Count];
+
+        for (var index = 0; index < addresses.Count; index++)
+        {
+            try
+            {
+                clients[index] = new TcpClient(addresses[index].AddressFamily);
+                attempts[index] = clients[index]!.ConnectAsync(addresses[index], code.Port);
+            }
+            catch (SocketException ex)
+            {
+                // A PC without IPv6 may refuse to even make an IPv6 socket.
+                attempts[index] = Task.FromException(ex);
+            }
+        }
+
         var deadline = Task.Delay(ConnectTimeout);
         var pending = new List<Task>(attempts);
         TcpClient? connected = null;
@@ -590,17 +611,31 @@ internal sealed class Session
 
             if (done.IsCompletedSuccessfully)
             {
-                connected = clients[attempts.IndexOf(done)];
+                connected = clients[Array.IndexOf(attempts, done)];
             }
         }
 
-        foreach (var client in clients.Where(client => client != connected))
+        outcomes = attempts.Select((attempt, index) => new ConnectAttempt(addresses[index].AddressFamily, ErrorOf(attempt))).ToList();
+
+        foreach (var client in clients.Where(client => client != null && client != connected))
         {
-            client.Dispose();
+            client!.Dispose();
         }
 
         return connected;
     }
+
+    /// <summary>
+    /// Reads why a connection attempt failed.
+    /// </summary>
+    /// <param name="attempt">The attempt.</param>
+    /// <returns>The socket's error, <see cref="SocketError.SocketError"/> for any other failure, or <see langword="null"/> while it has no answer yet.</returns>
+    private static SocketError? ErrorOf(Task attempt) => attempt switch
+    {
+        { IsFaulted: true } => attempt.Exception?.InnerException is SocketException socket ? socket.SocketErrorCode : SocketError.SocketError,
+        { IsCompleted: true } => SocketError.Success,
+        _ => null,
+    };
 
     /// <summary>
     /// Opens a connection's stream with the exchange's timeouts.

@@ -45,7 +45,9 @@ While the mod is installed, the game keeps running when its window is in the bac
 
 ## Troubleshooting
 
-`Multiplayer\InGame.log` only appears when something went wrong inside the game; `Multiplayer\Multiplayer.log` tells what the connection did. Please attach both when [opening an issue](https://github.com/Pauliinchen/MGQ-Paradox-Multiplayer-Mod/issues).
+- **"Your friend's game could not be reached":** the host's port 47625 is not reachable. Forward it in the router. Many cable and fibre connections share one public IPv4 address with other customers (DS-Lite, CGNAT), so forwarding is impossible there; use IPv6 or a virtual network instead.
+- **"Your friend's game offers only IPv6, which your connection lacks":** the host can only be reached over IPv6, and the joining PC has none. Join the same virtual network (Tailscale, ZeroTier, Radmin VPN), or let the one with IPv6 join the other.
+- **Logs:** `Multiplayer\InGame.log` only appears when something went wrong inside the game; `Multiplayer\Multiplayer.log` tells what the connection did. Please attach both when [opening an issue](https://github.com/Pauliinchen/MGQ-Paradox-Multiplayer-Mod/issues).
 
 ## Building from source
 
