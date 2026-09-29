@@ -2,7 +2,8 @@
 #  mp_actions.rb
 #
 #  Changelog:
-#      Paulinchen  2026-09-29: Showed the chat box's text as it is typed
+#      Paulinchen  2026-09-29: Told mp_overworld.rb while the player types in the chat
+#                            - Showed the chat box's text as it is typed
 #                            - Left room right above the player's head for their ping
 #                            - Added chat, opened with T or the wheel: a bubble above the sender and a log at the bottom left
 #                            - Opened an action wheel with B, which invites, accepts, leaves the party, and holds chat and duels
@@ -120,6 +121,13 @@ module MGQ_MpActions
       Party.reset
       Chat.reset
     end
+  end
+
+  # Tells what the player does, when this script has them busy. Called by mp_overworld.rb.
+  #
+  # @return [String, nil] "typing" while the chat box is open, else nil.
+  def self.scene
+    Chat.typing? ? "typing" : nil
   end
 
   # Takes a message of another game that is no state. Called by mp_overworld.rb.

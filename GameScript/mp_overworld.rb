@@ -2,7 +2,8 @@
 #  mp_overworld.rb
 #
 #  Changelog:
-#      Paulinchen  2026-09-29: Showed each player's ping, the own above the player's head and the others' beside their names
+#      Paulinchen  2026-09-29: Told the others while the player types in the chat
+#                            - Showed each player's ping, the own above the player's head and the others' beside their names
 #                            - Left parties to mp_actions.rb, which it asks through Actions
 #                            - Created
 #
@@ -22,6 +23,7 @@ module MGQ_MpOverworld
   STATE_ICONS = {
     "battle" => 451,
     "event" => 4,
+    "typing" => 4,
     "menu" => 183,
     "items" => 3059,
     "equip" => 3905,
@@ -130,6 +132,13 @@ module MGQ_MpOverworld
     # @return [Hash] The fields.
     def self.state_fields
       installed? ? MGQ_MpActions.state_fields : {}
+    end
+
+    # Asks mp_actions.rb whether it has the player busy, such as typing in the chat.
+    #
+    # @return [String, nil] A key of STATE_ICONS, nil when it has not.
+    def self.scene
+      installed? ? MGQ_MpActions.scene : nil
     end
 
     # Hands mp_actions.rb a message that is no state.
@@ -248,6 +257,9 @@ module MGQ_MpOverworld
       return "battle" if current.is_a?(Scene_Battle)
       return "event" if name =~ /Novel/ || (current.is_a?(Scene_Map) && ($game_message.busy? || $game_map.interpreter.running?))
       return "away" unless MGQ_Multiplayer::Background.in_front?
+
+      busy = Actions.scene
+      return busy if busy
       return SCREENS.find { |pattern, _| name =~ pattern }.to_a[1] || "menu" unless current.is_a?(Scene_Map)
 
       return "flying" if $game_player.in_airship?

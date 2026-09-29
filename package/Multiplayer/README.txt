@@ -108,7 +108,8 @@ game's letters appear.
 Each world keeps its own saves, Library, medals and affection in
 Multiplayer\Worlds, apart from your own game. On the map, the other
 players on the same map walk around with their names above them, and an
-icon for what they do: fighting, talking, in a menu, the inventory or
+icon for what they do: fighting, talking, typing in the chat, in a
+menu, the inventory or
 their equipment, shopping, at the casino, in the Library, sailing,
 flying, or away from the game. Their ping shows after their name, and
 yours right above your head: green up to 100 ms, yellow up to 200 ms,
