@@ -20,13 +20,14 @@ Close the game and extract the release zip into the folder that contains `Game.e
 Game.exe
 Multiplayer\Multiplayer.dll
 Patch\Multiplayer.rb
+Patch\mp_actions.rb
 Patch\mp_overworld.rb
 Patch\mp_sync.rb
 Patch\mp_world.rb
 Patch\pvp_battle.rb
 ```
 
-To uninstall, delete the `Multiplayer` folder and the five scripts in `Patch`. The `Multiplayer` folder also holds your worlds, so keep `Multiplayer\Worlds` if you want to play them again later.
+To uninstall, delete the `Multiplayer` folder and the six scripts in `Patch`. The `Multiplayer` folder also holds your worlds, so keep `Multiplayer\Worlds` if you want to play them again later.
 
 ## Worlds
 

@@ -6,6 +6,7 @@
 MGQ-Paradox-Multiplayer-Mod.slnx      Visual Studio solution
 Directory.Build.targets               puts vswhere.exe on the PATH, which the NativeAOT link needs
 GameScript/Multiplayer.rb             Ruby, what every way of playing together shares
+GameScript/mp_actions.rb              Ruby, what players of a world do together on the map: parties
 GameScript/mp_overworld.rb            Ruby, the other players of a world on the map, as ghosts
 GameScript/mp_sync.rb                 Ruby, live battles: the host computes, the guest plays back
 GameScript/mp_world.rb                Ruby, worlds: the world screen, and each world's own saves
@@ -18,13 +19,14 @@ docs/DEVELOPER.md                     this file
 .github/workflows/release.yml         tests, builds and attaches the zip on release
 ```
 
-**Scripts.** Patch folder mods, shipped as `Patch/*.rb`. The mod loader loads them sorted, capitals first, so after `Discord_RPC.rb` of the Discord mod: `Multiplayer.rb`, then `mp_overworld.rb`, `mp_sync.rb`, `mp_world.rb` and `pvp_battle.rb`. A file may only use what loaded before it at load time; later files are reached at run time (`defined?`).
+**Scripts.** Patch folder mods, shipped as `Patch/*.rb`. The mod loader loads them sorted, capitals first, so after `Discord_RPC.rb` of the Discord mod: `Multiplayer.rb`, then `mp_actions.rb`, `mp_overworld.rb`, `mp_sync.rb`, `mp_world.rb` and `pvp_battle.rb`. A file may only use what loaded before it at load time; later files are reached at run time (`defined?`).
 
 | File | Module | What it is |
 |---|---|---|
 | `Multiplayer.rb` | `MGQ_Multiplayer` | The foundation every mode shares: `Log` (`Multiplayer/InGame.log`), `Link` (the DLL's `mp_*` functions), `Background` (keeps the game running while another window is in front, and has `Input` report no buttons meanwhile), `Key` (F-keys the game's `Input` does not know), `Discord` (the bridge client, see below). |
+| `mp_actions.rb` | `MGQ_MpActions` | What players of a world do together on the map: parties so far (see [Parties](#parties-mp_actionsrb)). Reaches `MGQ_MpOverworld` at run time. |
 | `mp_sync.rb` | `MGQ_MpSync` | Live battles, for any mode: `join` makes the next battle live, `battle_started` marks it running, `finish` ends it and closes the link, `record_to_file` has the next battle record itself. Knows nothing of PvP battles. |
-| `mp_overworld.rb` | `MGQ_MpOverworld` | The other players of the open world on the map: what each game tells the others, the ghosts, their name labels and the status line (see [On the map](#on-the-map-mp_overworldrb)). Reaches `MGQ_MpWorld` at run time. |
+| `mp_overworld.rb` | `MGQ_MpOverworld` | The other players of the open world on the map: what each game tells the others, the ghosts, their name labels and the status line (see [On the map](#on-the-map-mp_overworldrb)). Reaches `MGQ_MpWorld` and `MGQ_MpActions` at run time. |
 | `mp_world.rb` | `MGQ_MpWorld` | Worlds: the Multiplayer command on the title screen, the world screen, each world's folder with its saves and system save (see [Worlds](#worlds-mp_worldrb)). |
 | `pvp_battle.rb` | `MGQ_PvpBattle` | PvP battles: the PvP battle screen (F11), the team exchange, the rebuilt characters, the mirror match. Drives `MGQ_MpSync`. |
 
@@ -48,7 +50,7 @@ Publishing the DLL project assembles the complete release layout in `Shipping/` 
 
 ```
 Multiplayer/  Multiplayer.dll  README.txt
-Patch/        Multiplayer.rb  mp_overworld.rb  mp_sync.rb  mp_world.rb  pvp_battle.rb
+Patch/        Multiplayer.rb  mp_actions.rb  mp_overworld.rb  mp_sync.rb  mp_world.rb  pvp_battle.rb
 ```
 
 - **Publish, not build:** only a publish runs NativeAOT, so a plain build gives no usable DLL.
@@ -148,7 +150,11 @@ While a world is open, a `Graphics.update` hook runs every frame in every scene:
 - **Ghosts** (`Game_MpGhost`, a `Game_Character` with `@through`): one per player on the current map, made where they stand. Every frame on the map (`Game_Map#update`) it takes their sprite, speed and visibility, and walks one tile toward where they stand, along the longer axis first, at their speed; more than `CATCH_UP_TILES` (3) away, or after a map change, it moves there at once. It triggers nothing, since only the player and events check triggers.
 - **Sprites** (`Spriteset_Map#update`): a `Sprite_Character` and a `Sprite_MpGhostLabel` per ghost, made and freed as ghosts come and go. The label shows the name, and before it an icon of the game's icon set for what the player does (`STATE_ICONS`): battle 451 (crossed swords), event 4 (speech bubble), menu 183 (open book), items 3059 (potion), equip 3905 (hammer), shop 3874 (coin), casino 220 (cards), library 3240 (red book), sailing 4069 (anchor), flying 3836 (wing), away 6 (Zzz); none while walking. `Sprite_MpWorldStatus` at the bottom left shows the last notices for 4 s each and, from `mp_world_status` every 30 frames, "Reconnecting . . .", "Connecting . . ." or why the connection failed.
 
-**Parties** (`Party`). Every state message also carries the player's party id (`party`) and whether they invite (`invite`), so a party needs no message of its own. B (`PARTY_KEY`, 0x42, read with `GetAsyncKeyState` like F11, since neither the game's `Input` nor its gamepad plugin reads it) on the map, while no event or message runs:
+- **Actions** (`Actions`): what players do together belongs to `mp_actions.rb`, which the overworld asks through `Actions`; without it, everyone is outside every party. `MGQ_MpActions.state_fields` adds to the state message, `observe` and `observe_leaving` hear of every state and every player leaving, `label_line` gives the line above a ghost's name, and `take` gets every message without a `map`, which lets actions send messages of their own.
+
+## Parties (`mp_actions.rb`)
+
+`MGQ_MpActions::Party`. Every state message also carries the player's party id (`party`) and whether they invite (`invite`), so a party needs no message of its own. B (`PARTY_KEY`, 0x42, read with `GetAsyncKeyState` like F11, since neither the game's `Input` nor its gamepad plugin reads it) on the map, while no event or message runs:
 
 - next to (`NEAR_TILES`, 2, on the same map) a player who invites and is not in the party: joins their party, taking their id;
 - next to players outside the party: invites for 15 s (`INVITE_FRAMES`), making a party of one with a new id, which the invite line above the player's own head (`Sprite_MpOwnLine`) and above their ghost on the others' screens shows;
