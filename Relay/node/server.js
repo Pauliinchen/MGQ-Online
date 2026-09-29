@@ -2,20 +2,23 @@
 //  server.js
 //
 //  Changelog:
-//      Paulinchen  2026-09-29: Added world rooms, which seat up to 32 games
+//      Paulinchen  2026-09-29: Kept the world directory, and seated a game in a world room only once the directory let it in
+//                            - Added world rooms, which seat up to 32 games
 //      Paulinchen  2026-09-29: Created
 //
 //----------------------------------------------------------------
 
 // The relay as a plain Node server, for a rented machine behind a TLS proxy such as Caddy. It keeps
-// its rooms in memory and follows the core's rules, so it behaves like the Cloudflare relay.
+// its rooms and its world directory in memory and follows the core's rules, so it behaves like the
+// Cloudflare relay.
 
 import http from "node:http";
 import { pathToFileURL } from "node:url";
 import { WebSocketServer } from "ws";
+import { Directory, handleDirectoryRequest } from "../core/directory.js";
 import {
-  CLOSE, IN, LIMITS, OUT, PAIRED, PING, PONG, admit, newPeer, newWorldPeer, overdue, parseRoute, routeWorldMessage, seatChangeText, seatText,
-  takeMessage, takeSeat, worldCapacity, worldOverdue,
+  CLOSE, IN, LIMITS, OUT, PAIRED, PING, PONG, admit, newPeer, newWorldPeer, overdue, parseRoute, presenceOf, routeWorldMessage, seatChangeText,
+  seatText, takeMessage, takeSeat, worldOverdue,
 } from "../core/relay.js";
 
 /**
@@ -24,12 +27,60 @@ import {
 const CHECK_EVERY_MS = 60 * 1000;
 
 /**
+ * Longest request body the directory reads.
+ */
+const MAX_BODY_BYTES = 16 * 1024;
+
+/**
+ * Keeps world entries in memory, as the directory's store.
+ *
+ * @returns {{get(id: string): Promise<object | undefined>, put(entry: object): Promise<void>, remove(id: string): Promise<void>, all(): Promise<object[]>}} The store.
+ */
+export function memoryStore() {
+  const entries = new Map();
+
+  return {
+    get: async (id) => (entries.has(id) ? structuredClone(entries.get(id)) : undefined),
+    put: async (entry) => void entries.set(entry.id, structuredClone(entry)),
+    remove: async (id) => void entries.delete(id),
+    all: async () => [...entries.values()].map((entry) => structuredClone(entry)),
+  };
+}
+
+/**
+ * Reads a request's body, stopping at MAX_BODY_BYTES.
+ *
+ * @param {http.IncomingMessage} request The request.
+ * @returns {Promise<string>} The body, or "" when it is too large.
+ */
+function readBody(request) {
+  return new Promise((resolve, reject) => {
+    const parts = [];
+    let size = 0;
+
+    request.on("data", (part) => {
+      size += part.length;
+
+      if (size > MAX_BODY_BYTES) {
+        request.destroy();
+        resolve("");
+        return;
+      }
+
+      parts.push(part);
+    });
+    request.on("end", () => resolve(Buffer.concat(parts).toString("utf8")));
+    request.on("error", reject);
+  });
+}
+
+/**
  * Creates a relay server, not yet listening.
  *
- * @param {{limits?: typeof LIMITS, clock?: () => number, checkEveryMs?: number}} [options] Limits, clock and check interval, which tests change.
+ * @param {{limits?: typeof LIMITS, clock?: () => number, checkEveryMs?: number, directory?: Directory}} [options] Limits, clock, check interval and directory, which tests change.
  * @returns {{server: http.Server, check: () => void, stop: () => Promise<void>}} The HTTP server to listen with, a look at the deadlines, and a way to stop everything.
  */
-export function createRelay({ limits = LIMITS, clock = Date.now, checkEveryMs = CHECK_EVERY_MS } = {}) {
+export function createRelay({ limits = LIMITS, clock = Date.now, checkEveryMs = CHECK_EVERY_MS, directory = new Directory(memoryStore(), { clock }) } = {}) {
   /** @type {Map<string, {socket: import("ws").WebSocket, record: object}[]>} */
   const rooms = new Map();
   /** @type {Map<string, {socket: import("ws").WebSocket, record: object}[]>} */
@@ -37,66 +88,114 @@ export function createRelay({ limits = LIMITS, clock = Date.now, checkEveryMs = 
   // Larger messages than the core allows reach it and get its close code; far larger ones never
   // reach memory at all.
   const sockets = new WebSocketServer({ noServer: true, maxPayload: limits.maxMessageBytes * 2 });
-  const server = http.createServer((_request, response) => {
-    response.writeHead(426, { "Content-Type": "text/plain" });
-    response.end("the relay only takes WebSockets");
+  const server = http.createServer((request, response) => {
+    answerDirectory(request, response).catch(() => {
+      response.writeHead(500, { "Content-Type": "application/json" });
+      response.end(JSON.stringify({ error: "the directory failed" }));
+    });
   });
 
   server.on("upgrade", (request, socket, head) => {
     const route = parseRoute(new URL(request.url, "http://relay"));
-    const refusal = "error" in route ? { status: 400, reason: route.error } : conflict(route);
 
-    if (refusal) {
-      socket.end(`HTTP/1.1 ${refusal.status} Refused\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\n${refusal.reason}`);
+    if ("error" in route) {
+      refuse(socket, 400, route.error);
       return;
     }
 
-    sockets.handleUpgrade(request, socket, head, (webSocket) => (route.kind === "world" ? sit(route, webSocket) : join(route, webSocket)));
+    if (route.kind === "room") {
+      const refusal = admit((rooms.get(route.roomId) ?? []).map((peer) => peer.record.role), route.role);
+
+      if (refusal) {
+        refuse(socket, 409, refusal.reason);
+        return;
+      }
+
+      sockets.handleUpgrade(request, socket, head, (webSocket) => join(route, webSocket));
+      return;
+    }
+
+    directory.admit(route.roomId, route.player, route.auth).then((answer) => {
+      if (answer.status !== 200) {
+        refuse(socket, answer.status, answer.body.error);
+        return;
+      }
+
+      const full = takeSeat((worlds.get(route.roomId) ?? []).map((peer) => peer.record), answer.seats).refusal;
+
+      if (full) {
+        refuse(socket, 409, full.reason);
+        return;
+      }
+
+      sockets.handleUpgrade(request, socket, head, (webSocket) => sit(route, answer, webSocket));
+    }, () => refuse(socket, 500, "the directory failed"));
   });
 
   /**
-   * Tells why a peer may not join its room or world room.
+   * Answers a request to the directory, and carries out what it asks beyond answering.
    *
-   * @param {{kind: string, roomId: string, role?: string, seats?: number}} route The room, with its role or seats.
-   * @returns {{status: number, reason: string} | null} The HTTP status and reason, or null when it may.
+   * @param {http.IncomingMessage} request The request.
+   * @param {http.ServerResponse} response The response.
+   * @returns {Promise<void>} Completes once answered.
    */
-  function conflict(route) {
-    const refusal = route.kind === "world"
-      ? seatFor(route).refusal
-      : admit((rooms.get(route.roomId) ?? []).map((peer) => peer.record.role), route.role);
+  async function answerDirectory(request, response) {
+    const url = new URL(request.url, "http://relay");
 
-    return refusal ? { status: 409, reason: refusal.reason } : null;
+    if (!url.pathname.startsWith("/v1/worlds")) {
+      response.writeHead(426, { "Content-Type": "text/plain" });
+      response.end("the relay takes WebSockets and the world directory only");
+      return;
+    }
+
+    const answer = await handleDirectoryRequest(directory, request.method, url, () => readBody(request));
+
+    if (answer.close) {
+      closeWorld(answer.id, CLOSE.worldDeleted, "the world was deleted");
+    }
+
+    if (answer.kick) {
+      closeWorld(answer.id, CLOSE.removed, "the creator removed this player from the world", answer.kick);
+    }
+
+    response.writeHead(answer.status, { "Content-Type": "application/json" });
+    response.end(JSON.stringify(answer.body));
   }
 
   /**
-   * Finds the seat a game would take in its world room.
+   * Closes the connections of a world room: all, or one player's.
    *
-   * @param {{roomId: string, seats: number}} route The world room and the seats the game asks for.
-   * @returns {{seat: number | null, capacity: number, refusal: object | null}} The seat and the room's seats, or why the game may not join.
+   * @param {string} roomId The world.
+   * @param {number} code The close code.
+   * @param {string} reason The close reason.
+   * @param {string} [player] The player whose connections close, all when left out.
    */
-  function seatFor(route) {
-    const records = (worlds.get(route.roomId) ?? []).map((peer) => peer.record);
-    const capacity = worldCapacity(records, route.seats);
-    return { ...takeSeat(records, capacity), capacity };
+  function closeWorld(roomId, code, reason, player) {
+    for (const peer of [...(worlds.get(roomId) ?? [])]) {
+      if (!player || peer.record.player === player) {
+        peer.socket.close(code, reason);
+      }
+    }
   }
 
   /**
    * Seats a game in its world room and passes its messages on.
    *
-   * @param {{roomId: string, seats: number}} route The world room and the seats the game asks for.
+   * @param {{roomId: string, name: string}} route The world room and the player's name.
+   * @param {{seats: number, player: string}} admission The world's seats and the player's id, from the directory.
    * @param {import("ws").WebSocket} socket The game's WebSocket.
    */
-  function sit(route, socket) {
+  function sit(route, admission, socket) {
+    const peers = worlds.get(route.roomId) ?? [];
     // Another game may have taken the last seat while this one's handshake ran.
-    const { seat, capacity, refusal } = seatFor(route);
+    const { seat, refusal } = takeSeat(peers.map((other) => other.record), admission.seats);
 
     if (refusal) {
       socket.close(refusal.code, refusal.reason);
       return;
     }
 
-    const peers = worlds.get(route.roomId) ?? [];
-    const peer = { socket, record: newWorldPeer(seat, capacity, clock(), limits) };
+    const peer = { socket, record: newWorldPeer(seat, { player: admission.player, name: route.name }, clock(), limits) };
     worlds.set(route.roomId, peers);
     socket.send(seatText(seat, peers.map((other) => other.record.seat)));
 
@@ -105,6 +204,7 @@ export function createRelay({ limits = LIMITS, clock = Date.now, checkEveryMs = 
     }
 
     peers.push(peer);
+    report(route.roomId, peers);
 
     socket.on("message", (data, isBinary) => {
       if (!isBinary) {
@@ -142,9 +242,32 @@ export function createRelay({ limits = LIMITS, clock = Date.now, checkEveryMs = 
       if (peers.length === 0) {
         worlds.delete(route.roomId);
       }
+
+      report(route.roomId, peers);
     });
 
     socket.on("error", () => socket.terminate());
+  }
+
+  /**
+   * Tells the directory who is in a world room now.
+   *
+   * @param {string} roomId The world.
+   * @param {{record: object}[]} peers The games in the room.
+   */
+  function report(roomId, peers) {
+    directory.presence(roomId, presenceOf(peers.map((peer) => peer.record))).catch(() => {});
+  }
+
+  /**
+   * Turns a WebSocket request down before it opens.
+   *
+   * @param {import("node:net").Socket} socket The request's connection.
+   * @param {number} status The HTTP status.
+   * @param {string} reason Why.
+   */
+  function refuse(socket, status, reason) {
+    socket.end(`HTTP/1.1 ${status} Refused\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\n${reason}`);
   }
 
   /**
@@ -155,8 +278,10 @@ export function createRelay({ limits = LIMITS, clock = Date.now, checkEveryMs = 
    */
   function join(route, socket) {
     // Another peer of the same role may have joined while this one's handshake ran.
-    if (conflict(route)) {
-      socket.close(CLOSE.roleTaken, `the room has a ${route.role} already`);
+    const taken = admit((rooms.get(route.roomId) ?? []).map((peer) => peer.record.role), route.role);
+
+    if (taken) {
+      socket.close(taken.code, taken.reason);
       return;
     }
 

@@ -2,7 +2,8 @@
 //  relay.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-09-29: Tested world rooms: seats, routing and each connection's lifetime
+//      Paulinchen  2026-09-29: Read a world room's player key, name and auth key instead of its seats
+//                            - Tested world rooms: seats, routing and each connection's lifetime
 //      Paulinchen  2026-09-29: Created
 //
 //----------------------------------------------------------------
@@ -10,14 +11,29 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  CLOSE, EVERYONE, IN, LIMITS, WORLD_SEATS, admit, newPeer, newWorldPeer, nextDeadline, nextWorldDeadline, overdue, parseRoute,
-  routeWorldMessage, seatChangeText, seatText, takeMessage, takeSeat, worldCapacity, worldOverdue,
+  CLOSE, EVERYONE, IN, LIMITS, admit, newPeer, newWorldPeer, nextDeadline, nextWorldDeadline, overdue, parseRoute, presenceOf,
+  routeWorldMessage, seatChangeText, seatText, takeMessage, takeSeat, worldOverdue,
 } from "./relay.js";
 
 /**
  * A room id as clients make them.
  */
 const ROOM = "0123456789abcdef0123456789abcdef";
+
+/**
+ * A player's key as games make them.
+ */
+const KEY = "fedcba9876543210fedcba9876543210";
+
+/**
+ * An auth key as games make them from a world's token.
+ */
+const AUTH = "ab".repeat(32);
+
+/**
+ * Who sits on a seat, as the tests seat them.
+ */
+const WHO = { player: "11".repeat(16), name: "Tester" };
 
 /**
  * When the tests start.
@@ -29,12 +45,14 @@ test("parseRoute takes a room and a role", () => {
   assert.deepEqual(parseRoute(new URL(`https://relay.test/v1/room/${ROOM}?role=guest`)), { kind: "room", roomId: ROOM, role: "guest" });
 });
 
-test("parseRoute takes a world room and its seats", () => {
-  assert.deepEqual(parseRoute(new URL(`https://relay.test/v1/world/${ROOM}?seats=4`)), { kind: "world", roomId: ROOM, seats: 4 });
-  assert.deepEqual(parseRoute(new URL(`https://relay.test/v1/world/${ROOM}?seats=${WORLD_SEATS.max}`)).seats, WORLD_SEATS.max);
+test("parseRoute takes a world room with the player's key, name and auth key", () => {
+  assert.deepEqual(
+    parseRoute(new URL(`https://relay.test/v1/world/${ROOM}?player=${KEY}&name=Luka%20the%20Hero&auth=${AUTH}`)),
+    { kind: "world", roomId: ROOM, player: KEY, name: "Luka the Hero", auth: AUTH },
+  );
 });
 
-test("parseRoute refuses other versions, ids, roles and seats", () => {
+test("parseRoute refuses other versions, ids, roles and world rooms without key, name or auth", () => {
   for (const address of [
     `https://relay.test/v2/room/${ROOM}?role=host`,
     `https://relay.test/v1/room/${ROOM.toUpperCase()}?role=host`,
@@ -43,11 +61,12 @@ test("parseRoute refuses other versions, ids, roles and seats", () => {
     `https://relay.test/v1/room/${ROOM}`,
     `https://relay.test/v1/room/${ROOM}/extra?role=host`,
     `https://relay.test/v1/world/${ROOM}`,
-    `https://relay.test/v1/world/${ROOM}?seats=1`,
-    `https://relay.test/v1/world/${ROOM}?seats=${WORLD_SEATS.max + 1}`,
-    `https://relay.test/v1/world/${ROOM}?seats=4.5`,
-    `https://relay.test/v1/world/${ROOM}?seats=-4`,
-    `https://relay.test/v1/hall/${ROOM}?seats=4`,
+    `https://relay.test/v1/world/${ROOM}?player=${KEY}&name=Luka`,
+    `https://relay.test/v1/world/${ROOM}?player=${KEY}&auth=${AUTH}`,
+    `https://relay.test/v1/world/${ROOM}?player=${KEY}&name=%20%0A&auth=${AUTH}`,
+    `https://relay.test/v1/world/${ROOM}?player=${KEY.toUpperCase()}&name=Luka&auth=${AUTH}`,
+    `https://relay.test/v1/world/${ROOM}?player=${KEY}&name=${"x".repeat(33)}&auth=${AUTH}`,
+    `https://relay.test/v1/hall/${ROOM}?player=${KEY}&name=Luka&auth=${AUTH}`,
   ]) {
     assert.ok("error" in parseRoute(new URL(address)), address);
   }
@@ -102,17 +121,16 @@ test("nextDeadline names the host's wait while alone, the room's end once paired
   assert.equal(nextDeadline([newPeer("host", T0), newPeer("guest", T0 + 1000)]), T0 + LIMITS.roomLifetimeMs);
 });
 
-test("worldCapacity keeps the seats of the games in the room, and takes the newcomer's for an empty one", () => {
-  assert.equal(worldCapacity([], 6), 6);
-  assert.equal(worldCapacity([newWorldPeer(0, 4, T0)], 32), 4);
-});
-
 test("takeSeat gives the lowest free seat, and refuses once every seat is taken", () => {
   assert.equal(takeSeat([], 4).seat, 0);
-  assert.equal(takeSeat([newWorldPeer(0, 4, T0), newWorldPeer(2, 4, T0)], 4).seat, 1);
+  assert.equal(takeSeat([newWorldPeer(0, WHO, T0), newWorldPeer(2, WHO, T0)], 4).seat, 1);
 
-  const full = [0, 1].map((seat) => newWorldPeer(seat, 2, T0));
+  const full = [0, 1].map((seat) => newWorldPeer(seat, WHO, T0));
   assert.deepEqual(takeSeat(full, 2), { seat: null, refusal: { code: CLOSE.worldFull, reason: "the world is full" } });
+});
+
+test("presenceOf lists who sits in a world room", () => {
+  assert.deepEqual(presenceOf([newWorldPeer(1, WHO, T0)]), [WHO]);
 });
 
 test("seatText and seatChangeText write what the games are told", () => {
@@ -140,7 +158,7 @@ test("routeWorldMessage refuses an empty message and leaves the original untouch
 });
 
 test("worldOverdue closes each connection on its own once it lasted too long", () => {
-  const peers = [newWorldPeer(0, 4, T0), newWorldPeer(1, 4, T0 + 5000)];
+  const peers = [newWorldPeer(0, WHO, T0), newWorldPeer(1, WHO, T0 + 5000)];
   const closed = worldOverdue(peers, T0 + LIMITS.worldConnectionMs);
 
   assert.deepEqual(closed, [{ index: 0, code: CLOSE.connectionExpired, reason: "the connection lasted too long" }]);
@@ -149,5 +167,5 @@ test("worldOverdue closes each connection on its own once it lasted too long", (
 
 test("nextWorldDeadline names the oldest connection's end", () => {
   assert.equal(nextWorldDeadline([]), null);
-  assert.equal(nextWorldDeadline([newWorldPeer(1, 4, T0 + 5000), newWorldPeer(0, 4, T0)]), T0 + LIMITS.worldConnectionMs);
+  assert.equal(nextWorldDeadline([newWorldPeer(1, WHO, T0 + 5000), newWorldPeer(0, WHO, T0)]), T0 + LIMITS.worldConnectionMs);
 });

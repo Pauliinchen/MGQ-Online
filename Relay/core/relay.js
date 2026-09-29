@@ -2,7 +2,8 @@
 //  relay.js
 //
 //  Changelog:
-//      Paulinchen  2026-09-29: Added world rooms, which seat up to 32 games and pass each message to one or all of the others
+//      Paulinchen  2026-09-29: Took a world room's seats from the directory, and a game's player key, name and auth key from its request
+//                            - Added world rooms, which seat up to 32 games and pass each message to one or all of the others
 //      Paulinchen  2026-09-29: Created
 //
 //----------------------------------------------------------------
@@ -61,7 +62,7 @@ export const OUT = "out";
 export const EVERYONE = 255;
 
 /**
- * How many games a world room may seat, as the first game into the room asks for.
+ * How many games a world room may seat, as its world in the directory says.
  */
 export const WORLD_SEATS = Object.freeze({ min: 2, max: 32 });
 
@@ -96,6 +97,8 @@ export const CLOSE = Object.freeze({
   peerLeft: 4006,
   worldFull: 4007,
   connectionExpired: 4008,
+  removed: 4009,
+  worldDeleted: 4010,
 });
 
 /**
@@ -105,15 +108,26 @@ export const CLOSE = Object.freeze({
 const ROOM_ID = /^[0-9a-f]{32}$/;
 
 /**
- * The number of seats a game asks a world room for, one or two digits.
+ * A player's key, 32 lowercase hexadecimal characters.
  */
-const SEATS = /^[0-9]{1,2}$/;
+const PLAYER_KEY = /^[0-9a-f]{32}$/;
 
 /**
- * Reads the room a request asks for: a room with its role, or a world room with its seats.
+ * An auth key made from a world's token, 64 lowercase hexadecimal characters.
+ */
+const AUTH_KEY = /^[0-9a-f]{64}$/;
+
+/**
+ * Longest player name a world room passes on to the directory.
+ */
+const MAX_PLAYER_NAME = 32;
+
+/**
+ * Reads the room a request asks for: a room with its role, or a world room with the player's key,
+ * name and auth key.
  *
- * @param {URL} url The request's address, such as /v1/room/<room id>?role=host or /v1/world/<room id>?seats=4.
- * @returns {{kind: "room", roomId: string, role: string} | {kind: "world", roomId: string, seats: number} | {error: string}} The room, or why the request is refused.
+ * @param {URL} url The request's address, such as /v1/room/<room id>?role=host or /v1/world/<world id>?player=…&name=…&auth=….
+ * @returns {{kind: "room", roomId: string, role: string} | {kind: "world", roomId: string, player: string, name: string, auth: string} | {error: string}} The room, or why the request is refused.
  */
 export function parseRoute(url) {
   const parts = url.pathname.split("/").filter((part) => part.length > 0);
@@ -127,13 +141,19 @@ export function parseRoute(url) {
   }
 
   if (parts[1] === "world") {
-    const seats = url.searchParams.get("seats") ?? "";
+    const player = url.searchParams.get("player") ?? "";
+    const auth = url.searchParams.get("auth") ?? "";
+    const name = (url.searchParams.get("name") ?? "").replace(/[\u0000-\u001f\u007f]/g, "").trim();
 
-    if (!SEATS.test(seats) || Number(seats) < WORLD_SEATS.min || Number(seats) > WORLD_SEATS.max) {
-      return { error: `the seats must be a number from ${WORLD_SEATS.min} to ${WORLD_SEATS.max}` };
+    if (!PLAYER_KEY.test(player) || !AUTH_KEY.test(auth)) {
+      return { error: "a world room needs the player's key and an auth key" };
     }
 
-    return { kind: "world", roomId: parts[2], seats: Number(seats) };
+    if (name.length === 0 || [...name].length > MAX_PLAYER_NAME) {
+      return { error: `the player's name must be 1 to ${MAX_PLAYER_NAME} characters` };
+    }
+
+    return { kind: "world", roomId: parts[2], player, name, auth };
   }
 
   const role = url.searchParams.get("role");
@@ -236,18 +256,6 @@ export function nextDeadline(peers, limits = LIMITS) {
 }
 
 /**
- * Tells how many seats a world room has: as many as the games in it were given, or as the
- * newcomer asks for when the room is empty.
- *
- * @param {{capacity: number}[]} peers The records of the games in the room.
- * @param {number} requested The seats the newcomer asks for.
- * @returns {number} The room's seats.
- */
-export function worldCapacity(peers, requested) {
-  return peers.length > 0 ? peers[0].capacity : requested;
-}
-
-/**
  * Finds the seat a game takes in a world room: the lowest one free.
  *
  * @param {{seat: number}[]} peers The records of the games in the room.
@@ -270,13 +278,23 @@ export function takeSeat(peers, capacity) {
  * Makes the record a game carries while it holds a seat in a world room.
  *
  * @param {number} seat The game's seat.
- * @param {number} capacity The room's seats.
+ * @param {{player: string, name: string}} who The player's id, as the directory made it, and name.
  * @param {number} now The current time in milliseconds.
  * @param {typeof LIMITS} [limits] The limits.
- * @returns {{seat: number, capacity: number, joinedAt: number, allowance: number, refilledAt: number}} The record, with a full message allowance.
+ * @returns {{seat: number, player: string, name: string, joinedAt: number, allowance: number, refilledAt: number}} The record, with a full message allowance.
  */
-export function newWorldPeer(seat, capacity, now, limits = LIMITS) {
-  return { seat, capacity, joinedAt: now, allowance: limits.burst, refilledAt: now };
+export function newWorldPeer(seat, who, now, limits = LIMITS) {
+  return { seat, player: who.player, name: who.name, joinedAt: now, allowance: limits.burst, refilledAt: now };
+}
+
+/**
+ * Lists the players in a world room, as the directory takes them.
+ *
+ * @param {{player: string, name: string}[]} peers The records of the games in the room.
+ * @returns {{player: string, name: string}[]} The players.
+ */
+export function presenceOf(peers) {
+  return peers.map((peer) => ({ player: peer.player, name: peer.name }));
 }
 
 /**

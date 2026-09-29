@@ -2,15 +2,27 @@
 //  server.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-09-29: Tested world rooms over real WebSockets
+//      Paulinchen  2026-09-29: Made every world in the directory first, and tested the directory over HTTP
+//                            - Tested world rooms over real WebSockets
 //      Paulinchen  2026-09-29: Created
 //
 //----------------------------------------------------------------
 
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
+import { playerIdOf, sha256Hex } from "../core/directory.js";
 import { CLOSE, EVERYONE, LIMITS, PAIRED, PONG } from "../core/relay.js";
 import { createRelay } from "./server.js";
+
+/**
+ * The auth key the tests' games make from their worlds' tokens.
+ */
+const AUTH = "ab".repeat(32);
+
+/**
+ * The player key of the tests' world creator.
+ */
+const CREATOR = "c0".repeat(16);
 
 /**
  * The limits the tests use: small messages, so the size check is quick to reach.
@@ -37,11 +49,17 @@ let base;
  */
 let worldBase;
 
+/**
+ * The address of the relay's world directory.
+ */
+let directoryBase;
+
 before(async () => {
   relay = createRelay({ limits: TEST_LIMITS, clock: () => now, checkEveryMs: 3_600_000 });
   await new Promise((resolve) => relay.server.listen(0, "127.0.0.1", resolve));
   base = `ws://127.0.0.1:${relay.server.address().port}/v1/room/`;
   worldBase = `ws://127.0.0.1:${relay.server.address().port}/v1/world/`;
+  directoryBase = `http://127.0.0.1:${relay.server.address().port}/v1/worlds`;
 });
 
 after(() => relay.stop());
@@ -68,14 +86,77 @@ async function connect(room, role) {
 }
 
 /**
+ * Makes a world in the directory, with the tests' auth key.
+ *
+ * @param {string} room The world's id.
+ * @param {number} seats Its seats.
+ * @returns {Promise<number>} The directory's HTTP status.
+ */
+async function makeWorld(room, seats) {
+  const response = await fetch(directoryBase, {
+    method: "POST",
+    body: JSON.stringify({
+      id: room,
+      name: `World ${room.slice(-3)}`,
+      seats,
+      player: CREATOR,
+      playerName: "Creator",
+      authHash: await sha256Hex(AUTH),
+      lock: { salt: "12".repeat(16), iterations: 200_000, box: "ab".repeat(40) },
+    }),
+  });
+  return response.status;
+}
+
+/**
+ * Makes a player key unique to a number.
+ *
+ * @param {number} number The number.
+ * @returns {string} The key.
+ */
+function playerKey(number) {
+  return number.toString(16).padStart(32, "a");
+}
+
+/**
  * Seats a game in a world room and collects what it receives.
  *
- * @param {string} room The room id.
- * @param {number} seats The seats the game asks for.
+ * @param {string} room The world's id.
+ * @param {number} player A number unique to the player.
+ * @param {string} [auth] The auth key, the tests' own unless given.
  * @returns {Promise<{socket: WebSocket, next: () => Promise<any>, closed: Promise<{code: number}>}>} The game, its next message and its close.
  */
-async function sit(room, seats) {
-  return open(`${worldBase}${room}?seats=${seats}`);
+async function sit(room, player, auth = AUTH) {
+  return open(`${worldBase}${room}?player=${playerKey(player)}&name=Player%20${player}&auth=${auth}`);
+}
+
+/**
+ * Reads a world from the directory's list.
+ *
+ * @param {string} room The world's id.
+ * @returns {Promise<object | undefined>} The world as everyone sees it.
+ */
+async function listed(room) {
+  const { worlds } = await (await fetch(directoryBase)).json();
+  return worlds.find((world) => world.id === room);
+}
+
+/**
+ * Waits until a condition holds, looking every few milliseconds.
+ *
+ * @param {() => Promise<boolean>} condition The condition.
+ * @returns {Promise<void>} Resolves once it holds.
+ */
+async function until(condition) {
+  for (let tries = 0; tries < 100; tries++) {
+    if (await condition()) {
+      return;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+
+  throw new Error("the condition never held");
 }
 
 /**
@@ -163,31 +244,39 @@ test("a host that waited alone too long is closed", async () => {
   assert.equal((await host.closed).code, CLOSE.waitedTooLong);
 });
 
-test("games in a world room get seats, and each learns who comes and goes", async () => {
-  const first = await sit(roomId(101), 4);
+test("games in a world room get seats, each learns who comes and goes, and the directory knows who is online", async () => {
+  assert.equal(await makeWorld(roomId(101), 4), 201);
+  const first = await sit(roomId(101), 1);
   assert.equal(await first.next(), "seat 0");
 
-  const second = await sit(roomId(101), 4);
+  const second = await sit(roomId(101), 2);
   assert.equal(await second.next(), "seat 1 0");
   assert.equal(await first.next(), "in 1");
 
-  const third = await sit(roomId(101), 4);
+  const third = await sit(roomId(101), 3);
   assert.equal(await third.next(), "seat 2 0 1");
+
+  await until(async () => (await listed(roomId(101))).online === 3);
+  const secondId = await playerIdOf(playerKey(2));
+  const members = (await listed(roomId(101))).members;
+  assert.deepEqual(members.find((member) => member.id === secondId), { id: secondId, name: "Player 2", online: true });
 
   second.socket.close();
   assert.equal(await first.next(), "in 2");
   assert.equal(await first.next(), "out 1");
   assert.equal(await third.next(), "out 1");
+  await until(async () => (await listed(roomId(101))).online === 2);
 
   first.socket.close();
   third.socket.close();
 });
 
 test("a world message goes to every other game, or to the one seat it names, with the sender's seat in front", async () => {
+  await makeWorld(roomId(102), 3);
   const games = [];
 
-  for (let seat = 0; seat < 3; seat++) {
-    games.push(await sit(roomId(102), 3));
+  for (let player = 0; player < 3; player++) {
+    games.push(await sit(roomId(102), player));
   }
 
   await games[0].next();
@@ -213,17 +302,26 @@ test("a world message goes to every other game, or to the one seat it names, wit
   }
 });
 
-test("a full world room turns the next game away, and the first game's seats count, not a newcomer's", async () => {
-  const first = await sit(roomId(103), 2);
-  const second = await sit(roomId(103), 8);
+test("a full world room turns the next game away", async () => {
+  await makeWorld(roomId(103), 2);
+  const first = await sit(roomId(103), 1);
+  const second = await sit(roomId(103), 2);
 
-  await assert.rejects(sit(roomId(103), 8));
+  await assert.rejects(sit(roomId(103), 3));
   first.socket.close();
   second.socket.close();
 });
 
+test("a world room turns away a game with the wrong auth key, and any game for a world the directory lacks", async () => {
+  await makeWorld(roomId(104), 2);
+
+  await assert.rejects(sit(roomId(104), 1, "cd".repeat(32)));
+  await assert.rejects(sit(roomId(199), 1));
+});
+
 test("an empty world message closes its sender", async () => {
-  const game = await sit(roomId(104), 2);
+  await makeWorld(roomId(105), 2);
+  const game = await sit(roomId(105), 1);
   await game.next();
 
   game.socket.send(new Uint8Array(0));
@@ -231,10 +329,11 @@ test("an empty world message closes its sender", async () => {
 });
 
 test("a world connection that lasted too long is closed, and the others see its seat free", async () => {
-  const first = await sit(roomId(105), 2);
+  await makeWorld(roomId(106), 2);
+  const first = await sit(roomId(106), 1);
   await first.next();
   now += 1000;
-  const second = await sit(roomId(105), 2);
+  const second = await sit(roomId(106), 2);
   await second.next();
   await first.next();
 
@@ -244,3 +343,32 @@ test("a world connection that lasted too long is closed, and the others see its 
   assert.equal(await second.next(), "out 0");
   second.socket.close();
 });
+
+test("a player the creator removes is closed and kept out, and deleting the world closes everyone", async () => {
+  await makeWorld(roomId(107), 4);
+  const guest = await sit(roomId(107), 5);
+  const other = await sit(roomId(107), 6);
+  await guest.next();
+  await other.next();
+  await guest.next();
+
+  const post = (path, body) => fetch(`${directoryBase}/${roomId(107)}/${path}`, { method: "POST", body: JSON.stringify(body) });
+
+  assert.equal((await post("ban", { player: playerKey(6), target: await playerIdOf(playerKey(5)) })).status, 403);
+  assert.equal((await post("ban", { player: CREATOR, target: await playerIdOf(playerKey(5)) })).status, 200);
+  assert.equal((await guest.closed).code, CLOSE.removed);
+  await assert.rejects(sit(roomId(107), 5));
+
+  assert.equal((await post("delete", { player: CREATOR })).status, 200);
+  assert.equal((await other.closed).code, CLOSE.worldDeleted);
+  assert.equal(await listed(roomId(107)), undefined);
+});
+
+test("the directory hands out a world's lock and refuses what is no directory route", async () => {
+  await makeWorld(roomId(108), 2);
+
+  assert.deepEqual(await (await fetch(`${directoryBase}/${roomId(108)}/lock`)).json(), { salt: "12".repeat(16), iterations: 200_000, box: "ab".repeat(40) });
+  assert.equal((await fetch(`${directoryBase}/${roomId(109)}/lock`)).status, 404);
+  assert.equal((await fetch(directoryBase.replace("/v1/worlds", "/elsewhere"))).status, 426);
+});
+

@@ -2,34 +2,51 @@
 //  worker.js
 //
 //  Changelog:
-//      Paulinchen  2026-09-29: Added world rooms, each a Durable Object that seats up to 32 games
+//      Paulinchen  2026-09-29: Added the world directory, a Durable Object that world rooms ask before seating a game
+//                            - Added world rooms, each a Durable Object that seats up to 32 games
 //      Paulinchen  2026-09-29: Created
 //
 //----------------------------------------------------------------
 
 // The relay on Cloudflare: a Worker that sends each room's requests to a Durable Object of its own,
-// which keeps the room's WebSockets. The rules come from the core, so the Node server keeps the
-// same ones.
+// which keeps the room's WebSockets, and the world directory's to the one directory object. The
+// rules come from the core, so the Node server keeps the same ones.
+//
+// The directory and the world rooms also talk to each other under /internal, which the Worker
+// never passes on from outside.
 
 import { DurableObject } from "cloudflare:workers";
+import { Directory as WorldDirectory, handleDirectoryRequest } from "../core/directory.js";
 import {
-  CLOSE, IN, OUT, PAIRED, PING, PONG, admit, newPeer, newWorldPeer, nextDeadline, nextWorldDeadline, overdue, parseRoute, routeWorldMessage,
-  seatChangeText, seatText, takeMessage, takeSeat, worldCapacity, worldOverdue,
+  CLOSE, IN, OUT, PAIRED, PING, PONG, admit, newPeer, newWorldPeer, nextDeadline, nextWorldDeadline, overdue, parseRoute, presenceOf,
+  routeWorldMessage, seatChangeText, seatText, takeMessage, takeSeat, worldOverdue,
 } from "../core/relay.js";
 
 /**
- * Sends a WebSocket request to its room or world room, and refuses anything else.
+ * The name of the one directory object.
+ */
+const DIRECTORY_NAME = "directory";
+
+/**
+ * Sends a WebSocket request to its room or world room, a directory request to the directory, and
+ * refuses anything else.
  */
 export default {
   /**
    * Handles a request to the relay.
    *
    * @param {Request} request The request.
-   * @param {{ROOMS: DurableObjectNamespace, WORLDS: DurableObjectNamespace}} env The Worker's bindings.
-   * @returns {Promise<Response>} The room's answer, or why the request is refused.
+   * @param {{ROOMS: DurableObjectNamespace, WORLDS: DurableObjectNamespace, DIRECTORY: DurableObjectNamespace}} env The Worker's bindings.
+   * @returns {Promise<Response>} The answer, or why the request is refused.
    */
   async fetch(request, env) {
-    const route = parseRoute(new URL(request.url));
+    const url = new URL(request.url);
+
+    if (url.pathname === "/v1/worlds" || url.pathname.startsWith("/v1/worlds/")) {
+      return directoryOf(env).fetch(request);
+    }
+
+    const route = parseRoute(url);
 
     if ("error" in route) {
       return new Response(route.error, { status: 400 });
@@ -43,6 +60,105 @@ export default {
     return rooms.get(rooms.idFromName(route.roomId)).fetch(request);
   },
 };
+
+/**
+ * Finds the directory object.
+ *
+ * @param {{DIRECTORY: DurableObjectNamespace}} env The bindings.
+ * @returns {DurableObjectStub} The directory.
+ */
+function directoryOf(env) {
+  return env.DIRECTORY.get(env.DIRECTORY.idFromName(DIRECTORY_NAME));
+}
+
+/**
+ * Finds a world room's object.
+ *
+ * @param {{WORLDS: DurableObjectNamespace}} env The bindings.
+ * @param {string} id The world.
+ * @returns {DurableObjectStub} The world room.
+ */
+function worldOf(env, id) {
+  return env.WORLDS.get(env.WORLDS.idFromName(id));
+}
+
+/**
+ * Sends an internal request to another object and reads its JSON answer.
+ *
+ * @param {DurableObjectStub} stub The object.
+ * @param {string} path The internal route.
+ * @param {object} [body] The request's body.
+ * @returns {Promise<any>} The answer.
+ */
+async function internal(stub, path, body = {}) {
+  const response = await stub.fetch(`https://relay/internal/${path}`, { method: "POST", body: JSON.stringify(body) });
+  return response.json();
+}
+
+/**
+ * Answers with JSON.
+ *
+ * @param {number} status The HTTP status.
+ * @param {object} body The body.
+ * @returns {Response} The answer.
+ */
+function json(status, body) {
+  return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+}
+
+/**
+ * The world directory: every world with its players, bans and locked token, one entry per world
+ * in the object's storage.
+ */
+export class Directory extends DurableObject {
+  /**
+   * Creates the directory over the object's storage.
+   *
+   * @param {DurableObjectState} ctx The object's state.
+   * @param {object} env The Worker's bindings.
+   */
+  constructor(ctx, env) {
+    super(ctx, env);
+    this.directory = new WorldDirectory({
+      get: (id) => ctx.storage.get(`world:${id}`),
+      put: (entry) => ctx.storage.put(`world:${entry.id}`, entry),
+      remove: (id) => ctx.storage.delete(`world:${id}`),
+      all: async () => [...(await ctx.storage.list({ prefix: "world:" })).values()],
+    });
+  }
+
+  /**
+   * Answers the directory's routes, and the world rooms' questions under /internal.
+   *
+   * @param {Request} request The request.
+   * @returns {Promise<Response>} The answer.
+   */
+  async fetch(request) {
+    const url = new URL(request.url);
+
+    if (url.pathname === "/internal/admit") {
+      const { id, player, auth } = await request.json();
+      return json(200, await this.directory.admit(id, player, auth));
+    }
+
+    if (url.pathname === "/internal/presence") {
+      const { id, online } = await request.json();
+      return json(200, await this.directory.presence(id, online));
+    }
+
+    const answer = await handleDirectoryRequest(this.directory, request.method, url, () => request.text());
+
+    if (answer.close) {
+      await internal(worldOf(this.env, answer.id), "close");
+    }
+
+    if (answer.kick) {
+      await internal(worldOf(this.env, answer.id), "kick", { player: answer.kick });
+    }
+
+    return json(answer.status, answer.body);
+  }
+}
 
 /**
  * One room: a host and a guest, whose binary messages it passes on to each other.
@@ -200,8 +316,8 @@ export class Room extends DurableObject {
  * One world room: up to 32 games in the same world, each on a seat of its own, whose binary
  * messages it passes on to one or all of the others with the sender's seat in front.
  *
- * Like a room, it hibernates and keeps each game's record on its socket. The room's number of
- * seats rides on every record too, so an empty room forgets it and the next game sets it anew.
+ * Like a room, it hibernates and keeps each game's record on its socket. It asks the directory
+ * before seating a game, and tells it who is in the room after every change.
  */
 export class World extends DurableObject {
   /**
@@ -216,17 +332,42 @@ export class World extends DurableObject {
   }
 
   /**
-   * Seats a game, unless the world is full, and tells the others.
+   * Seats a game the directory lets in, unless the world is full, and tells the others; or closes
+   * connections when the directory asks.
    *
-   * @param {Request} request The WebSocket request, already checked by the Worker.
+   * @param {Request} request The WebSocket request, already checked by the Worker, or the directory's internal request.
    * @returns {Promise<Response>} The WebSocket, or why the game may not join.
    */
   async fetch(request) {
-    const { seats } = parseRoute(new URL(request.url));
+    const url = new URL(request.url);
+
+    if (url.pathname === "/internal/close") {
+      await this.closeWhere(() => true, CLOSE.worldDeleted, "the world was deleted");
+      return json(200, {});
+    }
+
+    if (url.pathname === "/internal/kick") {
+      const { player } = await request.json();
+      await this.closeWhere((record) => record.player === player, CLOSE.removed, "the creator removed this player from the world");
+      return json(200, {});
+    }
+
+    const route = parseRoute(url);
+    const answer = await internal(directoryOf(this.env), "admit", { id: route.roomId, player: route.player, auth: route.auth });
+
+    if (answer.status !== 200) {
+      return new Response(answer.body.error, { status: answer.status });
+    }
+
+    if (!this.world) {
+      this.world = route.roomId;
+      await this.ctx.storage.put("world", route.roomId);
+    }
+
+    // Seats are counted after the directory answered, since other games may have come meanwhile.
     const present = this.peers();
     const records = present.map((peer) => peer.record);
-    const capacity = worldCapacity(records, seats);
-    const { seat, refusal } = takeSeat(records, capacity);
+    const { seat, refusal } = takeSeat(records, answer.seats);
 
     if (refusal) {
       return new Response(refusal.reason, { status: 409 });
@@ -234,7 +375,7 @@ export class World extends DurableObject {
 
     const [client, server] = Object.values(new WebSocketPair());
     this.ctx.acceptWebSocket(server);
-    server.serializeAttachment(newWorldPeer(seat, capacity, Date.now()));
+    server.serializeAttachment(newWorldPeer(seat, { player: answer.player, name: route.name }, Date.now()));
     server.send(seatText(seat, records.map((record) => record.seat)));
 
     for (const other of present) {
@@ -242,6 +383,7 @@ export class World extends DurableObject {
     }
 
     await this.schedule();
+    await this.report();
     return new Response(null, { status: 101, webSocket: client });
   }
 
@@ -338,6 +480,37 @@ export class World extends DurableObject {
 
     if (reschedule) {
       await this.schedule();
+      await this.report();
+    }
+  }
+
+  /**
+   * Closes the games whose records meet a condition, then tells the directory who is left.
+   *
+   * @param {(record: object) => boolean} condition Which games to close.
+   * @param {number} code The close code.
+   * @param {string} reason The close reason.
+   */
+  async closeWhere(condition, code, reason) {
+    for (const peer of this.peers().filter((each) => condition(each.record))) {
+      await this.leave(peer.socket, code, reason, false);
+    }
+
+    await this.schedule();
+    await this.report();
+  }
+
+  /**
+   * Tells the directory who is in the room now.
+   *
+   * The room's world id is the name it was made under, which only a game's request carries, so the
+   * first one stores it.
+   */
+  async report() {
+    this.world ??= await this.ctx.storage.get("world");
+
+    if (this.world) {
+      await internal(directoryOf(this.env), "presence", { id: this.world, online: presenceOf(this.peers().map((peer) => peer.record)) });
     }
   }
 

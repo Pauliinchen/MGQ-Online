@@ -2,14 +2,16 @@
 
 Passes the Multiplayer mod's frames between games. The games never connect to each other directly: many home connections cannot be reached from outside (DS-Lite, CGNAT, no IPv6, no forwarded port), but every one can connect out, so every game connects out to the relay.
 
-The relay never sees what is played: the games encrypt every frame with a key derived from the join code, which the relay never gets. It sees a room id, seat numbers, message sizes and timing, stores nothing and keeps no content.
+The relay never sees what is played: the games encrypt every frame with a key derived from the join code or the world's token, which the relay never gets. For PvP battles it sees a room id, message sizes and timing, and stores nothing. For worlds it keeps the **world directory**, which everyone can read: each world's name, seats and creator, the names of its players and who is online. It never learns a world's password or token: it keeps the token locked with the password, and checks a game that enters against a hash.
 
 ## Layout
 
 ```
 core/relay.js          the rules: routes, pairing, size and rate limits, deadlines (no platform code)
 core/relay.test.js     tests of the rules
-cloudflare/worker.js   the relay on Cloudflare Workers, one Durable Object per room and per world room
+core/directory.js      the world directory's rules, over a store the platform passes in
+core/directory.test.js tests of the directory
+cloudflare/worker.js   the relay on Cloudflare Workers, one Durable Object per room and per world room, one for the directory
 cloudflare/wrangler.toml
 node/server.js         the relay as a plain Node server, for a rented machine
 node/server.test.js    tests of the Node server over real WebSockets
@@ -28,9 +30,23 @@ A **room** pairs two games for a PvP battle. A **world room** seats up to 32 gam
 - **Messages:** binary messages go to the other peer unchanged. Once both are in, the relay sends each the text `paired`.
 - **Limits:** a host waits alone at most 30 minutes, a room lasts at most 2 hours.
 
+### World directory
+
+Plain HTTP with JSON bodies. A world's id is 32 lowercase hexadecimal characters, the start of a hash of its token.
+
+| Request | What it does |
+|---|---|
+| `GET /v1/worlds` | Lists every world: `id`, `name`, `seats`, `creator` (`id`, `name`), `online`, `created`, `active`, and `members` (`id`, `name`, `online`). |
+| `POST /v1/worlds` | Makes a world: `id`, `name`, `seats` (2 to 32), `player` (the creator's key), `playerName`, `authHash` (SHA-256 of the auth key, hexadecimal) and `lock` (`salt`, `iterations`, `box`: the token encrypted with a key from the password). 201, or 409 when the id is taken, 429 past 20 worlds per creator. |
+| `GET /v1/worlds/<id>/lock` | Hands out the world's `lock`, which only the password opens. |
+| `POST /v1/worlds/<id>/delete` | Deletes the world, if `player` is the creator's key, and closes its world room. |
+| `POST /v1/worlds/<id>/ban` | Removes the player whose id is `target` and keeps them out, if `player` is the creator's key. |
+
+A player's key never appears in the list: everyone sees the player's id, the first 32 characters of the SHA-256 of `mgqmp player <key>`. Names are at most 32 characters, on one line.
+
 ### World rooms
 
-- **Connect:** `wss://<relay>/v1/world/<room id>?seats=<n>`, with `n` from 2 to 32. The first game into an empty room sets its number of seats; a later game's `seats` is ignored. Once every seat is taken, the next game is refused with HTTP 409 before its WebSocket opens.
+- **Connect:** `wss://<relay>/v1/world/<world id>?player=<key>&name=<name>&auth=<auth key>`. The relay lets the game in only if the world is in the directory, the SHA-256 of the auth key is the world's `authHash`, and the creator has not removed the player: otherwise HTTP 404, 401 or 403 before the WebSocket opens. The world's seats come from the directory; once every one is taken, the next game gets HTTP 409. After every change the room tells the directory who is in it.
 - **Seats:** a game takes the lowest free seat, from 0. It is told `seat <own> <others…>`, the seats already taken in ascending order, such as `seat 2 0 1`. The others are told `in <seat>`, and `out <seat>` once it leaves.
 - **Messages:** a game sends a binary message as its target seat, or 255 for everyone, followed by the payload. The relay passes it on with the sender's seat in place of the target, so the receiver knows who sent it. A message for a free seat is dropped.
 - **Limits:** each connection lasts at most 2 hours on its own; the game then connects again.
@@ -39,7 +55,7 @@ A **room** pairs two games for a PvP battle. A **world room** seats up to 32 gam
 
 - The text `ping` is answered with `pong`, for keeping an idle connection open; any other text closes the connection.
 - At most 512 KB per message and 60 messages per second over time (bursts of 240), per connection.
-- **Close codes:** 4000 bad request, 4001 role taken, 4002 message too large, 4003 too many messages, 4004 nobody joined in time, 4005 the room lasted too long, 4006 the other side left, 4007 the world is full, 4008 the connection lasted too long.
+- **Close codes:** 4000 bad request, 4001 role taken, 4002 message too large, 4003 too many messages, 4004 nobody joined in time, 4005 the room lasted too long, 4006 the other side left, 4007 the world is full, 4008 the connection lasted too long, 4009 the creator removed the player, 4010 the world was deleted.
 
 ## Tests
 
