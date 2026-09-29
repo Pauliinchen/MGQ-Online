@@ -2,7 +2,8 @@
 #  Multiplayer.rb
 #
 #  Changelog:
-#      Paulinchen  2026-09-29: Told whether the game's window is hooked, which the keyboard needs
+#      Paulinchen  2026-09-29: Added Capture, which takes the buttons away from the game while a screen of the mod reads them
+#                            - Told whether the game's window is hooked, which the keyboard needs
 #                            - Told the DLL the player's key and name for worlds, and read typing from the keyboard through it
 #                            - Added Player, the player's id and name, which PvP battles pass on when Discord knows no name
 #                            - Found the mod folder relative to the game's folder, which works in a folder named with characters outside ASCII
@@ -422,26 +423,44 @@ module MGQ_Multiplayer
       @running == true
     end
 
-    # Has Input report no buttons while another window is in front, once the game keeps running.
+    # Has Input report no buttons while another window is in front, once the game keeps running, or
+    # while a screen of the mod reads them (Capture).
     #
     # The keyboard only reaches the window in front, but gamepads reach every game, so a pad played
     # in another game would play this one too.
     def self.guard_input
-      return if @input_guarded || !@running
+      return if @input_guarded
       @input_guarded = true
 
       input = Input.singleton_class
-      input.send(:alias_method, :mgq_multiplayer_update, :update)
-      input.send(:define_method, :update) do
-        MGQ_Multiplayer::Background.refresh
-        mgq_multiplayer_update
+      if @running
+        input.send(:alias_method, :mgq_multiplayer_update, :update)
+        input.send(:define_method, :update) do
+          MGQ_Multiplayer::Background.refresh
+          mgq_multiplayer_update
+        end
       end
 
       IDLE_INPUT.each do |method, idle|
-        original = :"mgq_multiplayer_#{method.to_s.sub('?', '_query')}"
+        original = Background.original(method)
         input.send(:alias_method, original, method)
-        input.send(:define_method, method) { |*args| MGQ_Multiplayer::Background.in_front? ? send(original, *args) : idle }
+        input.send(:define_method, method) { |*args| MGQ_Multiplayer::Background.in_front? && !MGQ_Multiplayer::Capture.on? ? send(original, *args) : idle }
       end
+    end
+
+    # Names the unguarded Input method that guard_input keeps.
+    #
+    # @param method [Symbol] A key of IDLE_INPUT.
+    # @return [Symbol] The name.
+    def self.original(method)
+      :"mgq_multiplayer_#{method.to_s.sub('?', '_query')}"
+    end
+
+    # Reports whether guard_input wrapped Input.
+    #
+    # @return [Boolean] Whether it did.
+    def self.input_guarded?
+      @input_guarded == true
     end
 
     # Asks Windows whether the window in front belongs to this game, once per frame.
@@ -458,6 +477,43 @@ module MGQ_Multiplayer
     # @return [Boolean] true while the input is not guarded or Windows cannot tell.
     def self.in_front?
       @in_front != false
+    end
+  end
+
+  # Takes the buttons away from the game while a screen of the mod reads them, such as a menu drawn
+  # over the map, under which the player would walk or open the game's menu otherwise.
+  module Capture
+    @owner = nil
+
+    # Takes the buttons for a screen.
+    #
+    # @param owner [Symbol] The screen, such as :wheel.
+    def self.start(owner)
+      @owner = owner
+    end
+
+    # Gives the buttons back, if the screen still holds them.
+    #
+    # @param owner [Symbol] The screen.
+    def self.stop(owner)
+      @owner = nil if @owner == owner
+    end
+
+    # Reports whether a screen holds the buttons.
+    #
+    # @return [Boolean] Whether one does.
+    def self.on?
+      !@owner.nil?
+    end
+
+    # Reports whether a button went down, past the capture, while the game window is in front.
+    #
+    # @param button [Symbol] The game's button, such as :C or :UP.
+    # @return [Boolean] Whether it went down.
+    def self.trigger?(button)
+      return false unless Background.in_front?
+
+      Background.input_guarded? ? Input.send(Background.original(:trigger?), button) : Input.trigger?(button)
     end
   end
 

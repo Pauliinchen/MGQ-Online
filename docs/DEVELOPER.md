@@ -6,7 +6,7 @@
 MGQ-Paradox-Multiplayer-Mod.slnx      Visual Studio solution
 Directory.Build.targets               puts vswhere.exe on the PATH, which the NativeAOT link needs
 GameScript/Multiplayer.rb             Ruby, what every way of playing together shares
-GameScript/mp_actions.rb              Ruby, what players of a world do together on the map: parties
+GameScript/mp_actions.rb              Ruby, what players of a world do together on the map: action wheel, parties
 GameScript/mp_overworld.rb            Ruby, the other players of a world on the map, as ghosts
 GameScript/mp_sync.rb                 Ruby, live battles: the host computes, the guest plays back
 GameScript/mp_world.rb                Ruby, worlds: the world screen, and each world's own saves
@@ -23,8 +23,8 @@ docs/DEVELOPER.md                     this file
 
 | File | Module | What it is |
 |---|---|---|
-| `Multiplayer.rb` | `MGQ_Multiplayer` | The foundation every mode shares: `Log` (`Multiplayer/InGame.log`), `Link` (the DLL's `mp_*` functions), `Background` (keeps the game running while another window is in front, and has `Input` report no buttons meanwhile), `Key` (F-keys the game's `Input` does not know), `Discord` (the bridge client, see below). |
-| `mp_actions.rb` | `MGQ_MpActions` | What players of a world do together on the map: parties so far (see [Parties](#parties-mp_actionsrb)). Reaches `MGQ_MpOverworld` at run time. |
+| `Multiplayer.rb` | `MGQ_Multiplayer` | The foundation every mode shares: `Log` (`Multiplayer/InGame.log`), `Link` (the DLL's `mp_*` functions), `Background` (keeps the game running while another window is in front, and has `Input` report no buttons meanwhile), `Key` (F-keys the game's `Input` does not know), `Capture` (takes the buttons away from the game while a screen of the mod reads them), `Discord` (the bridge client, see below). |
+| `mp_actions.rb` | `MGQ_MpActions` | What players of a world do together on the map: the action wheel and parties so far (see [Actions](#actions-mp_actionsrb)). Reaches `MGQ_MpOverworld` at run time. |
 | `mp_sync.rb` | `MGQ_MpSync` | Live battles, for any mode: `join` makes the next battle live, `battle_started` marks it running, `finish` ends it and closes the link, `record_to_file` has the next battle record itself. Knows nothing of PvP battles. |
 | `mp_overworld.rb` | `MGQ_MpOverworld` | The other players of the open world on the map: what each game tells the others, the ghosts, their name labels and the status line (see [On the map](#on-the-map-mp_overworldrb)). Reaches `MGQ_MpWorld` and `MGQ_MpActions` at run time. |
 | `mp_world.rb` | `MGQ_MpWorld` | Worlds: the Multiplayer command on the title screen, the world screen, each world's folder with its saves and system save (see [Worlds](#worlds-mp_worldrb)). |
@@ -149,18 +149,17 @@ While a world is open, a `Graphics.update` hook runs every frame in every scene:
 - **Newcomers** (`Inbox`): after every (re)connect (`kind=seat`) the game forgets the others and tells everyone everything; when another game comes in (`kind=in`), it tells that seat everything, and that game does the same, so both know each other at once. A message makes or updates the sender's `Peer` by seat; `kind=out` forgets it. Joining and leaving show as notices.
 - **Ghosts** (`Game_MpGhost`, a `Game_Character` with `@through`): one per player on the current map, made where they stand. Every frame on the map (`Game_Map#update`) it takes their sprite, speed and visibility, and walks one tile toward where they stand, along the longer axis first, at their speed; more than `CATCH_UP_TILES` (3) away, or after a map change, it moves there at once. It triggers nothing, since only the player and events check triggers.
 - **Sprites** (`Spriteset_Map#update`): a `Sprite_Character` and a `Sprite_MpGhostLabel` per ghost, made and freed as ghosts come and go. The label shows the name, and before it an icon of the game's icon set for what the player does (`STATE_ICONS`): battle 451 (crossed swords), event 4 (speech bubble), menu 183 (open book), items 3059 (potion), equip 3905 (hammer), shop 3874 (coin), casino 220 (cards), library 3240 (red book), sailing 4069 (anchor), flying 3836 (wing), away 6 (Zzz); none while walking. `Sprite_MpWorldStatus` at the bottom left shows the last notices for 4 s each and, from `mp_world_status` every 30 frames, "Reconnecting . . .", "Connecting . . ." or why the connection failed.
-
 - **Actions** (`Actions`): what players do together belongs to `mp_actions.rb`, which the overworld asks through `Actions`; without it, everyone is outside every party. `MGQ_MpActions.state_fields` adds to the state message, `observe` and `observe_leaving` hear of every state and every player leaving, `label_line` gives the line above a ghost's name, and `take` gets every message without a `map`, which lets actions send messages of their own.
 
-## Parties (`mp_actions.rb`)
+## Actions (`mp_actions.rb`)
 
-`MGQ_MpActions::Party`. Every state message also carries the player's party id (`party`) and whether they invite (`invite`), so a party needs no message of its own. B (`PARTY_KEY`, 0x42, read with `GetAsyncKeyState` like F11, since neither the game's `Input` nor its gamepad plugin reads it) on the map, while no event or message runs:
+**The action wheel** (`Wheel`, `Sprite_MpActionWheel`). B (`WHEEL_KEY`, 0x42, read with `GetAsyncKeyState` like F11, since neither the game's `Input` nor its gamepad plugin reads it) opens it on the map while no event or message runs, and closes it again. Its four choices (`wheel_options`, rebuilt every frame) sit above, right of, below and left of the player: the arrows pick one, the game's confirm button takes it, and cancel closes the wheel. A choice without `run` is grey, and taking it shows its `refusal` as a notice. While the wheel is open it holds the buttons (`MGQ_Multiplayer::Capture`, which has the guarded `Input` report none to the game, while the wheel reads them past it), so the player stands still and the game's menu and map keys stay shut. Leaving the map, an event or a message closes it.
 
-- next to (`NEAR_TILES`, 2, on the same map) a player who invites and is not in the party: joins their party, taking their id;
-- next to players outside the party: invites for 15 s (`INVITE_FRAMES`), making a party of one with a new id, which the invite line above the player's own head (`Sprite_MpOwnLine`) and above their ghost on the others' screens shows;
-- with nobody near, in a party: leaves it, after a second press within 3 s (`LEAVE_FRAMES`).
+- Up: accept the invite of a player nearby (`NEAR_TILES`, 2, on the same map) who is outside the party, else invite the players nearby who are outside it.
+- Down: leave the party, or stop an invite nobody took.
+- Left: chat, right: duel, both grey until they exist.
 
-A game sees another join its party when their message carries its id (`Party.observe`), which also ends its invite. An invite nobody took forgets its party of one, and leaving the world leaves the party. Ghosts outside the party are see-through (`STRANGER_OPACITY`), party members' names green. `Party.members` lists them for co-op battles, which do not exist yet.
+**Parties** (`Party`). Every state message also carries the player's party id (`party`) and whether they invite (`invite`), so a party needs no message of its own. Inviting lasts 15 s (`INVITE_FRAMES`) and makes a party of one with a new id, which the invite line above the player's own head (`Sprite_MpOwnLine`) and above their ghost on the others' screens shows. Accepting takes the inviter's id. A game sees another join its party when their message carries its id (`Party.observe`), which also ends its invite. An invite nobody took forgets its party of one, and leaving the world leaves the party. Ghosts outside the party are see-through (`STRANGER_OPACITY`), party members' names green. `Party.members` lists them for co-op battles, which do not exist yet.
 
 ## PvP battles (`pvp_battle.rb`)
 

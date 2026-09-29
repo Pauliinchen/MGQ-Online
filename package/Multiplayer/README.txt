@@ -113,10 +113,16 @@ their equipment, shopping, at the casino, in the Library, sailing,
 flying, or away from the game. They walk through
 everything and trigger nothing. PvP battles (F11) are off in a world.
 
+The action wheel: press B on the map to open it around your character.
+Pick a choice with the arrow keys and take it with the confirm button; B
+or cancel closes it. Grey choices cannot be taken right now and tell you
+why. Chat and duels come in a later version.
+
 Parties: players outside your party are slightly see-through. Stand next
-to another player and press B to invite them; when they press B next to
-you within 15 seconds, you form a party. Party members are fully visible
-and their names are green. Press B twice with nobody near to leave.
+to another player and pick "Invite to a party" in the wheel; when they
+pick "Accept" in theirs next to you within 15 seconds, you form a party.
+Party members are fully visible and their names are green. "Leave the
+party" at the bottom of the wheel leaves it.
 
 
 CONNECTION
