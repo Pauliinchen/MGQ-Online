@@ -122,9 +122,10 @@ or cancel closes it. Grey choices cannot be taken right now and tell you
 why. Duels come in a later version.
 
 Chat: press T, or pick "Chat" in the wheel, and type on the keyboard;
-Enter sends, Esc closes. Your line goes to everyone in the world: in a
-speech bubble above your head for the players on your map, and in the
-chat log at the bottom left of the map for everyone.
+Enter sends, Esc closes. The arrow keys, Home and End move the cursor,
+and Delete removes the character after it. Your line goes to everyone in
+the world: in a speech bubble above your head for the players on your
+map, and in the chat log at the bottom left of the map for everyone.
 
 Parties: players outside your party are slightly see-through. Stand next
 to another player and pick "Invite to a party" in the wheel; when they

@@ -2,6 +2,7 @@
 #  Multiplayer.rb
 #
 #  Changelog:
+#      Paulinchen  2026-09-30: Read held buttons past the capture too, which moves a text cursor
 #      Paulinchen  2026-09-29: Said in $mgq_text_input while the player types, so other mods' hotkeys stay quiet
 #                            - Added Capture, which takes the buttons away from the game while a screen of the mod reads them
 #                            - Told whether the game's window is hooked, which the keyboard needs
@@ -515,9 +516,27 @@ module MGQ_Multiplayer
     # @param button [Symbol] The game's button, such as :C or :UP.
     # @return [Boolean] Whether it went down.
     def self.trigger?(button)
+      read(:trigger?, button)
+    end
+
+    # Reports whether a button went down or repeats while held, past the capture, while the game
+    # window is in front.
+    #
+    # @param button [Symbol] The game's button, such as :LEFT.
+    # @return [Boolean] Whether it went down or repeats.
+    def self.repeat?(button)
+      read(:repeat?, button)
+    end
+
+    # Asks Input about a button past the capture, while the game window is in front.
+    #
+    # @param method [Symbol] :trigger? or :repeat?.
+    # @param button [Symbol] The game's button.
+    # @return [Boolean] What Input answers.
+    def self.read(method, button)
       return false unless Background.in_front?
 
-      Background.input_guarded? ? Input.send(Background.original(:trigger?), button) : Input.trigger?(button)
+      Background.input_guarded? ? Input.send(Background.original(method), button) : Input.send(method, button)
     end
   end
 

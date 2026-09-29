@@ -2,6 +2,7 @@
 #  mp_actions.rb
 #
 #  Changelog:
+#      Paulinchen  2026-09-30: Gave the chat box a blinking cursor, moved with the arrows, Home and End, with Delete
 #      Paulinchen  2026-09-29: Told mp_overworld.rb while the player types in the chat
 #                            - Showed the chat box's text as it is typed
 #                            - Left room right above the player's head for their ping
@@ -221,9 +222,20 @@ module MGQ_MpActions
     # Frames a bubble stays, six seconds.
     BUBBLE_FRAMES = 360
 
+    # Frames the cursor stays shown, then hidden, while it blinks.
+    BLINK_FRAMES = 30
+
+    # Windows' codes of the keys that move the cursor to the start or the end, and that remove the
+    # character after it. None of them types a character.
+    HOME_KEY = 0x24
+    END_KEY = 0x23
+    DELETE_KEY = 0x2E
+
     @log = []
     @bubbles = {}
     @typed = nil
+    @cursor = 0
+    @blink = 0
 
     # Reports whether the keyboard reaches the game, which only happens once its window is hooked.
     #
@@ -246,9 +258,25 @@ module MGQ_MpActions
       @typed
     end
 
+    # Where the cursor stands in the chat box's text.
+    #
+    # @return [Integer] The characters before it.
+    def self.cursor
+      @cursor
+    end
+
+    # Reports whether the blinking cursor shows this frame.
+    #
+    # @return [Boolean] Whether it does.
+    def self.cursor_shown?
+      (@blink / BLINK_FRAMES).even?
+    end
+
     # Opens the chat box, which holds the buttons, so keys that type move nobody.
     def self.start_typing
       @typed = ""
+      @cursor = 0
+      @blink = 0
       MGQ_Multiplayer::Link.typing(true)
       MGQ_Multiplayer::Capture.start(:chat)
     end
@@ -262,16 +290,27 @@ module MGQ_MpActions
       MGQ_Multiplayer::Capture.stop(:chat)
     end
 
-    # Types what came from the keyboard since the last frame.
+    # Types what came from the keyboard since the last frame, then moves the cursor with the arrow
+    # keys, Home and End, and removes the character after it with Delete. The cursor blinks, and
+    # shows at once after anything moved it.
     def self.update_typing
+      @blink += 1
       text, _keys = MGQ_Multiplayer::Link.take_typed
       text.each_char do |char|
         type(char)
-        break unless typing?
+        return unless typing?
       end
+
+      keys = MGQ_Multiplayer::Key
+      move_to(@cursor - 1) if MGQ_Multiplayer::Capture.repeat?(:LEFT)
+      move_to(@cursor + 1) if MGQ_Multiplayer::Capture.repeat?(:RIGHT)
+      move_to(0) if keys.pressed?(HOME_KEY)
+      move_to(@typed.length) if keys.pressed?(END_KEY)
+      edit(@typed[0, @cursor] + @typed[@cursor + 1..-1].to_s, @cursor) if keys.pressed?(DELETE_KEY) && @cursor < @typed.length
     end
 
-    # Types one character: Enter sends, Escape closes, Backspace removes the last one.
+    # Types one character at the cursor: Enter sends, Escape closes, Backspace removes the character
+    # before the cursor.
     #
     # @param char [String] The character.
     def self.type(char)
@@ -282,13 +321,32 @@ module MGQ_MpActions
         stop_typing
         Sound.play_cancel
       when "\b"
-        @typed = @typed[0...-1]
+        edit(@typed[0, @cursor - 1] + @typed[@cursor..-1], @cursor - 1) if @cursor > 0
       else
         return if char =~ /[[:cntrl:]]/
+        return Sound.play_buzzer if @typed.length >= MAX_LENGTH
 
-        # A new string, not an appended one, so the chat box sees the text changed.
-        @typed.length < MAX_LENGTH ? @typed += char : Sound.play_buzzer
+        edit(@typed[0, @cursor] + char + @typed[@cursor..-1], @cursor + 1)
       end
+    end
+
+    # Changes the chat box's text and puts the cursor where it goes.
+    #
+    # The text is always a new string, never changed in place, so the chat box sees it changed.
+    #
+    # @param text [String] The new text.
+    # @param cursor [Integer] The cursor's new place.
+    def self.edit(text, cursor)
+      @typed = text
+      move_to(cursor)
+    end
+
+    # Moves the cursor, within the text, and shows it at once.
+    #
+    # @param cursor [Integer] The place.
+    def self.move_to(cursor)
+      @cursor = [[cursor, 0].max, @typed.length].min
+      @blink = 0
     end
 
     # Sends the chat box's text, closing the box; an empty box just closes.
@@ -858,6 +916,15 @@ class Sprite_MpChatLog < Sprite
   # Color of the chat box's hint.
   HINT = Color.new(180, 180, 180)
 
+  # Background of the chat box's row, over the log's.
+  BOX_BACK = Color.new(0, 0, 0, 110)
+
+  # Room left of the chat box's text.
+  TEXT_LEFT = 4
+
+  # Width of the chat box's cursor.
+  CURSOR_WIDTH = 2
+
   # Creates the log, empty.
   #
   # @param viewport [Viewport] The map's topmost viewport.
@@ -875,7 +942,7 @@ class Sprite_MpChatLog < Sprite
     super
     chat = MGQ_MpActions::Chat
     lines = MGQ_MpActions.in_world? ? chat.log_lines.last(ROWS) : []
-    drawn = [lines, chat.typed]
+    drawn = [lines, chat.typed, chat.cursor, chat.typing? && chat.cursor_shown?]
     return if drawn == @shown
 
     @shown = drawn
@@ -885,24 +952,30 @@ class Sprite_MpChatLog < Sprite
     bitmap.fill_rect(bitmap.rect, BACK) if chat.typing?
     rows = lines.map { |line| chat.wrap(bitmap, line, WIDTH - 8) }.flatten.last(ROWS)
     rows.each_with_index { |row, index| bitmap.draw_text(4, (ROWS - rows.size + index) * ROW, WIDTH - 8, ROW, row) }
-    draw_box(chat.typed) if chat.typing?
+    draw_box(chat.typed, chat.cursor, chat.cursor_shown?) if chat.typing?
   end
 
-  # Draws the chat box on the bottom row: the text's end with a cursor, or a hint while it is empty.
+  # Draws the chat box on the bottom row: the text, moved left as far as the cursor needs to stay
+  # in sight, and the cursor; or a hint while the text is empty.
   #
   # @param text [String] The text typed.
-  def draw_box(text)
+  # @param cursor [Integer] The characters before the cursor.
+  # @param cursor_shown [Boolean] Whether the blinking cursor shows.
+  def draw_box(text, cursor, cursor_shown)
     y = ROWS * ROW
+    bitmap.fill_rect(0, y, WIDTH, ROW, BOX_BACK)
+
     if text.empty?
       bitmap.font.color = HINT
-      bitmap.draw_text(4, y, WIDTH - 8, ROW, "Type a message. Enter sends, Esc closes.")
+      bitmap.draw_text(TEXT_LEFT + CURSOR_WIDTH + 2, y, WIDTH - TEXT_LEFT * 2, ROW, "Type a message. Enter sends, Esc closes.")
       bitmap.font.color = Color.new(255, 255, 255)
-      return
     end
 
-    shown = "> #{text}_"
-    shown = shown[1..-1] while shown.size > 1 && bitmap.text_size(shown).width > WIDTH - 8
-    bitmap.draw_text(4, y, WIDTH - 8, ROW, shown)
+    before = bitmap.text_size(text[0, cursor]).width
+    left = TEXT_LEFT - [before - (WIDTH - TEXT_LEFT * 2 - CURSOR_WIDTH), 0].max
+    # Drawn as wide as the text is, since draw_text squeezes a text into a narrower rectangle.
+    bitmap.draw_text(left, y, bitmap.text_size(text).width + 8, ROW, text) unless text.empty?
+    bitmap.fill_rect(left + before, y + 3, CURSOR_WIDTH, ROW - 6, Color.new(255, 255, 255)) if cursor_shown
   end
 
   # Frees the log's picture.
