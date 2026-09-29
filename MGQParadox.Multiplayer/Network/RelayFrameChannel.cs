@@ -2,7 +2,8 @@
 //  RelayFrameChannel.cs
 //
 //  Changelog:
-//      Paulinchen  2026-09-29: Measured messages against the frame channel's longest frame
+//      Paulinchen  2026-09-29: Read whole messages through WebSocketMessages, which the world channel shares
+//                            - Measured messages against the frame channel's longest frame
 //                            - Created
 //
 //----------------------------------------------------------------
@@ -201,36 +202,10 @@ internal sealed class RelayFrameChannel : IFrameChannel
     }
 
     /// <summary>
-    /// Reads one whole message, which may arrive in parts.
+    /// Reads one whole message.
     /// </summary>
     /// <returns>The message, or <see langword="null"/> once the relay closed the connection or sent more than a frame may hold.</returns>
-    private async Task<(bool Binary, byte[] Data)?> ReadMessageAsync()
-    {
-        using var message = new MemoryStream();
-        var buffer = new byte[16 * 1024];
-
-        while (true)
-        {
-            var part = await _socket.ReceiveAsync(buffer, CancellationToken.None).ConfigureAwait(false);
-
-            if (part.MessageType == WebSocketMessageType.Close)
-            {
-                return null;
-            }
-
-            message.Write(buffer, 0, part.Count);
-
-            if (message.Length > IFrameChannel.MaxFrameBytes)
-            {
-                return null;
-            }
-
-            if (part.EndOfMessage)
-            {
-                return (part.MessageType == WebSocketMessageType.Binary, message.ToArray());
-            }
-        }
-    }
+    private Task<(bool Binary, byte[] Data)?> ReadMessageAsync() => WebSocketMessages.ReadAsync(_socket, IFrameChannel.MaxFrameBytes);
 
     /// <summary>
     /// Sends a text message to the relay.

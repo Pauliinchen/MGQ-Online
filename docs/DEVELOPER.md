@@ -28,8 +28,8 @@ docs/DEVELOPER.md                     this file
 
 | Path | What it is |
 |---|---|
-| `Exports.cs` | The functions `Multiplayer.rb` calls: `mp_start`, `mp_keep_running`, `mp_set_player_name`, `mp_host`, `mp_join_invite`, `mp_join_clipboard`, `mp_receive_invite`, `mp_cancel`, `mp_copy_code`, `mp_state`, `mp_status`, `mp_send` and `mp_receive`. Nothing may throw out of them. |
-| `Network/` | The connection: `Session` (hosting, joining, the first exchange, the state the script reads), `Link` (the connection that stays open), `IFrameChannel` and `RelayFrameChannel` (what carries the frames, through the relay), `FrameCipher` (their encryption), `Relays` (the relays by id, and the room a token leads to), `JoinCode`, `Message`. |
+| `Exports.cs` | The functions the game scripts call: `mp_start`, `mp_keep_running`, `mp_set_player_name`, `mp_host`, `mp_join_invite`, `mp_join_clipboard`, `mp_receive_invite`, `mp_cancel`, `mp_copy_code`, `mp_state`, `mp_status`, `mp_send` and `mp_receive` for PvP battles; `mp_world_new_code`, `mp_world_id`, `mp_world_read_clipboard`, `mp_world_copy_code`, `mp_world_open`, `mp_world_close`, `mp_world_status`, `mp_world_send` and `mp_world_receive` for worlds (see [Worlds](#worlds-dll)). Nothing may throw out of them. |
+| `Network/` | The connections. PvP battles: `Session` (hosting, joining, the first exchange, the state the script reads), `Link` (the connection that stays open), `IFrameChannel` and `RelayFrameChannel` (what carries the frames, through the relay), `FrameCipher` (their encryption), `JoinCode`. Worlds: `WorldSession`, `RelayWorldChannel`, `WorldCipher`, `WorldCode`. Both: `Relays` (the relays by id, and the rooms a token leads to), `WebSocketMessages`, `Message`. |
 | `../Relay/` | The relay server itself, see [Relay/README.md](../Relay/README.md). |
 | `GameWindow.cs` | Keeps the game running while another application is active, see [Background](#background). |
 | `Clipboard.cs` | The join code on the clipboard. |
@@ -86,6 +86,16 @@ The tests run 32-bit like the game and need the x86 .NET 10 runtime (`C:\Program
 - **Nothing blocks the game.** The DLL's threads run the network; every export returns at once.
 - **Nothing throws into the game.** Every export and the DLL's threads catch everything; an exception escaping them would end the game.
 - **The connection.** Hosting waits in a room of the relay, and joining enters it; the first frames swap what each game hands over (a PvP battle's team) and then stay open as the link, which carries the modes' own messages (`mp_send`, `mp_receive`). The link pings after 2 s without another frame, counts as `closed` after a goodbye and as `dropped` after 10 s of silence, which a running game never lets happen. `mp_state` describes it: `state`, `code`, `invite`, `error`, `opponent`, `link`, `role`, `party`, `ignored`, then the payload. `mp_status` describes it without the payload, for the checks the scripts make many times a second.
+
+### Worlds (DLL)
+
+A world is a lasting place several games play in at once, up to 32. Its **world code** (`mgqmp2;<token>;<relay>;<seats>`) never changes, so whoever holds it may enter the world again at any time; the world's folder is named by `mp_world_id`, a hash of the token, so the folder never gives the code away. `mp_world_new_code` makes the code of a new world with the seats the player chose.
+
+- **No host.** `mp_world_open` takes a seat in the world's room at the relay (see [Relay/README.md](../Relay/README.md), world rooms), whose room id is a hash of the token apart from a PvP room's. The first game into an empty room sets its seats; once they are taken, the next game waits and tries again, with `error` saying the world is full.
+- **Coming back by itself.** A cut connection, a silent relay (60 s, with keep-alives after 25 s) or the relay's 2-hour limit per connection leads back into the room, after 2, 5, 10, then every 30 s, the delays starting over after a connection that lasted 30 s. Meanwhile `state` is `reconnecting`, and the game plays on. The seat may be another one afterwards.
+- **One key per sender.** `WorldCipher` derives each game's key from the token and a salt the game picks per connection and sends in front of every frame; the sender's seat is authenticated, so a frame passed on under another seat fails. A sender's counters only have to grow, since frames it sends to one seat skip the others. Salts of games that left, or whose seat another game took, are refused from then on.
+- **Only a carrier.** The DLL never reads the messages and knows no players, only seats: who plays on a seat is for the game scripts to tell each other. `mp_world_receive` hands out one inbox entry at a time: `kind=seat` with `seat` and `others` after every (re)connect, `kind=in` or `kind=out` with the `seat` that came or went, and `kind=message` with the sender's `seat` and the text. `mp_world_send` sends to one seat, or to every other game with -1, and refuses while the game holds no seat. `mp_world_status` gives `state` (`idle`, `connecting`, `open`, `reconnecting`, `failed`), `seat`, `others` and `error`.
+- **Codes on the clipboard.** `mp_world_read_clipboard` answers `code=` with the world code, or `error=` saying why there is none, such as a PvP join code; a world code given to a PvP join says where worlds are entered.
 
 ### Background
 

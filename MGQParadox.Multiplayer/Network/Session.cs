@@ -2,7 +2,8 @@
 //  Session.cs
 //
 //  Changelog:
-//      Paulinchen  2026-09-29: Tried the relay room again after 10 s the first time, since the relay may still hold the host's last connection
+//      Paulinchen  2026-09-29: Told a world code from a join code of another version
+//                            - Tried the relay room again after 10 s the first time, since the relay may still hold the host's last connection
 //                            - Began every connection with the guest's salt, so each connection encrypts with a key of its own
 //                            - Met the friend at the relay only, dropping the listener, the addresses and the direct way
 //                            - Offered the join code once the host waits at the relay, and failed hosting when the relay is out of reach
@@ -118,6 +119,11 @@ internal sealed class Session
     /// Why a guest of another game version is turned away.
     /// </summary>
     private const string DifferentGame = "Your friend plays another version of the game or of this mod.";
+
+    /// <summary>
+    /// Why joining failed when the text is a world code rather than a join code.
+    /// </summary>
+    private const string WorldCodeGiven = "This is a world code. Enter the world through Multiplayer on the title screen.";
 
     /// <summary>
     /// How long reaching the relay may take.
@@ -309,7 +315,9 @@ internal sealed class Session
 
             if (JoinCode.Parse(text) is not { } code)
             {
-                FailLocked(JoinCode.IsOfAnyVersion(text) ? OtherModVersion : "There is no join code to join with.");
+                FailLocked(WorldCode.Parse(text) != null ? WorldCodeGiven
+                    : JoinCode.IsOfAnyVersion(text) ? OtherModVersion
+                    : "There is no join code to join with.");
                 return;
             }
 

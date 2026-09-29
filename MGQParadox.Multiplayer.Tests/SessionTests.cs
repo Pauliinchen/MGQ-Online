@@ -2,7 +2,8 @@
 //  SessionTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-09-29: Met at the test relay in every test, and covered an unreachable or unknown relay and codes of other versions
+//      Paulinchen  2026-09-29: Covered joining with a world code
+//                            - Met at the test relay in every test, and covered an unreachable or unknown relay and codes of other versions
 //                            - Covered joining through the relay, the direct way winning, and failing at the relay
 //                            - Added a test for a guest with another join code's token
 //                            - Added a test for invites while hosting
@@ -338,6 +339,21 @@ public sealed class SessionTests
 
         guest.JoinInvite("3.06", "guest team");
         Assert.Contains("another version of the mod", Message.Decode(guest.Describe())["error"]);
+    }
+
+    /// <summary>
+    /// Asserts that joining with a world code says where worlds are entered, instead of blaming the mod version.
+    /// </summary>
+    [Fact]
+    public void Join_WithAWorldCode_SaysWhereWorldsAreEntered()
+    {
+        var guest = NewSession("Guest", relay: null);
+
+        guest.Join("mgqmp2;abcdefghjkmnpqrs;r1;4", "3.06", "guest team");
+
+        var failed = Message.Decode(guest.Describe());
+        Assert.Equal("failed", failed["state"]);
+        Assert.Contains("world code", failed["error"]);
     }
 
     /// <summary>

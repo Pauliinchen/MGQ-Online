@@ -2,7 +2,8 @@
 //  Relays.cs
 //
 //  Changelog:
-//      Paulinchen  2026-09-29: Created
+//      Paulinchen  2026-09-29: Named the world room of a world's token
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -31,6 +32,11 @@ internal static class Relays
     /// Separates the room id from anything else ever derived from the same token.
     /// </summary>
     private static readonly byte[] RoomInfo = "mgqmp relay room v1"u8.ToArray();
+
+    /// <summary>
+    /// Separates the world room id from anything else ever derived from the same token.
+    /// </summary>
+    private static readonly byte[] WorldRoomInfo = "mgqmp world room v1"u8.ToArray();
 
     /// <summary>
     /// Size of a room id before it is written as hexadecimal.
@@ -62,6 +68,21 @@ internal static class Relays
     /// </remarks>
     /// <param name="token">The join code's token.</param>
     /// <returns>32 lowercase hexadecimal characters.</returns>
-    public static string RoomOf(string token) =>
-        Convert.ToHexString(HKDF.DeriveKey(HashAlgorithmName.SHA256, Encoding.UTF8.GetBytes(token), RoomBytes, info: RoomInfo)).ToLowerInvariant();
+    public static string RoomOf(string token) => HexOf(token, RoomInfo);
+
+    /// <summary>
+    /// Names the world room of a world's token.
+    /// </summary>
+    /// <param name="token">The world's token.</param>
+    /// <returns>32 lowercase hexadecimal characters.</returns>
+    public static string WorldRoomOf(string token) => HexOf(token, WorldRoomInfo);
+
+    /// <summary>
+    /// Derives a room id from a token.
+    /// </summary>
+    /// <param name="token">The token.</param>
+    /// <param name="info">What the id is for, which keeps ids for different uses apart.</param>
+    /// <returns>32 lowercase hexadecimal characters.</returns>
+    private static string HexOf(string token, byte[] info) =>
+        Convert.ToHexString(HKDF.DeriveKey(HashAlgorithmName.SHA256, Encoding.UTF8.GetBytes(token), RoomBytes, info: info)).ToLowerInvariant();
 }

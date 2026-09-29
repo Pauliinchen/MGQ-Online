@@ -2,7 +2,8 @@
 //  Exports.cs
 //
 //  Changelog:
-//      Paulinchen  2026-09-29: Dropped the port from mp_host, since hosting waits at the relay
+//      Paulinchen  2026-09-29: Added the mp_world_* functions for entering a world and passing messages there
+//                            - Dropped the port from mp_host, since hosting waits at the relay
 //                            - Added mp_status, the state without the friend's team
 //                            - Took an empty message instead of leaving it to block the ones behind it
 //      Paulinchen  2026-09-28: Created
@@ -10,6 +11,7 @@
 //----------------------------------------------------------------
 
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -308,6 +310,214 @@ internal static unsafe class Exports
             return 0;
         }
     }
+
+    /// <summary>
+    /// Makes the code of a new world, with a new token and the relay this version meets at.
+    /// </summary>
+    /// <param name="seats">How many games the world seats at once, 2 to 32.</param>
+    /// <param name="buffer">Receives the world code, UTF-8 and null-terminated.</param>
+    /// <param name="size">The size of the buffer in bytes.</param>
+    /// <returns>The code's length, or its length negated when the buffer is too small, 0 for seats out of range or when it failed.</returns>
+    [UnmanagedCallersOnly(EntryPoint = "mp_world_new_code", CallConvs = [typeof(CallConvStdcall)])]
+    public static int WorldNewCode(int seats, byte* buffer, int size)
+    {
+        try
+        {
+            return seats is >= WorldCode.MinSeats and <= WorldCode.MaxSeats
+                ? Copy(new WorldCode(JoinCode.NewToken(), Relays.Current, seats).ToText(), buffer, size)
+                : 0;
+        }
+        catch (Exception ex)
+        {
+            Log.Write($"mp_world_new_code failed: {ex}");
+            return 0;
+        }
+    }
+
+    /// <summary>
+    /// Names a world by its code, for its folder, without giving the code away.
+    /// </summary>
+    /// <param name="code">The world code, UTF-8 and null-terminated.</param>
+    /// <param name="buffer">Receives the world id, UTF-8 and null-terminated.</param>
+    /// <param name="size">The size of the buffer in bytes.</param>
+    /// <returns>The id's length, or its length negated when the buffer is too small, 0 when the text is no world code or it failed.</returns>
+    [UnmanagedCallersOnly(EntryPoint = "mp_world_id", CallConvs = [typeof(CallConvStdcall)])]
+    public static int WorldId(byte* code, byte* buffer, int size)
+    {
+        try
+        {
+            return WorldCode.Parse(Text(code)) is { } world ? Copy(WorldCode.IdOf(world.Token), buffer, size) : 0;
+        }
+        catch (Exception ex)
+        {
+            Log.Write($"mp_world_id failed: {ex}");
+            return 0;
+        }
+    }
+
+    /// <summary>
+    /// Reads the world code on the clipboard.
+    /// </summary>
+    /// <param name="buffer">Receives <c>code=</c> the world code, or <c>error=</c> why there is none, UTF-8 and null-terminated.</param>
+    /// <param name="size">The size of the buffer in bytes.</param>
+    /// <returns>The text's length, or its length negated when the buffer is too small, 0 when it failed.</returns>
+    [UnmanagedCallersOnly(EntryPoint = "mp_world_read_clipboard", CallConvs = [typeof(CallConvStdcall)])]
+    public static int WorldReadClipboard(byte* buffer, int size)
+    {
+        try
+        {
+            var text = Clipboard.GetText();
+            var header = WorldCode.Parse(text) is { } world
+                ? new KeyValuePair<string, string?>("code", world.ToText())
+                : new KeyValuePair<string, string?>("error", NoWorldCodeReason(text));
+
+            return Copy(new Message([header]).Encode(), buffer, size);
+        }
+        catch (Exception ex)
+        {
+            Log.Write($"mp_world_read_clipboard failed: {ex}");
+            return 0;
+        }
+    }
+
+    /// <summary>
+    /// Puts a world code on the clipboard, to hand it to a friend.
+    /// </summary>
+    /// <param name="code">The world code, UTF-8 and null-terminated.</param>
+    /// <returns>1 when the clipboard holds it, 0 otherwise.</returns>
+    [UnmanagedCallersOnly(EntryPoint = "mp_world_copy_code", CallConvs = [typeof(CallConvStdcall)])]
+    public static int WorldCopyCode(byte* code)
+    {
+        try
+        {
+            return WorldCode.Parse(Text(code)) is { } world && Clipboard.SetText(world.ToText()) ? 1 : 0;
+        }
+        catch (Exception ex)
+        {
+            Log.Write($"mp_world_copy_code failed: {ex}");
+            return 0;
+        }
+    }
+
+    /// <summary>
+    /// Enters a world. Returns at once, the connection runs on a thread of its own and comes back by itself after a break.
+    /// </summary>
+    /// <param name="code">The world code, UTF-8 and null-terminated.</param>
+    /// <returns>1 when started, 0 when the text is no world code or it failed.</returns>
+    [UnmanagedCallersOnly(EntryPoint = "mp_world_open", CallConvs = [typeof(CallConvStdcall)])]
+    public static int WorldOpen(byte* code)
+    {
+        try
+        {
+            return WorldSession.Current.Open(Text(code)) ? 1 : 0;
+        }
+        catch (Exception ex)
+        {
+            Log.Write($"mp_world_open failed: {ex}");
+            return 0;
+        }
+    }
+
+    /// <summary>
+    /// Leaves the world and forgets what arrived.
+    /// </summary>
+    /// <returns>1 when done, 0 when it failed.</returns>
+    [UnmanagedCallersOnly(EntryPoint = "mp_world_close", CallConvs = [typeof(CallConvStdcall)])]
+    public static int WorldClose()
+    {
+        try
+        {
+            WorldSession.Current.Close();
+            return 1;
+        }
+        catch (Exception ex)
+        {
+            Log.Write($"mp_world_close failed: {ex}");
+            return 0;
+        }
+    }
+
+    /// <summary>
+    /// Hands out how the world connection stands: <c>state</c>, and whichever of <c>seat</c>, <c>others</c> and <c>error</c> apply.
+    /// </summary>
+    /// <param name="buffer">Receives the state, UTF-8 and null-terminated.</param>
+    /// <param name="size">The size of the buffer in bytes.</param>
+    /// <returns>The length of the state, or its length negated when the buffer is too small, 0 when it failed.</returns>
+    [UnmanagedCallersOnly(EntryPoint = "mp_world_status", CallConvs = [typeof(CallConvStdcall)])]
+    public static int WorldStatus(byte* buffer, int size)
+    {
+        try
+        {
+            return Copy(WorldSession.Current.Describe(), buffer, size);
+        }
+        catch (Exception ex)
+        {
+            Log.Write($"mp_world_status failed: {ex}");
+            return 0;
+        }
+    }
+
+    /// <summary>
+    /// Sends a message to one game of the world or to all others. Returns at once.
+    /// </summary>
+    /// <param name="target">The seat, or -1 for every other game.</param>
+    /// <param name="text">The message, UTF-8 and null-terminated.</param>
+    /// <returns>1 when it goes out, 0 without a seat, for a seat out of range, or when it is too long.</returns>
+    [UnmanagedCallersOnly(EntryPoint = "mp_world_send", CallConvs = [typeof(CallConvStdcall)])]
+    public static int WorldSend(int target, byte* text)
+    {
+        try
+        {
+            return WorldSession.Current.Send(target, Text(text)) ? 1 : 0;
+        }
+        catch (Exception ex)
+        {
+            Log.Write($"mp_world_send failed: {ex}");
+            return 0;
+        }
+    }
+
+    /// <summary>
+    /// Hands out the oldest entry of the world's inbox and takes it, unless the buffer is too small for it.
+    /// </summary>
+    /// <param name="buffer">Receives the entry, UTF-8 and null-terminated: <c>kind</c> (seat, in, out, message) and <c>seat</c> headers, <c>others</c> for a seat entry, then a message's text.</param>
+    /// <param name="size">The size of the buffer in bytes.</param>
+    /// <returns>The entry's length, or its length negated when the buffer is too small, 0 while none waits.</returns>
+    [UnmanagedCallersOnly(EntryPoint = "mp_world_receive", CallConvs = [typeof(CallConvStdcall)])]
+    public static int WorldReceive(byte* buffer, int size)
+    {
+        try
+        {
+            if (WorldSession.Current.PeekMessage() is not { } entry)
+            {
+                return 0;
+            }
+
+            var length = Copy(entry, buffer, size);
+
+            if (length >= 0)
+            {
+                WorldSession.Current.TakeMessage();
+            }
+
+            return length;
+        }
+        catch (Exception ex)
+        {
+            Log.Write($"mp_world_receive failed: {ex}");
+            return 0;
+        }
+    }
+
+    /// <summary>
+    /// Tells why a text is no world code, for the player.
+    /// </summary>
+    /// <param name="text">The text.</param>
+    /// <returns>The reason.</returns>
+    private static string NoWorldCodeReason(string? text) =>
+        JoinCode.Parse(text) != null ? "This is a PvP join code. Press F11 on the map to join a PvP battle with it."
+        : JoinCode.IsOfAnyVersion(text) ? "This world code comes from another version of the mod. Both of you need the same version."
+        : "There is no world code on the clipboard. Ask a player of the world to copy theirs.";
 
     /// <summary>
     /// Writes a text into a buffer of the game script.

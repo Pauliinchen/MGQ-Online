@@ -2,7 +2,8 @@
 //  TestRelay.cs
 //
 //  Changelog:
-//      Paulinchen  2026-09-29: Created
+//      Paulinchen  2026-09-29: Seated games in world rooms, and cut them on request
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -22,7 +23,8 @@ namespace MGQParadox.Multiplayer.Tests;
 /// <summary>
 /// A relay inside the test process, following the protocol of Relay/README.md as far as the tests
 /// need: one host and one guest per room, <c>paired</c> once both are in, <c>ping</c> answered with
-/// <c>pong</c>, binary messages passed on, and the other side closed when one leaves.
+/// <c>pong</c>, binary messages passed on, and the other side closed when one leaves; and world rooms
+/// that seat games, tell who comes and goes, and pass messages on with the sender's seat in front.
 /// </summary>
 internal sealed class TestRelay : IDisposable
 {
@@ -30,6 +32,16 @@ internal sealed class TestRelay : IDisposable
     /// The close code the relay ends the other side with when one leaves.
     /// </summary>
     private const int PeerLeft = 4006;
+
+    /// <summary>
+    /// The target seat of a world message meant for every other game.
+    /// </summary>
+    private const int Everyone = 255;
+
+    /// <summary>
+    /// The games of each world room by seat, and the room's number of seats.
+    /// </summary>
+    private readonly Dictionary<string, (int Capacity, SortedDictionary<int, Peer?> Seats)> _worlds = new();
 
     /// <summary>
     /// Serves the WebSockets, on a free port of this PC.
@@ -79,6 +91,39 @@ internal sealed class TestRelay : IDisposable
     }
 
     /// <summary>
+    /// How many games hold a seat in all world rooms.
+    /// </summary>
+    public int SeatedGames
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _worlds.Values.Sum(world => world.Seats.Values.Count(peer => peer != null));
+            }
+        }
+    }
+
+    /// <summary>
+    /// Cuts every world room connection without a close, as a lost internet connection would.
+    /// </summary>
+    public void CutWorlds()
+    {
+        Peer[] seated;
+
+        lock (_gate)
+        {
+            seated = _worlds.Values.SelectMany(world => world.Seats.Values).OfType<Peer>().ToArray();
+        }
+
+        // Outside the gate, since a cut game may leave its seat on this very thread.
+        foreach (var peer in seated)
+        {
+            peer.Socket.Abort();
+        }
+    }
+
+    /// <summary>
     /// Stops the relay and cuts every connection.
     /// </summary>
     public void Dispose()
@@ -87,7 +132,7 @@ internal sealed class TestRelay : IDisposable
 
         lock (_gate)
         {
-            foreach (var peer in _rooms.Values.SelectMany(room => room.Values).OfType<Peer>())
+            foreach (var peer in _rooms.Values.SelectMany(room => room.Values).Concat(_worlds.Values.SelectMany(world => world.Seats.Values)).OfType<Peer>())
             {
                 peer.Socket.Abort();
             }
@@ -138,6 +183,13 @@ internal sealed class TestRelay : IDisposable
     private async Task ServeAsync(HttpListenerContext context)
     {
         var parts = context.Request.Url!.AbsolutePath.Trim('/').Split('/');
+
+        if (context.Request.IsWebSocketRequest && parts is [_, "world", _] && int.TryParse(context.Request.QueryString["seats"], out var seats))
+        {
+            await ServeWorldAsync(context, parts[2], seats);
+            return;
+        }
+
         var role = context.Request.QueryString["role"];
 
         if (!context.Request.IsWebSocketRequest || parts.Length != 3 || role is not ("host" or "guest"))
@@ -199,6 +251,106 @@ internal sealed class TestRelay : IDisposable
         finally
         {
             Leave(roomId, role);
+        }
+    }
+
+    /// <summary>
+    /// Seats a game in its world room and passes its messages on until it leaves.
+    /// </summary>
+    /// <param name="context">The request.</param>
+    /// <param name="roomId">The world room.</param>
+    /// <param name="requested">The seats the game asks for, which count only in an empty room.</param>
+    /// <returns>Completes once the game left.</returns>
+    private async Task ServeWorldAsync(HttpListenerContext context, string roomId, int requested)
+    {
+        int seat;
+        int[] others;
+
+        lock (_gate)
+        {
+            var world = _worlds.TryGetValue(roomId, out var existing) ? existing : _worlds[roomId] = (requested, new SortedDictionary<int, Peer?>());
+            seat = Enumerable.Range(0, world.Capacity).FirstOrDefault(free => !world.Seats.ContainsKey(free), -1);
+
+            if (seat < 0)
+            {
+                Refuse(context, 409);
+                return;
+            }
+
+            // Held while the handshake runs, so no other game takes the seat meanwhile.
+            world.Seats[seat] = null;
+            others = world.Seats.Keys.Where(taken => taken != seat).ToArray();
+        }
+
+        var peer = new Peer((await context.AcceptWebSocketAsync(null)).WebSocket);
+
+        lock (_gate)
+        {
+            _worlds[roomId].Seats[seat] = peer;
+        }
+
+        await peer.SendAsync(Encoding.UTF8.GetBytes(string.Join(' ', new[] { "seat", seat.ToString() }.Concat(others.Select(other => other.ToString())))), WebSocketMessageType.Text);
+
+        foreach (var other in WorldPeers(roomId, seat))
+        {
+            await other.Peer.SendAsync(Encoding.UTF8.GetBytes($"in {seat}"), WebSocketMessageType.Text);
+        }
+
+        try
+        {
+            while (await ReadAsync(peer.Socket) is { } message)
+            {
+                if (message.Type == WebSocketMessageType.Text)
+                {
+                    await peer.SendAsync("pong"u8.ToArray(), WebSocketMessageType.Text);
+                    continue;
+                }
+
+                var target = message.Data[0];
+                message.Data[0] = (byte)seat;
+
+                foreach (var other in WorldPeers(roomId, seat).Where(other => target == Everyone || other.Seat == target))
+                {
+                    await other.Peer.SendAsync(message.Data, WebSocketMessageType.Binary);
+                }
+            }
+        }
+        catch
+        {
+            // A cut connection ends the game's seat like a closed one.
+        }
+        finally
+        {
+            lock (_gate)
+            {
+                _worlds[roomId].Seats.Remove(seat);
+
+                if (_worlds[roomId].Seats.Count == 0)
+                {
+                    _worlds.Remove(roomId);
+                }
+            }
+
+            foreach (var other in WorldPeers(roomId, seat))
+            {
+                await other.Peer.SendAsync(Encoding.UTF8.GetBytes($"out {seat}"), WebSocketMessageType.Text);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Lists the other games of a world room.
+    /// </summary>
+    /// <param name="roomId">The world room.</param>
+    /// <param name="seat">The seat of the game asking.</param>
+    /// <returns>The others with their seats, those still in their handshake left out.</returns>
+    private (int Seat, Peer Peer)[] WorldPeers(string roomId, int seat)
+    {
+        lock (_gate)
+        {
+            return _worlds.TryGetValue(roomId, out var world)
+                ? world.Seats.Where(entry => entry.Key != seat && entry.Value != null).Select(entry => (entry.Key, entry.Value!)).ToArray()
+                : [];
         }
     }
 
