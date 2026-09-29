@@ -2,7 +2,8 @@
 //  Session.cs
 //
 //  Changelog:
-//      Paulinchen  2026-09-29: Logged what the join code offers and how each of the host's addresses went
+//      Paulinchen  2026-09-29: Ignored invites while hosting, counting them for the game script
+//                            - Logged what the join code offers and how each of the host's addresses went
 //                            - Told a guest without IPv6 why it cannot reach a host that offers only IPv6
 //                            - Let Describe leave the friend's team out
 //                            - Removed Advertised and Connected, which only the tests read
@@ -12,6 +13,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
@@ -84,6 +86,11 @@ internal sealed class Session
     private const string PartyHeader = "party";
 
     /// <summary>
+    /// How many invites this game ignored because it hosted, since it started.
+    /// </summary>
+    private const string IgnoredHeader = "ignored";
+
+    /// <summary>
     /// Why a guest of another game version is turned away.
     /// </summary>
     private const string DifferentGame = "Your friend plays another version of the game or of this mod.";
@@ -147,6 +154,11 @@ internal sealed class Session
     /// The join code of a Discord invite the player has not answered yet.
     /// </summary>
     private string? _invite;
+
+    /// <summary>
+    /// How many invites this game ignored because it hosted.
+    /// </summary>
+    private int _ignoredInvites;
 
     /// <summary>
     /// Waits for the guest while hosting.
@@ -294,8 +306,12 @@ internal sealed class Session
 
     /// <summary>
     /// Keeps the join code of a Discord invite the player accepted in Discord, until the game
-    /// script asks them.
+    /// script joins with it, unless this game hosts.
     /// </summary>
+    /// <remarks>
+    /// Discord also hands over a join the player did not mean, such as after a friend's request to
+    /// join, and joining would end the hosting that the friend's own invite leads to.
+    /// </remarks>
     /// <param name="secret">The invite's join secret.</param>
     public void ReceiveInvite(string secret)
     {
@@ -305,12 +321,23 @@ internal sealed class Session
             return;
         }
 
+        bool hosting;
+
         lock (_gate)
         {
-            _invite = secret;
+            hosting = _state == SessionState.Hosting;
+
+            if (hosting)
+            {
+                _ignoredInvites++;
+            }
+            else
+            {
+                _invite = secret;
+            }
         }
 
-        Log.Write("invite received");
+        Log.Write(hosting ? "ignored an invite, this game hosts" : "invite received");
     }
 
     /// <summary>
@@ -369,7 +396,7 @@ internal sealed class Session
     /// Describes the exchange for the game script.
     /// </summary>
     /// <param name="includeTeam">Whether the friend's team comes along once it arrived.</param>
-    /// <returns><c>state</c> and whichever of <c>code</c>, <c>invite</c>, <c>error</c>, <c>opponent</c>, <c>link</c>, <c>role</c> and <c>party</c> apply, then the friend's team when asked for and arrived.</returns>
+    /// <returns><c>state</c> and whichever of <c>code</c>, <c>invite</c>, <c>error</c>, <c>opponent</c>, <c>link</c>, <c>role</c>, <c>party</c> and <c>ignored</c> apply, then the friend's team when asked for and arrived.</returns>
     public string Describe(bool includeTeam = true)
     {
         lock (_gate)
@@ -384,6 +411,7 @@ internal sealed class Session
                 new(LinkHeader, _link?.State.ToString().ToLowerInvariant()),
                 new(RoleHeader, _state == SessionState.Received ? _role : null),
                 new(PartyHeader, (_state == SessionState.Hosting && _joinCode != null) || _link?.State == LinkState.Open ? _partyId : null),
+                new(IgnoredHeader, _ignoredInvites > 0 ? _ignoredInvites.ToString(CultureInfo.InvariantCulture) : null),
             };
 
             return new Message(headers, includeTeam && _state == SessionState.Received ? _opponentTeam ?? string.Empty : string.Empty).Encode();

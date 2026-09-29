@@ -32,7 +32,7 @@ To uninstall, delete the `Multiplayer` folder and the three scripts in `Patch`.
 Press **F11** on the map to open the PvP battle screen.
 
 - **Host:** your game waits for a friend and puts a join code on your clipboard. Send it to your friend, or invite them through the **+** in a Discord chat when the Discord mod is installed.
-- **Join:** copy your friend's join code and pick *Join with the copied code*, or accept their Discord invite: your game starts if it is closed, loads your newest save (the one *Continue* picks first) and joins by itself.
+- **Join:** copy your friend's join code and pick *Join with the copied code*, or accept their Discord invite: your game starts if it is closed, loads your newest save (the one *Continue* picks first) and joins by itself. While you host, invites you accept are ignored; stop hosting first.
 - **Fight your own team:** a mirror match against your own Frontline, without any network. `Multiplayer\Mirror Match.log` then lists each of your characters next to its copy and marks every value that differs.
 
 Once the teams are swapped, both battles start together. The host's game works the battle out, and the other game shows what happened. The team you meet is your friend's characters as they are: jobs, races, equipment, gems and abilities, pre-battle spells and passives included. A defeated character of your friend stays as a grey silhouette, since their team can still revive it.

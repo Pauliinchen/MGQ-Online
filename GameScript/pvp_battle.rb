@@ -2,7 +2,8 @@
 #  pvp_battle.rb
 #
 #  Changelog:
-#      Paulinchen  2026-09-29: Joined the host of an accepted Discord invite at once, loading the last save at the title screen
+#      Paulinchen  2026-09-29: Said when a Discord invite arrived while hosting and was ignored
+#                            - Joined the host of an accepted Discord invite at once, loading the last save at the title screen
 #                            - Said on the map when a live battle broke off
 #                            - Closed the link of a live battle that a reset interrupted
 #                            - Started the friend's characters' sprite effects through the setter the guest's stream records
@@ -32,6 +33,9 @@ module MGQ_PvpBattle
 
   # Who the player's own team belongs to in a mirror match.
   MIRROR_NAME = "Mirror"
+
+  # What the game says when a Discord invite arrived while this game hosted, which the DLL ignores.
+  IGNORED_INVITE = "You're hosting, so the Discord invite you accepted was ignored."
 
   # Reports whether the hooks can be installed.
   #
@@ -97,6 +101,8 @@ module MGQ_PvpBattle
   #
   # @param state [Hash] The state without the friend's team, see MGQ_Multiplayer::Link.status.
   def self.look_at(state)
+    $game_message.add(IGNORED_INVITE) if ignored_invite?(state)
+
     case state["state"]
     when "received"
       state = MGQ_Multiplayer::Link.state
@@ -109,6 +115,17 @@ module MGQ_PvpBattle
     else
       SceneManager.call(Scene_PvpLobby) if join_invite(state)
     end
+  end
+
+  # Tells once per invite that one arrived while this game hosted and was ignored.
+  #
+  # @param state [Hash] The state without the friend's team, see MGQ_Multiplayer::Link.status.
+  # @return [Boolean] Whether another invite was ignored since the last look.
+  def self.ignored_invite?(state)
+    count = state["ignored"].to_i
+    fresh = count > (@ignored_seen || 0)
+    @ignored_seen = count
+    fresh
   end
 
   # Joins the host of an invite the player accepted in Discord, unless this game joins already.
@@ -1709,7 +1726,8 @@ class Scene_PvpLobby < Scene_MenuBase
   def refresh_state
     @state = MGQ_Multiplayer::Link.status
     @state = MGQ_Multiplayer::Link.status if MGQ_PvpBattle.join_invite(@state)
-    @info_window.show(MGQ_PvpBattle::Lobby.lines_for(@state))
+    @ignored_invite ||= MGQ_PvpBattle.ignored_invite?(@state)
+    @info_window.show((@ignored_invite ? [MGQ_PvpBattle::IGNORED_INVITE] : []) + MGQ_PvpBattle::Lobby.lines_for(@state))
     @command_window.state = @state
     return_scene if @state["state"] == "received"
   rescue => e

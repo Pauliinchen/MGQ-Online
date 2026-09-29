@@ -72,7 +72,8 @@ Press F11 on the map to open the PvP battle screen.
   invite them through the + in a Discord chat ("Invite to play").
 - Your friend copies your join code and picks "Join with the copied
   code", or accepts the invite in Discord: their game starts if it is
-  closed, loads their last save and joins by itself.
+  closed, loads their last save and joins by itself. While a game hosts,
+  invites accepted there are ignored; stop hosting first.
 - Once the teams are swapped, both battles start together.
 - Fight your own team: a mirror match against your own Frontline, no
   friend or network needed. Multiplayer\Mirror Match.log then lists each

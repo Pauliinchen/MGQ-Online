@@ -2,7 +2,8 @@
 //  SessionTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-09-29: Added a test for the state without the team
+//      Paulinchen  2026-09-29: Added a test for invites while hosting
+//                            - Added a test for the state without the team
 //                            - Read the join code and party from the described state
 //      Paulinchen  2026-09-28: Created
 //
@@ -175,6 +176,32 @@ public sealed class SessionTests
 
         guest.JoinInvite("3.06", "guest team");
         Assert.Equal(string.Empty, Message.Decode(guest.Describe())["invite"]);
+    }
+
+    /// <summary>
+    /// Asserts that an invite arriving while hosting is ignored and counted, so hosting goes on and
+    /// the game script can say why, while one arriving afterwards waits as usual.
+    /// </summary>
+    [Fact]
+    public void Invite_IsIgnoredWhileHosting()
+    {
+        var host = NewSession("Host");
+
+        host.Host("3.06", "host team", FreePort());
+        AwaitCode(host);
+        host.ReceiveInvite("mgqmp1;abcdefghjk;1;127.0.0.1");
+
+        var hosting = Message.Decode(host.Describe());
+        Assert.Equal("hosting", hosting["state"]);
+        Assert.Equal(string.Empty, hosting["invite"]);
+        Assert.Equal("1", hosting["ignored"]);
+
+        host.Cancel();
+        host.ReceiveInvite("mgqmp1;abcdefghjk;1;127.0.0.1");
+
+        var idle = Message.Decode(host.Describe());
+        Assert.Equal("1", idle["invite"]);
+        Assert.Equal("1", idle["ignored"]);
     }
 
     /// <summary>
