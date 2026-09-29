@@ -2,7 +2,8 @@
 //  FrameCipherTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-09-29: Created
+//      Paulinchen  2026-09-29: Covered the salt that gives each connection a key of its own
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -22,13 +23,18 @@ public sealed class FrameCipherTests
     private const string Token = "abcdefghjk";
 
     /// <summary>
+    /// The connection's salt both sides share.
+    /// </summary>
+    private static readonly byte[] Salt = FrameCipher.NewSalt();
+
+    /// <summary>
     /// Asserts that frames pass both ways and in order, and that their text is not readable on the way.
     /// </summary>
     [Fact]
     public void Frames_PassBothWaysInOrder()
     {
-        var host = new FrameCipher(Token, host: true);
-        var guest = new FrameCipher(Token, host: false);
+        var host = new FrameCipher(Token, Salt, host: true);
+        var guest = new FrameCipher(Token, Salt, host: false);
 
         var first = guest.Seal(Encoding.UTF8.GetBytes("player=Guest"));
         var second = guest.Seal(Encoding.UTF8.GetBytes("ready"));
@@ -46,10 +52,23 @@ public sealed class FrameCipherTests
     [Fact]
     public void AnotherToken_FailsTheCheck()
     {
-        var host = new FrameCipher(Token, host: true);
-        var stranger = new FrameCipher("zzzzzzzzzz", host: false);
+        var host = new FrameCipher(Token, Salt, host: true);
+        var stranger = new FrameCipher("zzzzzzzzzz", Salt, host: false);
 
         Assert.Null(host.Open(stranger.Seal(Encoding.UTF8.GetBytes("ready"))));
+    }
+
+    /// <summary>
+    /// Asserts that a frame of another connection with the same token fails the check, so a guest
+    /// who tries the same join code again never shares a key, and with it a nonce, with its earlier try.
+    /// </summary>
+    [Fact]
+    public void AnotherSalt_FailsTheCheck()
+    {
+        var host = new FrameCipher(Token, Salt, host: true);
+        var earlierTry = new FrameCipher(Token, FrameCipher.NewSalt(), host: false);
+
+        Assert.Null(host.Open(earlierTry.Seal(Encoding.UTF8.GetBytes("ready"))));
     }
 
     /// <summary>
@@ -58,8 +77,8 @@ public sealed class FrameCipherTests
     [Fact]
     public void ChangedFrame_FailsTheCheck()
     {
-        var host = new FrameCipher(Token, host: true);
-        var frame = new FrameCipher(Token, host: false).Seal(Encoding.UTF8.GetBytes("ready"));
+        var host = new FrameCipher(Token, Salt, host: true);
+        var frame = new FrameCipher(Token, Salt, host: false).Seal(Encoding.UTF8.GetBytes("ready"));
 
         frame[10] ^= 1;
 
@@ -72,8 +91,8 @@ public sealed class FrameCipherTests
     [Fact]
     public void RepeatedOrMissingFrame_FailsTheCheck()
     {
-        var host = new FrameCipher(Token, host: true);
-        var guest = new FrameCipher(Token, host: false);
+        var host = new FrameCipher(Token, Salt, host: true);
+        var guest = new FrameCipher(Token, Salt, host: false);
         var first = guest.Seal(Encoding.UTF8.GetBytes("one"));
         var second = guest.Seal(Encoding.UTF8.GetBytes("two"));
         var third = guest.Seal(Encoding.UTF8.GetBytes("three"));
@@ -90,7 +109,7 @@ public sealed class FrameCipherTests
     [Fact]
     public void FrameSentBack_FailsTheCheck()
     {
-        var host = new FrameCipher(Token, host: true);
+        var host = new FrameCipher(Token, Salt, host: true);
 
         Assert.Null(host.Open(host.Seal(Encoding.UTF8.GetBytes("ready"))));
     }
@@ -101,6 +120,6 @@ public sealed class FrameCipherTests
     [Fact]
     public void TooShortFrame_FailsTheCheck()
     {
-        Assert.Null(new FrameCipher(Token, host: true).Open(new byte[FrameCipher.Overhead - 1]));
+        Assert.Null(new FrameCipher(Token, Salt, host: true).Open(new byte[FrameCipher.Overhead - 1]));
     }
 }

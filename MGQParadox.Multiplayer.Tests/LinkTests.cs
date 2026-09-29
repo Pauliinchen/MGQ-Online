@@ -2,7 +2,8 @@
 //  LinkTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-09-29: Linked the games through the test relay, since the direct connection is gone
+//      Paulinchen  2026-09-29: Encrypted the links with a connection's salt as well as the token
+//                            - Linked the games through the test relay, since the direct connection is gone
 //                            - Built the links from frame channels and ciphers, and covered frames of another join code
 //      Paulinchen  2026-09-28: Created
 //
@@ -24,6 +25,11 @@ public sealed class LinkTests : IDisposable
     /// The join code token both sides of a test link share.
     /// </summary>
     private const string Token = "abcdefghjk";
+
+    /// <summary>
+    /// The connection's salt both sides of a test link share.
+    /// </summary>
+    private static readonly byte[] Salt = FrameCipher.NewSalt();
 
     /// <summary>
     /// How long the links in these tests stay quiet before they ping.
@@ -173,7 +179,7 @@ public sealed class LinkTests : IDisposable
     /// <param name="host">Whether this side hosts.</param>
     /// <returns>The link.</returns>
     private static Link NewLink(IFrameChannel channel, string token, bool host) =>
-        new(channel, new FrameCipher(token, host), PingInterval, DropTimeout);
+        new(channel, new FrameCipher(token, Salt, host), PingInterval, DropTimeout);
 
     /// <summary>
     /// Waits until a message arrived.

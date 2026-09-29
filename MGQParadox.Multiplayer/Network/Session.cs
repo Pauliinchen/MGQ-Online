@@ -2,7 +2,8 @@
 //  Session.cs
 //
 //  Changelog:
-//      Paulinchen  2026-09-29: Met the friend at the relay only, dropping the listener, the addresses and the direct way
+//      Paulinchen  2026-09-29: Began every connection with the guest's salt, so each connection encrypts with a key of its own
+//                            - Met the friend at the relay only, dropping the listener, the addresses and the direct way
 //                            - Offered the join code once the host waits at the relay, and failed hosting when the relay is out of reach
 //                            - Told a join code of another mod version from no join code
 //                            - Reached the host through its relay when not directly, and waited at the relay while hosting
@@ -546,7 +547,13 @@ internal sealed class Session
 
         try
         {
-            var cipher = new FrameCipher(token, host: true);
+            if (channel.Receive() is not { Length: FrameCipher.SaltSize } salt)
+            {
+                Log.Write("turned a guest away, it sent no salt");
+                return false;
+            }
+
+            var cipher = new FrameCipher(token, salt, host: true);
 
             // A guest whose first frame does not decrypt holds another join code, so it is turned away unanswered.
             if (ReceiveMessage(channel, cipher) is not { } guest)
@@ -599,7 +606,9 @@ internal sealed class Session
             }
 
             channel.SetTimeout(ExchangeTimeout);
-            var cipher = new FrameCipher(code.Token, host: false);
+            var salt = FrameCipher.NewSalt();
+            channel.Send(salt);
+            var cipher = new FrameCipher(code.Token, salt, host: false);
             var headers = new KeyValuePair<string, string?>[]
             {
                 new(Message.Game, game),

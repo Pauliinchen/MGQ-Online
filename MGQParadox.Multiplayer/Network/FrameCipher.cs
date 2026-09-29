@@ -2,7 +2,8 @@
 //  FrameCipher.cs
 //
 //  Changelog:
-//      Paulinchen  2026-09-29: Created
+//      Paulinchen  2026-09-29: Derived a key of its own for every connection, from the token and a salt the guest picks
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -28,6 +29,11 @@ internal sealed class FrameCipher
     /// Bytes a sealed frame carries on top of its text: the counter and the authentication tag.
     /// </summary>
     public const int Overhead = CounterSize + TagSize;
+
+    /// <summary>
+    /// Size of the salt that makes each connection's key its own.
+    /// </summary>
+    public const int SaltSize = 16;
 
     /// <summary>
     /// Size of the counter ahead of each sealed frame.
@@ -95,18 +101,30 @@ internal sealed class FrameCipher
     private ulong _received;
 
     /// <summary>
-    /// Derives the key from a join code's token.
+    /// Derives the connection's key from a join code's token and the connection's salt.
     /// </summary>
+    /// <remarks>
+    /// The counters start at zero on every connection, so a key used on two connections, as when a
+    /// guest tries the same join code again, would repeat nonces; the salt keeps each key to one.
+    /// </remarks>
     /// <param name="token">The join code's token.</param>
+    /// <param name="salt">The connection's salt, see <see cref="NewSalt"/>.</param>
     /// <param name="host">Whether this game hosts, which decides the direction of its frames.</param>
-    public FrameCipher(string token, bool host)
+    public FrameCipher(string token, ReadOnlySpan<byte> salt, bool host)
     {
-        var key = HKDF.DeriveKey(HashAlgorithmName.SHA256, Encoding.UTF8.GetBytes(token), KeySize, info: KeyInfo);
+        var key = new byte[KeySize];
+        HKDF.DeriveKey(HashAlgorithmName.SHA256, Encoding.UTF8.GetBytes(token), key, salt, KeyInfo);
 
         _aes = new AesGcm(key, TagSize);
         _sendDirection = host ? FromHost : FromGuest;
         _receiveDirection = host ? FromGuest : FromHost;
     }
+
+    /// <summary>
+    /// Makes a salt for a new connection, which the guest picks and sends ahead of its first frame.
+    /// </summary>
+    /// <returns><see cref="SaltSize"/> random bytes.</returns>
+    public static byte[] NewSalt() => RandomNumberGenerator.GetBytes(SaltSize);
 
     /// <summary>
     /// Encrypts a frame to send.
