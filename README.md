@@ -1,6 +1,6 @@
 # MGQ Paradox Multiplayer
 
-Play Monster Girl Quest! Paradox RPG together with a friend over the internet, with nothing to set up in your router. So far: **PvP battles**, in which your Frontline fights your friend's Frontline live, each of you commanding your own team. Overworld and co-op play are planned on the same connection.
+Play Monster Girl Quest! Paradox RPG together with friends over the internet, with nothing to set up in your router. So far: **PvP battles**, in which your Frontline fights your friend's Frontline live, each of you commanding your own team; and **worlds**, which up to 32 players enter and see each other walk the same maps. Playing the story together and co-op battles are planned.
 
 ## Requirements
 
@@ -20,12 +20,27 @@ Close the game and extract the release zip into the folder that contains `Game.e
 Game.exe
 Multiplayer\Multiplayer.dll
 Patch\Multiplayer.rb
+Patch\mp_overworld.rb
 Patch\mp_sync.rb
 Patch\mp_world.rb
 Patch\pvp_battle.rb
 ```
 
-To uninstall, delete the `Multiplayer` folder and the four scripts in `Patch`. The `Multiplayer` folder also holds your worlds, so keep `Multiplayer\Worlds` if you want to play them again later.
+To uninstall, delete the `Multiplayer` folder and the five scripts in `Patch`. The `Multiplayer` folder also holds your worlds, so keep `Multiplayer\Worlds` if you want to play them again later.
+
+## Worlds
+
+Pick **Multiplayer** below *Continue* on the title screen. The first time, the game asks for the name the others see, unless the Discord mod knows yours.
+
+- **The list** at the left holds every world, your favourites first (marked `*`), then those you played last. The right side shows who made the chosen world, how many of its players are online, and everyone who ever joined it.
+- **New world:** give it a name, a password, and how many players it seats at once, 2 to 32. Then it starts at the opening.
+- **Enter a world:** the first time, type its password; your game remembers it after that. A world you have saves in loads your latest one; otherwise you start at the opening.
+- **Its creator** can remove a player, who can then no longer enter, or delete the world for everyone.
+- **Names and passwords** are typed on the keyboard; with a gamepad, the game's letters appear.
+
+Each world keeps its own saves, Library, medals and affection in `Multiplayer\Worlds`, apart from your own game. Going back to the title screen leaves the world.
+
+**On the map**, the other players on the same map walk around as they do, with their names above them and an icon while they are in a battle, a menu or an event. They walk through everything and trigger nothing. The bottom left of the screen tells who joined and left, and when the connection is being restored. PvP battles (F11) are off while you are in a world.
 
 ## PvP battles
 
@@ -43,7 +58,7 @@ Only the Frontline fights. Escape gives the battle up at once, Give Up is off, a
 
 Your games meet at the mod's **relay**, a small server that passes their data on. Both only connect out to it, which works on any internet connection, so neither of you has to open a port, change a router setting or install anything.
 
-- **Private:** everything your games send each other is encrypted with a key from the join code. The relay never gets that key: it passes on data it cannot read and keeps nothing.
+- **Private:** everything your games send each other is encrypted with a key from the join code or the world's password. The relay never gets that key: it passes on data it cannot read. For worlds it keeps the list everyone sees: each world's name, its players' names and who is online.
 - **No addresses:** the join code holds a random token and the relay's name, so your friend's game never learns your IP address.
 
 While the mod is installed, the game keeps running when its window is in the background, so neither player holds the other up.

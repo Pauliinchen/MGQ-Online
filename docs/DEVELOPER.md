@@ -6,6 +6,7 @@
 MGQ-Paradox-Multiplayer-Mod.slnx      Visual Studio solution
 Directory.Build.targets               puts vswhere.exe on the PATH, which the NativeAOT link needs
 GameScript/Multiplayer.rb             Ruby, what every way of playing together shares
+GameScript/mp_overworld.rb            Ruby, the other players of a world on the map, as ghosts
 GameScript/mp_sync.rb                 Ruby, live battles: the host computes, the guest plays back
 GameScript/mp_world.rb                Ruby, worlds: the world screen, and each world's own saves
 GameScript/pvp_battle.rb              Ruby, PvP battles against a friend's team or a mirror match
@@ -17,12 +18,13 @@ docs/DEVELOPER.md                     this file
 .github/workflows/release.yml         tests, builds and attaches the zip on release
 ```
 
-**Scripts.** Patch folder mods, shipped as `Patch/*.rb`. The mod loader loads them sorted, capitals first, so after `Discord_RPC.rb` of the Discord mod: `Multiplayer.rb`, then `mp_sync.rb`, `mp_world.rb` and `pvp_battle.rb`. A file may only use what loaded before it at load time; later files are reached at run time (`defined?`).
+**Scripts.** Patch folder mods, shipped as `Patch/*.rb`. The mod loader loads them sorted, capitals first, so after `Discord_RPC.rb` of the Discord mod: `Multiplayer.rb`, then `mp_overworld.rb`, `mp_sync.rb`, `mp_world.rb` and `pvp_battle.rb`. A file may only use what loaded before it at load time; later files are reached at run time (`defined?`).
 
 | File | Module | What it is |
 |---|---|---|
 | `Multiplayer.rb` | `MGQ_Multiplayer` | The foundation every mode shares: `Log` (`Multiplayer/InGame.log`), `Link` (the DLL's `mp_*` functions), `Background` (keeps the game running while another window is in front, and has `Input` report no buttons meanwhile), `Key` (F-keys the game's `Input` does not know), `Discord` (the bridge client, see below). |
 | `mp_sync.rb` | `MGQ_MpSync` | Live battles, for any mode: `join` makes the next battle live, `battle_started` marks it running, `finish` ends it and closes the link, `record_to_file` has the next battle record itself. Knows nothing of PvP battles. |
+| `mp_overworld.rb` | `MGQ_MpOverworld` | The other players of the open world on the map: what each game tells the others, the ghosts, their name labels and the status line (see [On the map](#on-the-map-mp_overworldrb)). Reaches `MGQ_MpWorld` at run time. |
 | `mp_world.rb` | `MGQ_MpWorld` | Worlds: the Multiplayer command on the title screen, the world screen, each world's folder with its saves and system save (see [Worlds](#worlds-mp_worldrb)). |
 | `pvp_battle.rb` | `MGQ_PvpBattle` | PvP battles: the PvP battle screen (F11), the team exchange, the rebuilt characters, the mirror match. Drives `MGQ_MpSync`. |
 
@@ -46,7 +48,7 @@ Publishing the DLL project assembles the complete release layout in `Shipping/` 
 
 ```
 Multiplayer/  Multiplayer.dll  README.txt
-Patch/        Multiplayer.rb  mp_sync.rb  mp_world.rb  pvp_battle.rb
+Patch/        Multiplayer.rb  mp_overworld.rb  mp_sync.rb  mp_world.rb  pvp_battle.rb
 ```
 
 - **Publish, not build:** only a publish runs NativeAOT, so a plain build gives no usable DLL.
@@ -136,6 +138,15 @@ The [Discord Rich Presence](https://github.com/Pauliinchen/MGQ-Paradox-Discord-R
 - **Entering** loads the world's latest save, an autosave included, with the game's own `Scene_Load#on_load_success`. A world without saves goes back to the title screen, whose own `command_new_game` starts the new game, so everything the game and other mods do for one happens. Entering also takes a seat in the world's room (`mp_world_open`), which tells the directory the player is online.
 - **Leaving** happens whenever the title screen starts other than for that new game: after *To Title*, a reset or a game over. It leaves the room, writes the world's system save and puts the player's own back.
 - **PvP battles** are off while a world is open (`MGQ_PvpBattle.available?`): a world keeps a connection of its own, and both would claim the Discord status.
+
+## On the map (`mp_overworld.rb`)
+
+While a world is open, a `Graphics.update` hook runs every frame in every scene: it reads the world room's inbox (`mp_world_receive`, at most 64 entries a frame) and tells the others what changed about the player, so nothing piles up during a battle or in a menu.
+
+- **What each game tells** (`Me`): one message of `key=value` lines with the player's id and name, the party leader's sprite and index (the vehicle's while in one), map, tile, facing, speed (`real_move_speed`, dashing included), whether the player is hidden, and the scene: `map`, `battle`, `menu` (any other scene) or `event` (a message or a running event on the map, or a novel scene). It goes to everyone whenever any of it changed, and only then, so a player standing still sends nothing: every incoming message counts against the relay's free plan.
+- **Newcomers** (`Inbox`): after every (re)connect (`kind=seat`) the game forgets the others and tells everyone everything; when another game comes in (`kind=in`), it tells that seat everything, and that game does the same, so both know each other at once. A message makes or updates the sender's `Peer` by seat; `kind=out` forgets it. Joining and leaving show as notices.
+- **Ghosts** (`Game_MpGhost`, a `Game_Character` with `@through`): one per player on the current map, made where they stand. Every frame on the map (`Game_Map#update`) it takes their sprite, speed and visibility, and walks one tile toward where they stand, along the longer axis first, at their speed; more than `CATCH_UP_TILES` (3) away, or after a map change, it moves there at once. It triggers nothing, since only the player and events check triggers.
+- **Sprites** (`Spriteset_Map#update`): a `Sprite_Character` and a `Sprite_MpGhostLabel` per ghost, made and freed as ghosts come and go. The label shows the name, and an icon of the game's icon set while the player is in a battle (451, crossed swords), a menu (183, a book) or an event (4, a speech bubble). `Sprite_MpWorldStatus` at the bottom left shows the last notices for 4 s each and, from `mp_world_status` every 30 frames, "Reconnecting . . .", "Connecting . . ." or why the connection failed.
 
 ## PvP battles (`pvp_battle.rb`)
 

@@ -1,10 +1,11 @@
 Monster Girl Quest! Paradox RPG - Multiplayer
 =============================================
 
-Play Monster Girl Quest! Paradox RPG together with a friend over the
+Play Monster Girl Quest! Paradox RPG together with friends over the
 internet, with nothing to set up in your router. So far: PvP battles, in
 which your Frontline fights your friend's Frontline live, each of you
-commanding your own team.
+commanding your own team; and worlds, which up to 32 players enter and
+see each other walk the same maps.
 
 
 REQUIREMENT
@@ -40,6 +41,7 @@ like this:
    Game.exe
    Multiplayer\Multiplayer.dll
    Patch\Multiplayer.rb
+   Patch\mp_overworld.rb
    Patch\mp_sync.rb
    Patch\mp_world.rb
    Patch\pvp_battle.rb
@@ -85,6 +87,30 @@ Press F11 on the map to open the PvP battle screen.
   first turn, and marks every value that differs.
 
 
+WORLDS (TEST)
+-------------
+Pick "Multiplayer" below "Continue" on the title screen. The first time,
+the game asks for the name the others see, unless the Discord mod knows
+yours. Names and passwords are typed on the keyboard; with a gamepad, the
+game's letters appear.
+
+- The list at the left holds every world, your favourites first (marked
+  *), then those you played last. The right side shows who made the
+  chosen world, how many of its players are online, and everyone who
+  ever joined it.
+- New world: give it a name, a password, and how many players it seats
+  at once, 2 to 32. Then it starts at the opening.
+- Enter a world: the first time, type its password; your game remembers
+  it after that. A world you have saves in loads your latest one.
+- Its creator can remove a player or delete the world for everyone.
+
+Each world keeps its own saves, Library, medals and affection in
+Multiplayer\Worlds, apart from your own game. On the map, the other
+players on the same map walk around with their names above them, and an
+icon while they are in a battle, a menu or an event. They walk through
+everything and trigger nothing. PvP battles (F11) are off in a world.
+
+
 CONNECTION
 ----------
 Your games meet at the mod's relay, a small server that passes their data
@@ -101,8 +127,9 @@ anything.
 
 UNINSTALL
 ---------
-Close the game and delete Patch\Multiplayer.rb, Patch\mp_sync.rb,
-Patch\mp_world.rb, Patch\pvp_battle.rb and the Multiplayer folder. The
+Close the game and delete Patch\Multiplayer.rb, Patch\mp_overworld.rb,
+Patch\mp_sync.rb, Patch\mp_world.rb, Patch\pvp_battle.rb and the
+Multiplayer folder. The
 Multiplayer folder also holds your worlds, so keep Multiplayer\Worlds if
 you want to play them again later.
 The mod loader stays for your other mods.
