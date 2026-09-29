@@ -1,12 +1,11 @@
 # MGQ Paradox Multiplayer
 
-Play Monster Girl Quest! Paradox RPG together with a friend over a direct connection. So far: **PvP battles**, in which your Frontline fights your friend's Frontline live, each of you commanding your own team. Overworld and co-op play are planned on the same connection.
+Play Monster Girl Quest! Paradox RPG together with a friend over the internet, with nothing to set up in your router. So far: **PvP battles**, in which your Frontline fights your friend's Frontline live, each of you commanding your own team. Overworld and co-op play are planned on the same connection.
 
 ## Requirements
 
 - Monster Girl Quest! Paradox RPG 3.06 with the English translation, the same version on both sides.
 - The community's mod loader: the `Patch.rb` from [*Patch.rb (enable Type 1 mods)*](https://mgq.miraheze.org/wiki/Paradox_mods#Patch.rb_(enable_Type_1_mods)) on the MGQ wiki, in your `Patch` folder.
-- For hosting: port 47625 (TCP) reachable, by forwarding it in your router, IPv6, or a virtual network like Tailscale, ZeroTier or Radmin VPN.
 
 Optional:
 
@@ -39,14 +38,21 @@ Once the teams are swapped, both battles start together. The host's game works t
 
 Only the Frontline fights. Escape gives the battle up at once, Give Up is off, and if your friend leaves or the connection breaks, you win. When you have waited for your friend for 10 seconds, Cancel lets you leave the battle, which also gives it up. Battle messages move on by themselves. Nothing carries over: no EXP, gold or items, and your save, the Library and affection are put back exactly as they were before.
 
-Windows asks whether `Game.exe` may use the network the first time you host; allow it. Your friend's game sees your IP address. To find your public one, your game asks api.ipify.org once per hosting.
+## Connection
+
+Your games first try to reach each other directly. When that fails, for example because one of you has no IPv6 and the other shares a public IPv4 address with other customers (DS-Lite, CGNAT), they meet at the mod's **relay**, which passes their data on. Neither of you has to change a router setting or install anything.
+
+- **Private:** everything your games send each other is encrypted with a key from the join code. The relay never gets that key: it passes on data it cannot read and keeps nothing.
+- **Direct is quicker:** a direct connection needs no detour. If you like, forward TCP port 47625 to the hosting PC; Windows asks whether `Game.exe` may use the network the first time you host, allow it.
+- **Addresses:** the join code carries the host's IP addresses, so your friend's game sees yours. To find your public one, your game asks api.ipify.org once per hosting.
 
 While the mod is installed, the game keeps running when its window is in the background, so neither player holds the other up.
 
 ## Troubleshooting
 
-- **"Your friend's game could not be reached":** the host's port 47625 is not reachable. Forward it in the router. Many cable and fibre connections share one public IPv4 address with other customers (DS-Lite, CGNAT), so forwarding is impossible there; use IPv6 or a virtual network instead.
-- **"Your friend's game offers only IPv6, which your connection lacks":** the host can only be reached over IPv6, and the joining PC has none. Join the same virtual network (Tailscale, ZeroTier, Radmin VPN), or let the one with IPv6 join the other.
+- **"Your friend's game is not hosting with this join code any more":** your friend stopped hosting, or hosted again, which makes a new join code. Ask for the new one.
+- **"Neither your friend's game nor the relay could be reached":** your internet connection is down, or something blocks the game from going online, such as a firewall. `Multiplayer\Multiplayer.log` says what each attempt answered.
+- **"Your friend's game uses a relay this version does not know":** your friend has a newer version of the mod; update yours.
 - **Logs:** `Multiplayer\InGame.log` only appears when something went wrong inside the game; `Multiplayer\Multiplayer.log` tells what the connection did. Please attach both when [opening an issue](https://github.com/Pauliinchen/MGQ-Paradox-Multiplayer-Mod/issues).
 
 ## Building from source

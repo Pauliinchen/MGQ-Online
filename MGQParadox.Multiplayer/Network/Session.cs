@@ -2,7 +2,8 @@
 //  Session.cs
 //
 //  Changelog:
-//      Paulinchen  2026-09-29: Swapped teams in encrypted frames over a frame channel, the join code's token no longer sent
+//      Paulinchen  2026-09-29: Reached the host through its relay when not directly, and waited at the relay while hosting
+//                            - Swapped teams in encrypted frames over a frame channel, the join code's token no longer sent
 //                            - Ignored invites while hosting, counting them for the game script
 //                            - Logged what the join code offers and how each of the host's addresses went
 //                            - Told a guest without IPv6 why it cannot reach a host that offers only IPv6
@@ -92,6 +93,36 @@ internal sealed class Session
     private const string IgnoredHeader = "ignored";
 
     /// <summary>
+    /// How the link came about, <see cref="ViaDirect"/> or <see cref="ViaRelay"/>, once the teams are swapped.
+    /// </summary>
+    private const string ViaHeader = "via";
+
+    /// <summary>
+    /// A link over a direct connection.
+    /// </summary>
+    private const string ViaDirect = "direct";
+
+    /// <summary>
+    /// A link through the host's relay.
+    /// </summary>
+    private const string ViaRelay = "relay";
+
+    /// <summary>
+    /// Why the guest failed when the relay was reached but no host waited in the room.
+    /// </summary>
+    private const string NotHosting = "Your friend's game is not hosting with this join code any more.";
+
+    /// <summary>
+    /// Why the guest failed when neither the host nor the relay could be reached.
+    /// </summary>
+    private const string NeitherReached = "Neither your friend's game nor the relay could be reached.";
+
+    /// <summary>
+    /// Why the guest failed when the join code names a relay this version does not know.
+    /// </summary>
+    private const string UnknownRelay = "Your friend's game uses a relay this version does not know. Update the mod.";
+
+    /// <summary>
     /// Why a guest of another game version is turned away.
     /// </summary>
     private const string DifferentGame = "Your friend plays another version of the game or of this mod.";
@@ -167,6 +198,16 @@ internal sealed class Session
     private TcpListener? _listener;
 
     /// <summary>
+    /// The host's connection that waits in its relay room, cut when hosting ends.
+    /// </summary>
+    private RelayFrameChannel? _relayWait;
+
+    /// <summary>
+    /// How the link came about, <see cref="ViaDirect"/> or <see cref="ViaRelay"/>.
+    /// </summary>
+    private string? _via;
+
+    /// <summary>
     /// The connection to the friend once the teams are swapped.
     /// </summary>
     private Link? _link;
@@ -177,9 +218,14 @@ internal sealed class Session
     private string? _role;
 
     /// <summary>
-    /// The game's exchange, which the game script and Discord's events share.
+    /// The game's exchange, which the game script and Discord's events share. A build with
+    /// <c>FORCE_RELAY</c> defined never joins directly, for testing the relay on one PC.
     /// </summary>
+#if FORCE_RELAY
+    public static Session Current { get; } = new() { TryDirect = false };
+#else
     public static Session Current { get; } = new();
+#endif
 
     /// <summary>
     /// Collects the addresses the join code offers.
@@ -207,6 +253,31 @@ internal sealed class Session
     public TimeSpan DropTimeout { get; init; } = TimeSpan.FromSeconds(10);
 
     /// <summary>
+    /// Looks up a relay's address by the id a join code names it with.
+    /// </summary>
+    public Func<string, Uri?> RelayAddress { get; init; } = Relays.AddressOf;
+
+    /// <summary>
+    /// Whether the guest tries the host's addresses directly, ahead of and alongside the relay.
+    /// </summary>
+    public bool TryDirect { get; init; } = true;
+
+    /// <summary>
+    /// How long the guest tries only directly before it starts the relay as well.
+    /// </summary>
+    public TimeSpan RelayDelay { get; init; } = TimeSpan.FromSeconds(2);
+
+    /// <summary>
+    /// How long the guest waits in the relay room for the host.
+    /// </summary>
+    public TimeSpan RelayPairTimeout { get; init; } = TimeSpan.FromSeconds(10);
+
+    /// <summary>
+    /// How long a host waits before it tries a relay again that it could not reach.
+    /// </summary>
+    public TimeSpan RelayRetry { get; init; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>
     /// Takes the player's name, which the Discord mod knows, sent along with every later team.
     /// </summary>
     /// <param name="name">The name, <see langword="null"/> while unknown.</param>
@@ -214,15 +285,16 @@ internal sealed class Session
         Volatile.Write(ref _playerName, Cleaned(name) is { Length: > 0 } cleaned ? cleaned : DefaultPlayerName);
 
     /// <summary>
-    /// Starts hosting: listens on a port, works out the join code, puts it on the clipboard and
-    /// on Discord, and swaps teams with the first guest who brings the code.
+    /// Starts hosting: listens on a port and waits in the relay room, works out the join code, puts
+    /// it on the clipboard and on Discord, and swaps teams with the first guest who brings the code,
+    /// whichever way they come.
     /// </summary>
     /// <param name="game">What tells this game version's data from another's.</param>
     /// <param name="team">The player's team.</param>
     /// <param name="port">The port to listen on.</param>
     public void Host(string game, string team, int port)
     {
-        TcpListener listener;
+        TcpListener? listener;
         int generation;
 
         lock (_gate)
@@ -235,9 +307,9 @@ internal sealed class Session
             }
             catch (SocketException ex)
             {
+                // Another game on this PC may hold the port; friends still come through the relay.
                 Log.Write($"cannot listen on port {port}: {ex.Message}");
-                FailLocked($"Port {port} is in use or blocked.");
-                return;
+                listener = null;
             }
 
             _listener = listener;
@@ -397,7 +469,7 @@ internal sealed class Session
     /// Describes the exchange for the game script.
     /// </summary>
     /// <param name="includeTeam">Whether the friend's team comes along once it arrived.</param>
-    /// <returns><c>state</c> and whichever of <c>code</c>, <c>invite</c>, <c>error</c>, <c>opponent</c>, <c>link</c>, <c>role</c>, <c>party</c> and <c>ignored</c> apply, then the friend's team when asked for and arrived.</returns>
+    /// <returns><c>state</c> and whichever of <c>code</c>, <c>invite</c>, <c>error</c>, <c>opponent</c>, <c>link</c>, <c>role</c>, <c>via</c>, <c>party</c> and <c>ignored</c> apply, then the friend's team when asked for and arrived.</returns>
     public string Describe(bool includeTeam = true)
     {
         lock (_gate)
@@ -411,6 +483,7 @@ internal sealed class Session
                 new(OpponentHeader, _state == SessionState.Received ? _opponent : null),
                 new(LinkHeader, _link?.State.ToString().ToLowerInvariant()),
                 new(RoleHeader, _state == SessionState.Received ? _role : null),
+                new(ViaHeader, _state == SessionState.Received ? _via : null),
                 new(PartyHeader, (_state == SessionState.Hosting && _joinCode != null) || _link?.State == LinkState.Open ? _partyId : null),
                 new(IgnoredHeader, _ignoredInvites > 0 ? _ignoredInvites.ToString(CultureInfo.InvariantCulture) : null),
             };
@@ -426,41 +499,48 @@ internal sealed class Session
     /// Catches everything, since an exception escaping this thread would end the whole game.
     /// </remarks>
     /// <param name="generation">The session this thread belongs to.</param>
-    /// <param name="listener">The listener, which stopping ends the wait.</param>
+    /// <param name="listener">The listener, which stopping ends the wait, or <see langword="null"/> when the port could not be opened.</param>
     /// <param name="game">What tells this game version's data from another's.</param>
     /// <param name="team">The player's team.</param>
     /// <param name="port">The port listened on.</param>
-    private void Serve(int generation, TcpListener listener, string game, string team, int port)
+    private void Serve(int generation, TcpListener? listener, string game, string team, int port)
     {
         try
         {
-            var addresses = FindAddresses();
+            IReadOnlyList<string> addresses = listener == null ? Array.Empty<string>() : FindAddresses();
+            var relay = RelayAddress(Relays.Current);
 
-            if (addresses.Count == 0)
+            if (addresses.Count == 0 && relay == null)
             {
-                Fail(generation, "This PC has no network address a friend could reach.");
+                Fail(generation, listener == null ? $"Port {port} is in use or blocked." : "This PC has no network address a friend could reach.");
                 return;
             }
 
             var token = JoinCode.NewToken();
-            var code = new JoinCode(token, port, addresses).ToText();
+            var code = new JoinCode(token, port, Relays.Current, addresses).ToText();
 
             if (!Advertise(generation, code, token))
             {
                 return;
             }
 
-            var offered = JoinCode.Parse(code)!.Addresses.Select(address => IPAddress.Parse(address).AddressFamily);
-            Log.Write($"hosting on port {port}, the code offers {ConnectAttempt.Count(offered)}, clipboard {(CopyJoinCode() ? "holds the code" : "unavailable")}");
+            var offered = ConnectAttempt.Count(JoinCode.Parse(code)!.Addresses.Select(address => IPAddress.Parse(address).AddressFamily));
+            Log.Write($"hosting {(listener == null ? "through the relay only" : $"on port {port}")}, the code offers {(offered.Length > 0 ? offered : "no address")}"
+                + $"{(relay == null ? "" : $" and relay {Relays.Current}")}, clipboard {(CopyJoinCode() ? "holds the code" : "unavailable")}");
 
-            while (IsCurrent(generation))
+            if (relay != null)
             {
-                var client = listener.AcceptTcpClient();
+                StartThread("MultiplayerHostRelay", () => ServeRelay(generation, relay, token, game, team));
+            }
+
+            while (listener != null && IsHosting(generation))
+            {
+                var channel = Open(listener.AcceptTcpClient());
                 var linked = false;
 
                 try
                 {
-                    if (Answer(generation, client, token, game, team, out linked))
+                    if (Answer(generation, channel, token, game, team, ViaDirect, out linked))
                     {
                         return;
                     }
@@ -469,16 +549,86 @@ internal sealed class Session
                 {
                     if (!linked)
                     {
-                        client.Dispose();
+                        channel.Dispose();
                     }
                 }
             }
         }
         catch (Exception ex)
         {
-            if (IsCurrent(generation))
+            if (IsHosting(generation))
             {
                 Fail(generation, $"Hosting stopped: {ex.Message}");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Waits in the relay room until a guest there swaps teams or hosting ends, and comes back when
+    /// the relay closes a room nobody joined.
+    /// </summary>
+    /// <remarks>
+    /// Catches everything, since an exception escaping this thread would end the whole game.
+    /// </remarks>
+    /// <param name="generation">The session this thread belongs to.</param>
+    /// <param name="relay">The relay's address.</param>
+    /// <param name="token">The join code's token, which names the room.</param>
+    /// <param name="game">What tells this game version's data from another's.</param>
+    /// <param name="team">The player's team.</param>
+    private void ServeRelay(int generation, Uri relay, string token, string game, string team)
+    {
+        var room = Relays.RoomOf(token);
+        var reportedUnreachable = false;
+
+        while (IsHosting(generation))
+        {
+            RelayFrameChannel? channel = null;
+            var linked = false;
+
+            try
+            {
+                channel = RelayFrameChannel.Connect(relay, room, host: true, ConnectTimeout);
+
+                if (!WaitAtRelay(generation, channel))
+                {
+                    return;
+                }
+
+                reportedUnreachable = false;
+
+                if (channel.WaitForPartner(Timeout.InfiniteTimeSpan))
+                {
+                    // Taken out of the wait first, or the swap's end would cut it as it ends the other waits.
+                    LeaveRelayWait(channel);
+                    channel.SetTimeout(ExchangeTimeout);
+
+                    if (Answer(generation, channel, token, game, team, ViaRelay, out linked))
+                    {
+                        return;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                if (IsHosting(generation) && !reportedUnreachable)
+                {
+                    Log.Write($"relay {Relays.Current} unreachable, trying again every {RelayRetry.TotalSeconds:0} s: {ex.GetBaseException().Message}");
+                    reportedUnreachable = true;
+                }
+
+                PauseWhileHosting(generation, RelayRetry);
+            }
+            finally
+            {
+                if (channel != null)
+                {
+                    LeaveRelayWait(channel);
+                }
+
+                if (!linked)
+                {
+                    channel?.Dispose();
+                }
             }
         }
     }
@@ -487,19 +637,19 @@ internal sealed class Session
     /// Swaps teams with one guest, or turns them away.
     /// </summary>
     /// <param name="generation">The session this belongs to.</param>
-    /// <param name="client">The guest's connection.</param>
+    /// <param name="channel">The guest's connection, with the exchange's timeout.</param>
     /// <param name="token">The token of the join code.</param>
     /// <param name="game">What tells this game version's data from another's.</param>
     /// <param name="team">The player's team.</param>
+    /// <param name="via">How the guest came, <see cref="ViaDirect"/> or <see cref="ViaRelay"/>.</param>
     /// <param name="linked">Whether the connection became the link, which then owns it.</param>
     /// <returns><see langword="true"/> when the session ended, <see langword="false"/> to wait for another guest.</returns>
-    private bool Answer(int generation, TcpClient client, string token, string game, string team, out bool linked)
+    private bool Answer(int generation, IFrameChannel channel, string token, string game, string team, string via, out bool linked)
     {
         linked = false;
 
         try
         {
-            var channel = Open(client);
             var cipher = new FrameCipher(token, host: true);
 
             // A guest whose first frame does not decrypt holds another join code, so it is turned away unanswered.
@@ -517,7 +667,7 @@ internal sealed class Session
             }
 
             SendMessage(channel, cipher, TeamMessage(team));
-            linked = Receive(generation, guest[Message.Player], guest.Team, channel, cipher, token);
+            linked = Receive(generation, guest[Message.Player], guest.Team, channel, cipher, token, via);
             return true;
         }
         catch (Exception ex)
@@ -539,21 +689,20 @@ internal sealed class Session
     /// <param name="team">The player's team.</param>
     private void Visit(int generation, JoinCode code, string game, string team)
     {
-        TcpClient? client = null;
+        IFrameChannel? channel = null;
         var linked = false;
 
         try
         {
-            client = ConnectToAny(code, out var attempts);
+            channel = Reach(code, out var via, out var failure);
 
-            if (client == null)
+            if (channel == null)
             {
-                Log.Write($"no address of the host answered: {ConnectAttempt.Summary(attempts)}");
-                Fail(generation, ConnectAttempt.Message(attempts));
+                Fail(generation, failure);
                 return;
             }
 
-            var channel = Open(client);
+            channel.SetTimeout(ExchangeTimeout);
             var cipher = new FrameCipher(code.Token, host: false);
             var headers = new KeyValuePair<string, string?>[]
             {
@@ -575,7 +724,7 @@ internal sealed class Session
                 return;
             }
 
-            linked = Receive(generation, host[Message.Player], host.Team, channel, cipher, code.Token);
+            linked = Receive(generation, host[Message.Player], host.Team, channel, cipher, code.Token, via);
         }
         catch (Exception ex)
         {
@@ -585,8 +734,93 @@ internal sealed class Session
         {
             if (!linked)
             {
-                client?.Dispose();
+                channel?.Dispose();
             }
+        }
+    }
+
+    /// <summary>
+    /// Reaches the host: directly at its addresses first, and through its relay as well once
+    /// <see cref="RelayDelay"/> passed or every address failed. The first connection wins; the other
+    /// is closed once it is done.
+    /// </summary>
+    /// <param name="code">The host's join code.</param>
+    /// <param name="via">How the host was reached, <see cref="ViaDirect"/> or <see cref="ViaRelay"/>.</param>
+    /// <param name="failure">Why the host could not be reached, which the game shows.</param>
+    /// <returns>The connection, or <see langword="null"/> when neither way reached the host.</returns>
+    private IFrameChannel? Reach(JoinCode code, out string via, out string failure)
+    {
+        var direct = TryDirect && code.Addresses.Count > 0
+            ? Task.Run(() => ConnectToAny(code))
+            : Task.FromResult<(TcpClient? Client, IReadOnlyList<ConnectAttempt> Attempts)>((null, Array.Empty<ConnectAttempt>()));
+
+        Task.WaitAny(direct, Task.Delay(RelayDelay));
+
+        if (direct.IsCompleted && direct.Result.Client is { } early)
+        {
+            (via, failure) = (ViaDirect, string.Empty);
+            return Open(early);
+        }
+
+        var relayAddress = RelayAddress(code.Relay);
+        var relay = relayAddress == null
+            ? Task.FromResult<(RelayFrameChannel? Channel, bool Reached, string Detail)>((null, false, $"relay {code.Relay} is unknown"))
+            : Task.Run(() => ConnectRelay(relayAddress, code.Token));
+        var pending = new List<Task> { direct, relay };
+
+        while (pending.Count > 0)
+        {
+            var done = pending[Task.WaitAny(pending.ToArray())];
+            pending.Remove(done);
+
+            if (done == direct && direct.Result.Client is { } client)
+            {
+                relay.ContinueWith(late => late.Result.Channel?.Dispose(), TaskScheduler.Default);
+                (via, failure) = (ViaDirect, string.Empty);
+                return Open(client);
+            }
+
+            if (done == relay && relay.Result.Channel is { } relayed)
+            {
+                direct.ContinueWith(late => late.Result.Client?.Dispose(), TaskScheduler.Default);
+                (via, failure) = (ViaRelay, string.Empty);
+                return relayed;
+            }
+        }
+
+        var attempts = direct.Result.Attempts;
+        Log.Write($"could not reach the host: directly {(attempts.Count > 0 ? ConnectAttempt.Summary(attempts) : "nothing to try")}, through the relay {relay.Result.Detail}");
+        via = string.Empty;
+        failure = relayAddress == null ? UnknownRelay : relay.Result.Reached ? NotHosting : NeitherReached;
+        return null;
+    }
+
+    /// <summary>
+    /// Enters the host's relay room as the guest and waits there for the host.
+    /// </summary>
+    /// <param name="relay">The relay's address.</param>
+    /// <param name="token">The join code's token, which names the room.</param>
+    /// <returns>The paired connection, or none with whether the relay was reached at all and what happened, for the log.</returns>
+    private (RelayFrameChannel? Channel, bool Reached, string Detail) ConnectRelay(Uri relay, string token)
+    {
+        RelayFrameChannel? channel = null;
+
+        try
+        {
+            channel = RelayFrameChannel.Connect(relay, Relays.RoomOf(token), host: false, ConnectTimeout);
+
+            if (channel.WaitForPartner(RelayPairTimeout))
+            {
+                return (channel, true, "paired");
+            }
+
+            channel.Dispose();
+            return (null, true, "found no host in the room");
+        }
+        catch (Exception ex)
+        {
+            channel?.Dispose();
+            return (null, false, $"failed: {ex.GetBaseException().Message}");
         }
     }
 
@@ -594,9 +828,8 @@ internal sealed class Session
     /// Tries every address of a join code at once and keeps the first connection that succeeds.
     /// </summary>
     /// <param name="code">The join code.</param>
-    /// <param name="outcomes">How each address went, for the log and the message when none answered.</param>
-    /// <returns>The connection, or <see langword="null"/> when no address answered in time.</returns>
-    private static TcpClient? ConnectToAny(JoinCode code, out IReadOnlyList<ConnectAttempt> outcomes)
+    /// <returns>The connection, or <see langword="null"/> when no address answered in time, and how each address went, for the log.</returns>
+    private static (TcpClient? Client, IReadOnlyList<ConnectAttempt> Attempts) ConnectToAny(JoinCode code)
     {
         var addresses = code.Addresses.Select(IPAddress.Parse).ToList();
         var clients = new TcpClient?[addresses.Count];
@@ -637,14 +870,14 @@ internal sealed class Session
             }
         }
 
-        outcomes = attempts.Select((attempt, index) => new ConnectAttempt(addresses[index].AddressFamily, ErrorOf(attempt))).ToList();
+        var outcomes = attempts.Select((attempt, index) => new ConnectAttempt(addresses[index].AddressFamily, ErrorOf(attempt))).ToList();
 
         foreach (var client in clients.Where(client => client != null && client != connected))
         {
             client!.Dispose();
         }
 
-        return connected;
+        return (connected, outcomes);
     }
 
     /// <summary>
@@ -749,7 +982,8 @@ internal sealed class Session
     }
 
     /// <summary>
-    /// Keeps the friend's team and the connection as the link, unless the session moved on meanwhile.
+    /// Keeps the friend's team and the connection as the link, unless the session moved on meanwhile
+    /// or another guest came first.
     /// </summary>
     /// <param name="generation">The session the team belongs to.</param>
     /// <param name="player">Who sent it.</param>
@@ -757,12 +991,13 @@ internal sealed class Session
     /// <param name="channel">The connection the team came over.</param>
     /// <param name="cipher">The exchange's cipher, which the link goes on with.</param>
     /// <param name="token">The join code's token, which names the party.</param>
+    /// <param name="via">How the connection came about, <see cref="ViaDirect"/> or <see cref="ViaRelay"/>.</param>
     /// <returns><see langword="true"/> when the link took the connection over.</returns>
-    private bool Receive(int generation, string player, string team, IFrameChannel channel, FrameCipher cipher, string token)
+    private bool Receive(int generation, string player, string team, IFrameChannel channel, FrameCipher cipher, string token, string via)
     {
         lock (_gate)
         {
-            if (generation != _generation)
+            if (generation != _generation || _state is not (SessionState.Hosting or SessionState.Joining))
             {
                 return false;
             }
@@ -771,13 +1006,77 @@ internal sealed class Session
             _opponent = Cleaned(player) is { Length: > 0 } cleaned ? cleaned : DefaultPlayerName;
             _opponentTeam = team;
             _joinCode = null;
+            _via = via;
             _link = new Link(channel, cipher, PingInterval, DropTimeout);
             _partyId = PartyIdOf(token);
-            StopListening();
+            StopWaiting();
         }
 
-        Log.Write("teams swapped");
+        Log.Write(via == ViaRelay ? "teams swapped through the relay" : "teams swapped directly");
         return true;
+    }
+
+    /// <summary>
+    /// Reports whether a generation still hosts, with nobody joined yet.
+    /// </summary>
+    /// <param name="generation">The generation.</param>
+    /// <returns><see langword="true"/> while it hosts.</returns>
+    private bool IsHosting(int generation)
+    {
+        lock (_gate)
+        {
+            return generation == _generation && _state == SessionState.Hosting;
+        }
+    }
+
+    /// <summary>
+    /// Keeps the host's relay connection as the one to cut when hosting ends, unless it ended already.
+    /// </summary>
+    /// <param name="generation">The hosting generation.</param>
+    /// <param name="channel">The connection waiting in the room.</param>
+    /// <returns><see langword="true"/> while it still hosts.</returns>
+    private bool WaitAtRelay(int generation, RelayFrameChannel channel)
+    {
+        lock (_gate)
+        {
+            if (generation != _generation || _state != SessionState.Hosting)
+            {
+                return false;
+            }
+
+            _relayWait = channel;
+            return true;
+        }
+    }
+
+    /// <summary>
+    /// Forgets the host's relay connection as the one to cut, if it still is.
+    /// </summary>
+    /// <param name="channel">The connection.</param>
+    private void LeaveRelayWait(RelayFrameChannel channel)
+    {
+        lock (_gate)
+        {
+            if (_relayWait == channel)
+            {
+                _relayWait = null;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Waits for a while, or until hosting ends.
+    /// </summary>
+    /// <param name="generation">The hosting generation.</param>
+    /// <param name="time">How long to wait at most.</param>
+    private void PauseWhileHosting(int generation, TimeSpan time)
+    {
+        var until = DateTime.UtcNow + time;
+
+        while (DateTime.UtcNow < until && IsHosting(generation))
+        {
+            Thread.Sleep(200);
+        }
     }
 
     /// <summary>
@@ -805,7 +1104,7 @@ internal sealed class Session
         _state = SessionState.Failed;
         _error = error;
         _joinCode = null;
-        StopListening();
+        StopWaiting();
         Log.Write($"{error}");
     }
 
@@ -819,7 +1118,7 @@ internal sealed class Session
     /// <returns>The new generation.</returns>
     private int Restart(SessionState state)
     {
-        StopListening();
+        StopWaiting();
         _link?.Close();
         _link = null;
         _role = state switch
@@ -834,13 +1133,15 @@ internal sealed class Session
         _error = null;
         _opponent = null;
         _opponentTeam = null;
+        _via = null;
         return ++_generation;
     }
 
     /// <summary>
-    /// Stops the listener, which ends the host's wait. Called under <see cref="_gate"/>.
+    /// Stops the listener and cuts the relay connection, which ends the host's waits. Called under
+    /// <see cref="_gate"/>.
     /// </summary>
-    private void StopListening()
+    private void StopWaiting()
     {
         try
         {
@@ -851,6 +1152,8 @@ internal sealed class Session
         }
 
         _listener = null;
+        _relayWait?.Abort();
+        _relayWait = null;
     }
 
     /// <summary>

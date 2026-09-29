@@ -87,7 +87,7 @@ public sealed class NetworkAddressesTests
         };
 
         var ordered = NetworkAddresses.Order(local, PublicIPv4);
-        var code = JoinCode.Parse(new JoinCode("abcdefghjk", 47625, ordered).ToText())!;
+        var code = JoinCode.Parse(new JoinCode("abcdefghjkmnpqrs", 47625, "r1", ordered).ToText())!;
 
         Assert.Equal(new[] { lasting, PublicIPv4, "192.168.0.104", "172.26.224.1", "172.19.144.1" }, ordered);
         Assert.Equal(new[] { lasting, PublicIPv4, "192.168.0.104", "172.26.224.1", "172.19.144.1" }, code.Addresses);
@@ -113,7 +113,7 @@ public sealed class NetworkAddressesTests
     {
         var local = new[] { Lasting(VpnIPv6, Vpn), Lasting(HomeIPv6, Ethernet), Lasting(GlobalIPv6, Ethernet) };
 
-        var code = new JoinCode("abcdefghjk", 47625, NetworkAddresses.Order(local, null));
+        var code = new JoinCode("abcdefghjkmnpqrs", 47625, "r1", NetworkAddresses.Order(local, null));
 
         Assert.Contains(GlobalIPv6, JoinCode.Parse(code.ToText())!.Addresses);
     }

@@ -1,9 +1,10 @@
 Monster Girl Quest! Paradox RPG - Multiplayer
 =============================================
 
-Play Monster Girl Quest! Paradox RPG together with a friend over a direct
-connection. So far: PvP battles, in which your Frontline fights your
-friend's Frontline live, each of you commanding your own team.
+Play Monster Girl Quest! Paradox RPG together with a friend over the
+internet, with nothing to set up in your router. So far: PvP battles, in
+which your Frontline fights your friend's Frontline live, each of you
+commanding your own team.
 
 
 REQUIREMENT
@@ -80,11 +81,24 @@ Press F11 on the map to open the PvP battle screen.
   of your characters next to its copy, before the battle and at its
   first turn, and marks every value that differs.
 
-Hosting needs your PC to be reachable on port 47625 (TCP): forward it in
-your router, or use IPv6, or a virtual network like Tailscale, ZeroTier or
-Radmin VPN. Windows asks whether Game.exe may use the network the first
-time you host; allow it. Your friend's game sees your IP address. To find
-it, your game asks api.ipify.org once per hosting.
+
+CONNECTION
+----------
+Your games first try to reach each other directly. When that fails, for
+example because one of you has no IPv6 and the other shares a public IPv4
+address with other customers (DS-Lite, CGNAT), they meet at the mod's
+relay, which passes their data on. Neither of you has to change a router
+setting or install anything.
+
+- Private: everything your games send each other is encrypted with a key
+  from the join code. The relay never gets that key: it passes on data it
+  cannot read and keeps nothing.
+- Direct is quicker: a direct connection needs no detour. If you like,
+  forward TCP port 47625 to the hosting PC; Windows asks whether Game.exe
+  may use the network the first time you host, allow it.
+- Addresses: the join code carries the host's IP addresses, so your
+  friend's game sees yours. To find your public one, your game asks
+  api.ipify.org once per hosting.
 
 
 UNINSTALL
@@ -96,14 +110,15 @@ The mod loader stays for your other mods.
 
 TROUBLESHOOTING
 ---------------
-- "Your friend's game could not be reached": the host's port 47625 is not
-  reachable. Forward it in the router. Many cable and fibre connections
-  share one public IPv4 address with other customers (DS-Lite, CGNAT), so
-  forwarding is impossible there; use IPv6 or a virtual network instead.
-- "Your friend's game offers only IPv6, which your connection lacks": the
-  host can only be reached over IPv6, and the joining PC has none. Join the
-  same virtual network (Tailscale, ZeroTier, Radmin VPN), or let the one
-  with IPv6 join the other.
+- "Your friend's game is not hosting with this join code any more": your
+  friend stopped hosting, or hosted again, which makes a new join code.
+  Ask for the new one.
+- "Neither your friend's game nor the relay could be reached": your
+  internet connection is down, or something blocks the game from going
+  online, such as a firewall. Multiplayer\Multiplayer.log says what each
+  attempt answered.
+- "Your friend's game uses a relay this version does not know": your
+  friend has a newer version of the mod; update yours.
 - An accepted Discord invite loads your newest save, the one Continue
   picks first, never the autosave.
 - Multiplayer\InGame.log only appears if something went wrong inside the

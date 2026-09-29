@@ -2,7 +2,8 @@
 #  pvp_battle.rb
 #
 #  Changelog:
-#      Paulinchen  2026-09-29: Said when a Discord invite arrived while hosting and was ignored
+#      Paulinchen  2026-09-29: Said on the PvP battle screen when the friend's team came through the relay
+#                            - Said when a Discord invite arrived while hosting and was ignored
 #                            - Joined the host of an accepted Discord invite at once, loading the last save at the title screen
 #                            - Said on the map when a live battle broke off
 #                            - Closed the link of a live battle that a reset interrupted
@@ -1661,7 +1662,7 @@ module MGQ_PvpBattle
       when "joining"
         ["Joining . . . swapping teams with your friend."]
       when "received"
-        ["Your friend's team arrived."]
+        [state["via"] == "relay" ? "Your friend's team arrived through the relay." : "Your friend's team arrived."]
       when "failed"
         ["The PvP battle broke off:", state["error"].to_s]
       else
