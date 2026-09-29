@@ -107,7 +107,9 @@ game's letters appear.
 Each world keeps its own saves, Library, medals and affection in
 Multiplayer\Worlds, apart from your own game. On the map, the other
 players on the same map walk around with their names above them, and an
-icon while they are in a battle, a menu or an event. They walk through
+icon for what they do: fighting, talking, in a menu, the inventory or
+their equipment, shopping, at the casino, in the Library, sailing,
+flying, or away from the game. They walk through
 everything and trigger nothing. PvP battles (F11) are off in a world.
 
 

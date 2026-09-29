@@ -13,8 +13,29 @@
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpOverworld
-  # Icons of the game's icon set next to a ghost's name, by what its player does.
-  STATE_ICONS = { "battle" => 451, "event" => 4, "menu" => 183 }
+  # Icons of the game's icon set next to a ghost's name, by what its player does. Walking the map shows none.
+  STATE_ICONS = {
+    "battle" => 451,
+    "event" => 4,
+    "menu" => 183,
+    "items" => 3059,
+    "equip" => 3905,
+    "shop" => 3874,
+    "casino" => 220,
+    "library" => 3240,
+    "sailing" => 4069,
+    "flying" => 3836,
+    "away" => 6,
+  }
+
+  # What a player does on a screen of the game, by the screen's class name; any other screen is a menu.
+  SCREENS = {
+    /\AScene_(Item|Storehouse)\z/ => "items",
+    /\AScene_(Equip|EquipStone\w*|Smith|Synthesize)\z/ => "equip",
+    /\AScene_Shop\z/ => "shop",
+    /\AScene_(Poker|Slot|CasinoPrize)\z/ => "casino",
+    /Library/ => "library",
+  }
 
   # Tiles a ghost walks to catch up; farther away, it moves there at once.
   CATCH_UP_TILES = 3
@@ -142,16 +163,21 @@ module MGQ_MpOverworld
       }
     end
 
-    # Tells what the player does: walk the map, fight, sit in a menu or watch an event.
+    # Tells what the player does: walk the map, travel by boat or airship, fight, watch an event,
+    # sit in a menu or one of its screens, or have the game in the background.
     #
-    # @return [String] "map", "battle", "menu" or "event".
+    # @return [String] A key of STATE_ICONS, or "map" for walking the map.
     def self.scene
       current = SceneManager.scene
+      name = current.class.name.to_s
       return "battle" if current.is_a?(Scene_Battle)
-      return "event" if current.class.name.to_s =~ /Novel/
-      return "menu" unless current.is_a?(Scene_Map)
+      return "event" if name =~ /Novel/ || (current.is_a?(Scene_Map) && ($game_message.busy? || $game_map.interpreter.running?))
+      return "away" unless MGQ_Multiplayer::Background.in_front?
+      return SCREENS.find { |pattern, _| name =~ pattern }.to_a[1] || "menu" unless current.is_a?(Scene_Map)
 
-      $game_message.busy? || $game_map.interpreter.running? ? "event" : "map"
+      return "flying" if $game_player.in_airship?
+
+      $game_player.in_boat? || $game_player.in_ship? ? "sailing" : "map"
     end
 
     # Writes a state as a message.
