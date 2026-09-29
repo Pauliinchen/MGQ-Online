@@ -71,8 +71,8 @@ Press F11 on the map to open the PvP battle screen.
   code, which is put on your clipboard, or, with the Discord mod,
   invite them through the + in a Discord chat ("Invite to play").
 - Your friend copies your join code and picks "Join with the copied
-  code", or accepts the invite in Discord (their game starts if it is
-  closed, then asks once a save is loaded).
+  code", or accepts the invite in Discord: their game starts if it is
+  closed, loads their last save and joins by itself.
 - Once the teams are swapped, both battles start together.
 - Fight your own team: a mirror match against your own Frontline, no
   friend or network needed. Multiplayer\Mirror Match.log then lists each
@@ -103,6 +103,8 @@ TROUBLESHOOTING
   host can only be reached over IPv6, and the joining PC has none. Join the
   same virtual network (Tailscale, ZeroTier, Radmin VPN), or let the one
   with IPv6 join the other.
+- An accepted Discord invite loads your newest save, the one Continue
+  picks first, never the autosave.
 - Multiplayer\InGame.log only appears if something went wrong inside the
   game, Multiplayer\Multiplayer.log tells what the connection did. Include
   both when reporting a problem.

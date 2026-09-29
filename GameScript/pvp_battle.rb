@@ -2,7 +2,8 @@
 #  pvp_battle.rb
 #
 #  Changelog:
-#      Paulinchen  2026-09-29: Said on the map when a live battle broke off
+#      Paulinchen  2026-09-29: Joined the host of an accepted Discord invite at once, loading the last save at the title screen
+#                            - Said on the map when a live battle broke off
 #                            - Closed the link of a live battle that a reset interrupted
 #                            - Started the friend's characters' sprite effects through the setter the guest's stream records
 #                            - Polled the connection without the friend's team
@@ -63,8 +64,8 @@ module MGQ_PvpBattle
   end
 
   # Opens the PvP battle screen when the key is pressed, starts a requested mirror match, starts
-  # the battle once the friend's team arrived, and opens the screen for a Discord invite. Called by
-  # the map while nothing else runs.
+  # the battle once the friend's team arrived, and joins the host of a Discord invite. Called by the
+  # map while nothing else runs.
   def self.on_map
     return unless available?
 
@@ -106,10 +107,49 @@ module MGQ_PvpBattle
       MGQ_Multiplayer::Link.cancel
       $game_message.add("PvP battle: #{state['error']}")
     else
-      invited = state["invite"] == "1"
-      SceneManager.call(Scene_PvpLobby) if invited && !@invite_shown
-      @invite_shown = invited
+      SceneManager.call(Scene_PvpLobby) if join_invite(state)
     end
+  end
+
+  # Joins the host of an invite the player accepted in Discord, unless this game joins already.
+  #
+  # @param state [Hash] The state without the friend's team, see MGQ_Multiplayer::Link.status.
+  # @return [Boolean] Whether it started joining.
+  def self.join_invite(state)
+    return false unless state["invite"] == "1" && state["state"] != "joining"
+
+    MGQ_Multiplayer::Link.join_invite(Team.game, Team.build)
+    log("joining the host of a Discord invite")
+    true
+  end
+
+  # Loads the last save at the title screen once the player accepted a Discord invite, so the map
+  # joins the host. Called by the title screen every frame while nothing else runs.
+  #
+  # Without any save it does nothing, and the map joins once the player started a game.
+  def self.on_title
+    return unless available? && !@title_load_failed
+
+    @title_frames = (@title_frames || 0) + 1
+    return if @title_frames < POLL_INTERVAL
+
+    @title_frames = 0
+    return unless MGQ_Multiplayer::Link.status["invite"] == "1"
+
+    index = DataManager.latest_savefile_index
+    return unless index && DataManager.load_header(index)
+
+    unless DataManager.load_game(index)
+      @title_load_failed = true
+      return log("could not load the last save for a Discord invite")
+    end
+
+    log("loaded the last save for a Discord invite")
+    # Scene_Load finishes the game's own loads, so the map starts exactly as after Continue.
+    Scene_Load.new.on_load_success
+  rescue => e
+    @title_frames = 0
+    log("title check failed: #{e.class}: #{e.message}")
   end
 
   # Starts the battle against the friend's team that arrived.
@@ -1592,25 +1632,24 @@ module MGQ_PvpBattle
     # @param state [Hash] The exchange, see MGQ_Multiplayer::Link.state.
     # @return [Array<String>] The lines to show.
     def self.lines_for(state)
-      lines = case state["state"]
-              when "hosting"
-                if state["code"]
-                  ["Hosting, waiting for a friend . . .",
-                   "Invite them through the + in a Discord chat, or send them the",
-                   "join code, which is on your clipboard. Port #{MGQ_Multiplayer::PORT} has to be open."]
-                else
-                  ["Hosting . . . finding this PC's addresses."]
-                end
-              when "joining"
-                ["Joining . . . swapping teams with your friend."]
-              when "received"
-                ["Your friend's team arrived."]
-              when "failed"
-                ["The PvP battle broke off:", state["error"].to_s]
-              else
-                INTRO
-              end
-      state["invite"] == "1" ? ["A Discord invite to a PvP battle is waiting."] + lines : lines
+      case state["state"]
+      when "hosting"
+        if state["code"]
+          ["Hosting, waiting for a friend . . .",
+           "Invite them through the + in a Discord chat, or send them the",
+           "join code, which is on your clipboard. Port #{MGQ_Multiplayer::PORT} has to be open."]
+        else
+          ["Hosting . . . finding this PC's addresses."]
+        end
+      when "joining"
+        ["Joining . . . swapping teams with your friend."]
+      when "received"
+        ["Your friend's team arrived."]
+      when "failed"
+        ["The PvP battle broke off:", state["error"].to_s]
+      else
+        INTRO
+      end
     end
 
     # The commands the screen offers.
@@ -1619,7 +1658,6 @@ module MGQ_PvpBattle
     # @return [Array<Array>] A name and a symbol per command.
     def self.commands_for(state)
       commands = []
-      commands.push(["Accept the Discord invite", :join_invite]) if state["invite"] == "1"
 
       case state["state"]
       when "hosting"
@@ -1636,8 +1674,8 @@ module MGQ_PvpBattle
   end
 end
 
-# The PvP battle screen, opened from the map with F11 (MGQ_PvpBattle::KEY_CODE) or by a
-# Discord invite.
+# The PvP battle screen, opened from the map with F11 (MGQ_PvpBattle::KEY_CODE) or when the map
+# joins the host of a Discord invite.
 #
 # Named without "Battle", which the Discord mod reads as being in a fight.
 class Scene_PvpLobby < Scene_MenuBase
@@ -1648,7 +1686,6 @@ class Scene_PvpLobby < Scene_MenuBase
     @command_window = Window_PvpLobbyCommand.new(@info_window.height)
     @command_window.set_handler(:host, method(:on_host))
     @command_window.set_handler(:join_clipboard, method(:on_join_clipboard))
-    @command_window.set_handler(:join_invite, method(:on_join_invite))
     @command_window.set_handler(:copy, method(:on_copy))
     @command_window.set_handler(:stop, method(:on_stop))
     @command_window.set_handler(:mirror, method(:on_mirror))
@@ -1667,10 +1704,11 @@ class Scene_PvpLobby < Scene_MenuBase
     refresh_state
   end
 
-  # Shows how the exchange stands, and goes back to the map once the friend's team arrived, which
-  # starts the battle there.
+  # Joins the host of a Discord invite, shows how the exchange stands, and goes back to the map once
+  # the friend's team arrived, which starts the battle there.
   def refresh_state
     @state = MGQ_Multiplayer::Link.status
+    @state = MGQ_Multiplayer::Link.status if MGQ_PvpBattle.join_invite(@state)
     @info_window.show(MGQ_PvpBattle::Lobby.lines_for(@state))
     @command_window.state = @state
     return_scene if @state["state"] == "received"
@@ -1688,12 +1726,6 @@ class Scene_PvpLobby < Scene_MenuBase
   # Joins with the join code on the clipboard.
   def on_join_clipboard
     MGQ_Multiplayer::Link.join_clipboard(MGQ_PvpBattle::Team.game, MGQ_PvpBattle::Team.build)
-    after_command
-  end
-
-  # Joins the host of the Discord invite.
-  def on_join_invite
-    MGQ_Multiplayer::Link.join_invite(MGQ_PvpBattle::Team.game, MGQ_PvpBattle::Team.build)
     after_command
   end
 
@@ -1839,6 +1871,14 @@ if MGQ_PvpBattle.hookable?
       def start
         MGQ_PvpBattle::Battle.forget
         mgq_pvp_battle_start
+      end
+
+      alias mgq_pvp_battle_update update
+
+      # Updates the title screen, then loads the last save once the player accepted a Discord invite.
+      def update
+        mgq_pvp_battle_update
+        MGQ_PvpBattle.on_title unless scene_changing?
       end
     end
   rescue => e
