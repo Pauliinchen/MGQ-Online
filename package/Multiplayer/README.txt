@@ -112,6 +112,11 @@ their equipment, shopping, at the casino, in the Library, sailing,
 flying, or away from the game. They walk through
 everything and trigger nothing. PvP battles (F11) are off in a world.
 
+Parties: players outside your party are slightly see-through. Stand next
+to another player and press B to invite them; when they press B next to
+you within 15 seconds, you form a party. Party members are fully visible
+and their names are green. Press B twice with nobody near to leave.
+
 
 CONNECTION
 ----------

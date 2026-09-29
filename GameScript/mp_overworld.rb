@@ -40,6 +40,22 @@ module MGQ_MpOverworld
   # Tiles a ghost walks to catch up; farther away, it moves there at once.
   CATCH_UP_TILES = 3
 
+  # Windows' code of the key that invites to a party, accepts an invite or leaves the party: B,
+  # which neither the game's Input nor its gamepad plugin reads.
+  PARTY_KEY = 0x42
+
+  # Tiles another player may be away, on the same map, to be invited or to accept.
+  NEAR_TILES = 2
+
+  # Frames an invite stands, fifteen seconds at 60 frames per second.
+  INVITE_FRAMES = 900
+
+  # Frames the second press that leaves the party may take, three seconds.
+  LEAVE_FRAMES = 180
+
+  # Opacity of the ghost of a player outside the party.
+  STRANGER_OPACITY = 150
+
   # Frames a notice stays at the bottom left, four seconds at 60 frames per second.
   NOTICE_FRAMES = 240
 
@@ -78,10 +94,12 @@ module MGQ_MpOverworld
   def self.tick
     unless in_world?
       Peers.clear unless Peers.empty?
+      Party.reset
       return
     end
 
     Inbox.take_all
+    Party.count_down
     Me.tell_changes
     Status.look
   rescue => e
@@ -160,6 +178,8 @@ module MGQ_MpOverworld
         "speed" => $game_player.real_move_speed,
         "hidden" => $game_player.transparent ? 1 : 0,
         "scene" => scene,
+        "party" => Party.id.to_s,
+        "invite" => Party.inviting? ? 1 : 0,
       }
     end
 
@@ -196,7 +216,8 @@ module MGQ_MpOverworld
     # @!attribute seat [Integer] Their game's seat.
     # @!attribute state [Hash] What they last told: "name", "sprite", "index", "map", "x", "y", "d", "speed", "hidden", "scene".
     # @!attribute ghost [Game_MpGhost, nil] Their ghost, while they are on this map.
-    Peer = Struct.new(:seat, :state, :ghost)
+    # @!attribute member [Boolean] Whether they were in the player's party at their last message.
+    Peer = Struct.new(:seat, :state, :ghost, :member)
 
     @peers = {}
 
@@ -210,9 +231,11 @@ module MGQ_MpOverworld
       if peer
         peer.state = state
       else
-        @peers[seat] = Peer.new(seat, state, nil)
+        peer = @peers[seat] = Peer.new(seat, state, nil, false)
         Status.notice("#{state['name']} joined the world.")
       end
+
+      Party.observe(peer)
     end
 
     # Forgets a game that left.
@@ -220,7 +243,10 @@ module MGQ_MpOverworld
     # @param seat [Integer] Its seat.
     def self.remove(seat)
       peer = @peers.delete(seat)
-      Status.notice("#{peer.state['name']} left the world.") if peer
+      return unless peer
+
+      Status.notice("#{peer.state['name']} left the world.")
+      Party.observe_leaving(peer)
     end
 
     # Forgets every game, as after a reconnect or once the world closed.
@@ -241,6 +267,160 @@ module MGQ_MpOverworld
     def self.all
       @peers.values
     end
+  end
+
+  # The player's party: the others who share its id. Every game says its party's id and whether it
+  # invites in the message it sends anyway, so joining needs no message of its own: a player who
+  # accepts takes the inviter's id, and the inviter sees them join by it.
+  module Party
+    @id = nil
+    @invite_frames = 0
+    @leave_frames = 0
+
+    # The party's id, nil while the player is in none.
+    #
+    # @return [String, nil] The id.
+    def self.id
+      @id
+    end
+
+    # Reports whether the player invites to a party now.
+    #
+    # @return [Boolean] Whether they do.
+    def self.inviting?
+      @invite_frames > 0
+    end
+
+    # Reports whether the player waits for a second press to leave the party.
+    #
+    # @return [Boolean] Whether they do.
+    def self.leaving?
+      @leave_frames > 0
+    end
+
+    # Reports whether another player is in the player's party.
+    #
+    # @param state [Hash] What the other player last told.
+    # @return [Boolean] Whether they are.
+    def self.member?(state)
+      !@id.nil? && state["party"] == @id
+    end
+
+    # Lists the other players in the party, whom a battle will take along once co-op battles exist.
+    #
+    # @return [Array<Peers::Peer>] The members.
+    def self.members
+      Peers.all.select { |peer| member?(peer.state) }
+    end
+
+    # Leaves the party and forgets any invite, as when the world closes.
+    def self.reset
+      @id = nil
+      @invite_frames = 0
+      @leave_frames = 0
+    end
+
+    # Lets an invite and a waiting leave run out, and forgets a party nobody joined. Called every frame.
+    def self.count_down
+      @leave_frames -= 1 if @leave_frames > 0
+      return unless @invite_frames > 0
+
+      @invite_frames -= 1
+      @id = nil if @invite_frames == 0 && members.empty?
+    end
+
+    # Acts on the party key, pressed on the map: accepts an invite nearby, invites the players
+    # nearby, or leaves the party with a second press when nobody is near.
+    def self.press
+      near = Peers.all.select { |peer| near?(peer.state) }
+      inviter = near.find { |peer| peer.state["invite"] == "1" && !member?(peer.state) }
+
+      if inviter
+        join(inviter)
+      elsif near.any? { |peer| !member?(peer.state) }
+        invite
+      elsif @id && !members.empty?
+        leaving? ? leave : ask_to_leave
+      else
+        Status.notice("Nobody is near enough to form a party.")
+      end
+    end
+
+    # Invites the players nearby, making a party of one for them to join.
+    def self.invite
+      @id ||= "#{MGQ_Multiplayer::Link.player_id[0, 8]}#{rand(36**6).to_s(36)}"
+      @invite_frames = INVITE_FRAMES
+      @leave_frames = 0
+    end
+
+    # Joins the party of a player who invites.
+    #
+    # @param inviter [Peers::Peer] The player.
+    def self.join(inviter)
+      left = @id && !members.empty?
+      @id = inviter.state["party"]
+      @invite_frames = 0
+      @leave_frames = 0
+      Status.notice("#{left ? 'You left your party and joined' : 'You joined'} #{inviter.state['name']}'s party.")
+      Peers.all.each { |peer| peer.member = member?(peer.state) }
+    end
+
+    # Asks for a second press before leaving the party.
+    def self.ask_to_leave
+      @leave_frames = LEAVE_FRAMES
+      Status.notice("Press B again to leave the party.")
+    end
+
+    # Leaves the party.
+    def self.leave
+      reset
+      Status.notice("You left the party.")
+      Peers.all.each { |peer| peer.member = false }
+    end
+
+    # Notices a player coming into or going out of the party, and stops inviting once one joined.
+    #
+    # @param peer [Peers::Peer] The player, with what they just told.
+    def self.observe(peer)
+      member = member?(peer.state)
+      return if member == peer.member
+
+      peer.member = member
+      if member
+        @invite_frames = 0
+        Status.notice("#{peer.state['name']} joined your party.")
+      else
+        Status.notice("#{peer.state['name']} left your party.")
+      end
+    end
+
+    # Forgets a party member who left the world.
+    #
+    # @param peer [Peers::Peer] The player.
+    def self.observe_leaving(peer)
+      @id = nil if peer.member && members.empty? && !inviting?
+    end
+
+    # Reports whether another player stands near the player, on the same map.
+    #
+    # @param state [Hash] What the other player last told.
+    # @return [Boolean] Whether they do.
+    def self.near?(state)
+      state["map"].to_i == $game_map.map_id &&
+        [(state["x"].to_i - $game_player.x).abs, (state["y"].to_i - $game_player.y).abs].max <= NEAR_TILES
+    end
+  end
+
+  # Takes the party key on the map, while no event, message or scene change is in the way.
+  # Called by the map every frame, so a press is seen once.
+  def self.on_map
+    pressed = MGQ_Multiplayer::Key.pressed?(PARTY_KEY)
+    return unless pressed && in_world?
+    return if $game_map.interpreter.running? || $game_message.busy?
+
+    Party.press
+  rescue => e
+    log("party key failed: #{e.class}: #{e.message}")
   end
 
   # Reads the world room's inbox.
@@ -329,7 +509,7 @@ module MGQ_MpOverworld
 
       if here
         peer.ghost ||= Game_MpGhost.new(peer.state)
-        peer.ghost.follow(peer.state)
+        peer.ghost.follow(peer.state, peer.member)
       else
         peer.ghost = nil
       end
@@ -339,11 +519,21 @@ module MGQ_MpOverworld
     @ghosts_failed = true
   end
 
-  # Lists the ghosts on this map, with what their players last told.
+  # Lists the ghosts on this map, with what their players last told and whether they are in the party.
   #
-  # @return [Array<Array>] The ghosts and their states.
+  # @return [Array<Array>] The ghosts, their states and whether each is a party member.
   def self.ghosts
-    in_world? ? Peers.all.select { |peer| peer.ghost }.map { |peer| [peer.ghost, peer.state] } : []
+    in_world? ? Peers.all.select { |peer| peer.ghost }.map { |peer| [peer.ghost, peer.state, peer.member] } : []
+  end
+
+  # Tells what the line above the player's own head says, if anything.
+  #
+  # @return [String, nil] The line.
+  def self.own_line
+    return nil unless in_world?
+    return "Inviting to a party . . ." if Party.inviting?
+
+    Party.leaving? ? "Press B again to leave the party" : nil
   end
 end
 
@@ -360,14 +550,17 @@ class Game_MpGhost < Game_Character
     @step_anime = false
     @walk_anime = true
     moveto(state["x"].to_i, state["y"].to_i)
-    follow(state)
+    follow(state, false)
   end
 
-  # Walks toward where the player stands, at their speed, and looks like them.
+  # Walks toward where the player stands, at their speed, and looks like them: see-through a
+  # little while they are outside the player's party.
   #
   # @param state [Hash] What the player last told.
-  def follow(state)
+  # @param member [Boolean] Whether they are in the player's party.
+  def follow(state, member)
     look_like(state)
+    @opacity = member ? 255 : MGQ_MpOverworld::STRANGER_OPACITY
     update
     return if moving?
 
@@ -394,15 +587,98 @@ class Game_MpGhost < Game_Character
   end
 end
 
-# A ghost's name above its head, with an icon for what its player does.
+# A ghost's name above its head, with an icon for what its player does, green for a party member,
+# and a line above it while its player invites to a party.
 class Sprite_MpGhostLabel < Sprite
   # Width of the label.
-  WIDTH = 200
+  WIDTH = 240
 
-  # Height of the label.
-  HEIGHT = 24
+  # Height of one line.
+  LINE = 24
+
+  # Color of a party member's name.
+  MEMBER_COLOR = Color.new(128, 255, 128)
+
+  # Color of the invite line.
+  INVITE_COLOR = Color.new(255, 224, 128)
 
   # Creates the label, empty.
+  #
+  # @param viewport [Viewport] The map's viewport of characters.
+  def initialize(viewport)
+    super(viewport)
+    self.bitmap = Bitmap.new(WIDTH, LINE * 2)
+    self.ox = WIDTH / 2
+    self.z = 250
+    @shown = nil
+  end
+
+  # Draws the label, if it changed, and follows the ghost's sprite.
+  #
+  # @param sprite [Sprite_Character] The ghost's sprite.
+  # @param state [Hash] What the player last told.
+  # @param member [Boolean] Whether the player is in the party.
+  def show(sprite, state, member)
+    self.x = sprite.x
+    self.y = sprite.y - sprite.height - LINE * 2 + 4
+    self.visible = sprite.visible && sprite.opacity > 0 && state["hidden"].to_i != 1
+    inviting = state["invite"] == "1" && !member
+    drawn = [state["name"], state["scene"], member, inviting]
+    return if drawn == @shown
+
+    @shown = drawn
+    bitmap.clear
+    bitmap.font.size = 18
+    bitmap.font.outline = true
+    line(0, "Invites to a party (B)", INVITE_COLOR) if inviting
+    draw_name(state["name"].to_s, MGQ_MpOverworld::STATE_ICONS[state["scene"]], member ? MEMBER_COLOR : Color.new(255, 255, 255))
+  end
+
+  # Draws a centered line of text.
+  #
+  # @param row [Integer] The line, 0 above the name.
+  # @param text [String] The text.
+  # @param color [Color] Its color.
+  def line(row, text, color)
+    bitmap.font.color = color
+    bitmap.draw_text(0, row * LINE, WIDTH, LINE, text, 1)
+  end
+
+  # Draws the name on the lower line, and the icon before it.
+  #
+  # @param name [String] The player's name.
+  # @param icon [Integer, nil] The icon's index in the game's icon set, nil for none.
+  # @param color [Color] The name's color.
+  def draw_name(name, icon, color)
+    width = [bitmap.text_size(name).width, WIDTH - 28].min
+    left = (WIDTH - width - (icon ? 26 : 0)) / 2
+
+    if icon
+      iconset = Cache.system("Iconset")
+      bitmap.blt(left, LINE, iconset, Rect.new(icon % 16 * 24, icon / 16 * 24, 24, 24))
+      left += 26
+    end
+
+    bitmap.font.color = color
+    bitmap.draw_text(left, LINE, width, LINE, name)
+  end
+
+  # Frees the label's picture.
+  def dispose
+    bitmap.dispose
+    super
+  end
+end
+
+# The line above the player's own head while they invite to a party or are about to leave it.
+class Sprite_MpOwnLine < Sprite
+  # Width of the line.
+  WIDTH = 320
+
+  # Height of the line.
+  HEIGHT = 24
+
+  # Creates the line, empty.
   #
   # @param viewport [Viewport] The map's viewport of characters.
   def initialize(viewport)
@@ -413,42 +689,27 @@ class Sprite_MpGhostLabel < Sprite
     @shown = nil
   end
 
-  # Draws the name and icon, if they changed, and follows the ghost's sprite.
+  # Draws the line, if it changed, above the player's sprite.
   #
-  # @param sprite [Sprite_Character] The ghost's sprite.
-  # @param state [Hash] What the player last told.
-  def show(sprite, state)
+  # @param sprite [Sprite_Character, nil] The player's sprite.
+  def show(sprite)
+    text = MGQ_MpOverworld.own_line
+    self.visible = !text.nil? && !sprite.nil?
+    return unless visible
+
     self.x = sprite.x
-    self.y = sprite.y - sprite.height - HEIGHT + 4
-    self.visible = sprite.visible && sprite.opacity > 0 && state["hidden"].to_i != 1
-    drawn = [state["name"], state["scene"]]
-    return if drawn == @shown
+    self.y = sprite.y - sprite.height - HEIGHT
+    return if text == @shown
 
-    @shown = drawn
-    draw(state["name"].to_s, MGQ_MpOverworld::STATE_ICONS[state["scene"]])
-  end
-
-  # Draws the name, and the icon before it.
-  #
-  # @param name [String] The player's name.
-  # @param icon [Integer, nil] The icon's index in the game's icon set, nil for none.
-  def draw(name, icon)
+    @shown = text
     bitmap.clear
     bitmap.font.size = 18
     bitmap.font.outline = true
-    width = [bitmap.text_size(name).width, WIDTH - 28].min
-    left = (WIDTH - width - (icon ? 26 : 0)) / 2
-
-    if icon
-      iconset = Cache.system("Iconset")
-      bitmap.blt(left, 0, iconset, Rect.new(icon % 16 * 24, icon / 16 * 24, 24, 24))
-      left += 26
-    end
-
-    bitmap.draw_text(left, 0, width, HEIGHT, name)
+    bitmap.font.color = Sprite_MpGhostLabel::INVITE_COLOR
+    bitmap.draw_text(0, 0, WIDTH, HEIGHT, text, 1)
   end
 
-  # Frees the label's picture.
+  # Frees the line's picture.
   def dispose
     bitmap.dispose
     super
@@ -548,10 +809,11 @@ if MGQ_MpOverworld.hookable?
         mgq_mp_overworld_update_ghosts
       end
 
-      # Keeps a sprite and label per ghost on this map, and the status line.
+      # Keeps a sprite and label per ghost on this map, the line above the player's head, and the status line.
       def mgq_mp_overworld_update_ghosts
         @mgq_mp_ghosts ||= {}
         @mgq_mp_status ||= Sprite_MpWorldStatus.new(@viewport3)
+        @mgq_mp_own_line ||= Sprite_MpOwnLine.new(@viewport1)
         ghosts = MGQ_MpOverworld.ghosts
 
         @mgq_mp_ghosts.keys.each do |ghost|
@@ -562,13 +824,14 @@ if MGQ_MpOverworld.hookable?
           label.dispose
         end
 
-        ghosts.each do |ghost, state|
+        ghosts.each do |ghost, state, member|
           @mgq_mp_ghosts[ghost] ||= [Sprite_Character.new(@viewport1, ghost), Sprite_MpGhostLabel.new(@viewport1)]
           sprite, label = @mgq_mp_ghosts[ghost]
           sprite.update
-          label.show(sprite, state)
+          label.show(sprite, state, member)
         end
 
+        @mgq_mp_own_line.show(@character_sprites.find { |sprite| sprite.character.equal?($game_player) })
         @mgq_mp_status.update
       rescue => e
         MGQ_MpOverworld.log("ghost sprites failed: #{e.class}: #{e.message}") unless @mgq_mp_failed
@@ -577,16 +840,32 @@ if MGQ_MpOverworld.hookable?
 
       alias mgq_mp_overworld_dispose dispose
 
-      # Frees the ghosts' sprites and the status line, then the map's.
+      # Frees the ghosts' sprites, the player's line and the status line, then the map's.
       def dispose
         (@mgq_mp_ghosts || {}).values.flatten.each { |sprite| sprite.dispose }
         @mgq_mp_ghosts = nil
-        @mgq_mp_status.dispose if @mgq_mp_status
-        @mgq_mp_status = nil
+        [@mgq_mp_status, @mgq_mp_own_line].compact.each { |sprite| sprite.dispose }
+        @mgq_mp_status = @mgq_mp_own_line = nil
         mgq_mp_overworld_dispose
       end
     end
   rescue => e
     MGQ_MpOverworld.log("sprite hooks FAILED: #{e.class}: #{e.message}")
+  end
+
+  begin
+    class Scene_Map
+      alias mgq_mp_overworld_update_scene update_scene
+
+      # Updates the map, then takes the party key.
+      #
+      # The game checks its own keys here too, only while no scene change is in the way.
+      def update_scene
+        mgq_mp_overworld_update_scene
+        MGQ_MpOverworld.on_map unless scene_changing?
+      end
+    end
+  rescue => e
+    MGQ_MpOverworld.log("map key hook FAILED: #{e.class}: #{e.message}")
   end
 end

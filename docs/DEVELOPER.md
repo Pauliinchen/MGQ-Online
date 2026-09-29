@@ -148,6 +148,14 @@ While a world is open, a `Graphics.update` hook runs every frame in every scene:
 - **Ghosts** (`Game_MpGhost`, a `Game_Character` with `@through`): one per player on the current map, made where they stand. Every frame on the map (`Game_Map#update`) it takes their sprite, speed and visibility, and walks one tile toward where they stand, along the longer axis first, at their speed; more than `CATCH_UP_TILES` (3) away, or after a map change, it moves there at once. It triggers nothing, since only the player and events check triggers.
 - **Sprites** (`Spriteset_Map#update`): a `Sprite_Character` and a `Sprite_MpGhostLabel` per ghost, made and freed as ghosts come and go. The label shows the name, and before it an icon of the game's icon set for what the player does (`STATE_ICONS`): battle 451 (crossed swords), event 4 (speech bubble), menu 183 (open book), items 3059 (potion), equip 3905 (hammer), shop 3874 (coin), casino 220 (cards), library 3240 (red book), sailing 4069 (anchor), flying 3836 (wing), away 6 (Zzz); none while walking. `Sprite_MpWorldStatus` at the bottom left shows the last notices for 4 s each and, from `mp_world_status` every 30 frames, "Reconnecting . . .", "Connecting . . ." or why the connection failed.
 
+**Parties** (`Party`). Every state message also carries the player's party id (`party`) and whether they invite (`invite`), so a party needs no message of its own. B (`PARTY_KEY`, 0x42, read with `GetAsyncKeyState` like F11, since neither the game's `Input` nor its gamepad plugin reads it) on the map, while no event or message runs:
+
+- next to (`NEAR_TILES`, 2, on the same map) a player who invites and is not in the party: joins their party, taking their id;
+- next to players outside the party: invites for 15 s (`INVITE_FRAMES`), making a party of one with a new id, which the invite line above the player's own head (`Sprite_MpOwnLine`) and above their ghost on the others' screens shows;
+- with nobody near, in a party: leaves it, after a second press within 3 s (`LEAVE_FRAMES`).
+
+A game sees another join its party when their message carries its id (`Party.observe`), which also ends its invite. An invite nobody took forgets its party of one, and leaving the world leaves the party. Ghosts outside the party are see-through (`STRANGER_OPACITY`), party members' names green. `Party.members` lists them for co-op battles, which do not exist yet.
+
 ## PvP battles (`pvp_battle.rb`)
 
 Two games swap their Frontline's builds, then fight the same battle live (see [Live battles](#live-battles-mp_syncrb)), each player commanding their own team; on the host, the friend's characters are rebuilt as real characters and take the friend's commands. A **mirror match** fights the player's own team the same way, played by the computer, without any network.

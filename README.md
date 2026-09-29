@@ -42,6 +42,8 @@ Each world keeps its own saves, Library, medals and affection in `Multiplayer\Wo
 
 **On the map**, the other players on the same map walk around as they do, with their names above them and an icon for what they do: fighting, talking or watching an event, in a menu, the inventory or their equipment, shopping, at the casino, in the Library, sailing, flying, or away from the game. They walk through everything and trigger nothing. The bottom left of the screen tells who joined and left, and when the connection is being restored. PvP battles (F11) are off while you are in a world.
 
+**Parties:** players outside your party are slightly see-through. Stand next to another player and press **B** to invite them; "Invites to a party (B)" then shows above your head on their screen for 15 seconds, and when they press **B** next to you, you form a party. Party members are fully visible and their names are green. To leave the party, press **B** twice with nobody next to you. Battles fought together as a party are planned.
+
 ## PvP battles
 
 Press **F11** on the map to open the PvP battle screen.
