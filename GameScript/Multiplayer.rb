@@ -2,7 +2,8 @@
 #  Multiplayer.rb
 #
 #  Changelog:
-#      Paulinchen  2026-09-29: Hosted without a port, since games meet at the relay
+#      Paulinchen  2026-09-29: Found the mod folder relative to the game's folder, which works in a folder named with characters outside ASCII
+#                            - Hosted without a port, since games meet at the relay
 #                            - Added Link.status, which leaves the friend's team out, for the frequent checks
 #      Paulinchen  2026-09-28: Created
 #
@@ -58,27 +59,17 @@ module MGQ_Multiplayer
     Log.write("start failed: #{e.class}: #{e.message}")
   end
 
-  # Builds the path of a file inside the mod folder.
+  # Builds the path of a file inside the mod folder, relative to the game's folder.
+  #
+  # The game always runs in its own folder. An absolute path breaks in a folder named with
+  # characters outside ASCII, such as the untranslated game's: File takes it only as UTF-8,
+  # Win32API loads a DLL only from the system's code page. A relative one, with backslashes, works
+  # for both.
   #
   # @param name [String] The file name, relative to the mod folder.
-  # @return [String] The full path.
+  # @return [String] The path.
   def self.path(name)
-    "#{game_dir}/#{MOD_DIR}/#{name}"
-  end
-
-  # The folder of Game.exe.
-  #
-  # Asked of Windows, the working directory is wherever a shortcut or Steam started the game.
-  #
-  # @return [String] The folder, with forward slashes.
-  def self.game_dir
-    @game_dir ||= begin
-      buffer = "\0" * 512
-      length = Win32API.new('kernel32', 'GetModuleFileNameA', 'lpl', 'l').call(0, buffer, 512)
-      File.dirname(buffer[0, length].tr("\\", "/"))
-    end
-  rescue
-    @game_dir = Dir.pwd
+    "#{MOD_DIR}\\#{name}"
   end
 
   # Keeps a name someone else chose short, on one line and free of message codes.
