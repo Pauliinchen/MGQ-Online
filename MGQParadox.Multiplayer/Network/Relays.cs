@@ -14,8 +14,7 @@ using System.Text;
 namespace MGQParadox.Multiplayer.Network;
 
 /// <summary>
-/// The relays that pass frames between games that cannot reach each other directly, by the id a
-/// join code names them with.
+/// The relays the games meet at, which pass their frames on, by the id a join code names them with.
 /// </summary>
 /// <remarks>
 /// The guest always takes the relay the host's join code names, so a relay stays in this list for as
