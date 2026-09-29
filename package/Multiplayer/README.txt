@@ -19,7 +19,7 @@ mods, you have it.
    https://mgq.miraheze.org/wiki/Paradox_mods#Patch.rb_(enable_Type_1_mods)
 
 Optional, but recommended:
-- Discord Rich Presence
+- Discord Rich Presence 1.5.0 or later
   (github.com/Pauliinchen/MGQ-Paradox-Discord-Rich-Presence): invite your
   friend through Discord instead of sending a join code, and show on your
   profile who you're playing with.
@@ -59,11 +59,11 @@ at once, and Give Up is off. Battle messages move on by themselves, so
 neither of you waits for the other to press a key. If your friend leaves
 or the connection breaks, you win. When you have waited for your friend
 for 10 seconds, Cancel lets you leave the battle, which also gives it
-up. A defeated character of your friend
-stays as a see-through grey silhouette, since their team can still
-revive it; it cannot be targeted meanwhile. Nothing carries over: no
-EXP, gold or items, no defeat scene, and your save, the Library and
-affection are put back exactly as they were before.
+up. A defeated character of your friend stays as a see-through grey
+silhouette, since their team can still revive it; it cannot be targeted
+meanwhile. Nothing carries over: no EXP, gold or items, no defeat scene,
+and your save, the Library and affection are put back exactly as they
+were before.
 
 Press F11 on the map to open the PvP battle screen.
 

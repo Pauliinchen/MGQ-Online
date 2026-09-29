@@ -10,7 +10,7 @@ Play Monster Girl Quest! Paradox RPG together with a friend over a direct connec
 
 Optional:
 
-- [Discord Rich Presence](https://github.com/Pauliinchen/MGQ-Paradox-Discord-Rich-Presence): invite your friend through Discord instead of sending a join code, and show on your profile who you're playing with.
+- [Discord Rich Presence](https://github.com/Pauliinchen/MGQ-Paradox-Discord-Rich-Presence) 1.5.0 or later: invite your friend through Discord instead of sending a join code, and show on your profile who you're playing with.
 - [Battle Dialogue](https://github.com/Pauliinchen/MGQ-Paradox-Mod-Collection/tree/main/Battle_Dialogue): shows what characters say in boxes at the screen's sides, so neither of you waits for the other to press a key.
 
 ## Install
@@ -33,9 +33,13 @@ Press **F11** on the map to open the PvP battle screen.
 
 - **Host:** your game waits for a friend and puts a join code on your clipboard. Send it to your friend, or invite them through the **+** in a Discord chat when the Discord mod is installed.
 - **Join:** copy your friend's join code and pick *Join with the copied code*, or accept their Discord invite.
-- **Fight your own team:** a mirror match against your own Frontline, without any network.
+- **Fight your own team:** a mirror match against your own Frontline, without any network. `Multiplayer\Mirror Match.log` then lists each of your characters next to its copy and marks every value that differs.
 
-Only the Frontline fights. Escape gives the battle up at once, Give Up is off, and if your friend leaves or the connection breaks, you win. When you have waited for your friend for 10 seconds, Cancel lets you leave the battle, which also gives it up. Nothing carries over: your save, the Library and affection are put back exactly as they were before.
+Once the teams are swapped, both battles start together. The host's game works the battle out, and the other game shows what happened. The team you meet is your friend's characters as they are: jobs, races, equipment, gems and abilities, pre-battle spells and passives included. A defeated character of your friend stays as a grey silhouette, since their team can still revive it.
+
+Only the Frontline fights. Escape gives the battle up at once, Give Up is off, and if your friend leaves or the connection breaks, you win. When you have waited for your friend for 10 seconds, Cancel lets you leave the battle, which also gives it up. Battle messages move on by themselves. Nothing carries over: no EXP, gold or items, and your save, the Library and affection are put back exactly as they were before.
+
+Windows asks whether `Game.exe` may use the network the first time you host; allow it. Your friend's game sees your IP address. To find your public one, your game asks api.ipify.org once per hosting.
 
 While the mod is installed, the game keeps running when its window is in the background, so neither player holds the other up.
 
