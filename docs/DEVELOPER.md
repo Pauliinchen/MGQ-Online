@@ -7,6 +7,7 @@ MGQ-Paradox-Multiplayer-Mod.slnx      Visual Studio solution
 Directory.Build.targets               puts vswhere.exe on the PATH, which the NativeAOT link needs
 GameScript/Multiplayer.rb             Ruby, what every way of playing together shares
 GameScript/mp_sync.rb                 Ruby, live battles: the host computes, the guest plays back
+GameScript/mp_world.rb                Ruby, worlds: the world screen, and each world's own saves
 GameScript/pvp_battle.rb              Ruby, PvP battles against a friend's team or a mirror match
 MGQParadox.Multiplayer/               C# NativeAOT project -> Multiplayer.dll, and the package
 MGQParadox.Multiplayer.Tests/         xUnit tests of the DLL, 32-bit like it
@@ -16,19 +17,20 @@ docs/DEVELOPER.md                     this file
 .github/workflows/release.yml         tests, builds and attaches the zip on release
 ```
 
-**Scripts.** Patch folder mods, shipped as `Patch/*.rb`. The mod loader loads them sorted, capitals first, so after `Discord_RPC.rb` of the Discord mod: `Multiplayer.rb`, then `mp_sync.rb`, then `pvp_battle.rb`. A file may only use what loaded before it at load time; later files are reached at run time (`defined?`).
+**Scripts.** Patch folder mods, shipped as `Patch/*.rb`. The mod loader loads them sorted, capitals first, so after `Discord_RPC.rb` of the Discord mod: `Multiplayer.rb`, then `mp_sync.rb`, `mp_world.rb` and `pvp_battle.rb`. A file may only use what loaded before it at load time; later files are reached at run time (`defined?`).
 
 | File | Module | What it is |
 |---|---|---|
 | `Multiplayer.rb` | `MGQ_Multiplayer` | The foundation every mode shares: `Log` (`Multiplayer/InGame.log`), `Link` (the DLL's `mp_*` functions), `Background` (keeps the game running while another window is in front, and has `Input` report no buttons meanwhile), `Key` (F-keys the game's `Input` does not know), `Discord` (the bridge client, see below). |
 | `mp_sync.rb` | `MGQ_MpSync` | Live battles, for any mode: `join` makes the next battle live, `battle_started` marks it running, `finish` ends it and closes the link, `record_to_file` has the next battle record itself. Knows nothing of PvP battles. |
+| `mp_world.rb` | `MGQ_MpWorld` | Worlds: the Multiplayer command on the title screen, the world screen, each world's folder with its saves and system save (see [Worlds](#worlds-mp_worldrb)). |
 | `pvp_battle.rb` | `MGQ_PvpBattle` | PvP battles: the PvP battle screen (F11), the team exchange, the rebuilt characters, the mirror match. Drives `MGQ_MpSync`. |
 
 **`MGQParadox.Multiplayer/`** builds `Multiplayer.dll`: C# compiled with NativeAOT into a native 32-bit DLL, because the game is a 32-bit process. Players need no .NET installed.
 
 | Path | What it is |
 |---|---|
-| `Exports.cs` | The functions the game scripts call: `mp_start`, `mp_keep_running`, `mp_set_player_name`, `mp_host`, `mp_join_invite`, `mp_join_clipboard`, `mp_receive_invite`, `mp_cancel`, `mp_copy_code`, `mp_state`, `mp_status`, `mp_send` and `mp_receive` for PvP battles; `mp_world_new_code`, `mp_world_id`, `mp_world_read_clipboard`, `mp_world_copy_code`, `mp_world_open`, `mp_world_close`, `mp_world_status`, `mp_world_send` and `mp_world_receive` for worlds (see [Worlds](#worlds-dll)). Nothing may throw out of them. |
+| `Exports.cs` | The functions the game scripts call: `mp_start`, `mp_keep_running`, `mp_set_player_name`, `mp_host`, `mp_join_invite`, `mp_join_clipboard`, `mp_receive_invite`, `mp_cancel`, `mp_copy_code`, `mp_state`, `mp_status`, `mp_send` and `mp_receive` for PvP battles; `mp_new_id` for the player's id; `mp_world_new_code`, `mp_world_id`, `mp_world_read_clipboard`, `mp_world_copy_code`, `mp_world_open`, `mp_world_close`, `mp_world_status`, `mp_world_send` and `mp_world_receive` for worlds (see [Worlds](#worlds-dll)). Nothing may throw out of them. |
 | `Network/` | The connections. PvP battles: `Session` (hosting, joining, the first exchange, the state the script reads), `Link` (the connection that stays open), `IFrameChannel` and `RelayFrameChannel` (what carries the frames, through the relay), `FrameCipher` (their encryption), `JoinCode`. Worlds: `WorldSession`, `RelayWorldChannel`, `WorldCipher`, `WorldCode`. Both: `Relays` (the relays by id, and the rooms a token leads to), `WebSocketMessages`, `Message`. |
 | `../Relay/` | The relay server itself, see [Relay/README.md](../Relay/README.md). |
 | `GameWindow.cs` | Keeps the game running while another application is active, see [Background](#background). |
@@ -43,7 +45,7 @@ Publishing the DLL project assembles the complete release layout in `Shipping/` 
 
 ```
 Multiplayer/  Multiplayer.dll  README.txt
-Patch/        Multiplayer.rb  mp_sync.rb  pvp_battle.rb
+Patch/        Multiplayer.rb  mp_sync.rb  mp_world.rb  pvp_battle.rb
 ```
 
 - **Publish, not build:** only a publish runs NativeAOT, so a plain build gives no usable DLL.
@@ -111,6 +113,18 @@ The [Discord Rich Presence](https://github.com/Pauliinchen/MGQ-Paradox-Discord-R
 - **Status fields:** `pvp_battle.rb` registers `Bridge.add_status`, which adds `pvp_battle_with=<Friend>` or `pvp_battle=mirror` for the Discord mod's first line.
 
 **Dialogue boxes.** The [Battle Dialogue](https://github.com/Pauliinchen/MGQ-Paradox-Mod-Collection/tree/main/Battle_Dialogue) mod of the MGQ-Paradox-Mod-Collection, when installed, shows every battle's messages in boxes at the screen's sides instead of the message window, so neither side of a live battle waits for a key. `mp_sync.rb` hands it each message the host's battle showed, with the speaker from the stream (`Battle_Dialogue.speaking`, `Battle_Dialogue.take_message`). Without it, a live battle's messages stay in the message window, which moves on by itself after 90 frames on both sides.
+
+## Worlds (`mp_world.rb`)
+
+**Flow.** *Multiplayer*, below *Continue* on the title screen (`Window_TitleCommand#make_command_list`), opens `Scene_MpWorlds`: the worlds on this PC, the one played last first, then *New world* (a name, then how many players it seats, 2 to 32, 4 at first), *Join with a copied world code* (`mp_world_read_clipboard`) and *Change your name*. A world offers *Enter*, *Copy the world code* and *Delete*. The first visit asks for the player's name unless the Discord mod knows it (`MGQ_Multiplayer::Player`: the name chosen for Multiplayer, else the one on Discord; PvP battles pass it on too). `Scene_MpName` uses the game's own letters, and Cancel with nothing typed leaves it.
+
+**On disk.** `Multiplayer/Player.ini` keeps the player's id (`mp_new_id`) and chosen name. Each world has `Multiplayer/Worlds/<id>/` (`mp_world_id`), with `world.ini` (name, world code, when it was made and last played) and `Save/`. Joining with a code makes the folder under a placeholder name until a player of the world tells the real one. Deleting a world deletes its folder; its code still lets the player back in, from the start.
+
+**Its own saves.** Entering a world writes the player's own system save, then redirects every path below the game's `Save` folder to the world's (`Files`: the path-taking methods of `File` and `Dir`, and `Bitmap.new` for thumbnails), and loads the world's system save, or makes one (`System`): the Library, the system switches and the global system with the affection, which the game otherwise shares between all saves and loads once per start. The game names `Save/` in many places, its backups, thumbnails and temporary file included, so the paths are changed where they reach the files. Paths only move while a world is open, and a path such as `SaveData.ini` never does. The game's options live in each save, so they are unaffected.
+
+- **Entering** loads the world's latest save, an autosave included, with the game's own `Scene_Load#on_load_success`. A world without saves goes back to the title screen, whose own `command_new_game` starts the new game, so everything the game and other mods do for one happens.
+- **Leaving** happens whenever the title screen starts other than for that new game: after *To Title*, a reset or a game over. It writes the world's system save and puts the player's own back.
+- **PvP battles** are off while a world is open (`MGQ_PvpBattle.available?`): a world keeps a connection of its own, and both would claim the Discord status.
 
 ## PvP battles (`pvp_battle.rb`)
 

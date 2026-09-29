@@ -2,7 +2,8 @@
 #  pvp_battle.rb
 #
 #  Changelog:
-#      Paulinchen  2026-09-29: Joined an invite accepted after a failed exchange instead of turning it down with the failure
+#      Paulinchen  2026-09-29: Kept the PvP battle screen closed while a world is open
+#                            - Joined an invite accepted after a failed exchange instead of turning it down with the failure
 #                            - Stopped asking for an open port and naming the way the team came, since every team comes through the relay
 #                            - Said that a host is reaching the relay until its join code is ready
 #                            - Said on the PvP battle screen when the friend's team came through the relay
@@ -53,9 +54,11 @@ module MGQ_PvpBattle
 
   # Tells whether PvP battles can run.
   #
-  # @return [Boolean] Whether PvP battles are on and the Multiplayer mod's DLL is installed.
+  # A world keeps a connection of its own, and the two would both claim the Discord status.
+  #
+  # @return [Boolean] Whether PvP battles are on, the Multiplayer mod's DLL is installed and no world is open.
   def self.available?
-    ENABLED && MGQ_Multiplayer.available?
+    ENABLED && MGQ_Multiplayer.available? && !(defined?(MGQ_MpWorld) && MGQ_MpWorld.open?)
   end
 
   # Writes a line to the Multiplayer mod's InGame.log.

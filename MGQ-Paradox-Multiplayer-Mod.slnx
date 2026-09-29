@@ -2,6 +2,7 @@
   <Folder Name="/GameScript/">
     <File Path="GameScript/Multiplayer.rb" />
     <File Path="GameScript/mp_sync.rb" />
+    <File Path="GameScript/mp_world.rb" />
     <File Path="GameScript/pvp_battle.rb" />
   </Folder>
   <Project Path="MGQParadox.Multiplayer/MGQParadox.Multiplayer.csproj" />

@@ -21,10 +21,11 @@ Game.exe
 Multiplayer\Multiplayer.dll
 Patch\Multiplayer.rb
 Patch\mp_sync.rb
+Patch\mp_world.rb
 Patch\pvp_battle.rb
 ```
 
-To uninstall, delete the `Multiplayer` folder and the three scripts in `Patch`.
+To uninstall, delete the `Multiplayer` folder and the four scripts in `Patch`. The `Multiplayer` folder also holds your worlds, so keep `Multiplayer\Worlds` if you want to play them again later.
 
 ## PvP battles
 

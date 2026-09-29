@@ -41,6 +41,7 @@ like this:
    Multiplayer\Multiplayer.dll
    Patch\Multiplayer.rb
    Patch\mp_sync.rb
+   Patch\mp_world.rb
    Patch\pvp_battle.rb
    ...
 
@@ -101,7 +102,9 @@ anything.
 UNINSTALL
 ---------
 Close the game and delete Patch\Multiplayer.rb, Patch\mp_sync.rb,
-Patch\pvp_battle.rb and the Multiplayer folder.
+Patch\mp_world.rb, Patch\pvp_battle.rb and the Multiplayer folder. The
+Multiplayer folder also holds your worlds, so keep Multiplayer\Worlds if
+you want to play them again later.
 The mod loader stays for your other mods.
 
 
