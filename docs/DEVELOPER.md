@@ -7,6 +7,7 @@ MGQ-Paradox-Multiplayer-Mod.slnx      Visual Studio solution
 Directory.Build.targets               puts vswhere.exe on the PATH, which the NativeAOT link needs
 GameScript/Multiplayer.rb             Ruby, what every way of playing together shares
 GameScript/mp_actions.rb              Ruby, what players of a world do together on the map: action wheel, parties, chat
+GameScript/mp_async.rb                Ruby, the world running on behind menus, battles and story scenes
 GameScript/mp_overworld.rb            Ruby, the other players of a world on the map, as ghosts
 GameScript/mp_sync.rb                 Ruby, live battles: the host computes, the guest plays back
 GameScript/mp_world.rb                Ruby, worlds: the world screen, and each world's own saves
@@ -19,12 +20,13 @@ docs/DEVELOPER.md                     this file
 .github/workflows/release.yml         tests, builds and attaches the zip on release
 ```
 
-**Scripts.** Patch folder mods, shipped as `Patch/*.rb`. The mod loader loads them sorted, capitals first, so after `Discord_RPC.rb` of the Discord mod: `Multiplayer.rb`, then `mp_actions.rb`, `mp_overworld.rb`, `mp_sync.rb`, `mp_world.rb` and `pvp_battle.rb`. A file may only use what loaded before it at load time; later files are reached at run time (`defined?`).
+**Scripts.** Patch folder mods, shipped as `Patch/*.rb`. The mod loader loads them sorted, capitals first, so after `Discord_RPC.rb` of the Discord mod: `Multiplayer.rb`, then `mp_actions.rb`, `mp_async.rb`, `mp_overworld.rb`, `mp_sync.rb`, `mp_world.rb` and `pvp_battle.rb`. A file may only use what loaded before it at load time; later files are reached at run time (`defined?`).
 
 | File | Module | What it is |
 |---|---|---|
 | `Multiplayer.rb` | `MGQ_Multiplayer` | The foundation every mode shares: `Log` (`Multiplayer/InGame.log`), `Link` (the DLL's `mp_*` functions), `Background` (keeps the game running while another window is in front, and has `Input` report no buttons meanwhile), `Key` (F-keys the game's `Input` does not know), `Capture` (takes the buttons away from the game while a screen of the mod reads them), `Discord` (the bridge client, see below). |
 | `mp_actions.rb` | `MGQ_MpActions` | What players of a world do together on the map: the action wheel, parties and chat (see [Actions](#actions-mp_actionsrb)). Reaches `MGQ_MpOverworld` at run time. |
+| `mp_async.rb` | `MGQ_MpAsync` | The world running on behind every other screen while a world is open, and the live map behind menus (see [The world never pauses](#the-world-never-pauses-mp_asyncrb)). Reaches `MGQ_MpWorld` at run time. |
 | `mp_sync.rb` | `MGQ_MpSync` | Live battles, for any mode: `join` makes the next battle live, `battle_started` marks it running, `finish` ends it and closes the link, `record_to_file` has the next battle record itself. Knows nothing of PvP battles. |
 | `mp_overworld.rb` | `MGQ_MpOverworld` | The other players of the open world on the map: what each game tells the others, the ghosts, their name labels and the status line (see [On the map](#on-the-map-mp_overworldrb)). Reaches `MGQ_MpWorld` and `MGQ_MpActions` at run time. |
 | `mp_world.rb` | `MGQ_MpWorld` | Worlds: the Multiplayer command on the title screen, the world screen, each world's folder with its saves and system save (see [Worlds](#worlds-mp_worldrb)). |
@@ -50,7 +52,7 @@ Publishing the DLL project assembles the complete release layout in `Shipping/` 
 
 ```
 Multiplayer/  Multiplayer.dll  README.txt
-Patch/        Multiplayer.rb  mp_actions.rb  mp_overworld.rb  mp_sync.rb  mp_world.rb  pvp_battle.rb
+Patch/        Multiplayer.rb  mp_actions.rb  mp_async.rb  mp_overworld.rb  mp_sync.rb  mp_world.rb  pvp_battle.rb
 ```
 
 - **Publish, not build:** only a publish runs NativeAOT, so a plain build gives no usable DLL.
@@ -152,6 +154,16 @@ While a world is open, a `Graphics.update` hook runs every frame in every scene:
 - **Sprites** (`Spriteset_Map#update`): a `Sprite_Character` and a `Sprite_MpGhostLabel` per ghost, made and freed as ghosts come and go. The label shows the name, and before it an icon of the game's icon set for what the player does (`STATE_ICONS`): battle 451 (crossed swords), event 4 (speech bubble), typing 4 (the same; `MGQ_MpActions.scene` says so while the chat box is open), menu 183 (open book), items 3059 (potion), equip 3905 (hammer), shop 3874 (coin), casino 220 (cards), library 3240 (red book), sailing 4069 (anchor), flying 3836 (wing), away 6 (Zzz); none while walking. `Sprite_MpWorldStatus` at the bottom left shows the last notices for 4 s each and, from `mp_world_status` every 30 frames, "Reconnecting . . .", "Connecting . . ." or why the connection failed.
 - **Pings** (`Ping`): every 30 frames the status's `ping` becomes the player's own, shown right above their head (`Sprite_MpOwnPing`), and after the name on each ghost's label the ping its player told. The others are only told a ping that moved by 20 ms (`PING_STEP`) and a quarter (`PING_SHARE`) of the one they know, so jitter sends nothing. Colors: up to 100 ms green, up to 200 ms yellow, then red (`PING_COLORS`). `mp_actions.rb` keeps `HEAD_ROOM` free above the head for it.
 - **Actions** (`Actions`): what players do together belongs to `mp_actions.rb`, which the overworld asks through `Actions`; without it, everyone is outside every party. `MGQ_MpActions.state_fields` adds to the state message, `observe` and `observe_leaving` hear of every state and every player leaving, `label_line` gives the line above a ghost's name, and `take` gets every message without a `map`, which lets actions send messages of their own.
+
+## The world never pauses (`mp_async.rb`)
+
+In single player the map stops whenever another screen is in front: a menu, a shop, a battle or a story (novel) scene. In a world it goes on, so what others see of the player and what the player comes back to never waits for them.
+
+- **Behind which screens** (`behind?`): every screen but the map itself, the title and the game over, while a world is open and a map waits on `SceneManager`'s stack. The map clears that stack whenever it starts, so a map on it is the one the player left and returns to; screens reached from the title never qualify.
+- **What runs** (`tick`, from a `Scene_Base#update_basic` hook, which every screen's frame calls, battles and novel scenes included): `$game_map.update(false)`, so events move, background (parallel) events and common events run, ghosts walk (`mp_overworld.rb` hooks the same method), and the map's screen effects go on; and `$game_timer`, except in a battle, which runs it itself. The player does not move, and the map's main event, which drives whatever the player is in, never runs here.
+- **What waits** (`hold?`, a `Game_Interpreter#execute_command` hook): while the tick runs, a command in `HELD_CODES` yields its interpreter's fiber until the map runs it again: messages, choices and inputs (101-105), party changes (129), transfers and vehicles (201, 206), music, sounds and movies (241-246, 249, 261), everything in 301-399 (battles, shops, name input, menu, save, game over, title, and actors' changes that would reach into a running battle), and scripts (355), which may do any of these. An event that starts by touching the player, or autoruns, only marks itself as starting; the main event picks it up once the player is back on the map. Events outside the tick, such as a battle's own, never wait.
+- **Field music**: the game's map refresh plays the field's music when a switch changed it (`need_refresh_autoplay_field`), which would cut into a battle's, so the tick leaves that refresh to the map.
+- **The live map** (`Spriteset_MpLiveMap`): a menu whose background is the picture the map took on leaving (`SceneManager.background_bitmap`) shows a `Spriteset_Map` instead, updated every frame, its viewports below everything the menu draws (z -300 to -200) and dimmed like the picture. Menus that make their background themselves, such as the casino and the warp screen, keep theirs.
 
 ## Actions (`mp_actions.rb`)
 

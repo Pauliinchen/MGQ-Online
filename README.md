@@ -21,13 +21,14 @@ Game.exe
 Multiplayer\Multiplayer.dll
 Patch\Multiplayer.rb
 Patch\mp_actions.rb
+Patch\mp_async.rb
 Patch\mp_overworld.rb
 Patch\mp_sync.rb
 Patch\mp_world.rb
 Patch\pvp_battle.rb
 ```
 
-To uninstall, delete the `Multiplayer` folder and the six scripts in `Patch`. The `Multiplayer` folder also holds your worlds, so keep `Multiplayer\Worlds` if you want to play them again later.
+To uninstall, delete the `Multiplayer` folder and the seven scripts in `Patch`. The `Multiplayer` folder also holds your worlds, so keep `Multiplayer\Worlds` if you want to play them again later.
 
 ## Worlds
 
@@ -42,6 +43,8 @@ Pick **Multiplayer** below *Continue* on the title screen. The first time, the g
 Each world keeps its own saves, Library, medals and affection in `Multiplayer\Worlds`, apart from your own game. Going back to the title screen leaves the world.
 
 **On the map**, the other players on the same map walk around as they do, with their names above them and an icon for what they do: fighting, talking or watching an event, typing in the chat, in a menu, the inventory or their equipment, shopping, at the casino, in the Library, sailing, flying, or away from the game. Their ping shows after their name, and yours right above your head: green up to 100 ms, yellow up to 200 ms, red beyond. They walk through everything and trigger nothing. The bottom left of the screen tells who joined and left, and when the connection is being restored. PvP battles (F11) are off while you are in a world.
+
+**The world never pauses:** while you are in a menu, a shop, a battle or a story scene, the map goes on behind it. The others walk on, NPCs move, and background events and timers run. Menus show the live map behind them instead of a still picture. Anything that needs you, such as a message, a battle, a move to another map, or an NPC that walks into you, waits until you are back on the map.
 
 **The action wheel:** press **B** on the map to open it around your character. Pick a choice with the arrow keys and take it with the confirm button; **B** or cancel closes the wheel. Choices you cannot take right now are grey and tell you why. Duels are shown already and come in a later version.
 

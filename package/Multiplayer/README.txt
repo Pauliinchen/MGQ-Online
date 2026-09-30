@@ -42,6 +42,7 @@ like this:
    Multiplayer\Multiplayer.dll
    Patch\Multiplayer.rb
    Patch\mp_actions.rb
+   Patch\mp_async.rb
    Patch\mp_overworld.rb
    Patch\mp_sync.rb
    Patch\mp_world.rb
@@ -116,6 +117,13 @@ yours right above your head: green up to 100 ms, yellow up to 200 ms,
 red beyond. They walk through everything and trigger nothing. PvP
 battles (F11) are off in a world.
 
+The world never pauses: while you are in a menu, a shop, a battle or a
+story scene, the map goes on behind it. The others walk on, NPCs move,
+and background events and timers run. Menus show the live map behind
+them. Anything that needs you, such as a message, a battle, a move to
+another map, or an NPC that walks into you, waits until you are back on
+the map.
+
 The action wheel: press B on the map to open it around your character.
 Pick a choice with the arrow keys and take it with the confirm button; B
 or cancel closes it. Grey choices cannot be taken right now and tell you
@@ -151,10 +159,10 @@ anything.
 UNINSTALL
 ---------
 Close the game and delete Patch\Multiplayer.rb, Patch\mp_actions.rb,
-Patch\mp_overworld.rb, Patch\mp_sync.rb, Patch\mp_world.rb,
-Patch\pvp_battle.rb and the Multiplayer folder. The Multiplayer folder
-also holds your worlds, so keep Multiplayer\Worlds if you want to play
-them again later.
+Patch\mp_async.rb, Patch\mp_overworld.rb, Patch\mp_sync.rb,
+Patch\mp_world.rb, Patch\pvp_battle.rb and the Multiplayer folder. The
+Multiplayer folder also holds your worlds, so keep Multiplayer\Worlds if
+you want to play them again later.
 The mod loader stays for your other mods.
 
 
