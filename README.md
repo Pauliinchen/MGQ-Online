@@ -23,6 +23,7 @@ Patch\Multiplayer.rb
 Patch\mp_actions.rb
 Patch\mp_actors.rb
 Patch\mp_async.rb
+Patch\mp_battles.rb
 Patch\mp_events.rb
 Patch\mp_npcs.rb
 Patch\mp_overworld.rb
@@ -32,7 +33,7 @@ Patch\mp_world.rb
 Patch\pvp_battle.rb
 ```
 
-To uninstall, delete the `Multiplayer` folder and the eleven scripts in `Patch`. The `Multiplayer` folder also holds your worlds, so keep `Multiplayer\Worlds` if you want to play them again later.
+To uninstall, delete the `Multiplayer` folder and the twelve scripts in `Patch`. The `Multiplayer` folder also holds your worlds, so keep `Multiplayer\Worlds` if you want to play them again later.
 
 ## Worlds
 

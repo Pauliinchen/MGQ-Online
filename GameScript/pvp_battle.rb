@@ -2,7 +2,8 @@
 #  pvp_battle.rb
 #
 #  Changelog:
-#      Paulinchen  2026-09-30: Left the builds and the rebuilt characters' shared parts to mp_actors.rb
+#      Paulinchen  2026-09-30: Left the rules every multiplayer battle shares to mp_battles.rb
+#                            - Left the builds and the rebuilt characters' shared parts to mp_actors.rb
 #      Paulinchen  2026-09-29: Kept the PvP battle screen closed while a world is open
 #                            - Joined an invite accepted after a failed exchange instead of turning it down with the failure
 #                            - Stopped asking for an open port and naming the way the team came, since every team comes through the relay
@@ -911,14 +912,6 @@ module MGQ_PvpBattle
       2 => "Your own team won.",
     }
 
-    # The switch that turns off ero offers, a low-HP monster's offer of an H-scene for giving up,
-    # and monsters opening conversations, by its name in the editor. They run the common event of
-    # the enemy's id (2000 + id), which the friend's characters have none of.
-    ERO_OFFERS_OFF = "No Seduction"
-
-    # The switch's id in 3.06, for a translation that names it otherwise.
-    ERO_OFFERS_OFF_ID = 86
-
     # Actions of the friend's characters logged per battle, the log holds few lines per session.
     LOGGED_ACTIONS = 12
 
@@ -960,8 +953,7 @@ module MGQ_PvpBattle
 
       troop_id = Opponents.add_troop
       $game_party.battle_members.each { |actor| actor.recover_all }
-      $game_switches[$data_system.switches.index(ERO_OFFERS_OFF) || ERO_OFFERS_OFF_ID] = true
-      $game_switches[NWConst::Sw::FORBID_BATTLE_SHIFT_CHANGE] = true if defined?(NWConst::Sw::FORBID_BATTLE_SHIFT_CHANGE)
+      MGQ_MpBattles.begin(:pvp)
       $game_temp.in_memory_battle = true
       BattleManager.setup(troop_id, true, true)
 
@@ -1042,6 +1034,7 @@ module MGQ_PvpBattle
     def self.restore
       @broken = defined?(MGQ_MpSync) && MGQ_MpSync.broken?
       MGQ_MpSync.finish if defined?(MGQ_MpSync)
+      MGQ_MpBattles.finish if defined?(MGQ_MpBattles)
       return unless @snapshot
 
       contents = Marshal.load(@snapshot)

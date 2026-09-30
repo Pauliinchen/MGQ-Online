@@ -2,6 +2,7 @@
 #  mp_sync.rb
 #
 #  Changelog:
+#      Paulinchen  2026-09-30: Left turning Give Up off to mp_battles.rb, which does it for every multiplayer battle
 #      Paulinchen  2026-09-29: Sent the start of a command phase before the host's own, which the host skips when none of its characters can act
 #                            - Streamed the battle log's lines, the skill lines and names and who appears as calls the guest makes in its own game's language
 #                            - Kept the untranslated game's speaker lines out of the name swap, and showed a translated host's name boxes as such lines on an untranslated guest
@@ -1536,10 +1537,6 @@ module MGQ_MpSync
 
       wrap(BattleManager.singleton_class, :judge_win_loss) do |_manager, _args, original|
         MGQ_MpSync.guest? ? false : original.call
-      end
-
-      wrap(BattleManager.singleton_class, :can_giveup?) do |_manager, _args, original|
-        MGQ_MpSync.live? ? false : original.call
       end
     end
 
