@@ -2,6 +2,7 @@
 //  server.js
 //
 //  Changelog:
+//      Paulinchen  2026-09-30: Kept each world's starting save in memory, taken and handed out as bytes
 //      Paulinchen  2026-09-29: Kept the world directory, and seated a game in a world room only once the directory let it in
 //                            - Added world rooms, which seat up to 32 games
 //      Paulinchen  2026-09-29: Created
@@ -32,28 +33,35 @@ const CHECK_EVERY_MS = 60 * 1000;
 const MAX_BODY_BYTES = 16 * 1024;
 
 /**
- * Keeps world entries in memory, as the directory's store.
+ * Keeps world entries and starting saves in memory, as the directory's store.
  *
- * @returns {{get(id: string): Promise<object | undefined>, put(entry: object): Promise<void>, remove(id: string): Promise<void>, all(): Promise<object[]>}} The store.
+ * @returns {import("../core/directory.js").DirectoryStore} The store.
  */
 export function memoryStore() {
   const entries = new Map();
+  const starts = new Map();
 
   return {
     get: async (id) => (entries.has(id) ? structuredClone(entries.get(id)) : undefined),
     put: async (entry) => void entries.set(entry.id, structuredClone(entry)),
-    remove: async (id) => void entries.delete(id),
+    remove: async (id) => {
+      entries.delete(id);
+      starts.delete(id);
+    },
     all: async () => [...entries.values()].map((entry) => structuredClone(entry)),
+    putStart: async (id, bytes) => void starts.set(id, Uint8Array.from(bytes)),
+    getStart: async (id) => starts.get(id),
   };
 }
 
 /**
- * Reads a request's body, stopping at MAX_BODY_BYTES.
+ * Reads a request's body as bytes, stopping past a limit.
  *
  * @param {http.IncomingMessage} request The request.
- * @returns {Promise<string>} The body, or "" when it is too large.
+ * @param {number} limit The most bytes it may have.
+ * @returns {Promise<Buffer | null>} The body, or null when it is longer than the limit.
  */
-function readBody(request) {
+function readBytes(request, limit) {
   return new Promise((resolve, reject) => {
     const parts = [];
     let size = 0;
@@ -61,17 +69,27 @@ function readBody(request) {
     request.on("data", (part) => {
       size += part.length;
 
-      if (size > MAX_BODY_BYTES) {
+      if (size > limit) {
         request.destroy();
-        resolve("");
+        resolve(null);
         return;
       }
 
       parts.push(part);
     });
-    request.on("end", () => resolve(Buffer.concat(parts).toString("utf8")));
+    request.on("end", () => resolve(Buffer.concat(parts)));
     request.on("error", reject);
   });
+}
+
+/**
+ * Reads a request's body as text, stopping at MAX_BODY_BYTES.
+ *
+ * @param {http.IncomingMessage} request The request.
+ * @returns {Promise<string>} The body, or "" when it is too large.
+ */
+async function readBody(request) {
+  return (await readBytes(request, MAX_BODY_BYTES))?.toString("utf8") ?? "";
 }
 
 /**
@@ -148,7 +166,7 @@ export function createRelay({ limits = LIMITS, clock = Date.now, checkEveryMs = 
       return;
     }
 
-    const answer = await handleDirectoryRequest(directory, request.method, url, () => readBody(request));
+    const answer = await handleDirectoryRequest(directory, request.method, url, () => readBody(request), (limit) => readBytes(request, limit));
 
     if (answer.close) {
       closeWorld(answer.id, CLOSE.worldDeleted, "the world was deleted");
@@ -156,6 +174,12 @@ export function createRelay({ limits = LIMITS, clock = Date.now, checkEveryMs = 
 
     if (answer.kick) {
       closeWorld(answer.id, CLOSE.removed, "the creator removed this player from the world", answer.kick);
+    }
+
+    if (answer.bytes) {
+      response.writeHead(answer.status, { "Content-Type": "application/octet-stream" });
+      response.end(answer.bytes);
+      return;
     }
 
     response.writeHead(answer.status, { "Content-Type": "application/json" });

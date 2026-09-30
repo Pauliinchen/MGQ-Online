@@ -2,6 +2,7 @@
 //  directory.js
 //
 //  Changelog:
+//      Paulinchen  2026-09-30: Kept a world's starting save, which its creator uploads once and only its players fetch
 //      Paulinchen  2026-09-29: Created
 //
 //----------------------------------------------------------------
@@ -9,7 +10,8 @@
 // The world directory's rules, the same on every server: the list of worlds everyone sees, who may
 // make, enter, delete or leave out whom, and who was in which world. The relay never learns a
 // world's token or password: it keeps the token locked with the password, and checks entering
-// against a hash of a key only the token's holders can make.
+// against a hash of a key only the token's holders can make. A world's starting save reaches it
+// encrypted with a key from the token, so the relay only keeps its bytes.
 //
 // It keeps its worlds through a store the platform layer passes in, and hands back what the layer
 // must do beyond answering, such as closing a removed player's connection.
@@ -27,7 +29,13 @@ export const DIRECTORY_LIMITS = Object.freeze({
   minIterations: 100_000,
   maxIterations: 5_000_000,
   maxLockHex: 512,
+  maxStartBytes: 8 * 1024 * 1024,
 });
+
+/**
+ * How far a world is with its starting save: it has none, its creator is still uploading it, or it is ready.
+ */
+export const START = Object.freeze({ none: "none", pending: "pending", ready: "ready" });
 
 /**
  * A world id: 32 lowercase hexadecimal characters, the world room's id.
@@ -97,13 +105,23 @@ export function cleanName(name, limits = DIRECTORY_LIMITS) {
 }
 
 /**
+ * @typedef {object} DirectoryStore Where the directory keeps its worlds, one entry each, and their starting saves.
+ * @property {(id: string) => Promise<object | undefined>} get Reads a world's entry.
+ * @property {(entry: object) => Promise<void>} put Writes a world's entry.
+ * @property {(id: string) => Promise<void>} remove Deletes a world's entry and its starting save.
+ * @property {() => Promise<object[]>} all Reads every world's entry.
+ * @property {(id: string, bytes: Uint8Array) => Promise<void>} putStart Writes a world's starting save.
+ * @property {(id: string) => Promise<Uint8Array | undefined>} getStart Reads a world's starting save.
+ */
+
+/**
  * The world directory, over a store of world entries.
  */
 export class Directory {
   /**
    * Creates the directory.
    *
-   * @param {{get(id: string): Promise<object | undefined>, put(entry: object): Promise<void>, remove(id: string): Promise<void>, all(): Promise<object[]>}} store Where the worlds are kept.
+   * @param {DirectoryStore} store Where the worlds and their starting saves are kept.
    * @param {{clock?: () => number, limits?: typeof DIRECTORY_LIMITS}} [options] The clock and limits, which tests change.
    */
   constructor(store, { clock = Date.now, limits = DIRECTORY_LIMITS } = {}) {
@@ -136,7 +154,7 @@ export class Directory {
   /**
    * Makes a world.
    *
-   * @param {object} request The world: id, name, seats, the creator's player key and name, the hash of the auth key, and the lock.
+   * @param {object} request The world: id, name, seats, the creator's player key and name, the hash of the auth key, the lock, and whether a starting save follows.
    * @returns {Promise<{status: number, body: object}>} The world's id, or why it was refused.
    */
   async create(request) {
@@ -171,6 +189,7 @@ export class Directory {
       creator: { id: creator, name: creatorName },
       authHash: request.authHash,
       lock: { salt: request.lock.salt, iterations: request.lock.iterations, box: request.lock.box },
+      start: request.start === true ? START.pending : START.none,
       created: now,
       active: now,
       members: { [creator]: { name: creatorName, seen: now } },
@@ -238,31 +257,65 @@ export class Directory {
    * @returns {Promise<{status: number, body: object, seats?: number, player?: string}>} The world's seats and the player's id, or why not.
    */
   async admit(id, key, auth) {
-    const entry = WORLD_ID.test(id) ? await this.store.get(id) : undefined;
+    const { entry, player, refusal } = await this.asPlayer(id, key, auth);
 
-    if (!entry) {
-      return notFound();
+    if (refusal) {
+      return refusal;
     }
 
-    if (typeof key !== "string" || !PLAYER_KEY.test(key) || typeof auth !== "string" || !HEX_32.test(auth)) {
-      return badRequest("a player key and an auth key are needed");
-    }
-
-    if ((await sha256Hex(auth)) !== entry.authHash) {
-      return { status: 401, body: { error: "the world's token does not match" } };
-    }
-
-    const player = await playerIdOf(key);
-
-    if (entry.bans.includes(player)) {
-      return { status: 403, body: { error: "the creator removed this player from the world" } };
-    }
-
-    if (!entry.members[player] && Object.keys(entry.members).length >= this.limits.maxMembers) {
-      return { status: 403, body: { error: "the world has as many players as it may" } };
+    if (entry.start === START.pending) {
+      return { status: 409, body: { error: "the world's starting save is still being uploaded" } };
     }
 
     return { status: 200, body: { seats: entry.seats, player }, seats: entry.seats, player };
+  }
+
+  /**
+   * Keeps a world's starting save, which its creator uploads once, right after making the world.
+   *
+   * @param {string} id The world.
+   * @param {unknown} key The asking player's key.
+   * @param {Uint8Array | null} bytes The starting save, encrypted by the creator's game; null when it was too large to read.
+   * @returns {Promise<{status: number, body: object}>} The answer.
+   */
+  async putStart(id, key, bytes) {
+    const { entry, refusal } = await this.asCreator(id, key);
+
+    if (refusal) {
+      return refusal;
+    }
+
+    if (entry.start !== START.pending) {
+      return { status: 409, body: { error: "the world takes no starting save" } };
+    }
+
+    if (!bytes || bytes.length === 0 || bytes.length > this.limits.maxStartBytes) {
+      return { status: 413, body: { error: `the starting save must be 1 to ${this.limits.maxStartBytes} bytes` } };
+    }
+
+    await this.store.putStart(entry.id, bytes);
+    entry.start = START.ready;
+    await this.store.put(entry);
+    return { status: 200, body: { bytes: bytes.length } };
+  }
+
+  /**
+   * Hands a world's starting save to one of its players.
+   *
+   * @param {string} id The world.
+   * @param {unknown} key The player's key.
+   * @param {unknown} auth The auth key the player's game made from the world's token.
+   * @returns {Promise<{status: number, body: object, bytes?: Uint8Array}>} The starting save, or why not.
+   */
+  async getStart(id, key, auth) {
+    const { entry, refusal } = await this.asPlayer(id, key, auth);
+
+    if (refusal) {
+      return refusal;
+    }
+
+    const bytes = entry.start === START.ready ? await this.store.getStart(entry.id) : undefined;
+    return bytes ? { status: 200, body: {}, bytes } : { status: 404, body: { error: "the world has no starting save" } };
   }
 
   /**
@@ -297,6 +350,42 @@ export class Directory {
 
     await this.store.put(entry);
     return { status: 200, body: { online: entry.online.length } };
+  }
+
+  /**
+   * Finds a world for a player who holds its token and was not removed from it.
+   *
+   * @param {string} id The world.
+   * @param {unknown} key The player's key.
+   * @param {unknown} auth The auth key the player's game made from the world's token.
+   * @returns {Promise<{entry?: object, player?: string, refusal?: {status: number, body: object}}>} The world and the player's id, or why the player may not.
+   */
+  async asPlayer(id, key, auth) {
+    const entry = WORLD_ID.test(id) ? await this.store.get(id) : undefined;
+
+    if (!entry) {
+      return { refusal: notFound() };
+    }
+
+    if (typeof key !== "string" || !PLAYER_KEY.test(key) || typeof auth !== "string" || !HEX_32.test(auth)) {
+      return { refusal: badRequest("a player key and an auth key are needed") };
+    }
+
+    if ((await sha256Hex(auth)) !== entry.authHash) {
+      return { refusal: { status: 401, body: { error: "the world's token does not match" } } };
+    }
+
+    const player = await playerIdOf(key);
+
+    if (entry.bans.includes(player)) {
+      return { refusal: { status: 403, body: { error: "the creator removed this player from the world" } } };
+    }
+
+    if (!entry.members[player] && Object.keys(entry.members).length >= this.limits.maxMembers) {
+      return { refusal: { status: 403, body: { error: "the world has as many players as it may" } } };
+    }
+
+    return { entry, player };
   }
 
   /**
@@ -339,6 +428,7 @@ export class Directory {
     if (!lock || typeof lock.salt !== "string" || !SALT.test(lock.salt)) return "the lock needs a salt of 32 lowercase hexadecimal characters";
     if (!Number.isInteger(lock.iterations) || lock.iterations < this.limits.minIterations || lock.iterations > this.limits.maxIterations) return "the lock's iterations are out of range";
     if (typeof lock.box !== "string" || !HEX.test(lock.box) || lock.box.length > this.limits.maxLockHex) return "the lock's box must be lowercase hexadecimal";
+    if (request.start !== undefined && typeof request.start !== "boolean") return "start must be true or false";
     return null;
   }
 }
@@ -349,10 +439,11 @@ export class Directory {
  * @param {Directory} directory The directory.
  * @param {string} method The HTTP method.
  * @param {URL} url The request's address.
- * @param {() => Promise<string>} readBody Reads the request's body.
- * @returns {Promise<{status: number, body: object, close?: boolean, kick?: string, id?: string}>} The answer, and what the platform layer must do beyond it for the world with that id.
+ * @param {() => Promise<string>} readBody Reads the request's body as text.
+ * @param {(limit: number) => Promise<Uint8Array | null>} readBytes Reads the request's body as bytes, null when it is longer than the limit.
+ * @returns {Promise<{status: number, body: object, bytes?: Uint8Array, close?: boolean, kick?: string, id?: string}>} The answer, sent as the bytes when there are any, and what the platform layer must do beyond it for the world with that id.
  */
-export async function handleDirectoryRequest(directory, method, url, readBody) {
+export async function handleDirectoryRequest(directory, method, url, readBody, readBytes) {
   const parts = url.pathname.split("/").filter((part) => part.length > 0);
 
   if (parts[0] !== "v1" || parts[1] !== "worlds") {
@@ -379,6 +470,14 @@ export async function handleDirectoryRequest(directory, method, url, readBody) {
   if (parts.length === 4 && parts[3] === "ban" && method === "POST") {
     const body = await readJson(readBody);
     return { ...(await directory.ban(parts[2], body?.player, body?.target)), id: parts[2] };
+  }
+
+  if (parts.length === 4 && parts[3] === "start" && method === "POST") {
+    return directory.putStart(parts[2], url.searchParams.get("player"), await readBytes(directory.limits.maxStartBytes));
+  }
+
+  if (parts.length === 4 && parts[3] === "start" && method === "GET") {
+    return directory.getStart(parts[2], url.searchParams.get("player"), url.searchParams.get("auth"));
   }
 
   return { status: 405, body: { error: "not a directory route" } };
@@ -413,6 +512,7 @@ export function publicView(entry) {
     name: entry.name,
     seats: entry.seats,
     creator: entry.creator,
+    start: entry.start ?? START.none,
     online: entry.online.length,
     created: entry.created,
     active: entry.active,

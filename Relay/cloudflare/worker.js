@@ -2,6 +2,7 @@
 //  worker.js
 //
 //  Changelog:
+//      Paulinchen  2026-09-30: Kept each world's starting save in the directory's storage, in pieces
 //      Paulinchen  2026-09-29: Added the world directory, a Durable Object that world rooms ask before seating a game
 //                            - Added world rooms, each a Durable Object that seats up to 32 games
 //      Paulinchen  2026-09-29: Created
@@ -107,8 +108,39 @@ function json(status, body) {
 }
 
 /**
+ * Size of the pieces a starting save is stored in, well below the largest value storage takes.
+ */
+const START_CHUNK_BYTES = 128 * 1024;
+
+/**
+ * Names the storage keys of a world's starting save.
+ *
+ * @param {string} id The world.
+ * @returns {string} The keys' common start.
+ */
+function startPrefix(id) {
+  return `start:${id}:`;
+}
+
+/**
+ * Reads a request's body as bytes, unless it is longer than a limit.
+ *
+ * @param {Request} request The request.
+ * @param {number} limit The most bytes it may have.
+ * @returns {Promise<Uint8Array | null>} The body, or null when it is too long.
+ */
+async function readBytes(request, limit) {
+  if (Number(request.headers.get("Content-Length") ?? 0) > limit) {
+    return null;
+  }
+
+  const bytes = new Uint8Array(await request.arrayBuffer());
+  return bytes.length > limit ? null : bytes;
+}
+
+/**
  * The world directory: every world with its players, bans and locked token, one entry per world
- * in the object's storage.
+ * in the object's storage, and each world's starting save in pieces beside it.
  */
 export class Directory extends DurableObject {
   /**
@@ -122,8 +154,42 @@ export class Directory extends DurableObject {
     this.directory = new WorldDirectory({
       get: (id) => ctx.storage.get(`world:${id}`),
       put: (entry) => ctx.storage.put(`world:${entry.id}`, entry),
-      remove: (id) => ctx.storage.delete(`world:${id}`),
+      remove: async (id) => {
+        await ctx.storage.delete(`world:${id}`);
+        const chunks = [...(await ctx.storage.list({ prefix: startPrefix(id) })).keys()];
+
+        if (chunks.length > 0) {
+          await ctx.storage.delete(chunks);
+        }
+      },
       all: async () => [...(await ctx.storage.list({ prefix: "world:" })).values()],
+      putStart: async (id, bytes) => {
+        const chunks = {};
+
+        for (let offset = 0; offset < bytes.length; offset += START_CHUNK_BYTES) {
+          // Padded, so the keys list in the order of the pieces.
+          chunks[`${startPrefix(id)}${String(offset / START_CHUNK_BYTES).padStart(4, "0")}`] = bytes.slice(offset, offset + START_CHUNK_BYTES);
+        }
+
+        await ctx.storage.put(chunks);
+      },
+      getStart: async (id) => {
+        const chunks = [...(await ctx.storage.list({ prefix: startPrefix(id) })).values()];
+
+        if (chunks.length === 0) {
+          return undefined;
+        }
+
+        const bytes = new Uint8Array(chunks.reduce((size, chunk) => size + chunk.length, 0));
+        let offset = 0;
+
+        for (const chunk of chunks) {
+          bytes.set(chunk, offset);
+          offset += chunk.length;
+        }
+
+        return bytes;
+      },
     });
   }
 
@@ -146,7 +212,7 @@ export class Directory extends DurableObject {
       return json(200, await this.directory.presence(id, online));
     }
 
-    const answer = await handleDirectoryRequest(this.directory, request.method, url, () => request.text());
+    const answer = await handleDirectoryRequest(this.directory, request.method, url, () => request.text(), (limit) => readBytes(request, limit));
 
     if (answer.close) {
       await internal(worldOf(this.env, answer.id), "close");
@@ -154,6 +220,10 @@ export class Directory extends DurableObject {
 
     if (answer.kick) {
       await internal(worldOf(this.env, answer.id), "kick", { player: answer.kick });
+    }
+
+    if (answer.bytes) {
+      return new Response(answer.bytes, { status: answer.status, headers: { "Content-Type": "application/octet-stream" } });
     }
 
     return json(answer.status, answer.body);

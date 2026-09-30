@@ -2,7 +2,7 @@
 
 Passes the Multiplayer mod's frames between games. The games never connect to each other directly: many home connections cannot be reached from outside (DS-Lite, CGNAT, no IPv6, no forwarded port), but every one can connect out, so every game connects out to the relay.
 
-The relay never sees what is played: the games encrypt every frame with a key derived from the join code or the world's token, which the relay never gets. For PvP battles it sees a room id, message sizes and timing, and stores nothing. For worlds it keeps the **world directory**, which everyone can read: each world's name, seats and creator, the names of its players and who is online. It never learns a world's password or token: it keeps the token locked with the password, and checks a game that enters against a hash.
+The relay never sees what is played: the games encrypt every frame with a key derived from the join code or the world's token, which the relay never gets. For PvP battles it sees a room id, message sizes and timing, and stores nothing. For worlds it keeps the **world directory**, which everyone can read: each world's name, seats and creator, the names of its players and who is online. It never learns a world's password or token: it keeps the token locked with the password, and checks a game that enters against a hash. A world may keep a **starting save**, which the games encrypt with a key from the token before it arrives, so the relay only keeps its bytes.
 
 ## Layout
 
@@ -36,17 +36,19 @@ Plain HTTP with JSON bodies. A world's id is 32 lowercase hexadecimal characters
 
 | Request | What it does |
 |---|---|
-| `GET /v1/worlds` | Lists every world: `id`, `name`, `seats`, `creator` (`id`, `name`), `online`, `created`, `active`, and `members` (`id`, `name`, `online`). |
-| `POST /v1/worlds` | Makes a world: `id`, `name`, `seats` (2 to 32), `player` (the creator's key), `playerName`, `authHash` (SHA-256 of the auth key, hexadecimal) and `lock` (`salt`, `iterations`, `box`: the token encrypted with a key from the password). 201, or 409 when the id is taken, 429 past 20 worlds per creator. |
+| `GET /v1/worlds` | Lists every world: `id`, `name`, `seats`, `creator` (`id`, `name`), `start` (`none`, `pending` or `ready`), `online`, `created`, `active`, and `members` (`id`, `name`, `online`). |
+| `POST /v1/worlds` | Makes a world: `id`, `name`, `seats` (2 to 32), `player` (the creator's key), `playerName`, `authHash` (SHA-256 of the auth key, hexadecimal) and `lock` (`salt`, `iterations`, `box`: the token encrypted with a key from the password), and `start: true` when a starting save follows. 201, or 409 when the id is taken, 429 past 20 worlds per creator. |
 | `GET /v1/worlds/<id>/lock` | Hands out the world's `lock`, which only the password opens. |
 | `POST /v1/worlds/<id>/delete` | Deletes the world, if `player` is the creator's key, and closes its world room. |
 | `POST /v1/worlds/<id>/ban` | Removes the player whose id is `target` and keeps them out, if `player` is the creator's key. |
+| `POST /v1/worlds/<id>/start?player=<key>` | Keeps the world's starting save, the body as bytes (at most 8 MB), if `player` is the creator's key and the world was made with `start: true`. Only once: 409 afterwards. |
+| `GET /v1/worlds/<id>/start?player=<key>&auth=<auth key>` | Hands out the starting save as bytes, to a game the world room would let in. 404 when the world has none. |
 
 A player's key never appears in the list: everyone sees the player's id, the first 32 characters of the SHA-256 of `mgqmp player <key>`. Names are at most 32 characters, on one line.
 
 ### World rooms
 
-- **Connect:** `wss://<relay>/v1/world/<world id>?player=<key>&name=<name>&auth=<auth key>`. The relay lets the game in only if the world is in the directory, the SHA-256 of the auth key is the world's `authHash`, and the creator has not removed the player: otherwise HTTP 404, 401 or 403 before the WebSocket opens. The world's seats come from the directory; once every one is taken, the next game gets HTTP 409. After every change the room tells the directory who is in it.
+- **Connect:** `wss://<relay>/v1/world/<world id>?player=<key>&name=<name>&auth=<auth key>`. The relay lets the game in only if the world is in the directory, the SHA-256 of the auth key is the world's `authHash`, and the creator has not removed the player: otherwise HTTP 404, 401 or 403 before the WebSocket opens, and HTTP 409 while the creator is still uploading the starting save. The world's seats come from the directory; once every one is taken, the next game gets HTTP 409. After every change the room tells the directory who is in it.
 - **Seats:** a game takes the lowest free seat, from 0. It is told `seat <own> <others…>`, the seats already taken in ascending order, such as `seat 2 0 1`. The others are told `in <seat>`, and `out <seat>` once it leaves.
 - **Messages:** a game sends a binary message as its target seat, or 255 for everyone, followed by the payload. The relay passes it on with the sender's seat in place of the target, so the receiver knows who sent it. A message for a free seat is dropped.
 - **Limits:** each connection lasts at most 2 hours on its own; the game then connects again.

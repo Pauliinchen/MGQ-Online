@@ -2,6 +2,7 @@
 //  server.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-09-30: Tested the starting save over HTTP, as bytes both ways
 //      Paulinchen  2026-09-29: Made every world in the directory first, and tested the directory over HTTP
 //                            - Tested world rooms over real WebSockets
 //      Paulinchen  2026-09-29: Created
@@ -372,3 +373,32 @@ test("the directory hands out a world's lock and refuses what is no directory ro
   assert.equal((await fetch(directoryBase.replace("/v1/worlds", "/elsewhere"))).status, 426);
 });
 
+
+test("the creator uploads a starting save as bytes, which the world's players fetch as they were", async () => {
+  const room = roomId(110);
+  const save = new Uint8Array(300_000).map((_, index) => index % 251);
+  const response = await fetch(directoryBase, {
+    method: "POST",
+    body: JSON.stringify({
+      id: room,
+      name: "Started World",
+      seats: 2,
+      player: CREATOR,
+      playerName: "Creator",
+      authHash: await sha256Hex(AUTH),
+      lock: { salt: "12".repeat(16), iterations: 200_000, box: "ab".repeat(40) },
+      start: true,
+    }),
+  });
+  assert.equal(response.status, 201);
+  await assert.rejects(sit(room, 7));
+
+  const uploaded = await fetch(`${directoryBase}/${room}/start?player=${CREATOR}`, { method: "POST", body: save });
+  assert.equal(uploaded.status, 200);
+  assert.equal((await listed(room)).start, "ready");
+
+  const fetched = await fetch(`${directoryBase}/${room}/start?player=${playerKey(7)}&auth=${AUTH}`);
+  assert.equal(fetched.status, 200);
+  assert.deepEqual(new Uint8Array(await fetched.arrayBuffer()), save);
+  assert.equal((await fetch(`${directoryBase}/${room}/start?player=${playerKey(7)}&auth=${"cd".repeat(32)}`)).status, 401);
+});
