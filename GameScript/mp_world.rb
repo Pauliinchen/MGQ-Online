@@ -2,7 +2,8 @@
 #  mp_world.rb
 #
 #  Changelog:
-#      Paulinchen  2026-09-30: Let the creator pick one of their saves as the starting save of a new world, which new players fetch before entering it
+#      Paulinchen  2026-09-30: Greyed out the title command and showed a notice once a newer release is out
+#                            - Let the creator pick one of their saves as the starting save of a new world, which new players fetch before entering it
 #                            - Made and joined worlds through forms at the right of the world screen, typed in place, and made hidden worlds, joined by their id
 #      Paulinchen  2026-09-29: Listed the relay's worlds with their players, favourites first, entered with a password once and typed names on the keyboard
 #                            - Let the creator delete a world or remove a player, and connected to a world while it is open
@@ -62,9 +63,10 @@ module MGQ_MpWorld
 
   # Tells whether worlds can be used.
   #
-  # @return [Boolean] Whether worlds are on and the Multiplayer mod's DLL is installed.
+  # @return [Boolean] Whether worlds are on, the Multiplayer mod's DLL is installed, and no newer
+  #   release is out.
   def self.available?
-    ENABLED && MGQ_Multiplayer.available?
+    ENABLED && MGQ_Multiplayer.available? && !MGQ_Multiplayer.outdated?
   end
 
   # Writes a line to the Multiplayer mod's InGame.log.
@@ -202,18 +204,74 @@ module MGQ_MpWorld
     log("could not start a new game in a world: #{e.class}: #{e.message}")
   end
 
-  # Adds the world screen's command to the title screen, below Continue.
+  # Adds the world screen's command to the title screen, below Continue: greyed out, with
+  # UpdateNotice saying why, once a newer release is out.
   #
   # @param window [Window_TitleCommand] The title screen's commands.
   def self.add_title_command(window)
-    return unless available?
+    return unless MGQ_Multiplayer.available?
 
     list = window.instance_variable_get(:@list)
-    entry = { :name => COMMAND_NAME, :symbol => :mgq_mp_world, :enabled => true, :ext => nil }
+    entry = { :name => COMMAND_NAME, :symbol => :mgq_mp_world, :enabled => !MGQ_Multiplayer.outdated?, :ext => nil }
     continue_at = list.index { |command| command[:symbol] == :continue }
     continue_at ? list.insert(continue_at + 1, entry) : list.push(entry)
   rescue => e
     log("title command failed: #{e.class}: #{e.message}")
+  end
+
+  # Two lines on the title screen, below Discord's own update notice if it shows one too, once a
+  # newer release of the Multiplayer mod is out.
+  module UpdateNotice
+    # What the notice says, the newer version filled in.
+    LINES = [
+      "Multiplayer %s is out.",
+      "Close the game and run Multiplayer\\Update.bat to update.",
+    ]
+
+    # Height of a line, which the font size follows.
+    LINE_HEIGHT = 20
+
+    # Where the notice starts: below the translation's version and Discord's own notice, which
+    # takes up to two lines from TOP 24.
+    TOP = 64
+
+    # Gap to the left and right edges of the screen.
+    MARGIN = 4
+
+    # Layer of the title screen's foreground, which the notice belongs to.
+    Z = 100
+
+    # Shows the notice on the title screen once a newer release is out. Called every update.
+    def self.refresh
+      return if @sprite || !SceneManager.scene.is_a?(Scene_Title)
+      return unless MGQ_Multiplayer.available? && (version = MGQ_Multiplayer.newer_version)
+
+      show(version)
+    end
+
+    # Takes the notice off the screen. Called when the title screen ends.
+    def self.hide
+      return unless @sprite
+
+      @sprite.bitmap.dispose
+      @sprite.dispose
+      @sprite = nil
+    end
+
+    # Draws the notice.
+    #
+    # @param version [String] The newer release's version.
+    def self.show(version)
+      @sprite = Sprite.new
+      @sprite.bitmap = Bitmap.new(Graphics.width, LINE_HEIGHT * LINES.size)
+      @sprite.bitmap.font.size = LINE_HEIGHT
+      @sprite.y = TOP
+      @sprite.z = Z
+
+      LINES.each_with_index do |line, index|
+        @sprite.bitmap.draw_text(MARGIN, index * LINE_HEIGHT, Graphics.width - 2 * MARGIN, LINE_HEIGHT, format(line, version))
+      end
+    end
   end
 
   # Builds what the world screen lists: the directory's worlds, and the worlds on this PC the
@@ -2186,10 +2244,20 @@ if MGQ_MpWorld.hookable?
 
       alias mgq_mp_world_update update
 
-      # Updates the title screen, then starts a new game in a world the world screen opened.
+      # Updates the title screen, then starts a new game in a world the world screen opened and
+      # shows the update notice.
       def update
         mgq_mp_world_update
         MGQ_MpWorld.on_title_update(self) unless scene_changing?
+        MGQ_MpWorld::UpdateNotice.refresh rescue nil
+      end
+
+      alias mgq_mp_world_terminate terminate
+
+      # Takes the update notice off the screen, then ends the title screen.
+      def terminate
+        MGQ_MpWorld::UpdateNotice.hide rescue nil
+        mgq_mp_world_terminate
       end
     end
   rescue => e

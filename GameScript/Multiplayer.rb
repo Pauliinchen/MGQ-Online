@@ -2,7 +2,8 @@
 #  Multiplayer.rb
 #
 #  Changelog:
-#      Paulinchen  2026-09-30: Read held buttons past the capture too, which moves a text cursor
+#      Paulinchen  2026-09-30: Asked GitHub for a newer release and told MGQ_MpWorld and MGQ_PvpBattle to disable themselves once one is out
+#                            - Read held buttons past the capture too, which moves a text cursor
 #      Paulinchen  2026-09-29: Said in $mgq_text_input while the player types, so other mods' hotkeys stay quiet
 #                            - Added Capture, which takes the buttons away from the game while a screen of the mod reads them
 #                            - Told whether the game's window is hooked, which the keyboard needs
@@ -36,6 +37,9 @@ module MGQ_Multiplayer
   # Longest player name shown.
   MAX_NAME_LENGTH = 32
 
+  # What the game says wherever the player tries to use the mod once a newer release is out.
+  UPDATE_MESSAGE = "A Multiplayer update is out. Close the game and run Multiplayer\\Update.bat to update."
+
   # Reports whether the hooks can be installed.
   #
   # A second copy of this script would wrap the same methods under the same names, and each hook
@@ -61,8 +65,24 @@ module MGQ_Multiplayer
 
     Link.start
     Background.start
+    UpdateCheck.start
   rescue => e
     Log.write("start failed: #{e.class}: #{e.message}")
+  end
+
+  # Tells whether a newer release of the mod is out, which MGQ_MpWorld and MGQ_PvpBattle disable
+  # themselves for, so two games speaking a protocol a refactor changed never meet.
+  #
+  # @return [Boolean] Whether one was found.
+  def self.outdated?
+    !UpdateCheck.version.nil?
+  end
+
+  # The newer release's version, once the check found one.
+  #
+  # @return [String, nil] The version, nil until one was found.
+  def self.newer_version
+    UpdateCheck.version
   end
 
   # Builds the path of a file inside the mod folder, relative to the game's folder.
@@ -406,6 +426,44 @@ module MGQ_Multiplayer
     end
   end
 
+  # Asks GitHub for the latest release of the mod, once per game session, on a thread of the DLL's
+  # own, so two games speaking a protocol a refactor changed never meet.
+  module UpdateCheck
+    # Frames between two looks at the DLL, half a second at 60 frames per second.
+    CHECK_FRAMES = 30
+
+    # Starts the check on the DLL's own thread, once per game session. A development build never asks.
+    def self.start
+      return if @started
+      @started = true
+      return unless MGQ_Multiplayer.available?
+
+      Link.function('mp_check_for_update', 'v').call
+    end
+
+    # Polls the DLL for a newer release. Called every frame, acts every CHECK_FRAMES, and stops
+    # asking once one was found.
+    def self.tick
+      return if @version
+
+      @frames = (@frames || 0) + 1
+      return if @frames < CHECK_FRAMES
+
+      @frames = 0
+      text = Link.read('mp_newer_version', 64)
+      @version = text unless text.empty?
+    rescue => e
+      Log.write("update check failed: #{e.class}: #{e.message}")
+    end
+
+    # The latest release's version, once the check found it newer than the installed one.
+    #
+    # @return [String, nil] The version, nil while none was found.
+    def self.version
+      @version
+    end
+  end
+
   # Keeps the game running while another window is in front, which RGSS pauses it for otherwise, so
   # neither player holds the other up, and ignores the buttons meanwhile.
   module Background
@@ -671,13 +729,13 @@ if MGQ_Multiplayer.hookable?
     class << Graphics
       alias mgq_multiplayer_graphics_update update
 
-      # Draws the frame, then tells the Discord mod how the connection stands.
+      # Draws the frame, then tells the Discord mod how the connection stands and polls for an update.
       #
-      # Graphics.update runs every frame in every scene, so the Discord mod hears of the connection
-      # wherever the player is.
+      # Graphics.update runs every frame in every scene, so both happen wherever the player is.
       def update
         mgq_multiplayer_graphics_update
         MGQ_Multiplayer::Discord.tick
+        MGQ_Multiplayer::UpdateCheck.tick
       end
     end
   rescue => e

@@ -40,6 +40,9 @@ like this:
 
    Game.exe
    Multiplayer\Multiplayer.dll
+   Multiplayer\Manifest.txt
+   Multiplayer\Update.bat
+   Multiplayer\Update.ps1
    Patch\Multiplayer.rb
    Patch\mp_actions.rb
    Patch\mp_actors.rb
@@ -59,6 +62,21 @@ like this:
 While this mod is installed, the game keeps running when its window is in
 the background, so neither player holds the other up. A gamepad does
 nothing meanwhile.
+
+
+UPDATE
+------
+The title screen greys out Multiplayer, and PvP battles (F11) stop
+working, once a new release is out; both games need the same version, so
+an old one is kept from joining a newer one. Close the game and
+double-click Multiplayer\Update.bat: it shows what changed, downloads the
+latest release and installs it, removing any file an earlier version left
+behind that this one no longer ships. Your player name, favourites and
+worlds are kept.
+
+To update by hand, close the game and extract the new download over the
+old one; then delete any Patch\*.rb file the new release's README no
+longer lists.
 
 
 PVP BATTLES (TEST)

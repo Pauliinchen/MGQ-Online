@@ -2,7 +2,8 @@
 #  pvp_battle.rb
 #
 #  Changelog:
-#      Paulinchen  2026-09-30: Left the rules every multiplayer battle shares to mp_battles.rb
+#      Paulinchen  2026-09-30: Disabled PvP battles once a newer release of the mod is out, telling the player on F11
+#                            - Left the rules every multiplayer battle shares to mp_battles.rb
 #                            - Left the builds and the rebuilt characters' shared parts to mp_actors.rb
 #      Paulinchen  2026-09-29: Kept the PvP battle screen closed while a world is open
 #                            - Joined an invite accepted after a failed exchange instead of turning it down with the failure
@@ -58,9 +59,10 @@ module MGQ_PvpBattle
   #
   # A world keeps a connection of its own, and the two would both claim the Discord status.
   #
-  # @return [Boolean] Whether PvP battles are on, the Multiplayer mod's DLL is installed and no world is open.
+  # @return [Boolean] Whether PvP battles are on, the Multiplayer mod's DLL is installed, no newer
+  #   release is out, and no world is open.
   def self.available?
-    ENABLED && MGQ_Multiplayer.available? && !(defined?(MGQ_MpWorld) && MGQ_MpWorld.open?)
+    ENABLED && MGQ_Multiplayer.available? && !MGQ_Multiplayer.outdated? && !(defined?(MGQ_MpWorld) && MGQ_MpWorld.open?)
   end
 
   # Writes a line to the Multiplayer mod's InGame.log.
@@ -79,7 +81,17 @@ module MGQ_PvpBattle
   # Opens the PvP battle screen when the key is pressed, starts a requested mirror match, starts
   # the battle once the friend's team arrived, and joins the host of a Discord invite. Called by the
   # map while nothing else runs.
+  #
+  # Once a newer release is out, the key only tells the player to update instead.
   def self.on_map
+    if MGQ_Multiplayer.available? && MGQ_Multiplayer.outdated?
+      pressed = MGQ_Multiplayer::Key.pressed?(KEY_CODE)
+      return if $game_map.interpreter.running? || $game_player.moving?
+
+      $game_message.add(MGQ_Multiplayer::UPDATE_MESSAGE) if pressed
+      return
+    end
+
     return unless available?
 
     pressed = MGQ_Multiplayer::Key.pressed?(KEY_CODE)

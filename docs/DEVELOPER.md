@@ -50,13 +50,16 @@ docs/DEVELOPER.md                     this file
 
 | Path | What it is |
 |---|---|
-| `Exports.cs` | The functions the game scripts call: `mp_start`, `mp_keep_running`, `mp_set_player_name`, `mp_host`, `mp_join_invite`, `mp_join_clipboard`, `mp_receive_invite`, `mp_cancel`, `mp_copy_code`, `mp_state`, `mp_status`, `mp_send` and `mp_receive` for PvP battles; `mp_new_id`, `mp_set_player` and `mp_player_id` for the player; `mp_dir_refresh`, `mp_dir_list`, `mp_dir_create`, `mp_dir_unlock`, `mp_dir_delete`, `mp_dir_ban`, `mp_dir_fetch_start`, `mp_dir_action` and `mp_dir_clear` for the world directory, and `mp_copy_text` for its ids; `mp_world_id`, `mp_world_open`, `mp_world_close`, `mp_world_status`, `mp_world_send` and `mp_world_receive` for worlds (see [Worlds](#worlds-dll)); `mp_typing` and `mp_take_typed` for the keyboard. Nothing may throw out of them. |
+| `Exports.cs` | The functions the game scripts call: `mp_start`, `mp_keep_running`, `mp_set_player_name`, `mp_host`, `mp_join_invite`, `mp_join_clipboard`, `mp_receive_invite`, `mp_cancel`, `mp_copy_code`, `mp_state`, `mp_status`, `mp_send` and `mp_receive` for PvP battles; `mp_check_for_update` and `mp_newer_version`; `mp_new_id`, `mp_set_player` and `mp_player_id` for the player; `mp_dir_refresh`, `mp_dir_list`, `mp_dir_create`, `mp_dir_unlock`, `mp_dir_delete`, `mp_dir_ban`, `mp_dir_fetch_start`, `mp_dir_action` and `mp_dir_clear` for the world directory, and `mp_copy_text` for its ids; `mp_world_id`, `mp_world_open`, `mp_world_close`, `mp_world_status`, `mp_world_send` and `mp_world_receive` for worlds (see [Worlds](#worlds-dll)); `mp_typing` and `mp_take_typed` for the keyboard. Nothing may throw out of them. |
+| `UpdateCheck.cs` | Asks GitHub's API for the latest release once per session, on its own thread, and compares it with the DLL's version. Development builds (`0.0.0-dev`) never ask. Same shape as the Discord mod's, see its `docs/DEVELOPER.md`. |
 | `Network/` | The connections. PvP battles: `Session` (hosting, joining, the first exchange, the state the script reads), `Link` (the connection that stays open), `IFrameChannel` and `RelayFrameChannel` (what carries the frames, through the relay), `FrameCipher` (their encryption), `JoinCode`. Worlds: `WorldDirectory` and `DirectoryClient` (the list and its actions), `WorldLock` (the token locked with the password), `WorldKeys` (auth key and player id), `StartingSave` (a world's starting save, zipped and encrypted), `Player`, `WorldSession`, `RelayWorldChannel`, `WorldCipher`, `WorldCode`. Both: `Relays` (the relays by id, and the rooms a token leads to), `WebSocketMessages`, `Message`. |
 | `../Relay/` | The relay server itself, see [Relay/README.md](../Relay/README.md). |
 | `GameWindow.cs` | Keeps the game running while another application is active, see [Background](#background), and hands typed keys to `Keyboard`. |
 | `Keyboard.cs` | What the player types while a text screen wants it, see [Keyboard](#keyboard). |
 | `Clipboard.cs` | The join code on the clipboard. |
 | `Log.cs`, `ModFolder.cs`, `NativeMethods.cs` | `Multiplayer.log` in the `Multiplayer` folder, which the DLL finds by its own path. |
+
+**`package/Multiplayer/`:** the player `README.txt`, and the updater: `Update.bat` runs `Update.ps1` (Windows PowerShell 5.1), which downloads the latest release's zip and extracts it over the game folder. It reads the installed version from the DLL's `ProductVersion`, so it needs no version file, and prints the release's notes to the console (see [Releasing](#releasing)). Unlike the Discord mod's updater, it also **cleans up after refactors**: the `ShippedFile` item in `MGQParadox.Multiplayer.csproj` is built from the same `ModFile`/`PatchFile` globs the package itself is, so every publish writes a `Multiplayer/Manifest.txt` that always lists exactly what that release ships, no matter how many `.rb` files get renamed, merged or split later. `Update.ps1` reads the *old* `Manifest.txt` before extracting and the *new* one after, and deletes whatever dropped out (only ever paths under `Multiplayer\` or `Patch\`, which is all a manifest can hold, so `Player.ini`, `Favourites.ini`, `Multiplayer/Worlds/` and the logs are never at risk). An install with no `Manifest.txt` yet (from before the updater existed, or a hand-extracted zip) simply skips cleanup instead of deleting anything.
 
 ## Build and test
 
@@ -65,7 +68,7 @@ You need the .NET 10 SDK and the Visual Studio workload **Desktop development wi
 Publishing the DLL project assembles the complete release layout in `Shipping/` at the repository root. Copy its content into a game folder to install or update the mod there:
 
 ```
-Multiplayer/  Multiplayer.dll  README.txt
+Multiplayer/  Multiplayer.dll  Manifest.txt  README.txt  Update.bat  Update.ps1
 Patch/        Multiplayer.rb  mp_actions.rb  mp_actors.rb  mp_async.rb  mp_battles.rb  mp_coop.rb  mp_events.rb  mp_npcs.rb  mp_overworld.rb  mp_save_distribution.rb  mp_story.rb  mp_sync.rb  mp_world.rb  pvp_battle.rb
 ```
 
@@ -101,7 +104,7 @@ The tests run 32-bit like the game and need the x86 .NET 10 runtime (`C:\Program
 ## Releasing
 
 1. Push your changes.
-2. On GitHub, go to **Releases → Draft a new release**, create a tag like `v0.1.0`, write the notes, and click **Publish**.
+2. On GitHub, go to **Releases → Draft a new release**, create a tag like `v0.1.0`, write the notes, and click **Publish**. `Update.ps1` prints these notes to the console as they stand, so write them as something a player reads there, not as a commit log.
 3. The *Release* workflow runs the tests, builds the mod and attaches `MGQ-Paradox-Multiplayer-0.1.0.zip` to that release. If the run failed, fix the cause on `main`, then start **Actions → Release → Run workflow** with the release's tag.
 
 ## Runtime
@@ -109,6 +112,7 @@ The tests run 32-bit like the game and need the x86 .NET 10 runtime (`C:\Program
 - **Nothing blocks the game.** The DLL's threads run the network; every export returns at once.
 - **Nothing throws into the game.** Every export and the DLL's threads catch everything; an exception escaping them would end the game.
 - **The connection.** Hosting waits in a room of the relay, and joining enters it; the first frames swap what each game hands over (a PvP battle's team) and then stay open as the link, which carries the modes' own messages (`mp_send`, `mp_receive`). The link pings after 2 s without another frame, counts as `closed` after a goodbye and as `dropped` after 10 s of silence, which a running game never lets happen. `mp_state` describes it: `state`, `code`, `invite`, `error`, `opponent`, `link`, `role`, `party`, `ignored`, then the payload. `mp_status` describes it without the payload, for the checks the scripts make many times a second.
+- **Update check:** `MGQ_Multiplayer.start` calls `mp_check_for_update` once per session, and the `Graphics.update` hook polls `mp_newer_version` every 30 frames until it answers (`MGQ_Multiplayer::UpdateCheck`). Once a version comes back, `MGQ_Multiplayer.outdated?` is true, which `MGQ_MpWorld.available?` and `MGQ_PvpBattle.available?` both require to be false: the title screen's Multiplayer command greys out (`MGQ_MpWorld.add_title_command`) and `Scene_Title` shows `MGQ_MpWorld::UpdateNotice` (two lines below the translation's version and Discord's own notice, which takes up to two lines from y=24), and F11 on the map answers with `MGQ_Multiplayer::UPDATE_MESSAGE` instead of opening the PvP lobby (`MGQ_PvpBattle.on_map`). Different mod versions never speak the same protocol on purpose, so this keeps an outdated game from confusing a friend's newer one rather than failing mid-exchange.
 
 ### Worlds (DLL)
 

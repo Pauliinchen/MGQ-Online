@@ -28,6 +28,14 @@
     <ModFile Include="..\package\Multiplayer\*" />
     <PatchFile Include="..\GameScript\*.rb" />
 
+    <!-- What Update.ps1 compares an older install's Manifest.txt against, to remove files a
+         refactor dropped. Built from the same globs the package itself is, so a rename never
+         needs updating by hand. -->
+    <ShippedFile Include="Multiplayer\$(AssemblyName).dll" />
+    <ShippedFile Include="Multiplayer\Manifest.txt" />
+    <ShippedFile Include="@(ModFile->'Multiplayer\%(Filename)%(Extension)')" />
+    <ShippedFile Include="@(PatchFile->'Patch\%(Filename)%(Extension)')" />
+
     <None Include="@(ModFile)" Link="Shipped\Multiplayer\%(Filename)%(Extension)" />
     <None Include="@(PatchFile)" Link="Shipped\Patch\%(Filename)%(Extension)" />
   </ItemGroup>
@@ -36,6 +44,7 @@
     <RemoveDir Directories="$(PackageDir)" />
     <Copy SourceFiles="$(PublishDir)$(AssemblyName).dll;@(ModFile)" DestinationFolder="$(PackageDir)Multiplayer" />
     <Copy SourceFiles="@(PatchFile)" DestinationFolder="$(PackageDir)Patch" />
+    <WriteLinesToFile File="$(PackageDir)Multiplayer\Manifest.txt" Lines="@(ShippedFile)" Overwrite="true" />
     <Message Importance="high" Text="$(MSBuildProjectName) -> $(PackageDir)" />
   </Target>
 

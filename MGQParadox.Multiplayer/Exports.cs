@@ -2,7 +2,8 @@
 //  Exports.cs
 //
 //  Changelog:
-//      Paulinchen  2026-09-30: Took a starting save in mp_dir_create, and added mp_dir_fetch_start, which fetches it for new players
+//      Paulinchen  2026-09-30: Added mp_check_for_update and mp_newer_version
+//                            - Took a starting save in mp_dir_create, and added mp_dir_fetch_start, which fetches it for new players
 //                            - Took whether a world is hidden in mp_dir_create, dropped the seats from mp_dir_unlock, and added mp_copy_text
 //      Paulinchen  2026-09-29: Added mp_set_player, mp_player_id, the mp_dir_* functions of the world directory and the keyboard's mp_typing and mp_take_typed, dropping the world code functions the directory replaces
 //                            - Added mp_new_id, which hands out a random id for the player
@@ -83,6 +84,46 @@ internal static unsafe class Exports
         catch (Exception ex)
         {
             Log.Write($"mp_keep_running failed: {ex}");
+            return 0;
+        }
+    }
+
+    /// <summary>
+    /// Starts asking GitHub for a newer release. Calling it again does nothing.
+    /// </summary>
+    /// <returns>1 when started, 0 when it failed.</returns>
+    [UnmanagedCallersOnly(EntryPoint = "mp_check_for_update", CallConvs = [typeof(CallConvStdcall)])]
+    public static int CheckForUpdate()
+    {
+        try
+        {
+            UpdateCheck.Start();
+            return 1;
+        }
+        catch (Exception ex)
+        {
+            Log.Write($"mp_check_for_update failed: {ex}");
+            return 0;
+        }
+    }
+
+    /// <summary>
+    /// Hands out the version of a newer release, once the check found one.
+    /// </summary>
+    /// <param name="buffer">Receives the version, UTF-8 and null-terminated.</param>
+    /// <param name="size">The size of the buffer in bytes.</param>
+    /// <returns>The version's length, 0 while there is none or it does not fit.</returns>
+    [UnmanagedCallersOnly(EntryPoint = "mp_newer_version", CallConvs = [typeof(CallConvStdcall)])]
+    public static int NewerVersion(byte* buffer, int size)
+    {
+        try
+        {
+            var version = UpdateCheck.NewerVersion;
+            return version == null ? 0 : Math.Max(Copy(version, buffer, size), 0);
+        }
+        catch (Exception ex)
+        {
+            Log.Write($"mp_newer_version failed: {ex}");
             return 0;
         }
     }
