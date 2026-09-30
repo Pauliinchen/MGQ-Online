@@ -1,19 +1,34 @@
 <Solution>
   <Folder Name="/GameScript/">
     <File Path="GameScript/Multiplayer.rb" />
-    <File Path="GameScript/mp_actions.rb" />
-    <File Path="GameScript/mp_actors.rb" />
-    <File Path="GameScript/mp_async.rb" />
-    <File Path="GameScript/mp_battles.rb" />
-    <File Path="GameScript/mp_coop.rb" />
-    <File Path="GameScript/mp_events.rb" />
-    <File Path="GameScript/mp_npcs.rb" />
-    <File Path="GameScript/mp_overworld.rb" />
-    <File Path="GameScript/mp_save_distribution.rb" />
-    <File Path="GameScript/mp_story.rb" />
-    <File Path="GameScript/mp_sync.rb" />
-    <File Path="GameScript/mp_world.rb" />
-    <File Path="GameScript/pvp_battle.rb" />
+  </Folder>
+  <Folder Name="/GameScript/Scripts/">
+    <File Path="GameScript/Multiplayer/Scripts/mp_actions.rbx" />
+    <File Path="GameScript/Multiplayer/Scripts/mp_actors.rbx" />
+    <File Path="GameScript/Multiplayer/Scripts/mp_async.rbx" />
+    <File Path="GameScript/Multiplayer/Scripts/mp_battles.rbx" />
+    <File Path="GameScript/Multiplayer/Scripts/mp_battles_coop.rbx" />
+    <File Path="GameScript/Multiplayer/Scripts/mp_battles_pvp.rbx" />
+    <File Path="GameScript/Multiplayer/Scripts/mp_battles_sync.rbx" />
+    <File Path="GameScript/Multiplayer/Scripts/mp_chat.rbx" />
+    <File Path="GameScript/Multiplayer/Scripts/mp_coop.rbx" />
+    <File Path="GameScript/Multiplayer/Scripts/mp_coop_events.rbx" />
+    <File Path="GameScript/Multiplayer/Scripts/mp_coop_npcs.rbx" />
+    <File Path="GameScript/Multiplayer/Scripts/mp_coop_story.rbx" />
+    <File Path="GameScript/Multiplayer/Scripts/mp_overworld.rbx" />
+    <File Path="GameScript/Multiplayer/Scripts/mp_overworld_sync.rbx" />
+    <File Path="GameScript/Multiplayer/Scripts/mp_save_distribution.rbx" />
+    <File Path="GameScript/Multiplayer/Scripts/mp_world.rbx" />
+  </Folder>
+  <Folder Name="/GameScript/Tests/">
+    <File Path="GameScript/Tests/async_test.rb" />
+    <File Path="GameScript/Tests/battles_coop_test.rb" />
+    <File Path="GameScript/Tests/battles_test.rb" />
+    <File Path="GameScript/Tests/coop_events_test.rb" />
+    <File Path="GameScript/Tests/loader_test.rb" />
+    <File Path="GameScript/Tests/overworld_test.rb" />
+    <File Path="GameScript/Tests/run.rb" />
+    <File Path="GameScript/Tests/support.rb" />
   </Folder>
   <Project Path="MGQParadox.Multiplayer/MGQParadox.Multiplayer.csproj" />
   <Project Path="MGQParadox.Multiplayer.Tests/MGQParadox.Multiplayer.Tests.csproj" />
