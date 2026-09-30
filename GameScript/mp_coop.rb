@@ -2,7 +2,8 @@
 #  mp_coop.rb
 #
 #  Changelog:
-#      Paulinchen  2026-09-30: Invited party members whose window is in the background, and logged why nobody was invited
+#      Paulinchen  2026-09-30: Showed the co-op party in the game's window per character too
+#                            - Invited party members whose window is in the background, and logged why nobody was invited
 #                            - Created
 #
 #----------------------------------------------------------------
@@ -317,7 +318,18 @@ module MGQ_MpCoop
       end
     end
     @members = members
+    show_party(scene)
+  end
+
+  # Shows the co-op party in the battle's windows, which the scene made for the player's own party:
+  # the status window, and the game's window per character, which takes its character only when made.
+  #
+  # @param scene [Scene_Battle] The battle.
+  def self.show_party(scene)
+    Array(scene.instance_variable_get(:@battle_actor_status_windows)).each_with_index { |window, index| window.actor = @members[index] }
     scene.send(:refresh_status) if scene.respond_to?(:refresh_status, true)
+  rescue => e
+    log("showing the party failed: #{e.class}: #{e.message}")
   end
 
   # Ends a co-op battle: the player's own party again, the game's own settings back, and the live
