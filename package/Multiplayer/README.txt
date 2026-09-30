@@ -46,12 +46,12 @@ like this:
    Patch\Multiplayer\README.txt
    Patch\Multiplayer\Update.bat
    Patch\Multiplayer\Update.ps1
-   Patch\Multiplayer\mp_*.rbx      (the mod's other scripts)
+   Patch\Multiplayer\Scripts\mp_*.rbx   (the mod's other scripts)
    ...
 
-Patch\Multiplayer.rb loads the scripts in Patch\Multiplayer itself. Your
-player name, favourites, worlds and the logs go into Patch\Multiplayer
-too.
+Patch\Multiplayer.rb loads the scripts in Patch\Multiplayer\Scripts
+itself. Your player name, favourites, worlds and the logs go into
+Patch\Multiplayer.
 
 While this mod is installed, the game keeps running when its window is in
 the background, so neither player holds the other up. A gamepad does
@@ -69,8 +69,8 @@ earlier version left behind that this one no longer ships. Your player
 name, favourites and worlds are kept.
 
 To update by hand, close the game and extract the new download over the
-old one; then delete any Patch\Multiplayer\mp_*.rbx file the new
-release's Manifest.txt no longer lists.
+old one; then delete any Patch\Multiplayer\Scripts\mp_*.rbx file the
+new release's Manifest.txt no longer lists.
 
 
 PVP BATTLES (TEST)

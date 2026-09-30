@@ -2,7 +2,8 @@
 #  Multiplayer.rb
 #
 #  Changelog:
-#      Paulinchen  2026-09-30: Loaded mp_chat.rbx after the action wheel
+#      Paulinchen  2026-09-30: Loaded the other scripts from Patch/Multiplayer/Scripts
+#                            - Loaded mp_chat.rbx after the action wheel
 #                            - Loaded mp_coop.rbx before the party scripts that register with it
 #                            - Loaded mp_overworld_sync.rbx before the scripts that register with it
 #                            - Moved the mod folder into Patch/Multiplayer and loaded the other scripts from there in a fixed order
@@ -36,7 +37,10 @@ module MGQ_Multiplayer
   # mod writes.
   MOD_DIR = "Patch\\Multiplayer"
 
-  # The mod's other scripts in the mod folder, in the order they load.
+  # Folder of the other scripts inside the mod folder.
+  SCRIPTS_DIR = "Scripts"
+
+  # The mod's other scripts in SCRIPTS_DIR, in the order they load.
   #
   # A script may use only what loaded before it while it loads, such as mp_actors.rbx's
   # Game_MpActor, or mp_overworld_sync.rbx and mp_coop.rbx, which the scripts after them register
@@ -126,7 +130,7 @@ module MGQ_Multiplayer
   # and the others load all the same.
   def self.load_scripts
     SCRIPTS.each do |name|
-      file = path(name + SCRIPT_EXTENSION)
+      file = path("#{SCRIPTS_DIR}\\#{name}#{SCRIPT_EXTENSION}")
       begin
         eval(File.read(file, encoding: "BOM|UTF-8"), TOPLEVEL_BINDING, file)
       # A script that does not parse raises a SyntaxError, which is no StandardError.

@@ -8,7 +8,7 @@ Monster Girl Quest! Online keeps its first name inside: the `Multiplayer` instal
 MGQ-Online.slnx                       Visual Studio solution
 Directory.Build.targets               puts vswhere.exe on the PATH, which the NativeAOT link needs
 GameScript/Multiplayer.rb             Ruby, what every way of playing together shares; loads the others
-GameScript/Multiplayer/               Ruby, the other scripts, in the order Multiplayer.rb loads them:
+GameScript/Multiplayer/Scripts/       Ruby, the other scripts, in the order Multiplayer.rb loads them:
   mp_actors.rbx                       characters of another game: builds as numbers, and rebuilt characters
   mp_async.rbx                        the world running on behind menus, battles and story scenes
   mp_overworld_sync.rbx               the world's messages: states, peers, and the registry other scripts join
@@ -33,7 +33,7 @@ docs/DEVELOPER.md                     this file
 .github/workflows/release.yml         tests, builds and attaches the zip on release
 ```
 
-**Scripts.** `Multiplayer.rb` is a Patch folder mod: the mod loader loads `Patch/**/*.rb` sorted, capitals first, so it comes after `Discord_RPC.rb` of the Discord mod. At its end it loads the other scripts from `Patch/Multiplayer/` itself (`load_scripts`), in the order of its `SCRIPTS`, which the table below follows. They are `.rbx` files because the loader recurses into folders: as `.rb` files it would load them a second time, in alphabetical order. A script may only use what loaded before it at load time; later ones are reached at run time (`defined?`). The order also decides how the battle scripts' hooks wrap each other, since they install them as the game starts running, the last loaded first. A script that is missing or fails to load is logged to `InGame.log`, and the others load all the same.
+**Scripts.** `Multiplayer.rb` is a Patch folder mod: the mod loader loads `Patch/**/*.rb` sorted, capitals first, so it comes after `Discord_RPC.rb` of the Discord mod. At its end it loads the other scripts from `Patch/Multiplayer/Scripts/` itself (`load_scripts`), in the order of its `SCRIPTS`, which the table below follows. They are `.rbx` files because the loader recurses into folders: as `.rb` files it would load them a second time, in alphabetical order. A script may only use what loaded before it at load time; later ones are reached at run time (`defined?`). The order also decides how the battle scripts' hooks wrap each other, since they install them as the game starts running, the last loaded first. A script that is missing or fails to load is logged to `InGame.log`, and the others load all the same.
 
 | File | Module | What it is |
 |---|---|---|
@@ -81,8 +81,9 @@ You need the .NET 10 SDK and the Visual Studio workload **Desktop development wi
 Publishing the DLL project assembles the complete release layout in `Shipping/` at the repository root. Copy its content into a game folder to install or update the mod there:
 
 ```
-Patch/              Multiplayer.rb
-Patch/Multiplayer/  Multiplayer.dll  Manifest.txt  README.txt  Update.bat  Update.ps1  mp_*.rbx
+Patch/                      Multiplayer.rb
+Patch/Multiplayer/          Multiplayer.dll  Manifest.txt  README.txt  Update.bat  Update.ps1
+Patch/Multiplayer/Scripts/  mp_*.rbx
 ```
 
 - **Publish, not build:** only a publish runs NativeAOT, so a plain build gives no usable DLL.

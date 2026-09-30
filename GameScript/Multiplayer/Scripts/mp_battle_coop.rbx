@@ -4,7 +4,7 @@
 #  Changelog:
 #      Paulinchen  2026-09-30: Sent and took the party's messages through mp_coop.rbx, which drops those of another party
 #                            - Registered with mp_overworld_sync.rbx for its messages instead of being asked by mp_overworld.rbx
-#                            - Moved into Patch/Multiplayer as mp_battle_coop.rbx, which Multiplayer.rb loads
+#                            - Moved into Patch/Multiplayer/Scripts as mp_battle_coop.rbx, which Multiplayer.rb loads
 #                            - Renamed from mp_coop.rbx, with the module MGQ_MpBattleCoop
 #                            - Let a player who got away leave the battle, the others fighting on, alone with their own full team
 #                            - Showed the co-op party in the game's window per character too

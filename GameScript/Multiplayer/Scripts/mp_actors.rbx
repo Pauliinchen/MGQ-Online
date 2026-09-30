@@ -2,7 +2,7 @@
 #  mp_actors.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-09-30: Moved into Patch/Multiplayer as mp_actors.rbx, which Multiplayer.rb loads
+#      Paulinchen  2026-09-30: Moved into Patch/Multiplayer/Scripts as mp_actors.rbx, which Multiplayer.rb loads
 #                            - Cleared a rebuilt character's actions, so a pre-battle spell finds its chain input set
 #                            - Created
 #

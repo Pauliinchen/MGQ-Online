@@ -26,9 +26,11 @@
 
   <ItemGroup>
     <!-- Multiplayer.rb goes into the Patch folder, where the mod loader finds it; everything else
-         goes into Patch\Multiplayer, whose scripts Multiplayer.rb loads itself. -->
+         goes into Patch\Multiplayer, the other scripts into its Scripts folder, which
+         Multiplayer.rb loads itself. -->
     <PatchFile Include="..\GameScript\Multiplayer.rb" />
-    <ModFile Include="..\package\Multiplayer\*;..\GameScript\Multiplayer\*.rbx" />
+    <ModFile Include="..\package\Multiplayer\*" />
+    <ScriptFile Include="..\GameScript\Multiplayer\Scripts\*.rbx" />
 
     <!-- What Update.ps1 compares an older install's Manifest.txt against, to remove files a
          refactor dropped. Built from the same globs the package itself is, so a rename never
@@ -36,15 +38,18 @@
     <ShippedFile Include="Patch\Multiplayer\$(AssemblyName).dll" />
     <ShippedFile Include="Patch\Multiplayer\Manifest.txt" />
     <ShippedFile Include="@(ModFile->'Patch\Multiplayer\%(Filename)%(Extension)')" />
+    <ShippedFile Include="@(ScriptFile->'Patch\Multiplayer\Scripts\%(Filename)%(Extension)')" />
     <ShippedFile Include="@(PatchFile->'Patch\%(Filename)%(Extension)')" />
 
     <None Include="@(ModFile)" Link="Shipped\Patch\Multiplayer\%(Filename)%(Extension)" />
+    <None Include="@(ScriptFile)" Link="Shipped\Patch\Multiplayer\Scripts\%(Filename)%(Extension)" />
     <None Include="@(PatchFile)" Link="Shipped\Patch\%(Filename)%(Extension)" />
   </ItemGroup>
 
   <Target Name="AssemblePackage" AfterTargets="Publish">
     <RemoveDir Directories="$(PackageDir)" />
     <Copy SourceFiles="$(PublishDir)$(AssemblyName).dll;@(ModFile)" DestinationFolder="$(PackageDir)Patch\Multiplayer" />
+    <Copy SourceFiles="@(ScriptFile)" DestinationFolder="$(PackageDir)Patch\Multiplayer\Scripts" />
     <Copy SourceFiles="@(PatchFile)" DestinationFolder="$(PackageDir)Patch" />
     <WriteLinesToFile File="$(PackageDir)Patch\Multiplayer\Manifest.txt" Lines="@(ShippedFile)" Overwrite="true" />
     <Message Importance="high" Text="$(MSBuildProjectName) -> $(PackageDir)" />

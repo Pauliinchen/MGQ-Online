@@ -3,7 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-09-30: Registered with mp_overworld_sync.rbx for its messages instead of being asked by mp_overworld.rbx
-#                            - Moved into Patch/Multiplayer as mp_battle_sync.rbx, which Multiplayer.rb loads
+#                            - Moved into Patch/Multiplayer/Scripts as mp_battle_sync.rbx, which Multiplayer.rb loads
 #                            - Renamed from mp_sync.rbx, with the module MGQ_MpBattleSync
 #                            - Let a co-op player who got away leave the battle, which the others fight on
 #                            - Held the battle's menus while waiting, so a hidden party command no longer takes presses after auto battle

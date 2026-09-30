@@ -3,7 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-09-30: Left the world's messages to mp_overworld_sync.rbx, keeping what the player sees of the others
-#                            - Moved into Patch/Multiplayer as mp_overworld.rbx, which Multiplayer.rb loads
+#                            - Moved into Patch/Multiplayer/Scripts as mp_overworld.rbx, which Multiplayer.rb loads
 #                            - Called the battle and party scripts by their new names
 #                            - Kept a script's message's body, which co-op battles carry their data in
 #                            - Told scripts' messages apart before states, since some name a map too

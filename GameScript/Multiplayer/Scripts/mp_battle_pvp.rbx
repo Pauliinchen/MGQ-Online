@@ -2,7 +2,7 @@
 #  mp_battle_pvp.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-09-30: Moved into Patch/Multiplayer as mp_battle_pvp.rbx, which Multiplayer.rb loads, and named the log there
+#      Paulinchen  2026-09-30: Moved into Patch/Multiplayer/Scripts as mp_battle_pvp.rbx, which Multiplayer.rb loads, and named the log there
 #                            - Renamed from pvp_battle.rb, with the module MGQ_MpBattlePvp
 #                            - Disabled PvP battles once a newer release of the mod is out, telling the player on F11
 #                            - Left the rules every multiplayer battle shares to mp_battle.rbx

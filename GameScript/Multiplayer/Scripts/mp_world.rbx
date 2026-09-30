@@ -2,7 +2,7 @@
 #  mp_world.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-09-30: Moved into Patch/Multiplayer as mp_world.rbx, which Multiplayer.rb loads, with the worlds in Patch/Multiplayer/Worlds
+#      Paulinchen  2026-09-30: Moved into Patch/Multiplayer/Scripts as mp_world.rbx, which Multiplayer.rb loads, with the worlds in Patch/Multiplayer/Worlds
 #                            - Named the mod Monster Girl Quest! Online in the update notice
 #                            - Greyed out the title command and showed a notice once a newer release is out
 #                            - Let the creator pick one of their saves as the starting save of a new world, which new players fetch before entering it

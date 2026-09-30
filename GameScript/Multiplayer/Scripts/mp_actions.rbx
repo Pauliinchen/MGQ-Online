@@ -5,7 +5,7 @@
 #      Paulinchen  2026-09-30: Left the chat to mp_chat.rbx, keeping the wheel's chat choice
 #                            - Left the party to mp_coop.rbx, keeping the wheel's party choices
 #                            - Registered with mp_overworld_sync.rbx for its messages instead of being asked by mp_overworld.rbx
-#                            - Moved into Patch/Multiplayer as mp_actions.rbx, which Multiplayer.rb loads
+#                            - Moved into Patch/Multiplayer/Scripts as mp_actions.rbx, which Multiplayer.rb loads
 #                            - Found the party's leader, the member who made the party
 #                            - Gave the chat box a blinking cursor, moved with the arrows, Home and End, with Delete
 #      Paulinchen  2026-09-29: Told mp_overworld.rbx while the player types in the chat
