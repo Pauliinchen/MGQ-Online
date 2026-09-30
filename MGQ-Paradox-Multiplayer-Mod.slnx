@@ -5,6 +5,7 @@
     <File Path="GameScript/mp_actors.rb" />
     <File Path="GameScript/mp_async.rb" />
     <File Path="GameScript/mp_battles.rb" />
+    <File Path="GameScript/mp_coop.rb" />
     <File Path="GameScript/mp_events.rb" />
     <File Path="GameScript/mp_npcs.rb" />
     <File Path="GameScript/mp_overworld.rb" />

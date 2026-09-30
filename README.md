@@ -1,6 +1,6 @@
 # MGQ Paradox Multiplayer
 
-Play Monster Girl Quest! Paradox RPG together with friends over the internet, with nothing to set up in your router. So far: **PvP battles**, in which your Frontline fights your friend's Frontline live, each of you commanding your own team; and **worlds**, which up to 32 players enter and see each other walk the same maps. Playing the story together and co-op battles are planned.
+Play Monster Girl Quest! Paradox RPG together with friends over the internet, with nothing to set up in your router. So far: **PvP battles**, in which your Frontline fights your friend's Frontline live, each of you commanding your own team; and **worlds**, which up to 32 players enter and see each other walk the same maps. In a world's party you play the story together and fight co-op battles.
 
 ## Requirements
 
@@ -24,6 +24,7 @@ Patch\mp_actions.rb
 Patch\mp_actors.rb
 Patch\mp_async.rb
 Patch\mp_battles.rb
+Patch\mp_coop.rb
 Patch\mp_events.rb
 Patch\mp_npcs.rb
 Patch\mp_overworld.rb
@@ -33,7 +34,7 @@ Patch\mp_world.rb
 Patch\pvp_battle.rb
 ```
 
-To uninstall, delete the `Multiplayer` folder and the twelve scripts in `Patch`. The `Multiplayer` folder also holds your worlds, so keep `Multiplayer\Worlds` if you want to play them again later.
+To uninstall, delete the `Multiplayer` folder and the thirteen scripts in `Patch`. The `Multiplayer` folder also holds your worlds, so keep `Multiplayer\Worlds` if you want to play them again later.
 
 ## Worlds
 
@@ -55,7 +56,7 @@ Each world keeps its own saves, Library, medals and affection in `Multiplayer\Wo
 
 **Chat:** press **T**, or pick *Chat* in the wheel, and type on the keyboard; **Enter** sends, **Esc** closes. The arrow keys, **Home** and **End** move the cursor, and **Delete** removes the character after it. Your line goes to everyone in the world: it shows in a speech bubble above your head for the players on your map, and in the chat log at the bottom left of the map for everyone.
 
-**Parties:** players outside your party are slightly see-through. Stand next to another player, open the wheel and pick *Invite to a party*; "Invites to a party (B)" then shows above your head on their screen for 15 seconds, and when they open the wheel next to you and pick *Accept*, you form a party. Party members are fully visible and their names are green. *Leave the party* at the bottom of the wheel leaves it. On a map you share with party members, you all see the same NPCs in the same places: whoever of you entered the map first is its Map Owner, and the NPCs move as they do in their game. While in a party, everyone plays the story of the player who made the party: its events, doors and conversations are as far along as in their game. Your own party, your companions and their affection stay yours, and your saves keep your own story. When you leave the party, you are back in your own story. If your story was exactly as far along as theirs when you joined, you keep what you played together, companions who joined in the story included. Chests are everyone's own: when a party member opens one, everyone in the party who has not looted it yet gets the same items. The party travels together: when the player who made the party goes to another map, everyone follows, and when a story scene starts there, everyone on that map is brought to them. The story itself plays in their game: when you start a story event, it is handed to them, and everyone on the map sees its dialogue in their own message window, at their own pace. Conversations, shops and the job change menu stay your own. Battles fought together as a party are planned.
+**Parties:** players outside your party are slightly see-through. Stand next to another player, open the wheel and pick *Invite to a party*; "Invites to a party (B)" then shows above your head on their screen for 15 seconds, and when they open the wheel next to you and pick *Accept*, you form a party. Party members are fully visible and their names are green. *Leave the party* at the bottom of the wheel leaves it. On a map you share with party members, you all see the same NPCs in the same places: whoever of you entered the map first is its Map Owner, and the NPCs move as they do in their game. While in a party, everyone plays the story of the player who made the party: its events, doors and conversations are as far along as in their game. Your own party, your companions and their affection stay yours, and your saves keep your own story. When you leave the party, you are back in your own story. If your story was exactly as far along as theirs when you joined, you keep what you played together, companions who joined in the story included. Chests are everyone's own: when a party member opens one, everyone in the party who has not looted it yet gets the same items. The party travels together: when the player who made the party goes to another map, everyone follows, and when a story scene starts there, everyone on that map is brought to them. The story itself plays in their game: when you start a story event, it is handed to them, and everyone on the map sees its dialogue in their own message window, at their own pace. Conversations, shops and the job change menu stay your own. **Co-op battles:** when a battle starts for a party member, whether a random encounter, a wandering monster or a boss of the story, the party members on the same map who are playing on it join it. With two players each brings the first two of their Frontline, with three or four each brings their first. Everyone commands their own characters; the game where the battle started works it out. When you escape as a guest, you leave the battle and the computer plays your characters on. Each of you gets the full EXP, gold and your own item drops, or your own defeat. Ero offers, Give Up and swapping in the backline are off in every multiplayer battle.
 
 ## PvP battles
 

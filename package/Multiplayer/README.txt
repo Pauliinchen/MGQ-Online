@@ -45,6 +45,7 @@ like this:
    Patch\mp_actors.rb
    Patch\mp_async.rb
    Patch\mp_battles.rb
+   Patch\mp_coop.rb
    Patch\mp_events.rb
    Patch\mp_npcs.rb
    Patch\mp_overworld.rb
@@ -180,7 +181,7 @@ anything.
 UNINSTALL
 ---------
 Close the game and delete Patch\Multiplayer.rb, Patch\mp_actions.rb,
-Patch\mp_actors.rb, Patch\mp_async.rb, Patch\mp_battles.rb, Patch\mp_events.rb, Patch\mp_npcs.rb,
+Patch\mp_actors.rb, Patch\mp_async.rb, Patch\mp_battles.rb, Patch\mp_coop.rb, Patch\mp_events.rb, Patch\mp_npcs.rb,
 Patch\mp_overworld.rb, Patch\mp_story.rb, Patch\mp_sync.rb,
 Patch\mp_world.rb, Patch\pvp_battle.rb and the Multiplayer folder. The Multiplayer folder also holds your worlds, so
 keep Multiplayer\Worlds if you want to play them again later.
