@@ -1,5 +1,5 @@
 # Publishing a release on GitHub (tag e.g. v1.0.0) builds the mod and attaches
-# MGQ-Paradox-Multiplayer-<version>.zip to that release. Nothing to upload by hand.
+# MGQ-Online-<version>.zip to that release. Nothing to upload by hand.
 #
 # Run it by hand from the Actions tab with a release's tag to build and attach the zip again, for
 # example after a failed run. It builds the code at that tag with this workflow from main, so the

@@ -70,7 +70,7 @@ export const WORLD_SEATS = Object.freeze({ min: 2, max: 32 });
  * The limits every room keeps.
  */
 export const LIMITS = Object.freeze({
-  // A frame of the Multiplayer mod is at most 256 KB, plus encryption.
+  // A frame of the mod is at most 256 KB, plus encryption.
   maxMessageBytes: 512 * 1024,
   // Messages a peer may send per second over time, and at once after a quiet spell.
   messagesPerSecond: 60,

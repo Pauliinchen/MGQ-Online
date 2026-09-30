@@ -37,7 +37,7 @@ module MGQ_MpBattles
     !SceneManager.respond_to?(:mgq_mp_battles_run)
   end
 
-  # Writes a line to the Multiplayer mod's InGame.log.
+  # Writes a line to the mod's InGame.log.
   #
   # @param message [String] The line.
   def self.log(message)

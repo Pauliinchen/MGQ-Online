@@ -8,7 +8,7 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <AssemblyName>Multiplayer</AssemblyName>
     <RootNamespace>MGQParadox.Multiplayer</RootNamespace>
-    <Product>Monster Girl Quest! Paradox RPG Multiplayer</Product>
+    <Product>Monster Girl Quest! Online</Product>
     <Version>0.0.0-dev</Version>
 
     <!-- The game is a 32-bit process and only loads a native DLL of its own kind. -->
@@ -17,7 +17,7 @@
     <InvariantGlobalization>true</InvariantGlobalization>
 
     <PackageDir>$([MSBuild]::NormalizeDirectory($(MSBuildProjectDirectory), .., Shipping))</PackageDir>
-    <ZipFile>$(MSBuildProjectDirectory)\bin\$(Configuration)\MGQ-Paradox-Multiplayer-$(Version).zip</ZipFile>
+    <ZipFile>$(MSBuildProjectDirectory)\bin\$(Configuration)\MGQ-Online-$(Version).zip</ZipFile>
   </PropertyGroup>
 
   <ItemGroup>

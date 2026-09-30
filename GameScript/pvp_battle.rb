@@ -59,13 +59,13 @@ module MGQ_PvpBattle
   #
   # A world keeps a connection of its own, and the two would both claim the Discord status.
   #
-  # @return [Boolean] Whether PvP battles are on, the Multiplayer mod's DLL is installed, no newer
+  # @return [Boolean] Whether PvP battles are on, the mod's DLL is installed, no newer
   #   release is out, and no world is open.
   def self.available?
     ENABLED && MGQ_Multiplayer.available? && !MGQ_Multiplayer.outdated? && !(defined?(MGQ_MpWorld) && MGQ_MpWorld.open?)
   end
 
-  # Writes a line to the Multiplayer mod's InGame.log.
+  # Writes a line to the mod's InGame.log.
   #
   # @param message [String] The line.
   def self.log(message)

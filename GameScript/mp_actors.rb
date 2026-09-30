@@ -11,7 +11,7 @@
 # characters of this game. PvP battles rebuild a friend's team with them; co-op battles will rebuild
 # the party members' characters, so balancing them happens in one place.
 module MGQ_MpActors
-  # Writes a line to the Multiplayer mod's InGame.log.
+  # Writes a line to the mod's InGame.log.
   #
   # @param message [String] The line.
   def self.log(message)

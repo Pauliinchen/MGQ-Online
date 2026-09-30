@@ -30,7 +30,7 @@ module MGQ_MpSaveDistribution
   # What Marshal says when a save holds an object of a class the game lacks.
   MISSING_CLASS = /undefined class\/module (\S+)/
 
-  # Writes a line to the Multiplayer mod's InGame.log.
+  # Writes a line to the mod's InGame.log.
   #
   # @param message [String] The line.
   def self.log(message)

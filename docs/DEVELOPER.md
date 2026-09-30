@@ -1,9 +1,11 @@
 # Developer notes
 
+Monster Girl Quest! Online keeps its first name inside: the `Multiplayer` install folder, `Multiplayer.dll`, the `MGQParadox.Multiplayer` projects, `MGQ_Multiplayer` and the `mp_` prefix. The `mgqmp` strings in join and world codes, key derivation labels and player ids must never change, since every world and player id on the relay derives from them.
+
 ## Layout
 
 ```
-MGQ-Paradox-Multiplayer-Mod.slnx      Visual Studio solution
+MGQ-Online.slnx                       Visual Studio solution
 Directory.Build.targets               puts vswhere.exe on the PATH, which the NativeAOT link needs
 GameScript/Multiplayer.rb             Ruby, what every way of playing together shares
 GameScript/mp_actions.rb              Ruby, what players of a world do together on the map: action wheel, parties, chat
@@ -78,7 +80,7 @@ Patch/        Multiplayer.rb  mp_actions.rb  mp_actors.rb  mp_async.rb  mp_battl
   dotnet publish MGQParadox.Multiplayer -c Release -p:Version=0.1.0
   ```
 
-- **Release publishes** also zip it: `bin/Release/MGQ-Paradox-Multiplayer-<Version>.zip`.
+- **Release publishes** also zip it: `bin/Release/MGQ-Online-<Version>.zip`.
 - **Every publish replaces `Shipping/`.** Close the game before copying it over an install: `Multiplayer.dll` is locked while the game runs.
 - **Logs:** `Multiplayer.log` (the DLL) and `InGame.log` (in-game errors), both in the `Multiplayer` folder.
 - **Two games on one PC** can play each other: both go through the real relay as they would between two homes.
@@ -105,7 +107,7 @@ The tests run 32-bit like the game and need the x86 .NET 10 runtime (`C:\Program
 
 1. Push your changes.
 2. On GitHub, go to **Releases → Draft a new release**, create a tag like `v0.1.0`, write the notes, and click **Publish**. `Update.ps1` prints these notes to the console as they stand, so write them as something a player reads there, not as a commit log.
-3. The *Release* workflow runs the tests, builds the mod and attaches `MGQ-Paradox-Multiplayer-0.1.0.zip` to that release. If the run failed, fix the cause on `main`, then start **Actions → Release → Run workflow** with the release's tag.
+3. The *Release* workflow runs the tests, builds the mod and attaches `MGQ-Online-0.1.0.zip` to that release. Keep that zip name: `Update.ps1` of every install looks for `MGQ-Online-*.zip`. If the run failed, fix the cause on `main`, then start **Actions → Release → Run workflow** with the release's tag.
 
 ## Runtime
 

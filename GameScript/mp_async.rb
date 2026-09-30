@@ -37,7 +37,7 @@ module MGQ_MpAsync
     !Game_Interpreter.method_defined?(:mgq_mp_async_execute_command)
   end
 
-  # Writes a line to the Multiplayer mod's InGame.log.
+  # Writes a line to the mod's InGame.log.
   #
   # @param message [String] The line.
   def self.log(message)

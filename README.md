@@ -1,4 +1,6 @@
-# MGQ Paradox Multiplayer
+# Monster Girl Quest! Online
+
+*An unofficial multiplayer mod for Monster Girl Quest! Paradox RPG.*
 
 Play Monster Girl Quest! Paradox RPG together with friends over the internet, with nothing to set up in your router.
 
@@ -116,7 +118,7 @@ Your games meet at the mod's **relay**, a small server that passes their data on
 - **"This join code comes from another version of the mod":** one of you has an older version; both need the same one.
 - **"Your friend's game uses a relay this version does not know":** your friend has a newer version of the mod; update yours.
 - **"This is a world code":** you pasted a world's code into a PvP join. Enter worlds through *Multiplayer* on the title screen.
-- **Logs:** `Multiplayer\InGame.log` only appears when something went wrong inside the game; `Multiplayer\Multiplayer.log` tells what the connection did. Please attach both when [opening an issue](https://github.com/Pauliinchen/MGQ-Paradox-Multiplayer-Mod/issues).
+- **Logs:** `Multiplayer\InGame.log` only appears when something went wrong inside the game; `Multiplayer\Multiplayer.log` tells what the connection did. Please attach both when [opening an issue](https://github.com/Pauliinchen/MGQ-Online/issues).
 
 ## Building from source
 
@@ -124,4 +126,4 @@ See [docs/DEVELOPER.md](docs/DEVELOPER.md).
 
 ## Disclaimer
 
-This is an unofficial fan project. It is not affiliated with Torotoro Resistance, the creators of Monster Girl Quest, or the English translation team. It contains no game or translation files.
+Monster Girl Quest! Online is an unofficial fan project. It is not affiliated with or endorsed by Torotoro Resistance, the creators of Monster Girl Quest!, or the English translation team. It contains no game or translation files.

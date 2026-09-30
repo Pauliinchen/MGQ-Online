@@ -47,7 +47,7 @@ module MGQ_MpNpcs
     !Game_Event.method_defined?(:mgq_mp_npcs_update_self_movement)
   end
 
-  # Writes a line to the Multiplayer mod's InGame.log.
+  # Writes a line to the mod's InGame.log.
   #
   # @param message [String] The line.
   def self.log(message)

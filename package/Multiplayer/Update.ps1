@@ -2,6 +2,7 @@
 #  Update.ps1
 #
 #  Changelog:
+#      Paulinchen  2026-09-30: Fetched MGQ-Online-<version>.zip from the repository under its new name, MGQ-Online
 #      Paulinchen  2026-09-30: Created
 #
 #----------------------------------------------------------------
@@ -15,9 +16,9 @@ $ErrorActionPreference = 'Stop'
 # Invoke-WebRequest slows to a crawl while it draws its progress bar.
 $ProgressPreference = 'SilentlyContinue'
 
-$LatestReleaseUrl = 'https://api.github.com/repos/Pauliinchen/MGQ-Paradox-Multiplayer-Mod/releases/latest'
-$UserAgent        = 'MGQ-Paradox-Multiplayer'
-$ReleaseZip       = 'MGQ-Paradox-Multiplayer-*.zip'
+$LatestReleaseUrl = 'https://api.github.com/repos/Pauliinchen/MGQ-Online/releases/latest'
+$UserAgent        = 'MGQ-Online'
+$ReleaseZip       = 'MGQ-Online-*.zip'
 
 $ModDir   = $PSScriptRoot
 $GameDir  = Split-Path $ModDir -Parent

@@ -85,7 +85,7 @@ module MGQ_MpOverworld
     !Spriteset_Map.method_defined?(:mgq_mp_overworld_update)
   end
 
-  # Writes a line to the Multiplayer mod's InGame.log.
+  # Writes a line to the mod's InGame.log.
   #
   # @param message [String] The line.
   def self.log(message)

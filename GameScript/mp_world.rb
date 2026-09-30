@@ -5,6 +5,7 @@
 #      Paulinchen  2026-09-30: Greyed out the title command and showed a notice once a newer release is out
 #                            - Let the creator pick one of their saves as the starting save of a new world, which new players fetch before entering it
 #                            - Made and joined worlds through forms at the right of the world screen, typed in place, and made hidden worlds, joined by their id
+#                            - Named the mod Monster Girl Quest! Online in the update notice
 #      Paulinchen  2026-09-29: Listed the relay's worlds with their players, favourites first, entered with a password once and typed names on the keyboard
 #                            - Let the creator delete a world or remove a player, and connected to a world while it is open
 #      Paulinchen  2026-09-29: Created
@@ -63,13 +64,13 @@ module MGQ_MpWorld
 
   # Tells whether worlds can be used.
   #
-  # @return [Boolean] Whether worlds are on, the Multiplayer mod's DLL is installed, and no newer
+  # @return [Boolean] Whether worlds are on, the mod's DLL is installed, and no newer
   #   release is out.
   def self.available?
     ENABLED && MGQ_Multiplayer.available? && !MGQ_Multiplayer.outdated?
   end
 
-  # Writes a line to the Multiplayer mod's InGame.log.
+  # Writes a line to the mod's InGame.log.
   #
   # @param message [String] The line.
   def self.log(message)
@@ -220,11 +221,11 @@ module MGQ_MpWorld
   end
 
   # Two lines on the title screen, below Discord's own update notice if it shows one too, once a
-  # newer release of the Multiplayer mod is out.
+  # newer release of the mod is out.
   module UpdateNotice
     # What the notice says, the newer version filled in.
     LINES = [
-      "Multiplayer %s is out.",
+      "Monster Girl Quest! Online %s is out.",
       "Close the game and run Multiplayer\\Update.bat to update.",
     ]
 

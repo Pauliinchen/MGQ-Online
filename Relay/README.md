@@ -1,6 +1,6 @@
 # Relay
 
-Passes the Multiplayer mod's frames between games. The games never connect to each other directly: many home connections cannot be reached from outside (DS-Lite, CGNAT, no IPv6, no forwarded port), but every one can connect out, so every game connects out to the relay.
+Passes Monster Girl Quest! Online's frames between games. The games never connect to each other directly: many home connections cannot be reached from outside (DS-Lite, CGNAT, no IPv6, no forwarded port), but every one can connect out, so every game connects out to the relay.
 
 The relay never sees what is played: the games encrypt every frame with a key derived from the join code or the world's token, which the relay never gets. For PvP battles it sees a room id, message sizes and timing, and stores nothing. For worlds it keeps the **world directory**, which everyone can read, but for hidden worlds, which only their players see listed: each world's name, seats and creator, the names of its players and who is online. It never learns a world's password or token: it keeps the token locked with the password, and checks a game that enters against a hash. A world may keep a **starting save**, which the games encrypt with a key from the token before it arrives, so the relay only keeps its bytes.
 

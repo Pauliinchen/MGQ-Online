@@ -1,7 +1,7 @@
 {
-  "name": "mgq-paradox-multiplayer-relay",
+  "name": "mgq-online-relay",
   "private": true,
-  "description": "Passes the Multiplayer mod's encrypted frames between games.",
+  "description": "Passes Monster Girl Quest! Online's encrypted frames between games.",
   "type": "module",
   "engines": {
     "node": ">=22"

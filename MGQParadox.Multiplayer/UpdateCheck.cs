@@ -2,6 +2,7 @@
 //  UpdateCheck.cs
 //
 //  Changelog:
+//      Paulinchen  2026-09-30: Asked the repository under its new name, MGQ-Online
 //      Paulinchen  2026-09-30: Created
 //
 //----------------------------------------------------------------
@@ -23,12 +24,12 @@ internal static class UpdateCheck
     /// The latest release, as GitHub's API describes it.
     /// </summary>
     private const string LatestReleaseUrl =
-        "https://api.github.com/repos/Pauliinchen/MGQ-Paradox-Multiplayer-Mod/releases/latest";
+        "https://api.github.com/repos/Pauliinchen/MGQ-Online/releases/latest";
 
     /// <summary>
     /// Names the mod to GitHub, which turns away requests without a user agent.
     /// </summary>
-    private const string UserAgent = "MGQ-Paradox-Multiplayer";
+    private const string UserAgent = "MGQ-Online";
 
     /// <summary>
     /// The property of the release that holds its tag, like <c>v0.1.0</c>.

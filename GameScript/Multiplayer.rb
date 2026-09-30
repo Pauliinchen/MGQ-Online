@@ -4,6 +4,7 @@
 #  Changelog:
 #      Paulinchen  2026-09-30: Asked GitHub for a newer release and told MGQ_MpWorld and MGQ_PvpBattle to disable themselves once one is out
 #                            - Read held buttons past the capture too, which moves a text cursor
+#                            - Named the mod Monster Girl Quest! Online in the update message
 #      Paulinchen  2026-09-29: Said in $mgq_text_input while the player types, so other mods' hotkeys stay quiet
 #                            - Added Capture, which takes the buttons away from the game while a screen of the mod reads them
 #                            - Told whether the game's window is hooked, which the keyboard needs
@@ -38,7 +39,7 @@ module MGQ_Multiplayer
   MAX_NAME_LENGTH = 32
 
   # What the game says wherever the player tries to use the mod once a newer release is out.
-  UPDATE_MESSAGE = "A Multiplayer update is out. Close the game and run Multiplayer\\Update.bat to update."
+  UPDATE_MESSAGE = "A Monster Girl Quest! Online update is out. Close the game and run Multiplayer\\Update.bat to update."
 
   # Reports whether the hooks can be installed.
   #

@@ -281,7 +281,7 @@ export class Room extends DurableObject {
 
   /**
    * Passes a peer's binary message on to the other peer. A message sent before the other peer
-   * arrived is dropped, which the Multiplayer mod never does.
+   * arrived is dropped, which the mod never does.
    *
    * @param {WebSocket} socket The peer's socket.
    * @param {ArrayBuffer | string} message The message.

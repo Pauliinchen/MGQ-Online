@@ -1,5 +1,6 @@
-Monster Girl Quest! Paradox RPG - Multiplayer
-=============================================
+Monster Girl Quest! Online
+==========================
+An unofficial multiplayer mod for Monster Girl Quest! Paradox RPG.
 
 Play Monster Girl Quest! Paradox RPG together with friends over the
 internet, with nothing to set up in your router. So far: PvP battles, in
@@ -246,3 +247,9 @@ CREDITS
 -------
 The mod loader is the community's Patch.rb from the MGQ wiki (link above).
 It is not included in this download.
+
+Monster Girl Quest! Online is an unofficial fan project. It is not
+affiliated with or endorsed by Torotoro Resistance, the creators of
+Monster Girl Quest!, or the English translation team.
+
+   https://github.com/Pauliinchen/MGQ-Online
