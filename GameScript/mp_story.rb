@@ -2,7 +2,8 @@
 #  mp_story.rb
 #
 #  Changelog:
-#      Paulinchen  2026-09-30: Created
+#      Paulinchen  2026-09-30: Kept chests the player's own while they play the leader's story
+#                            - Created
 #
 #----------------------------------------------------------------
 
@@ -27,8 +28,9 @@ module MGQ_MpStory
   # First switch that tells whether a companion awakened, one per companion.
   AWAKENING_SWITCHES = 6000
 
-  # Variables that are the player's own: monsters' friendliness (2000-2999).
-  PERSONAL_VARIABLES = [2000...3000]
+  # Variables that are the player's own: where a game over returns them (1002) and monsters'
+  # friendliness (2000-2999).
+  PERSONAL_VARIABLES = [1002, 2000...3000]
 
   # First variable that holds a companion's affection, one per companion.
   AFFECTION_VARIABLES = 3000
@@ -180,8 +182,54 @@ module MGQ_MpStory
     switches, variables, self_switches = raw_state
     changes[0].each { |id, value| switches[id] = value unless personal_switch?(id) }
     changes[1].each { |id, value| variables[id] = value unless personal_variable?(id) }
-    changes[2].each { |key, value| self_switches[key] = value }
+    changes[2].each { |key, value| self_switches[key] = value unless personal_self_switch?(key) }
     set_raw(switches, variables, self_switches)
+  end
+
+  # Reads a self switch as it is the player's own, whether or not they play the leader's story.
+  #
+  # @param key [Array] The self switch: map, event and letter.
+  # @return [Boolean] Its value.
+  def self.own_self_switch(key)
+    (guest? ? @own[2][key] : $game_self_switches.mgq_mp_data[key]) == true
+  end
+
+  # Sets a self switch of the player's own, such as a chest's, in their own story and in the one
+  # they play.
+  #
+  # @param key [Array] The self switch: map, event and letter.
+  # @param value [Boolean] Its value.
+  def self.keep_own_self_switch(key, value)
+    @own[2][key] = value if guest?
+    $game_self_switches.mgq_mp_data[key] = value
+    $game_map.need_refresh = true if $game_map
+  end
+
+  # Shows the player's own chests on a map they enter while playing the leader's story. Called
+  # after a map is set up.
+  def self.map_entered
+    return unless guest?
+
+    data = $game_self_switches.mgq_mp_data
+    chest_keys.each { |key| data[key] = @own[2][key] }
+    $game_map.need_refresh = true
+  rescue => e
+    log("showing own chests failed: #{e.class}: #{e.message}")
+  end
+
+  # Reports whether a self switch is the player's own: a chest's on the map, through mp_events.rb.
+  #
+  # @param key [Array] The self switch: map, event and letter.
+  # @return [Boolean] Whether it is.
+  def self.personal_self_switch?(key)
+    defined?(MGQ_MpEvents) && $game_map ? MGQ_MpEvents.chest_key?(key) : false
+  end
+
+  # Lists the self switches of the chests on the map, through mp_events.rb.
+  #
+  # @return [Array<Array>] Their keys.
+  def self.chest_keys
+    defined?(MGQ_MpEvents) && $game_map ? MGQ_MpEvents.chest_keys : []
   end
 
   # Gives the player their own story back, keeping what of their own changed meanwhile.
@@ -245,7 +293,9 @@ module MGQ_MpStory
     variables = story[1].dup
     [personal[0].size, switches.size].max.times { |id| switches[id] = personal[0][id] if personal_switch?(id) }
     [personal[1].size, variables.size].max.times { |id| variables[id] = personal[1][id] if personal_variable?(id) }
-    [switches, variables, story[2].dup]
+    self_switches = story[2].dup
+    chest_keys.each { |key| self_switches[key] = personal[2][key] }
+    [switches, variables, self_switches]
   end
 
   # Reports whether a switch is the player's own.
@@ -445,6 +495,22 @@ if MGQ_MpStory.hookable?
     end
   rescue => e
     MGQ_MpStory.log("map hook FAILED: #{e.class}: #{e.message}")
+  end
+
+  begin
+    class Game_Map
+      alias mgq_mp_story_setup setup
+
+      # Sets up a map, then shows the player's own chests on it.
+      #
+      # @param map_id [Integer] The map.
+      def setup(map_id)
+        mgq_mp_story_setup(map_id)
+        MGQ_MpStory.map_entered
+      end
+    end
+  rescue => e
+    MGQ_MpStory.log("map setup hook FAILED: #{e.class}: #{e.message}")
   end
 
   begin

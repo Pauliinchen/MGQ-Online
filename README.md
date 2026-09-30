@@ -22,6 +22,7 @@ Multiplayer\Multiplayer.dll
 Patch\Multiplayer.rb
 Patch\mp_actions.rb
 Patch\mp_async.rb
+Patch\mp_events.rb
 Patch\mp_npcs.rb
 Patch\mp_overworld.rb
 Patch\mp_story.rb
@@ -30,7 +31,7 @@ Patch\mp_world.rb
 Patch\pvp_battle.rb
 ```
 
-To uninstall, delete the `Multiplayer` folder and the nine scripts in `Patch`. The `Multiplayer` folder also holds your worlds, so keep `Multiplayer\Worlds` if you want to play them again later.
+To uninstall, delete the `Multiplayer` folder and the ten scripts in `Patch`. The `Multiplayer` folder also holds your worlds, so keep `Multiplayer\Worlds` if you want to play them again later.
 
 ## Worlds
 
@@ -52,7 +53,7 @@ Each world keeps its own saves, Library, medals and affection in `Multiplayer\Wo
 
 **Chat:** press **T**, or pick *Chat* in the wheel, and type on the keyboard; **Enter** sends, **Esc** closes. The arrow keys, **Home** and **End** move the cursor, and **Delete** removes the character after it. Your line goes to everyone in the world: it shows in a speech bubble above your head for the players on your map, and in the chat log at the bottom left of the map for everyone.
 
-**Parties:** players outside your party are slightly see-through. Stand next to another player, open the wheel and pick *Invite to a party*; "Invites to a party (B)" then shows above your head on their screen for 15 seconds, and when they open the wheel next to you and pick *Accept*, you form a party. Party members are fully visible and their names are green. *Leave the party* at the bottom of the wheel leaves it. On a map you share with party members, you all see the same NPCs in the same places: whoever of you entered the map first is its Map Owner, and the NPCs move as they do in their game. While in a party, everyone plays the story of the player who made the party: its events, doors and conversations are as far along as in their game. Your own party, your companions and their affection stay yours, and your saves keep your own story. When you leave the party, you are back in your own story. Battles fought together as a party are planned.
+**Parties:** players outside your party are slightly see-through. Stand next to another player, open the wheel and pick *Invite to a party*; "Invites to a party (B)" then shows above your head on their screen for 15 seconds, and when they open the wheel next to you and pick *Accept*, you form a party. Party members are fully visible and their names are green. *Leave the party* at the bottom of the wheel leaves it. On a map you share with party members, you all see the same NPCs in the same places: whoever of you entered the map first is its Map Owner, and the NPCs move as they do in their game. While in a party, everyone plays the story of the player who made the party: its events, doors and conversations are as far along as in their game. Your own party, your companions and their affection stay yours, and your saves keep your own story. When you leave the party, you are back in your own story. Chests are everyone's own: when a party member opens one, everyone in the party who has not looted it yet gets the same items. Battles fought together as a party are planned.
 
 ## PvP battles
 

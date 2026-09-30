@@ -43,6 +43,7 @@ like this:
    Patch\Multiplayer.rb
    Patch\mp_actions.rb
    Patch\mp_async.rb
+   Patch\mp_events.rb
    Patch\mp_npcs.rb
    Patch\mp_overworld.rb
    Patch\mp_story.rb
@@ -147,7 +148,9 @@ you entered the map first is its Map Owner, and the NPCs move as they do
 in their game. While in a party, everyone plays the story of the player
 who made the party. Your own party, your companions and their affection
 stay yours, and your saves keep your own story. When you leave the
-party, you are back in your own story.
+party, you are back in your own story. Chests are everyone's own: when
+a party member opens one, everyone in the party who has not looted it
+yet gets the same items.
 
 
 CONNECTION
@@ -167,9 +170,9 @@ anything.
 UNINSTALL
 ---------
 Close the game and delete Patch\Multiplayer.rb, Patch\mp_actions.rb,
-Patch\mp_async.rb, Patch\mp_npcs.rb, Patch\mp_overworld.rb,
-Patch\mp_story.rb, Patch\mp_sync.rb, Patch\mp_world.rb,
-Patch\pvp_battle.rb and the Multiplayer folder. The Multiplayer folder also holds your worlds, so
+Patch\mp_async.rb, Patch\mp_events.rb, Patch\mp_npcs.rb,
+Patch\mp_overworld.rb, Patch\mp_story.rb, Patch\mp_sync.rb,
+Patch\mp_world.rb, Patch\pvp_battle.rb and the Multiplayer folder. The Multiplayer folder also holds your worlds, so
 keep Multiplayer\Worlds if you want to play them again later.
 The mod loader stays for your other mods.
 

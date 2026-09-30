@@ -8,6 +8,7 @@ Directory.Build.targets               puts vswhere.exe on the PATH, which the Na
 GameScript/Multiplayer.rb             Ruby, what every way of playing together shares
 GameScript/mp_actions.rb              Ruby, what players of a world do together on the map: action wheel, parties, chat
 GameScript/mp_async.rb                Ruby, the world running on behind menus, battles and story scenes
+GameScript/mp_events.rb               Ruby, the events of a party: what each event page is, and chests opened for all
 GameScript/mp_npcs.rb                 Ruby, the NPCs a party shares on a map, moved by its Map Owner
 GameScript/mp_overworld.rb            Ruby, the other players of a world on the map, as ghosts
 GameScript/mp_story.rb                Ruby, the story a party plays: the leader's, borrowed by the members
@@ -22,13 +23,14 @@ docs/DEVELOPER.md                     this file
 .github/workflows/release.yml         tests, builds and attaches the zip on release
 ```
 
-**Scripts.** Patch folder mods, shipped as `Patch/*.rb`. The mod loader loads them sorted, capitals first, so after `Discord_RPC.rb` of the Discord mod: `Multiplayer.rb`, then `mp_actions.rb`, `mp_async.rb`, `mp_npcs.rb`, `mp_overworld.rb`, `mp_story.rb`, `mp_sync.rb`, `mp_world.rb` and `pvp_battle.rb`. A file may only use what loaded before it at load time; later files are reached at run time (`defined?`).
+**Scripts.** Patch folder mods, shipped as `Patch/*.rb`. The mod loader loads them sorted, capitals first, so after `Discord_RPC.rb` of the Discord mod: `Multiplayer.rb`, then `mp_actions.rb`, `mp_async.rb`, `mp_events.rb`, `mp_npcs.rb`, `mp_overworld.rb`, `mp_story.rb`, `mp_sync.rb`, `mp_world.rb` and `pvp_battle.rb`. A file may only use what loaded before it at load time; later files are reached at run time (`defined?`).
 
 | File | Module | What it is |
 |---|---|---|
 | `Multiplayer.rb` | `MGQ_Multiplayer` | The foundation every mode shares: `Log` (`Multiplayer/InGame.log`), `Link` (the DLL's `mp_*` functions), `Background` (keeps the game running while another window is in front, and has `Input` report no buttons meanwhile), `Key` (F-keys the game's `Input` does not know), `Capture` (takes the buttons away from the game while a screen of the mod reads them), `Discord` (the bridge client, see below). |
 | `mp_actions.rb` | `MGQ_MpActions` | What players of a world do together on the map: the action wheel, parties and chat (see [Actions](#actions-mp_actionsrb)). Reaches `MGQ_MpOverworld` at run time. |
 | `mp_async.rb` | `MGQ_MpAsync` | The world running on behind every other screen while a world is open, and the live map behind menus (see [The world never pauses](#the-world-never-pauses-mp_asyncrb)). Reaches `MGQ_MpWorld` at run time. |
+| `mp_events.rb` | `MGQ_MpEvents` | The events of a party: sorts every event page by what it does, and opens chests for the whole party (see [Events in a party](#events-in-a-party-mp_eventsrb)). Reaches `MGQ_MpOverworld`, `MGQ_MpActions` and `MGQ_MpStory` at run time. |
 | `mp_npcs.rb` | `MGQ_MpNpcs` | The NPCs a party shares on a map: the Map Owner moves them and the other members follow (see [NPCs in a party](#npcs-in-a-party-mp_npcsrb)). Reaches `MGQ_MpOverworld` and `MGQ_MpActions` at run time. |
 | `mp_story.rb` | `MGQ_MpStory` | The story a party plays: members borrow the leader's switches, variables and self switches and get their own back afterwards (see [The party's story](#the-partys-story-mp_storyrb)). Reaches `MGQ_MpOverworld` and `MGQ_MpActions` at run time. |
 | `mp_sync.rb` | `MGQ_MpSync` | Live battles, for any mode: `join` makes the next battle live, `battle_started` marks it running, `finish` ends it and closes the link, `record_to_file` has the next battle record itself. Knows nothing of PvP battles. |
@@ -56,7 +58,7 @@ Publishing the DLL project assembles the complete release layout in `Shipping/` 
 
 ```
 Multiplayer/  Multiplayer.dll  README.txt
-Patch/        Multiplayer.rb  mp_actions.rb  mp_async.rb  mp_npcs.rb  mp_overworld.rb  mp_story.rb  mp_sync.rb  mp_world.rb  pvp_battle.rb
+Patch/        Multiplayer.rb  mp_actions.rb  mp_async.rb  mp_events.rb  mp_npcs.rb  mp_overworld.rb  mp_story.rb  mp_sync.rb  mp_world.rb  pvp_battle.rb
 ```
 
 - **Publish, not build:** only a publish runs NativeAOT, so a plain build gives no usable DLL.
@@ -184,10 +186,24 @@ Players outside a party share no NPCs: each game moves its own, as in single pla
 Outside a party every player plays their own story in their own world save. In a party, the members play the leader's: the player who made the party (`Party.leader`: the member whose id starts the party's id, else the lowest id while they are gone).
 
 - **What is borrowed**: the story as the game keeps it, `$game_switches`, `$game_variables` and `$game_self_switches`, read and written as raw data (`mgq_mp_data`). The game's own `[]=` would run its side effects: a switch in 1001-2000 adds or removes that companion, an awakening switch refreshes an actor, an affection variable writes through to `$game_global_system`.
-- **What stays the player's own** (`personal_switch?`, `personal_variable?`): configuration mirrored in switches (95, 445-447, 502), party membership (switches 1001-2000), awakening (switches from 6000, one per companion), monsters' friendliness (variables 2000-2999) and affection (variables from 3000, one per companion). Every join of a story with the player's own values (`mix`) keeps these.
+- **What stays the player's own** (`personal_switch?`, `personal_variable?`): configuration mirrored in switches (95, 445-447, 502), party membership (switches 1001-2000), awakening (switches from 6000, one per companion), where a game over returns them (variable 1002), monsters' friendliness (variables 2000-2999) and affection (variables from 3000, one per companion). Every join of a story with the player's own values (`mix`) keeps these.
 - **Borrowing**: a member asks the leader (`story=ask`, every 2 s until answered, again whenever the leader changes), who answers with the whole story (`story=full`: `s` the switches on, `v` the variables set, `ss` the self switches on). The member keeps their own story aside (`@own`) the first time and plays the leader's with their own values. The leader then sends what changed, at most every 15 frames (`story=delta`, found by comparing with the story last sent), to the whole party. Variables carry only numbers, strings and true or false (`encode_value`), so no message can make objects in the other game.
 - **Getting it back** (`restore`): leaving the party, the leader leaving, or becoming the leader gives the member their own story back, with their own values as they are by then.
 - **Saving** (`DataManager.make_save_contents`): while a member plays the leader's story, every save, the autosave included, holds their own story with their own values as they are. Loading a save or starting a new game (`extract_save_contents`, `create_game_objects`) brings its own story, so the member asks the leader again.
+
+## Events in a party (`mp_events.rb`)
+
+**What an event page is** (`kind`, memoized per map, event and page; `kind_of` for a list of commands): read from its commands before it runs, following called common events up to 5 deep.
+
+- `:battle`: the page starts a battle (301) and shows no dialogue itself (101, 102, 105). The wandering monsters call common events before and after their battle that set variables, so the page alone decides.
+- `:story`: it sets a switch or variable that is neither scratch (named like "General", "temp", "System Only") nor the player's own (see `MGQ_MpStory.personal_switch?`); party membership switches 1001-2000 always count. Or it sets its own self switch without giving items, fights with dialogue, changes the party (129), uses vehicles (206), asks for a name (303), ends the game (353, 354), or runs a script that is not a talk's or travel's.
+- `:chest`: it gives items or gold (125-128) and sets its own self switch.
+- `:travel`: it transfers the player (201, or the scripts in `TRAVEL_SCRIPTS`).
+- `:talk`: everything else: conversations, choices, shops, and the scripts in `TALK_SCRIPTS` (companions' own lines, choices, presents and affection, medals, the job change, synthesis, casino and party menus).
+
+Over the game's 28,500 event pages with commands this gives about 13,200 story, 6,100 talk, 4,700 travel, 2,600 battle and 1,800 chest pages. Most story pages among the conversations call a story common event; the largest group is the Chaos Labyrinth's.
+
+**Chests** are the player's own. While the map's main event runs a chest page in a party (`started`), the items and gold it gives are kept, only the outermost of the game's nested `gain_item` calls for enchanted items (`enter_gain`). When the event ends (`Game_Interpreter#run`), the party is told `chest=<map>.<event>.<letter>` and `gains=<kind><id>x<amount>,...` (kinds `i`, `w`, `a`, and `g0` for gold). Every member who has not looted that chest in their own story gets the same items and has it marked looted (`MGQ_MpStory.keep_own_self_switch`). A member playing the leader's story sees their own chests: the chests' self switches of the map they are on are the player's own in every join of stories (`MGQ_MpStory.personal_self_switch?`), and again whenever a map is set up (`map_entered`).
 
 ## Actions (`mp_actions.rb`)
 
