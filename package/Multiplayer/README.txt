@@ -48,16 +48,16 @@ like this:
    Patch\mp_actions.rb
    Patch\mp_actors.rb
    Patch\mp_async.rb
-   Patch\mp_battles.rb
-   Patch\mp_coop.rb
-   Patch\mp_events.rb
-   Patch\mp_npcs.rb
+   Patch\mp_battle.rb
+   Patch\mp_battle_coop.rb
+   Patch\mp_battle_pvp.rb
+   Patch\mp_battle_sync.rb
+   Patch\mp_coop_events.rb
+   Patch\mp_coop_npcs.rb
+   Patch\mp_coop_story.rb
    Patch\mp_overworld.rb
    Patch\mp_save_distribution.rb
-   Patch\mp_story.rb
-   Patch\mp_sync.rb
    Patch\mp_world.rb
-   Patch\pvp_battle.rb
    ...
 
 While this mod is installed, the game keeps running when its window is in
@@ -216,10 +216,8 @@ anything.
 
 UNINSTALL
 ---------
-Close the game and delete Patch\Multiplayer.rb, Patch\mp_actions.rb,
-Patch\mp_actors.rb, Patch\mp_async.rb, Patch\mp_battles.rb, Patch\mp_coop.rb, Patch\mp_events.rb, Patch\mp_npcs.rb,
-Patch\mp_overworld.rb, Patch\mp_save_distribution.rb, Patch\mp_story.rb, Patch\mp_sync.rb,
-Patch\mp_world.rb, Patch\pvp_battle.rb and the Multiplayer folder. The Multiplayer folder also holds your worlds, so
+Close the game and delete Patch\Multiplayer.rb, every Patch\mp_*.rb file
+and the Multiplayer folder. The Multiplayer folder also holds your worlds, so
 keep Multiplayer\Worlds if you want to play them again later.
 The mod loader stays for your other mods.
 

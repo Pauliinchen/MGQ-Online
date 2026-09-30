@@ -19,7 +19,7 @@ Optional:
 
 ## Install
 
-Close the game and extract the release zip into the folder that contains `Game.exe`. You then have a `Multiplayer` folder next to `Game.exe`, and the mod's scripts in `Patch`: `Multiplayer.rb`, `pvp_battle.rb` and the `mp_*.rb` files.
+Close the game and extract the release zip into the folder that contains `Game.exe`. You then have a `Multiplayer` folder next to `Game.exe`, and the mod's scripts in `Patch`: `Multiplayer.rb` and the `mp_*.rb` files.
 
 While the mod is installed, the game keeps running when its window is in the background, so no player holds the others up. A gamepad does nothing meanwhile.
 
@@ -31,7 +31,7 @@ Close the game and double-click `Multiplayer\Update.bat`. It shows what's new, d
 
 ## Uninstall
 
-Close the game and delete `Multiplayer.rb`, `pvp_battle.rb` and every `mp_*.rb` file in `Patch`, then the `Multiplayer` folder. That folder also holds your worlds: keep `Multiplayer\Worlds` if you want to play them again later. The mod loader stays for your other mods.
+Close the game and delete `Multiplayer.rb` and every `mp_*.rb` file in `Patch`, then the `Multiplayer` folder. That folder also holds your worlds: keep `Multiplayer\Worlds` if you want to play them again later. The mod loader stays for your other mods.
 
 ## Worlds
 

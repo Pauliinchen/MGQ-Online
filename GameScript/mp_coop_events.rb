@@ -1,8 +1,9 @@
 #----------------------------------------------------------------
-#  mp_events.rb
+#  mp_coop_events.rb
 #
 #  Changelog:
-#      Paulinchen  2026-09-30: Played a party's story events in the leader's game and showed its messages to the members
+#      Paulinchen  2026-09-30: Renamed from mp_events.rb, with the module MGQ_MpCoopEvents
+#                            - Played a party's story events in the leader's game and showed its messages to the members
 #                            - Took the party along where the leader goes, and gathered it for story scenes
 #                            - Created
 #
@@ -15,7 +16,7 @@
 # not looted it yet gets the same items.
 #
 # It must never interrupt the game, so every entry point rescues.
-module MGQ_MpEvents
+module MGQ_MpCoopEvents
   # Event commands that move the story on wherever they appear: party changes (129), vehicles (206),
   # name input (303), game over and title (353, 354).
   STORY_CODES = [129, 206, 303, 353, 354]
@@ -57,14 +58,14 @@ module MGQ_MpEvents
   #
   # @return [Boolean] false when the hooks are in place already.
   def self.hookable?
-    !Game_Interpreter.method_defined?(:mgq_mp_events_setup)
+    !Game_Interpreter.method_defined?(:mgq_mp_coop_events_setup)
   end
 
   # Writes a line to the mod's InGame.log.
   #
   # @param message [String] The line.
   def self.log(message)
-    MGQ_Multiplayer::Log.write("events: #{message}")
+    MGQ_Multiplayer::Log.write("co-op events: #{message}")
   rescue
   end
 
@@ -80,7 +81,7 @@ module MGQ_MpEvents
   # @param event [Game_Event] The event.
   # @return [Symbol] :talk, :travel, :chest, :battle or :story; :talk for an event without a page.
   def self.kind(event)
-    page = event.mgq_mp_events_page
+    page = event.mgq_mp_coop_events_page
     return :talk if page < 0
 
     @kinds[[$game_map.map_id, event.id, page]] ||= kind_of(event.list || [])
@@ -183,7 +184,7 @@ module MGQ_MpEvents
   def self.temporary_switch?(id)
     return false if id.between?(1001, 2000)
 
-    $data_system.switches[id].to_s =~ TEMPORARY_NAMES || (defined?(MGQ_MpStory) && MGQ_MpStory.personal_switch?(id)) ? true : false
+    $data_system.switches[id].to_s =~ TEMPORARY_NAMES || (defined?(MGQ_MpCoopStory) && MGQ_MpCoopStory.personal_switch?(id)) ? true : false
   end
 
   # Reports whether a variable is only scratch, or the player's own, such as affection.
@@ -191,7 +192,7 @@ module MGQ_MpEvents
   # @param id [Integer] The variable.
   # @return [Boolean] Whether it is.
   def self.temporary_variable?(id)
-    $data_system.variables[id].to_s =~ TEMPORARY_NAMES || (defined?(MGQ_MpStory) && MGQ_MpStory.personal_variable?(id)) ? true : false
+    $data_system.variables[id].to_s =~ TEMPORARY_NAMES || (defined?(MGQ_MpCoopStory) && MGQ_MpCoopStory.personal_variable?(id)) ? true : false
   end
 
   # Lists the self switches of the chests on the map.
@@ -499,7 +500,7 @@ module MGQ_MpEvents
     @chest = nil
     return unless chest[:key] && in_party?
 
-    MGQ_MpStory.keep_own_self_switch(chest[:key], true) if defined?(MGQ_MpStory)
+    MGQ_MpCoopStory.keep_own_self_switch(chest[:key], true) if defined?(MGQ_MpCoopStory)
     gains = chest[:gains].map { |kind, id, amount| "#{kind}#{id}x#{amount}" }.join(",")
     fields = { "chest" => chest[:key].join("."), "party" => MGQ_MpActions::Party.id, "gains" => gains }
     MGQ_MpOverworld::Link.send_to(-1, MGQ_MpOverworld::Me.encode(fields))
@@ -527,7 +528,7 @@ module MGQ_MpEvents
     return if own_self_switch(key)
 
     names = grant(message["gains"].to_s)
-    MGQ_MpStory.keep_own_self_switch(key, true) if defined?(MGQ_MpStory)
+    MGQ_MpCoopStory.keep_own_self_switch(key, true) if defined?(MGQ_MpCoopStory)
     text = names.empty? ? "#{peer.state['name']} opened a chest for the party." : "#{peer.state['name']} opened a chest for the party: #{names.join(', ')}."
     MGQ_MpOverworld::Status.notice(text)
   rescue => e
@@ -539,7 +540,7 @@ module MGQ_MpEvents
   # @param key [Array] The self switch.
   # @return [Boolean] Its value.
   def self.own_self_switch(key)
-    defined?(MGQ_MpStory) ? MGQ_MpStory.own_self_switch(key) : $game_self_switches[key]
+    defined?(MGQ_MpCoopStory) ? MGQ_MpCoopStory.own_self_switch(key) : $game_self_switches[key]
   end
 
   # Gives the items of a chest.
@@ -573,51 +574,51 @@ end
 # Each wraps a game method: the original runs first unless said otherwise, and the mod's part never
 # raises.
 
-if MGQ_MpEvents.hookable?
+if MGQ_MpCoopEvents.hookable?
   begin
     class Game_Event
       # Tells which page the event shows.
       #
       # @return [Integer] The page's index, -1 for none.
-      def mgq_mp_events_page
+      def mgq_mp_coop_events_page
         @page ? @event.pages.index(@page).to_i : -1
       end
     end
 
     class Game_Interpreter
-      alias mgq_mp_events_setup setup
-      alias mgq_mp_events_run run
+      alias mgq_mp_coop_events_setup setup
+      alias mgq_mp_coop_events_run run
 
       # Sets up a list of commands, noticing a chest the map's main event opens.
       #
       # @param list [Array<RPG::EventCommand>] The commands.
       # @param event_id [Integer] The event, 0 for none.
       def setup(list, event_id = 0)
-        mgq_mp_events_setup(list, event_id)
-        MGQ_MpEvents.started(self, list, event_id) rescue nil
+        mgq_mp_coop_events_setup(list, event_id)
+        MGQ_MpCoopEvents.started(self, list, event_id) rescue nil
       end
 
       # Runs the commands, then tells the party about a chest they opened.
       def run
-        mgq_mp_events_run
-        MGQ_MpEvents.finished(self) rescue nil
+        mgq_mp_coop_events_run
+        MGQ_MpCoopEvents.finished(self) rescue nil
       end
 
-      alias mgq_mp_events_wait_for_message wait_for_message
+      alias mgq_mp_coop_events_wait_for_message wait_for_message
 
       # Tells the party members the message the leader's story shows, then waits for it.
       #
       # The Yanfly plugin, which loads after the Patch folder, writes its own command_101, so the
       # message is caught here, where every message waits once its text is set.
       def wait_for_message
-        MGQ_MpEvents.show(self)
-        mgq_mp_events_wait_for_message
+        MGQ_MpCoopEvents.show(self)
+        mgq_mp_coop_events_wait_for_message
       end
     end
 
     class Game_Map
-      alias mgq_mp_events_setup_starting_map_event setup_starting_map_event
-      alias mgq_mp_events_setup_autorun_common_event setup_autorun_common_event
+      alias mgq_mp_coop_events_setup_starting_map_event setup_starting_map_event
+      alias mgq_mp_coop_events_setup_autorun_common_event setup_autorun_common_event
 
       # Starts the event that is starting, unless it is story the leader's game plays. The original
       # does not run then.
@@ -625,12 +626,12 @@ if MGQ_MpEvents.hookable?
       # @return [Game_Event, nil] The event started.
       def setup_starting_map_event
         event = @events.values.find { |e| e.starting }
-        if event && MGQ_MpEvents.hand_over(event)
+        if event && MGQ_MpCoopEvents.hand_over(event)
           event.clear_starting_flag
           event.unlock
           return nil
         end
-        mgq_mp_events_setup_starting_map_event
+        mgq_mp_coop_events_setup_starting_map_event
       end
 
       # Starts a common event that runs by itself, unless it is story the leader's game plays. The
@@ -639,46 +640,46 @@ if MGQ_MpEvents.hookable?
       # @return [RPG::CommonEvent, nil] The common event started.
       def setup_autorun_common_event
         common = $data_common_events.find { |c| c && c.autorun? && $game_switches[c.switch_id] }
-        return nil if common && MGQ_MpEvents.leave_to_leader?(common)
+        return nil if common && MGQ_MpCoopEvents.leave_to_leader?(common)
 
-        mgq_mp_events_setup_autorun_common_event
+        mgq_mp_coop_events_setup_autorun_common_event
       end
     end
   rescue => e
-    MGQ_MpEvents.log("interpreter hooks FAILED: #{e.class}: #{e.message}")
+    MGQ_MpCoopEvents.log("interpreter hooks FAILED: #{e.class}: #{e.message}")
   end
 
   begin
     class Game_Player
-      alias mgq_mp_events_perform_transfer perform_transfer
+      alias mgq_mp_coop_events_perform_transfer perform_transfer
 
       # Carries out a reserved transfer, then as leader takes the party along.
       def perform_transfer
         moving = transfer?
-        mgq_mp_events_perform_transfer
-        MGQ_MpEvents.transferred if moving
+        mgq_mp_coop_events_perform_transfer
+        MGQ_MpCoopEvents.transferred if moving
       end
     end
 
     class Game_Map
-      alias mgq_mp_events_update update
+      alias mgq_mp_coop_events_update update
 
       # Updates the map, then moves the player after the leader when they are free.
       #
       # @param args [Array] The original's arguments.
       def update(*args)
-        mgq_mp_events_update(*args)
-        MGQ_MpEvents.update
+        mgq_mp_coop_events_update(*args)
+        MGQ_MpCoopEvents.update
       end
     end
   rescue => e
-    MGQ_MpEvents.log("travel hooks FAILED: #{e.class}: #{e.message}")
+    MGQ_MpCoopEvents.log("travel hooks FAILED: #{e.class}: #{e.message}")
   end
 
   begin
     class Game_Party
-      alias mgq_mp_events_gain_item gain_item
-      alias mgq_mp_events_gain_gold gain_gold
+      alias mgq_mp_coop_events_gain_item gain_item
+      alias mgq_mp_coop_events_gain_gold gain_gold
 
       # Gives an item, keeping it for the party when a chest gives it.
       #
@@ -689,24 +690,24 @@ if MGQ_MpEvents.hookable?
       # @param amount [Integer] How many.
       # @param rest [Array] The original's other arguments.
       def gain_item(item, amount, *rest)
-        outermost = MGQ_MpEvents.enter_gain
+        outermost = MGQ_MpCoopEvents.enter_gain
         begin
-          mgq_mp_events_gain_item(item, amount, *rest)
+          mgq_mp_coop_events_gain_item(item, amount, *rest)
         ensure
-          MGQ_MpEvents.leave_gain
+          MGQ_MpCoopEvents.leave_gain
         end
-        MGQ_MpEvents.gained_item(item, amount) if outermost
+        MGQ_MpCoopEvents.gained_item(item, amount) if outermost
       end
 
       # Gives gold, keeping it for the party when a chest gives it.
       #
       # @param amount [Integer] How much.
       def gain_gold(amount)
-        mgq_mp_events_gain_gold(amount)
-        MGQ_MpEvents.gained("g", 0, amount)
+        mgq_mp_coop_events_gain_gold(amount)
+        MGQ_MpCoopEvents.gained("g", 0, amount)
       end
     end
   rescue => e
-    MGQ_MpEvents.log("party hooks FAILED: #{e.class}: #{e.message}")
+    MGQ_MpCoopEvents.log("party hooks FAILED: #{e.class}: #{e.message}")
   end
 end

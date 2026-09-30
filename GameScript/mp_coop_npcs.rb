@@ -1,7 +1,8 @@
 #----------------------------------------------------------------
-#  mp_npcs.rb
+#  mp_coop_npcs.rb
 #
 #  Changelog:
+#      Paulinchen  2026-09-30: Renamed from mp_npcs.rb, with the module MGQ_MpCoopNpcs
 #      Paulinchen  2026-09-30: Created
 #
 #----------------------------------------------------------------
@@ -16,7 +17,7 @@
 # players come and go.
 #
 # It must never interrupt the game, so every entry point rescues.
-module MGQ_MpNpcs
+module MGQ_MpCoopNpcs
   # Frames between two messages of the Map Owner, a quarter of a second at 60 frames per second.
   SEND_FRAMES = 15
 
@@ -44,14 +45,14 @@ module MGQ_MpNpcs
   #
   # @return [Boolean] false when the hooks are in place already.
   def self.hookable?
-    !Game_Event.method_defined?(:mgq_mp_npcs_update_self_movement)
+    !Game_Event.method_defined?(:mgq_mp_coop_npcs_update_self_movement)
   end
 
   # Writes a line to the mod's InGame.log.
   #
   # @param message [String] The line.
   def self.log(message)
-    MGQ_Multiplayer::Log.write("npcs: #{message}")
+    MGQ_Multiplayer::Log.write("co-op npcs: #{message}")
   rescue
   end
 
@@ -259,17 +260,17 @@ end
 # Each wraps a game method: the original runs first unless said otherwise, and the mod's part never
 # raises.
 
-if MGQ_MpNpcs.hookable?
+if MGQ_MpCoopNpcs.hookable?
   begin
     class Game_Event
-      alias mgq_mp_npcs_update_self_movement update_self_movement
-      alias mgq_mp_npcs_collide_with_characters? collide_with_characters?
-      alias mgq_mp_npcs_near_the_player? near_the_player?
+      alias mgq_mp_coop_npcs_update_self_movement update_self_movement
+      alias mgq_mp_coop_npcs_collide_with_characters? collide_with_characters?
+      alias mgq_mp_coop_npcs_near_the_player? near_the_player?
 
       # Moves the event on its own, unless another party member's game moves it. The original does
       # not run then.
       def update_self_movement
-        mgq_mp_npcs_update_self_movement unless MGQ_MpNpcs.following?
+        mgq_mp_coop_npcs_update_self_movement unless MGQ_MpCoopNpcs.following?
       end
 
       # Reports whether the event collides with a character on a tile, a party member included.
@@ -278,7 +279,7 @@ if MGQ_MpNpcs.hookable?
       # @param y [Integer] The tile's y.
       # @return [Boolean] Whether it does.
       def collide_with_characters?(x, y)
-        mgq_mp_npcs_collide_with_characters?(x, y) || (normal_priority? && MGQ_MpNpcs.member_at?(x, y))
+        mgq_mp_coop_npcs_collide_with_characters?(x, y) || (normal_priority? && MGQ_MpCoopNpcs.member_at?(x, y))
       end
 
       # Reports whether the player, or on the Map Owner's map a party member, is near enough for an
@@ -286,13 +287,13 @@ if MGQ_MpNpcs.hookable?
       #
       # @return [Boolean] Whether one is.
       def near_the_player?
-        mgq_mp_npcs_near_the_player? || MGQ_MpNpcs.member_near?(self)
+        mgq_mp_coop_npcs_near_the_player? || MGQ_MpCoopNpcs.member_near?(self)
       end
 
       # Walks toward the nearest party member, the player unless another member is nearer. The
       # original does not run for another member.
       def move_toward_player
-        member = MGQ_MpNpcs.nearest_member(self)
+        member = MGQ_MpCoopNpcs.nearest_member(self)
         member ? move_toward_character(member) : super
       end
 
@@ -326,22 +327,22 @@ if MGQ_MpNpcs.hookable?
       end
     end
   rescue => e
-    MGQ_MpNpcs.log("event hooks FAILED: #{e.class}: #{e.message}")
+    MGQ_MpCoopNpcs.log("event hooks FAILED: #{e.class}: #{e.message}")
   end
 
   begin
     class Game_Map
-      alias mgq_mp_npcs_update update
+      alias mgq_mp_coop_npcs_update update
 
       # Updates the map, then its events for the party.
       #
       # @param args [Array] The original's arguments.
       def update(*args)
-        mgq_mp_npcs_update(*args)
-        MGQ_MpNpcs.update
+        mgq_mp_coop_npcs_update(*args)
+        MGQ_MpCoopNpcs.update
       end
     end
   rescue => e
-    MGQ_MpNpcs.log("map hook FAILED: #{e.class}: #{e.message}")
+    MGQ_MpCoopNpcs.log("map hook FAILED: #{e.class}: #{e.message}")
   end
 end

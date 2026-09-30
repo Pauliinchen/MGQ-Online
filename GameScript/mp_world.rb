@@ -2,10 +2,10 @@
 #  mp_world.rb
 #
 #  Changelog:
-#      Paulinchen  2026-09-30: Greyed out the title command and showed a notice once a newer release is out
+#      Paulinchen  2026-09-30: Named the mod Monster Girl Quest! Online in the update notice
+#                            - Greyed out the title command and showed a notice once a newer release is out
 #                            - Let the creator pick one of their saves as the starting save of a new world, which new players fetch before entering it
 #                            - Made and joined worlds through forms at the right of the world screen, typed in place, and made hidden worlds, joined by their id
-#                            - Named the mod Monster Girl Quest! Online in the update notice
 #      Paulinchen  2026-09-29: Listed the relay's worlds with their players, favourites first, entered with a password once and typed names on the keyboard
 #                            - Let the creator delete a world or remove a player, and connected to a world while it is open
 #      Paulinchen  2026-09-29: Created

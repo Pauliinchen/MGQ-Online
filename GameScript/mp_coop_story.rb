@@ -1,8 +1,9 @@
 #----------------------------------------------------------------
-#  mp_story.rb
+#  mp_coop_story.rb
 #
 #  Changelog:
-#      Paulinchen  2026-09-30: Kept what members as far along as the leader play together, companions who join included
+#      Paulinchen  2026-09-30: Renamed from mp_story.rb, with the module MGQ_MpCoopStory
+#                            - Kept what members as far along as the leader play together, companions who join included
 #                            - Kept chests the player's own while they play the leader's story
 #                            - Created
 #
@@ -15,7 +16,7 @@
 # member makes holds their own story.
 #
 # It must never interrupt the game, so every entry point rescues.
-module MGQ_MpStory
+module MGQ_MpCoopStory
   # Frames between two messages of the leader, a quarter of a second at 60 frames per second.
   SEND_FRAMES = 15
 
@@ -60,7 +61,7 @@ module MGQ_MpStory
   #
   # @param message [String] The line.
   def self.log(message)
-    MGQ_Multiplayer::Log.write("story: #{message}")
+    MGQ_Multiplayer::Log.write("co-op story: #{message}")
   rescue
   end
 
@@ -247,7 +248,7 @@ module MGQ_MpStory
   # @param actor_id [Integer] The companion.
   def self.joined(actor_id)
     return unless leader == :me && !MGQ_MpActions::Party.members.empty?
-    return unless defined?(MGQ_MpEvents) && MGQ_MpEvents.telling?
+    return unless defined?(MGQ_MpCoopEvents) && MGQ_MpCoopEvents.telling?
 
     tell(-1, "recruit", "actor" => actor_id)
   rescue => e
@@ -296,19 +297,19 @@ module MGQ_MpStory
     log("showing own chests failed: #{e.class}: #{e.message}")
   end
 
-  # Reports whether a self switch is the player's own: a chest's on the map, through mp_events.rb.
+  # Reports whether a self switch is the player's own: a chest's on the map, through mp_coop_events.rb.
   #
   # @param key [Array] The self switch: map, event and letter.
   # @return [Boolean] Whether it is.
   def self.personal_self_switch?(key)
-    defined?(MGQ_MpEvents) && $game_map ? MGQ_MpEvents.chest_key?(key) : false
+    defined?(MGQ_MpCoopEvents) && $game_map ? MGQ_MpCoopEvents.chest_key?(key) : false
   end
 
-  # Lists the self switches of the chests on the map, through mp_events.rb.
+  # Lists the self switches of the chests on the map, through mp_coop_events.rb.
   #
   # @return [Array<Array>] Their keys.
   def self.chest_keys
-    defined?(MGQ_MpEvents) && $game_map ? MGQ_MpEvents.chest_keys : []
+    defined?(MGQ_MpCoopEvents) && $game_map ? MGQ_MpCoopEvents.chest_keys : []
   end
 
   # Gives the player their own story back, keeping what of their own changed meanwhile.
@@ -538,7 +539,7 @@ end
 # Each wraps a game method: the original runs first unless said otherwise, and the mod's part never
 # raises.
 
-if MGQ_MpStory.hookable?
+if MGQ_MpCoopStory.hookable?
   begin
     [Game_Switches, Game_Variables, Game_SelfSwitches].each do |klass|
       klass.class_eval do
@@ -558,72 +559,72 @@ if MGQ_MpStory.hookable?
       end
     end
   rescue => e
-    MGQ_MpStory.log("data access FAILED: #{e.class}: #{e.message}")
+    MGQ_MpCoopStory.log("data access FAILED: #{e.class}: #{e.message}")
   end
 
   begin
     class Game_Map
-      alias mgq_mp_story_update update
+      alias mgq_mp_coop_story_update update
 
       # Updates the map, then the party's story.
       #
       # @param args [Array] The original's arguments.
       def update(*args)
-        mgq_mp_story_update(*args)
-        MGQ_MpStory.update
+        mgq_mp_coop_story_update(*args)
+        MGQ_MpCoopStory.update
       end
     end
   rescue => e
-    MGQ_MpStory.log("map hook FAILED: #{e.class}: #{e.message}")
+    MGQ_MpCoopStory.log("map hook FAILED: #{e.class}: #{e.message}")
   end
 
   begin
     class Game_Party
-      alias mgq_mp_story_add_stand_actor add_stand_actor
+      alias mgq_mp_coop_story_add_stand_actor add_stand_actor
 
       # Takes a companion into the party's roster, then as leader tells the party.
       #
       # @param actor_id [Integer] The companion.
       def add_stand_actor(actor_id)
-        mgq_mp_story_add_stand_actor(actor_id)
-        MGQ_MpStory.joined(actor_id)
+        mgq_mp_coop_story_add_stand_actor(actor_id)
+        MGQ_MpCoopStory.joined(actor_id)
       end
     end
   rescue => e
-    MGQ_MpStory.log("companion hook FAILED: #{e.class}: #{e.message}")
+    MGQ_MpCoopStory.log("companion hook FAILED: #{e.class}: #{e.message}")
   end
 
   begin
     class Game_Map
-      alias mgq_mp_story_setup setup
+      alias mgq_mp_coop_story_setup setup
 
       # Sets up a map, then shows the player's own chests on it.
       #
       # @param map_id [Integer] The map.
       def setup(map_id)
-        mgq_mp_story_setup(map_id)
-        MGQ_MpStory.map_entered
+        mgq_mp_coop_story_setup(map_id)
+        MGQ_MpCoopStory.map_entered
       end
     end
   rescue => e
-    MGQ_MpStory.log("map setup hook FAILED: #{e.class}: #{e.message}")
+    MGQ_MpCoopStory.log("map setup hook FAILED: #{e.class}: #{e.message}")
   end
 
   begin
     class << DataManager
-      alias mgq_mp_story_make_save_contents make_save_contents
-      alias mgq_mp_story_extract_save_contents extract_save_contents
-      alias mgq_mp_story_create_game_objects create_game_objects
+      alias mgq_mp_coop_story_make_save_contents make_save_contents
+      alias mgq_mp_coop_story_extract_save_contents extract_save_contents
+      alias mgq_mp_coop_story_create_game_objects create_game_objects
 
       # Gathers what the game saves, with a member's own story in place of the leader's.
       #
       # @return [Hash] What the game saves.
       def make_save_contents
-        contents = mgq_mp_story_make_save_contents
+        contents = mgq_mp_coop_story_make_save_contents
         begin
-          MGQ_MpStory.save_contents(contents)
+          MGQ_MpCoopStory.save_contents(contents)
         rescue => e
-          MGQ_MpStory.log("save guard failed: #{e.class}: #{e.message}")
+          MGQ_MpCoopStory.log("save guard failed: #{e.class}: #{e.message}")
           contents
         end
       end
@@ -632,17 +633,17 @@ if MGQ_MpStory.hookable?
       #
       # @param contents [Hash] The save's contents.
       def extract_save_contents(contents)
-        mgq_mp_story_extract_save_contents(contents)
-        MGQ_MpStory.forget
+        mgq_mp_coop_story_extract_save_contents(contents)
+        MGQ_MpCoopStory.forget
       end
 
       # Makes the game's objects anew, as for a new game, which brings its own story.
       def create_game_objects
-        mgq_mp_story_create_game_objects
-        MGQ_MpStory.forget
+        mgq_mp_coop_story_create_game_objects
+        MGQ_MpCoopStory.forget
       end
     end
   rescue => e
-    MGQ_MpStory.log("save hooks FAILED: #{e.class}: #{e.message}")
+    MGQ_MpCoopStory.log("save hooks FAILED: #{e.class}: #{e.message}")
   end
 end

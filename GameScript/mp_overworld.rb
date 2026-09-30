@@ -2,13 +2,14 @@
 #  mp_overworld.rb
 #
 #  Changelog:
-#      Paulinchen  2026-09-30: Kept a script's message's body, which co-op battles carry their data in
+#      Paulinchen  2026-09-30: Called the battle and party scripts by their new names
+#                            - Kept a script's message's body, which co-op battles carry their data in
 #                            - Told scripts' messages apart before states, since some name a map too
-#                            - Handed co-op battle messages to mp_coop.rb and mp_sync.rb
-#                            - Handed party event messages to mp_events.rb
-#                            - Handed chest messages to mp_events.rb
-#                            - Handed story messages to mp_story.rb, routing scripts' messages through one table
-#                            - Told when the player entered their map, and handed NPC messages to mp_npcs.rb
+#                            - Handed co-op battle messages to mp_battle_coop.rb and mp_battle_sync.rb
+#                            - Handed party event messages to mp_coop_events.rb
+#                            - Handed chest messages to mp_coop_events.rb
+#                            - Handed story messages to mp_coop_story.rb, routing scripts' messages through one table
+#                            - Told when the player entered their map, and handed NPC messages to mp_coop_npcs.rb
 #      Paulinchen  2026-09-29: Told the others while the player types in the chat
 #                            - Showed each player's ping, the own above the player's head and the others' beside their names
 #                            - Left parties to mp_actions.rb, which it asks through Actions
@@ -120,8 +121,8 @@ module MGQ_MpOverworld
   # The scripts that take messages of their own, when they are installed.
   module Routes
     # The script each message goes to, by the field that marks it.
-    SCRIPTS = { "npcs" => :MGQ_MpNpcs, "story" => :MGQ_MpStory, "chest" => :MGQ_MpEvents, "pevent" => :MGQ_MpEvents,
-                "coop" => :MGQ_MpCoop, "battle" => :MGQ_MpSync }
+    SCRIPTS = { "npcs" => :MGQ_MpCoopNpcs, "story" => :MGQ_MpCoopStory, "chest" => :MGQ_MpCoopEvents, "pevent" => :MGQ_MpCoopEvents,
+                "coop" => :MGQ_MpBattleCoop, "battle" => :MGQ_MpBattleSync }
 
     # Hands a message to the script it is for.
     #

@@ -1,7 +1,8 @@
 #----------------------------------------------------------------
-#  mp_battles.rb
+#  mp_battle.rb
 #
 #  Changelog:
+#      Paulinchen  2026-09-30: Renamed from mp_battles.rb, with the module MGQ_MpBattle
 #      Paulinchen  2026-09-30: Created
 #
 #----------------------------------------------------------------
@@ -11,7 +12,7 @@
 # the same characters. The game's own settings come back once the battle ends.
 #
 # It must never interrupt the game, so every entry point rescues.
-module MGQ_MpBattles
+module MGQ_MpBattle
   # The switch that turns off ero offers, a low-HP monster's offer of an H-scene for giving up,
   # and monsters opening conversations, by its name in the editor. An offer would stop one game's
   # battle for a scene the others wait through.
@@ -34,14 +35,14 @@ module MGQ_MpBattles
   #
   # @return [Boolean] false when the hooks are in place already.
   def self.hookable?
-    !SceneManager.respond_to?(:mgq_mp_battles_run)
+    !SceneManager.respond_to?(:mgq_mp_battle_run)
   end
 
   # Writes a line to the mod's InGame.log.
   #
   # @param message [String] The line.
   def self.log(message)
-    MGQ_Multiplayer::Log.write("battles: #{message}")
+    MGQ_Multiplayer::Log.write("battle: #{message}")
   rescue
   end
 
@@ -95,13 +96,13 @@ module MGQ_MpBattles
 
     @installed = true
     BattleManager.singleton_class.class_eval do
-      alias_method :mgq_mp_battles_can_giveup?, :can_giveup?
+      alias_method :mgq_mp_battle_can_giveup?, :can_giveup?
 
       # Offers Give Up, except in a multiplayer battle, where it would end the battle for everyone.
       #
       # @return [Boolean] Whether Give Up is offered.
       def can_giveup?
-        MGQ_MpBattles.running? ? false : mgq_mp_battles_can_giveup?
+        MGQ_MpBattle.running? ? false : mgq_mp_battle_can_giveup?
       end
     end
   rescue => e
@@ -114,18 +115,18 @@ end
 # Each wraps a game method: the original runs first unless said otherwise, and the mod's part never
 # raises.
 
-if MGQ_MpBattles.hookable?
+if MGQ_MpBattle.hookable?
   begin
     class << SceneManager
-      alias mgq_mp_battles_run run
+      alias mgq_mp_battle_run run
 
       # Installs the battle hooks, then runs the game.
       def run
-        MGQ_MpBattles.install
-        mgq_mp_battles_run
+        MGQ_MpBattle.install
+        mgq_mp_battle_run
       end
     end
   rescue => e
-    MGQ_MpBattles.log("SceneManager hook FAILED: #{e.class}: #{e.message}")
+    MGQ_MpBattle.log("SceneManager hook FAILED: #{e.class}: #{e.message}")
   end
 end

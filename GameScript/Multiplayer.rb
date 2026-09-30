@@ -2,9 +2,10 @@
 #  Multiplayer.rb
 #
 #  Changelog:
-#      Paulinchen  2026-09-30: Asked GitHub for a newer release and told MGQ_MpWorld and MGQ_PvpBattle to disable themselves once one is out
-#                            - Read held buttons past the capture too, which moves a text cursor
+#      Paulinchen  2026-09-30: Called the battle and party scripts by their new names
 #                            - Named the mod Monster Girl Quest! Online in the update message
+#                            - Asked GitHub for a newer release and told MGQ_MpWorld and MGQ_MpBattlePvp to disable themselves once one is out
+#                            - Read held buttons past the capture too, which moves a text cursor
 #      Paulinchen  2026-09-29: Said in $mgq_text_input while the player types, so other mods' hotkeys stay quiet
 #                            - Added Capture, which takes the buttons away from the game while a screen of the mod reads them
 #                            - Told whether the game's window is hooked, which the keyboard needs
@@ -71,7 +72,7 @@ module MGQ_Multiplayer
     Log.write("start failed: #{e.class}: #{e.message}")
   end
 
-  # Tells whether a newer release of the mod is out, which MGQ_MpWorld and MGQ_PvpBattle disable
+  # Tells whether a newer release of the mod is out, which MGQ_MpWorld and MGQ_MpBattlePvp disable
   # themselves for, so two games speaking a protocol a refactor changed never meet.
   #
   # @return [Boolean] Whether one was found.
