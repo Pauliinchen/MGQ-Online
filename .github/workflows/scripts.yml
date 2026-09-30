@@ -1,0 +1,20 @@
+# Runs the scripts' tests (GameScript/Tests) on every push and pull request, so they never drift
+# from the scripts. Windows, since Multiplayer.rb builds its paths with backslashes as the game needs.
+name: Scripts
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+
+      - name: Test the scripts
+        run: ruby GameScript/Tests/run.rb

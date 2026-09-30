@@ -47,6 +47,13 @@ jobs:
           DOTNET_ROOT_X86: C:\Program Files (x86)\dotnet
         run: dotnet run --project MGQParadox.Multiplayer.Tests
 
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+
+      - name: Test the scripts
+        run: ruby GameScript/Tests/run.rb
+
       # The runner's Visual Studio brings the C++ linker NativeAOT needs for the DLL.
       - name: Publish (Release publishes also zip the package)
         shell: pwsh

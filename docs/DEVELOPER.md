@@ -25,12 +25,15 @@ GameScript/Multiplayer/Scripts/       Ruby, the other scripts, in the order Mult
   mp_battles_coop.rbx                  co-op battles: the party members on the map join a member's battle
   mp_battles_sync.rbx                  live battles: the host computes, the guest plays back
   mp_battles_pvp.rbx                   PvP battles against a friend's team or a mirror match
+GameScript/Tests/                     Ruby, tests of the scripts outside the game, run.rb runs them all
 MGQParadox.Multiplayer/               C# NativeAOT project -> Multiplayer.dll, and the package
 MGQParadox.Multiplayer.Tests/         xUnit tests of the DLL, 32-bit like it
 package/Multiplayer/                  static files shipped as-is
 Shipping/                             publish output, git-ignored
 docs/DEVELOPER.md                     this file
 .github/workflows/release.yml         tests, builds and attaches the zip on release
+.github/workflows/scripts.yml         tests the scripts on every push
+.github/ISSUE_TEMPLATE/bug_report.yml the form players report bugs with
 ```
 
 **Scripts.** `Multiplayer.rb` is a Patch folder mod: the mod loader loads `Patch/**/*.rb` sorted, capitals first, so it comes after `Discord_RPC.rb` of the Discord mod. At its end it loads the other scripts from `Patch/Multiplayer/Scripts/` itself (`load_scripts`), in the order of its `SCRIPTS`, which the table below follows. They are `.rbx` files because the loader recurses into folders: as `.rb` files it would load them a second time, in alphabetical order. A script may only use what loaded before it at load time; later ones are reached at run time (`defined?`). The order also decides how the battle scripts' hooks wrap each other, since they install them as the game starts running, the last loaded first. A script that is missing or fails to load is logged to `InGame.log`, and the others load all the same.
@@ -105,7 +108,15 @@ Patch/Multiplayer/Scripts/  mp_*.rbx
 dotnet run --project MGQParadox.Multiplayer.Tests
 ```
 
-The tests run 32-bit like the game and need the x86 .NET 10 runtime (`C:\Program Files (x86)\dotnet`); with `DOTNET_ROOT` pointing at the x64 install they need `DOTNET_ROOT_X86` pointing at the x86 one. The scripts are not covered; they only run inside the game.
+The tests run 32-bit like the game and need the x86 .NET 10 runtime (`C:\Program Files (x86)\dotnet`); with `DOTNET_ROOT` pointing at the x64 install they need `DOTNET_ROOT_X86` pointing at the x86 one.
+
+`GameScript/Tests` covers the scripts outside the game, with stand-ins for the parts of RGSS and the game each script touches: how `Multiplayer.rb` loads the others (`loader_test.rb`), the open world with the wheel, chat, parties and the party's message gate (`overworld_test.rb`), the party's events and story (`coop_events_test.rb`), co-op battles (`battles_coop_test.rb`), the shared battle rules (`battles_test.rb`) and the world running behind menus (`async_test.rb`). Each file runs in a Ruby process of its own, since each brings its own stand-ins; `support.rb` gives them `check` and `load_script`. With Ruby 3.3 or later:
+
+```powershell
+ruby GameScript/Tests/run.rb        # -v shows every check
+```
+
+The *Scripts* workflow runs them on every push, and the *Release* workflow before it builds a release. They run on a newer Ruby than the game's (1.9), so they do not catch what only that one lacks. Drawing, input and the game's own battle and event engine stay untested: those need the game.
 
 ## Conventions
 
