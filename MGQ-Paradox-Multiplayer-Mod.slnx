@@ -3,6 +3,7 @@
     <File Path="GameScript/Multiplayer.rb" />
     <File Path="GameScript/mp_actions.rb" />
     <File Path="GameScript/mp_async.rb" />
+    <File Path="GameScript/mp_npcs.rb" />
     <File Path="GameScript/mp_overworld.rb" />
     <File Path="GameScript/mp_sync.rb" />
     <File Path="GameScript/mp_world.rb" />

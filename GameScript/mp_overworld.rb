@@ -2,6 +2,7 @@
 #  mp_overworld.rb
 #
 #  Changelog:
+#      Paulinchen  2026-09-30: Told when the player entered their map, and handed NPC messages to mp_npcs.rb
 #      Paulinchen  2026-09-29: Told the others while the player types in the chat
 #                            - Showed each player's ping, the own above the player's head and the others' beside their names
 #                            - Left parties to mp_actions.rb, which it asks through Actions
@@ -108,6 +109,21 @@ module MGQ_MpOverworld
   rescue => e
     log("tick failed: #{e.class}: #{e.message}") unless @tick_failed
     @tick_failed = true
+  end
+
+  # mp_npcs.rb, when it is installed: the NPCs a party shares on a map.
+  module Npcs
+    # Hands mp_npcs.rb a message about NPCs.
+    #
+    # @param peer [Peers::Peer, nil] Who sent it, nil before their first state.
+    # @param message [Hash] The message's fields.
+    # @return [Boolean] Whether the message was about NPCs.
+    def self.take(peer, message)
+      return false unless message["npcs"]
+
+      MGQ_MpNpcs.take(peer, message) if defined?(MGQ_MpNpcs)
+      true
+    end
   end
 
   # mp_actions.rb, when it is installed: what players do together, such as parties. Without it,
@@ -228,15 +244,14 @@ module MGQ_MpOverworld
     def self.current
       return nil unless $game_player && $game_map && $game_map.map_id > 0
 
-      # Read once per connection, since the state is compared every frame.
-      @identity ||= [MGQ_Multiplayer::Link.player_id, MGQ_Multiplayer::Player.name.to_s]
       looks = $game_player.vehicle || $game_player
       {
-        "id" => @identity[0],
-        "name" => @identity[1],
+        "id" => identity[0],
+        "name" => identity[1],
         "sprite" => looks.character_name.to_s,
         "index" => looks.character_index,
         "map" => $game_map.map_id,
+        "since" => map_since,
         "x" => $game_player.x,
         "y" => $game_player.y,
         "d" => $game_player.direction,
@@ -245,6 +260,25 @@ module MGQ_MpOverworld
         "scene" => scene,
         "ping" => Ping.told,
       }.merge(Actions.state_fields)
+    end
+
+    # The player's id and name, read once per connection, since the state is compared every frame.
+    #
+    # @return [Array<String>] The id and the name.
+    def self.identity
+      @identity ||= [MGQ_Multiplayer::Link.player_id, MGQ_Multiplayer::Player.name.to_s]
+    end
+
+    # Tells when the player entered the map they are on, which decides who of a party on a map is
+    # its Map Owner.
+    #
+    # @return [Integer] Milliseconds since 1970 by this computer's clock.
+    def self.map_since
+      if @since_map != $game_map.map_id
+        @since_map = $game_map.map_id
+        @since = (Time.now.to_f * 1000).to_i
+      end
+      @since
     end
 
     # Tells what the player does: walk the map, travel by boat or airship, fight, watch an event,
@@ -377,7 +411,11 @@ module MGQ_MpOverworld
       when "message"
         state = MGQ_Multiplayer::Link.parse(entry[:payload].dup)
         state.delete(:payload)
-        state["map"] ? Peers.take(seat, state) : Actions.take(Peers.at(seat), state)
+        if state["map"]
+          Peers.take(seat, state)
+        elsif !Npcs.take(Peers.at(seat), state)
+          Actions.take(Peers.at(seat), state)
+        end
       end
     end
   end

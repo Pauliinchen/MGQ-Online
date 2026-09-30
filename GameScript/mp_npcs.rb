@@ -1,0 +1,347 @@
+#----------------------------------------------------------------
+#  mp_npcs.rb
+#
+#  Changelog:
+#      Paulinchen  2026-09-30: Created
+#
+#----------------------------------------------------------------
+
+# The NPCs a party shares on a map. Of the party members on a map, the one who entered it first is
+# its Map Owner: their game moves the map's events as the game does, and tells the others where each
+# stands, which way it faces and which page it shows. The other members' games stop moving events
+# on their own and walk them where the Map Owner's are. Players outside the party, or on other
+# maps, share nothing: each moves their own NPCs.
+#
+# The world's creator plays no part in this; every map has its own Map Owner, and it changes as
+# players come and go.
+#
+# It must never interrupt the game, so every entry point rescues.
+module MGQ_MpNpcs
+  # Frames between two messages of the Map Owner, a quarter of a second at 60 frames per second.
+  SEND_FRAMES = 15
+
+  # Tiles an event walks to catch up; farther away, it moves there at once.
+  CATCH_UP_TILES = 3
+
+  # Frames an event may fail to walk to its place before it moves there at once.
+  STUCK_FRAMES = 60
+
+  # Tiles within which an approaching event notices a party member, as the game's own check does for the player.
+  NEAR_TILES = 20
+
+  @role = nil
+  @frames = 0
+  @sent = {}
+  @present = []
+  @targets = {}
+  @stuck = {}
+  @blockers = []
+
+  # Reports whether the hooks can be installed.
+  #
+  # A second copy of this script would wrap the same methods under the same names, and each hook
+  # would then call itself until the stack overflows.
+  #
+  # @return [Boolean] false when the hooks are in place already.
+  def self.hookable?
+    !Game_Event.method_defined?(:mgq_mp_npcs_update_self_movement)
+  end
+
+  # Writes a line to the Multiplayer mod's InGame.log.
+  #
+  # @param message [String] The line.
+  def self.log(message)
+    MGQ_Multiplayer::Log.write("npcs: #{message}")
+  rescue
+  end
+
+  # This game's part in the NPCs of its map.
+  #
+  # @return [Symbol, nil] :owner while it moves them for its party, :follower while another member
+  #   does, nil while no other party member is on the map.
+  def self.role
+    @role
+  end
+
+  # Reports whether another party member's game moves this map's events.
+  #
+  # @return [Boolean] Whether it does.
+  def self.following?
+    @role == :follower
+  end
+
+  # Lists the other party members on the player's map.
+  #
+  # @return [Array<MGQ_MpOverworld::Peers::Peer>] The members.
+  def self.party_here
+    return [] unless defined?(MGQ_MpOverworld) && MGQ_MpOverworld.in_world? && defined?(MGQ_MpActions)
+    return [] unless MGQ_MpActions::Party.id
+
+    MGQ_MpOverworld::Peers.all.select { |peer| peer.member && peer.state["map"].to_i == $game_map.map_id }
+  end
+
+  # Finds the Map Owner among the party members on the map: the one who entered it first, the lower
+  # player id among equals, so every member's game finds the same one.
+  #
+  # @param members [Array<MGQ_MpOverworld::Peers::Peer>] The other party members on the map.
+  # @return [MGQ_MpOverworld::Peers::Peer, Symbol] The member, or :me for the player.
+  def self.owner(members)
+    me = [[MGQ_MpOverworld::Me.map_since.to_i, MGQ_MpOverworld::Me.identity[0].to_s], :me]
+    others = members.map { |peer| [[peer.state["since"].to_i, peer.state["id"].to_s], peer] }
+    ([me] + others).min_by { |key, _| key }[1]
+  end
+
+  # Follows the map for one frame: finds the Map Owner, and sends or follows the events. Called
+  # after the map's own update, behind other screens too.
+  def self.update
+    members = party_here
+    role = members.empty? ? nil : (owner(members) == :me ? :owner : :follower)
+    change_role(role) if role != @role
+    @blockers = members.map(&:ghost).compact
+
+    case @role
+    when :owner then lead(members)
+    when :follower then follow
+    end
+  rescue => e
+    log("update failed: #{e.class}: #{e.message}") unless @update_failed
+    @update_failed = true
+  end
+
+  # Starts a new part, forgetting what the old one sent or followed.
+  #
+  # @param role [Symbol, nil] The new part.
+  def self.change_role(role)
+    @role = role
+    @sent = {}
+    @present = []
+    @targets = {}
+    @stuck = {}
+    @frames = SEND_FRAMES
+  end
+
+  # As Map Owner, sends newcomers the whole picture and everyone what changed.
+  #
+  # @param members [Array<MGQ_MpOverworld::Peers::Peer>] The other party members on the map.
+  def self.lead(members)
+    seats = members.map(&:seat)
+    (seats - @present).each { |seat| tell(seat, snapshot, true) }
+    @present = seats
+
+    @frames += 1
+    return if @frames < SEND_FRAMES
+
+    @frames = 0
+    now = snapshot
+    changed = now.reject { |id, state| @sent[id] == state }
+    return if changed.empty?
+
+    @sent = now if tell(-1, changed, false)
+  end
+
+  # Reads every event of the map.
+  #
+  # @return [Hash{Integer => Array<Integer>}] Each event's x, y, facing and page by its id.
+  def self.snapshot
+    states = {}
+    $game_map.events.each { |id, event| states[id] = event.mgq_mp_npc_state }
+    states
+  end
+
+  # Sends events' states to one party member or to everyone, who ignore it unless they are in the
+  # party on this map.
+  #
+  # @param seat [Integer] The member's seat, -1 for everyone.
+  # @param states [Hash{Integer => Array<Integer>}] The events' states.
+  # @param full [Boolean] Whether they are all the map's events.
+  # @return [Boolean] Whether it went out.
+  def self.tell(seat, states, full)
+    list = states.map { |id, state| "#{id}:#{state.join(',')}" }.join(";")
+    fields = { "npcs" => $game_map.map_id, "party" => MGQ_MpActions::Party.id, "full" => full ? 1 : 0, "events" => list }
+    MGQ_MpOverworld::Link.send_to(seat, MGQ_MpOverworld::Me.encode(fields))
+  end
+
+  # Takes the Map Owner's events. Called by mp_overworld.rb.
+  #
+  # @param peer [MGQ_MpOverworld::Peers::Peer, nil] Who sent them.
+  # @param message [Hash] The message's fields.
+  def self.take(peer, message)
+    return unless following? && peer && message["npcs"].to_i == $game_map.map_id
+    return unless message["party"] == MGQ_MpActions::Party.id && owner(party_here).equal?(peer)
+
+    full = message["full"] == "1"
+    @targets = {} if full
+    message["events"].to_s.split(";").each do |entry|
+      id, state = entry.split(":", 2)
+      @targets[id.to_i] = state.to_s.split(",").map(&:to_i)
+    end
+    @targets.each { |id, state| place($game_map.events[id], state) } if full
+  rescue => e
+    log("taking events failed: #{e.class}: #{e.message}") unless @take_failed
+    @take_failed = true
+  end
+
+  # Walks every event toward where the Map Owner's stands.
+  def self.follow
+    @targets.each { |id, state| walk($game_map.events[id], id, state) }
+  end
+
+  # Walks an event a step toward its place, or moves it there at once when it is far or stuck.
+  #
+  # An event talking to the player or moved by one of the player's own events stays where it is,
+  # and so does an event on another page than the Map Owner's, which means another story state.
+  #
+  # @param event [Game_Event, nil] The event.
+  # @param id [Integer] Its id.
+  # @param state [Array<Integer>] Its place: x, y, facing and page.
+  def self.walk(event, id, state)
+    return unless event && event.mgq_mp_npc_free? && event.mgq_mp_npc_page == state[3]
+    return if event.moving?
+
+    x, y, direction = state
+    dx = x - event.x
+    dy = y - event.y
+    if dx == 0 && dy == 0
+      @stuck.delete(id)
+      event.mgq_mp_npc_face(direction)
+    elsif dx.abs + dy.abs > CATCH_UP_TILES || (@stuck[id] = @stuck[id].to_i + 1) > STUCK_FRAMES
+      @stuck.delete(id)
+      place(event, state)
+    else
+      event.move_straight(dx.abs >= dy.abs ? (dx > 0 ? 6 : 4) : (dy > 0 ? 2 : 8))
+    end
+  end
+
+  # Moves an event to its place at once.
+  #
+  # @param event [Game_Event, nil] The event.
+  # @param state [Array<Integer>] Its place: x, y, facing and page.
+  def self.place(event, state)
+    return unless event && event.mgq_mp_npc_free? && event.mgq_mp_npc_page == state[3]
+
+    event.moveto(state[0], state[1])
+    event.mgq_mp_npc_face(state[2])
+  end
+
+  # Reports whether a party member stands on a tile, which an event cannot walk onto.
+  #
+  # @param x [Integer] The tile's x.
+  # @param y [Integer] The tile's y.
+  # @return [Boolean] Whether one does.
+  def self.member_at?(x, y)
+    @blockers.any? { |ghost| ghost.x == x && ghost.y == y }
+  end
+
+  # Finds the party member an approaching event goes for on the Map Owner's map: the nearest of the
+  # player and the other members.
+  #
+  # @param event [Game_Event] The event.
+  # @return [Game_Character, nil] The member's ghost when one is nearer than the player, else nil.
+  def self.nearest_member(event)
+    return nil unless @role == :owner
+
+    distance = lambda { |character| event.distance_x_from(character.x).abs + event.distance_y_from(character.y).abs }
+    nearest = @blockers.min_by { |ghost| distance.call(ghost) }
+    nearest && distance.call(nearest) < distance.call($game_player) ? nearest : nil
+  end
+
+  # Reports whether a party member is near enough for an approaching event to notice them.
+  #
+  # @param event [Game_Event] The event.
+  # @return [Boolean] Whether one is.
+  def self.member_near?(event)
+    @role == :owner && @blockers.any? { |ghost| event.distance_x_from(ghost.x).abs + event.distance_y_from(ghost.y).abs < NEAR_TILES }
+  end
+end
+
+# Game hooks.
+#
+# Each wraps a game method: the original runs first unless said otherwise, and the mod's part never
+# raises.
+
+if MGQ_MpNpcs.hookable?
+  begin
+    class Game_Event
+      alias mgq_mp_npcs_update_self_movement update_self_movement
+      alias mgq_mp_npcs_collide_with_characters? collide_with_characters?
+      alias mgq_mp_npcs_near_the_player? near_the_player?
+
+      # Moves the event on its own, unless another party member's game moves it. The original does
+      # not run then.
+      def update_self_movement
+        mgq_mp_npcs_update_self_movement unless MGQ_MpNpcs.following?
+      end
+
+      # Reports whether the event collides with a character on a tile, a party member included.
+      #
+      # @param x [Integer] The tile's x.
+      # @param y [Integer] The tile's y.
+      # @return [Boolean] Whether it does.
+      def collide_with_characters?(x, y)
+        mgq_mp_npcs_collide_with_characters?(x, y) || (normal_priority? && MGQ_MpNpcs.member_at?(x, y))
+      end
+
+      # Reports whether the player, or on the Map Owner's map a party member, is near enough for an
+      # approaching event to go for them.
+      #
+      # @return [Boolean] Whether one is.
+      def near_the_player?
+        mgq_mp_npcs_near_the_player? || MGQ_MpNpcs.member_near?(self)
+      end
+
+      # Walks toward the nearest party member, the player unless another member is nearer. The
+      # original does not run for another member.
+      def move_toward_player
+        member = MGQ_MpNpcs.nearest_member(self)
+        member ? move_toward_character(member) : super
+      end
+
+      # Tells where the event stands, which way it faces and which page it shows.
+      #
+      # @return [Array<Integer>] x, y, facing and the page's index, -1 for none, as when erased.
+      def mgq_mp_npc_state
+        [@x, @y, @direction, mgq_mp_npc_page]
+      end
+
+      # Tells which page the event shows.
+      #
+      # @return [Integer] The page's index, -1 for none.
+      def mgq_mp_npc_page
+        @page ? @event.pages.index(@page).to_i : -1
+      end
+
+      # Reports whether the Map Owner may move the event here: not while it talks to the player or
+      # one of the player's own events moves it.
+      #
+      # @return [Boolean] Whether it may.
+      def mgq_mp_npc_free?
+        !@locked && !@move_route_forcing
+      end
+
+      # Turns the event to a facing, as far as the event lets itself be turned.
+      #
+      # @param direction [Integer] The facing.
+      def mgq_mp_npc_face(direction)
+        set_direction(direction) if direction > 0 && direction != @direction
+      end
+    end
+  rescue => e
+    MGQ_MpNpcs.log("event hooks FAILED: #{e.class}: #{e.message}")
+  end
+
+  begin
+    class Game_Map
+      alias mgq_mp_npcs_update update
+
+      # Updates the map, then its events for the party.
+      #
+      # @param args [Array] The original's arguments.
+      def update(*args)
+        mgq_mp_npcs_update(*args)
+        MGQ_MpNpcs.update
+      end
+    end
+  rescue => e
+    MGQ_MpNpcs.log("map hook FAILED: #{e.class}: #{e.message}")
+  end
+end
