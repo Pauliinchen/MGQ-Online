@@ -5,7 +5,7 @@
 #      Paulinchen  2026-09-30: Sent and took the party's messages through mp_coop.rbx, which drops those of another party
 #                            - Registered with mp_overworld_sync.rbx for its messages instead of being asked by mp_overworld.rbx
 #                            - Moved into Patch/Multiplayer/Scripts as mp_coop_events.rbx, which Multiplayer.rb loads
-#                            - Renamed from mp_events.rbx, with the module MGQ_MpCoopEvents
+#                            - Renamed from mp_events.rb, with the module MGQ_MpCoopEvents
 #                            - Played a party's story events in the leader's game and showed its messages to the members
 #                            - Took the party along where the leader goes, and gathered it for story scenes
 #                            - Created

@@ -9,7 +9,7 @@
 #                            - Moved the mod folder into Patch/Multiplayer and loaded the other scripts from there in a fixed order
 #                            - Called the battle and party scripts by their new names
 #                            - Named the mod Monster Girl Quest! Online in the update message
-#                            - Asked GitHub for a newer release and told MGQ_MpWorld and MGQ_MpBattlePvp to disable themselves once one is out
+#                            - Asked GitHub for a newer release and told MGQ_MpWorld and MGQ_MpBattlesPvp to disable themselves once one is out
 #                            - Read held buttons past the capture too, which moves a text cursor
 #      Paulinchen  2026-09-29: Said in $mgq_text_input while the player types, so other mods' hotkeys stay quiet
 #                            - Added Capture, which takes the buttons away from the game while a screen of the mod reads them
@@ -50,7 +50,7 @@ module MGQ_Multiplayer
     mp_actors mp_async mp_overworld_sync mp_actions mp_chat mp_overworld
     mp_coop mp_coop_events mp_coop_npcs mp_coop_story
     mp_save_distribution mp_world
-    mp_battle mp_battle_coop mp_battle_sync mp_battle_pvp
+    mp_battles mp_battles_coop mp_battles_sync mp_battles_pvp
   ]
 
   # Extension of the scripts, which the mod loader skips, since only this script may load them.
@@ -98,7 +98,7 @@ module MGQ_Multiplayer
     Log.write("start failed: #{e.class}: #{e.message}")
   end
 
-  # Tells whether a newer release of the mod is out, which MGQ_MpWorld and MGQ_MpBattlePvp disable
+  # Tells whether a newer release of the mod is out, which MGQ_MpWorld and MGQ_MpBattlesPvp disable
   # themselves for, so two games speaking a protocol a refactor changed never meet.
   #
   # @return [Boolean] Whether one was found.

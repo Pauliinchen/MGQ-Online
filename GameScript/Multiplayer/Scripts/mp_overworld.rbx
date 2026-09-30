@@ -7,7 +7,7 @@
 #                            - Called the battle and party scripts by their new names
 #                            - Kept a script's message's body, which co-op battles carry their data in
 #                            - Told scripts' messages apart before states, since some name a map too
-#                            - Handed co-op battle messages to mp_battle_coop.rbx and mp_battle_sync.rbx
+#                            - Handed co-op battle messages to mp_battles_coop.rbx and mp_battles_sync.rbx
 #                            - Handed party event messages to mp_coop_events.rbx
 #                            - Handed chest messages to mp_coop_events.rbx
 #                            - Handed story messages to mp_coop_story.rbx, routing scripts' messages through one table

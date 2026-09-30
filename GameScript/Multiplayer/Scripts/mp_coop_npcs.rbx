@@ -5,7 +5,7 @@
 #      Paulinchen  2026-09-30: Sent and took the party's messages through mp_coop.rbx, which drops those of another party
 #                            - Registered with mp_overworld_sync.rbx for its messages instead of being asked by mp_overworld.rbx
 #                            - Moved into Patch/Multiplayer/Scripts as mp_coop_npcs.rbx, which Multiplayer.rb loads
-#                            - Renamed from mp_npcs.rbx, with the module MGQ_MpCoopNpcs
+#                            - Renamed from mp_npcs.rb, with the module MGQ_MpCoopNpcs
 #      Paulinchen  2026-09-30: Created
 #
 #----------------------------------------------------------------

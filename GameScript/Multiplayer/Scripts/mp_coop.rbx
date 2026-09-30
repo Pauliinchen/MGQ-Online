@@ -8,7 +8,7 @@
 
 # Everything players of a world do as a party: who is in the player's party, and the party's
 # messages. The party scripts after it (mp_coop_events.rbx, mp_coop_npcs.rbx, mp_coop_story.rbx
-# and mp_battle_coop.rbx) register here for their fields; this script takes those messages from
+# and mp_battles_coop.rbx) register here for their fields; this script takes those messages from
 # mp_overworld_sync.rbx, drops those of another party, and hands on the rest.
 #
 # It must never interrupt the game, so every entry point rescues.

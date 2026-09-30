@@ -5,7 +5,7 @@
 #      Paulinchen  2026-09-30: Sent and took the party's messages through mp_coop.rbx, which drops those of another party
 #                            - Registered with mp_overworld_sync.rbx for its messages instead of being asked by mp_overworld.rbx
 #                            - Moved into Patch/Multiplayer/Scripts as mp_coop_story.rbx, which Multiplayer.rb loads
-#                            - Renamed from mp_story.rbx, with the module MGQ_MpCoopStory
+#                            - Renamed from mp_story.rb, with the module MGQ_MpCoopStory
 #                            - Kept what members as far along as the leader play together, companions who join included
 #                            - Kept chests the player's own while they play the leader's story
 #                            - Created
