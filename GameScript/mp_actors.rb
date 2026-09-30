@@ -2,7 +2,8 @@
 #  mp_actors.rb
 #
 #  Changelog:
-#      Paulinchen  2026-09-30: Created
+#      Paulinchen  2026-09-30: Cleared a rebuilt character's actions, so a pre-battle spell finds its chain input set
+#                            - Created
 #
 #----------------------------------------------------------------
 
@@ -561,6 +562,9 @@ class Game_MpActor < Game_Actor
     @member.equips.first(@equips.size).each_with_index { |item, slot| @equips[slot].object = item if item }
     refresh
     recover_all
+    # Only clearing the actions sets the chain input, which a pre-battle spell reads before the
+    # first turn would clear them.
+    clear_actions
   end
 
   # Completes an ability table for every skill type.
