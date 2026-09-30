@@ -2,7 +2,8 @@
 #  mp_battle_sync.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-09-30: Moved into Patch/Multiplayer as mp_battle_sync.rbx, which Multiplayer.rb loads
+#      Paulinchen  2026-09-30: Registered with mp_overworld_sync.rbx for its messages instead of being asked by mp_overworld.rbx
+#                            - Moved into Patch/Multiplayer as mp_battle_sync.rbx, which Multiplayer.rb loads
 #                            - Renamed from mp_sync.rbx, with the module MGQ_MpBattleSync
 #                            - Let a co-op player who got away leave the battle, which the others fight on
 #                            - Held the battle's menus while waiting, so a hidden party command no longer takes presses after auto battle
@@ -189,9 +190,9 @@ module MGQ_MpBattleSync
     log("a guest left the co-op battle, their characters leave at the next command phase")
   end
 
-  # Takes a message of a co-op battle from the world's room. Called by mp_overworld.rbx.
+  # Takes a message of a co-op battle from the world's room. Called by mp_overworld_sync.rbx.
   #
-  # @param peer [MGQ_MpOverworld::Peers::Peer, nil] Who sent it.
+  # @param peer [MGQ_MpOverworldSync::Peers::Peer, nil] Who sent it.
   # @param message [Hash] The message: "battle" its kind, "bid" the battle's id, and the body.
   def self.take(peer, message)
     return unless peer && world? && @role && message["bid"] == @battle_id
@@ -532,7 +533,7 @@ module MGQ_MpBattleSync
     # @return [Boolean] Whether it went out.
     def self.post(kind, body = "")
       if MGQ_MpBattleSync.world?
-        MGQ_MpOverworld::Link.send_to(-1, "battle=#{kind}\nbid=#{MGQ_MpBattleSync.battle_id}\n\n#{body}")
+        MGQ_MpOverworldSync::Link.send_to(-1, "battle=#{kind}\nbid=#{MGQ_MpBattleSync.battle_id}\n\n#{body}")
       else
         MGQ_Multiplayer::Link.post("#{kind}\n#{body}")
       end
@@ -600,10 +601,10 @@ module MGQ_MpBattleSync
     #
     # @return [Boolean] Whether the other side is gone: every guest for the host, the host for a guest.
     def self.world_gone?
-      return true unless MGQ_MpOverworld.in_world?
+      return true unless MGQ_MpOverworldSync.in_world?
 
       MGQ_MpBattleSync.guests_in.each do |seat|
-        MGQ_MpBattleSync.guest_left(seat) if MGQ_MpOverworld::Peers.at(seat).nil? || take_from("leave", seat)
+        MGQ_MpBattleSync.guest_left(seat) if MGQ_MpOverworldSync::Peers.at(seat).nil? || take_from("leave", seat)
       end
       MGQ_MpBattleSync.guests_in.empty?
     end
@@ -2030,6 +2031,14 @@ module MGQ_MpBattleSync
       Channel.post("leave") if MGQ_MpBattleSync.coop? && MGQ_MpBattleSync.guest? && scene.send(:scene_changing?)
     end
   end
+end
+
+# What this script takes part in of the world's messages, through mp_overworld_sync.rbx.
+
+begin
+  MGQ_MpOverworldSync.route("battle") { |peer, message| MGQ_MpBattleSync.take(peer, message) }
+rescue => e
+  MGQ_MpBattleSync.log("overworld sync FAILED: #{e.class}: #{e.message}")
 end
 
 if MGQ_MpBattleSync.hookable?

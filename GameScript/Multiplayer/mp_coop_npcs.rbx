@@ -2,7 +2,8 @@
 #  mp_coop_npcs.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-09-30: Moved into Patch/Multiplayer as mp_coop_npcs.rbx, which Multiplayer.rb loads
+#      Paulinchen  2026-09-30: Registered with mp_overworld_sync.rbx for its messages instead of being asked by mp_overworld.rbx
+#                            - Moved into Patch/Multiplayer as mp_coop_npcs.rbx, which Multiplayer.rb loads
 #                            - Renamed from mp_npcs.rbx, with the module MGQ_MpCoopNpcs
 #      Paulinchen  2026-09-30: Created
 #
@@ -74,21 +75,21 @@ module MGQ_MpCoopNpcs
 
   # Lists the other party members on the player's map.
   #
-  # @return [Array<MGQ_MpOverworld::Peers::Peer>] The members.
+  # @return [Array<MGQ_MpOverworldSync::Peers::Peer>] The members.
   def self.party_here
-    return [] unless defined?(MGQ_MpOverworld) && MGQ_MpOverworld.in_world? && defined?(MGQ_MpActions)
+    return [] unless defined?(MGQ_MpOverworldSync) && MGQ_MpOverworldSync.in_world? && defined?(MGQ_MpActions)
     return [] unless MGQ_MpActions::Party.id
 
-    MGQ_MpOverworld::Peers.all.select { |peer| peer.member && peer.state["map"].to_i == $game_map.map_id }
+    MGQ_MpOverworldSync::Peers.all.select { |peer| peer.member && peer.state["map"].to_i == $game_map.map_id }
   end
 
   # Finds the Map Owner among the party members on the map: the one who entered it first, the lower
   # player id among equals, so every member's game finds the same one.
   #
-  # @param members [Array<MGQ_MpOverworld::Peers::Peer>] The other party members on the map.
-  # @return [MGQ_MpOverworld::Peers::Peer, Symbol] The member, or :me for the player.
+  # @param members [Array<MGQ_MpOverworldSync::Peers::Peer>] The other party members on the map.
+  # @return [MGQ_MpOverworldSync::Peers::Peer, Symbol] The member, or :me for the player.
   def self.owner(members)
-    me = [[MGQ_MpOverworld::Me.map_since.to_i, MGQ_MpOverworld::Me.identity[0].to_s], :me]
+    me = [[MGQ_MpOverworldSync::Me.map_since.to_i, MGQ_MpOverworldSync::Me.identity[0].to_s], :me]
     others = members.map { |peer| [[peer.state["since"].to_i, peer.state["id"].to_s], peer] }
     ([me] + others).min_by { |key, _| key }[1]
   end
@@ -124,7 +125,7 @@ module MGQ_MpCoopNpcs
 
   # As Map Owner, sends newcomers the whole picture and everyone what changed.
   #
-  # @param members [Array<MGQ_MpOverworld::Peers::Peer>] The other party members on the map.
+  # @param members [Array<MGQ_MpOverworldSync::Peers::Peer>] The other party members on the map.
   def self.lead(members)
     seats = members.map(&:seat)
     (seats - @present).each { |seat| tell(seat, snapshot, true) }
@@ -160,12 +161,12 @@ module MGQ_MpCoopNpcs
   def self.tell(seat, states, full)
     list = states.map { |id, state| "#{id}:#{state.join(',')}" }.join(";")
     fields = { "npcs" => $game_map.map_id, "party" => MGQ_MpActions::Party.id, "full" => full ? 1 : 0, "events" => list }
-    MGQ_MpOverworld::Link.send_to(seat, MGQ_MpOverworld::Me.encode(fields))
+    MGQ_MpOverworldSync::Link.send_to(seat, MGQ_MpOverworldSync::Me.encode(fields))
   end
 
-  # Takes the Map Owner's events. Called by mp_overworld.rbx.
+  # Takes the Map Owner's events. Called by mp_overworld_sync.rbx.
   #
-  # @param peer [MGQ_MpOverworld::Peers::Peer, nil] Who sent them.
+  # @param peer [MGQ_MpOverworldSync::Peers::Peer, nil] Who sent them.
   # @param message [Hash] The message's fields.
   def self.take(peer, message)
     return unless following? && peer && message["npcs"].to_i == $game_map.map_id
@@ -254,6 +255,14 @@ module MGQ_MpCoopNpcs
   def self.member_near?(event)
     @role == :owner && @blockers.any? { |ghost| event.distance_x_from(ghost.x).abs + event.distance_y_from(ghost.y).abs < NEAR_TILES }
   end
+end
+
+# What this script takes part in of the world's messages, through mp_overworld_sync.rbx.
+
+begin
+  MGQ_MpOverworldSync.route("npcs") { |peer, message| MGQ_MpCoopNpcs.take(peer, message) }
+rescue => e
+  MGQ_MpCoopNpcs.log("overworld sync FAILED: #{e.class}: #{e.message}")
 end
 
 # Game hooks.

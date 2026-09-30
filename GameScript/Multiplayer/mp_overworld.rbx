@@ -2,7 +2,8 @@
 #  mp_overworld.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-09-30: Moved into Patch/Multiplayer as mp_overworld.rbx, which Multiplayer.rb loads
+#      Paulinchen  2026-09-30: Left the world's messages to mp_overworld_sync.rbx, keeping what the player sees of the others
+#                            - Moved into Patch/Multiplayer as mp_overworld.rbx, which Multiplayer.rb loads
 #                            - Called the battle and party scripts by their new names
 #                            - Kept a script's message's body, which co-op battles carry their data in
 #                            - Told scripts' messages apart before states, since some name a map too
@@ -18,13 +19,10 @@
 #
 #----------------------------------------------------------------
 
-# The other players of the open world on the map: each game tells the others where its player
-# stands, how they look and whether they are on the map, in a battle, a menu or an event, and
-# shows the players on the same map as ghosts with their names, which walk through everything and
-# trigger nothing. A line at the bottom left tells who came and went.
-#
-# What players do together, such as parties, is mp_actions.rbx's, which this script asks through
-# Actions whenever it is installed.
+# What the player sees of the other players of the open world: their ghosts on the same map, which
+# walk through everything and trigger nothing, with their names, what they do and their ping, the
+# player's own ping, and the line at the bottom left. What the games tell each other is
+# mp_overworld_sync.rbx's.
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpOverworld
@@ -44,35 +42,11 @@ module MGQ_MpOverworld
     "away" => 6,
   }
 
-  # What a player does on a screen of the game, by the screen's class name; any other screen is a menu.
-  SCREENS = {
-    /\AScene_(Item|Storehouse)\z/ => "items",
-    /\AScene_(Equip|EquipStone\w*|Smith|Synthesize)\z/ => "equip",
-    /\AScene_Shop\z/ => "shop",
-    /\AScene_(Poker|Slot|CasinoPrize)\z/ => "casino",
-    /Library/ => "library",
-  }
-
   # Tiles a ghost walks to catch up; farther away, it moves there at once.
   CATCH_UP_TILES = 3
 
   # Opacity of the ghost of a player outside the party.
   STRANGER_OPACITY = 150
-
-  # Frames a notice stays at the bottom left, four seconds at 60 frames per second.
-  NOTICE_FRAMES = 240
-
-  # Frames between two looks at the connection.
-  STATUS_FRAMES = 30
-
-  # Bytes the DLL may write an inbox entry into at first.
-  ENTRY_SIZE = 4096
-
-  # Milliseconds a ping must differ from the one the others know before they are told again.
-  PING_STEP = 20
-
-  # Share of the ping the others know that a new ping must differ by, too, before they are told again.
-  PING_SHARE = 0.25
 
   # Colors of a ping, by the most milliseconds each stands for; above them all, the last.
   PING_COLORS = [[100, Color.new(128, 255, 128)], [200, Color.new(255, 224, 96)], [nil, Color.new(255, 112, 96)]]
@@ -99,426 +73,18 @@ module MGQ_MpOverworld
   #
   # @return [Boolean] Whether mp_world.rbx has a world open.
   def self.in_world?
-    defined?(MGQ_MpWorld) && MGQ_MpWorld.open? ? true : false
+    MGQ_MpOverworldSync.in_world?
   end
 
-  # Takes what the others sent and tells them what changed here. Called every frame in every scene.
-  def self.tick
-    unless in_world?
-      Peers.clear unless Peers.empty?
-      Actions.tick(false)
-      return
-    end
+  # Writes a ping as it shows, with the color that says how good it is.
+  #
+  # @param ping [String, Integer, nil] The milliseconds.
+  # @return [Array, nil] The text and its color, nil for no ping.
+  def self.ping_label(ping)
+    return nil if ping.to_s.empty?
 
-    Inbox.take_all
-    Actions.tick(true)
-    Me.tell_changes
-    Status.look
-  rescue => e
-    log("tick failed: #{e.class}: #{e.message}") unless @tick_failed
-    @tick_failed = true
-  end
-
-  # The scripts that take messages of their own, when they are installed.
-  module Routes
-    # The script each message goes to, by the field that marks it.
-    SCRIPTS = { "npcs" => :MGQ_MpCoopNpcs, "story" => :MGQ_MpCoopStory, "chest" => :MGQ_MpCoopEvents, "pevent" => :MGQ_MpCoopEvents,
-                "coop" => :MGQ_MpBattleCoop, "battle" => :MGQ_MpBattleSync }
-
-    # Hands a message to the script it is for.
-    #
-    # @param peer [Peers::Peer, nil] Who sent it, nil before their first state.
-    # @param message [Hash] The message's fields.
-    # @return [Boolean] Whether it was for one of these scripts.
-    def self.take(peer, message)
-      field, name = SCRIPTS.find { |key, _| message[key] }
-      return false unless field
-
-      Object.const_get(name).take(peer, message) if Object.const_defined?(name)
-      true
-    end
-  end
-
-  # mp_actions.rbx, when it is installed: what players do together, such as parties. Without it,
-  # every call answers as if nobody were in a party.
-  module Actions
-    # Reports whether mp_actions.rbx is installed.
-    #
-    # @return [Boolean] Whether it is.
-    def self.installed?
-      defined?(MGQ_MpActions) ? true : false
-    end
-
-    # Lets mp_actions.rbx follow the frames.
-    #
-    # @param in_world [Boolean] Whether a world is open.
-    def self.tick(in_world)
-      MGQ_MpActions.tick(in_world) if installed?
-    end
-
-    # Asks mp_actions.rbx for its fields of the player's state.
-    #
-    # @return [Hash] The fields.
-    def self.state_fields
-      installed? ? MGQ_MpActions.state_fields : {}
-    end
-
-    # Asks mp_actions.rbx whether it has the player busy, such as typing in the chat.
-    #
-    # @return [String, nil] A key of STATE_ICONS, nil when it has not.
-    def self.scene
-      installed? ? MGQ_MpActions.scene : nil
-    end
-
-    # Hands mp_actions.rbx a message that is no state.
-    #
-    # @param peer [Peers::Peer, nil] Who sent it, nil before their first state.
-    # @param message [Hash] The message's fields.
-    def self.take(peer, message)
-      MGQ_MpActions.take(peer, message) if installed?
-    end
-
-    # Tells mp_actions.rbx what another player just told.
-    #
-    # @param peer [Peers::Peer] The player.
-    def self.observe(peer)
-      MGQ_MpActions.observe(peer) if installed?
-    end
-
-    # Tells mp_actions.rbx that another player left the world.
-    #
-    # @param peer [Peers::Peer] The player.
-    def self.observe_leaving(peer)
-      MGQ_MpActions.observe_leaving(peer) if installed?
-    end
-
-    # Asks mp_actions.rbx for the line above a ghost's name.
-    #
-    # @param peer [Peers::Peer] The ghost's player.
-    # @return [Array, nil] The text and its color, nil for none.
-    def self.label_line(peer)
-      installed? ? MGQ_MpActions.label_line(peer) : nil
-    end
-  end
-
-  # Patch/Multiplayer/Multiplayer.dll's world room: the inbox and sending.
-  module Link
-    # Hands out the oldest inbox entry.
-    #
-    # @return [Hash, nil] "kind" ("seat", "in", "out" or "message"), "seat", "others", and the
-    #   message's text under :payload; nil while none waits.
-    def self.next_entry
-      text = MGQ_Multiplayer::Link.read('mp_world_receive', ENTRY_SIZE)
-      text.empty? ? nil : MGQ_Multiplayer::Link.parse(text)
-    end
-
-    # Sends a message to one seat or to every other game.
-    #
-    # @param target [Integer] The seat, -1 for everyone.
-    # @param text [String] The message.
-    # @return [Boolean] Whether it went out.
-    def self.send_to(target, text)
-      MGQ_Multiplayer::Link.function('mp_world_send', 'lp').call(target, text + "\0") == 1
-    end
-
-    # Reads how the connection stands.
-    #
-    # @return [Hash] "state" ("idle", "connecting", "open", "reconnecting" or "failed"), "seat", "others" and "error".
-    def self.status
-      text = MGQ_Multiplayer::Link.read('mp_world_status', 1024)
-      text.empty? ? { "state" => "idle" } : MGQ_Multiplayer::Link.parse(text)
-    end
-  end
-
-  # What this game tells the others about its player.
-  module Me
-    # Tells every other game what changed, if anything did.
-    def self.tell_changes
-      state = current
-      return if state.nil? || state == @told
-
-      @told = state if Link.send_to(-1, encode(state))
-    end
-
-    # Tells one game everything, as a newcomer needs.
-    #
-    # @param seat [Integer] The newcomer's seat, -1 for everyone, which also reads the player's
-    #   id and name again, since a new connection may follow a new name.
-    def self.tell_all(seat)
-      @identity = nil if seat < 0
-      state = current
-      Link.send_to(seat, encode(state)) if state
-      @told = state if seat < 0
-    end
-
-    # Reads what the others need to know about the player.
-    #
-    # @return [Hash, nil] The player's state, nil before the map exists.
-    def self.current
-      return nil unless $game_player && $game_map && $game_map.map_id > 0
-
-      looks = $game_player.vehicle || $game_player
-      {
-        "id" => identity[0],
-        "name" => identity[1],
-        "sprite" => looks.character_name.to_s,
-        "index" => looks.character_index,
-        "map" => $game_map.map_id,
-        "since" => map_since,
-        "x" => $game_player.x,
-        "y" => $game_player.y,
-        "d" => $game_player.direction,
-        "speed" => $game_player.real_move_speed,
-        "hidden" => $game_player.transparent ? 1 : 0,
-        "scene" => scene,
-        "ping" => Ping.told,
-      }.merge(Actions.state_fields)
-    end
-
-    # The player's id and name, read once per connection, since the state is compared every frame.
-    #
-    # @return [Array<String>] The id and the name.
-    def self.identity
-      @identity ||= [MGQ_Multiplayer::Link.player_id, MGQ_Multiplayer::Player.name.to_s]
-    end
-
-    # Tells when the player entered the map they are on, which decides who of a party on a map is
-    # its Map Owner.
-    #
-    # @return [Integer] Milliseconds since 1970 by this computer's clock.
-    def self.map_since
-      if @since_map != $game_map.map_id
-        @since_map = $game_map.map_id
-        @since = (Time.now.to_f * 1000).to_i
-      end
-      @since
-    end
-
-    # Tells what the player does: walk the map, travel by boat or airship, fight, watch an event,
-    # sit in a menu or one of its screens, or have the game in the background.
-    #
-    # @return [String] A key of STATE_ICONS, or "map" for walking the map.
-    def self.scene
-      current = SceneManager.scene
-      name = current.class.name.to_s
-      return "battle" if current.is_a?(Scene_Battle)
-      return "event" if name =~ /Novel/ || (current.is_a?(Scene_Map) && ($game_message.busy? || $game_map.interpreter.running?))
-      return "away" unless MGQ_Multiplayer::Background.in_front?
-
-      busy = Actions.scene
-      return busy if busy
-      return SCREENS.find { |pattern, _| name =~ pattern }.to_a[1] || "menu" unless current.is_a?(Scene_Map)
-
-      return "flying" if $game_player.in_airship?
-
-      $game_player.in_boat? || $game_player.in_ship? ? "sailing" : "map"
-    end
-
-    # Writes a state as a message.
-    #
-    # @param state [Hash] The state.
-    # @return [String] The message: key=value lines.
-    def self.encode(state)
-      state.map { |key, value| "#{key}=#{value.to_s.gsub(/[\r\n]/, ' ')}" }.join("\n") + "\n\n"
-    end
-  end
-
-  # The other games of the world, by seat, as their last messages said.
-  module Peers
-    # Another player: their seat, what they last told, and their ghost while on this map.
-    #
-    # @!attribute seat [Integer] Their game's seat.
-    # @!attribute state [Hash] What they last told: "name", "sprite", "index", "map", "x", "y", "d", "speed", "hidden", "scene".
-    # @!attribute ghost [Game_MpGhost, nil] Their ghost, while they are on this map.
-    # @!attribute member [Boolean] Whether they were in the player's party at their last message.
-    Peer = Struct.new(:seat, :state, :ghost, :member)
-
-    @peers = {}
-
-    # Takes what a game told.
-    #
-    # @param seat [Integer] The game's seat.
-    # @param state [Hash] What it told.
-    def self.take(seat, state)
-      peer = @peers[seat]
-
-      if peer
-        peer.state = state
-      else
-        peer = @peers[seat] = Peer.new(seat, state, nil, false)
-        Status.notice("#{state['name']} joined the world.")
-      end
-
-      Actions.observe(peer)
-    end
-
-    # Finds a game by its seat.
-    #
-    # @param seat [Integer] The seat.
-    # @return [Peer, nil] The game, nil before its first state.
-    def self.at(seat)
-      @peers[seat]
-    end
-
-    # Forgets a game that left.
-    #
-    # @param seat [Integer] Its seat.
-    def self.remove(seat)
-      peer = @peers.delete(seat)
-      return unless peer
-
-      Status.notice("#{peer.state['name']} left the world.")
-      Actions.observe_leaving(peer)
-    end
-
-    # Forgets every game, as after a reconnect or once the world closed.
-    def self.clear
-      @peers.clear
-    end
-
-    # Reports whether no other game is known.
-    #
-    # @return [Boolean] Whether none is.
-    def self.empty?
-      @peers.empty?
-    end
-
-    # Lists the other games.
-    #
-    # @return [Array<Peer>] The games.
-    def self.all
-      @peers.values
-    end
-  end
-
-  # Reads the world room's inbox.
-  module Inbox
-    # Most entries read per frame, so a flood never stalls a frame.
-    MAX_PER_FRAME = 64
-
-    # Takes every waiting entry.
-    def self.take_all
-      MAX_PER_FRAME.times do
-        entry = Link.next_entry
-        break unless entry
-
-        take(entry)
-      end
-    end
-
-    # Takes one entry.
-    #
-    # @param entry [Hash] The entry, see Link.next_entry.
-    def self.take(entry)
-      seat = entry["seat"].to_i
-
-      case entry["kind"]
-      when "seat"
-        # A new connection: every other game is told everything, and tells everything back.
-        Peers.clear
-        Me.tell_all(-1)
-      when "in"
-        Me.tell_all(seat)
-      when "out"
-        Peers.remove(seat)
-      when "message"
-        state = MGQ_Multiplayer::Link.parse(entry[:payload].dup)
-        # A script's message may name a map too, such as where the leader went, so it is told
-        # apart before a state, which is any other message with a map. Its body, such as a co-op
-        # battle's stream, is its script's; a state has none.
-        if Routes.take(Peers.at(seat), state)
-          nil
-        elsif state["map"]
-          state.delete(:payload)
-          Peers.take(seat, state)
-        else
-          Actions.take(Peers.at(seat), state)
-        end
-      end
-    end
-  end
-
-  # The line at the bottom left of the map: who came and went, and when the connection is down.
-  module Status
-    @frames = 0
-    @notices = []
-
-    # Adds a notice, shown for a few seconds.
-    #
-    # @param text [String] The notice.
-    def self.notice(text)
-      @notices.push([text, NOTICE_FRAMES])
-      @notices.shift while @notices.size > 3
-    end
-
-    # Looks at the connection every STATUS_FRAMES, and lets notices run out.
-    def self.look
-      @notices.each { |notice| notice[1] -= 1 }
-      @notices.reject! { |_, left| left <= 0 }
-      @frames += 1
-      return if @frames < STATUS_FRAMES
-
-      @frames = 0
-      state = Link.status
-      Ping.take(state["ping"])
-      @problem =
-        case state["state"]
-        when "reconnecting" then "Reconnecting . . ."
-        when "connecting" then state["error"] || "Connecting . . ."
-        when "failed" then "Not connected: #{state['error']}"
-        end
-    end
-
-    # Tells what the line shows now.
-    #
-    # @return [Array<String>] The lines, the connection's problem first.
-    def self.lines
-      ([@problem] + @notices.map { |text, _| text }).compact
-    end
-  end
-
-  # The player's ping: the round trip to the relay, which the DLL times every few seconds. The
-  # player sees each new one; the others are told only once it moved noticeably, since every
-  # message counts against the relay's free plan.
-  module Ping
-    @measured = nil
-    @told = ""
-
-    # Takes the ping the connection's status tells.
-    #
-    # @param text [String, nil] The milliseconds, nil or empty while there is no connection.
-    def self.take(text)
-      @measured = text.to_s.empty? ? nil : text.to_i
-      return if @measured.nil?
-
-      told = @told.empty? ? nil : @told.to_i
-      @told = @measured.to_s if told.nil? || (@measured - told).abs >= [PING_STEP, told * PING_SHARE].max
-    end
-
-    # The last ping measured.
-    #
-    # @return [Integer, nil] The milliseconds, nil while there is no connection.
-    def self.measured
-      @measured
-    end
-
-    # The ping the others are told.
-    #
-    # @return [String] The milliseconds, empty before the first.
-    def self.told
-      @told
-    end
-
-    # Writes a ping as it shows, with the color that says how good it is.
-    #
-    # @param ping [String, Integer, nil] The milliseconds.
-    # @return [Array, nil] The text and its color, nil for no ping.
-    def self.label(ping)
-      return nil if ping.to_s.empty?
-
-      milliseconds = ping.to_i
-      ["#{milliseconds} ms", PING_COLORS.find { |most, _| most.nil? || milliseconds <= most }[1]]
-    end
+    milliseconds = ping.to_i
+    ["#{milliseconds} ms", PING_COLORS.find { |most, _| most.nil? || milliseconds <= most }[1]]
   end
 
   # Moves the ghosts of the players on this map. Called by the map every frame.
@@ -526,7 +92,7 @@ module MGQ_MpOverworld
     return unless in_world?
 
     map = $game_map.map_id
-    Peers.all.each do |peer|
+    MGQ_MpOverworldSync::Peers.all.each do |peer|
       here = peer.state["map"].to_i == map
 
       if here
@@ -543,9 +109,9 @@ module MGQ_MpOverworld
 
   # Lists the players whose ghosts are on this map.
   #
-  # @return [Array<Peers::Peer>] The players.
+  # @return [Array<MGQ_MpOverworldSync::Peers::Peer>] The players.
   def self.ghosts
-    in_world? ? Peers.all.select { |peer| peer.ghost } : []
+    in_world? ? MGQ_MpOverworldSync::Peers.all.select { |peer| peer.ghost } : []
   end
 end
 
@@ -600,7 +166,7 @@ class Game_MpGhost < Game_Character
 end
 
 # A ghost's name above its head, with an icon for what its player does, green for a party member,
-# and above it the line mp_actions.rbx gives, such as an invite.
+# and above it the line a script gives through mp_overworld_sync.rbx, such as an invite.
 class Sprite_MpGhostLabel < Sprite
   # Width of the label.
   WIDTH = 240
@@ -631,13 +197,13 @@ class Sprite_MpGhostLabel < Sprite
   # Draws the label, if it changed, and follows the ghost's sprite.
   #
   # @param sprite [Sprite_Character] The ghost's sprite.
-  # @param peer [MGQ_MpOverworld::Peers::Peer] The ghost's player.
+  # @param peer [MGQ_MpOverworldSync::Peers::Peer] The ghost's player.
   def show(sprite, peer)
     state = peer.state
     self.x = sprite.x
     self.y = sprite.y - sprite.height - LINE * 2 + 4
     self.visible = sprite.visible && sprite.opacity > 0 && state["hidden"].to_i != 1
-    above = MGQ_MpOverworld::Actions.label_line(peer)
+    above = MGQ_MpOverworldSync.label_line_of(peer)
     drawn = [state["name"], state["scene"], state["ping"], peer.member, above]
     return if drawn == @shown
 
@@ -647,7 +213,7 @@ class Sprite_MpGhostLabel < Sprite
     bitmap.font.outline = true
     line(0, above[0], above[1]) if above
     draw_name(state["name"].to_s, MGQ_MpOverworld::STATE_ICONS[state["scene"]], peer.member ? MEMBER_COLOR : Color.new(255, 255, 255),
-              MGQ_MpOverworld::Ping.label(state["ping"]))
+              MGQ_MpOverworld.ping_label(state["ping"]))
   end
 
   # Draws a centered line of text.
@@ -723,7 +289,7 @@ class Sprite_MpOwnPing < Sprite
   #
   # @param sprite [Sprite_Character, nil] The player's sprite.
   def show(sprite)
-    ping = MGQ_MpOverworld.in_world? ? MGQ_MpOverworld::Ping.label(MGQ_MpOverworld::Ping.measured) : nil
+    ping = MGQ_MpOverworld.in_world? ? MGQ_MpOverworld.ping_label(MGQ_MpOverworldSync::Ping.measured) : nil
     self.visible = !ping.nil? && !sprite.nil? && sprite.visible && sprite.opacity > 0
     return unless visible
 
@@ -772,7 +338,7 @@ class Sprite_MpWorldStatus < Sprite
   # Draws what the line shows now, if it changed.
   def update
     super
-    lines = MGQ_MpOverworld.in_world? ? MGQ_MpOverworld::Status.lines.last(ROWS) : []
+    lines = MGQ_MpOverworld.in_world? ? MGQ_MpOverworldSync::Status.lines.last(ROWS) : []
     return if lines == @shown
 
     @shown = lines
@@ -796,23 +362,6 @@ end
 # Each wraps a game method: the original runs first, and the mod's part never raises.
 
 if MGQ_MpOverworld.hookable?
-  begin
-    class << Graphics
-      alias mgq_mp_overworld_graphics_update update
-
-      # Draws the frame, then takes the others' messages and tells them what changed here.
-      #
-      # Graphics.update runs every frame in every scene, so the others hear of a battle or a menu
-      # and nothing piles up meanwhile.
-      def update
-        mgq_mp_overworld_graphics_update
-        MGQ_MpOverworld.tick
-      end
-    end
-  rescue => e
-    MGQ_MpOverworld.log("Graphics hook FAILED: #{e.class}: #{e.message}")
-  end
-
   begin
     class Game_Map
       alias mgq_mp_overworld_update update

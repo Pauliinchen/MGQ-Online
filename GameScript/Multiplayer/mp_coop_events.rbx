@@ -2,7 +2,8 @@
 #  mp_coop_events.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-09-30: Moved into Patch/Multiplayer as mp_coop_events.rbx, which Multiplayer.rb loads
+#      Paulinchen  2026-09-30: Registered with mp_overworld_sync.rbx for its messages instead of being asked by mp_overworld.rbx
+#                            - Moved into Patch/Multiplayer as mp_coop_events.rbx, which Multiplayer.rb loads
 #                            - Renamed from mp_events.rbx, with the module MGQ_MpCoopEvents
 #                            - Played a party's story events in the leader's game and showed its messages to the members
 #                            - Took the party along where the leader goes, and gathered it for story scenes
@@ -74,7 +75,7 @@ module MGQ_MpCoopEvents
   #
   # @return [Boolean] Whether they are.
   def self.in_party?
-    defined?(MGQ_MpOverworld) && MGQ_MpOverworld.in_world? && defined?(MGQ_MpActions) && !MGQ_MpActions::Party.id.nil?
+    defined?(MGQ_MpOverworldSync) && MGQ_MpOverworldSync.in_world? && defined?(MGQ_MpActions) && !MGQ_MpActions::Party.id.nil?
   end
 
   # Sorts an event's current page.
@@ -257,7 +258,7 @@ module MGQ_MpCoopEvents
 
   # Finds the leader of the player's party, through mp_actions.rbx.
   #
-  # @return [MGQ_MpOverworld::Peers::Peer, Symbol, nil] The leader, :me for the player, nil outside a party.
+  # @return [MGQ_MpOverworldSync::Peers::Peer, Symbol, nil] The leader, :me for the player, nil outside a party.
   def self.leader
     in_party? ? MGQ_MpActions::Party.leader : nil
   end
@@ -277,7 +278,7 @@ module MGQ_MpCoopEvents
   # @return [Boolean] Whether it went out.
   def self.tell(seat, kind, fields = {})
     message = { "pevent" => kind, "party" => MGQ_MpActions::Party.id }.merge(fields)
-    MGQ_MpOverworld::Link.send_to(seat, MGQ_MpOverworld::Me.encode(message))
+    MGQ_MpOverworldSync::Link.send_to(seat, MGQ_MpOverworldSync::Me.encode(message))
   end
 
   # As leader, brings the party members on the map to where the player stands.
@@ -301,7 +302,7 @@ module MGQ_MpCoopEvents
 
   # Takes a message about the party's events from another member.
   #
-  # @param peer [MGQ_MpOverworld::Peers::Peer, nil] Who sent it.
+  # @param peer [MGQ_MpOverworldSync::Peers::Peer, nil] Who sent it.
   # @param message [Hash] The message's fields.
   def self.take_party(peer, message)
     return unless peer && in_party? && message["party"] == MGQ_MpActions::Party.id
@@ -327,14 +328,14 @@ module MGQ_MpCoopEvents
   # @return [Boolean] Whether it was handed over, so it must not run here.
   def self.hand_over(event)
     lead = leader
-    return false unless lead.is_a?(MGQ_MpOverworld::Peers::Peer) && kind(event) == :story
+    return false unless lead.is_a?(MGQ_MpOverworldSync::Peers::Peer) && kind(event) == :story
     return true if event.trigger == 3
 
     if lead.state["map"].to_i == $game_map.map_id
       tell(lead.seat, "run", "map" => $game_map.map_id, "event" => event.id)
-      MGQ_MpOverworld::Status.notice("The story goes on in #{lead.state['name']}'s game.")
+      MGQ_MpOverworldSync::Status.notice("The story goes on in #{lead.state['name']}'s game.")
     else
-      MGQ_MpOverworld::Status.notice("#{lead.state['name']} leads the party's story. Bring them here to go on.")
+      MGQ_MpOverworldSync::Status.notice("#{lead.state['name']} leads the party's story. Bring them here to go on.")
     end
     true
   rescue => e
@@ -347,14 +348,14 @@ module MGQ_MpCoopEvents
   # @param common [RPG::CommonEvent] The common event.
   # @return [Boolean] Whether it is.
   def self.leave_to_leader?(common)
-    leader.is_a?(MGQ_MpOverworld::Peers::Peer) && kind_of(common.list || []) == :story
+    leader.is_a?(MGQ_MpOverworldSync::Peers::Peer) && kind_of(common.list || []) == :story
   rescue
     false
   end
 
   # As leader, takes a member's request to play a story event on the leader's map.
   #
-  # @param peer [MGQ_MpOverworld::Peers::Peer] The member.
+  # @param peer [MGQ_MpOverworldSync::Peers::Peer] The member.
   # @param message [Hash] The message's fields: "map" and "event".
   def self.take_request(peer, message)
     return unless leader == :me && MGQ_MpActions::Party.member?(peer.state) && message["map"].to_i == $game_map.map_id
@@ -396,7 +397,7 @@ module MGQ_MpCoopEvents
 
   # Keeps a message of the leader's story to show once the player is free.
   #
-  # @param peer [MGQ_MpOverworld::Peers::Peer] The leader.
+  # @param peer [MGQ_MpOverworldSync::Peers::Peer] The leader.
   # @param message [Hash] The message's fields.
   def self.hear(peer, message)
     @heard ||= []
@@ -504,14 +505,14 @@ module MGQ_MpCoopEvents
     MGQ_MpCoopStory.keep_own_self_switch(chest[:key], true) if defined?(MGQ_MpCoopStory)
     gains = chest[:gains].map { |kind, id, amount| "#{kind}#{id}x#{amount}" }.join(",")
     fields = { "chest" => chest[:key].join("."), "party" => MGQ_MpActions::Party.id, "gains" => gains }
-    MGQ_MpOverworld::Link.send_to(-1, MGQ_MpOverworld::Me.encode(fields))
+    MGQ_MpOverworldSync::Link.send_to(-1, MGQ_MpOverworldSync::Me.encode(fields))
   rescue => e
     log("telling a chest failed: #{e.class}: #{e.message}")
   end
 
-  # Takes a message about chests or the party's events. Called by mp_overworld.rbx.
+  # Takes a message about chests or the party's events. Called by mp_overworld_sync.rbx.
   #
-  # @param peer [MGQ_MpOverworld::Peers::Peer, nil] Who sent it.
+  # @param peer [MGQ_MpOverworldSync::Peers::Peer, nil] Who sent it.
   # @param message [Hash] The message's fields.
   def self.take(peer, message)
     message["chest"] ? take_chest(peer, message) : take_party(peer, message)
@@ -519,7 +520,7 @@ module MGQ_MpCoopEvents
 
   # Takes a chest another member opened: gives its items, unless the player looted it already.
   #
-  # @param peer [MGQ_MpOverworld::Peers::Peer, nil] Who opened it.
+  # @param peer [MGQ_MpOverworldSync::Peers::Peer, nil] Who opened it.
   # @param message [Hash] The message's fields.
   def self.take_chest(peer, message)
     return unless peer && in_party? && message["party"] == MGQ_MpActions::Party.id && MGQ_MpActions::Party.member?(peer.state)
@@ -531,7 +532,7 @@ module MGQ_MpCoopEvents
     names = grant(message["gains"].to_s)
     MGQ_MpCoopStory.keep_own_self_switch(key, true) if defined?(MGQ_MpCoopStory)
     text = names.empty? ? "#{peer.state['name']} opened a chest for the party." : "#{peer.state['name']} opened a chest for the party: #{names.join(', ')}."
-    MGQ_MpOverworld::Status.notice(text)
+    MGQ_MpOverworldSync::Status.notice(text)
   rescue => e
     log("taking a chest failed: #{e.class}: #{e.message}")
   end
@@ -568,6 +569,15 @@ module MGQ_MpCoopEvents
   ensure
     @granting = false
   end
+end
+
+# What this script takes part in of the world's messages, through mp_overworld_sync.rbx.
+
+begin
+  MGQ_MpOverworldSync.route("chest") { |peer, message| MGQ_MpCoopEvents.take(peer, message) }
+  MGQ_MpOverworldSync.route("pevent") { |peer, message| MGQ_MpCoopEvents.take(peer, message) }
+rescue => e
+  MGQ_MpCoopEvents.log("overworld sync FAILED: #{e.class}: #{e.message}")
 end
 
 # Game hooks.

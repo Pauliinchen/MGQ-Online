@@ -2,7 +2,8 @@
 #  mp_actions.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-09-30: Moved into Patch/Multiplayer as mp_actions.rbx, which Multiplayer.rb loads
+#      Paulinchen  2026-09-30: Registered with mp_overworld_sync.rbx for its messages instead of being asked by mp_overworld.rbx
+#                            - Moved into Patch/Multiplayer as mp_actions.rbx, which Multiplayer.rb loads
 #                            - Found the party's leader, the member who made the party
 #                            - Gave the chat box a blinking cursor, moved with the arrows, Home and End, with Delete
 #      Paulinchen  2026-09-29: Told mp_overworld.rbx while the player types in the chat
@@ -15,11 +16,8 @@
 #----------------------------------------------------------------
 
 # What players of a world do together on the map: the action wheel, parties and chat. It builds
-# on mp_overworld.rbx, which knows the other players and their messages, and which asks this script,
-# through the functions at the top of MGQ_MpActions, what to add to the player's state, what to
-# show above a ghost's name, and to take the messages that are not states.
-#
-# mp_overworld.rbx loads after this script, so both only reach each other while the game runs.
+# on mp_overworld_sync.rbx, which knows the other players and their messages, and registers there
+# what to add to the player's state, what to show above a ghost's name, and the chat's messages.
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpActions
@@ -68,39 +66,39 @@ module MGQ_MpActions
   rescue
   end
 
-  # Reports whether a world is open, through mp_overworld.rbx.
+  # Reports whether a world is open, through mp_overworld_sync.rbx.
   #
   # @return [Boolean] Whether it is.
   def self.in_world?
-    defined?(MGQ_MpOverworld) && MGQ_MpOverworld.in_world? ? true : false
+    defined?(MGQ_MpOverworldSync) && MGQ_MpOverworldSync.in_world? ? true : false
   end
 
-  # Tells every other game of the world something, through mp_overworld.rbx.
+  # Tells every other game of the world something, through mp_overworld_sync.rbx.
   #
   # @param fields [Hash] The message's fields, which must leave out "map", since that marks a state.
   # @return [Boolean] Whether it went out.
   def self.tell(fields)
-    return false unless defined?(MGQ_MpOverworld)
+    return false unless defined?(MGQ_MpOverworldSync)
 
-    MGQ_MpOverworld::Link.send_to(-1, MGQ_MpOverworld::Me.encode(fields))
+    MGQ_MpOverworldSync::Link.send_to(-1, MGQ_MpOverworldSync::Me.encode(fields))
   end
 
-  # Shows a notice at the bottom left of the map, through mp_overworld.rbx.
+  # Shows a notice at the bottom left of the map, through mp_overworld_sync.rbx.
   #
   # @param text [String] The notice.
   def self.notice(text)
-    MGQ_MpOverworld::Status.notice(text) if defined?(MGQ_MpOverworld)
+    MGQ_MpOverworldSync::Status.notice(text) if defined?(MGQ_MpOverworldSync)
   end
 
-  # Lists the other players of the world, through mp_overworld.rbx.
+  # Lists the other players of the world, through mp_overworld_sync.rbx.
   #
-  # @return [Array<MGQ_MpOverworld::Peers::Peer>] The players.
+  # @return [Array<MGQ_MpOverworldSync::Peers::Peer>] The players.
   def self.peers
-    defined?(MGQ_MpOverworld) ? MGQ_MpOverworld::Peers.all : []
+    defined?(MGQ_MpOverworldSync) ? MGQ_MpOverworldSync::Peers.all : []
   end
 
   # The fields this script adds to the state the player's game tells the others. Called by
-  # mp_overworld.rbx.
+  # mp_overworld_sync.rbx.
   #
   # @return [Hash] The fields.
   def self.state_fields
@@ -108,7 +106,7 @@ module MGQ_MpActions
   end
 
   # Lets invites, bubbles and chat lines run out, closes the wheel and the chat box once the map is
-  # left, and forgets everything once no world is open. Called by mp_overworld.rbx every frame in
+  # left, and forgets everything once no world is open. Called by mp_overworld_sync.rbx every frame in
   # every scene.
   #
   # @param in_world [Boolean] Whether a world is open.
@@ -127,38 +125,38 @@ module MGQ_MpActions
     end
   end
 
-  # Tells what the player does, when this script has them busy. Called by mp_overworld.rbx.
+  # Tells what the player does, when this script has them busy. Called by mp_overworld_sync.rbx.
   #
   # @return [String, nil] "typing" while the chat box is open, else nil.
   def self.scene
     Chat.typing? ? "typing" : nil
   end
 
-  # Takes a message of another game that is no state. Called by mp_overworld.rbx.
+  # Takes a message of another game that is no state. Called by mp_overworld_sync.rbx.
   #
-  # @param peer [MGQ_MpOverworld::Peers::Peer, nil] Who sent it, nil before their first state.
+  # @param peer [MGQ_MpOverworldSync::Peers::Peer, nil] Who sent it, nil before their first state.
   # @param message [Hash] The message's fields.
   def self.take(peer, message)
     Chat.receive(peer, message) if message["chat"]
   end
 
-  # Notices what another player's new state means for the party. Called by mp_overworld.rbx.
+  # Notices what another player's new state means for the party. Called by mp_overworld_sync.rbx.
   #
-  # @param peer [MGQ_MpOverworld::Peers::Peer] The player, with what they just told.
+  # @param peer [MGQ_MpOverworldSync::Peers::Peer] The player, with what they just told.
   def self.observe(peer)
     Party.observe(peer)
   end
 
-  # Notices another player leaving the world. Called by mp_overworld.rbx.
+  # Notices another player leaving the world. Called by mp_overworld_sync.rbx.
   #
-  # @param peer [MGQ_MpOverworld::Peers::Peer] The player.
+  # @param peer [MGQ_MpOverworldSync::Peers::Peer] The player.
   def self.observe_leaving(peer)
     Party.observe_leaving(peer)
   end
 
-  # Tells what the line above a ghost's name says. Called by mp_overworld.rbx.
+  # Tells what the line above a ghost's name says. Called by mp_overworld_sync.rbx.
   #
-  # @param peer [MGQ_MpOverworld::Peers::Peer] The ghost's player.
+  # @param peer [MGQ_MpOverworldSync::Peers::Peer] The ghost's player.
   # @return [Array, nil] The text and its color, nil for none.
   def self.label_line(peer)
     peer.state["invite"] == "1" && !peer.member ? ["Invites to a party (B)", INVITE_COLOR] : nil
@@ -368,7 +366,7 @@ module MGQ_MpActions
 
     # Takes another player's chat line.
     #
-    # @param peer [MGQ_MpOverworld::Peers::Peer, nil] Who sent it, nil before their first state.
+    # @param peer [MGQ_MpOverworldSync::Peers::Peer, nil] Who sent it, nil before their first state.
     # @param message [Hash] The message, the line under "chat".
     def self.receive(peer, message)
       text = message["chat"].to_s.gsub(/[[:cntrl:]]/, "").strip[0, MAX_LENGTH]
@@ -557,7 +555,7 @@ module MGQ_MpActions
 
     # Lists the other players in the party, whom a battle will take along once co-op battles exist.
     #
-    # @return [Array<MGQ_MpOverworld::Peers::Peer>] The members.
+    # @return [Array<MGQ_MpOverworldSync::Peers::Peer>] The members.
     def self.members
       MGQ_MpActions.peers.select { |peer| member?(peer.state) }
     end
@@ -565,11 +563,11 @@ module MGQ_MpActions
     # Finds the party's leader: the member who made the party, whose id starts the party's id, or
     # the member with the lowest id while they are gone, so every member's game finds the same one.
     #
-    # @return [MGQ_MpOverworld::Peers::Peer, Symbol, nil] The leader, :me for the player, nil outside a party.
+    # @return [MGQ_MpOverworldSync::Peers::Peer, Symbol, nil] The leader, :me for the player, nil outside a party.
     def self.leader
       return nil unless @id
 
-      candidates = [[MGQ_MpOverworld::Me.identity[0].to_s, :me]] + members.map { |peer| [peer.state["id"].to_s, peer] }
+      candidates = [[MGQ_MpOverworldSync::Me.identity[0].to_s, :me]] + members.map { |peer| [peer.state["id"].to_s, peer] }
       maker = candidates.find { |id, _| !id.empty? && id[0, 8] == @id[0, 8] }
       (maker || candidates.min_by { |id, _| id })[1]
     end
@@ -624,7 +622,7 @@ module MGQ_MpActions
 
     # Joins the party of a player who invites.
     #
-    # @param inviter [MGQ_MpOverworld::Peers::Peer] The player.
+    # @param inviter [MGQ_MpOverworldSync::Peers::Peer] The player.
     def self.join(inviter)
       left = @id && !members.empty?
       @id = inviter.state["party"]
@@ -642,7 +640,7 @@ module MGQ_MpActions
 
     # Notices a player coming into or going out of the party, and stops inviting once one joined.
     #
-    # @param peer [MGQ_MpOverworld::Peers::Peer] The player, with what they just told.
+    # @param peer [MGQ_MpOverworldSync::Peers::Peer] The player, with what they just told.
     def self.observe(peer)
       member = member?(peer.state)
       return if member == peer.member
@@ -658,7 +656,7 @@ module MGQ_MpActions
 
     # Forgets a party nobody is left in once a member left the world.
     #
-    # @param peer [MGQ_MpOverworld::Peers::Peer] The player.
+    # @param peer [MGQ_MpOverworldSync::Peers::Peer] The player.
     def self.observe_leaving(peer)
       @id = nil if peer.member && members.empty? && !inviting?
     end
@@ -1000,6 +998,20 @@ class Sprite_MpChatLog < Sprite
   end
 end
 
+# What this script takes part in of the world's messages, through mp_overworld_sync.rbx.
+
+begin
+  MGQ_MpOverworldSync.route("chat") { |peer, message| MGQ_MpActions.take(peer, message) }
+  MGQ_MpOverworldSync.on_tick { |in_world| MGQ_MpActions.tick(in_world) }
+  MGQ_MpOverworldSync.state_fields { MGQ_MpActions.state_fields }
+  MGQ_MpOverworldSync.busy_scene { MGQ_MpActions.scene }
+  MGQ_MpOverworldSync.on_observe { |peer| MGQ_MpActions.observe(peer) }
+  MGQ_MpOverworldSync.on_leave { |peer| MGQ_MpActions.observe_leaving(peer) }
+  MGQ_MpOverworldSync.label_line { |peer| MGQ_MpActions.label_line(peer) }
+rescue => e
+  MGQ_MpActions.log("overworld sync FAILED: #{e.class}: #{e.message}")
+end
+
 # Game hooks.
 #
 # Each wraps a game method: the original runs first, and the mod's part never raises.
@@ -1061,7 +1073,7 @@ if MGQ_MpActions.hookable?
             character, lift = $game_player, Sprite_MpChatBubble::OWN_LIFT
             character = nil if MGQ_MpActions::Wheel.open?
           else
-            peer = MGQ_MpOverworld::Peers.at(sender)
+            peer = MGQ_MpOverworldSync::Peers.at(sender)
             character, lift = peer && peer.ghost, Sprite_MpChatBubble::GHOST_LIFT
           end
 

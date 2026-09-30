@@ -2,7 +2,8 @@
 #  mp_battle_coop.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-09-30: Moved into Patch/Multiplayer as mp_battle_coop.rbx, which Multiplayer.rb loads
+#      Paulinchen  2026-09-30: Registered with mp_overworld_sync.rbx for its messages instead of being asked by mp_overworld.rbx
+#                            - Moved into Patch/Multiplayer as mp_battle_coop.rbx, which Multiplayer.rb loads
 #                            - Renamed from mp_coop.rbx, with the module MGQ_MpBattleCoop
 #                            - Let a player who got away leave the battle, the others fighting on, alone with their own full team
 #                            - Showed the co-op party in the game's window per character too
@@ -73,7 +74,7 @@ module MGQ_MpBattleCoop
   #
   # @return [Integer] The seat, -1 while the game holds none.
   def self.own_seat
-    seat = MGQ_MpOverworld::Link.status["seat"]
+    seat = MGQ_MpOverworldSync::Link.status["seat"]
     seat.to_s.empty? ? -1 : seat.to_i
   end
 
@@ -85,7 +86,7 @@ module MGQ_MpBattleCoop
   # @return [Boolean] Whether it went out.
   def self.tell(seat, kind, fields)
     message = { "coop" => kind, "party" => MGQ_MpActions::Party.id }.merge(fields)
-    MGQ_MpOverworld::Link.send_to(seat, MGQ_MpOverworld::Me.encode(message))
+    MGQ_MpOverworldSync::Link.send_to(seat, MGQ_MpOverworldSync::Me.encode(message))
   end
 
   # The host's side.
@@ -121,7 +122,7 @@ module MGQ_MpBattleCoop
   #
   # @return [Boolean] Whether it may.
   def self.host_possible?
-    return false unless defined?(MGQ_MpOverworld) && MGQ_MpOverworld.in_world? && defined?(MGQ_MpActions) && MGQ_MpActions::Party.id
+    return false unless defined?(MGQ_MpOverworldSync) && MGQ_MpOverworldSync.in_world? && defined?(MGQ_MpActions) && MGQ_MpActions::Party.id
     return false if $game_temp && $game_temp.in_memory_battle
     return false if defined?(MGQ_MpBattlePvp) && MGQ_MpBattlePvp::Battle.running?
 
@@ -132,7 +133,7 @@ module MGQ_MpBattleCoop
 
   # Lists the party members who may join: on the player's map, playing on it.
   #
-  # @return [Array<MGQ_MpOverworld::Peers::Peer>] The members.
+  # @return [Array<MGQ_MpOverworldSync::Peers::Peer>] The members.
   def self.candidates
     MGQ_MpActions::Party.members.select { |peer| peer.state["map"].to_i == $game_map.map_id && FREE_SCENES.include?(peer.state["scene"]) }
   end
@@ -154,7 +155,7 @@ module MGQ_MpBattleCoop
 
         body = channel.take_from("join", seat)
         joined[seat] = body if body
-        answered << seat if body || channel.take_from("decline", seat) || MGQ_MpOverworld::Peers.at(seat).nil?
+        answered << seat if body || channel.take_from("decline", seat) || MGQ_MpOverworldSync::Peers.at(seat).nil?
       end
       frames += 1
       answered.size == invited.size || frames >= JOIN_FRAMES ? true : nil
@@ -167,7 +168,7 @@ module MGQ_MpBattleCoop
     players = [[own_seat, MGQ_Multiplayer::Player.name.to_s] + own_build(2)]
     joined.keys.sort.each do |seat|
       builds, vitals = MGQ_MpBattleSync::Wire.parse(joined[seat].to_s)
-      players << [seat, MGQ_MpOverworld::Peers.at(seat).state["name"].to_s, builds.to_s, Array(vitals)]
+      players << [seat, MGQ_MpOverworldSync::Peers.at(seat).state["name"].to_s, builds.to_s, Array(vitals)]
     end
     channel.post("roster", MGQ_MpBattleSync::Wire.line([$game_troop.members.map(&:enemy_id), players]))
     form(scene, players)
@@ -187,9 +188,9 @@ module MGQ_MpBattleCoop
 
   # The guest's side.
 
-  # Takes a co-op message. Called by mp_overworld.rbx.
+  # Takes a co-op message. Called by mp_overworld_sync.rbx.
   #
-  # @param peer [MGQ_MpOverworld::Peers::Peer, nil] Who sent it.
+  # @param peer [MGQ_MpOverworldSync::Peers::Peer, nil] Who sent it.
   # @param message [Hash] The message's fields.
   def self.take(peer, message)
     return unless peer && message["coop"] == "invite" && message["party"] == MGQ_MpActions::Party.id
@@ -229,7 +230,7 @@ module MGQ_MpBattleCoop
 
   # Starts the invited battle as a guest.
   #
-  # @param peer [MGQ_MpOverworld::Peers::Peer] The host.
+  # @param peer [MGQ_MpOverworldSync::Peers::Peer] The host.
   # @param message [Hash] The invite.
   def self.accept(peer, message)
     # The leader's story dialogue a member reads may be on screen; the battle takes its place.
@@ -248,11 +249,11 @@ module MGQ_MpBattleCoop
 
   # Turns an invite down, so the host need not wait for the player.
   #
-  # @param peer [MGQ_MpOverworld::Peers::Peer] The host.
+  # @param peer [MGQ_MpOverworldSync::Peers::Peer] The host.
   # @param message [Hash] The invite.
   def self.decline(peer, message)
     @invite = nil
-    MGQ_MpOverworld::Link.send_to(peer.seat, "battle=decline\nbid=#{message['bid']}\n\n")
+    MGQ_MpOverworldSync::Link.send_to(peer.seat, "battle=decline\nbid=#{message['bid']}\n\n")
   end
 
   # As guest, tells the host who joins and builds the party the host sends. Called at the battle's start.
@@ -499,6 +500,14 @@ class Game_MpAlly < Game_MpActor
     super
     make_auto_battle_actions unless @actions.empty?
   end
+end
+
+# What this script takes part in of the world's messages, through mp_overworld_sync.rbx.
+
+begin
+  MGQ_MpOverworldSync.route("coop") { |peer, message| MGQ_MpBattleCoop.take(peer, message) }
+rescue => e
+  MGQ_MpBattleCoop.log("overworld sync FAILED: #{e.class}: #{e.message}")
 end
 
 # Game hooks.

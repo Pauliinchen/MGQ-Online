@@ -2,7 +2,8 @@
 #  Multiplayer.rb
 #
 #  Changelog:
-#      Paulinchen  2026-09-30: Moved the mod folder into Patch/Multiplayer and loaded the other scripts from there in a fixed order
+#      Paulinchen  2026-09-30: Loaded mp_overworld_sync.rbx before the scripts that register with it
+#                            - Moved the mod folder into Patch/Multiplayer and loaded the other scripts from there in a fixed order
 #                            - Called the battle and party scripts by their new names
 #                            - Named the mod Monster Girl Quest! Online in the update message
 #                            - Asked GitHub for a newer release and told MGQ_MpWorld and MGQ_MpBattlePvp to disable themselves once one is out
@@ -36,10 +37,11 @@ module MGQ_Multiplayer
   # The mod's other scripts in the mod folder, in the order they load.
   #
   # A script may use only what loaded before it while it loads, such as mp_actors.rbx's
-  # Game_MpActor. The battle scripts install their battle hooks once the game runs, the last loaded
-  # first, so their order decides how those hooks wrap each other.
+  # Game_MpActor, or mp_overworld_sync.rbx, which the scripts after it register with. The battle
+  # scripts install their battle hooks once the game runs, the last loaded first, so their order
+  # decides how those hooks wrap each other.
   SCRIPTS = %w[
-    mp_actors mp_async mp_actions mp_overworld
+    mp_actors mp_async mp_overworld_sync mp_actions mp_overworld
     mp_coop_events mp_coop_npcs mp_coop_story
     mp_save_distribution mp_world
     mp_battle mp_battle_coop mp_battle_sync mp_battle_pvp

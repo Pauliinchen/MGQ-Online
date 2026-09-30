@@ -2,7 +2,8 @@
 #  mp_coop_story.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-09-30: Moved into Patch/Multiplayer as mp_coop_story.rbx, which Multiplayer.rb loads
+#      Paulinchen  2026-09-30: Registered with mp_overworld_sync.rbx for its messages instead of being asked by mp_overworld.rbx
+#                            - Moved into Patch/Multiplayer as mp_coop_story.rbx, which Multiplayer.rb loads
 #                            - Renamed from mp_story.rbx, with the module MGQ_MpCoopStory
 #                            - Kept what members as far along as the leader play together, companions who join included
 #                            - Kept chests the player's own while they play the leader's story
@@ -66,11 +67,11 @@ module MGQ_MpCoopStory
   rescue
   end
 
-  # Shows a notice at the bottom left of the map, through mp_overworld.rbx.
+  # Shows a notice at the bottom left of the map, through mp_overworld_sync.rbx.
   #
   # @param text [String] The notice.
   def self.notice(text)
-    MGQ_MpOverworld::Status.notice(text) if defined?(MGQ_MpOverworld)
+    MGQ_MpOverworldSync::Status.notice(text) if defined?(MGQ_MpOverworldSync)
   end
 
   # Reports whether the player plays the leader's story now.
@@ -82,9 +83,9 @@ module MGQ_MpCoopStory
 
   # Finds the leader of the player's party, through mp_actions.rbx.
   #
-  # @return [MGQ_MpOverworld::Peers::Peer, Symbol, nil] The leader, :me for the player, nil outside a party.
+  # @return [MGQ_MpOverworldSync::Peers::Peer, Symbol, nil] The leader, :me for the player, nil outside a party.
   def self.leader
-    return nil unless defined?(MGQ_MpOverworld) && MGQ_MpOverworld.in_world? && defined?(MGQ_MpActions)
+    return nil unless defined?(MGQ_MpOverworldSync) && MGQ_MpOverworldSync.in_world? && defined?(MGQ_MpActions)
 
     MGQ_MpActions::Party.leader
   end
@@ -93,7 +94,7 @@ module MGQ_MpCoopStory
   # story, and a player who left the party gets their own back. Called after the map's update.
   def self.update
     leader = self.leader
-    restore if guest? && !leader.is_a?(MGQ_MpOverworld::Peers::Peer)
+    restore if guest? && !leader.is_a?(MGQ_MpOverworldSync::Peers::Peer)
     if leader == :me
       lead
     else
@@ -123,7 +124,7 @@ module MGQ_MpCoopStory
 
   # As member, asks the leader for their story until it came, again whenever the leader changes.
   #
-  # @param leader [MGQ_MpOverworld::Peers::Peer] The leader.
+  # @param leader [MGQ_MpOverworldSync::Peers::Peer] The leader.
   def self.follow(leader)
     id = leader.state["id"].to_s
     if id != @leader_id
@@ -143,9 +144,9 @@ module MGQ_MpCoopStory
     tell(leader.seat, "ask", {})
   end
 
-  # Takes a message about the story. Called by mp_overworld.rbx.
+  # Takes a message about the story. Called by mp_overworld_sync.rbx.
   #
-  # @param peer [MGQ_MpOverworld::Peers::Peer, nil] Who sent it.
+  # @param peer [MGQ_MpOverworldSync::Peers::Peer, nil] Who sent it.
   # @param message [Hash] The message's fields.
   def self.take(peer, message)
     return unless peer && message["party"] == MGQ_MpActions::Party.id
@@ -172,12 +173,12 @@ module MGQ_MpCoopStory
   # @return [Boolean] Whether it went out.
   def self.tell(seat, kind, fields)
     message = { "story" => kind, "party" => MGQ_MpActions::Party.id }.merge(fields)
-    MGQ_MpOverworld::Link.send_to(seat, MGQ_MpOverworld::Me.encode(message))
+    MGQ_MpOverworldSync::Link.send_to(seat, MGQ_MpOverworldSync::Me.encode(message))
   end
 
   # Starts playing the leader's story, keeping the player's own aside the first time.
   #
-  # @param leader [MGQ_MpOverworld::Peers::Peer] The leader.
+  # @param leader [MGQ_MpOverworldSync::Peers::Peer] The leader.
   # @param story [Array] The leader's switches, variables and self switches.
   def self.borrow(leader, story)
     first = !guest?
@@ -258,7 +259,7 @@ module MGQ_MpCoopStory
 
   # Takes a companion who joined the leader in the story the player plays along.
   #
-  # @param leader [MGQ_MpOverworld::Peers::Peer] The leader.
+  # @param leader [MGQ_MpOverworldSync::Peers::Peer] The leader.
   # @param actor_id [Integer] The companion.
   def self.recruit(leader, actor_id)
     return if actor_id <= 0 || !$data_actors[actor_id] || $game_party.exist_all_actor_id?(actor_id)
@@ -534,6 +535,14 @@ module MGQ_MpCoopStory
     copy.mgq_mp_data = data
     copy
   end
+end
+
+# What this script takes part in of the world's messages, through mp_overworld_sync.rbx.
+
+begin
+  MGQ_MpOverworldSync.route("story") { |peer, message| MGQ_MpCoopStory.take(peer, message) }
+rescue => e
+  MGQ_MpCoopStory.log("overworld sync FAILED: #{e.class}: #{e.message}")
 end
 
 # Game hooks.
