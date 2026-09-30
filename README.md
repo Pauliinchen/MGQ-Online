@@ -7,6 +7,8 @@ Play Monster Girl Quest! Paradox RPG together with friends over the internet, wi
 - **Worlds:** up to 32 players on the same maps. Form a party to play the story together and fight co-op battles.
 - **PvP battles:** your Frontline against a friend's, live, each of you commanding your own team.
 
+Worlds, parties and co-op battles are a **prototype**: expect bugs, and please [report them](https://github.com/Pauliinchen/MGQ-Online/issues/new?template=bug_report.yml).
+
 ## Requirements
 
 - Monster Girl Quest! Paradox RPG 3.06, with or without the English translation. Everyone needs the same game version and the same version of this mod. A translated and an untranslated game can play together; each shows battles in its own language.
@@ -117,7 +119,7 @@ Your games meet at the mod's **relay**, a small server that passes their data on
 - **"This join code comes from another version of the mod":** one of you has an older version; both need the same one.
 - **"Your friend's game uses a relay this version does not know":** your friend has a newer version of the mod; update yours.
 - **"This is a world code":** you pasted a world's code into a PvP join. Enter worlds through *Multiplayer* on the title screen.
-- **Logs:** `Patch\Multiplayer\InGame.log` only appears when something went wrong inside the game; `Patch\Multiplayer\Multiplayer.log` tells what the connection did. Please attach both when [opening an issue](https://github.com/Pauliinchen/MGQ-Online/issues).
+- **Logs:** `Patch\Multiplayer\InGame.log` only appears when something went wrong inside the game; `Patch\Multiplayer\Multiplayer.log` tells what the connection did. Please attach both to a [bug report](https://github.com/Pauliinchen/MGQ-Online/issues/new?template=bug_report.yml).
 
 ## Building from source
 

@@ -1,0 +1,80 @@
+# The form GitHub shows for a new bug report. It asks for what the logs cannot tell: the version,
+# the game, and what the player did.
+name: Bug report
+description: Something went wrong while playing with Monster Girl Quest! Online.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! Worlds, parties and co-op battles are still a prototype, so every report helps.
+        One bug per report, please.
+
+  - type: input
+    id: version
+    attributes:
+      label: Mod version
+      description: The release you installed, such as 0.2.0.
+      placeholder: 0.2.0
+    validations:
+      required: true
+
+  - type: dropdown
+    id: game
+    attributes:
+      label: Game
+      options:
+        - 3.06 with the English translation
+        - 3.06 without the translation
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Where it happened
+      options:
+        - World screen (finding, creating or joining a world)
+        - On the map (other players, chat, action wheel)
+        - In a party (story, NPCs, events, chests, travelling)
+        - Co-op battle
+        - PvP battle
+        - Updating or installing
+        - Somewhere else
+    validations:
+      required: true
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you saw, and what you expected instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: How to make it happen again
+      description: What you and the other players did right before, and how many of you were in the world or the party.
+      placeholder: |
+        1. Two of us formed a party in Iliasburg.
+        2. The leader started the story scene at the church.
+        3. ...
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: |
+        Drag these files in here, from every game that took part if you can:
+        - `Patch\Multiplayer\InGame.log` and `Patch\Multiplayer\Multiplayer.log`
+        - `errors.txt` in the game folder, if the game crashed
+    validations:
+      required: true
+
+  - type: textarea
+    id: mods
+    attributes:
+      label: Other mods
+      description: Any other mods in your Patch folder, such as the Discord Rich Presence mod.
