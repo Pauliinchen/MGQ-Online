@@ -2,7 +2,8 @@
 #  mp_events.rb
 #
 #  Changelog:
-#      Paulinchen  2026-09-30: Took the party along where the leader goes, and gathered it for story scenes
+#      Paulinchen  2026-09-30: Played a party's story events in the leader's game and showed its messages to the members
+#                            - Took the party along where the leader goes, and gathered it for story scenes
 #                            - Created
 #
 #----------------------------------------------------------------
@@ -31,6 +32,9 @@ module MGQ_MpEvents
 
   # Event commands that show dialogue: text, choices, scrolling text.
   MESSAGE_CODES = [101, 102, 105]
+
+  # Messages of the leader's story kept at most while the player is busy.
+  MAX_HEARD = 30
 
   # How deep called common events are followed.
   MAX_DEPTH = 5
@@ -226,7 +230,8 @@ module MGQ_MpEvents
   def self.started(interpreter, list, event_id)
     return unless $game_map && interpreter.equal?($game_map.interpreter)
 
-    gather if leading? && scene?(list)
+    @telling = leading? && kind_of(list || []) == :story
+    gather if @telling && scene?(list)
     event = event_id > 0 ? $game_map.events[event_id] : nil
     @chest = event && kind(event) == :chest && in_party? ? { :interpreter => interpreter, :key => chest_key(event), :gains => [] } : nil
   end
@@ -291,20 +296,134 @@ module MGQ_MpEvents
   # @param message [Hash] The message's fields.
   def self.take_party(peer, message)
     return unless peer && in_party? && message["party"] == MGQ_MpActions::Party.id
+    return take_request(peer, message) if message["pevent"] == "run"
     return unless leader.equal?(peer)
 
     place = [message["map"].to_i, message["x"].to_i, message["y"].to_i, message["d"].to_i]
     case message["pevent"]
     when "travel" then @travel = place
     when "gather" then @gather = place if place[0] == $game_map.map_id
+    when "say" then hear(peer, message) if place[0] == $game_map.map_id
     end
   rescue => e
     log("taking #{message['pevent']} failed: #{e.class}: #{e.message}")
   end
 
+  # Hands a story event the player started to the leader, whose game plays the story. Called
+  # when the map's main event would start it.
+  #
+  # An event that runs by itself is left to the leader's own game, which runs it on its map.
+  #
+  # @param event [Game_Event] The event.
+  # @return [Boolean] Whether it was handed over, so it must not run here.
+  def self.hand_over(event)
+    lead = leader
+    return false unless lead.is_a?(MGQ_MpOverworld::Peers::Peer) && kind(event) == :story
+    return true if event.trigger == 3
+
+    if lead.state["map"].to_i == $game_map.map_id
+      tell(lead.seat, "run", "map" => $game_map.map_id, "event" => event.id)
+      MGQ_MpOverworld::Status.notice("The story goes on in #{lead.state['name']}'s game.")
+    else
+      MGQ_MpOverworld::Status.notice("#{lead.state['name']} leads the party's story. Bring them here to go on.")
+    end
+    true
+  rescue => e
+    log("handing over an event failed: #{e.class}: #{e.message}")
+    false
+  end
+
+  # Reports whether a common event that runs by itself is left to the leader's game.
+  #
+  # @param common [RPG::CommonEvent] The common event.
+  # @return [Boolean] Whether it is.
+  def self.leave_to_leader?(common)
+    leader.is_a?(MGQ_MpOverworld::Peers::Peer) && kind_of(common.list || []) == :story
+  rescue
+    false
+  end
+
+  # As leader, takes a member's request to play a story event on the leader's map.
+  #
+  # @param peer [MGQ_MpOverworld::Peers::Peer] The member.
+  # @param message [Hash] The message's fields: "map" and "event".
+  def self.take_request(peer, message)
+    return unless leader == :me && MGQ_MpActions::Party.member?(peer.state) && message["map"].to_i == $game_map.map_id
+
+    @requests ||= []
+    id = message["event"].to_i
+    @requests << id unless @requests.include?(id)
+  end
+
+  # As leader, starts the next event a member asked for, once the player is free.
+  def self.start_requested
+    return if @requests.nil? || @requests.empty? || !free?
+
+    event = $game_map.events[@requests.shift]
+    event.start if event && kind(event) == :story
+  end
+
+  # As leader, tells the members on the map the message the player's story shows now. Called
+  # before an interpreter waits for a message.
+  #
+  # @param interpreter [Game_Interpreter] The interpreter.
+  def self.show(interpreter)
+    return unless @telling && interpreter.equal?($game_map.interpreter)
+
+    message = $game_message
+    page = [message.texts.dup, message.choices.dup]
+    return if page == [[], []] || page == @shown
+
+    @shown = page
+    fields = place_fields.merge(
+      "face" => message.face_name.to_s, "index" => message.face_index.to_i,
+      "background" => message.background.to_i, "position" => message.position.to_i,
+      "lines" => page[0].map { |line| [line.to_s].pack('m0') }.join(","),
+      "choices" => page[1].map { |choice| [choice.to_s].pack('m0') }.join(","))
+    tell(-1, "say", fields)
+  rescue => e
+    log("telling a message failed: #{e.class}: #{e.message}")
+  end
+
+  # Keeps a message of the leader's story to show once the player is free.
+  #
+  # @param peer [MGQ_MpOverworld::Peers::Peer] The leader.
+  # @param message [Hash] The message's fields.
+  def self.hear(peer, message)
+    @heard ||= []
+    lines = message["lines"].to_s.split(",").map { |line| decode(line) }
+    choices = message["choices"].to_s.split(",").map { |choice| decode(choice) }
+    @heard << [message["face"].to_s, message["index"].to_i, message["background"].to_i, message["position"].to_i, lines] unless lines.empty?
+    @heard << ["", 0, message["background"].to_i, message["position"].to_i, ["#{peer.state['name']} chooses:"] + choices.first(3)] unless choices.empty?
+    @heard.shift while @heard.size > MAX_HEARD
+  end
+
+  # Reads a line written for a message.
+  #
+  # @param text [String] The line, Base64.
+  # @return [String] The line.
+  def self.decode(text)
+    text.unpack('m0')[0].to_s.force_encoding("UTF-8")
+  end
+
+  # Shows the next message of the leader's story, once the player is free.
+  def self.show_heard
+    return if @heard.nil? || @heard.empty? || !free?
+
+    face, index, background, position, lines = @heard.shift
+    $game_message.face_name = face
+    $game_message.face_index = index
+    $game_message.background = background
+    $game_message.position = position
+    lines.each { |line| $game_message.add(line) }
+  end
+
   # Moves the player where the leader went or gathers the party, once the player is free: on the
-  # map, with no event, message or transfer of their own in the way. Called after the map's update.
+  # map, with no event, message or transfer of their own in the way. As leader, starts the story
+  # events members asked for. Shows the leader's messages. Called after the map's update.
   def self.update
+    start_requested
+    show_heard
     return unless @travel || @gather
     return unless free?
 
@@ -475,6 +594,47 @@ if MGQ_MpEvents.hookable?
       def run
         mgq_mp_events_run
         MGQ_MpEvents.finished(self) rescue nil
+      end
+
+      alias mgq_mp_events_wait_for_message wait_for_message
+
+      # Tells the party members the message the leader's story shows, then waits for it.
+      #
+      # The Yanfly plugin, which loads after the Patch folder, writes its own command_101, so the
+      # message is caught here, where every message waits once its text is set.
+      def wait_for_message
+        MGQ_MpEvents.show(self)
+        mgq_mp_events_wait_for_message
+      end
+    end
+
+    class Game_Map
+      alias mgq_mp_events_setup_starting_map_event setup_starting_map_event
+      alias mgq_mp_events_setup_autorun_common_event setup_autorun_common_event
+
+      # Starts the event that is starting, unless it is story the leader's game plays. The original
+      # does not run then.
+      #
+      # @return [Game_Event, nil] The event started.
+      def setup_starting_map_event
+        event = @events.values.find { |e| e.starting }
+        if event && MGQ_MpEvents.hand_over(event)
+          event.clear_starting_flag
+          event.unlock
+          return nil
+        end
+        mgq_mp_events_setup_starting_map_event
+      end
+
+      # Starts a common event that runs by itself, unless it is story the leader's game plays. The
+      # original does not run then.
+      #
+      # @return [RPG::CommonEvent, nil] The common event started.
+      def setup_autorun_common_event
+        common = $data_common_events.find { |c| c && c.autorun? && $game_switches[c.switch_id] }
+        return nil if common && MGQ_MpEvents.leave_to_leader?(common)
+
+        mgq_mp_events_setup_autorun_common_event
       end
     end
   rescue => e

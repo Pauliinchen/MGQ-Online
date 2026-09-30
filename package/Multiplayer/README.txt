@@ -152,7 +152,11 @@ party, you are back in your own story. Chests are everyone's own: when
 a party member opens one, everyone in the party who has not looted it
 yet gets the same items. The party travels together: when the player
 who made the party goes to another map, everyone follows, and when a
-story scene starts there, everyone on that map is brought to them.
+story scene starts there, everyone on that map is brought to them. The
+story itself plays in their game: when you start a story event, it is
+handed to them, and everyone on the map sees its dialogue in their own
+message window, at their own pace. Conversations, shops and the job
+change menu stay your own.
 
 
 CONNECTION
