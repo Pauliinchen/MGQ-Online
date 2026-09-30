@@ -40,25 +40,18 @@ Paradox RPG folder (the one that contains Game.exe). It should then look
 like this:
 
    Game.exe
-   Multiplayer\Multiplayer.dll
-   Multiplayer\Manifest.txt
-   Multiplayer\Update.bat
-   Multiplayer\Update.ps1
    Patch\Multiplayer.rb
-   Patch\mp_actions.rb
-   Patch\mp_actors.rb
-   Patch\mp_async.rb
-   Patch\mp_battle.rb
-   Patch\mp_battle_coop.rb
-   Patch\mp_battle_pvp.rb
-   Patch\mp_battle_sync.rb
-   Patch\mp_coop_events.rb
-   Patch\mp_coop_npcs.rb
-   Patch\mp_coop_story.rb
-   Patch\mp_overworld.rb
-   Patch\mp_save_distribution.rb
-   Patch\mp_world.rb
+   Patch\Multiplayer\Multiplayer.dll
+   Patch\Multiplayer\Manifest.txt
+   Patch\Multiplayer\README.txt
+   Patch\Multiplayer\Update.bat
+   Patch\Multiplayer\Update.ps1
+   Patch\Multiplayer\mp_*.rbx      (the mod's other scripts)
    ...
+
+Patch\Multiplayer.rb loads the scripts in Patch\Multiplayer itself. Your
+player name, favourites, worlds and the logs go into Patch\Multiplayer
+too.
 
 While this mod is installed, the game keeps running when its window is in
 the background, so neither player holds the other up. A gamepad does
@@ -70,14 +63,14 @@ UPDATE
 The title screen greys out Multiplayer, and PvP battles (F11) stop
 working, once a new release is out; both games need the same version, so
 an old one is kept from joining a newer one. Close the game and
-double-click Multiplayer\Update.bat: it shows what changed, downloads the
-latest release and installs it, removing any file an earlier version left
-behind that this one no longer ships. Your player name, favourites and
-worlds are kept.
+double-click Patch\Multiplayer\Update.bat: it shows what changed,
+downloads the latest release and installs it, removing any file an
+earlier version left behind that this one no longer ships. Your player
+name, favourites and worlds are kept.
 
 To update by hand, close the game and extract the new download over the
-old one; then delete any Patch\*.rb file the new release's README no
-longer lists.
+old one; then delete any Patch\Multiplayer\mp_*.rbx file the new
+release's Manifest.txt no longer lists.
 
 
 PVP BATTLES (TEST)
@@ -110,9 +103,9 @@ Press F11 on the map to open the PvP battle screen.
   invites accepted there are ignored; stop hosting first.
 - Once the teams are swapped, both battles start together.
 - Fight your own team: a mirror match against your own Frontline, no
-  friend or network needed. Multiplayer\Mirror Match.log then lists each
-  of your characters next to its copy, before the battle and at its
-  first turn, and marks every value that differs.
+  friend or network needed. Patch\Multiplayer\Mirror Match.log then
+  lists each of your characters next to its copy, before the battle and
+  at its first turn, and marks every value that differs.
 
 
 WORLDS (TEST)
@@ -141,7 +134,7 @@ game's letters appear.
 - Its creator can remove a player or delete the world for everyone.
 
 Each world keeps its own saves, Library, medals and affection in
-Multiplayer\Worlds, apart from your own game. On the map, the other
+Patch\Multiplayer\Worlds, apart from your own game. On the map, the other
 players on the same map walk around with their names above them, and an
 icon for what they do: fighting, talking, typing in the chat, in a
 menu, the inventory or
@@ -216,10 +209,10 @@ anything.
 
 UNINSTALL
 ---------
-Close the game and delete Patch\Multiplayer.rb, every Patch\mp_*.rb file
-and the Multiplayer folder. The Multiplayer folder also holds your worlds, so
-keep Multiplayer\Worlds if you want to play them again later.
-The mod loader stays for your other mods.
+Close the game and delete Patch\Multiplayer.rb and the Patch\Multiplayer
+folder. That folder also holds your worlds, so keep
+Patch\Multiplayer\Worlds if you want to play them again later. The mod
+loader stays for your other mods.
 
 
 TROUBLESHOOTING
@@ -229,16 +222,16 @@ TROUBLESHOOTING
   Ask for the new one.
 - "The relay could not be reached": your internet connection is down, or
   something blocks the game from going online, such as a firewall.
-  Multiplayer\Multiplayer.log says what the relay answered.
+  Patch\Multiplayer\Multiplayer.log says what the relay answered.
 - "This join code comes from another version of the mod": one of you has
   an older version; both need the same one.
 - "Your friend's game uses a relay this version does not know": your
   friend has a newer version of the mod; update yours.
 - An accepted Discord invite loads your newest save, the one Continue
   picks first, never the autosave.
-- Multiplayer\InGame.log only appears if something went wrong inside the
-  game, Multiplayer\Multiplayer.log tells what the connection did. Include
-  both when reporting a problem.
+- Patch\Multiplayer\InGame.log only appears if something went wrong
+  inside the game, Patch\Multiplayer\Multiplayer.log tells what the
+  connection did. Include both when reporting a problem.
 
 
 CREDITS

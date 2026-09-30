@@ -19,25 +19,24 @@ Optional:
 
 ## Install
 
-Close the game and extract the release zip into the folder that contains `Game.exe`. You then have a `Multiplayer` folder next to `Game.exe`, and the mod's scripts in `Patch`: `Multiplayer.rb` and the `mp_*.rb` files.
-
+Close the game and extract the release zip into the folder that contains `Game.exe`. You then have `Multiplayer.rb` in your `Patch` folder, and next to it a `Multiplayer` folder with everything else of the mod: the DLL, the other scripts, and later your name, worlds and logs.
 While the mod is installed, the game keeps running when its window is in the background, so no player holds the others up. A gamepad does nothing meanwhile.
 
 ## Update
 
 When a new release is out, the title screen says so. Until you update, *Multiplayer* is greyed out and F11 doesn't open PvP battles, since everyone needs the same version.
 
-Close the game and double-click `Multiplayer\Update.bat`. It shows what's new, downloads the release, installs it, and removes files an older version left behind. Your player name, favourites and worlds are kept.
+Close the game and double-click `Patch\Multiplayer\Update.bat`. It shows what's new, downloads the release, installs it, and removes files an older version left behind. Your player name, favourites and worlds are kept.
 
 ## Uninstall
 
-Close the game and delete `Multiplayer.rb` and every `mp_*.rb` file in `Patch`, then the `Multiplayer` folder. That folder also holds your worlds: keep `Multiplayer\Worlds` if you want to play them again later. The mod loader stays for your other mods.
+Close the game and delete `Multiplayer.rb` and the `Multiplayer` folder in `Patch`. That folder also holds your worlds: keep `Patch\Multiplayer\Worlds` if you want to play them again later. The mod loader stays for your other mods.
 
 ## Worlds
 
 Pick **Multiplayer** below *Continue* on the title screen. The first time, the game asks for the name the others see, unless the Discord mod knows yours. Names and passwords are typed on the keyboard; with a gamepad, the game's letters appear.
 
-Each world keeps its own saves, Library, medals and affection in `Multiplayer\Worlds`, so your own game stays untouched. Going back to the title screen leaves the world.
+Each world keeps its own saves, Library, medals and affection in `Patch\Multiplayer\Worlds`, so your own game stays untouched. Going back to the title screen leaves the world.
 
 ### Finding, creating and joining
 
@@ -89,7 +88,7 @@ Press **F11** on the map to open the PvP battle screen.
 
 - **Host:** your game waits for a friend and puts a join code on your clipboard. Send it to your friend, or invite them through the **+** in a Discord chat when the Discord mod is installed.
 - **Join:** copy your friend's join code and pick *Join with the copied code*, or accept their Discord invite: your game starts if it's closed, loads your newest save (the one *Continue* picks first) and joins by itself. While you host, invites you accept are ignored; stop hosting first.
-- **Fight your own team:** a mirror match against your own Frontline, no network needed. `Multiplayer\Mirror Match.log` then lists each of your characters next to its copy and marks every value that differs.
+- **Fight your own team:** a mirror match against your own Frontline, no network needed. `Patch\Multiplayer\Mirror Match.log` then lists each of your characters next to its copy and marks every value that differs.
 
 Once the teams are swapped, both battles start together. The host's game works the battle out, and the other game shows what happened. You meet your friend's characters as they are: jobs, races, equipment, gems and abilities, pre-battle spells and passives included. A defeated character of your friend stays as a grey silhouette, since their team can still revive it.
 
@@ -112,13 +111,13 @@ Your games meet at the mod's **relay**, a small server that passes their data on
 
 ## Troubleshooting
 
-- **Multiplayer is greyed out on the title screen:** a new release is out. Update with `Multiplayer\Update.bat`, see [Update](#update).
+- **Multiplayer is greyed out on the title screen:** a new release is out. Update with `Patch\Multiplayer\Update.bat`, see [Update](#update).
 - **"Your friend's game is not hosting with this join code any more":** your friend stopped hosting, or hosted again, which makes a new join code. Ask for the new one.
-- **"The relay could not be reached":** your internet connection is down, or something blocks the game from going online, such as a firewall. `Multiplayer\Multiplayer.log` says what the relay answered.
+- **"The relay could not be reached":** your internet connection is down, or something blocks the game from going online, such as a firewall. `Patch\Multiplayer\Multiplayer.log` says what the relay answered.
 - **"This join code comes from another version of the mod":** one of you has an older version; both need the same one.
 - **"Your friend's game uses a relay this version does not know":** your friend has a newer version of the mod; update yours.
 - **"This is a world code":** you pasted a world's code into a PvP join. Enter worlds through *Multiplayer* on the title screen.
-- **Logs:** `Multiplayer\InGame.log` only appears when something went wrong inside the game; `Multiplayer\Multiplayer.log` tells what the connection did. Please attach both when [opening an issue](https://github.com/Pauliinchen/MGQ-Online/issues).
+- **Logs:** `Patch\Multiplayer\InGame.log` only appears when something went wrong inside the game; `Patch\Multiplayer\Multiplayer.log` tells what the connection did. Please attach both when [opening an issue](https://github.com/Pauliinchen/MGQ-Online/issues).
 
 ## Building from source
 

@@ -1,7 +1,8 @@
 #----------------------------------------------------------------
-#  mp_save_distribution.rb
+#  mp_save_distribution.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-09-30: Moved into Patch/Multiplayer as mp_save_distribution.rbx, which Multiplayer.rb loads
 #      Paulinchen  2026-09-30: Created
 #
 #----------------------------------------------------------------
@@ -12,7 +13,7 @@
 # token; a new player's game fetches it into the world's folder before entering the world for the
 # first time, where it is the world's first save.
 #
-# mp_world.rb, which loads later, calls it from the world screen. It must never interrupt the game,
+# mp_world.rbx, which loads later, calls it from the world screen. It must never interrupt the game,
 # so every entry point rescues.
 module MGQ_MpSaveDistribution
   # The starting save's name in a world's folder: the world's first save.
@@ -84,7 +85,7 @@ module MGQ_MpSaveDistribution
     SYSTEM_FALLBACK
   end
 
-  # Writes the files as Multiplayer/Multiplayer.dll takes them.
+  # Writes the files as Patch/Multiplayer/Multiplayer.dll takes them.
   #
   # @param files [Array<Array<String>>] Each file's name in the world's folder and its path in the game's folder.
   # @return [String] One line per file, its name, "=" and its path; empty for none.

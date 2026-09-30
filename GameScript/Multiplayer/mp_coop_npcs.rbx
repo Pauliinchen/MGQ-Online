@@ -1,8 +1,9 @@
 #----------------------------------------------------------------
-#  mp_coop_npcs.rb
+#  mp_coop_npcs.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-09-30: Renamed from mp_npcs.rb, with the module MGQ_MpCoopNpcs
+#      Paulinchen  2026-09-30: Moved into Patch/Multiplayer as mp_coop_npcs.rbx, which Multiplayer.rb loads
+#                            - Renamed from mp_npcs.rbx, with the module MGQ_MpCoopNpcs
 #      Paulinchen  2026-09-30: Created
 #
 #----------------------------------------------------------------
@@ -162,7 +163,7 @@ module MGQ_MpCoopNpcs
     MGQ_MpOverworld::Link.send_to(seat, MGQ_MpOverworld::Me.encode(fields))
   end
 
-  # Takes the Map Owner's events. Called by mp_overworld.rb.
+  # Takes the Map Owner's events. Called by mp_overworld.rbx.
   #
   # @param peer [MGQ_MpOverworld::Peers::Peer, nil] Who sent them.
   # @param message [Hash] The message's fields.

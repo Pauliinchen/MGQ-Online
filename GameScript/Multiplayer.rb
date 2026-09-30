@@ -2,7 +2,8 @@
 #  Multiplayer.rb
 #
 #  Changelog:
-#      Paulinchen  2026-09-30: Called the battle and party scripts by their new names
+#      Paulinchen  2026-09-30: Moved the mod folder into Patch/Multiplayer and loaded the other scripts from there in a fixed order
+#                            - Called the battle and party scripts by their new names
 #                            - Named the mod Monster Girl Quest! Online in the update message
 #                            - Asked GitHub for a newer release and told MGQ_MpWorld and MGQ_MpBattlePvp to disable themselves once one is out
 #                            - Read held buttons past the capture too, which moves a text cursor
@@ -19,16 +20,33 @@
 #----------------------------------------------------------------
 
 # What every way of playing together shares: the connection with a friend through
-# Multiplayer/Multiplayer.dll, the game running on while its window is in the background, keys the
-# game's own Input does not know, and the Discord mod, when it is installed.
+# Patch/Multiplayer/Multiplayer.dll, the game running on while its window is in the background,
+# keys the game's own Input does not know, and the Discord mod, when it is installed. It also loads
+# the mod's other scripts, see SCRIPTS.
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_Multiplayer
   # Turns the mod off without uninstalling it.
   ENABLED = true
 
-  # Folder next to Game.exe that holds the DLL and everything the mod writes.
-  MOD_DIR = "Multiplayer"
+  # Folder inside the game's Patch folder that holds the DLL, the other scripts and everything the
+  # mod writes.
+  MOD_DIR = "Patch\\Multiplayer"
+
+  # The mod's other scripts in the mod folder, in the order they load.
+  #
+  # A script may use only what loaded before it while it loads, such as mp_actors.rbx's
+  # Game_MpActor. The battle scripts install their battle hooks once the game runs, the last loaded
+  # first, so their order decides how those hooks wrap each other.
+  SCRIPTS = %w[
+    mp_actors mp_async mp_actions mp_overworld
+    mp_coop_events mp_coop_npcs mp_coop_story
+    mp_save_distribution mp_world
+    mp_battle mp_battle_coop mp_battle_sync mp_battle_pvp
+  ]
+
+  # Extension of the scripts, which the mod loader skips, since only this script may load them.
+  SCRIPT_EXTENSION = ".rbx"
 
   # File name of the DLL inside the mod folder.
   DLL = "Multiplayer.dll"
@@ -40,7 +58,7 @@ module MGQ_Multiplayer
   MAX_NAME_LENGTH = 32
 
   # What the game says wherever the player tries to use the mod once a newer release is out.
-  UPDATE_MESSAGE = "A Monster Girl Quest! Online update is out. Close the game and run Multiplayer\\Update.bat to update."
+  UPDATE_MESSAGE = "A Monster Girl Quest! Online update is out. Close the game and run Patch\\Multiplayer\\Update.bat to update."
 
   # Reports whether the hooks can be installed.
   #
@@ -100,6 +118,20 @@ module MGQ_Multiplayer
     "#{MOD_DIR}\\#{name}"
   end
 
+  # Loads the mod's other scripts in the order of SCRIPTS. One that is missing or fails is logged,
+  # and the others load all the same.
+  def self.load_scripts
+    SCRIPTS.each do |name|
+      file = path(name + SCRIPT_EXTENSION)
+      begin
+        eval(File.read(file, encoding: "BOM|UTF-8"), TOPLEVEL_BINDING, file)
+      # A script that does not parse raises a SyntaxError, which is no StandardError.
+      rescue Exception => e
+        Log.write("#{name}#{SCRIPT_EXTENSION} did not load: #{e.class}: #{e.message} (#{e.backtrace.to_a.first})")
+      end
+    end
+  end
+
   # Keeps a name someone else chose short, on one line and free of message codes.
   #
   # @param name [String, nil] The name.
@@ -111,7 +143,7 @@ module MGQ_Multiplayer
     "A friend"
   end
 
-  # Multiplayer/InGame.log, which only appears when something went wrong inside the game.
+  # Patch/Multiplayer/InGame.log, which only appears when something went wrong inside the game.
   module Log
     # Lines written per session at most, an error repeating every frame would flood the file.
     MAX_LINES = 60
@@ -130,7 +162,7 @@ module MGQ_Multiplayer
     end
   end
 
-  # Files of key=value lines, such as Multiplayer/Player.ini.
+  # Files of key=value lines, such as Patch/Multiplayer/Player.ini.
   module Ini
     # Reads a file.
     #
@@ -166,7 +198,7 @@ module MGQ_Multiplayer
   end
 
   # Who plays this game: an id that tells it from every other player's, kept in
-  # Multiplayer/Player.ini, and the name the others see.
+  # Patch/Multiplayer/Player.ini, and the name the others see.
   module Player
     # File that keeps the id and the chosen name, inside the mod folder.
     FILE = "Player.ini"
@@ -225,8 +257,8 @@ module MGQ_Multiplayer
     end
   end
 
-  # Multiplayer/Multiplayer.dll's functions: hosting, joining, the first exchange of what each game
-  # hands over, and the messages that follow, all running on threads of the DLL's own.
+  # Patch/Multiplayer/Multiplayer.dll's functions: hosting, joining, the first exchange of what each
+  # game hands over, and the messages that follow, all running on threads of the DLL's own.
   module Link
     # Bytes the DLL may write the connection's state into at first, a PvP battle's team included.
     # A larger state asks for a larger buffer.
@@ -761,3 +793,5 @@ if MGQ_Multiplayer.hookable?
     MGQ_Multiplayer::Log.write("SceneManager hook FAILED: #{e.class}: #{e.message}")
   end
 end
+
+MGQ_Multiplayer.load_scripts

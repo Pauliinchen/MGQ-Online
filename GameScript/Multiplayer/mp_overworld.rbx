@@ -1,18 +1,19 @@
 #----------------------------------------------------------------
-#  mp_overworld.rb
+#  mp_overworld.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-09-30: Called the battle and party scripts by their new names
+#      Paulinchen  2026-09-30: Moved into Patch/Multiplayer as mp_overworld.rbx, which Multiplayer.rb loads
+#                            - Called the battle and party scripts by their new names
 #                            - Kept a script's message's body, which co-op battles carry their data in
 #                            - Told scripts' messages apart before states, since some name a map too
-#                            - Handed co-op battle messages to mp_battle_coop.rb and mp_battle_sync.rb
-#                            - Handed party event messages to mp_coop_events.rb
-#                            - Handed chest messages to mp_coop_events.rb
-#                            - Handed story messages to mp_coop_story.rb, routing scripts' messages through one table
-#                            - Told when the player entered their map, and handed NPC messages to mp_coop_npcs.rb
+#                            - Handed co-op battle messages to mp_battle_coop.rbx and mp_battle_sync.rbx
+#                            - Handed party event messages to mp_coop_events.rbx
+#                            - Handed chest messages to mp_coop_events.rbx
+#                            - Handed story messages to mp_coop_story.rbx, routing scripts' messages through one table
+#                            - Told when the player entered their map, and handed NPC messages to mp_coop_npcs.rbx
 #      Paulinchen  2026-09-29: Told the others while the player types in the chat
 #                            - Showed each player's ping, the own above the player's head and the others' beside their names
-#                            - Left parties to mp_actions.rb, which it asks through Actions
+#                            - Left parties to mp_actions.rbx, which it asks through Actions
 #                            - Created
 #
 #----------------------------------------------------------------
@@ -22,7 +23,7 @@
 # shows the players on the same map as ghosts with their names, which walk through everything and
 # trigger nothing. A line at the bottom left tells who came and went.
 #
-# What players do together, such as parties, is mp_actions.rb's, which this script asks through
+# What players do together, such as parties, is mp_actions.rbx's, which this script asks through
 # Actions whenever it is installed.
 #
 # It must never interrupt the game, so every entry point rescues.
@@ -96,7 +97,7 @@ module MGQ_MpOverworld
 
   # Reports whether a world is open.
   #
-  # @return [Boolean] Whether mp_world.rb has a world open.
+  # @return [Boolean] Whether mp_world.rbx has a world open.
   def self.in_world?
     defined?(MGQ_MpWorld) && MGQ_MpWorld.open? ? true : false
   end
@@ -138,38 +139,38 @@ module MGQ_MpOverworld
     end
   end
 
-  # mp_actions.rb, when it is installed: what players do together, such as parties. Without it,
+  # mp_actions.rbx, when it is installed: what players do together, such as parties. Without it,
   # every call answers as if nobody were in a party.
   module Actions
-    # Reports whether mp_actions.rb is installed.
+    # Reports whether mp_actions.rbx is installed.
     #
     # @return [Boolean] Whether it is.
     def self.installed?
       defined?(MGQ_MpActions) ? true : false
     end
 
-    # Lets mp_actions.rb follow the frames.
+    # Lets mp_actions.rbx follow the frames.
     #
     # @param in_world [Boolean] Whether a world is open.
     def self.tick(in_world)
       MGQ_MpActions.tick(in_world) if installed?
     end
 
-    # Asks mp_actions.rb for its fields of the player's state.
+    # Asks mp_actions.rbx for its fields of the player's state.
     #
     # @return [Hash] The fields.
     def self.state_fields
       installed? ? MGQ_MpActions.state_fields : {}
     end
 
-    # Asks mp_actions.rb whether it has the player busy, such as typing in the chat.
+    # Asks mp_actions.rbx whether it has the player busy, such as typing in the chat.
     #
     # @return [String, nil] A key of STATE_ICONS, nil when it has not.
     def self.scene
       installed? ? MGQ_MpActions.scene : nil
     end
 
-    # Hands mp_actions.rb a message that is no state.
+    # Hands mp_actions.rbx a message that is no state.
     #
     # @param peer [Peers::Peer, nil] Who sent it, nil before their first state.
     # @param message [Hash] The message's fields.
@@ -177,21 +178,21 @@ module MGQ_MpOverworld
       MGQ_MpActions.take(peer, message) if installed?
     end
 
-    # Tells mp_actions.rb what another player just told.
+    # Tells mp_actions.rbx what another player just told.
     #
     # @param peer [Peers::Peer] The player.
     def self.observe(peer)
       MGQ_MpActions.observe(peer) if installed?
     end
 
-    # Tells mp_actions.rb that another player left the world.
+    # Tells mp_actions.rbx that another player left the world.
     #
     # @param peer [Peers::Peer] The player.
     def self.observe_leaving(peer)
       MGQ_MpActions.observe_leaving(peer) if installed?
     end
 
-    # Asks mp_actions.rb for the line above a ghost's name.
+    # Asks mp_actions.rbx for the line above a ghost's name.
     #
     # @param peer [Peers::Peer] The ghost's player.
     # @return [Array, nil] The text and its color, nil for none.
@@ -200,7 +201,7 @@ module MGQ_MpOverworld
     end
   end
 
-  # Multiplayer/Multiplayer.dll's world room: the inbox and sending.
+  # Patch/Multiplayer/Multiplayer.dll's world room: the inbox and sending.
   module Link
     # Hands out the oldest inbox entry.
     #
@@ -599,7 +600,7 @@ class Game_MpGhost < Game_Character
 end
 
 # A ghost's name above its head, with an icon for what its player does, green for a party member,
-# and above it the line mp_actions.rb gives, such as an invite.
+# and above it the line mp_actions.rbx gives, such as an invite.
 class Sprite_MpGhostLabel < Sprite
   # Width of the label.
   WIDTH = 240

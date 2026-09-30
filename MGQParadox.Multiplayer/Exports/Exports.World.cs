@@ -45,7 +45,7 @@ internal static unsafe partial class Exports
     }
 
     /// <summary>
-    /// Takes who plays in worlds: the key from Multiplayer/Player.ini and the name the others see.
+    /// Takes who plays in worlds: the key from Patch/Multiplayer/Player.ini and the name the others see.
     /// </summary>
     /// <param name="key">The player's key, 32 lowercase hexadecimal characters, UTF-8 and null-terminated.</param>
     /// <param name="name">The player's name, UTF-8 and null-terminated.</param>

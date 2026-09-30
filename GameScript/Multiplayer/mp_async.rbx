@@ -1,8 +1,9 @@
 #----------------------------------------------------------------
-#  mp_async.rb
+#  mp_async.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-09-30: Skipped the screen's freeze between the map and menus, since even a transition of no frames took seven
+#      Paulinchen  2026-09-30: Moved into Patch/Multiplayer as mp_async.rbx, which Multiplayer.rb loads
+#                            - Skipped the screen's freeze between the map and menus, since even a transition of no frames took seven
 #                            - Switched between the map and menus at once, since a fade froze the world behind them
 #                            - Created
 #

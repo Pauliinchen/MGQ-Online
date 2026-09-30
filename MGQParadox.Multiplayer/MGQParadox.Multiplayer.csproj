@@ -25,26 +25,28 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ModFile Include="..\package\Multiplayer\*" />
-    <PatchFile Include="..\GameScript\*.rb" />
+    <!-- Multiplayer.rb goes into the Patch folder, where the mod loader finds it; everything else
+         goes into Patch\Multiplayer, whose scripts Multiplayer.rb loads itself. -->
+    <PatchFile Include="..\GameScript\Multiplayer.rb" />
+    <ModFile Include="..\package\Multiplayer\*;..\GameScript\Multiplayer\*.rbx" />
 
     <!-- What Update.ps1 compares an older install's Manifest.txt against, to remove files a
          refactor dropped. Built from the same globs the package itself is, so a rename never
          needs updating by hand. -->
-    <ShippedFile Include="Multiplayer\$(AssemblyName).dll" />
-    <ShippedFile Include="Multiplayer\Manifest.txt" />
-    <ShippedFile Include="@(ModFile->'Multiplayer\%(Filename)%(Extension)')" />
+    <ShippedFile Include="Patch\Multiplayer\$(AssemblyName).dll" />
+    <ShippedFile Include="Patch\Multiplayer\Manifest.txt" />
+    <ShippedFile Include="@(ModFile->'Patch\Multiplayer\%(Filename)%(Extension)')" />
     <ShippedFile Include="@(PatchFile->'Patch\%(Filename)%(Extension)')" />
 
-    <None Include="@(ModFile)" Link="Shipped\Multiplayer\%(Filename)%(Extension)" />
+    <None Include="@(ModFile)" Link="Shipped\Patch\Multiplayer\%(Filename)%(Extension)" />
     <None Include="@(PatchFile)" Link="Shipped\Patch\%(Filename)%(Extension)" />
   </ItemGroup>
 
   <Target Name="AssemblePackage" AfterTargets="Publish">
     <RemoveDir Directories="$(PackageDir)" />
-    <Copy SourceFiles="$(PublishDir)$(AssemblyName).dll;@(ModFile)" DestinationFolder="$(PackageDir)Multiplayer" />
+    <Copy SourceFiles="$(PublishDir)$(AssemblyName).dll;@(ModFile)" DestinationFolder="$(PackageDir)Patch\Multiplayer" />
     <Copy SourceFiles="@(PatchFile)" DestinationFolder="$(PackageDir)Patch" />
-    <WriteLinesToFile File="$(PackageDir)Multiplayer\Manifest.txt" Lines="@(ShippedFile)" Overwrite="true" />
+    <WriteLinesToFile File="$(PackageDir)Patch\Multiplayer\Manifest.txt" Lines="@(ShippedFile)" Overwrite="true" />
     <Message Importance="high" Text="$(MSBuildProjectName) -> $(PackageDir)" />
   </Target>
 

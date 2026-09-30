@@ -13,7 +13,7 @@ using System.IO;
 namespace MGQParadox.Multiplayer;
 
 /// <summary>
-/// The Multiplayer folder next to Game.exe, which holds the DLL and everything it reads or writes.
+/// The mod folder, Patch\Multiplayer in the game folder, which holds the DLL and everything it reads or writes.
 /// </summary>
 internal static class ModFolder
 {

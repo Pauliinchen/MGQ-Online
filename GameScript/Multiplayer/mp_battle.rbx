@@ -1,8 +1,9 @@
 #----------------------------------------------------------------
-#  mp_battle.rb
+#  mp_battle.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-09-30: Renamed from mp_battles.rb, with the module MGQ_MpBattle
+#      Paulinchen  2026-09-30: Moved into Patch/Multiplayer as mp_battle.rbx, which Multiplayer.rb loads
+#                            - Renamed from mp_battles.rbx, with the module MGQ_MpBattle
 #      Paulinchen  2026-09-30: Created
 #
 #----------------------------------------------------------------

@@ -1,10 +1,11 @@
 #----------------------------------------------------------------
-#  mp_actions.rb
+#  mp_actions.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-09-30: Found the party's leader, the member who made the party
+#      Paulinchen  2026-09-30: Moved into Patch/Multiplayer as mp_actions.rbx, which Multiplayer.rb loads
+#                            - Found the party's leader, the member who made the party
 #                            - Gave the chat box a blinking cursor, moved with the arrows, Home and End, with Delete
-#      Paulinchen  2026-09-29: Told mp_overworld.rb while the player types in the chat
+#      Paulinchen  2026-09-29: Told mp_overworld.rbx while the player types in the chat
 #                            - Showed the chat box's text as it is typed
 #                            - Left room right above the player's head for their ping
 #                            - Added chat, opened with T or the wheel: a bubble above the sender and a log at the bottom left
@@ -14,11 +15,11 @@
 #----------------------------------------------------------------
 
 # What players of a world do together on the map: the action wheel, parties and chat. It builds
-# on mp_overworld.rb, which knows the other players and their messages, and which asks this script,
+# on mp_overworld.rbx, which knows the other players and their messages, and which asks this script,
 # through the functions at the top of MGQ_MpActions, what to add to the player's state, what to
 # show above a ghost's name, and to take the messages that are not states.
 #
-# mp_overworld.rb loads after this script, so both only reach each other while the game runs.
+# mp_overworld.rbx loads after this script, so both only reach each other while the game runs.
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpActions
@@ -39,7 +40,7 @@ module MGQ_MpActions
   # Color of the invite line above a ghost's name and above the player's own head.
   INVITE_COLOR = Color.new(255, 224, 128)
 
-  # Pixels kept free right above the player's head, where mp_overworld.rb shows their ping.
+  # Pixels kept free right above the player's head, where mp_overworld.rbx shows their ping.
   HEAD_ROOM = 16
 
   # A choice of the action wheel.
@@ -67,14 +68,14 @@ module MGQ_MpActions
   rescue
   end
 
-  # Reports whether a world is open, through mp_overworld.rb.
+  # Reports whether a world is open, through mp_overworld.rbx.
   #
   # @return [Boolean] Whether it is.
   def self.in_world?
     defined?(MGQ_MpOverworld) && MGQ_MpOverworld.in_world? ? true : false
   end
 
-  # Tells every other game of the world something, through mp_overworld.rb.
+  # Tells every other game of the world something, through mp_overworld.rbx.
   #
   # @param fields [Hash] The message's fields, which must leave out "map", since that marks a state.
   # @return [Boolean] Whether it went out.
@@ -84,21 +85,22 @@ module MGQ_MpActions
     MGQ_MpOverworld::Link.send_to(-1, MGQ_MpOverworld::Me.encode(fields))
   end
 
-  # Shows a notice at the bottom left of the map, through mp_overworld.rb.
+  # Shows a notice at the bottom left of the map, through mp_overworld.rbx.
   #
   # @param text [String] The notice.
   def self.notice(text)
     MGQ_MpOverworld::Status.notice(text) if defined?(MGQ_MpOverworld)
   end
 
-  # Lists the other players of the world, through mp_overworld.rb.
+  # Lists the other players of the world, through mp_overworld.rbx.
   #
   # @return [Array<MGQ_MpOverworld::Peers::Peer>] The players.
   def self.peers
     defined?(MGQ_MpOverworld) ? MGQ_MpOverworld::Peers.all : []
   end
 
-  # The fields this script adds to the state the player's game tells the others. Called by mp_overworld.rb.
+  # The fields this script adds to the state the player's game tells the others. Called by
+  # mp_overworld.rbx.
   #
   # @return [Hash] The fields.
   def self.state_fields
@@ -106,7 +108,7 @@ module MGQ_MpActions
   end
 
   # Lets invites, bubbles and chat lines run out, closes the wheel and the chat box once the map is
-  # left, and forgets everything once no world is open. Called by mp_overworld.rb every frame in
+  # left, and forgets everything once no world is open. Called by mp_overworld.rbx every frame in
   # every scene.
   #
   # @param in_world [Boolean] Whether a world is open.
@@ -125,14 +127,14 @@ module MGQ_MpActions
     end
   end
 
-  # Tells what the player does, when this script has them busy. Called by mp_overworld.rb.
+  # Tells what the player does, when this script has them busy. Called by mp_overworld.rbx.
   #
   # @return [String, nil] "typing" while the chat box is open, else nil.
   def self.scene
     Chat.typing? ? "typing" : nil
   end
 
-  # Takes a message of another game that is no state. Called by mp_overworld.rb.
+  # Takes a message of another game that is no state. Called by mp_overworld.rbx.
   #
   # @param peer [MGQ_MpOverworld::Peers::Peer, nil] Who sent it, nil before their first state.
   # @param message [Hash] The message's fields.
@@ -140,21 +142,21 @@ module MGQ_MpActions
     Chat.receive(peer, message) if message["chat"]
   end
 
-  # Notices what another player's new state means for the party. Called by mp_overworld.rb.
+  # Notices what another player's new state means for the party. Called by mp_overworld.rbx.
   #
   # @param peer [MGQ_MpOverworld::Peers::Peer] The player, with what they just told.
   def self.observe(peer)
     Party.observe(peer)
   end
 
-  # Notices another player leaving the world. Called by mp_overworld.rb.
+  # Notices another player leaving the world. Called by mp_overworld.rbx.
   #
   # @param peer [MGQ_MpOverworld::Peers::Peer] The player.
   def self.observe_leaving(peer)
     Party.observe_leaving(peer)
   end
 
-  # Tells what the line above a ghost's name says. Called by mp_overworld.rb.
+  # Tells what the line above a ghost's name says. Called by mp_overworld.rbx.
   #
   # @param peer [MGQ_MpOverworld::Peers::Peer] The ghost's player.
   # @return [Array, nil] The text and its color, nil for none.

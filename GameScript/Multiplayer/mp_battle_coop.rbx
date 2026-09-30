@@ -1,8 +1,9 @@
 #----------------------------------------------------------------
-#  mp_battle_coop.rb
+#  mp_battle_coop.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-09-30: Renamed from mp_coop.rb, with the module MGQ_MpBattleCoop
+#      Paulinchen  2026-09-30: Moved into Patch/Multiplayer as mp_battle_coop.rbx, which Multiplayer.rb loads
+#                            - Renamed from mp_coop.rbx, with the module MGQ_MpBattleCoop
 #                            - Let a player who got away leave the battle, the others fighting on, alone with their own full team
 #                            - Showed the co-op party in the game's window per character too
 #                            - Invited party members whose window is in the background, and logged why nobody was invited
@@ -12,8 +13,8 @@
 
 # Co-op battles: when a party member's game starts a battle, the party members on the same map who
 # are playing on the map join it. The game that started it computes it (the host); the others play
-# it back and command their own characters, through mp_battle_sync.rb over the world's room. The party is
-# every player's characters together: with two players each brings the first two of their
+# it back and command their own characters, through mp_battle_sync.rbx over the world's room. The
+# party is every player's characters together: with two players each brings the first two of their
 # Frontline, with three or four each brings their first. A player who gets away leaves the battle;
 # the others fight on, and one left alone fights on with their own full team, as in a battle of
 # their own. Every game ends the battle with its own rewards or its own defeat.
@@ -186,7 +187,7 @@ module MGQ_MpBattleCoop
 
   # The guest's side.
 
-  # Takes a co-op message. Called by mp_overworld.rb.
+  # Takes a co-op message. Called by mp_overworld.rbx.
   #
   # @param peer [MGQ_MpOverworld::Peers::Peer, nil] Who sent it.
   # @param message [Hash] The message's fields.

@@ -1,8 +1,9 @@
 #----------------------------------------------------------------
-#  mp_coop_story.rb
+#  mp_coop_story.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-09-30: Renamed from mp_story.rb, with the module MGQ_MpCoopStory
+#      Paulinchen  2026-09-30: Moved into Patch/Multiplayer as mp_coop_story.rbx, which Multiplayer.rb loads
+#                            - Renamed from mp_story.rbx, with the module MGQ_MpCoopStory
 #                            - Kept what members as far along as the leader play together, companions who join included
 #                            - Kept chests the player's own while they play the leader's story
 #                            - Created
@@ -65,7 +66,7 @@ module MGQ_MpCoopStory
   rescue
   end
 
-  # Shows a notice at the bottom left of the map, through mp_overworld.rb.
+  # Shows a notice at the bottom left of the map, through mp_overworld.rbx.
   #
   # @param text [String] The notice.
   def self.notice(text)
@@ -79,7 +80,7 @@ module MGQ_MpCoopStory
     !@own.nil?
   end
 
-  # Finds the leader of the player's party, through mp_actions.rb.
+  # Finds the leader of the player's party, through mp_actions.rbx.
   #
   # @return [MGQ_MpOverworld::Peers::Peer, Symbol, nil] The leader, :me for the player, nil outside a party.
   def self.leader
@@ -142,7 +143,7 @@ module MGQ_MpCoopStory
     tell(leader.seat, "ask", {})
   end
 
-  # Takes a message about the story. Called by mp_overworld.rb.
+  # Takes a message about the story. Called by mp_overworld.rbx.
   #
   # @param peer [MGQ_MpOverworld::Peers::Peer, nil] Who sent it.
   # @param message [Hash] The message's fields.
@@ -297,7 +298,8 @@ module MGQ_MpCoopStory
     log("showing own chests failed: #{e.class}: #{e.message}")
   end
 
-  # Reports whether a self switch is the player's own: a chest's on the map, through mp_coop_events.rb.
+  # Reports whether a self switch is the player's own: a chest's on the map, through
+  # mp_coop_events.rbx.
   #
   # @param key [Array] The self switch: map, event and letter.
   # @return [Boolean] Whether it is.
@@ -305,7 +307,7 @@ module MGQ_MpCoopStory
     defined?(MGQ_MpCoopEvents) && $game_map ? MGQ_MpCoopEvents.chest_key?(key) : false
   end
 
-  # Lists the self switches of the chests on the map, through mp_coop_events.rb.
+  # Lists the self switches of the chests on the map, through mp_coop_events.rbx.
   #
   # @return [Array<Array>] Their keys.
   def self.chest_keys

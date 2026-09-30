@@ -1,8 +1,9 @@
 #----------------------------------------------------------------
-#  mp_world.rb
+#  mp_world.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-09-30: Named the mod Monster Girl Quest! Online in the update notice
+#      Paulinchen  2026-09-30: Moved into Patch/Multiplayer as mp_world.rbx, which Multiplayer.rb loads, with the worlds in Patch/Multiplayer/Worlds
+#                            - Named the mod Monster Girl Quest! Online in the update notice
 #                            - Greyed out the title command and showed a notice once a newer release is out
 #                            - Let the creator pick one of their saves as the starting save of a new world, which new players fetch before entering it
 #                            - Made and joined worlds through forms at the right of the world screen, typed in place, and made hidden worlds, joined by their id
@@ -16,9 +17,9 @@
 # title screen. The relay's world directory lists every public world with its players, and hidden
 # ones only for their players; others join a hidden world by its id. A world's password is asked
 # once, after which this game remembers the world. Each world keeps its own saves and its
-# own system save (Library, medals, system switches, affection) in Multiplayer/Worlds/<id>, so
+# own system save (Library, medals, system switches, affection) in Patch/Multiplayer/Worlds/<id>, so
 # playing in a world never touches the player's own saves. A new world's players start at the
-# beginning, or from one of its creator's saves (mp_save_distribution.rb).
+# beginning, or from one of its creator's saves (mp_save_distribution.rbx).
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpWorld
@@ -29,7 +30,7 @@ module MGQ_MpWorld
   COMMAND_NAME = "Multiplayer"
 
   # Folder of the worlds on this PC, inside the mod folder.
-  WORLDS_DIR = "Multiplayer/Worlds"
+  WORLDS_DIR = "Patch/Multiplayer/Worlds"
 
   # File of the worlds the player marked as favourites, inside the mod folder.
   FAVOURITES_FILE = "Favourites.ini"
@@ -226,7 +227,7 @@ module MGQ_MpWorld
     # What the notice says, the newer version filled in.
     LINES = [
       "Monster Girl Quest! Online %s is out.",
-      "Close the game and run Multiplayer\\Update.bat to update.",
+      "Close the game and run Patch\\Multiplayer\\Update.bat to update.",
     ]
 
     # Height of a line, which the font size follows.
@@ -308,7 +309,7 @@ module MGQ_MpWorld
   # @!attribute gone [Boolean] Whether the directory no longer has it, as opposed to its list not having arrived.
   Entry = Struct.new(:id, :name, :listed, :local, :favourite, :gone)
 
-  # Multiplayer/Multiplayer.dll's world functions: the folder id of a world code, and the
+  # Patch/Multiplayer/Multiplayer.dll's world functions: the folder id of a world code, and the
   # connection to the open world's room.
   module Link
     # Names a world's folder by its code.
@@ -343,8 +344,8 @@ module MGQ_MpWorld
     end
   end
 
-  # The relay's world directory, through Multiplayer/Multiplayer.dll: the list of worlds, fetched
-  # again whenever asked, and one action at a time.
+  # The relay's world directory, through Patch/Multiplayer/Multiplayer.dll: the list of worlds,
+  # fetched again whenever asked, and one action at a time.
   module Directory
     # A world as the directory lists it.
     #
@@ -460,7 +461,7 @@ module MGQ_MpWorld
     end
   end
 
-  # The worlds the player marked as favourites, in Multiplayer/Favourites.ini.
+  # The worlds the player marked as favourites, in Patch/Multiplayer/Favourites.ini.
   module Favourites
     # Lists the favourites.
     #
@@ -482,7 +483,7 @@ module MGQ_MpWorld
     end
   end
 
-  # A world on this PC: its folder in Multiplayer/Worlds, named by a hash of its code, with
+  # A world on this PC: its folder in Patch/Multiplayer/Worlds, named by a hash of its code, with
   # world.ini (name, world code, directory id, when it was made and last played) and the world's
   # Save folder.
   class World

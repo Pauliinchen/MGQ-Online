@@ -2,14 +2,16 @@
 #  Update.ps1
 #
 #  Changelog:
-#      Paulinchen  2026-09-30: Fetched MGQ-Online-<version>.zip from the repository under its new name, MGQ-Online
+#      Paulinchen  2026-09-30: Found the game folder two levels up, since the mod lives in Patch\Multiplayer
+#                            - Fetched MGQ-Online-<version>.zip from the repository under its new name, MGQ-Online
 #      Paulinchen  2026-09-30: Created
 #
 #----------------------------------------------------------------
 
-# Updates the mod in the game folder above this one to the latest release on GitHub, removing files
-# an earlier version left behind that the new one no longer ships, such as a script a later refactor
-# renamed or merged into another. Update.bat runs it.
+# Updates the mod in the game folder two levels above this one (this script lives in
+# Patch\Multiplayer) to the latest release on GitHub, removing files an earlier version left behind
+# that the new one no longer ships, such as a script a later refactor renamed or merged into
+# another. Update.bat runs it.
 
 $ErrorActionPreference = 'Stop'
 
@@ -21,7 +23,7 @@ $UserAgent        = 'MGQ-Online'
 $ReleaseZip       = 'MGQ-Online-*.zip'
 
 $ModDir   = $PSScriptRoot
-$GameDir  = Split-Path $ModDir -Parent
+$GameDir  = Split-Path (Split-Path $ModDir -Parent) -Parent
 $GameExe  = Join-Path $GameDir 'Game.exe'
 $Dll      = Join-Path $ModDir 'Multiplayer.dll'
 $Manifest = Join-Path $ModDir 'Manifest.txt'
@@ -62,8 +64,9 @@ function Get-ShippedFiles {
 
 # Deletes files the old release shipped that the new one does not.
 #
-# A manifest only ever lists paths under Multiplayer\ or Patch\, so this never comes near
-# Player.ini, Favourites.ini, Multiplayer\Worlds or the logs, whatever it is handed.
+# A manifest only ever lists files a release shipped, under Patch\ (or Multiplayer\ next to
+# Game.exe, before the mod moved into Patch\Multiplayer), so this never comes near Player.ini,
+# Favourites.ini, the worlds or the logs, which no release ships.
 #
 # $Old: the old manifest's paths.
 # $New: the new manifest's paths.
@@ -100,7 +103,7 @@ function Show-ReleaseNotes($Release) {
 
 try {
     if (-not (Test-Path $GameExe)) {
-        throw "Game.exe is not in $GameDir. Keep this script in the Multiplayer folder next to Game.exe."
+        throw "Game.exe is not in $GameDir. Keep this script in Patch\Multiplayer inside the game folder."
     }
 
     # Windows PowerShell 5.1 may still default to TLS 1.0, which GitHub refuses.

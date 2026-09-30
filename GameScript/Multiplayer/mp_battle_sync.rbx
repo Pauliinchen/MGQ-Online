@@ -1,12 +1,13 @@
 #----------------------------------------------------------------
-#  mp_battle_sync.rb
+#  mp_battle_sync.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-09-30: Renamed from mp_sync.rb, with the module MGQ_MpBattleSync
+#      Paulinchen  2026-09-30: Moved into Patch/Multiplayer as mp_battle_sync.rbx, which Multiplayer.rb loads
+#                            - Renamed from mp_sync.rbx, with the module MGQ_MpBattleSync
 #                            - Let a co-op player who got away leave the battle, which the others fight on
 #                            - Held the battle's menus while waiting, so a hidden party command no longer takes presses after auto battle
 #                            - Carried co-op battles over the world's room, several guests commanding their own characters in one party
-#                            - Left turning Give Up off to mp_battle.rb, which does it for every multiplayer battle
+#                            - Left turning Give Up off to mp_battle.rbx, which does it for every multiplayer battle
 #      Paulinchen  2026-09-29: Sent the start of a command phase before the host's own, which the host skips when none of its characters can act
 #                            - Streamed the battle log's lines, the skill lines and names and who appears as calls the guest makes in its own game's language
 #                            - Kept the untranslated game's speaker lines out of the name swap, and showed a translated host's name boxes as such lines on an untranslated guest
@@ -188,7 +189,7 @@ module MGQ_MpBattleSync
     log("a guest left the co-op battle, their characters leave at the next command phase")
   end
 
-  # Takes a message of a co-op battle from the world's room. Called by mp_overworld.rb.
+  # Takes a message of a co-op battle from the world's room. Called by mp_overworld.rbx.
   #
   # @param peer [MGQ_MpOverworld::Peers::Peer, nil] Who sent it.
   # @param message [Hash] The message: "battle" its kind, "bid" the battle's id, and the body.

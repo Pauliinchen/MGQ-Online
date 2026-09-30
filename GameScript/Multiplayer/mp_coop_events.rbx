@@ -1,8 +1,9 @@
 #----------------------------------------------------------------
-#  mp_coop_events.rb
+#  mp_coop_events.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-09-30: Renamed from mp_events.rb, with the module MGQ_MpCoopEvents
+#      Paulinchen  2026-09-30: Moved into Patch/Multiplayer as mp_coop_events.rbx, which Multiplayer.rb loads
+#                            - Renamed from mp_events.rbx, with the module MGQ_MpCoopEvents
 #                            - Played a party's story events in the leader's game and showed its messages to the members
 #                            - Took the party along where the leader goes, and gathered it for story scenes
 #                            - Created
@@ -254,7 +255,7 @@ module MGQ_MpCoopEvents
     @telling && $game_map && $game_map.interpreter.running? ? true : false
   end
 
-  # Finds the leader of the player's party, through mp_actions.rb.
+  # Finds the leader of the player's party, through mp_actions.rbx.
   #
   # @return [MGQ_MpOverworld::Peers::Peer, Symbol, nil] The leader, :me for the player, nil outside a party.
   def self.leader
@@ -508,7 +509,7 @@ module MGQ_MpCoopEvents
     log("telling a chest failed: #{e.class}: #{e.message}")
   end
 
-  # Takes a message about chests or the party's events. Called by mp_overworld.rb.
+  # Takes a message about chests or the party's events. Called by mp_overworld.rbx.
   #
   # @param peer [MGQ_MpOverworld::Peers::Peer, nil] Who sent it.
   # @param message [Hash] The message's fields.

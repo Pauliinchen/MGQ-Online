@@ -1,11 +1,12 @@
 #----------------------------------------------------------------
-#  mp_battle_pvp.rb
+#  mp_battle_pvp.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-09-30: Renamed from pvp_battle.rb, with the module MGQ_MpBattlePvp
+#      Paulinchen  2026-09-30: Moved into Patch/Multiplayer as mp_battle_pvp.rbx, which Multiplayer.rb loads, and named the log there
+#                            - Renamed from pvp_battle.rb, with the module MGQ_MpBattlePvp
 #                            - Disabled PvP battles once a newer release of the mod is out, telling the player on F11
-#                            - Left the rules every multiplayer battle shares to mp_battle.rb
-#                            - Left the builds and the rebuilt characters' shared parts to mp_actors.rb
+#                            - Left the rules every multiplayer battle shares to mp_battle.rbx
+#                            - Left the builds and the rebuilt characters' shared parts to mp_actors.rbx
 #      Paulinchen  2026-09-29: Kept the PvP battle screen closed while a world is open
 #                            - Joined an invite accepted after a failed exchange instead of turning it down with the failure
 #                            - Stopped asking for an open port and naming the way the team came, since every team comes through the relay
@@ -704,8 +705,9 @@ module MGQ_MpBattlePvp
     end
   end
 
-  # Multiplayer/Mirror Match.log: each character of a mirror match next to its rebuild, outside of
-  # battle and at the first turn, every value that differs marked. Written anew for every match.
+  # Patch/Multiplayer/Mirror Match.log: each character of a mirror match next to its rebuild,
+  # outside of battle and at the first turn, every value that differs marked. Written anew for every
+  # match.
   module MirrorReport
     # File inside the Discord folder.
     FILE = "Mirror Match.log"
@@ -913,10 +915,10 @@ module MGQ_MpBattlePvp
     }
 
     # What the map says when the battle could not start.
-    FAILED = "The battle could not start, Multiplayer\\InGame.log says why."
+    FAILED = "The battle could not start, Patch\\Multiplayer\\InGame.log says why."
 
     # What the map says after a live battle broke off without a winner.
-    BROKEN = "The PvP battle against %s's team broke off, Multiplayer\\InGame.log says why."
+    BROKEN = "The PvP battle against %s's team broke off, Patch\\Multiplayer\\InGame.log says why."
 
     # What the map says after a mirror match, by the game's battle result.
     MIRROR_RESULTS = {
