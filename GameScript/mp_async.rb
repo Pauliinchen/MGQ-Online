@@ -2,7 +2,8 @@
 #  mp_async.rb
 #
 #  Changelog:
-#      Paulinchen  2026-09-30: Created
+#      Paulinchen  2026-09-30: Switched between the map and menus at once, since a fade froze the world behind them
+#                            - Created
 #
 #----------------------------------------------------------------
 
@@ -116,6 +117,18 @@ module MGQ_MpAsync
   def self.live_map?(scene)
     behind?(scene)
   end
+
+  # Reports whether a screen comes in at once rather than fading in from the last picture, since
+  # the picture stands still for the fade while the world behind it runs on.
+  #
+  # @param scene [Scene_Base] The screen.
+  # @return [Boolean] Whether it comes in at once: a menu showing the live map, or the map while
+  #   a world is open.
+  def self.instant?(scene)
+    return false unless defined?(MGQ_MpWorld) && MGQ_MpWorld.open?
+
+    scene.is_a?(Scene_Map) || (scene.respond_to?(:mgq_mp_live_map?) && scene.mgq_mp_live_map?)
+  end
 end
 
 # The live map behind a menu: the map's sprites, below everything the menu draws and dimmed as the
@@ -169,6 +182,22 @@ if MGQ_MpAsync.hookable?
         mgq_mp_async_update_live_map
       end
 
+      alias mgq_mp_async_transition_speed transition_speed
+
+      # Tells how many frames the screen fades in, none while the world runs visibly behind it.
+      #
+      # @return [Integer] The frames.
+      def transition_speed
+        MGQ_MpAsync.instant?(self) ? 0 : mgq_mp_async_transition_speed
+      end
+
+      # Reports whether the screen shows the live map behind it.
+      #
+      # @return [Boolean] Whether it does.
+      def mgq_mp_live_map?
+        !@mgq_mp_live_map.nil?
+      end
+
       # Updates the live map behind a menu, if the menu shows one.
       def mgq_mp_async_update_live_map
         @mgq_mp_live_map.update if @mgq_mp_live_map
@@ -181,6 +210,22 @@ if MGQ_MpAsync.hookable?
     end
   rescue => e
     MGQ_MpAsync.log("scene hook FAILED: #{e.class}: #{e.message}")
+  end
+
+  begin
+    class Scene_Map
+      alias mgq_mp_async_transition_speed transition_speed
+
+      # Tells how many frames the map fades in, none while a world is open. A fade from black, as
+      # after a battle, is the map's own and stays.
+      #
+      # @return [Integer] The frames.
+      def transition_speed
+        MGQ_MpAsync.instant?(self) ? 0 : mgq_mp_async_transition_speed
+      end
+    end
+  rescue => e
+    MGQ_MpAsync.log("map transition hook FAILED: #{e.class}: #{e.message}")
   end
 
   begin
