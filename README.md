@@ -1,92 +1,121 @@
 # MGQ Paradox Multiplayer
 
-Play Monster Girl Quest! Paradox RPG together with friends over the internet, with nothing to set up in your router. So far: **PvP battles**, in which your Frontline fights your friend's Frontline live, each of you commanding your own team; and **worlds**, which up to 32 players enter and see each other walk the same maps. In a world's party you play the story together and fight co-op battles.
+Play Monster Girl Quest! Paradox RPG together with friends over the internet, with nothing to set up in your router.
+
+- **Worlds:** up to 32 players on the same maps. Form a party to play the story together and fight co-op battles.
+- **PvP battles:** your Frontline against a friend's, live, each of you commanding your own team.
 
 ## Requirements
 
-- Monster Girl Quest! Paradox RPG 3.06, the same version on both sides, with or without the English translation. A translated and an untranslated game can play together; each shows the battle in its own language.
+- Monster Girl Quest! Paradox RPG 3.06, with or without the English translation. Everyone needs the same game version and the same version of this mod. A translated and an untranslated game can play together; each shows battles in its own language.
 - The community's mod loader: the `Patch.rb` from [*Patch.rb (enable Type 1 mods)*](https://mgq.miraheze.org/wiki/Paradox_mods#Patch.rb_(enable_Type_1_mods)) on the MGQ wiki, in your `Patch` folder.
 
 Optional:
 
-- [Discord Rich Presence](https://github.com/Pauliinchen/MGQ-Paradox-Discord-Rich-Presence) 1.5.1 or later: invite your friend through Discord instead of sending a join code, and show on your profile who you're playing with.
-- [Battle Dialogue](https://github.com/Pauliinchen/MGQ-Paradox-Mod-Collection/tree/main/Battle_Dialogue): shows what characters say in boxes at the screen's sides, so neither of you waits for the other to press a key.
+- [Discord Rich Presence](https://github.com/Pauliinchen/MGQ-Paradox-Discord-Rich-Presence) 1.5.1 or later: invite friends through Discord instead of sending a join code, show on your profile who you're playing with, and use your Discord name in worlds.
+- [Battle Dialogue](https://github.com/Pauliinchen/MGQ-Paradox-Mod-Collection/tree/main/Battle_Dialogue): shows what characters say in boxes at the screen's sides, so nobody waits for another player to press a key.
 
 ## Install
 
-Close the game and extract the release zip into the folder that contains `Game.exe`:
+Close the game and extract the release zip into the folder that contains `Game.exe`. You then have a `Multiplayer` folder next to `Game.exe`, and the mod's scripts in `Patch`: `Multiplayer.rb`, `pvp_battle.rb` and the `mp_*.rb` files.
 
-```
-Game.exe
-Multiplayer\Multiplayer.dll
-Patch\Multiplayer.rb
-Patch\mp_actions.rb
-Patch\mp_actors.rb
-Patch\mp_async.rb
-Patch\mp_battles.rb
-Patch\mp_coop.rb
-Patch\mp_events.rb
-Patch\mp_npcs.rb
-Patch\mp_overworld.rb
-Patch\mp_save_distribution.rb
-Patch\mp_story.rb
-Patch\mp_sync.rb
-Patch\mp_world.rb
-Patch\pvp_battle.rb
-```
+While the mod is installed, the game keeps running when its window is in the background, so no player holds the others up. A gamepad does nothing meanwhile.
 
-To uninstall, delete the `Multiplayer` folder and the thirteen scripts in `Patch`. The `Multiplayer` folder also holds your worlds, so keep `Multiplayer\Worlds` if you want to play them again later.
+## Update
+
+When a new release is out, the title screen says so. Until you update, *Multiplayer* is greyed out and F11 doesn't open PvP battles, since everyone needs the same version.
+
+Close the game and double-click `Multiplayer\Update.bat`. It shows what's new, downloads the release, installs it, and removes files an older version left behind. Your player name, favourites and worlds are kept.
+
+## Uninstall
+
+Close the game and delete `Multiplayer.rb`, `pvp_battle.rb` and every `mp_*.rb` file in `Patch`, then the `Multiplayer` folder. That folder also holds your worlds: keep `Multiplayer\Worlds` if you want to play them again later. The mod loader stays for your other mods.
 
 ## Worlds
 
-Pick **Multiplayer** below *Continue* on the title screen. The first time, the game asks for the name the others see, unless the Discord mod knows yours.
+Pick **Multiplayer** below *Continue* on the title screen. The first time, the game asks for the name the others see, unless the Discord mod knows yours. Names and passwords are typed on the keyboard; with a gamepad, the game's letters appear.
 
-- **The list** at the left holds every public world and the hidden worlds you joined, your favourites first (marked `*`), then those you played last. The right side shows who made the chosen world, how many of its players are online, and everyone who ever joined it.
-- **Create new world:** point at it and fill in the form at the right: a name, a password, and Max Players, 2 to 32. Tick *Hidden* to leave the world out of the list, and *From my save* to have every new player start from one of your saves, with your party, items, story and Library, instead of the opening; then choose the save. Max Players and the starting save cannot be changed later.
+Each world keeps its own saves, Library, medals and affection in `Multiplayer\Worlds`, so your own game stays untouched. Going back to the title screen leaves the world.
+
+### Finding, creating and joining
+
+The list at the left shows every public world and the hidden worlds you joined: your favourites first (marked `*`), then the ones you played last. The right side shows who made the chosen world, how many of its players are online, and everyone who ever joined it.
+
+- **Enter a world:** type its password the first time; your game remembers it after that. You continue from your latest save in that world; the first time, you start at the opening or from the creator's save.
+- **Create new world:** point at it and fill in the form at the right: a name, a password, and Max Players (2 to 32).
+  - *Hidden* leaves the world out of the list. Only its players see it there.
+  - *From my save* lets every new player start from one of your saves, with your party, items, story and Library, instead of the opening. Choose the save after ticking it.
+  - Max Players and the starting save can't be changed later.
 - **Join a hidden world:** type or paste (Ctrl+V) the world id its creator sent you, and its password. The creator copies the id with *Copy the world id* on the world.
-- **Enter a world:** the first time, type its password; your game remembers it after that. A world you have saves in loads your latest one; otherwise you start at the opening, or from the creator's save.
-- **Its creator** can remove a player, who can then no longer enter, or delete the world for everyone.
-- **Names and passwords** are typed on the keyboard, right in the form; with a gamepad, the game's letters appear.
+- **The creator** can remove a player, who can then no longer enter, or delete the world for everyone.
 
-Each world keeps its own saves, Library, medals and affection in `Multiplayer\Worlds`, apart from your own game. Going back to the title screen leaves the world.
+### On the map
 
-**On the map**, the other players on the same map walk around as they do, with their names above them and an icon for what they do: fighting, talking or watching an event, typing in the chat, in a menu, the inventory or their equipment, shopping, at the casino, in the Library, sailing, flying, or away from the game. Their ping shows after their name, and yours right above your head: green up to 100 ms, yellow up to 200 ms, red beyond. They walk through everything and trigger nothing. The bottom left of the screen tells who joined and left, and when the connection is being restored. PvP battles (F11) are off while you are in a world.
+- **Other players** on your map walk around with their name above them and an icon for what they're doing: fighting, talking or watching an event, typing in the chat, in a menu, the inventory or their equipment, shopping, at the casino, in the Library, sailing, flying, or away. They walk through everything and trigger nothing.
+- **Ping** shows after each player's name, and yours right above your head: green up to 100 ms, yellow up to 200 ms, red beyond.
+- **The bottom left** of the screen tells who joined and left, and when the connection is being restored.
+- **The world never pauses.** While you're in a menu, a shop, a battle or a story scene, the map goes on behind it: the others walk on, NPCs move, and background events and timers run. Menus show the live map instead of a still picture. Anything that needs you, such as a message, a battle, a move to another map, or an NPC walking into you, waits until you're back on the map.
+- PvP battles (F11) are off while you're in a world.
 
-**The world never pauses:** while you are in a menu, a shop, a battle or a story scene, the map goes on behind it. The others walk on, NPCs move, and background events and timers run. Menus show the live map behind them instead of a still picture. Anything that needs you, such as a message, a battle, a move to another map, or an NPC that walks into you, waits until you are back on the map.
+### Action wheel and chat
 
-**The action wheel:** press **B** on the map to open it around your character. Pick a choice with the arrow keys and take it with the confirm button; **B** or cancel closes the wheel. Choices you cannot take right now are grey and tell you why. Duels are shown already and come in a later version.
+- **Action wheel:** press **B** on the map. Pick a choice with the arrow keys and take it with the confirm button; **B** or cancel closes the wheel. Grey choices can't be taken right now and tell you why. Duels are shown already and come in a later version.
+- **Chat:** press **T**, or pick *Chat* in the wheel. **Enter** sends, **Esc** closes; the arrow keys, **Home** and **End** move the cursor, and **Delete** removes the character after it. Your line shows in a speech bubble above your head for the players on your map, and in the chat log at the bottom left for everyone in the world.
 
-**Chat:** press **T**, or pick *Chat* in the wheel, and type on the keyboard; **Enter** sends, **Esc** closes. The arrow keys, **Home** and **End** move the cursor, and **Delete** removes the character after it. Your line goes to everyone in the world: it shows in a speech bubble above your head for the players on your map, and in the chat log at the bottom left of the map for everyone.
+### Parties
 
-**Parties:** players outside your party are slightly see-through. Stand next to another player, open the wheel and pick *Invite to a party*; "Invites to a party (B)" then shows above your head on their screen for 15 seconds, and when they open the wheel next to you and pick *Accept*, you form a party. Party members are fully visible and their names are green. *Leave the party* at the bottom of the wheel leaves it. On a map you share with party members, you all see the same NPCs in the same places: whoever of you entered the map first is its Map Owner, and the NPCs move as they do in their game. While in a party, everyone plays the story of the player who made the party: its events, doors and conversations are as far along as in their game. Your own party, your companions and their affection stay yours, and your saves keep your own story. When you leave the party, you are back in your own story. If your story was exactly as far along as theirs when you joined, you keep what you played together, companions who joined in the story included. Chests are everyone's own: when a party member opens one, everyone in the party who has not looted it yet gets the same items. The party travels together: when the player who made the party goes to another map, everyone follows, and when a story scene starts there, everyone on that map is brought to them. The story itself plays in their game: when you start a story event, it is handed to them, and everyone on the map sees its dialogue in their own message window, at their own pace. Conversations, shops and the job change menu stay your own. **Co-op battles:** when a battle starts for a party member, whether a random encounter, a wandering monster or a boss of the story, the party members on the same map who are playing on it join it. With two players each brings the first two of their Frontline, with three or four each brings their first. Everyone commands their own characters; the game where the battle started works it out. Each of you can try to escape as in any battle; whoever gets away leaves the battle, and the others fight on without their characters. The one left alone fights on with their own full team, as in a battle of their own. Each of you gets the full EXP, gold and your own item drops, or your own defeat. Ero offers, Give Up and swapping in the backline are off in every multiplayer battle.
+- **Forming one:** stand next to another player, open the wheel and pick *Invite to a party*. "Invites to a party (B)" shows above your head on their screen for 15 seconds; when they pick *Accept* in their wheel next to you, you're a party. *Leave the party* at the bottom of the wheel leaves it.
+- **Who's in it:** party members are fully visible with green names; everyone else is slightly see-through.
+- **NPCs:** on a map you share, you all see the same NPCs in the same places. Whoever of you entered the map first is its Map Owner, and the NPCs move as they do in that player's game.
+- **Story:** everyone plays the story of the player who made the party. Its events, doors and conversations are as far along as in that player's game, and story events you start are handed to them. Everyone on the map sees the dialogue in their own message window, at their own pace. Conversations, shops and the job change menu stay your own.
+- **What stays yours:** your party, companions and affection, and your saves keep your own story. When you leave the party, you're back in your own story. If your story was exactly as far along as theirs when you joined, you keep what you played together, companions who joined in the story included.
+- **Travelling:** when the player who made the party goes to another map, everyone follows. When a story scene starts, everyone on that map is brought to them.
+- **Chests** are everyone's own: when a member opens one, everyone in the party who hasn't looted it yet gets the same items.
+
+### Co-op battles
+
+When a battle starts for a party member, whether a random encounter, a wandering monster or a story boss, the party members playing on the same map join it.
+
+- With two players, each brings the first two of their Frontline; with three or four, each brings their first.
+- Everyone commands their own characters. The game where the battle started works it out.
+- Each of you can try to escape. Whoever gets away leaves the battle, and the others fight on without their characters. The one left alone fights on with their own full team.
+- Each of you gets the full EXP, gold and your own item drops, or your own defeat.
 
 ## PvP battles
 
 Press **F11** on the map to open the PvP battle screen.
 
 - **Host:** your game waits for a friend and puts a join code on your clipboard. Send it to your friend, or invite them through the **+** in a Discord chat when the Discord mod is installed.
-- **Join:** copy your friend's join code and pick *Join with the copied code*, or accept their Discord invite: your game starts if it is closed, loads your newest save (the one *Continue* picks first) and joins by itself. While you host, invites you accept are ignored; stop hosting first.
-- **Fight your own team:** a mirror match against your own Frontline, without any network. `Multiplayer\Mirror Match.log` then lists each of your characters next to its copy and marks every value that differs.
+- **Join:** copy your friend's join code and pick *Join with the copied code*, or accept their Discord invite: your game starts if it's closed, loads your newest save (the one *Continue* picks first) and joins by itself. While you host, invites you accept are ignored; stop hosting first.
+- **Fight your own team:** a mirror match against your own Frontline, no network needed. `Multiplayer\Mirror Match.log` then lists each of your characters next to its copy and marks every value that differs.
 
-Once the teams are swapped, both battles start together. The host's game works the battle out, and the other game shows what happened. The team you meet is your friend's characters as they are: jobs, races, equipment, gems and abilities, pre-battle spells and passives included. A defeated character of your friend stays as a grey silhouette, since their team can still revive it.
+Once the teams are swapped, both battles start together. The host's game works the battle out, and the other game shows what happened. You meet your friend's characters as they are: jobs, races, equipment, gems and abilities, pre-battle spells and passives included. A defeated character of your friend stays as a grey silhouette, since their team can still revive it.
 
-Only the Frontline fights. Escape gives the battle up at once, Give Up is off, and if your friend leaves or the connection breaks, you win. When you have waited for your friend for 10 seconds, Cancel lets you leave the battle, which also gives it up. Battle messages move on by themselves. Nothing carries over: no EXP, gold or items, and your save, the Library and affection are put back exactly as they were before.
+- Only the Frontline fights.
+- **Escape** gives the battle up at once. If your friend leaves or the connection breaks, you win.
+- After waiting 10 seconds for your friend, **Cancel** lets you leave the battle, which also gives it up.
+- **Nothing carries over:** no EXP, gold or items, and your save, the Library and affection are put back exactly as they were.
+
+## Rules of every multiplayer battle
+
+Ero offers, Give Up and swapping in the backline are off. Battle messages move on by themselves, so nobody waits for another player.
 
 ## Connection
 
-Your games meet at the mod's **relay**, a small server that passes their data on. Both only connect out to it, which works on any internet connection, so neither of you has to open a port, change a router setting or install anything.
+Your games meet at the mod's **relay**, a small server that passes their data on. Every game only connects out to it, which works on any internet connection: nobody has to open a port, change a router setting or install anything.
 
-- **Private:** everything your games send each other is encrypted with a key from the join code or the world's password. The relay never gets that key: it passes on data it cannot read. For worlds it keeps the list everyone sees: each world's name, its players' names and who is online.
-- **No addresses:** the join code holds a random token and the relay's name, so your friend's game never learns your IP address.
-
-While the mod is installed, the game keeps running when its window is in the background, so neither player holds the other up.
+- **Private:** everything your games send each other is encrypted with a key only the players have. The relay never gets it: it passes on data it can't read.
+- **What the relay keeps:** the list of worlds, with each world's name, its players' names and who is online; hidden worlds are listed only for their players. A world's password never reaches it, and a starting save arrives encrypted.
+- **No addresses:** a join code holds a random token and the relay's name, so your friend's game never learns your IP address.
 
 ## Troubleshooting
 
+- **Multiplayer is greyed out on the title screen:** a new release is out. Update with `Multiplayer\Update.bat`, see [Update](#update).
 - **"Your friend's game is not hosting with this join code any more":** your friend stopped hosting, or hosted again, which makes a new join code. Ask for the new one.
 - **"The relay could not be reached":** your internet connection is down, or something blocks the game from going online, such as a firewall. `Multiplayer\Multiplayer.log` says what the relay answered.
 - **"This join code comes from another version of the mod":** one of you has an older version; both need the same one.
 - **"Your friend's game uses a relay this version does not know":** your friend has a newer version of the mod; update yours.
+- **"This is a world code":** you pasted a world's code into a PvP join. Enter worlds through *Multiplayer* on the title screen.
 - **Logs:** `Multiplayer\InGame.log` only appears when something went wrong inside the game; `Multiplayer\Multiplayer.log` tells what the connection did. Please attach both when [opening an issue](https://github.com/Pauliinchen/MGQ-Paradox-Multiplayer-Mod/issues).
 
 ## Building from source
