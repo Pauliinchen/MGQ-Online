@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-09-30: Kept a world's starting save, uploaded once by its creator and handed to its players
+//                            - Kept hidden worlds out of the list for everyone but their players, and named a world with its lock
 //      Paulinchen  2026-09-29: Kept a world directory, and seated only its players, closing those the creator removes or deletes the world of
 //                            - Seated games in world rooms, and cut them on request
 //                            - Created
@@ -303,9 +304,9 @@ internal sealed class TestRelay : IDisposable
         {
             answer = parts switch
             {
-                ["v1", "worlds"] when method == "GET" => (200, new JsonObject { ["worlds"] = new JsonArray(_directory.Select(entry => ListedWorld(entry.Key, entry.Value)).ToArray()) }),
+                ["v1", "worlds"] when method == "GET" => (200, List(query["player"])),
                 ["v1", "worlds"] when method == "POST" => Create(body!),
-                ["v1", "worlds", var id, "lock"] when _directory.TryGetValue(id, out var world) => (200, world.Lock.DeepClone()),
+                ["v1", "worlds", var id, "lock"] when _directory.TryGetValue(id, out var world) => (200, LockOf(world)),
                 ["v1", "worlds", var id, "delete"] when CreatorOf(id, body?["player"]?.GetValue<string>()) is { } world => Delete(id, toClose, out closeCode),
                 ["v1", "worlds", var id, "ban"] when CreatorOf(id, body?["player"]?.GetValue<string>()) is { } world => Ban(id, world, body!["target"]!.GetValue<string>(), toClose, out closeCode),
                 ["v1", "worlds", var id, "start"] when method == "POST" && CreatorOf(id, query["player"]) is { } world => PutStart(world, upload),
@@ -325,6 +326,32 @@ internal sealed class TestRelay : IDisposable
         context.Response.ContentType = download != null ? "application/octet-stream" : "application/json";
         await context.Response.OutputStream.WriteAsync(bytes);
         context.Response.Close();
+    }
+
+    /// <summary>
+    /// Lists the worlds a player sees: the public ones, and the hidden ones the player joined. Called with the gate held.
+    /// </summary>
+    /// <param name="key">The asking player's key, <see langword="null"/> for the public worlds only.</param>
+    /// <returns>The answer.</returns>
+    private JsonObject List(string? key)
+    {
+        var player = key != null ? PlayerIdOf(key) : null;
+        var seen = _directory.Where(entry => !entry.Value.Hidden || (player != null && entry.Value.Members.ContainsKey(player)));
+        return new JsonObject { ["worlds"] = new JsonArray(seen.Select(entry => ListedWorld(entry.Key, entry.Value)).ToArray()) };
+    }
+
+    /// <summary>
+    /// Writes a world's lock with its name, seats and starting save state.
+    /// </summary>
+    /// <param name="world">The world's entry.</param>
+    /// <returns>The answer.</returns>
+    private static JsonNode LockOf(DirectoryWorld world)
+    {
+        var answer = world.Lock.DeepClone();
+        answer["name"] = world.Name;
+        answer["seats"] = world.Seats;
+        answer["start"] = world.Start;
+        return answer;
     }
 
     /// <summary>
@@ -392,6 +419,7 @@ internal sealed class TestRelay : IDisposable
         {
             Members = { [creator] = creatorName },
             Start = body["start"]?.GetValue<bool>() == true ? "pending" : "none",
+            Hidden = body["hidden"]?.GetValue<bool>() == true,
         };
 
         return (201, new JsonObject { ["id"] = id });
@@ -457,6 +485,7 @@ internal sealed class TestRelay : IDisposable
             ["seats"] = world.Seats,
             ["creator"] = new JsonObject { ["id"] = world.CreatorId, ["name"] = world.CreatorName },
             ["start"] = world.Start,
+            ["hidden"] = world.Hidden,
             ["online"] = online.Count,
             ["created"] = 0,
             ["active"] = 0,
@@ -817,6 +846,11 @@ internal sealed class TestRelay : IDisposable
         /// How far it is with its starting save: "none", "pending" or "ready".
         /// </summary>
         public string Start { get; set; } = "none";
+
+        /// <summary>
+        /// Whether the list leaves it out for everyone but its players.
+        /// </summary>
+        public bool Hidden { get; init; }
 
         /// <summary>
         /// Its starting save, <see langword="null"/> before its creator uploaded one.

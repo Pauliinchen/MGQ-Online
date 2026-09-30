@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-09-30: Covered the starting save: uploaded once by the creator, fetched by players only
+//                            - Covered hidden worlds, listed only for their players, and the lock naming its world
 //      Paulinchen  2026-09-29: Created
 //
 //----------------------------------------------------------------
@@ -94,6 +95,7 @@ test("a made world is listed without its hashes or lock, with the creator as its
   assert.deepEqual(body.worlds[0].creator, { id: creator, name: "Creator" });
   assert.deepEqual(body.worlds[0].members, [{ id: creator, name: "Creator", online: false }]);
   assert.equal(body.worlds[0].start, "none");
+  assert.equal(body.worlds[0].hidden, false);
   assert.equal(JSON.stringify(body).includes("authHash"), false);
   assert.equal(JSON.stringify(body).includes("box"), false);
   assert.notEqual(creator, CREATOR);
@@ -106,7 +108,7 @@ test("a world is refused twice, with bad fields, or beyond a creator's limit", a
   assert.equal((await directory.create(await newWorld())).status, 409);
   assert.equal((await directory.create(await newWorld({ id: "1".repeat(32) }))).status, 429);
 
-  for (const bad of [{ start: "yes" }, { seats: 1 }, { seats: 33 }, { name: " " }, { id: "xyz" }, { player: "short" }, { authHash: "00" }, { lock: { salt: "12", iterations: 200_000, box: "ab" } }, { lock: { salt: "12".repeat(16), iterations: 10, box: "ab" } }]) {
+  for (const bad of [{ start: "yes" }, { hidden: 1 },{ seats: 1 }, { seats: 33 }, { name: " " }, { id: "xyz" }, { player: "short" }, { authHash: "00" }, { lock: { salt: "12", iterations: 200_000, box: "ab" } }, { lock: { salt: "12".repeat(16), iterations: 10, box: "ab" } }]) {
     assert.equal((await directory.create(await newWorld({ id: "2".repeat(32), player: OTHER, ...bad }))).status, 400, JSON.stringify(bad));
   }
 });
@@ -115,8 +117,25 @@ test("the lock is handed out to anyone, since only the password opens it", async
   const { directory } = newDirectory();
   await directory.create(await newWorld());
 
-  assert.deepEqual((await directory.lock(WORLD)).body, { salt: "12".repeat(16), iterations: 200_000, box: "ab".repeat(60) });
+  assert.deepEqual((await directory.lock(WORLD)).body, { salt: "12".repeat(16), iterations: 200_000, box: "ab".repeat(60), name: "Iliasburg Crew", seats: 4, start: "none" });
   assert.equal((await directory.lock("f".repeat(32))).status, 404);
+});
+
+test("a hidden world is listed only for its players, and found by its id", async () => {
+  const { directory } = newDirectory();
+  await directory.create(await newWorld({ hidden: true }));
+
+  assert.deepEqual((await directory.list()).body.worlds, []);
+  assert.deepEqual((await directory.list(OTHER)).body.worlds, []);
+  assert.deepEqual((await directory.list("nope")).body.worlds, []);
+  assert.equal((await directory.list(CREATOR)).body.worlds[0].hidden, true);
+  assert.equal((await directory.lock(WORLD)).body.name, "Iliasburg Crew");
+
+  await directory.presence(WORLD, [{ player: await playerIdOf(OTHER), name: "Guest" }]);
+  assert.equal((await directory.list(OTHER)).body.worlds.length, 1);
+
+  await directory.ban(WORLD, CREATOR, await playerIdOf(OTHER));
+  assert.deepEqual((await directory.list(OTHER)).body.worlds, []);
 });
 
 test("admit lets in whoever brings the auth key, and names their player id and the seats", async () => {
@@ -224,8 +243,9 @@ test("handleDirectoryRequest routes the public requests and names the world an e
   const bytes = (value) => async (limit) => (value.length > limit ? null : value);
   const url = (path) => new URL(`https://relay.test${path}`);
 
-  assert.equal((await handleDirectoryRequest(directory, "POST", url("/v1/worlds"), body(await newWorld({ start: true })))).status, 201);
-  assert.equal((await handleDirectoryRequest(directory, "GET", url("/v1/worlds"), body(null))).body.worlds.length, 1);
+  assert.equal((await handleDirectoryRequest(directory, "POST", url("/v1/worlds"), body(await newWorld({ start: true, hidden: true })))).status, 201);
+  assert.equal((await handleDirectoryRequest(directory, "GET", url("/v1/worlds"), body(null))).body.worlds.length, 0);
+  assert.equal((await handleDirectoryRequest(directory, "GET", url(`/v1/worlds?player=${CREATOR}`), body(null))).body.worlds.length, 1);
   assert.equal((await handleDirectoryRequest(directory, "GET", url(`/v1/worlds/${WORLD}/lock`), body(null))).status, 200);
   assert.equal((await handleDirectoryRequest(directory, "POST", url("/v1/worlds"), async () => "not json")).status, 400);
   assert.equal((await handleDirectoryRequest(directory, "PUT", url("/v1/worlds"), body(null))).status, 405);

@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-09-30: Covered making a world with a starting save and fetching it as a new player
+//                            - Covered hidden worlds, listed for their creator only and opened by their id
 //      Paulinchen  2026-09-29: Created
 //
 //----------------------------------------------------------------
@@ -39,7 +40,7 @@ public sealed class WorldDirectoryTests
         using var relay = new TestRelay();
         var creator = NewDirectory(relay, CreatorKey, "Creator");
 
-        var made = Act(creator, directory => directory.Create("Iliasburg Crew", "secret", 4, []));
+        var made = Act(creator, directory => directory.Create("Iliasburg Crew", "secret", 4, false, []));
         Assert.Equal("done", made["state"]);
         Assert.Equal("create", made["kind"]);
         Assert.Equal(4, WorldCode.Parse(made["code"])!.Seats);
@@ -47,7 +48,7 @@ public sealed class WorldDirectoryTests
 
         var lines = List(creator);
         var creatorId = WorldKeys.PlayerIdOf(CreatorKey);
-        Assert.Contains($"world\t{made["world"]}\t4\t0\t{creatorId}\t0\tCreator\tIliasburg Crew\tnone", lines);
+        Assert.Contains($"world\t{made["world"]}\t4\t0\t{creatorId}\t0\tCreator\tIliasburg Crew\tnone\t0", lines);
         Assert.Contains($"member\t{creatorId}\t0\tCreator", lines);
     }
 
@@ -60,18 +61,41 @@ public sealed class WorldDirectoryTests
         using var relay = new TestRelay();
         var creator = NewDirectory(relay, CreatorKey, "Creator");
         var guest = NewDirectory(relay, PlayerKey(2), "Guest");
-        var made = Act(creator, directory => directory.Create("Iliasburg Crew", "secret", 4, []));
+        var made = Act(creator, directory => directory.Create("Iliasburg Crew", "secret", 4, false, []));
 
-        var wrong = Act(guest, directory => directory.Unlock(made["world"], 4, "Secret"));
+        var wrong = Act(guest, directory => directory.Unlock(made["world"], "Secret"));
         Assert.Equal("failed", wrong["state"]);
         Assert.Contains("password", wrong["error"]);
 
-        var opened = Act(guest, directory => directory.Unlock(made["world"], 4, "secret"));
+        var opened = Act(guest, directory => directory.Unlock(made["world"], "secret"));
         Assert.Equal("done", opened["state"]);
         Assert.Equal(made["code"], opened["code"]);
+        Assert.Equal("Iliasburg Crew", opened["name"]);
+        Assert.Equal("none", opened["start"]);
 
-        var missing = Act(guest, directory => directory.Unlock(new string('f', 32), 4, "secret"));
+        var missing = Act(guest, directory => directory.Unlock(new string('f', 32), "secret"));
         Assert.Contains("no longer exists", missing["error"]);
+    }
+
+    /// <summary>
+    /// Asserts that a hidden world is listed for its creator only, and that another player opens it
+    /// by its id and password, learning its seats and name from the directory.
+    /// </summary>
+    [Fact]
+    public void Create_Hidden_IsFoundByItsId()
+    {
+        using var relay = new TestRelay();
+        var creator = NewDirectory(relay, CreatorKey, "Creator");
+        var guest = NewDirectory(relay, PlayerKey(2), "Guest");
+
+        var made = Act(creator, directory => directory.Create("Secret Base", "secret", 6, true, []));
+        Assert.Contains(List(creator), line => line.StartsWith($"world\t{made["world"]}\t") && line.EndsWith("\tnone\t1"));
+        Assert.Empty(List(guest));
+
+        var opened = Act(guest, directory => directory.Unlock(made["world"], "secret"));
+        Assert.Equal(made["code"], opened["code"]);
+        Assert.Equal(6, WorldCode.Parse(opened["code"])!.Seats);
+        Assert.Equal("Secret Base", opened["name"]);
     }
 
     /// <summary>
@@ -83,7 +107,7 @@ public sealed class WorldDirectoryTests
         using var relay = new TestRelay();
         var creator = NewDirectory(relay, CreatorKey, "Creator");
         var guest = NewDirectory(relay, PlayerKey(2), "Guest");
-        var made = Act(creator, directory => directory.Create("Iliasburg Crew", "secret", 4, []));
+        var made = Act(creator, directory => directory.Create("Iliasburg Crew", "secret", 4, false, []));
 
         Assert.Contains("creator", Act(guest, directory => directory.Delete(made["world"]))["error"]);
         Assert.Equal("done", Act(creator, directory => directory.Delete(made["world"]))["state"]);
@@ -100,8 +124,8 @@ public sealed class WorldDirectoryTests
         var nobody = new WorldDirectory { RelayAddress = _ => relay.Address, Iterations = 1_000, Playing = () => null };
         var lost = new WorldDirectory { RelayAddress = _ => null, Iterations = 1_000, Playing = () => (CreatorKey, "Creator") };
 
-        Assert.Contains("who plays", Act(nobody, directory => directory.Create("World", "secret", 4, []))["error"]);
-        Assert.Contains("unknown", Act(lost, directory => directory.Create("World", "secret", 4, []))["error"]);
+        Assert.Contains("who plays", Act(nobody, directory => directory.Create("World", "secret", 4, false, []))["error"]);
+        Assert.Contains("unknown", Act(lost, directory => directory.Create("World", "secret", 4, false, []))["error"]);
     }
 
     /// <summary>
@@ -118,11 +142,11 @@ public sealed class WorldDirectoryTests
         var creator = NewDirectory(relay, CreatorKey, "Creator");
         var guest = NewDirectory(relay, PlayerKey(2), "Guest");
 
-        var made = Act(creator, directory => directory.Create("Iliasburg Crew", "secret", 4, [("Save01.rvdata2", save), ("SystemSave.rvdata2", system)]));
+        var made = Act(creator, directory => directory.Create("Iliasburg Crew", "secret", 4, false, [("Save01.rvdata2", save), ("SystemSave.rvdata2", system)]));
         Assert.Equal("done", made["state"]);
-        Assert.Contains(List(creator), line => line.StartsWith($"world\t{made["world"]}\t") && line.EndsWith("\tready"));
+        Assert.Contains(List(creator), line => line.StartsWith($"world\t{made["world"]}\t") && line.EndsWith("\tready\t0"));
 
-        var opened = Act(guest, directory => directory.Unlock(made["world"], 4, "secret"));
+        var opened = Act(guest, directory => directory.Unlock(made["world"], "secret"));
         var target = Path.Combine(folder.Path, "World", "Save");
         var fetched = Act(guest, directory => directory.FetchStart(opened["code"], target));
 
@@ -141,7 +165,7 @@ public sealed class WorldDirectoryTests
         using var folder = new TempFolder();
         var creator = NewDirectory(relay, CreatorKey, "Creator");
 
-        var made = Act(creator, directory => directory.Create("World", "secret", 4, [("Save01.rvdata2", Path.Combine(folder.Path, "missing.rvdata2"))]));
+        var made = Act(creator, directory => directory.Create("World", "secret", 4, false, [("Save01.rvdata2", Path.Combine(folder.Path, "missing.rvdata2"))]));
 
         Assert.Equal("failed", made["state"]);
         Assert.Contains("could not be read", made["error"]);
@@ -157,9 +181,9 @@ public sealed class WorldDirectoryTests
         using var relay = new TestRelay();
         using var folder = new TempFolder();
         var creator = NewDirectory(relay, CreatorKey, "Creator");
-        var made = Act(creator, directory => directory.Create("World", "secret", 4, []));
+        var made = Act(creator, directory => directory.Create("World", "secret", 4, false, []));
 
-        Assert.Contains(List(creator), line => line.EndsWith("\tnone"));
+        Assert.Contains(List(creator), line => line.EndsWith("\tnone\t0"));
         Assert.Equal("failed", Act(creator, directory => directory.FetchStart(made["code"], folder.Path))["state"]);
     }
 

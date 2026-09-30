@@ -41,11 +41,12 @@ To uninstall, delete the `Multiplayer` folder and the thirteen scripts in `Patch
 
 Pick **Multiplayer** below *Continue* on the title screen. The first time, the game asks for the name the others see, unless the Discord mod knows yours.
 
-- **The list** at the left holds every world, your favourites first (marked `*`), then those you played last. The right side shows who made the chosen world, how many of its players are online, and everyone who ever joined it.
-- **New world:** give it a name, a password, and how many players it seats at once, 2 to 32. Then it starts at the opening.
-- **Enter a world:** the first time, type its password; your game remembers it after that. A world you have saves in loads your latest one; otherwise you start at the opening.
+- **The list** at the left holds every public world and the hidden worlds you joined, your favourites first (marked `*`), then those you played last. The right side shows who made the chosen world, how many of its players are online, and everyone who ever joined it.
+- **Create new world:** point at it and fill in the form at the right: a name, a password, and Max Players, 2 to 32. Tick *Hidden* to leave the world out of the list, and *From my save* to have every new player start from one of your saves, with your party, items, story and Library, instead of the opening; then choose the save. Max Players and the starting save cannot be changed later.
+- **Join a hidden world:** type or paste (Ctrl+V) the world id its creator sent you, and its password. The creator copies the id with *Copy the world id* on the world.
+- **Enter a world:** the first time, type its password; your game remembers it after that. A world you have saves in loads your latest one; otherwise you start at the opening, or from the creator's save.
 - **Its creator** can remove a player, who can then no longer enter, or delete the world for everyone.
-- **Names and passwords** are typed on the keyboard; with a gamepad, the game's letters appear.
+- **Names and passwords** are typed on the keyboard, right in the form; with a gamepad, the game's letters appear.
 
 Each world keeps its own saves, Library, medals and affection in `Multiplayer\Worlds`, apart from your own game. Going back to the title screen leaves the world.
 

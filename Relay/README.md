@@ -2,7 +2,7 @@
 
 Passes the Multiplayer mod's frames between games. The games never connect to each other directly: many home connections cannot be reached from outside (DS-Lite, CGNAT, no IPv6, no forwarded port), but every one can connect out, so every game connects out to the relay.
 
-The relay never sees what is played: the games encrypt every frame with a key derived from the join code or the world's token, which the relay never gets. For PvP battles it sees a room id, message sizes and timing, and stores nothing. For worlds it keeps the **world directory**, which everyone can read: each world's name, seats and creator, the names of its players and who is online. It never learns a world's password or token: it keeps the token locked with the password, and checks a game that enters against a hash. A world may keep a **starting save**, which the games encrypt with a key from the token before it arrives, so the relay only keeps its bytes.
+The relay never sees what is played: the games encrypt every frame with a key derived from the join code or the world's token, which the relay never gets. For PvP battles it sees a room id, message sizes and timing, and stores nothing. For worlds it keeps the **world directory**, which everyone can read, but for hidden worlds, which only their players see listed: each world's name, seats and creator, the names of its players and who is online. It never learns a world's password or token: it keeps the token locked with the password, and checks a game that enters against a hash. A world may keep a **starting save**, which the games encrypt with a key from the token before it arrives, so the relay only keeps its bytes.
 
 ## Layout
 
@@ -36,9 +36,9 @@ Plain HTTP with JSON bodies. A world's id is 32 lowercase hexadecimal characters
 
 | Request | What it does |
 |---|---|
-| `GET /v1/worlds` | Lists every world: `id`, `name`, `seats`, `creator` (`id`, `name`), `start` (`none`, `pending` or `ready`), `online`, `created`, `active`, and `members` (`id`, `name`, `online`). |
-| `POST /v1/worlds` | Makes a world: `id`, `name`, `seats` (2 to 32), `player` (the creator's key), `playerName`, `authHash` (SHA-256 of the auth key, hexadecimal) and `lock` (`salt`, `iterations`, `box`: the token encrypted with a key from the password), and `start: true` when a starting save follows. 201, or 409 when the id is taken, 429 past 20 worlds per creator. |
-| `GET /v1/worlds/<id>/lock` | Hands out the world's `lock`, which only the password opens. |
+| `GET /v1/worlds?player=<key>` | Lists every public world, and the hidden ones the player of `player` joined (without `player`, public ones only): `id`, `name`, `seats`, `creator` (`id`, `name`), `start` (`none`, `pending` or `ready`), `hidden`, `online`, `created`, `active`, and `members` (`id`, `name`, `online`). |
+| `POST /v1/worlds` | Makes a world: `id`, `name`, `seats` (2 to 32), `player` (the creator's key), `playerName`, `authHash` (SHA-256 of the auth key, hexadecimal) and `lock` (`salt`, `iterations`, `box`: the token encrypted with a key from the password), `start: true` when a starting save follows, and `hidden: true` to leave it out of the list for everyone but its players. 201, or 409 when the id is taken, 429 past 20 worlds per creator. |
+| `GET /v1/worlds/<id>/lock` | Hands out the world's `lock` (`salt`, `iterations`, `box`), which only the password opens, with its `name`, `seats` and `start`, so a hidden world is entered by its id. |
 | `POST /v1/worlds/<id>/delete` | Deletes the world, if `player` is the creator's key, and closes its world room. |
 | `POST /v1/worlds/<id>/ban` | Removes the player whose id is `target` and keeps them out, if `player` is the creator's key. |
 | `POST /v1/worlds/<id>/start?player=<key>` | Keeps the world's starting save, the body as bytes (at most 8 MB), if `player` is the creator's key and the world was made with `start: true`. Only once: 409 afterwards. |

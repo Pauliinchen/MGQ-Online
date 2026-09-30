@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-09-30: Made a world with a starting save, fetched it for new players, and listed which worlds have one
+//                            - Made hidden worlds, listed them for their players, and opened a world by its id alone
 //      Paulinchen  2026-09-29: Created
 //
 //----------------------------------------------------------------
@@ -52,6 +53,16 @@ internal sealed class WorldDirectory
     private const string WorldHeader = "world";
 
     /// <summary>
+    /// The name of the world an action opened.
+    /// </summary>
+    private const string NameHeader = "name";
+
+    /// <summary>
+    /// How far the world an action opened is with its starting save.
+    /// </summary>
+    private const string StartHeader = "start";
+
+    /// <summary>
     /// Why an action failed when the game script has not said who plays.
     /// </summary>
     private const string NoPlayer = "The game has not said who plays yet.";
@@ -92,9 +103,9 @@ internal sealed class WorldDirectory
     private (string Kind, string State)? _action;
 
     /// <summary>
-    /// The world code the last action ended with.
+    /// What the last action ended with.
     /// </summary>
-    private string? _actionCode;
+    private ActionResult? _actionResult;
 
     /// <summary>
     /// Why the last action failed.
@@ -143,7 +154,7 @@ internal sealed class WorldDirectory
 
             try
             {
-                list = ListText(Client().List());
+                list = ListText(Client().List(Playing()?.Key));
             }
             catch (Exception ex)
             {
@@ -163,7 +174,7 @@ internal sealed class WorldDirectory
     /// <summary>
     /// Describes the list for the game script.
     /// </summary>
-    /// <returns><c>state</c> ("loading", "ready" or "failed") and <c>error</c>, then one line per world and player: <c>world</c>, id, seats, players online, creator's id, when last active, creator's name, name, starting save ("none", "pending" or "ready"); <c>member</c>, id, 1 when online, name; each separated by tabs.</returns>
+    /// <returns><c>state</c> ("loading", "ready" or "failed") and <c>error</c>, then one line per world and player: <c>world</c>, id, seats, players online, creator's id, when last active, creator's name, name, starting save ("none", "pending" or "ready"), 1 when hidden; <c>member</c>, id, 1 when online, name; each separated by tabs.</returns>
     public string DescribeList()
     {
         lock (_gate)
@@ -180,9 +191,10 @@ internal sealed class WorldDirectory
     /// <param name="name">The world's name.</param>
     /// <param name="password">The password others enter it with.</param>
     /// <param name="seats">How many games it seats at once.</param>
+    /// <param name="hidden">Whether the list leaves it out for everyone but its players.</param>
     /// <param name="start">The starting save's files, each named as new players get it and where it is read from; empty for none.</param>
     /// <returns><see langword="false"/> while another action runs.</returns>
-    public bool Create(string name, string password, int seats, IReadOnlyList<(string Name, string Path)> start) => Start("create", () =>
+    public bool Create(string name, string password, int seats, bool hidden, IReadOnlyList<(string Name, string Path)> start) => Start("create", () =>
     {
         var (key, playerName) = Me();
         var token = JoinCode.NewToken();
@@ -192,15 +204,15 @@ internal sealed class WorldDirectory
         var box = start.Count > 0 ? SealStart(token, start) : null;
         var client = Client();
 
-        client.Create(id, name, seats, key, playerName, WorldKeys.AuthHashOf(WorldKeys.AuthKeyOf(token)), worldLock, box != null);
-        Log.Write($"made world {id}");
+        client.Create(id, name, seats, key, playerName, WorldKeys.AuthHashOf(WorldKeys.AuthKeyOf(token)), worldLock, box != null, hidden);
+        Log.Write($"made world {id}{(hidden ? ", hidden" : string.Empty)}");
 
         if (box != null)
         {
             UploadStart(client, id, key, box);
         }
 
-        return new WorldCode(token, Relays.Current, seats).ToText();
+        return new ActionResult(new WorldCode(token, Relays.Current, seats).ToText());
     });
 
     /// <summary>
@@ -280,15 +292,16 @@ internal sealed class WorldDirectory
     }
 
     /// <summary>
-    /// Opens a world's lock with its password, which gives its world code.
+    /// Opens a world's lock with its password, which gives its world code, its name and how far it
+    /// is with its starting save, so a hidden world is entered by its id alone.
     /// </summary>
     /// <param name="id">The world.</param>
-    /// <param name="seats">How many games it seats, as the list says.</param>
     /// <param name="password">The password.</param>
     /// <returns><see langword="false"/> while another action runs.</returns>
-    public bool Unlock(string id, int seats, string password) => Start("unlock", () =>
+    public bool Unlock(string id, string password) => Start("unlock", () =>
     {
-        var token = Client().Lock(id).Open(password);
+        var world = Client().Lock(id);
+        var token = world.Lock.Open(password);
 
         if (token == null)
         {
@@ -300,7 +313,7 @@ internal sealed class WorldDirectory
             throw new ActionException("The world's lock is damaged.");
         }
 
-        return new WorldCode(token, Relays.Current, seats).ToText();
+        return new ActionResult(new WorldCode(token, Relays.Current, world.Seats).ToText(), world.Name, world.Start);
     });
 
     /// <summary>
@@ -329,18 +342,20 @@ internal sealed class WorldDirectory
     /// <summary>
     /// Describes the running or last action for the game script.
     /// </summary>
-    /// <returns><c>state</c> ("idle", "busy", "done" or "failed"), and whichever of <c>kind</c>, <c>code</c>, <c>world</c> and <c>error</c> apply.</returns>
+    /// <returns><c>state</c> ("idle", "busy", "done" or "failed"), and whichever of <c>kind</c>, <c>code</c>, <c>world</c>, <c>name</c>, <c>start</c> and <c>error</c> apply.</returns>
     public string DescribeAction()
     {
         lock (_gate)
         {
-            var code = _action?.State == "done" ? _actionCode : null;
+            var result = _action?.State == "done" ? _actionResult : null;
             var headers = new KeyValuePair<string, string?>[]
             {
                 new(StateHeader, _action?.State ?? "idle"),
                 new(KindHeader, _action?.Kind),
-                new(CodeHeader, code),
-                new(WorldHeader, WorldCode.Parse(code) is { } world ? Relays.WorldRoomOf(world.Token) : null),
+                new(CodeHeader, result?.Code),
+                new(WorldHeader, WorldCode.Parse(result?.Code) is { } world ? Relays.WorldRoomOf(world.Token) : null),
+                new(NameHeader, result?.Name is { } name ? OnOneField(name) : null),
+                new(StartHeader, result?.Start),
                 new(ErrorHeader, _action?.State == "failed" ? _actionError : null),
             };
 
@@ -358,7 +373,7 @@ internal sealed class WorldDirectory
             if (_action?.State != "busy")
             {
                 _action = null;
-                _actionCode = null;
+                _actionResult = null;
                 _actionError = null;
             }
         }
@@ -368,9 +383,9 @@ internal sealed class WorldDirectory
     /// Runs an action on a thread of its own, unless one runs already.
     /// </summary>
     /// <param name="kind">The action's kind.</param>
-    /// <param name="work">The action, which returns a world code or <see langword="null"/>.</param>
+    /// <param name="work">The action, which returns the world it made or opened, or <see langword="null"/>.</param>
     /// <returns><see langword="false"/> while another action runs.</returns>
-    private bool Start(string kind, Func<string?> work)
+    private bool Start(string kind, Func<ActionResult?> work)
     {
         int generation;
 
@@ -383,18 +398,18 @@ internal sealed class WorldDirectory
 
             generation = ++_actionGeneration;
             _action = (kind, "busy");
-            _actionCode = null;
+            _actionResult = null;
             _actionError = null;
         }
 
         StartThread($"MultiplayerDirectory{kind}", () =>
         {
-            string? code = null;
+            ActionResult? result = null;
             string? error = null;
 
             try
             {
-                code = work();
+                result = work();
             }
             catch (Exception ex)
             {
@@ -407,7 +422,7 @@ internal sealed class WorldDirectory
                 if (generation == _actionGeneration)
                 {
                     _action = (kind, error == null ? "done" : "failed");
-                    _actionCode = code;
+                    _actionResult = result;
                     _actionError = error;
                 }
             }
@@ -460,7 +475,7 @@ internal sealed class WorldDirectory
             text.Append("world\t").Append(world.Id).Append('\t').Append(world.Seats.ToString(CultureInfo.InvariantCulture))
                 .Append('\t').Append(world.Online.ToString(CultureInfo.InvariantCulture)).Append('\t').Append(world.CreatorId)
                 .Append('\t').Append(world.Active.ToString(CultureInfo.InvariantCulture)).Append('\t').Append(OnOneField(world.CreatorName))
-                .Append('\t').Append(OnOneField(world.Name)).Append('\t').Append(OnOneField(world.Start)).Append('\n');
+                .Append('\t').Append(OnOneField(world.Name)).Append('\t').Append(OnOneField(world.Start)).Append('\t').Append(world.Hidden ? '1' : '0').Append('\n');
 
             foreach (var member in world.Members.OrderByDescending(member => member.Online).ThenBy(member => member.Name, StringComparer.OrdinalIgnoreCase))
             {
@@ -485,6 +500,14 @@ internal sealed class WorldDirectory
     /// <param name="work">The work, which must catch everything itself.</param>
     private static void StartThread(string name, Action work) =>
         new Thread(() => work()) { IsBackground = true, Name = name }.Start();
+
+    /// <summary>
+    /// The world an action made or opened.
+    /// </summary>
+    /// <param name="Code">The world code.</param>
+    /// <param name="Name">The world's name, when the action learned it from the directory.</param>
+    /// <param name="Start">How far the world is with its starting save, when the action learned it from the directory.</param>
+    private sealed record ActionResult(string Code, string? Name = null, string? Start = null);
 
     /// <summary>
     /// An action that failed for a reason the player is told as it is.

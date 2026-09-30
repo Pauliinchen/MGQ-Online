@@ -2,7 +2,7 @@
 //  WorldSessionTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-09-30: Made the test world without a starting save
+//      Paulinchen  2026-09-30: Made the test world without a starting save, public
 //      Paulinchen  2026-09-29: Covered the ping an open connection tells
 //                            - Made every world in the directory first, and covered deleted worlds, removed players and a missing player
 //                            - Created
@@ -320,7 +320,7 @@ public sealed class WorldSessionTests
     /// <param name="seats">The world's seats.</param>
     /// <returns>The world's code.</returns>
     private static string MakeWorld(TestRelay relay, int seats) =>
-        WorldDirectoryTests.Act(Creator(relay), directory => directory.Create("Test World", "secret", seats, []))["code"];
+        WorldDirectoryTests.Act(Creator(relay), directory => directory.Create("Test World", "secret", seats, false, []))["code"];
 
     /// <summary>
     /// Makes the directory client of the tests' world creator.

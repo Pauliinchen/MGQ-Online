@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-09-30: Tested the starting save over HTTP, as bytes both ways
+//                            - Expected the lock to name its world
 //      Paulinchen  2026-09-29: Made every world in the directory first, and tested the directory over HTTP
 //                            - Tested world rooms over real WebSockets
 //      Paulinchen  2026-09-29: Created
@@ -368,7 +369,7 @@ test("a player the creator removes is closed and kept out, and deleting the worl
 test("the directory hands out a world's lock and refuses what is no directory route", async () => {
   await makeWorld(roomId(108), 2);
 
-  assert.deepEqual(await (await fetch(`${directoryBase}/${roomId(108)}/lock`)).json(), { salt: "12".repeat(16), iterations: 200_000, box: "ab".repeat(40) });
+  assert.deepEqual(await (await fetch(`${directoryBase}/${roomId(108)}/lock`)).json(), { salt: "12".repeat(16), iterations: 200_000, box: "ab".repeat(40), name: `World ${roomId(108).slice(-3)}`, seats: 2, start: "none" });
   assert.equal((await fetch(`${directoryBase}/${roomId(109)}/lock`)).status, 404);
   assert.equal((await fetch(directoryBase.replace("/v1/worlds", "/elsewhere"))).status, 426);
 });

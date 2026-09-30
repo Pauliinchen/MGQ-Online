@@ -103,15 +103,20 @@ the game asks for the name the others see, unless the Discord mod knows
 yours. Names and passwords are typed on the keyboard; with a gamepad, the
 game's letters appear.
 
-- The list at the left holds every world, your favourites first (marked
-  *), then those you played last. The right side shows who made the
-  chosen world, how many of its players are online, and everyone who
-  ever joined it.
-- New world: give it a name, a password, and how many players it seats
-  at once, 2 to 32. Then choose where its players start: at the opening,
-  or from one of your own saves, with your party, items, story and
-  Library. This cannot be changed later. Every new player of the world
-  starts there; a save that needs a mod they lack tells them which.
+- The list at the left holds every public world and the hidden worlds
+  you joined, your favourites first (marked *), then those you played
+  last. The right side shows who made the chosen world, how many of its
+  players are online, and everyone who ever joined it.
+- Create new world: point at it and fill in the form at the right: a
+  name, a password, and Max Players, 2 to 32. Tick "Hidden" to leave the
+  world out of the list. Tick "From my save" to have every new player
+  start from one of your own saves, with your party, items, story and
+  Library, instead of the opening; then choose the save. Max Players and
+  the starting save cannot be changed later. A save that needs a mod a
+  player lacks tells them which.
+- Join a hidden world: type or paste (Ctrl+V) the world id its creator
+  sent you, and its password. The creator copies the id with "Copy the
+  world id" on the world.
 - Enter a world: the first time, type its password; your game remembers
   it after that. A world you have saves in loads your latest one.
 - Its creator can remove a player or delete the world for everyone.

@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-09-30: Took a starting save in mp_dir_create, and added mp_dir_fetch_start, which fetches it for new players
+//                            - Took whether a world is hidden in mp_dir_create, dropped the seats from mp_dir_unlock, and added mp_copy_text
 //      Paulinchen  2026-09-29: Added mp_set_player, mp_player_id, the mp_dir_* functions of the world directory and the keyboard's mp_typing and mp_take_typed, dropping the world code functions the directory replaces
 //                            - Added mp_new_id, which hands out a random id for the player
 //                            - Added the mp_world_* functions for entering a world and passing messages there
@@ -228,6 +229,25 @@ internal static unsafe class Exports
     }
 
     /// <summary>
+    /// Puts a text on the clipboard, such as a hidden world's id for its creator to hand out.
+    /// </summary>
+    /// <param name="text">The text, UTF-8 and null-terminated.</param>
+    /// <returns>1 when the clipboard holds it, 0 otherwise.</returns>
+    [UnmanagedCallersOnly(EntryPoint = "mp_copy_text", CallConvs = [typeof(CallConvStdcall)])]
+    public static int CopyText(byte* text)
+    {
+        try
+        {
+            return Clipboard.SetText(Text(text)) ? 1 : 0;
+        }
+        catch (Exception ex)
+        {
+            Log.Write($"mp_copy_text failed: {ex}");
+            return 0;
+        }
+    }
+
+    /// <summary>
     /// Hands out how the connection stands, with what the friend handed over once it arrived.
     /// </summary>
     /// <param name="buffer">Receives the state, UTF-8 and null-terminated.</param>
@@ -448,14 +468,15 @@ internal static unsafe class Exports
     /// <param name="name">The world's name, UTF-8 and null-terminated.</param>
     /// <param name="password">The password others enter it with, UTF-8 and null-terminated.</param>
     /// <param name="seats">How many games it seats at once, 2 to 32.</param>
+    /// <param name="hidden">1 to leave the world out of the list for everyone but its players, 0 to list it for everyone.</param>
     /// <param name="start">The starting save's files, UTF-8 and null-terminated: one line each, the name new players get it under, <c>=</c>, and where it is read from, relative to the game's folder; empty for none.</param>
     /// <returns>1 when started, 0 while another action runs, for seats out of range or when it failed.</returns>
     [UnmanagedCallersOnly(EntryPoint = "mp_dir_create", CallConvs = [typeof(CallConvStdcall)])]
-    public static int DirectoryCreate(byte* name, byte* password, int seats, byte* start)
+    public static int DirectoryCreate(byte* name, byte* password, int seats, int hidden, byte* start)
     {
         try
         {
-            return seats is >= WorldCode.MinSeats and <= WorldCode.MaxSeats && WorldDirectory.Current.Create(Text(name), Text(password), seats, StartFiles(Text(start))) ? 1 : 0;
+            return seats is >= WorldCode.MinSeats and <= WorldCode.MaxSeats && WorldDirectory.Current.Create(Text(name), Text(password), seats, hidden == 1, StartFiles(Text(start))) ? 1 : 0;
         }
         catch (Exception ex)
         {
@@ -486,18 +507,18 @@ internal static unsafe class Exports
     }
 
     /// <summary>
-    /// Opens a world's lock with its password. Returns at once; the world code follows in <c>mp_dir_action</c>.
+    /// Opens a world's lock with its password. Returns at once; the world code, the world's name and
+    /// how far it is with its starting save follow in <c>mp_dir_action</c>.
     /// </summary>
     /// <param name="id">The world, UTF-8 and null-terminated.</param>
-    /// <param name="seats">How many games it seats, as the list says.</param>
     /// <param name="password">The password, UTF-8 and null-terminated.</param>
     /// <returns>1 when started, 0 while another action runs or when it failed.</returns>
     [UnmanagedCallersOnly(EntryPoint = "mp_dir_unlock", CallConvs = [typeof(CallConvStdcall)])]
-    public static int DirectoryUnlock(byte* id, int seats, byte* password)
+    public static int DirectoryUnlock(byte* id, byte* password)
     {
         try
         {
-            return WorldDirectory.Current.Unlock(Text(id), seats, Text(password)) ? 1 : 0;
+            return WorldDirectory.Current.Unlock(Text(id), Text(password)) ? 1 : 0;
         }
         catch (Exception ex)
         {

@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-09-30: Uploaded and downloaded a world's starting save, and read which worlds have one
+//                            - Made hidden worlds, listed them for their players, and read a world's name with its lock
 //      Paulinchen  2026-09-29: Created
 //
 //----------------------------------------------------------------
@@ -62,13 +63,15 @@ internal sealed class DirectoryClient
     }
 
     /// <summary>
-    /// Lists every world.
+    /// Lists the worlds a player sees: every public world, and the hidden ones the player joined.
     /// </summary>
+    /// <param name="playerKey">The player's key, or <see langword="null"/> for the public worlds only.</param>
     /// <returns>The worlds.</returns>
     /// <exception cref="DirectoryException">The directory could not be reached or answered with an error.</exception>
-    public IReadOnlyList<ListedWorld> List()
+    public IReadOnlyList<ListedWorld> List(string? playerKey)
     {
-        using var document = Send(HttpMethod.Get, _worlds, null);
+        var address = playerKey == null ? _worlds : new Uri($"{_worlds}?player={Uri.EscapeDataString(playerKey)}");
+        using var document = Send(HttpMethod.Get, address, null);
         var worlds = new List<ListedWorld>();
 
         foreach (var world in document.RootElement.GetProperty("worlds").EnumerateArray())
@@ -90,6 +93,7 @@ internal sealed class DirectoryClient
                 world.GetProperty("online").GetInt32(),
                 world.GetProperty("active").GetInt64(),
                 world.TryGetProperty("start", out var start) ? start.GetString() ?? "none" : "none",
+                world.TryGetProperty("hidden", out var hidden) && hidden.ValueKind == JsonValueKind.True,
                 members));
         }
 
@@ -97,16 +101,17 @@ internal sealed class DirectoryClient
     }
 
     /// <summary>
-    /// Fetches a world's locked token.
+    /// Fetches a world's locked token, with the world's name, seats and starting save state.
     /// </summary>
     /// <param name="id">The world.</param>
-    /// <returns>The lock.</returns>
+    /// <returns>The lock and the world.</returns>
     /// <exception cref="DirectoryException">The directory could not be reached, knows no such world, or answered with an error.</exception>
-    public WorldLock Lock(string id)
+    public LockedWorld Lock(string id)
     {
         using var document = Send(HttpMethod.Get, WorldAddress(id, "lock"), null);
         var root = document.RootElement;
-        return new WorldLock(root.GetProperty("salt").GetString()!, root.GetProperty("iterations").GetInt32(), root.GetProperty("box").GetString()!);
+        var worldLock = new WorldLock(root.GetProperty("salt").GetString()!, root.GetProperty("iterations").GetInt32(), root.GetProperty("box").GetString()!);
+        return new LockedWorld(worldLock, root.GetProperty("name").GetString() ?? "?", root.GetProperty("seats").GetInt32(), root.GetProperty("start").GetString() ?? "none");
     }
 
     /// <summary>
@@ -120,8 +125,9 @@ internal sealed class DirectoryClient
     /// <param name="authHash">The hash of the world's auth key.</param>
     /// <param name="worldLock">The world's locked token.</param>
     /// <param name="start">Whether a starting save follows, which keeps everyone out until it arrived.</param>
+    /// <param name="hidden">Whether the list leaves it out for everyone but its players.</param>
     /// <exception cref="DirectoryException">The directory could not be reached or refused the world.</exception>
-    public void Create(string id, string name, int seats, string playerKey, string playerName, string authHash, WorldLock worldLock, bool start)
+    public void Create(string id, string name, int seats, string playerKey, string playerName, string authHash, WorldLock worldLock, bool start, bool hidden)
     {
         var body = Json(writer =>
         {
@@ -137,6 +143,7 @@ internal sealed class DirectoryClient
             writer.WriteString("box", worldLock.Box);
             writer.WriteEndObject();
             writer.WriteBoolean("start", start);
+            writer.WriteBoolean("hidden", hidden);
         });
 
         using var _ = Send(HttpMethod.Post, _worlds, body);
@@ -342,8 +349,18 @@ internal sealed class DirectoryException(HttpStatusCode? status, string reason) 
 /// <param name="Online">How many players are in it now.</param>
 /// <param name="Active">When someone was last in it, in milliseconds since 1970.</param>
 /// <param name="Start">How far it is with its starting save: "none", "pending" or "ready".</param>
+/// <param name="Hidden">Whether the list leaves it out for everyone but its players.</param>
 /// <param name="Members">Everyone who ever joined it.</param>
-internal sealed record ListedWorld(string Id, string Name, int Seats, string CreatorId, string CreatorName, int Online, long Active, string Start, IReadOnlyList<ListedMember> Members);
+internal sealed record ListedWorld(string Id, string Name, int Seats, string CreatorId, string CreatorName, int Online, long Active, string Start, bool Hidden, IReadOnlyList<ListedMember> Members);
+
+/// <summary>
+/// A world's locked token, with what a player who knows only the world's id needs to enter it.
+/// </summary>
+/// <param name="Lock">The locked token.</param>
+/// <param name="Name">The world's name.</param>
+/// <param name="Seats">How many games it seats at once.</param>
+/// <param name="Start">How far it is with its starting save: "none", "pending" or "ready".</param>
+internal sealed record LockedWorld(WorldLock Lock, string Name, int Seats, string Start);
 
 /// <summary>
 /// A player of a world, as the directory lists them.

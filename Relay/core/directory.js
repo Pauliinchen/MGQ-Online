@@ -3,12 +3,14 @@
 //
 //  Changelog:
 //      Paulinchen  2026-09-30: Kept a world's starting save, which its creator uploads once and only its players fetch
+//                            - Left hidden worlds out of the list for everyone but their players, and named a world with its lock
 //      Paulinchen  2026-09-29: Created
 //
 //----------------------------------------------------------------
 
-// The world directory's rules, the same on every server: the list of worlds everyone sees, who may
-// make, enter, delete or leave out whom, and who was in which world. The relay never learns a
+// The world directory's rules, the same on every server: the list of worlds, public ones for
+// everyone and hidden ones for their players only, who may make, enter, delete or leave out whom,
+// and who was in which world. The relay never learns a
 // world's token or password: it keeps the token locked with the password, and checks entering
 // against a hash of a key only the token's holders can make. A world's starting save reaches it
 // encrypted with a key from the token, so the relay only keeps its bytes.
@@ -131,30 +133,33 @@ export class Directory {
   }
 
   /**
-   * Lists every world as everyone sees it.
+   * Lists the worlds a player sees: every public world, and the hidden ones the player joined.
    *
+   * @param {unknown} [key] The asking player's key; without one, only the public worlds.
    * @returns {Promise<{status: number, body: object}>} The worlds.
    */
-  async list() {
-    const worlds = (await this.store.all()).map((entry) => publicView(entry));
+  async list(key) {
+    const player = typeof key === "string" && PLAYER_KEY.test(key) ? await playerIdOf(key) : null;
+    const worlds = (await this.store.all()).filter((entry) => !entry.hidden || (player && entry.members[player])).map((entry) => publicView(entry));
     return { status: 200, body: { worlds } };
   }
 
   /**
-   * Hands out a world's locked token, which only its password opens.
+   * Hands out a world's locked token, which only its password opens, with what a player who
+   * found it by its id alone needs to enter it.
    *
    * @param {string} id The world.
-   * @returns {Promise<{status: number, body: object}>} The lock, or why there is none.
+   * @returns {Promise<{status: number, body: object}>} The lock with the world's name, seats and starting save state, or why there is none.
    */
   async lock(id) {
     const entry = WORLD_ID.test(id) ? await this.store.get(id) : undefined;
-    return entry ? { status: 200, body: entry.lock } : notFound();
+    return entry ? { status: 200, body: { ...entry.lock, name: entry.name, seats: entry.seats, start: entry.start ?? START.none } } : notFound();
   }
 
   /**
    * Makes a world.
    *
-   * @param {object} request The world: id, name, seats, the creator's player key and name, the hash of the auth key, the lock, and whether a starting save follows.
+   * @param {object} request The world: id, name, seats, the creator's player key and name, the hash of the auth key, the lock, whether a starting save follows, and whether it is hidden from the list.
    * @returns {Promise<{status: number, body: object}>} The world's id, or why it was refused.
    */
   async create(request) {
@@ -190,6 +195,7 @@ export class Directory {
       authHash: request.authHash,
       lock: { salt: request.lock.salt, iterations: request.lock.iterations, box: request.lock.box },
       start: request.start === true ? START.pending : START.none,
+      hidden: request.hidden === true,
       created: now,
       active: now,
       members: { [creator]: { name: creatorName, seen: now } },
@@ -429,6 +435,7 @@ export class Directory {
     if (!Number.isInteger(lock.iterations) || lock.iterations < this.limits.minIterations || lock.iterations > this.limits.maxIterations) return "the lock's iterations are out of range";
     if (typeof lock.box !== "string" || !HEX.test(lock.box) || lock.box.length > this.limits.maxLockHex) return "the lock's box must be lowercase hexadecimal";
     if (request.start !== undefined && typeof request.start !== "boolean") return "start must be true or false";
+    if (request.hidden !== undefined && typeof request.hidden !== "boolean") return "hidden must be true or false";
     return null;
   }
 }
@@ -451,7 +458,7 @@ export async function handleDirectoryRequest(directory, method, url, readBody, r
   }
 
   if (parts.length === 2 && method === "GET") {
-    return directory.list();
+    return directory.list(url.searchParams.get("player"));
   }
 
   if (parts.length === 2 && method === "POST") {
@@ -513,6 +520,7 @@ export function publicView(entry) {
     seats: entry.seats,
     creator: entry.creator,
     start: entry.start ?? START.none,
+    hidden: entry.hidden === true,
     online: entry.online.length,
     created: entry.created,
     active: entry.active,
