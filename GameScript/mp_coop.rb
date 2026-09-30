@@ -2,7 +2,8 @@
 #  mp_coop.rb
 #
 #  Changelog:
-#      Paulinchen  2026-09-30: Showed the co-op party in the game's window per character too
+#      Paulinchen  2026-09-30: Let a player who got away leave the battle, the others fighting on, alone with their own full team
+#                            - Showed the co-op party in the game's window per character too
 #                            - Invited party members whose window is in the background, and logged why nobody was invited
 #                            - Created
 #
@@ -12,8 +13,9 @@
 # are playing on the map join it. The game that started it computes it (the host); the others play
 # it back and command their own characters, through mp_sync.rb over the world's room. The party is
 # every player's characters together: with two players each brings the first two of their
-# Frontline, with three or four each brings their first. Every game ends the battle with its own
-# rewards or its own defeat.
+# Frontline, with three or four each brings their first. A player who gets away leaves the battle;
+# the others fight on, and one left alone fights on with their own full team, as in a battle of
+# their own. Every game ends the battle with its own rewards or its own defeat.
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpCoop
@@ -159,7 +161,8 @@ module MGQ_MpCoop
     return stand_down if joined.empty? || answer == :gone
 
     MGQ_MpSync.keep_seats(joined.keys)
-    players = [[own_seat, MGQ_Multiplayer::Player.name.to_s] + own_build(joined.size + 1)]
+    # Everyone's first two characters travel, so a party that loses a player can bring more.
+    players = [[own_seat, MGQ_Multiplayer::Player.name.to_s] + own_build(2)]
     joined.keys.sort.each do |seat|
       builds, vitals = MGQ_MpSync::Wire.parse(joined[seat].to_s)
       players << [seat, MGQ_MpOverworld::Peers.at(seat).state["name"].to_s, builds.to_s, Array(vitals)]
@@ -295,13 +298,16 @@ module MGQ_MpCoop
   end
 
   # Builds the co-op party every game shares, in the host's order: the player's own characters as
-  # they are, everyone else's rebuilt with their HP and MP.
+  # they are, everyone else's rebuilt with their HP and MP. Characters of the party before stay as
+  # they are, with what the battle did to them.
   #
   # @param scene [Scene_Battle] The battle.
   # @param players [Array<Array>] Each player's seat, name, builds and HP and MP.
   def self.form(scene, players)
+    @players = players
     count = share(players.size)
     seat = own_seat
+    before = Array(@members).select { |member| member.is_a?(Game_MpAlly) }
     members = []
     players.each do |player_seat, name, builds, vitals|
       if player_seat == seat
@@ -310,26 +316,107 @@ module MGQ_MpCoop
       end
 
       MGQ_MpActors::Builds.parse(builds.to_s, count).each_with_index do |member, index|
-        ally = Game_MpAlly.new(member, name.to_s, player_seat)
-        hp, mp = Array(vitals)[index]
-        ally.hp = hp if hp.is_a?(Integer) && hp > 0
-        ally.mp = mp if mp.is_a?(Integer)
-        members << ally
+        kept = before.find { |ally| ally.mp_seat == player_seat && ally.mp_place == index }
+        members << (kept || new_ally(member, name.to_s, player_seat, index, Array(vitals)[index]))
       end
     end
     @members = members
-    show_party(scene)
+    show_party(scene, members)
   end
 
-  # Shows the co-op party in the battle's windows, which the scene made for the player's own party:
-  # the status window, and the game's window per character, which takes its character only when made.
+  # Rebuilds another player's character with the HP and MP it has in their game.
+  #
+  # @param member [MGQ_MpActors::Builds::Member] The character's build.
+  # @param name [String] Its owner's name.
+  # @param seat [Integer] Its owner's world seat.
+  # @param place [Integer] Its place among its owner's characters.
+  # @param vitals [Array, nil] Its HP and MP.
+  # @return [Game_MpAlly] The character.
+  def self.new_ally(member, name, seat, place, vitals)
+    ally = Game_MpAlly.new(member, name, seat, place)
+    hp, mp = Array(vitals)
+    ally.hp = hp if hp.is_a?(Integer) && hp > 0
+    ally.mp = mp if mp.is_a?(Integer)
+    ally
+  end
+
+  # Shows a party in the battle's windows, which the scene made for the player's own party: the
+  # status window, and the game's window per character, which takes its character only when made.
   #
   # @param scene [Scene_Battle] The battle.
-  def self.show_party(scene)
-    Array(scene.instance_variable_get(:@battle_actor_status_windows)).each_with_index { |window, index| window.actor = @members[index] }
+  # @param members [Array<Game_Actor>] The party.
+  def self.show_party(scene, members)
+    Array(scene.instance_variable_get(:@battle_actor_status_windows)).each_with_index { |window, index| window.actor = members[index] }
     scene.send(:refresh_status) if scene.respond_to?(:refresh_status, true)
   rescue => e
     log("showing the party failed: #{e.class}: #{e.message}")
+  end
+
+  # As host, takes the players who left out of the party, before a command phase: the others fight
+  # on, each bringing as many as the smaller party lets them, told to the guests between two of the
+  # host's sends. Alone, the host fights on with their own full team, as in a battle of their own.
+  # Called when a command phase starts.
+  #
+  # @param scene [Scene_Battle] The battle.
+  def self.settle(scene)
+    return unless active?
+
+    staying = @players.select { |seat, *| seat == own_seat || MGQ_MpSync.guests_in.include?(seat) }
+    return if staying.size == @players.size
+
+    return go_solo(scene) if staying.size == 1
+
+    MGQ_MpSync::Recorder.flush if MGQ_MpSync::Recorder.active?
+    MGQ_MpSync::Channel.post("coop_party", MGQ_MpSync::Wire.line([staying]))
+    form(scene, staying)
+    log("#{staying.size} players fight on")
+  rescue => e
+    log("settling the party failed: #{e.class}: #{e.message}")
+  end
+
+  # As guest, takes the party the host sent after a player left.
+  #
+  # @param scene [Scene_Battle] The battle.
+  # @param body [String] The party, see settle.
+  def self.reform(scene, body)
+    players = MGQ_MpSync::Wire.parse(body.to_s)
+    form(scene, Array(players && players[0]))
+  rescue => e
+    log("taking the new party failed: #{e.class}: #{e.message}")
+  end
+
+  # As host, fights on alone with the player's own full team, as in a battle of their own.
+  #
+  # @param scene [Scene_Battle] The battle.
+  def self.go_solo(scene)
+    log("everyone else left battle #{MGQ_MpSync.battle_id}, it goes on alone")
+    stand_alone(scene)
+  end
+
+  # As guest, fights on alone once the host got away or is gone: the player's own full team takes
+  # the battle over from where the host's stream left it, as a battle of their own.
+  #
+  # @param scene [Scene_Battle] The battle.
+  def self.take_over(scene)
+    log("the host left battle #{MGQ_MpSync.battle_id}, it goes on alone")
+    stand_alone(scene)
+    BattleManager.turn_end
+    scene.start_party_command_selection
+  rescue => e
+    log("taking the battle over failed: #{e.class}: #{e.message}")
+    BattleManager.process_abort
+  end
+
+  # Ends the co-op side of the battle, which goes on as the player's own: their own full team, the
+  # game's own settings, no live battle.
+  #
+  # @param scene [Scene_Battle] The battle.
+  def self.stand_alone(scene)
+    @members = nil
+    @players = nil
+    MGQ_MpSync.finish
+    MGQ_MpBattles.finish
+    show_party(scene, $game_party.battle_members)
   end
 
   # Ends a co-op battle: the player's own party again, the game's own settings back, and the live
@@ -338,6 +425,7 @@ module MGQ_MpCoop
     return unless active? || (MGQ_MpSync.role && MGQ_MpSync.coop?) || MGQ_MpBattles.kind == :coop
 
     @members = nil
+    @players = nil
     MGQ_MpSync.finish if MGQ_MpSync.coop?
     MGQ_MpBattles.finish if MGQ_MpBattles.kind == :coop
   rescue => e
@@ -373,14 +461,21 @@ class Game_MpAlly < Game_MpActor
   # @return [Integer] The seat.
   attr_reader :mp_seat
 
+  # The character's place among its owner's characters in the battle.
+  #
+  # @return [Integer] The place, 0 for the first.
+  attr_reader :mp_place
+
   # Rebuilds another player's character.
   #
   # @param member [MGQ_MpActors::Builds::Member] The character's build.
   # @param player [String] Who the character belongs to.
   # @param seat [Integer] The owner's world seat.
-  def initialize(member, player, seat)
+  # @param place [Integer] The character's place among its owner's characters.
+  def initialize(member, player, seat, place)
     super(member, player)
     @mp_seat = seat
+    @mp_place = place
   end
 
   # Tells whether this game's player commands the character.

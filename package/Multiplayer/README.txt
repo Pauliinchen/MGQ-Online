@@ -153,7 +153,15 @@ who made the party. Your own party, your companions and their affection
 stay yours, and your saves keep your own story. When you leave the
 party, you are back in your own story. If your story was exactly as far
 along as theirs when you joined, you keep what you played together,
-companions who joined in the story included. Chests are everyone's own: when
+companions who joined in the story included.
+
+Co-op battles: when a battle starts for a party member, the party
+members on the same map who are playing on it join it. With two players
+each brings the first two of their Frontline, with three or four each
+brings their first, and everyone commands their own characters. Each of
+you can try to escape; whoever gets away leaves the battle, and the one
+left alone fights on with their own full team. Each of you gets the full
+EXP, gold and your own item drops, or your own defeat. Chests are everyone's own: when
 a party member opens one, everyone in the party who has not looted it
 yet gets the same items. The party travels together: when the player
 who made the party goes to another map, everyone follows, and when a

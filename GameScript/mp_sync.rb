@@ -2,7 +2,8 @@
 #  mp_sync.rb
 #
 #  Changelog:
-#      Paulinchen  2026-09-30: Carried co-op battles over the world's room, several guests commanding their own characters in one party
+#      Paulinchen  2026-09-30: Let a co-op player who got away leave the battle, which the others fight on
+#                            - Carried co-op battles over the world's room, several guests commanding their own characters in one party
 #                            - Left turning Give Up off to mp_battles.rb, which does it for every multiplayer battle
 #      Paulinchen  2026-09-29: Sent the start of a command phase before the host's own, which the host skips when none of its characters can act
 #                            - Streamed the battle log's lines, the skill lines and names and who appears as calls the guest makes in its own game's language
@@ -174,14 +175,15 @@ module MGQ_MpSync
     @seats - (@left || [])
   end
 
-  # Notes that a guest left a co-op battle; the computer plays their characters from then on.
+  # Notes that a guest left a co-op battle. The computer plays their characters for the rest of the
+  # turn; the next command phase takes them out of the party (see MGQ_MpCoop.settle).
   #
   # @param seat [Integer] The guest's seat.
   def self.guest_left(seat)
     return if (@left ||= []).include?(seat)
 
     @left << seat
-    log("a guest left the co-op battle, the computer plays their characters")
+    log("a guest left the co-op battle, their characters leave at the next command phase")
   end
 
   # Takes a message of a co-op battle from the world's room. Called by mp_overworld.rb.
@@ -292,16 +294,16 @@ module MGQ_MpSync
   def self.friend_gone(scene)
     log("the link to #{@player} ended")
 
-    # A co-op battle plays on with the computer on the host once every guest is gone, and ends
-    # without a winner on a guest whose host is gone.
+    # A co-op battle plays on on the host once every guest is gone, the host's own full team again
+    # from the next command phase (see MGQ_MpCoop.settle); a guest whose host is gone fights on
+    # alone.
     if host? && (DROPOUT == :computer || coop?)
       @solo = true
       return true
     end
 
     if coop?
-      $game_message.add("#{@player} left the battle.")
-      BattleManager.process_abort
+      MGQ_MpCoop.take_over(scene)
       return false
     end
 
@@ -553,6 +555,16 @@ module MGQ_MpSync
       poll
       index = @messages.index { |message| message[0] == kind }
       index ? @messages.delete_at(index)[1] : nil
+    end
+
+    # Takes the oldest message of any of some kinds, which keeps their order among each other.
+    #
+    # @param kinds [Array<String>] The kinds.
+    # @return [Array<String>, nil] Its kind and body, nil while none arrived.
+    def self.take_first(kinds)
+      poll
+      index = @messages.index { |message| kinds.include?(message[0]) }
+      index ? @messages.delete_at(index)[0, 2] : nil
     end
 
     # Takes the oldest message of a kind one game sent.
@@ -1085,7 +1097,7 @@ module MGQ_MpSync
       window = nil
 
       loop do
-        event = next_event
+        event = next_event(scene)
 
         unless event
           ending = Channel.ending
@@ -1118,13 +1130,20 @@ module MGQ_MpSync
       @failed = {}
     end
 
-    # Takes the next event of the host's stream.
+    # Takes the next event of the host's stream, taking a co-op party's change on the way.
     #
+    # @param scene [Scene_Battle] The battle.
     # @return [Array, nil] The next event of the host's stream, nil while none arrived.
-    def self.next_event
+    def self.next_event(scene)
       while @events.empty?
-        body = Channel.take("events")
-        return nil unless body
+        kind, body = Channel.take_first(%w(coop_party events))
+        return nil unless kind
+
+        # A co-op party changes between two sends, so the next send's battlers are the new party's.
+        if kind == "coop_party"
+          MGQ_MpCoop.reform(scene, body)
+          next
+        end
 
         body.split("\n").each do |line|
           event = Wire.parse(line) { |ref| battler(ref) }
@@ -1613,7 +1632,12 @@ module MGQ_MpSync
       # The game also comes back here after a party change or a menu in the same phase, which
       # Recorder.command_phase records only once.
       wrap(Scene_Battle, :start_party_command_selection) do |scene, _args, original|
-        Recorder.command_phase unless scene.send(:scene_changing?)
+        unless scene.send(:scene_changing?)
+          # A co-op party changes only here, before the command phase is recorded, so every game
+          # takes the change between two of the host's sends.
+          MGQ_MpCoop.settle(scene) if MGQ_MpSync.coop? && MGQ_MpSync.host?
+          Recorder.command_phase
+        end
         original.call
       end
 
@@ -1692,7 +1716,13 @@ module MGQ_MpSync
       end
 
       wrap(Scene_Battle, :command_escape) do |scene, _args, original|
-        Live.escape_leaves? ? Live.forfeit(scene) : original.call
+        if Live.escape_leaves?
+          Live.forfeit(scene)
+        else
+          result = original.call
+          Live.escaped(scene)
+          result
+        end
       end
 
       wrap(BattleManager.singleton_class, :judge_win_loss) do |_manager, _args, original|
@@ -1840,7 +1870,7 @@ module MGQ_MpSync
     def self.play_until_commands(scene)
       event = Playback.run(scene)
       return end_early(scene, event[0]) if event && event[0].is_a?(Symbol)
-      return guest_end(event[1]) if event
+      return guest_end(event[1], scene) if event
 
       # The guest's own battle never reaches the turn's end, and a command phase started in the
       # middle of one keeps the last turn's actions and skips every command.
@@ -1851,8 +1881,8 @@ module MGQ_MpSync
     # Ends the guest's battle the way the host's ended, seen from the other side.
     #
     # @param result [String] How the host's battle ended.
-    def self.guest_end(result)
-      return coop_end(result) if MGQ_MpSync.coop?
+    def self.guest_end(result, scene)
+      return coop_end(result, scene) if MGQ_MpSync.coop?
 
       case result
       when "process_victory" then BattleManager.process_defeat
@@ -1863,15 +1893,16 @@ module MGQ_MpSync
       end
     end
 
-    # Ends a co-op guest's battle as the host's ended: each game wins, loses or escapes with its
-    # own rewards or defeat.
+    # Ends a co-op guest's battle as the host's ended: each game wins or loses with its own rewards
+    # or defeat. When the host got away, the guest fights on alone.
     #
     # @param result [String] How the host's battle ended.
-    def self.coop_end(result)
+    # @param scene [Scene_Battle] The battle.
+    def self.coop_end(result, scene)
       case result
       when "process_victory" then BattleManager.process_victory
       when "process_defeat" then BattleManager.process_defeat
-      else BattleManager.process_abort
+      else MGQ_MpCoop.take_over(scene)
       end
     end
 
@@ -1943,8 +1974,8 @@ module MGQ_MpSync
       false
     end
 
-    # Escape ends a live PvP battle as lost, without the chance of failing; a co-op guest leaves the
-    # battle, whose characters the computer plays on in the host's game.
+    # Leaves a live battle at once: a PvP battle is lost, without the chance of failing; a co-op
+    # player leaves the battle, which the others fight on.
     #
     # @param scene [Scene_Battle] The battle.
     def self.forfeit(scene)
@@ -1953,12 +1984,20 @@ module MGQ_MpSync
       BattleManager.process_abort
     end
 
-    # Reports whether Escape leaves the live battle rather than trying to escape: always in a PvP
-    # battle, and for a co-op guest; the co-op host tries to escape as in any battle, for everyone.
+    # Reports whether Escape leaves the live battle at once: in a PvP battle. In a co-op battle each
+    # player tries to escape as in any battle, and one who got away leaves it (see escaped).
     #
     # @return [Boolean] Whether it does.
     def self.escape_leaves?
-      MGQ_MpSync.live? && !(MGQ_MpSync.coop? && MGQ_MpSync.host?)
+      MGQ_MpSync.live? && !MGQ_MpSync.coop?
+    end
+
+    # Tells the host that a co-op guest got away, so the others fight on without them. The host's
+    # getting away reaches the guests as its battle's end. Called after an escape.
+    #
+    # @param scene [Scene_Battle] The battle.
+    def self.escaped(scene)
+      Channel.post("leave") if MGQ_MpSync.coop? && MGQ_MpSync.guest? && scene.send(:scene_changing?)
     end
   end
 end
