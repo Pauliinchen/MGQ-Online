@@ -2,7 +2,8 @@
 #  Multiplayer.rb
 #
 #  Changelog:
-#      Paulinchen  2026-09-30: Loaded mp_coop.rbx before the party scripts that register with it
+#      Paulinchen  2026-09-30: Loaded mp_chat.rbx after the action wheel
+#                            - Loaded mp_coop.rbx before the party scripts that register with it
 #                            - Loaded mp_overworld_sync.rbx before the scripts that register with it
 #                            - Moved the mod folder into Patch/Multiplayer and loaded the other scripts from there in a fixed order
 #                            - Called the battle and party scripts by their new names
@@ -42,7 +43,7 @@ module MGQ_Multiplayer
   # with. The battle scripts install their battle hooks once the game runs, the last loaded first,
   # so their order decides how those hooks wrap each other.
   SCRIPTS = %w[
-    mp_actors mp_async mp_overworld_sync mp_actions mp_overworld
+    mp_actors mp_async mp_overworld_sync mp_actions mp_chat mp_overworld
     mp_coop mp_coop_events mp_coop_npcs mp_coop_story
     mp_save_distribution mp_world
     mp_battle mp_battle_coop mp_battle_sync mp_battle_pvp

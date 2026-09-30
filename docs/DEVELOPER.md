@@ -12,7 +12,8 @@ GameScript/Multiplayer/               Ruby, the other scripts, in the order Mult
   mp_actors.rbx                       characters of another game: builds as numbers, and rebuilt characters
   mp_async.rbx                        the world running on behind menus, battles and story scenes
   mp_overworld_sync.rbx               the world's messages: states, peers, and the registry other scripts join
-  mp_actions.rbx                      what players of a world do on the map: action wheel, chat
+  mp_actions.rbx                      the action wheel on the map
+  mp_chat.rbx                         chat: the chat box, bubbles above the players, the chat log
   mp_overworld.rbx                    what the player sees of the others: ghosts, labels, pings, status line
   mp_coop.rbx                         parties: who is in the player's party, and the gate for its messages
   mp_coop_events.rbx                  the events of a party: what each event page is, and chests opened for all
@@ -40,7 +41,8 @@ docs/DEVELOPER.md                     this file
 | `mp_actors.rbx` | `MGQ_MpActors`, `Game_MpActor` | Characters of another game: `Builds` writes and reads a character's build as plain numbers, `Items` its equipment, and `Game_MpActor` rebuilds it as a real character of this game (see [Team](#pvp-battles-mp_battle_pvprbx) and Rebuilt characters). PvP battles build their enemy side on it; co-op battles will build the party members' characters on it. |
 | `mp_async.rbx` | `MGQ_MpAsync` | The world running on behind every other screen while a world is open, and the live map behind menus (see [The world never pauses](#the-world-never-pauses-mp_asyncrbx)). Reaches `MGQ_MpWorld` at run time. |
 | `mp_overworld_sync.rbx` | `MGQ_MpOverworldSync` | The open world's messages: what each game tells the others, the other games by seat, and the registry the scripts after it join for their messages (see [On the map](#on-the-map)). Reaches `MGQ_MpWorld` at run time. |
-| `mp_actions.rbx` | `MGQ_MpActions` | What players of a world do on the map: the action wheel, whose party choices go to `MGQ_MpCoop`, and chat (see [Actions](#actions-mp_actionsrbx)). Registers with `MGQ_MpOverworldSync`. |
+| `mp_actions.rbx` | `MGQ_MpActions` | The action wheel on the map, whose party choices go to `MGQ_MpCoop` and whose chat choice to `MGQ_MpChat` (see [Actions](#actions-mp_actionsrbx)). Registers with `MGQ_MpOverworldSync`. |
+| `mp_chat.rbx` | `MGQ_MpChat` | Chat: the chat box, the bubble above the sender and the chat log (see [Chat](#chat-mp_chatrbx)). Registers with `MGQ_MpOverworldSync`. |
 | `mp_overworld.rbx` | `MGQ_MpOverworld` | What the player sees of the other players of the open world: the ghosts, their name labels, the own ping and the status line (see [On the map](#on-the-map)). Reads `MGQ_MpOverworldSync`. |
 | `mp_coop.rbx` | `MGQ_MpCoop` | Parties: `Party` (who is in the player's party, invites, the leader), and the gate that hands the party's messages to the scripts registered for them (see [Parties](#parties-mp_cooprbx)). Registers with `MGQ_MpOverworldSync`. |
 | `mp_coop_events.rbx` | `MGQ_MpCoopEvents` | The events of a party: sorts every event page by what it does, and opens chests for the whole party (see [Events in a party](#events-in-a-party-mp_coop_eventsrbx)). Reaches `MGQ_MpOverworldSync`, `MGQ_MpActions` and `MGQ_MpCoopStory` at run time. |
@@ -272,10 +274,14 @@ Over the game's 28,500 event pages with commands this gives about 13,200 story, 
 
 The wheel opens on the first choice that can be taken, clockwise from the top.
 
-**Chat** (`Chat`). T (`CHAT_KEY`, 0x54) or the wheel opens the chat box, which takes the keyboard through `mp_typing`/`mp_take_typed` like the world screen's text box, and holds the buttons (`Capture`), so keys that type move nobody. Enter sends, Escape closes, a line has at most 120 characters (`MAX_LENGTH`). The box has a cursor that blinks every half second (`BLINK_FRAMES`) and shows at once after a change. Typing and Backspace work at the cursor. The arrow keys move it (`Capture.repeat?`, so a held arrow repeats), Home and End jump to either end, and Delete removes the character after it. None of these keys types a character, so they are read as the game's buttons or from Windows (`Key`). The text moves left as far as the cursor needs to stay in sight. A line goes to everyone as its own message, `chat=<line>` and `name=<sender>` without a `map`, so `mp_overworld.rbx` hands it to `MGQ_MpActions.take` rather than taking it for a state; the name covers a line that arrives before its sender's first state. Every line, the player's own included:
+## Chat (`mp_chat.rbx`)
+
+**The chat box.** T (`CHAT_KEY`, 0x54) or the wheel's chat choice opens the chat box, which takes the keyboard through `mp_typing`/`mp_take_typed` like the world screen's text box, and holds the buttons (`Capture`), so keys that type move nobody. Enter sends, Escape closes, a line has at most 120 characters (`MAX_LENGTH`). The box has a cursor that blinks every half second (`BLINK_FRAMES`) and shows at once after a change. Typing and Backspace work at the cursor. The arrow keys move it (`Capture.repeat?`, so a held arrow repeats), Home and End jump to either end, and Delete removes the character after it. None of these keys types a character, so they are read as the game's buttons or from Windows (`Key`). The text moves left as far as the cursor needs to stay in sight. A line goes to everyone as its own message, `chat=<line>` and `name=<sender>` without a `map`, so `mp_overworld.rbx` hands it to `MGQ_MpActions.take` rather than taking it for a state; the name covers a line that arrives before its sender's first state. Every line, the player's own included:
 
 - joins the chat log (`Sprite_MpChatLog`) at the bottom left, above the status line, for 10 s (`LOG_FRAMES`); the open chat box shows the last lines, wrapped, with the box on the row below;
 - shows for 6 s (`BUBBLE_FRAMES`) in a bubble (`Sprite_MpChatBubble`) above the sender, while their ghost is on the player's map, placed from the character's `screen_x`/`screen_y`, so it needs no sprite of `mp_overworld.rbx`.
+
+While the chat box is open, `mp_actions.rbx` leaves B to it, and while the wheel is open, T does nothing.
 
 ## PvP battles (`mp_battle_pvp.rbx`)
 
