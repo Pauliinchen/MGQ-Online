@@ -2,7 +2,8 @@
 #  mp_coop_npcs.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-09-30: Registered with mp_overworld_sync.rbx for its messages instead of being asked by mp_overworld.rbx
+#      Paulinchen  2026-09-30: Sent and took the party's messages through mp_coop.rbx, which drops those of another party
+#                            - Registered with mp_overworld_sync.rbx for its messages instead of being asked by mp_overworld.rbx
 #                            - Moved into Patch/Multiplayer as mp_coop_npcs.rbx, which Multiplayer.rb loads
 #                            - Renamed from mp_npcs.rbx, with the module MGQ_MpCoopNpcs
 #      Paulinchen  2026-09-30: Created
@@ -77,8 +78,8 @@ module MGQ_MpCoopNpcs
   #
   # @return [Array<MGQ_MpOverworldSync::Peers::Peer>] The members.
   def self.party_here
-    return [] unless defined?(MGQ_MpOverworldSync) && MGQ_MpOverworldSync.in_world? && defined?(MGQ_MpActions)
-    return [] unless MGQ_MpActions::Party.id
+    return [] unless defined?(MGQ_MpOverworldSync) && MGQ_MpOverworldSync.in_world? && defined?(MGQ_MpCoop)
+    return [] unless MGQ_MpCoop::Party.id
 
     MGQ_MpOverworldSync::Peers.all.select { |peer| peer.member && peer.state["map"].to_i == $game_map.map_id }
   end
@@ -160,17 +161,16 @@ module MGQ_MpCoopNpcs
   # @return [Boolean] Whether it went out.
   def self.tell(seat, states, full)
     list = states.map { |id, state| "#{id}:#{state.join(',')}" }.join(";")
-    fields = { "npcs" => $game_map.map_id, "party" => MGQ_MpActions::Party.id, "full" => full ? 1 : 0, "events" => list }
-    MGQ_MpOverworldSync::Link.send_to(seat, MGQ_MpOverworldSync::Me.encode(fields))
+    MGQ_MpCoop.tell(seat, "npcs", $game_map.map_id, "full" => full ? 1 : 0, "events" => list)
   end
 
-  # Takes the Map Owner's events. Called by mp_overworld_sync.rbx.
+  # Takes the Map Owner's events. Called by mp_coop.rbx.
   #
   # @param peer [MGQ_MpOverworldSync::Peers::Peer, nil] Who sent them.
   # @param message [Hash] The message's fields.
   def self.take(peer, message)
     return unless following? && peer && message["npcs"].to_i == $game_map.map_id
-    return unless message["party"] == MGQ_MpActions::Party.id && owner(party_here).equal?(peer)
+    return unless owner(party_here).equal?(peer)
 
     full = message["full"] == "1"
     @targets = {} if full
@@ -257,12 +257,12 @@ module MGQ_MpCoopNpcs
   end
 end
 
-# What this script takes part in of the world's messages, through mp_overworld_sync.rbx.
+# What this script takes part in of the party's messages, through mp_coop.rbx.
 
 begin
-  MGQ_MpOverworldSync.route("npcs") { |peer, message| MGQ_MpCoopNpcs.take(peer, message) }
+  MGQ_MpCoop.route("npcs") { |peer, message| MGQ_MpCoopNpcs.take(peer, message) }
 rescue => e
-  MGQ_MpCoopNpcs.log("overworld sync FAILED: #{e.class}: #{e.message}")
+  MGQ_MpCoopNpcs.log("co-op FAILED: #{e.class}: #{e.message}")
 end
 
 # Game hooks.

@@ -2,7 +2,8 @@
 #  mp_actions.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-09-30: Registered with mp_overworld_sync.rbx for its messages instead of being asked by mp_overworld.rbx
+#      Paulinchen  2026-09-30: Left the party to mp_coop.rbx, keeping the wheel's party choices
+#                            - Registered with mp_overworld_sync.rbx for its messages instead of being asked by mp_overworld.rbx
 #                            - Moved into Patch/Multiplayer as mp_actions.rbx, which Multiplayer.rb loads
 #                            - Found the party's leader, the member who made the party
 #                            - Gave the chat box a blinking cursor, moved with the arrows, Home and End, with Delete
@@ -15,9 +16,9 @@
 #
 #----------------------------------------------------------------
 
-# What players of a world do together on the map: the action wheel, parties and chat. It builds
-# on mp_overworld_sync.rbx, which knows the other players and their messages, and registers there
-# what to add to the player's state, what to show above a ghost's name, and the chat's messages.
+# What players of a world do on the map: the action wheel, whose party choices go to mp_coop.rbx,
+# and chat. It builds on mp_overworld_sync.rbx, which knows the other players and their messages,
+# and registers there for the chat's messages.
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpActions
@@ -28,15 +29,6 @@ module MGQ_MpActions
   # Windows' code of the key that opens the chat: T, which neither the game's Input nor its gamepad
   # plugin reads.
   CHAT_KEY = 0x54
-
-  # Tiles another player may be away, on the same map, to be invited or to accept.
-  NEAR_TILES = 2
-
-  # Frames an invite stands, fifteen seconds at 60 frames per second.
-  INVITE_FRAMES = 900
-
-  # Color of the invite line above a ghost's name and above the player's own head.
-  INVITE_COLOR = Color.new(255, 224, 128)
 
   # Pixels kept free right above the player's head, where mp_overworld.rbx shows their ping.
   HEAD_ROOM = 16
@@ -97,17 +89,9 @@ module MGQ_MpActions
     defined?(MGQ_MpOverworldSync) ? MGQ_MpOverworldSync::Peers.all : []
   end
 
-  # The fields this script adds to the state the player's game tells the others. Called by
-  # mp_overworld_sync.rbx.
-  #
-  # @return [Hash] The fields.
-  def self.state_fields
-    { "party" => Party.id.to_s, "invite" => Party.inviting? ? 1 : 0 }
-  end
-
-  # Lets invites, bubbles and chat lines run out, closes the wheel and the chat box once the map is
-  # left, and forgets everything once no world is open. Called by mp_overworld_sync.rbx every frame in
-  # every scene.
+  # Lets bubbles and chat lines run out, closes the wheel and the chat box once the map is left, and
+  # forgets the chat once no world is open. Called by mp_overworld_sync.rbx every frame in every
+  # scene.
   #
   # @param in_world [Boolean] Whether a world is open.
   def self.tick(in_world)
@@ -116,13 +100,7 @@ module MGQ_MpActions
       Chat.stop_typing
     end
 
-    if in_world
-      Party.count_down
-      Chat.count_down
-    else
-      Party.reset
-      Chat.reset
-    end
+    in_world ? Chat.count_down : Chat.reset
   end
 
   # Tells what the player does, when this script has them busy. Called by mp_overworld_sync.rbx.
@@ -140,33 +118,11 @@ module MGQ_MpActions
     Chat.receive(peer, message) if message["chat"]
   end
 
-  # Notices what another player's new state means for the party. Called by mp_overworld_sync.rbx.
-  #
-  # @param peer [MGQ_MpOverworldSync::Peers::Peer] The player, with what they just told.
-  def self.observe(peer)
-    Party.observe(peer)
-  end
-
-  # Notices another player leaving the world. Called by mp_overworld_sync.rbx.
-  #
-  # @param peer [MGQ_MpOverworldSync::Peers::Peer] The player.
-  def self.observe_leaving(peer)
-    Party.observe_leaving(peer)
-  end
-
-  # Tells what the line above a ghost's name says. Called by mp_overworld_sync.rbx.
-  #
-  # @param peer [MGQ_MpOverworldSync::Peers::Peer] The ghost's player.
-  # @return [Array, nil] The text and its color, nil for none.
-  def self.label_line(peer)
-    peer.state["invite"] == "1" && !peer.member ? ["Invites to a party (B)", INVITE_COLOR] : nil
-  end
-
   # Tells what the line above the player's own head says, if anything.
   #
   # @return [String, nil] The line.
   def self.own_line
-    in_world? && Party.inviting? && !Wheel.open? ? "Inviting to a party . . ." : nil
+    in_world? && MGQ_MpCoop::Party.inviting? && !Wheel.open? ? "Inviting to a party . . ." : nil
   end
 
   # The action wheel's choices, by the direction that picks them.
@@ -174,11 +130,35 @@ module MGQ_MpActions
   # @return [Hash{Symbol => Option}] The choices under :UP, :RIGHT, :DOWN and :LEFT.
   def self.wheel_options
     {
-      :UP => Party.join_or_invite_option,
+      :UP => join_or_invite_option,
       :RIGHT => Option.new("Duel", nil, "Duels come in a later version."),
-      :DOWN => Party.leave_option,
+      :DOWN => leave_option,
       :LEFT => Option.new("Chat (T)", Chat.available? ? lambda { Chat.start_typing } : nil, "Chat needs the keyboard, which cannot reach the game."),
     }
+  end
+
+  # The wheel's party choice: accepting the invite of a player nearby, else inviting the players
+  # nearby who are outside the party.
+  #
+  # @return [Option] The choice.
+  def self.join_or_invite_option
+    party = MGQ_MpCoop::Party
+    near = peers.select { |peer| party.near?(peer.state) && !party.member?(peer.state) }
+    inviter = near.find { |peer| peer.state["invite"] == "1" }
+    return Option.new("Accept #{inviter.state['name']}'s invite", lambda { party.join(inviter) }, nil) if inviter
+
+    Option.new("Invite to a party", near.empty? ? nil : lambda { party.invite }, "Nobody is near enough to invite.")
+  end
+
+  # The wheel's choice that leaves the party, or stops an invite nobody took.
+  #
+  # @return [Option] The choice.
+  def self.leave_option
+    party = MGQ_MpCoop::Party
+    return Option.new("Leave the party", lambda { party.leave }, nil) unless party.members.empty?
+    return Option.new("Stop inviting", lambda { party.stop_inviting }, nil) if party.inviting?
+
+    Option.new("Leave the party", nil, "You are in no party.")
   end
 
   # Opens, steers or closes the action wheel and the chat box on the map. Called by the map every
@@ -524,152 +504,6 @@ module MGQ_MpActions
     end
   end
 
-  # The player's party: the others who share its id. Every game says its party's id and whether it
-  # invites in the state it sends anyway, so joining needs no message of its own: a player who
-  # accepts takes the inviter's id, and the inviter sees them join by it.
-  module Party
-    @id = nil
-    @invite_frames = 0
-
-    # The party's id, nil while the player is in none.
-    #
-    # @return [String, nil] The id.
-    def self.id
-      @id
-    end
-
-    # Reports whether the player invites to a party now.
-    #
-    # @return [Boolean] Whether they do.
-    def self.inviting?
-      @invite_frames > 0
-    end
-
-    # Reports whether another player is in the player's party.
-    #
-    # @param state [Hash] What the other player last told.
-    # @return [Boolean] Whether they are.
-    def self.member?(state)
-      !@id.nil? && state["party"] == @id
-    end
-
-    # Lists the other players in the party, whom a battle will take along once co-op battles exist.
-    #
-    # @return [Array<MGQ_MpOverworldSync::Peers::Peer>] The members.
-    def self.members
-      MGQ_MpActions.peers.select { |peer| member?(peer.state) }
-    end
-
-    # Finds the party's leader: the member who made the party, whose id starts the party's id, or
-    # the member with the lowest id while they are gone, so every member's game finds the same one.
-    #
-    # @return [MGQ_MpOverworldSync::Peers::Peer, Symbol, nil] The leader, :me for the player, nil outside a party.
-    def self.leader
-      return nil unless @id
-
-      candidates = [[MGQ_MpOverworldSync::Me.identity[0].to_s, :me]] + members.map { |peer| [peer.state["id"].to_s, peer] }
-      maker = candidates.find { |id, _| !id.empty? && id[0, 8] == @id[0, 8] }
-      (maker || candidates.min_by { |id, _| id })[1]
-    end
-
-    # Leaves the party and forgets any invite, as when the world closes.
-    def self.reset
-      @id = nil
-      @invite_frames = 0
-    end
-
-    # Lets an invite run out, and forgets a party nobody joined. Called every frame.
-    def self.count_down
-      return unless @invite_frames > 0
-
-      @invite_frames -= 1
-      @id = nil if @invite_frames == 0 && members.empty?
-    end
-
-    # The wheel's party choice: accepting the invite of a player nearby, else inviting the players
-    # nearby who are outside the party.
-    #
-    # @return [Option] The choice.
-    def self.join_or_invite_option
-      near = MGQ_MpActions.peers.select { |peer| near?(peer.state) && !member?(peer.state) }
-      inviter = near.find { |peer| peer.state["invite"] == "1" }
-      return Option.new("Accept #{inviter.state['name']}'s invite", lambda { join(inviter) }, nil) if inviter
-
-      Option.new("Invite to a party", near.empty? ? nil : lambda { invite }, "Nobody is near enough to invite.")
-    end
-
-    # The wheel's choice that leaves the party, or stops an invite nobody took.
-    #
-    # @return [Option] The choice.
-    def self.leave_option
-      return Option.new("Leave the party", lambda { leave }, nil) unless members.empty?
-      return Option.new("Stop inviting", lambda { stop_inviting }, nil) if inviting?
-
-      Option.new("Leave the party", nil, "You are in no party.")
-    end
-
-    # Invites the players nearby, making a party of one for them to join.
-    def self.invite
-      @id ||= "#{MGQ_Multiplayer::Link.player_id[0, 8]}#{rand(36**6).to_s(36)}"
-      @invite_frames = INVITE_FRAMES
-    end
-
-    # Stops inviting, forgetting a party nobody joined.
-    def self.stop_inviting
-      @invite_frames = 0
-      @id = nil if members.empty?
-    end
-
-    # Joins the party of a player who invites.
-    #
-    # @param inviter [MGQ_MpOverworldSync::Peers::Peer] The player.
-    def self.join(inviter)
-      left = @id && !members.empty?
-      @id = inviter.state["party"]
-      @invite_frames = 0
-      MGQ_MpActions.notice("#{left ? 'You left your party and joined' : 'You joined'} #{inviter.state['name']}'s party.")
-      MGQ_MpActions.peers.each { |peer| peer.member = member?(peer.state) }
-    end
-
-    # Leaves the party.
-    def self.leave
-      reset
-      MGQ_MpActions.notice("You left the party.")
-      MGQ_MpActions.peers.each { |peer| peer.member = false }
-    end
-
-    # Notices a player coming into or going out of the party, and stops inviting once one joined.
-    #
-    # @param peer [MGQ_MpOverworldSync::Peers::Peer] The player, with what they just told.
-    def self.observe(peer)
-      member = member?(peer.state)
-      return if member == peer.member
-
-      peer.member = member
-      if member
-        @invite_frames = 0
-        MGQ_MpActions.notice("#{peer.state['name']} joined your party.")
-      else
-        MGQ_MpActions.notice("#{peer.state['name']} left your party.")
-      end
-    end
-
-    # Forgets a party nobody is left in once a member left the world.
-    #
-    # @param peer [MGQ_MpOverworldSync::Peers::Peer] The player.
-    def self.observe_leaving(peer)
-      @id = nil if peer.member && members.empty? && !inviting?
-    end
-
-    # Reports whether another player stands near the player, on the same map.
-    #
-    # @param state [Hash] What the other player last told.
-    # @return [Boolean] Whether they do.
-    def self.near?(state)
-      state["map"].to_i == $game_map.map_id &&
-        [(state["x"].to_i - $game_player.x).abs, (state["y"].to_i - $game_player.y).abs].max <= NEAR_TILES
-    end
-  end
 end
 
 # The line above the player's own head while they invite to a party.
@@ -707,7 +541,7 @@ class Sprite_MpOwnLine < Sprite
     bitmap.clear
     bitmap.font.size = 18
     bitmap.font.outline = true
-    bitmap.font.color = MGQ_MpActions::INVITE_COLOR
+    bitmap.font.color = MGQ_MpCoop::INVITE_COLOR
     bitmap.draw_text(0, 0, WIDTH, HEIGHT, text, 1)
   end
 
@@ -1003,11 +837,7 @@ end
 begin
   MGQ_MpOverworldSync.route("chat") { |peer, message| MGQ_MpActions.take(peer, message) }
   MGQ_MpOverworldSync.on_tick { |in_world| MGQ_MpActions.tick(in_world) }
-  MGQ_MpOverworldSync.state_fields { MGQ_MpActions.state_fields }
   MGQ_MpOverworldSync.busy_scene { MGQ_MpActions.scene }
-  MGQ_MpOverworldSync.on_observe { |peer| MGQ_MpActions.observe(peer) }
-  MGQ_MpOverworldSync.on_leave { |peer| MGQ_MpActions.observe_leaving(peer) }
-  MGQ_MpOverworldSync.label_line { |peer| MGQ_MpActions.label_line(peer) }
 rescue => e
   MGQ_MpActions.log("overworld sync FAILED: #{e.class}: #{e.message}")
 end

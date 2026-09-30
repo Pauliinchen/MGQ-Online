@@ -2,7 +2,8 @@
 #  mp_coop_story.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-09-30: Registered with mp_overworld_sync.rbx for its messages instead of being asked by mp_overworld.rbx
+#      Paulinchen  2026-09-30: Sent and took the party's messages through mp_coop.rbx, which drops those of another party
+#                            - Registered with mp_overworld_sync.rbx for its messages instead of being asked by mp_overworld.rbx
 #                            - Moved into Patch/Multiplayer as mp_coop_story.rbx, which Multiplayer.rb loads
 #                            - Renamed from mp_story.rbx, with the module MGQ_MpCoopStory
 #                            - Kept what members as far along as the leader play together, companions who join included
@@ -85,9 +86,9 @@ module MGQ_MpCoopStory
   #
   # @return [MGQ_MpOverworldSync::Peers::Peer, Symbol, nil] The leader, :me for the player, nil outside a party.
   def self.leader
-    return nil unless defined?(MGQ_MpOverworldSync) && MGQ_MpOverworldSync.in_world? && defined?(MGQ_MpActions)
+    return nil unless defined?(MGQ_MpOverworldSync) && MGQ_MpOverworldSync.in_world? && defined?(MGQ_MpCoop)
 
-    MGQ_MpActions::Party.leader
+    MGQ_MpCoop::Party.leader
   end
 
   # Follows the party for one frame: the leader tells what changed, a member borrows the leader's
@@ -108,7 +109,7 @@ module MGQ_MpCoopStory
 
   # As leader, tells the members what of the story changed since the last time.
   def self.lead
-    if MGQ_MpActions::Party.members.empty?
+    if MGQ_MpCoop::Party.members.empty?
       @sent = nil
       return
     end
@@ -144,16 +145,14 @@ module MGQ_MpCoopStory
     tell(leader.seat, "ask", {})
   end
 
-  # Takes a message about the story. Called by mp_overworld_sync.rbx.
+  # Takes a message about the story. Called by mp_coop.rbx.
   #
   # @param peer [MGQ_MpOverworldSync::Peers::Peer, nil] Who sent it.
   # @param message [Hash] The message's fields.
   def self.take(peer, message)
-    return unless peer && message["party"] == MGQ_MpActions::Party.id
-
     case message["story"]
     when "ask"
-      tell(peer.seat, "full", full(raw_state)) if leader == :me && MGQ_MpActions::Party.member?(peer.state)
+      tell(peer.seat, "full", full(raw_state)) if leader == :me && MGQ_MpCoop::Party.member?(peer.state)
     when "full"
       borrow(peer, decode_full(message)) if leader.equal?(peer)
     when "delta"
@@ -172,8 +171,7 @@ module MGQ_MpCoopStory
   # @param fields [Hash] The message's other fields.
   # @return [Boolean] Whether it went out.
   def self.tell(seat, kind, fields)
-    message = { "story" => kind, "party" => MGQ_MpActions::Party.id }.merge(fields)
-    MGQ_MpOverworldSync::Link.send_to(seat, MGQ_MpOverworldSync::Me.encode(message))
+    MGQ_MpCoop.tell(seat, "story", kind, fields)
   end
 
   # Starts playing the leader's story, keeping the player's own aside the first time.
@@ -249,7 +247,7 @@ module MGQ_MpCoopStory
   #
   # @param actor_id [Integer] The companion.
   def self.joined(actor_id)
-    return unless leader == :me && !MGQ_MpActions::Party.members.empty?
+    return unless leader == :me && !MGQ_MpCoop::Party.members.empty?
     return unless defined?(MGQ_MpCoopEvents) && MGQ_MpCoopEvents.telling?
 
     tell(-1, "recruit", "actor" => actor_id)
@@ -537,12 +535,12 @@ module MGQ_MpCoopStory
   end
 end
 
-# What this script takes part in of the world's messages, through mp_overworld_sync.rbx.
+# What this script takes part in of the party's messages, through mp_coop.rbx.
 
 begin
-  MGQ_MpOverworldSync.route("story") { |peer, message| MGQ_MpCoopStory.take(peer, message) }
+  MGQ_MpCoop.route("story") { |peer, message| MGQ_MpCoopStory.take(peer, message) }
 rescue => e
-  MGQ_MpCoopStory.log("overworld sync FAILED: #{e.class}: #{e.message}")
+  MGQ_MpCoopStory.log("co-op FAILED: #{e.class}: #{e.message}")
 end
 
 # Game hooks.

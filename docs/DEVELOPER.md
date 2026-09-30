@@ -12,8 +12,9 @@ GameScript/Multiplayer/               Ruby, the other scripts, in the order Mult
   mp_actors.rbx                       characters of another game: builds as numbers, and rebuilt characters
   mp_async.rbx                        the world running on behind menus, battles and story scenes
   mp_overworld_sync.rbx               the world's messages: states, peers, and the registry other scripts join
-  mp_actions.rbx                      what players of a world do together on the map: action wheel, parties, chat
+  mp_actions.rbx                      what players of a world do on the map: action wheel, chat
   mp_overworld.rbx                    what the player sees of the others: ghosts, labels, pings, status line
+  mp_coop.rbx                         parties: who is in the player's party, and the gate for its messages
   mp_coop_events.rbx                  the events of a party: what each event page is, and chests opened for all
   mp_coop_npcs.rbx                    the NPCs a party shares on a map, moved by its Map Owner
   mp_coop_story.rbx                   the story a party plays: the leader's, borrowed by the members
@@ -39,8 +40,9 @@ docs/DEVELOPER.md                     this file
 | `mp_actors.rbx` | `MGQ_MpActors`, `Game_MpActor` | Characters of another game: `Builds` writes and reads a character's build as plain numbers, `Items` its equipment, and `Game_MpActor` rebuilds it as a real character of this game (see [Team](#pvp-battles-mp_battle_pvprbx) and Rebuilt characters). PvP battles build their enemy side on it; co-op battles will build the party members' characters on it. |
 | `mp_async.rbx` | `MGQ_MpAsync` | The world running on behind every other screen while a world is open, and the live map behind menus (see [The world never pauses](#the-world-never-pauses-mp_asyncrbx)). Reaches `MGQ_MpWorld` at run time. |
 | `mp_overworld_sync.rbx` | `MGQ_MpOverworldSync` | The open world's messages: what each game tells the others, the other games by seat, and the registry the scripts after it join for their messages (see [On the map](#on-the-map)). Reaches `MGQ_MpWorld` at run time. |
-| `mp_actions.rbx` | `MGQ_MpActions` | What players of a world do together on the map: the action wheel, parties and chat (see [Actions](#actions-mp_actionsrbx)). Registers with `MGQ_MpOverworldSync`. |
+| `mp_actions.rbx` | `MGQ_MpActions` | What players of a world do on the map: the action wheel, whose party choices go to `MGQ_MpCoop`, and chat (see [Actions](#actions-mp_actionsrbx)). Registers with `MGQ_MpOverworldSync`. |
 | `mp_overworld.rbx` | `MGQ_MpOverworld` | What the player sees of the other players of the open world: the ghosts, their name labels, the own ping and the status line (see [On the map](#on-the-map)). Reads `MGQ_MpOverworldSync`. |
+| `mp_coop.rbx` | `MGQ_MpCoop` | Parties: `Party` (who is in the player's party, invites, the leader), and the gate that hands the party's messages to the scripts registered for them (see [Parties](#parties-mp_cooprbx)). Registers with `MGQ_MpOverworldSync`. |
 | `mp_coop_events.rbx` | `MGQ_MpCoopEvents` | The events of a party: sorts every event page by what it does, and opens chests for the whole party (see [Events in a party](#events-in-a-party-mp_coop_eventsrbx)). Reaches `MGQ_MpOverworldSync`, `MGQ_MpActions` and `MGQ_MpCoopStory` at run time. |
 | `mp_coop_npcs.rbx` | `MGQ_MpCoopNpcs` | The NPCs a party shares on a map: the Map Owner moves them and the other members follow (see [NPCs in a party](#npcs-in-a-party-mp_coop_npcsrbx)). Reaches `MGQ_MpOverworldSync` and `MGQ_MpActions` at run time. |
 | `mp_coop_story.rbx` | `MGQ_MpCoopStory` | The story a party plays: members borrow the leader's switches, variables and self switches and get their own back afterwards (see [The party's story](#the-partys-story-mp_coop_storyrbx)). Reaches `MGQ_MpOverworldSync` and `MGQ_MpActions` at run time. |
@@ -207,6 +209,12 @@ In single player the map stops whenever another screen is in front: a menu, a sh
 - **The live map** (`Spriteset_MpLiveMap`): a menu whose background is the picture the map took on leaving (`SceneManager.background_bitmap`) shows a `Spriteset_Map` instead, updated every frame, its viewports below everything the menu draws (z -300 to -200) and dimmed like the picture. Menus that make their background themselves, such as the casino and the warp screen, keep theirs.
 - **No freeze between the map and menus** (`instant_switch?`, `leave`): leaving a screen freezes its picture (`Graphics.freeze` in `Scene_Base#terminate`), and the next screen fades in from it (`Graphics.transition` in `post_start`, 10 frames, the map 15). Nothing updates meanwhile, and even a transition of no frames takes about 117 ms (measured in game), so the world stood still for a moment at every menu. While a world is open, switching between the map and menus skips both: the screen keeps its last picture until the next screen draws its first. Battles, story scenes and the title keep their fades.
 
+## Parties (`mp_coop.rbx`)
+
+**The party** (`Party`). Every state message also carries the player's party id (`party`) and whether they invite (`invite`), so a party needs no message of its own. Inviting lasts 15 s (`INVITE_FRAMES`, from the wheel in `mp_actions.rbx`) and makes a party of one with a new id, which the invite line above the player's own head (`Sprite_MpOwnLine`) and above their ghost on the others' screens shows. Accepting takes the inviter's id. A game sees another join its party when their message carries its id (`Party.observe`), which also ends its invite. An invite nobody took forgets its party of one, and leaving the world leaves the party. Ghosts outside the party are see-through (`STRANGER_OPACITY`), party members' names green. `Party.members` and `Party.leader` are what the party scripts below build on.
+
+**The party's messages** (`route`, `take`, `tell`). The party scripts (`mp_coop_events.rbx`, `mp_coop_npcs.rbx`, `mp_coop_story.rbx` and `mp_battle_coop.rbx`) register their fields with `MGQ_MpCoop.route`, which registers the same field with `mp_overworld_sync.rbx`. A message is handed on only from a player the game already knows and with the party's own id; the scripts keep only checks of their own, such as who the Map Owner or the leader is. `MGQ_MpCoop.tell(seat, field, value, fields)` adds the party's id to what they send.
+
 ## NPCs in a party (`mp_coop_npcs.rbx`)
 
 Players outside a party share no NPCs: each game moves its own, as in single player. Between party members on the same map, one game moves the map's events and the others follow it.
@@ -257,14 +265,12 @@ Over the game's 28,500 event pages with commands this gives about 13,200 story, 
 
 **The action wheel** (`Wheel`, `Sprite_MpActionWheel`). B (`WHEEL_KEY`, 0x42, read with `GetAsyncKeyState` like F11, since neither the game's `Input` nor its gamepad plugin reads it) opens it on the map while no event or message runs, and closes it again. Its four choices (`wheel_options`, rebuilt every frame) sit above, right of, below and left of the player: the arrows pick one, the game's confirm button takes it, and cancel closes the wheel. A choice without `run` is grey, and taking it shows its `refusal` as a notice. While the wheel is open it holds the buttons (`MGQ_Multiplayer::Capture`, which has the guarded `Input` report none to the game, while the wheel reads them past it), so the player stands still and the game's menu and map keys stay shut. Leaving the map, an event or a message closes it.
 
-- Up: accept the invite of a player nearby (`NEAR_TILES`, 2, on the same map) who is outside the party, else invite the players nearby who are outside it.
+- Up: accept the invite of a player nearby (`MGQ_MpCoop::NEAR_TILES`, 2, on the same map) who is outside the party, else invite the players nearby who are outside it.
 - Down: leave the party, or stop an invite nobody took.
 - Left: chat, grey while the keyboard cannot reach the game (`Background.running?`).
 - Right: duel, grey until duels exist.
 
 The wheel opens on the first choice that can be taken, clockwise from the top.
-
-**Parties** (`Party`). Every state message also carries the player's party id (`party`) and whether they invite (`invite`), so a party needs no message of its own. Inviting lasts 15 s (`INVITE_FRAMES`) and makes a party of one with a new id, which the invite line above the player's own head (`Sprite_MpOwnLine`) and above their ghost on the others' screens shows. Accepting takes the inviter's id. A game sees another join its party when their message carries its id (`Party.observe`), which also ends its invite. An invite nobody took forgets its party of one, and leaving the world leaves the party. Ghosts outside the party are see-through (`STRANGER_OPACITY`), party members' names green. `Party.members` lists them for co-op battles, which do not exist yet.
 
 **Chat** (`Chat`). T (`CHAT_KEY`, 0x54) or the wheel opens the chat box, which takes the keyboard through `mp_typing`/`mp_take_typed` like the world screen's text box, and holds the buttons (`Capture`), so keys that type move nobody. Enter sends, Escape closes, a line has at most 120 characters (`MAX_LENGTH`). The box has a cursor that blinks every half second (`BLINK_FRAMES`) and shows at once after a change. Typing and Backspace work at the cursor. The arrow keys move it (`Capture.repeat?`, so a held arrow repeats), Home and End jump to either end, and Delete removes the character after it. None of these keys types a character, so they are read as the game's buttons or from Windows (`Key`). The text moves left as far as the cursor needs to stay in sight. A line goes to everyone as its own message, `chat=<line>` and `name=<sender>` without a `map`, so `mp_overworld.rbx` hands it to `MGQ_MpActions.take` rather than taking it for a state; the name covers a line that arrives before its sender's first state. Every line, the player's own included:
 

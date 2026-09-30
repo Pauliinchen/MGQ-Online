@@ -2,7 +2,8 @@
 #  mp_battle_coop.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-09-30: Registered with mp_overworld_sync.rbx for its messages instead of being asked by mp_overworld.rbx
+#      Paulinchen  2026-09-30: Sent and took the party's messages through mp_coop.rbx, which drops those of another party
+#                            - Registered with mp_overworld_sync.rbx for its messages instead of being asked by mp_overworld.rbx
 #                            - Moved into Patch/Multiplayer as mp_battle_coop.rbx, which Multiplayer.rb loads
 #                            - Renamed from mp_coop.rbx, with the module MGQ_MpBattleCoop
 #                            - Let a player who got away leave the battle, the others fighting on, alone with their own full team
@@ -85,8 +86,7 @@ module MGQ_MpBattleCoop
   # @param fields [Hash] Its other fields.
   # @return [Boolean] Whether it went out.
   def self.tell(seat, kind, fields)
-    message = { "coop" => kind, "party" => MGQ_MpActions::Party.id }.merge(fields)
-    MGQ_MpOverworldSync::Link.send_to(seat, MGQ_MpOverworldSync::Me.encode(message))
+    MGQ_MpCoop.tell(seat, "coop", kind, fields)
   end
 
   # The host's side.
@@ -102,7 +102,7 @@ module MGQ_MpBattleCoop
 
     seats = candidates.map(&:seat)
     if seats.empty?
-      others = MGQ_MpActions::Party.members.map { |peer| "#{peer.state['name']} on map #{peer.state['map']} (#{peer.state['scene']})" }
+      others = MGQ_MpCoop::Party.members.map { |peer| "#{peer.state['name']} on map #{peer.state['map']} (#{peer.state['scene']})" }
       return log("nobody to invite on map #{$game_map.map_id}: #{others.empty? ? 'no other party member' : others.join(', ')}")
     end
 
@@ -122,7 +122,7 @@ module MGQ_MpBattleCoop
   #
   # @return [Boolean] Whether it may.
   def self.host_possible?
-    return false unless defined?(MGQ_MpOverworldSync) && MGQ_MpOverworldSync.in_world? && defined?(MGQ_MpActions) && MGQ_MpActions::Party.id
+    return false unless defined?(MGQ_MpOverworldSync) && MGQ_MpOverworldSync.in_world? && defined?(MGQ_MpCoop) && MGQ_MpCoop::Party.id
     return false if $game_temp && $game_temp.in_memory_battle
     return false if defined?(MGQ_MpBattlePvp) && MGQ_MpBattlePvp::Battle.running?
 
@@ -135,7 +135,7 @@ module MGQ_MpBattleCoop
   #
   # @return [Array<MGQ_MpOverworldSync::Peers::Peer>] The members.
   def self.candidates
-    MGQ_MpActions::Party.members.select { |peer| peer.state["map"].to_i == $game_map.map_id && FREE_SCENES.include?(peer.state["scene"]) }
+    MGQ_MpCoop::Party.members.select { |peer| peer.state["map"].to_i == $game_map.map_id && FREE_SCENES.include?(peer.state["scene"]) }
   end
 
   # As host, waits for the invited members to join or turn the battle down, then sends everyone the
@@ -188,12 +188,12 @@ module MGQ_MpBattleCoop
 
   # The guest's side.
 
-  # Takes a co-op message. Called by mp_overworld_sync.rbx.
+  # Takes a co-op message. Called by mp_coop.rbx.
   #
   # @param peer [MGQ_MpOverworldSync::Peers::Peer, nil] Who sent it.
   # @param message [Hash] The message's fields.
   def self.take(peer, message)
-    return unless peer && message["coop"] == "invite" && message["party"] == MGQ_MpActions::Party.id
+    return unless message["coop"] == "invite"
     return unless message["seats"].to_s.split(",").map(&:to_i).include?(own_seat)
 
     @invite = { :peer => peer, :message => message, :frames => 0 }
@@ -502,12 +502,12 @@ class Game_MpAlly < Game_MpActor
   end
 end
 
-# What this script takes part in of the world's messages, through mp_overworld_sync.rbx.
+# What this script takes part in of the party's messages, through mp_coop.rbx.
 
 begin
-  MGQ_MpOverworldSync.route("coop") { |peer, message| MGQ_MpBattleCoop.take(peer, message) }
+  MGQ_MpCoop.route("coop") { |peer, message| MGQ_MpBattleCoop.take(peer, message) }
 rescue => e
-  MGQ_MpBattleCoop.log("overworld sync FAILED: #{e.class}: #{e.message}")
+  MGQ_MpBattleCoop.log("co-op FAILED: #{e.class}: #{e.message}")
 end
 
 # Game hooks.
