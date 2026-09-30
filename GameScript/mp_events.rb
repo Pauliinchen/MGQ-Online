@@ -246,6 +246,13 @@ module MGQ_MpEvents
     list.any? { |c| MESSAGE_CODES.include?(c.code) || (c.code == 355 && c.parameters[0].to_s =~ /\A\s*call_novel_scene/) } && kind_of(list) == :story
   end
 
+  # Reports whether the leader's main event plays story now, whose companions join the members too.
+  #
+  # @return [Boolean] Whether it does.
+  def self.telling?
+    @telling && $game_map && $game_map.interpreter.running? ? true : false
+  end
+
   # Finds the leader of the player's party, through mp_actions.rb.
   #
   # @return [MGQ_MpOverworld::Peers::Peer, Symbol, nil] The leader, :me for the player, nil outside a party.

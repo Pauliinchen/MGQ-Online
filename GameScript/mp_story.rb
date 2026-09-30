@@ -2,7 +2,8 @@
 #  mp_story.rb
 #
 #  Changelog:
-#      Paulinchen  2026-09-30: Kept chests the player's own while they play the leader's story
+#      Paulinchen  2026-09-30: Kept what members as far along as the leader play together, companions who join included
+#                            - Kept chests the player's own while they play the leader's story
 #                            - Created
 #
 #----------------------------------------------------------------
@@ -34,6 +35,10 @@ module MGQ_MpStory
 
   # First variable that holds a companion's affection, one per companion.
   AFFECTION_VARIABLES = 3000
+
+  # Variables that tell how far along a story is: the main story (1001) and the three routes'
+  # progress (1141-1143).
+  STORY_MARKERS = [1001, 1141, 1142, 1143]
 
   @own = nil
   @leader_id = nil
@@ -120,6 +125,9 @@ module MGQ_MpStory
   def self.follow(leader)
     id = leader.state["id"].to_s
     if id != @leader_id
+      # A new leader has another story: the member first gets their own back, with what they
+      # played along.
+      restore if guest?
       @leader_id = id
       @waiting = true
       @ask_frames = ASK_FRAMES
@@ -147,6 +155,8 @@ module MGQ_MpStory
       borrow(peer, decode_full(message)) if leader.equal?(peer)
     when "delta"
       apply(decode_delta(message)) if leader.equal?(peer) && guest? && !@waiting
+    when "recruit"
+      recruit(peer, message["actor"].to_i) if leader.equal?(peer) && guest? && @same
     end
   rescue => e
     log("taking #{message['story']} failed: #{e.class}: #{e.message}")
@@ -169,21 +179,90 @@ module MGQ_MpStory
   # @param story [Array] The leader's switches, variables and self switches.
   def self.borrow(leader, story)
     first = !guest?
-    @own = deep_copy(raw_state) if first
+    if first
+      @own = deep_copy(raw_state)
+      @same = same_story?(@own, story)
+      @recorded = [{}, {}, {}]
+    end
     set_raw(*mix(story, raw_state))
     @waiting = false
-    notice("You follow #{leader.state['name']}'s story while in the party.") if first
+    return unless first
+
+    notice("You follow #{leader.state['name']}'s story while in the party." + (@same ? " You are as far along, so you keep what you play together." : ""))
   end
 
-  # Takes what of the leader's story changed.
+  # Reports whether two stories are as far along: the same main story progress and route progress.
+  #
+  # @param own [Array] The player's switches, variables and self switches.
+  # @param other [Array] The leader's.
+  # @return [Boolean] Whether they are.
+  def self.same_story?(own, other)
+    STORY_MARKERS.all? { |id| own[1][id].to_i == other[1][id].to_i }
+  end
+
+  # Takes what of the leader's story changed, and keeps it for the player's own story when they
+  # are as far along as the leader.
   #
   # @param changes [Array] The changed switches, variables and self switches, each by key.
   def self.apply(changes)
     switches, variables, self_switches = raw_state
-    changes[0].each { |id, value| switches[id] = value unless personal_switch?(id) }
-    changes[1].each { |id, value| variables[id] = value unless personal_variable?(id) }
-    changes[2].each { |key, value| self_switches[key] = value unless personal_self_switch?(key) }
+    changes[0].each do |id, value|
+      next if personal_switch?(id)
+
+      switches[id] = value
+      @recorded[0][id] = value if @same
+    end
+    changes[1].each do |id, value|
+      next if personal_variable?(id)
+
+      variables[id] = value
+      @recorded[1][id] = value if @same
+    end
+    changes[2].each do |key, value|
+      next if personal_self_switch?(key)
+
+      self_switches[key] = value
+      @recorded[2][key] = value if @same
+    end
     set_raw(switches, variables, self_switches)
+  end
+
+  # The player's own story, with what they played along when they were as far as the leader.
+  #
+  # @return [Array] The switches, variables and self switches.
+  def self.own_story
+    return @own unless @same
+
+    switches, variables, self_switches = @own.map(&:dup)
+    @recorded[0].each { |id, value| switches[id] = value }
+    @recorded[1].each { |id, value| variables[id] = value }
+    @recorded[2].each { |key, value| self_switches[key] = value }
+    [switches, variables, self_switches]
+  end
+
+  # As leader, tells the party about a companion who joined in the story, so members as far along
+  # get them too. A companion recruited outside the story, as after a battle, stays the leader's.
+  # Called when a companion joins.
+  #
+  # @param actor_id [Integer] The companion.
+  def self.joined(actor_id)
+    return unless leader == :me && !MGQ_MpActions::Party.members.empty?
+    return unless defined?(MGQ_MpEvents) && MGQ_MpEvents.telling?
+
+    tell(-1, "recruit", "actor" => actor_id)
+  rescue => e
+    log("telling a companion failed: #{e.class}: #{e.message}")
+  end
+
+  # Takes a companion who joined the leader in the story the player plays along.
+  #
+  # @param leader [MGQ_MpOverworld::Peers::Peer] The leader.
+  # @param actor_id [Integer] The companion.
+  def self.recruit(leader, actor_id)
+    return if actor_id <= 0 || !$data_actors[actor_id] || $game_party.exist_all_actor_id?(actor_id)
+
+    $game_party.add_stand_actor(actor_id)
+    notice("#{$data_actors[actor_id].name} joined you too.")
   end
 
   # Reads a self switch as it is the player's own, whether or not they play the leader's story.
@@ -234,17 +313,18 @@ module MGQ_MpStory
 
   # Gives the player their own story back, keeping what of their own changed meanwhile.
   def self.restore
-    set_raw(*mix(@own, raw_state))
-    @own = nil
-    @leader_id = nil
-    @waiting = false
-    notice("You are back in your own story.")
+    kept = @same
+    set_raw(*mix(own_story, raw_state))
+    forget
+    notice(kept ? "You are back in your own story, with what you played together." : "You are back in your own story.")
   end
 
   # Forgets the story kept aside, as when a save is loaded or a new game starts, which bring their
   # own story. A member then asks the leader again.
   def self.forget
     @own = nil
+    @same = false
+    @recorded = nil
     @leader_id = nil
     @waiting = false
   end
@@ -256,7 +336,7 @@ module MGQ_MpStory
   def self.save_contents(contents)
     return contents unless guest?
 
-    switches, variables, self_switches = mix(@own, raw_state)
+    switches, variables, self_switches = mix(own_story, raw_state)
     contents[:switches] = with_data(contents[:switches], switches)
     contents[:variables] = with_data(contents[:variables], variables)
     contents[:self_switches] = with_data(contents[:self_switches], self_switches)
@@ -495,6 +575,22 @@ if MGQ_MpStory.hookable?
     end
   rescue => e
     MGQ_MpStory.log("map hook FAILED: #{e.class}: #{e.message}")
+  end
+
+  begin
+    class Game_Party
+      alias mgq_mp_story_add_stand_actor add_stand_actor
+
+      # Takes a companion into the party's roster, then as leader tells the party.
+      #
+      # @param actor_id [Integer] The companion.
+      def add_stand_actor(actor_id)
+        mgq_mp_story_add_stand_actor(actor_id)
+        MGQ_MpStory.joined(actor_id)
+      end
+    end
+  rescue => e
+    MGQ_MpStory.log("companion hook FAILED: #{e.class}: #{e.message}")
   end
 
   begin
