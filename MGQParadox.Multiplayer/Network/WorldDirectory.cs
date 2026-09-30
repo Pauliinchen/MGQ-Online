@@ -2,6 +2,7 @@
 //  WorldDirectory.cs
 //
 //  Changelog:
+//      Paulinchen  2026-09-30: Made a world with a starting save, fetched it for new players, and listed which worlds have one
 //      Paulinchen  2026-09-29: Created
 //
 //----------------------------------------------------------------
@@ -9,6 +10,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Net;
 using System.Text;
@@ -18,8 +20,9 @@ namespace MGQParadox.Multiplayer.Network;
 
 /// <summary>
 /// The world directory as the game script uses it: the list of worlds, fetched again whenever asked,
-/// and one action at a time, making, opening, deleting or clearing a player out of a world. Both run
-/// on threads of their own, and the game script reads how they stand.
+/// and one action at a time, making, opening, deleting or clearing a player out of a world, or
+/// fetching its starting save. Both run on threads of their own, and the game script reads how
+/// they stand.
 /// </summary>
 internal sealed class WorldDirectory
 {
@@ -160,7 +163,7 @@ internal sealed class WorldDirectory
     /// <summary>
     /// Describes the list for the game script.
     /// </summary>
-    /// <returns><c>state</c> ("loading", "ready" or "failed") and <c>error</c>, then one line per world and player: <c>world</c>, id, seats, players online, creator's id, when last active, creator's name, name; <c>member</c>, id, 1 when online, name; each separated by tabs.</returns>
+    /// <returns><c>state</c> ("loading", "ready" or "failed") and <c>error</c>, then one line per world and player: <c>world</c>, id, seats, players online, creator's id, when last active, creator's name, name, starting save ("none", "pending" or "ready"); <c>member</c>, id, 1 when online, name; each separated by tabs.</returns>
     public string DescribeList()
     {
         lock (_gate)
@@ -171,23 +174,110 @@ internal sealed class WorldDirectory
     }
 
     /// <summary>
-    /// Makes a world: a new token, locked with the password, and the world in the directory.
+    /// Makes a world: a new token, locked with the password, and the world in the directory, with
+    /// the starting save new players get, if there is one.
     /// </summary>
     /// <param name="name">The world's name.</param>
     /// <param name="password">The password others enter it with.</param>
     /// <param name="seats">How many games it seats at once.</param>
+    /// <param name="start">The starting save's files, each named as new players get it and where it is read from; empty for none.</param>
     /// <returns><see langword="false"/> while another action runs.</returns>
-    public bool Create(string name, string password, int seats) => Start("create", () =>
+    public bool Create(string name, string password, int seats, IReadOnlyList<(string Name, string Path)> start) => Start("create", () =>
     {
         var (key, playerName) = Me();
         var token = JoinCode.NewToken();
         var id = Relays.WorldRoomOf(token);
         var worldLock = WorldLock.Close(token, password, Iterations);
+        // Sealed before the world exists, so a save that cannot be read leaves no world behind.
+        var box = start.Count > 0 ? SealStart(token, start) : null;
+        var client = Client();
 
-        Client().Create(id, name, seats, key, playerName, WorldKeys.AuthHashOf(WorldKeys.AuthKeyOf(token)), worldLock);
+        client.Create(id, name, seats, key, playerName, WorldKeys.AuthHashOf(WorldKeys.AuthKeyOf(token)), worldLock, box != null);
         Log.Write($"made world {id}");
+
+        if (box != null)
+        {
+            UploadStart(client, id, key, box);
+        }
+
         return new WorldCode(token, Relays.Current, seats).ToText();
     });
+
+    /// <summary>
+    /// Fetches a world's starting save and writes its files into a folder.
+    /// </summary>
+    /// <param name="code">The world code.</param>
+    /// <param name="folder">The folder, relative to the game's folder or full.</param>
+    /// <returns><see langword="false"/> while another action runs.</returns>
+    public bool FetchStart(string code, string folder) => Start("start", () =>
+    {
+        var world = WorldCode.Parse(code) ?? throw new ActionException("The world code is damaged.");
+        var id = Relays.WorldRoomOf(world.Token);
+        var box = Client().GetStart(id, Me().Key, WorldKeys.AuthKeyOf(world.Token));
+
+        try
+        {
+            var names = StartingSave.Open(world.Token, box, ModFolder.GamePathOf(folder));
+            Log.Write($"fetched the starting save of world {id}: {string.Join(", ", names)}");
+        }
+        catch (InvalidDataException ex)
+        {
+            throw new ActionException(ex.Message);
+        }
+        catch (IOException ex)
+        {
+            throw new ActionException($"The starting save could not be written: {ex.Message}");
+        }
+
+        return null;
+    });
+
+    /// <summary>
+    /// Zips and encrypts the starting save's files.
+    /// </summary>
+    /// <param name="token">The world's token.</param>
+    /// <param name="files">The files, each named as new players get it and where it is read from.</param>
+    /// <returns>The starting save as the relay keeps it.</returns>
+    private static byte[] SealStart(string token, IReadOnlyList<(string Name, string Path)> files)
+    {
+        try
+        {
+            return StartingSave.Seal(token, files.Select(file => (file.Name, ModFolder.GamePathOf(file.Path))).ToList());
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            throw new ActionException($"The save could not be read: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Uploads a new world's starting save, deleting the world again when that fails, since nobody could ever enter it.
+    /// </summary>
+    /// <param name="client">The directory's client.</param>
+    /// <param name="id">The world.</param>
+    /// <param name="key">The creator's key.</param>
+    /// <param name="box">The starting save.</param>
+    private static void UploadStart(DirectoryClient client, string id, string key, byte[] box)
+    {
+        try
+        {
+            client.PutStart(id, key, box);
+            Log.Write($"uploaded the starting save of world {id}, {box.Length} bytes");
+        }
+        catch (DirectoryException ex)
+        {
+            try
+            {
+                client.Delete(id, key);
+            }
+            catch (DirectoryException deleteFailed)
+            {
+                Log.Write($"could not delete world {id} after its starting save failed: {deleteFailed.Message}");
+            }
+
+            throw new ActionException(ex.Status == null ? Unreachable : $"The starting save could not be uploaded: {ex.Message}");
+        }
+    }
 
     /// <summary>
     /// Opens a world's lock with its password, which gives its world code.
@@ -351,6 +441,7 @@ internal sealed class WorldDirectory
         DirectoryException { Status: HttpStatusCode.NotFound } => "The world no longer exists.",
         DirectoryException { Status: HttpStatusCode.Forbidden } => "Only the world's creator may do this.",
         DirectoryException { Status: HttpStatusCode.TooManyRequests } => "You have made as many worlds as you may. Delete one first.",
+        DirectoryException { Status: HttpStatusCode.RequestEntityTooLarge } => "The save is too large to share.",
         DirectoryException directory => $"The relay refused: {directory.Message}",
         _ => $"Something went wrong: {ex.GetBaseException().Message}",
     };
@@ -369,7 +460,7 @@ internal sealed class WorldDirectory
             text.Append("world\t").Append(world.Id).Append('\t').Append(world.Seats.ToString(CultureInfo.InvariantCulture))
                 .Append('\t').Append(world.Online.ToString(CultureInfo.InvariantCulture)).Append('\t').Append(world.CreatorId)
                 .Append('\t').Append(world.Active.ToString(CultureInfo.InvariantCulture)).Append('\t').Append(OnOneField(world.CreatorName))
-                .Append('\t').Append(OnOneField(world.Name)).Append('\n');
+                .Append('\t').Append(OnOneField(world.Name)).Append('\t').Append(OnOneField(world.Start)).Append('\n');
 
             foreach (var member in world.Members.OrderByDescending(member => member.Online).ThenBy(member => member.Name, StringComparer.OrdinalIgnoreCase))
             {

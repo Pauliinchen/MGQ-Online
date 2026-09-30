@@ -2,11 +2,13 @@
 //  WorldDirectoryTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-09-30: Covered making a world with a starting save and fetching it as a new player
 //      Paulinchen  2026-09-29: Created
 //
 //----------------------------------------------------------------
 
 using System;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using MGQParadox.Multiplayer.Network;
@@ -14,7 +16,7 @@ using MGQParadox.Multiplayer.Network;
 namespace MGQParadox.Multiplayer.Tests;
 
 /// <summary>
-/// Covers making, listing, opening and deleting worlds, and removing players, against a relay inside this process.
+/// Covers making, listing, opening and deleting worlds, removing players and fetching starting saves, against a relay inside this process.
 /// </summary>
 public sealed class WorldDirectoryTests
 {
@@ -37,7 +39,7 @@ public sealed class WorldDirectoryTests
         using var relay = new TestRelay();
         var creator = NewDirectory(relay, CreatorKey, "Creator");
 
-        var made = Act(creator, directory => directory.Create("Iliasburg Crew", "secret", 4));
+        var made = Act(creator, directory => directory.Create("Iliasburg Crew", "secret", 4, []));
         Assert.Equal("done", made["state"]);
         Assert.Equal("create", made["kind"]);
         Assert.Equal(4, WorldCode.Parse(made["code"])!.Seats);
@@ -45,7 +47,7 @@ public sealed class WorldDirectoryTests
 
         var lines = List(creator);
         var creatorId = WorldKeys.PlayerIdOf(CreatorKey);
-        Assert.Contains($"world\t{made["world"]}\t4\t0\t{creatorId}\t0\tCreator\tIliasburg Crew", lines);
+        Assert.Contains($"world\t{made["world"]}\t4\t0\t{creatorId}\t0\tCreator\tIliasburg Crew\tnone", lines);
         Assert.Contains($"member\t{creatorId}\t0\tCreator", lines);
     }
 
@@ -58,7 +60,7 @@ public sealed class WorldDirectoryTests
         using var relay = new TestRelay();
         var creator = NewDirectory(relay, CreatorKey, "Creator");
         var guest = NewDirectory(relay, PlayerKey(2), "Guest");
-        var made = Act(creator, directory => directory.Create("Iliasburg Crew", "secret", 4));
+        var made = Act(creator, directory => directory.Create("Iliasburg Crew", "secret", 4, []));
 
         var wrong = Act(guest, directory => directory.Unlock(made["world"], 4, "Secret"));
         Assert.Equal("failed", wrong["state"]);
@@ -81,7 +83,7 @@ public sealed class WorldDirectoryTests
         using var relay = new TestRelay();
         var creator = NewDirectory(relay, CreatorKey, "Creator");
         var guest = NewDirectory(relay, PlayerKey(2), "Guest");
-        var made = Act(creator, directory => directory.Create("Iliasburg Crew", "secret", 4));
+        var made = Act(creator, directory => directory.Create("Iliasburg Crew", "secret", 4, []));
 
         Assert.Contains("creator", Act(guest, directory => directory.Delete(made["world"]))["error"]);
         Assert.Equal("done", Act(creator, directory => directory.Delete(made["world"]))["state"]);
@@ -98,8 +100,67 @@ public sealed class WorldDirectoryTests
         var nobody = new WorldDirectory { RelayAddress = _ => relay.Address, Iterations = 1_000, Playing = () => null };
         var lost = new WorldDirectory { RelayAddress = _ => null, Iterations = 1_000, Playing = () => (CreatorKey, "Creator") };
 
-        Assert.Contains("who plays", Act(nobody, directory => directory.Create("World", "secret", 4))["error"]);
-        Assert.Contains("unknown", Act(lost, directory => directory.Create("World", "secret", 4))["error"]);
+        Assert.Contains("who plays", Act(nobody, directory => directory.Create("World", "secret", 4, []))["error"]);
+        Assert.Contains("unknown", Act(lost, directory => directory.Create("World", "secret", 4, []))["error"]);
+    }
+
+    /// <summary>
+    /// Asserts that a world made with a starting save lists it as ready, and that a player who
+    /// opened the world with its password fetches the creator's files as they were.
+    /// </summary>
+    [Fact]
+    public void Create_WithStartingSave_HandsItToPlayers()
+    {
+        using var relay = new TestRelay();
+        using var folder = new TempFolder();
+        var save = folder.Write("Save05.rvdata2", 50_000);
+        var system = folder.Write("SystemSave.rvdata2", 2_000);
+        var creator = NewDirectory(relay, CreatorKey, "Creator");
+        var guest = NewDirectory(relay, PlayerKey(2), "Guest");
+
+        var made = Act(creator, directory => directory.Create("Iliasburg Crew", "secret", 4, [("Save01.rvdata2", save), ("SystemSave.rvdata2", system)]));
+        Assert.Equal("done", made["state"]);
+        Assert.Contains(List(creator), line => line.StartsWith($"world\t{made["world"]}\t") && line.EndsWith("\tready"));
+
+        var opened = Act(guest, directory => directory.Unlock(made["world"], 4, "secret"));
+        var target = Path.Combine(folder.Path, "World", "Save");
+        var fetched = Act(guest, directory => directory.FetchStart(opened["code"], target));
+
+        Assert.Equal("done", fetched["state"]);
+        Assert.Equal(File.ReadAllBytes(save), File.ReadAllBytes(Path.Combine(target, "Save01.rvdata2")));
+        Assert.Equal(File.ReadAllBytes(system), File.ReadAllBytes(Path.Combine(target, "SystemSave.rvdata2")));
+    }
+
+    /// <summary>
+    /// Asserts that a starting save that cannot be read fails with a reason and leaves no world behind.
+    /// </summary>
+    [Fact]
+    public void Create_WithUnreadableSave_MakesNoWorld()
+    {
+        using var relay = new TestRelay();
+        using var folder = new TempFolder();
+        var creator = NewDirectory(relay, CreatorKey, "Creator");
+
+        var made = Act(creator, directory => directory.Create("World", "secret", 4, [("Save01.rvdata2", Path.Combine(folder.Path, "missing.rvdata2"))]));
+
+        Assert.Equal("failed", made["state"]);
+        Assert.Contains("could not be read", made["error"]);
+        Assert.Empty(List(creator));
+    }
+
+    /// <summary>
+    /// Asserts that fetching the starting save of a world without one fails with a reason.
+    /// </summary>
+    [Fact]
+    public void FetchStart_WithoutStartingSave_Fails()
+    {
+        using var relay = new TestRelay();
+        using var folder = new TempFolder();
+        var creator = NewDirectory(relay, CreatorKey, "Creator");
+        var made = Act(creator, directory => directory.Create("World", "secret", 4, []));
+
+        Assert.Contains(List(creator), line => line.EndsWith("\tnone"));
+        Assert.Equal("failed", Act(creator, directory => directory.FetchStart(made["code"], folder.Path))["state"]);
     }
 
     /// <summary>

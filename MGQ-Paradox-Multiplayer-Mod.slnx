@@ -9,6 +9,7 @@
     <File Path="GameScript/mp_events.rb" />
     <File Path="GameScript/mp_npcs.rb" />
     <File Path="GameScript/mp_overworld.rb" />
+    <File Path="GameScript/mp_save_distribution.rb" />
     <File Path="GameScript/mp_story.rb" />
     <File Path="GameScript/mp_sync.rb" />
     <File Path="GameScript/mp_world.rb" />

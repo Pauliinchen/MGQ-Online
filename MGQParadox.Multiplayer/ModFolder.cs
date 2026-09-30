@@ -2,6 +2,7 @@
 //  ModFolder.cs
 //
 //  Changelog:
+//      Paulinchen  2026-09-30: Built paths the game script names relative to the game's folder
 //      Paulinchen  2026-09-28: Created
 //
 //----------------------------------------------------------------
@@ -33,6 +34,13 @@ internal static class ModFolder
     /// <param name="fileName">The name of the file.</param>
     /// <returns>The full path of the file.</returns>
     public static string PathOf(string fileName) => Path.Combine(Root, fileName);
+
+    /// <summary>
+    /// Builds the path of a file the game script names relative to the game's folder, the folder above this one.
+    /// </summary>
+    /// <param name="path">The path, relative to the game's folder or full.</param>
+    /// <returns>The full path.</returns>
+    public static string GamePathOf(string path) => Path.GetFullPath(Path.Combine(Path.GetDirectoryName(Root) ?? Root, path));
 
     /// <summary>
     /// Removes a trailing separator from a folder path.

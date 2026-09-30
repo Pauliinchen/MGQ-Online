@@ -2,6 +2,7 @@
 //  DirectoryClient.cs
 //
 //  Changelog:
+//      Paulinchen  2026-09-30: Uploaded and downloaded a world's starting save, and read which worlds have one
 //      Paulinchen  2026-09-29: Created
 //
 //----------------------------------------------------------------
@@ -31,9 +32,19 @@ internal sealed class DirectoryClient
     private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(15);
 
     /// <summary>
+    /// How long uploading or downloading a starting save may take, on a slow line too.
+    /// </summary>
+    private static readonly TimeSpan TransferTimeout = TimeSpan.FromMinutes(3);
+
+    /// <summary>
     /// Sends the requests, shared by every client.
     /// </summary>
     private static readonly HttpClient Http = new() { Timeout = RequestTimeout };
+
+    /// <summary>
+    /// Sends the starting saves, which take longer than the other requests.
+    /// </summary>
+    private static readonly HttpClient TransferHttp = new() { Timeout = TransferTimeout };
 
     /// <summary>
     /// The directory's address, /v1/worlds at the relay.
@@ -78,6 +89,7 @@ internal sealed class DirectoryClient
                 creator.GetProperty("name").GetString() ?? "?",
                 world.GetProperty("online").GetInt32(),
                 world.GetProperty("active").GetInt64(),
+                world.TryGetProperty("start", out var start) ? start.GetString() ?? "none" : "none",
                 members));
         }
 
@@ -107,8 +119,9 @@ internal sealed class DirectoryClient
     /// <param name="playerName">The creator's name.</param>
     /// <param name="authHash">The hash of the world's auth key.</param>
     /// <param name="worldLock">The world's locked token.</param>
+    /// <param name="start">Whether a starting save follows, which keeps everyone out until it arrived.</param>
     /// <exception cref="DirectoryException">The directory could not be reached or refused the world.</exception>
-    public void Create(string id, string name, int seats, string playerKey, string playerName, string authHash, WorldLock worldLock)
+    public void Create(string id, string name, int seats, string playerKey, string playerName, string authHash, WorldLock worldLock, bool start)
     {
         var body = Json(writer =>
         {
@@ -123,9 +136,52 @@ internal sealed class DirectoryClient
             writer.WriteNumber("iterations", worldLock.Iterations);
             writer.WriteString("box", worldLock.Box);
             writer.WriteEndObject();
+            writer.WriteBoolean("start", start);
         });
 
         using var _ = Send(HttpMethod.Post, _worlds, body);
+    }
+
+    /// <summary>
+    /// Uploads a world's starting save, which only its creator may, once.
+    /// </summary>
+    /// <param name="id">The world.</param>
+    /// <param name="playerKey">The creator's key.</param>
+    /// <param name="box">The starting save, see <see cref="StartingSave.Seal"/>.</param>
+    /// <exception cref="DirectoryException">The directory could not be reached or refused.</exception>
+    public void PutStart(string id, string playerKey, byte[] box)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, WorldAddress(id, $"start?player={Uri.EscapeDataString(playerKey)}"))
+        {
+            Content = new ByteArrayContent(box),
+        };
+
+        using var response = Exchange(request, TransferHttp);
+        ThrowUnlessSuccess(response);
+    }
+
+    /// <summary>
+    /// Downloads a world's starting save, which only its players may.
+    /// </summary>
+    /// <param name="id">The world.</param>
+    /// <param name="playerKey">The player's key.</param>
+    /// <param name="authKey">The auth key made from the world's token.</param>
+    /// <returns>The starting save as the creator uploaded it.</returns>
+    /// <exception cref="DirectoryException">The directory could not be reached, the world has no starting save, or the player may not have it.</exception>
+    public byte[] GetStart(string id, string playerKey, string authKey)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, WorldAddress(id, $"start?player={Uri.EscapeDataString(playerKey)}&auth={Uri.EscapeDataString(authKey)}"));
+        using var response = Exchange(request, TransferHttp);
+        ThrowUnlessSuccess(response);
+
+        try
+        {
+            return response.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult();
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or IOException)
+        {
+            throw new DirectoryException(null, ex.GetBaseException().Message);
+        }
     }
 
     /// <summary>
@@ -180,41 +236,66 @@ internal sealed class DirectoryClient
             request.Content = new StringContent(body, Encoding.UTF8, "application/json");
         }
 
-        HttpResponseMessage response;
+        using var response = Exchange(request, Http);
+        ThrowUnlessSuccess(response);
 
         try
         {
-            response = Http.Send(request);
+            return JsonDocument.Parse(response.Content.ReadAsStream());
+        }
+        catch (JsonException)
+        {
+            throw new DirectoryException(response.StatusCode, "The relay's answer is no JSON.");
+        }
+    }
+
+    /// <summary>
+    /// Sends a request.
+    /// </summary>
+    /// <param name="request">The request.</param>
+    /// <param name="http">The client to send it with.</param>
+    /// <returns>The answer, which the caller disposes.</returns>
+    /// <exception cref="DirectoryException">The directory could not be reached.</exception>
+    private static HttpResponseMessage Exchange(HttpRequestMessage request, HttpClient http)
+    {
+        try
+        {
+            return http.Send(request);
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or IOException)
         {
             throw new DirectoryException(null, ex.GetBaseException().Message);
         }
+    }
 
-        using (response)
+    /// <summary>
+    /// Turns an error answer into an exception with the directory's reason.
+    /// </summary>
+    /// <param name="response">The answer.</param>
+    /// <exception cref="DirectoryException">The answer is an error.</exception>
+    private static void ThrowUnlessSuccess(HttpResponseMessage response)
+    {
+        if (response.IsSuccessStatusCode)
         {
-            using var stream = response.Content.ReadAsStream();
-            JsonDocument? document = null;
-
-            try
-            {
-                document = JsonDocument.Parse(stream);
-            }
-            catch (JsonException)
-            {
-            }
-
-            if (response.IsSuccessStatusCode && document != null)
-            {
-                return document;
-            }
-
-            var error = document != null && document.RootElement.ValueKind == JsonValueKind.Object && document.RootElement.TryGetProperty("error", out var reason)
-                ? reason.GetString()
-                : null;
-            document?.Dispose();
-            throw new DirectoryException(response.StatusCode, error ?? $"HTTP {(int)response.StatusCode}");
+            return;
         }
+
+        string? error = null;
+
+        try
+        {
+            using var document = JsonDocument.Parse(response.Content.ReadAsStream());
+
+            if (document.RootElement.ValueKind == JsonValueKind.Object && document.RootElement.TryGetProperty("error", out var reason))
+            {
+                error = reason.GetString();
+            }
+        }
+        catch (Exception ex) when (ex is JsonException or IOException or HttpRequestException)
+        {
+        }
+
+        throw new DirectoryException(response.StatusCode, error ?? $"HTTP {(int)response.StatusCode}");
     }
 
     /// <summary>
@@ -260,8 +341,9 @@ internal sealed class DirectoryException(HttpStatusCode? status, string reason) 
 /// <param name="CreatorName">The creator's name.</param>
 /// <param name="Online">How many players are in it now.</param>
 /// <param name="Active">When someone was last in it, in milliseconds since 1970.</param>
+/// <param name="Start">How far it is with its starting save: "none", "pending" or "ready".</param>
 /// <param name="Members">Everyone who ever joined it.</param>
-internal sealed record ListedWorld(string Id, string Name, int Seats, string CreatorId, string CreatorName, int Online, long Active, IReadOnlyList<ListedMember> Members);
+internal sealed record ListedWorld(string Id, string Name, int Seats, string CreatorId, string CreatorName, int Online, long Active, string Start, IReadOnlyList<ListedMember> Members);
 
 /// <summary>
 /// A player of a world, as the directory lists them.

@@ -49,6 +49,7 @@ like this:
    Patch\mp_events.rb
    Patch\mp_npcs.rb
    Patch\mp_overworld.rb
+   Patch\mp_save_distribution.rb
    Patch\mp_story.rb
    Patch\mp_sync.rb
    Patch\mp_world.rb
@@ -107,7 +108,10 @@ game's letters appear.
   chosen world, how many of its players are online, and everyone who
   ever joined it.
 - New world: give it a name, a password, and how many players it seats
-  at once, 2 to 32. Then it starts at the opening.
+  at once, 2 to 32. Then choose where its players start: at the opening,
+  or from one of your own saves, with your party, items, story and
+  Library. This cannot be changed later. Every new player of the world
+  starts there; a save that needs a mod they lack tells them which.
 - Enter a world: the first time, type its password; your game remembers
   it after that. A world you have saves in loads your latest one.
 - Its creator can remove a player or delete the world for everyone.
@@ -190,7 +194,7 @@ UNINSTALL
 ---------
 Close the game and delete Patch\Multiplayer.rb, Patch\mp_actions.rb,
 Patch\mp_actors.rb, Patch\mp_async.rb, Patch\mp_battles.rb, Patch\mp_coop.rb, Patch\mp_events.rb, Patch\mp_npcs.rb,
-Patch\mp_overworld.rb, Patch\mp_story.rb, Patch\mp_sync.rb,
+Patch\mp_overworld.rb, Patch\mp_save_distribution.rb, Patch\mp_story.rb, Patch\mp_sync.rb,
 Patch\mp_world.rb, Patch\pvp_battle.rb and the Multiplayer folder. The Multiplayer folder also holds your worlds, so
 keep Multiplayer\Worlds if you want to play them again later.
 The mod loader stays for your other mods.

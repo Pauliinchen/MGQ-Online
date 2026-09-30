@@ -28,6 +28,7 @@ Patch\mp_coop.rb
 Patch\mp_events.rb
 Patch\mp_npcs.rb
 Patch\mp_overworld.rb
+Patch\mp_save_distribution.rb
 Patch\mp_story.rb
 Patch\mp_sync.rb
 Patch\mp_world.rb

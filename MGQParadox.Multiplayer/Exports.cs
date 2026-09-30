@@ -2,6 +2,7 @@
 //  Exports.cs
 //
 //  Changelog:
+//      Paulinchen  2026-09-30: Took a starting save in mp_dir_create, and added mp_dir_fetch_start, which fetches it for new players
 //      Paulinchen  2026-09-29: Added mp_set_player, mp_player_id, the mp_dir_* functions of the world directory and the keyboard's mp_typing and mp_take_typed, dropping the world code functions the directory replaces
 //                            - Added mp_new_id, which hands out a random id for the player
 //                            - Added the mp_world_* functions for entering a world and passing messages there
@@ -15,6 +16,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
@@ -440,23 +442,45 @@ internal static unsafe class Exports
     }
 
     /// <summary>
-    /// Makes a world, locked with its password, in the directory. Returns at once; the world code
-    /// follows in <c>mp_dir_action</c>.
+    /// Makes a world, locked with its password, in the directory, with the starting save new
+    /// players get, if there is one. Returns at once; the world code follows in <c>mp_dir_action</c>.
     /// </summary>
     /// <param name="name">The world's name, UTF-8 and null-terminated.</param>
     /// <param name="password">The password others enter it with, UTF-8 and null-terminated.</param>
     /// <param name="seats">How many games it seats at once, 2 to 32.</param>
+    /// <param name="start">The starting save's files, UTF-8 and null-terminated: one line each, the name new players get it under, <c>=</c>, and where it is read from, relative to the game's folder; empty for none.</param>
     /// <returns>1 when started, 0 while another action runs, for seats out of range or when it failed.</returns>
     [UnmanagedCallersOnly(EntryPoint = "mp_dir_create", CallConvs = [typeof(CallConvStdcall)])]
-    public static int DirectoryCreate(byte* name, byte* password, int seats)
+    public static int DirectoryCreate(byte* name, byte* password, int seats, byte* start)
     {
         try
         {
-            return seats is >= WorldCode.MinSeats and <= WorldCode.MaxSeats && WorldDirectory.Current.Create(Text(name), Text(password), seats) ? 1 : 0;
+            return seats is >= WorldCode.MinSeats and <= WorldCode.MaxSeats && WorldDirectory.Current.Create(Text(name), Text(password), seats, StartFiles(Text(start))) ? 1 : 0;
         }
         catch (Exception ex)
         {
             Log.Write($"mp_dir_create failed: {ex}");
+            return 0;
+        }
+    }
+
+    /// <summary>
+    /// Fetches a world's starting save and writes its files into a folder. Returns at once; how
+    /// it went follows in <c>mp_dir_action</c>.
+    /// </summary>
+    /// <param name="code">The world code, UTF-8 and null-terminated.</param>
+    /// <param name="folder">The folder, relative to the game's folder, UTF-8 and null-terminated.</param>
+    /// <returns>1 when started, 0 while another action runs or when it failed.</returns>
+    [UnmanagedCallersOnly(EntryPoint = "mp_dir_fetch_start", CallConvs = [typeof(CallConvStdcall)])]
+    public static int DirectoryFetchStart(byte* code, byte* folder)
+    {
+        try
+        {
+            return WorldDirectory.Current.FetchStart(Text(code), Text(folder)) ? 1 : 0;
+        }
+        catch (Exception ex)
+        {
+            Log.Write($"mp_dir_fetch_start failed: {ex}");
             return 0;
         }
     }
@@ -738,4 +762,16 @@ internal static unsafe class Exports
     /// <param name="text">The text, UTF-8 and null-terminated.</param>
     /// <returns>The text, empty for a null pointer.</returns>
     private static string Text(byte* text) => Marshal.PtrToStringUTF8((nint)text) ?? string.Empty;
+
+    /// <summary>
+    /// Reads the files of a starting save as the game script lists them.
+    /// </summary>
+    /// <param name="text">One line per file: its name in the starting save, <c>=</c>, and where it is read from.</param>
+    /// <returns>The files, empty for none.</returns>
+    private static List<(string Name, string Path)> StartFiles(string text) =>
+        text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(line => line.Split('=', 2))
+            .Where(parts => parts.Length == 2)
+            .Select(parts => (parts[0], parts[1]))
+            .ToList();
 }

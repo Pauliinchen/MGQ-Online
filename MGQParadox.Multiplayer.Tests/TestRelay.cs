@@ -2,6 +2,7 @@
 //  TestRelay.cs
 //
 //  Changelog:
+//      Paulinchen  2026-09-30: Kept a world's starting save, uploaded once by its creator and handed to its players
 //      Paulinchen  2026-09-29: Kept a world directory, and seated only its players, closing those the creator removes or deletes the world of
 //                            - Seated games in world rooms, and cut them on request
 //                            - Created
@@ -288,11 +289,15 @@ internal sealed class TestRelay : IDisposable
     private async Task ServeDirectoryAsync(HttpListenerContext context, string[] parts)
     {
         var method = context.Request.HttpMethod;
-        using var reader = new StreamReader(context.Request.InputStream, Encoding.UTF8);
-        var body = method == "POST" ? JsonNode.Parse(await reader.ReadToEndAsync()) : null;
+        var query = context.Request.QueryString;
+        using var raw = new MemoryStream();
+        await context.Request.InputStream.CopyToAsync(raw);
+        var upload = raw.ToArray();
+        var body = method == "POST" && parts is not [.., "start"] ? JsonNode.Parse(upload) : null;
         List<Peer> toClose = [];
         var closeCode = 0;
         (int Status, JsonNode Body) answer;
+        byte[]? download = null;
 
         lock (_gate)
         {
@@ -301,8 +306,10 @@ internal sealed class TestRelay : IDisposable
                 ["v1", "worlds"] when method == "GET" => (200, new JsonObject { ["worlds"] = new JsonArray(_directory.Select(entry => ListedWorld(entry.Key, entry.Value)).ToArray()) }),
                 ["v1", "worlds"] when method == "POST" => Create(body!),
                 ["v1", "worlds", var id, "lock"] when _directory.TryGetValue(id, out var world) => (200, world.Lock.DeepClone()),
-                ["v1", "worlds", var id, "delete"] when CreatorOf(id, body) is { } world => Delete(id, toClose, out closeCode),
-                ["v1", "worlds", var id, "ban"] when CreatorOf(id, body) is { } world => Ban(id, world, body!["target"]!.GetValue<string>(), toClose, out closeCode),
+                ["v1", "worlds", var id, "delete"] when CreatorOf(id, body?["player"]?.GetValue<string>()) is { } world => Delete(id, toClose, out closeCode),
+                ["v1", "worlds", var id, "ban"] when CreatorOf(id, body?["player"]?.GetValue<string>()) is { } world => Ban(id, world, body!["target"]!.GetValue<string>(), toClose, out closeCode),
+                ["v1", "worlds", var id, "start"] when method == "POST" && CreatorOf(id, query["player"]) is { } world => PutStart(world, upload),
+                ["v1", "worlds", var id, "start"] when method == "GET" && _directory.TryGetValue(id, out var world) => GetStart(world, query["player"], query["auth"], out download),
                 ["v1", "worlds", var id, _] when _directory.ContainsKey(id) => (403, Error("only the world's creator may do this")),
                 _ => (404, Error("there is no such world")),
             };
@@ -313,11 +320,55 @@ internal sealed class TestRelay : IDisposable
             await peer.CloseAsync(closeCode);
         }
 
-        var bytes = Encoding.UTF8.GetBytes(answer.Body.ToJsonString());
+        var bytes = download ?? Encoding.UTF8.GetBytes(answer.Body.ToJsonString());
         context.Response.StatusCode = answer.Status;
-        context.Response.ContentType = "application/json";
+        context.Response.ContentType = download != null ? "application/octet-stream" : "application/json";
         await context.Response.OutputStream.WriteAsync(bytes);
         context.Response.Close();
+    }
+
+    /// <summary>
+    /// Keeps a world's starting save, once. Called with the gate held.
+    /// </summary>
+    /// <param name="world">The world's entry.</param>
+    /// <param name="bytes">The starting save.</param>
+    /// <returns>The answer.</returns>
+    private static (int, JsonNode) PutStart(DirectoryWorld world, byte[] bytes)
+    {
+        if (world.Start != "pending")
+        {
+            return (409, Error("the world takes no starting save"));
+        }
+
+        world.StartBytes = bytes;
+        world.Start = "ready";
+        return (200, new JsonObject { ["bytes"] = bytes.Length });
+    }
+
+    /// <summary>
+    /// Hands a world's starting save to one of its players. Called with the gate held.
+    /// </summary>
+    /// <param name="world">The world's entry.</param>
+    /// <param name="key">The player's key.</param>
+    /// <param name="auth">The auth key.</param>
+    /// <param name="download">Receives the starting save, <see langword="null"/> when refused.</param>
+    /// <returns>The answer.</returns>
+    private static (int, JsonNode) GetStart(DirectoryWorld world, string? key, string? auth, out byte[]? download)
+    {
+        download = null;
+
+        if (Hash(auth ?? string.Empty) != world.AuthHash)
+        {
+            return (401, Error("the world's token does not match"));
+        }
+
+        if (world.Bans.Contains(PlayerIdOf(key ?? string.Empty)))
+        {
+            return (403, Error("the creator removed this player from the world"));
+        }
+
+        download = world.StartBytes;
+        return download != null ? (200, new JsonObject()) : (404, Error("the world has no starting save"));
     }
 
     /// <summary>
@@ -340,6 +391,7 @@ internal sealed class TestRelay : IDisposable
             body["name"]!.GetValue<string>(), body["seats"]!.GetValue<int>(), creator, creatorName, body["authHash"]!.GetValue<string>(), body["lock"]!.DeepClone())
         {
             Members = { [creator] = creatorName },
+            Start = body["start"]?.GetValue<bool>() == true ? "pending" : "none",
         };
 
         return (201, new JsonObject { ["id"] = id });
@@ -382,10 +434,10 @@ internal sealed class TestRelay : IDisposable
     /// Finds a world whose creator's key a request carries. Called with the gate held.
     /// </summary>
     /// <param name="id">The world.</param>
-    /// <param name="body">The request's body.</param>
+    /// <param name="key">The key the request carries.</param>
     /// <returns>The world, or <see langword="null"/> when there is none or the key is not the creator's.</returns>
-    private DirectoryWorld? CreatorOf(string id, JsonNode? body) =>
-        _directory.TryGetValue(id, out var world) && body?["player"]?.GetValue<string>() is { } key && PlayerIdOf(key) == world.CreatorId ? world : null;
+    private DirectoryWorld? CreatorOf(string id, string? key) =>
+        _directory.TryGetValue(id, out var world) && key != null && PlayerIdOf(key) == world.CreatorId ? world : null;
 
     /// <summary>
     /// Writes a world as the directory lists it. Called with the gate held.
@@ -404,6 +456,7 @@ internal sealed class TestRelay : IDisposable
             ["name"] = world.Name,
             ["seats"] = world.Seats,
             ["creator"] = new JsonObject { ["id"] = world.CreatorId, ["name"] = world.CreatorName },
+            ["start"] = world.Start,
             ["online"] = online.Count,
             ["created"] = 0,
             ["active"] = 0,
@@ -441,6 +494,12 @@ internal sealed class TestRelay : IDisposable
             if (world.Bans.Contains(playerId))
             {
                 Refuse(context, 403);
+                return;
+            }
+
+            if (world.Start == "pending")
+            {
+                Refuse(context, 409);
                 return;
             }
 
@@ -753,5 +812,15 @@ internal sealed class TestRelay : IDisposable
         /// The ids of the players the creator removed.
         /// </summary>
         public HashSet<string> Bans { get; } = [];
+
+        /// <summary>
+        /// How far it is with its starting save: "none", "pending" or "ready".
+        /// </summary>
+        public string Start { get; set; } = "none";
+
+        /// <summary>
+        /// Its starting save, <see langword="null"/> before its creator uploaded one.
+        /// </summary>
+        public byte[]? StartBytes { get; set; }
     }
 }

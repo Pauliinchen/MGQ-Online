@@ -2,6 +2,7 @@
 #  mp_world.rb
 #
 #  Changelog:
+#      Paulinchen  2026-09-30: Let the creator pick one of their saves as the starting save of a new world, which new players fetch before entering it
 #      Paulinchen  2026-09-29: Listed the relay's worlds with their players, favourites first, entered with a password once and typed names on the keyboard
 #                            - Let the creator delete a world or remove a player, and connected to a world while it is open
 #      Paulinchen  2026-09-29: Created
@@ -12,7 +13,8 @@
 # title screen. The relay's world directory lists every world with its players; a world's password
 # is asked once, after which this game remembers the world. Each world keeps its own saves and its
 # own system save (Library, medals, system switches, affection) in Multiplayer/Worlds/<id>, so
-# playing in a world never touches the player's own saves.
+# playing in a world never touches the player's own saves. A new world's players start at the
+# beginning, or from one of its creator's saves (mp_save_distribution.rb).
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpWorld
@@ -270,8 +272,9 @@ module MGQ_MpWorld
     # @!attribute active [Integer] When someone was last in it, in milliseconds since 1970.
     # @!attribute creator_name [String] The creator's name.
     # @!attribute name [String] The world's name.
+    # @!attribute start [String] How far it is with its starting save: "none", "pending" or "ready".
     # @!attribute members [Array<Member>] Everyone who ever joined it, those online first.
-    ListedWorld = Struct.new(:id, :seats, :online, :creator_id, :active, :creator_name, :name, :members)
+    ListedWorld = Struct.new(:id, :seats, :online, :creator_id, :active, :creator_name, :name, :start, :members)
 
     # A player of a world.
     #
@@ -300,7 +303,7 @@ module MGQ_MpWorld
 
         case fields[0]
         when "world"
-          worlds.push(ListedWorld.new(fields[1], fields[2].to_i, fields[3].to_i, fields[4], fields[5].to_i, fields[6].to_s, fields[7].to_s, []))
+          worlds.push(ListedWorld.new(fields[1], fields[2].to_i, fields[3].to_i, fields[4], fields[5].to_i, fields[6].to_s, fields[7].to_s, fields[8] || "none", []))
         when "member"
           worlds.last.members.push(Member.new(fields[1], fields[2] == "1", fields[3].to_s)) if worlds.last
         end
@@ -309,15 +312,16 @@ module MGQ_MpWorld
       [state["state"] || "idle", state["error"], worlds]
     end
 
-    # Makes a world, locked with its password.
+    # Makes a world, locked with its password, with the starting save new players get, if there is one.
     #
     # @param name [String] The world's name.
     # @param password [String] The password.
     # @param seats [Integer] How many players it seats at once.
+    # @param start [String] The starting save's files, see MGQ_MpSaveDistribution.text_of; empty for none.
     # @return [Boolean] Whether the action started.
-    def self.create(name, password, seats)
+    def self.create(name, password, seats, start)
       MGQ_Multiplayer::Player.share
-      MGQ_Multiplayer::Link.function('mp_dir_create', 'ppl').call(name + "\0", password + "\0", seats) == 1
+      MGQ_Multiplayer::Link.function('mp_dir_create', 'pplp').call(name + "\0", password + "\0", seats, start + "\0") == 1
     end
 
     # Opens a world's lock with its password.
@@ -665,6 +669,7 @@ class Scene_MpWorlds < Scene_MenuBase
     "unlock" => "Opening the world with its password . . .",
     "delete" => "Deleting the world . . .",
     "ban" => "Removing the player . . .",
+    "start" => "Fetching the starting save . . .",
   }
 
   # Creates the windows, fetches the list, and takes what the text screen handed back.
@@ -689,6 +694,10 @@ class Scene_MpWorlds < Scene_MenuBase
     @seats_window = Window_MpSeats.new
     @seats_window.set_handler(:ok, method(:on_seats))
     @seats_window.set_handler(:cancel, method(:back_to_list))
+    @start_window = Window_MpChoice.new
+    @start_window.set_handler(:from_beginning, method(:on_from_beginning))
+    @start_window.set_handler(:from_save, method(:on_from_save))
+    @start_window.set_handler(:cancel, method(:on_start_cancel))
     @message ||= HINT
     @me = MGQ_MpWorld::Directory.my_id
     MGQ_MpWorld::Directory.refresh
@@ -696,6 +705,7 @@ class Scene_MpWorlds < Scene_MenuBase
     @look_frames = LOOK_FRAMES
     look_at_list
     take_text_result
+    take_start_save
     show_info
   end
 
@@ -781,9 +791,13 @@ class Scene_MpWorlds < Scene_MenuBase
 
   # Enters the chosen world, asking for its password the first time.
   def on_enter
-    if @entry.local
+    if @entry.listed && @entry.listed.start == "pending"
+      Sound.play_buzzer
+      say("#{@entry.name} is still being set up by its creator. Try again in a moment.")
+      back_to_list
+    elsif @entry.local
       @entry.local.describe(@entry.listed.name, @entry.listed.id) if @entry.listed
-      enter(@entry.local)
+      enter(@entry.local, @entry.listed)
     elsif @entry.listed.online >= @entry.listed.seats
       Sound.play_buzzer
       say("#{@entry.name} is full right now.")
@@ -847,12 +861,58 @@ class Scene_MpWorlds < Scene_MenuBase
     ask_text(:player_name, "Your name, which the others see", MGQ_Multiplayer::Player.name.to_s, false, MGQ_MpWorld::MAX_NAME_CHARS)
   end
 
-  # Makes the new world with the chosen seats.
+  # Takes the chosen seats and asks where the new world's players start.
   def on_seats
+    @new_world[:seats] = @seats_window.seats
+    @seats_window.finish
+    ask_start
+  end
+
+  # Asks where the new world's players start.
+  def ask_start
+    @list_window.deactivate
+    say("Where do the players of #{@new_world[:name]} start? It cannot be changed later.")
+    @start_window.start([["At the beginning", :from_beginning], ["From one of my saves", :from_save], ["Back", :cancel]])
+  end
+
+  # Makes the new world, whose players start at the beginning.
+  def on_from_beginning
+    create_world([])
+  end
+
+  # Opens the save screen to pick the new world's starting save.
+  def on_from_save
+    close_popups
+    @choosing_start = true
+    MGQ_MpSaveDistribution.choose
+  end
+
+  # Gives up the new world before it was made.
+  def on_start_cancel
+    @new_world = nil
+    say(HINT)
+    back_to_list
+  end
+
+  # Makes the new world from the save picked on the save screen, or asks again where its players
+  # start when the player left the save screen without one. Called as the world screen starts again.
+  def take_start_save
+    return unless @choosing_start
+
+    @choosing_start = false
+    index = MGQ_MpSaveDistribution.take_chosen
+    index ? create_world(MGQ_MpSaveDistribution.files_of(index)) : ask_start
+  end
+
+  # Makes the new world.
+  #
+  # @param files [Array<Array<String>>] The starting save's files, see MGQ_MpSaveDistribution.files_of; empty for none.
+  def create_world(files)
     world = @new_world
     @new_world = nil
     @creating = world[:name]
-    start_action("create") { MGQ_MpWorld::Directory.create(world[:name], world[:password], @seats_window.seats) }
+    @start_files = files
+    start_action("create") { MGQ_MpWorld::Directory.create(world[:name], world[:password], world[:seats], MGQ_MpSaveDistribution.text_of(files)) }
   end
 
   # Starts a directory action and waits for it, the input held meanwhile.
@@ -888,12 +948,25 @@ class Scene_MpWorlds < Scene_MenuBase
     end
 
     case kind
-    when "create", "unlock"
-      name = kind == "create" ? @creating : @entry.name
-      world = MGQ_MpWorld::World.found(action["code"], name, action["world"])
-      return enter(world) if world
+    when "create"
+      world = MGQ_MpWorld::World.found(action["code"], @creating, action["world"])
+
+      if world && (@start_files.empty? || MGQ_MpSaveDistribution.place(world, @start_files))
+        return enter(world, nil)
+      end
+
+      say(world ? "Your save could not be copied into #{@creating}." : "The world's folder could not be made.")
+    when "unlock"
+      world = MGQ_MpWorld::World.found(action["code"], @entry.name, action["world"])
+      return enter(world, @entry.listed) if world
 
       say("The world's folder could not be made.")
+    when "start"
+      error = MGQ_MpSaveDistribution.check(@fetched)
+      return enter(@fetched, nil) unless error
+
+      Sound.play_buzzer
+      say(error)
     when "delete"
       say("#{@entry.name} was deleted for everyone.")
     when "ban"
@@ -904,10 +977,17 @@ class Scene_MpWorlds < Scene_MenuBase
     back_to_list
   end
 
-  # Enters a world, or says why it cannot.
+  # Enters a world, first fetching its starting save when this PC has no save of it yet, or says
+  # why it cannot.
   #
   # @param world [MGQ_MpWorld::World] The world.
-  def enter(world)
+  # @param listed [MGQ_MpWorld::Directory::ListedWorld, nil] The world in the directory, nil when its starting save needs no fetching.
+  def enter(world, listed)
+    if MGQ_MpSaveDistribution.fetch?(world, listed)
+      @fetched = world
+      return start_action("start") { MGQ_MpSaveDistribution.fetch(world) }
+    end
+
     error = MGQ_MpWorld.start(world, self)
     return unless error
 
@@ -948,7 +1028,7 @@ class Scene_MpWorlds < Scene_MenuBase
 
   # Closes the small windows.
   def close_popups
-    [@actions_window, @members_window, @confirm_window, @seats_window].each { |window| window.finish }
+    [@actions_window, @members_window, @confirm_window, @seats_window, @start_window].each { |window| window.finish }
   end
 
   # Says something in the lines at the top.
@@ -1191,6 +1271,12 @@ end
 # The chosen world's details at the right of the world screen: who made it, who is online, and
 # everyone who ever joined.
 class Window_MpWorldDetail < Window_Base
+  # What the window says about a world's starting save, by how far the world is with it.
+  START_TEXTS = {
+    "pending" => "Its creator is still uploading its starting save.",
+    "ready" => "New players start from its creator's save.",
+  }
+
   # Creates the window beside the list.
   #
   # @param x [Integer] The left edge.
@@ -1219,6 +1305,7 @@ class Window_MpWorldDetail < Window_Base
     if listed
       lines.push(["Made by #{listed.creator_id == me ? 'you' : listed.creator_name}", normal_color])
       lines.push(["#{listed.online} of #{listed.seats} players online", normal_color])
+      lines.push([START_TEXTS[listed.start], normal_color]) if START_TEXTS[listed.start]
     elsif entry.gone
       lines.push(["Only on this PC: its creator deleted it, or it is from before the list.", normal_color])
     else
