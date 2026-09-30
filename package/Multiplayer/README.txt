@@ -150,7 +150,9 @@ who made the party. Your own party, your companions and their affection
 stay yours, and your saves keep your own story. When you leave the
 party, you are back in your own story. Chests are everyone's own: when
 a party member opens one, everyone in the party who has not looted it
-yet gets the same items.
+yet gets the same items. The party travels together: when the player
+who made the party goes to another map, everyone follows, and when a
+story scene starts there, everyone on that map is brought to them.
 
 
 CONNECTION

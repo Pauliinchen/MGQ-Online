@@ -2,7 +2,8 @@
 #  mp_overworld.rb
 #
 #  Changelog:
-#      Paulinchen  2026-09-30: Handed chest messages to mp_events.rb
+#      Paulinchen  2026-09-30: Handed party event messages to mp_events.rb
+#                            - Handed chest messages to mp_events.rb
 #                            - Handed story messages to mp_story.rb, routing scripts' messages through one table
 #                            - Told when the player entered their map, and handed NPC messages to mp_npcs.rb
 #      Paulinchen  2026-09-29: Told the others while the player types in the chat
@@ -116,7 +117,7 @@ module MGQ_MpOverworld
   # The scripts that take messages of their own, when they are installed.
   module Routes
     # The script each message goes to, by the field that marks it.
-    SCRIPTS = { "npcs" => :MGQ_MpNpcs, "story" => :MGQ_MpStory, "chest" => :MGQ_MpEvents }
+    SCRIPTS = { "npcs" => :MGQ_MpNpcs, "story" => :MGQ_MpStory, "chest" => :MGQ_MpEvents, "pevent" => :MGQ_MpEvents }
 
     # Hands a message to the script it is for.
     #

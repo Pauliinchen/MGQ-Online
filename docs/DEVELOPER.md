@@ -205,6 +205,12 @@ Over the game's 28,500 event pages with commands this gives about 13,200 story, 
 
 **Chests** are the player's own. While the map's main event runs a chest page in a party (`started`), the items and gold it gives are kept, only the outermost of the game's nested `gain_item` calls for enchanted items (`enter_gain`). When the event ends (`Game_Interpreter#run`), the party is told `chest=<map>.<event>.<letter>` and `gains=<kind><id>x<amount>,...` (kinds `i`, `w`, `a`, and `g0` for gold). Every member who has not looted that chest in their own story gets the same items and has it marked looted (`MGQ_MpStory.keep_own_self_switch`). A member playing the leader's story sees their own chests: the chests' self switches of the map they are on are the player's own in every join of stories (`MGQ_MpStory.personal_self_switch?`), and again whenever a map is set up (`map_entered`).
 
+**Travelling together.** Party event messages carry `pevent=<kind>`, the party's id, and the leader's place: `map`, `x`, `y`, `d`. Only the leader's are taken.
+
+- `travel`: after every transfer of the leader (`Game_Player#perform_transfer`), the members go there too.
+- `gather`: when the leader's main event starts a story scene (`scene?`: story with its own dialogue, or a novel scene), the members on the leader's map are moved to where the leader stands.
+- A member is moved once they are free (`free?`: on the map, with no event, message or transfer of their own in the way), checked after every map update, so a member in a menu or battle follows when they are back. Another map means a transfer, the same map a plain `moveto`.
+
 ## Actions (`mp_actions.rb`)
 
 **The action wheel** (`Wheel`, `Sprite_MpActionWheel`). B (`WHEEL_KEY`, 0x42, read with `GetAsyncKeyState` like F11, since neither the game's `Input` nor its gamepad plugin reads it) opens it on the map while no event or message runs, and closes it again. Its four choices (`wheel_options`, rebuilt every frame) sit above, right of, below and left of the player: the arrows pick one, the game's confirm button takes it, and cancel closes the wheel. A choice without `run` is grey, and taking it shows its `refusal` as a notice. While the wheel is open it holds the buttons (`MGQ_Multiplayer::Capture`, which has the guarded `Input` report none to the game, while the wheel reads them past it), so the player stands still and the game's menu and map keys stay shut. Leaving the map, an event or a message closes it.

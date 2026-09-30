@@ -2,7 +2,8 @@
 #  mp_events.rb
 #
 #  Changelog:
-#      Paulinchen  2026-09-30: Created
+#      Paulinchen  2026-09-30: Took the party along where the leader goes, and gathered it for story scenes
+#                            - Created
 #
 #----------------------------------------------------------------
 
@@ -216,15 +217,117 @@ module MGQ_MpEvents
     command ? [$game_map.map_id, event.id, command.parameters[0]] : nil
   end
 
-  # Notices the map's main event starting, and keeps track of a chest's items.
+  # Notices the map's main event starting: keeps track of a chest's items, and as leader brings the
+  # party together for a story scene.
   #
   # @param interpreter [Game_Interpreter] The interpreter.
+  # @param list [Array<RPG::EventCommand>] Its commands.
   # @param event_id [Integer] The event, 0 for a common event.
-  def self.started(interpreter, event_id)
-    return unless interpreter.equal?($game_map.interpreter) && event_id > 0
+  def self.started(interpreter, list, event_id)
+    return unless $game_map && interpreter.equal?($game_map.interpreter)
 
-    event = $game_map.events[event_id]
+    gather if leading? && scene?(list)
+    event = event_id > 0 ? $game_map.events[event_id] : nil
     @chest = event && kind(event) == :chest && in_party? ? { :interpreter => interpreter, :key => chest_key(event), :gains => [] } : nil
+  end
+
+  # Reports whether a list of commands is a story scene: story with its own dialogue or novel scene.
+  #
+  # @param list [Array<RPG::EventCommand>] The commands.
+  # @return [Boolean] Whether it is.
+  def self.scene?(list)
+    return false unless list
+
+    list.any? { |c| MESSAGE_CODES.include?(c.code) || (c.code == 355 && c.parameters[0].to_s =~ /\A\s*call_novel_scene/) } && kind_of(list) == :story
+  end
+
+  # Finds the leader of the player's party, through mp_actions.rb.
+  #
+  # @return [MGQ_MpOverworld::Peers::Peer, Symbol, nil] The leader, :me for the player, nil outside a party.
+  def self.leader
+    in_party? ? MGQ_MpActions::Party.leader : nil
+  end
+
+  # Reports whether the player leads a party with other members in it.
+  #
+  # @return [Boolean] Whether they do.
+  def self.leading?
+    leader == :me && !MGQ_MpActions::Party.members.empty?
+  end
+
+  # Sends the party a message about events.
+  #
+  # @param seat [Integer] A member's seat, -1 for everyone, who ignore it outside the party.
+  # @param kind [String] What it is about.
+  # @param fields [Hash] Its other fields.
+  # @return [Boolean] Whether it went out.
+  def self.tell(seat, kind, fields = {})
+    message = { "pevent" => kind, "party" => MGQ_MpActions::Party.id }.merge(fields)
+    MGQ_MpOverworld::Link.send_to(seat, MGQ_MpOverworld::Me.encode(message))
+  end
+
+  # As leader, brings the party members on the map to where the player stands.
+  def self.gather
+    tell(-1, "gather", place_fields)
+  end
+
+  # As leader, takes the party along to where the player was just transferred. Called after a transfer.
+  def self.transferred
+    tell(-1, "travel", place_fields) if leading?
+  rescue => e
+    log("telling a transfer failed: #{e.class}: #{e.message}")
+  end
+
+  # Writes where the player stands.
+  #
+  # @return [Hash] "map", "x", "y" and "d".
+  def self.place_fields
+    { "map" => $game_map.map_id, "x" => $game_player.x, "y" => $game_player.y, "d" => $game_player.direction }
+  end
+
+  # Takes a message about the party's events from another member.
+  #
+  # @param peer [MGQ_MpOverworld::Peers::Peer, nil] Who sent it.
+  # @param message [Hash] The message's fields.
+  def self.take_party(peer, message)
+    return unless peer && in_party? && message["party"] == MGQ_MpActions::Party.id
+    return unless leader.equal?(peer)
+
+    place = [message["map"].to_i, message["x"].to_i, message["y"].to_i, message["d"].to_i]
+    case message["pevent"]
+    when "travel" then @travel = place
+    when "gather" then @gather = place if place[0] == $game_map.map_id
+    end
+  rescue => e
+    log("taking #{message['pevent']} failed: #{e.class}: #{e.message}")
+  end
+
+  # Moves the player where the leader went or gathers the party, once the player is free: on the
+  # map, with no event, message or transfer of their own in the way. Called after the map's update.
+  def self.update
+    return unless @travel || @gather
+    return unless free?
+
+    map_id, x, y, direction = @gather || @travel
+    @travel = @gather = nil
+    return unless in_party?
+
+    if map_id == $game_map.map_id
+      $game_player.moveto(x, y)
+      $game_player.set_direction(direction) if direction > 0
+    else
+      $game_player.reserve_transfer(map_id, x, y, direction > 0 ? direction : 2)
+    end
+  rescue => e
+    log("following the leader failed: #{e.class}: #{e.message}")
+  end
+
+  # Reports whether the player is free to be moved: on the map, with no event, message or transfer
+  # of their own in the way.
+  #
+  # @return [Boolean] Whether they are.
+  def self.free?
+    SceneManager.scene.is_a?(Scene_Map) && !$game_map.interpreter.running? && !$game_message.busy? && !$game_player.transfer?
   end
 
   # Notes that an item is being given, and whether it is the outermost of nested gifts.
@@ -278,12 +381,19 @@ module MGQ_MpEvents
     log("telling a chest failed: #{e.class}: #{e.message}")
   end
 
+  # Takes a message about chests or the party's events. Called by mp_overworld.rb.
+  #
+  # @param peer [MGQ_MpOverworld::Peers::Peer, nil] Who sent it.
+  # @param message [Hash] The message's fields.
+  def self.take(peer, message)
+    message["chest"] ? take_chest(peer, message) : take_party(peer, message)
+  end
+
   # Takes a chest another member opened: gives its items, unless the player looted it already.
-  # Called by mp_overworld.rb.
   #
   # @param peer [MGQ_MpOverworld::Peers::Peer, nil] Who opened it.
   # @param message [Hash] The message's fields.
-  def self.take(peer, message)
+  def self.take_chest(peer, message)
     return unless peer && in_party? && message["party"] == MGQ_MpActions::Party.id && MGQ_MpActions::Party.member?(peer.state)
 
     map_id, event_id, letter = message["chest"].to_s.split(".")
@@ -358,7 +468,7 @@ if MGQ_MpEvents.hookable?
       # @param event_id [Integer] The event, 0 for none.
       def setup(list, event_id = 0)
         mgq_mp_events_setup(list, event_id)
-        MGQ_MpEvents.started(self, event_id) rescue nil
+        MGQ_MpEvents.started(self, list, event_id) rescue nil
       end
 
       # Runs the commands, then tells the party about a chest they opened.
@@ -369,6 +479,33 @@ if MGQ_MpEvents.hookable?
     end
   rescue => e
     MGQ_MpEvents.log("interpreter hooks FAILED: #{e.class}: #{e.message}")
+  end
+
+  begin
+    class Game_Player
+      alias mgq_mp_events_perform_transfer perform_transfer
+
+      # Carries out a reserved transfer, then as leader takes the party along.
+      def perform_transfer
+        moving = transfer?
+        mgq_mp_events_perform_transfer
+        MGQ_MpEvents.transferred if moving
+      end
+    end
+
+    class Game_Map
+      alias mgq_mp_events_update update
+
+      # Updates the map, then moves the player after the leader when they are free.
+      #
+      # @param args [Array] The original's arguments.
+      def update(*args)
+        mgq_mp_events_update(*args)
+        MGQ_MpEvents.update
+      end
+    end
+  rescue => e
+    MGQ_MpEvents.log("travel hooks FAILED: #{e.class}: #{e.message}")
   end
 
   begin
