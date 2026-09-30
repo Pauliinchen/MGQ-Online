@@ -2,7 +2,8 @@
 #  mp_overworld.rb
 #
 #  Changelog:
-#      Paulinchen  2026-09-30: Told scripts' messages apart before states, since some name a map too
+#      Paulinchen  2026-09-30: Kept a script's message's body, which co-op battles carry their data in
+#                            - Told scripts' messages apart before states, since some name a map too
 #                            - Handed co-op battle messages to mp_coop.rb and mp_sync.rb
 #                            - Handed party event messages to mp_events.rb
 #                            - Handed chest messages to mp_events.rb
@@ -420,12 +421,13 @@ module MGQ_MpOverworld
         Peers.remove(seat)
       when "message"
         state = MGQ_Multiplayer::Link.parse(entry[:payload].dup)
-        state.delete(:payload)
         # A script's message may name a map too, such as where the leader went, so it is told
-        # apart before a state, which is any other message with a map.
+        # apart before a state, which is any other message with a map. Its body, such as a co-op
+        # battle's stream, is its script's; a state has none.
         if Routes.take(Peers.at(seat), state)
           nil
         elsif state["map"]
+          state.delete(:payload)
           Peers.take(seat, state)
         else
           Actions.take(Peers.at(seat), state)
