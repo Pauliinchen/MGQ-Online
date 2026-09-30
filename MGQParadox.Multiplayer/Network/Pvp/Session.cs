@@ -29,6 +29,7 @@ using System.Threading;
 using MGQParadox.Multiplayer.Network.Relay;
 using MGQParadox.Multiplayer.Network.Transport;
 using MGQParadox.Multiplayer.Network.World;
+using MGQParadox.Multiplayer.Windows;
 
 namespace MGQParadox.Multiplayer.Network.Pvp;
 

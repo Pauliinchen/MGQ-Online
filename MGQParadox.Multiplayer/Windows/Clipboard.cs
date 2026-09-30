@@ -10,7 +10,7 @@ using System;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 
-namespace MGQParadox.Multiplayer;
+namespace MGQParadox.Multiplayer.Windows;
 
 /// <summary>
 /// The Windows clipboard, which carries a join code when Discord's invites do not.

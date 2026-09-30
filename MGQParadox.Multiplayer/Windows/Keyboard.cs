@@ -11,7 +11,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 
-namespace MGQParadox.Multiplayer;
+namespace MGQParadox.Multiplayer.Windows;
 
 /// <summary>
 /// What the player types into the game's window while a text screen of the game script wants it,

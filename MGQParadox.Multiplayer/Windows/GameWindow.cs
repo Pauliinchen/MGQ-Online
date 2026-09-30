@@ -11,7 +11,7 @@ using System;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
-namespace MGQParadox.Multiplayer;
+namespace MGQParadox.Multiplayer.Windows;
 
 /// <summary>
 /// The game's window, whose game RGSS pauses while another application is active.

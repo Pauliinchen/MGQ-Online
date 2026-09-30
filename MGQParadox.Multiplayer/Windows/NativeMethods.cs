@@ -8,7 +8,7 @@
 
 using System.Runtime.InteropServices;
 
-namespace MGQParadox.Multiplayer;
+namespace MGQParadox.Multiplayer.Windows;
 
 /// <summary>
 /// The Windows functions the DLL needs to find itself.
