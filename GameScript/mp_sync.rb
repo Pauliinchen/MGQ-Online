@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-09-30: Let a co-op player who got away leave the battle, which the others fight on
+#                            - Held the battle's menus while waiting, so a hidden party command no longer takes presses after auto battle
 #                            - Carried co-op battles over the world's room, several guests commanding their own characters in one party
 #                            - Left turning Give Up off to mp_battles.rb, which does it for every multiplayer battle
 #      Paulinchen  2026-09-29: Sent the start of a command phase before the host's own, which the host skips when none of its characters can act
@@ -1095,6 +1096,7 @@ module MGQ_MpSync
       # The party's status windows show during a turn, which the guest's own battle never has.
       scene.instance_variable_set(:@battle_actor_status_windows_show, true)
       window = nil
+      held = Waiting.hold_input(scene)
 
       loop do
         event = next_event(scene)
@@ -1122,6 +1124,7 @@ module MGQ_MpSync
     ensure
       scene.instance_variable_set(:@battle_actor_status_windows_show, false)
       Waiting.close(window)
+      Waiting.release_input(held)
     end
 
     # Forgets events of an earlier battle.
@@ -1459,6 +1462,7 @@ module MGQ_MpSync
     def self.wait_for(scene, text)
       window = nil
       frames = 0
+      held = hold_input(scene)
       loop do
         answer = yield
         return answer if answer
@@ -1474,6 +1478,30 @@ module MGQ_MpSync
       end
     ensure
       close(window)
+      release_input(held)
+    end
+
+    # Deactivates the battle's windows that take input for a wait, since the battle keeps updating
+    # them while it waits.
+    #
+    # The game's auto battle activates the hidden party command right before the turn the host
+    # waits in, where its presses started a second command phase.
+    #
+    # @param scene [Scene_Battle] The battle.
+    # @return [Array<Window_Selectable>] The windows it deactivated.
+    def self.hold_input(scene)
+      windows = scene.instance_variables.map { |name| scene.instance_variable_get(name) }
+      windows.select { |window| window.is_a?(Window_Selectable) && !window.disposed? && window.active }.each(&:deactivate)
+    rescue => e
+      MGQ_MpSync.log("could not hold the battle's input: #{e.class}: #{e.message}")
+      []
+    end
+
+    # Hands the windows a wait deactivated back as they were.
+    #
+    # @param windows [Array<Window_Selectable>, nil] The windows.
+    def self.release_input(windows)
+      Array(windows).each { |window| window.activate unless window.disposed? }
     end
   end
 
