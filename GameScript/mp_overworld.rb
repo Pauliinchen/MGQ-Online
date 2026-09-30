@@ -2,7 +2,8 @@
 #  mp_overworld.rb
 #
 #  Changelog:
-#      Paulinchen  2026-09-30: Told when the player entered their map, and handed NPC messages to mp_npcs.rb
+#      Paulinchen  2026-09-30: Handed story messages to mp_story.rb, routing scripts' messages through one table
+#                            - Told when the player entered their map, and handed NPC messages to mp_npcs.rb
 #      Paulinchen  2026-09-29: Told the others while the player types in the chat
 #                            - Showed each player's ping, the own above the player's head and the others' beside their names
 #                            - Left parties to mp_actions.rb, which it asks through Actions
@@ -111,17 +112,21 @@ module MGQ_MpOverworld
     @tick_failed = true
   end
 
-  # mp_npcs.rb, when it is installed: the NPCs a party shares on a map.
-  module Npcs
-    # Hands mp_npcs.rb a message about NPCs.
+  # The scripts that take messages of their own, when they are installed.
+  module Routes
+    # The script each message goes to, by the field that marks it.
+    SCRIPTS = { "npcs" => :MGQ_MpNpcs, "story" => :MGQ_MpStory }
+
+    # Hands a message to the script it is for.
     #
     # @param peer [Peers::Peer, nil] Who sent it, nil before their first state.
     # @param message [Hash] The message's fields.
-    # @return [Boolean] Whether the message was about NPCs.
+    # @return [Boolean] Whether it was for one of these scripts.
     def self.take(peer, message)
-      return false unless message["npcs"]
+      field, name = SCRIPTS.find { |key, _| message[key] }
+      return false unless field
 
-      MGQ_MpNpcs.take(peer, message) if defined?(MGQ_MpNpcs)
+      Object.const_get(name).take(peer, message) if Object.const_defined?(name)
       true
     end
   end
@@ -413,7 +418,7 @@ module MGQ_MpOverworld
         state.delete(:payload)
         if state["map"]
           Peers.take(seat, state)
-        elsif !Npcs.take(Peers.at(seat), state)
+        elsif !Routes.take(Peers.at(seat), state)
           Actions.take(Peers.at(seat), state)
         end
       end

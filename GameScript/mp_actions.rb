@@ -2,7 +2,8 @@
 #  mp_actions.rb
 #
 #  Changelog:
-#      Paulinchen  2026-09-30: Gave the chat box a blinking cursor, moved with the arrows, Home and End, with Delete
+#      Paulinchen  2026-09-30: Found the party's leader, the member who made the party
+#                            - Gave the chat box a blinking cursor, moved with the arrows, Home and End, with Delete
 #      Paulinchen  2026-09-29: Told mp_overworld.rb while the player types in the chat
 #                            - Showed the chat box's text as it is typed
 #                            - Left room right above the player's head for their ping
@@ -557,6 +558,18 @@ module MGQ_MpActions
     # @return [Array<MGQ_MpOverworld::Peers::Peer>] The members.
     def self.members
       MGQ_MpActions.peers.select { |peer| member?(peer.state) }
+    end
+
+    # Finds the party's leader: the member who made the party, whose id starts the party's id, or
+    # the member with the lowest id while they are gone, so every member's game finds the same one.
+    #
+    # @return [MGQ_MpOverworld::Peers::Peer, Symbol, nil] The leader, :me for the player, nil outside a party.
+    def self.leader
+      return nil unless @id
+
+      candidates = [[MGQ_MpOverworld::Me.identity[0].to_s, :me]] + members.map { |peer| [peer.state["id"].to_s, peer] }
+      maker = candidates.find { |id, _| !id.empty? && id[0, 8] == @id[0, 8] }
+      (maker || candidates.min_by { |id, _| id })[1]
     end
 
     # Leaves the party and forgets any invite, as when the world closes.

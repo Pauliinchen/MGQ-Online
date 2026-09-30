@@ -45,6 +45,7 @@ like this:
    Patch\mp_async.rb
    Patch\mp_npcs.rb
    Patch\mp_overworld.rb
+   Patch\mp_story.rb
    Patch\mp_sync.rb
    Patch\mp_world.rb
    Patch\pvp_battle.rb
@@ -143,7 +144,10 @@ Party members are fully visible and their names are green. "Leave the
 party" at the bottom of the wheel leaves it. On a map you share with
 party members, you all see the same NPCs in the same places: whoever of
 you entered the map first is its Map Owner, and the NPCs move as they do
-in their game.
+in their game. While in a party, everyone plays the story of the player
+who made the party. Your own party, your companions and their affection
+stay yours, and your saves keep your own story. When you leave the
+party, you are back in your own story.
 
 
 CONNECTION
@@ -164,8 +168,8 @@ UNINSTALL
 ---------
 Close the game and delete Patch\Multiplayer.rb, Patch\mp_actions.rb,
 Patch\mp_async.rb, Patch\mp_npcs.rb, Patch\mp_overworld.rb,
-Patch\mp_sync.rb, Patch\mp_world.rb, Patch\pvp_battle.rb and the
-Multiplayer folder. The Multiplayer folder also holds your worlds, so
+Patch\mp_story.rb, Patch\mp_sync.rb, Patch\mp_world.rb,
+Patch\pvp_battle.rb and the Multiplayer folder. The Multiplayer folder also holds your worlds, so
 keep Multiplayer\Worlds if you want to play them again later.
 The mod loader stays for your other mods.
 
