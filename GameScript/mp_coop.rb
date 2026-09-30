@@ -2,7 +2,8 @@
 #  mp_coop.rb
 #
 #  Changelog:
-#      Paulinchen  2026-09-30: Created
+#      Paulinchen  2026-09-30: Invited party members whose window is in the background, and logged why nobody was invited
+#                            - Created
 #
 #----------------------------------------------------------------
 
@@ -21,9 +22,10 @@ module MGQ_MpCoop
   # Frames an invite waits for the player to be free before it is turned down, three seconds.
   ACCEPT_FRAMES = 180
 
-  # What another player does, by their state's scene, while they may be invited: walking the map
-  # or reading an event's messages, such as the leader's story.
-  FREE_SCENES = %w(map event)
+  # What another player does, by their state's scene, while they may be invited: walking the map,
+  # reading an event's messages, such as the leader's story, or on the map with their window in the
+  # background, which keeps running.
+  FREE_SCENES = %w(map event away)
 
   # Characters each player brings with two players; with more, each brings one.
   PAIR_SHARE = 2
@@ -93,7 +95,10 @@ module MGQ_MpCoop
     return if @joining || !host_possible?
 
     seats = candidates.map(&:seat)
-    return if seats.empty?
+    if seats.empty?
+      others = MGQ_MpActions::Party.members.map { |peer| "#{peer.state['name']} on map #{peer.state['map']} (#{peer.state['scene']})" }
+      return log("nobody to invite on map #{$game_map.map_id}: #{others.empty? ? 'no other party member' : others.join(', ')}")
+    end
 
     battle_id = rand(36**8).to_s(36)
     MGQ_MpSync.join_world(:host, battle_id, seats, "the party")
@@ -112,10 +117,12 @@ module MGQ_MpCoop
   # @return [Boolean] Whether it may.
   def self.host_possible?
     return false unless defined?(MGQ_MpOverworld) && MGQ_MpOverworld.in_world? && defined?(MGQ_MpActions) && MGQ_MpActions::Party.id
-    return false if defined?(MGQ_MpSync) && MGQ_MpSync.role
-    return false if MGQ_MpBattles.running? || ($game_temp && $game_temp.in_memory_battle)
+    return false if $game_temp && $game_temp.in_memory_battle
+    return false if defined?(MGQ_PvpBattle) && MGQ_PvpBattle::Battle.running?
 
-    !(defined?(MGQ_PvpBattle) && MGQ_PvpBattle::Battle.running?)
+    busy = MGQ_MpSync.role || MGQ_MpBattles.running?
+    log("no co-op battle: another multiplayer battle still runs (#{MGQ_MpSync.role.inspect}, #{MGQ_MpBattles.kind.inspect})") if busy
+    !busy
   end
 
   # Lists the party members who may join: on the player's map, playing on it.
