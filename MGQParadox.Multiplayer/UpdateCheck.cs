@@ -12,6 +12,7 @@ using System.Net.Http;
 using System.Reflection;
 using System.Text.Json;
 using System.Threading;
+using MGQParadox.Multiplayer.Network.Transport;
 
 namespace MGQParadox.Multiplayer;
 

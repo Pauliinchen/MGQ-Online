@@ -23,7 +23,9 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
-using MGQParadox.Multiplayer.Network;
+using MGQParadox.Multiplayer.Network.Pvp;
+using MGQParadox.Multiplayer.Network.Transport;
+using MGQParadox.Multiplayer.Network.World;
 
 namespace MGQParadox.Multiplayer;
 
