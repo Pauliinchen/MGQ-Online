@@ -2,7 +2,8 @@
 #  mp_async.rb
 #
 #  Changelog:
-#      Paulinchen  2026-09-30: Switched between the map and menus at once, since a fade froze the world behind them
+#      Paulinchen  2026-09-30: Skipped the screen's freeze between the map and menus, since even a transition of no frames took seven
+#                            - Switched between the map and menus at once, since a fade froze the world behind them
 #                            - Created
 #
 #----------------------------------------------------------------
@@ -118,16 +119,49 @@ module MGQ_MpAsync
     behind?(scene)
   end
 
-  # Reports whether a screen comes in at once rather than fading in from the last picture, since
-  # the picture stands still for the fade while the world behind it runs on.
+  # Reports whether leaving a screen for another switches at once: between the map and menus while
+  # a world is open.
   #
-  # @param scene [Scene_Base] The screen.
-  # @return [Boolean] Whether it comes in at once: a menu showing the live map, or the map while
-  #   a world is open.
-  def self.instant?(scene)
+  # @param from [Scene_Base] The screen left.
+  # @param to [Scene_Base, nil] The screen next, nil when the game ends.
+  # @return [Boolean] Whether it switches at once.
+  def self.instant_switch?(from, to)
     return false unless defined?(MGQ_MpWorld) && MGQ_MpWorld.open?
+    return false unless [from, to].all? { |scene| scene.is_a?(Scene_Map) || scene.is_a?(Scene_MenuBase) }
 
-    scene.is_a?(Scene_Map) || (scene.respond_to?(:mgq_mp_live_map?) && scene.mgq_mp_live_map?)
+    to.is_a?(Scene_Map) || map_waiting?
+  end
+
+  # Leaves a screen, skipping the freeze of the screen when the next one comes in at once. The
+  # engine's transition from a frozen screen takes about seven frames even when it lasts none,
+  # during which nothing moves; without a freeze, the screen keeps its last picture until the next
+  # one draws its first.
+  #
+  # @param from [Scene_Base] The screen left.
+  # @yield The screen's own leaving, which freezes the screen.
+  def self.leave(from)
+    @skip_freeze = instant_switch?(from, SceneManager.scene)
+    yield
+  ensure
+    @skip_freeze = false
+  end
+
+  # Reports whether to skip a freeze of the screen, and remembers it was skipped. Called by Graphics.freeze.
+  #
+  # @return [Boolean] Whether to skip it.
+  def self.skip_freeze?
+    # A freeze that happens belongs to its own transition, which must not be skipped.
+    @unfrozen = @skip_freeze ? true : false
+  end
+
+  # Reports whether to skip a transition, as after a skipped freeze, and forgets the skip. Called
+  # by Graphics.transition.
+  #
+  # @return [Boolean] Whether to skip it.
+  def self.skip_transition?
+    skipped = @unfrozen ? true : false
+    @unfrozen = false
+    skipped
   end
 end
 
@@ -182,20 +216,11 @@ if MGQ_MpAsync.hookable?
         mgq_mp_async_update_live_map
       end
 
-      alias mgq_mp_async_transition_speed transition_speed
+      alias mgq_mp_async_terminate terminate
 
-      # Tells how many frames the screen fades in, none while the world runs visibly behind it.
-      #
-      # @return [Integer] The frames.
-      def transition_speed
-        MGQ_MpAsync.instant?(self) ? 0 : mgq_mp_async_transition_speed
-      end
-
-      # Reports whether the screen shows the live map behind it.
-      #
-      # @return [Boolean] Whether it does.
-      def mgq_mp_live_map?
-        !@mgq_mp_live_map.nil?
+      # Leaves the screen, without freezing it when the next one comes in at once.
+      def terminate
+        MGQ_MpAsync.leave(self) { mgq_mp_async_terminate }
       end
 
       # Updates the live map behind a menu, if the menu shows one.
@@ -213,19 +238,24 @@ if MGQ_MpAsync.hookable?
   end
 
   begin
-    class Scene_Map
-      alias mgq_mp_async_transition_speed transition_speed
+    class << Graphics
+      alias mgq_mp_async_freeze freeze
+      alias mgq_mp_async_transition transition
 
-      # Tells how many frames the map fades in, none while a world is open. A fade from black, as
-      # after a battle, is the map's own and stays.
+      # Freezes the screen, unless the screen being left switches to the next at once.
+      def freeze
+        MGQ_MpAsync.skip_freeze? ? nil : mgq_mp_async_freeze
+      end
+
+      # Carries out the transition from the frozen screen, unless the freeze was skipped.
       #
-      # @return [Integer] The frames.
-      def transition_speed
-        MGQ_MpAsync.instant?(self) ? 0 : mgq_mp_async_transition_speed
+      # @param args [Array] The original's arguments.
+      def transition(*args)
+        MGQ_MpAsync.skip_transition? ? nil : mgq_mp_async_transition(*args)
       end
     end
   rescue => e
-    MGQ_MpAsync.log("map transition hook FAILED: #{e.class}: #{e.message}")
+    MGQ_MpAsync.log("screen hooks FAILED: #{e.class}: #{e.message}")
   end
 
   begin
