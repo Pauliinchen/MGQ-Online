@@ -2,7 +2,8 @@
 //  DirectoryClient.cs
 //
 //  Changelog:
-//      Paulinchen  2026-09-30: Uploaded and downloaded a world's starting save, and read which worlds have one
+//      Paulinchen  2026-09-30: Read whether the list was made for an admin
+//                            - Uploaded and downloaded a world's starting save, and read which worlds have one
 //                            - Made hidden worlds, listed them for their players, and read a world's name with its lock
 //      Paulinchen  2026-09-29: Created
 //
@@ -65,12 +66,13 @@ internal sealed class DirectoryClient
     }
 
     /// <summary>
-    /// Lists the worlds a player sees: every public world, and the hidden ones the player joined.
+    /// Lists the worlds a player sees: every public world, and the hidden ones the player joined, or
+    /// every world for one of the relay's admins.
     /// </summary>
     /// <param name="playerKey">The player's key, or <see langword="null"/> for the public worlds only.</param>
-    /// <returns>The worlds.</returns>
+    /// <returns>The worlds, and whether the player is an admin.</returns>
     /// <exception cref="DirectoryException">The directory could not be reached or answered with an error.</exception>
-    public IReadOnlyList<ListedWorld> List(string? playerKey)
+    public WorldListing List(string? playerKey)
     {
         var address = playerKey == null ? _worlds : new Uri($"{_worlds}?player={Uri.EscapeDataString(playerKey)}");
         using var document = Send(HttpMethod.Get, address, null);
@@ -99,7 +101,8 @@ internal sealed class DirectoryClient
                 members));
         }
 
-        return worlds;
+        var admin = document.RootElement.TryGetProperty("admin", out var flag) && flag.ValueKind == JsonValueKind.True;
+        return new WorldListing(worlds, admin);
     }
 
     /// <summary>
@@ -197,7 +200,7 @@ internal sealed class DirectoryClient
     /// Deletes a world for everyone.
     /// </summary>
     /// <param name="id">The world.</param>
-    /// <param name="playerKey">The creator's key.</param>
+    /// <param name="playerKey">The creator's or an admin's key.</param>
     /// <exception cref="DirectoryException">The directory could not be reached or refused.</exception>
     public void Delete(string id, string playerKey)
     {
@@ -339,6 +342,13 @@ internal sealed class DirectoryException(HttpStatusCode? status, string reason) 
     /// </summary>
     public HttpStatusCode? Status { get; } = status;
 }
+
+/// <summary>
+/// The worlds the directory lists for a player.
+/// </summary>
+/// <param name="Worlds">The worlds.</param>
+/// <param name="Admin">Whether the player is one of the relay's admins, who sees every world and may delete any.</param>
+internal sealed record WorldListing(IReadOnlyList<ListedWorld> Worlds, bool Admin);
 
 /// <summary>
 /// A world as the directory lists it.

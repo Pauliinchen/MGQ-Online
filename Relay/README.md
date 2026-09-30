@@ -36,15 +36,17 @@ Plain HTTP with JSON bodies. A world's id is 32 lowercase hexadecimal characters
 
 | Request | What it does |
 |---|---|
-| `GET /v1/worlds?player=<key>` | Lists every public world, and the hidden ones the player of `player` joined (without `player`, public ones only): `id`, `name`, `seats`, `creator` (`id`, `name`), `start` (`none`, `pending` or `ready`), `hidden`, `online`, `created`, `active`, and `members` (`id`, `name`, `online`). |
+| `GET /v1/worlds?player=<key>` | Lists every public world, and the hidden ones the player of `player` joined (without `player`, public ones only), or every world for an admin: `worlds`, each with `id`, `name`, `seats`, `creator` (`id`, `name`), `start` (`none`, `pending` or `ready`), `hidden`, `online`, `created`, `active`, and `members` (`id`, `name`, `online`); and `admin`, true for an admin. |
 | `POST /v1/worlds` | Makes a world: `id`, `name`, `seats` (2 to 32), `player` (the creator's key), `playerName`, `authHash` (SHA-256 of the auth key, hexadecimal) and `lock` (`salt`, `iterations`, `box`: the token encrypted with a key from the password), `start: true` when a starting save follows, and `hidden: true` to leave it out of the list for everyone but its players. 201, or 409 when the id is taken, 429 past 20 worlds per creator. |
 | `GET /v1/worlds/<id>/lock` | Hands out the world's `lock` (`salt`, `iterations`, `box`), which only the password opens, with its `name`, `seats` and `start`, so a hidden world is entered by its id. |
-| `POST /v1/worlds/<id>/delete` | Deletes the world, if `player` is the creator's key, and closes its world room. |
+| `POST /v1/worlds/<id>/delete` | Deletes the world, if `player` is the creator's or an admin's key, and closes its world room. |
 | `POST /v1/worlds/<id>/ban` | Removes the player whose id is `target` and keeps them out, if `player` is the creator's key. |
 | `POST /v1/worlds/<id>/start?player=<key>` | Keeps the world's starting save, the body as bytes (at most 8 MB), if `player` is the creator's key and the world was made with `start: true`. Only once: 409 afterwards. |
 | `GET /v1/worlds/<id>/start?player=<key>&auth=<auth key>` | Hands out the starting save as bytes, to a game the world room would let in. 404 when the world has none. |
 
 A player's key never appears in the list: everyone sees the player's id, the first 32 characters of the SHA-256 of `mgqmp player <key>`. Names are at most 32 characters, on one line.
+
+**Admins** look after the directory: they see every world, hidden ones too, and may delete any. They cannot open a world's lock or enter it without its password. The relay reads their player ids from the setting `ADMINS`, separated by commas or spaces; without it there are none. On Cloudflare it is a secret, kept out of the repository: `npx wrangler secret put ADMINS` sets it and deploys it at once. The Node server reads it from the environment variable of the same name. An admin's id is made from the key in their game's `Patch\Multiplayer\Player.ini`, as above.
 
 ### World rooms
 

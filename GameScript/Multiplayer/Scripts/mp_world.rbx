@@ -2,7 +2,8 @@
 #  mp_world.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-09-30: Moved into Patch/Multiplayer/Scripts as mp_world.rbx, which Multiplayer.rb loads, with the worlds in Patch/Multiplayer/Worlds
+#      Paulinchen  2026-09-30: Let the relay's admins see every world, hidden ones too, and delete any
+#                            - Moved into Patch/Multiplayer/Scripts as mp_world.rbx, which Multiplayer.rb loads, with the worlds in Patch/Multiplayer/Worlds
 #                            - Named the mod Monster Girl Quest! Online in the update notice
 #                            - Greyed out the title command and showed a notice once a newer release is out
 #                            - Let the creator pick one of their saves as the starting save of a new world, which new players fetch before entering it
@@ -15,7 +16,8 @@
 
 # Worlds: lasting places several players play in together, entered through Multiplayer on the
 # title screen. The relay's world directory lists every public world with its players, and hidden
-# ones only for their players; others join a hidden world by its id. A world's password is asked
+# ones only for their players and the relay's admins; others join a hidden world by its id. An
+# admin may delete any world. A world's password is asked
 # once, after which this game remembers the world. Each world keeps its own saves and its
 # own system save (Library, medals, system switches, affection) in Patch/Multiplayer/Worlds/<id>, so
 # playing in a world never touches the player's own saves. A new world's players start at the
@@ -378,7 +380,7 @@ module MGQ_MpWorld
 
     # Reads the list as it stands.
     #
-    # @return [Array] The state ("idle", "loading", "ready" or "failed"), why it failed, and the worlds.
+    # @return [Array] The state ("idle", "loading", "ready" or "failed"), why it failed, the worlds, and whether the player is one of the relay's admins, who sees every world and may delete any.
     def self.list
       state = MGQ_Multiplayer::Link.parse(MGQ_Multiplayer::Link.read('mp_dir_list', LIST_SIZE))
       worlds = []
@@ -394,7 +396,7 @@ module MGQ_MpWorld
         end
       end
 
-      [state["state"] || "idle", state["error"], worlds]
+      [state["state"] || "idle", state["error"], worlds, state["admin"] == "1"]
     end
 
     # Makes a world, locked with its password, with the starting save new players get, if there is one.
@@ -1030,9 +1032,10 @@ class Scene_MpWorlds < Scene_MenuBase
   # Shows the list the DLL holds, if it changed.
   def look_at_list
     @look_frames = 0
-    state, error, listed = MGQ_MpWorld::Directory.list
+    state, error, listed, admin = MGQ_MpWorld::Directory.list
     @list_state = state
     @list_error = state == "failed" ? error : nil
+    @admin = admin
     entries = MGQ_MpWorld.entries(listed, state == "ready")
     @list_window.entries = entries
     show_info
@@ -1075,7 +1078,7 @@ class Scene_MpWorlds < Scene_MenuBase
     commands.push([@entry.favourite ? "No longer a favourite" : "Mark as a favourite", :favourite]) if @entry.id
     commands.push(["Copy the world id", :copy_id]) if creator && listed.hidden
     commands.push(["Remove a player", :ban, listed.members.size > 1]) if creator
-    commands.push(["Delete the world for everyone", :delete_world]) if creator
+    commands.push(["Delete the world for everyone", :delete_world]) if creator || (listed && @admin)
     commands.push(["Delete my saves of it", :delete_saves]) if @entry.local
     commands.push(["Back", :cancel])
     @actions_window.start(commands)

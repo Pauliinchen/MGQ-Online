@@ -2,7 +2,8 @@
 //  server.js
 //
 //  Changelog:
-//      Paulinchen  2026-09-30: Kept each world's starting save in memory, taken and handed out as bytes
+//      Paulinchen  2026-09-30: Read the relay's admins from the ADMINS environment variable
+//                            - Kept each world's starting save in memory, taken and handed out as bytes
 //      Paulinchen  2026-09-29: Kept the world directory, and seated a game in a world room only once the directory let it in
 //                            - Added world rooms, which seat up to 32 games
 //      Paulinchen  2026-09-29: Created
@@ -16,7 +17,7 @@
 import http from "node:http";
 import { pathToFileURL } from "node:url";
 import { WebSocketServer } from "ws";
-import { Directory, handleDirectoryRequest } from "../core/directory.js";
+import { Directory, handleDirectoryRequest, parseAdmins } from "../core/directory.js";
 import {
   CLOSE, IN, LIMITS, OUT, PAIRED, PING, PONG, admit, newPeer, newWorldPeer, overdue, parseRoute, presenceOf, routeWorldMessage, seatChangeText,
   seatText, takeMessage, takeSeat, worldOverdue,
@@ -399,5 +400,7 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   const port = Number(process.env.PORT ?? 8080);
   const host = process.env.HOST ?? "127.0.0.1";
 
-  createRelay().server.listen(port, host, () => console.log(`relay listening on ${host}:${port}`));
+  const directory = new Directory(memoryStore(), { admins: parseAdmins(process.env.ADMINS) });
+
+  createRelay({ directory }).server.listen(port, host, () => console.log(`relay listening on ${host}:${port}`));
 }

@@ -2,7 +2,8 @@
 //  WorldDirectoryTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-09-30: Covered making a world with a starting save and fetching it as a new player
+//      Paulinchen  2026-09-30: Covered an admin, who sees hidden worlds and deletes another player's world
+//                            - Covered making a world with a starting save and fetching it as a new player
 //                            - Covered hidden worlds, listed for their creator only and opened by their id
 //      Paulinchen  2026-09-29: Created
 //
@@ -114,6 +115,27 @@ public sealed class WorldDirectoryTests
         Assert.Contains("creator", Act(guest, directory => directory.Delete(made["world"]))["error"]);
         Assert.Equal("done", Act(creator, directory => directory.Delete(made["world"]))["state"]);
         Assert.DoesNotContain(made["world"], List(creator));
+    }
+
+    /// <summary>
+    /// Asserts that an admin's list is marked as such and holds hidden worlds of others, which the
+    /// admin deletes, while another player's list is not marked.
+    /// </summary>
+    [Fact]
+    public void Admin_SeesAndDeletesHiddenWorlds()
+    {
+        var adminKey = PlayerKey(9);
+        using var relay = new TestRelay { Admins = [WorldKeys.PlayerIdOf(adminKey)] };
+        var creator = NewDirectory(relay, CreatorKey, "Creator");
+        var admin = NewDirectory(relay, adminKey, "Admin");
+        var made = Act(creator, directory => directory.Create("Secret Base", "secret", 4, true, []));
+
+        Assert.Contains(List(admin), line => line.StartsWith($"world\t{made["world"]}\t"));
+        Assert.Equal("1", ListState(admin)["admin"]);
+        Assert.Empty(ListState(creator)["admin"]);
+
+        Assert.Equal("done", Act(admin, directory => directory.Delete(made["world"]))["state"]);
+        Assert.Empty(List(creator));
     }
 
     /// <summary>
@@ -238,7 +260,15 @@ public sealed class WorldDirectoryTests
     /// </summary>
     /// <param name="directory">The directory.</param>
     /// <returns>The list's lines.</returns>
-    internal static string[] List(WorldDirectory directory)
+    internal static string[] List(WorldDirectory directory) =>
+        ListState(directory).Team.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+
+    /// <summary>
+    /// Fetches the list and waits for it.
+    /// </summary>
+    /// <param name="directory">The directory.</param>
+    /// <returns>The list as the game script reads it, its headers with it.</returns>
+    internal static Message ListState(WorldDirectory directory)
     {
         directory.Refresh();
         var deadline = DateTime.UtcNow + Patience;
@@ -249,7 +279,7 @@ public sealed class WorldDirectoryTests
 
             if (list["state"] == "ready")
             {
-                return list.Team.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+                return list;
             }
 
             Assert.NotEqual("failed", list["state"]);

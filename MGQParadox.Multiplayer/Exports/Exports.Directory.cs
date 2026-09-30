@@ -126,7 +126,7 @@ internal static unsafe partial class Exports
     }
 
     /// <summary>
-    /// Deletes a world for everyone, which only its creator may. Returns at once.
+    /// Deletes a world for everyone, which only its creator or one of the relay's admins may. Returns at once.
     /// </summary>
     /// <param name="id">The world, UTF-8 and null-terminated.</param>
     /// <returns>1 when started, 0 while another action runs or when it failed.</returns>

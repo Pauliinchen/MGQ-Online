@@ -2,7 +2,8 @@
 //  WorldDirectory.cs
 //
 //  Changelog:
-//      Paulinchen  2026-09-30: Made a world with a starting save, fetched it for new players, and listed which worlds have one
+//      Paulinchen  2026-09-30: Told the game script whether the player is one of the relay's admins
+//                            - Made a world with a starting save, fetched it for new players, and listed which worlds have one
 //                            - Made hidden worlds, listed them for their players, and opened a world by its id alone
 //      Paulinchen  2026-09-29: Created
 //
@@ -39,6 +40,11 @@ internal sealed class WorldDirectory
     /// Why the list or the action failed.
     /// </summary>
     private const string ErrorHeader = "error";
+
+    /// <summary>
+    /// Whether the list was made for one of the relay's admins, who sees every world and may delete any.
+    /// </summary>
+    private const string AdminHeader = "admin";
 
     /// <summary>
     /// Which action ran.
@@ -84,6 +90,11 @@ internal sealed class WorldDirectory
     /// The list as the game script reads it, <see langword="null"/> before the first one arrived.
     /// </summary>
     private string? _list;
+
+    /// <summary>
+    /// Whether the last list was made for one of the relay's admins.
+    /// </summary>
+    private bool _admin;
 
     /// <summary>
     /// Whether a list is being fetched.
@@ -152,12 +163,12 @@ internal sealed class WorldDirectory
 
         StartThread("MultiplayerDirectoryList", () =>
         {
-            string? list = null;
+            WorldListing? listing = null;
             string? error = null;
 
             try
             {
-                list = ListText(Client().List(Playing()?.Key));
+                listing = Client().List(Playing()?.Key);
             }
             catch (Exception ex)
             {
@@ -169,7 +180,12 @@ internal sealed class WorldDirectory
             {
                 _listing = false;
                 _listError = error;
-                _list = list ?? _list;
+
+                if (listing != null)
+                {
+                    _list = ListText(listing.Worlds);
+                    _admin = listing.Admin;
+                }
             }
         });
     }
@@ -177,13 +193,13 @@ internal sealed class WorldDirectory
     /// <summary>
     /// Describes the list for the game script.
     /// </summary>
-    /// <returns><c>state</c> ("loading", "ready" or "failed") and <c>error</c>, then one line per world and player: <c>world</c>, id, seats, players online, creator's id, when last active, creator's name, name, starting save ("none", "pending" or "ready"), 1 when hidden; <c>member</c>, id, 1 when online, name; each separated by tabs.</returns>
+    /// <returns><c>state</c> ("loading", "ready" or "failed"), <c>error</c> and <c>admin</c> (1 for an admin), then one line per world and player: <c>world</c>, id, seats, players online, creator's id, when last active, creator's name, name, starting save ("none", "pending" or "ready"), 1 when hidden; <c>member</c>, id, 1 when online, name; each separated by tabs.</returns>
     public string DescribeList()
     {
         lock (_gate)
         {
             var state = _listing ? "loading" : _listError != null ? "failed" : _list != null ? "ready" : "idle";
-            return new Message([new(StateHeader, state), new(ErrorHeader, _listError)], _list ?? string.Empty).Encode();
+            return new Message([new(StateHeader, state), new(ErrorHeader, _listError), new(AdminHeader, _admin ? "1" : null)], _list ?? string.Empty).Encode();
         }
     }
 
@@ -320,7 +336,7 @@ internal sealed class WorldDirectory
     });
 
     /// <summary>
-    /// Deletes a world for everyone, which only its creator may.
+    /// Deletes a world for everyone, which only its creator or one of the relay's admins may.
     /// </summary>
     /// <param name="id">The world.</param>
     /// <returns><see langword="false"/> while another action runs.</returns>

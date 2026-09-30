@@ -2,7 +2,8 @@
 //  directory.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-09-30: Covered the starting save: uploaded once by the creator, fetched by players only
+//      Paulinchen  2026-09-30: Covered the relay's admins, who see every world and delete any
+//                            - Covered the starting save: uploaded once by the creator, fetched by players only
 //                            - Covered hidden worlds, listed only for their players, and the lock naming its world
 //      Paulinchen  2026-09-29: Created
 //
@@ -10,7 +11,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { DIRECTORY_LIMITS, Directory, cleanName, handleDirectoryRequest, playerIdOf, sha256Hex } from "./directory.js";
+import { DIRECTORY_LIMITS, Directory, cleanName, handleDirectoryRequest, parseAdmins, playerIdOf, sha256Hex } from "./directory.js";
 
 /**
  * The creator's player key, as games make them.
@@ -21,6 +22,11 @@ const CREATOR = "c0".repeat(16);
  * Another player's key.
  */
 const OTHER = "0f".repeat(16);
+
+/**
+ * An admin's player key.
+ */
+const ADMIN = "ad".repeat(16);
 
 /**
  * The auth key the holders of the test world's token make.
@@ -36,9 +42,10 @@ const WORLD = "0123456789abcdef0123456789abcdef";
  * Makes a directory over a store in memory, with a clock the tests move.
  *
  * @param {object} [limits] The limits.
+ * @param {string[]} [admins] The admins' player ids.
  * @returns {{directory: Directory, time: {now: number}}} The directory and its clock.
  */
-function newDirectory(limits = DIRECTORY_LIMITS) {
+function newDirectory(limits = DIRECTORY_LIMITS, admins = []) {
   const entries = new Map();
   const starts = new Map();
   const time = { now: 1_000_000 };
@@ -54,7 +61,7 @@ function newDirectory(limits = DIRECTORY_LIMITS) {
     getStart: async (id) => starts.get(id),
   };
 
-  return { directory: new Directory(store, { clock: () => time.now, limits }), time, starts };
+  return { directory: new Directory(store, { clock: () => time.now, limits, admins }), time, starts };
 }
 
 /**
@@ -136,6 +143,33 @@ test("a hidden world is listed only for its players, and found by its id", async
 
   await directory.ban(WORLD, CREATOR, await playerIdOf(OTHER));
   assert.deepEqual((await directory.list(OTHER)).body.worlds, []);
+});
+
+test("parseAdmins reads player ids separated by commas or white space, and nothing else", () => {
+  const id = "ad".repeat(16);
+
+  assert.deepEqual(parseAdmins(` ${id.toUpperCase()},\n${"0f".repeat(16)} nope `), [id, "0f".repeat(16)]);
+  assert.deepEqual(parseAdmins(""), []);
+  assert.deepEqual(parseAdmins(undefined), []);
+});
+
+test("an admin sees every world, hidden ones too, and deletes any, but removes nobody", async () => {
+  const { directory } = newDirectory(DIRECTORY_LIMITS, [await playerIdOf(ADMIN)]);
+  await directory.create(await newWorld({ hidden: true }));
+
+  const listed = (await directory.list(ADMIN)).body;
+  assert.equal(listed.admin, true);
+  assert.deepEqual(listed.worlds.map((world) => world.id), [WORLD]);
+  assert.equal((await directory.list(CREATOR)).body.admin, false);
+  assert.equal((await directory.list()).body.admin, false);
+
+  assert.equal((await directory.ban(WORLD, ADMIN, await playerIdOf(CREATOR))).status, 403);
+  assert.equal((await directory.putStart(WORLD, ADMIN, Uint8Array.of(1))).status, 403);
+
+  const deleted = await directory.remove(WORLD, ADMIN);
+  assert.equal(deleted.status, 200);
+  assert.equal(deleted.close, true);
+  assert.deepEqual((await directory.list(ADMIN)).body.worlds, []);
 });
 
 test("admit lets in whoever brings the auth key, and names their player id and the seats", async () => {

@@ -2,7 +2,8 @@
 //  worker.js
 //
 //  Changelog:
-//      Paulinchen  2026-09-30: Kept each world's starting save in the directory's storage, in pieces
+//      Paulinchen  2026-09-30: Read the relay's admins from the ADMINS secret
+//                            - Kept each world's starting save in the directory's storage, in pieces
 //      Paulinchen  2026-09-29: Added the world directory, a Durable Object that world rooms ask before seating a game
 //                            - Added world rooms, each a Durable Object that seats up to 32 games
 //      Paulinchen  2026-09-29: Created
@@ -17,7 +18,7 @@
 // never passes on from outside.
 
 import { DurableObject } from "cloudflare:workers";
-import { Directory as WorldDirectory, handleDirectoryRequest } from "../core/directory.js";
+import { Directory as WorldDirectory, handleDirectoryRequest, parseAdmins } from "../core/directory.js";
 import {
   CLOSE, IN, OUT, PAIRED, PING, PONG, admit, newPeer, newWorldPeer, nextDeadline, nextWorldDeadline, overdue, parseRoute, presenceOf,
   routeWorldMessage, seatChangeText, seatText, takeMessage, takeSeat, worldOverdue,
@@ -144,10 +145,10 @@ async function readBytes(request, limit) {
  */
 export class Directory extends DurableObject {
   /**
-   * Creates the directory over the object's storage.
+   * Creates the directory over the object's storage, with the admins the ADMINS secret names.
    *
    * @param {DurableObjectState} ctx The object's state.
-   * @param {object} env The Worker's bindings.
+   * @param {{ADMINS?: string}} env The Worker's bindings.
    */
   constructor(ctx, env) {
     super(ctx, env);
@@ -190,7 +191,7 @@ export class Directory extends DurableObject {
 
         return bytes;
       },
-    });
+    }, { admins: parseAdmins(env.ADMINS) });
   }
 
   /**

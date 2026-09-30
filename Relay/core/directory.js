@@ -2,15 +2,16 @@
 //  directory.js
 //
 //  Changelog:
-//      Paulinchen  2026-09-30: Kept a world's starting save, which its creator uploads once and only its players fetch
+//      Paulinchen  2026-09-30: Listed every world for the relay's admins, hidden ones too, and let them delete any
+//                            - Kept a world's starting save, which its creator uploads once and only its players fetch
 //                            - Left hidden worlds out of the list for everyone but their players, and named a world with its lock
 //      Paulinchen  2026-09-29: Created
 //
 //----------------------------------------------------------------
 
 // The world directory's rules, the same on every server: the list of worlds, public ones for
-// everyone and hidden ones for their players only, who may make, enter, delete or leave out whom,
-// and who was in which world. The relay never learns a
+// everyone and hidden ones for their players and the relay's admins only, who may make, enter,
+// delete or leave out whom, and who was in which world. The relay never learns a
 // world's token or password: it keeps the token locked with the password, and checks entering
 // against a hash of a key only the token's holders can make. A world's starting save reaches it
 // encrypted with a key from the token, so the relay only keeps its bytes.
@@ -91,6 +92,16 @@ export async function playerIdOf(key) {
 }
 
 /**
+ * Reads the relay's admins from its settings: player ids, separated by commas or white space.
+ *
+ * @param {unknown} text The setting, undefined when it is not set.
+ * @returns {string[]} The admins' player ids, empty for none; anything else in the setting is left out.
+ */
+export function parseAdmins(text) {
+  return typeof text === "string" ? text.toLowerCase().split(/[\s,]+/).filter((id) => PLAYER_KEY.test(id)) : [];
+}
+
+/**
  * Tidies a name someone chose: on one line, without control characters, trimmed and not too long.
  *
  * @param {unknown} name The name.
@@ -124,24 +135,27 @@ export class Directory {
    * Creates the directory.
    *
    * @param {DirectoryStore} store Where the worlds and their starting saves are kept.
-   * @param {{clock?: () => number, limits?: typeof DIRECTORY_LIMITS}} [options] The clock and limits, which tests change.
+   * @param {{clock?: () => number, limits?: typeof DIRECTORY_LIMITS, admins?: string[]}} [options] The clock and limits, which tests change, and the player ids of the relay's admins.
    */
-  constructor(store, { clock = Date.now, limits = DIRECTORY_LIMITS } = {}) {
+  constructor(store, { clock = Date.now, limits = DIRECTORY_LIMITS, admins = [] } = {}) {
     this.store = store;
     this.clock = clock;
     this.limits = limits;
+    this.admins = new Set(admins);
   }
 
   /**
-   * Lists the worlds a player sees: every public world, and the hidden ones the player joined.
+   * Lists the worlds a player sees: every public world, and the hidden ones the player joined, or
+   * every world for an admin.
    *
    * @param {unknown} [key] The asking player's key; without one, only the public worlds.
-   * @returns {Promise<{status: number, body: object}>} The worlds.
+   * @returns {Promise<{status: number, body: object}>} The worlds, and whether the player is an admin.
    */
   async list(key) {
     const player = typeof key === "string" && PLAYER_KEY.test(key) ? await playerIdOf(key) : null;
-    const worlds = (await this.store.all()).filter((entry) => !entry.hidden || (player && entry.members[player])).map((entry) => publicView(entry));
-    return { status: 200, body: { worlds } };
+    const admin = this.admins.has(player);
+    const worlds = (await this.store.all()).filter((entry) => admin || !entry.hidden || (player && entry.members[player])).map((entry) => publicView(entry));
+    return { status: 200, body: { worlds, admin } };
   }
 
   /**
@@ -207,14 +221,14 @@ export class Directory {
   }
 
   /**
-   * Deletes a world for everyone, if the creator asks.
+   * Deletes a world for everyone, if the creator or an admin asks.
    *
    * @param {string} id The world.
    * @param {unknown} key The asking player's key.
    * @returns {Promise<{status: number, body: object, close?: boolean}>} The answer, and whether the world room must close.
    */
   async remove(id, key) {
-    const { entry, refusal } = await this.asCreator(id, key);
+    const { entry, refusal } = await this.asCreator(id, key, true);
 
     if (refusal) {
       return refusal;
@@ -395,20 +409,23 @@ export class Directory {
   }
 
   /**
-   * Finds a world for its creator.
+   * Finds a world for its creator, or for an admin where admins may act too.
    *
    * @param {string} id The world.
    * @param {unknown} key The asking player's key.
+   * @param {boolean} [adminsToo] Whether an admin may act as the creator.
    * @returns {Promise<{entry?: object, refusal?: {status: number, body: object}}>} The world, or why the player may not act on it.
    */
-  async asCreator(id, key) {
+  async asCreator(id, key, adminsToo = false) {
     const entry = WORLD_ID.test(id) ? await this.store.get(id) : undefined;
 
     if (!entry) {
       return { refusal: notFound() };
     }
 
-    if (typeof key !== "string" || !PLAYER_KEY.test(key) || (await playerIdOf(key)) !== entry.creator.id) {
+    const player = typeof key === "string" && PLAYER_KEY.test(key) ? await playerIdOf(key) : null;
+
+    if (!player || (player !== entry.creator.id && !(adminsToo && this.admins.has(player)))) {
       return { refusal: { status: 403, body: { error: "only the world's creator may do this" } } };
     }
 

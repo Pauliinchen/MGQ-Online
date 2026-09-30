@@ -2,7 +2,8 @@
 //  TestRelay.cs
 //
 //  Changelog:
-//      Paulinchen  2026-09-30: Kept a world's starting save, uploaded once by its creator and handed to its players
+//      Paulinchen  2026-09-30: Listed every world for admins and let them delete any
+//                            - Kept a world's starting save, uploaded once by its creator and handed to its players
 //                            - Kept hidden worlds out of the list for everyone but their players, and named a world with its lock
 //      Paulinchen  2026-09-29: Kept a world directory, and seated only its players, closing those the creator removes or deletes the world of
 //                            - Seated games in world rooms, and cut them on request
@@ -97,6 +98,11 @@ internal sealed class TestRelay : IDisposable
     /// The relay's address, for a session's relay lookup.
     /// </summary>
     public Uri Address { get; }
+
+    /// <summary>
+    /// The player ids of the admins, who see every world and delete any.
+    /// </summary>
+    public HashSet<string> Admins { get; init; } = [];
 
     /// <summary>
     /// How many peers the relay holds in all its rooms.
@@ -308,7 +314,7 @@ internal sealed class TestRelay : IDisposable
                 ["v1", "worlds"] when method == "GET" => (200, List(query["player"])),
                 ["v1", "worlds"] when method == "POST" => Create(body!),
                 ["v1", "worlds", var id, "lock"] when _directory.TryGetValue(id, out var world) => (200, LockOf(world)),
-                ["v1", "worlds", var id, "delete"] when CreatorOf(id, body?["player"]?.GetValue<string>()) is { } world => Delete(id, toClose, out closeCode),
+                ["v1", "worlds", var id, "delete"] when CreatorOf(id, body?["player"]?.GetValue<string>(), adminsToo: true) is { } world => Delete(id, toClose, out closeCode),
                 ["v1", "worlds", var id, "ban"] when CreatorOf(id, body?["player"]?.GetValue<string>()) is { } world => Ban(id, world, body!["target"]!.GetValue<string>(), toClose, out closeCode),
                 ["v1", "worlds", var id, "start"] when method == "POST" && CreatorOf(id, query["player"]) is { } world => PutStart(world, upload),
                 ["v1", "worlds", var id, "start"] when method == "GET" && _directory.TryGetValue(id, out var world) => GetStart(world, query["player"], query["auth"], out download),
@@ -330,15 +336,16 @@ internal sealed class TestRelay : IDisposable
     }
 
     /// <summary>
-    /// Lists the worlds a player sees: the public ones, and the hidden ones the player joined. Called with the gate held.
+    /// Lists the worlds a player sees: the public ones, and the hidden ones the player joined, or every world for an admin. Called with the gate held.
     /// </summary>
     /// <param name="key">The asking player's key, <see langword="null"/> for the public worlds only.</param>
     /// <returns>The answer.</returns>
     private JsonObject List(string? key)
     {
         var player = key != null ? PlayerIdOf(key) : null;
-        var seen = _directory.Where(entry => !entry.Value.Hidden || (player != null && entry.Value.Members.ContainsKey(player)));
-        return new JsonObject { ["worlds"] = new JsonArray(seen.Select(entry => ListedWorld(entry.Key, entry.Value)).ToArray()) };
+        var admin = player != null && Admins.Contains(player);
+        var seen = _directory.Where(entry => admin || !entry.Value.Hidden || (player != null && entry.Value.Members.ContainsKey(player)));
+        return new JsonObject { ["worlds"] = new JsonArray(seen.Select(entry => ListedWorld(entry.Key, entry.Value)).ToArray()), ["admin"] = admin };
     }
 
     /// <summary>
@@ -460,13 +467,14 @@ internal sealed class TestRelay : IDisposable
     }
 
     /// <summary>
-    /// Finds a world whose creator's key a request carries. Called with the gate held.
+    /// Finds a world whose creator's key a request carries, or an admin's where admins may act too. Called with the gate held.
     /// </summary>
     /// <param name="id">The world.</param>
     /// <param name="key">The key the request carries.</param>
-    /// <returns>The world, or <see langword="null"/> when there is none or the key is not the creator's.</returns>
-    private DirectoryWorld? CreatorOf(string id, string? key) =>
-        _directory.TryGetValue(id, out var world) && key != null && PlayerIdOf(key) == world.CreatorId ? world : null;
+    /// <param name="adminsToo">Whether an admin may act as the creator.</param>
+    /// <returns>The world, or <see langword="null"/> when there is none or the key may not act on it.</returns>
+    private DirectoryWorld? CreatorOf(string id, string? key, bool adminsToo = false) =>
+        _directory.TryGetValue(id, out var world) && key != null && (PlayerIdOf(key) == world.CreatorId || (adminsToo && Admins.Contains(PlayerIdOf(key)))) ? world : null;
 
     /// <summary>
     /// Writes a world as the directory lists it. Called with the gate held.
