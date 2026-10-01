@@ -2,6 +2,7 @@
 //  ModFolder.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-01: Built the game's paths from the folder two above the mod folder, now that it is Patch\Multiplayer
 //      Paulinchen  2026-09-30: Built paths the game script names relative to the game's folder
 //      Paulinchen  2026-09-28: Created
 //
@@ -36,11 +37,23 @@ internal static class ModFolder
     public static string PathOf(string fileName) => Path.Combine(Root, fileName);
 
     /// <summary>
-    /// Builds the path of a file the game script names relative to the game's folder, the folder above this one.
+    /// Builds the path of a file the game script names relative to the game's folder.
     /// </summary>
     /// <param name="path">The path, relative to the game's folder or full.</param>
     /// <returns>The full path.</returns>
-    public static string GamePathOf(string path) => Path.GetFullPath(Path.Combine(Path.GetDirectoryName(Root) ?? Root, path));
+    public static string GamePathOf(string path) => GamePathOf(path, Root);
+
+    /// <summary>
+    /// Builds the path of a file the game script names relative to the game's folder, two folders above the mod folder.
+    /// </summary>
+    /// <param name="path">The path, relative to the game's folder or full.</param>
+    /// <param name="modFolder">Full path of the mod folder, Patch\Multiplayer in the game folder.</param>
+    /// <returns>The full path.</returns>
+    internal static string GamePathOf(string path, string modFolder)
+    {
+        var patch = Path.GetDirectoryName(modFolder) ?? modFolder;
+        return Path.GetFullPath(Path.Combine(Path.GetDirectoryName(patch) ?? patch, path));
+    }
 
     /// <summary>
     /// Removes a trailing separator from a folder path.
