@@ -2,6 +2,7 @@
 //  TestRelay.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-01: Let admins delete through a helper of their own, and named them in the refusal
 //      Paulinchen  2026-09-30: Listed every world for admins and let them delete any
 //                            - Kept a world's starting save, uploaded once by its creator and handed to its players
 //                            - Kept hidden worlds out of the list for everyone but their players, and named a world with its lock
@@ -314,10 +315,11 @@ internal sealed class TestRelay : IDisposable
                 ["v1", "worlds"] when method == "GET" => (200, List(query["player"])),
                 ["v1", "worlds"] when method == "POST" => Create(body!),
                 ["v1", "worlds", var id, "lock"] when _directory.TryGetValue(id, out var world) => (200, LockOf(world)),
-                ["v1", "worlds", var id, "delete"] when CreatorOf(id, body?["player"]?.GetValue<string>(), adminsToo: true) is { } world => Delete(id, toClose, out closeCode),
+                ["v1", "worlds", var id, "delete"] when CreatorOrAdminOf(id, body?["player"]?.GetValue<string>()) is { } world => Delete(id, toClose, out closeCode),
                 ["v1", "worlds", var id, "ban"] when CreatorOf(id, body?["player"]?.GetValue<string>()) is { } world => Ban(id, world, body!["target"]!.GetValue<string>(), toClose, out closeCode),
                 ["v1", "worlds", var id, "start"] when method == "POST" && CreatorOf(id, query["player"]) is { } world => PutStart(world, upload),
                 ["v1", "worlds", var id, "start"] when method == "GET" && _directory.TryGetValue(id, out var world) => GetStart(world, query["player"], query["auth"], out download),
+                ["v1", "worlds", var id, "delete"] when _directory.ContainsKey(id) => (403, Error("only the world's creator or an admin may do this")),
                 ["v1", "worlds", var id, _] when _directory.ContainsKey(id) => (403, Error("only the world's creator may do this")),
                 _ => (404, Error("there is no such world")),
             };
@@ -467,14 +469,37 @@ internal sealed class TestRelay : IDisposable
     }
 
     /// <summary>
-    /// Finds a world whose creator's key a request carries, or an admin's where admins may act too. Called with the gate held.
+    /// Finds a world whose creator's key a request carries. Called with the gate held.
     /// </summary>
     /// <param name="id">The world.</param>
     /// <param name="key">The key the request carries.</param>
-    /// <param name="adminsToo">Whether an admin may act as the creator.</param>
-    /// <returns>The world, or <see langword="null"/> when there is none or the key may not act on it.</returns>
-    private DirectoryWorld? CreatorOf(string id, string? key, bool adminsToo = false) =>
-        _directory.TryGetValue(id, out var world) && key != null && (PlayerIdOf(key) == world.CreatorId || (adminsToo && Admins.Contains(PlayerIdOf(key)))) ? world : null;
+    /// <returns>The world, or <see langword="null"/> when there is none or the key is not its creator's.</returns>
+    private DirectoryWorld? CreatorOf(string id, string? key)
+    {
+        if (!_directory.TryGetValue(id, out var world) || key == null)
+        {
+            return null;
+        }
+
+        return PlayerIdOf(key) == world.CreatorId ? world : null;
+    }
+
+    /// <summary>
+    /// Finds a world whose creator's or an admin's key a request carries. Called with the gate held.
+    /// </summary>
+    /// <param name="id">The world.</param>
+    /// <param name="key">The key the request carries.</param>
+    /// <returns>The world, or <see langword="null"/> when there is none or the key is neither its creator's nor an admin's.</returns>
+    private DirectoryWorld? CreatorOrAdminOf(string id, string? key)
+    {
+        if (!_directory.TryGetValue(id, out var world) || key == null)
+        {
+            return null;
+        }
+
+        var player = PlayerIdOf(key);
+        return player == world.CreatorId || Admins.Contains(player) ? world : null;
+    }
 
     /// <summary>
     /// Writes a world as the directory lists it. Called with the gate held.

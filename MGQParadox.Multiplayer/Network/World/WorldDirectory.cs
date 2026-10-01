@@ -2,6 +2,7 @@
 //  WorldDirectory.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-01: Stopped offering admin deletes after the list failed to load
 //      Paulinchen  2026-09-30: Told the game script whether the player is one of the relay's admins
 //                            - Made a world with a starting save, fetched it for new players, and listed which worlds have one
 //                            - Made hidden worlds, listed them for their players, and opened a world by its id alone
@@ -92,7 +93,7 @@ internal sealed class WorldDirectory
     private string? _list;
 
     /// <summary>
-    /// Whether the last list was made for one of the relay's admins.
+    /// Whether the last fetched list was made for one of the relay's admins; false after a failed fetch.
     /// </summary>
     private bool _admin;
 
@@ -180,11 +181,11 @@ internal sealed class WorldDirectory
             {
                 _listing = false;
                 _listError = error;
+                _admin = listing?.Admin == true;
 
                 if (listing != null)
                 {
                     _list = ListText(listing.Worlds);
-                    _admin = listing.Admin;
                 }
             }
         });

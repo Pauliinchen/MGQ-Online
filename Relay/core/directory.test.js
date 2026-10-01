@@ -2,6 +2,7 @@
 //  directory.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-01: Covered the refusal of a delete by someone who is neither the creator nor an admin
 //      Paulinchen  2026-09-30: Covered the relay's admins, who see every world and delete any
 //                            - Covered the starting save: uploaded once by the creator, fetched by players only
 //                            - Covered hidden worlds, listed only for their players, and the lock naming its world
@@ -165,6 +166,7 @@ test("an admin sees every world, hidden ones too, and deletes any, but removes n
 
   assert.equal((await directory.ban(WORLD, ADMIN, await playerIdOf(CREATOR))).status, 403);
   assert.equal((await directory.putStart(WORLD, ADMIN, Uint8Array.of(1))).status, 403);
+  assert.deepEqual(await directory.remove(WORLD, OTHER), { status: 403, body: { error: "only the world's creator or an admin may do this" } });
 
   const deleted = await directory.remove(WORLD, ADMIN);
   assert.equal(deleted.status, 200);

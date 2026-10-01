@@ -2,6 +2,7 @@
 //  directory.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-01: Named admins in the refusal of a delete, and checked admin and banned ids as player ids
 //      Paulinchen  2026-09-30: Listed every world for the relay's admins, hidden ones too, and let them delete any
 //                            - Kept a world's starting save, which its creator uploads once and only its players fetch
 //                            - Left hidden worlds out of the list for everyone but their players, and named a world with its lock
@@ -10,8 +11,8 @@
 //----------------------------------------------------------------
 
 // The world directory's rules, the same on every server: the list of worlds, public ones for
-// everyone and hidden ones for their players and the relay's admins only, who may make, enter,
-// delete or leave out whom, and who was in which world. The relay never learns a
+// everyone and hidden ones only for their players and the relay's admins; who may make, enter,
+// delete or leave out whom; and who was in which world. The relay never learns a
 // world's token or password: it keeps the token locked with the password, and checks entering
 // against a hash of a key only the token's holders can make. A world's starting save reaches it
 // encrypted with a key from the token, so the relay only keeps its bytes.
@@ -49,6 +50,11 @@ const WORLD_ID = /^[0-9a-f]{32}$/;
  * A player's key: 32 lowercase hexadecimal characters, which only the player's game knows.
  */
 const PLAYER_KEY = /^[0-9a-f]{32}$/;
+
+/**
+ * A player's id, as playerIdOf makes it: 32 lowercase hexadecimal characters.
+ */
+const PLAYER_ID = /^[0-9a-f]{32}$/;
 
 /**
  * A key or hash of 32 bytes, as 64 lowercase hexadecimal characters.
@@ -98,7 +104,7 @@ export async function playerIdOf(key) {
  * @returns {string[]} The admins' player ids, empty for none; anything else in the setting is left out.
  */
 export function parseAdmins(text) {
-  return typeof text === "string" ? text.toLowerCase().split(/[\s,]+/).filter((id) => PLAYER_KEY.test(id)) : [];
+  return typeof text === "string" ? text.toLowerCase().split(/[\s,]+/).filter((id) => PLAYER_ID.test(id)) : [];
 }
 
 /**
@@ -228,7 +234,7 @@ export class Directory {
    * @returns {Promise<{status: number, body: object, close?: boolean}>} The answer, and whether the world room must close.
    */
   async remove(id, key) {
-    const { entry, refusal } = await this.asCreator(id, key, true);
+    const { entry, refusal } = await this.asCreatorOrAdmin(id, key);
 
     if (refusal) {
       return refusal;
@@ -253,7 +259,7 @@ export class Directory {
       return refusal;
     }
 
-    if (typeof target !== "string" || !PLAYER_KEY.test(target) || target === entry.creator.id) {
+    if (typeof target !== "string" || !PLAYER_ID.test(target) || target === entry.creator.id) {
       return badRequest("the player to remove must be another player's id");
     }
 
@@ -409,14 +415,55 @@ export class Directory {
   }
 
   /**
-   * Finds a world for its creator, or for an admin where admins may act too.
+   * Finds a world for its creator.
    *
    * @param {string} id The world.
    * @param {unknown} key The asking player's key.
-   * @param {boolean} [adminsToo] Whether an admin may act as the creator.
    * @returns {Promise<{entry?: object, refusal?: {status: number, body: object}}>} The world, or why the player may not act on it.
    */
-  async asCreator(id, key, adminsToo = false) {
+  async asCreator(id, key) {
+    const { entry, player, refusal } = await this.worldAndPlayer(id, key);
+
+    if (refusal) {
+      return { refusal };
+    }
+
+    if (player !== entry.creator.id) {
+      return { refusal: { status: 403, body: { error: "only the world's creator may do this" } } };
+    }
+
+    return { entry };
+  }
+
+  /**
+   * Finds a world for its creator or one of the relay's admins.
+   *
+   * @param {string} id The world.
+   * @param {unknown} key The asking player's key.
+   * @returns {Promise<{entry?: object, refusal?: {status: number, body: object}}>} The world, or why the player may not act on it.
+   */
+  async asCreatorOrAdmin(id, key) {
+    const { entry, player, refusal } = await this.worldAndPlayer(id, key);
+
+    if (refusal) {
+      return { refusal };
+    }
+
+    if (player !== entry.creator.id && !this.admins.has(player)) {
+      return { refusal: { status: 403, body: { error: "only the world's creator or an admin may do this" } } };
+    }
+
+    return { entry };
+  }
+
+  /**
+   * Finds a world and the id of the player asking about it.
+   *
+   * @param {string} id The world.
+   * @param {unknown} key The asking player's key.
+   * @returns {Promise<{entry?: object, player?: string | null, refusal?: {status: number, body: object}}>} The world and the player's id, null for a key that is no player key, or why there is no world.
+   */
+  async worldAndPlayer(id, key) {
     const entry = WORLD_ID.test(id) ? await this.store.get(id) : undefined;
 
     if (!entry) {
@@ -424,12 +471,7 @@ export class Directory {
     }
 
     const player = typeof key === "string" && PLAYER_KEY.test(key) ? await playerIdOf(key) : null;
-
-    if (!player || (player !== entry.creator.id && !(adminsToo && this.admins.has(player)))) {
-      return { refusal: { status: 403, body: { error: "only the world's creator may do this" } } };
-    }
-
-    return { entry };
+    return { entry, player };
   }
 
   /**

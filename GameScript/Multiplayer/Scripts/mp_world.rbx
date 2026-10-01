@@ -2,6 +2,7 @@
 #  mp_world.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-01: Said that the relay's admins see hidden worlds too
 #      Paulinchen  2026-09-30: Let the relay's admins see every world, hidden ones too, and delete any
 #                            - Moved into Patch/Multiplayer/Scripts as mp_world.rbx, which Multiplayer.rb loads, with the worlds in Patch/Multiplayer/Worlds
 #                            - Named the mod Monster Girl Quest! Online in the update notice
@@ -360,7 +361,7 @@ module MGQ_MpWorld
     # @!attribute name [String] The world's name.
     # @!attribute start [String] How far it is with its starting save: "none", "pending" or "ready".
     # @!attribute members [Array<Member>] Everyone who ever joined it, those online first.
-    # @!attribute hidden [Boolean] Whether the list leaves it out for everyone but its players.
+    # @!attribute hidden [Boolean] Whether the list leaves it out for everyone but its players and the relay's admins.
     ListedWorld = Struct.new(:id, :seats, :online, :creator_id, :active, :creator_name, :name, :start, :members, :hidden)
 
     # A player of a world.
@@ -404,7 +405,7 @@ module MGQ_MpWorld
     # @param name [String] The world's name.
     # @param password [String] The password.
     # @param seats [Integer] How many players it seats at once.
-    # @param hidden [Boolean] Whether the list leaves it out for everyone but its players.
+    # @param hidden [Boolean] Whether the list leaves it out for everyone but its players and the relay's admins.
     # @param start [String] The starting save's files, see MGQ_MpSaveDistribution.text_of; empty for none.
     # @return [Boolean] Whether the action started.
     def self.create(name, password, seats, hidden, start)
@@ -807,7 +808,7 @@ module MGQ_MpWorld
         Field.new(:name, :text, "Name", 0, "The name everyone sees in the list.", :max_chars => MAX_NAME_CHARS),
         Field.new(:password, :password, "Password", 1, "Everyone types it once to enter the world.", :max_chars => MAX_PASSWORD_CHARS),
         Field.new(:seats, :number, "Max Players", 2, "How many players may be in the world at once, #{MIN_SEATS} to #{MAX_SEATS}. It cannot be changed later.", :max_chars => MAX_SEATS.to_s.size, :allowed => /\A\d\z/),
-        Field.new(:hidden, :check, "Hidden", 3, "Ticked, the world is left out of the list: share its id and password with those who may join. Otherwise everyone sees it.", :side => :left),
+        Field.new(:hidden, :check, "Hidden", 3, "Ticked, only its players and the relay's admins see it in the list: share its id and password with those who may join. Otherwise everyone sees it.", :side => :left),
         Field.new(:from_save, :check, "From my save", 3, "Ticked, new players start from one of your saves instead of the opening. It cannot be changed later.", :side => :right),
         Field.new(:save, :save, "Save", 4, "The save every new player starts from.", :needs => :from_save),
         Field.new(:confirm, :button, "Create the world", 6, "Makes the world and enters it."),
@@ -1790,7 +1791,7 @@ class Window_MpWorldDetail < Window_Base
       lines.push(["Made by #{listed.creator_id == me ? 'you' : listed.creator_name}", normal_color])
       lines.push(["#{listed.online} of #{listed.seats} players online", normal_color])
       lines.push([START_TEXTS[listed.start], normal_color]) if START_TEXTS[listed.start]
-      lines.push(["Hidden: only its players see it in the list.", normal_color]) if listed.hidden
+      lines.push(["Hidden: only its players and the relay's admins see it in the list.", normal_color]) if listed.hidden
     elsif entry.gone
       lines.push(["Only on this PC: it was deleted, or you were removed.", normal_color])
     else

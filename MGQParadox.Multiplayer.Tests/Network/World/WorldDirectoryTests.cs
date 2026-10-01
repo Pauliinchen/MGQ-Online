@@ -2,6 +2,7 @@
 //  WorldDirectoryTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-01: Covered an admin who is no longer marked as one once the list fails to load
 //      Paulinchen  2026-09-30: Covered an admin, who sees hidden worlds and deletes another player's world
 //                            - Covered making a world with a starting save and fetching it as a new player
 //                            - Covered hidden worlds, listed for their creator only and opened by their id
@@ -139,6 +140,25 @@ public sealed class WorldDirectoryTests
     }
 
     /// <summary>
+    /// Asserts that a list that fails to load no longer marks the player as an admin.
+    /// </summary>
+    [Fact]
+    public void Admin_IsClearedWhenTheListFails()
+    {
+        var adminKey = PlayerKey(9);
+        using var relay = new TestRelay { Admins = [WorldKeys.PlayerIdOf(adminKey)] };
+        Uri? address = relay.Address;
+        var admin = new WorldDirectory { RelayAddress = _ => address, Iterations = 1_000, Playing = () => (adminKey, "Admin") };
+
+        Assert.Equal("1", ListState(admin)["admin"]);
+
+        address = null;
+        var failed = ListEnding(admin);
+        Assert.Equal("failed", failed["state"]);
+        Assert.Empty(failed["admin"]);
+    }
+
+    /// <summary>
     /// Asserts that an action without a player, or with an unknown relay, fails with a reason.
     /// </summary>
     [Fact]
@@ -270,6 +290,18 @@ public sealed class WorldDirectoryTests
     /// <returns>The list as the game script reads it, its headers with it.</returns>
     internal static Message ListState(WorldDirectory directory)
     {
+        var list = ListEnding(directory);
+        Assert.Equal("ready", list["state"]);
+        return list;
+    }
+
+    /// <summary>
+    /// Fetches the list and waits until the fetch is ready or failed.
+    /// </summary>
+    /// <param name="directory">The directory.</param>
+    /// <returns>The list as the game script reads it, its headers with it.</returns>
+    private static Message ListEnding(WorldDirectory directory)
+    {
         directory.Refresh();
         var deadline = DateTime.UtcNow + Patience;
 
@@ -277,12 +309,11 @@ public sealed class WorldDirectoryTests
         {
             var list = Message.Decode(directory.DescribeList());
 
-            if (list["state"] == "ready")
+            if (list["state"] is "ready" or "failed")
             {
                 return list;
             }
 
-            Assert.NotEqual("failed", list["state"]);
             Thread.Sleep(20);
         }
 
