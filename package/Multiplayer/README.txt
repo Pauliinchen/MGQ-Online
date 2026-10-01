@@ -161,6 +161,8 @@ Enter sends, Esc closes. The arrow keys, Home and End move the cursor,
 and Delete removes the character after it. Your line goes to everyone in
 the world: in a speech bubble above your head for the players on your
 map, and in the chat log at the bottom left of the map for everyone.
+The chat works in battles too, where its log sits above the battle's
+windows, and tells at once when a player leaves the battle.
 
 Parties: players outside your party are slightly see-through. Stand next
 to another player and pick "Invite to a party" in the wheel; when they

@@ -2,6 +2,7 @@
 #  overworld_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-01: Checked the chat in battles and the game's own lines in the chat log
 #      Paulinchen  2026-09-30: Created
 #
 #----------------------------------------------------------------
@@ -23,7 +24,8 @@ end
 class Game_Message; attr_accessor :busy; def busy?; @busy; end; end
 class Interpreter; def running?; false; end; end
 class Scene_Map; def update_scene; end; def scene_changing?; false; end; end
-class Scene_Battle; end
+class Scene_Battle; def update_basic; end; end
+class Spriteset_Battle; def update; end; def dispose; end; end
 module SceneManager; class << self; attr_accessor :scene; end; end
 class Game_Character
   attr_reader :x, :y, :direction, :character_name, :character_index, :opacity
@@ -374,10 +376,22 @@ check("log lines stay a while longer", chat.log_lines.size, 3)
 check("then the log goes quiet", chat.log_lines, [])
 chat.start_typing
 check("but shows again while typing", chat.log_lines.size, 3)
-SceneManager.scene = Scene_Battle.new
+battle = Scene_Battle.new
+SceneManager.scene = battle
 MGQ_MpOverworldSync.tick
-check("leaving the map closes the chat box", [chat.typing?, MGQ_Multiplayer::Capture.on?], [false, false])
+check("a battle keeps the chat box open", [chat.typing?, MGQ_Multiplayer::Capture.on?], [true, true])
+$typed = "in battle\r"
+battle.update_basic
+check("and its line goes out from the battle", [chat.typing?, chat.log_lines.last], [false, "Me: in battle"])
+$pressed = MGQ_MpChat::CHAT_KEY
+battle.update_basic
+check("T opens the chat box in a battle too", chat.typing?, true)
+SceneManager.scene = Scene_Item.new
+MGQ_MpOverworldSync.tick
+check("a menu closes the chat box", [chat.typing?, MGQ_Multiplayer::Capture.on?], [false, false])
 SceneManager.scene = Scene_Map.new
+chat.system("Friend left the battle.")
+check("the game's own lines go to the log too", chat.log_lines.last, "* Friend left the battle.")
 
 class FakeBitmap; def text_size(text); Struct.new(:width).new(text.size * 10); end; end
 check("wrapping at spaces", chat.wrap(FakeBitmap.new, "aaa bbb ccc", 70), ["aaa bbb", "ccc"])

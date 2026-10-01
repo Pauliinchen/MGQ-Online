@@ -2,6 +2,8 @@
 #  mp_chat.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-01: Let the chat box and the chat log work in battles, above the battle's windows
+#                            - Showed the game's own lines in the chat log, such as a player leaving a battle
 #      Paulinchen  2026-09-30: Created
 #
 #----------------------------------------------------------------
@@ -187,9 +189,24 @@ module MGQ_MpChat
   # @param name [String] The sender's name.
   # @param text [String] The line.
   def self.add(sender, name, text)
-    @log.push(["#{name}: #{text}", LOG_FRAMES])
-    @log.shift while @log.size > KEPT
+    push("#{name}: #{text}")
     @bubbles[sender] = [text, BUBBLE_FRAMES] unless sender.nil?
+  end
+
+  # Adds a line of the game's own to the log, such as a player leaving a battle, which shows in
+  # battles too, where the world's status line does not.
+  #
+  # @param text [String] The line.
+  def self.system(text)
+    push("* #{text}")
+  end
+
+  # Adds a line to the log, forgetting the oldest beyond KEPT.
+  #
+  # @param line [String] The line.
+  def self.push(line)
+    @log.push([line, LOG_FRAMES])
+    @log.shift while @log.size > KEPT
   end
 
   # Lets log lines and bubbles run out. Called every frame.
@@ -292,12 +309,14 @@ module MGQ_MpChat
     MGQ_MpOverworldSync::Status.notice(text)
   end
 
-  # Lets bubbles and chat lines run out, closes the chat box once the map is left, and forgets the
-  # chat once no world is open. Called by mp_overworld_sync.rbx every frame in every scene.
+  # Lets bubbles and chat lines run out, closes the chat box once neither the map nor a battle
+  # shows, and forgets the chat once no world is open. Called by mp_overworld_sync.rbx every frame
+  # in every scene.
   #
   # @param in_world [Boolean] Whether a world is open.
   def self.tick(in_world)
-    stop_typing unless in_world && SceneManager.scene.is_a?(Scene_Map)
+    scene = SceneManager.scene
+    stop_typing unless in_world && (scene.is_a?(Scene_Map) || scene.is_a?(Scene_Battle))
     in_world ? count_down : reset
   end
 
@@ -325,6 +344,23 @@ module MGQ_MpChat
     end
   rescue => e
     log("chat failed: #{e.class}: #{e.message}")
+    stop_typing
+  end
+
+  # Opens the chat box with T in a battle of a world, and types into it while it is open. Called by
+  # the battle every frame, its waits included, so the player chats while the battle plays on.
+  def self.on_battle
+    chat_key = MGQ_Multiplayer::Key.pressed?(CHAT_KEY)
+    return stop_typing unless in_world?
+
+    if typing?
+      update_typing
+    elsif chat_key && available?
+      Sound.play_ok
+      start_typing
+    end
+  rescue => e
+    log("battle chat failed: #{e.class}: #{e.message}")
     stop_typing
   end
 end
@@ -435,6 +471,9 @@ class Sprite_MpChatLog < Sprite
   # Room the world's status line keeps at the bottom of the screen.
   STATUS_ROOM = 96
 
+  # Room a battle's command and status windows keep at the bottom of the screen.
+  BATTLE_ROOM = 200
+
   # Background while the chat box is open.
   BACK = Color.new(0, 0, 0, 120)
 
@@ -452,12 +491,13 @@ class Sprite_MpChatLog < Sprite
 
   # Creates the log, empty.
   #
-  # @param viewport [Viewport] The map's topmost viewport.
-  def initialize(viewport)
+  # @param viewport [Viewport] The map's topmost viewport, or the battle's chat viewport.
+  # @param bottom_room [Integer] Room kept free below it: STATUS_ROOM on the map, BATTLE_ROOM in battle.
+  def initialize(viewport, bottom_room = STATUS_ROOM)
     super(viewport)
     self.bitmap = Bitmap.new(WIDTH, ROW * (ROWS + 1))
     self.x = 8
-    self.y = Graphics.height - STATUS_ROOM - bitmap.height
+    self.y = Graphics.height - bottom_room - bitmap.height
     self.z = 200
     @shown = nil
   end
@@ -596,5 +636,54 @@ if MGQ_MpChat.hookable?
     end
   rescue => e
     MGQ_MpChat.log("sprite hooks FAILED: #{e.class}: #{e.message}")
+  end
+
+  begin
+    class Scene_Battle
+      alias mgq_mp_chat_update_basic update_basic
+
+      # Updates the battle, then the chat box.
+      #
+      # update_basic runs in the battle's waits too, so the chat box takes typing while the battle
+      # plays on.
+      def update_basic
+        mgq_mp_chat_update_basic
+        MGQ_MpChat.on_battle
+      end
+    end
+
+    class Spriteset_Battle
+      alias mgq_mp_chat_update update
+      alias mgq_mp_chat_dispose dispose
+
+      # Updates the battle's sprites, then the chat log.
+      def update
+        mgq_mp_chat_update
+        mgq_mp_chat_update_log
+      end
+
+      # Keeps the chat log above the battle's windows while a world is open.
+      def mgq_mp_chat_update_log
+        return unless @mgq_mp_chat_log || MGQ_MpChat.in_world?
+
+        # The battle's windows lie above every viewport of the spriteset, so the log gets its own.
+        @mgq_mp_chat_viewport ||= Viewport.new.tap { |viewport| viewport.z = 300 }
+        @mgq_mp_chat_log ||= Sprite_MpChatLog.new(@mgq_mp_chat_viewport, Sprite_MpChatLog::BATTLE_ROOM)
+        @mgq_mp_chat_log.update
+      rescue => e
+        MGQ_MpChat.log("battle chat log failed: #{e.class}: #{e.message}") unless @mgq_mp_chat_failed
+        @mgq_mp_chat_failed = true
+      end
+
+      # Frees the chat log, then the battle's sprites.
+      def dispose
+        @mgq_mp_chat_log.dispose if @mgq_mp_chat_log
+        @mgq_mp_chat_viewport.dispose if @mgq_mp_chat_viewport
+        @mgq_mp_chat_log = @mgq_mp_chat_viewport = nil
+        mgq_mp_chat_dispose
+      end
+    end
+  rescue => e
+    MGQ_MpChat.log("battle hooks FAILED: #{e.class}: #{e.message}")
   end
 end
