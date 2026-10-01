@@ -184,13 +184,18 @@ you can try to escape; whoever gets away leaves the battle, and the one
 left alone fights on with their own full team. Each of you gets the full
 EXP, gold and your own item drops, or your own defeat. Chests are everyone's own: when
 a party member opens one, everyone in the party who has not looted it
-yet gets the same items. The party travels together: when the player
-who made the party goes to another map, everyone follows, and when a
-story scene starts there, everyone on that map is brought to them. The
-story itself plays in their game: when you start a story event, it is
+yet gets the same items. Everyone goes where they like; only a story
+scene brings the party together. A story scene the player who made the
+party starts waits until every member stands next to them, 30 seconds
+at most: members get 5 seconds to finish what they do, then are
+brought over, wherever they are (after a battle or a menu once it is
+over), and stand still while the scene plays. After 30 seconds it starts
+without those who have not come, and they play on where they are. The story itself plays in their game: when you start a story event, it is
 handed to them, and everyone on the map sees its dialogue in their own
-message window, at their own pace. Conversations, shops and the job
-change menu stay your own.
+message window, which moves on when that player moves on; only they can
+continue or close it. Conversations, shops and the job change menu stay
+your own, and so do the companions, merchants, inn and maids of the
+Pocket Castle.
 
 
 CONNECTION

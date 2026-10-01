@@ -2,12 +2,17 @@
 #  coop_events_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-01: Checked that a page counts only the branches that can run now
+#                            - Checked that exits noting a flag on the way are travel, and that members come over after five seconds
+#                            - Checked that only the leader moves the story dialogue on, and the Pocket Castle's residents sorted as talks
+#                            - Checked that a story scene waits for the whole party, at most thirty seconds, which comes over after ten seconds and stands still, and that a member it started without plays on
+#                            - Checked that members no longer follow the leader to other maps
 #      Paulinchen  2026-09-30: Created
 #
 #----------------------------------------------------------------
 
-# Covers mp_coop_events.rbx with mp_coop_story.rbx: how event pages are sorted, chests, travelling
-# together, and story events played in the leader's game.
+# Covers mp_coop_events.rbx with mp_coop_story.rbx: how event pages are sorted, chests, gathering
+# for story scenes, and story events played in the leader's game.
 
 require_relative "support"
 
@@ -63,8 +68,8 @@ $data_weapons = [nil, RPG::Weapon.new(1, "Sword")]
 $data_armors = [nil]
 module Vocab; def self.currency_unit; "G"; end; end
 
-class Game_Switches; def initialize; @data = []; end; end
-class Game_Variables; def initialize; @data = []; end; end
+class Game_Switches; def initialize; @data = []; end; def [](id); @data[id] || false; end; def []=(id, value); @data[id] = value; end; end
+class Game_Variables; def initialize; @data = []; end; def [](id); @data[id] || 0; end; def []=(id, value); @data[id] = value; end; end
 class Game_SelfSwitches; def initialize; @data = {}; end; end
 class Game_Party
   attr_reader :items, :gold
@@ -72,14 +77,18 @@ class Game_Party
   def gain_item(item, amount, include_equip = false, keep_flag = false); @items[item.name] += amount; end
   def gain_gold(amount); @gold += amount; end
 end
+module Graphics; def self.frame_count; $frame_count; end; end
+$frame_count = 0
 class Game_Interpreter
   attr_accessor :busy
+  def execute_command; end
   def setup(list, event_id = 0); @list = list; @event_id = event_id; end
   def run; @list.each { |command| $game_party.gain_item($data_items[command.parameters[0]], command.parameters[3]) if command.code == 126 }; end
   def running?; @busy; end
 end
 class Game_Player
   attr_reader :x, :y, :direction, :reserved
+  def movable?; true; end
   def initialize; @x = 1; @y = 1; @direction = 2; end
   def moveto(x, y); @x, @y = x, y; end
   def set_direction(d); @direction = d; end
@@ -91,6 +100,12 @@ class Game_Player
     @reserved = nil
   end
 end
+# The message window's wait for the player's input at a page's end.
+class Window_Message
+  attr_accessor :pause
+  def process_input; input_pause; end
+  def input_pause; $own_pause = true; end
+end
 class Game_Message
   attr_accessor :busy, :face_name, :face_index, :background, :position
   attr_reader :texts, :choices
@@ -99,7 +114,8 @@ class Game_Message
   def add(text); @texts << text; end
   def busy?; @busy; end
 end
-class Scene_Map; end
+class Scene_Map; def update_call_menu; @menu_calling = :asked; end; attr_reader :menu_calling; end
+class Scene_Battle; end
 class Scene_Menu; end
 module SceneManager; class << self; attr_accessor :scene; end; end
 class Game_Interpreter
@@ -182,6 +198,48 @@ check("a fight with dialogue is story", kind([c(101, "", 0, 0, 2), c(301, 0, 5, 
 check("a called common event counts", kind([c(117, 1)]), :story)
 check("common events calling each other end", kind([c(117, 2)]), :story)
 
+# The Pocket Castle's residents are talks there, whatever their talk sets.
+$game_map = Game_Map.new
+companion = [c(101, "", 0, 0, 2), c(401, "\\n<Vanilla (Affection:\\V[3005])>Hello"), c(355, "call_novel_scene(12)"), c(121, 60, 60, 0)]
+inn = [c(101, "", 0, 0, 2), c(401, "A stuffed animal is watching over the inn."), c(117, 270)]
+coin_shop = [c(355, "@goods = []"), c(121, 60, 60, 0)]
+castle_story = [c(101, "", 0, 0, 2), c(401, "\\n<Sphinx>The Yellow Orb..."), c(355, "actor_label_jump"), c(121, 60, 60, 0)]
+$game_map.map_id = 228
+check("in the Pocket Castle a companion's talk, the inn and the coin shop are talks", [kind(companion), kind(inn), kind(coin_shop)], [:talk, :talk, :talk])
+check("its story events stay story", kind(castle_story), :story)
+$game_map.map_id = 7
+check("outside the castle a companion's novel scene stays story", kind(companion), :story)
+
+# An exit that notes a flag on the way, as Iliasville's north exit notes Sonya, is travel.
+exit_page = RPG::Page.new([c(250, nil), c(201, 0, 6, 5, 66, 2, 0), c(111, 0, 60, 0), c(121, 60, 60, 0), c(412)])
+talking_exit = RPG::Page.new([c(101, "", 0, 0, 2), c(201, 0, 6, 5, 66, 2, 0), c(121, 60, 60, 0)])
+$game_map.events = { 21 => Game_Event.new(21, [exit_page]), 22 => Game_Event.new(22, [exit_page], 3), 23 => Game_Event.new(23, [talking_exit]) }
+check("an exit that notes a story switch on the way is travel", MGQ_MpCoopEvents.kind($game_map.events[21]), :travel)
+check("the same page running by itself stays story", MGQ_MpCoopEvents.kind($game_map.events[22]), :story)
+check("an exit with dialogue stays story", MGQ_MpCoopEvents.kind($game_map.events[23]), :story)
+
+# An exit holding the story's warning in a branch, as Iliasville's do, is story only while the
+# branch can run: here while the story's progress (variable 1001) is 7, or switch 61 is off.
+$game_switches = Game_Switches.new
+$game_variables = Game_Variables.new
+warning_exit = RPG::Page.new([
+  Command.new(111, 0, [1, 1001, 0, 7, 0]), Command.new(101, 1, ["", 0, 0, 2]), Command.new(121, 1, [60, 60, 0]), Command.new(115, 1, []), Command.new(0, 1, []),
+  Command.new(412, 0, []),
+  Command.new(111, 0, [0, 61, 0]), Command.new(0, 1, []), Command.new(411, 0, []), Command.new(101, 1, ["", 0, 0, 2]), Command.new(121, 1, [62, 62, 0]), Command.new(0, 1, []),
+  Command.new(412, 0, []),
+  c(201, 0, 2, 296, 355, 0, 0)])
+$game_map.events = { 24 => Game_Event.new(24, [warning_exit]) }
+$game_variables[1001] = 7
+$game_switches[61] = true
+check("while its warning can show, the exit is story", MGQ_MpCoopEvents.kind($game_map.events[24]), :story)
+$game_variables[1001] = 12
+check("once the story moved past it, the exit is travel", MGQ_MpCoopEvents.kind($game_map.events[24]), :travel)
+$game_switches[61] = false
+check("a branch's else runs when its condition fails", MGQ_MpCoopEvents.kind($game_map.events[24]), :story)
+$game_switches = $game_variables = nil
+check("without the game's switches every branch counts", MGQ_MpCoopEvents.kind($game_map.events[24]), :story)
+$game_map = nil
+
 # Chests.
 $game_map = Game_Map.new
 $game_party = Game_Party.new
@@ -251,7 +309,7 @@ $members = [friend]
 $sent.clear
 $game_player.reserve_transfer(9, 4, 5, 8)
 $game_player.perform_transfer
-check("the leader takes the party along", $sent.map { |seat, f| [seat, f["pevent"], f["map"], f["x"], f["y"], f["d"]] }, [[-1, "travel", "9", "4", "5", "8"]])
+check("the leader's transfers take nobody along", $sent, [])
 $sent.clear
 $game_map.interpreter.setup([c(101, "", 0, 0, 2), c(121, 60, 60, 0)], 1)
 check("and gathers it for a story scene", $sent.map { |seat, f| [seat, f["pevent"], f["map"]] }, [[-1, "gather", "9"]])
@@ -264,28 +322,100 @@ $leader = leader
 $members = [leader]
 $game_map.map_id = 3
 $game_player.moveto(1, 1)
-MGQ_MpCoopEvents.take(friend, { "pevent" => "travel", "party" => "p1", "map" => "7", "x" => "2", "y" => "2", "d" => "4" })
+MGQ_MpCoopEvents.take(leader, { "pevent" => "travel", "party" => "p1", "map" => "7", "x" => "2", "y" => "2", "d" => "4" })
 $game_map.update
 MGQ_MpCoopEvents.update
-check("only the leader is followed", $game_player.reserved, nil)
-MGQ_MpCoopEvents.take(leader, { "pevent" => "travel", "party" => "p1", "map" => "7", "x" => "2", "y" => "2", "d" => "4" })
-$game_message.busy = true
+check("a member stays when the leader goes to another map", $game_player.reserved, nil)
+MGQ_MpCoopEvents.take(friend, { "pevent" => "gather", "party" => "p1", "map" => "7", "x" => "2", "y" => "2", "d" => "4" })
+check("only the leader calls the party to a story scene", MGQ_MpCoopEvents.own_line, nil)
+$game_map.map_id = 7
+$game_player.moveto(2, 2)
+
+# A member called to the leader's story scene.
+$notices.clear
+leader.state.merge!("map" => "8")
+MGQ_MpCoopEvents.take(leader, { "pevent" => "gather", "party" => "p1", "map" => "8", "x" => "9", "y" => "3", "d" => "6" })
 MGQ_MpCoopEvents.update
-check("a member in a message follows later", $game_player.reserved, nil)
-$game_message.busy = false
-SceneManager.scene = Scene_Menu.new
+check("a member called to the story hears when they come over", [$notices.last, MGQ_MpCoopEvents.own_line], ["Leader's story is starting. You join them in 5 seconds.", "Joining Leader in 5 s . . ."])
+check("and is not moved before five seconds", [$game_player.reserved, $game_map.map_id], [nil, 7])
+$frame_count = 150
+MGQ_MpCoopEvents.take(leader, { "pevent" => "gather", "party" => "p1", "map" => "8", "x" => "9", "y" => "3", "d" => "6" })
+check("calls again do not start the time anew", MGQ_MpCoopEvents.own_line, "Joining Leader in 3 s . . .")
+$frame_count = 300
+SceneManager.scene = Scene_Battle.new
 MGQ_MpCoopEvents.update
-check("so does a member in a menu", $game_player.reserved, nil)
+check("a member in battle comes once it is over", [$game_player.reserved, MGQ_MpCoopEvents.own_line], [nil, "Joining Leader once free . . ."])
 SceneManager.scene = Scene_Map.new
 MGQ_MpCoopEvents.update
-check("then the member goes where the leader went", $game_player.reserved, [7, 2, 2, 4])
+check("then they are brought to the leader's map", $game_player.reserved, [8, 9, 3, 6])
 $game_player.perform_transfer
-MGQ_MpCoopEvents.take(leader, { "pevent" => "gather", "party" => "p1", "map" => "7", "x" => "9", "y" => "3", "d" => "6" })
+check("and wait no more", MGQ_MpCoopEvents.own_line, nil)
+MGQ_MpCoopEvents.take(leader, { "pevent" => "gather", "party" => "p1", "map" => "8", "x" => "11", "y" => "4", "d" => "6" })
+check("a member standing near already is not moved", [MGQ_MpCoopEvents.own_line, $game_player.x], [nil, 9])
+$frame_count = 2000
+MGQ_MpCoopEvents.take(leader, { "pevent" => "gather", "party" => "p1", "map" => "5", "x" => "1", "y" => "1", "d" => "2" })
+$frame_count = 2359
+check("a call stands while the leader still calls", MGQ_MpCoopEvents.own_line, "Joining Leader once free . . .")
+$frame_count = 2360
 MGQ_MpCoopEvents.update
-check("a story scene brings the member to the leader", [$game_player.x, $game_player.y, $game_player.direction, $game_player.reserved], [9, 3, 6, nil])
-MGQ_MpCoopEvents.take(leader, { "pevent" => "gather", "party" => "p1", "map" => "8", "x" => "1", "y" => "1", "d" => "2" })
-MGQ_MpCoopEvents.update
-check("but only on the leader's map", [$game_player.x, $game_player.y, $game_player.reserved], [9, 3, nil])
+check("once the calls stop, the story started without the member, who stays", [MGQ_MpCoopEvents.own_line, $notices.last, $game_player.reserved],
+      [nil, "Leader's story started without you.", nil])
+
+# While the leader's story scene plays, the member stands still.
+check("free while the leader tells no story", [$game_player.movable?, MGQ_MpCoopEvents.blocked?], [true, false])
+leader.state["telling"] = "1"
+scene = Scene_Map.new
+scene.update_call_menu
+check("blocked while it plays: no moving, no menu", [$game_player.movable?, scene.menu_calling], [false, false])
+leader.state["map"] = "5"
+check("a member on another map, whom the story started without, plays on", [$game_player.movable?, MGQ_MpCoopEvents.blocked?], [true, false])
+leader.state["map"] = "8"
+leader.state["telling"] = "0"
+scene.update_call_menu
+check("free again once it ends", [$game_player.movable?, scene.menu_calling], [true, :asked])
+
+# The leader's story scene waits for the party.
+$leader = :me
+$members = [friend]
+$game_map.map_id = 3
+$game_player.moveto(5, 5)
+friend.state.merge!("map" => "9", "x" => "1", "y" => "1")
+$frame_count = 1000
+$sent.clear
+$notices.clear
+interpreter = $game_map.interpreter
+interpreter.setup([c(101, "", 0, 0, 2), c(121, 60, 60, 0)], 1)
+check("a story scene calls the members", [$sent.map { |seat, f| [seat, f["pevent"], f["map"], f["x"]] }, $notices.last], [[[-1, "gather", "3", "5"]], "Gathering the party for the story . . ."])
+interpreter.busy = true
+check("and waits while one is away", [MGQ_MpCoopEvents.holding?(interpreter), MGQ_MpCoopEvents.own_line, MGQ_MpCoopEvents.state_fields["telling"]], [true, "Gathering the party . . .", 0])
+$sent.clear
+$frame_count = 1100
+MGQ_MpCoopEvents.holding?(interpreter)
+check("calling again only every three seconds", $sent.size, 0)
+$frame_count = 1200
+MGQ_MpCoopEvents.holding?(interpreter)
+check("then once more", $sent.map { |_, f| f["pevent"] }, ["gather"])
+check("other interpreters never wait", MGQ_MpCoopEvents.holding?(Game_Interpreter.new), false)
+friend.state.merge!("map" => "3", "x" => "7", "y" => "4")
+check("once everyone stands near, the scene plays", [MGQ_MpCoopEvents.holding?(interpreter), $notices.last, MGQ_MpCoopEvents.state_fields["telling"]], [false, "The party is here.", 1])
+interpreter.busy = false
+check("and the members are free once it ends", MGQ_MpCoopEvents.state_fields["telling"], 0)
+$sent.clear
+interpreter.setup([c(101, "", 0, 0, 2), c(121, 60, 60, 0)], 1)
+check("a party gathered already plays at once", [$sent.size, MGQ_MpCoopEvents.holding?(interpreter)], [0, false])
+friend.state.merge!("map" => "9", "x" => "1", "y" => "1")
+$frame_count = 3000
+interpreter.setup([c(101, "", 0, 0, 2), c(121, 60, 60, 0)], 1)
+interpreter.busy = true
+$frame_count = 4799
+check("a member who does not come holds the scene up to thirty seconds", MGQ_MpCoopEvents.holding?(interpreter), true)
+$frame_count = 4800
+check("then it plays without them", [MGQ_MpCoopEvents.holding?(interpreter), $notices.last, MGQ_MpCoopEvents.state_fields["telling"]],
+      [false, "The story starts without Friend.", 1])
+interpreter.busy = false
+$leader = leader
+$members = [leader]
+$game_map.map_id = 7
 
 # Story events in the leader's game.
 story_page = RPG::Page.new([c(101, "", 0, 0, 2), c(401, "Line"), c(121, 60, 60, 0)])
@@ -338,10 +468,14 @@ $game_message.face_index = 2
 $game_message.add("Hello, \\N[1]!")
 $game_message.choices.push("Yes", "No")
 $game_map.interpreter.wait_for_message
+$game_message.clear
 $game_map.interpreter.wait_for_message
 says = $sent.select { |_, f| f["pevent"] == "say" }
 check("the leader's story message goes to the party once", says.size, 1)
 say = says.first[1]
+check("and once the leader moved on, that it is done", $sent.map { |_, f| [f["pevent"], f["page"]] }.select { |kind, _| %w[say done].include?(kind) }, [["say", say["page"]], ["done", say["page"]]])
+$game_message.add("Hello, \\N[1]!")
+$game_message.choices.push("Yes", "No")
 check("with its face and text", [say["face"], say["index"], say["map"], MGQ_MpCoopEvents.decode(say["lines"].split(",")[0]), say["choices"].split(",").map { |t| MGQ_MpCoopEvents.decode(t) }], ["Alice", "2", "7", "Hello, \\N[1]!", ["Yes", "No"]])
 $sent.clear
 $game_message.clear
@@ -360,7 +494,29 @@ MGQ_MpCoopEvents.update
 check("a member busy with a message sees the leader's later", $game_message.texts, [])
 $game_message.busy = false
 MGQ_MpCoopEvents.update
-check("then the leader's message", [$game_message.face_name, $game_message.texts], ["Alice", ["Hello, \\N[1]!"]])
+check("then the leader's message, with what the leader chooses from", [$game_message.face_name, $game_message.texts], ["Alice", ["Hello, \\N[1]!", "Leader chooses: Yes / No"]])
+
+# Only the leader moves the dialogue on.
+window = Window_Message.new
+$own_pause = nil
+pause = Fiber.new { window.process_input; :closed }
+pause.resume
+pause.resume
+check("the member cannot move the leader's page on or close it", [pause.alive?, $own_pause, window.pause], [true, nil, true])
+MGQ_MpCoopEvents.take(leader, { "pevent" => "done", "party" => "p1", "map" => "7", "x" => "0", "y" => "0", "d" => "2", "page" => say["page"] })
+check("the leader moving on ends it", [pause.resume, window.pause], [:closed, false])
+Fiber.new { window.process_input }.resume
+check("then the member's own messages wait for their buttons again", $own_pause, true)
 $game_message.clear
+$game_message.busy = true
+MGQ_MpCoopEvents.take(leader, say.merge("page" => "s.1", "lines" => ["Old page"].pack('m0')))
+MGQ_MpCoopEvents.take(leader, { "pevent" => "done", "party" => "p1", "map" => "7", "page" => "s.1" })
+MGQ_MpCoopEvents.take(leader, say.merge("page" => "s.2", "lines" => ["Current page"].pack('m0'), "choices" => ""))
+$game_message.busy = false
 MGQ_MpCoopEvents.update
-check("then what the leader chooses from", $game_message.texts, ["Leader chooses:", "Yes", "No"])
+check("a member busy meanwhile skips the pages the leader moved past", $game_message.texts, ["Current page"])
+leader.state["telling"] = "0"
+$frame_count += MGQ_MpCoopEvents::STALE_FRAMES
+check("a page ends anyway once the leader stopped telling the story a while ago", MGQ_MpCoopEvents.page_done?, true)
+MGQ_MpCoopEvents.page_ended
+$game_message.clear
