@@ -2,7 +2,8 @@
 #  mp_overworld_sync.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-02: Followed Graphics.update through mp_hooks.rbx
+#      Paulinchen  2026-10-02: Told Discord the open world's name, its players and its seats through the Discord mod
+#                            - Followed Graphics.update through mp_hooks.rbx
 #                            - Marked the player's state, which tells it apart from the scripts' messages
 #      Paulinchen  2026-09-30: Created
 #
@@ -63,6 +64,17 @@ module MGQ_MpOverworldSync
   # @return [Boolean] Whether mp_world.rbx has a world open.
   def self.in_world?
     defined?(MGQ_MpWorld) && MGQ_MpWorld.open? ? true : false
+  end
+
+  # The fields the Discord mod publishes about the open world, which Discord shows as its name and
+  # its players, such as "(3 of 8)".
+  #
+  # @return [Hash] The world's name, id, players and seats, none outside a world.
+  def self.status_fields
+    world = in_world? ? MGQ_MpWorld.world : nil
+    return {} unless world
+
+    { "mp_world" => world.name, "mp_world_id" => world.id, "mp_world_size" => Peers.all.size + 1, "mp_world_max" => world.seats }
   end
 
   # Hands every message marked by a field to a script. The first field registered wins when a
@@ -496,4 +508,11 @@ begin
   MGQ_MpHooks.after(Graphics.singleton_class, :update, "mp_overworld_sync") { MGQ_MpOverworldSync.tick }
 rescue => e
   MGQ_MpOverworldSync.log("Graphics hook FAILED: #{e.class}: #{e.message}")
+end
+
+# Discord shows the world and its players, through the Discord mod's bridge when it is installed.
+begin
+  MGQ_Discord::Bridge.add_status { |_scene| MGQ_MpOverworldSync.status_fields } if MGQ_Multiplayer::Discord.available?
+rescue => e
+  MGQ_MpOverworldSync.log("status source FAILED: #{e.class}: #{e.message}")
 end

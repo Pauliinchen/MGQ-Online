@@ -2,7 +2,8 @@
 #  mp_world.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-02: Offered to copy a world's latest save into the player's own game
+#      Paulinchen  2026-10-02: Told how many players a world seats, from its code
+#                            - Offered to copy a world's latest save into the player's own game
 #                            - Made worlds without a password, which their players enter without being asked for one
 #                            - Showed the featured worlds, which the relay's admins make, in gold after the favourites
 #                            - Followed the title screen's start and update through mp_hooks.rbx
@@ -615,6 +616,13 @@ module MGQ_MpWorld
     # @return [String] The folder, relative to the game's folder.
     def folder
       World.folder_of(@id)
+    end
+
+    # How many players the world seats at once, which the last field of its code tells.
+    #
+    # @return [Integer] The seats, 0 for a code that tells none.
+    def seats
+      @code.to_s.split(";").last.to_i
     end
 
     # The folder of the world's saves, which the game's Save folder stands for while it is open.

@@ -2,7 +2,8 @@
 #  world_open_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-02: Created
+#      Paulinchen  2026-10-02: Checked the seats a world code tells
+#                            - Created
 #
 #----------------------------------------------------------------
 
@@ -162,3 +163,7 @@ detail.show(entries[1], "me")
 check("a featured world says so below its name", lines[0, 2], ["Golden", "Featured: one of the relay's own worlds."])
 check("a world without a password says anyone may enter", lines.include?("No password: anyone may enter."), true)
 check("made by the admin tool's player", lines.include?("Made by Global"), true)
+
+# The seats, which the world code tells.
+check("a world's code tells its seats", MGQ_MpWorld::World.new("abcdef012345", "code" => "mgqmp2;abcdefghjkmnpqrs;r1;8").seats, 8)
+check("a code without them tells none", MGQ_MpWorld::World.new("abcdef012345", {}).seats, 0)

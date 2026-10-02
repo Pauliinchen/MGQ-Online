@@ -2,7 +2,8 @@
 #  overworld_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-02: Checked that the state marker tells states apart from the scripts' messages
+#      Paulinchen  2026-10-02: Checked what Discord hears of the open world
+#                            - Checked that the state marker tells states apart from the scripts' messages
 #                            - Checked that a full party turns away one player too many and cannot be joined
 #      Paulinchen  2026-10-01: Checked the chat in battles and the game's own lines in the chat log
 #                            - Checked the globe in the wheel's middle
@@ -483,3 +484,15 @@ check("the leader turns away the fifth player", [$sent.select { |_, text| text.i
 MGQ_MpCoop::Party.reset
 MGQ_MpCoop::Party.join(MGQ_MpOverworldSync::Peers.at(10))
 check("a full party cannot be joined", [MGQ_MpCoop::Party.id, MGQ_MpOverworldSync::Status.lines.last], [nil, "M10's party is full."])
+
+# Discord hears of the open world: its name, its players and its seats.
+valley = Struct.new(:name, :id, :seats).new("Valley", "w1", 8)
+MGQ_MpWorld.define_singleton_method(:world) { valley }
+MGQ_MpOverworldSync::Peers.clear
+$inbox << entry("message", 2, told(friend))
+MGQ_MpOverworldSync.tick
+check("Discord hears of the world and its players", MGQ_MpOverworldSync.status_fields,
+      { "mp_world" => "Valley", "mp_world_id" => "w1", "mp_world_size" => 2, "mp_world_max" => 8 })
+$open = false
+check("and of none once it closed", MGQ_MpOverworldSync.status_fields, {})
+$open = true
