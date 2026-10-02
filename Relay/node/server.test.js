@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-02: Expected the lock to say whether new players choose where to start
+//                            - Expected the list to say when each player was last seen
 //      Paulinchen  2026-09-30: Tested the starting save over HTTP, as bytes both ways
 //                            - Expected the lock to name its world
 //      Paulinchen  2026-09-29: Made every world in the directory first, and tested the directory over HTTP
@@ -262,7 +263,9 @@ test("games in a world room get seats, each learns who comes and goes, and the d
   await until(async () => (await listed(roomId(101))).online === 3);
   const secondId = await playerIdOf(playerKey(2));
   const members = (await listed(roomId(101))).members;
-  assert.deepEqual(members.find((member) => member.id === secondId), { id: secondId, name: "Player 2", online: true });
+  const { seen, ...secondMember } = members.find((member) => member.id === secondId);
+  assert.deepEqual(secondMember, { id: secondId, name: "Player 2", online: true });
+  assert.equal(typeof seen, "number");
 
   second.socket.close();
   assert.equal(await first.next(), "in 2");

@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-02: Kept whether a world lets each new player choose where to start
+//                            - Kept whether a world has no password and whether it is featured
 //                            - Cut the connections outside the lock when stopping, since a cut can end a connection at once
 //      Paulinchen  2026-10-01: Let admins delete through a helper of their own, and named them in the refusal
 //      Paulinchen  2026-09-30: Listed every world for admins and let them delete any
@@ -438,6 +439,8 @@ internal sealed class TestRelay : IDisposable
             Start = body["start"]?.GetValue<bool>() == true ? "pending" : "none",
             Hidden = body["hidden"]?.GetValue<bool>() == true,
             Choose = body["choose"]?.GetValue<bool>() == true,
+            Open = body["open"]?.GetValue<bool>() == true,
+            Featured = body["featured"]?.GetValue<bool>() == true,
         };
 
         return (201, new JsonObject { ["id"] = id });
@@ -529,6 +532,8 @@ internal sealed class TestRelay : IDisposable
             ["start"] = world.Start,
             ["hidden"] = world.Hidden,
             ["choose"] = world.Choose,
+            ["open"] = world.Open,
+            ["featured"] = world.Featured,
             ["online"] = online.Count,
             ["created"] = 0,
             ["active"] = 0,
@@ -899,6 +904,16 @@ internal sealed class TestRelay : IDisposable
         /// Whether each new player chooses where to start.
         /// </summary>
         public bool Choose { get; init; }
+
+        /// <summary>
+        /// Whether it has no password.
+        /// </summary>
+        public bool Open { get; init; }
+
+        /// <summary>
+        /// Whether it is one of the relay's own worlds.
+        /// </summary>
+        public bool Featured { get; init; }
 
         /// <summary>
         /// Its starting save, <see langword="null"/> before its creator uploaded one.

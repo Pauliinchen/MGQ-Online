@@ -116,12 +116,14 @@ yours. Names and passwords are typed on the keyboard; with a gamepad, the
 game's letters appear.
 
 - The list at the left holds every public world and the hidden worlds
-  you joined, your favourites first (marked *), then those you played
-  last. The right side shows who made the chosen world, how many of its
-  players are online, and everyone who ever joined it.
+  you joined, your favourites first (marked *), then the featured worlds
+  in gold, which the relay's admins run, then those you played last. The
+  right side shows who made the chosen world, how many of its players
+  are online, and everyone who ever joined it.
 - Create new world: point at it and fill in the form at the right: a
-  name, a password, and Max Players, 2 to 32. Tick "Hidden" to leave the
-  world out of the list. Tick "From my save" to have every new player
+  name, a password (left empty, anyone may enter), and Max Players, 2 to
+  32. Tick "Hidden" to leave the world out of the list. Tick "From my
+  save" to have every new player
   start from one of your own saves, with your party, items, story and
   Library, instead of the opening; then choose the save. Tick "Players
   choose their start" to let each new player choose when they first
@@ -130,10 +132,11 @@ game's letters appear.
   my save". Max Players, the starting save and Players choose cannot be
   changed later. A save that needs a mod a player lacks tells them which.
 - Join a hidden world: type or paste (Ctrl+V) the world id its creator
-  sent you, and its password. The creator copies the id with "Copy the
-  world id" on the world.
-- Enter a world: the first time, type its password; your game remembers
-  it after that. A world you have saves in loads your latest one.
+  sent you, and its password if it has one. The creator copies the id
+  with "Copy the world id" on the world.
+- Enter a world: the first time, type its password, unless it has none;
+  your game remembers it after that. A world you have saves in loads
+  your latest one.
 - Its creator can remove a player or delete the world for everyone.
 
 Each world keeps its own saves, Library, medals and affection in

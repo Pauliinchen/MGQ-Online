@@ -65,7 +65,7 @@ internal static unsafe partial class Exports
     /// players get, if there is one. Returns at once; the world code follows in <c>mp_dir_action</c>.
     /// </summary>
     /// <param name="name">The world's name, UTF-8 and null-terminated.</param>
-    /// <param name="password">The password others enter it with, UTF-8 and null-terminated.</param>
+    /// <param name="password">The password others enter it with, UTF-8 and null-terminated; empty for none.</param>
     /// <param name="seats">How many games it seats at once, 2 to 32.</param>
     /// <param name="hidden">1 to leave the world out of the list for everyone but its players, 0 to list it for everyone.</param>
     /// <param name="choose">1 to let each new player choose where to start, 0 to start everyone alike.</param>

@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-02: Made worlds whose new players choose where to start, and told the game script which worlds do
+//                            - Made worlds without a password, and told the game script which worlds have none and which are featured
 //      Paulinchen  2026-10-01: Stopped offering admin deletes after the list failed to load
 //      Paulinchen  2026-09-30: Told the game script whether the player is one of the relay's admins
 //                            - Made a world with a starting save, fetched it for new players, and listed which worlds have one
@@ -200,7 +201,7 @@ internal sealed class WorldDirectory
     /// <summary>
     /// Describes the list for the game script.
     /// </summary>
-    /// <returns><c>state</c> ("loading", "ready" or "failed"), <c>error</c> and <c>admin</c> (1 for an admin), then one line per world and player: <c>world</c>, id, seats, players online, creator's id, when last active, creator's name, name, starting save ("none", "pending" or "ready"), 1 when hidden, 1 when new players choose where to start; <c>member</c>, id, 1 when online, name; each separated by tabs.</returns>
+    /// <returns><c>state</c> ("loading", "ready" or "failed"), <c>error</c> and <c>admin</c> (1 for an admin), then one line per world and player: <c>world</c>, id, seats, players online, creator's id, when last active, creator's name, name, starting save ("none", "pending" or "ready"), 1 when hidden, 1 when new players choose where to start, 1 without a password, 1 when featured; <c>member</c>, id, 1 when online, name; each separated by tabs.</returns>
     public string DescribeList()
     {
         lock (_gate)
@@ -215,7 +216,7 @@ internal sealed class WorldDirectory
     /// the starting save new players get, if there is one.
     /// </summary>
     /// <param name="name">The world's name.</param>
-    /// <param name="password">The password others enter it with.</param>
+    /// <param name="password">The password others enter it with, empty for none.</param>
     /// <param name="seats">How many games it seats at once.</param>
     /// <param name="hidden">Whether the list leaves it out for everyone but its players.</param>
     /// <param name="choose">Whether each new player chooses where to start.</param>
@@ -231,8 +232,9 @@ internal sealed class WorldDirectory
         var box = start.Count > 0 ? SealStart(token, start) : null;
         var client = Client();
 
-        client.Create(id, name, seats, key, playerName, WorldKeys.AuthHashOf(WorldKeys.AuthKeyOf(token)), worldLock, box != null, hidden, choose);
-        Log.Write($"made world {id}{(hidden ? ", hidden" : string.Empty)}{(choose ? ", players choose where to start" : string.Empty)}");
+        var open = password.Length == 0;
+        client.Create(id, name, seats, key, playerName, WorldKeys.AuthHashOf(WorldKeys.AuthKeyOf(token)), worldLock, box != null, hidden, choose, open);
+        Log.Write($"made world {id}{(hidden ? ", hidden" : string.Empty)}{(choose ? ", players choose where to start" : string.Empty)}{(open ? ", without a password" : string.Empty)}");
 
         if (box != null)
         {
@@ -505,7 +507,7 @@ internal sealed class WorldDirectory
                 .Append('\t').Append(world.Online.ToString(CultureInfo.InvariantCulture)).Append('\t').Append(world.CreatorId)
                 .Append('\t').Append(world.Active.ToString(CultureInfo.InvariantCulture)).Append('\t').Append(OnOneField(world.CreatorName))
                 .Append('\t').Append(OnOneField(world.Name)).Append('\t').Append(OnOneField(world.Start)).Append('\t').Append(world.Hidden ? '1' : '0')
-                .Append('\t').Append(world.Choose ? '1' : '0').Append('\n');
+                .Append('\t').Append(world.Choose ? '1' : '0').Append('\t').Append(world.Open ? '1' : '0').Append('\t').Append(world.Featured ? '1' : '0').Append('\n');
 
             foreach (var member in world.Members.OrderByDescending(member => member.Online).ThenBy(member => member.Name, StringComparer.OrdinalIgnoreCase))
             {

@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-02: Made worlds whose new players choose where to start, and read which worlds do
+//                            - Made worlds without a password, and read which worlds have none and which are featured
 //      Paulinchen  2026-09-30: Read whether the list was made for an admin
 //                            - Uploaded and downloaded a world's starting save, and read which worlds have one
 //                            - Made hidden worlds, listed them for their players, and read a world's name with its lock
@@ -100,6 +101,8 @@ internal sealed class DirectoryClient
                 world.TryGetProperty("start", out var start) ? start.GetString() ?? "none" : "none",
                 Flag(world, "hidden"),
                 Flag(world, "choose"),
+                Flag(world, "open"),
+                Flag(world, "featured"),
                 members));
         }
 
@@ -133,8 +136,9 @@ internal sealed class DirectoryClient
     /// <param name="start">Whether a starting save follows, which keeps everyone out until it arrived.</param>
     /// <param name="hidden">Whether the list leaves it out for everyone but its players.</param>
     /// <param name="choose">Whether each new player chooses where to start.</param>
+    /// <param name="open">Whether its password is empty, so the games enter without asking for it.</param>
     /// <exception cref="DirectoryException">The directory could not be reached or refused the world.</exception>
-    public void Create(string id, string name, int seats, string playerKey, string playerName, string authHash, WorldLock worldLock, bool start, bool hidden, bool choose)
+    public void Create(string id, string name, int seats, string playerKey, string playerName, string authHash, WorldLock worldLock, bool start, bool hidden, bool choose, bool open)
     {
         var body = Json(writer =>
         {
@@ -152,6 +156,7 @@ internal sealed class DirectoryClient
             writer.WriteBoolean("start", start);
             writer.WriteBoolean("hidden", hidden);
             writer.WriteBoolean("choose", choose);
+            writer.WriteBoolean("open", open);
         });
 
         using var _ = Send(HttpMethod.Post, _worlds, body);
@@ -375,8 +380,10 @@ internal sealed record WorldListing(IReadOnlyList<ListedWorld> Worlds, bool Admi
 /// <param name="Start">How far it is with its starting save: "none", "pending" or "ready".</param>
 /// <param name="Hidden">Whether the list leaves it out for everyone but its players.</param>
 /// <param name="Choose">Whether each new player chooses where to start.</param>
+/// <param name="Open">Whether it has no password.</param>
+/// <param name="Featured">Whether it is one of the relay's own worlds, which an admin made.</param>
 /// <param name="Members">Everyone who ever joined it.</param>
-internal sealed record ListedWorld(string Id, string Name, int Seats, string CreatorId, string CreatorName, int Online, long Active, string Start, bool Hidden, bool Choose, IReadOnlyList<ListedMember> Members);
+internal sealed record ListedWorld(string Id, string Name, int Seats, string CreatorId, string CreatorName, int Online, long Active, string Start, bool Hidden, bool Choose, bool Open, bool Featured, IReadOnlyList<ListedMember> Members);
 
 /// <summary>
 /// A world's locked token, with what a player who knows only the world's id needs to enter it.

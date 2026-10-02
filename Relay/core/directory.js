@@ -3,6 +3,8 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-02: Kept whether a world lets each new player choose where to start
+//                            - Kept whether a world has no password, and let admins make featured worlds beyond the creator limit
+//                            - Listed when each player was last seen in a world, noting it as they leave too
 //      Paulinchen  2026-10-01: Named admins in the refusal of a delete, and checked admin and banned ids as player ids
 //      Paulinchen  2026-09-30: Listed every world for the relay's admins, hidden ones too, and let them delete any
 //                            - Kept a world's starting save, which its creator uploads once and only its players fetch
@@ -12,7 +14,8 @@
 //----------------------------------------------------------------
 
 // The world directory's rules, the same on every server: the list of worlds, public ones for
-// everyone and hidden ones only for their players and the relay's admins; who may make, enter,
+// everyone and hidden ones only for their players and the relay's admins, whose own worlds may be
+// featured; who may make, enter,
 // delete or leave out whom; and who was in which world. The relay never learns a
 // world's token or password: it keeps the token locked with the password, and checks entering
 // against a hash of a key only the token's holders can make. A world's starting save reaches it
@@ -180,7 +183,7 @@ export class Directory {
   /**
    * Makes a world.
    *
-   * @param {object} request The world: id, name, seats, the creator's player key and name, the hash of the auth key, the lock, whether a starting save follows, whether it is hidden from the list, and whether each new player chooses where to start.
+   * @param {object} request The world: id, name, seats, the creator's player key and name, the hash of the auth key, the lock, whether a starting save follows, whether it is hidden from the list, whether each new player chooses where to start, whether it has no password, and whether it is featured.
    * @returns {Promise<{status: number, body: object}>} The world's id, or why it was refused.
    */
   async create(request) {
@@ -195,13 +198,18 @@ export class Directory {
     }
 
     const creator = await playerIdOf(request.player);
+    const admin = this.admins.has(creator);
     const worlds = await this.store.all();
+
+    if (request.featured === true && !admin) {
+      return { status: 403, body: { error: "only the relay's admins may make featured worlds" } };
+    }
 
     if (worlds.length >= this.limits.maxWorlds) {
       return { status: 503, body: { error: "the directory is full" } };
     }
 
-    if (worlds.filter((entry) => entry.creator.id === creator).length >= this.limits.maxWorldsPerCreator) {
+    if (!admin && worlds.filter((entry) => entry.creator.id === creator).length >= this.limits.maxWorldsPerCreator) {
       return { status: 429, body: { error: `a player may make at most ${this.limits.maxWorldsPerCreator} worlds` } };
     }
 
@@ -218,6 +226,8 @@ export class Directory {
       start: request.start === true ? START.pending : START.none,
       hidden: request.hidden === true,
       choose: request.choose === true,
+      open: request.open === true,
+      featured: request.featured === true,
       created: now,
       active: now,
       members: { [creator]: { name: creatorName, seen: now } },
@@ -347,7 +357,8 @@ export class Directory {
   }
 
   /**
-   * Notes who is in a world's room now, as the room reports after every change.
+   * Notes who is in a world's room now, as the room reports after every change, and when those
+   * who left were last seen.
    *
    * @param {string} id The world.
    * @param {{player: string, name: string}[]} online The players in the room.
@@ -361,6 +372,13 @@ export class Directory {
     }
 
     const now = this.clock();
+
+    for (const player of entry.online) {
+      if (entry.members[player]) {
+        entry.members[player].seen = now;
+      }
+    }
+
     entry.online = [];
 
     for (const { player, name } of online) {
@@ -498,6 +516,8 @@ export class Directory {
     if (request.start !== undefined && typeof request.start !== "boolean") return "start must be true or false";
     if (request.hidden !== undefined && typeof request.hidden !== "boolean") return "hidden must be true or false";
     if (request.choose !== undefined && typeof request.choose !== "boolean") return "choose must be true or false";
+    if (request.open !== undefined && typeof request.open !== "boolean") return "open must be true or false";
+    if (request.featured !== undefined && typeof request.featured !== "boolean") return "featured must be true or false";
     return null;
   }
 }
@@ -568,13 +588,13 @@ async function readJson(readBody) {
 }
 
 /**
- * Makes the view of a world everyone may see: no hashes, no lock, and players by id and name.
+ * Makes the view of a world everyone may see: no hashes, no lock, and players by id, name and when they were last seen.
  *
  * @param {object} entry The world entry.
  * @returns {object} The view.
  */
 export function publicView(entry) {
-  const members = Object.entries(entry.members).map(([id, member]) => ({ id, name: member.name, online: entry.online.includes(id) }));
+  const members = Object.entries(entry.members).map(([id, member]) => ({ id, name: member.name, online: entry.online.includes(id), seen: member.seen }));
 
   return {
     id: entry.id,
@@ -584,6 +604,8 @@ export function publicView(entry) {
     start: entry.start ?? START.none,
     hidden: entry.hidden === true,
     choose: entry.choose === true,
+    open: entry.open === true,
+    featured: entry.featured === true,
     online: entry.online.length,
     created: entry.created,
     active: entry.active,

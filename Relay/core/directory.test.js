@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-02: Covered worlds whose new players choose where to start
+//                            - Covered worlds without a password, featured worlds and when players were last seen
 //      Paulinchen  2026-10-01: Covered the refusal of a delete by someone who is neither the creator nor an admin
 //      Paulinchen  2026-09-30: Covered the relay's admins, who see every world and delete any
 //                            - Covered the starting save: uploaded once by the creator, fetched by players only
@@ -102,10 +103,12 @@ test("a made world is listed without its hashes or lock, with the creator as its
   const creator = await playerIdOf(CREATOR);
   assert.deepEqual(body.worlds.map(({ id, name, seats, online }) => ({ id, name, seats, online })), [{ id: WORLD, name: "Iliasburg Crew", seats: 4, online: 0 }]);
   assert.deepEqual(body.worlds[0].creator, { id: creator, name: "Creator" });
-  assert.deepEqual(body.worlds[0].members, [{ id: creator, name: "Creator", online: false }]);
+  assert.deepEqual(body.worlds[0].members, [{ id: creator, name: "Creator", online: false, seen: 1_000_000 }]);
   assert.equal(body.worlds[0].start, "none");
   assert.equal(body.worlds[0].hidden, false);
   assert.equal(body.worlds[0].choose, false);
+  assert.equal(body.worlds[0].open, false);
+  assert.equal(body.worlds[0].featured, false);
   assert.equal(JSON.stringify(body).includes("authHash"), false);
   assert.equal(JSON.stringify(body).includes("box"), false);
   assert.notEqual(creator, CREATOR);
@@ -118,7 +121,7 @@ test("a world is refused twice, with bad fields, or beyond a creator's limit", a
   assert.equal((await directory.create(await newWorld())).status, 409);
   assert.equal((await directory.create(await newWorld({ id: "1".repeat(32) }))).status, 429);
 
-  for (const bad of [{ start: "yes" }, { hidden: 1 }, { choose: "no" }, { seats: 1 }, { seats: 33 }, { name: " " }, { id: "xyz" }, { player: "short" }, { authHash: "00" }, { lock: { salt: "12", iterations: 200_000, box: "ab" } }, { lock: { salt: "12".repeat(16), iterations: 10, box: "ab" } }]) {
+  for (const bad of [{ start: "yes" }, { hidden: 1 }, { choose: "no" }, { open: "yes" }, { featured: 1 },{ seats: 1 }, { seats: 33 }, { name: " " }, { id: "xyz" }, { player: "short" }, { authHash: "00" }, { lock: { salt: "12", iterations: 200_000, box: "ab" } }, { lock: { salt: "12".repeat(16), iterations: 10, box: "ab" } }]) {
     assert.equal((await directory.create(await newWorld({ id: "2".repeat(32), player: OTHER, ...bad }))).status, 400, JSON.stringify(bad));
   }
 });
@@ -210,12 +213,30 @@ test("presence marks who is online, adds newcomers as players and notes activity
   let world = (await directory.list()).body.worlds[0];
   assert.equal(world.online, 1);
   assert.equal(world.active, time.now);
-  assert.deepEqual(world.members.find((member) => member.id === other), { id: other, name: "Guest", online: true });
+  assert.deepEqual(world.members.find((member) => member.id === other), { id: other, name: "Guest", online: true, seen: time.now });
 
+  time.now += 7000;
   await directory.presence(WORLD, []);
   world = (await directory.list()).body.worlds[0];
   assert.equal(world.online, 0);
   assert.equal(world.members.length, 2);
+  assert.equal(world.members.find((member) => member.id === other).seen, time.now, "a player who left was last seen as they left");
+});
+
+test("a world without a password says so in the list", async () => {
+  const { directory } = newDirectory();
+  await directory.create(await newWorld({ open: true }));
+
+  assert.equal((await directory.list()).body.worlds[0].open, true);
+});
+
+test("only an admin makes featured worlds, beyond the limit of worlds per creator", async () => {
+  const { directory } = newDirectory({ ...DIRECTORY_LIMITS, maxWorldsPerCreator: 1 }, [await playerIdOf(ADMIN)]);
+
+  assert.deepEqual(await directory.create(await newWorld({ featured: true })), { status: 403, body: { error: "only the relay's admins may make featured worlds" } });
+  assert.equal((await directory.create(await newWorld({ player: ADMIN, featured: true }))).status, 201);
+  assert.equal((await directory.create(await newWorld({ id: "1".repeat(32), player: ADMIN, featured: true }))).status, 201);
+  assert.deepEqual((await directory.list()).body.worlds.map((world) => world.featured), [true, true]);
 });
 
 test("only the creator deletes a world or removes a player, who is then kept out", async () => {

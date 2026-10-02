@@ -2,7 +2,9 @@
 #  mp_world.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-02: Followed the title screen's start and update through mp_hooks.rbx
+#      Paulinchen  2026-10-02: Made worlds without a password, which their players enter without being asked for one
+#                            - Showed the featured worlds, which the relay's admins make, in gold after the favourites
+#                            - Followed the title screen's start and update through mp_hooks.rbx
 #                            - Put the Save folder back in one place as a world closes
 #                            - Let the creator tick Players choose, after which each new player starts at the beginning, from one of their own saves or from the starting save
 #      Paulinchen  2026-10-01: Said that the relay's admins see hidden worlds too
@@ -21,8 +23,8 @@
 # Worlds: lasting places several players play in together, entered through Multiplayer on the
 # title screen. The relay's world directory lists every public world with its players, and hidden
 # ones only for their players and the relay's admins; others join a hidden world by its id. An
-# admin may delete any world. A world's password is asked
-# once, after which this game remembers the world. Each world keeps its own saves and its
+# admin may delete any world, and the admins' featured worlds show in gold. A world's password, if
+# it has one, is asked once, after which this game remembers the world. Each world keeps its own saves and its
 # own system save (Library, medals, system switches, affection) in Patch/Multiplayer/Worlds/<id>, so
 # playing in a world never touches the player's own saves. A new world's players start at the
 # beginning, from one of its creator's saves, or where each of them chooses (mp_save_distribution.rbx).
@@ -58,6 +60,9 @@ module MGQ_MpWorld
 
   # A world's id, which joins a hidden world.
   WORLD_ID = /\A[0-9a-f]{32}\z/
+
+  # Colour of the featured worlds, which the relay's admins make.
+  FEATURED_COLOR = Color.new(255, 200, 64)
 
   # The buttons whose press, in a frame no key went down, tells a gamepad from the keyboard.
   #
@@ -283,7 +288,8 @@ module MGQ_MpWorld
   end
 
   # Builds what the world screen lists: the directory's worlds, and the worlds on this PC the
-  # directory no longer has, favourites first, then those played last, then by name.
+  # directory no longer has, favourites first, then the featured ones, then those played last,
+  # then by name.
   #
   # @param listed [Array<Directory::ListedWorld>] The directory's worlds.
   # @param complete [Boolean] Whether the directory's list arrived, so a world missing from it is gone.
@@ -302,7 +308,7 @@ module MGQ_MpWorld
       entries.push(Entry.new(world.directory_id, world.name, nil, world, favourites.include?(world.directory_id), complete || !world.directory_id))
     end
 
-    entries.sort_by { |entry| [entry.favourite ? 0 : 1, -(entry.local ? entry.local.played_at.to_i : 0), entry.name.downcase] }
+    entries.sort_by { |entry| [entry.favourite ? 0 : 1, entry.featured? ? 0 : 1, -(entry.local ? entry.local.played_at.to_i : 0), entry.name.downcase] }
   end
 
   # A world as the world screen lists it: the directory's, this PC's folder of it, or both.
@@ -313,7 +319,21 @@ module MGQ_MpWorld
   # @!attribute local [World, nil] The world's folder on this PC, nil before the player entered it.
   # @!attribute favourite [Boolean] Whether the player marked it as a favourite.
   # @!attribute gone [Boolean] Whether the directory no longer has it, as opposed to its list not having arrived.
-  Entry = Struct.new(:id, :name, :listed, :local, :favourite, :gone)
+  Entry = Struct.new(:id, :name, :listed, :local, :favourite, :gone) do
+    # Tells whether the directory lists the world as one of the relay's own, which an admin made.
+    #
+    # @return [Boolean] Whether it does.
+    def featured?
+      !listed.nil? && listed.featured
+    end
+
+    # Tells whether the directory lists the world as one without a password.
+    #
+    # @return [Boolean] Whether it does.
+    def open?
+      !listed.nil? && listed.open
+    end
+  end
 
   # Patch/Multiplayer/Multiplayer.dll's world functions: the folder id of a world code, and the
   # connection to the open world's room.
@@ -366,7 +386,9 @@ module MGQ_MpWorld
     # @!attribute members [Array<Member>] Everyone who ever joined it, those online first.
     # @!attribute hidden [Boolean] Whether the list leaves it out for everyone but its players and the relay's admins.
     # @!attribute choose [Boolean] Whether each new player chooses where to start.
-    ListedWorld = Struct.new(:id, :seats, :online, :creator_id, :active, :creator_name, :name, :start, :members, :hidden, :choose)
+    # @!attribute open [Boolean] Whether it has no password.
+    # @!attribute featured [Boolean] Whether it is one of the relay's own worlds, which an admin made.
+    ListedWorld = Struct.new(:id, :seats, :online, :creator_id, :active, :creator_name, :name, :start, :members, :hidden, :choose, :open, :featured)
 
     # A player of a world.
     #
@@ -395,7 +417,7 @@ module MGQ_MpWorld
 
         case fields[0]
         when "world"
-          worlds.push(ListedWorld.new(fields[1], fields[2].to_i, fields[3].to_i, fields[4], fields[5].to_i, fields[6].to_s, fields[7].to_s, fields[8] || "none", [], fields[9] == "1", fields[10] == "1"))
+          worlds.push(ListedWorld.new(fields[1], fields[2].to_i, fields[3].to_i, fields[4], fields[5].to_i, fields[6].to_s, fields[7].to_s, fields[8] || "none", [], fields[9] == "1", fields[10] == "1", fields[11] == "1", fields[12] == "1"))
         when "member"
           worlds.last.members.push(Member.new(fields[1], fields[2] == "1", fields[3].to_s)) if worlds.last
         end
@@ -407,7 +429,7 @@ module MGQ_MpWorld
     # Makes a world, locked with its password, with the starting save new players get, if there is one.
     #
     # @param name [String] The world's name.
-    # @param password [String] The password.
+    # @param password [String] The password, empty for none.
     # @param seats [Integer] How many players it seats at once.
     # @param hidden [Boolean] Whether the list leaves it out for everyone but its players and the relay's admins.
     # @param choose [Boolean] Whether each new player chooses where to start.
@@ -810,9 +832,9 @@ module MGQ_MpWorld
     def self.create
       fields = [
         Field.new(:name, :text, "Name", 0, "The name everyone sees in the list.", :max_chars => MAX_NAME_CHARS),
-        Field.new(:password, :password, "Password", 1, "Everyone types it once to enter the world.", :max_chars => MAX_PASSWORD_CHARS),
+        Field.new(:password, :password, "Password", 1, "Everyone types it once to enter the world. Left empty, anyone may enter without one.", :max_chars => MAX_PASSWORD_CHARS),
         Field.new(:seats, :number, "Max Players", 2, "How many players may be in the world at once, #{MIN_SEATS} to #{MAX_SEATS}. It cannot be changed later.", :max_chars => MAX_SEATS.to_s.size, :allowed => /\A\d\z/),
-        Field.new(:hidden, :check, "Hidden", 3, "Ticked, only its players and the relay's admins see it in the list: share its id and password with those who may join. Otherwise everyone sees it.", :side => :left),
+        Field.new(:hidden, :check, "Hidden", 3, "Ticked, only its players and the relay's admins see it in the list: share its id, and its password if it has one, with those who may join. Otherwise everyone sees it.", :side => :left),
         Field.new(:from_save, :check, "From my save", 3, "Ticked, new players start from one of your saves instead of the opening; with Players choose their start ticked, it is one of their choices. It cannot be changed later.", :side => :right),
         Field.new(:save, :save, "Save", 4, "The save every new player starts from.", :needs => :from_save),
         Field.new(:choose, :check, "Players choose their start", 5, "Ticked, each new player chooses: at the beginning, from one of their own saves, or from your save when From my save is ticked. It cannot be changed later."),
@@ -827,7 +849,7 @@ module MGQ_MpWorld
     def self.join
       fields = [
         Field.new(:id, :id, "World id", 0, "The id the world's creator copied for you. Ctrl+V pastes it.", :max_chars => 32, :allowed => /\A[0-9a-f]\z/i),
-        Field.new(:password, :password, "Password", 1, "The world's password.", :max_chars => MAX_PASSWORD_CHARS),
+        Field.new(:password, :password, "Password", 1, "The world's password; left empty for a world without one.", :max_chars => MAX_PASSWORD_CHARS),
         Field.new(:confirm, :button, "Join the world", 3, "Opens the world and enters it."),
       ]
       new("Join a hidden world", fields, :id => "", :password => "")
@@ -905,9 +927,11 @@ module MGQ_MpWorld
       when :id
         id = text.strip.downcase
         id =~ WORLD_ID ? [id, nil] : [text, "A world id has 32 characters, the digits and a to f."]
+      when :password
+        # A password keeps its spaces, since the others type it exactly, and may be empty.
+        [text, nil]
       else
-        # A password keeps its spaces, since the others type it exactly.
-        tidy = field.kind == :password ? text : text.strip
+        tidy = text.strip
         tidy.empty? ? [text, "The #{field.label.downcase} cannot be empty."] : [tidy, nil]
       end
     end
@@ -947,7 +971,7 @@ class Scene_MpWorlds < Scene_MenuBase
   # What the screen says while an action runs, by the action's kind.
   BUSY_TEXTS = {
     "create" => "Making the world . . .",
-    "unlock" => "Opening the world with its password . . .",
+    "unlock" => "Opening the world . . .",
     "delete" => "Deleting the world . . .",
     "ban" => "Removing the player . . .",
     "start" => "Fetching the starting save . . .",
@@ -1095,7 +1119,7 @@ class Scene_MpWorlds < Scene_MenuBase
     @actions_window.start(commands)
   end
 
-  # Enters the chosen world, asking for its password the first time.
+  # Enters the chosen world, asking for its password the first time, unless it has none.
   def on_enter
     if @entry.listed && @entry.listed.start == "pending"
       Sound.play_buzzer
@@ -1113,6 +1137,8 @@ class Scene_MpWorlds < Scene_MenuBase
       Sound.play_buzzer
       say("#{@entry.name} is full right now.")
       back_to_list
+    elsif @entry.open?
+      start_action("unlock") { MGQ_MpWorld::Directory.unlock(@entry.id, "") }
     else
       ask_text(:password, "The password of #{@entry.name}", "", :masked => true, :max_chars => MGQ_MpWorld::MAX_PASSWORD_CHARS)
     end
@@ -1129,7 +1155,7 @@ class Scene_MpWorlds < Scene_MenuBase
   # Puts the chosen hidden world's id on the clipboard, for its creator to hand out.
   def on_copy_id
     if MGQ_MpWorld::Link.copy(@entry.id)
-      say("The id of #{@entry.name} is on the clipboard. Send it with the password to those who may join.")
+      say("The id of #{@entry.name} is on the clipboard. Send it#{@entry.open? ? '' : ' with the password'} to those who may join.")
     else
       Sound.play_buzzer
       say("The id could not be put on the clipboard.")
@@ -1156,7 +1182,8 @@ class Scene_MpWorlds < Scene_MenuBase
 
   # Asks whether to delete the player's saves of the chosen world.
   def on_delete_saves
-    confirm(:delete_saves, "Delete your saves of #{@entry.name}? #{@entry.listed ? 'You would need its password again, and start anew.' : ''}", "Delete them")
+    again = @entry.open? ? "You would start anew." : "You would need its password again, and start anew."
+    confirm(:delete_saves, "Delete your saves of #{@entry.name}? #{@entry.listed ? again : ''}", "Delete them")
   end
 
   # Does what the player confirmed.
@@ -1828,8 +1855,8 @@ class Window_MpWorldList < Window_Command
     add_command("Back", :cancel)
   end
 
-  # Draws a world with its players online and seats, a favourite with a mark, and one its creator
-  # deleted pale.
+  # Draws a world with its players online and seats, a featured one in gold, a favourite with a
+  # mark, and one its creator deleted pale.
   #
   # @param index [Integer] The row.
   def draw_item(index)
@@ -1837,7 +1864,7 @@ class Window_MpWorldList < Window_Command
     return super unless entry
 
     rect = item_rect_for_text(index)
-    change_color(entry.favourite ? crisis_color : normal_color, !entry.gone)
+    change_color(entry.featured? ? MGQ_MpWorld::FEATURED_COLOR : entry.favourite ? crisis_color : normal_color, !entry.gone)
     draw_text(rect, entry.favourite ? "* #{entry.name}" : entry.name)
     draw_text(rect, "#{entry.listed.online}/#{entry.listed.seats}", 2) if entry.listed
   end
@@ -1869,13 +1896,15 @@ class Window_MpWorldDetail < Window_Base
 
     lines = []
     listed = entry.listed
-    lines.push([entry.name, system_color])
+    lines.push([entry.name, entry.featured? ? MGQ_MpWorld::FEATURED_COLOR : system_color])
 
     if listed
+      lines.push(["Featured: one of the relay's own worlds.", MGQ_MpWorld::FEATURED_COLOR]) if listed.featured
       lines.push(["Made by #{listed.creator_id == me ? 'you' : listed.creator_name}", normal_color])
       lines.push(["#{listed.online} of #{listed.seats} players online", normal_color])
       start = start_text(listed)
       lines.push([start, normal_color]) if start
+      lines.push(["No password: anyone may enter.", normal_color]) if listed.open
       lines.push(["Hidden: only its players and the relay's admins see it in the list.", normal_color]) if listed.hidden
     elsif entry.gone
       lines.push(["Only on this PC: it was deleted, or you were removed.", normal_color])

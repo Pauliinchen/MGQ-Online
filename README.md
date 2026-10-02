@@ -42,15 +42,15 @@ Each world keeps its own saves, Library, medals and affection in `Patch\Multipla
 
 ### Finding, creating and joining
 
-The list at the left shows every public world and the hidden worlds you joined: your favourites first (marked `*`), then the ones you played last. The right side shows who made the chosen world, how many of its players are online, and everyone who ever joined it.
+The list at the left shows every public world and the hidden worlds you joined: your favourites first (marked `*`), then the featured worlds in gold, which the relay's admins run, then the ones you played last. The right side shows who made the chosen world, how many of its players are online, and everyone who ever joined it.
 
-- **Enter a world:** type its password the first time; your game remembers it after that. You continue from your latest save in that world; the first time, you start at the opening or from the creator's save, or choose where to start if the creator let you.
-- **Create new world:** point at it and fill in the form at the right: a name, a password, and Max Players (2 to 32).
+- **Enter a world:** type its password the first time, unless it has none; your game remembers it after that. You continue from your latest save in that world; the first time, you start at the opening or from the creator's save, or choose where to start if the creator let you.
+- **Create new world:** point at it and fill in the form at the right: a name, a password (left empty, anyone may enter), and Max Players (2 to 32).
   - *Hidden* leaves the world out of the list. Only its players see it there.
   - *From my save* lets every new player start from one of your saves, with your party, items, story and Library, instead of the opening. Choose the save after ticking it.
   - *Players choose their start* lets each new player choose when they first enter: at the beginning, from one of their own saves, or from yours if you ticked *From my save*. Their own save is copied into the world; the original stays untouched.
   - Max Players, the starting save and Players choose can't be changed later.
-- **Join a hidden world:** type or paste (Ctrl+V) the world id its creator sent you, and its password. The creator copies the id with *Copy the world id* on the world.
+- **Join a hidden world:** type or paste (Ctrl+V) the world id its creator sent you, and its password if it has one. The creator copies the id with *Copy the world id* on the world.
 - **The creator** can remove a player, who can then no longer enter, or delete the world for everyone.
 
 ### On the map
