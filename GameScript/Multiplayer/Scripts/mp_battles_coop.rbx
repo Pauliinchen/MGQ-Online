@@ -2,7 +2,8 @@
 #  mp_battles_coop.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-02: Followed the map and installed the late hooks through mp_hooks.rbx
+#      Paulinchen  2026-10-02: Started a co-op battle when a player who joined it left the world before the roster went out
+#                            - Followed the map and installed the late hooks through mp_hooks.rbx
 #                            - Turned an invite down through MGQ_MpBattlesSync.tell, and took the seat, place and Luka from Game_MpActor
 #                            - Turned a co-op battle down while the leader's story scene is about to bring the player over
 #      Paulinchen  2026-10-01: Listed the battle's players, so each hears at once when another leaves
@@ -183,7 +184,9 @@ module MGQ_MpBattlesCoop
     players = [[own_seat, MGQ_Multiplayer::Player.name.to_s] + own_build]
     joined.keys.sort.each do |seat|
       builds, vitals, max = MGQ_MpBattlesSync::Wire.parse(joined[seat].to_s)
-      players << [seat, MGQ_MpOverworldSync::Peers.at(seat).state["name"].to_s, builds.to_s, Array(vitals), max.to_i]
+      # A player who joined may have left the world since; their characters fight on all the same.
+      peer = MGQ_MpOverworldSync::Peers.at(seat)
+      players << [seat, peer ? peer.state["name"].to_s : "?", builds.to_s, Array(vitals), max.to_i]
     end
     players = arrange(players)
     channel.post("roster", MGQ_MpBattlesSync::Wire.line([troop_entries, players]))

@@ -2,7 +2,8 @@
 #  mp_coop_story.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-02: Followed the map's update through mp_hooks.rbx
+#      Paulinchen  2026-10-02: Ended the awakening switches with the last companion's, as the affection variables end
+#                            - Followed the map's update through mp_hooks.rbx
 #      Paulinchen  2026-10-01: Kept the places of the player's party their own, so the leader's fewer never cut it
 #      Paulinchen  2026-09-30: Sent and took the party's messages through mp_coop.rbx, which drops those of another party
 #                            - Registered with mp_overworld_sync.rbx for its messages instead of being asked by mp_overworld.rbx
@@ -388,7 +389,7 @@ module MGQ_MpCoopStory
   # @param id [Integer] The switch.
   # @return [Boolean] Whether it is.
   def self.personal_switch?(id)
-    PERSONAL_SWITCHES.any? { |range| range === id } || (id >= AWAKENING_SWITCHES && id <= AWAKENING_SWITCHES + companions)
+    PERSONAL_SWITCHES.any? { |range| range === id } || (id >= AWAKENING_SWITCHES && id < AWAKENING_SWITCHES + companions)
   end
 
   # Reports whether a variable is the player's own.

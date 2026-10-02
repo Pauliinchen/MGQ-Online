@@ -2,7 +2,8 @@
 #  battles_coop_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-02: Ended the guest's battle through guest_end
+#      Paulinchen  2026-10-02: Checked that a player who joined and left the world before the roster does not stop the battle
+#                            - Ended the guest's battle through guest_end
 #      Paulinchen  2026-10-01: Checked that every player hears at once when another leaves the battle
 #                            - Checked that a guest whose troop differs fights the host's enemies
 #                            - Checked the squads players bring, the leader first, and swaps with the Backline
@@ -41,6 +42,24 @@ $frames = 0
 MGQ_MpBattlesSync.take(friend, { "battle" => "decline", "bid" => MGQ_MpBattlesSync.battle_id, :payload => "" })
 check("a decline ends the gathering", MGQ_MpBattlesCoop.gather(scene), nil)
 check("and without anyone the battle is the host's own", [MGQ_MpBattlesSync.role, MGQ_MpBattles.running?, MGQ_MpBattlesCoop.active?], [nil, false, false])
+
+# Somebody joins, then leaves the world before the roster goes out.
+BattleManager.setup(40, true, false)
+bid = MGQ_MpBattlesSync.battle_id
+$sent.clear
+$frames = 0
+$inject = lambda do |frame|
+  next unless frame == 3
+
+  MGQ_MpBattlesSync.take(friend, { "battle" => "join", "bid" => bid, :payload => MGQ_MpBattlesSync::Wire.line(["7,8,9", [[50, 5], [60, 6], [70, 7]], 8]) })
+  MGQ_MpOverworldSync::Peers.all.delete(friend)
+end
+check("a player who joined and left the world since does not stop the battle", MGQ_MpBattlesCoop.gather(scene), nil)
+$inject = nil
+roster = $sent.map { |seat, text| fields_of(text) }.find { |f| f["battle"] == "roster" }
+check("and is named as unknown", MGQ_MpBattlesSync::Wire.parse(roster[:payload])[1].map { |p| p[0, 2] }, [[0, "Me"], [2, "?"]])
+MGQ_MpOverworldSync::Peers.all.unshift(friend)
+MGQ_MpBattlesCoop.ended
 
 # Somebody joins.
 BattleManager.setup(40, true, false)

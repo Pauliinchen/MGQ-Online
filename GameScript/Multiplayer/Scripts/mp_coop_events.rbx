@@ -2,7 +2,8 @@
 #  mp_coop_events.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-02: Held event commands and followed the map's update through mp_hooks.rbx
+#      Paulinchen  2026-10-02: Sorted a common event once per depth, so one sorted deep down no longer counts as story when called higher up
+#                            - Held event commands and followed the map's update through mp_hooks.rbx
 #                            - Took whether the player plays in a party, and an event's page, from mp_coop.rbx
 #                            - Told the kinds of item a chest gives by their class alone
 #                            - Started no random encounter for a member the leader's story scene is about to bring over
@@ -272,7 +273,10 @@ module MGQ_MpCoopEvents
     marks
   end
 
-  # Adds what a common event does, sorted once per common event.
+  # Adds what a common event does, sorted once per common event and depth.
+  #
+  # The depth is part of the key, since a common event sorted deep down counts the events it calls
+  # past MAX_DEPTH as story, which a call from higher up must not take over.
   #
   # @param id [Integer] The common event.
   # @param depth [Integer] How deep it is called.
@@ -280,7 +284,7 @@ module MGQ_MpCoopEvents
   def self.common_marks(id, depth)
     return { :story => true } if depth > MAX_DEPTH
 
-    @common_kinds[id] ||= begin
+    @common_kinds[[id, depth]] ||= begin
       common = $data_common_events[id]
       common ? marks_of(common.list || [], depth) : {}
     end

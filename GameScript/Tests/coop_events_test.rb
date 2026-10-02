@@ -2,7 +2,8 @@
 #  coop_events_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-02: Gave the stand-ins the party check and the event page that mp_coop.rbx now holds
+#      Paulinchen  2026-10-02: Checked that a common event sorted deep down is sorted anew higher up, and where the awakening switches end
+#                            - Gave the stand-ins the party check and the event page that mp_coop.rbx now holds
 #                            - Checked that no random encounter starts for a member the story scene is about to bring over
 #      Paulinchen  2026-10-01: Checked that a page counts only the branches that can run now
 #                            - Checked that exits noting a flag on the way are travel, and that members come over after five seconds
@@ -211,6 +212,13 @@ check("a fight without dialogue is a battle", kind([c(301, 0, 5, false, false), 
 check("a fight with dialogue is story", kind([c(101, "", 0, 0, 2), c(301, 0, 5, false, false)]), :story)
 check("a called common event counts", kind([c(117, 1)]), :story)
 check("common events calling each other end", kind([c(117, 2)]), :story)
+(20..25).each { |id| $data_common_events[id] = RPG::CommonEvent.new([c(117, id + 1)]) }
+$data_common_events[26] = RPG::CommonEvent.new([c(101, "", 0, 0, 2)])
+check("a chain of common events too deep counts as story", kind([c(117, 20)]), :story)
+check("its end called from higher up is sorted by what it does", kind([c(117, 24)]), :talk)
+story = MGQ_MpCoopStory
+check("the awakening switches end with the last companion's",
+      [story.personal_switch?(story::AWAKENING_SWITCHES + 9), story.personal_switch?(story::AWAKENING_SWITCHES + 10)], [true, false])
 
 # The Pocket Castle's residents are talks there, whatever their talk sets.
 $game_map = Game_Map.new
