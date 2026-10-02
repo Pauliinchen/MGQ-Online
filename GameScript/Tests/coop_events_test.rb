@@ -2,7 +2,8 @@
 #  coop_events_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-02: Checked that a common event sorted deep down is sorted anew higher up, and where the awakening switches end
+#      Paulinchen  2026-10-02: Checked that members as far along as the leader keep the story, its items, gold and companions, and their own changes
+#                            - Checked that a common event sorted deep down is sorted anew higher up, and where the awakening switches end
 #                            - Gave the stand-ins the party check and the event page that mp_coop.rbx now holds
 #                            - Checked that no random encounter starts for a member the story scene is about to bring over
 #      Paulinchen  2026-10-01: Checked that a page counts only the branches that can run now
@@ -76,10 +77,17 @@ class Game_Switches; def initialize; @data = []; end; def [](id); @data[id] || f
 class Game_Variables; def initialize; @data = []; end; def [](id); @data[id] || 0; end; def []=(id, value); @data[id] = value; end; end
 class Game_SelfSwitches; def initialize; @data = {}; end; end
 class Game_Party
-  attr_reader :items, :gold
-  def initialize; @items = Hash.new(0); @gold = 0; end
+  attr_reader :items, :gold, :actors, :include_actors
+  attr_accessor :in_battle
+  def initialize; @items = Hash.new(0); @gold = 0; @actors = []; @include_actors = []; end
   def gain_item(item, amount, include_equip = false, keep_flag = false); @items[item.name] += amount; end
   def gain_gold(amount); @gold += amount; end
+  def add_actor(actor_id); add_stand_actor(actor_id); @actors << actor_id; end
+  def add_stand_actor(actor_id); @include_actors << actor_id; end
+  def remove_actor(actor_id); @include_actors.delete(actor_id); @actors.delete(actor_id); end
+  def exist_all_actor_id?(actor_id); @include_actors.include?(actor_id); end
+  def exist_party_actor_id?(actor_id); @actors.include?(actor_id); end
+  def party_member_full?; @actors.size >= 2; end
 end
 module Graphics; def self.frame_count; $frame_count; end; end
 $frame_count = 0
@@ -550,3 +558,89 @@ $frame_count += MGQ_MpCoopEvents::STALE_FRAMES
 check("a page ends anyway once the leader stopped telling the story a while ago", MGQ_MpCoopEvents.page_done?, true)
 MGQ_MpCoopEvents.page_ended
 $game_message.clear
+
+# The leader tells the party what their story gives, takes and sends away.
+Actor = Struct.new(:name)
+$data_actors[3] = Actor.new("Alice")
+$data_actors[4] = Actor.new("Tamamo")
+$game_party = Game_Party.new
+$game_party.add_actor(3)
+$leader = :me
+$members = [friend]
+$game_map.interpreter.busy = true
+MGQ_MpCoopEvents.instance_variable_set(:@telling, true)
+$sent.clear
+$game_party.gain_item($data_items[1], 3)
+$game_party.gain_gold(-5)
+$game_party.remove_actor(3)
+check("items, gold and departures of the leader's story go to the party",
+      $sent.map { |seat, f| [seat, f["story"], f["item"] || f["actor"]] }, [[-1, "gain", "i1x3"], [-1, "gain", "g0x-5"], [-1, "depart", "3"]])
+$sent.clear
+$game_party.gain_item($data_items[1], -2, false, true)
+check("items only moved to the item storage are not", $sent.size, 0)
+unique = RPG::Weapon.new(1, "Sword+")
+def unique.uniq_item?; true; end
+$game_party.gain_item(unique, -1)
+check("nor an enchanted copy, which exists only in the leader's game", $sent.size, 0)
+MGQ_MpCoopEvents.take(friend, { "chest" => "6.2.A", "party" => "p1", "gains" => "i2x1" })
+check("nor what a member's chest gives the leader meanwhile", $sent.select { |_, f| f["story"] }.size, 0)
+$game_party.in_battle = true
+$game_party.gain_gold(100)
+check("nor battle rewards, which every player gets in their own game", $sent.select { |_, f| f["story"] }.size, 0)
+$game_party.in_battle = false
+$game_map.interpreter.busy = false
+$game_party.gain_item($data_items[2], 1)
+check("nor what comes once the story event ended", $sent.select { |_, f| f["story"] }.size, 0)
+MGQ_MpCoopEvents.instance_variable_set(:@telling, false)
+
+# A member as far along as the leader keeps what they play together once the party ends.
+# Plays a member's game until the party ends, from their own story to the leader's.
+#
+# @param own_progress [Integer] The member's main story progress, variable 1001.
+# @return [Array] The member's switches, variables and save once back in their own story.
+def play_along(own_progress)
+  $game_party = Game_Party.new
+  $game_party.add_actor(3)
+  $game_switches = Game_Switches.new
+  $game_variables = Game_Variables.new
+  $game_self_switches = Game_SelfSwitches.new
+  $game_switches[80] = true
+  $game_variables[1001] = own_progress
+  $party = "p1"
+  $leader = $story_leader
+  $members = [$story_leader]
+  $notices.clear
+  MGQ_MpCoopStory.update
+  MGQ_MpCoopStory.take($story_leader, { "story" => "full", "party" => "p1", "s" => "81", "v" => "1001:n40", "ss" => "" })
+  joined = $notices.last
+  MGQ_MpCoopStory.take($story_leader, { "story" => "delta", "party" => "p1", "s" => "82:1", "v" => "1001:n41", "ss" => "" })
+  $game_variables[150] = 7
+  $game_switches[90] = true
+  [["gain", "item", "i1x2"], ["gain", "item", "g0x-30"], ["gain", "item", "w1x1"], ["depart", "actor", "3"], ["recruit", "actor", "3"], ["recruit", "actor", "4"]].each do |kind, field, value|
+    MGQ_MpCoopStory.take($story_leader, { "story" => kind, "party" => "p1", field => value })
+  end
+  save = MGQ_MpCoopStory.save_contents(:switches => $game_switches, :variables => $game_variables, :self_switches => $game_self_switches)
+  saved = [save[:switches][82], save[:variables][1001], save[:variables][150]]
+  $party = nil
+  $leader = nil
+  $members = []
+  MGQ_MpCoopStory.update
+  [joined, $game_switches, $game_variables, saved]
+end
+
+$story_leader = leader
+joined, switches, variables, saved = play_along(40)
+check("a member as far along hears they keep what they play together", joined,
+      "You follow Leader's story while in the party. You are as far along, so you keep what you play together.")
+check("once the party ends they keep the story played together, not what the leader had before",
+      [switches[80], switches[81], switches[82], variables[1001]], [true, false, true, 41])
+check("and what changed in their own game meanwhile", [switches[90], variables[150]], [true, 7])
+check("a save made in the party holds it too", saved, [true, 41, 7])
+check("the story's items and gold are theirs", [$game_party.items["Potion"], $game_party.items["Sword"], $game_party.gold], [2, 1, -30])
+check("a companion the story sent away and brought back is in the party again, a new one waits at the castle",
+      [$game_party.actors, $game_party.include_actors], [[3], [3, 4]])
+check("with notices", $notices.include?("Leader's story took 30 G from you too.") && $notices.include?("Tamamo joined you too."), true)
+
+joined, switches, variables, saved = play_along(30)
+check("a member behind the leader keeps none of the leader's story", [switches[80], switches[82], variables[1001], switches[90], variables[150]], [true, false, 30, false, 0])
+check("nor its items, gold or companions", [$game_party.items["Potion"], $game_party.gold, $game_party.include_actors], [0, 0, [3]])

@@ -2,7 +2,8 @@
 #  mp_coop_events.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-02: Sorted a common event once per depth, so one sorted deep down no longer counts as story when called higher up
+#      Paulinchen  2026-10-02: Told mp_coop_story.rbx the items and gold the leader's story gives or takes
+#                            - Sorted a common event once per depth, so one sorted deep down no longer counts as story when called higher up
 #                            - Held event commands and followed the map's update through mp_hooks.rbx
 #                            - Took whether the player plays in a party, and an event's page, from mp_coop.rbx
 #                            - Told the kinds of item a chest gives by their class alone
@@ -838,15 +839,40 @@ module MGQ_MpCoopEvents
     @gain_depth = @gain_depth.to_i - 1
   end
 
-  # Keeps an item a chest gives.
+  # Keeps an item a chest gives, and tells the party about one the leader's story gives or takes,
+  # through mp_coop_story.rbx.
+  #
+  # An enchanted copy is left out of the story's, since it exists only in the game that made it.
   #
   # @param item [RPG::BaseItem, nil] The item.
-  # @param amount [Integer] How many.
-  def self.gained_item(item, amount)
+  # @param amount [Integer] How many, below zero for a loss.
+  # @param stored [Boolean] Whether it only moves between the bag and the item storage.
+  def self.gained_item(item, amount, stored = false)
     kind = ITEM_CLASSES.keys.find { |letter| item.is_a?(ITEM_CLASSES[letter]) }
-    gained(kind, item.id, amount) if kind
+    return unless kind
+
+    gained(kind, item.id, amount)
+    story_gave(kind, item.id, amount) unless stored || (item.respond_to?(:uniq_item?) && item.uniq_item?)
   rescue => e
     log("keeping an item failed: #{e.class}: #{e.message}")
+  end
+
+  # Keeps gold a chest gives, and tells the party about gold the leader's story gives or takes.
+  #
+  # @param amount [Integer] How much, below zero for a loss.
+  def self.gained_gold(amount)
+    gained("g", 0, amount)
+    story_gave("g", 0, amount)
+  end
+
+  # Tells the party about items or gold the leader's story gave or took, through mp_coop_story.rbx;
+  # never what a member's chest gives the player.
+  #
+  # @param kind [String] "i", "w", "a", or "g" for gold.
+  # @param id [Integer] The item, 0 for gold.
+  # @param amount [Integer] How many.
+  def self.story_gave(kind, id, amount)
+    MGQ_MpCoopStory.gave(kind, id, amount) if defined?(MGQ_MpCoopStory) && !@granting
   end
 
   # Keeps an item or gold a chest gives.
@@ -1116,14 +1142,15 @@ if MGQ_MpCoopEvents.hookable?
       alias mgq_mp_coop_events_gain_item gain_item
       alias mgq_mp_coop_events_gain_gold gain_gold
 
-      # Gives an item, keeping it for the party when a chest gives it.
+      # Gives an item, keeping it for the party when a chest or the leader's story gives it.
       #
       # The game gives an enchanted item by calling this again for each copy it makes, so only the
       # outermost call counts.
       #
       # @param item [RPG::BaseItem] The item.
       # @param amount [Integer] How many.
-      # @param rest [Array] The original's other arguments.
+      # @param rest [Array] The original's other arguments: include_equip, and keep_flag, set when
+      #   the item only moves to or from the item storage.
       def gain_item(item, amount, *rest)
         outermost = MGQ_MpCoopEvents.enter_gain
         begin
@@ -1131,15 +1158,15 @@ if MGQ_MpCoopEvents.hookable?
         ensure
           MGQ_MpCoopEvents.leave_gain
         end
-        MGQ_MpCoopEvents.gained_item(item, amount) if outermost
+        MGQ_MpCoopEvents.gained_item(item, amount, rest[1] ? true : false) if outermost
       end
 
-      # Gives gold, keeping it for the party when a chest gives it.
+      # Gives gold, keeping it for the party when a chest or the leader's story gives it.
       #
       # @param amount [Integer] How much.
       def gain_gold(amount)
         mgq_mp_coop_events_gain_gold(amount)
-        MGQ_MpCoopEvents.gained("g", 0, amount)
+        MGQ_MpCoopEvents.gained_gold(amount)
       end
     end
   rescue => e

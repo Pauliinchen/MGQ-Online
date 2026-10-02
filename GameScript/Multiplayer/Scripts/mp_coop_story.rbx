@@ -2,7 +2,9 @@
 #  mp_coop_story.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-02: Ended the awakening switches with the last companion's, as the affection variables end
+#      Paulinchen  2026-10-02: Gave members as far along as the leader the items, gold and departures of the leader's story too
+#                            - Kept what a member as far along as the leader changed in their own game while in the party
+#                            - Ended the awakening switches with the last companion's, as the affection variables end
 #                            - Followed the map's update through mp_hooks.rbx
 #      Paulinchen  2026-10-01: Kept the places of the player's party their own, so the leader's fewer never cut it
 #      Paulinchen  2026-09-30: Sent and took the party's messages through mp_coop.rbx, which drops those of another party
@@ -19,7 +21,8 @@
 # members borrow the leader's story, the switches, variables and self switches the game's events
 # read, and get their own back when they leave or the leader goes. What is the player's own, their
 # party, their companions' awakening and their affection, stays theirs throughout, and every save a
-# member makes holds their own story.
+# member makes holds their own story. A member as far along as the leader keeps what they play
+# together: the story's changes, its items, gold and companions, and what changed in their own game.
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpCoopStory
@@ -163,6 +166,10 @@ module MGQ_MpCoopStory
       apply(decode_delta(message)) if leader.equal?(peer) && guest? && !@waiting
     when "recruit"
       recruit(peer, message["actor"].to_i) if leader.equal?(peer) && guest? && @same
+    when "depart"
+      depart(peer, message["actor"].to_i) if leader.equal?(peer) && guest? && @same
+    when "gain"
+      gain(peer, message["item"].to_s) if leader.equal?(peer) && guest? && @same
     end
   rescue => e
     log("taking #{message['story']} failed: #{e.class}: #{e.message}")
@@ -171,7 +178,7 @@ module MGQ_MpCoopStory
   # Sends a message about the story to one member or to the whole party.
   #
   # @param seat [Integer] The member's seat, -1 for everyone, who ignore it outside the party.
-  # @param kind [String] "ask", "full", "delta" or "recruit".
+  # @param kind [String] "ask", "full", "delta", "recruit", "depart" or "gain".
   # @param fields [Hash] The message's other fields.
   # @return [Boolean] Whether it went out.
   def self.tell(seat, kind, fields)
@@ -188,8 +195,10 @@ module MGQ_MpCoopStory
       @own = deep_copy(raw_state)
       @same = same_story?(@own, story)
       @recorded = [{}, {}, {}]
+      @departed = []
     end
     set_raw(*mix(story, raw_state))
+    @borrowed = deep_copy(raw_state)
     @waiting = false
     return unless first
 
@@ -210,39 +219,52 @@ module MGQ_MpCoopStory
   #
   # @param changes [Array] The changed switches, variables and self switches, each by key.
   def self.apply(changes)
-    switches, variables, self_switches = raw_state
+    story = raw_state
     changes[0].each do |id, value|
       next if personal_switch?(id)
 
-      switches[id] = value
+      story[0][id] = @borrowed[0][id] = value
       @recorded[0][id] = value if @same
     end
     changes[1].each do |id, value|
       next if personal_variable?(id)
 
-      variables[id] = value
+      story[1][id] = @borrowed[1][id] = value
       @recorded[1][id] = value if @same
     end
     changes[2].each do |key, value|
       next if personal_self_switch?(key)
 
-      self_switches[key] = value
+      story[2][key] = @borrowed[2][key] = value
       @recorded[2][key] = value if @same
     end
-    set_raw(switches, variables, self_switches)
+    set_raw(*story)
   end
 
-  # The player's own story, with what they played along when they were as far as the leader.
+  # The player's own story, with what they played along when they were as far as the leader: the
+  # leader's changes, then what changed in the player's own game, such as their own battles.
   #
   # @return [Array] The switches, variables and self switches.
   def self.own_story
     return @own unless @same
 
-    switches, variables, self_switches = @own.map(&:dup)
-    @recorded[0].each { |id, value| switches[id] = value }
-    @recorded[1].each { |id, value| variables[id] = value }
-    @recorded[2].each { |key, value| self_switches[key] = value }
-    [switches, variables, self_switches]
+    story = @own.map(&:dup)
+    played = raw_state
+    3.times do |kind|
+      @recorded[kind].each { |key, value| story[kind][key] = value }
+      changed_keys(@borrowed[kind], played[kind]).each { |key| story[kind][key] = played[kind][key] }
+    end
+    story
+  end
+
+  # Lists the switches, variables or self switches that differ between two stories.
+  #
+  # @param before [Array, Hash] Those of one story.
+  # @param after [Array, Hash] Those of the other.
+  # @return [Array] The keys that differ.
+  def self.changed_keys(before, after)
+    keys = before.is_a?(Hash) ? before.keys | after.keys : (0...[before.size, after.size].max).to_a
+    keys.reject { |key| before[key] == after[key] }
   end
 
   # As leader, tells the party about a companion who joined in the story, so members as far along
@@ -251,23 +273,91 @@ module MGQ_MpCoopStory
   #
   # @param actor_id [Integer] The companion.
   def self.joined(actor_id)
-    return unless leader == :me && !MGQ_MpCoop::Party.members.empty?
-    return unless defined?(MGQ_MpCoopEvents) && MGQ_MpCoopEvents.telling?
-
-    tell(-1, "recruit", "actor" => actor_id)
+    tell(-1, "recruit", "actor" => actor_id) if telling_party?
   rescue => e
     log("telling a companion failed: #{e.class}: #{e.message}")
   end
 
-  # Takes a companion who joined the leader in the story the player plays along.
+  # As leader, tells the party about a companion who left in the story. Called when a companion
+  # leaves.
+  #
+  # @param actor_id [Integer] The companion.
+  def self.left(actor_id)
+    tell(-1, "depart", "actor" => actor_id) if telling_party?
+  rescue => e
+    log("telling a departure failed: #{e.class}: #{e.message}")
+  end
+
+  # As leader, tells the party about items or gold the story gave or took. Called by
+  # mp_coop_events.rbx, which leaves out moves to and from the item storage and enchanted copies.
+  #
+  # @param kind [String] "i", "w", "a", or "g" for gold.
+  # @param id [Integer] The item, 0 for gold.
+  # @param amount [Integer] How many, below zero for a loss.
+  def self.gave(kind, id, amount)
+    tell(-1, "gain", "item" => "#{kind}#{id}x#{amount}") if amount != 0 && telling_party?
+  rescue => e
+    log("telling an item failed: #{e.class}: #{e.message}")
+  end
+
+  # Reports whether the player leads a party through its story now, outside a battle, whose rewards
+  # each player gets in their own game.
+  #
+  # @return [Boolean] Whether they do.
+  def self.telling_party?
+    return false unless leader == :me && !MGQ_MpCoop::Party.members.empty?
+    return false if $game_party && $game_party.in_battle
+
+    defined?(MGQ_MpCoopEvents) && MGQ_MpCoopEvents.telling?
+  end
+
+  # Takes a companion who joined the leader in the story the player plays along, back into the
+  # party when the story only sent them away for a while.
   #
   # @param leader [MGQ_MpOverworldSync::Peers::Peer] The leader.
   # @param actor_id [Integer] The companion.
   def self.recruit(leader, actor_id)
     return if actor_id <= 0 || !$data_actors[actor_id] || $game_party.exist_all_actor_id?(actor_id)
 
-    $game_party.add_stand_actor(actor_id)
+    if @departed.delete(actor_id) && !$game_party.party_member_full?
+      $game_party.add_actor(actor_id)
+    else
+      $game_party.add_stand_actor(actor_id)
+    end
     notice("#{$data_actors[actor_id].name} joined you too.")
+  end
+
+  # Lets a companion go who left the leader in the story the player plays along.
+  #
+  # @param leader [MGQ_MpOverworldSync::Peers::Peer] The leader.
+  # @param actor_id [Integer] The companion.
+  def self.depart(leader, actor_id)
+    return unless actor_id > 0 && $data_actors[actor_id] && $game_party.exist_all_actor_id?(actor_id)
+
+    @departed << actor_id if $game_party.exist_party_actor_id?(actor_id)
+    $game_party.remove_actor(actor_id)
+    notice("#{$data_actors[actor_id].name} left you too.")
+  end
+
+  # Gives or takes items or gold as the leader's story did.
+  #
+  # @param leader [MGQ_MpOverworldSync::Peers::Peer] The leader.
+  # @param text [String] The item as written: kind, id, "x" and amount, below zero for a loss.
+  def self.gain(leader, text)
+    return unless text =~ /\A([iwag])(\d+)x(-?\d+)\z/
+
+    kind, id, amount = Regexp.last_match(1), Regexp.last_match(2).to_i, Regexp.last_match(3).to_i
+    if kind == "g"
+      $game_party.gain_gold(amount)
+      name = "#{amount.abs} #{Vocab.currency_unit}"
+    else
+      item = { "i" => $data_items, "w" => $data_weapons, "a" => $data_armors }[kind][id]
+      return unless item
+
+      $game_party.gain_item(item, amount)
+      name = amount.abs > 1 ? "#{item.name} x#{amount.abs}" : item.name
+    end
+    notice(amount > 0 ? "#{leader.state['name']}'s story gave you #{name} too." : "#{leader.state['name']}'s story took #{name} from you too.")
   end
 
   # Reads a self switch as it is the player's own, whether or not they play the leader's story.
@@ -331,6 +421,8 @@ module MGQ_MpCoopStory
     @own = nil
     @same = false
     @recorded = nil
+    @borrowed = nil
+    @departed = nil
     @leader_id = nil
     @waiting = false
   end
@@ -413,23 +505,14 @@ module MGQ_MpCoopStory
   # @param after [Array] The same after.
   # @return [Hash] Changed switches, variables and self switches by key, under "s", "v" and "ss".
   def self.delta(before, after)
-    switches = changed(before[0], after[0]).reject { |id, _| personal_switch?(id) }
-    variables = changed(before[1], after[1]).reject { |id, _| personal_variable?(id) }
-    self_switches = (before[2].keys | after[2].keys).reject { |key| before[2][key] == after[2][key] }.map { |key| [key, after[2][key]] }
+    switches = changed_keys(before[0], after[0]).reject { |id| personal_switch?(id) }
+    variables = changed_keys(before[1], after[1]).reject { |id| personal_variable?(id) }
+    self_switches = changed_keys(before[2], after[2])
     {
-      "s" => switches.map { |id, value| "#{id}:#{value ? 1 : 0}" }.join(","),
-      "v" => variables.map { |id, value| "#{id}:#{encode_value(value)}" }.join(","),
-      "ss" => self_switches.map { |key, value| "#{key.join('.')}:#{value ? 1 : 0}" }.join(","),
+      "s" => switches.map { |id| "#{id}:#{after[0][id] ? 1 : 0}" }.join(","),
+      "v" => variables.map { |id| "#{id}:#{encode_value(after[1][id])}" }.join(","),
+      "ss" => self_switches.map { |key| "#{key.join('.')}:#{after[2][key] ? 1 : 0}" }.join(","),
     }
-  end
-
-  # Lists the entries of two arrays that differ.
-  #
-  # @param before [Array] The array before.
-  # @param after [Array] The array after.
-  # @return [Array<Array>] Each changed index with its value after.
-  def self.changed(before, after)
-    (0...[before.size, after.size].max).select { |id| before[id] != after[id] }.map { |id| [id, after[id]] }
   end
 
   # Writes a whole story, leaving out what is the player's own.
@@ -587,6 +670,7 @@ if MGQ_MpCoopStory.hookable?
   begin
     class Game_Party
       alias mgq_mp_coop_story_add_stand_actor add_stand_actor
+      alias mgq_mp_coop_story_remove_actor remove_actor
 
       # Takes a companion into the party's roster, then as leader tells the party.
       #
@@ -594,6 +678,14 @@ if MGQ_MpCoopStory.hookable?
       def add_stand_actor(actor_id)
         mgq_mp_coop_story_add_stand_actor(actor_id)
         MGQ_MpCoopStory.joined(actor_id)
+      end
+
+      # Takes a companion out of the party's roster, then as leader tells the party.
+      #
+      # @param actor_id [Integer] The companion.
+      def remove_actor(actor_id)
+        mgq_mp_coop_story_remove_actor(actor_id)
+        MGQ_MpCoopStory.left(actor_id)
       end
     end
   rescue => e
