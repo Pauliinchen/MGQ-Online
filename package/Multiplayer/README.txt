@@ -123,9 +123,12 @@ game's letters appear.
   name, a password, and Max Players, 2 to 32. Tick "Hidden" to leave the
   world out of the list. Tick "From my save" to have every new player
   start from one of your own saves, with your party, items, story and
-  Library, instead of the opening; then choose the save. Max Players and
-  the starting save cannot be changed later. A save that needs a mod a
-  player lacks tells them which.
+  Library, instead of the opening; then choose the save. Tick "Players
+  choose their start" to let each new player choose when they first
+  enter: at the beginning, from one of their own saves (copied into the
+  world, the original stays as it is), or from yours if you ticked "From
+  my save". Max Players, the starting save and Players choose cannot be
+  changed later. A save that needs a mod a player lacks tells them which.
 - Join a hidden world: type or paste (Ctrl+V) the world id its creator
   sent you, and its password. The creator copies the id with "Copy the
   world id" on the world.

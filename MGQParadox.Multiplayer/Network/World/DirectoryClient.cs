@@ -2,6 +2,7 @@
 //  DirectoryClient.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-02: Made worlds whose new players choose where to start, and read which worlds do
 //      Paulinchen  2026-09-30: Read whether the list was made for an admin
 //                            - Uploaded and downloaded a world's starting save, and read which worlds have one
 //                            - Made hidden worlds, listed them for their players, and read a world's name with its lock
@@ -97,16 +98,16 @@ internal sealed class DirectoryClient
                 world.GetProperty("online").GetInt32(),
                 world.GetProperty("active").GetInt64(),
                 world.TryGetProperty("start", out var start) ? start.GetString() ?? "none" : "none",
-                world.TryGetProperty("hidden", out var hidden) && hidden.ValueKind == JsonValueKind.True,
+                Flag(world, "hidden"),
+                Flag(world, "choose"),
                 members));
         }
 
-        var admin = document.RootElement.TryGetProperty("admin", out var flag) && flag.ValueKind == JsonValueKind.True;
-        return new WorldListing(worlds, admin);
+        return new WorldListing(worlds, Flag(document.RootElement, "admin"));
     }
 
     /// <summary>
-    /// Fetches a world's locked token, with the world's name, seats and starting save state.
+    /// Fetches a world's locked token, with the world's name, seats, starting save state and whether new players choose where to start.
     /// </summary>
     /// <param name="id">The world.</param>
     /// <returns>The lock and the world.</returns>
@@ -116,7 +117,7 @@ internal sealed class DirectoryClient
         using var document = Send(HttpMethod.Get, WorldAddress(id, "lock"), null);
         var root = document.RootElement;
         var worldLock = new WorldLock(root.GetProperty("salt").GetString()!, root.GetProperty("iterations").GetInt32(), root.GetProperty("box").GetString()!);
-        return new LockedWorld(worldLock, root.GetProperty("name").GetString() ?? "?", root.GetProperty("seats").GetInt32(), root.GetProperty("start").GetString() ?? "none");
+        return new LockedWorld(worldLock, root.GetProperty("name").GetString() ?? "?", root.GetProperty("seats").GetInt32(), root.GetProperty("start").GetString() ?? "none", Flag(root, "choose"));
     }
 
     /// <summary>
@@ -131,8 +132,9 @@ internal sealed class DirectoryClient
     /// <param name="worldLock">The world's locked token.</param>
     /// <param name="start">Whether a starting save follows, which keeps everyone out until it arrived.</param>
     /// <param name="hidden">Whether the list leaves it out for everyone but its players.</param>
+    /// <param name="choose">Whether each new player chooses where to start.</param>
     /// <exception cref="DirectoryException">The directory could not be reached or refused the world.</exception>
-    public void Create(string id, string name, int seats, string playerKey, string playerName, string authHash, WorldLock worldLock, bool start, bool hidden)
+    public void Create(string id, string name, int seats, string playerKey, string playerName, string authHash, WorldLock worldLock, bool start, bool hidden, bool choose)
     {
         var body = Json(writer =>
         {
@@ -149,6 +151,7 @@ internal sealed class DirectoryClient
             writer.WriteEndObject();
             writer.WriteBoolean("start", start);
             writer.WriteBoolean("hidden", hidden);
+            writer.WriteBoolean("choose", choose);
         });
 
         using var _ = Send(HttpMethod.Post, _worlds, body);
@@ -222,6 +225,15 @@ internal sealed class DirectoryClient
             writer.WriteString("target", target);
         }));
     }
+
+    /// <summary>
+    /// Reads a flag of the directory's answer.
+    /// </summary>
+    /// <param name="element">The object holding it.</param>
+    /// <param name="name">The flag's name.</param>
+    /// <returns>Whether it is <see langword="true"/>; <see langword="false"/> when it is missing.</returns>
+    private static bool Flag(JsonElement element, string name) =>
+        element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.True;
 
     /// <summary>
     /// Builds the address of one of a world's routes.
@@ -362,8 +374,9 @@ internal sealed record WorldListing(IReadOnlyList<ListedWorld> Worlds, bool Admi
 /// <param name="Active">When someone was last in it, in milliseconds since 1970.</param>
 /// <param name="Start">How far it is with its starting save: "none", "pending" or "ready".</param>
 /// <param name="Hidden">Whether the list leaves it out for everyone but its players.</param>
+/// <param name="Choose">Whether each new player chooses where to start.</param>
 /// <param name="Members">Everyone who ever joined it.</param>
-internal sealed record ListedWorld(string Id, string Name, int Seats, string CreatorId, string CreatorName, int Online, long Active, string Start, bool Hidden, IReadOnlyList<ListedMember> Members);
+internal sealed record ListedWorld(string Id, string Name, int Seats, string CreatorId, string CreatorName, int Online, long Active, string Start, bool Hidden, bool Choose, IReadOnlyList<ListedMember> Members);
 
 /// <summary>
 /// A world's locked token, with what a player who knows only the world's id needs to enter it.
@@ -372,7 +385,8 @@ internal sealed record ListedWorld(string Id, string Name, int Seats, string Cre
 /// <param name="Name">The world's name.</param>
 /// <param name="Seats">How many games it seats at once.</param>
 /// <param name="Start">How far it is with its starting save: "none", "pending" or "ready".</param>
-internal sealed record LockedWorld(WorldLock Lock, string Name, int Seats, string Start);
+/// <param name="Choose">Whether each new player chooses where to start.</param>
+internal sealed record LockedWorld(WorldLock Lock, string Name, int Seats, string Start, bool Choose);
 
 /// <summary>
 /// A player of a world, as the directory lists them.

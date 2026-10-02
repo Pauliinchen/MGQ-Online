@@ -2,6 +2,7 @@
 //  Exports.Directory.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-02: Took whether new players choose where to start in mp_dir_create
 //      Paulinchen  2026-09-30: Created
 //
 //----------------------------------------------------------------
@@ -67,14 +68,15 @@ internal static unsafe partial class Exports
     /// <param name="password">The password others enter it with, UTF-8 and null-terminated.</param>
     /// <param name="seats">How many games it seats at once, 2 to 32.</param>
     /// <param name="hidden">1 to leave the world out of the list for everyone but its players, 0 to list it for everyone.</param>
+    /// <param name="choose">1 to let each new player choose where to start, 0 to start everyone alike.</param>
     /// <param name="start">The starting save's files, UTF-8 and null-terminated: one line each, the name new players get it under, <c>=</c>, and where it is read from, relative to the game's folder; empty for none.</param>
     /// <returns>1 when started, 0 while another action runs, for seats out of range or when it failed.</returns>
     [UnmanagedCallersOnly(EntryPoint = "mp_dir_create", CallConvs = [typeof(CallConvStdcall)])]
-    public static int DirectoryCreate(byte* name, byte* password, int seats, int hidden, byte* start)
+    public static int DirectoryCreate(byte* name, byte* password, int seats, int hidden, int choose, byte* start)
     {
         try
         {
-            return seats is >= WorldCode.MinSeats and <= WorldCode.MaxSeats && WorldDirectory.Current.Create(Text(name), Text(password), seats, hidden == 1, StartFiles(Text(start))) ? 1 : 0;
+            return seats is >= WorldCode.MinSeats and <= WorldCode.MaxSeats && WorldDirectory.Current.Create(Text(name), Text(password), seats, hidden == 1, choose == 1, StartFiles(Text(start))) ? 1 : 0;
         }
         catch (Exception ex)
         {
@@ -105,8 +107,9 @@ internal static unsafe partial class Exports
     }
 
     /// <summary>
-    /// Opens a world's lock with its password. Returns at once; the world code, the world's name and
-    /// how far it is with its starting save follow in <c>mp_dir_action</c>.
+    /// Opens a world's lock with its password. Returns at once; the world code, the world's name, how
+    /// far it is with its starting save and whether new players choose where to start follow in
+    /// <c>mp_dir_action</c>.
     /// </summary>
     /// <param name="id">The world, UTF-8 and null-terminated.</param>
     /// <param name="password">The password, UTF-8 and null-terminated.</param>

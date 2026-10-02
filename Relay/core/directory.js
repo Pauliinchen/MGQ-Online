@@ -2,6 +2,7 @@
 //  directory.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-02: Kept whether a world lets each new player choose where to start
 //      Paulinchen  2026-10-01: Named admins in the refusal of a delete, and checked admin and banned ids as player ids
 //      Paulinchen  2026-09-30: Listed every world for the relay's admins, hidden ones too, and let them delete any
 //                            - Kept a world's starting save, which its creator uploads once and only its players fetch
@@ -169,17 +170,17 @@ export class Directory {
    * found it by its id alone needs to enter it.
    *
    * @param {string} id The world.
-   * @returns {Promise<{status: number, body: object}>} The lock with the world's name, seats and starting save state, or why there is none.
+   * @returns {Promise<{status: number, body: object}>} The lock with the world's name, seats, starting save state and whether new players choose where to start, or why there is none.
    */
   async lock(id) {
     const entry = WORLD_ID.test(id) ? await this.store.get(id) : undefined;
-    return entry ? { status: 200, body: { ...entry.lock, name: entry.name, seats: entry.seats, start: entry.start ?? START.none } } : notFound();
+    return entry ? { status: 200, body: { ...entry.lock, name: entry.name, seats: entry.seats, start: entry.start ?? START.none, choose: entry.choose === true } } : notFound();
   }
 
   /**
    * Makes a world.
    *
-   * @param {object} request The world: id, name, seats, the creator's player key and name, the hash of the auth key, the lock, whether a starting save follows, and whether it is hidden from the list.
+   * @param {object} request The world: id, name, seats, the creator's player key and name, the hash of the auth key, the lock, whether a starting save follows, whether it is hidden from the list, and whether each new player chooses where to start.
    * @returns {Promise<{status: number, body: object}>} The world's id, or why it was refused.
    */
   async create(request) {
@@ -216,6 +217,7 @@ export class Directory {
       lock: { salt: request.lock.salt, iterations: request.lock.iterations, box: request.lock.box },
       start: request.start === true ? START.pending : START.none,
       hidden: request.hidden === true,
+      choose: request.choose === true,
       created: now,
       active: now,
       members: { [creator]: { name: creatorName, seen: now } },
@@ -495,6 +497,7 @@ export class Directory {
     if (typeof lock.box !== "string" || !HEX.test(lock.box) || lock.box.length > this.limits.maxLockHex) return "the lock's box must be lowercase hexadecimal";
     if (request.start !== undefined && typeof request.start !== "boolean") return "start must be true or false";
     if (request.hidden !== undefined && typeof request.hidden !== "boolean") return "hidden must be true or false";
+    if (request.choose !== undefined && typeof request.choose !== "boolean") return "choose must be true or false";
     return null;
   }
 }
@@ -580,6 +583,7 @@ export function publicView(entry) {
     creator: entry.creator,
     start: entry.start ?? START.none,
     hidden: entry.hidden === true,
+    choose: entry.choose === true,
     online: entry.online.length,
     created: entry.created,
     active: entry.active,

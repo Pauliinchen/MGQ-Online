@@ -35,6 +35,7 @@
     <File Path="GameScript/Tests/loader_test.rb" />
     <File Path="GameScript/Tests/overworld_test.rb" />
     <File Path="GameScript/Tests/run.rb" />
+    <File Path="GameScript/Tests/start_choice_test.rb" />
     <File Path="GameScript/Tests/support.rb" />
     <File Path="GameScript/Tests/team_test.rb" />
     <File Path="GameScript/Tests/world_overview_test.rb" />

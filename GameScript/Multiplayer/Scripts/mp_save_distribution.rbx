@@ -2,6 +2,7 @@
 #  mp_save_distribution.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-02: Let a new player of a world whose players choose start from one of their own saves
 #      Paulinchen  2026-09-30: Moved into Patch/Multiplayer/Scripts as mp_save_distribution.rbx, which Multiplayer.rb loads
 #      Paulinchen  2026-09-30: Created
 #
@@ -12,6 +13,10 @@
 # world, and it can never be changed. The relay keeps it encrypted with a key from the world's
 # token; a new player's game fetches it into the world's folder before entering the world for the
 # first time, where it is the world's first save.
+#
+# A world made with Players choose instead asks each new player where to start: at the beginning,
+# from one of their own saves, copied into the world's folder the same way, or from the starting
+# save when it has one.
 #
 # mp_world.rbx, which loads later, calls it from the world screen. It must never interrupt the game,
 # so every entry point rescues.
@@ -31,6 +36,13 @@ module MGQ_MpSaveDistribution
   # What Marshal says when a save holds an object of a class the game lacks.
   MISSING_CLASS = /undefined class\/module (\S+)/
 
+  # What the save screen says, by what the save is chosen for: a new world's starting save, or
+  # the player's own start in a world whose players choose.
+  HELP_TEXTS = {
+    :world => "Choose the save every new player of the world starts from.",
+    :own => "Choose the save you start from in the world. Your own saves stay as they are.",
+  }
+
   # Writes a line to the mod's InGame.log.
   #
   # @param message [String] The line.
@@ -39,10 +51,20 @@ module MGQ_MpSaveDistribution
   rescue
   end
 
-  # Opens the save screen to pick the starting save of a new world.
-  def self.choose
+  # Opens the save screen to pick a save.
+  #
+  # @param purpose [Symbol] What the save is for, a key of HELP_TEXTS.
+  def self.choose(purpose)
     @chosen = nil
+    @purpose = purpose
     SceneManager.call(Scene_MpStartSave)
+  end
+
+  # Tells what the save screen says.
+  #
+  # @return [String] The text.
+  def self.help
+    HELP_TEXTS[@purpose]
   end
 
   # Keeps the save the player picked.
@@ -52,13 +74,14 @@ module MGQ_MpSaveDistribution
     @chosen = index
   end
 
-  # Hands out the save the player picked, once.
+  # Hands out what the save screen was opened for and the save the player picked, once.
   #
-  # @return [Integer, nil] The save's index, nil when the player left the save screen without one.
+  # @return [Array] The purpose, nil when the save screen was not opened; and the save's index,
+  #   nil when the player left it without one.
   def self.take_chosen
-    index = @chosen
-    @chosen = nil
-    index
+    taken = [@purpose, @chosen]
+    @purpose = @chosen = nil
+    taken
   end
 
   # Lists the files a starting save is made of: the save, its thumbnail when it has one, and the
@@ -112,14 +135,32 @@ module MGQ_MpSaveDistribution
     false
   end
 
+  # Reports whether a new player must be asked where to start before entering a world: the world
+  # lets its players choose, and this PC has no save of the world yet.
+  #
+  # @param world [MGQ_MpWorld::World] The world on this PC.
+  # @param choose [Boolean, nil] Whether the world lets its players choose, nil when unknown.
+  # @return [Boolean] Whether the player must be asked.
+  def self.ask_start?(world, choose)
+    choose == true && new_player?(world)
+  end
+
   # Reports whether a world's starting save must be fetched before entering it: the world has one,
   # and this PC has no save of the world yet.
   #
   # @param world [MGQ_MpWorld::World] The world on this PC.
-  # @param listed [MGQ_MpWorld::Directory::ListedWorld, nil] The world in the directory.
+  # @param start [String, nil] How far the world is with its starting save, nil when unknown.
   # @return [Boolean] Whether it must.
-  def self.fetch?(world, listed)
-    !listed.nil? && listed.start == "ready" && world.latest_save.nil?
+  def self.fetch?(world, start)
+    start == "ready" && new_player?(world)
+  end
+
+  # Reports whether the player enters a world for the first time: this PC has no save of it yet.
+  #
+  # @param world [MGQ_MpWorld::World] The world on this PC.
+  # @return [Boolean] Whether they do.
+  def self.new_player?(world)
+    world.latest_save.nil?
   end
 
   # Starts fetching a world's starting save into its folder; how it went follows as a directory action.
@@ -166,14 +207,14 @@ module MGQ_MpSaveDistribution
   end
 end
 
-# The save screen, opened from the world screen to pick a new world's starting save: the game's own
-# list of saves, whose choice is handed back instead of loaded.
+# The save screen, opened from the world screen to pick a new world's starting save or a player's
+# own start in a world: the game's own list of saves, whose choice is handed back instead of loaded.
 class Scene_MpStartSave < Scene_Load
   # Tells what the list is for.
   #
   # @return [String] The text.
   def help_window_text
-    "Choose the save every new player of the world starts from."
+    MGQ_MpSaveDistribution.help
   end
 
   # Hands the chosen save back to the world screen, if there is a save in that slot.

@@ -2,6 +2,7 @@
 //  directory.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-02: Covered worlds whose new players choose where to start
 //      Paulinchen  2026-10-01: Covered the refusal of a delete by someone who is neither the creator nor an admin
 //      Paulinchen  2026-09-30: Covered the relay's admins, who see every world and delete any
 //                            - Covered the starting save: uploaded once by the creator, fetched by players only
@@ -104,6 +105,7 @@ test("a made world is listed without its hashes or lock, with the creator as its
   assert.deepEqual(body.worlds[0].members, [{ id: creator, name: "Creator", online: false }]);
   assert.equal(body.worlds[0].start, "none");
   assert.equal(body.worlds[0].hidden, false);
+  assert.equal(body.worlds[0].choose, false);
   assert.equal(JSON.stringify(body).includes("authHash"), false);
   assert.equal(JSON.stringify(body).includes("box"), false);
   assert.notEqual(creator, CREATOR);
@@ -116,7 +118,7 @@ test("a world is refused twice, with bad fields, or beyond a creator's limit", a
   assert.equal((await directory.create(await newWorld())).status, 409);
   assert.equal((await directory.create(await newWorld({ id: "1".repeat(32) }))).status, 429);
 
-  for (const bad of [{ start: "yes" }, { hidden: 1 },{ seats: 1 }, { seats: 33 }, { name: " " }, { id: "xyz" }, { player: "short" }, { authHash: "00" }, { lock: { salt: "12", iterations: 200_000, box: "ab" } }, { lock: { salt: "12".repeat(16), iterations: 10, box: "ab" } }]) {
+  for (const bad of [{ start: "yes" }, { hidden: 1 }, { choose: "no" }, { seats: 1 }, { seats: 33 }, { name: " " }, { id: "xyz" }, { player: "short" }, { authHash: "00" }, { lock: { salt: "12", iterations: 200_000, box: "ab" } }, { lock: { salt: "12".repeat(16), iterations: 10, box: "ab" } }]) {
     assert.equal((await directory.create(await newWorld({ id: "2".repeat(32), player: OTHER, ...bad }))).status, 400, JSON.stringify(bad));
   }
 });
@@ -125,8 +127,17 @@ test("the lock is handed out to anyone, since only the password opens it", async
   const { directory } = newDirectory();
   await directory.create(await newWorld());
 
-  assert.deepEqual((await directory.lock(WORLD)).body, { salt: "12".repeat(16), iterations: 200_000, box: "ab".repeat(60), name: "Iliasburg Crew", seats: 4, start: "none" });
+  assert.deepEqual((await directory.lock(WORLD)).body, { salt: "12".repeat(16), iterations: 200_000, box: "ab".repeat(60), name: "Iliasburg Crew", seats: 4, start: "none", choose: false });
   assert.equal((await directory.lock("f".repeat(32))).status, 404);
+});
+
+test("a world whose new players choose where to start says so in the list and the lock", async () => {
+  const { directory } = newDirectory();
+  await directory.create(await newWorld({ start: true, choose: true }));
+
+  assert.equal((await directory.list()).body.worlds[0].choose, true);
+  assert.equal((await directory.lock(WORLD)).body.choose, true);
+  assert.equal((await directory.lock(WORLD)).body.start, "pending");
 });
 
 test("a hidden world is listed only for its players, and found by its id", async () => {

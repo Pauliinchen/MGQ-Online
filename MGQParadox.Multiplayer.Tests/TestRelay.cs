@@ -2,6 +2,7 @@
 //  TestRelay.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-02: Kept whether a world lets each new player choose where to start
 //      Paulinchen  2026-10-01: Let admins delete through a helper of their own, and named them in the refusal
 //      Paulinchen  2026-09-30: Listed every world for admins and let them delete any
 //                            - Kept a world's starting save, uploaded once by its creator and handed to its players
@@ -351,7 +352,7 @@ internal sealed class TestRelay : IDisposable
     }
 
     /// <summary>
-    /// Writes a world's lock with its name, seats and starting save state.
+    /// Writes a world's lock with its name, seats, starting save state and whether new players choose where to start.
     /// </summary>
     /// <param name="world">The world's entry.</param>
     /// <returns>The answer.</returns>
@@ -361,6 +362,7 @@ internal sealed class TestRelay : IDisposable
         answer["name"] = world.Name;
         answer["seats"] = world.Seats;
         answer["start"] = world.Start;
+        answer["choose"] = world.Choose;
         return answer;
     }
 
@@ -430,6 +432,7 @@ internal sealed class TestRelay : IDisposable
             Members = { [creator] = creatorName },
             Start = body["start"]?.GetValue<bool>() == true ? "pending" : "none",
             Hidden = body["hidden"]?.GetValue<bool>() == true,
+            Choose = body["choose"]?.GetValue<bool>() == true,
         };
 
         return (201, new JsonObject { ["id"] = id });
@@ -520,6 +523,7 @@ internal sealed class TestRelay : IDisposable
             ["creator"] = new JsonObject { ["id"] = world.CreatorId, ["name"] = world.CreatorName },
             ["start"] = world.Start,
             ["hidden"] = world.Hidden,
+            ["choose"] = world.Choose,
             ["online"] = online.Count,
             ["created"] = 0,
             ["active"] = 0,
@@ -885,6 +889,11 @@ internal sealed class TestRelay : IDisposable
         /// Whether the list leaves it out for everyone but its players.
         /// </summary>
         public bool Hidden { get; init; }
+
+        /// <summary>
+        /// Whether each new player chooses where to start.
+        /// </summary>
+        public bool Choose { get; init; }
 
         /// <summary>
         /// Its starting save, <see langword="null"/> before its creator uploaded one.
