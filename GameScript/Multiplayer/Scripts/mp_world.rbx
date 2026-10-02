@@ -2,7 +2,8 @@
 #  mp_world.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-02: Made worlds without a password, which their players enter without being asked for one
+#      Paulinchen  2026-10-02: Offered to copy a world's latest save into the player's own game
+#                            - Made worlds without a password, which their players enter without being asked for one
 #                            - Showed the featured worlds, which the relay's admins make, in gold after the favourites
 #                            - Followed the title screen's start and update through mp_hooks.rbx
 #                            - Put the Save folder back in one place as a world closes
@@ -641,10 +642,26 @@ module MGQ_MpWorld
 
     # Finds the world's latest save, an autosave included.
     #
-    # It looks at the files themselves, since the game only finds a world's saves while the world is open.
-    #
     # @return [Integer, String, nil] The save's index as DataManager takes it, nil without any save.
     def latest_save
+      latest = latest_save_entry
+      latest && latest[0]
+    end
+
+    # Finds the file of the world's latest save, an autosave included.
+    #
+    # @return [String, nil] Its path, relative to the game's folder; nil without any save.
+    def latest_save_file
+      latest = latest_save_entry
+      latest && "#{save_folder}/#{latest[1]}"
+    end
+
+    # Finds the world's latest save and its file.
+    #
+    # It looks at the files themselves, since the game only finds a world's saves while the world is open.
+    #
+    # @return [Array, nil] The save's index as DataManager takes it and its file's name, nil without any save.
+    def latest_save_entry
       return nil unless File.directory?(save_folder)
 
       saves = Dir.entries(save_folder).map do |entry|
@@ -653,8 +670,7 @@ module MGQ_MpWorld
         when /\AAutoSave(\d{2})\.rvdata2\z/i then [$1, entry]
         end
       end
-      latest = saves.compact.max_by { |_, entry| File.mtime("#{save_folder}/#{entry}") }
-      latest && latest[0]
+      saves.compact.max_by { |_, entry| File.mtime("#{save_folder}/#{entry}") }
     end
 
     # Deletes the world's folder with everything in it: this game's saves of the world, and that
@@ -702,6 +718,18 @@ module MGQ_MpWorld
     # @param folder [String, nil] The folder.
     def self.root=(folder)
       @root = folder
+    end
+
+    # Runs a block with the paths below the Save folder reaching the game's own Save folder, also
+    # while a world is open.
+    #
+    # @return [Object] What the block returns.
+    def self.unmapped
+      root = @root
+      @root = nil
+      yield
+    ensure
+      @root = root
     end
 
     # Changes the paths among some arguments that lie below the Save folder.
@@ -995,7 +1023,7 @@ class Scene_MpWorlds < Scene_MenuBase
     @list_window.set_handler(:rename, method(:on_rename))
     @list_window.set_handler(:cancel, method(:return_scene))
     @actions_window = Window_MpChoice.new
-    [:enter, :favourite, :copy_id, :ban, :delete_world, :delete_saves].each { |symbol| @actions_window.set_handler(symbol, method(:"on_#{symbol}")) }
+    [:enter, :favourite, :copy_id, :ban, :delete_world, :export_save, :delete_saves].each { |symbol| @actions_window.set_handler(symbol, method(:"on_#{symbol}")) }
     @actions_window.set_handler(:cancel, method(:back_to_list))
     @members_window = Window_MpChoice.new
     @members_window.set_handler(:member, method(:on_member))
@@ -1114,6 +1142,7 @@ class Scene_MpWorlds < Scene_MenuBase
     commands.push(["Copy the world id", :copy_id]) if creator && listed.hidden
     commands.push(["Remove a player", :ban, listed.members.size > 1]) if creator
     commands.push(["Delete the world for everyone", :delete_world]) if creator || (listed && @admin)
+    commands.push(["Copy my latest save to my game", :export_save]) if @entry.local && @entry.local.latest_save
     commands.push(["Delete my saves of it", :delete_saves]) if @entry.local
     commands.push(["Back", :cancel])
     @actions_window.start(commands)
@@ -1178,6 +1207,12 @@ class Scene_MpWorlds < Scene_MenuBase
   # Asks whether to delete the chosen world for everyone.
   def on_delete_world
     confirm(:delete_world, "Delete #{@entry.name} for everyone? Nobody can enter it again. Saves stay on each PC.", "Delete it")
+  end
+
+  # Copies the chosen world's latest save into the player's own game, see MGQ_MpSaveExport.
+  def on_export_save
+    say(MGQ_MpSaveExport.export(@entry.local))
+    back_to_list
   end
 
   # Asks whether to delete the player's saves of the chosen world.

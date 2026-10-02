@@ -137,6 +137,10 @@ game's letters appear.
 - Enter a world: the first time, type its password, unless it has none;
   your game remembers it after that. A world you have saves in loads
   your latest one.
+- Copy my latest save to my game, on a world you played, or Copy to my
+  game in the menu while you are in it: copies the world's latest save
+  into the first free slot of your own saves. Your own Library, medals
+  and affection stay as they are.
 - Its creator can remove a player or delete the world for everyone.
 
 Each world keeps its own saves, Library, medals and affection in

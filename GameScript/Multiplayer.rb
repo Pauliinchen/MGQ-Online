@@ -2,7 +2,8 @@
 #  Multiplayer.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-02: Loaded mp_hooks.rbx first and followed Graphics.update and SceneManager.run through it
+#      Paulinchen  2026-10-02: Loaded mp_save_export.rbx after mp_world.rbx
+#                            - Loaded mp_hooks.rbx first and followed Graphics.update and SceneManager.run through it
 #      Paulinchen  2026-10-01: Loaded mp_coop_squad.rbx after mp_coop.rbx
 #                            - Loaded mp_battles_duel.rbx and mp_battles_team.rbx after the PvP battles, and mp_world_overview.rbx last
 #                            - Added Mouse, where the mouse points on the game's screen and its left button
@@ -53,7 +54,7 @@ module MGQ_Multiplayer
   SCRIPTS = %w[
     mp_hooks mp_actors mp_async mp_overworld_sync mp_actions mp_chat mp_overworld
     mp_coop mp_coop_squad mp_coop_events mp_coop_npcs mp_coop_story
-    mp_save_distribution mp_world
+    mp_save_distribution mp_world mp_save_export
     mp_battles mp_battles_coop mp_battles_sync mp_battles_pvp mp_battles_duel mp_battles_team
     mp_world_overview
   ]

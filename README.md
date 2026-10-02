@@ -51,6 +51,7 @@ The list at the left shows every public world and the hidden worlds you joined: 
   - *Players choose their start* lets each new player choose when they first enter: at the beginning, from one of their own saves, or from yours if you ticked *From my save*. Their own save is copied into the world; the original stays untouched.
   - Max Players, the starting save and Players choose can't be changed later.
 - **Join a hidden world:** type or paste (Ctrl+V) the world id its creator sent you, and its password if it has one. The creator copies the id with *Copy the world id* on the world.
+- **Take a world's save home:** *Copy my latest save to my game* on a world you've played, or *Copy to my game* in the menu while you're in it, copies that world's latest save into the first free slot of your own saves. Your own Library, medals and affection stay as they are.
 - **The creator** can remove a player, who can then no longer enter, or delete the world for everyone.
 
 ### On the map
