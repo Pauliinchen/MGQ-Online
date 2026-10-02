@@ -2,173 +2,30 @@
 #  battles_coop_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-01: Checked that every player hears at once when another leaves the battle
+#                            - Checked that a guest whose troop differs fights the host's enemies
+#                            - Checked the squads players bring, the leader first, and swaps with the Backline
+#                            - Took the stand-ins from battle_support.rb, which the team duel test shares
 #      Paulinchen  2026-09-30: Created
 #
 #----------------------------------------------------------------
 
-# Covers co-op battles, mp_battles_coop.rbx with mp_battles_sync.rbx and mp_battles.rbx: from the
-# invite to the end of the battle, for the host and for a guest.
+# Covers co-op battles, mp_battles_coop.rbx with mp_battles_sync.rbx, mp_battles.rbx and
+# mp_coop_squad.rbx: from the invite to the end of the battle, for the host and for a guest.
 
-require_relative "support"
+require_relative "battle_support"
 
-$sent = []
-$log = []
-module MGQ_Multiplayer
-  module Log; def self.write(m); $log << m; end; end
-  module Player; def self.name; "Me"; end; end
-  module Link; def self.cancel; $cancelled = true; end; end
-end
-module MGQ_MpOverworldSync
-  def self.in_world?; true; end
-  module Peers
-    Peer = Struct.new(:seat, :state, :ghost, :member)
-    @all = []
-    def self.all; @all; end
-    def self.at(seat); @all.find { |p| p.seat == seat }; end
-  end
-  module Me; def self.encode(state); state.map { |k, v| "#{k}=#{v}" }.join("\n") + "\n\n"; end; end
-  module Link
-    def self.send_to(seat, text); $sent << [seat, text]; true; end
-    def self.status; { "seat" => $my_seat.to_s }; end
-  end
-end
-module MGQ_MpCoop
-  module Party
-    def self.id; "p1"; end
-    def self.members; MGQ_MpOverworldSync::Peers.all.select(&:member); end
-  end
-end
-module RPG; class Item; end; class Skill; end; class State; end; class Weapon; end; class Armor; end; end
-class Color; end
-class Tone; end
-class Game_ActionResult; end
-class Game_BaseItem; end
-class Game_Battler; end
-class Game_Action
-  attr_accessor :item, :target_index
-  def initialize(battler); @battler = battler; end
-  def set_skill(id); @item = [:skill, id]; end
-  def set_item(id); @item = [:item, id]; end
-end
-class Game_Actor < Game_Battler
-  attr_accessor :id, :hp, :mp, :actions
-  def initialize(id); @id = id; @hp = 100; @mp = 10; @actions = []; end
-  def name; "Actor#{@id}"; end
-  def make_actions; @actions = [Game_Action.new(self)]; end
-  def make_auto_battle_actions; @actions = [:auto]; end
-end
-class Game_MpActor < Game_Actor
-  def initialize(member, player); super(member.actor_id); @player = player; end
-  def name; "Actor#{@id} (#{@player})"; end
-end
-class Game_Enemy < Game_Battler
-  attr_reader :enemy_id
-  def initialize(id); @enemy_id = id; end
-  def name; "Enemy#{@enemy_id}"; end
-end
-module MGQ_MpActors
-  module Builds
-    Member = Struct.new(:actor_id)
-    def self.write(actors); actors.map(&:id).join(","); end
-    def self.parse(text, count); text.to_s.split(",").first(count).map { |id| Member.new(id.to_i) }; end
-  end
-end
-class Game_Party
-  attr_accessor :own
-  def battle_members; @own; end
-end
-class Game_Troop; attr_accessor :members; end
-class Game_Temp; attr_accessor :in_memory_battle; end
-class Game_Message; def clear; $cleared = true; end; end
-class Interpreter; attr_accessor :busy; def running?; @busy; end; end
-class Game_Map; attr_accessor :map_id, :interpreter; end
-class Game_Player; attr_accessor :moving; def transfer?; false; end; def moving?; @moving; end; end
-class Game_Switches; def initialize; @d = {}; end; def [](i); @d[i] || false; end; def []=(i, v); @d[i] = v; end; end
-System = Struct.new(:switches)
-$data_system = System.new(Array.new(100, ""))
-module NWConst; module Sw; FORBID_BATTLE_SHIFT_CHANGE = 27; end; end
-module BattleManager
-  def self.setup(troop_id, can_escape = true, can_lose = false); $setup << [troop_id, can_escape, can_lose]; end
-  def self.can_giveup?; true; end
-  def self.turn_end; $turn_ends = ($turn_ends || 0) + 1; end
-  def self.process_abort; $aborted = true; end
-end
-$setup = []
-$data_skills = Array.new(200, :skill)
-$data_items = Array.new(50, :item)
-module SceneManager
-  def self.run; end
-  def self.call(scene); $called = scene; end
-end
-class Scene_Battle
-  def terminate; end
-  def refresh_status; $refreshed = true; end
-  def start_party_command_selection; $commands_phase = true; end
-  attr_accessor :changing
-  def scene_changing?; @changing; end
-  def update_for_wait; $frames += 1; $inject.call($frames) if $inject; end
-end
-class Scene_Map; def update_scene; end; def scene_changing?; false; end; end
-class Window_Base; end
-module Input; def self.trigger?(*); false; end; end
-
-module MGQ_MpCoop
-  def self.tell(seat, field, value, fields = {})
-    MGQ_MpOverworldSync::Link.send_to(seat, MGQ_MpOverworldSync::Me.encode({ field => value, "party" => Party.id }.merge(fields)))
-  end
-  def self.route(*); end
-end
-module MGQ_MpOverworldSync
-  def self.route(*); end
-  def self.on_tick(*); end
-  def self.state_fields(*); end
-  def self.busy_scene(*); end
-  def self.on_observe(*); end
-  def self.on_leave(*); end
-  def self.label_line(*); end
-end
-load_script "mp_battles"
-load_script "mp_battles_coop"
-load_script "mp_battles_sync"
-module MGQ_MpBattlesSync::Waiting
-  def self.open(text); :window; end
-  def self.close(window); nil; end
-  def self.leave?(window, frames); false; end
-end
-SceneManager.run
-MGQ_MpBattlesCoop.install
-
-# Reads a message another game sent into its fields, its body under :payload.
-#
-# @param text [String] The message.
-# @return [Hash] The fields.
-def fields_of(text)
-  head, payload = text.split("\n\n", 2)
-  fields = {}
-  head.to_s.split("\n").each { |line| k, v = line.split("=", 2); fields[k] = v if v }
-  fields[:payload] = payload.to_s
-  fields
-end
-
-$game_switches = Game_Switches.new
-$game_temp = Game_Temp.new
-$game_message = Game_Message.new
-$game_map = Game_Map.new
-$game_map.map_id = 5
-$game_map.interpreter = Interpreter.new
-$game_player = Game_Player.new
-$game_party = Game_Party.new
-$game_troop = Game_Troop.new
-$game_troop.members = [Game_Enemy.new(31), Game_Enemy.new(32)]
 mine = [Game_Actor.new(1), Game_Actor.new(2), Game_Actor.new(3)]
 $game_party.own = mine
-friend = MGQ_MpOverworldSync::Peers::Peer.new(2, { "name" => "Friend", "map" => "5", "scene" => "map" }, nil, true)
+friend = MGQ_MpOverworldSync::Peers::Peer.new(2, { "id" => "id-friend", "name" => "Friend", "map" => "5", "scene" => "map" }, nil, true)
 busy = MGQ_MpOverworldSync::Peers::Peer.new(3, { "name" => "Busy", "map" => "5", "scene" => "menu" }, nil, true)
 away = MGQ_MpOverworldSync::Peers::Peer.new(4, { "name" => "Away", "map" => "9", "scene" => "map" }, nil, true)
 stranger = MGQ_MpOverworldSync::Peers::Peer.new(6, { "name" => "Stranger", "map" => "5", "scene" => "map" }, nil, false)
 MGQ_MpOverworldSync::Peers.all.push(friend, busy, away, stranger)
 $my_seat = 0
+$leader = :me
 scene = Scene_Battle.new
+$scene_now = scene
 
 # The host invites.
 BattleManager.setup(40, true, false)
@@ -187,7 +44,7 @@ check("and without anyone the battle is the host's own", [MGQ_MpBattlesSync.role
 # Somebody joins.
 BattleManager.setup(40, true, false)
 bid = MGQ_MpBattlesSync.battle_id
-join = MGQ_MpBattlesSync::Wire.line(["7,8", [[50, 5], [60, 6]]])
+join = MGQ_MpBattlesSync::Wire.line(["7,8,9", [[50, 5], [60, 6], [70, 7]], 8])
 MGQ_MpBattlesSync.take(stranger, { "battle" => "join", "bid" => bid, :payload => join })
 MGQ_MpBattlesSync.take(friend, { "battle" => "join", "bid" => "other", :payload => join })
 $sent.clear
@@ -197,7 +54,8 @@ check("the host gathers who joins", MGQ_MpBattlesCoop.gather(scene), nil)
 $inject = nil
 roster = $sent.map { |seat, text| fields_of(text) }.find { |f| f["battle"] == "roster" }
 enemies, players = MGQ_MpBattlesSync::Wire.parse(roster[:payload])
-check("and sends the party to everyone", [enemies, players.map { |p| p[0, 3] }], [[31, 32], [[0, "Me", "1,2"], [2, "Friend", "7,8"]]])
+check("and sends the party and the troop to everyone", [enemies, players.map { |p| p[0, 3] }], [[[31, 0, 0, 0], [32, 0, 0, 0]], [[0, "Me", "1,2,3"], [2, "Friend", "7,8,9"]]])
+check("with each player's order and shares, the Backline's as far as their characters go", players.map { |p| p[4, 4] }, [[8, [0, 1, 2], 2, 1], [8, [0, 1, 2], 2, 1]])
 party = $game_party.battle_members
 check("two players bring two each, the host's own first", party.map(&:name), ["Actor1", "Actor2", "Actor7 (Friend)", "Actor8 (Friend)"])
 check("the others' characters keep their HP and MP", party[2, 2].map { |a| [a.hp, a.mp, a.mp_seat] }, [[50, 5, 2], [60, 6, 2]])
@@ -228,7 +86,7 @@ check("and leaves the world's room open", $cancelled, false)
 $my_seat = 2
 $sent.clear
 $setup.clear
-host = MGQ_MpOverworldSync::Peers::Peer.new(0, { "name" => "Host", "map" => "5", "scene" => "map" }, nil, true)
+host = MGQ_MpOverworldSync::Peers::Peer.new(0, { "id" => "id-host", "name" => "Host", "map" => "5", "scene" => "map" }, nil, true)
 MGQ_MpOverworldSync::Peers.all.push(host)
 message = { "coop" => "invite", "party" => "p1", "bid" => "b9", "troop" => "40", "escape" => "1", "lose" => "0", "seats" => "2,3", "map" => "5" }
 MGQ_MpBattlesCoop.take(host, message.merge("seats" => "3"))
@@ -245,19 +103,38 @@ check("its own setup invites nobody", $sent.select { |_, t| t.include?("coop=inv
 
 $sent.clear
 $frames = 0
-roster_body = MGQ_MpBattlesSync::Wire.line([[31, 32], [[0, "Host", "4,5", [[80, 8], [90, 9]]], [2, "Me", "1,2", [[100, 10], [100, 10]]]]])
+roster_body = MGQ_MpBattlesSync::Wire.line([[[31, 0, 0, 0], [32, 0, 0, 0]], [[0, "Host", "4,5", [[80, 8], [90, 9]], 8, [0, 1], 2, 0], [2, "Me", "1,2,3", [[100, 10]] * 3, 8, [0, 1, 2], 2, 1]]])
 $inject = lambda { |frame| MGQ_MpBattlesSync.take(host, { "battle" => "roster", "bid" => "b9", :payload => roster_body }) if frame == 2 }
+own_enemies = $game_troop.members.dup
 check("the guest joins", MGQ_MpBattlesCoop.join(scene), nil)
 $inject = nil
+check("a guest whose troop is the host's keeps its own enemies", $game_troop.members.zip(own_enemies).all? { |now, before| now.equal?(before) }, true)
 sent_join = $sent.map { |_, text| fields_of(text) }.find { |f| f["battle"] == "join" }
-check("with up to two of its own characters", MGQ_MpBattlesSync::Wire.parse(sent_join[:payload]), ["1,2", [[100, 10], [100, 10]]])
+check("with the squad two players bring, and its places", MGQ_MpBattlesSync::Wire.parse(sent_join[:payload]), ["1,2,3", [[100, 10], [100, 10], [100, 10]], 8])
 guest_party = $game_party.battle_members
 check("and fights in the host's order, its own characters as they are", guest_party.map(&:name), ["Actor4 (Host)", "Actor5 (Host)", "Actor1", "Actor2"])
 check("the guest's commands are only for its own", MGQ_MpBattlesSync::Wire.parse(MGQ_MpBattlesSync::Commands.build)[0].map(&:size), [0, 0, 0, 0])
 guest_party[2].actions = [Game_Action.new(guest_party[2]).tap { |a| a.set_skill(5); a.target_index = 0; a.item = RPG::Skill.new; def (a.item).id; 5; end }]
 check("which it sends by the party's places", MGQ_MpBattlesSync::Wire.parse(MGQ_MpBattlesSync::Commands.build)[0][2], [["skill", 5, 0]])
+check("with the order of its own places", MGQ_MpBattlesSync::Wire.parse(MGQ_MpBattlesSync::Commands.build)[1], [0, 1, 2])
+check("its Backline is its own share", $game_party.bench_members.map(&:name), ["Actor3"])
 check("a guest tries to escape as in any battle", MGQ_MpBattlesSync::Live.escape_leaves?, false)
 MGQ_MpBattlesCoop.ended
+
+# A guest whose troop differs from the host's, through a mod of either game, fights the host's.
+own_enemies = $game_troop.members.dup
+troop_scene = Scene_Battle.new
+troop_scene.instance_variable_set(:@spriteset, Spriteset_Battle.new)
+hosts = [[31, 100, 300, 0], [31, 200, 300, 0], [32, 300, 300, 0], [32, 400, 300, 1]]
+MGQ_MpBattlesCoop.take_troop(troop_scene, hosts)
+rebuilt = $game_troop.members
+check("a guest whose troop differs fights the host's enemies, in the host's places", rebuilt.map { |e| [e.index, e.enemy_id, e.screen_x, e.screen_y, e.hidden?] },
+      [[0, 31, 100, 300, false], [1, 31, 200, 300, false], [2, 32, 300, 300, false], [3, 32, 400, 300, true]])
+check("named apart as the game names a troop's enemies", rebuilt.map(&:name), ["Enemy31 A", "Enemy31 B", "Enemy32 A", "Enemy32"])
+check("and drawn anew", troop_scene.instance_variable_get(:@spriteset).enemies, rebuilt.reverse)
+$game_troop.members = own_enemies
+MGQ_MpBattlesCoop.take_troop(troop_scene, [[31, 0, 0, 0], [500, 0, 0, 0]])
+check("a host's enemy this game lacks keeps the guest's own troop", $game_troop.members.equal?(own_enemies), true)
 
 # A player with their window in the background.
 friend.state["scene"] = "away"
@@ -271,36 +148,47 @@ $my_seat = 0
 BattleManager.setup(41)
 check("nobody to invite says why", $log.last.to_s.start_with?("co-op battle: nobody to invite on map 5: Friend on map 5 (menu), Busy on map 5 (menu)"), true)
 
-# 3 players bring one each.
-check("three players bring one each", MGQ_MpBattlesCoop.share(3), 1)
+# Shares.
+check("of three players the leader brings two and two of the Backline, the others one each", [0, 1, 2].map { |at| MGQ_MpCoopSquad.share(at, 3, 8) }, [[2, 2], [1, 1], [1, 1]])
 
 # Players who get away: three players, then two, then one.
 $my_seat = 0
 MGQ_MpOverworldSync::Peers.all.clear
-g1 = MGQ_MpOverworldSync::Peers::Peer.new(2, { "name" => "Friend", "map" => "5", "scene" => "map" }, nil, true)
-g2 = MGQ_MpOverworldSync::Peers::Peer.new(3, { "name" => "Other", "map" => "5", "scene" => "map" }, nil, true)
+g1 = MGQ_MpOverworldSync::Peers::Peer.new(2, { "id" => "id-friend", "name" => "Friend", "map" => "5", "scene" => "map" }, nil, true)
+g2 = MGQ_MpOverworldSync::Peers::Peer.new(3, { "id" => "id-other", "name" => "Other", "map" => "5", "scene" => "map" }, nil, true)
 MGQ_MpOverworldSync::Peers.all.push(g1, g2)
 $game_map.map_id = 5
 $game_party.own = mine
 BattleManager.setup(50)
 bid3 = MGQ_MpBattlesSync.battle_id
-MGQ_MpBattlesSync.take(g1, { "battle" => "join", "bid" => bid3, :payload => MGQ_MpBattlesSync::Wire.line(["7,8", [[50, 5], [60, 6]]]) })
-MGQ_MpBattlesSync.take(g2, { "battle" => "join", "bid" => bid3, :payload => MGQ_MpBattlesSync::Wire.line(["9,10", [[70, 7], [80, 8]]]) })
+MGQ_MpBattlesSync.take(g1, { "battle" => "join", "bid" => bid3, :payload => MGQ_MpBattlesSync::Wire.line(["7,8,9", [[50, 5], [60, 6], [65, 6]], 8]) })
+MGQ_MpBattlesSync.take(g2, { "battle" => "join", "bid" => bid3, :payload => MGQ_MpBattlesSync::Wire.line(["10,11", [[70, 7], [80, 8]], 8]) })
 $frames = 0
 $sent.clear
 MGQ_MpBattlesCoop.gather(scene)
 three = $game_party.battle_members
-check("three players bring one each", three.map(&:name), ["Actor1", "Actor7 (Friend)", "Actor9 (Other)"])
+check("of three players the leader brings two, the others one each", three.map(&:name), ["Actor1", "Actor2", "Actor7 (Friend)", "Actor10 (Other)"])
 roster3 = $sent.map { |_, text| fields_of(text) }.find { |f| f["battle"] == "roster" }
-check("the roster carries two of everyone's characters", MGQ_MpBattlesSync::Wire.parse(roster3[:payload])[1].map { |p| p[2] }, ["1,2", "7,8", "9,10"])
-three[1].hp = 12
+check("the roster carries everyone's squad for two players", MGQ_MpBattlesSync::Wire.parse(roster3[:payload])[1].map { |p| p[2] }, ["1,2,3", "7,8,9", "10,11"])
+three[2].hp = 12
+
+$notices = []
+MGQ_MpOverworldSync::Peers.all.concat([g1, g2])
+MGQ_MpBattlesSync.take(g2, { "battle" => "leave", "bid" => bid3, :payload => "" })
+check("a player who leaves is told of at once, before the next command phase", [$notices, $game_party.battle_members.size], [["Other left the battle."], 4])
+MGQ_MpBattlesSync.take(g2, { "battle" => "leave", "bid" => bid3, :payload => "" })
+MGQ_MpBattlesSync::Departures.gone(g2)
+check("once per battle", $notices, ["Other left the battle."])
+MGQ_MpBattlesSync::Departures.gone(MGQ_MpOverworldSync::Peers::Peer.new(9, { "name" => "Stranger" }, nil, false))
+check("a player outside the battle who leaves the world is not", $notices.size, 1)
+MGQ_MpOverworldSync::Peers.all.clear
 
 MGQ_MpBattlesSync.guest_left(3)
 $sent.clear
 MGQ_MpBattlesCoop.settle(scene)
 two = $game_party.battle_members
 check("when one gets away, the others bring two each", two.map(&:name), ["Actor1", "Actor2", "Actor7 (Friend)", "Actor8 (Friend)"])
-check("characters who stay keep what the battle did to them", [two[2].equal?(three[1]), two[2].hp], [true, 12])
+check("characters who stay keep what the battle did to them", [two[2].equal?(three[2]), two[2].hp], [true, 12])
 change = $sent.map { |_, text| fields_of(text) }.find { |f| f["battle"] == "coop_party" }
 check("the guests hear of the new party", MGQ_MpBattlesSync::Wire.parse(change[:payload])[0].map { |p| p[0] }, [0, 2])
 $sent.clear
@@ -317,9 +205,9 @@ $my_seat = 2
 MGQ_MpBattlesSync.join_world(:guest, "g7", [0], "Host")
 MGQ_MpBattlesSync.battle_started
 MGQ_MpBattles.begin(:coop)
-MGQ_MpBattlesCoop.form(scene, [[0, "Host", "4,5", [[80, 8], [90, 9]]], [2, "Me", "1,2", [[100, 10], [100, 10]]], [3, "Other", "9,10", []]])
-check("the guest's party of three", $game_party.battle_members.map(&:name), ["Actor4 (Host)", "Actor1", "Actor9 (Other)"])
-MGQ_MpBattlesSync::Channel.receive(0, "coop_party", MGQ_MpBattlesSync::Wire.line([[[0, "Host", "4,5", [[80, 8], [90, 9]]], [2, "Me", "1,2", []]]]))
+MGQ_MpBattlesCoop.form(scene, [[0, "Host", "4,5", [[80, 8], [90, 9]], 8, [0, 1], 2, 0], [2, "Me", "1,2,3", [[100, 10]] * 3, 8, [0, 1, 2], 1, 1], [3, "Other", "10,11", [], 8, [0, 1], 1, 1]])
+check("the guest's party of three", $game_party.battle_members.map(&:name), ["Actor4 (Host)", "Actor5 (Host)", "Actor1", "Actor10 (Other)"])
+MGQ_MpBattlesSync::Channel.receive(0, "coop_party", MGQ_MpBattlesSync::Wire.line([[[0, "Host", "4,5", [[80, 8], [90, 9]], 8, [0, 1], 2, 0], [2, "Me", "1,2,3", [], 8, [0, 1, 2], 2, 1]]]))
 MGQ_MpBattlesSync::Channel.receive(0, "events", "")
 MGQ_MpBattlesSync::Playback.reset
 MGQ_MpBattlesSync::Playback.next_event(scene)
@@ -341,3 +229,67 @@ $aborted = false
 MGQ_MpBattlesSync::Live.coop_end("process_abort", scene)
 check("when the host gets away, the guest fights on alone", [MGQ_MpBattlesCoop.active?, $game_party.battle_members, MGQ_MpBattlesSync.role, MGQ_MpBattles.running?], [false, mine, nil, false])
 check("from a new command phase", [$turn_ends, $commands_phase, $aborted], [1, true, false])
+
+# Swaps with the Backline: the host with five characters, a friend with four.
+$my_seat = 0
+MGQ_MpOverworldSync::Peers.all.clear
+mate = MGQ_MpOverworldSync::Peers::Peer.new(2, { "id" => "id-friend", "name" => "Friend", "map" => "5", "scene" => "map" }, nil, true)
+MGQ_MpOverworldSync::Peers.all.push(mate)
+five = (1..5).map { |id| Game_Actor.new(id) }
+$game_party.own = five.dup
+BattleManager.setup(60)
+MGQ_MpBattlesSync.take(mate, { "battle" => "join", "bid" => MGQ_MpBattlesSync.battle_id, :payload => MGQ_MpBattlesSync::Wire.line(["7,8,9,10", [[50, 5]] * 4, 8]) })
+$frames = 0
+MGQ_MpBattlesCoop.gather(scene)
+check("each of two players brings their squad of four, two of them in front", [$game_party.battle_members.map(&:name), $game_party.bench_members.map(&:name)],
+      [["Actor1", "Actor2", "Actor7 (Friend)", "Actor8 (Friend)"], ["Actor3", "Actor4"]])
+$shift = true
+status = Window_BattleStatus.new
+status.index = 2
+check("a shift change picks none of the others' characters", status.current_item_enabled?, false)
+status.index = 1
+check("but the player's own", status.current_item_enabled?, true)
+$shift = false
+check("outside a shift change the window is the game's", status.current_item_enabled?, :original)
+friend_front = $game_party.battle_members[2]
+check("another player's character never swaps", MGQ_MpBattlesCoop.swap(scene, friend_front, 0), false)
+scene.instance_variable_set(:@status_window, Struct.new(:index).new(1))
+scene.instance_variable_set(:@bench_window, Struct.new(:index).new(1))
+$bench_cancelled = false
+scene.bench_member_ok
+check("the shift change swaps the player's own in", [$game_party.battle_members.map(&:name), $game_party.bench_members.map(&:name), $bench_cancelled],
+      [["Actor1", "Actor4", "Actor7 (Friend)", "Actor8 (Friend)"], ["Actor3", "Actor2"], true])
+check("in their own party too, as in a battle of their own", $game_party.own.map(&:id), [1, 4, 3, 2, 5])
+$sent.clear
+MGQ_MpBattlesCoop.share_order
+told = $sent.map { |_, text| fields_of(text) }.find { |f| f["battle"] == "coop_party" }
+check("the host tells the guests the new order before the turn", MGQ_MpBattlesSync::Wire.parse(told[:payload])[0].map { |p| p[5] }, [[0, 3, 2, 1], [0, 1, 2, 3]])
+$sent.clear
+MGQ_MpBattlesCoop.share_order
+check("only once", $sent.size, 0)
+MGQ_MpBattlesSync::Commands.apply(MGQ_MpBattlesSync::Wire.line([[[], [], [], [["skill", 12, 0]]], [3, 1, 2, 0]]), 2)
+swapped = $game_party.battle_members
+check("a guest's commands bring their swap first", swapped.map(&:name), ["Actor1", "Actor4", "Actor10 (Friend)", "Actor8 (Friend)"])
+check("so their commands reach the character they see", swapped[3].actions.map(&:item), [[:skill, 12]])
+check("the character swapped out leaves the party", $game_party.battle_members.include?(friend_front), false)
+MGQ_MpBattlesSync::Commands.apply(MGQ_MpBattlesSync::Wire.line([[[], [], [], []], [0, 1, 2, 3]]), 2)
+check("and comes back as the battle left it", $game_party.battle_members[2].equal?(friend_front), true)
+MGQ_MpBattlesSync::Commands.apply(MGQ_MpBattlesSync::Wire.line([[[], [], [], []], [0, 0, 1, 2]]), 2)
+check("a broken order puts the guest's characters back in theirs", MGQ_MpBattlesCoop.instance_variable_get(:@players).find { |p| p[0] == 2 }[5], [0, 1, 2, 3])
+five[0].hp = 0
+five[1].hp = 0
+$game_party.battle_members.each { |member| member.hp = 0 }
+$game_party.battle_members[1].hp = 100
+check("a swap may not leave nobody standing", MGQ_MpBattlesCoop.swap_kills_all?($game_party.battle_members[1], five[1]), true)
+MGQ_MpBattlesCoop.ended
+
+# The leader's characters come first, whoever hosts.
+$leader = mate
+$game_party.own = five.map { |actor| actor.tap { |a| a.hp = 100 } }
+BattleManager.setup(61)
+MGQ_MpBattlesSync.take(mate, { "battle" => "join", "bid" => MGQ_MpBattlesSync.battle_id, :payload => MGQ_MpBattlesSync::Wire.line(["7,8,9,10", [[50, 5]] * 4, 8]) })
+$frames = 0
+MGQ_MpBattlesCoop.gather(scene)
+check("the party's leader leads the battle's party too", $game_party.battle_members.map(&:name).first, "Actor7 (Friend)")
+MGQ_MpBattlesCoop.ended
+$leader = :me

@@ -2,6 +2,7 @@
 #  battles_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-01: Checked that only PvP battles forbid swapping the Backline in
 #      Paulinchen  2026-09-30: Created
 #
 #----------------------------------------------------------------
@@ -40,12 +41,14 @@ $game_switches[27] = false
 $game_switches[86] = false
 check("Give Up outside", BattleManager.can_giveup?, true)
 MGQ_MpBattles.begin(:coop)
-check("rules on", [MGQ_MpBattles.kind, $game_switches[86], $game_switches[27], BattleManager.can_giveup?], [:coop, true, true, false])
+check("rules on", [MGQ_MpBattles.kind, $game_switches[86], BattleManager.can_giveup?], [:coop, true, false])
+check("a co-op battle may swap the Backline in", $game_switches[27], false)
 MGQ_MpBattles.finish
 check("the game's own settings come back", [MGQ_MpBattles.running?, $game_switches[86], $game_switches[27], BattleManager.can_giveup?], [false, false, false, true])
 $game_switches[86] = true
 MGQ_MpBattles.begin(:pvp)
+check("a PvP battle may not swap the Backline in", $game_switches[27], true)
 MGQ_MpBattles.finish
-check("a switch that was on stays on", $game_switches[86], true)
+check("a switch that was on stays on", [$game_switches[86], $game_switches[27]], [true, false])
 $data_system.switches[86] = "Other name"
-check("the id stands in for a translated name", MGQ_MpBattles.switch_rules.keys.sort, [27, 86])
+check("the id stands in for a translated name", MGQ_MpBattles.switch_rules(:pvp).keys.sort, [27, 86])

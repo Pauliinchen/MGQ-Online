@@ -2,6 +2,7 @@
 #  mp_overworld_sync.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-02: Marked the player's state, which tells it apart from the scripts' messages
 #      Paulinchen  2026-09-30: Created
 #
 #----------------------------------------------------------------
@@ -40,6 +41,9 @@ module MGQ_MpOverworldSync
 
   # Share of the ping the others know that a new ping must differ by, too, before they are told again.
   PING_SHARE = 0.25
+
+  # The field that marks a message as a player's state, which no route may be named like.
+  STATE_FIELD = "state"
 
   @routes = {}
   @handlers = Hash.new { |handlers, kind| handlers[kind] = [] }
@@ -239,6 +243,7 @@ module MGQ_MpOverworldSync
 
       looks = $game_player.vehicle || $game_player
       state = {
+        STATE_FIELD => 1,
         "id" => identity[0],
         "name" => identity[1],
         "sprite" => looks.character_name.to_s,
@@ -405,14 +410,13 @@ module MGQ_MpOverworldSync
         Peers.remove(seat)
       when "message"
         message = MGQ_Multiplayer::Link.parse(entry[:payload].dup)
-        # A script's message may name a map too, such as where the leader went, so it is told
-        # apart before a state, which is any other message with a map. Its body, such as a co-op
-        # battle's stream, is its script's; a state has none.
-        if MGQ_MpOverworldSync.hand_over(Peers.at(seat), message)
-          nil
-        elsif message["map"]
+        # A state may carry a field named like a route, and a script's message may name a map, so
+        # only STATE_FIELD tells them apart.
+        if message[STATE_FIELD]
           message.delete(:payload)
           Peers.take(seat, message)
+        else
+          MGQ_MpOverworldSync.hand_over(Peers.at(seat), message)
         end
       end
     end

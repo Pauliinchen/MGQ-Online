@@ -2,6 +2,7 @@
 #  loader_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-02: Checked that the scripts whose constants the World overview shares load before it
 #      Paulinchen  2026-09-30: Created
 #
 #----------------------------------------------------------------
@@ -24,6 +25,8 @@ check("mp_actors loads before the scripts whose classes build on Game_MpActor",
       %w[mp_battles_coop mp_battles_pvp].all? { |name| scripts.index("mp_actors") < scripts.index(name) }, true)
 check("the registries load before the scripts that join them",
       [scripts.index("mp_overworld_sync") < scripts.index("mp_actions"), scripts.index("mp_coop") < scripts.index("mp_coop_events")], [true, true])
+check("the scripts whose constants the World overview shares load before it",
+      %w[mp_actions mp_overworld mp_battles_pvp].all? { |name| scripts.index(name) < scripts.index("mp_world_overview") }, true)
 check("the battle scripts keep the order their late hooks rely on",
       %w[mp_battles mp_battles_coop mp_battles_sync].map { |name| scripts.index(name) }.each_cons(2).all? { |a, b| a < b }, true)
 

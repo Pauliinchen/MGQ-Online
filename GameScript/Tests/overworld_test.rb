@@ -2,127 +2,23 @@
 #  overworld_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-02: Checked that the state marker tells states apart from the scripts' messages
+#                            - Checked that a full party turns away one player too many and cannot be joined
 #      Paulinchen  2026-10-01: Checked the chat in battles and the game's own lines in the chat log
+#                            - Checked the globe in the wheel's middle
+#                            - Checked the followers behind a party member's ghost
+#                            - Took the open world's stand-ins from world_support.rb, which the duel and overview tests share
+#                            - Checked the wheel's middle, invites naming a player, and the size and leader of a party
+#                            - Checked that only the party's leader invites and removes members
 #      Paulinchen  2026-09-30: Created
 #
 #----------------------------------------------------------------
 
-# Covers the open world as mp_overworld_sync.rbx, mp_actions.rbx, mp_chat.rbx, mp_overworld.rbx and
-# mp_coop.rbx play it together: states, other players and their ghosts, the action wheel and parties,
-# chat, pings, and the gate of the party's messages.
+# Covers the open world as mp_overworld_sync.rbx, mp_actions.rbx, mp_chat.rbx, mp_overworld.rbx,
+# mp_coop.rbx and mp_coop_squad.rbx play it together: states, other players, their ghosts and their
+# followers, the action wheel and parties, chat, pings, and the gate of the party's messages.
 
-require_relative "support"
-
-# Stand-ins for the game.
-class Sprite; def initialize(*); end; end
-module Graphics; def self.update; end; end
-class Spriteset_Map; def update; end; def dispose; end; end
-class Game_Map
-  attr_accessor :map_id, :interpreter
-  def update(main = false); end
-end
-class Game_Message; attr_accessor :busy; def busy?; @busy; end; end
-class Interpreter; def running?; false; end; end
-class Scene_Map; def update_scene; end; def scene_changing?; false; end; end
-class Scene_Battle; def update_basic; end; end
-class Spriteset_Battle; def update; end; def dispose; end; end
-module SceneManager; class << self; attr_accessor :scene; end; end
-class Game_Character
-  attr_reader :x, :y, :direction, :character_name, :character_index, :opacity
-  def initialize; @x = 0; @y = 0; @direction = 2; end
-  def moveto(x, y); @x, @y = x, y; end
-  def set_graphic(name, index); @character_name, @character_index = name, index; end
-  def set_direction(d); @direction = d; end
-  def update; end
-  def moving?; false; end
-  def move_straight(d)
-    @direction = d
-    case d when 2 then @y += 1 when 8 then @y -= 1 when 4 then @x -= 1 when 6 then @x += 1 end
-  end
-end
-Player = Struct.new(:x, :y, :direction, :character_name, :character_index, :real_move_speed, :transparent, :vehicle, :vehicle_type) do
-  def in_airship?; vehicle_type == :airship; end
-  def in_boat?; vehicle_type == :boat; end
-  def in_ship?; vehicle_type == :ship; end
-end
-class Scene_Item; end
-class Scene_EquipStoneActor; end
-class Scene_Library_H; end
-class Scene_Slot; end
-
-$sent = []
-$inbox = []
-$in_front = true
-$pressed = false
-$buttons = []
-$typed = ""
-$sounds = []
-module Sound; %w[cursor ok cancel buzzer].each { |s| define_singleton_method("play_#{s}") { $sounds << s } }; end
-class Color; def initialize(*); end; end
-module MGQ_Multiplayer
-  module Background; def self.in_front?; $in_front; end; def self.running?; true; end; end
-  module Key; def self.pressed?(code); p = $pressed == code || ($pressed == true && code == 0x42); $pressed = false if p; p; end; end
-  module Log; def self.write(m); puts "  log: #{m}"; end; end
-  module Capture
-    def self.start(owner); @owner = owner; end
-    def self.stop(owner); @owner = nil if @owner == owner; end
-    def self.on?; !@owner.nil?; end
-    def self.trigger?(button); $buttons.delete(button) ? true : false; end
-    def self.repeat?(button); $buttons.delete(button) ? true : false; end
-  end
-  module Player; def self.name; "Me"; end; end
-  module Link
-    def self.player_id; "me"; end
-    def self.typing(on); $typing_on = on; end
-    def self.take_typed; text = $typed; $typed = ""; [text, text.size]; end
-    def self.parse(text)
-      head, payload = text.split("\n\n", 2)
-      state = { :payload => payload.to_s }
-      head.to_s.split("\n").each { |line| k, v = line.split("=", 2); state[k] = v if v }
-      state
-    end
-  end
-end
-module MGQ_MpWorld; def self.open?; $open; end; end
-
-load_script "mp_overworld_sync"
-load_script "mp_actions"
-load_script "mp_chat"
-load_script "mp_overworld"
-load_script "mp_coop"
-
-# One frame on the map: the wheel's keys, then the chat's, as the hooks run them.
-def map_frame; MGQ_MpActions.on_map; MGQ_MpChat.on_map; end
-
-module MGQ_MpOverworldSync::Link
-  def self.next_entry; $inbox.shift; end
-  def self.send_to(target, text); $sent << [target, text]; true; end
-  def self.status; { "state" => "open", "ping" => $status_ping }; end
-end
-
-# An entry of the world room's inbox, as the DLL hands it out.
-#
-# @param kind [String] "seat", "in", "out" or "message".
-# @param seat [Integer] The seat it is about.
-# @param payload [String] A message's text.
-# @return [Hash] The entry.
-def entry(kind, seat, payload = "")
-  { "kind" => kind, "seat" => seat.to_s, :payload => payload }
-end
-
-# Writes a state as another game sends it.
-#
-# @param state [Hash] The state's fields.
-# @return [String] The message.
-def told(state)
-  state.map { |k, v| "#{k}=#{v}" }.join("\n") + "\n\n"
-end
-
-$open = true
-$game_map = Game_Map.new; $game_map.map_id = 5; $game_map.interpreter = Interpreter.new
-$game_message = Game_Message.new
-$game_player = Player.new(3, 4, 2, "Actor1", 0, 4, false, nil)
-SceneManager.scene = Scene_Map.new
+require_relative "world_support"
 
 # A new seat tells everyone everything.
 $inbox << entry("seat", 0)
@@ -222,7 +118,7 @@ check("chat offered, duel greyed", [option(:LEFT), option(:RIGHT)], [["Chat (T)"
 $pressed = true
 map_frame
 check("B opens the wheel and holds the buttons", [MGQ_MpActions::Wheel.open?, MGQ_Multiplayer::Capture.on?], [true, true])
-check("the first choice that can be taken is picked", MGQ_MpActions::Wheel.selected, :LEFT)
+check("the wheel opens on its middle, the World overview's globe", [MGQ_MpActions::Wheel.selected, option(:CENTER)[0], MGQ_MpActions.wheel_options[:CENTER].icon], [:CENTER, "World (F11)", 3988])
 $buttons << :UP << :C
 map_frame
 check("a greyed choice says why", [MGQ_MpActions::Wheel.open?, MGQ_MpOverworldSync::Status.lines.last, $sounds.last], [true, "Nobody is near enough to invite.", "buzzer"])
@@ -244,7 +140,7 @@ $inbox << entry("message", 2, told(friend.merge("map" => 5, "x" => 21, "y" => 22
 MGQ_MpOverworldSync.tick
 check("someone near: invite first", option(:UP), ["Invite to a party", true])
 $sent.clear
-wheel(:C)
+wheel(:UP, :C)
 check("inviting", [MGQ_MpCoop::Party.inviting?, MGQ_MpActions::Wheel.open?], [true, false])
 my_party = MGQ_MpCoop::Party.id
 check("the invite is told", $sent.last[1].include?("invite=1") && $sent.last[1].include?("party=#{my_party}"), true)
@@ -261,7 +157,23 @@ check("a member is solid", ghost.opacity, 255)
 check("the label knows the member", MGQ_MpOverworld.ghosts.first.member, true)
 check("a member is not invited again", option(:UP), ["Invite to a party", false])
 
+# A member's ghost has the followers they show, which step where the one before stood.
+check("followers are told only once shown", [$sent.last[1].include?("trail=\n"), $sent.last[1].include?("follow=0")], [true, true])
+[21, 22, 23, 24].each do |x|
+  $inbox << entry("message", 2, told(friend.merge("map" => 5, "x" => x, "y" => 22, "party" => my_party, "trail" => "Actor5*1|Actor6*2")))
+  MGQ_MpOverworldSync.tick
+  MGQ_MpOverworld.update_ghosts
+end
+check("a member's ghost has their followers", ghost.followers.map { |f| [f.character_name, f.character_index] }, [["Actor5", 1], ["Actor6", 2]])
+check("each a step behind the one before", [ghost.x, ghost.followers.map(&:x)], [24, [23, 22]])
+$inbox << entry("message", 2, told(friend.merge("map" => 5, "x" => 24, "y" => 40, "party" => my_party, "trail" => "Actor5*1")))
+MGQ_MpOverworldSync.tick
+MGQ_MpOverworld.update_ghosts
+check("a jump gathers the followers, as many as told", ghost.followers.map { |f| [f.x, f.y] }, [[24, 40]])
+
 wheel(:DOWN, :C)
+MGQ_MpOverworld.update_ghosts
+check("a stranger's ghost has no followers", ghost.followers, [])
 check("left", [MGQ_MpCoop::Party.id, MGQ_MpOverworldSync::Status.lines.last], [nil, "You left the party."])
 check("no party to leave", option(:DOWN), ["Leave the party", false])
 
@@ -276,7 +188,7 @@ $inbox << entry("message", 2, "chat=hello\n\n")
 MGQ_MpOverworldSync.tick
 check("a chat line goes to the chat", taken, [[2, "hello"]])
 MGQ_MpChat.singleton_class.send(:alias_method, :receive, :harness_receive)
-wheel(:C)
+wheel(:UP, :C)
 check("accepting an invite takes their party", MGQ_MpCoop::Party.id, "theirs")
 check("joined notice", MGQ_MpOverworldSync::Status.lines.last, "You joined Friend's party.")
 $inbox << entry("message", 2, told(friend.merge("map" => 5, "x" => 20, "y" => 21, "party" => "", "invite" => 0)))
@@ -449,6 +361,22 @@ MGQ_MpOverworldSync.tick
 check("a script's message keeps its body", $taken_battle, [["join", "first line	second
 third"]])
 
+# A state may carry a field named like a route: the marker keeps it a state.
+MGQ_MpOverworldSync.state_fields { { "battle" => "clash", "kept" => 1 } }
+state = MGQ_MpOverworldSync::Me.current
+check("a state keeps a field named like a route, and carries the marker", [state["battle"], state["kept"], state["state"]], ["clash", 1, 1])
+$taken_battle = nil
+$inbox << entry("message", 2, told(friend.merge("x" => 12, "battle" => "clash")))
+MGQ_MpOverworldSync.tick
+check("a state with a route's field is taken as a state, not by the route",
+      [$taken_battle, MGQ_MpOverworldSync::Peers.at(2).state["x"]], [nil, "12"])
+$inbox << entry("message", 2, "map=5
+x=1
+
+")
+MGQ_MpOverworldSync.tick
+check("a message with a map but no marker is no state", MGQ_MpOverworldSync::Peers.at(2).state["x"], "12")
+
 # Leaving, and closing the world.
 $inbox << entry("out", 2)
 MGQ_MpOverworldSync.tick
@@ -492,3 +420,66 @@ MGQ_MpCoop.tell(4, "gtest", "hello", "extra" => 1)
 check("tell adds the party id", [$sent.last[0], $sent.last[1].include?("gtest=hello
 party=#{mine}
 extra=1")], [4, true])
+
+# The wheel's middle, and the opposite arrow back to it.
+MGQ_MpActions::Wheel.open
+$buttons << :UP
+map_frame
+check("an arrow picks its side", MGQ_MpActions::Wheel.selected, :UP)
+$buttons << :DOWN
+map_frame
+check("the opposite arrow goes back to the middle", MGQ_MpActions::Wheel.selected, :CENTER)
+MGQ_MpActions::Wheel.close
+
+# Invites that name a player reach them anywhere.
+far = MGQ_MpOverworldSync::Peers.at(4)
+far.state.merge!("party" => "far-p", "invite" => "1", "invite_to" => "other-id", "map" => "9")
+check("an invite naming someone else does not reach the player from afar", MGQ_MpCoop::Party.invited_by?(far), false)
+far.state["invite_to"] = "other-id,me"
+check("one naming the player does", MGQ_MpCoop::Party.invited_by?(far), true)
+check("but not in the wheel, which needs the inviter near", MGQ_MpCoop::Party.invited_by?(far, false), false)
+MGQ_MpCoop::Party.stop_inviting
+MGQ_MpCoop::Party.invite("friend")
+check("the player's invite names its target", [MGQ_MpOverworldSync::Me.current["invite_to"], MGQ_MpCoop::Party.targets], ["friend", ["friend"]])
+MGQ_MpCoop::Party.invite
+check("a wheel invite keeps the targets of the standing invite", MGQ_MpCoop::Party.targets, ["friend"])
+(MGQ_MpCoop::INVITE_FRAMES + 1).times { MGQ_MpCoop::Party.count_down }
+check("the targets run out with the invite", MGQ_MpCoop::Party.targets, [])
+
+# The size and leader of a party.
+MGQ_MpCoop::Party.invite
+far.state.merge!("party" => MGQ_MpCoop::Party.id, "invite" => "0")
+badges = [MGQ_MpOverworld.party_badge(:me), MGQ_MpOverworld.party_badge(far)]
+check("a party of two shows its size on both, and one of them leads", [badges.map { |b| b[0] }, badges.count { |b| b[1] }], [["2 / 4", "2 / 4"], 1])
+check("the leader is the one the party's id names, else the lowest id", MGQ_MpCoop.leads?(far), true)
+far.state["party"] = "theirs"
+check("a player alone shows no size", [MGQ_MpOverworld.party_badge(:me), MGQ_MpOverworld.party_badge(far)], [nil, nil])
+
+# Only the party's leader invites and removes members.
+MGQ_MpCoop::Party.reset
+MGQ_MpCoop::Party.invite
+far.state.merge!("party" => MGQ_MpCoop::Party.id, "invite" => "0", "id" => "zz-far")
+check("the leader may invite more", MGQ_MpCoop::Party.may_invite?, true)
+$sent.clear
+MGQ_MpCoop::Party.remove(far)
+check("and removes a member by telling their game", [$sent.last[0], $sent.last[1].include?("kick=1")], [4, true])
+far.state["id"] = "aa-far"
+check("a member may not invite", [MGQ_MpCoop::Party.may_invite?, MGQ_MpActions.wheel_options[:UP].refusal], [false, "Only the party's leader invites."])
+MGQ_MpCoop::Party.remove(far)
+check("nor remove", $sent.size, 1)
+$inbox << entry("message", 4, "kick=1\nparty=#{MGQ_MpCoop::Party.id}\n\n")
+MGQ_MpOverworldSync.tick
+check("the leader's removal makes the member's game leave", [MGQ_MpCoop::Party.id, MGQ_MpOverworldSync::Status.lines.last], [nil, "Friend removed you from the party."])
+
+# A party past its size: the leader turns away whoever joins one too many, and nobody joins a full one.
+MGQ_MpCoop::Party.reset
+MGQ_MpCoop::Party.invite
+full = MGQ_MpCoop::Party.id
+(10..13).each { |seat| $inbox << entry("message", seat, told(friend.merge("id" => "zz-m#{seat}", "name" => "M#{seat}", "party" => full))) }
+$sent.clear
+MGQ_MpOverworldSync.tick
+check("the leader turns away the fifth player", [$sent.select { |_, text| text.include?("kick=full") }.map(&:first), MGQ_MpOverworldSync::Status.lines.last],
+      [[13], "M13 could not join, the party is full."])
+MGQ_MpCoop::Party.reset
+MGQ_MpCoop::Party.join(MGQ_MpOverworldSync::Peers.at(10))
+check("a full party cannot be joined", [MGQ_MpCoop::Party.id, MGQ_MpOverworldSync::Status.lines.last], [nil, "M10's party is full."])

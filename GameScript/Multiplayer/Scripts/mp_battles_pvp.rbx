@@ -2,6 +2,8 @@
 #  mp_battles_pvp.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-01: Left F11 to the World overview in a world, also once a newer release is out
+#                            - Let a team duel start the battle with the other side's characters it rebuilt, each with its owner's seat
 #      Paulinchen  2026-09-30: Moved into Patch/Multiplayer/Scripts as mp_battles_pvp.rbx, which Multiplayer.rb loads, and named the log there
 #                            - Renamed from pvp_battle.rb, with the module MGQ_MpBattlesPvp
 #                            - Disabled PvP battles once a newer release of the mod is out, telling the player on F11
@@ -86,6 +88,10 @@ module MGQ_MpBattlesPvp
   #
   # Once a newer release is out, the key only tells the player to update instead.
   def self.on_map
+    # In a world F11 opens the World overview, and a key press is read only once, by whoever
+    # asks first.
+    return if defined?(MGQ_MpWorld) && MGQ_MpWorld.open?
+
     if MGQ_Multiplayer.available? && MGQ_Multiplayer.outdated?
       pressed = MGQ_Multiplayer::Key.pressed?(KEY_CODE)
       return if $game_map.interpreter.running? || $game_player.moving?
@@ -270,6 +276,12 @@ module MGQ_MpBattlesPvp
 
     # The letter and plural mark the game gives monsters of the same name.
     attr_accessor :letter, :plural
+
+    # The world seat of the player who owns the character in a team duel, whose commands it takes.
+    attr_accessor :mp_seat
+
+    # The character's place among its owner's characters in a team duel.
+    attr_accessor :mp_place
 
     # Rebuilds a friend's character.
     #
@@ -579,6 +591,14 @@ module MGQ_MpBattlesPvp
         end
       end.compact
 
+      stand(opponents)
+    end
+
+    # Stands rebuilt characters side by side at the screen's bottom.
+    #
+    # @param opponents [Array<Opponent>] The characters, in the troop's order.
+    # @return [Array<Opponent>] The same characters.
+    def self.stand(opponents)
       opponents.each_with_index do |opponent, index|
         opponent.screen_x = Graphics.width * (2 * index + 1) / (2 * opponents.size)
         opponent.screen_y = Graphics.height
@@ -956,6 +976,8 @@ module MGQ_MpBattlesPvp
     # @param opponent [String] The friend's name.
     # @param members [Array<MGQ_MpActors::Builds::Member>] The friend's team.
     # @param mirror [Boolean] Whether it is the player's own team.
+    # @yieldreturn [Array<Opponent>] The characters of the other side, rebuilt by a team duel; without
+    #   a block, the friend's team is rebuilt.
     def self.start(opponent, members, mirror)
       @snapshot = Marshal.dump(DataManager.make_save_contents)
       @globals = Marshal.dump(globals)
@@ -972,7 +994,7 @@ module MGQ_MpBattlesPvp
       $game_temp.in_memory_battle = true
       BattleManager.setup(troop_id, true, true)
 
-      opponents = Opponents.build(members, opponent)
+      opponents = block_given? ? Opponents.stand(yield) : Opponents.build(members, opponent)
       raise "nobody of #{opponent}'s team could be rebuilt" if opponents.empty?
 
       $game_troop.instance_variable_set(:@enemies, opponents)

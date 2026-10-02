@@ -2,6 +2,11 @@
 #  mp_battles_sync.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-02: Started every wait for the guests with nobody ready, whatever an earlier wait left behind
+#      Paulinchen  2026-10-01: Told every player of a live battle at once when another leaves it or the world
+#                            - Carried a co-op guest's swaps with their commands, and told the party anew before the turn
+#                            - Carried duels, PvP battles between two players of a world, over the world's room
+#                            - Carried team duels, two parties with several players a side, whose players' commands each go to their own side
 #      Paulinchen  2026-09-30: Registered with mp_overworld_sync.rbx for its messages instead of being asked by mp_overworld.rbx
 #                            - Moved into Patch/Multiplayer/Scripts as mp_battles_sync.rbx, which Multiplayer.rb loads
 #                            - Renamed from mp_sync.rb, with the module MGQ_MpBattlesSync
@@ -130,16 +135,20 @@ module MGQ_MpBattlesSync
     false
   end
 
-  # Makes the next battle a live co-op battle over the world's room.
+  # Makes the next battle a live battle over the world's room: a co-op battle, or a duel, which is
+  # a PvP battle between two players of the world.
   #
   # @param role [Symbol] :host or :guest.
   # @param battle_id [String] The battle's id, which its messages carry.
   # @param seats [Array<Integer>] The other games' seats: the invited guests, or the host.
   # @param player [String] Who the waits name: the host's name, or "the party" for the host.
-  def self.join_world(role, battle_id, seats, player)
+  # @param mode [Symbol] :coop, or :pvp for a duel.
+  # @param team [Boolean] Whether the duel is a team duel, see mp_battles_team.rbx.
+  def self.join_world(role, battle_id, seats, player, mode = :coop, team = false)
     @role = role
     @player = player
-    @mode = :coop
+    @mode = mode
+    @team = team
     @transport = :world
     @seats = seats.dup
     @left = []
@@ -148,7 +157,7 @@ module MGQ_MpBattlesSync
     @broken = false
     @battle_running = false
     Channel.reset
-    log("co-op battle #{battle_id} as #{role}")
+    log("#{mode == :pvp ? 'duel' : 'co-op battle'} #{battle_id} as #{role}")
   end
 
   # Reports whether the live battle is a co-op battle.
@@ -156,6 +165,28 @@ module MGQ_MpBattlesSync
   # @return [Boolean] Whether it is.
   def self.coop?
     @role && @mode == :coop ? true : false
+  end
+
+  # Reports whether the live battle is a team duel, two parties fighting each other.
+  #
+  # @return [Boolean] Whether it is.
+  def self.team?
+    @role && @mode == :pvp && @team ? true : false
+  end
+
+  # Reports whether this game's party is the host's party: in a co-op battle, and on the host's
+  # side of a team duel. Otherwise the host's party is this game's troop.
+  #
+  # @return [Boolean] Whether it is.
+  def self.same_side?
+    coop? || (team? && MGQ_MpBattlesTeam.same_side?)
+  end
+
+  # Reports whether the host takes commands from several guests: in a co-op battle and a team duel.
+  #
+  # @return [Boolean] Whether it does.
+  def self.several?
+    coop? || team?
   end
 
   # Reports whether the live battle runs over the world's room.
@@ -190,14 +221,28 @@ module MGQ_MpBattlesSync
     log("a guest left the co-op battle, their characters leave at the next command phase")
   end
 
-  # Takes a message of a co-op battle from the world's room. Called by mp_overworld_sync.rbx.
+  # Takes a message of a co-op battle or a duel from the world's room. Called by mp_overworld_sync.rbx.
   #
   # @param peer [MGQ_MpOverworldSync::Peers::Peer, nil] Who sent it.
   # @param message [Hash] The message: "battle" its kind, "bid" the battle's id, and the body.
   def self.take(peer, message)
     return unless peer && world? && @role && message["bid"] == @battle_id
 
-    Channel.receive(peer.seat, message["battle"].to_s, message[:payload].to_s)
+    kind = message["battle"].to_s
+    # Every player of the battle hears of one who leaves, not only the host who takes them out.
+    Departures.left(peer) if kind == "leave"
+    Channel.receive(peer.seat, kind, message[:payload].to_s)
+  end
+
+  # Lists the other players of a live battle over the world's room: the host or the guests, and in
+  # a co-op battle or a team duel everyone else in it.
+  #
+  # @return [Array<Integer>] Their world seats.
+  def self.player_seats
+    seats = Array(@seats)
+    seats |= MGQ_MpBattlesCoop.player_seats if coop?
+    seats |= (MGQ_MpBattlesTeam.own + MGQ_MpBattlesTeam.other).map(&:first) if team?
+    seats - [MGQ_MpBattlesCoop.own_seat]
   end
 
   # Marks the live battle as started. Called by the mode once its battle scene is on the way.
@@ -228,6 +273,7 @@ module MGQ_MpBattlesSync
 
     world = world?
     @role = nil
+    @team = false
     @broken = false
     @battle_running = false
     @transport = nil
@@ -308,6 +354,14 @@ module MGQ_MpBattlesSync
 
     if coop?
       MGQ_MpBattlesCoop.take_over(scene)
+      return false
+    end
+
+    # A team duel's host wins once the other side is empty; a guest on the host's side loses its
+    # host, who computes the duel, so the duel breaks off.
+    if team? && (host? || same_side?)
+      $game_message.add(host? ? "Everyone on the other side left." : "#{@player} left the duel.")
+      host? ? BattleManager.process_victory : BattleManager.process_abort
       return false
     end
 
@@ -597,7 +651,7 @@ module MGQ_MpBattlesSync
       @gone = MGQ_MpBattlesSync.world? ? world_gone? : MGQ_Multiplayer::Link.status["link"] != "open"
     end
 
-    # Looks at who of a co-op battle is still in the world's room.
+    # Looks at who of a co-op battle or a duel is still in the world's room.
     #
     # @return [Boolean] Whether the other side is gone: every guest for the host, the host for a guest.
     def self.world_gone?
@@ -606,6 +660,8 @@ module MGQ_MpBattlesSync
       MGQ_MpBattlesSync.guests_in.each do |seat|
         MGQ_MpBattlesSync.guest_left(seat) if MGQ_MpOverworldSync::Peers.at(seat).nil? || take_from("leave", seat)
       end
+      return true if MGQ_MpBattlesSync.team? && MGQ_MpBattlesSync.host? && MGQ_MpBattlesTeam.other_side_gone?
+
       MGQ_MpBattlesSync.guests_in.empty?
     end
 
@@ -651,22 +707,25 @@ module MGQ_MpBattlesSync
   # means the same battler on both sides.
   module Commands
     # Writes the guest's commands: for every party member, its actions, none for the other
-    # players' characters in a co-op battle.
+    # players' characters in a co-op battle, where the order of the guest's places follows, which a
+    # swap with their Backline changed.
     #
     # @return [String] The commands.
     def self.build
       commands = $game_party.battle_members.map do |actor|
-        next [] if MGQ_MpBattlesSync.coop? && actor.is_a?(Game_MpActor)
+        # Others' characters send nothing, but those this player took over from a player who left.
+        next [] if actor.is_a?(Game_MpActor) && !actor.inputable?
 
         actor.actions.select(&:item).map do |action|
           [action.item.is_a?(RPG::Item) ? "item" : "skill", action.item.id, action.target_index]
         end
       end
-      Wire.line([commands])
+      MGQ_MpBattlesSync.coop? ? Wire.line([commands, MGQ_MpBattlesCoop.own_order]) : Wire.line([commands])
     end
 
     # Gives a guest's characters on the host the guest's commands. A character without any keeps
-    # what the computer chose.
+    # what the computer chose. In a co-op battle the guest's swaps come first, so the commands
+    # find the characters the guest sees.
     #
     # @param body [String] The commands.
     # @param seat [Integer, nil] The guest's world seat in a co-op battle, whose characters take them.
@@ -675,9 +734,14 @@ module MGQ_MpBattlesSync
       commands = values && values[0]
       return MGQ_MpBattlesSync.log("unreadable commands") unless commands.is_a?(Array)
 
-      battlers = MGQ_MpBattlesSync.coop? ? $game_party.battle_members : $game_troop.members
+      MGQ_MpBattlesCoop.take_order(seat, values[1]) if MGQ_MpBattlesSync.coop?
+
+      # The guest's party is the host's party in a co-op battle and on the host's side of a team
+      # duel, else the host's troop, in the same order.
+      same = MGQ_MpBattlesSync.coop? || (MGQ_MpBattlesSync.team? && MGQ_MpBattlesTeam.same_side_as_host?(seat))
+      battlers = same ? $game_party.battle_members : $game_troop.members
       battlers.each_with_index do |battler, index|
-        next if MGQ_MpBattlesSync.coop? && !(battler.respond_to?(:mp_seat) && battler.mp_seat == seat)
+        next if MGQ_MpBattlesSync.several? && !commanded_by?(battler, seat)
 
         list = commands[index]
         next unless list.is_a?(Array)
@@ -685,6 +749,18 @@ module MGQ_MpBattlesSync
         actions = list.map { |command| action(battler, command) }.compact
         battler.instance_variable_set(:@actions, actions) unless actions.empty?
       end
+    end
+
+    # Reports whether a guest commands a character: their own, or in a team duel one of a player
+    # who left, which they took over.
+    #
+    # @param battler [Game_Battler] The character.
+    # @param seat [Integer] The guest's world seat.
+    # @return [Boolean] Whether they do.
+    def self.commanded_by?(battler, seat)
+      return false unless battler.respond_to?(:mp_seat)
+
+      battler.mp_seat == seat || (MGQ_MpBattlesSync.team? && MGQ_MpBattlesTeam.heir_of(battler.mp_seat) == seat)
     end
 
     # Turns a friend's command into an action.
@@ -727,7 +803,7 @@ module MGQ_MpBattlesSync
       @swaps = {}
       # A co-op battle's party and troop stand on the same side on every game, with each
       # player's own characters named without their owner.
-      own_party, own_troop = MGQ_MpBattlesSync.coop? ? [$game_party.battle_members, $game_troop.members] : [$game_troop.members, $game_party.battle_members]
+      own_party, own_troop = MGQ_MpBattlesSync.same_side? ? [$game_party.battle_members, $game_troop.members] : [$game_troop.members, $game_party.battle_members]
       Array(party).each_with_index { |name, index| add(name, own_party[index]) }
       Array(troop).each_with_index { |name, index| add(name, own_troop[index]) }
       names = @swaps.keys.sort_by { |name| -name.size }
@@ -1142,8 +1218,13 @@ module MGQ_MpBattlesSync
     # @return [Array, nil] The next event of the host's stream, nil while none arrived.
     def self.next_event(scene)
       while @events.empty?
-        kind, body = Channel.take_first(%w(coop_party events))
+        kind, body = Channel.take_first(%w(coop_party team_heirs events))
         return nil unless kind
+
+        if kind == "team_heirs"
+          MGQ_MpBattlesTeam.take_heirs(body)
+          next
+        end
 
         # A co-op party changes between two sends, so the next send's battlers are the new party's.
         if kind == "coop_party"
@@ -1166,8 +1247,9 @@ module MGQ_MpBattlesSync
     def self.battler(ref)
       return nil unless ref =~ /\A([ae])(\d{1,2})\z/
 
-      # In a PvP battle the host's party is the guest's troop; a co-op battle's sides are the same.
-      party = MGQ_MpBattlesSync.coop? ? $1 == "a" : $1 == "e"
+      # In a PvP battle the host's party is the guest's troop; a co-op battle's sides are the same,
+      # and so are those of a team duel's guest on the host's side.
+      party = MGQ_MpBattlesSync.same_side? ? $1 == "a" : $1 == "e"
       party ? $game_party.battle_members[$2.to_i] : $game_troop.members[$2.to_i]
     end
 
@@ -1404,6 +1486,48 @@ module MGQ_MpBattlesSync
       ids.each { |id| turns[id] ||= 1 }
       battler.instance_variable_set(:@states, ids)
       battler.instance_variable_set(:@buffs, Array(buffs).map(&:to_i)) if Array(buffs).size == 8
+    end
+  end
+
+  # Tells the player at once when another player leaves the live battle, in the chat log, which
+  # shows in battle, and in the world's status line: the battle itself takes them out only at its
+  # next command phase.
+  module Departures
+    # Battles and seats already told, at most this many kept.
+    KEPT = 32
+
+    @told = []
+
+    # Tells that a player left the battle, as their "leave" says.
+    #
+    # @param peer [MGQ_MpOverworldSync::Peers::Peer] The player.
+    def self.left(peer)
+      tell(peer, "#{peer.state['name']} left the battle.")
+    end
+
+    # Tells that a player of the battle left the world. Called by mp_overworld_sync.rbx.
+    #
+    # @param peer [MGQ_MpOverworldSync::Peers::Peer] The player.
+    def self.gone(peer)
+      return unless MGQ_MpBattlesSync.role && MGQ_MpBattlesSync.world? && MGQ_MpBattlesSync.player_seats.include?(peer.seat)
+
+      tell(peer, "#{peer.state['name']} left the world, and the battle.")
+    end
+
+    # Tells of a player leaving, once per battle.
+    #
+    # @param peer [MGQ_MpOverworldSync::Peers::Peer] The player.
+    # @param text [String] What the player sees.
+    def self.tell(peer, text)
+      key = [MGQ_MpBattlesSync.battle_id, peer.seat]
+      return if @told.include?(key)
+
+      @told.push(key)
+      @told.shift while @told.size > KEPT
+      MGQ_MpChat.system(text) if defined?(MGQ_MpChat)
+      MGQ_MpOverworldSync::Status.notice(text)
+    rescue => e
+      MGQ_MpBattlesSync.log("telling of a departure failed: #{e.class}: #{e.message}")
     end
   end
 
@@ -1664,9 +1788,10 @@ module MGQ_MpBattlesSync
       # Recorder.command_phase records only once.
       wrap(Scene_Battle, :start_party_command_selection) do |scene, _args, original|
         unless scene.send(:scene_changing?)
-          # A co-op party changes only here, before the command phase is recorded, so every game
-          # takes the change between two of the host's sends.
+          # A co-op party changes between two of the host's sends: here, before the command phase is
+          # recorded, when a player left, and once the commands came, when a player swapped.
           MGQ_MpBattlesCoop.settle(scene) if MGQ_MpBattlesSync.coop? && MGQ_MpBattlesSync.host?
+          MGQ_MpBattlesTeam.settle if MGQ_MpBattlesSync.team? && MGQ_MpBattlesSync.host?
           Recorder.command_phase
         end
         original.call
@@ -1831,6 +1956,7 @@ module MGQ_MpBattlesSync
     # @param scene [Scene_Battle] The battle.
     # @return [Boolean] Whether the battle starts, false when it ended early.
     def self.host_start(scene)
+      MGQ_MpBattlesTeam.form(scene) if MGQ_MpBattlesSync.team?
       if MGQ_MpBattlesSync.coop?
         gathered = MGQ_MpBattlesCoop.gather(scene)
         return end_early(scene, gathered) if gathered.is_a?(Symbol)
@@ -1840,6 +1966,7 @@ module MGQ_MpBattlesSync
 
       MGQ_MpBattlesSync.show_everything
       Channel.post("ready", MGQ_MpBattlesSync.names)
+      @ready = []
       ready = Waiting.wait_for(scene, "Waiting for #{MGQ_MpBattlesSync.player}...") { all_ready? }
       return end_early(scene, ready) if ready.is_a?(Symbol)
 
@@ -1848,17 +1975,15 @@ module MGQ_MpBattlesSync
     end
 
     # Takes the guests' word that their battle is ready: the one guest's in a PvP battle, every
-    # guest's still in a co-op battle.
+    # guest's still in a co-op battle or a team duel. host_start empties the guests ready before
+    # each wait.
     #
     # @return [Boolean, nil] true once every guest is ready, nil while one is not.
     def self.all_ready?
-      return Channel.take("ready") ? true : nil unless MGQ_MpBattlesSync.coop?
+      return Channel.take("ready") ? true : nil unless MGQ_MpBattlesSync.several?
 
-      @ready ||= []
       MGQ_MpBattlesSync.guests_in.each { |seat| @ready << seat if !@ready.include?(seat) && Channel.take_from("ready", seat) }
-      done = (MGQ_MpBattlesSync.guests_in - @ready).empty?
-      @ready = nil if done
-      done ? true : nil
+      (MGQ_MpBattlesSync.guests_in - @ready).empty? ? true : nil
     end
 
     # The guest waits for the host's battle, then plays its start.
@@ -1869,6 +1994,7 @@ module MGQ_MpBattlesSync
       # The game marks the party as fighting in on_battle_start, which the guest leaves out with the
       # rest of the battle's logic. Skills usable only in battle check it, and the end clears it.
       $game_party.instance_variable_set(:@in_battle, true)
+      MGQ_MpBattlesTeam.form(scene) if MGQ_MpBattlesSync.team?
       if MGQ_MpBattlesSync.coop?
         joined = MGQ_MpBattlesCoop.join(scene)
         return end_early(scene, joined) if joined.is_a?(Symbol)
@@ -1914,6 +2040,7 @@ module MGQ_MpBattlesSync
     # @param result [String] How the host's battle ended.
     def self.guest_end(result, scene)
       return coop_end(result, scene) if MGQ_MpBattlesSync.coop?
+      return team_end(result) if MGQ_MpBattlesSync.team? && MGQ_MpBattlesSync.same_side?
 
       case result
       when "process_victory" then BattleManager.process_defeat
@@ -1937,12 +2064,26 @@ module MGQ_MpBattlesSync
       end
     end
 
+    # Ends the battle of a team duel's guest on the host's side as the host's ended: won or lost
+    # together, or broken off when the host gave up or left.
+    #
+    # @param result [String] How the host's battle ended.
+    def self.team_end(result)
+      case result
+      when "process_victory" then BattleManager.process_victory
+      when "process_defeat" then BattleManager.process_defeat
+      else
+        $game_message.add("#{MGQ_MpBattlesSync.player} left the duel.")
+        BattleManager.process_abort
+      end
+    end
+
     # The host waits for the guests' commands and gives them to their characters.
     #
     # @param scene [Scene_Battle] The battle.
     # @return [Boolean] Whether the turn goes on.
     def self.host_commands(scene)
-      return host_coop_commands(scene) if MGQ_MpBattlesSync.coop?
+      return host_coop_commands(scene) if MGQ_MpBattlesSync.several?
 
       commands = Waiting.wait_for(scene, "Waiting for #{MGQ_MpBattlesSync.player}'s commands...") { Channel.take("commands") }
       return end_early(scene, commands) if commands.is_a?(Symbol)
@@ -1970,6 +2111,7 @@ module MGQ_MpBattlesSync
       end
       return end_early(scene, answer) if answer.is_a?(Symbol)
 
+      MGQ_MpBattlesCoop.share_order
       true
     end
 
@@ -1995,7 +2137,8 @@ module MGQ_MpBattlesSync
         forfeit(scene)
       when :forfeit
         $game_message.add("#{MGQ_MpBattlesSync.player} forfeited.")
-        BattleManager.process_victory
+        # On the host's side of a team duel, the host's forfeit is the side's.
+        MGQ_MpBattlesSync.team? && MGQ_MpBattlesSync.same_side? ? BattleManager.process_defeat : BattleManager.process_victory
       when :broken
         $game_message.add("The live battle broke off.")
         BattleManager.process_abort
@@ -2011,7 +2154,8 @@ module MGQ_MpBattlesSync
     # @param scene [Scene_Battle] The battle.
     def self.forfeit(scene)
       scene.instance_variable_get(:@info_viewport).visible = false
-      Channel.post(MGQ_MpBattlesSync.coop? ? "leave" : "forfeit")
+      # A team duel's guest leaves it, and another player of their side takes their characters over.
+      Channel.post(MGQ_MpBattlesSync.coop? || (MGQ_MpBattlesSync.team? && MGQ_MpBattlesSync.guest?) ? "leave" : "forfeit")
       BattleManager.process_abort
     end
 
@@ -2037,6 +2181,7 @@ end
 
 begin
   MGQ_MpOverworldSync.route("battle") { |peer, message| MGQ_MpBattlesSync.take(peer, message) }
+  MGQ_MpOverworldSync.on_leave { |peer| MGQ_MpBattlesSync::Departures.gone(peer) }
 rescue => e
   MGQ_MpBattlesSync.log("overworld sync FAILED: #{e.class}: #{e.message}")
 end

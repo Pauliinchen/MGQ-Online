@@ -2,14 +2,16 @@
 #  mp_battles.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-01: Let co-op battles swap the Backline in, which only PvP battles forbid now
 #      Paulinchen  2026-09-30: Moved into Patch/Multiplayer/Scripts as mp_battles.rbx, which Multiplayer.rb loads
 #      Paulinchen  2026-09-30: Created
 #
 #----------------------------------------------------------------
 
-# The rules of every multiplayer battle, PvP battles and co-op battles alike: no ero offers, no
-# Give Up, and no swapping the backline in during the battle, since every game has to fight with
-# the same characters. The game's own settings come back once the battle ends.
+# The rules of every multiplayer battle, PvP battles and co-op battles alike: no ero offers and no
+# Give Up. A PvP battle also forbids swapping the Backline in, since both games fight with the
+# teams they swapped at the start; a co-op battle tells its swaps to every game. The game's own
+# settings come back once the battle ends.
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpBattles
@@ -60,7 +62,7 @@ module MGQ_MpBattles
     finish if running?
     @kind = kind
     @kept = {}
-    switch_rules.each do |id, value|
+    switch_rules(kind).each do |id, value|
       @kept[id] = $game_switches[id]
       $game_switches[id] = value
     end
@@ -82,10 +84,11 @@ module MGQ_MpBattles
 
   # The switches a multiplayer battle sets.
   #
+  # @param kind [Symbol] :pvp or :coop.
   # @return [Hash{Integer => Boolean}] Each switch's value during the battle.
-  def self.switch_rules
+  def self.switch_rules(kind)
     rules = { ($data_system.switches.index(ERO_OFFERS_OFF) || ERO_OFFERS_OFF_ID) => true }
-    rules[NWConst::Sw::FORBID_BATTLE_SHIFT_CHANGE] = true if defined?(NWConst::Sw::FORBID_BATTLE_SHIFT_CHANGE)
+    rules[NWConst::Sw::FORBID_BATTLE_SHIFT_CHANGE] = true if kind == :pvp && defined?(NWConst::Sw::FORBID_BATTLE_SHIFT_CHANGE)
     rules
   end
 

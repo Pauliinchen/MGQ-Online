@@ -58,17 +58,25 @@ The list at the left shows every public world and the hidden worlds you joined: 
 - **Ping** shows after each player's name, and yours right above your head: green up to 100 ms, yellow up to 200 ms, red beyond.
 - **The bottom left** of the screen tells who joined and left, and when the connection is being restored.
 - **The world never pauses.** While you're in a menu, a shop, a battle or a story scene, the map goes on behind it: the others walk on, NPCs move, and background events and timers run. Menus show the live map instead of a still picture. Anything that needs you, such as a message, a battle, a move to another map, or an NPC walking into you, waits until you're back on the map.
-- PvP battles (F11) are off while you're in a world.
+- The PvP battle screen is off while you're in a world: challenge other players to a duel instead, and F11 opens the World overview.
 
 ### Action wheel and chat
 
-- **Action wheel:** press **B** on the map. Pick a choice with the arrow keys and take it with the confirm button; **B** or cancel closes the wheel. Grey choices can't be taken right now and tell you why. Duels are shown already and come in a later version.
-- **Chat:** press **T**, or pick *Chat* in the wheel. **Enter** sends, **Esc** closes; the arrow keys, **Home** and **End** move the cursor, and **Delete** removes the character after it. Your line shows in a speech bubble above your head for the players on your map, and in the chat log at the bottom left for everyone in the world.
+- **Action wheel:** press **B** on the map. Pick a choice with the arrow keys and take it with the confirm button; **B** or cancel closes the wheel. Grey choices can't be taken right now and tell you why. The wheel opens on its middle, the globe over your character, which opens the World overview; an arrow picks a side, the opposite arrow goes back.
+- **Chat:** press **T**, or pick *Chat* in the wheel. **Enter** sends, **Esc** closes; the arrow keys, **Home** and **End** move the cursor, and **Delete** removes the character after it. Your line shows in a speech bubble above your head for the players on your map, and in the chat log at the bottom left for everyone in the world. The chat works in battles too, where its log sits above the battle's windows.
+
+### World overview
+
+- **Open it** with **F11** or the middle of the action wheel; **F11**, **B**, cancel or a click outside it closes it. The world keeps running behind it.
+- **Every player online**, grouped by where they are, yours first: their name, the level of their highest companion, where they are in the story ("Part 2: Alice side") and their ping. Party leaders have a crown, a party's size shows as "2 / 4", and your party's members are green, you included. A player whose party invite or duel challenge reaches you shows "Invites you to a party" or "Challenges you to a duel" in their row.
+- **Pick a player** with the arrow keys and confirm, or click them, for a menu: invite them to your party or accept their invite, and challenge them to a duel or accept theirs, wherever in the world they are. As your party's leader you also remove members here. On your own row you can leave your party or stop inviting.
 
 ### Parties
 
-- **Forming one:** stand next to another player, open the wheel and pick *Invite to a party*. "Invites to a party (B)" shows above your head on their screen for 15 seconds; when they pick *Accept* in their wheel next to you, you're a party. *Leave the party* at the bottom of the wheel leaves it.
-- **Who's in it:** party members are fully visible with green names; everyone else is slightly see-through.
+- **Forming one:** stand next to another player, open the wheel and pick *Invite to a party*. "Invites to a party (B)" shows above your head on their screen for 15 seconds; when they pick *Accept* in their wheel next to you, you're a party. A party holds up to four players, and only its leader, the player who made it, invites more and removes members (in the World overview). *Leave the party* at the bottom of the wheel leaves it.
+- **Who's in it:** party members are fully visible with green names; everyone else is slightly see-through. A party's size shows after its players' names and above your head ("2 / 4"), its leader has a crown, and Discord shows it as "(2 of 4)". A box at the top right of the map lists your party, its leader first and then by name, with each player's highest companion level, ping, and where they are on a line below (long names shortened).
+- **Your squad:** a party shares one team's worth of companions. The Frontline's four places and the Backline's are split between you, the player who made the party taking any place left over: with two players, each has two in front and half of the Backline; with three, the player who made the party has two in front and the others one; with four, everyone has one. Your Formation screens show your whole team: your share of the Frontline as the Frontline, your share of the Backline as the game shows the Backline, and the companions past your share in black and white below a line, so you can see who stays home.
+- **Followers:** only your share of the Frontline walks behind you, and behind your ghost on the other members' screens; with one place in front, you walk alone. The player who made the party can show nobody but the players instead: *Mod Config → Monster Girl Quest! Online → Party Followers*.
 - **NPCs:** on a map you share, you all see the same NPCs in the same places. Whoever of you entered the map first is its Map Owner, and the NPCs move as they do in that player's game.
 - **Story:** everyone plays the story of the player who made the party. Its events, doors and conversations are as far along as in that player's game, and story events you start are handed to them. Everyone on the map sees the dialogue in their own message window, which moves on when that player moves on; only they can continue or close it. Conversations, shops and the job change menu stay your own, and so do the companions, merchants, inn and maids of the Pocket Castle.
 - **What stays yours:** your party, companions and affection, and your saves keep your own story. When you leave the party, you're back in your own story. If your story was exactly as far along as theirs when you joined, you keep what you played together, companions who joined in the story included.
@@ -80,10 +88,17 @@ The list at the left shows every public world and the hidden worlds you joined: 
 
 When a battle starts for a party member, whether a random encounter, a wandering monster or a story boss, the party members playing on the same map join it.
 
-- With two players, each brings the first two of their Frontline; with three or four, each brings their first.
-- Everyone commands their own characters. The game where the battle started works it out.
-- Each of you can try to escape. Whoever gets away leaves the battle, and the others fight on without their characters. The one left alone fights on with their own full team.
+- Each of you brings your squad: your share of the Frontline fights, your share of the Backline waits. The companions past it stay out of the battle.
+- Everyone commands their own characters and can swap their own Backline in with *Party*. The game where the battle started works it out.
+- Everyone fights the enemies of the game where the battle started, even when a mod there changes them, such as one that doubles them.
+- Each of you can try to escape. Whoever gets away leaves the battle, and the others fight on without their characters. Everyone still in the battle reads "<name> left the battle." in the chat log at once; the characters leave at the next round. The one left alone fights on with their own full team.
 - Each of you gets the full EXP, gold and your own item drops, or your own defeat.
+
+### Duels
+
+- **Challenge** the players next to you with *Challenge to a duel* on the right of the action wheel, or one player anywhere through the World overview. "Challenges you to a duel (B)" shows above your head on their screen for 15 seconds.
+- **Accept** in the wheel next to them, or in the World overview. The duel is the same PvP battle as F11 outside a world: your Frontline against theirs, each commanding their own team, and both games are put back as they were afterwards.
+- **Team duels:** when a party's leader duels, their whole party fights, and so does the other player's party when they lead one. Everyone gets ready on the map; the duel starts once all are ready, or after 10 seconds with those who are. Each player brings their share of the Frontline, as in co-op battles, and commands their own characters; a player alone brings their whole Frontline. Whoever leaves the duel leaves their characters to the next player of their side, who commands them from then on.
 
 ## PvP battles
 

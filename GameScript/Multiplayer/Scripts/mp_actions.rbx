@@ -2,6 +2,14 @@
 #  mp_actions.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-02: Took a choice through MGQ_MpActions.choose, which the World overview shares
+#      Paulinchen  2026-10-01: Showed a globe in a small square box in the wheel's middle instead of its text
+#                            - Refused to invite into a full party or to accept the invite of one
+#                            - Challenged the players nearby to a duel, or accepted their challenge, on the wheel's right
+#                            - Opened the World overview from the wheel's middle, where the wheel now opens
+#                            - Left the keys to the World overview while it is open, whose B closes it
+#                            - Let only the party's leader invite
+#                            - Showed the wait for the party's story scene above the player's own head
 #      Paulinchen  2026-09-30: Left the chat to mp_chat.rbx, keeping the wheel's chat choice
 #                            - Left the party to mp_coop.rbx, keeping the wheel's party choices
 #                            - Registered with mp_overworld_sync.rbx for its messages instead of being asked by mp_overworld.rbx
@@ -35,7 +43,11 @@ module MGQ_MpActions
   # @!attribute text [String] What the wheel shows.
   # @!attribute run [Proc, nil] What choosing it does, nil while it cannot be chosen.
   # @!attribute refusal [String, nil] The notice for choosing it while it cannot be chosen.
-  Option = Struct.new(:text, :run, :refusal)
+  # @!attribute icon [Integer, nil] The icon the wheel shows instead of the text, nil for the text.
+  Option = Struct.new(:text, :run, :refusal, :icon)
+
+  # The game's globe icon, which stands for the World overview in the wheel's middle.
+  WORLD_ICON = 3988
 
   # Reports whether the hooks can be installed.
   #
@@ -69,6 +81,24 @@ module MGQ_MpActions
     MGQ_MpOverworldSync::Status.notice(text) if defined?(MGQ_MpOverworldSync)
   end
 
+  # Takes a choice of the wheel or the World overview, or tells why it cannot be taken.
+  #
+  # @param option [Option, nil] The choice.
+  # @yield Closes what offered the choice, before the choice runs.
+  def self.choose(option)
+    return unless option
+
+    unless option.run
+      Sound.play_buzzer
+      notice(option.refusal) if option.refusal
+      return
+    end
+
+    Sound.play_ok
+    yield if block_given?
+    option.run.call
+  end
+
   # Lists the other players of the world, through mp_overworld_sync.rbx.
   #
   # @return [Array<MGQ_MpOverworldSync::Peers::Peer>] The players.
@@ -88,19 +118,52 @@ module MGQ_MpActions
   #
   # @return [String, nil] The line.
   def self.own_line
-    in_world? && MGQ_MpCoop::Party.inviting? && !Wheel.open? ? "Inviting to a party . . ." : nil
+    return nil unless in_world? && !Wheel.open?
+
+    story = defined?(MGQ_MpCoopEvents) ? MGQ_MpCoopEvents.own_line : nil
+    return story if story
+
+    lines = []
+    lines << "Inviting to a party" if MGQ_MpCoop::Party.inviting?
+    lines << "Challenging to a duel" if defined?(MGQ_MpBattlesDuel) && MGQ_MpBattlesDuel.inviting?
+    lines.empty? ? nil : "#{lines.join(', ')} . . ."
   end
 
   # The action wheel's choices, by the direction that picks them.
   #
-  # @return [Hash{Symbol => Option}] The choices under :UP, :RIGHT, :DOWN and :LEFT.
+  # @return [Hash{Symbol => Option}] The choices under :CENTER, :UP, :RIGHT, :DOWN and :LEFT.
   def self.wheel_options
     {
+      :CENTER => overview_option,
       :UP => join_or_invite_option,
-      :RIGHT => Option.new("Duel", nil, "Duels come in a later version."),
+      :RIGHT => duel_option,
       :DOWN => leave_option,
       :LEFT => Option.new("Chat (T)", MGQ_MpChat.available? ? lambda { MGQ_MpChat.start_typing } : nil, "Chat needs the keyboard, which cannot reach the game."),
     }
+  end
+
+  # The wheel's middle choice: the World overview of mp_world_overview.rbx.
+  #
+  # @return [Option] The choice.
+  def self.overview_option
+    overview = defined?(MGQ_MpWorldOverview) ? MGQ_MpWorldOverview : nil
+    Option.new("World (F11)", overview ? lambda { overview.open } : nil, "The World overview is missing.", WORLD_ICON)
+  end
+
+  # The wheel's duel choice: accepting the challenge of a player nearby, else challenging the
+  # players nearby, through mp_battles_duel.rbx.
+  #
+  # @return [Option] The choice.
+  def self.duel_option
+    return Option.new("Duel", nil, "Duels need PvP battles, which are off or out of date.") unless defined?(MGQ_MpBattlesDuel) && MGQ_MpBattlesDuel.available?
+
+    duel = MGQ_MpBattlesDuel
+    near = peers.select { |peer| MGQ_MpCoop::Party.near?(peer.state) }
+    challenger = near.find { |peer| duel.challenged_by?(peer, false) }
+    return Option.new("Accept #{challenger.state['name']}'s duel", lambda { duel.accept(challenger) }, nil) if challenger
+    return Option.new("Stop challenging", lambda { duel.stop }, nil) if duel.inviting?
+
+    Option.new("Challenge to a duel", near.empty? ? nil : lambda { duel.invite }, "Nobody is near enough to challenge.")
   end
 
   # The wheel's party choice: accepting the invite of a player nearby, else inviting the players
@@ -111,7 +174,12 @@ module MGQ_MpActions
     party = MGQ_MpCoop::Party
     near = peers.select { |peer| party.near?(peer.state) && !party.member?(peer.state) }
     inviter = near.find { |peer| peer.state["invite"] == "1" }
-    return Option.new("Accept #{inviter.state['name']}'s invite", lambda { party.join(inviter) }, nil) if inviter
+    if inviter
+      full = party.full?(inviter.state["party"])
+      return Option.new("Accept #{inviter.state['name']}'s invite", full ? nil : lambda { party.join(inviter) }, "The party is full.")
+    end
+    return Option.new("Invite to a party", nil, "Only the party's leader invites.") unless party.may_invite?
+    return Option.new("Invite to a party", nil, "The party is full.") if party.full?
 
     Option.new("Invite to a party", near.empty? ? nil : lambda { party.invite }, "Nobody is near enough to invite.")
   end
@@ -136,6 +204,11 @@ module MGQ_MpActions
       return
     end
     return if MGQ_MpChat.typing?
+    # The wheel key closes the World overview, which holds the buttons while open.
+    if defined?(MGQ_MpWorldOverview) && MGQ_MpWorldOverview.open?
+      MGQ_MpWorldOverview.close if wheel_key
+      return
+    end
 
     if Wheel.open?
       Wheel.update(wheel_key)
@@ -147,15 +220,22 @@ module MGQ_MpActions
     Wheel.close
   end
 
-  # The action wheel: four choices around the player, picked with the arrows and taken with the
-  # game's confirm button. It holds the buttons while open, so the player stands still and the
-  # game's menu stays shut.
+  # The action wheel: four choices around the player and one over them, picked with the arrows and
+  # taken with the game's confirm button. It opens on the middle; an arrow picks its side, and the
+  # opposite arrow goes back to the middle. It holds the buttons while open, so the player stands
+  # still and the game's menu stays shut.
   module Wheel
     # The directions around the player, clockwise from the top.
     DIRECTIONS = [:UP, :RIGHT, :DOWN, :LEFT]
 
+    # The choice over the player.
+    CENTER = :CENTER
+
+    # Each direction's opposite, which goes back to the middle.
+    OPPOSITES = { :UP => :DOWN, :DOWN => :UP, :LEFT => :RIGHT, :RIGHT => :LEFT }
+
     @open = false
-    @selected = :UP
+    @selected = CENTER
 
     # Reports whether the wheel is open.
     #
@@ -166,15 +246,14 @@ module MGQ_MpActions
 
     # The direction whose choice is picked.
     #
-    # @return [Symbol] One of DIRECTIONS.
+    # @return [Symbol] One of DIRECTIONS, or CENTER.
     def self.selected
       @selected
     end
 
-    # Opens the wheel on the first choice that can be taken.
+    # Opens the wheel on its middle choice.
     def self.open
-      options = MGQ_MpActions.wheel_options
-      @selected = DIRECTIONS.find { |direction| options[direction].run } || DIRECTIONS[0]
+      @selected = CENTER
       @open = true
       MGQ_Multiplayer::Capture.start(:wheel)
       Sound.play_cursor
@@ -201,26 +280,11 @@ module MGQ_MpActions
       DIRECTIONS.each do |direction|
         next unless MGQ_Multiplayer::Capture.trigger?(direction) && direction != @selected
 
-        @selected = direction
+        @selected = OPPOSITES[direction] == @selected ? CENTER : direction
         Sound.play_cursor
       end
 
-      choose(MGQ_MpActions.wheel_options[@selected]) if MGQ_Multiplayer::Capture.trigger?(:C)
-    end
-
-    # Takes a choice, or tells why it cannot be taken.
-    #
-    # @param option [Option] The choice.
-    def self.choose(option)
-      unless option.run
-        Sound.play_buzzer
-        MGQ_MpActions.notice(option.refusal) if option.refusal
-        return
-      end
-
-      Sound.play_ok
-      close
-      option.run.call
+      MGQ_MpActions.choose(MGQ_MpActions.wheel_options[@selected]) { close } if MGQ_Multiplayer::Capture.trigger?(:C)
     end
   end
 
@@ -272,14 +336,24 @@ class Sprite_MpOwnLine < Sprite
   end
 end
 
-# The action wheel around the player: a box per choice above, right of, below and left of them,
-# the picked one lit, those that cannot be taken grey.
+# The action wheel around the player: a box per choice above, right of, below and left of them, a
+# square one with an icon over them, the picked one lit, those that cannot be taken grey.
 class Sprite_MpActionWheel < Sprite
   # Width of a choice's box.
   BOX_WIDTH = 200
 
   # Height of a choice's box.
   BOX_HEIGHT = 26
+
+  # Width of the middle choice's box, square and narrower than the player's sprite, so it never
+  # reaches the boxes left and right of the player.
+  CENTER_WIDTH = BOX_HEIGHT
+
+  # Size of an icon in the game's icon set.
+  ICON_SIZE = 24
+
+  # Opacity of an icon whose choice cannot be taken.
+  GREY_OPACITY = 110
 
   # Room kept free around the player's sprite, which is 32 by 48 pixels.
   GAP = 4
@@ -305,6 +379,7 @@ class Sprite_MpActionWheel < Sprite
     :RIGHT => [WIDTH / 2 + PLAYER_SIDE, FEET - (PLAYER_HEIGHT + BOX_HEIGHT) / 2],
     :DOWN => [(WIDTH - BOX_WIDTH) / 2, FEET + GAP],
     :LEFT => [0, FEET - (PLAYER_HEIGHT + BOX_HEIGHT) / 2],
+    :CENTER => [(WIDTH - CENTER_WIDTH) / 2, FEET - (PLAYER_HEIGHT + BOX_HEIGHT) / 2],
   }
 
   # Background of a box.
@@ -342,7 +417,7 @@ class Sprite_MpActionWheel < Sprite
     self.x = sprite.x
     self.y = sprite.y
     options = MGQ_MpActions.wheel_options
-    drawn = [MGQ_MpActions::Wheel.selected] + options.map { |direction, option| [direction, option.text, !option.run.nil?] }
+    drawn = [MGQ_MpActions::Wheel.selected] + options.map { |direction, option| [direction, option.text, option.icon, !option.run.nil?] }
     return if drawn == @shown
 
     @shown = drawn
@@ -358,10 +433,23 @@ class Sprite_MpActionWheel < Sprite
   # @param option [MGQ_MpActions::Option] The choice.
   def draw_box(direction, option)
     x, y = BOXES[direction]
+    width = direction == MGQ_MpActions::Wheel::CENTER ? CENTER_WIDTH : BOX_WIDTH
     picked = direction == MGQ_MpActions::Wheel.selected
-    bitmap.fill_rect(x, y, BOX_WIDTH, BOX_HEIGHT, picked ? PICKED_BACK : BACK)
+    bitmap.fill_rect(x, y, width, BOX_HEIGHT, picked ? PICKED_BACK : BACK)
+    return draw_icon(option, x + (width - ICON_SIZE) / 2, y + (BOX_HEIGHT - ICON_SIZE) / 2) if option.icon
+
     bitmap.font.color = option.run ? TEXT : GREY
-    bitmap.draw_text(x + 4, y, BOX_WIDTH - 8, BOX_HEIGHT, option.text, 1)
+    bitmap.draw_text(x + 4, y, width - 8, BOX_HEIGHT, option.text, 1)
+  end
+
+  # Draws a choice's icon, faded while it cannot be taken.
+  #
+  # @param option [MGQ_MpActions::Option] The choice.
+  # @param x [Integer] The icon's left edge.
+  # @param y [Integer] The icon's top edge.
+  def draw_icon(option, x, y)
+    source = Rect.new(option.icon % 16 * ICON_SIZE, option.icon / 16 * ICON_SIZE, ICON_SIZE, ICON_SIZE)
+    bitmap.blt(x, y, Cache.system("Iconset"), source, option.run ? 255 : GREY_OPACITY)
   end
 
   # Frees the wheel's picture.

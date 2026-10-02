@@ -2,6 +2,7 @@
 #  mp_coop_story.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-01: Kept the places of the player's party their own, so the leader's fewer never cut it
 #      Paulinchen  2026-09-30: Sent and took the party's messages through mp_coop.rbx, which drops those of another party
 #                            - Registered with mp_overworld_sync.rbx for its messages instead of being asked by mp_overworld.rbx
 #                            - Moved into Patch/Multiplayer/Scripts as mp_coop_story.rbx, which Multiplayer.rb loads
@@ -33,9 +34,10 @@ module MGQ_MpCoopStory
   # First switch that tells whether a companion awakened, one per companion.
   AWAKENING_SWITCHES = 6000
 
-  # Variables that are the player's own: where a game over returns them (1002) and monsters'
+  # Variables that are the player's own: the places their party has beyond eight (56), since the
+  # game cuts a party down to its places, where a game over returns them (1002) and monsters'
   # friendliness (2000-2999).
-  PERSONAL_VARIABLES = [1002, 2000...3000]
+  PERSONAL_VARIABLES = [56, 1002, 2000...3000]
 
   # First variable that holds a companion's affection, one per companion.
   AFFECTION_VARIABLES = 3000

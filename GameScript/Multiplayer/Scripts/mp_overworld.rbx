@@ -2,6 +2,8 @@
 #  mp_overworld.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-01: Showed a party member's followers behind their ghost
+#                            - Showed the size of a player's party after their name and above the player's own head, and a crown for its leader
 #      Paulinchen  2026-09-30: Left the world's messages to mp_overworld_sync.rbx, keeping what the player sees of the others
 #                            - Moved into Patch/Multiplayer/Scripts as mp_overworld.rbx, which Multiplayer.rb loads
 #                            - Called the battle and party scripts by their new names
@@ -50,6 +52,21 @@ module MGQ_MpOverworld
 
   # Colors of a ping, by the most milliseconds each stands for; above them all, the last.
   PING_COLORS = [[100, Color.new(128, 255, 128)], [200, Color.new(255, 224, 96)], [nil, Color.new(255, 112, 96)]]
+
+  # Icon of the game's icon set before the name of a party's leader: a crown.
+  CROWN_ICON = 226
+
+  # Tells what marks a player's party: its size, and whether they lead it.
+  #
+  # @param player [MGQ_MpOverworldSync::Peers::Peer, Symbol] The player, :me for the player.
+  # @return [Array, nil] The size as "2 / 4" and whether they lead, nil outside a party of two or more.
+  def self.party_badge(player)
+    return nil unless defined?(MGQ_MpCoop)
+
+    id = player == :me ? MGQ_MpCoop::Party.id : player.state["party"]
+    size = MGQ_MpCoop.size_of(id)
+    size >= 2 ? ["#{size} / #{MGQ_MpCoop::MAX_PLAYERS}", MGQ_MpCoop.leads?(player)] : nil
+  end
 
   # Reports whether the hooks can be installed.
   #
@@ -116,8 +133,14 @@ module MGQ_MpOverworld
 end
 
 # Another player of the world on this map: it walks where they walk, looks like their party
-# leader, and walks through everything without triggering anything.
+# leader, and walks through everything without triggering anything. A party member's ghost has the
+# followers they show behind it.
 class Game_MpGhost < Game_Character
+  # The followers behind the ghost.
+  #
+  # @return [Array<Game_MpGhostFollower>] The followers, none outside the player's party.
+  attr_reader :followers
+
   # Creates the ghost where its player stands.
   #
   # @param state [Hash] What the player last told.
@@ -127,12 +150,13 @@ class Game_MpGhost < Game_Character
     @priority_type = 1
     @step_anime = false
     @walk_anime = true
+    @followers = []
     moveto(state["x"].to_i, state["y"].to_i)
     follow(state, false)
   end
 
   # Walks toward where the player stands, at their speed, and looks like them: see-through a
-  # little while they are outside the player's party.
+  # little while they are outside the player's party, with their followers while inside it.
   #
   # @param state [Hash] What the player last told.
   # @param member [Boolean] Whether they are in the player's party.
@@ -140,6 +164,8 @@ class Game_MpGhost < Game_Character
     look_like(state)
     @opacity = member ? 255 : MGQ_MpOverworld::STRANGER_OPACITY
     update
+    trail(member && defined?(MGQ_MpCoopSquad) ? MGQ_MpCoopSquad.parse_trail(state["trail"]) : [])
+    @followers.each(&:update)
     return if moving?
 
     dx = state["x"].to_i - @x
@@ -150,9 +176,21 @@ class Game_MpGhost < Game_Character
     elsif dx.abs + dy.abs > MGQ_MpOverworld::CATCH_UP_TILES
       moveto(state["x"].to_i, state["y"].to_i)
       set_direction(state["d"].to_i) if state["d"].to_i > 0
+      @followers.each { |follower| follower.gather(self) }
     else
+      # The followers step first, each onto where the one before it stands, as the game's do.
+      @followers.reverse_each(&:chase)
       move_straight(dx.abs >= dy.abs ? (dx > 0 ? 6 : 4) : (dy > 0 ? 2 : 8))
     end
+  end
+
+  # Keeps a follower per look the player's followers have, in their order.
+  #
+  # @param looks [Array<Array>] Each follower's sprite and index.
+  def trail(looks)
+    @followers = @followers.first(looks.size)
+    @followers << Game_MpGhostFollower.new(@followers.last || self) while @followers.size < looks.size
+    @followers.each_with_index { |follower, index| follower.look_like(*looks[index], self) }
   end
 
   # Takes the player's sprite, speed and visibility.
@@ -162,6 +200,58 @@ class Game_MpGhost < Game_Character
     set_graphic(state["sprite"].to_s, state["index"].to_i) if @character_name != state["sprite"].to_s || @character_index != state["index"].to_i
     @move_speed = [[state["speed"].to_i, 1].max, 6].min
     @transparent = state["hidden"].to_i == 1
+  end
+end
+
+# A follower behind a party member's ghost: it steps where the one before it stood, as the game's
+# own followers do.
+class Game_MpGhostFollower < Game_Character
+  # Creates the follower where the one before it stands.
+  #
+  # @param preceding [Game_Character] The ghost or the follower before it.
+  def initialize(preceding)
+    super()
+    @preceding = preceding
+    @through = true
+    @priority_type = 1
+    @step_anime = false
+    @walk_anime = true
+    moveto(preceding.x, preceding.y)
+  end
+
+  # Takes the follower's look and the ghost's speed, opacity and visibility.
+  #
+  # @param name [String] The sprite's file.
+  # @param index [Integer] The sprite's index in the file.
+  # @param ghost [Game_MpGhost] The ghost it follows.
+  def look_like(name, index, ghost)
+    set_graphic(name, index) if @character_name != name || @character_index != index
+    @move_speed = ghost.move_speed
+    @opacity = ghost.opacity
+    @transparent = ghost.transparent
+  end
+
+  # Steps toward the one before it, unless it stands on the same tile.
+  def chase
+    return if moving?
+
+    sx = distance_x_from(@preceding.x)
+    sy = distance_y_from(@preceding.y)
+    if sx != 0 && sy != 0
+      move_diagonal(sx > 0 ? 4 : 6, sy > 0 ? 8 : 2)
+    elsif sx != 0
+      move_straight(sx > 0 ? 4 : 6)
+    elsif sy != 0
+      move_straight(sy > 0 ? 8 : 2)
+    end
+  end
+
+  # Moves at once onto the ghost, as when the ghost jumped to its player.
+  #
+  # @param ghost [Game_MpGhost] The ghost.
+  def gather(ghost)
+    moveto(ghost.x, ghost.y)
+    set_direction(ghost.direction)
   end
 end
 
@@ -180,8 +270,11 @@ class Sprite_MpGhostLabel < Sprite
   # Font size of the ping after the name.
   PING_SIZE = 14
 
-  # Room between the name and the ping.
+  # Room between the name and each small text after it.
   PING_GAP = 6
+
+  # Color of the size of a party the player is not in.
+  SIZE_COLOR = Color.new(220, 220, 220)
 
   # Creates the label, empty.
   #
@@ -204,7 +297,8 @@ class Sprite_MpGhostLabel < Sprite
     self.y = sprite.y - sprite.height - LINE * 2 + 4
     self.visible = sprite.visible && sprite.opacity > 0 && state["hidden"].to_i != 1
     above = MGQ_MpOverworldSync.label_line_of(peer)
-    drawn = [state["name"], state["scene"], state["ping"], peer.member, above]
+    badge = MGQ_MpOverworld.party_badge(peer)
+    drawn = [state["name"], state["scene"], state["ping"], peer.member, above, badge]
     return if drawn == @shown
 
     @shown = drawn
@@ -212,8 +306,9 @@ class Sprite_MpGhostLabel < Sprite
     bitmap.font.size = 18
     bitmap.font.outline = true
     line(0, above[0], above[1]) if above
-    draw_name(state["name"].to_s, MGQ_MpOverworld::STATE_ICONS[state["scene"]], peer.member ? MEMBER_COLOR : Color.new(255, 255, 255),
-              MGQ_MpOverworld.ping_label(state["ping"]))
+    icons = [MGQ_MpOverworld::STATE_ICONS[state["scene"]], badge && badge[1] ? MGQ_MpOverworld::CROWN_ICON : nil].compact
+    extras = [badge && [badge[0], peer.member ? MEMBER_COLOR : SIZE_COLOR], MGQ_MpOverworld.ping_label(state["ping"])].compact
+    draw_name(state["name"].to_s, icons, peer.member ? MEMBER_COLOR : Color.new(255, 255, 255), extras)
   end
 
   # Draws a centered line of text.
@@ -226,37 +321,37 @@ class Sprite_MpGhostLabel < Sprite
     bitmap.draw_text(0, row * LINE, WIDTH, LINE, text, 1)
   end
 
-  # Draws the name on the lower line, the icon before it and the ping after it.
+  # Draws the name on the lower line, the icons before it and the small texts after it, such as
+  # the party's size and the ping.
   #
   # @param name [String] The player's name.
-  # @param icon [Integer, nil] The icon's index in the game's icon set, nil for none.
+  # @param icons [Array<Integer>] The icons' indexes in the game's icon set.
   # @param color [Color] The name's color.
-  # @param ping [Array, nil] The ping's text and color, nil for none.
-  def draw_name(name, icon, color, ping)
-    ping_width = 0
-    if ping
-      bitmap.font.size = PING_SIZE
-      ping_width = bitmap.text_size(ping[0]).width
-      bitmap.font.size = 18
-    end
+  # @param extras [Array<Array>] Each small text and its color.
+  def draw_name(name, icons, color, extras)
+    bitmap.font.size = PING_SIZE
+    widths = extras.map { |text, _| bitmap.text_size(text).width }
+    bitmap.font.size = 18
+    after = widths.inject(0) { |sum, extra| sum + PING_GAP + extra }
+    width = [bitmap.text_size(name).width, WIDTH - 26 * icons.size - 2 - after].min
+    left = (WIDTH - width - 26 * icons.size - after) / 2
 
-    after = ping ? PING_GAP + ping_width : 0
-    width = [bitmap.text_size(name).width, WIDTH - 28 - after].min
-    left = (WIDTH - width - (icon ? 26 : 0) - after) / 2
-
-    if icon
-      iconset = Cache.system("Iconset")
+    iconset = Cache.system("Iconset") unless icons.empty?
+    icons.each do |icon|
       bitmap.blt(left, LINE, iconset, Rect.new(icon % 16 * 24, icon / 16 * 24, 24, 24))
       left += 26
     end
 
     bitmap.font.color = color
     bitmap.draw_text(left, LINE, width, LINE, name)
-    return unless ping
-
+    left += width
     bitmap.font.size = PING_SIZE
-    bitmap.font.color = ping[1]
-    bitmap.draw_text(left + width + PING_GAP, LINE, ping_width, LINE, ping[0])
+    extras.each_with_index do |(text, extra_color), index|
+      left += PING_GAP
+      bitmap.font.color = extra_color
+      bitmap.draw_text(left, LINE, widths[index], LINE, text)
+      left += widths[index]
+    end
   end
 
   # Frees the label's picture.
@@ -266,10 +361,11 @@ class Sprite_MpGhostLabel < Sprite
   end
 end
 
-# The player's own ping, right above their head.
+# The player's own ping, right above their head, after their party's size and a crown while they
+# lead it.
 class Sprite_MpOwnPing < Sprite
-  # Width of the ping.
-  WIDTH = 80
+  # Width of the line.
+  WIDTH = 200
 
   # Height of the ping, the room it takes above the head.
   HEIGHT = 16
@@ -285,24 +381,39 @@ class Sprite_MpOwnPing < Sprite
     @shown = nil
   end
 
-  # Draws the ping, if it changed, above the player's sprite.
+  # Draws the line, if it changed, above the player's sprite.
   #
   # @param sprite [Sprite_Character, nil] The player's sprite.
   def show(sprite)
-    ping = MGQ_MpOverworld.in_world? ? MGQ_MpOverworld.ping_label(MGQ_MpOverworldSync::Ping.measured) : nil
-    self.visible = !ping.nil? && !sprite.nil? && sprite.visible && sprite.opacity > 0
+    in_world = MGQ_MpOverworld.in_world?
+    ping = in_world ? MGQ_MpOverworld.ping_label(MGQ_MpOverworldSync::Ping.measured) : nil
+    badge = in_world ? MGQ_MpOverworld.party_badge(:me) : nil
+    self.visible = !(ping.nil? && badge.nil?) && !sprite.nil? && sprite.visible && sprite.opacity > 0
     return unless visible
 
     self.x = sprite.x
     self.y = sprite.y - sprite.height - HEIGHT
-    return if ping[0] == @shown
+    drawn = [ping, badge].map { |part| part && part[0] } + [badge && badge[1]]
+    return if drawn == @shown
 
-    @shown = ping[0]
+    @shown = drawn
     bitmap.clear
     bitmap.font.size = Sprite_MpGhostLabel::PING_SIZE
     bitmap.font.outline = true
-    bitmap.font.color = ping[1]
-    bitmap.draw_text(0, 0, WIDTH, HEIGHT, ping[0], 1)
+    parts = [badge && [badge[0], Sprite_MpGhostLabel::MEMBER_COLOR], ping].compact
+    widths = parts.map { |text, _| bitmap.text_size(text).width }
+    crown = badge && badge[1] ? HEIGHT : 0
+    left = (WIDTH - crown - widths.inject(0) { |sum, width| sum + width } - Sprite_MpGhostLabel::PING_GAP * (parts.size - 1)) / 2
+    if crown > 0
+      icon = MGQ_MpOverworld::CROWN_ICON
+      bitmap.stretch_blt(Rect.new(left, 0, HEIGHT, HEIGHT), Cache.system("Iconset"), Rect.new(icon % 16 * 24, icon / 16 * 24, 24, 24))
+      left += crown
+    end
+    parts.each_with_index do |(text, color), index|
+      bitmap.font.color = color
+      bitmap.draw_text(left, 0, widths[index], HEIGHT, text)
+      left += widths[index] + Sprite_MpGhostLabel::PING_GAP
+    end
   end
 
   # Frees the ping's picture.
@@ -382,15 +493,18 @@ if MGQ_MpOverworld.hookable?
     class Spriteset_Map
       alias mgq_mp_overworld_update update
 
-      # Updates the map's sprites, then the ghosts', their labels, the player's own ping and the status line.
+      # Updates the map's sprites, then the ghosts', their followers', their labels, the player's
+      # own ping and the status line.
       def update
         mgq_mp_overworld_update
         mgq_mp_overworld_update_ghosts
       end
 
-      # Keeps a sprite and label per ghost on this map, the player's own ping and the status line.
+      # Keeps a sprite and label per ghost on this map, a sprite per ghost's follower, the player's
+      # own ping and the status line.
       def mgq_mp_overworld_update_ghosts
         @mgq_mp_ghosts ||= {}
+        @mgq_mp_followers ||= {}
         @mgq_mp_status ||= Sprite_MpWorldStatus.new(@viewport3)
         @mgq_mp_own_ping ||= Sprite_MpOwnPing.new(@viewport1)
         @mgq_mp_own_ping.show(@character_sprites.find { |sprite| sprite.character.equal?($game_player) })
@@ -402,6 +516,16 @@ if MGQ_MpOverworld.hookable?
           sprite, label = @mgq_mp_ghosts.delete(ghost)
           sprite.dispose
           label.dispose
+        end
+
+        followers = peers.map { |peer| peer.ghost.followers }.flatten
+        @mgq_mp_followers.keys.each do |follower|
+          @mgq_mp_followers.delete(follower).dispose unless followers.any? { |shown| shown.equal?(follower) }
+        end
+
+        # Followers first, so a ghost's sprite and label draw over its followers on the same tile.
+        followers.each do |follower|
+          (@mgq_mp_followers[follower] ||= Sprite_Character.new(@viewport1, follower)).update
         end
 
         peers.each do |peer|
@@ -419,10 +543,11 @@ if MGQ_MpOverworld.hookable?
 
       alias mgq_mp_overworld_dispose dispose
 
-      # Frees the ghosts' sprites, the player's own ping and the status line, then the map's.
+      # Frees the ghosts' and their followers' sprites, the player's own ping and the status line,
+      # then the map's.
       def dispose
-        (@mgq_mp_ghosts || {}).values.flatten.each { |sprite| sprite.dispose }
-        @mgq_mp_ghosts = nil
+        ((@mgq_mp_ghosts || {}).values.flatten + (@mgq_mp_followers || {}).values).each { |sprite| sprite.dispose }
+        @mgq_mp_ghosts = @mgq_mp_followers = nil
         [@mgq_mp_status, @mgq_mp_own_ping].compact.each { |sprite| sprite.dispose }
         @mgq_mp_status = @mgq_mp_own_ping = nil
         mgq_mp_overworld_dispose

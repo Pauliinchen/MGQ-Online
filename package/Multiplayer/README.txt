@@ -142,7 +142,8 @@ their equipment, shopping, at the casino, in the Library, sailing,
 flying, or away from the game. Their ping shows after their name, and
 yours right above your head: green up to 100 ms, yellow up to 200 ms,
 red beyond. They walk through everything and trigger nothing. PvP
-battles (F11) are off in a world.
+battles (F11) are off in a world: duel the other players instead, and
+F11 opens the World overview.
 
 The world never pauses: while you are in a menu, a shop, a battle or a
 story scene, the map goes on behind it. The others walk on, NPCs move,
@@ -154,7 +155,30 @@ the map.
 The action wheel: press B on the map to open it around your character.
 Pick a choice with the arrow keys and take it with the confirm button; B
 or cancel closes it. Grey choices cannot be taken right now and tell you
-why. Duels come in a later version.
+why. The wheel opens on its middle, the globe over your character, which
+opens the World overview; an arrow picks a side and the opposite arrow
+goes back.
+
+World overview: F11 or the middle of the wheel opens it, and F11, B,
+cancel or a click outside it closes it. It lists every player online,
+grouped by where they are: their name, their highest companion's level,
+where they are in the story and their ping, with a crown for a party's
+leader and the party's size as "2 / 4"; your party's members are green,
+you included. A player whose invite or challenge reaches you shows it in
+their row. Pick a player with the arrow keys and confirm, or click
+them, to invite them to your party, accept their invite, or challenge
+them to a duel or accept theirs, wherever they are.
+
+Duels: "Challenge to a duel" on the right of the wheel challenges the
+players next to you for 15 seconds; they accept in their wheel or in the
+World overview. A duel is the same PvP battle as F11 outside a world:
+your Frontline against theirs, and both games are put back afterwards.
+When a party's leader duels, it is a team duel: their whole party
+fights, and the other side's party when its player leads one. Everyone
+gets ready on the map, and it starts once all are ready, or after 10
+seconds with those who are. Each brings their share of the Frontline,
+as in co-op battles; whoever leaves leaves their characters to the next
+player of their side.
 
 Chat: press T, or pick "Chat" in the wheel, and type on the keyboard;
 Enter sends, Esc closes. The arrow keys, Home and End move the cursor,
@@ -167,8 +191,25 @@ windows, and tells at once when a player leaves the battle.
 Parties: players outside your party are slightly see-through. Stand next
 to another player and pick "Invite to a party" in the wheel; when they
 pick "Accept" in theirs next to you within 15 seconds, you form a party.
-Party members are fully visible and their names are green. "Leave the
-party" at the bottom of the wheel leaves it. On a map you share with
+A party holds up to four players. Party members are fully visible and
+their names are green; a party's size shows after its players' names and
+above your head ("2 / 4"), its leader has a crown, and Discord shows it
+as "(2 of 4)". A box at the top right of the map lists your party, its
+leader first and then by name, with each player's highest companion
+level, ping, and where they are below (long names shortened). "Leave
+the party" at the bottom of the wheel
+leaves it. Only the party's leader, the player who made it, invites
+more and removes members (in the World overview). A party shares one
+team's worth of companions: the
+Frontline's four places and the Backline's are split between you, the
+player who made the party taking any place left over. Your Formation
+screens show your share of the Frontline as the Frontline, your share
+of the Backline as the game shows the Backline, and the companions past
+your share in black and white below a line. Only your share of the
+Frontline follows you on the map, also on the other members' screens;
+the player who made the party can show the players alone
+instead (Mod Config, Monster Girl Quest! Online, Party Followers). On a
+map you share with
 party members, you all see the same NPCs in the same places: whoever of
 you entered the map first is its Map Owner, and the NPCs move as they do
 in their game. While in a party, everyone plays the story of the player
@@ -179,10 +220,13 @@ along as theirs when you joined, you keep what you played together,
 companions who joined in the story included.
 
 Co-op battles: when a battle starts for a party member, the party
-members on the same map who are playing on it join it. With two players
-each brings the first two of their Frontline, with three or four each
-brings their first, and everyone commands their own characters. Each of
-you can try to escape; whoever gets away leaves the battle, and the one
+members on the same map who are playing on it join it. Each brings
+their squad: their share of the Frontline fights and their share of the
+Backline waits, the rest stays out. Everyone commands their own
+characters and can swap their own Backline in with "Party". Everyone
+fights the enemies of the game where the battle started, even when a mod
+there changes them, such as one that doubles them. Each of you can try
+to escape; whoever gets away leaves the battle, and the one
 left alone fights on with their own full team. Each of you gets the full
 EXP, gold and your own item drops, or your own defeat. Chests are everyone's own: when
 a party member opens one, everyone in the party who has not looted it

@@ -2,6 +2,9 @@
 #  Multiplayer.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-01: Loaded mp_coop_squad.rbx after mp_coop.rbx
+#                            - Loaded mp_battles_duel.rbx and mp_battles_team.rbx after the PvP battles, and mp_world_overview.rbx last
+#                            - Added Mouse, where the mouse points on the game's screen and its left button
 #      Paulinchen  2026-09-30: Loaded the other scripts from Patch/Multiplayer/Scripts
 #                            - Loaded mp_chat.rbx after the action wheel
 #                            - Loaded mp_coop.rbx before the party scripts that register with it
@@ -48,9 +51,10 @@ module MGQ_Multiplayer
   # so their order decides how those hooks wrap each other.
   SCRIPTS = %w[
     mp_actors mp_async mp_overworld_sync mp_actions mp_chat mp_overworld
-    mp_coop mp_coop_events mp_coop_npcs mp_coop_story
+    mp_coop mp_coop_squad mp_coop_events mp_coop_npcs mp_coop_story
     mp_save_distribution mp_world
-    mp_battles mp_battles_coop mp_battles_sync mp_battles_pvp
+    mp_battles mp_battles_coop mp_battles_sync mp_battles_pvp mp_battles_duel mp_battles_team
+    mp_world_overview
   ]
 
   # Extension of the scripts, which the mod loader skips, since only this script may load them.
@@ -658,6 +662,45 @@ module MGQ_Multiplayer
       pressed = down && !@down[code]
       @down[code] = down
       pressed && Background.in_front?
+    end
+  end
+
+  # The mouse over the game's window, read from Windows: where it points on the game's screen, and
+  # its left button.
+  module Mouse
+    # Windows' code of the left mouse button.
+    LEFT_BUTTON = 0x01
+
+    # Tells where the mouse points on the game's screen, while the game window is in front.
+    #
+    # The window may be larger than the game's screen, which RGSS stretches over it.
+    #
+    # @return [Array<Integer>, nil] x and y in the game's pixels, nil outside the window or while
+    #   another window is in front.
+    def self.position
+      return nil unless Background.in_front?
+
+      window = Windows.api('user32', 'GetForegroundWindow', 'v', 'l').call
+      point = [0, 0].pack('l2')
+      return nil if Windows.api('user32', 'GetCursorPos', 'p', 'i').call(point) == 0
+
+      Windows.api('user32', 'ScreenToClient', 'lp', 'i').call(window, point)
+      rect = [0, 0, 0, 0].pack('l4')
+      Windows.api('user32', 'GetClientRect', 'lp', 'i').call(window, rect)
+      x, y = point.unpack('l2')
+      width, height = rect.unpack('l4')[2, 2]
+      return nil if width <= 0 || height <= 0 || x < 0 || y < 0 || x >= width || y >= height
+
+      [x * Graphics.width / width, y * Graphics.height / height]
+    rescue
+      nil
+    end
+
+    # Reports whether the left button went down since the last call, while the game window is in front.
+    #
+    # @return [Boolean] Whether it went down.
+    def self.clicked?
+      Key.pressed?(LEFT_BUTTON)
     end
   end
 
