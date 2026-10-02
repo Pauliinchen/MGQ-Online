@@ -2,7 +2,11 @@
 #  mp_battles_sync.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-02: Started every wait for the guests with nobody ready, whatever an earlier wait left behind
+#      Paulinchen  2026-10-02: Installed the battle hooks through mp_hooks.rbx
+#                            - Sent every message of a battle over the world's room through tell
+#                            - Played back only the picture, screen and audio methods the hooks record
+#                            - Ended a guest's co-op battle and a team duel on the host's side through one method
+#                            - Started every wait for the guests with nobody ready, whatever an earlier wait left behind
 #      Paulinchen  2026-10-01: Told every player of a live battle at once when another leaves it or the world
 #                            - Carried a co-op guest's swaps with their commands, and told the party anew before the turn
 #                            - Carried duels, PvP battles between two players of a world, over the world's room
@@ -27,8 +31,10 @@
 #
 #----------------------------------------------------------------
 
-# Live battles, in which two players each command their own team: the host's game computes the
-# battle and streams what it shows, the guest's game plays that back and sends its commands.
+# Live battles: the host's game computes the battle and streams what it shows, every guest's game
+# plays that back and sends its own characters' commands. A PvP battle with a friend runs over the
+# link; co-op battles, duels and team duels over the world's room, co-op battles and team duels with
+# several guests.
 #
 # Each game sees its own team as the party, so the two would draw their random numbers in a
 # different order if both computed.
@@ -90,16 +96,6 @@ module MGQ_MpBattlesSync
     #
     # @return [String, nil] The id.
     attr_reader :battle_id
-  end
-
-  # Reports whether the hooks can be installed.
-  #
-  # A second copy of this script would wrap the same methods under the same names, and each hook
-  # would then call itself until the stack overflows.
-  #
-  # @return [Boolean] false when the hooks are in place already.
-  def self.hookable?
-    !SceneManager.respond_to?(:mgq_mp_battles_sync_run)
   end
 
   # Writes a line to the mod's InGame.log.
@@ -335,6 +331,24 @@ module MGQ_MpBattlesSync
   # Turns off the host's settings that would keep parts of the battle from the guest.
   def self.show_everything
     SKIP_SETTINGS.each { |key| $game_system.conf[key] = false if $game_system.conf.key?(key) }
+  end
+
+  # Lists the names the guest swaps.
+  #
+  # @return [String] The names of this game's party and troop, which the guest swaps for its own.
+  def self.names
+    Wire.line([$game_party.battle_members.map(&:name), $game_troop.members.map(&:name)])
+  end
+
+  # Sends a message of a battle over the world's room.
+  #
+  # @param seat [Integer] The game's seat, -1 for everyone.
+  # @param kind [String] What it is.
+  # @param battle_id [String] The battle's id.
+  # @param body [String] The rest.
+  # @return [Boolean] Whether it went out.
+  def self.tell(seat, kind, battle_id, body = "")
+    MGQ_MpOverworldSync::Link.send_to(seat, MGQ_MpOverworldSync::Me.encode("battle" => kind, "bid" => battle_id) + body)
   end
 
   # Ends the battle once the friend is gone: won, or played on by the computer on the host.
@@ -587,7 +601,7 @@ module MGQ_MpBattlesSync
     # @return [Boolean] Whether it went out.
     def self.post(kind, body = "")
       if MGQ_MpBattlesSync.world?
-        MGQ_MpOverworldSync::Link.send_to(-1, "battle=#{kind}\nbid=#{MGQ_MpBattlesSync.battle_id}\n\n#{body}")
+        MGQ_MpBattlesSync.tell(-1, kind, MGQ_MpBattlesSync.battle_id, body)
       else
         MGQ_Multiplayer::Link.post("#{kind}\n#{body}")
       end
@@ -1139,16 +1153,6 @@ module MGQ_MpBattlesSync
     # Battle log methods the host may have called.
     LOG_METHODS = %w(add_text replace_text back_one back_to clear clear_popup)
 
-    # Picture methods the host may have called.
-    PICTURE_METHODS = %w(show move rotate start_tone_change erase)
-
-    # Screen methods the host may have called.
-    SCREEN_METHODS = %w(start_shake start_flash start_tone_change start_fadeout start_fadein od_fadein od_fadeout)
-
-    # Audio functions the host may have called.
-    AUDIO_METHODS = %w(se_play me_play bgm_play bgs_play se_stop me_stop bgm_stop bgs_stop me_fade bgm_fade bgs_fade
-                       start_over_drive end_over_drive)
-
     # Scene waits the host may have called, with a duration.
     TIMED_WAITS = %w(wait abs_wait)
 
@@ -1275,9 +1279,9 @@ module MGQ_MpBattlesSync
       when /\Apicture\./
         picture(method, args)
       when /\Ascreen\./
-        $game_troop.screen.send(method, *args) if SCREEN_METHODS.include?(method)
+        $game_troop.screen.send(method, *args) if recorded?(Hooks::SCREEN_METHODS, method)
       when /\Aaudio\./
-        Audio.send(method, *args) if AUDIO_METHODS.include?(method)
+        Audio.send(method, *args) if recorded?(Hooks::AUDIO_METHODS, method)
       when "animation"
         animation(scene, *args)
       when "battler.sprite_effect_type"
@@ -1299,6 +1303,18 @@ module MGQ_MpBattlesSync
       @failed ||= {}
       MGQ_MpBattlesSync.log("could not play #{kind}: #{e.class}: #{e.message}") unless @failed[kind]
       @failed[kind] = true
+    end
+
+    # Reports whether the hooks record a method, which the guest then plays as the host called it.
+    #
+    # The name came from the host, so it is compared as text and never made a symbol, since symbols
+    # are never freed.
+    #
+    # @param names [Array<Symbol>] The methods the hooks record.
+    # @param method [String] The method the host called.
+    # @return [Boolean] Whether they record it.
+    def self.recorded?(names, method)
+      names.any? { |name| name.to_s == method }
     end
 
     # Makes a call the host recorded with this game's own texts, see Recorder.call: the battle log
@@ -1414,7 +1430,7 @@ module MGQ_MpBattlesSync
     # @param args [Array] The picture's number, then the method's arguments.
     def self.picture(method, args)
       number = args[0].to_i
-      return unless PICTURE_METHODS.include?(method) && number > 0 && number <= 100
+      return unless recorded?(Hooks::PICTURE_METHODS, method) && number > 0 && number <= 100
       return if method == "show" && args[1].to_s !~ PICTURE_NAME
 
       $game_troop.screen.pictures[number].send(method, *args[1..-1])
@@ -1630,13 +1646,6 @@ module MGQ_MpBattlesSync
     def self.release_input(windows)
       Array(windows).each { |window| window.activate unless window.disposed? }
     end
-  end
-
-  # Lists the names the guest swaps.
-  #
-  # @return [String] The names of this game's party and troop, which the guest swaps for its own.
-  def self.names
-    Wire.line([$game_party.battle_members.map(&:name), $game_troop.members.map(&:name)])
   end
 
   # The game hooks, which run the original and return its result unless a live battle's side takes
@@ -2035,12 +2044,22 @@ module MGQ_MpBattlesSync
       scene.start_party_command_selection
     end
 
-    # Ends the guest's battle the way the host's ended, seen from the other side.
+    # Ends the guest's battle the way the host's ended: as it ended in a co-op battle and on the
+    # host's side of a team duel, else seen from the other side.
     #
     # @param result [String] How the host's battle ended.
+    # @param scene [Scene_Battle] The battle.
     def self.guest_end(result, scene)
-      return coop_end(result, scene) if MGQ_MpBattlesSync.coop?
-      return team_end(result) if MGQ_MpBattlesSync.team? && MGQ_MpBattlesSync.same_side?
+      # When the co-op host got away, the guest fights on alone.
+      return same_end(result) { MGQ_MpBattlesCoop.take_over(scene) } if MGQ_MpBattlesSync.coop?
+
+      if MGQ_MpBattlesSync.team? && MGQ_MpBattlesSync.same_side?
+        # The host gave up or left, and with them the game that computes the duel.
+        return same_end(result) do
+          $game_message.add("#{MGQ_MpBattlesSync.player} left the duel.")
+          BattleManager.process_abort
+        end
+      end
 
       case result
       when "process_victory" then BattleManager.process_defeat
@@ -2051,30 +2070,16 @@ module MGQ_MpBattlesSync
       end
     end
 
-    # Ends a co-op guest's battle as the host's ended: each game wins or loses with its own rewards
-    # or defeat. When the host got away, the guest fights on alone.
+    # Ends a guest's battle on the host's side as the host's ended: each game wins or loses with its
+    # own rewards or defeat.
     #
     # @param result [String] How the host's battle ended.
-    # @param scene [Scene_Battle] The battle.
-    def self.coop_end(result, scene)
+    # @yield What follows when the host's battle ended otherwise, as when the host got away.
+    def self.same_end(result)
       case result
       when "process_victory" then BattleManager.process_victory
       when "process_defeat" then BattleManager.process_defeat
-      else MGQ_MpBattlesCoop.take_over(scene)
-      end
-    end
-
-    # Ends the battle of a team duel's guest on the host's side as the host's ended: won or lost
-    # together, or broken off when the host gave up or left.
-    #
-    # @param result [String] How the host's battle ended.
-    def self.team_end(result)
-      case result
-      when "process_victory" then BattleManager.process_victory
-      when "process_defeat" then BattleManager.process_defeat
-      else
-        $game_message.add("#{MGQ_MpBattlesSync.player} left the duel.")
-        BattleManager.process_abort
+      else yield
       end
     end
 
@@ -2083,7 +2088,7 @@ module MGQ_MpBattlesSync
     # @param scene [Scene_Battle] The battle.
     # @return [Boolean] Whether the turn goes on.
     def self.host_commands(scene)
-      return host_coop_commands(scene) if MGQ_MpBattlesSync.several?
+      return host_guests_commands(scene) if MGQ_MpBattlesSync.several?
 
       commands = Waiting.wait_for(scene, "Waiting for #{MGQ_MpBattlesSync.player}'s commands...") { Channel.take("commands") }
       return end_early(scene, commands) if commands.is_a?(Symbol)
@@ -2092,12 +2097,12 @@ module MGQ_MpBattlesSync
       true
     end
 
-    # The co-op host waits for the commands of every guest still in the battle. A guest who left
-    # sends none, and the computer plays their characters.
+    # The host of a co-op battle or a team duel waits for the commands of every guest still in the
+    # battle. A guest who left sends none, and the computer plays their characters.
     #
     # @param scene [Scene_Battle] The battle.
     # @return [Boolean] Whether the turn goes on.
-    def self.host_coop_commands(scene)
+    def self.host_guests_commands(scene)
       waiting = MGQ_MpBattlesSync.guests_in
       answer = Waiting.wait_for(scene, "Waiting for the party's commands...") do
         waiting.dup.each do |seat|
@@ -2186,21 +2191,12 @@ rescue => e
   MGQ_MpBattlesSync.log("overworld sync FAILED: #{e.class}: #{e.message}")
 end
 
-if MGQ_MpBattlesSync.hookable?
-  begin
-    class << SceneManager
-      alias mgq_mp_battles_sync_run run
+# Game hooks, through mp_hooks.rbx.
 
-      # Installs the battle hooks, then runs the game.
-      #
-      # The game's plugins load after the Patch folder and define battle methods anew, so the hooks
-      # go in once every plugin is in.
-      def run
-        MGQ_MpBattlesSync::Hooks.install rescue nil
-        mgq_mp_battles_sync_run
-      end
-    end
-  rescue => e
-    MGQ_MpBattlesSync.log("SceneManager hook FAILED: #{e.class}: #{e.message}")
-  end
+begin
+  # Installs the battle hooks as the game starts running. The game's plugins load after the Patch
+  # folder and define battle methods anew, so the hooks go in once every plugin is in.
+  MGQ_MpHooks.before(SceneManager.singleton_class, :run, "mp_battles_sync") { MGQ_MpBattlesSync::Hooks.install }
+rescue => e
+  MGQ_MpBattlesSync.log("SceneManager hook FAILED: #{e.class}: #{e.message}")
 end

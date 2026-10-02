@@ -2,7 +2,8 @@
 #  mp_actions.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-02: Took a choice through MGQ_MpActions.choose, which the World overview shares
+#      Paulinchen  2026-10-02: Followed the map and its sprites through mp_hooks.rbx
+#                            - Took a choice through MGQ_MpActions.choose, which the World overview shares
 #      Paulinchen  2026-10-01: Showed a globe in a small square box in the wheel's middle instead of its text
 #                            - Refused to invite into a full party or to accept the invite of one
 #                            - Challenged the players nearby to a duel, or accepted their challenge, on the wheel's right
@@ -48,16 +49,6 @@ module MGQ_MpActions
 
   # The game's globe icon, which stands for the World overview in the wheel's middle.
   WORLD_ICON = 3988
-
-  # Reports whether the hooks can be installed.
-  #
-  # A second copy of this script would wrap the same methods under the same names, and each hook
-  # would then call itself until the stack overflows.
-  #
-  # @return [Boolean] false when the hooks are in place already.
-  def self.hookable?
-    !Scene_Map.method_defined?(:mgq_mp_actions_update_scene)
-  end
 
   # Writes a line to the mod's InGame.log.
   #
@@ -287,7 +278,6 @@ module MGQ_MpActions
       MGQ_MpActions.choose(MGQ_MpActions.wheel_options[@selected]) { close } if MGQ_Multiplayer::Capture.trigger?(:C)
     end
   end
-
 end
 
 # The line above the player's own head while they invite to a party.
@@ -467,58 +457,26 @@ rescue => e
   MGQ_MpActions.log("overworld sync FAILED: #{e.class}: #{e.message}")
 end
 
-# Game hooks.
-#
-# Each wraps a game method: the original runs first, and the mod's part never raises.
+# Game hooks, through mp_hooks.rbx.
 
-if MGQ_MpActions.hookable?
-  begin
-    class Scene_Map
-      alias mgq_mp_actions_update_scene update_scene
+begin
+  # After the map's update, the action wheel. The game checks its own keys there too, only while no
+  # scene change is in the way.
+  MGQ_MpHooks.after(Scene_Map, :update_scene, "mp_actions") { MGQ_MpActions.on_map unless scene_changing? }
 
-      # Updates the map, then the action wheel.
-      #
-      # The game checks its own keys here too, only while no scene change is in the way.
-      def update_scene
-        mgq_mp_actions_update_scene
-        MGQ_MpActions.on_map unless scene_changing?
-      end
-    end
-  rescue => e
-    MGQ_MpActions.log("map key hook FAILED: #{e.class}: #{e.message}")
+  # After the map's sprites, the line above the player's own head and the action wheel around them.
+  MGQ_MpHooks.after(Spriteset_Map, :update, "mp_actions") do
+    @mgq_mp_own_line ||= Sprite_MpOwnLine.new(@viewport1)
+    @mgq_mp_wheel ||= Sprite_MpActionWheel.new(@viewport3)
+    player = @character_sprites.find { |sprite| sprite.character.equal?($game_player) }
+    @mgq_mp_own_line.show(player)
+    @mgq_mp_wheel.show(player)
   end
 
-  begin
-    class Spriteset_Map
-      alias mgq_mp_actions_update update
-      alias mgq_mp_actions_dispose dispose
-
-      # Updates the map's sprites, then the line above the player's own head and the wheel.
-      def update
-        mgq_mp_actions_update
-        mgq_mp_actions_update_sprites
-      end
-
-      # Keeps the line above the player's own head and the action wheel around them.
-      def mgq_mp_actions_update_sprites
-        @mgq_mp_own_line ||= Sprite_MpOwnLine.new(@viewport1)
-        @mgq_mp_wheel ||= Sprite_MpActionWheel.new(@viewport3)
-        player = @character_sprites.find { |sprite| sprite.character.equal?($game_player) }
-        @mgq_mp_own_line.show(player)
-        @mgq_mp_wheel.show(player)
-      rescue => e
-        MGQ_MpActions.log("action sprites failed: #{e.class}: #{e.message}") unless @mgq_mp_actions_failed
-        @mgq_mp_actions_failed = true
-      end
-
-      # Frees the line above the player's own head and the wheel, then the map's sprites.
-      def dispose
-        [@mgq_mp_own_line, @mgq_mp_wheel].compact.each { |sprite| sprite.dispose }
-        @mgq_mp_own_line = @mgq_mp_wheel = nil
-        mgq_mp_actions_dispose
-      end
-    end
-  rescue => e
-    MGQ_MpActions.log("sprite hooks FAILED: #{e.class}: #{e.message}")
+  MGQ_MpHooks.before(Spriteset_Map, :dispose, "mp_actions") do
+    [@mgq_mp_own_line, @mgq_mp_wheel].compact.each { |sprite| sprite.dispose }
+    @mgq_mp_own_line = @mgq_mp_wheel = nil
   end
+rescue => e
+  MGQ_MpActions.log("hooks FAILED: #{e.class}: #{e.message}")
 end

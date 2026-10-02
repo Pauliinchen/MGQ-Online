@@ -2,6 +2,7 @@
 #  mp_overworld.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-02: Followed the map and its sprites through mp_hooks.rbx
 #      Paulinchen  2026-10-01: Showed a party member's followers behind their ghost
 #                            - Showed the size of a player's party after their name and above the player's own head, and a crown for its leader
 #      Paulinchen  2026-09-30: Left the world's messages to mp_overworld_sync.rbx, keeping what the player sees of the others
@@ -66,16 +67,6 @@ module MGQ_MpOverworld
     id = player == :me ? MGQ_MpCoop::Party.id : player.state["party"]
     size = MGQ_MpCoop.size_of(id)
     size >= 2 ? ["#{size} / #{MGQ_MpCoop::MAX_PLAYERS}", MGQ_MpCoop.leads?(player)] : nil
-  end
-
-  # Reports whether the hooks can be installed.
-  #
-  # A second copy of this script would wrap the same methods under the same names, and each hook
-  # would then call itself until the stack overflows.
-  #
-  # @return [Boolean] false when the hooks are in place already.
-  def self.hookable?
-    !Spriteset_Map.method_defined?(:mgq_mp_overworld_update)
   end
 
   # Writes a line to the mod's InGame.log.
@@ -468,92 +459,56 @@ class Sprite_MpWorldStatus < Sprite
   end
 end
 
-# Game hooks.
-#
-# Each wraps a game method: the original runs first, and the mod's part never raises.
+# Game hooks, through mp_hooks.rbx.
 
-if MGQ_MpOverworld.hookable?
-  begin
-    class Game_Map
-      alias mgq_mp_overworld_update update
+begin
+  # After the map's update, the ghosts on it move.
+  MGQ_MpHooks.after(Game_Map, :update, "mp_overworld") { MGQ_MpOverworld.update_ghosts }
 
-      # Updates the map, then moves the ghosts on it.
-      #
-      # @param args [Array] The original's arguments.
-      def update(*args)
-        mgq_mp_overworld_update(*args)
-        MGQ_MpOverworld.update_ghosts
-      end
+  # After the map's sprites, a sprite and label per ghost on this map, a sprite per ghost's
+  # follower, the player's own ping and the status line.
+  MGQ_MpHooks.after(Spriteset_Map, :update, "mp_overworld") do
+    @mgq_mp_ghosts ||= {}
+    @mgq_mp_followers ||= {}
+    @mgq_mp_status ||= Sprite_MpWorldStatus.new(@viewport3)
+    @mgq_mp_own_ping ||= Sprite_MpOwnPing.new(@viewport1)
+    @mgq_mp_own_ping.show(@character_sprites.find { |sprite| sprite.character.equal?($game_player) })
+    peers = MGQ_MpOverworld.ghosts
+
+    @mgq_mp_ghosts.keys.each do |ghost|
+      next if peers.any? { |peer| peer.ghost.equal?(ghost) }
+
+      sprite, label = @mgq_mp_ghosts.delete(ghost)
+      sprite.dispose
+      label.dispose
     end
-  rescue => e
-    MGQ_MpOverworld.log("map hook FAILED: #{e.class}: #{e.message}")
+
+    followers = peers.map { |peer| peer.ghost.followers }.flatten
+    @mgq_mp_followers.keys.each do |follower|
+      @mgq_mp_followers.delete(follower).dispose unless followers.any? { |shown| shown.equal?(follower) }
+    end
+
+    # Followers first, so a ghost's sprite and label draw over its followers on the same tile.
+    followers.each do |follower|
+      (@mgq_mp_followers[follower] ||= Sprite_Character.new(@viewport1, follower)).update
+    end
+
+    peers.each do |peer|
+      @mgq_mp_ghosts[peer.ghost] ||= [Sprite_Character.new(@viewport1, peer.ghost), Sprite_MpGhostLabel.new(@viewport1)]
+      sprite, label = @mgq_mp_ghosts[peer.ghost]
+      sprite.update
+      label.show(sprite, peer)
+    end
+
+    @mgq_mp_status.update
   end
 
-  begin
-    class Spriteset_Map
-      alias mgq_mp_overworld_update update
-
-      # Updates the map's sprites, then the ghosts', their followers', their labels, the player's
-      # own ping and the status line.
-      def update
-        mgq_mp_overworld_update
-        mgq_mp_overworld_update_ghosts
-      end
-
-      # Keeps a sprite and label per ghost on this map, a sprite per ghost's follower, the player's
-      # own ping and the status line.
-      def mgq_mp_overworld_update_ghosts
-        @mgq_mp_ghosts ||= {}
-        @mgq_mp_followers ||= {}
-        @mgq_mp_status ||= Sprite_MpWorldStatus.new(@viewport3)
-        @mgq_mp_own_ping ||= Sprite_MpOwnPing.new(@viewport1)
-        @mgq_mp_own_ping.show(@character_sprites.find { |sprite| sprite.character.equal?($game_player) })
-        peers = MGQ_MpOverworld.ghosts
-
-        @mgq_mp_ghosts.keys.each do |ghost|
-          next if peers.any? { |peer| peer.ghost.equal?(ghost) }
-
-          sprite, label = @mgq_mp_ghosts.delete(ghost)
-          sprite.dispose
-          label.dispose
-        end
-
-        followers = peers.map { |peer| peer.ghost.followers }.flatten
-        @mgq_mp_followers.keys.each do |follower|
-          @mgq_mp_followers.delete(follower).dispose unless followers.any? { |shown| shown.equal?(follower) }
-        end
-
-        # Followers first, so a ghost's sprite and label draw over its followers on the same tile.
-        followers.each do |follower|
-          (@mgq_mp_followers[follower] ||= Sprite_Character.new(@viewport1, follower)).update
-        end
-
-        peers.each do |peer|
-          @mgq_mp_ghosts[peer.ghost] ||= [Sprite_Character.new(@viewport1, peer.ghost), Sprite_MpGhostLabel.new(@viewport1)]
-          sprite, label = @mgq_mp_ghosts[peer.ghost]
-          sprite.update
-          label.show(sprite, peer)
-        end
-
-        @mgq_mp_status.update
-      rescue => e
-        MGQ_MpOverworld.log("ghost sprites failed: #{e.class}: #{e.message}") unless @mgq_mp_failed
-        @mgq_mp_failed = true
-      end
-
-      alias mgq_mp_overworld_dispose dispose
-
-      # Frees the ghosts' and their followers' sprites, the player's own ping and the status line,
-      # then the map's.
-      def dispose
-        ((@mgq_mp_ghosts || {}).values.flatten + (@mgq_mp_followers || {}).values).each { |sprite| sprite.dispose }
-        @mgq_mp_ghosts = @mgq_mp_followers = nil
-        [@mgq_mp_status, @mgq_mp_own_ping].compact.each { |sprite| sprite.dispose }
-        @mgq_mp_status = @mgq_mp_own_ping = nil
-        mgq_mp_overworld_dispose
-      end
-    end
-  rescue => e
-    MGQ_MpOverworld.log("sprite hooks FAILED: #{e.class}: #{e.message}")
+  MGQ_MpHooks.before(Spriteset_Map, :dispose, "mp_overworld") do
+    ((@mgq_mp_ghosts || {}).values.flatten + (@mgq_mp_followers || {}).values).each { |sprite| sprite.dispose }
+    @mgq_mp_ghosts = @mgq_mp_followers = nil
+    [@mgq_mp_status, @mgq_mp_own_ping].compact.each { |sprite| sprite.dispose }
+    @mgq_mp_status = @mgq_mp_own_ping = nil
   end
+rescue => e
+  MGQ_MpOverworld.log("hooks FAILED: #{e.class}: #{e.message}")
 end

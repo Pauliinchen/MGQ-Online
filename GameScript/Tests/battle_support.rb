@@ -2,6 +2,7 @@
 #  battle_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-02: Gave the rebuilt character stand-in its owner's seat and place
 #      Paulinchen  2026-10-01: Created
 #
 #----------------------------------------------------------------
@@ -70,6 +71,7 @@ class Game_Actor < Game_Battler
   def make_auto_battle_actions; @actions = [:auto]; end
 end
 class Game_MpActor < Game_Actor
+  attr_accessor :mp_seat, :mp_place
   def initialize(member, player); super(member.actor_id); @player = player; end
   def name; "Actor#{@id} (#{@player})"; end
 end

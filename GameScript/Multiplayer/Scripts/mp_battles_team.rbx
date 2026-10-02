@@ -2,6 +2,7 @@
 #  mp_battles_team.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-02: Took the Frontline's size from mp_coop_squad.rbx
 #      Paulinchen  2026-10-01: Created
 #
 #----------------------------------------------------------------
@@ -16,9 +17,6 @@
 # mp_battles_duel.rbx gathers the players on the map; this script holds the sides once the duel
 # starts. It must never interrupt the game, so every entry point rescues.
 module MGQ_MpBattlesTeam
-  # Characters a player of a team duel sends at most: their Frontline.
-  FRONTLINE = 4
-
   @own = []
   @other = []
   @same_side = false
@@ -81,7 +79,7 @@ module MGQ_MpBattlesTeam
   def self.opponents
     @other.map do |player|
       seat, name, builds = player
-      members = MGQ_MpActors::Builds.parse(builds.to_s, FRONTLINE)
+      members = MGQ_MpActors::Builds.parse(builds.to_s, MGQ_MpCoopSquad::FRONTLINE)
       MGQ_MpBattlesCoop.lines_of(player)[0].map { |place| opponent(seat, name.to_s, members[place], place) }
     end.flatten.compact
   end

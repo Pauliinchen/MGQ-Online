@@ -2,6 +2,7 @@
 #  duel_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-02: Gave the live battle stand-in tell
 #      Paulinchen  2026-10-01: Created
 #
 #----------------------------------------------------------------
@@ -39,6 +40,7 @@ module MGQ_MpBattlesSync
   end
   def self.role; $role; end
   def self.join_world(*args); $joined << args; end
+  def self.tell(seat, kind, battle_id, body = ""); MGQ_MpOverworldSync::Link.send_to(seat, "battle=#{kind}\nbid=#{battle_id}\n\n#{body}"); end
 end
 module MGQ_MpBattlesCoop
   def self.own_seat; 0; end

@@ -2,6 +2,7 @@
 #  team_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-02: Ended the guest's duel through guest_end
 #      Paulinchen  2026-10-01: Created
 #
 #----------------------------------------------------------------
@@ -14,9 +15,7 @@ require_relative "battle_support"
 
 # Stand-ins for the PvP battle.
 module MGQ_MpBattlesPvp
-  class Opponent < Game_MpActor
-    attr_accessor :mp_seat, :mp_place
-  end
+  class Opponent < Game_MpActor; end
   module Opponents; def self.stand(opponents); opponents; end; end
 end
 load_script "mp_battles_team"
@@ -125,7 +124,7 @@ sync.join_world(:guest, "t3", [0], "Me", :pvp, true)
 team.prepare(own, other, true)
 check("the host's side's guest keeps the host's references", [sync.same_side?, MGQ_MpBattlesSync::Playback.battler("a0").equal?($game_party.battle_members[0])], [true, true])
 $aborted = false
-MGQ_MpBattlesSync::Live.team_end("process_abort")
+MGQ_MpBattlesSync::Live.guest_end("process_abort", nil)
 check("a host who left ends the duel for its side without a winner", [$aborted, $game_message_texts.to_a.last], [true, "Me left the duel."])
 
 # A host's wait for its guests starts with nobody ready, whatever an earlier wait left behind.

@@ -2,6 +2,7 @@
 #  coop_squad_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-02: Dropped the checks of squad, which the places already cover
 #      Paulinchen  2026-10-01: Created
 #
 #----------------------------------------------------------------
@@ -164,7 +165,6 @@ check("the leader first, then by id", squad.ranked([["b", false], ["c", true], [
 check("outside a party no share", squad.own_share, nil)
 check("every follower shows", $game_player.followers.map { |f| f.visible? }, [true, true, true])
 check("nobody is cut", squad.place_of(actors[7]), nil)
-check("the squad is the whole team", squad.squad.size, 8)
 check("no trail is told", squad.state_fields["trail"], "")
 
 # A party of two, the player leading.
@@ -179,7 +179,6 @@ MGQ_MpOverworldSync.tick(true)
 check("followers are shown anew once the share changed", $game_player.refreshed, 1)
 check("only the share of the Frontline follows, as the frame's tick took it", $game_player.followers.map { |f| f.visible? }, [true, false, false])
 check("the trail tells the followers shown", squad.state_fields, { "follow" => 0, "trail" => "Follower1*1" })
-check("the squad is the first four", squad.squad.map(&:id), [1, 2, 3, 4])
 
 # The leader's choice of followers.
 check("the option is in the Mod Config, and the leader may choose", NWConst::Config::MOD_CONTENTS.find { |e| e[:key] == squad::FOLLOWERS }[:enable].call, true)

@@ -2,6 +2,9 @@
 #  mp_battles_pvp.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-02: Followed the map and the title screen through mp_hooks.rbx
+#                            - Took the Frontline's size from mp_coop_squad.rbx, and the seat, place and Luka from Game_MpActor
+#                            - Listed the PvP battle screen's commands once per change of the exchange
 #      Paulinchen  2026-10-01: Left F11 to the World overview in a world, also once a newer release is out
 #                            - Let a team duel start the battle with the other side's characters it rebuilt, each with its owner's seat
 #      Paulinchen  2026-09-30: Moved into Patch/Multiplayer/Scripts as mp_battles_pvp.rbx, which Multiplayer.rb loads, and named the log there
@@ -40,9 +43,6 @@ module MGQ_MpBattlesPvp
   # Frames between two looks at the exchange, a third of a second at 60 frames per second.
   POLL_INTERVAL = 20
 
-  # Party members a team holds, the Frontline.
-  TEAM_SIZE = 4
-
   # Who the player's own team belongs to in a mirror match.
   MIRROR_NAME = "Mirror"
 
@@ -56,7 +56,7 @@ module MGQ_MpBattlesPvp
   #
   # @return [Boolean] false when the hooks are in place already.
   def self.hookable?
-    !Scene_Map.method_defined?(:mgq_mp_battles_pvp_update_scene)
+    !Scene_Map.method_defined?(:mgq_mp_battles_pvp_start)
   end
 
   # Tells whether PvP battles can run.
@@ -250,7 +250,7 @@ module MGQ_MpBattlesPvp
     #
     # @return [String] A member line per party member.
     def self.build
-      MGQ_MpActors::Builds.write($game_party.battle_members.first(TEAM_SIZE))
+      MGQ_MpActors::Builds.write($game_party.battle_members.first(MGQ_MpCoopSquad::FRONTLINE))
     end
 
     # Reads a friend's team, taking only what this game's data knows.
@@ -258,7 +258,7 @@ module MGQ_MpBattlesPvp
     # @param text [String] The team, see build.
     # @return [Array<MGQ_MpActors::Builds::Member>] The members, none when nothing was readable.
     def self.parse(text)
-      MGQ_MpActors::Builds.parse(text, TEAM_SIZE)
+      MGQ_MpActors::Builds.parse(text, MGQ_MpCoopSquad::FRONTLINE)
     end
   end
 
@@ -276,12 +276,6 @@ module MGQ_MpBattlesPvp
 
     # The letter and plural mark the game gives monsters of the same name.
     attr_accessor :letter, :plural
-
-    # The world seat of the player who owns the character in a team duel, whose commands it takes.
-    attr_accessor :mp_seat
-
-    # The character's place among its owner's characters in a team duel.
-    attr_accessor :mp_place
 
     # Rebuilds a friend's character.
     #
@@ -356,13 +350,6 @@ module MGQ_MpBattlesPvp
     # @return [Integer] No hue change.
     def battler_hue
       0
-    end
-
-    # Tells whether the character is Luka.
-    #
-    # @return [Boolean] Never, Luka's mechanics (binding, giving up) belong to the player's Luka.
-    def luca?
-      false
     end
 
     # A stand-in for the monster data the battle's code reads of the enemy side.
@@ -729,7 +716,7 @@ module MGQ_MpBattlesPvp
   # outside of battle and at the first turn, every value that differs marked. Written anew for every
   # match.
   module MirrorReport
-    # File inside the Discord folder.
+    # File inside the mod folder.
     FILE = "Mirror Match.log"
 
     # Names of the extra rates, in the game's order.
@@ -1343,7 +1330,7 @@ class Window_PvpLobbyCommand < Window_Command
   #
   # @param y [Integer] The top edge, below the lines.
   def initialize(y)
-    @state = { "state" => "idle" }
+    @commands = MGQ_MpBattlesPvp::Lobby.commands_for("state" => "idle")
     super(0, y)
     self.x = (Graphics.width - width) / 2
   end
@@ -1362,7 +1349,7 @@ class Window_PvpLobbyCommand < Window_Command
     commands = MGQ_MpBattlesPvp::Lobby.commands_for(state)
     return if commands == @commands
 
-    @state = state
+    @commands = commands
     clear_command_list
     make_command_list
     self.height = window_height
@@ -1372,12 +1359,28 @@ class Window_PvpLobbyCommand < Window_Command
 
   # Lists the commands of the state.
   def make_command_list
-    @commands = MGQ_MpBattlesPvp::Lobby.commands_for(@state)
     @commands.each { |name, symbol| add_command(name, symbol) }
   end
 end
 
-# Game hooks.
+# Game hooks shared with other scripts, through mp_hooks.rbx.
+
+begin
+  # After the map's update, the key and the exchange. The game checks its own keys there too, only
+  # while no event, message or scene change is in the way.
+  MGQ_MpHooks.after(Scene_Map, :update_scene, "mp_battles_pvp") { MGQ_MpBattlesPvp.on_map unless scene_changing? }
+
+  # Before the title screen starts, a PvP battle a reset interrupted is forgotten. The title screen
+  # interrupts a battle only through a reset, which loads the game data anew.
+  MGQ_MpHooks.before(Scene_Title, :start, "mp_battles_pvp") { MGQ_MpBattlesPvp::Battle.forget }
+
+  # After the title screen's update, the last save loads once the player accepted a Discord invite.
+  MGQ_MpHooks.after(Scene_Title, :update, "mp_battles_pvp") { MGQ_MpBattlesPvp.on_title unless scene_changing? }
+rescue => e
+  MGQ_MpBattlesPvp.log("hooks FAILED: #{e.class}: #{e.message}")
+end
+
+# Game hooks of this script alone.
 #
 # Each wraps a game method: the original runs first unless said otherwise, and the mod's part never
 # raises.
@@ -1385,17 +1388,6 @@ end
 if MGQ_MpBattlesPvp.hookable?
   begin
     class Scene_Map
-      alias mgq_mp_battles_pvp_update_scene update_scene
-
-      # Updates the map, then checks for the key and the exchange.
-      #
-      # The game checks its own keys here too, only while no event, message or scene change is in
-      # the way.
-      def update_scene
-        mgq_mp_battles_pvp_update_scene
-        MGQ_MpBattlesPvp.on_map unless scene_changing?
-      end
-
       alias mgq_mp_battles_pvp_start start
 
       # Puts the game back after a PvP battle, then starts the map.
@@ -1407,31 +1399,7 @@ if MGQ_MpBattlesPvp.hookable?
       end
     end
   rescue => e
-    MGQ_MpBattlesPvp.log("map hooks FAILED: #{e.class}: #{e.message}")
-  end
-
-  begin
-    class Scene_Title
-      alias mgq_mp_battles_pvp_start start
-
-      # Forgets a PvP battle a reset interrupted, then starts the title screen.
-      #
-      # The title screen interrupts a battle only through a reset, which loads the game data anew.
-      def start
-        MGQ_MpBattlesPvp::Battle.forget
-        mgq_mp_battles_pvp_start
-      end
-
-      alias mgq_mp_battles_pvp_update update
-
-      # Updates the title screen, then loads the last save once the player accepted a Discord invite.
-      def update
-        mgq_mp_battles_pvp_update
-        MGQ_MpBattlesPvp.on_title unless scene_changing?
-      end
-    end
-  rescue => e
-    MGQ_MpBattlesPvp.log("title hook FAILED: #{e.class}: #{e.message}")
+    MGQ_MpBattlesPvp.log("map hook FAILED: #{e.class}: #{e.message}")
   end
 
   begin

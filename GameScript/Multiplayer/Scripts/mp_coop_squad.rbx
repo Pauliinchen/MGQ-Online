@@ -2,6 +2,8 @@
 #  mp_coop_squad.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-02: Installed the hooks on the game's plugins through mp_hooks.rbx
+#                            - Took whether the player plays in a party from mp_coop.rbx, and dropped squad, which co-op battles count otherwise
 #      Paulinchen  2026-10-01: Created
 #
 #----------------------------------------------------------------
@@ -46,16 +48,6 @@ module MGQ_MpCoopSquad
   @shown = nil
   @monochrome = {}
 
-  # Reports whether the hooks can be installed.
-  #
-  # A second copy of this script would wrap the same methods under the same names, and each hook
-  # would then call itself until the stack overflows.
-  #
-  # @return [Boolean] false when the hooks are in place already.
-  def self.hookable?
-    !SceneManager.respond_to?(:mgq_mp_coop_squad_run)
-  end
-
   # Writes a line to the mod's InGame.log.
   #
   # @param message [String] The line.
@@ -94,18 +86,11 @@ module MGQ_MpCoopSquad
     players.sort_by { |id, leads| [leads ? 0 : 1, id.to_s] }.map { |id, _| id.to_s }
   end
 
-  # Reports whether the player plays in a party of an open world with someone else in it.
-  #
-  # @return [Boolean] Whether they do.
-  def self.in_party?
-    MGQ_MpOverworldSync.in_world? && !MGQ_MpCoop::Party.id.nil? && !MGQ_MpCoop::Party.members.empty?
-  end
-
   # Tells the player's squad in their party.
   #
   # @return [Array<Integer>, nil] The Frontline's and the Backline's share, nil outside a party.
   def self.own_share
-    return nil unless in_party?
+    return nil unless MGQ_MpCoop.in_party?
 
     party = MGQ_MpCoop::Party
     leader = party.leader
@@ -122,20 +107,12 @@ module MGQ_MpCoopSquad
     $game_party.all_members.select(&:exist?)
   end
 
-  # Lists the player's squad: the characters a co-op battle brings.
-  #
-  # @return [Array<Game_Actor>] The squad, the whole team outside a party.
-  def self.squad
-    front, bench = own_share
-    front ? own_order.first(front + bench) : own_order
-  end
-
   # Tells where a character stands in the player's squad.
   #
   # @param actor [Game_Actor, nil] The character.
   # @return [Symbol, nil] :front, :bench or :cut, nil outside a party or for no character.
   def self.place_of(actor)
-    return nil unless actor && in_party?
+    return nil unless actor && MGQ_MpCoop.in_party?
 
     index = own_order.index(actor)
     index ? place_at(index) : :cut
@@ -158,7 +135,7 @@ module MGQ_MpCoopSquad
   #
   # @return [Integer] ACTIVE_FRONTLINE or LEADERS_ONLY.
   def self.mode
-    leader = in_party? ? MGQ_MpCoop::Party.leader : :me
+    leader = MGQ_MpCoop.in_party? ? MGQ_MpCoop::Party.leader : :me
     value = leader == :me || leader.nil? ? own_mode : leader.state["follow"]
     value.to_s == LEADERS_ONLY.to_s ? LEADERS_ONLY : ACTIVE_FRONTLINE
   end
@@ -225,7 +202,7 @@ module MGQ_MpCoopSquad
   #
   # @return [String] Each follower's sprite and index, "name*index" joined by "|".
   def self.trail
-    return "" unless in_party? && $game_player
+    return "" unless MGQ_MpCoop.in_party? && $game_player
 
     shown = []
     $game_player.followers.each do |follower|
@@ -271,7 +248,7 @@ module MGQ_MpCoopSquad
     menu = config.const_defined?(:MOD_CONTENTS) ? config::MOD_CONTENTS : config::CONTENTS
     menu.insert(-2, :key => FOLLOWERS, :name => "[Monster Girl Quest! Online] Party Followers", :sub => true,
                     :help => "Who walks behind the players of a party. The party's leader decides for everyone.\r\n←/→ Toggle",
-                    :enable => lambda { !in_party? || MGQ_MpCoop::Party.leader == :me })
+                    :enable => lambda { !MGQ_MpCoop.in_party? || MGQ_MpCoop::Party.leader == :me })
     config::DATA[FOLLOWERS] = FOLLOWER_VALUES.keys
     config::DATA_TEXT[FOLLOWERS] = {}
     FOLLOWER_VALUES.each { |value, (label, text)| config::DATA_TEXT[FOLLOWERS][value] = { :name => label, :help => text } }
@@ -400,7 +377,7 @@ module MGQ_MpCoopSquad
       #
       # @param index [Integer] The row.
       def draw_item(index)
-        place = MGQ_MpCoopSquad.in_party? ? mgq_mp_coop_squad_place(index) : nil
+        place = MGQ_MpCoop.in_party? ? mgq_mp_coop_squad_place(index) : nil
         @mgq_mp_coop_squad_place = place
         mgq_mp_coop_squad_draw_item(index)
         return unless place == :cut && index > 0 && mgq_mp_coop_squad_place(index - 1) != :cut
@@ -456,22 +433,11 @@ rescue => e
   MGQ_MpCoopSquad.log("option FAILED: #{e.class}: #{e.message}")
 end
 
-# Game hooks.
-#
-# Each wraps a game method: the original runs first, and the mod's part never raises.
+# Game hooks, through mp_hooks.rbx.
 
-if MGQ_MpCoopSquad.hookable?
-  begin
-    class << SceneManager
-      alias mgq_mp_coop_squad_run run
-
-      # Installs the hooks on the game's plugins, then runs the game.
-      def run
-        MGQ_MpCoopSquad.install
-        mgq_mp_coop_squad_run
-      end
-    end
-  rescue => e
-    MGQ_MpCoopSquad.log("SceneManager hook FAILED: #{e.class}: #{e.message}")
-  end
+begin
+  # Installs the hooks on the game's plugins as the game starts running.
+  MGQ_MpHooks.before(SceneManager.singleton_class, :run, "mp_coop_squad") { MGQ_MpCoopSquad.install }
+rescue => e
+  MGQ_MpCoopSquad.log("SceneManager hook FAILED: #{e.class}: #{e.message}")
 end

@@ -2,7 +2,10 @@
 #  mp_coop_events.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-02: Started no random encounter for a member the leader's story scene is about to bring over
+#      Paulinchen  2026-10-02: Held event commands and followed the map's update through mp_hooks.rbx
+#                            - Took whether the player plays in a party, and an event's page, from mp_coop.rbx
+#                            - Told the kinds of item a chest gives by their class alone
+#                            - Started no random encounter for a member the leader's story scene is about to bring over
 #      Paulinchen  2026-10-01: Sorted event pages by the branches that can run now, so an exit counts as story only while its story warning shows
 #                            - Let exits that only note a flag on the way stay travel, so a member leaves a town in their own game
 #                            - Shortened a member's time before the leader's story scene brings them over to five seconds
@@ -81,10 +84,7 @@ module MGQ_MpCoopEvents
   # How deep called common events are followed.
   MAX_DEPTH = 5
 
-  # The kinds of item a chest gives, by the letter a message writes them with.
-  ITEM_KINDS = ["i", "w", "a"]
-
-  # The class of each kind of item.
+  # The class of each kind of item a chest gives, by the letter a message writes it with.
   ITEM_CLASSES = { "i" => RPG::Item, "w" => RPG::Weapon, "a" => RPG::Armor }
 
   # Frames a member gets to finish what they do before a story scene brings them to the leader,
@@ -129,19 +129,12 @@ module MGQ_MpCoopEvents
   rescue
   end
 
-  # Reports whether the player is in a party of an open world.
-  #
-  # @return [Boolean] Whether they are.
-  def self.in_party?
-    defined?(MGQ_MpOverworldSync) && MGQ_MpOverworldSync.in_world? && defined?(MGQ_MpCoop) && !MGQ_MpCoop::Party.id.nil?
-  end
-
   # Sorts an event's current page, by what of it can run now.
   #
   # @param event [Game_Event] The event.
   # @return [Symbol] :talk, :travel, :chest, :battle or :story; :talk for an event without a page.
   def self.kind(event)
-    return :talk if event.mgq_mp_coop_events_page < 0
+    return :talk if event.mgq_mp_page < 0
 
     exit?(event) ? :travel : kind_of(event.list || [])
   end
@@ -388,7 +381,7 @@ module MGQ_MpCoopEvents
     event = event_id > 0 ? $game_map.events[event_id] : nil
     @telling = leading? && (event ? kind(event) : kind_of(list || [])) == :story
     hold(interpreter) if @telling && scene?(list) && !gathered?
-    @chest = event && kind(event) == :chest && in_party? ? { :interpreter => interpreter, :key => chest_key(event), :gains => [] } : nil
+    @chest = event && kind(event) == :chest && MGQ_MpCoop.in_party? ? { :interpreter => interpreter, :key => chest_key(event), :gains => [] } : nil
   end
 
   # Reports whether a list of commands is a story scene: story with its own dialogue or novel scene.
@@ -408,11 +401,11 @@ module MGQ_MpCoopEvents
     @telling && $game_map && $game_map.interpreter.running? ? true : false
   end
 
-  # Finds the leader of the player's party, through mp_actions.rbx.
+  # Finds the leader of the player's party, through mp_coop.rbx.
   #
   # @return [MGQ_MpOverworldSync::Peers::Peer, Symbol, nil] The leader, :me for the player, nil outside a party.
   def self.leader
-    in_party? ? MGQ_MpCoop::Party.leader : nil
+    MGQ_MpCoop.in_party? ? MGQ_MpCoop::Party.leader : nil
   end
 
   # Reports whether the player leads a party with other members in it.
@@ -782,7 +775,7 @@ module MGQ_MpCoopEvents
   # pages the leader moved past meanwhile.
   def self.show_heard
     return if @heard.nil? || @heard.empty? || !free?
-    return @heard.clear unless in_party?
+    return @heard.clear unless MGQ_MpCoop.in_party?
 
     @heard.shift while !@heard.empty? && done?(@heard.first[:page])
     return if @heard.empty?
@@ -808,7 +801,7 @@ module MGQ_MpCoopEvents
 
     map_id, x, y, direction = place
     @gather = nil
-    return unless in_party?
+    return unless MGQ_MpCoop.in_party?
 
     if map_id == $game_map.map_id
       $game_player.moveto(x, y)
@@ -846,7 +839,7 @@ module MGQ_MpCoopEvents
   # @param item [RPG::BaseItem, nil] The item.
   # @param amount [Integer] How many.
   def self.gained_item(item, amount)
-    kind = ITEM_KINDS.find { |letter| item.is_a?(ITEM_CLASSES[letter]) }
+    kind = ITEM_CLASSES.keys.find { |letter| item.is_a?(ITEM_CLASSES[letter]) }
     gained(kind, item.id, amount) if kind
   rescue => e
     log("keeping an item failed: #{e.class}: #{e.message}")
@@ -869,7 +862,7 @@ module MGQ_MpCoopEvents
 
     chest = @chest
     @chest = nil
-    return unless chest[:key] && in_party?
+    return unless chest[:key] && MGQ_MpCoop.in_party?
 
     MGQ_MpCoopStory.keep_own_self_switch(chest[:key], true) if defined?(MGQ_MpCoopStory)
     gains = chest[:gains].map { |kind, id, amount| "#{kind}#{id}x#{amount}" }.join(",")
@@ -949,22 +942,32 @@ rescue => e
   MGQ_MpCoopEvents.log("co-op FAILED: #{e.class}: #{e.message}")
 end
 
-# Game hooks.
+# Game hooks shared with other scripts, through mp_hooks.rbx.
+
+begin
+  # Before an event command runs, its interpreter waits while the leader's story scene waits for
+  # the party.
+  MGQ_MpHooks.before(Game_Interpreter, :execute_command, "mp_coop_events") do
+    begin
+      Fiber.yield while MGQ_MpCoopEvents.holding?(self)
+    rescue FiberError
+      # An interpreter run outside a fiber cannot wait, so its command runs at once.
+    end
+  end
+
+  # After the map's update, the player is brought to the leader's story scene when they are free.
+  MGQ_MpHooks.after(Game_Map, :update, "mp_coop_events") { MGQ_MpCoopEvents.update }
+rescue => e
+  MGQ_MpCoopEvents.log("hooks FAILED: #{e.class}: #{e.message}")
+end
+
+# Game hooks of this script alone.
 #
 # Each wraps a game method: the original runs first unless said otherwise, and the mod's part never
 # raises.
 
 if MGQ_MpCoopEvents.hookable?
   begin
-    class Game_Event
-      # Tells which page the event shows.
-      #
-      # @return [Integer] The page's index, -1 for none.
-      def mgq_mp_coop_events_page
-        @page ? @event.pages.index(@page).to_i : -1
-      end
-    end
-
     class Game_Interpreter
       alias mgq_mp_coop_events_setup setup
       alias mgq_mp_coop_events_run run
@@ -1028,24 +1031,6 @@ if MGQ_MpCoopEvents.hookable?
     end
   rescue => e
     MGQ_MpCoopEvents.log("interpreter hooks FAILED: #{e.class}: #{e.message}")
-  end
-
-  begin
-    class Game_Interpreter
-      alias mgq_mp_coop_events_execute_command execute_command
-
-      # Runs an event command, first waiting while the leader's story scene waits for the party.
-      def execute_command
-        begin
-          Fiber.yield while MGQ_MpCoopEvents.holding?(self)
-        rescue FiberError
-          # An interpreter run outside a fiber cannot wait, so its command runs at once.
-        end
-        mgq_mp_coop_events_execute_command
-      end
-    end
-  rescue => e
-    MGQ_MpCoopEvents.log("story hold hook FAILED: #{e.class}: #{e.message}")
   end
 
   begin
@@ -1120,22 +1105,6 @@ if MGQ_MpCoopEvents.hookable?
     end
   rescue => e
     MGQ_MpCoopEvents.log("story block hooks FAILED: #{e.class}: #{e.message}")
-  end
-
-  begin
-    class Game_Map
-      alias mgq_mp_coop_events_update update
-
-      # Updates the map, then brings the player to the leader's story scene when they are free.
-      #
-      # @param args [Array] The original's arguments.
-      def update(*args)
-        mgq_mp_coop_events_update(*args)
-        MGQ_MpCoopEvents.update
-      end
-    end
-  rescue => e
-    MGQ_MpCoopEvents.log("map hook FAILED: #{e.class}: #{e.message}")
   end
 
   begin

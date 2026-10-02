@@ -2,6 +2,7 @@
 #  mp_chat.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-02: Followed the map and its sprites through mp_hooks.rbx
 #      Paulinchen  2026-10-01: Let the chat box and the chat log work in battles, above the battle's windows
 #                            - Showed the game's own lines in the chat log, such as a player leaving a battle
 #      Paulinchen  2026-09-30: Created
@@ -276,7 +277,7 @@ module MGQ_MpChat
   #
   # @return [Boolean] false when the hooks are in place already.
   def self.hookable?
-    !Spriteset_Map.method_defined?(:mgq_mp_chat_update)
+    !Scene_Battle.method_defined?(:mgq_mp_chat_update_basic)
   end
 
   # Writes a line to the mod's InGame.log.
@@ -296,7 +297,8 @@ module MGQ_MpChat
 
   # Tells every other game of the world something, through mp_overworld_sync.rbx.
   #
-  # @param fields [Hash] The message's fields, which must leave out "map", since that marks a state.
+  # @param fields [Hash] The message's fields, which must leave out MGQ_MpOverworldSync::STATE_FIELD,
+  #   since that marks a state.
   # @return [Boolean] Whether it went out.
   def self.tell(fields)
     MGQ_MpOverworldSync::Link.send_to(-1, MGQ_MpOverworldSync::Me.encode(fields))
@@ -550,7 +552,6 @@ class Sprite_MpChatLog < Sprite
   end
 end
 
-
 # What this script takes part in of the world's messages, through mp_overworld_sync.rbx.
 
 begin
@@ -561,83 +562,52 @@ rescue => e
   MGQ_MpChat.log("overworld sync FAILED: #{e.class}: #{e.message}")
 end
 
-# Game hooks.
+# Game hooks shared with other scripts, through mp_hooks.rbx.
+
+begin
+  # After the map's update, the chat box. The game checks its own keys there too, only while no
+  # scene change is in the way.
+  MGQ_MpHooks.after(Scene_Map, :update_scene, "mp_chat") { MGQ_MpChat.on_map unless scene_changing? }
+
+  # After the map's sprites, the chat log and a bubble per player with a recent chat line, above
+  # them while they are on this map.
+  MGQ_MpHooks.after(Spriteset_Map, :update, "mp_chat") do
+    @mgq_mp_chat_log ||= Sprite_MpChatLog.new(@viewport3)
+    @mgq_mp_chat_log.update
+    @mgq_mp_bubbles ||= {}
+    chat = MGQ_MpChat
+    senders = chat.in_world? ? chat.senders : []
+    (@mgq_mp_bubbles.keys - senders).each { |sender| @mgq_mp_bubbles.delete(sender).dispose }
+
+    senders.each do |sender|
+      bubble = @mgq_mp_bubbles[sender] ||= Sprite_MpChatBubble.new(@viewport1)
+      if sender == :me
+        character, lift = $game_player, Sprite_MpChatBubble::OWN_LIFT
+        character = nil if MGQ_MpActions::Wheel.open?
+      else
+        peer = MGQ_MpOverworldSync::Peers.at(sender)
+        character, lift = peer && peer.ghost, Sprite_MpChatBubble::GHOST_LIFT
+      end
+
+      shown = character && !character.transparent
+      bubble.show(shown ? chat.bubble(sender) : nil, shown ? character.screen_x : 0, shown ? character.screen_y - lift : 0)
+    end
+  end
+
+  MGQ_MpHooks.before(Spriteset_Map, :dispose, "mp_chat") do
+    @mgq_mp_chat_log.dispose if @mgq_mp_chat_log
+    (@mgq_mp_bubbles || {}).each_value { |sprite| sprite.dispose }
+    @mgq_mp_chat_log = @mgq_mp_bubbles = nil
+  end
+rescue => e
+  MGQ_MpChat.log("hooks FAILED: #{e.class}: #{e.message}")
+end
+
+# Game hooks of this script alone.
 #
 # Each wraps a game method: the original runs first, and the mod's part never raises.
 
 if MGQ_MpChat.hookable?
-  begin
-    class Scene_Map
-      alias mgq_mp_chat_update_scene update_scene
-
-      # Updates the map, then the chat box.
-      #
-      # The game checks its own keys here too, only while no scene change is in the way.
-      def update_scene
-        mgq_mp_chat_update_scene
-        MGQ_MpChat.on_map unless scene_changing?
-      end
-    end
-  rescue => e
-    MGQ_MpChat.log("map key hook FAILED: #{e.class}: #{e.message}")
-  end
-
-  begin
-    class Spriteset_Map
-      alias mgq_mp_chat_update update
-      alias mgq_mp_chat_dispose dispose
-
-      # Updates the map's sprites, then the chat log and the chat bubbles.
-      def update
-        mgq_mp_chat_update
-        mgq_mp_chat_update_sprites
-      end
-
-      # Keeps the chat log and a bubble per player with a recent chat line.
-      def mgq_mp_chat_update_sprites
-        @mgq_mp_chat_log ||= Sprite_MpChatLog.new(@viewport3)
-        @mgq_mp_chat_log.update
-        mgq_mp_chat_update_bubbles
-      rescue => e
-        MGQ_MpChat.log("chat sprites failed: #{e.class}: #{e.message}") unless @mgq_mp_chat_failed
-        @mgq_mp_chat_failed = true
-      end
-
-      # Keeps a bubble per player with a recent chat line, above them while they are on this map.
-      def mgq_mp_chat_update_bubbles
-        @mgq_mp_bubbles ||= {}
-        chat = MGQ_MpChat
-        senders = MGQ_MpChat.in_world? ? chat.senders : []
-        (@mgq_mp_bubbles.keys - senders).each { |sender| @mgq_mp_bubbles.delete(sender).dispose }
-
-        senders.each do |sender|
-          bubble = @mgq_mp_bubbles[sender] ||= Sprite_MpChatBubble.new(@viewport1)
-          if sender == :me
-            character, lift = $game_player, Sprite_MpChatBubble::OWN_LIFT
-            character = nil if MGQ_MpActions::Wheel.open?
-          else
-            peer = MGQ_MpOverworldSync::Peers.at(sender)
-            character, lift = peer && peer.ghost, Sprite_MpChatBubble::GHOST_LIFT
-          end
-
-          shown = character && !character.transparent
-          bubble.show(shown ? chat.bubble(sender) : nil, shown ? character.screen_x : 0, shown ? character.screen_y - lift : 0)
-        end
-      end
-
-
-      # Frees the chat log and the bubbles, then the map's sprites.
-      def dispose
-        @mgq_mp_chat_log.dispose if @mgq_mp_chat_log
-        (@mgq_mp_bubbles || {}).each_value { |sprite| sprite.dispose }
-        @mgq_mp_chat_log = @mgq_mp_bubbles = nil
-        mgq_mp_chat_dispose
-      end
-    end
-  rescue => e
-    MGQ_MpChat.log("sprite hooks FAILED: #{e.class}: #{e.message}")
-  end
-
   begin
     class Scene_Battle
       alias mgq_mp_chat_update_basic update_basic

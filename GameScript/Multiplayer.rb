@@ -2,6 +2,7 @@
 #  Multiplayer.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-02: Loaded mp_hooks.rbx first and followed Graphics.update and SceneManager.run through it
 #      Paulinchen  2026-10-01: Loaded mp_coop_squad.rbx after mp_coop.rbx
 #                            - Loaded mp_battles_duel.rbx and mp_battles_team.rbx after the PvP battles, and mp_world_overview.rbx last
 #                            - Added Mouse, where the mouse points on the game's screen and its left button
@@ -46,11 +47,11 @@ module MGQ_Multiplayer
   # The mod's other scripts in SCRIPTS_DIR, in the order they load.
   #
   # A script may use only what loaded before it while it loads, such as mp_actors.rbx's
-  # Game_MpActor, or mp_overworld_sync.rbx and mp_coop.rbx, which the scripts after them register
-  # with. The battle scripts install their battle hooks once the game runs, the last loaded first,
-  # so their order decides how those hooks wrap each other.
+  # Game_MpActor, or mp_hooks.rbx, mp_overworld_sync.rbx and mp_coop.rbx, which the scripts after
+  # them register with. The battle scripts install their battle hooks once the game runs, the last
+  # loaded first, so their order decides how those hooks wrap each other.
   SCRIPTS = %w[
-    mp_actors mp_async mp_overworld_sync mp_actions mp_chat mp_overworld
+    mp_hooks mp_actors mp_async mp_overworld_sync mp_actions mp_chat mp_overworld
     mp_coop mp_coop_squad mp_coop_events mp_coop_npcs mp_coop_story
     mp_save_distribution mp_world
     mp_battles mp_battles_coop mp_battles_sync mp_battles_pvp mp_battles_duel mp_battles_team
@@ -71,16 +72,6 @@ module MGQ_Multiplayer
 
   # What the game says wherever the player tries to use the mod once a newer release is out.
   UPDATE_MESSAGE = "A Monster Girl Quest! Online update is out. Close the game and run Patch\\Multiplayer\\Update.bat to update."
-
-  # Reports whether the hooks can be installed.
-  #
-  # A second copy of this script would wrap the same methods under the same names, and each hook
-  # would then call itself until the stack overflows.
-  #
-  # @return [Boolean] false when the hooks are in place already.
-  def self.hookable?
-    !SceneManager.respond_to?(:mgq_multiplayer_run)
-  end
 
   # Tells whether the mod can run.
   #
@@ -803,46 +794,21 @@ module MGQ_Multiplayer
 end
 
 MGQ_Multiplayer.start
-
-# Game hooks.
-#
-# Each wraps a game method: the original runs first, its result is returned unchanged, and the
-# mod's part never raises.
-
-if MGQ_Multiplayer.hookable?
-  begin
-    class << Graphics
-      alias mgq_multiplayer_graphics_update update
-
-      # Draws the frame, then tells the Discord mod how the connection stands and polls for an update.
-      #
-      # Graphics.update runs every frame in every scene, so both happen wherever the player is.
-      def update
-        mgq_multiplayer_graphics_update
-        MGQ_Multiplayer::Discord.tick
-        MGQ_Multiplayer::UpdateCheck.tick
-      end
-    end
-  rescue => e
-    MGQ_Multiplayer::Log.write("Graphics hook FAILED: #{e.class}: #{e.message}")
-  end
-
-  begin
-    class << SceneManager
-      alias mgq_multiplayer_run run
-
-      # Guards the input, then runs the game.
-      #
-      # The game's plugins load after the Patch folder, the gamepad one wrapping Input, so the
-      # guard wraps Input once every plugin is in.
-      def run
-        MGQ_Multiplayer::Background.guard_input rescue nil
-        mgq_multiplayer_run
-      end
-    end
-  rescue => e
-    MGQ_Multiplayer::Log.write("SceneManager hook FAILED: #{e.class}: #{e.message}")
-  end
-end
-
 MGQ_Multiplayer.load_scripts
+
+# Game hooks, through mp_hooks.rbx.
+
+begin
+  # After every frame, tells the Discord mod how the connection stands and polls for an update.
+  # Graphics.update runs every frame in every scene, so both happen wherever the player is.
+  MGQ_MpHooks.after(Graphics.singleton_class, :update, "Multiplayer") do
+    MGQ_Multiplayer::Discord.tick
+    MGQ_Multiplayer::UpdateCheck.tick
+  end
+
+  # Guards the input as the game starts running. The game's plugins load after the Patch folder,
+  # the gamepad one wrapping Input, so the guard wraps Input once every plugin is in.
+  MGQ_MpHooks.before(SceneManager.singleton_class, :run, "Multiplayer") { MGQ_Multiplayer::Background.guard_input }
+rescue => e
+  MGQ_Multiplayer::Log.write("hooks FAILED: #{e.class}: #{e.message}")
+end

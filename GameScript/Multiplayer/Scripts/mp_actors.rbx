@@ -2,6 +2,7 @@
 #  mp_actors.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-02: Kept the owner's seat and place, and that no rebuilt character is Luka, in Game_MpActor for both sides
 #      Paulinchen  2026-09-30: Moved into Patch/Multiplayer/Scripts as mp_actors.rbx, which Multiplayer.rb loads
 #                            - Cleared a rebuilt character's actions, so a pre-battle spell finds its chain input set
 #                            - Created
@@ -9,8 +10,8 @@
 #----------------------------------------------------------------
 
 # Characters of another game: their builds written as plain numbers, and rebuilt from those as real
-# characters of this game. PvP battles rebuild a friend's team with them; co-op battles will rebuild
-# the party members' characters, so balancing them happens in one place.
+# characters of this game. PvP battles rebuild a friend's team with them, and co-op battles the
+# party members' characters, so balancing them happens in one place.
 module MGQ_MpActors
   # Writes a line to the mod's InGame.log.
   #
@@ -439,6 +440,16 @@ class Game_MpActor < Game_Actor
     :love => :ACTOR_LOVE,
   }
 
+  # The world seat of the player who owns the character, in a battle over the world's room.
+  #
+  # @return [Integer, nil] The seat, nil elsewhere.
+  attr_accessor :mp_seat
+
+  # The character's place among its owner's characters, in a battle over the world's room.
+  #
+  # @return [Integer, nil] The place, nil elsewhere.
+  attr_accessor :mp_place
+
   # Rebuilds a character of another game.
   #
   # @param member [MGQ_MpActors::Builds::Member] The character's build.
@@ -455,6 +466,13 @@ class Game_MpActor < Game_Actor
   # @return [String] The character's name with its owner's, like "Alice (<player>)".
   def name
     "#{actor.name} (#{@player})"
+  end
+
+  # Tells whether the character is Luka.
+  #
+  # @return [Boolean] Never; Luka's mechanics, binding and giving up, belong to the player's own Luka.
+  def luca?
+    false
   end
 
   # Has the extra accessory slot when the owner's game had it. The game reads a switch of the

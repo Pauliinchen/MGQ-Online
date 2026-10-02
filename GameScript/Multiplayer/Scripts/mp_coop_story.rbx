@@ -2,6 +2,7 @@
 #  mp_coop_story.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-02: Followed the map's update through mp_hooks.rbx
 #      Paulinchen  2026-10-01: Kept the places of the player's party their own, so the leader's fewer never cut it
 #      Paulinchen  2026-09-30: Sent and took the party's messages through mp_coop.rbx, which drops those of another party
 #                            - Registered with mp_overworld_sync.rbx for its messages instead of being asked by mp_overworld.rbx
@@ -84,7 +85,7 @@ module MGQ_MpCoopStory
     !@own.nil?
   end
 
-  # Finds the leader of the player's party, through mp_actions.rbx.
+  # Finds the leader of the player's party, through mp_coop.rbx.
   #
   # @return [MGQ_MpOverworldSync::Peers::Peer, Symbol, nil] The leader, :me for the player, nil outside a party.
   def self.leader
@@ -169,7 +170,7 @@ module MGQ_MpCoopStory
   # Sends a message about the story to one member or to the whole party.
   #
   # @param seat [Integer] The member's seat, -1 for everyone, who ignore it outside the party.
-  # @param kind [String] "ask", "full" or "delta".
+  # @param kind [String] "ask", "full", "delta" or "recruit".
   # @param fields [Hash] The message's other fields.
   # @return [Boolean] Whether it went out.
   def self.tell(seat, kind, fields)
@@ -545,7 +546,16 @@ rescue => e
   MGQ_MpCoopStory.log("co-op FAILED: #{e.class}: #{e.message}")
 end
 
-# Game hooks.
+# Game hooks shared with other scripts, through mp_hooks.rbx.
+
+begin
+  # After the map's update, the party's story.
+  MGQ_MpHooks.after(Game_Map, :update, "mp_coop_story") { MGQ_MpCoopStory.update }
+rescue => e
+  MGQ_MpCoopStory.log("map hook FAILED: #{e.class}: #{e.message}")
+end
+
+# Game hooks of this script alone.
 #
 # Each wraps a game method: the original runs first unless said otherwise, and the mod's part never
 # raises.
@@ -571,22 +581,6 @@ if MGQ_MpCoopStory.hookable?
     end
   rescue => e
     MGQ_MpCoopStory.log("data access FAILED: #{e.class}: #{e.message}")
-  end
-
-  begin
-    class Game_Map
-      alias mgq_mp_coop_story_update update
-
-      # Updates the map, then the party's story.
-      #
-      # @param args [Array] The original's arguments.
-      def update(*args)
-        mgq_mp_coop_story_update(*args)
-        MGQ_MpCoopStory.update
-      end
-    end
-  rescue => e
-    MGQ_MpCoopStory.log("map hook FAILED: #{e.class}: #{e.message}")
   end
 
   begin

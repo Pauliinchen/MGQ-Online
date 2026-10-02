@@ -2,7 +2,9 @@
 #  mp_world.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-02: Let the creator tick Players choose, after which each new player starts at the beginning, from one of their own saves or from the starting save
+#      Paulinchen  2026-10-02: Followed the title screen's start and update through mp_hooks.rbx
+#                            - Put the Save folder back in one place as a world closes
+#                            - Let the creator tick Players choose, after which each new player starts at the beginning, from one of their own saves or from the starting save
 #      Paulinchen  2026-10-01: Said that the relay's admins see hidden worlds too
 #      Paulinchen  2026-09-30: Let the relay's admins see every world, hidden ones too, and delete any
 #                            - Moved into Patch/Multiplayer/Scripts as mp_world.rbx, which Multiplayer.rb loads, with the worlds in Patch/Multiplayer/Worlds
@@ -12,7 +14,7 @@
 #                            - Made and joined worlds through forms at the right of the world screen, typed in place, and made hidden worlds, joined by their id
 #      Paulinchen  2026-09-29: Listed the relay's worlds with their players, favourites first, entered with a password once and typed names on the keyboard
 #                            - Let the creator delete a world or remove a player, and connected to a world while it is open
-#      Paulinchen  2026-09-29: Created
+#                            - Created
 #
 #----------------------------------------------------------------
 
@@ -57,6 +59,12 @@ module MGQ_MpWorld
   # A world's id, which joins a hidden world.
   WORLD_ID = /\A[0-9a-f]{32}\z/
 
+  # The buttons whose press, in a frame no key went down, tells a gamepad from the keyboard.
+  #
+  # Directions count by their first frame only, since an arrow key held down reports its
+  # direction in later frames too.
+  GAMEPAD_BUTTONS = [:C, :B, :A, :UP, :DOWN, :LEFT, :RIGHT]
+
   # Reports whether the hooks can be installed.
   #
   # A second copy of this script would wrap the same methods under the same names, and each hook
@@ -64,7 +72,7 @@ module MGQ_MpWorld
   #
   # @return [Boolean] false when the hooks are in place already.
   def self.hookable?
-    !Scene_Title.method_defined?(:mgq_mp_world_start)
+    !Scene_Title.method_defined?(:mgq_mp_world_terminate)
   end
 
   # Tells whether worlds can be used.
@@ -112,12 +120,6 @@ module MGQ_MpWorld
   def self.text_result=(result)
     @text_result = result
   end
-
-  # The buttons whose press, in a frame no key went down, tells a gamepad from the keyboard.
-  #
-  # Directions count by their first frame only, since an arrow key held down reports its
-  # direction in later frames too.
-  GAMEPAD_BUTTONS = [:C, :B, :A, :UP, :DOWN, :LEFT, :RIGHT]
 
   # Reports whether a button or direction was pressed this frame, which only a gamepad does in a
   # frame no key went down.
@@ -734,7 +736,6 @@ module MGQ_MpWorld
       return unless @own
 
       DataManager.save_system
-      Files.root = nil
       $game_library, $game_system_switches, $game_global_system, count = @own
       DataManager.instance_variable_set(:@system_save_count, count)
       @own = nil
@@ -2286,7 +2287,23 @@ class Window_MpTextInput < Window_NameInput
   end
 end
 
-# Game hooks.
+# Game hooks shared with other scripts, through mp_hooks.rbx.
+
+begin
+  # Before the title screen starts, a world the game came back from closes.
+  MGQ_MpHooks.before(Scene_Title, :start, "mp_world") { MGQ_MpWorld.on_title_start }
+
+  # After the title screen's update, a new game starts in a world the world screen opened, and the
+  # update notice shows.
+  MGQ_MpHooks.after(Scene_Title, :update, "mp_world") do
+    MGQ_MpWorld.on_title_update(self) unless scene_changing?
+    MGQ_MpWorld::UpdateNotice.refresh
+  end
+rescue => e
+  MGQ_MpWorld.log("title hooks FAILED: #{e.class}: #{e.message}")
+end
+
+# Game hooks of this script alone.
 #
 # Each wraps a game method: the original runs first unless said otherwise, and the mod's part never
 # raises.
@@ -2323,14 +2340,6 @@ if MGQ_MpWorld.hookable?
     end
 
     class Scene_Title
-      alias mgq_mp_world_start start
-
-      # Closes a world the game came back from, then starts the title screen.
-      def start
-        MGQ_MpWorld.on_title_start rescue nil
-        mgq_mp_world_start
-      end
-
       alias mgq_mp_world_create_command_window create_command_window
 
       # Creates the title screen's commands, Multiplayer among them.
@@ -2343,16 +2352,6 @@ if MGQ_MpWorld.hookable?
       def mgq_mp_world_command
         close_command_window
         SceneManager.call(Scene_MpWorlds)
-      end
-
-      alias mgq_mp_world_update update
-
-      # Updates the title screen, then starts a new game in a world the world screen opened and
-      # shows the update notice.
-      def update
-        mgq_mp_world_update
-        MGQ_MpWorld.on_title_update(self) unless scene_changing?
-        MGQ_MpWorld::UpdateNotice.refresh rescue nil
       end
 
       alias mgq_mp_world_terminate terminate

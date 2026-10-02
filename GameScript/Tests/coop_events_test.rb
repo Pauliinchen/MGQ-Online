@@ -2,7 +2,8 @@
 #  coop_events_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-02: Checked that no random encounter starts for a member the story scene is about to bring over
+#      Paulinchen  2026-10-02: Gave the stand-ins the party check and the event page that mp_coop.rbx now holds
+#                            - Checked that no random encounter starts for a member the story scene is about to bring over
 #      Paulinchen  2026-10-01: Checked that a page counts only the branches that can run now
 #                            - Checked that exits noting a flag on the way are travel, and that members come over after five seconds
 #                            - Checked that only the leader moves the story dialogue on, and the Pocket Castle's residents sorted as talks
@@ -41,6 +42,7 @@ module MGQ_MpCoop
     def self.members; $members; end
     def self.member?(state); state["party"] == $party; end
   end
+  def self.in_party?; !$party.nil? && !Array($members).empty?; end
 end
 module RPG
   class BaseItem; attr_accessor :id, :name; def initialize(id, name); @id, @name = id, name; end; end
@@ -139,6 +141,7 @@ class Game_Event
   def start; @starting = true; @locked = true; end
   def clear_starting_flag; @starting = false; end
   def unlock; @locked = false; end
+  def mgq_mp_page; @page ? @event.pages.index(@page).to_i : -1; end
 end
 class Game_Map
   attr_accessor :map_id, :events, :need_refresh, :interpreter, :started

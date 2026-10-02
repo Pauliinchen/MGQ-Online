@@ -2,6 +2,8 @@
 #  mp_async.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-02: Held event commands through mp_hooks.rbx
+#                            - Asked behind? directly where the live map is decided
 #      Paulinchen  2026-09-30: Moved into Patch/Multiplayer/Scripts as mp_async.rbx, which Multiplayer.rb loads
 #                            - Skipped the screen's freeze between the map and menus, since even a transition of no frames took seven
 #                            - Switched between the map and menus at once, since a fade froze the world behind them
@@ -35,7 +37,7 @@ module MGQ_MpAsync
   #
   # @return [Boolean] false when the hooks are in place already.
   def self.hookable?
-    !Game_Interpreter.method_defined?(:mgq_mp_async_execute_command)
+    !Scene_Base.method_defined?(:mgq_mp_async_update_basic)
   end
 
   # Writes a line to the mod's InGame.log.
@@ -110,14 +112,6 @@ module MGQ_MpAsync
   # @return [Boolean] Whether it waits.
   def self.hold?(command)
     @ticking && !command.nil? && HELD_CODES.include?(command.code)
-  end
-
-  # Reports whether a menu shows the live map behind it rather than the picture taken on leaving.
-  #
-  # @param scene [Scene_Base] The menu.
-  # @return [Boolean] Whether it does.
-  def self.live_map?(scene)
-    behind?(scene)
   end
 
   # Reports whether leaving a screen for another switches at once: between the map and menus while
@@ -275,7 +269,7 @@ if MGQ_MpAsync.hookable?
       # menus with a background of their own keep it.
       def mgq_mp_async_show_live_map
         return unless @background_sprite && @background_sprite.bitmap.equal?(SceneManager.background_bitmap)
-        return unless MGQ_MpAsync.live_map?(self)
+        return unless MGQ_MpAsync.behind?(self)
 
         @mgq_mp_live_map = Spriteset_MpLiveMap.new
         @background_sprite.visible = false
@@ -296,23 +290,20 @@ if MGQ_MpAsync.hookable?
   rescue => e
     MGQ_MpAsync.log("menu hooks FAILED: #{e.class}: #{e.message}")
   end
+end
 
-  begin
-    class Game_Interpreter
-      alias mgq_mp_async_execute_command execute_command
+# Game hooks shared with other scripts, through mp_hooks.rbx.
 
-      # Runs an event command, first waiting until the player is back on the map when the command
-      # needs them and the map runs behind another screen.
-      def execute_command
-        begin
-          Fiber.yield while MGQ_MpAsync.hold?(@list[@index])
-        rescue FiberError
-          # An interpreter run outside a fiber cannot wait, so its command runs at once.
-        end
-        mgq_mp_async_execute_command
-      end
+begin
+  # Before an event command runs, its interpreter waits until the player is back on the map when
+  # the command needs them and the map runs behind another screen.
+  MGQ_MpHooks.before(Game_Interpreter, :execute_command, "mp_async") do
+    begin
+      Fiber.yield while MGQ_MpAsync.hold?(@list[@index])
+    rescue FiberError
+      # An interpreter run outside a fiber cannot wait, so its command runs at once.
     end
-  rescue => e
-    MGQ_MpAsync.log("event hook FAILED: #{e.class}: #{e.message}")
   end
+rescue => e
+  MGQ_MpAsync.log("event hook FAILED: #{e.class}: #{e.message}")
 end

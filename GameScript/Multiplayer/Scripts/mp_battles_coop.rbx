@@ -2,7 +2,9 @@
 #  mp_battles_coop.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-02: Turned a co-op battle down while the leader's story scene is about to bring the player over
+#      Paulinchen  2026-10-02: Followed the map and installed the late hooks through mp_hooks.rbx
+#                            - Turned an invite down through MGQ_MpBattlesSync.tell, and took the seat, place and Luka from Game_MpActor
+#                            - Turned a co-op battle down while the leader's story scene is about to bring the player over
 #      Paulinchen  2026-10-01: Listed the battle's players, so each hears at once when another leaves
 #                            - Rebuilt the host's enemies on a guest whose troop differs, such as through a mod of either game
 #                            - Brought each player's squad, a share of the Frontline and of the Backline, the leader's first
@@ -60,7 +62,7 @@ module MGQ_MpBattlesCoop
   #
   # @return [Boolean] false when the hooks are in place already.
   def self.hookable?
-    !SceneManager.respond_to?(:mgq_mp_battles_coop_run)
+    !BattleManager.respond_to?(:mgq_mp_battles_coop_setup)
   end
 
   # Writes a line to the mod's InGame.log.
@@ -267,7 +269,7 @@ module MGQ_MpBattlesCoop
   # @param message [Hash] The invite.
   def self.decline(peer, message)
     @invite = nil
-    MGQ_MpOverworldSync::Link.send_to(peer.seat, "battle=decline\nbid=#{message['bid']}\n\n")
+    MGQ_MpBattlesSync.tell(peer.seat, "decline", message["bid"].to_s)
   end
 
   # As guest, tells the host who joins and builds the party the host sends. Called at the battle's start.
@@ -748,16 +750,6 @@ end
 # Another player's character in a co-op battle's party. Its owner commands it from their own game;
 # the computer plays it when no command came, as after its owner left.
 class Game_MpAlly < Game_MpActor
-  # The owner's world seat.
-  #
-  # @return [Integer] The seat.
-  attr_reader :mp_seat
-
-  # The character's place among its owner's characters in the battle.
-  #
-  # @return [Integer] The place, 0 for the first.
-  attr_reader :mp_place
-
   # Rebuilds another player's character.
   #
   # @param member [MGQ_MpActors::Builds::Member] The character's build.
@@ -766,8 +758,8 @@ class Game_MpAlly < Game_MpActor
   # @param place [Integer] The character's place among its owner's characters.
   def initialize(member, player, seat, place)
     super(member, player)
-    @mp_seat = seat
-    @mp_place = place
+    self.mp_seat = seat
+    self.mp_place = place
   end
 
   # Tells whether this game's player commands the character: only in a team duel, once its owner
@@ -776,13 +768,6 @@ class Game_MpAlly < Game_MpActor
   # @return [Boolean] Whether they do.
   def inputable?
     defined?(MGQ_MpBattlesTeam) && MGQ_MpBattlesTeam.commands?(self) ? super : false
-  end
-
-  # Tells whether the character is Luka.
-  #
-  # @return [Boolean] Never; Luka's mechanics, binding and giving up, belong to the player's own Luka.
-  def luca?
-    false
   end
 
   # Makes the turn's actions with the game's own auto-battle, which the owner's commands replace.
@@ -800,26 +785,24 @@ rescue => e
   MGQ_MpBattlesCoop.log("co-op FAILED: #{e.class}: #{e.message}")
 end
 
-# Game hooks.
+# Game hooks shared with other scripts, through mp_hooks.rbx.
+
+begin
+  # Installs the hooks on methods the game's plugins may define anew, as the game starts running.
+  MGQ_MpHooks.before(SceneManager.singleton_class, :run, "mp_battles_coop") { MGQ_MpBattlesCoop.install }
+
+  # After the map's update, joins a co-op battle the player was invited to.
+  MGQ_MpHooks.after(Scene_Map, :update_scene, "mp_battles_coop") { MGQ_MpBattlesCoop.on_map unless scene_changing? }
+rescue => e
+  MGQ_MpBattlesCoop.log("hooks FAILED: #{e.class}: #{e.message}")
+end
+
+# Game hooks of this script alone.
 #
 # Each wraps a game method: the original runs first unless said otherwise, and the mod's part never
 # raises.
 
 if MGQ_MpBattlesCoop.hookable?
-  begin
-    class << SceneManager
-      alias mgq_mp_battles_coop_run run
-
-      # Installs the hooks on methods the game's plugins may define anew, then runs the game.
-      def run
-        MGQ_MpBattlesCoop.install
-        mgq_mp_battles_coop_run
-      end
-    end
-  rescue => e
-    MGQ_MpBattlesCoop.log("SceneManager hook FAILED: #{e.class}: #{e.message}")
-  end
-
   begin
     class << BattleManager
       alias mgq_mp_battles_coop_setup setup
@@ -839,16 +822,6 @@ if MGQ_MpBattlesCoop.hookable?
   end
 
   begin
-    class Scene_Map
-      alias mgq_mp_battles_coop_update_scene update_scene
-
-      # Updates the map, then joins a co-op battle the player was invited to.
-      def update_scene
-        mgq_mp_battles_coop_update_scene
-        MGQ_MpBattlesCoop.on_map unless scene_changing?
-      end
-    end
-
     class Scene_Battle
       alias mgq_mp_battles_coop_terminate terminate
 
@@ -859,6 +832,6 @@ if MGQ_MpBattlesCoop.hookable?
       end
     end
   rescue => e
-    MGQ_MpBattlesCoop.log("scene hooks FAILED: #{e.class}: #{e.message}")
+    MGQ_MpBattlesCoop.log("battle end hook FAILED: #{e.class}: #{e.message}")
   end
 end

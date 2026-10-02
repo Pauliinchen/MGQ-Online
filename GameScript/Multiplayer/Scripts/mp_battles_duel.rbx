@@ -2,6 +2,8 @@
 #  mp_battles_duel.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-02: Followed the map through mp_hooks.rbx
+#                            - Sent the battle's break-off and leaving through MGQ_MpBattlesSync.tell
 #      Paulinchen  2026-10-01: Created
 #
 #----------------------------------------------------------------
@@ -42,16 +44,6 @@ module MGQ_MpBattlesDuel
   @pending = nil
   @gathering = nil
   @called = nil
-
-  # Reports whether the hooks can be installed.
-  #
-  # A second copy of this script would wrap the same methods under the same names, and each hook
-  # would then call itself until the stack overflows.
-  #
-  # @return [Boolean] false when the hooks are in place already.
-  def self.hookable?
-    !Scene_Map.method_defined?(:mgq_mp_battles_duel_update_scene)
-  end
 
   # Writes a line to the mod's InGame.log.
   #
@@ -239,7 +231,7 @@ module MGQ_MpBattlesDuel
   # @param reason [String] A key of REASONS.
   def self.call_off(seat, battle_id, reason = "off")
     send_to(seat, { "duel" => "cancel", "bid" => battle_id, "reason" => reason })
-    MGQ_MpOverworldSync::Link.send_to(seat, "battle=broken\nbid=#{battle_id}\n\n")
+    MGQ_MpBattlesSync.tell(seat, "broken", battle_id)
   end
 
   # Tells why the other player could not duel.
@@ -404,7 +396,7 @@ module MGQ_MpBattlesDuel
     @called = nil
     unless free?
       # The duel counts the player in already; leaving hands their characters to their side.
-      MGQ_MpOverworldSync::Link.send_to(peer.seat, "battle=leave\nbid=#{battle_id}\n\n")
+      MGQ_MpBattlesSync.tell(peer.seat, "leave", battle_id)
       return notice("The duel with #{peer.state['name']} started without you.")
     end
 
@@ -458,7 +450,7 @@ module MGQ_MpBattlesDuel
   def self.give_up(pending)
     role, battle_id, peer = pending
     if role == :team && peer
-      MGQ_MpOverworldSync::Link.send_to(peer.seat, "battle=leave\nbid=#{battle_id}\n\n")
+      MGQ_MpBattlesSync.tell(peer.seat, "leave", battle_id)
     elsif role == :team
       ((pending[3] + pending[4]).map { |seat, *| seat } - [MGQ_MpBattlesCoop.own_seat]).each { |seat| call_off(seat, battle_id) }
     else
@@ -517,22 +509,11 @@ rescue => e
   MGQ_MpBattlesDuel.log("overworld sync FAILED: #{e.class}: #{e.message}")
 end
 
-# Game hooks.
-#
-# Each wraps a game method: the original runs first, and the mod's part never raises.
+# Game hooks, through mp_hooks.rbx.
 
-if MGQ_MpBattlesDuel.hookable?
-  begin
-    class Scene_Map
-      alias mgq_mp_battles_duel_update_scene update_scene
-
-      # Updates the map, then starts a duel waiting to start.
-      def update_scene
-        mgq_mp_battles_duel_update_scene
-        MGQ_MpBattlesDuel.on_map unless scene_changing?
-      end
-    end
-  rescue => e
-    MGQ_MpBattlesDuel.log("map hook FAILED: #{e.class}: #{e.message}")
-  end
+begin
+  # After the map's update, a duel waiting to start starts.
+  MGQ_MpHooks.after(Scene_Map, :update_scene, "mp_battles_duel") { MGQ_MpBattlesDuel.on_map unless scene_changing? }
+rescue => e
+  MGQ_MpBattlesDuel.log("map hook FAILED: #{e.class}: #{e.message}")
 end

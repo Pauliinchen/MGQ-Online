@@ -2,11 +2,13 @@
 #  mp_coop_npcs.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-02: Followed the map's update through mp_hooks.rbx
+#                            - Took an event's page from mp_coop.rbx, and dropped the unused role
 #      Paulinchen  2026-09-30: Sent and took the party's messages through mp_coop.rbx, which drops those of another party
 #                            - Registered with mp_overworld_sync.rbx for its messages instead of being asked by mp_overworld.rbx
 #                            - Moved into Patch/Multiplayer/Scripts as mp_coop_npcs.rbx, which Multiplayer.rb loads
 #                            - Renamed from mp_npcs.rb, with the module MGQ_MpCoopNpcs
-#      Paulinchen  2026-09-30: Created
+#                            - Created
 #
 #----------------------------------------------------------------
 
@@ -57,14 +59,6 @@ module MGQ_MpCoopNpcs
   def self.log(message)
     MGQ_Multiplayer::Log.write("co-op npcs: #{message}")
   rescue
-  end
-
-  # This game's part in the NPCs of its map.
-  #
-  # @return [Symbol, nil] :owner while it moves them for its party, :follower while another member
-  #   does, nil while no other party member is on the map.
-  def self.role
-    @role
   end
 
   # Reports whether another party member's game moves this map's events.
@@ -198,7 +192,7 @@ module MGQ_MpCoopNpcs
   # @param id [Integer] Its id.
   # @param state [Array<Integer>] Its place: x, y, facing and page.
   def self.walk(event, id, state)
-    return unless event && event.mgq_mp_npc_free? && event.mgq_mp_npc_page == state[3]
+    return unless event && event.mgq_mp_npc_free? && event.mgq_mp_page == state[3]
     return if event.moving?
 
     x, y, direction = state
@@ -220,7 +214,7 @@ module MGQ_MpCoopNpcs
   # @param event [Game_Event, nil] The event.
   # @param state [Array<Integer>] Its place: x, y, facing and page.
   def self.place(event, state)
-    return unless event && event.mgq_mp_npc_free? && event.mgq_mp_npc_page == state[3]
+    return unless event && event.mgq_mp_npc_free? && event.mgq_mp_page == state[3]
 
     event.moveto(state[0], state[1])
     event.mgq_mp_npc_face(state[2])
@@ -311,14 +305,7 @@ if MGQ_MpCoopNpcs.hookable?
       #
       # @return [Array<Integer>] x, y, facing and the page's index, -1 for none, as when erased.
       def mgq_mp_npc_state
-        [@x, @y, @direction, mgq_mp_npc_page]
-      end
-
-      # Tells which page the event shows.
-      #
-      # @return [Integer] The page's index, -1 for none.
-      def mgq_mp_npc_page
-        @page ? @event.pages.index(@page).to_i : -1
+        [@x, @y, @direction, mgq_mp_page]
       end
 
       # Reports whether the Map Owner may move the event here: not while it talks to the player or
@@ -339,20 +326,13 @@ if MGQ_MpCoopNpcs.hookable?
   rescue => e
     MGQ_MpCoopNpcs.log("event hooks FAILED: #{e.class}: #{e.message}")
   end
+end
 
-  begin
-    class Game_Map
-      alias mgq_mp_coop_npcs_update update
+# Game hooks shared with other scripts, through mp_hooks.rbx.
 
-      # Updates the map, then its events for the party.
-      #
-      # @param args [Array] The original's arguments.
-      def update(*args)
-        mgq_mp_coop_npcs_update(*args)
-        MGQ_MpCoopNpcs.update
-      end
-    end
-  rescue => e
-    MGQ_MpCoopNpcs.log("map hook FAILED: #{e.class}: #{e.message}")
-  end
+begin
+  # After the map's update, its events for the party.
+  MGQ_MpHooks.after(Game_Map, :update, "mp_coop_npcs") { MGQ_MpCoopNpcs.update }
+rescue => e
+  MGQ_MpCoopNpcs.log("map hook FAILED: #{e.class}: #{e.message}")
 end

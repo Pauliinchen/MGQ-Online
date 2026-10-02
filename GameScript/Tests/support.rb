@@ -2,6 +2,7 @@
 #  support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-02: Loaded mp_hooks.rbx before the first script, as Multiplayer.rb does
 #      Paulinchen  2026-09-30: Created
 #
 #----------------------------------------------------------------
@@ -49,10 +50,12 @@ def check(label, actual, expected)
   Checks.check(label, actual, expected)
 end
 
-# Loads one of the mod's scripts as Multiplayer.rb does, from GameScript/Multiplayer/Scripts.
+# Loads one of the mod's scripts as Multiplayer.rb does, from GameScript/Multiplayer/Scripts, after
+# mp_hooks.rbx, which the scripts register their hooks with.
 #
 # @param name [String] The script's name without its extension, such as "mp_coop".
 def load_script(name)
+  load File.join(SCRIPTS_DIR, "mp_hooks.rbx") unless defined?(MGQ_MpHooks)
   load File.join(SCRIPTS_DIR, "#{name}.rbx")
 end
 

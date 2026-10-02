@@ -2,7 +2,9 @@
 #  mp_coop.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-02: Turned away, as the leader, a player who joined a full party, and refused to join a full party
+#      Paulinchen  2026-10-02: Told whether the player plays in a party with someone else, for every party script
+#                            - Told which page an event shows, for the party's events and NPCs
+#                            - Turned away, as the leader, a player who joined a full party, and refused to join a full party
 #                            - Kept the invite's frames and targets in MGQ_MpCoop::Invite, which duels share
 #      Paulinchen  2026-10-01: Kept a party to four players, one per place of the Frontline
 #                            - Invited a player anywhere in the world by their id, besides the players nearby
@@ -96,6 +98,13 @@ module MGQ_MpCoop
   # @return [Hash] The fields.
   def self.state_fields
     { "party" => Party.id.to_s, "invite" => Party.inviting? ? 1 : 0, "invite_to" => Party.targets.join(",") }
+  end
+
+  # Reports whether the player plays in a party of an open world with someone else in it.
+  #
+  # @return [Boolean] Whether they do.
+  def self.in_party?
+    MGQ_MpOverworldSync.in_world? && !Party.id.nil? && !Party.members.empty?
   end
 
   # Counts the players of a party, the player included when it is theirs.
@@ -418,6 +427,15 @@ module MGQ_MpCoop
       state["map"].to_i == $game_map.map_id &&
         [(state["x"].to_i - $game_player.x).abs, (state["y"].to_i - $game_player.y).abs].max <= NEAR_TILES
     end
+  end
+end
+
+class Game_Event
+  # Tells which page the event shows, which the party's events and NPCs compare between games.
+  #
+  # @return [Integer] The page's index, -1 for none.
+  def mgq_mp_page
+    @page ? @event.pages.index(@page).to_i : -1
   end
 end
 

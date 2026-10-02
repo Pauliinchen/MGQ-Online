@@ -2,6 +2,8 @@
 #  mp_world_overview.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-02: Followed the map and its sprites through mp_hooks.rbx
+#                            - Dropped the unused scroll reader and the wrapper around another player's choices
 #      Paulinchen  2026-10-01: Created
 #
 #----------------------------------------------------------------
@@ -87,16 +89,6 @@ module MGQ_MpWorldOverview
   @scroll = 0
   @frames = 0
 
-  # Reports whether the hooks can be installed.
-  #
-  # A second copy of this script would wrap the same methods under the same names, and each hook
-  # would then call itself until the stack overflows.
-  #
-  # @return [Boolean] false when the hooks are in place already.
-  def self.hookable?
-    !Scene_Map.method_defined?(:mgq_mp_world_overview_update_scene)
-  end
-
   # Writes a line to the mod's InGame.log.
   #
   # @param message [String] The line.
@@ -117,13 +109,6 @@ module MGQ_MpWorldOverview
   # @return [Integer, nil] The choice picked in it, nil while it is closed.
   def self.menu
     @menu
-  end
-
-  # The first line of the list shown, past the lines scrolled away.
-  #
-  # @return [Integer] The line.
-  def self.scroll
-    @scroll
   end
 
   # Opens the overview on the player's own row.
@@ -375,15 +360,7 @@ module MGQ_MpWorldOverview
   # @param row [Row] The player.
   # @return [Array<MGQ_MpActions::Option>] The choices.
   def self.menu_options(row)
-    row.player == :me ? own_options : options_for(row.player)
-  end
-
-  # The menu's choices for another player: their party and their duel.
-  #
-  # @param peer [MGQ_MpOverworldSync::Peers::Peer] The player.
-  # @return [Array<MGQ_MpActions::Option>] The choices.
-  def self.options_for(peer)
-    [party_option(peer), duel_option(peer)]
+    row.player == :me ? own_options : [party_option(row.player), duel_option(row.player)]
   end
 
   # The party choice for another player: accepting their invite, removing them as the party's
@@ -938,41 +915,22 @@ rescue => e
   MGQ_MpWorldOverview.log("overworld sync FAILED: #{e.class}: #{e.message}")
 end
 
-# Game hooks.
-#
-# Each wraps a game method: the original runs first, and the mod's part never raises.
+# Game hooks, through mp_hooks.rbx.
 
-if MGQ_MpWorldOverview.hookable?
-  begin
-    class Scene_Map
-      alias mgq_mp_world_overview_update_scene update_scene
+begin
+  # After the map's update, the overview's keys.
+  MGQ_MpHooks.after(Scene_Map, :update_scene, "mp_world_overview") { MGQ_MpWorldOverview.on_map unless scene_changing? }
 
-      # Updates the map, then the overview.
-      def update_scene
-        mgq_mp_world_overview_update_scene
-        MGQ_MpWorldOverview.on_map unless scene_changing?
-      end
-    end
-
-    class Spriteset_Map
-      alias mgq_mp_world_overview_update update
-      alias mgq_mp_world_overview_dispose dispose
-
-      # Updates the map's sprites, then the overview's box and the party's box.
-      def update
-        mgq_mp_world_overview_update
-        (@mgq_mp_overview ||= Sprite_MpWorldOverview.new(@viewport3)).update
-        (@mgq_mp_party_box ||= Sprite_MpPartyBox.new(@viewport3)).update
-      end
-
-      # Frees the overview's box and the party's box, then the map's sprites.
-      def dispose
-        [@mgq_mp_overview, @mgq_mp_party_box].compact.each(&:dispose)
-        @mgq_mp_overview = @mgq_mp_party_box = nil
-        mgq_mp_world_overview_dispose
-      end
-    end
-  rescue => e
-    MGQ_MpWorldOverview.log("hooks FAILED: #{e.class}: #{e.message}")
+  # After the map's sprites, the overview's box and the party's box.
+  MGQ_MpHooks.after(Spriteset_Map, :update, "mp_world_overview") do
+    (@mgq_mp_overview ||= Sprite_MpWorldOverview.new(@viewport3)).update
+    (@mgq_mp_party_box ||= Sprite_MpPartyBox.new(@viewport3)).update
   end
+
+  MGQ_MpHooks.before(Spriteset_Map, :dispose, "mp_world_overview") do
+    [@mgq_mp_overview, @mgq_mp_party_box].compact.each(&:dispose)
+    @mgq_mp_overview = @mgq_mp_party_box = nil
+  end
+rescue => e
+  MGQ_MpWorldOverview.log("hooks FAILED: #{e.class}: #{e.message}")
 end

@@ -4,7 +4,7 @@
 #  Changelog:
 #      Paulinchen  2026-10-02: Let a new player of a world whose players choose start from one of their own saves
 #      Paulinchen  2026-09-30: Moved into Patch/Multiplayer/Scripts as mp_save_distribution.rbx, which Multiplayer.rb loads
-#      Paulinchen  2026-09-30: Created
+#                            - Created
 #
 #----------------------------------------------------------------
 

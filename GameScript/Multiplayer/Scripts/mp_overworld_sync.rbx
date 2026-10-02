@@ -2,7 +2,8 @@
 #  mp_overworld_sync.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-02: Marked the player's state, which tells it apart from the scripts' messages
+#      Paulinchen  2026-10-02: Followed Graphics.update through mp_hooks.rbx
+#                            - Marked the player's state, which tells it apart from the scripts' messages
 #      Paulinchen  2026-09-30: Created
 #
 #----------------------------------------------------------------
@@ -48,16 +49,6 @@ module MGQ_MpOverworldSync
   @routes = {}
   @handlers = Hash.new { |handlers, kind| handlers[kind] = [] }
   @failed = {}
-
-  # Reports whether the hooks can be installed.
-  #
-  # A second copy of this script would wrap the same methods under the same names, and each hook
-  # would then call itself until the stack overflows.
-  #
-  # @return [Boolean] false when the hooks are in place already.
-  def self.hookable?
-    !Graphics.respond_to?(:mgq_mp_overworld_sync_update)
-  end
 
   # Writes a line to the mod's InGame.log.
   #
@@ -496,25 +487,13 @@ module MGQ_MpOverworldSync
   end
 end
 
-# Game hooks.
-#
-# Each wraps a game method: the original runs first, and the mod's part never raises.
+# Game hooks, through mp_hooks.rbx.
 
-if MGQ_MpOverworldSync.hookable?
-  begin
-    class << Graphics
-      alias mgq_mp_overworld_sync_update update
-
-      # Draws the frame, then takes the others' messages and tells them what changed here.
-      #
-      # Graphics.update runs every frame in every scene, so the others hear of a battle or a menu
-      # and nothing piles up meanwhile.
-      def update
-        mgq_mp_overworld_sync_update
-        MGQ_MpOverworldSync.tick
-      end
-    end
-  rescue => e
-    MGQ_MpOverworldSync.log("Graphics hook FAILED: #{e.class}: #{e.message}")
-  end
+begin
+  # After every frame, takes the others' messages and tells them what changed here. Graphics.update
+  # runs every frame in every scene, so the others hear of a battle or a menu and nothing piles up
+  # meanwhile.
+  MGQ_MpHooks.after(Graphics.singleton_class, :update, "mp_overworld_sync") { MGQ_MpOverworldSync.tick }
+rescue => e
+  MGQ_MpOverworldSync.log("Graphics hook FAILED: #{e.class}: #{e.message}")
 end

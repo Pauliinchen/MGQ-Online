@@ -2,6 +2,7 @@
 #  battles_coop_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-02: Ended the guest's battle through guest_end
 #      Paulinchen  2026-10-01: Checked that every player hears at once when another leaves the battle
 #                            - Checked that a guest whose troop differs fights the host's enemies
 #                            - Checked the squads players bring, the leader first, and swaps with the Backline
@@ -226,7 +227,7 @@ check("in co-op every player tries to escape as in any battle", MGQ_MpBattlesSyn
 $turn_ends = 0
 $commands_phase = false
 $aborted = false
-MGQ_MpBattlesSync::Live.coop_end("process_abort", scene)
+MGQ_MpBattlesSync::Live.guest_end("process_abort", scene)
 check("when the host gets away, the guest fights on alone", [MGQ_MpBattlesCoop.active?, $game_party.battle_members, MGQ_MpBattlesSync.role, MGQ_MpBattles.running?], [false, mine, nil, false])
 check("from a new command phase", [$turn_ends, $commands_phase, $aborted], [1, true, false])
 

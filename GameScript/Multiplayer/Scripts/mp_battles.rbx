@@ -2,9 +2,10 @@
 #  mp_battles.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-02: Installed the battle hooks through mp_hooks.rbx
 #      Paulinchen  2026-10-01: Let co-op battles swap the Backline in, which only PvP battles forbid now
 #      Paulinchen  2026-09-30: Moved into Patch/Multiplayer/Scripts as mp_battles.rbx, which Multiplayer.rb loads
-#      Paulinchen  2026-09-30: Created
+#                            - Created
 #
 #----------------------------------------------------------------
 
@@ -28,16 +29,6 @@ module MGQ_MpBattles
     #
     # @return [Symbol, nil] :pvp or :coop while one runs, nil otherwise.
     attr_reader :kind
-  end
-
-  # Reports whether the hooks can be installed.
-  #
-  # A second copy of this script would wrap the same methods under the same names, and each hook
-  # would then call itself until the stack overflows.
-  #
-  # @return [Boolean] false when the hooks are in place already.
-  def self.hookable?
-    !SceneManager.respond_to?(:mgq_mp_battles_run)
   end
 
   # Writes a line to the mod's InGame.log.
@@ -113,23 +104,11 @@ module MGQ_MpBattles
   end
 end
 
-# Game hooks.
-#
-# Each wraps a game method: the original runs first unless said otherwise, and the mod's part never
-# raises.
+# Game hooks, through mp_hooks.rbx.
 
-if MGQ_MpBattles.hookable?
-  begin
-    class << SceneManager
-      alias mgq_mp_battles_run run
-
-      # Installs the battle hooks, then runs the game.
-      def run
-        MGQ_MpBattles.install
-        mgq_mp_battles_run
-      end
-    end
-  rescue => e
-    MGQ_MpBattles.log("SceneManager hook FAILED: #{e.class}: #{e.message}")
-  end
+begin
+  # Installs the battle hooks as the game starts running.
+  MGQ_MpHooks.before(SceneManager.singleton_class, :run, "mp_battles") { MGQ_MpBattles.install }
+rescue => e
+  MGQ_MpBattles.log("SceneManager hook FAILED: #{e.class}: #{e.message}")
 end
