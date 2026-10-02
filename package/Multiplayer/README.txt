@@ -238,7 +238,8 @@ scene brings the party together. A story scene the player who made the
 party starts waits until every member stands next to them, 30 seconds
 at most: members get 5 seconds to finish what they do, then are
 brought over, wherever they are (after a battle or a menu once it is
-over), and stand still while the scene plays. After 30 seconds it starts
+over; no random encounter starts for them meanwhile), and stand still
+while the scene plays. After 30 seconds it starts
 without those who have not come, and they play on where they are. The story itself plays in their game: when you start a story event, it is
 handed to them, and everyone on the map sees its dialogue in their own
 message window, which moves on when that player moves on; only they can
