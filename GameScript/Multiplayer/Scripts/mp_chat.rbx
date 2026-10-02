@@ -2,7 +2,8 @@
 #  mp_chat.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-02: Followed the map and its sprites through mp_hooks.rbx
+#      Paulinchen  2026-10-02: Opened the chat box with the key the player bound
+#                            - Followed the map and its sprites through mp_hooks.rbx
 #      Paulinchen  2026-10-01: Let the chat box and the chat log work in battles, above the battle's windows
 #                            - Showed the game's own lines in the chat log, such as a player leaving a battle
 #      Paulinchen  2026-09-30: Created
@@ -10,16 +11,12 @@
 #----------------------------------------------------------------
 
 # The chat: a line typed on the keyboard goes to every player of the world, shows in a bubble
-# above the sender while they are on the same map, and in the chat log at the bottom left. T or
-# the action wheel of mp_actions.rbx opens the chat box. It builds on mp_overworld_sync.rbx, which
-# knows the other players and their messages.
+# above the sender while they are on the same map, and in the chat log at the bottom left. Its key
+# (T unless the player binds another, see mp_keys.rbx) or the action wheel of mp_actions.rbx opens
+# the chat box. It builds on mp_overworld_sync.rbx, which knows the other players and their messages.
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpChat
-  # Windows' code of the key that opens the chat: T, which neither the game's Input nor its gamepad
-  # plugin reads.
-  CHAT_KEY = 0x54
-
   # Characters a chat line may have.
   MAX_LENGTH = 120
 
@@ -329,10 +326,10 @@ module MGQ_MpChat
     typing? ? "typing" : nil
   end
 
-  # Opens the chat box with T, and types into it while it is open. Called by the map every frame,
-  # so a press of the key is seen once.
+  # Opens the chat box with its key, and types into it while it is open. Called by the map every
+  # frame, so a press of the key is seen once.
   def self.on_map
-    chat_key = MGQ_Multiplayer::Key.pressed?(CHAT_KEY)
+    chat_key = MGQ_MpKeys.pressed?(:chat)
     unless in_world? && !$game_map.interpreter.running? && !$game_message.busy?
       stop_typing
       return
@@ -349,10 +346,10 @@ module MGQ_MpChat
     stop_typing
   end
 
-  # Opens the chat box with T in a battle of a world, and types into it while it is open. Called by
-  # the battle every frame, its waits included, so the player chats while the battle plays on.
+  # Opens the chat box with its key in a battle of a world, and types into it while it is open.
+  # Called by the battle every frame, its waits included, so the player chats while the battle plays on.
   def self.on_battle
-    chat_key = MGQ_Multiplayer::Key.pressed?(CHAT_KEY)
+    chat_key = MGQ_MpKeys.pressed?(:chat)
     return stop_typing unless in_world?
 
     if typing?

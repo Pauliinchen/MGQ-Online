@@ -2,13 +2,14 @@
 #  mp_battles_duel.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-02: Followed the map through mp_hooks.rbx
+#      Paulinchen  2026-10-02: Named the key the player bound to the action wheel in the challenge line above a ghost
+#                            - Followed the map through mp_hooks.rbx
 #                            - Sent the battle's break-off and leaving through MGQ_MpBattlesSync.tell
 #      Paulinchen  2026-10-01: Created
 #
 #----------------------------------------------------------------
 
-# Duels: PvP battles between two players of a world, the same battle as F11's (mp_battles_pvp.rbx)
+# Duels: PvP battles between two players of a world, the same battle as the PvP battle screen's (mp_battles_pvp.rbx)
 # carried over the world's room (mp_battles_sync.rbx). A player challenges like a party invite: the
 # players nearby, or one player anywhere picked in the World overview, for fifteen seconds. The
 # challenged player accepts and sends their team; the challenger answers with theirs, hosts, and
@@ -149,7 +150,7 @@ module MGQ_MpBattlesDuel
   # @param peer [MGQ_MpOverworldSync::Peers::Peer] The ghost's player.
   # @return [Array, nil] The text and its color, nil for none.
   def self.label_line(peer)
-    challenged_by?(peer) ? ["Challenges you to a duel (B)", CHALLENGE_COLOR] : nil
+    challenged_by?(peer) ? ["Challenges you to a duel (#{MGQ_MpKeys.label(:wheel)})", CHALLENGE_COLOR] : nil
   end
 
   # Accepts a challenge: sends the challenger the player's team, and waits for theirs.

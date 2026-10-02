@@ -2,7 +2,8 @@
 #  mp_coop.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-02: Told whether the player plays in a party with someone else, for every party script
+#      Paulinchen  2026-10-02: Named the key the player bound to the action wheel in the invite line above a ghost
+#                            - Told whether the player plays in a party with someone else, for every party script
 #                            - Told which page an event shows, for the party's events and NPCs
 #                            - Turned away, as the leader, a player who joined a full party, and refused to join a full party
 #                            - Kept the invite's frames and targets in MGQ_MpCoop::Invite, which duels share
@@ -164,7 +165,7 @@ module MGQ_MpCoop
   # @param peer [MGQ_MpOverworldSync::Peers::Peer] The ghost's player.
   # @return [Array, nil] The text and its color, nil for none.
   def self.label_line(peer)
-    peer.state["invite"] == "1" && !peer.member ? ["Invites to a party (B)", INVITE_COLOR] : nil
+    peer.state["invite"] == "1" && !peer.member ? ["Invites to a party (#{MGQ_MpKeys.label(:wheel)})", INVITE_COLOR] : nil
   end
 
   # A standing invite of the player: to the players nearby, and to players anywhere named by their

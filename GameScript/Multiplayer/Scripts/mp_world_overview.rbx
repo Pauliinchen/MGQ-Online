@@ -2,13 +2,15 @@
 #  mp_world_overview.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-02: Followed the map and its sprites through mp_hooks.rbx
+#      Paulinchen  2026-10-02: Opened and closed the overview with the key the player bound, which its hint names
+#                            - Followed the map and its sprites through mp_hooks.rbx
 #                            - Dropped the unused scroll reader and the wrapper around another player's choices
 #      Paulinchen  2026-10-01: Created
 #
 #----------------------------------------------------------------
 
-# The World overview: a large box over the map, opened with F11 or the action wheel's middle, that
+# The World overview: a large box over the map, opened with its key (F11 unless the player binds
+# another, see mp_keys.rbx) or the action wheel's middle, that
 # lists every player of the world online, grouped by where they are, with their highest companion
 # level, their place in the story and their ping. A player picked with the arrows and confirm, or
 # with the mouse, opens a menu of party and duel invites; a player's row shows their invite or
@@ -22,10 +24,6 @@
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpWorldOverview
-  # Windows' code of the key that opens and closes the overview: the PvP battle screen's F11, which
-  # opens that screen outside a world.
-  KEY_CODE = MGQ_MpBattlesPvp::KEY_CODE
-
   # Frames between two readings of the highest companion level and the place in the story, three
   # seconds, since the state is compared every frame.
   READ_FRAMES = 180
@@ -144,9 +142,9 @@ module MGQ_MpWorldOverview
       !$game_message.busy? && !MGQ_MpChat.typing? && !MGQ_MpActions::Wheel.open?
   end
 
-  # Opens or closes the overview with F11, and steers it while open. Called by the map every frame.
+  # Opens or closes the overview with its key, and steers it while open. Called by the map every frame.
   def self.on_map
-    pressed = MGQ_Multiplayer::Key.pressed?(KEY_CODE)
+    pressed = MGQ_MpKeys.pressed?(:overview)
     return close if @open && (pressed || !openable_while_open?)
     return unless pressed || @open
 
@@ -162,7 +160,7 @@ module MGQ_MpWorldOverview
   end
 
   # Reports whether the open overview may stay: still in a world and on the map, with no event or
-  # message, nor the chat box, which T opens over it.
+  # message, nor the chat box, which its key opens over it.
   #
   # @return [Boolean] Whether it may.
   def self.openable_while_open?
@@ -698,7 +696,7 @@ class Sprite_MpWorldOverview < Sprite
     lines.each_with_index { |line, index| draw_line(line, TITLE + index * ROW, view[:scroll] + index == view[:selected]) }
     bitmap.font.size = 16
     bitmap.font.color = GREY
-    bitmap.draw_text(8, BOX.height - HINT_HEIGHT, BOX.width - 16, HINT_HEIGHT, "Enter or click: invite or duel    Esc or F11: close", 1)
+    bitmap.draw_text(8, BOX.height - HINT_HEIGHT, BOX.width - 16, HINT_HEIGHT, "Enter or click: invite or duel    Esc or #{MGQ_MpKeys.label(:overview)}: close", 1)
     draw_menu(view) if view[:menu]
   end
 

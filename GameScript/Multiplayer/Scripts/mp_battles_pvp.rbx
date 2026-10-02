@@ -2,7 +2,8 @@
 #  mp_battles_pvp.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-02: Followed the map and the title screen through mp_hooks.rbx
+#      Paulinchen  2026-10-02: Opened the PvP battle screen with the key the player bound to the World overview
+#                            - Followed the map and the title screen through mp_hooks.rbx
 #                            - Took the Frontline's size from mp_coop_squad.rbx, and the seat, place and Luka from Game_MpActor
 #                            - Listed the PvP battle screen's commands once per change of the exchange
 #      Paulinchen  2026-10-01: Left F11 to the World overview in a world, also once a newer release is out
@@ -35,10 +36,6 @@
 module MGQ_MpBattlesPvp
   # Turns PvP battles off without uninstalling them.
   ENABLED = true
-
-  # Windows' code of the key on the map that opens the PvP battle screen, F11. The game's own
-  # keys F5 to F9 are all taken, F8 by the game's message hiding.
-  KEY_CODE = 0x7A
 
   # Frames between two looks at the exchange, a third of a second at 60 frames per second.
   POLL_INTERVAL = 20
@@ -88,12 +85,12 @@ module MGQ_MpBattlesPvp
   #
   # Once a newer release is out, the key only tells the player to update instead.
   def self.on_map
-    # In a world F11 opens the World overview, and a key press is read only once, by whoever
-    # asks first.
+    # In a world the same key opens the World overview, and a key press is read only once, by
+    # whoever asks first.
     return if defined?(MGQ_MpWorld) && MGQ_MpWorld.open?
 
     if MGQ_Multiplayer.available? && MGQ_Multiplayer.outdated?
-      pressed = MGQ_Multiplayer::Key.pressed?(KEY_CODE)
+      pressed = MGQ_MpKeys.pressed?(:overview)
       return if $game_map.interpreter.running? || $game_player.moving?
 
       $game_message.add(MGQ_Multiplayer::UPDATE_MESSAGE) if pressed
@@ -102,7 +99,7 @@ module MGQ_MpBattlesPvp
 
     return unless available?
 
-    pressed = MGQ_Multiplayer::Key.pressed?(KEY_CODE)
+    pressed = MGQ_MpKeys.pressed?(:overview)
     return if $game_map.interpreter.running? || $game_player.moving?
 
     if pressed
@@ -1209,7 +1206,7 @@ module MGQ_MpBattlesPvp
   end
 end
 
-# The PvP battle screen, opened from the map with F11 (MGQ_MpBattlesPvp::KEY_CODE) or when the map
+# The PvP battle screen, opened from the map with the World overview's key (MGQ_MpKeys) or when the map
 # joins the host of a Discord invite.
 #
 # Named without "Battle", which the Discord mod reads as being in a fight.

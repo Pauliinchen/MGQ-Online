@@ -31,6 +31,8 @@ Optional, but recommended:
 - Battle Dialogue (github.com/Pauliinchen/MGQ-Paradox-Mod-Collection):
   shows what characters say in boxes at the screen's sides, so neither of
   you waits for the other to press a key.
+- Mod Config Remake (github.com/Pauliinchen/MGQ-Paradox-Mod-Collection):
+  bind other keys to the action wheel, the chat and the World overview.
 
 
 INSTALL
@@ -71,6 +73,21 @@ name, favourites and worlds are kept.
 To update by hand, close the game and extract the new download over the
 old one; then delete any Patch\Multiplayer\Scripts\mp_*.rbx file the
 new release's Manifest.txt no longer lists.
+
+
+KEYS
+----
+B opens the action wheel, T the chat and F11 the World overview, or the
+PvP battle screen outside a world. This README names these default keys.
+
+With Mod Config Remake installed, you can bind others: Mod Config,
+Monster Girl Quest! Online, confirm Action Wheel, Chat or World
+Overview, then press the new key (Esc keeps the old one). Keys the game
+uses itself, such as the arrows, Enter, Esc, Z, X, Shift, A, S, D, Q and
+W, cannot be bound, and neither can a key another option already has.
+Your keys are kept in Patch\Multiplayer\Player.ini, so they hold in
+every save and every world. The texts in the game name the keys you
+bound.
 
 
 PVP BATTLES (TEST)

@@ -18,6 +18,7 @@ Optional:
 
 - [Discord Rich Presence](https://github.com/Pauliinchen/MGQ-Paradox-Discord-Rich-Presence) 1.5.1 or later: invite friends through Discord instead of sending a join code, show on your profile who you're playing with, and use your Discord name in worlds.
 - [Battle Dialogue](https://github.com/Pauliinchen/MGQ-Paradox-Mod-Collection/tree/main/Battle_Dialogue): shows what characters say in boxes at the screen's sides, so nobody waits for another player to press a key.
+- [Mod Config Remake](https://github.com/Pauliinchen/MGQ-Paradox-Mod-Collection/tree/main/0_ModConfigRemake): bind other keys to the action wheel, the chat and the World overview.
 
 ## Install
 
@@ -33,6 +34,12 @@ Close the game and double-click `Patch\Multiplayer\Update.bat`. It shows what's 
 ## Uninstall
 
 Close the game and delete `Multiplayer.rb` and the `Multiplayer` folder in `Patch`. That folder also holds your worlds: keep `Patch\Multiplayer\Worlds` if you want to play them again later. The mod loader stays for your other mods.
+
+## Keys
+
+**B** opens the action wheel, **T** the chat and **F11** the World overview, or the PvP battle screen outside a world. This README names these default keys.
+
+With Mod Config Remake installed, you can bind others: *Mod Config → Monster Girl Quest! Online*, confirm *Action Wheel*, *Chat* or *World Overview*, then press the new key (**Esc** keeps the old one). Keys the game uses itself, such as the arrows, Enter, Esc, Z, X, Shift, A, S, D, Q and W, can't be bound, and neither can a key another option already has. Your keys are kept in `Patch\Multiplayer\Player.ini`, so they hold in every save and every world. The texts in the game name the keys you bound.
 
 ## Worlds
 

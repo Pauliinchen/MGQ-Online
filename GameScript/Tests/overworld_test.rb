@@ -296,7 +296,7 @@ check("a battle keeps the chat box open", [chat.typing?, MGQ_Multiplayer::Captur
 $typed = "in battle\r"
 battle.update_basic
 check("and its line goes out from the battle", [chat.typing?, chat.log_lines.last], [false, "Me: in battle"])
-$pressed = MGQ_MpChat::CHAT_KEY
+$pressed = MGQ_MpKeys.code(:chat)
 battle.update_basic
 check("T opens the chat box in a battle too", chat.typing?, true)
 SceneManager.scene = Scene_Item.new

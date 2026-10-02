@@ -2,6 +2,7 @@
 #  world_overview_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-02: Opened the overview with the key mp_keys.rbx binds instead of a stand-in for the PvP battle screen's
 #      Paulinchen  2026-10-01: Created
 #
 #----------------------------------------------------------------
@@ -20,7 +21,6 @@ module MGQ_Multiplayer
   end
 end
 module MGQ_MpWorld; def self.world; Struct.new(:name).new("Test World"); end; end
-module MGQ_MpBattlesPvp; KEY_CODE = 0x7A; end
 # A character, whose levels the game keeps as a Hash of base, class and race level.
 Actor = Struct.new(:base_level, :luca) do
   def luca?; luca; end

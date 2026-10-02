@@ -2,13 +2,14 @@
 #  world_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-02: Loaded mp_keys.rbx, with Player.ini's settings kept in $player_ini
 #      Paulinchen  2026-10-01: Created
 #
 #----------------------------------------------------------------
 
 # What the tests of the open world share: stand-ins for the game and the DLL, the scripts every
-# one of them builds on (mp_overworld_sync.rbx, mp_actions.rbx, mp_chat.rbx, mp_overworld.rbx,
-# mp_coop.rbx and mp_coop_squad.rbx), helpers that feed the world room, and a player standing on
+# one of them builds on (mp_keys.rbx, mp_overworld_sync.rbx, mp_actions.rbx, mp_chat.rbx,
+# mp_overworld.rbx, mp_coop.rbx and mp_coop_squad.rbx), helpers that feed the world room, and a player standing on
 # map 5 of an open world.
 
 require_relative "support"
@@ -82,7 +83,11 @@ module MGQ_Multiplayer
     def self.trigger?(button); $buttons.delete(button) ? true : false; end
     def self.repeat?(button); $buttons.delete(button) ? true : false; end
   end
-  module Player; def self.name; "Me"; end; end
+  module Player
+    def self.name; "Me"; end
+    def self.setting(key); $player_ini[key]; end
+    def self.store(key, value); $player_ini[key] = value.to_s; true; end
+  end
   module Link
     def self.player_id; "me"; end
     def self.typing(on); $typing_on = on; end
@@ -96,7 +101,9 @@ module MGQ_Multiplayer
   end
 end
 module MGQ_MpWorld; def self.open?; $open; end; end
+$player_ini = {}
 
+load_script "mp_keys"
 load_script "mp_overworld_sync"
 load_script "mp_actions"
 load_script "mp_chat"
