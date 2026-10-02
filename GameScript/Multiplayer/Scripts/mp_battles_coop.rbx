@@ -2,6 +2,7 @@
 #  mp_battles_coop.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-02: Turned a co-op battle down while the leader's story scene is about to bring the player over
 #      Paulinchen  2026-10-01: Listed the battle's players, so each hears at once when another leaves
 #                            - Rebuilt the host's enemies on a guest whose troop differs, such as through a mod of either game
 #                            - Brought each player's squad, a share of the Frontline and of the Backline, the leader's first
@@ -224,7 +225,7 @@ module MGQ_MpBattlesCoop
     message = invite[:message]
     invite[:frames] += 1
     return decline(peer, message) unless message["map"].to_i == $game_map.map_id && MGQ_MpBattlesSync.role.nil?
-    return decline(peer, message) if invite[:frames] > ACCEPT_FRAMES
+    return decline(peer, message) if invite[:frames] > ACCEPT_FRAMES || (defined?(MGQ_MpCoopEvents) && MGQ_MpCoopEvents.coming?)
     return unless free?
 
     @invite = nil

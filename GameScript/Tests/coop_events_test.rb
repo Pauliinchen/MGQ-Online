@@ -2,6 +2,7 @@
 #  coop_events_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-02: Checked that no random encounter starts for a member the story scene is about to bring over
 #      Paulinchen  2026-10-01: Checked that a page counts only the branches that can run now
 #                            - Checked that exits noting a flag on the way are travel, and that members come over after five seconds
 #                            - Checked that only the leader moves the story dialogue on, and the Pocket Castle's residents sorted as talks
@@ -88,6 +89,16 @@ class Game_Interpreter
 end
 class Game_Player
   attr_reader :x, :y, :direction, :reserved
+  # Steps left before a random encounter.
+  attr_accessor :encounter_count
+
+  # Draws the steps to the next random encounter.
+  def make_encounter_count; @encounter_count = 30; end
+
+  # Starts a random encounter once its steps ran out.
+  #
+  # @return [Boolean] Whether a battle starts.
+  def encounter; return false if @encounter_count > 0; make_encounter_count; true; end
   def movable?; true; end
   def initialize; @x = 1; @y = 1; @direction = 2; end
   def moveto(x, y); @x, @y = x, y; end
@@ -338,6 +349,10 @@ MGQ_MpCoopEvents.take(leader, { "pevent" => "gather", "party" => "p1", "map" => 
 MGQ_MpCoopEvents.update
 check("a member called to the story hears when they come over", [$notices.last, MGQ_MpCoopEvents.own_line], ["Leader's story is starting. You join them in 5 seconds.", "Joining Leader in 5 s . . ."])
 check("and is not moved before five seconds", [$game_player.reserved, $game_map.map_id], [nil, 7])
+$game_player.encounter_count = 5
+check("a member about to come over meets no random encounter while steps are left", $game_player.encounter, false)
+$game_player.encounter_count = 0
+check("nor once they ran out, which draws new steps", [$game_player.encounter, $game_player.encounter_count], [false, 30])
 $frame_count = 150
 MGQ_MpCoopEvents.take(leader, { "pevent" => "gather", "party" => "p1", "map" => "8", "x" => "9", "y" => "3", "d" => "6" })
 check("calls again do not start the time anew", MGQ_MpCoopEvents.own_line, "Joining Leader in 3 s . . .")
@@ -350,6 +365,8 @@ MGQ_MpCoopEvents.update
 check("then they are brought to the leader's map", $game_player.reserved, [8, 9, 3, 6])
 $game_player.perform_transfer
 check("and wait no more", MGQ_MpCoopEvents.own_line, nil)
+$game_player.encounter_count = 0
+check("then random encounters come again", $game_player.encounter, true)
 MGQ_MpCoopEvents.take(leader, { "pevent" => "gather", "party" => "p1", "map" => "8", "x" => "11", "y" => "4", "d" => "6" })
 check("a member standing near already is not moved", [MGQ_MpCoopEvents.own_line, $game_player.x], [nil, 9])
 $frame_count = 2000
@@ -357,6 +374,8 @@ MGQ_MpCoopEvents.take(leader, { "pevent" => "gather", "party" => "p1", "map" => 
 $frame_count = 2359
 check("a call stands while the leader still calls", MGQ_MpCoopEvents.own_line, "Joining Leader once free . . .")
 $frame_count = 2360
+$notices.clear
+check("asking whether the member is coming once the calls stopped only says no", [MGQ_MpCoopEvents.coming?, $notices], [false, []])
 MGQ_MpCoopEvents.update
 check("once the calls stop, the story started without the member, who stays", [MGQ_MpCoopEvents.own_line, $notices.last, $game_player.reserved],
       [nil, "Leader's story started without you.", nil])

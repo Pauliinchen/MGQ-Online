@@ -2,6 +2,7 @@
 #  mp_coop_events.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-02: Started no random encounter for a member the leader's story scene is about to bring over
 #      Paulinchen  2026-10-01: Sorted event pages by the branches that can run now, so an exit counts as story only while its story warning shows
 #                            - Let exits that only note a flag on the way stay travel, so a member leaves a town in their own game
 #                            - Shortened a member's time before the leader's story scene brings them over to five seconds
@@ -531,6 +532,14 @@ module MGQ_MpCoopEvents
     end
     @gather[:place] = place
     @gather[:called] = Graphics.frame_count
+  end
+
+  # Reports whether the leader's story scene is about to bring the player over, which keeps random
+  # encounters and co-op battles away so no battle holds the player up.
+  #
+  # @return [Boolean] Whether it is.
+  def self.coming?
+    !@gather.nil? && Graphics.frame_count - @gather[:called] < CALL_LAPSE_FRAMES
   end
 
   # Tells where the player comes to for the leader's story scene, once its five seconds passed.
@@ -1082,6 +1091,20 @@ if MGQ_MpCoopEvents.hookable?
       # @return [Boolean] Whether they may.
       def movable?
         mgq_mp_coop_events_movable? && !(MGQ_MpCoopEvents.blocked? rescue false)
+      end
+
+      alias mgq_mp_coop_events_encounter encounter
+
+      # Starts a random encounter when its steps ran out, but not while the leader's story scene is
+      # about to bring the player over.
+      #
+      # @return [Boolean] Whether a battle starts.
+      def encounter
+        return mgq_mp_coop_events_encounter unless (MGQ_MpCoopEvents.coming? rescue false)
+
+        # Steps that ran out while called would start a battle the moment the player arrives.
+        make_encounter_count if @encounter_count <= 0
+        false
       end
     end
 
