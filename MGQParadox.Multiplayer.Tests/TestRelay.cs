@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-02: Kept whether a world lets each new player choose where to start
+//                            - Cut the connections outside the lock when stopping, since a cut can end a connection at once
 //      Paulinchen  2026-10-01: Let admins delete through a helper of their own, and named them in the refusal
 //      Paulinchen  2026-09-30: Listed every world for admins and let them delete any
 //                            - Kept a world's starting save, uploaded once by its creator and handed to its players
@@ -159,13 +160,17 @@ internal sealed class TestRelay : IDisposable
     public void Dispose()
     {
         _listener.Stop();
+        Peer[] connected;
 
         lock (_gate)
         {
-            foreach (var peer in _rooms.Values.SelectMany(room => room.Values).Concat(_worlds.Values.SelectMany(seats => seats.Values)).OfType<Peer>())
-            {
-                peer.Socket.Abort();
-            }
+            connected = _rooms.Values.SelectMany(room => room.Values).Concat(_worlds.Values.SelectMany(seats => seats.Values)).OfType<Peer>().ToArray();
+        }
+
+        // Aborting may end a connection on this thread at once, which removes its seat from the lists.
+        foreach (var peer in connected)
+        {
+            peer.Socket.Abort();
         }
     }
 
