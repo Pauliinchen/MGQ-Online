@@ -4,6 +4,8 @@
 #  Changelog:
 #      Paulinchen  2026-10-03: Checked that the others' characters start the battle and each turn with a hit count
 #                            - Checked that the map shows the player's own leader again after the battle
+#                            - Checked that the party's leader leads a member's battle, and that the member hosts once the leader refuses or stays silent
+#                            - Checked that invites during a battle of the player's own or older than three seconds are turned down
 #                            - Checked that a guest's command the character may not give is left out
 #      Paulinchen  2026-10-02: Checked that a player who joined and left the world before the roster does not stop the battle
 #                            - Ended the guest's battle through guest_end
@@ -122,6 +124,7 @@ $setup.clear
 host = MGQ_MpOverworldSync::Peers::Peer.new(0, { "id" => "id-host", "name" => "Host", "map" => "5", "scene" => "map" }, nil, true)
 MGQ_MpOverworldSync::Peers.all.push(host)
 message = { "coop" => "invite", "party" => "p1", "bid" => "b9", "troop" => "40", "escape" => "1", "lose" => "0", "seats" => "2,3", "map" => "5" }
+$scene_now = Scene_Map.new
 MGQ_MpBattlesCoop.take(host, message.merge("seats" => "3"))
 MGQ_MpBattlesCoop.on_map
 check("an invite for others is not taken", $setup, [])
@@ -133,6 +136,7 @@ $game_map.interpreter.busy = false
 MGQ_MpBattlesCoop.on_map
 check("then the same battle starts as guest", [$setup, $called, MGQ_MpBattlesSync.role, MGQ_MpBattlesSync.player, MGQ_MpBattlesSync.seats, MGQ_MpBattles.kind, $cleared], [[[40, true, false]], Scene_Battle, :guest, "Host", [0], :coop, true])
 check("its own setup invites nobody", $sent.select { |_, t| t.include?("coop=invite") }, [])
+$scene_now = scene
 
 $sent.clear
 $frames = 0
@@ -316,13 +320,82 @@ $game_party.battle_members[1].hp = 100
 check("a swap may not leave nobody standing", MGQ_MpBattlesCoop.swap_kills_all?($game_party.battle_members[1], five[1]), true)
 MGQ_MpBattlesCoop.ended
 
-# The leader's characters come first, whoever hosts.
+# A member's battle: the party's leader on the map is asked to lead it.
 $leader = mate
 $game_party.own = five.map { |actor| actor.tap { |a| a.hp = 100 } }
+$sent.clear
+BattleManager.setup(62, false, true)
+ask = $sent.map { |seat, text| [seat, fields_of(text)] }.find { |_, f| f["coop"] == "lead" }
+check("a member asks the party's leader to lead the battle", ask && [ask[0], ask[1]["troop"], ask[1]["escape"], ask[1]["lose"], ask[1]["map"]], [2, "62", "0", "1", "5"])
+check("and joins it as a guest", [MGQ_MpBattlesSync.role, MGQ_MpBattlesSync.battle_id, MGQ_MpBattlesSync.seats, MGQ_MpBattles.kind], [:guest, ask[1]["bid"], [2], :coop])
+MGQ_MpBattlesCoop.take(mate, { "coop" => "invite", "bid" => "other", "seats" => "0" })
+MGQ_MpBattlesCoop.take(mate, { "coop" => "invite", "bid" => ask[1]["bid"], "seats" => "0,3", "map" => "5" })
+$frames = 0
+MGQ_MpBattlesCoop.await_leader(scene)
+check("the leader's invite for the battle is the answer", [MGQ_MpBattlesSync.role, MGQ_MpBattlesSync.player, $frames], [:guest, "Friend", 0])
+check("no other invite waits on the map", MGQ_MpBattlesCoop.instance_variable_get(:@invite), nil)
+MGQ_MpBattlesCoop.ended
+
+# The leader refuses: the member hosts, and the leader's characters still come first.
+$sent.clear
 BattleManager.setup(61)
+asked = MGQ_MpBattlesSync.battle_id
+MGQ_MpBattlesCoop.take(mate, { "coop" => "no_lead", "bid" => asked })
+$sent.clear
+MGQ_MpBattlesCoop.await_leader(scene)
+invite = $sent.map { |seat, text| [seat, fields_of(text)] }.find { |_, f| f["coop"] == "invite" }
+check("a leader who refuses leaves the battle to the member, who hosts it", [MGQ_MpBattlesSync.role, invite && invite[1]["troop"], MGQ_MpBattlesSync.battle_id == asked], [:host, "61", false])
+MGQ_MpBattlesCoop.take(mate, { "coop" => "invite", "bid" => asked, "seats" => "0", "map" => "5" })
+check("and a late invite for the battle it asked for is dropped", MGQ_MpBattlesCoop.instance_variable_get(:@invite), nil)
 MGQ_MpBattlesSync.take(mate, { "battle" => "join", "bid" => MGQ_MpBattlesSync.battle_id, :payload => MGQ_MpBattlesSync::Wire.line(["7,8,9,10", [[50, 5]] * 4, 8]) })
 $frames = 0
 MGQ_MpBattlesCoop.gather(scene)
 check("the party's leader leads the battle's party too", $game_party.battle_members.map(&:name).first, "Actor7 (Friend)")
 MGQ_MpBattlesCoop.ended
+
+# A silent leader: the member hosts once the wait runs out.
+BattleManager.setup(63)
+$frames = 0
+MGQ_MpBattlesCoop.await_leader(scene)
+check("a silent leader leaves the battle to the member after the wait", [MGQ_MpBattlesSync.role, $frames], [:host, MGQ_MpBattlesCoop::LEADER_FRAMES - 1])
+MGQ_MpBattlesCoop.ended
+
+# The leader's side: leading a member's battle on the map.
 $leader = :me
+mate.state["scene"] = "battle"
+$setup.clear
+$sent.clear
+$called = nil
+MGQ_MpBattlesCoop.take(mate, { "coop" => "lead", "bid" => "m1", "troop" => "64", "escape" => "0", "lose" => "1", "map" => "5" })
+MGQ_MpBattlesCoop.on_map
+invite = $sent.map { |seat, text| [seat, fields_of(text)] }.find { |_, f| f["coop"] == "invite" }
+check("the leader starts the member's battle as its host", [$setup, $called, MGQ_MpBattlesSync.role, MGQ_MpBattlesSync.battle_id], [[[64, false, true]], Scene_Battle, :host, "m1"])
+check("and invites the member, who is in that battle already", invite && invite[1]["seats"], "2")
+$frames = 0
+check("a member who asked and did not join calls the battle off", MGQ_MpBattlesCoop.gather(scene), :broken)
+check("for everyone in it", $sent.map { |_, text| fields_of(text)["battle"] }.include?("broken"), true)
+MGQ_MpBattlesCoop.ended
+$sent.clear
+MGQ_MpBattlesCoop.take(mate, { "coop" => "lead", "bid" => "m2", "troop" => "64", "map" => "9" })
+MGQ_MpBattlesCoop.on_map
+check("a leader on another map refuses", $sent.map { |seat, text| [seat, fields_of(text)["coop"], fields_of(text)["bid"]] }, [[2, "no_lead", "m2"]])
+$sent.clear
+MGQ_MpBattlesCoop.take(mate, { "coop" => "lead", "bid" => "m3", "troop" => "64", "map" => "5" })
+MGQ_MpBattlesCoop.instance_variable_get(:@request)[:at] -= 60
+MGQ_MpBattlesCoop.on_map
+check("a request that waited through a battle of the leader's own is refused", [$sent.map { |_, text| fields_of(text)["coop"] }, MGQ_MpBattlesSync.role], [["no_lead"], nil])
+mate.state["scene"] = "map"
+
+# Invites a player cannot take in time.
+invite_of = lambda { |bid| { "coop" => "invite", "bid" => bid, "troop" => "40", "seats" => "0", "map" => "5" } }
+$sent.clear
+MGQ_MpBattlesCoop.take(mate, invite_of.call("i1"))
+check("an invite during a battle of the player's own is turned down at once",
+      [$sent.map { |seat, text| [seat, fields_of(text)["battle"], fields_of(text)["bid"]] }, MGQ_MpBattlesCoop.instance_variable_get(:@invite)], [[[2, "decline", "i1"]], nil])
+$scene_now = Scene_Map.new
+$sent.clear
+MGQ_MpBattlesCoop.take(mate, invite_of.call("i2"))
+MGQ_MpBattlesCoop.instance_variable_get(:@invite)[:at] -= 60
+MGQ_MpBattlesCoop.on_map
+check("an invite that waited past three seconds is turned down, not joined", [$sent.map { |_, text| fields_of(text)["battle"] }, MGQ_MpBattlesSync.role], [["decline"], nil])
+$scene_now = scene

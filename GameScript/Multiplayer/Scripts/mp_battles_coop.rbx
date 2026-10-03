@@ -4,6 +4,8 @@
 #  Changelog:
 #      Paulinchen  2026-10-03: Started the battle and each turn for the other players' characters, whose unset hit count crashed the game when hit
 #                            - Showed the player's own leader and followers on the map again once the co-op party is forgotten
+#                            - Let the party's leader host a battle a member started, so the leader's game and mods decide it
+#                            - Turned down an invite that came during a battle of the player's own, and one older than three seconds
 #      Paulinchen  2026-10-02: Started a co-op battle when a player who joined it left the world before the roster went out
 #                            - Followed the map and installed the late hooks through mp_hooks.rbx
 #                            - Turned an invite down through MGQ_MpBattlesSync.tell, and took the seat, place and Luka from Game_MpActor
@@ -26,8 +28,10 @@
 #----------------------------------------------------------------
 
 # Co-op battles: when a party member's game starts a battle, the party members on the same map who
-# are playing on the map join it. The game that started it computes it (the host); the others play
-# it back and command their own characters, through mp_battles_sync.rbx over the world's room. The
+# are playing on the map join it. The party's leader computes it (the host), so the leader's game
+# and mods decide it: a member who started it asks the leader to lead it and joins as a guest. When
+# the leader is elsewhere, busy or silent, the game that started it hosts. The others play it back
+# and command their own characters, through mp_battles_sync.rbx over the world's room. The
 # party is every player's squad together (see mp_coop_squad.rbx): each brings their share of the
 # Frontline, the party's leader first, and may swap their share of the Backline in. A player who
 # gets away leaves the battle; the others fight on with larger shares, and one left alone fights on
@@ -41,6 +45,10 @@ module MGQ_MpBattlesCoop
 
   # Frames an invite waits for the player to be free before it is turned down, three seconds.
   ACCEPT_FRAMES = 180
+
+  # Frames a member's battle waits for the party's leader to lead it, six seconds: longer than the
+  # leader waits to be free, so a leader who takes it never finds the member gone.
+  LEADER_FRAMES = 360
 
   # What another player does, by their state's scene, while they may be invited: walking the map,
   # reading an event's messages, such as the leader's story, or on the map with their window in the
@@ -110,8 +118,9 @@ module MGQ_MpBattlesCoop
 
   # The host's side.
 
-  # Makes a battle the game just set up a co-op battle, inviting the party members on the map who
-  # are playing on it. Called after BattleManager.setup.
+  # Makes a battle the game just set up a co-op battle: asks the party's leader to lead it when the
+  # leader plays on the map, else invites the party members on the map who are playing on it.
+  # Called after BattleManager.setup.
   #
   # @param troop_id [Integer] The troop.
   # @param can_escape [Boolean] Whether the party may escape.
@@ -119,13 +128,31 @@ module MGQ_MpBattlesCoop
   def self.offer(troop_id, can_escape, can_lose)
     return if @joining || !host_possible?
 
+    @requester, battle_id = @leading
+    leader = MGQ_MpCoop::Party.leader
+    return ask_leader(leader, troop_id, can_escape, can_lose) if @requester.nil? && candidates.include?(leader)
+
+    host(troop_id, can_escape, can_lose, battle_id)
+  rescue => e
+    log("could not offer a co-op battle: #{e.class}: #{e.message}")
+  end
+
+  # Hosts a co-op battle, inviting the party members on the map who are playing on it, and the
+  # member who asked the player to lead it.
+  #
+  # @param troop_id [Integer] The troop.
+  # @param can_escape [Boolean] Whether the party may escape.
+  # @param can_lose [Boolean] Whether losing goes on without a game over.
+  # @param battle_id [String, nil] The battle's id the member who asked chose, nil for a new one.
+  def self.host(troop_id, can_escape, can_lose, battle_id = nil)
     seats = candidates.map(&:seat)
+    seats |= [@requester] if @requester
     if seats.empty?
       others = MGQ_MpCoop::Party.members.map { |peer| "#{peer.state['name']} on map #{peer.state['map']} (#{peer.state['scene']})" }
       return log("nobody to invite on map #{$game_map.map_id}: #{others.empty? ? 'no other party member' : others.join(', ')}")
     end
 
-    battle_id = rand(36**8).to_s(36)
+    battle_id ||= new_battle_id
     MGQ_MpBattlesSync.join_world(:host, battle_id, seats, "the party")
     MGQ_MpBattlesSync.battle_started
     MGQ_MpBattles.begin(:coop)
@@ -133,7 +160,62 @@ module MGQ_MpBattlesCoop
                        "seats" => seats.join(","), "map" => $game_map.map_id)
     log("invited #{seats.size} member(s) to battle #{battle_id} against troop #{troop_id}")
   rescue => e
-    log("could not offer a co-op battle: #{e.class}: #{e.message}")
+    log("could not host a co-op battle: #{e.class}: #{e.message}")
+  end
+
+  # Makes up a battle's id, which its messages carry.
+  #
+  # @return [String] The id.
+  def self.new_battle_id
+    rand(36**8).to_s(36)
+  end
+
+  # As a member, asks the party's leader to lead the battle the player's game just set up, which the
+  # player then joins as a guest. The battle's start waits for the answer, see await_leader.
+  #
+  # @param leader [MGQ_MpOverworldSync::Peers::Peer] The party's leader.
+  # @param troop_id [Integer] The troop.
+  # @param can_escape [Boolean] Whether the party may escape.
+  # @param can_lose [Boolean] Whether losing goes on without a game over.
+  def self.ask_leader(leader, troop_id, can_escape, can_lose)
+    battle_id = new_battle_id
+    @asking = { :seat => leader.seat, :bid => battle_id, :troop => troop_id, :escape => can_escape, :lose => can_lose, :answer => nil }
+    MGQ_MpBattlesSync.join_world(:guest, battle_id, [leader.seat], leader.state["name"].to_s)
+    MGQ_MpBattlesSync.battle_started
+    MGQ_MpBattles.begin(:coop)
+    tell(leader.seat, "lead", "bid" => battle_id, "troop" => troop_id, "escape" => can_escape ? 1 : 0, "lose" => can_lose ? 1 : 0,
+                              "map" => $game_map.map_id)
+    log("asked #{leader.state['name']} to lead battle #{battle_id} against troop #{troop_id}")
+  end
+
+  # As a member, waits at the battle's start for the party's leader to lead it. When the leader
+  # turns it down, is gone or stays silent for LEADER_FRAMES, the player hosts it instead. Called
+  # at the battle's start, before its live side.
+  #
+  # @param scene [Scene_Battle] The battle.
+  def self.await_leader(scene)
+    asking = @asking
+    return unless asking
+
+    frames = 0
+    answer = MGQ_MpBattlesSync::Waiting.wait_for(scene, "Asking #{MGQ_MpBattlesSync.player} to lead the battle...") do
+      frames += 1
+      asking[:answer] || (frames >= LEADER_FRAMES ? :silent : nil)
+    end
+    @asking = nil
+    return log("#{MGQ_MpBattlesSync.player} leads battle #{asking[:bid]}") if answer == :leads
+
+    # A late invite from the leader must not start this battle anew once it is over.
+    @dropped_bid = asking[:bid]
+    log("#{MGQ_MpBattlesSync.player} does not lead battle #{asking[:bid]} (#{answer}), the player hosts it")
+    MGQ_MpBattlesSync.finish
+    MGQ_MpBattles.finish
+    host(asking[:troop], asking[:escape], asking[:lose])
+  rescue => e
+    @asking = nil
+    MGQ_MpBattlesSync.finish
+    MGQ_MpBattles.finish
+    log("waiting for the leader failed: #{e.class}: #{e.message}")
   end
 
   # Reports whether a battle starting now may become a co-op battle: in a party of an open world,
@@ -180,6 +262,7 @@ module MGQ_MpBattlesCoop
       answered.size == invited.size || frames >= JOIN_FRAMES ? true : nil
     end
     return answer if answer.is_a?(Symbol) && answer != :gone
+    return call_off if @requester && !joined.key?(@requester)
     return stand_down if joined.empty? || answer == :gone
 
     MGQ_MpBattlesSync.keep_seats(joined.keys)
@@ -195,6 +278,16 @@ module MGQ_MpBattlesCoop
     form(scene, players)
     log("battle #{MGQ_MpBattlesSync.battle_id} with #{players.size} players")
     nil
+  end
+
+  # Ends a battle the player leads for a member before it began, since that member did not join:
+  # the encounter was theirs, and everyone else who joined leaves it too.
+  #
+  # @return [Symbol] :broken, which ends the battle.
+  def self.call_off
+    log("the member who asked to lead battle #{MGQ_MpBattlesSync.battle_id} did not join it")
+    MGQ_MpBattlesSync.break_off("the member who asked for it did not join")
+    :broken
   end
 
   # Ends the co-op battle before it began, since nobody joined: the battle is the host's own.
@@ -214,25 +307,60 @@ module MGQ_MpBattlesCoop
   # @param peer [MGQ_MpOverworldSync::Peers::Peer, nil] Who sent it.
   # @param message [Hash] The message's fields.
   def self.take(peer, message)
-    return unless message["coop"] == "invite"
-    return unless message["seats"].to_s.split(",").map(&:to_i).include?(own_seat)
-
-    @invite = { :peer => peer, :message => message, :frames => 0 }
+    case message["coop"]
+    when "invite" then take_invite(peer, message)
+    when "lead" then @request = { :peer => peer, :message => message, :at => Time.now }
+    when "no_lead" then answer_of(peer, message, :refused)
+    end
   rescue => e
-    log("taking an invite failed: #{e.class}: #{e.message}")
+    log("taking a co-op message failed: #{e.class}: #{e.message}")
   end
 
-  # Joins an invite once the player is free on the map, or turns it down when they stay busy.
-  # Called by the map every frame, so the battle starts as an encounter would.
+  # Takes an invite to a battle: the answer of the leader the player asked to lead their battle, or
+  # an invite to join on the map, which a player in a battle of their own turns down at once.
+  #
+  # @param peer [MGQ_MpOverworldSync::Peers::Peer] The host.
+  # @param message [Hash] The invite.
+  def self.take_invite(peer, message)
+    return unless message["seats"].to_s.split(",").map(&:to_i).include?(own_seat)
+    return answer_of(peer, message, :leads) if @asking
+    return if message["bid"] == @dropped_bid
+    return MGQ_MpBattlesSync.tell(peer.seat, "decline", message["bid"].to_s) if MGQ_MpBattlesSync.role || SceneManager.scene.is_a?(Scene_Battle)
+
+    @invite = { :peer => peer, :message => message, :at => Time.now }
+  end
+
+  # Reports whether an invite or a request to lead waited longer than ACCEPT_FRAMES. It counts by the
+  # clock, since one that arrived outside the map waits for the map, where the frames count.
+  #
+  # @param entry [Hash] The invite or the request, with :at, when it arrived.
+  # @return [Boolean] Whether it did.
+  def self.expired?(entry)
+    Time.now - entry[:at] > ACCEPT_FRAMES / 60.0
+  end
+
+  # Notes the leader's answer to the player's request to lead their battle.
+  #
+  # @param peer [MGQ_MpOverworldSync::Peers::Peer] Who answered.
+  # @param message [Hash] The answer.
+  # @param answer [Symbol] :leads or :refused.
+  def self.answer_of(peer, message, answer)
+    asking = @asking
+    asking[:answer] = answer if asking && peer.seat == asking[:seat] && message["bid"] == asking[:bid]
+  end
+
+  # Leads a member's battle once the player is free on the map, refuses it otherwise, then joins an
+  # invite once the player is free on the map, or turns it down when they stay busy. Called by the
+  # map every frame, so the battle starts as an encounter would.
   def self.on_map
+    serve_request if @request
     return unless @invite
 
     invite = @invite
     peer = invite[:peer]
     message = invite[:message]
-    invite[:frames] += 1
     return decline(peer, message) unless message["map"].to_i == $game_map.map_id && MGQ_MpBattlesSync.role.nil?
-    return decline(peer, message) if invite[:frames] > ACCEPT_FRAMES || (defined?(MGQ_MpCoopEvents) && MGQ_MpCoopEvents.coming?)
+    return decline(peer, message) if expired?(invite) || (defined?(MGQ_MpCoopEvents) && MGQ_MpCoopEvents.coming?)
     return unless free?
 
     @invite = nil
@@ -240,6 +368,50 @@ module MGQ_MpBattlesCoop
   rescue => e
     @invite = nil
     log("joining a co-op battle failed: #{e.class}: #{e.message}")
+  end
+
+  # As the party's leader, leads a member's battle once the player is free on the member's map, or
+  # refuses it when the player is elsewhere, busy for ACCEPT_FRAMES or no longer the leader.
+  def self.serve_request
+    request = @request
+    peer = request[:peer]
+    message = request[:message]
+    unless message["map"].to_i == $game_map.map_id && MGQ_MpBattlesSync.role.nil? && MGQ_MpCoop::Party.leader == :me
+      return refuse_lead(peer, message)
+    end
+    return refuse_lead(peer, message) if expired?(request) || (defined?(MGQ_MpCoopEvents) && MGQ_MpCoopEvents.coming?)
+    return unless free?
+
+    @request = nil
+    lead(peer, message)
+  rescue => e
+    @request = nil
+    log("leading a member's battle failed: #{e.class}: #{e.message}")
+  end
+
+  # Starts a member's battle as its host, with the id the member chose; the member joins it.
+  #
+  # @param peer [MGQ_MpOverworldSync::Peers::Peer] The member.
+  # @param message [Hash] The member's request.
+  def self.lead(peer, message)
+    @leading = [peer.seat, message["bid"].to_s]
+    BattleManager.setup(message["troop"].to_i, message["escape"] == "1", message["lose"] == "1")
+    return refuse_lead(peer, message) unless MGQ_MpBattlesSync.role == :host
+
+    SceneManager.call(Scene_Battle)
+    log("leads #{peer.state['name']}'s battle #{message['bid']}")
+  ensure
+    @leading = nil
+  end
+
+  # Refuses to lead a member's battle, which the member then hosts.
+  #
+  # @param peer [MGQ_MpOverworldSync::Peers::Peer] The member.
+  # @param message [Hash] The member's request.
+  def self.refuse_lead(peer, message)
+    @request = nil
+    tell(peer.seat, "no_lead", "bid" => message["bid"].to_s)
+    log("could not lead #{peer.state['name']}'s battle #{message['bid']}")
   end
 
   # Reports whether the player may join a battle: on the map, with no event or transfer of their own.
@@ -602,6 +774,7 @@ module MGQ_MpBattlesCoop
     @own_squad = nil
     @allies = {}
     @reordered = false
+    @requester = nil
     $game_player.refresh if $game_player
   end
 

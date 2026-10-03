@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-03: Took from a guest only skills their character has and items a battle allows
+#                            - Waited at a member's battle start for the party's leader to lead it
 #                            - Streamed an animation once, played one a battler starts by itself, and kept actions and turn ends to the recording on file
 #      Paulinchen  2026-10-02: Installed the battle hooks through mp_hooks.rbx
 #                            - Sent every message of a battle over the world's room through tell
@@ -1921,6 +1922,8 @@ module MGQ_MpBattlesSync
     # guest's commands, the guest playing the host's stream, forfeits and the end.
     def self.live
       wrap(Scene_Battle, :battle_start) do |scene, _args, original|
+        # A member's battle becomes the leader's to host, or stays the member's own to host.
+        MGQ_MpBattlesCoop.await_leader(scene)
         if MGQ_MpBattlesSync.guest?
           Live.guest_start(scene)
         elsif MGQ_MpBattlesSync.host? && !Live.host_start(scene)
