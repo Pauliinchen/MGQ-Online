@@ -2,6 +2,8 @@
 #  mp_coop.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-03: Counted only the players the party's leader admitted as its members, whom the leader's invite reached
+#                            - Listed an event's pages, for the party's chests
 #      Paulinchen  2026-10-02: Named the key the player bound to the action wheel in the invite line above a ghost
 #                            - Told whether the player plays in a party with someone else, for every party script
 #                            - Told which page an event shows, for the party's events and NPCs
@@ -32,8 +34,16 @@ module MGQ_MpCoop
   # Players a party holds at most, one per place of the Frontline they share.
   MAX_PLAYERS = 4
 
+  # Frames after a player joined in which others the invite reached may still join, three seconds,
+  # since several may accept before any of them sees another join and the invite stop.
+  LATE_FRAMES = 180
+
   # Color of the invite line above a ghost's name and above the player's own head.
   INVITE_COLOR = Color.new(255, 224, 128)
+
+  # What a player reads once a party's leader turned them away as they joined, after the leader's
+  # name, by the reason the leader gives.
+  TURNED_AWAY = { "full" => "'s party is full", "late" => "'s invite is over" }
 
   @routes = {}
 
@@ -70,14 +80,14 @@ module MGQ_MpCoop
     MGQ_MpOverworldSync.route(field) { |peer, message| take(field, peer, message) }
   end
 
-  # Takes a message of the party, dropping one of another party or from a player the game does not
-  # know yet.
+  # Takes a message of the party, dropping one of another party, from a player the party's leader
+  # did not admit, or from a player the game does not know yet.
   #
   # @param field [String] The field that marks it.
   # @param peer [MGQ_MpOverworldSync::Peers::Peer, nil] Who sent it.
   # @param message [Hash] The message's fields.
   def self.take(field, peer, message)
-    return unless peer && Party.id && message["party"] == Party.id
+    return unless peer && Party.id && message["party"] == Party.id && Party.member?(peer.state)
 
     @routes[field].call(peer, message)
   end
@@ -98,7 +108,8 @@ module MGQ_MpCoop
   #
   # @return [Hash] The fields.
   def self.state_fields
-    { "party" => Party.id.to_s, "invite" => Party.inviting? ? 1 : 0, "invite_to" => Party.targets.join(",") }
+    { "party" => Party.id.to_s, "party_members" => Party.admitted.join(","),
+      "invite" => Party.inviting? ? 1 : 0, "invite_to" => Party.targets.join(",") }
   end
 
   # Reports whether the player plays in a party of an open world with someone else in it.
@@ -115,7 +126,16 @@ module MGQ_MpCoop
   def self.size_of(id)
     return 0 if id.to_s.empty?
 
-    peers.count { |peer| peer.state["party"] == id } + (id == Party.id ? 1 : 0)
+    players_of(id).size + (id == Party.id ? 1 : 0)
+  end
+
+  # Lists the other players of a party: of the player's own only those its leader admitted, of
+  # another party everyone who names it.
+  #
+  # @param id [String] The party's id.
+  # @return [Array<MGQ_MpOverworldSync::Peers::Peer>] The players.
+  def self.players_of(id)
+    id == Party.id ? Party.members : peers.select { |peer| peer.state["party"] == id }
   end
 
   # Finds the leader of a party: the player who made it, whose id starts the party's id, or the
@@ -126,11 +146,11 @@ module MGQ_MpCoop
   def self.leader_of(id)
     return nil if id.to_s.empty?
 
-    candidates = peers.select { |peer| peer.state["party"] == id }.map { |peer| [peer.state["id"].to_s, peer] }
+    candidates = players_of(id).map { |peer| [peer.state["id"].to_s, peer] }
     candidates.unshift([MGQ_MpOverworldSync::Me.identity[0].to_s, :me]) if id == Party.id
     return nil if candidates.empty?
 
-    maker = candidates.find { |player_id, _| !player_id.empty? && player_id[0, 8] == id[0, 8] }
+    maker = candidates.find { |player_id, _| Party.maker?(player_id, id) }
     (maker || candidates.min_by { |player_id, _| player_id })[1]
   end
 
@@ -241,12 +261,19 @@ module MGQ_MpCoop
     end
   end
 
-  # The player's party: the others who share its id. Every game says its party's id and whether it
-  # invites in the state it sends anyway, so joining needs no message of its own: a player who
-  # accepts takes the inviter's id, and the inviter sees them join by it.
+  # The player's party: the others who share its id and whom its leader admitted. Every game says
+  # its party's id and whether it invites in the state it sends anyway, so joining needs no message
+  # of its own: a player who accepts takes the inviter's id, and the inviter sees them join by it.
+  #
+  # Anyone can read a party's id in its members' states, so naming it is not enough: the leader
+  # admits only a player the invite reached, and tells whom it admitted.
   module Party
     @id = nil
     @invite = Invite.new
+    @admitted = []
+    @turned_away = {}
+    @late_frames = 0
+    @late_targets = []
 
     # The party's id, nil while the player is in none.
     #
@@ -262,12 +289,33 @@ module MGQ_MpCoop
       @invite.inviting?
     end
 
-    # Reports whether another player is in the player's party.
+    # The ids of the players the party's leader admitted, which the leader keeps and every member
+    # takes from the leader.
+    #
+    # @return [Array<String>] The ids, none outside a party.
+    def self.admitted
+      @id ? @admitted : []
+    end
+
+    # Reports whether a player made a party: their id starts the party's id.
+    #
+    # @param player_id [String] The player's id.
+    # @param id [String] The party's id, the player's own party's by default.
+    # @return [Boolean] Whether they did.
+    def self.maker?(player_id, id = @id)
+      !player_id.empty? && player_id[0, 8] == id[0, 8]
+    end
+
+    # Reports whether another player is in the player's party: one who names it, and who made it or
+    # was admitted by its leader.
     #
     # @param state [Hash] What the other player last told.
     # @return [Boolean] Whether they are.
     def self.member?(state)
-      !@id.nil? && state["party"] == @id
+      return false unless !@id.nil? && state["party"] == @id
+
+      player_id = state["id"].to_s
+      maker?(player_id) || @admitted.include?(player_id)
     end
 
     # Lists the other players in the party.
@@ -312,13 +360,41 @@ module MGQ_MpCoop
 
     # Leaves the party and forgets any invite, as when the world closes.
     def self.reset
-      @id = nil
+      forget
       @invite.stop
+    end
+
+    # Forgets the party and whom its leader admitted.
+    def self.forget
+      @id = nil
+      @admitted = []
+      @turned_away = {}
+      @late_frames = 0
+      @late_targets = []
     end
 
     # Lets an invite run out, and forgets a party nobody joined. Called every frame.
     def self.count_down
-      @id = nil if @invite.count_down && members.empty?
+      @late_frames -= 1 if @late_frames > 0
+      forget if @invite.count_down && members.empty?
+    end
+
+    # Stops the invite once a player joined, leaving LATE_FRAMES to the others it reached.
+    def self.close_invite
+      return unless inviting?
+
+      @late_targets = targets.dup
+      @late_frames = LATE_FRAMES
+      @invite.stop
+    end
+
+    # Reports whether the invite reaches another player, or did as it stopped for a player who
+    # joined a moment ago.
+    #
+    # @param state [Hash] What the other player last told.
+    # @return [Boolean] Whether it does.
+    def self.invite_reached?(state)
+      @invite.covers?(state) || (@late_frames > 0 && (near?(state) || @late_targets.include?(state["id"].to_s)))
     end
 
     # Invites the players nearby, and a player anywhere in the world when named, making a party of
@@ -333,7 +409,7 @@ module MGQ_MpCoop
     # Stops inviting, forgetting a party nobody joined.
     def self.stop_inviting
       @invite.stop
-      @id = nil if members.empty?
+      forget if members.empty?
     end
 
     # Joins the party of a player who invites.
@@ -343,7 +419,9 @@ module MGQ_MpCoop
       return MGQ_MpCoop.notice("#{inviter.state['name']}'s party is full.") if full?(inviter.state["party"])
 
       left = @id && !members.empty?
+      forget
       @id = inviter.state["party"]
+      @admitted = told_by(inviter)
       @invite.stop
       MGQ_MpCoop.notice("#{left ? 'You left your party and joined' : 'You joined'} #{inviter.state['name']}'s party.")
       MGQ_MpCoop.peers.each { |peer| peer.member = member?(peer.state) }
@@ -370,54 +448,109 @@ module MGQ_MpCoop
       return unless leader == :me && member?(peer.state)
 
       MGQ_MpCoop.tell(peer.seat, "kick", 1)
+      player_id = peer.state["id"].to_s
+      @admitted.delete(player_id)
+      # Their state names the party until the message arrives, which must not turn them away again.
+      @turned_away[player_id] = true
+      peer.member = false
       MGQ_MpCoop.notice("You removed #{peer.state['name']} from the party.")
     end
 
-    # Leaves the party once its leader removed the player, or turned them away from a full party.
+    # Leaves the party once its leader removed the player, or turned them away as they joined.
     #
     # @param peer [MGQ_MpOverworldSync::Peers::Peer] Who removed them, which counts only from the leader.
-    # @param reason [String, nil] "full" when the party was full as the player joined.
+    # @param reason [String, nil] A key of TURNED_AWAY when the player was turned away as they joined.
     def self.removed_by(peer, reason = nil)
       return unless leader.equal?(peer)
 
       reset
-      MGQ_MpCoop.notice(reason == "full" ? "#{peer.state['name']}'s party is full." : "#{peer.state['name']} removed you from the party.")
+      MGQ_MpCoop.notice("#{peer.state['name']}#{TURNED_AWAY.fetch(reason, ' removed you from the party')}.")
       MGQ_MpCoop.peers.each { |other| other.member = false }
     end
 
-    # Notices a player coming into or going out of the party, and stops inviting once one joined.
-    # As the leader, turns away a player who joined a party already full, since two players may
-    # accept before either sees the other join.
+    # Follows what another player just told: takes the leader's word on whom it admitted, admits
+    # the player as the leader, and notices them coming into or going out of the party.
     #
     # @param peer [MGQ_MpOverworldSync::Peers::Peer] The player, with what they just told.
     def self.observe(peer)
+      adopt(peer)
+      admit(peer)
+      update(peer)
+    end
+
+    # Reads whom a player says the party's leader admitted, the player included, since a leader
+    # who did not make the party is a member only by that list.
+    #
+    # @param peer [MGQ_MpOverworldSync::Peers::Peer] The player.
+    # @return [Array<String>] The ids.
+    def self.told_by(peer)
+      peer.state["party_members"].to_s.split(",") | [peer.state["id"].to_s]
+    end
+
+    # Takes whom the leader admitted, as a member, and looks at every other player again.
+    #
+    # @param peer [MGQ_MpOverworldSync::Peers::Peer] The player, with what they just told.
+    def self.adopt(peer)
+      return unless member?(peer.state) && leader.equal?(peer)
+
+      told = told_by(peer)
+      return if told.sort == @admitted.sort
+
+      @admitted = told
+      MGQ_MpCoop.peers.each { |other| update(other) unless other.equal?(peer) }
+    end
+
+    # As the leader, admits a player who names the party while the invite reaches them, and turns
+    # away one it does not reach or who finds the party full.
+    #
+    # @param peer [MGQ_MpOverworldSync::Peers::Peer] The player, with what they just told.
+    def self.admit(peer)
+      player_id = peer.state["id"].to_s
+      return @turned_away.delete(player_id) unless @id && peer.state["party"] == @id
+      return if player_id.empty? || member?(peer.state) || @turned_away[player_id] || leader != :me
+
+      @turned_away[player_id] = true
+      return turn_away(peer, "late") unless invite_reached?(peer.state)
+      return turn_away(peer, "full") if full?
+
+      @turned_away.delete(player_id)
+      @admitted << player_id
+    end
+
+    # Notices a player coming into or going out of the party, and stops inviting once one joined.
+    #
+    # @param peer [MGQ_MpOverworldSync::Peers::Peer] The player.
+    def self.update(peer)
       member = member?(peer.state)
       return if member == peer.member
 
       peer.member = member
       if member
-        @invite.stop
-        return turn_away(peer) if leader == :me && MGQ_MpCoop.size_of(@id) > MAX_PLAYERS
-
+        close_invite
         MGQ_MpCoop.notice("#{peer.state['name']} joined your party.")
       else
+        @admitted.delete(peer.state["id"].to_s) if leader == :me
         MGQ_MpCoop.notice("#{peer.state['name']} left your party.")
       end
     end
 
-    # Sends a player who joined a full party away again, as its leader.
+    # Sends a player who names the party away again, as its leader.
     #
     # @param peer [MGQ_MpOverworldSync::Peers::Peer] The player.
-    def self.turn_away(peer)
-      MGQ_MpCoop.tell(peer.seat, "kick", "full")
-      MGQ_MpCoop.notice("#{peer.state['name']} could not join, the party is full.")
+    # @param reason [String] A key of TURNED_AWAY.
+    def self.turn_away(peer, reason)
+      MGQ_MpCoop.tell(peer.seat, "kick", reason)
+      MGQ_MpCoop.notice("#{peer.state['name']} could not join, #{reason == 'full' ? 'the party is full' : 'the invite is over'}.")
     end
 
-    # Forgets a party nobody is left in once a member left the world.
+    # Forgets a player who left the world, and a party nobody is left in.
     #
     # @param peer [MGQ_MpOverworldSync::Peers::Peer] The player.
     def self.observe_leaving(peer)
-      @id = nil if peer.member && members.empty? && !inviting?
+      player_id = peer.state["id"].to_s
+      @turned_away.delete(player_id)
+      @admitted.delete(player_id) if leader == :me
+      forget if peer.member && members.empty? && !inviting?
     end
 
     # Reports whether another player stands near the player, on the same map.
@@ -437,6 +570,13 @@ class Game_Event
   # @return [Integer] The page's index, -1 for none.
   def mgq_mp_page
     @page ? @event.pages.index(@page).to_i : -1
+  end
+
+  # Lists the event's pages, which tell a chest whichever page it shows.
+  #
+  # @return [Array<RPG::Event::Page>] The pages.
+  def mgq_mp_pages
+    @event.pages
   end
 end
 

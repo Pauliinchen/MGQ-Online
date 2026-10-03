@@ -2,6 +2,7 @@
 #  world_overview_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-03: Named the member in the leader's invite, which admits them
 #      Paulinchen  2026-10-02: Opened the overview with the key mp_keys.rbx binds instead of a stand-in for the PvP battle screen's
 #      Paulinchen  2026-10-01: Created
 #
@@ -163,7 +164,7 @@ bea = MGQ_MpOverworldSync::Peers.at(3)
 check("a member sees their leader in the party", overview.party_option(friend_peer).text, "In your party")
 check("and may not invite", [overview.party_option(bea).run, overview.party_option(bea).refusal], [nil, "Only the party's leader invites."])
 MGQ_MpCoop::Party.reset
-MGQ_MpCoop::Party.invite
+MGQ_MpCoop::Party.invite("zz-bea")
 $inbox << entry("message", 3, told(other.merge("party" => MGQ_MpCoop::Party.id, "id" => "zz-bea")))
 MGQ_MpOverworldSync.tick
 check("the leader may remove a member", overview.party_option(bea).text, "Remove from party")

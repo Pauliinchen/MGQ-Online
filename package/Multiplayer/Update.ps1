@@ -4,7 +4,7 @@
 #  Changelog:
 #      Paulinchen  2026-09-30: Found the game folder two levels up, since the mod lives in Patch\Multiplayer
 #                            - Fetched MGQ-Online-<version>.zip from the repository under its new name, MGQ-Online
-#      Paulinchen  2026-09-30: Created
+#                            - Created
 #
 #----------------------------------------------------------------
 

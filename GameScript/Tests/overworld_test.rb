@@ -2,6 +2,7 @@
 #  overworld_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-03: Checked that a party counts only whom its leader admitted, and that a player whose connection dropped is kept for a while
 #      Paulinchen  2026-10-02: Checked what Discord hears of the open world
 #                            - Checked that the state marker tells states apart from the scripts' messages
 #                            - Checked that a full party turns away one player too many and cannot be joined
@@ -381,6 +382,18 @@ check("a message with a map but no marker is no state", MGQ_MpOverworldSync::Pee
 # Leaving, and closing the world.
 $inbox << entry("out", 2)
 MGQ_MpOverworldSync.tick
+check("a player whose connection dropped is kept for a while, unseen",
+      [MGQ_MpOverworldSync::Peers.at(2).away.nil?, MGQ_MpOverworldSync::Status.lines.include?("Friend left the world.")], [false, false])
+MGQ_MpOverworld.update_ghosts
+check("without their ghost", MGQ_MpOverworldSync::Peers.at(2).ghost, nil)
+$inbox << entry("message", 6, told(friend))
+MGQ_MpOverworldSync.tick
+check("and is the same player once they tell again, on any seat",
+      [MGQ_MpOverworldSync::Peers.at(2), MGQ_MpOverworldSync::Peers.at(6).away, MGQ_MpOverworldSync::Peers.all.size, MGQ_MpOverworldSync::Status.lines.grep(/joined the world/).size], [nil, nil, 1, 0])
+$inbox << entry("seat", 0)
+MGQ_MpOverworldSync.tick
+check("the player's own new connection keeps the others for as long", MGQ_MpOverworldSync::Peers.at(6).away.nil?, false)
+(MGQ_MpOverworldSync::REJOIN_FRAMES + 1).times { MGQ_MpOverworldSync.tick }
 check("left notice", MGQ_MpOverworldSync::Status.lines.last, "Friend left the world.")
 check("no peers left", MGQ_MpOverworldSync::Peers.empty?, true)
 $inbox << entry("message", 3, told(friend.merge("seat" => 3)))
@@ -402,6 +415,11 @@ $inbox << entry("message", 4, told(friend.merge("x" => 50, "y" => 50)))
 MGQ_MpOverworldSync.tick
 MGQ_MpCoop::Party.invite
 mine = MGQ_MpCoop::Party.id
+MGQ_MpOverworldSync::Peers.at(4).state["party"] = mine
+$inbox << entry("message", 4, "gtest=uninvited\nparty=#{mine}\n\n")
+MGQ_MpOverworldSync.tick
+check("a player the leader did not admit is not heard, though they name the party", $gate, [])
+MGQ_MpCoop::Party.admitted << "friend"
 $inbox << entry("message", 4, "gtest=theirs
 party=other
 
@@ -450,6 +468,7 @@ check("the targets run out with the invite", MGQ_MpCoop::Party.targets, [])
 # The size and leader of a party.
 MGQ_MpCoop::Party.invite
 far.state.merge!("party" => MGQ_MpCoop::Party.id, "invite" => "0")
+MGQ_MpCoop::Party.admitted << far.state["id"]
 badges = [MGQ_MpOverworld.party_badge(:me), MGQ_MpOverworld.party_badge(far)]
 check("a party of two shows its size on both, and one of them leads", [badges.map { |b| b[0] }, badges.count { |b| b[1] }], [["2 / 4", "2 / 4"], 1])
 check("the leader is the one the party's id names, else the lowest id", MGQ_MpCoop.leads?(far), true)
@@ -460,11 +479,13 @@ check("a player alone shows no size", [MGQ_MpOverworld.party_badge(:me), MGQ_MpO
 MGQ_MpCoop::Party.reset
 MGQ_MpCoop::Party.invite
 far.state.merge!("party" => MGQ_MpCoop::Party.id, "invite" => "0", "id" => "zz-far")
+MGQ_MpCoop::Party.admitted << "zz-far"
 check("the leader may invite more", MGQ_MpCoop::Party.may_invite?, true)
 $sent.clear
 MGQ_MpCoop::Party.remove(far)
-check("and removes a member by telling their game", [$sent.last[0], $sent.last[1].include?("kick=1")], [4, true])
+check("and removes a member by telling their game", [$sent.last[0], $sent.last[1].include?("kick=1"), MGQ_MpCoop::Party.members], [4, true, []])
 far.state["id"] = "aa-far"
+MGQ_MpCoop::Party.admitted << "aa-far"
 check("a member may not invite", [MGQ_MpCoop::Party.may_invite?, MGQ_MpActions.wheel_options[:UP].refusal], [false, "Only the party's leader invites."])
 MGQ_MpCoop::Party.remove(far)
 check("nor remove", $sent.size, 1)
@@ -474,13 +495,46 @@ check("the leader's removal makes the member's game leave", [MGQ_MpCoop::Party.i
 
 # A party past its size: the leader turns away whoever joins one too many, and nobody joins a full one.
 MGQ_MpCoop::Party.reset
-MGQ_MpCoop::Party.invite
+(10..13).each { |seat| MGQ_MpCoop::Party.invite("zz-m#{seat}") }
 full = MGQ_MpCoop::Party.id
 (10..13).each { |seat| $inbox << entry("message", seat, told(friend.merge("id" => "zz-m#{seat}", "name" => "M#{seat}", "party" => full))) }
 $sent.clear
 MGQ_MpOverworldSync.tick
 check("the leader turns away the fifth player", [$sent.select { |_, text| text.include?("kick=full") }.map(&:first), MGQ_MpOverworldSync::Status.lines.last],
       [[13], "M13 could not join, the party is full."])
+
+# A player the invite did not reach names the party: the leader turns them away, and they are no member.
+MGQ_MpCoop::Party.reset
+MGQ_MpCoop::Party.invite("zz-m10")
+$inbox << entry("message", 10, told(friend.merge("id" => "zz-m10", "name" => "M10", "party" => MGQ_MpCoop::Party.id)))
+$inbox << entry("message", 11, told(friend.merge("id" => "zz-m11", "name" => "M11", "party" => MGQ_MpCoop::Party.id, "x" => 40)))
+(MGQ_MpCoop::LATE_FRAMES + 1).times { MGQ_MpCoop::Party.count_down }
+$sent.clear
+MGQ_MpOverworldSync.tick
+check("the leader admits whom the invite reached, and turns away who only names the party",
+      [MGQ_MpCoop::Party.members.map(&:seat), MGQ_MpCoop::Party.admitted, $sent.select { |_, text| text.include?("kick=late") }.map(&:first)], [[10], ["zz-m10"], [11]])
+check("and tells whom it admitted", MGQ_MpOverworldSync::Me.current["party_members"], "zz-m10")
+$inbox << entry("message", 11, told(friend.merge("id" => "zz-m11", "name" => "M11", "party" => MGQ_MpCoop::Party.id, "x" => 41)))
+$sent.clear
+MGQ_MpOverworldSync.tick
+check("once", $sent.select { |_, text| text.include?("kick=") }, [])
+
+# A member takes the leader's word on who is in the party.
+MGQ_MpCoop::Party.reset
+leader = MGQ_MpOverworldSync::Peers.at(10)
+leader.state.merge!("party" => "zz-m10", "invite" => "1", "party_members" => "zz-m12")
+(11..12).each { |seat| MGQ_MpOverworldSync::Peers.at(seat).state["party"] = "zz-m10" }
+MGQ_MpCoop::Party.join(leader)
+check("a member counts the leader and whom the leader admitted", MGQ_MpCoop::Party.members.map(&:seat), [10, 12])
+$inbox << entry("message", 10, told(leader.state.merge("party_members" => "zz-m12,zz-m11,me")))
+MGQ_MpOverworldSync.tick
+check("and whom the leader admits later", MGQ_MpCoop::Party.members.map(&:seat), [10, 11, 12])
+$inbox << entry("out", 10)
+(MGQ_MpOverworldSync::REJOIN_FRAMES + 1).times { MGQ_MpOverworldSync.tick }
+check("the party outlasts its leader, and the lowest id leads", [MGQ_MpCoop::Party.members.map(&:seat), MGQ_MpCoop::Party.leader == :me], [[11, 12], true])
+(10..13).each { |seat| $inbox << entry("message", seat, told(friend.merge("id" => "zz-m#{seat}", "name" => "M#{seat}", "party" => full))) }
+MGQ_MpOverworldSync.tick
+
 MGQ_MpCoop::Party.reset
 MGQ_MpCoop::Party.join(MGQ_MpOverworldSync::Peers.at(10))
 check("a full party cannot be joined", [MGQ_MpCoop::Party.id, MGQ_MpOverworldSync::Status.lines.last], [nil, "M10's party is full."])

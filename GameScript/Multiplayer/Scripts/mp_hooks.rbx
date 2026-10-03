@@ -2,6 +2,7 @@
 #  mp_hooks.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-03: Kept each method's blocks ready in their order, so a wrapped method looks nothing up and builds nothing when it runs
 #      Paulinchen  2026-10-02: Created
 #
 #----------------------------------------------------------------
@@ -15,6 +16,10 @@
 module MGQ_MpHooks
   # The blocks by method, then by when they run, then by the script that registered them.
   @blocks ||= {}
+
+  # The blocks by method, then by when they run, as each wrap runs them: pairs of script and block
+  # in their order. Every wrap holds its own two lists, which a registration fills anew.
+  @ready ||= {}
 
   # The original of each wrapped method by method.
   @originals ||= {}
@@ -62,9 +67,12 @@ module MGQ_MpHooks
   # @param script [String] Who registers.
   # @param block [Proc] What runs.
   def self.register(owner, name, moment, script, block)
-    wrap(owner, name)
+    ready = @ready[[owner, name]] ||= { :before => [], :after => [] }
+    wrap(owner, name, ready)
     blocks = @blocks[[owner, name]] ||= { :before => {}, :after => {} }
     blocks[moment][script] = block
+    ready[:before].replace(blocks[:before].to_a.reverse)
+    ready[:after].replace(blocks[:after].to_a)
   rescue => e
     log("#{script} could not follow #{owner}##{name}: #{e.class}: #{e.message}")
   end
@@ -76,16 +84,21 @@ module MGQ_MpHooks
   #
   # @param owner [Module] The class that has the method.
   # @param name [Symbol] The method.
-  def self.wrap(owner, name)
+  # @param ready [Hash] The method's blocks as the wrap runs them, see @ready.
+  def self.wrap(owner, name, ready)
     return if @originals[[owner, name]]
 
     original = :"mgq_mp_hooks_#{@originals.size + 1}_#{name.to_s.gsub(/[?!=]/, '_')}"
     was_private = owner.private_method_defined?(name)
+    before = ready[:before]
+    after = ready[:after]
+    before_label = "before #{owner}##{name}"
+    after_label = "after #{owner}##{name}"
     owner.send(:alias_method, original, name)
     owner.send(:define_method, name) do |*args, &block|
-      MGQ_MpHooks.run(self, owner, name, :before, args)
+      MGQ_MpHooks.run(self, before, before_label, args) unless before.empty?
       result = send(original, *args, &block)
-      MGQ_MpHooks.run(self, owner, name, :after, args)
+      MGQ_MpHooks.run(self, after, after_label, args) unless after.empty?
       result
     end
     owner.send(:private, name) if was_private
@@ -95,22 +108,16 @@ module MGQ_MpHooks
   # Runs the blocks registered for a moment of a method, logging a failing one once.
   #
   # @param object [Object] The object the method runs on.
-  # @param owner [Module] The class that has the method.
-  # @param name [Symbol] The method.
-  # @param moment [Symbol] :before or :after.
+  # @param hooks [Array<Array>] Each script and its block, in the order they run.
+  # @param label [String] The moment and the method, for the log.
   # @param args [Array] The method's arguments.
-  def self.run(object, owner, name, moment, args)
-    blocks = @blocks[[owner, name]]
-    return unless blocks
-
-    scripts = moment == :before ? blocks[:before].keys.reverse : blocks[:after].keys
-    scripts.each do |script|
+  def self.run(object, hooks, label, args)
+    hooks.each do |script, block|
       begin
-        object.instance_exec(*args, &blocks[moment][script])
+        object.instance_exec(*args, &block)
       rescue => e
-        key = [owner, name, moment, script]
-        log("#{script} failed #{moment} #{owner}##{name}: #{e.class}: #{e.message}") unless @failed[key]
-        @failed[key] = true
+        log("#{script} failed #{label}: #{e.class}: #{e.message}") unless @failed[block]
+        @failed[block] = true
       end
     end
   end

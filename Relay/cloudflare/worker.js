@@ -6,7 +6,7 @@
 //                            - Kept each world's starting save in the directory's storage, in pieces
 //      Paulinchen  2026-09-29: Added the world directory, a Durable Object that world rooms ask before seating a game
 //                            - Added world rooms, each a Durable Object that seats up to 32 games
-//      Paulinchen  2026-09-29: Created
+//                            - Created
 //
 //----------------------------------------------------------------
 

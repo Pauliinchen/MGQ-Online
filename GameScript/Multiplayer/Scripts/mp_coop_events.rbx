@@ -2,6 +2,8 @@
 #  mp_coop_events.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-03: Left every starting story event to the leader, so one that starts by itself no longer keeps a member's other events from starting
+#                            - Knew a chest by any of its pages, so one the player opened stays their own
 #      Paulinchen  2026-10-02: Told mp_coop_story.rbx the items and gold the leader's story gives or takes
 #                            - Sorted a common event once per depth, so one sorted deep down no longer counts as story when called higher up
 #                            - Held event commands and followed the map's update through mp_hooks.rbx
@@ -351,7 +353,17 @@ module MGQ_MpCoopEvents
     return @chest_keys if @chest_keys_map == $game_map.map_id
 
     @chest_keys_map = $game_map.map_id
-    @chest_keys = $game_map.events.values.select { |event| kind(event) == :chest }.map { |event| chest_key(event) }.compact
+    @chest_keys = $game_map.events.values.map { |event| chest_key_of_pages(event) }.compact
+  end
+
+  # Finds the self switch an event sets as a chest, on whichever of its pages gives the chest's
+  # items, since a chest the player opened shows another page.
+  #
+  # @param event [Game_Event] The event.
+  # @return [Array, nil] Its key, nil when no page is a chest's.
+  def self.chest_key_of_pages(event)
+    page = event.mgq_mp_pages.find { |candidate| kind_of(candidate.list || []) == :chest }
+    page ? chest_key(event, page.list) : nil
   end
 
   # Reports whether a self switch belongs to a chest on the map, which makes it the player's own.
@@ -365,9 +377,10 @@ module MGQ_MpCoopEvents
   # Finds the self switch a chest sets.
   #
   # @param event [Game_Event] The chest.
+  # @param list [Array<RPG::EventCommand>, nil] The commands of the chest's page, those of the page it shows by default.
   # @return [Array, nil] Its key, nil when the page sets none.
-  def self.chest_key(event)
-    command = (event.list || []).find { |c| c.code == 123 && c.parameters[1] == 0 }
+  def self.chest_key(event, list = event.list)
+    command = (list || []).find { |c| c.code == 123 && c.parameters[1] == 0 }
     command ? [$game_map.map_id, event.id, command.parameters[0]] : nil
   end
 
@@ -1034,16 +1047,16 @@ if MGQ_MpCoopEvents.hookable?
       alias mgq_mp_coop_events_setup_starting_map_event setup_starting_map_event
       alias mgq_mp_coop_events_setup_autorun_common_event setup_autorun_common_event
 
-      # Starts the event that is starting, unless it is story the leader's game plays. The original
-      # does not run then.
+      # Starts the event that is starting, leaving out every one that is story the leader's game
+      # plays.
       #
       # @return [Game_Event, nil] The event started.
       def setup_starting_map_event
-        event = @events.values.find { |e| e.starting }
-        if event && MGQ_MpCoopEvents.hand_over(event)
+        @events.values.each do |event|
+          next unless event.starting && MGQ_MpCoopEvents.hand_over(event)
+
           event.clear_starting_flag
           event.unlock
-          return nil
         end
         mgq_mp_coop_events_setup_starting_map_event
       end

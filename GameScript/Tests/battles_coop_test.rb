@@ -2,6 +2,7 @@
 #  battles_coop_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-03: Checked that a guest's command the character may not give is left out
 #      Paulinchen  2026-10-02: Checked that a player who joined and left the world before the roster does not stop the battle
 #                            - Ended the guest's battle through guest_end
 #      Paulinchen  2026-10-01: Checked that every player hears at once when another leaves the battle
@@ -90,6 +91,10 @@ MGQ_MpBattlesSync::Commands.apply(commands, 2)
 check("a guest's commands go to their characters", [party[2].actions.map(&:item), party[3].actions.map(&:item)], [[[:skill, 12]], [[:item, 3]]])
 MGQ_MpBattlesSync::Commands.apply(MGQ_MpBattlesSync::Wire.line([[[["skill", 99, 0]], [], [], []]]), 2)
 check("never to the host's own", party[0].actions, [])
+MGQ_MpBattlesSync::Commands.apply(MGQ_MpBattlesSync::Wire.line([[[], [], [["skill", KNOWN_SKILLS, 0]], [["item", FIELD_ITEMS, 0]]]]), 2)
+check("a skill the character lacks and an item no battle allows are left out", [party[2].actions.map(&:item), party[3].actions.map(&:item)], [[[:skill, 12]], [[:item, 3]]])
+MGQ_MpBattlesSync::Commands.apply(MGQ_MpBattlesSync::Wire.line([[[], [], [["skill", 199, 0]], [["skill", -1, 0]]]]), 2)
+check("a skill of no skill type is taken, an id below the database is not", [party[2].actions.map(&:item), party[3].actions.map(&:item)], [[[:skill, 199]], [[:item, 3]]])
 check("the host's own characters are commanded here", [party[0].is_a?(Game_MpAlly), party[2].inputable?], [false, false])
 
 # Playback and escape.

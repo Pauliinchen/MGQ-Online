@@ -4,7 +4,7 @@
 //  Changelog:
 //      Paulinchen  2026-09-29: Took a world room's seats from the directory, and a game's player key, name and auth key from its request
 //                            - Added world rooms, which seat up to 32 games and pass each message to one or all of the others
-//      Paulinchen  2026-09-29: Created
+//                            - Created
 //
 //----------------------------------------------------------------
 

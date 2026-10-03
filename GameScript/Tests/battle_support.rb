@@ -2,6 +2,7 @@
 #  battle_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-03: Gave the characters skills and the database skills and items, which a guest's commands are checked against
 #      Paulinchen  2026-10-02: Gave the rebuilt character stand-in its owner's seat and place
 #      Paulinchen  2026-10-01: Created
 #
@@ -47,7 +48,18 @@ module MGQ_MpCoop
   end
   def self.leads?(player); player == :me ? $leader == :me : ($leader.equal?(player) || Array($leaders).any? { |l| l.equal?(player) }); end
 end
-module RPG; class Item; end; class Skill; end; class State; end; class Weapon; end; class Armor; end; end
+module RPG
+  class Item
+    attr_reader :id
+    def initialize(id = 0, battle = true); @id = id; @battle = battle; end
+    def battle_ok?; @battle; end
+  end
+  class Skill
+    attr_reader :id, :stype_id
+    def initialize(id = 0, stype_id = 1); @id = id; @stype_id = stype_id; end
+  end
+  class State; end; class Weapon; end; class Armor; end
+end
 class Color; def initialize(*); end; end
 class Tone; end
 class Game_ActionResult; end
@@ -68,6 +80,9 @@ class Game_Actor < Game_Battler
   def inputable?; true; end
   def luca?; false; end
   def make_actions; @actions = [Game_Action.new(self)]; end
+  def attack_skill_id; 1; end
+  def guard_skill_id; 2; end
+  def skills; $data_skills[3...KNOWN_SKILLS]; end
   def make_auto_battle_actions; @actions = [:auto]; end
 end
 class Game_MpActor < Game_Actor
@@ -135,8 +150,12 @@ module BattleManager
   def self.bind?; false; end
 end
 $setup = []
-$data_skills = Array.new(200, :skill)
-$data_items = Array.new(50, :item)
+# Every character has the skills below KNOWN_SKILLS; of those from there on, only the last has no
+# skill type. The items from FIELD_ITEMS on are none a battle allows.
+KNOWN_SKILLS = 150
+FIELD_ITEMS = 40
+$data_skills = [nil] + (1...200).map { |id| RPG::Skill.new(id, id == 199 ? 0 : 1) }
+$data_items = [nil] + (1...50).map { |id| RPG::Item.new(id, id < FIELD_ITEMS) }
 module SceneManager
   def self.run; end
   def self.call(scene); $called = scene; end

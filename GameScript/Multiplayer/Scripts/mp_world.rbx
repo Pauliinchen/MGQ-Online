@@ -2,6 +2,7 @@
 #  mp_world.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-03: Put the player's own system save and Save folder back when a world's system save cannot be loaded
 #      Paulinchen  2026-10-02: Told how many players a world seats, from its code
 #                            - Offered to copy a world's latest save into the player's own game
 #                            - Made worlds without a password, which their players enter without being asked for one
@@ -779,6 +780,7 @@ module MGQ_MpWorld
   # system, which holds the affection. A world keeps its own.
   module System
     # Writes the player's own system save and loads the world's, making a new one the first time.
+    # A world's system save that cannot be loaded leaves the player's own in place.
     #
     # @param folder [String] The folder of the world's saves.
     def self.enter(folder)
@@ -787,6 +789,11 @@ module MGQ_MpWorld
       Files.root = folder
       $game_library = $game_system_switches = $game_global_system = nil
       DataManager.setup_system
+    rescue
+      # Without this the game would go on in the world's folder with no world open, and the next
+      # world would keep the half-loaded system save as the player's own.
+      put_back
+      raise
     end
 
     # Writes the world's system save and puts the player's own back.
@@ -794,11 +801,18 @@ module MGQ_MpWorld
       return unless @own
 
       DataManager.save_system
+    ensure
+      put_back
+    end
+
+    # Puts the player's own system save and Save folder back.
+    def self.put_back
+      Files.root = nil
+      return unless @own
+
       $game_library, $game_system_switches, $game_global_system, count = @own
       DataManager.instance_variable_set(:@system_save_count, count)
       @own = nil
-    ensure
-      Files.root = nil
     end
   end
 

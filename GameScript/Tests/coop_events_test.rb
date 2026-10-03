@@ -2,6 +2,7 @@
 #  coop_events_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-03: Checked that a chest showing its opened page is still a chest, and that a story event left to the leader lets the next event start
 #      Paulinchen  2026-10-02: Checked that members as far along as the leader keep the story, its items, gold and companions, and their own changes
 #                            - Checked that a common event sorted deep down is sorted anew higher up, and where the awakening switches end
 #                            - Gave the stand-ins the party check and the event page that mp_coop.rbx now holds
@@ -151,6 +152,8 @@ class Game_Event
   def clear_starting_flag; @starting = false; end
   def unlock; @locked = false; end
   def mgq_mp_page; @page ? @event.pages.index(@page).to_i : -1; end
+  def mgq_mp_pages; @event.pages; end
+  def show(index); @page = @event.pages[index]; end
 end
 class Game_Map
   attr_accessor :map_id, :events, :need_refresh, :interpreter, :started
@@ -280,6 +283,13 @@ chest_page = RPG::Page.new([c(126, 1, 0, 0, 2), c(123, "A", 0)])
 talk_page = RPG::Page.new([c(101, "", 0, 0, 2)])
 $game_map.events = { 5 => Game_Event.new(5, [chest_page]), 6 => Game_Event.new(6, [talk_page]) }
 check("the map's chests are found", MGQ_MpCoopEvents.chest_keys, [[3, 5, "A"]])
+opened_page = RPG::Page.new([c(101, "", 0, 0, 2)])
+$game_map.events[7] = Game_Event.new(7, [chest_page, opened_page])
+$game_map.events[7].show(1)
+MGQ_MpCoopEvents.instance_variable_set(:@chest_keys_map, nil)
+check("so is a chest that shows its opened page", MGQ_MpCoopEvents.chest_keys, [[3, 5, "A"], [3, 7, "A"]])
+$game_map.events.delete(7)
+MGQ_MpCoopEvents.instance_variable_set(:@chest_keys_map, nil)
 
 $party = "p1"
 $leader = :me
@@ -470,6 +480,12 @@ check("a talk runs in the member's own game", $game_map.setup_starting_map_event
 $sent.clear
 $game_map.events[13].start
 check("a story event that runs by itself is left to the leader's game", [$game_map.setup_starting_map_event, $sent.size], [nil, 0])
+events = $game_map.events
+$game_map.events = { 13 => events[13], 12 => events[12] }
+$game_map.events[13].start
+$game_map.events[12].start
+check("and does not keep the member's own events from starting", [$game_map.setup_starting_map_event, $game_map.events[13].starting], [events[12], false])
+$game_map.events = events
 leader.state["map"] = "8"
 $game_map.events[11].start
 $game_map.setup_starting_map_event

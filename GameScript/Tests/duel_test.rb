@@ -2,6 +2,7 @@
 #  duel_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-03: Checked that a call to a team duel is taken only from the challenger the player accepted or through their party's leader
 #      Paulinchen  2026-10-02: Gave the live battle stand-in tell
 #      Paulinchen  2026-10-01: Created
 #
@@ -154,7 +155,7 @@ $inbox << entry("seat", 0) << entry("in", 2) << entry("message", 2, told(friend)
 pal = { "id" => "pal", "name" => "Pal", "map" => 5, "x" => 30, "y" => 30, "d" => 2, "scene" => "map" }
 $inbox << entry("message", 3, told(pal))
 MGQ_MpOverworldSync.tick
-MGQ_MpCoop::Party.invite
+MGQ_MpCoop::Party.invite("pal")
 $inbox << entry("message", 3, told(pal.merge("party" => MGQ_MpCoop::Party.id)))
 MGQ_MpOverworldSync.tick
 check("the player leads a party of two", MGQ_MpCoop.leads?(:me), true)
@@ -198,12 +199,46 @@ MGQ_MpOverworldSync.tick
 (MGQ_MpBattlesDuel::READY_FRAMES + 1).times { duel.tick(true) }
 check("without the other side it is off", [duel_sent.map { |_, f| f["reason"] }.compact.uniq, MGQ_MpOverworldSync::Status.lines.last], [["off"], "Nobody of Friend's side was ready, the duel is off."])
 
-# Called to a team duel as one of its players.
+# The player who accepted leads a party: they tell whom they called of it, who then count too.
+mate = { "id" => "mate", "name" => "Mate", "map" => 5, "x" => 31, "y" => 31, "d" => 2, "scene" => "map", "party" => "friend-p" }
+$inbox << entry("in", 4) << entry("message", 4, told(mate)) << entry("message", 2, told(friend.merge("party" => "friend-p")))
+MGQ_MpOverworldSync.tick
+duel.invite
+$sent.clear
+$inbox << entry("message", 2, "duel=accept\n\ngame-1\tteam-friend")
+MGQ_MpOverworldSync.tick
+calls = duel_sent.select { |_, f| f["duel"] == "team" }
+bid = calls.first[1]["bid"]
+check("the challenger calls its own party and the player who accepted, not their party", calls.map(&:first).sort, [2, 3])
+$inbox << entry("message", 4, "duel=ready\nbid=#{bid}\n\ngame-1\tbuilds-mate\t8")
+$inbox << entry("message", 2, "duel=side\nbid=#{bid}\nseats=4,9\n\n")
+$inbox << entry("message", 2, "duel=ready\nbid=#{bid}\n\ngame-1\tbuilds-friend\t8") << entry("message", 3, "duel=ready\nbid=#{bid}\n\ngame-1\tbuilds-pal\t8")
+MGQ_MpOverworldSync.tick
+starts = duel_sent.select { |_, f| f["duel"] == "start" }
+own, other = MGQ_MpBattlesSync::Wire.parse(starts.first[1][:payload])
+check("whom the other side's leader called joins their side, even when ready before being named",
+      [starts.map(&:first).sort, own.map(&:first).sort, other.map(&:first).sort], [[2, 3, 4], [0, 3], [2, 4]])
+frame
+$inbox << entry("message", 2, told(friend))
+MGQ_MpOverworldSync.tick
+
+# Called to a team duel as one of its players: only by the challenger the player accepted.
+$sent.clear
+$inbox << entry("message", 2, "duel=team\nbid=g8\n\n")
+MGQ_MpOverworldSync.tick
+check("a call from a player whose challenge the player did not accept is not answered", duel_sent, [])
+$inbox << entry("message", 2, told(friend.merge("challenge" => 1)))
+MGQ_MpOverworldSync.tick
+duel.accept(MGQ_MpOverworldSync::Peers.at(2))
 $sent.clear
 $inbox << entry("message", 2, "duel=team\nbid=g9\n\n")
 MGQ_MpOverworldSync.tick
 ready = duel_sent.find { |_, f| f["duel"] == "ready" }
 check("a player called answers once free, with their Frontline", [ready[0], ready[1]["bid"], ready[1][:payload]], [2, "g9", "game-1\tbuilds-me\t8"])
+side = duel_sent.find { |_, f| f["duel"] == "side" }
+check("as their party's leader, the player passes the call on and tells the challenger whom",
+      [$sent.select { |_, text| text.include?("duel_call=g9") }.map { |seat, text| [seat, text.include?("seat=2")] }, side[0], side[1].values_at("bid", "seats")],
+      [[[3, true]], 2, ["g9", "3"]])
 hosts = [[2, "Friend", "b", [], 8, [0, 1, 2, 3], 4, 0]]
 others = [[0, "Me", "b", [], 8, [0, 1, 2, 3], 2, 0], [3, "Pal", "b", [], 8, [0, 1, 2, 3], 2, 0]]
 $inbox << entry("message", 2, "duel=start\nbid=g9\nteam=1\n\n" + MGQ_MpBattlesSync::Wire.line([hosts, others]))
@@ -211,6 +246,7 @@ MGQ_MpOverworldSync.tick
 frame
 check("then joins the challenger's duel on the other side", [$joined.last, $prepared.map { |side| side.is_a?(Array) ? side.map(&:first) : side }],
       [[:guest, "g9", [2], "Friend", :pvp, true], [[0, 3], [2], false]])
+duel.accept(MGQ_MpOverworldSync::Peers.at(2))
 $sent.clear
 $inbox << entry("message", 2, "duel=team\nbid=g10\n\n")
 $game_message.busy = true
@@ -250,3 +286,20 @@ MGQ_MpOverworldSync.tick
 joined = $joined.size
 frame
 check("a call-off before the start drops the duel", [$joined.size - joined, MGQ_MpOverworldSync::Status.lines.last], [0, "Friend called the duel off."])
+
+# A party's member is called through their leader, never by the challenger alone.
+MGQ_MpCoop::Party.reset
+lead = MGQ_MpOverworldSync::Peers.at(2)
+lead.state.merge!("party" => "friend", "invite" => "1")
+MGQ_MpCoop::Party.join(lead)
+$sent.clear
+$inbox << entry("message", 3, "duel=team\nbid=g20\n\n")
+MGQ_MpOverworldSync.tick
+check("a member does not answer a challenger their leader did not accept", duel_sent, [])
+$inbox << entry("message", 3, "duel_call=g21\nparty=friend\nseat=2\n\n")
+MGQ_MpOverworldSync.tick
+check("nor a call another player passes on", duel_sent, [])
+$inbox << entry("message", 2, "duel_call=g22\nparty=friend\nseat=3\n\n")
+MGQ_MpOverworldSync.tick
+ready = duel_sent.find { |_, f| f["duel"] == "ready" }
+check("a call the leader passes on is answered to the challenger", [ready[0], ready[1]["bid"]], [3, "g22"])

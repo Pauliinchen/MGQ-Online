@@ -2,6 +2,7 @@
 #  mp_overworld_sync.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-03: Kept a player whose connection dropped for fifteen seconds, and every player across the game's own reconnect, so a party and a battle outlast it
 #      Paulinchen  2026-10-02: Told Discord the open world's name, its players and its seats through the Discord mod
 #                            - Followed Graphics.update through mp_hooks.rbx
 #                            - Marked the player's state, which tells it apart from the scripts' messages
@@ -34,6 +35,10 @@ module MGQ_MpOverworldSync
 
   # Frames between two looks at the connection.
   STATUS_FRAMES = 30
+
+  # Frames a player whose connection dropped is kept, fifteen seconds, since the relay ends every
+  # connection after a while and the games connect again at once.
+  REJOIN_FRAMES = 900
 
   # Bytes the DLL may write an inbox entry into at first.
   ENTRY_SIZE = 4096
@@ -164,6 +169,7 @@ module MGQ_MpOverworldSync
     end
 
     Inbox.take_all
+    Peers.tick
     ask(:tick, true)
     Me.tell_changes
     Status.look
@@ -321,25 +327,69 @@ module MGQ_MpOverworldSync
     # @!attribute state [Hash] What they last told: "name", "sprite", "index", "map", "x", "y", "d", "speed", "hidden", "scene".
     # @!attribute ghost [Game_MpGhost, nil] Their ghost, while they are on this map.
     # @!attribute member [Boolean] Whether they were in the player's party at their last message.
-    Peer = Struct.new(:seat, :state, :ghost, :member)
+    # @!attribute away [Integer, nil] The frames they are still kept for while their connection is down, nil while it stands.
+    Peer = Struct.new(:seat, :state, :ghost, :member, :away)
 
     @peers = {}
 
-    # Takes what a game told.
+    # Takes what a game told. A player who is away and comes back, on any seat, is the same player
+    # as before.
     #
     # @param seat [Integer] The game's seat.
     # @param state [Hash] What it told.
     def self.take(seat, state)
       peer = @peers[seat]
+      # Another player took the seat of one who is away.
+      remove(seat) if peer && peer.away && peer.state["id"] != state["id"]
+      peer = @peers[seat] || returning(seat, state)
 
       if peer
         peer.state = state
+        peer.away = nil
       else
-        peer = @peers[seat] = Peer.new(seat, state, nil, false)
+        peer = @peers[seat] = Peer.new(seat, state, nil, false, nil)
         Status.notice("#{state['name']} joined the world.")
       end
 
       MGQ_MpOverworldSync.ask(:observe, peer)
+    end
+
+    # Finds the player who is away and now tells from another seat, and moves them there.
+    #
+    # @param seat [Integer] The seat they tell from.
+    # @param state [Hash] What they told.
+    # @return [Peer, nil] The player, nil when nobody away has their id.
+    def self.returning(seat, state)
+      peer = @peers.values.find { |other| other.away && !state["id"].to_s.empty? && other.state["id"] == state["id"] }
+      return nil unless peer
+
+      @peers.delete(peer.seat)
+      peer.seat = seat
+      @peers[seat] = peer
+    end
+
+    # Keeps a game whose connection dropped for REJOIN_FRAMES, in which it may come back.
+    #
+    # @param seat [Integer] Its seat.
+    def self.wait_for(seat)
+      peer = @peers[seat]
+      peer.away ||= REJOIN_FRAMES if peer
+    end
+
+    # Keeps every game for REJOIN_FRAMES after the player's own connection came back, in which
+    # each tells its state again.
+    def self.wait_for_all
+      @peers.each_key { |seat| wait_for(seat) }
+    end
+
+    # Forgets the games that stayed away. Called every frame.
+    def self.tick
+      @peers.values.each do |peer|
+        next unless peer.away
+
+        peer.away -= 1
+        remove(peer.seat) if peer.away <= 0
+      end
     end
 
     # Finds a game by its seat.
@@ -361,7 +411,7 @@ module MGQ_MpOverworldSync
       MGQ_MpOverworldSync.ask(:leave, peer)
     end
 
-    # Forgets every game, as after a reconnect or once the world closed.
+    # Forgets every game, as once the world closed.
     def self.clear
       @peers.clear
     end
@@ -405,12 +455,12 @@ module MGQ_MpOverworldSync
       case entry["kind"]
       when "seat"
         # A new connection: every other game is told everything, and tells everything back.
-        Peers.clear
+        Peers.wait_for_all
         Me.tell_all(-1)
       when "in"
         Me.tell_all(seat)
       when "out"
-        Peers.remove(seat)
+        Peers.wait_for(seat)
       when "message"
         message = MGQ_Multiplayer::Link.parse(entry[:payload].dup)
         # A state may carry a field named like a route, and a script's message may name a map, so

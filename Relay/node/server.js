@@ -6,7 +6,7 @@
 //                            - Kept each world's starting save in memory, taken and handed out as bytes
 //      Paulinchen  2026-09-29: Kept the world directory, and seated a game in a world room only once the directory let it in
 //                            - Added world rooms, which seat up to 32 games
-//      Paulinchen  2026-09-29: Created
+//                            - Created
 //
 //----------------------------------------------------------------
 

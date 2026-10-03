@@ -2,6 +2,7 @@
 #  mp_overworld.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-03: Hid the ghost of a player whose connection is down
 #      Paulinchen  2026-10-02: Followed the map and its sprites through mp_hooks.rbx
 #      Paulinchen  2026-10-01: Showed a party member's followers behind their ghost
 #                            - Showed the size of a player's party after their name and above the player's own head, and a crown for its leader
@@ -101,7 +102,7 @@ module MGQ_MpOverworld
 
     map = $game_map.map_id
     MGQ_MpOverworldSync::Peers.all.each do |peer|
-      here = peer.state["map"].to_i == map
+      here = peer.away.nil? && peer.state["map"].to_i == map
 
       if here
         peer.ghost ||= Game_MpGhost.new(peer.state)

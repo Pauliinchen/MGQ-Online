@@ -2,6 +2,7 @@
 #  coop_squad_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-03: Admitted the party's members, as its leader does
 #      Paulinchen  2026-10-02: Dropped the checks of squad, which the places already cover
 #      Paulinchen  2026-10-01: Created
 #
@@ -171,6 +172,7 @@ check("no trail is told", squad.state_fields["trail"], "")
 party.invite
 friend = MGQ_MpOverworldSync::Peers::Peer.new(2, { "id" => "friend-id", "name" => "Friend", "party" => party.id }, nil, true)
 MGQ_MpOverworldSync::Peers.all << friend
+party.admitted << "friend-id"
 check("two players: two in front and two behind", squad.own_share, [2, 2])
 check("places in the squad", actors.first(6).map { |a| squad.place_of(a) }, [:front, :front, :bench, :bench, :cut, :cut])
 $game_player.refreshed = 0
@@ -199,6 +201,7 @@ check("a member may not choose", NWConst::Config::MOD_CONTENTS.find { |e| e[:key
 friend.state["follow"] = "0"
 other = MGQ_MpOverworldSync::Peers::Peer.new(3, { "id" => "a-other", "name" => "Other", "party" => "friend-p" }, nil, true)
 MGQ_MpOverworldSync::Peers.all << other
+party.admitted << "a-other"
 check("of three, a member who does not lead has one and one", squad.own_share, [1, 1])
 MGQ_MpOverworldSync.tick(true)
 check("and so walks alone", $game_player.followers.map { |f| f.visible? }, [false, false, false])
@@ -223,6 +226,7 @@ check("with a line above the first cut row only", edit.contents.fills.map { |f| 
 check("three players are no full party", party.full?, false)
 fourth = MGQ_MpOverworldSync::Peers::Peer.new(4, { "id" => "z-fourth", "name" => "Fourth", "party" => "friend-p" }, nil, true)
 MGQ_MpOverworldSync::Peers.all << fourth
+party.admitted << "z-fourth"
 check("four are", party.full?, true)
 check("so is another party of four seen from outside", party.full?("friend-p"), true)
 

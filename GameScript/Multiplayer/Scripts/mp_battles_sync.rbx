@@ -2,6 +2,8 @@
 #  mp_battles_sync.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-03: Took from a guest only skills their character has and items a battle allows
+#                            - Streamed an animation once, played one a battler starts by itself, and kept actions and turn ends to the recording on file
 #      Paulinchen  2026-10-02: Installed the battle hooks through mp_hooks.rbx
 #                            - Sent every message of a battle over the world's room through tell
 #                            - Played back only the picture, screen and audio methods the hooks record
@@ -781,20 +783,45 @@ module MGQ_MpBattlesSync
     #
     # @param battler [Game_Battler] The character.
     # @param command [Array] "skill" or "item", the id and the target's index.
-    # @return [Game_Action, nil] The action, nil for a command it cannot read.
+    # @return [Game_Action, nil] The action, nil for a command it cannot read or the character may not give.
     def self.action(battler, command)
       kind, id, target = command
-      return nil unless command.is_a?(Array) && id.is_a?(Integer) && target.is_a?(Integer)
+      return nil unless command.is_a?(Array) && id.is_a?(Integer) && id > 0 && target.is_a?(Integer)
+
+      item = { "skill" => $data_skills, "item" => $data_items }.fetch(kind, [])[id]
+      return nil unless item
+      return refuse(battler, item) unless allowed?(battler, item)
 
       action = Game_Action.new(battler)
       action.set_symbol(:count) if action.respond_to?(:set_symbol)
-      case kind
-      when "skill" then $data_skills[id] ? action.set_skill(id) : (return nil)
-      when "item" then $data_items[id] ? action.set_item(id) : (return nil)
-      else return nil
-      end
+      item.is_a?(RPG::Item) ? action.set_item(id) : action.set_skill(id)
       action.target_index = target
       action
+    end
+
+    # Reports whether a character may be commanded to use a skill or an item: a skill it has, or
+    # one of no skill type, as attacking, guarding and struggling are, and an item a battle allows.
+    #
+    # The owner's bag is not known here, so their own game alone counts their items.
+    #
+    # @param battler [Game_Battler] The character.
+    # @param item [RPG::UsableItem] The skill or item.
+    # @return [Boolean] Whether it may.
+    def self.allowed?(battler, item)
+      return item.battle_ok? if item.is_a?(RPG::Item)
+
+      item.stype_id == 0 || [battler.attack_skill_id, battler.guard_skill_id].include?(item.id) ||
+        (battler.respond_to?(:skills) && battler.skills.include?(item))
+    end
+
+    # Leaves out a command the character may not give, and logs it.
+    #
+    # @param battler [Game_Battler] The character.
+    # @param item [RPG::UsableItem] The skill or item.
+    # @return [nil] Nothing.
+    def self.refuse(battler, item)
+      MGQ_MpBattlesSync.log("left out #{item.class.name.split('::').last.downcase} #{item.id} for #{battler.name}, who may not use it")
+      nil
     end
   end
 
@@ -870,6 +897,9 @@ module MGQ_MpBattlesSync
     # Events kept before a mirror match writes them to the file.
     FLUSH_EVENTS = 200
 
+    # The events only the recording on file keeps, which no guest plays.
+    FILE_ONLY = ["action", "turn_end"]
+
     # Seeds a call's random choices are drawn from.
     SEED_RANGE = 1 << 30
 
@@ -924,6 +954,7 @@ module MGQ_MpBattlesSync
     # @param fields [Array] Its values, see Wire.line.
     def self.event(kind, *fields)
       return unless active? && !muted?
+      return if @sink == :link && FILE_ONLY.include?(kind)
 
       line = Wire.line([kind] + fields)
       @events << (@sink == :file ? "#{@frame.to_s.rjust(6)}\t#{line}" : line)
@@ -1026,6 +1057,25 @@ module MGQ_MpBattlesSync
     # @return [Boolean] Whether a call the guest makes itself is running.
     def self.muted?
       (@muted || 0) > 0
+    end
+
+    # Runs the battle's own showing of an animation, which is recorded as one event, so the
+    # animation it starts on each target is not recorded a second time.
+    #
+    # @yield The game's method.
+    # @return [Object] What the block returns.
+    def self.showing_animation
+      @showing_animation = true
+      yield
+    ensure
+      @showing_animation = false
+    end
+
+    # Tells whether the battle's own showing of an animation is running.
+    #
+    # @return [Boolean] Whether it is.
+    def self.showing_animation?
+      @showing_animation ? true : false
     end
 
     # Runs a block with the random numbers following a seed, so the guest's call makes the same
@@ -1284,6 +1334,8 @@ module MGQ_MpBattlesSync
         Audio.send(method, *args) if recorded?(Hooks::AUDIO_METHODS, method)
       when "animation"
         animation(scene, *args)
+      when "battler.animation_id", "battler.animation_mirror"
+        battler_animation(method, *args)
       when "battler.sprite_effect_type"
         sprite_effect(*args)
       when "skill_name"
@@ -1376,6 +1428,19 @@ module MGQ_MpBattlesSync
       @speaker = nil
       show_message
       scene.send(:wait_for_message)
+    end
+
+    # Starts an animation a battler started by itself on the host, outside the battle's own showing
+    # of one, or mirrors it.
+    #
+    # @param field [String] "animation_id" or "animation_mirror".
+    # @param battler [Game_Battler, nil] The guest's battler.
+    # @param value [Integer, Boolean] The animation, or whether it is mirrored.
+    def self.battler_animation(field, battler, value)
+      return if battler.nil? || behind?
+      return battler.animation_mirror = value ? true : false if field == "animation_mirror"
+
+      battler.animation_id = value.to_i if $data_animations[value.to_i]
     end
 
     # Starts a sprite effect the host started. The host's characters fall with an actor's collapse,
@@ -1759,7 +1824,9 @@ module MGQ_MpBattlesSync
     def self.battlers
       ANIMATION_SETTERS.each do |name|
         kind = "battler.#{name.to_s.chomp('=')}"
-        record_before(Game_Battler, name) { |battler, args| [kind, battler, args[0]] if args[0] && args[0] != 0 }
+        record_before(Game_Battler, name) do |battler, args|
+          [kind, battler, args[0]] if args[0] && args[0] != 0 && !Recorder.showing_animation?
+        end
       end
       wrap(Game_Battler, :sprite_effect_type=) do |battler, args, original|
         Recorder.sprite_effect(battler, args[0])
@@ -1787,8 +1854,9 @@ module MGQ_MpBattlesSync
       end
 
       # Recorded before the game checks the skip key, which leaves the animation out on this screen only.
-      record_before(Scene_Battle, :show_animation) do |scene, args|
-        ["animation", scene.instance_variable_get(:@subject), args[0], args[1]]
+      wrap(Scene_Battle, :show_animation) do |scene, args, original|
+        Recorder.event("animation", scene.instance_variable_get(:@subject), args[0], args[1]) if Recorder.active?
+        Recorder.showing_animation { original.call }
       end
 
       record_before(Scene_Battle, :turn_end) { |_scene, _args| ["turn_end"] }
