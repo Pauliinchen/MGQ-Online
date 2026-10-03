@@ -2,7 +2,8 @@
 #  mp_coop_story.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Logged through MGQ_MpLog
+#      Paulinchen  2026-10-03: Sent messages, showed notices and read the world, the own id and the own seat through MGQ_MpOverworldSync
+#                            - Logged through MGQ_MpLog
 #      Paulinchen  2026-10-02: Gave members as far along as the leader the items, gold and departures of the leader's story too
 #                            - Kept what a member as far along as the leader changed in their own game while in the party
 #                            - Ended the awakening switches with the last companion's, as the affection variables end
@@ -72,13 +73,6 @@ module MGQ_MpCoopStory
 
   # What starts this script's lines in the mod's InGame.log.
   LOG_TAG = "co-op story"
-
-  # Shows a notice at the bottom left of the map, through mp_overworld_sync.rbx.
-  #
-  # @param text [String] The notice.
-  def self.notice(text)
-    MGQ_MpOverworldSync::Status.notice(text) if defined?(MGQ_MpOverworldSync)
-  end
 
   # Reports whether the player plays the leader's story now.
   #
@@ -199,7 +193,7 @@ module MGQ_MpCoopStory
     @waiting = false
     return unless first
 
-    notice("You follow #{leader.state['name']}'s story while in the party." + (@same ? " You are as far along, so you keep what you play together." : ""))
+    MGQ_MpOverworldSync.notice("You follow #{leader.state['name']}'s story while in the party." + (@same ? " You are as far along, so you keep what you play together." : ""))
   end
 
   # Reports whether two stories are as far along: the same main story progress and route progress.
@@ -321,7 +315,7 @@ module MGQ_MpCoopStory
     else
       $game_party.add_stand_actor(actor_id)
     end
-    notice("#{$data_actors[actor_id].name} joined you too.")
+    MGQ_MpOverworldSync.notice("#{$data_actors[actor_id].name} joined you too.")
   end
 
   # Lets a companion go who left the leader in the story the player plays along.
@@ -333,7 +327,7 @@ module MGQ_MpCoopStory
 
     @departed << actor_id if $game_party.exist_party_actor_id?(actor_id)
     $game_party.remove_actor(actor_id)
-    notice("#{$data_actors[actor_id].name} left you too.")
+    MGQ_MpOverworldSync.notice("#{$data_actors[actor_id].name} left you too.")
   end
 
   # Gives or takes items or gold as the leader's story did.
@@ -354,7 +348,7 @@ module MGQ_MpCoopStory
       $game_party.gain_item(item, amount)
       name = amount.abs > 1 ? "#{item.name} x#{amount.abs}" : item.name
     end
-    notice(amount > 0 ? "#{leader.state['name']}'s story gave you #{name} too." : "#{leader.state['name']}'s story took #{name} from you too.")
+    MGQ_MpOverworldSync.notice(amount > 0 ? "#{leader.state['name']}'s story gave you #{name} too." : "#{leader.state['name']}'s story took #{name} from you too.")
   end
 
   # Reads a self switch as it is the player's own, whether or not they play the leader's story.
@@ -409,7 +403,7 @@ module MGQ_MpCoopStory
     kept = @same
     set_raw(*mix(own_story, raw_state))
     forget
-    notice(kept ? "You are back in your own story, with what you played together." : "You are back in your own story.")
+    MGQ_MpOverworldSync.notice(kept ? "You are back in your own story, with what you played together." : "You are back in your own story.")
   end
 
   # Forgets the story kept aside, as when a save is loaded or a new game starts, which bring their

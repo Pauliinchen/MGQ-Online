@@ -2,7 +2,8 @@
 #  mp_coop_squad.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Logged through MGQ_MpLog
+#      Paulinchen  2026-10-03: Sent messages, showed notices and read the world, the own id and the own seat through MGQ_MpOverworldSync
+#                            - Logged through MGQ_MpLog
 #      Paulinchen  2026-10-02: Installed the hooks on the game's plugins through mp_hooks.rbx
 #                            - Took whether the player plays in a party from mp_coop.rbx, and dropped squad, which co-op battles count otherwise
 #      Paulinchen  2026-10-01: Created
@@ -92,7 +93,7 @@ module MGQ_MpCoopSquad
 
     party = MGQ_MpCoop::Party
     leader = party.leader
-    own_id = MGQ_MpOverworldSync::Me.identity[0].to_s
+    own_id = MGQ_MpOverworldSync::Me.id
     players = [[own_id, leader == :me]] + party.members.map { |peer| [peer.state["id"].to_s, peer.equal?(leader)] }
     order = ranked(players)
     share(order.index(own_id), order.size, $game_party.party_member_max)

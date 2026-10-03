@@ -2,7 +2,8 @@
 #  mp_coop_events.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Logged through MGQ_MpLog
+#      Paulinchen  2026-10-03: Sent messages, showed notices and read the world, the own id and the own seat through MGQ_MpOverworldSync
+#                            - Logged through MGQ_MpLog
 #                            - Left every starting story event to the leader, so one that starts by itself no longer keeps a member's other events from starting
 #                            - Knew a chest by any of its pages, so one the player opened stays their own
 #      Paulinchen  2026-10-02: Told mp_coop_story.rbx the items and gold the leader's story gives or takes
@@ -448,7 +449,7 @@ module MGQ_MpCoopEvents
   def self.hold(interpreter)
     @hold = { :interpreter => interpreter, :since => Graphics.frame_count, :called => Graphics.frame_count }
     gather
-    MGQ_MpOverworldSync::Status.notice("Gathering the party for the story . . .")
+    MGQ_MpOverworldSync.notice("Gathering the party for the story . . .")
   end
 
   # As leader, calls the party members to where the player stands.
@@ -467,13 +468,13 @@ module MGQ_MpCoopEvents
 
     if !leading? || gathered?
       @hold = nil
-      MGQ_MpOverworldSync::Status.notice("The party is here.") if leading?
+      MGQ_MpOverworldSync.notice("The party is here.") if leading?
       return false
     end
 
     if Graphics.frame_count - @hold[:since] >= HOLD_FRAMES
       @hold = nil
-      MGQ_MpOverworldSync::Status.notice("The story starts without #{missing.join(', ')}.")
+      MGQ_MpOverworldSync.notice("The story starts without #{missing.join(', ')}.")
       return false
     end
 
@@ -536,7 +537,7 @@ module MGQ_MpCoopEvents
     return @gather = nil if near_place?(mine, place)
 
     unless @gather
-      MGQ_MpOverworldSync::Status.notice("#{peer.state['name']}'s story is starting. You join them in #{GATHER_FRAMES / 60} seconds.")
+      MGQ_MpOverworldSync.notice("#{peer.state['name']}'s story is starting. You join them in #{GATHER_FRAMES / 60} seconds.")
       @gather = { :since => Graphics.frame_count, :name => peer.state["name"].to_s }
     end
     @gather[:place] = place
@@ -566,7 +567,7 @@ module MGQ_MpCoopEvents
     return nil unless @gather
     return @gather if Graphics.frame_count - @gather[:called] < CALL_LAPSE_FRAMES
 
-    MGQ_MpOverworldSync::Status.notice("#{@gather[:name]}'s story started without you.")
+    MGQ_MpOverworldSync.notice("#{@gather[:name]}'s story started without you.")
     @gather = nil
   end
 
@@ -632,9 +633,9 @@ module MGQ_MpCoopEvents
 
     if lead.state["map"].to_i == $game_map.map_id
       tell(lead.seat, "run", "map" => $game_map.map_id, "event" => event.id)
-      MGQ_MpOverworldSync::Status.notice("The story goes on in #{lead.state['name']}'s game.")
+      MGQ_MpOverworldSync.notice("The story goes on in #{lead.state['name']}'s game.")
     else
-      MGQ_MpOverworldSync::Status.notice("#{lead.state['name']} leads the party's story. Bring them here to go on.")
+      MGQ_MpOverworldSync.notice("#{lead.state['name']} leads the party's story. Bring them here to go on.")
     end
     true
   rescue => e
@@ -934,7 +935,7 @@ module MGQ_MpCoopEvents
     names = grant(message["gains"].to_s)
     MGQ_MpCoopStory.keep_own_self_switch(key, true) if defined?(MGQ_MpCoopStory)
     text = names.empty? ? "#{peer.state['name']} opened a chest for the party." : "#{peer.state['name']} opened a chest for the party: #{names.join(', ')}."
-    MGQ_MpOverworldSync::Status.notice(text)
+    MGQ_MpOverworldSync.notice(text)
   rescue => e
     log("taking a chest failed: #{e.class}: #{e.message}")
   end

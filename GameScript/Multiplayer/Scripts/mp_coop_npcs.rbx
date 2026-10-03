@@ -2,7 +2,8 @@
 #  mp_coop_npcs.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Logged through MGQ_MpLog
+#      Paulinchen  2026-10-03: Sent messages, showed notices and read the world, the own id and the own seat through MGQ_MpOverworldSync
+#                            - Logged through MGQ_MpLog
 #      Paulinchen  2026-10-02: Followed the map's update through mp_hooks.rbx
 #                            - Took an event's page from mp_coop.rbx, and dropped the unused role
 #      Paulinchen  2026-09-30: Sent and took the party's messages through mp_coop.rbx, which drops those of another party
@@ -82,7 +83,7 @@ module MGQ_MpCoopNpcs
   # @param members [Array<MGQ_MpOverworldSync::Peers::Peer>] The other party members on the map.
   # @return [MGQ_MpOverworldSync::Peers::Peer, Symbol] The member, or :me for the player.
   def self.owner(members)
-    me = [[MGQ_MpOverworldSync::Me.map_since.to_i, MGQ_MpOverworldSync::Me.identity[0].to_s], :me]
+    me = [[MGQ_MpOverworldSync::Me.map_since.to_i, MGQ_MpOverworldSync::Me.id], :me]
     others = members.map { |peer| [[peer.state["since"].to_i, peer.state["id"].to_s], peer] }
     ([me] + others).min_by { |key, _| key }[1]
   end

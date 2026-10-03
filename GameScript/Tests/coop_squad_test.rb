@@ -2,7 +2,8 @@
 #  coop_squad_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Admitted the party's members, as its leader does
+#      Paulinchen  2026-10-03: Gave the world stand-in tell, notice and the own id and seat
+#                            - Admitted the party's members, as its leader does
 #      Paulinchen  2026-10-02: Dropped the checks of squad, which the places already cover
 #      Paulinchen  2026-10-01: Created
 #
@@ -130,12 +131,13 @@ module MGQ_MpOverworldSync
   def self.label_line(*); end
   def self.fields; @fields.map(&:call).inject({}) { |all, f| all.merge(f) }; end
   def self.tick(in_world); @ticks.each { |t| t.call(in_world) }; end
+  def self.notice(text); Status.notice(text); end
   module Peers
     Peer = Struct.new(:seat, :state, :ghost, :member)
     @all = []
     def self.all; @all; end
   end
-  module Me; def self.identity; ["me-id-000", "Me"]; end; end
+  module Me; def self.identity; ["me-id-000", "Me"]; end; def self.id; identity[0]; end; end
   module Status; def self.notice(text); $notice = text; end; end
 end
 

@@ -2,7 +2,8 @@
 #  mp_chat.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Logged through MGQ_MpLog
+#      Paulinchen  2026-10-03: Sent messages, showed notices and read the world, the own id and the own seat through MGQ_MpOverworldSync
+#                            - Logged through MGQ_MpLog
 #                            - Read the bound keys through MGQ_MpHotkeys, renamed from MGQ_MpKeys
 #      Paulinchen  2026-10-02: Opened the chat box with the key the player bound
 #                            - Followed the map and its sprites through mp_hooks.rbx
@@ -168,7 +169,7 @@ module MGQ_MpChat
       add(:me, MGQ_Multiplayer::Player.name.to_s, text)
     else
       Sound.play_buzzer
-      MGQ_MpChat.notice("The message could not be sent.")
+      MGQ_MpOverworldSync.notice("The message could not be sent.")
     end
   end
 
@@ -284,27 +285,13 @@ module MGQ_MpChat
   # What starts this script's lines in the mod's InGame.log.
   LOG_TAG = "chat"
 
-  # Reports whether a world is open, through mp_overworld_sync.rbx.
-  #
-  # @return [Boolean] Whether it is.
-  def self.in_world?
-    MGQ_MpOverworldSync.in_world?
-  end
-
   # Tells every other game of the world something, through mp_overworld_sync.rbx.
   #
   # @param fields [Hash] The message's fields, which must leave out MGQ_MpOverworldSync::STATE_FIELD,
   #   since that marks a state.
   # @return [Boolean] Whether it went out.
   def self.tell(fields)
-    MGQ_MpOverworldSync::Link.send_to(-1, MGQ_MpOverworldSync::Me.encode(fields))
-  end
-
-  # Shows a notice at the bottom left of the map, through mp_overworld_sync.rbx.
-  #
-  # @param text [String] The notice.
-  def self.notice(text)
-    MGQ_MpOverworldSync::Status.notice(text)
+    MGQ_MpOverworldSync.tell(-1, fields)
   end
 
   # Lets bubbles and chat lines run out, closes the chat box once neither the map nor a battle
@@ -329,7 +316,7 @@ module MGQ_MpChat
   # frame, so a press of the key is seen once.
   def self.on_map
     chat_key = MGQ_MpHotkeys.pressed?(:chat)
-    unless in_world? && !$game_map.interpreter.running? && !$game_message.busy?
+    unless MGQ_MpOverworldSync.in_world? && !$game_map.interpreter.running? && !$game_message.busy?
       stop_typing
       return
     end
@@ -349,7 +336,7 @@ module MGQ_MpChat
   # Called by the battle every frame, its waits included, so the player chats while the battle plays on.
   def self.on_battle
     chat_key = MGQ_MpHotkeys.pressed?(:chat)
-    return stop_typing unless in_world?
+    return stop_typing unless MGQ_MpOverworldSync.in_world?
 
     if typing?
       update_typing
@@ -504,7 +491,7 @@ class Sprite_MpChatLog < Sprite
   def update
     super
     chat = MGQ_MpChat
-    lines = MGQ_MpChat.in_world? ? chat.log_lines.last(ROWS) : []
+    lines = MGQ_MpOverworldSync.in_world? ? chat.log_lines.last(ROWS) : []
     drawn = [lines, chat.typed, chat.cursor, chat.typing? && chat.cursor_shown?]
     return if drawn == @shown
 
@@ -572,7 +559,7 @@ begin
     @mgq_mp_chat_log.update
     @mgq_mp_bubbles ||= {}
     chat = MGQ_MpChat
-    senders = chat.in_world? ? chat.senders : []
+    senders = MGQ_MpOverworldSync.in_world? ? chat.senders : []
     (@mgq_mp_bubbles.keys - senders).each { |sender| @mgq_mp_bubbles.delete(sender).dispose }
 
     senders.each do |sender|
@@ -630,7 +617,7 @@ if MGQ_MpChat.hookable?
 
       # Keeps the chat log above the battle's windows while a world is open.
       def mgq_mp_chat_update_log
-        return unless @mgq_mp_chat_log || MGQ_MpChat.in_world?
+        return unless @mgq_mp_chat_log || MGQ_MpOverworldSync.in_world?
 
         # The battle's windows lie above every viewport of the spriteset, so the log gets its own.
         @mgq_mp_chat_viewport ||= Viewport.new.tap { |viewport| viewport.z = 300 }

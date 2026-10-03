@@ -2,7 +2,8 @@
 #  mp_battles_team.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Logged through MGQ_MpLog
+#      Paulinchen  2026-10-03: Sent messages, showed notices and read the world, the own id and the own seat through MGQ_MpOverworldSync
+#                            - Logged through MGQ_MpLog
 #      Paulinchen  2026-10-02: Took the Frontline's size from mp_coop_squad.rbx
 #      Paulinchen  2026-10-01: Created
 #
@@ -133,7 +134,7 @@ module MGQ_MpBattlesTeam
   # @param ally [Game_MpAlly] The character.
   # @return [Boolean] Whether they do.
   def self.commands?(ally)
-    MGQ_MpBattlesSync.team? && heir_of(ally.mp_seat) == MGQ_MpBattlesCoop.own_seat
+    MGQ_MpBattlesSync.team? && heir_of(ally.mp_seat) == MGQ_MpOverworldSync::Me.seat
   end
 
   # Lists the players of a side still in the duel: the host and the guests who did not leave.
@@ -141,7 +142,7 @@ module MGQ_MpBattlesTeam
   # @param side [Array<Array>] The side's players.
   # @return [Array<Integer>] Their seats, in the side's order.
   def self.staying(side)
-    host = MGQ_MpBattlesCoop.own_seat
+    host = MGQ_MpOverworldSync::Me.seat
     side.map { |seat, *| seat }.select { |seat| seat == host || MGQ_MpBattlesSync.guests_in.include?(seat) }
   end
 

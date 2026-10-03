@@ -2,7 +2,8 @@
 #  mp_overworld.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Logged through MGQ_MpLog
+#      Paulinchen  2026-10-03: Sent messages, showed notices and read the world, the own id and the own seat through MGQ_MpOverworldSync
+#                            - Logged through MGQ_MpLog
 #                            - Hid the ghost of a player whose connection is down
 #      Paulinchen  2026-10-02: Followed the map and its sprites through mp_hooks.rbx
 #      Paulinchen  2026-10-01: Showed a party member's followers behind their ghost
@@ -76,13 +77,6 @@ module MGQ_MpOverworld
   # What starts this script's lines in the mod's InGame.log.
   LOG_TAG = "overworld"
 
-  # Reports whether a world is open.
-  #
-  # @return [Boolean] Whether mp_world.rbx has a world open.
-  def self.in_world?
-    MGQ_MpOverworldSync.in_world?
-  end
-
   # Writes a ping as it shows, with the color that says how good it is.
   #
   # @param ping [String, Integer, nil] The milliseconds.
@@ -96,7 +90,7 @@ module MGQ_MpOverworld
 
   # Moves the ghosts of the players on this map. Called by the map every frame.
   def self.update_ghosts
-    return unless in_world?
+    return unless MGQ_MpOverworldSync.in_world?
 
     map = $game_map.map_id
     MGQ_MpOverworldSync::Peers.all.each do |peer|
@@ -117,7 +111,7 @@ module MGQ_MpOverworld
   #
   # @return [Array<MGQ_MpOverworldSync::Peers::Peer>] The players.
   def self.ghosts
-    in_world? ? MGQ_MpOverworldSync::Peers.all.select { |peer| peer.ghost } : []
+    MGQ_MpOverworldSync.in_world? ? MGQ_MpOverworldSync::Peers.all.select { |peer| peer.ghost } : []
   end
 end
 
@@ -374,7 +368,7 @@ class Sprite_MpOwnPing < Sprite
   #
   # @param sprite [Sprite_Character, nil] The player's sprite.
   def show(sprite)
-    in_world = MGQ_MpOverworld.in_world?
+    in_world = MGQ_MpOverworldSync.in_world?
     ping = in_world ? MGQ_MpOverworld.ping_label(MGQ_MpOverworldSync::Ping.measured) : nil
     badge = in_world ? MGQ_MpOverworld.party_badge(:me) : nil
     self.visible = !(ping.nil? && badge.nil?) && !sprite.nil? && sprite.visible && sprite.opacity > 0
@@ -438,7 +432,7 @@ class Sprite_MpWorldStatus < Sprite
   # Draws what the line shows now, if it changed.
   def update
     super
-    lines = MGQ_MpOverworld.in_world? ? MGQ_MpOverworldSync::Status.lines.last(ROWS) : []
+    lines = MGQ_MpOverworldSync.in_world? ? MGQ_MpOverworldSync::Status.lines.last(ROWS) : []
     return if lines == @shown
 
     @shown = lines

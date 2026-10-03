@@ -2,7 +2,8 @@
 #  mp_overworld_sync.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Logged through MGQ_MpLog
+#      Paulinchen  2026-10-03: Added tell, notice, Me.id and Me.seat, which every script sends, notifies and names the player with
+#                            - Logged through MGQ_MpLog
 #                            - Kept a player whose connection dropped for fifteen seconds, and every player across the game's own reconnect, so a party and a battle outlast it
 #      Paulinchen  2026-10-02: Told Discord the open world's name, its players and its seats through the Discord mod
 #                            - Followed Graphics.update through mp_hooks.rbx
@@ -66,6 +67,23 @@ module MGQ_MpOverworldSync
   # @return [Boolean] Whether mp_world.rbx has a world open.
   def self.in_world?
     defined?(MGQ_MpWorld) && MGQ_MpWorld.open? ? true : false
+  end
+
+  # Shows a notice at the bottom left of the map for a few seconds.
+  #
+  # @param text [String] The notice.
+  def self.notice(text)
+    Status.notice(text)
+  end
+
+  # Sends a message to one seat or to every other game.
+  #
+  # @param seat [Integer] The seat, -1 for everyone.
+  # @param fields [Hash] The message's fields, the first of which marks it for its route.
+  # @param body [String] What follows the fields, such as a team.
+  # @return [Boolean] Whether it went out.
+  def self.tell(seat, fields, body = "")
+    Link.send_to(seat, Me.encode(fields) + body)
   end
 
   # The fields the Discord mod publishes about the open world, which Discord shows as its name and
@@ -271,6 +289,21 @@ module MGQ_MpOverworldSync
     # @return [Array<String>] The id and the name.
     def self.identity
       @identity ||= [MGQ_Multiplayer::Link.player_id, MGQ_Multiplayer::Player.name.to_s]
+    end
+
+    # The id everyone sees for the player.
+    #
+    # @return [String] The id, "" before the player was set.
+    def self.id
+      identity[0].to_s
+    end
+
+    # The seat of the player's game in the world's room.
+    #
+    # @return [Integer] The seat, -1 while the game holds none.
+    def self.seat
+      seat = Link.status["seat"]
+      seat.to_s.empty? ? -1 : seat.to_i
     end
 
     # Tells when the player entered the map they are on, which decides who of a party on a map is

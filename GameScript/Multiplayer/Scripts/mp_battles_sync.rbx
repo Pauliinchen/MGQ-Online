@@ -2,7 +2,8 @@
 #  mp_battles_sync.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Logged through MGQ_MpLog
+#      Paulinchen  2026-10-03: Sent messages, showed notices and read the world, the own id and the own seat through MGQ_MpOverworldSync
+#                            - Logged through MGQ_MpLog
 #                            - Took from a guest only skills their character has and items a battle allows
 #                            - Waited at a member's battle start for the party's leader to lead it
 #                            - Streamed an animation once, played one a battler starts by itself, and kept actions and turn ends to the recording on file
@@ -239,7 +240,7 @@ module MGQ_MpBattlesSync
     seats = Array(@seats)
     seats |= MGQ_MpBattlesCoop.player_seats if coop?
     seats |= (MGQ_MpBattlesTeam.own + MGQ_MpBattlesTeam.other).map(&:first) if team?
-    seats - [MGQ_MpBattlesCoop.own_seat]
+    seats - [MGQ_MpOverworldSync::Me.seat]
   end
 
   # Marks the live battle as started. Called by the mode once its battle scene is on the way.
@@ -349,7 +350,7 @@ module MGQ_MpBattlesSync
   # @param body [String] The rest.
   # @return [Boolean] Whether it went out.
   def self.tell(seat, kind, battle_id, body = "")
-    MGQ_MpOverworldSync::Link.send_to(seat, MGQ_MpOverworldSync::Me.encode("battle" => kind, "bid" => battle_id) + body)
+    MGQ_MpOverworldSync.tell(seat, { "battle" => kind, "bid" => battle_id }, body)
   end
 
   # Ends the battle once the friend is gone: won, or played on by the computer on the host.
@@ -1602,7 +1603,7 @@ module MGQ_MpBattlesSync
       @told.push(key)
       @told.shift while @told.size > KEPT
       MGQ_MpChat.system(text) if defined?(MGQ_MpChat)
-      MGQ_MpOverworldSync::Status.notice(text)
+      MGQ_MpOverworldSync.notice(text)
     rescue => e
       MGQ_MpBattlesSync.log("telling of a departure failed: #{e.class}: #{e.message}")
     end

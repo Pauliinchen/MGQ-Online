@@ -2,7 +2,8 @@
 #  mp_battles_coop.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Logged through MGQ_MpLog
+#      Paulinchen  2026-10-03: Sent messages, showed notices and read the world, the own id and the own seat through MGQ_MpOverworldSync
+#                            - Logged through MGQ_MpLog
 #                            - Started the battle and each turn for the other players' characters, whose unset hit count crashed the game when hit
 #                            - Showed the player's own leader and followers on the map again once the co-op party is forgotten
 #                            - Let the party's leader host a battle a member started, so the leader's game and mods decide it
@@ -99,14 +100,6 @@ module MGQ_MpBattlesCoop
   # @return [Boolean] Whether one does.
   def self.active?
     !@members.nil?
-  end
-
-  # The player's own world seat.
-  #
-  # @return [Integer] The seat, -1 while the game holds none.
-  def self.own_seat
-    seat = MGQ_MpOverworldSync::Link.status["seat"]
-    seat.to_s.empty? ? -1 : seat.to_i
   end
 
   # Sends a co-op message to one game or to everyone, who ignore it outside the party.
@@ -347,7 +340,7 @@ module MGQ_MpBattlesCoop
     return stand_down if joined.empty? || answer == :gone
 
     MGQ_MpBattlesSync.keep_seats(joined.keys)
-    players = [[own_seat, MGQ_Multiplayer::Player.name.to_s] + own_build]
+    players = [[MGQ_MpOverworldSync::Me.seat, MGQ_Multiplayer::Player.name.to_s] + own_build]
     joined.keys.sort.each do |seat|
       builds, vitals, max = MGQ_MpBattlesSync::Wire.parse(joined[seat].to_s)
       # A player who joined may have left the world since; their characters fight on all the same.
@@ -404,7 +397,7 @@ module MGQ_MpBattlesCoop
   # @param peer [MGQ_MpOverworldSync::Peers::Peer] The host.
   # @param message [Hash] The invite.
   def self.take_invite(peer, message)
-    return unless message["seats"].to_s.split(",").map(&:to_i).include?(own_seat)
+    return unless message["seats"].to_s.split(",").map(&:to_i).include?(MGQ_MpOverworldSync::Me.seat)
     return answer_of(peer, message, :leads) if @asking
     return if message["bid"] == @dropped_bid
     return MGQ_MpBattlesSync.tell(peer.seat, "decline", message["bid"].to_s) if MGQ_MpBattlesSync.role || SceneManager.scene.is_a?(Scene_Battle)
@@ -636,7 +629,7 @@ module MGQ_MpBattlesCoop
   # @param seat [Integer] The player's world seat.
   # @return [String] The id, empty when unknown.
   def self.player_id(seat)
-    return MGQ_MpOverworldSync::Me.identity[0].to_s if seat == own_seat
+    return MGQ_MpOverworldSync::Me.id if seat == MGQ_MpOverworldSync::Me.seat
 
     peer = MGQ_MpOverworldSync::Peers.at(seat)
     peer ? peer.state["id"].to_s : ""
@@ -647,7 +640,7 @@ module MGQ_MpBattlesCoop
   # @param seat [Integer] The player's world seat.
   # @return [Boolean] Whether they do.
   def self.leads?(seat)
-    player = seat == own_seat ? :me : MGQ_MpOverworldSync::Peers.at(seat)
+    player = seat == MGQ_MpOverworldSync::Me.seat ? :me : MGQ_MpOverworldSync::Peers.at(seat)
     player ? MGQ_MpCoop.leads?(player) : false
   end
 
@@ -680,7 +673,7 @@ module MGQ_MpBattlesCoop
   #
   # @return [Array, nil] The entry, see arrange, nil outside a co-op battle.
   def self.own_player
-    Array(@players).find { |seat, *| seat == own_seat }
+    Array(@players).find { |seat, *| seat == MGQ_MpOverworldSync::Me.seat }
   end
 
   # Lists the player's own characters on the battle's Backline, those they may swap in.
@@ -712,7 +705,7 @@ module MGQ_MpBattlesCoop
     players.each do |player|
       seat, name, builds, vitals = player
       front = lines_of(player)[0]
-      if seat == own_seat
+      if seat == MGQ_MpOverworldSync::Me.seat
         members.concat(front.map { |place| @own_squad[place] }.compact)
       else
         members.concat(front.map { |place| ally(seat, name, builds, vitals, place) }.compact)
@@ -778,7 +771,7 @@ module MGQ_MpBattlesCoop
   def self.settle(scene)
     return unless active?
 
-    staying = @players.select { |seat, *| seat == own_seat || MGQ_MpBattlesSync.guests_in.include?(seat) }
+    staying = @players.select { |seat, *| seat == MGQ_MpOverworldSync::Me.seat || MGQ_MpBattlesSync.guests_in.include?(seat) }
     return if staying.size == @players.size
 
     return go_solo(scene) if staying.size == 1

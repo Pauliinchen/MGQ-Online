@@ -2,7 +2,8 @@
 #  battle_support.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Gave the characters a battle start and a turn start, which set their hit count
+#      Paulinchen  2026-10-03: Gave the world stand-in tell, notice and the own id and seat
+#                            - Gave the characters a battle start and a turn start, which set their hit count
 #                            - Let the map's player refresh, telling which leader it shows
 #                            - Gave the map's player a random encounter and a menu call, and added the title screen
 #                            - Gave the characters skills and the database skills and items, which a guest's commands are checked against
@@ -27,6 +28,8 @@ module MGQ_Multiplayer
 end
 module MGQ_MpOverworldSync
   def self.in_world?; true; end
+  def self.notice(text); Status.notice(text); end
+  def self.tell(seat, fields, body = ""); Link.send_to(seat, Me.encode(fields) + body); end
   module Peers
     Peer = Struct.new(:seat, :state, :ghost, :member)
     @all = []
@@ -36,6 +39,8 @@ module MGQ_MpOverworldSync
   module Me
     def self.encode(state); state.map { |k, v| "#{k}=#{v}" }.join("\n") + "\n\n"; end
     def self.identity; ["id-me", "Me"]; end
+    def self.id; identity[0]; end
+    def self.seat; $my_seat.to_i; end
   end
   module Status; def self.notice(text); ($notices ||= []) << text; end; end
   module Link

@@ -2,7 +2,8 @@
 #  mp_actions.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Logged through MGQ_MpLog
+#      Paulinchen  2026-10-03: Sent messages, showed notices and read the world, the own id and the own seat through MGQ_MpOverworldSync
+#                            - Logged through MGQ_MpLog
 #                            - Read the bound keys through MGQ_MpHotkeys, renamed from MGQ_MpKeys
 #      Paulinchen  2026-10-02: Opened the wheel with the key the player bound, and named the bound keys of the chat and the World overview
 #                            - Followed the map and its sprites through mp_hooks.rbx
@@ -54,20 +55,6 @@ module MGQ_MpActions
   # What starts this script's lines in the mod's InGame.log.
   LOG_TAG = "actions"
 
-  # Reports whether a world is open, through mp_overworld_sync.rbx.
-  #
-  # @return [Boolean] Whether it is.
-  def self.in_world?
-    defined?(MGQ_MpOverworldSync) && MGQ_MpOverworldSync.in_world? ? true : false
-  end
-
-  # Shows a notice at the bottom left of the map, through mp_overworld_sync.rbx.
-  #
-  # @param text [String] The notice.
-  def self.notice(text)
-    MGQ_MpOverworldSync::Status.notice(text) if defined?(MGQ_MpOverworldSync)
-  end
-
   # Takes a choice of the wheel or the World overview, or tells why it cannot be taken.
   #
   # @param option [Option, nil] The choice.
@@ -77,20 +64,13 @@ module MGQ_MpActions
 
     unless option.run
       Sound.play_buzzer
-      notice(option.refusal) if option.refusal
+      MGQ_MpOverworldSync.notice(option.refusal) if option.refusal
       return
     end
 
     Sound.play_ok
     yield if block_given?
     option.run.call
-  end
-
-  # Lists the other players of the world, through mp_overworld_sync.rbx.
-  #
-  # @return [Array<MGQ_MpOverworldSync::Peers::Peer>] The players.
-  def self.peers
-    defined?(MGQ_MpOverworldSync) ? MGQ_MpOverworldSync::Peers.all : []
   end
 
   # Closes the wheel once the map is left. Called by mp_overworld_sync.rbx every frame in every
@@ -105,7 +85,7 @@ module MGQ_MpActions
   #
   # @return [String, nil] The line.
   def self.own_line
-    return nil unless in_world? && !Wheel.open?
+    return nil unless MGQ_MpOverworldSync.in_world? && !Wheel.open?
 
     story = defined?(MGQ_MpCoopEvents) ? MGQ_MpCoopEvents.own_line : nil
     return story if story
@@ -145,7 +125,7 @@ module MGQ_MpActions
     return Option.new("Duel", nil, "Duels need PvP battles, which are off or out of date.") unless defined?(MGQ_MpBattlesDuel) && MGQ_MpBattlesDuel.available?
 
     duel = MGQ_MpBattlesDuel
-    near = peers.select { |peer| MGQ_MpCoop::Party.near?(peer.state) }
+    near = MGQ_MpOverworldSync::Peers.all.select { |peer| MGQ_MpCoop::Party.near?(peer.state) }
     challenger = near.find { |peer| duel.challenged_by?(peer, false) }
     return Option.new("Accept #{challenger.state['name']}'s duel", lambda { duel.accept(challenger) }, nil) if challenger
     return Option.new("Stop challenging", lambda { duel.stop }, nil) if duel.inviting?
@@ -159,7 +139,7 @@ module MGQ_MpActions
   # @return [Option] The choice.
   def self.join_or_invite_option
     party = MGQ_MpCoop::Party
-    near = peers.select { |peer| party.near?(peer.state) && !party.member?(peer.state) }
+    near = MGQ_MpOverworldSync::Peers.all.select { |peer| party.near?(peer.state) && !party.member?(peer.state) }
     inviter = near.find { |peer| peer.state["invite"] == "1" }
     if inviter
       full = party.full?(inviter.state["party"])
@@ -186,7 +166,7 @@ module MGQ_MpActions
   # it is open. Called by the map every frame, so a press of the key is seen once.
   def self.on_map
     wheel_key = MGQ_MpHotkeys.pressed?(:wheel)
-    unless in_world? && !$game_map.interpreter.running? && !$game_message.busy?
+    unless MGQ_MpOverworldSync.in_world? && !$game_map.interpreter.running? && !$game_message.busy?
       Wheel.close
       return
     end
