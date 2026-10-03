@@ -78,11 +78,12 @@ new release's Manifest.txt no longer lists.
 KEYS
 ----
 B opens the action wheel, T the chat and F11 the World overview, or the
-PvP battle screen outside a world. This README names these default keys.
+PvP battle screen outside a world. Y accepts and N declines the first
+invite at the top left. This README names these default keys.
 
 With Mod Config Remake installed, you can bind others: Mod Config,
-Monster Girl Quest! Online, confirm Action Wheel, Chat or World
-Overview, then press the new key (Esc keeps the old one). Keys the game
+Monster Girl Quest! Online, confirm Action Wheel, Chat, World Overview,
+Accept Notification or Decline Notification, then press the new key (Esc keeps the old one). Keys the game
 uses itself, such as the arrows, Enter, Esc, Z, X, Shift, A, S, D, Q and
 W, cannot be bound, and neither can a key another option already has.
 Your keys are kept in Patch\Multiplayer\Player.ini, so they hold in
@@ -194,7 +195,16 @@ leader and the party's size as "2 / 4"; your party's members are green,
 you included. A player whose invite or challenge reaches you shows it in
 their row. Pick a player with the arrow keys and confirm, or click
 them, to invite them to your party, accept their invite, or challenge
-them to a duel or accept theirs, wherever they are.
+them to a duel or accept theirs, wherever they are. A party invite from
+afar stands for a minute.
+
+Notifications: a box at the top left, on the map and in menus, lists the
+party invites and duel challenges that reach you, from wherever they
+come, for as long as they stand. Below them, messages show for a
+moment, such as a party member meeting enemies. Y accepts the first
+invite or challenge (a challenge only on the map), N declines it: the
+other player reads that you declined, and it stays away until they
+invite you anew.
 
 Duels: "Challenge to a duel" on the right of the wheel challenges the
 players next to you for 15 seconds; they accept in their wheel or in the
@@ -247,12 +257,19 @@ along as theirs when you joined, you keep what you played together,
 companions who joined in the story included.
 
 Co-op battles: when a battle starts for a party member, the party
-members on the same map who are playing on it join it. Each brings
+members on the same map who are playing on it join it. A random
+encounter waits up to 3 seconds for members on that map who are in a
+menu, typing or on a vehicle: they see it in their notification box,
+and it starts as soon as they are back on the map. Each brings
 their squad: their share of the Frontline fights and their share of the
 Backline waits, the rest stays out. Everyone commands their own
-characters and can swap their own Backline in with "Party". Everyone
-fights the enemies of the game where the battle started, even when a mod
-there changes them, such as one that doubles them. Each of you can try
+characters and can swap their own Backline in with "Party". The party
+leader's game works the battle out, with the leader's difficulty and
+mods, whoever met the enemies; when the leader is not playing on that
+map, is busy or does not answer within 6 seconds, the game where the
+battle started does. Everyone fights the enemies of the game that works
+it out, even when a mod there changes them, such as one that doubles
+them. Each of you can try
 to escape; whoever gets away leaves the battle, and the one
 left alone fights on with their own full team. Each of you gets the full
 EXP, gold and your own item drops, or your own defeat. Chests are everyone's own: when

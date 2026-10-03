@@ -37,9 +37,9 @@ Close the game and delete `Multiplayer.rb` and the `Multiplayer` folder in `Patc
 
 ## Keys
 
-**B** opens the action wheel, **T** the chat and **F11** the World overview, or the PvP battle screen outside a world. This README names these default keys.
+**B** opens the action wheel, **T** the chat and **F11** the World overview, or the PvP battle screen outside a world. **Y** accepts and **N** declines the first invite at the top left. This README names these default keys.
 
-With Mod Config Remake installed, you can bind others: *Mod Config → Monster Girl Quest! Online*, confirm *Action Wheel*, *Chat* or *World Overview*, then press the new key (**Esc** keeps the old one). Keys the game uses itself, such as the arrows, Enter, Esc, Z, X, Shift, A, S, D, Q and W, can't be bound, and neither can a key another option already has. Your keys are kept in `Patch\Multiplayer\Player.ini`, so they hold in every save and every world. The texts in the game name the keys you bound.
+With Mod Config Remake installed, you can bind others: *Mod Config → Monster Girl Quest! Online*, confirm *Action Wheel*, *Chat*, *World Overview*, *Accept Notification* or *Decline Notification*, then press the new key (**Esc** keeps the old one). Keys the game uses itself, such as the arrows, Enter, Esc, Z, X, Shift, A, S, D, Q and W, can't be bound, and neither can a key another option already has. Your keys are kept in `Patch\Multiplayer\Player.ini`, so they hold in every save and every world. The texts in the game name the keys you bound.
 
 ## Worlds
 
@@ -78,7 +78,12 @@ The list at the left shows every public world and the hidden worlds you joined: 
 
 - **Open it** with **F11** or the middle of the action wheel; **F11**, **B**, cancel or a click outside it closes it. The world keeps running behind it.
 - **Every player online**, grouped by where they are, yours first: their name, the level of their highest companion, where they are in the story ("Part 2: Alice side") and their ping. Party leaders have a crown, a party's size shows as "2 / 4", and your party's members are green, you included. A player whose party invite or duel challenge reaches you shows "Invites you to a party" or "Challenges you to a duel" in their row.
-- **Pick a player** with the arrow keys and confirm, or click them, for a menu: invite them to your party or accept their invite, and challenge them to a duel or accept theirs, wherever in the world they are. As your party's leader you also remove members here. On your own row you can leave your party or stop inviting.
+- **Pick a player** with the arrow keys and confirm, or click them, for a menu: invite them to your party or accept their invite, and challenge them to a duel or accept theirs, wherever in the world they are. A party invite from afar stands for a minute. As your party's leader you also remove members here. On your own row you can leave your party or stop inviting.
+
+### Notifications
+
+- **The box at the top left**, on the map and in menus, lists the party invites and duel challenges that reach you, from wherever in the world they come, for as long as they stand. Below them, messages show for a moment, such as a party member meeting enemies.
+- **Y** accepts the first invite or challenge (a challenge only on the map), **N** declines it: the other player reads that you declined, and it stays away until they invite you anew.
 
 ### Parties
 
@@ -97,9 +102,11 @@ The list at the left shows every public world and the hidden worlds you joined: 
 
 When a battle starts for a party member, whether a random encounter, a wandering monster or a story boss, the party members playing on the same map join it.
 
+- A random encounter waits up to 3 seconds for party members on the same map who are in a menu, typing or on a vehicle: you stand still, they read "<name> is in a battle!" in the notification box for a moment, and the battle starts as soon as they're back on the map. Whoever is still busy after 3 seconds misses it.
+
 - Each of you brings your squad: your share of the Frontline fights, your share of the Backline waits. The companions past it stay out of the battle.
-- Everyone commands their own characters and can swap their own Backline in with *Party*. The game where the battle started works it out.
-- Everyone fights the enemies of the game where the battle started, even when a mod there changes them, such as one that doubles them.
+- Everyone commands their own characters and can swap their own Backline in with *Party*. The party leader's game works it out, with the leader's difficulty and mods, whoever met the enemies: "Asking <leader> to lead the battle..." shows while a member's game hands it over. When the leader isn't playing on that map, is busy or doesn't answer within 6 seconds, the game where the battle started works it out.
+- Everyone fights the enemies of the game that works the battle out, even when a mod there changes them, such as one that doubles them.
 - Each of you can try to escape. Whoever gets away leaves the battle, and the others fight on without their characters. Everyone still in the battle reads "<name> left the battle." in the chat log at once; the characters leave at the next round. The one left alone fights on with their own full team.
 - Each of you gets the full EXP, gold and your own item drops, or your own defeat.
 
