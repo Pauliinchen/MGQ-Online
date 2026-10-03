@@ -2,7 +2,8 @@
 #  duel_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Gave the co-op stand-in its Player record
+#      Paulinchen  2026-10-03: Checked that a duel takes the challenger's rule of the Backline
+#                            - Gave the co-op stand-in its Player record
 #                            - Gave the world stand-in tell, notice and the own id and seat
 #                            - Checked that a call to a team duel is taken only from the challenger the player accepted or through their party's leader
 #                            - Checked that a player who declines a challenge is no longer named by it
@@ -30,10 +31,16 @@ module MGQ_MpBattlesPvp
     def self.game; $game_print; end
     def self.build; "team-me"; end
     def self.parse(text); text.to_s.empty? ? [] : [text]; end
+    def self.sent_backline?; $backline_wanted; end
+    def self.backline?(text); text.to_s.start_with?("backline"); end
   end
+  module Backline; def self.wanted?; $backline_wanted; end; end
   module Battle
     def self.running?; false; end
-    def self.start(name, members, mirror); $started << [name, members, mirror, block_given? ? yield : nil]; end
+    def self.start(name, members, mirror, backline = false)
+      $backlines << backline
+      $started << [name, members, mirror, block_given? ? yield : nil]
+    end
   end
 end
 module MGQ_MpBattlesSync
@@ -62,6 +69,8 @@ end
 $game_print = "game-1"
 $started = []
 $joined = []
+$backlines = []
+$backline_wanted = false
 
 load_script "mp_battles_duel"
 
@@ -129,6 +138,27 @@ check("the challenger answers with its own team and a battle id", [start[0], sta
 check("and stops challenging", duel.inviting?, false)
 frame
 check("then hosts the duel", [$joined.last[0], $joined.last[2, 3], $started.last[1]], [:host, [[2], "Friend", :pvp], ["team-friend"]])
+check("without the Backline while the challenger's duels have none", $backlines.last, false)
+
+# The Backline: the challenger's rule holds, and their challenge says so.
+$backline_wanted = true
+check("the state tells that the player's duels have the Backline", MGQ_MpOverworldSync::Me.current["challenge_backline"], 1)
+duel.invite("friend")
+$inbox << entry("message", 2, "duel=accept\n\ngame-1\tteam-friend")
+MGQ_MpOverworldSync.tick
+frame
+check("a challenger whose duels have the Backline hosts with it", [$joined.last[0], $backlines.last], [:host, true])
+$backline_wanted = false
+$inbox << entry("message", 2, told(friend.merge("challenge" => 1, "challenge_backline" => 1)))
+MGQ_MpOverworldSync.tick
+check("a challenge with the Backline says so", duel::Offers.call_of(peer).to_a[0], "Challenges you to a duel with Backline")
+duel.accept(peer)
+$inbox << entry("message", 2, "duel=start\nbid=b2\n\ngame-1\tbackline=1 team-friend")
+MGQ_MpOverworldSync.tick
+frame
+check("the challenged player takes the challenger's rule", [$joined.last[0], $backlines.last], [:guest, true])
+$inbox << entry("message", 2, told(friend))
+MGQ_MpOverworldSync.tick
 
 # Why a duel does not start.
 $sent.clear

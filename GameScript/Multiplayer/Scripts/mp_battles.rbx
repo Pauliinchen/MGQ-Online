@@ -2,7 +2,8 @@
 #  mp_battles.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Added Mode, what a kind of live battle does differently from a duel, which the kinds register and the live battle asks
+#      Paulinchen  2026-10-03: Let a PvP battle with the Backline swap it in, and let a mode name the characters outside the battle
+#                            - Added Mode, what a kind of live battle does differently from a duel, which the kinds register and the live battle asks
 #                            - Logged through MGQ_MpLog
 #      Paulinchen  2026-10-02: Installed the battle hooks through mp_hooks.rbx
 #      Paulinchen  2026-10-01: Let co-op battles swap the Backline in, which only PvP battles forbid now
@@ -12,9 +13,9 @@
 #----------------------------------------------------------------
 
 # The rules of every multiplayer battle, PvP battles and co-op battles alike: no ero offers and no
-# Give Up. A PvP battle also forbids swapping the Backline in, since both games fight with the
-# teams they swapped at the start; a co-op battle tells its swaps to every game. The game's own
-# settings come back once the battle ends.
+# Give Up. A PvP battle without the Backline also forbids swapping it in; a co-op battle and a PvP
+# battle with the Backline tell their swaps to every game. The game's own settings come back once
+# the battle ends.
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpBattles
@@ -137,6 +138,34 @@ module MGQ_MpBattles
     def take(_kind, _scene, _body)
     end
 
+    # Lists this game's own characters outside the battle that the stream still names.
+    #
+    # @return [Array<Game_Battler>] The characters.
+    def own_reserve
+      []
+    end
+
+    # Lists the other side's characters outside the battle that the stream still names.
+    #
+    # @return [Array<Game_Battler>] The characters.
+    def other_reserve
+      []
+    end
+
+    # Names a character outside the battle for the host's stream.
+    #
+    # @param _battler [Game_Battler] The character.
+    # @return [String, nil] The reference, nil for a character the battle does not know.
+    def reserve_ref(_battler)
+    end
+
+    # Finds the guest's character outside the battle for a reference of the host's stream.
+    #
+    # @param _ref [String] The reference, see reserve_ref.
+    # @return [Game_Battler, nil] The character.
+    def reserve(_ref)
+    end
+
     # Fights the battle on alone once the host is gone. Called by the guest.
     #
     # @param _scene [Scene_Battle] The battle.
@@ -179,11 +208,12 @@ module MGQ_MpBattles
   # Starts a multiplayer battle's rules, keeping the game's own settings to put back.
   #
   # @param kind [Symbol] :pvp or :coop.
-  def self.begin(kind)
+  # @param backline [Boolean] Whether the Backline may be swapped in.
+  def self.begin(kind, backline = kind != :pvp)
     finish if running?
     @kind = kind
     @kept = {}
-    switch_rules(kind).each do |id, value|
+    switch_rules(kind, backline).each do |id, value|
       @kept[id] = $game_switches[id]
       $game_switches[id] = value
     end
@@ -206,10 +236,11 @@ module MGQ_MpBattles
   # The switches a multiplayer battle sets.
   #
   # @param kind [Symbol] :pvp or :coop.
+  # @param backline [Boolean] Whether the Backline may be swapped in.
   # @return [Hash{Integer => Boolean}] Each switch's value during the battle.
-  def self.switch_rules(kind)
+  def self.switch_rules(kind, backline = kind != :pvp)
     rules = { ($data_system.switches.index(ERO_OFFERS_OFF) || ERO_OFFERS_OFF_ID) => true }
-    rules[NWConst::Sw::FORBID_BATTLE_SHIFT_CHANGE] = true if kind == :pvp && defined?(NWConst::Sw::FORBID_BATTLE_SHIFT_CHANGE)
+    rules[NWConst::Sw::FORBID_BATTLE_SHIFT_CHANGE] = true if !backline && defined?(NWConst::Sw::FORBID_BATTLE_SHIFT_CHANGE)
     rules
   end
 

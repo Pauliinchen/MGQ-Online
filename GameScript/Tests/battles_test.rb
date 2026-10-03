@@ -2,7 +2,8 @@
 #  battles_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Checked the modes of live battles
+#      Paulinchen  2026-10-03: Checked that a PvP battle with the Backline may swap it in
+#                            - Checked the modes of live battles
 #      Paulinchen  2026-10-01: Checked that only PvP battles forbid swapping the Backline in
 #      Paulinchen  2026-09-30: Created
 #
@@ -51,6 +52,9 @@ MGQ_MpBattles.begin(:pvp)
 check("a PvP battle may not swap the Backline in", $game_switches[27], true)
 MGQ_MpBattles.finish
 check("a switch that was on stays on", [$game_switches[86], $game_switches[27]], [true, false])
+MGQ_MpBattles.begin(:pvp, true)
+check("a PvP battle with the Backline may swap it in", $game_switches[27], false)
+MGQ_MpBattles.finish
 $data_system.switches[86] = "Other name"
 check("the id stands in for a translated name", MGQ_MpBattles.switch_rules(:pvp).keys.sort, [27, 86])
 

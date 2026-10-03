@@ -2,7 +2,8 @@
 #  mp_battles_sync_playback.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Asked the running battle's mode instead of naming co-op battles and team duels
+#      Paulinchen  2026-10-03: Found the characters outside the battle that its mode names
+#                            - Asked the running battle's mode instead of naming co-op battles and team duels
 #                            - Read and wrote the game's private fields and called its private methods through MGQ_MpGame
 #                            - Created
 #
@@ -108,10 +109,11 @@ module MGQ_MpBattlesSync
 
     # Finds the guest's battler for a reference of the host's side.
     #
-    # @param ref [String] A battler of the host's side, such as "a0".
+    # @param ref [String] A battler of the host's side, such as "a0", or a character outside the
+    #   battle as its mode names it.
     # @return [Game_Battler, nil] The guest's battler in its place.
     def self.battler(ref)
-      return nil unless ref =~ /\A([ae])(\d{1,2})\z/
+      return MGQ_MpBattlesSync.mode.reserve(ref) unless ref =~ /\A([ae])(\d{1,2})\z/
 
       # In a PvP battle the host's party is the guest's troop; a co-op battle's sides are the same,
       # and so are those of a team duel's guest on the host's side.

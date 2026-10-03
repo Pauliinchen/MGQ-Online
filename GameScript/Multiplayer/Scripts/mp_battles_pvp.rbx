@@ -2,7 +2,8 @@
 #  mp_battles_pvp.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Fought with the balance of mp_balance_pvp.rbx
+#      Paulinchen  2026-10-03: Swapped the Backline's builds too, with the host's rule, and started a battle with the Backline of mp_battles_pvp_backline.rbx
+#                            - Fought with the balance of mp_balance_pvp.rbx
 #                            - Read and wrote the game's private fields and called its private methods through MGQ_MpGame
 #                            - Moved the mirror match's report into mp_battles_pvp_mirror.rbx and the PvP battle screen into mp_battles_pvp_lobby.rbx
 #                            - Called the scripts that load before this one without asking whether they loaded
@@ -34,9 +35,10 @@
 #
 #----------------------------------------------------------------
 
-# PvP battles: two games swap their Frontline's builds, then fight the same battle live, each player
-# commanding their own team, and the game is put back as it was once it ends. A mirror match fights
-# the player's own team, played by the computer.
+# PvP battles: two games swap their teams' builds, then fight the same battle live, each player
+# commanding their own team, and the game is put back as it was once it ends. Only the Frontline
+# fights unless the host's battles have the Backline (mp_battles_pvp_backline.rbx). A mirror match
+# fights the player's own team, played by the computer.
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpBattlesPvp
@@ -217,13 +219,16 @@ module MGQ_MpBattlesPvp
       return
     end
 
-    Battle.start(opponent, members, false)
+    # The host's rule holds: the one it sent with its own team, or the one its team brought.
+    backline = state["role"] == "host" ? Team.sent_backline? : Team.backline?(state[:payload])
+    Battle.start(opponent, members, false, backline)
   end
 
   # Starts a mirror match: the player's own team, sent through the same build as a friend's would
   # be, so it fights exactly as a friend would meet it.
   def self.begin_mirror
-    Battle.start(MIRROR_NAME, Team.parse(Team.build), true)
+    team = Team.build
+    Battle.start(MIRROR_NAME, Team.parse(team), true, Team.backline?(team))
   end
 
   # The fields the Discord mod publishes about PvP battles, through its bridge. The Discord mod
@@ -237,8 +242,18 @@ module MGQ_MpBattlesPvp
     Battle.mirror? ? { "pvp_battle" => "mirror" } : { "pvp_battle_with" => Battle.opponent }
   end
 
-  # The team two games swap: the Frontline's builds, see MGQ_MpActors::Builds.
+  # The team two games swap: the builds of the Frontline and the Backline, see MGQ_MpActors::Builds,
+  # below a line that says whether the sender's battles have the Backline.
   module Team
+    # Starts a team's first line, followed by 1 when the sender's battles have the Backline, else 0.
+    RULE = "backline="
+
+    # A team's first line.
+    RULE_LINE = /\A#{RULE}([01])\r?\n/
+
+    # Members read of a team at most, which limits what another game can have this one rebuild.
+    MOST_MEMBERS = 20
+
     # Tells this game's data and the build format from another's.
     #
     # @return [String] The fingerprint, see MGQ_MpActors::Builds.game.
@@ -246,19 +261,37 @@ module MGQ_MpBattlesPvp
       MGQ_MpActors::Builds.game
     end
 
-    # Writes the player's Frontline.
+    # Writes the player's team, the Frontline first, and notes the rule it carries, which holds
+    # when the player hosts the battle.
     #
-    # @return [String] A member line per party member.
+    # @return [String] The rule's line, then a member line per party member.
     def self.build
-      MGQ_MpActors::Builds.write($game_party.battle_members.first(MGQ_MpCoopSquad::FRONTLINE))
+      @sent_backline = Backline.wanted?
+      party = $game_party.battle_members.first(MGQ_MpCoopSquad::FRONTLINE) + $game_party.bench_members
+      "#{RULE}#{@sent_backline ? 1 : 0}\n" + MGQ_MpActors::Builds.write(party.first(MOST_MEMBERS))
+    end
+
+    # Reports whether the team the player sent last said their battles have the Backline.
+    #
+    # @return [Boolean] Whether it did.
+    def self.sent_backline?
+      @sent_backline ? true : false
+    end
+
+    # Reports whether a team says its sender's battles have the Backline.
+    #
+    # @param text [String] The team, see build.
+    # @return [Boolean] Whether it does.
+    def self.backline?(text)
+      text.to_s[RULE_LINE, 1] == "1"
     end
 
     # Reads a friend's team, taking only what this game's data knows.
     #
     # @param text [String] The team, see build.
-    # @return [Array<MGQ_MpActors::Builds::Member>] The members, none when nothing was readable.
+    # @return [Array<MGQ_MpActors::Builds::Member>] The members, the Frontline first, none when nothing was readable.
     def self.parse(text)
-      MGQ_MpActors::Builds.parse(text, MGQ_MpCoopSquad::FRONTLINE)
+      MGQ_MpActors::Builds.parse(text.to_s.sub(RULE_LINE, ""), MOST_MEMBERS)
     end
   end
 
@@ -762,11 +795,14 @@ module MGQ_MpBattlesPvp
     # Starts the battle from the map.
     #
     # @param opponent [String] The friend's name.
-    # @param members [Array<MGQ_MpActors::Builds::Member>] The friend's team.
+    # @param members [Array<MGQ_MpActors::Builds::Member>] The friend's team, the Frontline first.
     # @param mirror [Boolean] Whether it is the player's own team.
+    # @param backline [Boolean] Whether both players swap their Backline in, which a team duel never has.
     # @yieldreturn [Array<Opponent>] The characters of the other side, rebuilt by a team duel; without
     #   a block, the friend's team is rebuilt.
-    def self.start(opponent, members, mirror)
+    def self.start(opponent, members, mirror, backline = false)
+      backline &&= !block_given?
+      members = Array(members).first(MGQ_MpCoopSquad::FRONTLINE) unless backline
       @snapshot = Marshal.dump(DataManager.make_save_contents)
       @globals = Marshal.dump(globals)
       @medals = Array(MGQ_MpGame.get($game_temp, :gain_medals)).dup
@@ -777,24 +813,27 @@ module MGQ_MpBattlesPvp
       @logged_actions = 0
 
       troop_id = Opponents.add_troop
-      $game_party.battle_members.each { |actor| actor.recover_all }
-      MGQ_MpBattles.begin(:pvp)
+      own = $game_party.battle_members + (backline ? $game_party.bench_members : [])
+      own.each { |actor| actor.recover_all }
+      MGQ_MpBattles.begin(:pvp, backline)
       $game_temp.in_memory_battle = true
       BattleManager.setup(troop_id, true, true)
 
-      opponents = block_given? ? Opponents.stand(yield) : Opponents.build(members, opponent)
+      everyone = block_given? ? yield : Opponents.build(members, opponent)
+      opponents = Opponents.stand(backline ? everyone.first(MGQ_MpCoopSquad::FRONTLINE) : everyone)
       raise "nobody of #{opponent}'s team could be rebuilt" if opponents.empty?
 
       MGQ_MpGame.set($game_troop, :enemies, opponents)
+      Backline.begin(everyone) if backline
       BattleManager.make_escape_ratio if BattleManager.respond_to?(:make_escape_ratio)
-      check(opponents)
-      MGQ_MpBalancePvp.begin($game_party.battle_members + opponents)
+      check(everyone)
+      MGQ_MpBalancePvp.begin(own + everyone)
       MirrorReport.start(opponents) if mirror
       BattleManager.event_proc = Proc.new { |result| MGQ_MpBattlesPvp::Battle.finished(result) }
       MGQ_MpBattlesSync.record_to_file if mirror
       MGQ_MpBattlesSync.battle_started
       SceneManager.call(Scene_Battle)
-      MGQ_MpBattlesPvp.log("started against #{opponent}'s team of #{opponents.size}")
+      MGQ_MpBattlesPvp.log("started against #{opponent}'s team of #{opponents.size}, #{everyone.size - opponents.size} more on the Backline")
     rescue => e
       MGQ_MpBattlesPvp.log("could not start: #{e.class}: #{e.message}")
       @failed = true
@@ -862,6 +901,7 @@ module MGQ_MpBattlesPvp
       MGQ_MpBattlesSync.finish
       MGQ_MpBattles.finish
       MGQ_MpBalancePvp.finish
+      Backline.finish
       return unless @snapshot
 
       contents = Marshal.load(@snapshot)
@@ -905,6 +945,7 @@ module MGQ_MpBattlesPvp
       MGQ_MpBattlesPvp.log("could not put the shared data back after a reset: #{e.class}: #{e.message}")
     ensure
       MGQ_MpBalancePvp.finish
+      Backline.finish
       @snapshot = nil
       @globals = nil
       $game_temp.in_memory_battle = false if $game_temp
@@ -1055,7 +1096,8 @@ if MGQ_MpBattlesPvp.hookable?
       alias mgq_mp_battles_pvp_update update
 
       # Draws the HP bar of a friend's character, which the game draws only for monsters, and turns
-      # a dead one into a grey, see-through silhouette once its defeat flash ends.
+      # a dead one into a grey, see-through silhouette once its defeat flash ends, or at once when
+      # it was swapped in dead, which the game draws as not there.
       #
       # The game marks a character dead as the hit lands, before the battle log tells of it, and
       # every sprite effect makes the picture opaque again, so the flash starts the silhouette and
@@ -1072,7 +1114,7 @@ if MGQ_MpBattlesPvp.hookable?
 
         begin
           dead = @battler.dead?
-          @mgq_mp_battles_pvp_defeat_shown = dead && (@mgq_mp_battles_pvp_defeat_shown || @effect_type == :whiten)
+          @mgq_mp_battles_pvp_defeat_shown = dead && (@mgq_mp_battles_pvp_defeat_shown || @effect_type == :whiten || !@battler_visible)
           silhouette = @mgq_mp_battles_pvp_defeat_shown && @effect_type != :whiten
           if silhouette != @mgq_mp_battles_pvp_silhouette
             @mgq_mp_battles_pvp_silhouette = silhouette

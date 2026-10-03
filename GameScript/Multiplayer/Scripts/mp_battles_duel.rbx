@@ -2,7 +2,8 @@
 #  mp_battles_duel.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Kept a duel waiting to start as a Pending record, and the sides' players as MGQ_MpBattlesCoop::Player records
+#      Paulinchen  2026-10-03: Started a duel with the Backline when the challenger's duels have it, and said so in the challenge
+#                            - Kept a duel waiting to start as a Pending record, and the sides' players as MGQ_MpBattlesCoop::Player records
 #                            - Offered the duel's choices and challenges to the wheel, the World overview and the notification box through MGQ_MpActions
 #                            - Asked MGQ_MpOverworldSync whether the map is quiet or the player free on it
 #                            - Sent messages, showed notices and read the world, the own id and the own seat through MGQ_MpOverworldSync
@@ -59,7 +60,8 @@ module MGQ_MpBattlesDuel
   # @!attribute own [Array<MGQ_MpBattlesCoop::Player>, nil] The players of the player's side of a team duel.
   # @!attribute other [Array<MGQ_MpBattlesCoop::Player>, nil] The players of the other side of a team duel.
   # @!attribute same_side [Boolean, nil] Whether the player stands on the host's side of a team duel.
-  Pending = Struct.new(:role, :battle_id, :peer, :members, :own, :other, :same_side) do
+  # @!attribute backline [Boolean, nil] Whether a duel between two players has the Backline.
+  Pending = Struct.new(:role, :battle_id, :peer, :members, :own, :other, :same_side, :backline) do
     # Lists the seats of a team duel's players.
     #
     # @return [Array<Integer>] The seats of both sides.
@@ -159,7 +161,17 @@ module MGQ_MpBattlesDuel
   #
   # @return [Hash] The fields.
   def self.state_fields
-    { "challenge" => inviting? ? 1 : 0, "challenge_to" => targets.join(",") }
+    { "challenge" => inviting? ? 1 : 0, "challenge_to" => targets.join(","), "challenge_backline" => MGQ_MpBattlesPvp::Backline.wanted? ? 1 : 0 }
+  end
+
+  # Words another player's challenge, with the Backline when their duels have it, which a team
+  # duel never does.
+  #
+  # @param peer [MGQ_MpOverworldSync::Peers::Peer] The challenger.
+  # @param start [String] How the line starts, up to the duel.
+  # @return [String] The line.
+  def self.challenge_text(peer, start)
+    "#{start} to a duel#{' with Backline' if peer.state['challenge_backline'].to_i == 1 && !team_duel?(peer)}"
   end
 
   # Tells what the line above a ghost's name says: their challenge, when it reaches the player.
@@ -219,6 +231,7 @@ module MGQ_MpBattlesDuel
 
     MGQ_MpOverworldSync.tell(peer.seat, { "duel" => "start", "bid" => battle_id }, team_line)
     @pending = Pending.new(:host, battle_id, peer, members)
+    @pending.backline = MGQ_MpBattlesPvp::Team.sent_backline?
   end
 
   # As challenged player, starts the duel the challenger answered.
@@ -240,6 +253,8 @@ module MGQ_MpBattlesDuel
     return call_off(peer.seat, battle_id) unless members
 
     @pending = Pending.new(:guest, battle_id, peer, members)
+    # The challenger hosts, so the rule their team brought holds.
+    @pending.backline = MGQ_MpBattlesPvp::Team.backline?(MGQ_MpBattlesSync::Wire.parse(body.to_s)[1])
   end
 
   # Calls off a duel the other player started or is about to start: their battle breaks off, or
@@ -562,8 +577,8 @@ module MGQ_MpBattlesDuel
     role, battle_id, peer, members = pending.role, pending.battle_id, pending.peer, pending.members
     name = peer.state["name"].to_s
     MGQ_MpBattlesSync.join_world(role, battle_id, [peer.seat], name, :pvp)
-    MGQ_MpBattlesPvp::Battle.start(name, members, false)
-    log("duel #{battle_id} with #{name} as #{role}")
+    MGQ_MpBattlesPvp::Battle.start(name, members, false, pending.backline)
+    log("duel #{battle_id} with #{name} as #{role}#{' with the Backline' if pending.backline}")
   rescue => e
     @pending = nil
     log("starting a duel failed: #{e.class}: #{e.message}")
@@ -620,7 +635,7 @@ module MGQ_MpBattlesDuel
     # @param peer [MGQ_MpOverworldSync::Peers::Peer] The other player.
     # @return [Array, nil] The text and its color, nil for none.
     def self.call_of(peer)
-      MGQ_MpBattlesDuel.challenged_by?(peer) ? ["Challenges you to a duel", CHALLENGE_COLOR] : nil
+      MGQ_MpBattlesDuel.challenged_by?(peer) ? [MGQ_MpBattlesDuel.challenge_text(peer, "Challenges you"), CHALLENGE_COLOR] : nil
     end
 
     # Tells another player's challenge for the notification box, while it reaches the player and
@@ -634,7 +649,7 @@ module MGQ_MpBattlesDuel
       return nil unless duel.available? && duel.challenged_by?(peer)
 
       on_map = SceneManager.scene.is_a?(Scene_Map)
-      MGQ_MpActions::Notice.new([:duel, peer.seat], "#{peer.state['name']} challenges you to a duel", CHALLENGE_COLOR, on_map ? "Accept" : nil,
+      MGQ_MpActions::Notice.new([:duel, peer.seat], duel.challenge_text(peer, "#{peer.state['name']} challenges you"), CHALLENGE_COLOR, on_map ? "Accept" : nil,
                                 on_map ? lambda { duel.accept(peer) } : nil, lambda { duel.decline(peer, "no") }, peer.state["id"])
     end
 

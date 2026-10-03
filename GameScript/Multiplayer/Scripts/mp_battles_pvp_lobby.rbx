@@ -2,7 +2,8 @@
 #  mp_battles_pvp_lobby.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Created
+#      Paulinchen  2026-10-03: Spoke of the friend's team, which may have its Backline
+#                            - Created
 #
 #----------------------------------------------------------------
 
@@ -14,7 +15,7 @@ module MGQ_MpBattlesPvp
   module Lobby
     # What the screen says before anything started.
     INTRO = [
-      "Fight a friend's Frontline, each of you against the other's team.",
+      "Fight a friend's team, each of you against the other's.",
       "Host: invite a friend through the + in a Discord chat, or send",
       "them the join code. Join: copy their join code, then join with it.",
       "Or fight your own team in a mirror match.",

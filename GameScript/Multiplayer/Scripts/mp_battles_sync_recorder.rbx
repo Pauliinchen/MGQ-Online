@@ -2,7 +2,8 @@
 #  mp_battles_sync_recorder.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Read and wrote the game's private fields and called its private methods through MGQ_MpGame
+#      Paulinchen  2026-10-03: Recorded the characters outside the battle that its mode names
+#                            - Read and wrote the game's private fields and called its private methods through MGQ_MpGame
 #                            - Created
 #
 #----------------------------------------------------------------
@@ -252,17 +253,18 @@ module MGQ_MpBattlesSync
       @speaker = nil
     end
 
-    # Names a battler by its side and place, "a0" for the party's first, "e0" for the troop's.
+    # Names a battler by its side and place, "a0" for the party's first, "e0" for the troop's, or as
+    # the battle's mode names a character outside the battle.
     #
     # @param battler [Game_Battler] A battler, or the stand-in the game uses for automatic skills.
-    # @return [String] The reference, "?" for a battler outside both.
+    # @return [String] The reference, "?" for a battler the battle does not know.
     def self.ref(battler)
       battler = battler.observer if defined?(Game_Master) && battler.is_a?(Game_Master)
       party = $game_party.battle_members.index(battler)
       return "a#{party}" if party
 
       troop = $game_troop.members.index(battler)
-      troop ? "e#{troop}" : "?"
+      troop ? "e#{troop}" : (MGQ_MpBattlesSync.mode.reserve_ref(battler) || "?")
     end
 
     # Sends or writes the kept events.
@@ -287,9 +289,9 @@ module MGQ_MpBattlesSync
 
     # Lists the battlers of the battle.
     #
-    # @return [Array<Game_Battler>] Every battler of the battle.
+    # @return [Array<Game_Battler>] Every battler of the battle, and the characters outside it the stream names.
     def self.battlers
-      $game_party.battle_members + $game_troop.members
+      MGQ_MpBattlesSync.party_side + MGQ_MpBattlesSync.troop_side
     end
 
     # Reads the values the stream carries of a battler.

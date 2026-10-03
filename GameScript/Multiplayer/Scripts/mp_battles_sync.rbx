@@ -2,7 +2,8 @@
 #  mp_battles_sync.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Asked the running battle's mode instead of naming co-op battles and team duels
+#      Paulinchen  2026-10-03: Named the characters outside the battle to the guest too, which a PvP battle with the Backline swaps in
+#                            - Asked the running battle's mode instead of naming co-op battles and team duels
 #                            - Read and wrote the game's private fields and called its private methods through MGQ_MpGame
 #                            - Read the sides' players as MGQ_MpBattlesCoop::Player records
 #                            - Moved the wire into mp_battles_sync_wire.rbx, the recorder, the playback, and the hooks with the live battle's steps into scripts of their own
@@ -350,9 +351,24 @@ module MGQ_MpBattlesSync
 
   # Lists the names the guest swaps.
   #
-  # @return [String] The names of this game's party and troop, which the guest swaps for its own.
+  # @return [String] The names of this game's party and troop, each with its characters outside the
+  #   battle, which the guest swaps for its own.
   def self.names
-    Wire.line([$game_party.battle_members.map(&:name), $game_troop.members.map(&:name)])
+    Wire.line([party_side.map(&:name), troop_side.map(&:name)])
+  end
+
+  # Lists the party's characters the stream names: those in the battle, then those outside it.
+  #
+  # @return [Array<Game_Battler>] The characters.
+  def self.party_side
+    $game_party.battle_members + mode.own_reserve
+  end
+
+  # Lists the troop's characters the stream names: those in the battle, then those outside it.
+  #
+  # @return [Array<Game_Battler>] The characters.
+  def self.troop_side
+    $game_troop.members + mode.other_reserve
   end
 
   # Sends a message of a battle over the world's room.
@@ -657,7 +673,8 @@ module MGQ_MpBattlesSync
       @swaps = {}
       # A co-op battle's party and troop stand on the same side on every game, with each
       # player's own characters named without their owner.
-      own_party, own_troop = MGQ_MpBattlesSync.same_side? ? [$game_party.battle_members, $game_troop.members] : [$game_troop.members, $game_party.battle_members]
+      sides = [MGQ_MpBattlesSync.party_side, MGQ_MpBattlesSync.troop_side]
+      own_party, own_troop = MGQ_MpBattlesSync.same_side? ? sides : sides.reverse
       Array(party).each_with_index { |name, index| add(name, own_party[index]) }
       Array(troop).each_with_index { |name, index| add(name, own_troop[index]) }
       names = @swaps.keys.sort_by { |name| -name.size }

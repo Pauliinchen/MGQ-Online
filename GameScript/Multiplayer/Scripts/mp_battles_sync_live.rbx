@@ -2,7 +2,8 @@
 #  mp_battles_sync_live.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Asked the running battle's mode instead of naming co-op battles and team duels
+#      Paulinchen  2026-10-03: Told the one guest of a PvP battle an order of places that changed, as the guests of a co-op battle
+#                            - Asked the running battle's mode instead of naming co-op battles and team duels
 #                            - Read and wrote the game's private fields and called its private methods through MGQ_MpGame
 #                            - Created
 #
@@ -438,6 +439,7 @@ module MGQ_MpBattlesSync
       return end_early(scene, commands) if commands.is_a?(Symbol)
 
       Commands.apply(commands)
+      MGQ_MpBattlesSync.mode.share_order
       true
     end
 
