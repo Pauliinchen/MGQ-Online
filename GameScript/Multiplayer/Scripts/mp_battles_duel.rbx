@@ -2,7 +2,8 @@
 #  mp_battles_duel.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Sent messages, showed notices and read the world, the own id and the own seat through MGQ_MpOverworldSync
+#      Paulinchen  2026-10-03: Asked MGQ_MpOverworldSync whether the map is quiet or the player free on it
+#                            - Sent messages, showed notices and read the world, the own id and the own seat through MGQ_MpOverworldSync
 #                            - Logged through MGQ_MpLog
 #                            - Took a call to a team duel only from the challenger the player accepted or through the leader of the player's party
 #                            - Read the bound keys through MGQ_MpHotkeys, renamed from MGQ_MpKeys
@@ -92,8 +93,7 @@ module MGQ_MpBattlesDuel
   #
   # @return [Boolean] Whether they may.
   def self.free?
-    SceneManager.scene.is_a?(Scene_Map) && !$game_map.interpreter.running? && !$game_message.busy? &&
-      !$game_player.transfer? && MGQ_MpBattlesSync.role.nil? && !MGQ_MpBattles.running? && !MGQ_MpBattlesPvp::Battle.running?
+    MGQ_MpOverworldSync.map_free? && MGQ_MpBattlesSync.role.nil? && !MGQ_MpBattles.running? && !MGQ_MpBattlesPvp::Battle.running?
   end
 
   # Challenges the players nearby, and a player anywhere in the world when named.

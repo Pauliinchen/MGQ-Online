@@ -2,7 +2,8 @@
 #  coop_events_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Gave the world stand-in tell, notice and the own id and seat
+#      Paulinchen  2026-10-03: Gave the world stand-in map_free?
+#                            - Gave the world stand-in tell, notice and the own id and seat
 #                            - Checked that a chest showing its opened page is still a chest, and that a story event left to the leader lets the next event start
 #      Paulinchen  2026-10-02: Checked that members as far along as the leader keep the story, its items, gold and companions, and their own changes
 #                            - Checked that a common event sorted deep down is sorted anew higher up, and where the awakening switches end
@@ -28,6 +29,7 @@ $notices = []
 module MGQ_MpOverworldSync
   def self.in_world?; true; end
   def self.notice(text); Status.notice(text); end
+  def self.map_free?; SceneManager.scene.is_a?(Scene_Map) && !$game_map.interpreter.running? && !$game_message.busy? && !$game_player.transfer?; end
   def self.tell(seat, fields, body = ""); Link.send_to(seat, Me.encode(fields) + body); end
   module Peers; Peer = Struct.new(:seat, :state, :ghost, :member); end
   module Me; def self.encode(state); state.map { |k, v| "#{k}=#{v}" }.join("\n") + "\n\n"; end; end

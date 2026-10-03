@@ -2,7 +2,8 @@
 #  mp_coop_events.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Sent messages, showed notices and read the world, the own id and the own seat through MGQ_MpOverworldSync
+#      Paulinchen  2026-10-03: Asked MGQ_MpOverworldSync whether the map is quiet or the player free on it
+#                            - Sent messages, showed notices and read the world, the own id and the own seat through MGQ_MpOverworldSync
 #                            - Logged through MGQ_MpLog
 #                            - Left every starting story event to the leader, so one that starts by itself no longer keeps a member's other events from starting
 #                            - Knew a chest by any of its pages, so one the player opened stays their own
@@ -667,7 +668,7 @@ module MGQ_MpCoopEvents
 
   # As leader, starts the next event a member asked for, once the player is free.
   def self.start_requested
-    return if @requests.nil? || @requests.empty? || !free?
+    return if @requests.nil? || @requests.empty? || !MGQ_MpOverworldSync.map_free?
 
     event = $game_map.events[@requests.shift]
     event.start if event && kind(event) == :story
@@ -791,7 +792,7 @@ module MGQ_MpCoopEvents
   # Shows the page of the leader's story the leader is on, once the player is free, leaving out the
   # pages the leader moved past meanwhile.
   def self.show_heard
-    return if @heard.nil? || @heard.empty? || !free?
+    return if @heard.nil? || @heard.empty? || !MGQ_MpOverworldSync.map_free?
     return @heard.clear unless MGQ_MpCoop.in_party?
 
     @heard.shift while !@heard.empty? && done?(@heard.first[:page])
@@ -814,7 +815,7 @@ module MGQ_MpCoopEvents
     start_requested
     show_heard
     place = come?
-    return unless place && free?
+    return unless place && MGQ_MpOverworldSync.map_free?
 
     map_id, x, y, direction = place
     @gather = nil
@@ -828,14 +829,6 @@ module MGQ_MpCoopEvents
     end
   rescue => e
     log("coming to the leader failed: #{e.class}: #{e.message}")
-  end
-
-  # Reports whether the player is free to be moved: on the map, with no event, message or transfer
-  # of their own in the way.
-  #
-  # @return [Boolean] Whether they are.
-  def self.free?
-    SceneManager.scene.is_a?(Scene_Map) && !$game_map.interpreter.running? && !$game_message.busy? && !$game_player.transfer?
   end
 
   # Notes that an item is being given, and whether it is the outermost of nested gifts.

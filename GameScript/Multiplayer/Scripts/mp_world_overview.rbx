@@ -2,7 +2,8 @@
 #  mp_world_overview.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Logged through MGQ_MpLog
+#      Paulinchen  2026-10-03: Asked MGQ_MpOverworldSync whether the map is quiet or the player free on it
+#                            - Logged through MGQ_MpLog
 #                            - Read the bound keys through MGQ_MpHotkeys, renamed from MGQ_MpKeys
 #      Paulinchen  2026-10-02: Opened and closed the overview with the key the player bound, which its hint names
 #                            - Followed the map and its sprites through mp_hooks.rbx
@@ -137,8 +138,8 @@ module MGQ_MpWorldOverview
   #
   # @return [Boolean] Whether it may.
   def self.openable?
-    MGQ_MpOverworldSync.in_world? && SceneManager.scene.is_a?(Scene_Map) && !$game_map.interpreter.running? &&
-      !$game_message.busy? && !MGQ_MpChat.typing? && !MGQ_MpActions::Wheel.open?
+    MGQ_MpOverworldSync.in_world? && SceneManager.scene.is_a?(Scene_Map) && MGQ_MpOverworldSync.map_quiet? &&
+      !MGQ_MpChat.typing? && !MGQ_MpActions::Wheel.open?
   end
 
   # Opens or closes the overview with its key, and steers it while open. Called by the map every frame.
@@ -163,7 +164,7 @@ module MGQ_MpWorldOverview
   #
   # @return [Boolean] Whether it may.
   def self.openable_while_open?
-    MGQ_MpOverworldSync.in_world? && !$game_map.interpreter.running? && !$game_message.busy? && !MGQ_MpChat.typing?
+    MGQ_MpOverworldSync.in_world? && MGQ_MpOverworldSync.map_quiet? && !MGQ_MpChat.typing?
   end
 
   # Closes the overview once the map is left. Called by mp_overworld_sync.rbx every frame in every

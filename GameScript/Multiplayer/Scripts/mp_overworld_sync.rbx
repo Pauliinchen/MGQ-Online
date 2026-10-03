@@ -2,7 +2,8 @@
 #  mp_overworld_sync.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Added tell, notice, Me.id and Me.seat, which every script sends, notifies and names the player with
+#      Paulinchen  2026-10-03: Added map_quiet? and map_free?, which the scripts check before they act on the map
+#                            - Added tell, notice, Me.id and Me.seat, which every script sends, notifies and names the player with
 #                            - Logged through MGQ_MpLog
 #                            - Kept a player whose connection dropped for fifteen seconds, and every player across the game's own reconnect, so a party and a battle outlast it
 #      Paulinchen  2026-10-02: Told Discord the open world's name, its players and its seats through the Discord mod
@@ -67,6 +68,21 @@ module MGQ_MpOverworldSync
   # @return [Boolean] Whether mp_world.rbx has a world open.
   def self.in_world?
     defined?(MGQ_MpWorld) && MGQ_MpWorld.open? ? true : false
+  end
+
+  # Reports whether the map is quiet: no event runs and no message shows.
+  #
+  # @return [Boolean] Whether it is.
+  def self.map_quiet?
+    !$game_map.interpreter.running? && !$game_message.busy?
+  end
+
+  # Reports whether the player is free on the map: the map is the scene and quiet, and no transfer
+  # is on its way.
+  #
+  # @return [Boolean] Whether they are.
+  def self.map_free?
+    SceneManager.scene.is_a?(Scene_Map) && map_quiet? && !$game_player.transfer?
   end
 
   # Shows a notice at the bottom left of the map for a few seconds.
@@ -326,7 +342,7 @@ module MGQ_MpOverworldSync
       current = SceneManager.scene
       name = current.class.name.to_s
       return "battle" if current.is_a?(Scene_Battle)
-      return "event" if name =~ /Novel/ || (current.is_a?(Scene_Map) && ($game_message.busy? || $game_map.interpreter.running?))
+      return "event" if name =~ /Novel/ || (current.is_a?(Scene_Map) && !MGQ_MpOverworldSync.map_quiet?)
       return "away" unless MGQ_Multiplayer::Background.in_front?
 
       busy = MGQ_MpOverworldSync.ask(:busy_scene).compact.first

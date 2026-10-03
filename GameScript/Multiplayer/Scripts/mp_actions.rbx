@@ -2,7 +2,8 @@
 #  mp_actions.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Sent messages, showed notices and read the world, the own id and the own seat through MGQ_MpOverworldSync
+#      Paulinchen  2026-10-03: Asked MGQ_MpOverworldSync whether the map is quiet or the player free on it
+#                            - Sent messages, showed notices and read the world, the own id and the own seat through MGQ_MpOverworldSync
 #                            - Logged through MGQ_MpLog
 #                            - Read the bound keys through MGQ_MpHotkeys, renamed from MGQ_MpKeys
 #      Paulinchen  2026-10-02: Opened the wheel with the key the player bound, and named the bound keys of the chat and the World overview
@@ -166,7 +167,7 @@ module MGQ_MpActions
   # it is open. Called by the map every frame, so a press of the key is seen once.
   def self.on_map
     wheel_key = MGQ_MpHotkeys.pressed?(:wheel)
-    unless MGQ_MpOverworldSync.in_world? && !$game_map.interpreter.running? && !$game_message.busy?
+    unless MGQ_MpOverworldSync.in_world? && MGQ_MpOverworldSync.map_quiet?
       Wheel.close
       return
     end
