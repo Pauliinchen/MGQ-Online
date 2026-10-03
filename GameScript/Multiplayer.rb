@@ -2,7 +2,8 @@
 #  Multiplayer.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Loaded mp_game_access.rbx after mp_hooks.rbx
+#      Paulinchen  2026-10-03: Loaded mp_balance_pvp.rbx before mp_battles_pvp.rbx
+#                            - Loaded mp_game_access.rbx after mp_hooks.rbx
 #                            - Loaded mp_ui.rbx, and the scripts split off the world, battle sync and PvP scripts
 #                            - Loaded mp_log.rbx first
 #                            - Loaded mp_notices.rbx last
@@ -63,7 +64,7 @@ module MGQ_Multiplayer
     mp_save_distribution mp_world mp_world_text mp_world_screen mp_save_export
     mp_battles mp_battles_coop
     mp_battles_sync mp_battles_sync_wire mp_battles_sync_recorder mp_battles_sync_playback mp_battles_sync_live
-    mp_battles_pvp mp_battles_pvp_mirror mp_battles_pvp_lobby mp_battles_duel mp_battles_team
+    mp_balance_pvp mp_battles_pvp mp_battles_pvp_mirror mp_battles_pvp_lobby mp_battles_duel mp_battles_team
     mp_world_overview mp_notices
   ]
 

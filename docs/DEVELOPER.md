@@ -37,6 +37,7 @@ GameScript/Multiplayer/Scripts/       Ruby, the other scripts, in the order Mult
   mp_battles_sync_recorder.rbx         the host's side of the stream: the battle recorded as events
   mp_battles_sync_playback.rbx         the guest's side of the stream: the events played
   mp_battles_sync_live.rbx             the battle hooks, and the steps host and guest differ in
+  mp_balance_pvp.rbx                   the balance of a PvP battle: more HP, limited evasion, immunity and walls
   mp_battles_pvp.rbx                   PvP battles against a friend's team or a mirror match
   mp_battles_pvp_mirror.rbx            the mirror match's report
   mp_battles_pvp_lobby.rbx             the PvP battle screen outside a world
@@ -90,6 +91,7 @@ docs/DEVELOPER.md                     this file
 | `mp_battles_sync_recorder.rbx` | `MGQ_MpBattlesSync::Recorder` | The host's side of the stream: what its battle shows, as events for the guests or a mirror match's file. |
 | `mp_battles_sync_playback.rbx` | `MGQ_MpBattlesSync::Playback` | The guest's side of the stream: the host's events, played on the guest's battle. |
 | `mp_battles_sync_live.rbx` | `MGQ_MpBattlesSync::Hooks`, `MGQ_MpBattlesSync::Live` | The hooks into the game's battle, installed as the game starts running, and the steps host and guest differ in. |
+| `mp_balance_pvp.rbx` | `MGQ_MpBalancePvp` | The balance of a PvP battle, between `begin(battlers)` and `finish`: skills use their formulas for monsters (`MONSTER_FORMULAS`), max HP times `HP_RATE` (damage formulas still read the game's max HP), one action's damage or healing on a target counted in full up to `DAMAGE_KNEE` of its max HP and kept below `DAMAGE_LIMIT`, at least `DAMAGE_RATE_FLOOR` of a hit taken by a character whose physical, magical or sure-hit damage rate is lower, evasion and reflection up to `AVOID_CEILING`, at least `ELEMENT_FLOOR` of an attack past a nullified or absorbed element, and a defense wall that takes `WALL_SHARE` of max HP off a hit. Constants, since both games must agree. |
 | `mp_battles_pvp.rbx` | `MGQ_MpBattlesPvp` | PvP battles: the PvP battle screen (F11), the team exchange, the rebuilt characters, the mirror match. Drives `MGQ_MpBattlesSync`. |
 | `mp_battles_pvp_mirror.rbx` | `MGQ_MpBattlesPvp::MirrorReport` | The mirror match's report: the player's team beside its rebuilt copy, turn by turn. |
 | `mp_battles_pvp_lobby.rbx` | `MGQ_MpBattlesPvp::Lobby`, `Scene_PvpLobby`, `Window_PvpLobbyCommand` | The PvP battle screen outside a world (F11): its lines and commands by how the exchange stands. |

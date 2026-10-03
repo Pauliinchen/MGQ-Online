@@ -2,7 +2,8 @@
 #  mp_battles_pvp.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Read and wrote the game's private fields and called its private methods through MGQ_MpGame
+#      Paulinchen  2026-10-03: Fought with the balance of mp_balance_pvp.rbx
+#                            - Read and wrote the game's private fields and called its private methods through MGQ_MpGame
 #                            - Moved the mirror match's report into mp_battles_pvp_mirror.rbx and the PvP battle screen into mp_battles_pvp_lobby.rbx
 #                            - Called the scripts that load before this one without asking whether they loaded
 #                            - Logged through MGQ_MpLog
@@ -787,6 +788,7 @@ module MGQ_MpBattlesPvp
       MGQ_MpGame.set($game_troop, :enemies, opponents)
       BattleManager.make_escape_ratio if BattleManager.respond_to?(:make_escape_ratio)
       check(opponents)
+      MGQ_MpBalancePvp.begin($game_party.battle_members + opponents)
       MirrorReport.start(opponents) if mirror
       BattleManager.event_proc = Proc.new { |result| MGQ_MpBattlesPvp::Battle.finished(result) }
       MGQ_MpBattlesSync.record_to_file if mirror
@@ -859,6 +861,7 @@ module MGQ_MpBattlesPvp
       @broken = MGQ_MpBattlesSync.broken?
       MGQ_MpBattlesSync.finish
       MGQ_MpBattles.finish
+      MGQ_MpBalancePvp.finish
       return unless @snapshot
 
       contents = Marshal.load(@snapshot)
@@ -901,6 +904,7 @@ module MGQ_MpBattlesPvp
     rescue => e
       MGQ_MpBattlesPvp.log("could not put the shared data back after a reset: #{e.class}: #{e.message}")
     ensure
+      MGQ_MpBalancePvp.finish
       @snapshot = nil
       @globals = nil
       $game_temp.in_memory_battle = false if $game_temp

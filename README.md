@@ -127,6 +127,7 @@ Press **F11** on the map to open the PvP battle screen.
 Once the teams are swapped, both battles start together. The host's game works the battle out, and the other game shows what happened. You meet your friend's characters as they are: jobs, races, equipment, gems and abilities, pre-battle spells and passives included. A defeated character of your friend stays as a grey silhouette, since their team can still revive it.
 
 - Only the Frontline fights.
+- **PvP balance:** skills deal what they deal in a monster's hands and every character has 4 times its max HP, and one action takes at most 60% of a character's HP however strong it is, so no team falls to the first hit. A character that takes no damage at all, as under Quantization, still takes a quarter of a hit. Evasion and reflection stop at 75%, an element a character nullifies or absorbs still deals a quarter of the damage, and a defense wall takes a quarter of max HP off a hit instead of all of it.
 - **Escape** gives the battle up at once. If your friend leaves or the connection breaks, you win.
 - After waiting 10 seconds for your friend, **Cancel** lets you leave the battle, which also gives it up.
 - **Nothing carries over:** no EXP, gold or items, and your save, the Library and affection are put back exactly as they were.
