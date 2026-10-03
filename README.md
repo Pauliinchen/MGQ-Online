@@ -5,7 +5,7 @@
 Play Monster Girl Quest! Paradox RPG together with friends over the internet, with nothing to set up in your router.
 
 - **Worlds:** up to 32 players on the same maps. Form a party to play the story together and fight co-op battles.
-- **PvP battles:** your Frontline against a friend's, live, each of you commanding your own team.
+- **PvP battles:** your team against a friend's, live, each of you commanding your own.
 
 Worlds, parties and co-op battles are a **prototype**: expect bugs, and please [report them](https://github.com/Pauliinchen/MGQ-Online/issues/new?template=bug_report.yml).
 
@@ -94,7 +94,7 @@ The list at the left shows every public world and the hidden worlds you joined: 
 - **NPCs:** on a map you share, you all see the same NPCs in the same places. Whoever of you entered the map first is its Map Owner, and the NPCs move as they do in that player's game.
 - **Story:** everyone plays the story of the player who made the party. Its events, doors and conversations are as far along as in that player's game, and story events you start are handed to them. Everyone on the map sees the dialogue in their own message window, which moves on when that player moves on; only they can continue or close it. Conversations, shops and the job change menu stay your own, and so do the companions, merchants, inn and maids of the Pocket Castle.
 - **What stays yours:** your party, companions and affection, and your saves keep your own story. When you leave the party, you're back in your own story. If your story was exactly as far along as theirs when you joined, you keep what you played together, companions who joined in the story included.
-- **Travelling:** everyone goes where they like; only story scenes bring the party together.
+- **Travelling:** everyone goes where they like; only story scenes bring the party together. A member teleports to the party's leader whenever they like: *Teleport to \<leader>* takes the place of *Invite to a party* at the top of the wheel, and the leader's row in the World overview offers it too. It brings you over as soon as you're free on the map.
 - **Story scenes wait for everyone:** when the player who made the party starts a story scene, it waits until every member stands next to them, and they can't move meanwhile. Members see a 5-second countdown above their head to finish what they're doing, then are brought over, wherever they are; a member in a battle or a menu comes once it's over. No random encounter or co-op battle starts for them during the countdown. The scene waits 30 seconds at most, then starts without whoever hasn't come; they play on where they are. While the scene plays, the members on that map stand still and can't open the menu.
 - **Chests** are everyone's own: when a member opens one, everyone in the party who hasn't looted it yet gets the same items.
 
@@ -112,8 +112,8 @@ When a battle starts for a party member, whether a random encounter, a wandering
 ### Duels
 
 - **Challenge** the players next to you with *Challenge to a duel* on the right of the action wheel, or one player anywhere through the World overview. "Challenges you to a duel (B)" shows above your head on their screen for 15 seconds.
-- **Accept** in the wheel next to them, or in the World overview. The duel is the same PvP battle as F11 outside a world: your Frontline against theirs, each commanding their own team, and both games are put back as they were afterwards.
-- **Team duels:** when a party's leader duels, their whole party fights, and so does the other player's party when they lead one. Everyone gets ready on the map; the duel starts once all are ready, or after 10 seconds with those who are. Each player brings their share of the Frontline, as in co-op battles, and commands their own characters; a player alone brings their whole Frontline. Whoever leaves the duel leaves their characters to the next player of their side, who commands them from then on.
+- **Accept** in the wheel next to them, or in the World overview. The duel is the same PvP battle as F11 outside a world: your team against theirs, each commanding their own, and both games are put back as they were afterwards. The challenger's *PvP Backline* option decides whether the Backline takes part; a challenge "with Backline" says so.
+- **Team duels:** when a party's leader duels, their whole party fights, and so does the other player's party when they lead one. Everyone gets ready on the map; the duel starts once all are ready, or after 10 seconds with those who are. Each player brings their share of the Frontline, as in co-op battles, and commands their own characters; a player alone brings their whole Frontline. The Backline stays out of a team duel. Whoever leaves the duel leaves their characters to the next player of their side, who commands them from then on.
 
 ## PvP battles
 
@@ -125,7 +125,8 @@ Press **F11** on the map to open the PvP battle screen.
 
 Once the teams are swapped, both battles start together. The host's game works the battle out, and the other game shows what happened. You meet your friend's characters as they are: jobs, races, equipment, gems and abilities, pre-battle spells and passives included. A defeated character of your friend stays as a grey silhouette, since their team can still revive it.
 
-- Only the Frontline fights.
+- **Backline:** both of you swap your Backline in with the battle's *Party* command. You choose a swap with the round's commands: the character swapped in gives no commands that round, and an attack hits whoever stands in the place it was aimed at once it lands. A fallen character can be swapped out, and a team loses once its whole Frontline is down.
+- **Frontline only:** the host decides. *Mod Config → Monster Girl Quest! Online → PvP Backline* set to *Frontline Only* takes the *Party* command out of the battles you host and the duels you challenge to, for both players.
 - **PvP balance:** skills deal what they deal in a monster's hands and every character has 4 times its max HP, and one action takes at most 60% of a character's HP however strong it is, so no team falls to the first hit. A character that takes no damage at all, as under Quantization, still takes a quarter of a hit. Evasion and reflection stop at 75%, an element a character nullifies or absorbs still deals a quarter of the damage, and a defense wall takes a quarter of max HP off a hit instead of all of it.
 - **Escape** gives the battle up at once. If your friend leaves or the connection breaks, you win.
 - After waiting 10 seconds for your friend, **Cancel** lets you leave the battle, which also gives it up.
@@ -133,7 +134,7 @@ Once the teams are swapped, both battles start together. The host's game works t
 
 ## Rules of every multiplayer battle
 
-Ero offers and Give Up are off, and in PvP battles and duels so is swapping in the Backline. Battle messages move on by themselves, so nobody waits for another player.
+Ero offers and Give Up are off, and so is swapping in the Backline in team duels and in PvP battles and duels hosted as *Frontline Only*. Battle messages move on by themselves, so nobody waits for another player.
 
 ## Connection
 

@@ -5,8 +5,8 @@ An unofficial multiplayer mod for Monster Girl Quest! Paradox RPG.
 Play Monster Girl Quest! Paradox RPG together with friends over the
 internet, with nothing to set up in your router. Worlds: up to 32
 players on the same maps, who form parties to play the story together
-and fight co-op battles. PvP battles: your Frontline against a friend's,
-live, each of you commanding your own team.
+and fight co-op battles. PvP battles: your team against a friend's,
+live, each of you commanding your own.
 
 
 REQUIREMENT
@@ -95,14 +95,12 @@ bound.
 
 PVP BATTLES (TEST)
 ------------------
-Fight a friend's Frontline live: your games swap their Frontline, then
-you both fight the same battle, each commanding your own team. The
-hosting game works the battle out and the other shows what happened. The
-team you meet is your friend's characters as they are, with their jobs,
-races, equipment, gems and abilities, pre-battle spells and passives
-included. Only the Frontline fights: the Party command, which swaps in
-the backline, is gone during a PvP battle. Escape gives the battle up
-at once, and Give Up is off. Battle messages move on by themselves, so
+Fight a friend's team live: your games swap their teams, then you both
+fight the same battle, each commanding your own team. The hosting game
+works the battle out and the other shows what happened. The team you
+meet is your friend's characters as they are, with their jobs, races,
+equipment, gems and abilities, pre-battle spells and passives included.
+Escape gives the battle up at once, and Give Up is off. Battle messages move on by themselves, so
 neither of you waits for the other to press a key. If your friend leaves
 or the connection breaks, you win. When you have waited for your friend
 for 10 seconds, Cancel lets you leave the battle, which also gives it
@@ -111,6 +109,16 @@ silhouette, since their team can still revive it; it cannot be targeted
 meanwhile. Nothing carries over: no EXP, gold or items, no defeat scene,
 and your save, the Library and affection are put back exactly as they
 were before.
+
+Backline: both of you swap your Backline in with the battle's Party
+command. You choose a swap with the round's commands: the character
+swapped in gives no commands that round, and an attack hits whoever
+stands in the place it was aimed at once it lands. A fallen character
+can be swapped out, and a team loses once its whole Frontline is down.
+The host decides whether the Backline takes part: Mod Config, Monster
+Girl Quest! Online, PvP Backline set to Frontline Only takes the Party
+command out of the battles you host and the duels you challenge to, for
+both players.
 
 PvP balance: skills deal what they deal in a monster's hands, and every
 character has 4 times its max HP. One action takes at most 60% of a
@@ -220,7 +228,9 @@ invite you anew.
 Duels: "Challenge to a duel" on the right of the wheel challenges the
 players next to you for 15 seconds; they accept in their wheel or in the
 World overview. A duel is the same PvP battle as F11 outside a world:
-your Frontline against theirs, and both games are put back afterwards.
+your team against theirs, and both games are put back afterwards. The
+challenger's PvP Backline option decides whether the Backline takes
+part; a challenge "with Backline" says so. A team duel never has it.
 When a party's leader duels, it is a team duel: their whole party
 fights, and the other side's party when its player leads one. Everyone
 gets ready on the map, and it starts once all are ready, or after 10
@@ -285,7 +295,11 @@ battle, and the one left alone fights on with their own full team. Each
 of you gets the full EXP, gold and your own item drops, or your own
 defeat. Chests are everyone's own: when a party member opens one,
 everyone in the party who has not looted it yet gets the same items. Everyone goes where they like; only a story
-scene brings the party together. A story scene the player who made the
+scene brings the party together. A member teleports to the party's
+leader whenever they like: "Teleport to <leader>" takes the place of
+"Invite to a party" at the top of the wheel, and the leader's row in the
+World overview offers it too. It brings you over as soon as you are free
+on the map. A story scene the player who made the
 party starts waits until every member stands next to them, 30 seconds
 at most: members get 5 seconds to finish what they do, then are
 brought over, wherever they are (after a battle or a menu once it is
