@@ -2,7 +2,8 @@
 #  mp_battles_duel.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Asked MGQ_MpOverworldSync whether the map is quiet or the player free on it
+#      Paulinchen  2026-10-03: Offered the duel's choices and challenges to the wheel, the World overview and the notification box through MGQ_MpActions
+#                            - Asked MGQ_MpOverworldSync whether the map is quiet or the player free on it
 #                            - Sent messages, showed notices and read the world, the own id and the own seat through MGQ_MpOverworldSync
 #                            - Logged through MGQ_MpLog
 #                            - Took a call to a team duel only from the challenger the player accepted or through the leader of the player's party
@@ -550,6 +551,83 @@ module MGQ_MpBattlesDuel
     @pending = nil
     log("starting a duel failed: #{e.class}: #{e.message}")
   end
+
+  # What duels offer between two players, through mp_actions.rbx: their choices on the action wheel
+  # and in the World overview, and challenges in the overview and the notification box.
+  module Offers
+    # The choice wherever duels cannot run.
+    UNAVAILABLE = MGQ_MpActions::Option.new("Duel", nil, "Duels need PvP battles, which are off or out of date.")
+
+    # The wheel's duel choice: accepting the challenge of a player nearby, else challenging the
+    # players nearby.
+    #
+    # @return [MGQ_MpActions::Option] The choice.
+    def self.wheel_option
+      duel = MGQ_MpBattlesDuel
+      return UNAVAILABLE unless duel.available?
+
+      option = MGQ_MpActions::Option
+      near = MGQ_MpOverworldSync::Peers.all.select { |peer| MGQ_MpCoop::Party.near?(peer.state) }
+      challenger = near.find { |peer| duel.challenged_by?(peer, false) }
+      return option.new("Accept #{challenger.state['name']}'s duel", lambda { duel.accept(challenger) }, nil) if challenger
+      return own_options.first if duel.inviting?
+
+      option.new("Challenge to a duel", near.empty? ? nil : lambda { duel.invite }, "Nobody is near enough to challenge.")
+    end
+
+    # The duel choice for another player in the World overview: accepting their challenge, which
+    # closes the overview, else challenging them.
+    #
+    # @param peer [MGQ_MpOverworldSync::Peers::Peer] The player.
+    # @return [MGQ_MpActions::Option] The choice.
+    def self.peer_option(peer)
+      duel = MGQ_MpBattlesDuel
+      return UNAVAILABLE unless duel.available?
+
+      option = MGQ_MpActions::Option
+      return option.new("Accept duel", lambda { duel.accept(peer) }, nil, nil, true) if duel.challenged_by?(peer)
+      return option.new("Challenged to a duel", nil, "Your challenge to #{peer.state['name']} stands.") if duel.targets.include?(peer.state["id"].to_s)
+
+      option.new("Challenge to a duel", lambda { duel.invite(peer.state["id"]) }, nil)
+    end
+
+    # The duel choice on the player's own row of the World overview: stopping a challenge.
+    #
+    # @return [Array<MGQ_MpActions::Option>] The choice, none while the player does not challenge.
+    def self.own_options
+      MGQ_MpBattlesDuel.inviting? ? [MGQ_MpActions::Option.new("Stop challenging", lambda { MGQ_MpBattlesDuel.stop }, nil)] : []
+    end
+
+    # Tells another player's challenge, when it reaches the player.
+    #
+    # @param peer [MGQ_MpOverworldSync::Peers::Peer] The other player.
+    # @return [Array, nil] The text and its color, nil for none.
+    def self.call_of(peer)
+      MGQ_MpBattlesDuel.challenged_by?(peer) ? ["Challenges you to a duel", CHALLENGE_COLOR] : nil
+    end
+
+    # Tells another player's challenge for the notification box, while it reaches the player and
+    # duels can run. A duel starts only from the map, so in a menu the challenge stands without the
+    # key that accepts it.
+    #
+    # @param peer [MGQ_MpOverworldSync::Peers::Peer] The other player.
+    # @return [MGQ_MpActions::Notice, nil] The challenge, nil for none.
+    def self.notice_of(peer)
+      duel = MGQ_MpBattlesDuel
+      return nil unless duel.available? && duel.challenged_by?(peer)
+
+      on_map = SceneManager.scene.is_a?(Scene_Map)
+      MGQ_MpActions::Notice.new([:duel, peer.seat], "#{peer.state['name']} challenges you to a duel", CHALLENGE_COLOR, on_map ? "Accept" : nil,
+                                on_map ? lambda { duel.accept(peer) } : nil, lambda { duel.decline(peer, "no") }, peer.state["id"])
+    end
+
+    # Names what the player is doing for the line above their own head.
+    #
+    # @return [String, nil] That they challenge, nil while they do not.
+    def self.own_doing
+      MGQ_MpBattlesDuel.inviting? ? "Challenging to a duel" : nil
+    end
+  end
 end
 
 # What duels take part in of the world's messages, through mp_overworld_sync.rbx.
@@ -562,6 +640,17 @@ begin
   MGQ_MpOverworldSync.label_line { |peer| MGQ_MpBattlesDuel.label_line(peer) }
 rescue => e
   MGQ_MpBattlesDuel.log("overworld sync FAILED: #{e.class}: #{e.message}")
+end
+
+# What duels add to the action wheel, the World overview and the notification box, through
+# mp_actions.rbx.
+
+begin
+  MGQ_MpActions.offer(MGQ_MpBattlesDuel::Offers)
+  MGQ_MpActions.wheel_slot(:RIGHT) { MGQ_MpBattlesDuel::Offers.wheel_option }
+  MGQ_MpActions.own_doing_from { MGQ_MpBattlesDuel::Offers.own_doing }
+rescue => e
+  MGQ_MpBattlesDuel.log("actions FAILED: #{e.class}: #{e.message}")
 end
 
 # Game hooks, through mp_hooks.rbx.

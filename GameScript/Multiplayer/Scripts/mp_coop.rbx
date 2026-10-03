@@ -2,7 +2,8 @@
 #  mp_coop.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Sent messages, showed notices and read the world, the own id and the own seat through MGQ_MpOverworldSync
+#      Paulinchen  2026-10-03: Offered the party's choices and invites to the wheel, the World overview and the notification box through MGQ_MpActions
+#                            - Sent messages, showed notices and read the world, the own id and the own seat through MGQ_MpOverworldSync
 #                            - Logged through MGQ_MpLog
 #                            - Counted only the players the party's leader admitted as its members, whom the leader's invite reached
 #                            - Read the bound keys through MGQ_MpHotkeys, renamed from MGQ_MpKeys
@@ -48,7 +49,7 @@ module MGQ_MpCoop
   LATE_FRAMES = 180
 
   # Color of the invite line above a ghost's name and above the player's own head.
-  INVITE_COLOR = Color.new(255, 224, 128)
+  INVITE_COLOR = MGQ_MpActions::LINE_COLOR
 
   # What a player reads once a party's leader turned them away as they joined, after the leader's
   # name, by the reason the leader gives.
@@ -579,6 +580,106 @@ module MGQ_MpCoop
         [(state["x"].to_i - $game_player.x).abs, (state["y"].to_i - $game_player.y).abs].max <= NEAR_TILES
     end
   end
+
+  # What the party offers between two players, through mp_actions.rbx: its choices on the action
+  # wheel and in the World overview, and its invites in the overview and the notification box.
+  module Offers
+    # The wheel's party choice: accepting the invite of a player nearby, else inviting the players
+    # nearby who are outside the party.
+    #
+    # @return [MGQ_MpActions::Option] The choice.
+    def self.wheel_option
+      option = MGQ_MpActions::Option
+      near = MGQ_MpOverworldSync::Peers.all.select { |peer| Party.near?(peer.state) && !Party.member?(peer.state) }
+      inviter = near.find { |peer| peer.state["invite"] == "1" }
+      if inviter
+        full = Party.full?(inviter.state["party"])
+        return option.new("Accept #{inviter.state['name']}'s invite", full ? nil : lambda { Party.join(inviter) }, "The party is full.")
+      end
+      refusal = invite_refusal("The party is full.")
+      return option.new("Invite to a party", nil, refusal) if refusal
+
+      option.new("Invite to a party", near.empty? ? nil : lambda { Party.invite }, "Nobody is near enough to invite.")
+    end
+
+    # The wheel's choice that leaves the party, or stops an invite nobody took.
+    #
+    # @return [MGQ_MpActions::Option] The choice.
+    def self.wheel_leave_option
+      own_options.first || MGQ_MpActions::Option.new("Leave the party", nil, "You are in no party.")
+    end
+
+    # Tells why the player may not invite now.
+    #
+    # @param full [String] What to say of a full party.
+    # @return [String, nil] The reason, nil while they may.
+    def self.invite_refusal(full)
+      return "Only the party's leader invites." unless Party.may_invite?
+
+      Party.full? ? full : nil
+    end
+
+    # The party choice for another player in the World overview: accepting their invite, removing
+    # them as the party's leader, else inviting them, which only a leader or a player outside a
+    # party may.
+    #
+    # @param peer [MGQ_MpOverworldSync::Peers::Peer] The player.
+    # @return [MGQ_MpActions::Option] The choice.
+    def self.peer_option(peer)
+      option = MGQ_MpActions::Option
+      if Party.invited_by?(peer)
+        return option.new("Accept party invite", Party.full?(peer.state["party"]) ? nil : lambda { Party.join(peer) }, "Their party is full.")
+      end
+      if Party.member?(peer.state)
+        return option.new("Remove from party", lambda { Party.remove(peer) }, nil) if Party.leader == :me
+
+        return option.new("In your party", nil, "#{peer.state['name']} is in your party already.")
+      end
+      refusal = invite_refusal("Your party is full.")
+      return option.new("Invite to party", nil, refusal) if refusal
+      return option.new("Invited to party", nil, "Your invite to #{peer.state['name']} stands.") if Party.targets.include?(peer.state["id"].to_s)
+
+      option.new("Invite to party", lambda { Party.invite(peer.state["id"]) }, nil)
+    end
+
+    # The party choices on the player's own row of the World overview: leaving the party, and
+    # stopping an invite.
+    #
+    # @return [Array<MGQ_MpActions::Option>] The choices, none outside a party and without an invite.
+    def self.own_options
+      choices = []
+      choices << MGQ_MpActions::Option.new("Leave the party", lambda { Party.leave }, nil) unless Party.members.empty?
+      choices << MGQ_MpActions::Option.new("Stop inviting", lambda { Party.stop_inviting }, nil) if Party.inviting?
+      choices
+    end
+
+    # Tells another player's party invite, when it reaches the player.
+    #
+    # @param peer [MGQ_MpOverworldSync::Peers::Peer] The other player.
+    # @return [Array, nil] The text and its color, nil for none.
+    def self.call_of(peer)
+      Party.invited_by?(peer) ? ["Invites you to a party", INVITE_COLOR] : nil
+    end
+
+    # Tells another player's party invite for the notification box, while it reaches the player
+    # and their party has room.
+    #
+    # @param peer [MGQ_MpOverworldSync::Peers::Peer] The other player.
+    # @return [MGQ_MpActions::Notice, nil] The invite, nil for none.
+    def self.notice_of(peer)
+      return nil unless Party.invited_by?(peer) && !Party.full?(peer.state["party"])
+
+      MGQ_MpActions::Notice.new([:party, peer.seat], "#{peer.state['name']} invites you to a party", INVITE_COLOR, "Accept",
+                                lambda { Party.join(peer) }, lambda { Party.decline(peer) }, peer.state["party"])
+    end
+
+    # Names what the player is doing for the line above their own head.
+    #
+    # @return [String, nil] That they invite, nil while they do not.
+    def self.own_doing
+      Party.inviting? ? "Inviting to a party" : nil
+    end
+  end
 end
 
 class Game_Event
@@ -610,6 +711,18 @@ begin
   MGQ_MpOverworldSync.route("party_decline") { |peer, _message| MGQ_MpCoop::Party.declined_by(peer) if peer }
 rescue => e
   MGQ_MpCoop.log("overworld sync FAILED: #{e.class}: #{e.message}")
+end
+
+# What the party adds to the action wheel, the World overview and the notification box, through
+# mp_actions.rbx.
+
+begin
+  MGQ_MpActions.offer(MGQ_MpCoop::Offers)
+  MGQ_MpActions.wheel_slot(:UP) { MGQ_MpCoop::Offers.wheel_option }
+  MGQ_MpActions.wheel_slot(:DOWN) { MGQ_MpCoop::Offers.wheel_leave_option }
+  MGQ_MpActions.own_doing_from { MGQ_MpCoop::Offers.own_doing }
+rescue => e
+  MGQ_MpCoop.log("actions FAILED: #{e.class}: #{e.message}")
 end
 
 # Discord shows the party's size, through the Discord mod's bridge when it is installed.

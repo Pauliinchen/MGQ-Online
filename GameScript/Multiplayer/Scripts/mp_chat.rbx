@@ -2,7 +2,8 @@
 #  mp_chat.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Asked MGQ_MpOverworldSync whether the map is quiet or the player free on it
+#      Paulinchen  2026-10-03: Filled the wheel's chat choice and told the wheel while the chat box is open
+#                            - Asked MGQ_MpOverworldSync whether the map is quiet or the player free on it
 #                            - Sent messages, showed notices and read the world, the own id and the own seat through MGQ_MpOverworldSync
 #                            - Logged through MGQ_MpLog
 #                            - Read the bound keys through MGQ_MpHotkeys, renamed from MGQ_MpKeys
@@ -53,6 +54,14 @@ module MGQ_MpChat
   # @return [Boolean] Whether it does.
   def self.available?
     MGQ_Multiplayer::Background.running?
+  end
+
+  # The action wheel's chat choice.
+  #
+  # @return [MGQ_MpActions::Option] The choice.
+  def self.wheel_option
+    MGQ_MpActions::Option.new("Chat (#{MGQ_MpHotkeys.label(:chat)})", available? ? lambda { start_typing } : nil,
+                              "Chat needs the keyboard, which cannot reach the game.")
   end
 
   # Reports whether the chat box is open.
@@ -544,6 +553,15 @@ begin
   MGQ_MpOverworldSync.busy_scene { MGQ_MpChat.scene }
 rescue => e
   MGQ_MpChat.log("overworld sync FAILED: #{e.class}: #{e.message}")
+end
+
+# What the chat adds to the action wheel, through mp_actions.rbx.
+
+begin
+  MGQ_MpActions.wheel_slot(:LEFT) { MGQ_MpChat.wheel_option }
+  MGQ_MpActions.cover { |_wheel_key| MGQ_MpChat.typing? }
+rescue => e
+  MGQ_MpChat.log("action wheel FAILED: #{e.class}: #{e.message}")
 end
 
 # Game hooks shared with other scripts, through mp_hooks.rbx.

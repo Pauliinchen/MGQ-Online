@@ -2,7 +2,8 @@
 #  mp_notices.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Called the scripts that load before this one without asking whether they loaded
+#      Paulinchen  2026-10-03: Listed the invites the scripts offer through MGQ_MpActions
+#                            - Called the scripts that load before this one without asking whether they loaded
 #                            - Logged through MGQ_MpLog
 #                            - Created
 #
@@ -28,18 +29,6 @@ module MGQ_MpNotices
 
   # Color of a message.
   MESSAGE_COLOR = Color.new(220, 220, 220)
-
-  # A notification: an invite, or a message.
-  #
-  # @!attribute key [Object] What it is about; a newer message with the same key replaces it.
-  # @!attribute text [String] What it says.
-  # @!attribute color [Color] Its text's color.
-  # @!attribute action [String, nil] What accepting it does, such as "Accept"; nil for a message and
-  #   for an invite that cannot be accepted here.
-  # @!attribute take [Proc, nil] Accepts it, nil when action is.
-  # @!attribute decline [Proc, nil] Declines it, nil for a message.
-  # @!attribute mark [Object] What the invite is, which tells a new one from the one the player declined.
-  Notice = Struct.new(:key, :text, :color, :action, :take, :decline, :mark)
 
   @messages = []
   @declined = {}
@@ -69,41 +58,15 @@ module MGQ_MpNotices
   # Lists what the box shows: the invites that stand, by their sender's name, then the messages,
   # newest first, as many as fit.
   #
-  # @return [Array<Notice>] The notifications, at most MAX_ROWS.
+  # @return [Array<MGQ_MpActions::Notice>] The notifications, at most MAX_ROWS.
   def self.notices
     peers = MGQ_MpOverworldSync::Peers.all.sort_by { |peer| peer.state["name"].to_s.downcase }
-    invites = peers.map { |peer| [party_invite_of(peer), challenge_of(peer)] }.flatten.compact
+    invites = peers.map { |peer| MGQ_MpActions.offers.map { |offers| offers.notice_of(peer) } }.flatten.compact
     # An invite the player declined stays away while it stands; a new one shows again.
     @declined.delete_if { |key, mark| invites.none? { |invite| invite.key == key && invite.mark == mark } }
     invites.reject! { |invite| @declined[invite.key] == invite.mark }
-    messages = @messages.reverse.map { |entry| Notice.new(entry[:key], entry[:text], MESSAGE_COLOR) }
+    messages = @messages.reverse.map { |entry| MGQ_MpActions::Notice.new(entry[:key], entry[:text], MESSAGE_COLOR) }
     (invites + messages).first(MAX_ROWS)
-  end
-
-  # Tells another player's party invite, while it reaches the player and their party has room.
-  #
-  # @param peer [MGQ_MpOverworldSync::Peers::Peer] The other player.
-  # @return [Notice, nil] The invite, nil for none.
-  def self.party_invite_of(peer)
-    party = MGQ_MpCoop::Party
-    return nil unless party.invited_by?(peer) && !party.full?(peer.state["party"])
-
-    Notice.new([:party, peer.seat], "#{peer.state['name']} invites you to a party", MGQ_MpCoop::INVITE_COLOR, "Accept",
-               lambda { party.join(peer) }, lambda { party.decline(peer) }, peer.state["party"])
-  end
-
-  # Tells another player's duel challenge, while it reaches the player and duels can run. A duel
-  # starts only from the map, so in a menu the challenge stands without the key that accepts it.
-  #
-  # @param peer [MGQ_MpOverworldSync::Peers::Peer] The other player.
-  # @return [Notice, nil] The challenge, nil for none.
-  def self.challenge_of(peer)
-    duel = MGQ_MpBattlesDuel
-    return nil unless duel.available? && duel.challenged_by?(peer)
-
-    on_map = SceneManager.scene.is_a?(Scene_Map)
-    Notice.new([:duel, peer.seat], "#{peer.state['name']} challenges you to a duel", MGQ_MpBattlesDuel::CHALLENGE_COLOR, on_map ? "Accept" : nil,
-               on_map ? lambda { duel.accept(peer) } : nil, lambda { duel.decline(peer, "no") }, peer.state["id"])
   end
 
   # Counts the messages down, accepts or declines the first invite when its key went down, and draws
@@ -139,7 +102,7 @@ module MGQ_MpNotices
   # Accepts or declines the first invite, which the box names with the keys. A declined one stays
   # away while it stands.
   #
-  # @param list [Array<Notice>] The notifications shown.
+  # @param list [Array<MGQ_MpActions::Notice>] The notifications shown.
   # @param answer [Symbol] :take to accept, :decline to decline.
   # @return [Boolean] Whether the invite was answered.
   def self.answer_first(list, answer)
@@ -154,7 +117,7 @@ module MGQ_MpNotices
 
   # Draws the box, making it the first time it shows anything.
   #
-  # @param list [Array<Notice>] The notifications.
+  # @param list [Array<MGQ_MpActions::Notice>] The notifications.
   def self.show(list)
     @box = nil if @box && @box.disposed?
     if list.empty?
@@ -200,7 +163,7 @@ class Sprite_MpNoticeBox < Sprite
 
   # Shows the notifications, drawing them again only when they changed.
   #
-  # @param list [Array<MGQ_MpNotices::Notice>] The notifications, at least one.
+  # @param list [Array<MGQ_MpActions::Notice>] The notifications, at least one.
   def show(list)
     self.visible = true
     keys = keys_text(list.first)
@@ -214,7 +177,7 @@ class Sprite_MpNoticeBox < Sprite
   # Tells what the keys do to the first notification: accept and decline an invite, or only decline
   # one that cannot be accepted here.
   #
-  # @param notice [MGQ_MpNotices::Notice] The first notification.
+  # @param notice [MGQ_MpActions::Notice] The first notification.
   # @return [String, nil] The keys and what they do, nil for a message.
   def keys_text(notice)
     return nil unless notice.decline
@@ -225,7 +188,7 @@ class Sprite_MpNoticeBox < Sprite
 
   # Draws the notifications, the first invite with its keys.
   #
-  # @param list [Array<MGQ_MpNotices::Notice>] The notifications.
+  # @param list [Array<MGQ_MpActions::Notice>] The notifications.
   # @param keys [String, nil] What the keys do to the first one, see keys_text.
   def draw(list, keys)
     bitmap.clear

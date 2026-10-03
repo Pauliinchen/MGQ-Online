@@ -2,7 +2,8 @@
 #  mp_actions.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Asked MGQ_MpOverworldSync whether the map is quiet or the player free on it
+#      Paulinchen  2026-10-03: Took the wheel's choices, the own line and what lies over the map from what the later scripts register, and kept their offers for the World overview and the notification box
+#                            - Asked MGQ_MpOverworldSync whether the map is quiet or the player free on it
 #                            - Sent messages, showed notices and read the world, the own id and the own seat through MGQ_MpOverworldSync
 #                            - Logged through MGQ_MpLog
 #                            - Read the bound keys through MGQ_MpHotkeys, renamed from MGQ_MpKeys
@@ -32,24 +33,48 @@
 #----------------------------------------------------------------
 
 # The action wheel on the map: its key (B unless the player binds another, see mp_hotkeys.rbx) opens it
-# around the player, its party choices go to mp_coop.rbx and its chat choice to mp_chat.rbx. It
-# builds on mp_overworld_sync.rbx, which knows the other players.
+# around the player. The scripts after this one fill its directions (wheel_slot), say the line
+# above the player's own head (own_line_from, own_doing_from) and add what they offer between
+# two players to the World overview and the notification box (offer). It builds on
+# mp_overworld_sync.rbx, which knows the other players.
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpActions
   # Pixels kept free right above the player's head, where mp_overworld.rbx shows their ping.
   HEAD_ROOM = 16
 
-  # A choice of the action wheel.
+  # A choice of the action wheel or of a player's menu in the World overview.
   #
   # @!attribute text [String] What the wheel shows.
   # @!attribute run [Proc, nil] What choosing it does, nil while it cannot be chosen.
   # @!attribute refusal [String, nil] The notice for choosing it while it cannot be chosen.
   # @!attribute icon [Integer, nil] The icon the wheel shows instead of the text, nil for the text.
-  Option = Struct.new(:text, :run, :refusal, :icon)
+  # @!attribute leaves [Boolean, nil] Whether choosing it closes the World overview too.
+  Option = Struct.new(:text, :run, :refusal, :icon, :leaves)
 
-  # The game's globe icon, which stands for the World overview in the wheel's middle.
-  WORLD_ICON = 3988
+  # A line of the notification box: an invite, or a message.
+  #
+  # @!attribute key [Object] What it is about; a newer message with the same key replaces it.
+  # @!attribute text [String] What it says.
+  # @!attribute color [Color] Its text's color.
+  # @!attribute action [String, nil] What accepting it does, such as "Accept"; nil for a message and
+  #   for an invite that cannot be accepted here.
+  # @!attribute take [Proc, nil] Accepts it, nil when action is.
+  # @!attribute decline [Proc, nil] Declines it, nil for a message.
+  # @!attribute mark [Object] What the invite is, which tells a new one from the one the player declined.
+  Notice = Struct.new(:key, :text, :color, :action, :take, :decline, :mark)
+
+  # The wheel's choice in a direction no script fills.
+  NO_OPTION = Option.new("", nil, nil)
+
+  # Color of the line above the player's own head, which invites share.
+  LINE_COLOR = Color.new(255, 224, 128)
+
+  @offers = []
+  @slots = {}
+  @lines = []
+  @doings = []
+  @covers = []
 
   extend MGQ_MpLog
 
@@ -82,101 +107,85 @@ module MGQ_MpActions
     Wheel.close unless in_world && SceneManager.scene.is_a?(Scene_Map)
   end
 
+  # Adds what a script offers between two players, such as party invites or duels, to the World
+  # overview and the notification box.
+  #
+  # @param offers [Module] Answers call_of(peer) with the text and color of the other player's
+  #   invite that reaches the player, notice_of(peer) with its Notice, peer_option(peer) with the
+  #   Option of the other player's menu, and own_options with the Options of the player's own
+  #   menu; nil or none where it has nothing.
+  def self.offer(offers)
+    @offers << offers
+  end
+
+  # Lists what the scripts offer between two players, in the order they registered.
+  #
+  # @return [Array<Module>] See offer.
+  def self.offers
+    @offers
+  end
+
+  # Fills a direction of the action wheel.
+  #
+  # @param direction [Symbol] Wheel::CENTER or one of Wheel::DIRECTIONS.
+  # @yieldreturn [Option] The choice the wheel shows there now.
+  def self.wheel_slot(direction, &option)
+    @slots[direction] = option
+  end
+
+  # Lets a script say the line above the player's own head, in place of every other.
+  #
+  # @yieldreturn [String, nil] The line, nil while the script has none.
+  def self.own_line_from(&line)
+    @lines << line
+  end
+
+  # Lets a script name what the player is doing in the line above their own head, such as
+  # "Inviting to a party". The line joins what every script names.
+  #
+  # @yieldreturn [String, nil] What the player is doing, nil while nothing.
+  def self.own_doing_from(&doing)
+    @doings << doing
+  end
+
+  # Lets a script tell that one of its screens lies over the map, which the wheel leaves the
+  # buttons to.
+  #
+  # @yieldparam wheel_key [Boolean] Whether the wheel key went down this frame, which may close the screen.
+  # @yieldreturn [Boolean] Whether the screen is open.
+  def self.cover(&open)
+    @covers << open
+  end
+
   # Tells what the line above the player's own head says, if anything.
   #
   # @return [String, nil] The line.
   def self.own_line
     return nil unless MGQ_MpOverworldSync.in_world? && !Wheel.open?
 
-    story = defined?(MGQ_MpCoopEvents) ? MGQ_MpCoopEvents.own_line : nil
-    return story if story
+    line = @lines.map(&:call).compact.first
+    return line if line
 
-    lines = []
-    lines << "Inviting to a party" if MGQ_MpCoop::Party.inviting?
-    lines << "Challenging to a duel" if defined?(MGQ_MpBattlesDuel) && MGQ_MpBattlesDuel.inviting?
-    lines.empty? ? nil : "#{lines.join(', ')} . . ."
+    doing = @doings.map(&:call).compact
+    doing.empty? ? nil : "#{doing.join(', ')} . . ."
   end
 
   # The action wheel's choices, by the direction that picks them.
   #
   # @return [Hash{Symbol => Option}] The choices under :CENTER, :UP, :RIGHT, :DOWN and :LEFT.
   def self.wheel_options
-    {
-      :CENTER => overview_option,
-      :UP => join_or_invite_option,
-      :RIGHT => duel_option,
-      :DOWN => leave_option,
-      :LEFT => Option.new("Chat (#{MGQ_MpHotkeys.label(:chat)})", MGQ_MpChat.available? ? lambda { MGQ_MpChat.start_typing } : nil, "Chat needs the keyboard, which cannot reach the game."),
-    }
+    Hash[([Wheel::CENTER] + Wheel::DIRECTIONS).map { |direction| [direction, @slots[direction] ? @slots[direction].call : NO_OPTION] }]
   end
 
-  # The wheel's middle choice: the World overview of mp_world_overview.rbx.
-  #
-  # @return [Option] The choice.
-  def self.overview_option
-    overview = defined?(MGQ_MpWorldOverview) ? MGQ_MpWorldOverview : nil
-    Option.new("World (#{MGQ_MpHotkeys.label(:overview)})", overview ? lambda { overview.open } : nil, "The World overview is missing.", WORLD_ICON)
-  end
-
-  # The wheel's duel choice: accepting the challenge of a player nearby, else challenging the
-  # players nearby, through mp_battles_duel.rbx.
-  #
-  # @return [Option] The choice.
-  def self.duel_option
-    return Option.new("Duel", nil, "Duels need PvP battles, which are off or out of date.") unless defined?(MGQ_MpBattlesDuel) && MGQ_MpBattlesDuel.available?
-
-    duel = MGQ_MpBattlesDuel
-    near = MGQ_MpOverworldSync::Peers.all.select { |peer| MGQ_MpCoop::Party.near?(peer.state) }
-    challenger = near.find { |peer| duel.challenged_by?(peer, false) }
-    return Option.new("Accept #{challenger.state['name']}'s duel", lambda { duel.accept(challenger) }, nil) if challenger
-    return Option.new("Stop challenging", lambda { duel.stop }, nil) if duel.inviting?
-
-    Option.new("Challenge to a duel", near.empty? ? nil : lambda { duel.invite }, "Nobody is near enough to challenge.")
-  end
-
-  # The wheel's party choice: accepting the invite of a player nearby, else inviting the players
-  # nearby who are outside the party.
-  #
-  # @return [Option] The choice.
-  def self.join_or_invite_option
-    party = MGQ_MpCoop::Party
-    near = MGQ_MpOverworldSync::Peers.all.select { |peer| party.near?(peer.state) && !party.member?(peer.state) }
-    inviter = near.find { |peer| peer.state["invite"] == "1" }
-    if inviter
-      full = party.full?(inviter.state["party"])
-      return Option.new("Accept #{inviter.state['name']}'s invite", full ? nil : lambda { party.join(inviter) }, "The party is full.")
-    end
-    return Option.new("Invite to a party", nil, "Only the party's leader invites.") unless party.may_invite?
-    return Option.new("Invite to a party", nil, "The party is full.") if party.full?
-
-    Option.new("Invite to a party", near.empty? ? nil : lambda { party.invite }, "Nobody is near enough to invite.")
-  end
-
-  # The wheel's choice that leaves the party, or stops an invite nobody took.
-  #
-  # @return [Option] The choice.
-  def self.leave_option
-    party = MGQ_MpCoop::Party
-    return Option.new("Leave the party", lambda { party.leave }, nil) unless party.members.empty?
-    return Option.new("Stop inviting", lambda { party.stop_inviting }, nil) if party.inviting?
-
-    Option.new("Leave the party", nil, "You are in no party.")
-  end
-
-  # Opens, steers or closes the action wheel on the map, but leaves the keys to the chat box while
-  # it is open. Called by the map every frame, so a press of the key is seen once.
+  # Opens, steers or closes the action wheel on the map, but leaves the keys to a screen that lies
+  # over it, such as the chat box. Called by the map every frame, so a press of the key is seen once.
   def self.on_map
     wheel_key = MGQ_MpHotkeys.pressed?(:wheel)
     unless MGQ_MpOverworldSync.in_world? && MGQ_MpOverworldSync.map_quiet?
       Wheel.close
       return
     end
-    return if MGQ_MpChat.typing?
-    # The wheel key closes the World overview, which holds the buttons while open.
-    if defined?(MGQ_MpWorldOverview) && MGQ_MpWorldOverview.open?
-      MGQ_MpWorldOverview.close if wheel_key
-      return
-    end
+    return if @covers.any? { |open| open.call(wheel_key) }
 
     if Wheel.open?
       Wheel.update(wheel_key)
@@ -292,7 +301,7 @@ class Sprite_MpOwnLine < Sprite
     bitmap.clear
     bitmap.font.size = 18
     bitmap.font.outline = true
-    bitmap.font.color = MGQ_MpCoop::INVITE_COLOR
+    bitmap.font.color = MGQ_MpActions::LINE_COLOR
     bitmap.draw_text(0, 0, WIDTH, HEIGHT, text, 1)
   end
 

@@ -2,7 +2,8 @@
 #  mp_world_overview.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Called the scripts that load before this one without asking whether they loaded
+#      Paulinchen  2026-10-03: Filled the wheel's middle, and built the menus and calls from what the scripts offer through MGQ_MpActions
+#                            - Called the scripts that load before this one without asking whether they loaded
 #                            - Asked MGQ_MpOverworldSync whether the map is quiet or the player free on it
 #                            - Logged through MGQ_MpLog
 #                            - Read the bound keys through MGQ_MpHotkeys, renamed from MGQ_MpKeys
@@ -91,6 +92,9 @@ module MGQ_MpWorldOverview
   @scroll = 0
   @frames = 0
 
+  # The game's globe icon, which stands for the overview in the action wheel's middle.
+  WORLD_ICON = 3988
+
   extend MGQ_MpLog
 
   # What starts this script's lines in the mod's InGame.log.
@@ -108,6 +112,24 @@ module MGQ_MpWorldOverview
   # @return [Integer, nil] The choice picked in it, nil while it is closed.
   def self.menu
     @menu
+  end
+
+  # The action wheel's middle choice, which opens the overview.
+  #
+  # @return [MGQ_MpActions::Option] The choice.
+  def self.wheel_option
+    MGQ_MpActions::Option.new("World (#{MGQ_MpHotkeys.label(:overview)})", lambda { open }, nil, WORLD_ICON)
+  end
+
+  # Tells the action wheel whether the overview lies over the map, closing it on the wheel's key.
+  #
+  # @param wheel_key [Boolean] Whether the wheel key went down this frame.
+  # @return [Boolean] Whether the overview was open.
+  def self.cover(wheel_key)
+    return false unless @open
+
+    close if wheel_key
+    true
   end
 
   # Opens the overview on the player's own row.
@@ -321,16 +343,13 @@ module MGQ_MpWorldOverview
     party.sort_by { |row| [row.badge && row.badge[1] ? 0 : 1, row.name.downcase] }
   end
 
-  # Tells what another player calls the player to: their party invite or their duel challenge, when
-  # it reaches the player.
+  # Tells what another player calls the player to, such as their party invite or their duel
+  # challenge, when it reaches the player.
   #
   # @param peer [MGQ_MpOverworldSync::Peers::Peer] The other player.
   # @return [Array, nil] The text and its color, nil for none.
   def self.call_of(peer)
-    return ["Invites you to a party", MGQ_MpCoop::INVITE_COLOR] if MGQ_MpCoop::Party.invited_by?(peer)
-    return nil unless MGQ_MpBattlesDuel.challenged_by?(peer)
-
-    ["Challenges you to a duel", MGQ_MpBattlesDuel::CHALLENGE_COLOR]
+    MGQ_MpActions.offers.map { |offers| offers.call_of(peer) }.compact.first
   end
 
   # Lays the list out: a heading per place, the player's own first and the others by name, each
@@ -354,62 +373,15 @@ module MGQ_MpWorldOverview
     row.player == :me ? :me : row.player.seat
   end
 
-  # The menu's choices for a player.
+  # The menu's choices for a player: what every script offers with them, see MGQ_MpActions.offer.
   #
   # @param row [Row] The player.
   # @return [Array<MGQ_MpActions::Option>] The choices.
   def self.menu_options(row)
-    row.player == :me ? own_options : [party_option(row.player), duel_option(row.player)]
-  end
+    return MGQ_MpActions.offers.map { |offers| offers.peer_option(row.player) } unless row.player == :me
 
-  # The party choice for another player: accepting their invite, removing them as the party's
-  # leader, else inviting them, which only a leader or a player outside a party may.
-  #
-  # @param peer [MGQ_MpOverworldSync::Peers::Peer] The player.
-  # @return [MGQ_MpActions::Option] The choice.
-  def self.party_option(peer)
-    party = MGQ_MpCoop::Party
-    option = MGQ_MpActions::Option
-    if party.invited_by?(peer)
-      return option.new("Accept party invite", party.full?(peer.state["party"]) ? nil : lambda { party.join(peer) }, "Their party is full.")
-    end
-    if party.member?(peer.state)
-      return option.new("Remove from party", lambda { party.remove(peer) }, nil) if party.leader == :me
-
-      return option.new("In your party", nil, "#{peer.state['name']} is in your party already.")
-    end
-    return option.new("Invite to party", nil, "Only the party's leader invites.") unless party.may_invite?
-    return option.new("Invite to party", nil, "Your party is full.") if party.full?
-    return option.new("Invited to party", nil, "Your invite to #{peer.state['name']} stands.") if party.targets.include?(peer.state["id"].to_s)
-
-    option.new("Invite to party", lambda { party.invite(peer.state["id"]) }, nil)
-  end
-
-  # The duel choice for another player: accepting their challenge, else challenging them.
-  #
-  # @param peer [MGQ_MpOverworldSync::Peers::Peer] The player.
-  # @return [MGQ_MpActions::Option] The choice.
-  def self.duel_option(peer)
-    option = MGQ_MpActions::Option
-    duel = MGQ_MpBattlesDuel
-    return option.new("Duel", nil, "Duels need PvP battles, which are off or out of date.") unless duel.available?
-    return option.new("Accept duel", lambda { close; duel.accept(peer) }, nil) if duel.challenged_by?(peer)
-    return option.new("Challenged to a duel", nil, "Your challenge to #{peer.state['name']} stands.") if duel.targets.include?(peer.state["id"].to_s)
-
-    option.new("Challenge to a duel", lambda { duel.invite(peer.state["id"]) }, nil)
-  end
-
-  # The menu's choices on the player's own row: leaving the party, and stopping invites.
-  #
-  # @return [Array<MGQ_MpActions::Option>] The choices.
-  def self.own_options
-    party = MGQ_MpCoop::Party
-    option = MGQ_MpActions::Option
-    choices = []
-    choices << option.new("Leave the party", lambda { party.leave }, nil) unless party.members.empty?
-    choices << option.new("Stop inviting", lambda { party.stop_inviting }, nil) if party.inviting?
-    choices << option.new("Stop challenging", lambda { MGQ_MpBattlesDuel.stop }, nil) if MGQ_MpBattlesDuel.inviting?
-    choices.empty? ? [option.new("Nothing to do", nil, "Pick another player to invite them.")] : choices
+    own = MGQ_MpActions.offers.map(&:own_options).flatten
+    own.empty? ? [MGQ_MpActions::Option.new("Nothing to do", nil, "Pick another player to invite them.")] : own
   end
 
   # What the overview shows now.
@@ -506,7 +478,10 @@ module MGQ_MpWorldOverview
   #
   # @param option [MGQ_MpActions::Option, nil] The choice.
   def self.choose(option)
-    MGQ_MpActions.choose(option) { @menu = nil }
+    MGQ_MpActions.choose(option) do
+      @menu = nil
+      close if option.leaves
+    end
   end
 
   # Follows the mouse: pointing picks a player or a choice, a click opens the player's menu or takes
@@ -910,6 +885,15 @@ begin
   MGQ_MpOverworldSync.state_fields { MGQ_MpWorldOverview.state_fields }
 rescue => e
   MGQ_MpWorldOverview.log("overworld sync FAILED: #{e.class}: #{e.message}")
+end
+
+# What the overview adds to the action wheel, through mp_actions.rbx.
+
+begin
+  MGQ_MpActions.wheel_slot(:CENTER) { MGQ_MpWorldOverview.wheel_option }
+  MGQ_MpActions.cover { |wheel_key| MGQ_MpWorldOverview.cover(wheel_key) }
+rescue => e
+  MGQ_MpWorldOverview.log("action wheel FAILED: #{e.class}: #{e.message}")
 end
 
 # Game hooks, through mp_hooks.rbx.

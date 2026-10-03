@@ -2,7 +2,8 @@
 #  world_overview_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Added a stand-in for duels without PvP battles
+#      Paulinchen  2026-10-03: Followed the choices to the scripts that offer them
+#                            - Added a stand-in for duels without PvP battles
 #                            - Named the member in the leader's invite, which admits them
 #      Paulinchen  2026-10-02: Opened the overview with the key mp_keys.rbx binds instead of a stand-in for the PvP battle screen's
 #      Paulinchen  2026-10-01: Created
@@ -33,10 +34,11 @@ $data_mapinfos = { 5 => MapInfo.new("Ilias Village (editor)") }
 
 # Duels without PvP battles, which the overview greys out.
 module MGQ_MpBattlesDuel
-  def self.available?; false; end
-  def self.challenged_by?(_peer); false; end
-  def self.inviting?; false; end
+  def self.peer_option(_peer); MGQ_MpActions::Option.new("Duel", nil, "Duels need PvP battles, which are off or out of date."); end
+  def self.own_options; []; end
+  def self.call_of(_peer); nil; end
 end
+MGQ_MpActions.offer(MGQ_MpBattlesDuel)
 load_script "mp_world_overview"
 
 overview = MGQ_MpWorldOverview
@@ -45,6 +47,7 @@ overview = MGQ_MpWorldOverview
 $data_system.variables[1001] = "Overall Events Progress"
 $data_system.switches[50] = "Alice Chosen"
 $data_system.variables[1142] = "天界ルート進行度"
+check("the wheel's middle is the overview's globe", [MGQ_MpActions.wheel_options[:CENTER].text, MGQ_MpActions.wheel_options[:CENTER].icon], ["World (F11)", 3988])
 check("before the side is chosen: the part", [overview.story_code, overview.story_text(overview.story_code)], ["1", "Part 1"])
 $game_switches[50] = true
 $game_variables[1001] = 25
@@ -119,7 +122,7 @@ check("cancel closes the menu, then the overview", [overview.open?, MGQ_Multipla
 # An invite from afar.
 $inbox << entry("message", 2, told(friend.merge("party" => "friend-p", "invite" => 1, "invite_to" => "me")))
 MGQ_MpOverworldSync.tick
-check("an invite naming the player is accepted from the overview", overview.party_option(MGQ_MpOverworldSync::Peers.at(2)).text, "Accept party invite")
+check("an invite naming the player is accepted from the overview", MGQ_MpCoop::Offers.peer_option(MGQ_MpOverworldSync::Peers.at(2)).text, "Accept party invite")
 check("and shows on the inviter's row in place of the story", overview.row_of(MGQ_MpOverworldSync::Peers.at(2)).call[0], "Invites you to a party")
 check("but not on another player's", overview.row_of(MGQ_MpOverworldSync::Peers.at(3)).call, nil)
 check("outside a party the player's own row is white", [overview.rows.first.member, overview.party_rows], [false, []])
@@ -168,10 +171,10 @@ check("the chat box closes it", [MGQ_MpChat.typing?, overview.open?], [true, fal
 # Only the party's leader invites and removes.
 friend_peer = MGQ_MpOverworldSync::Peers.at(2)
 bea = MGQ_MpOverworldSync::Peers.at(3)
-check("a member sees their leader in the party", overview.party_option(friend_peer).text, "In your party")
-check("and may not invite", [overview.party_option(bea).run, overview.party_option(bea).refusal], [nil, "Only the party's leader invites."])
+check("a member sees their leader in the party", MGQ_MpCoop::Offers.peer_option(friend_peer).text, "In your party")
+check("and may not invite", [MGQ_MpCoop::Offers.peer_option(bea).run, MGQ_MpCoop::Offers.peer_option(bea).refusal], [nil, "Only the party's leader invites."])
 MGQ_MpCoop::Party.reset
 MGQ_MpCoop::Party.invite("zz-bea")
 $inbox << entry("message", 3, told(other.merge("party" => MGQ_MpCoop::Party.id, "id" => "zz-bea")))
 MGQ_MpOverworldSync.tick
-check("the leader may remove a member", overview.party_option(bea).text, "Remove from party")
+check("the leader may remove a member", MGQ_MpCoop::Offers.peer_option(bea).text, "Remove from party")

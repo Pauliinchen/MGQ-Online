@@ -2,7 +2,8 @@
 #  overworld_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Checked that a party counts only whom its leader admitted, and that a player whose connection dropped is kept for a while
+#      Paulinchen  2026-10-03: Followed the choices to the scripts that offer them
+#                            - Checked that a party counts only whom its leader admitted, and that a player whose connection dropped is kept for a while
 #                            - Read the bound keys through MGQ_MpHotkeys, renamed from MGQ_MpKeys
 #                            - Checked that an invite naming a player from afar stands longer, and that a decline ends it for them
 #      Paulinchen  2026-10-02: Checked what Discord hears of the open world
@@ -118,11 +119,11 @@ $game_player.x, $game_player.y = 20, 20
 $inbox << entry("message", 2, told(friend.merge("map" => 5, "x" => 40, "y" => 40)))
 MGQ_MpOverworldSync.tick
 check("nobody near: invite greyed", option(:UP), ["Invite to a party", false])
-check("chat offered, duel greyed", [option(:LEFT), option(:RIGHT)], [["Chat (T)", true], ["Duel", false]])
+check("chat offered, and a direction no script fills stays empty", [option(:LEFT), option(:RIGHT)], [["Chat (T)", true], ["", false]])
 $pressed = true
 map_frame
 check("B opens the wheel and holds the buttons", [MGQ_MpActions::Wheel.open?, MGQ_Multiplayer::Capture.on?], [true, true])
-check("the wheel opens on its middle, the World overview's globe", [MGQ_MpActions::Wheel.selected, option(:CENTER)[0], MGQ_MpActions.wheel_options[:CENTER].icon], [:CENTER, "World (F11)", 3988])
+check("the wheel opens on its middle", MGQ_MpActions::Wheel.selected, :CENTER)
 $buttons << :UP << :C
 map_frame
 check("a greyed choice says why", [MGQ_MpActions::Wheel.open?, MGQ_MpOverworldSync::Status.lines.last, $sounds.last], [true, "Nobody is near enough to invite.", "buzzer"])

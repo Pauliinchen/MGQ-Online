@@ -2,7 +2,8 @@
 #  mp_coop_events.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Held the player through MGQ_MpHooks.hold_player
+#      Paulinchen  2026-10-03: Said the story's line above the player's own head through MGQ_MpActions
+#                            - Held the player through MGQ_MpHooks.hold_player
 #                            - Asked MGQ_MpOverworldSync whether the map is quiet or the player free on it
 #                            - Sent messages, showed notices and read the world, the own id and the own seat through MGQ_MpOverworldSync
 #                            - Logged through MGQ_MpLog
@@ -976,6 +977,14 @@ begin
   MGQ_MpOverworldSync.state_fields { MGQ_MpCoopEvents.state_fields }
 rescue => e
   MGQ_MpCoopEvents.log("co-op FAILED: #{e.class}: #{e.message}")
+end
+
+# The line above the player's own head while the leader's story calls them, through mp_actions.rbx.
+
+begin
+  MGQ_MpActions.own_line_from { MGQ_MpCoopEvents.own_line }
+rescue => e
+  MGQ_MpCoopEvents.log("actions FAILED: #{e.class}: #{e.message}")
 end
 
 # Game hooks shared with other scripts, through mp_hooks.rbx.

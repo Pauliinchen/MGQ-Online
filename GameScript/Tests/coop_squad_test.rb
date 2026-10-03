@@ -2,7 +2,8 @@
 #  coop_squad_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Gave the world stand-in tell, notice and the own id and seat
+#      Paulinchen  2026-10-03: Added a stand-in for the action wheel's registries
+#                            - Gave the world stand-in tell, notice and the own id and seat
 #                            - Admitted the party's members, as its leader does
 #      Paulinchen  2026-10-02: Dropped the checks of squad, which the places already cover
 #      Paulinchen  2026-10-01: Created
@@ -141,6 +142,13 @@ module MGQ_MpOverworldSync
   module Status; def self.notice(text); $notice = text; end; end
 end
 
+module MGQ_MpActions
+  Option = Struct.new(:text, :run, :refusal, :icon, :leaves)
+  LINE_COLOR = :line
+  def self.offer(*); end
+  def self.wheel_slot(*); end
+  def self.own_doing_from; end
+end
 load_script "mp_coop"
 load_script "mp_coop_squad"
 SceneManager.run

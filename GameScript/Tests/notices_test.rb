@@ -2,7 +2,8 @@
 #  notices_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Created
+#      Paulinchen  2026-10-03: Offered the challenges through MGQ_MpActions, as the duel script does
+#                            - Created
 #
 #----------------------------------------------------------------
 
@@ -33,7 +34,20 @@ module MGQ_MpBattlesDuel
   def self.challenged_by?(peer); peer.state["challenge"] == "1"; end
   def self.accept(peer); $duel_answer = [:accept, peer.state["name"]]; end
   def self.decline(peer, reason); $duel_answer = [:decline, peer.state["name"], reason]; end
+
+  # The challenges the notification box lists, as mp_battles_duel.rbx offers them.
+  module Offers
+    def self.notice_of(peer)
+      duel = MGQ_MpBattlesDuel
+      return nil unless duel.challenged_by?(peer)
+
+      on_map = SceneManager.scene.is_a?(Scene_Map)
+      MGQ_MpActions::Notice.new([:duel, peer.seat], "#{peer.state['name']} challenges you to a duel", CHALLENGE_COLOR, on_map ? "Accept" : nil,
+                                on_map ? lambda { duel.accept(peer) } : nil, lambda { duel.decline(peer, "no") }, peer.state["id"])
+    end
+  end
 end
+MGQ_MpActions.offer(MGQ_MpBattlesDuel::Offers)
 
 load_script "mp_notices"
 
