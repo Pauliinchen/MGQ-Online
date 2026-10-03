@@ -2,7 +2,8 @@
 #  mp_battles_team.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Sent messages, showed notices and read the world, the own id and the own seat through MGQ_MpOverworldSync
+#      Paulinchen  2026-10-03: Read the sides' players as MGQ_MpBattlesCoop::Player records
+#                            - Sent messages, showed notices and read the world, the own id and the own seat through MGQ_MpOverworldSync
 #                            - Logged through MGQ_MpLog
 #      Paulinchen  2026-10-02: Took the Frontline's size from mp_coop_squad.rbx
 #      Paulinchen  2026-10-01: Created
@@ -53,12 +54,13 @@ module MGQ_MpBattlesTeam
 
   # Keeps the sides of the duel about to start.
   #
-  # @param own [Array<Array>] The players of this game's side, see MGQ_MpBattlesCoop.arrange.
-  # @param other [Array<Array>] The players of the other side.
+  # @param own [Array<MGQ_MpBattlesCoop::Player, Array>] The players of this game's side as
+  #   MGQ_MpBattlesCoop.arrange gives them, or their fields.
+  # @param other [Array<MGQ_MpBattlesCoop::Player, Array>] The players of the other side.
   # @param same_side [Boolean] Whether this game's side is the host's.
   def self.prepare(own, other, same_side)
-    @own = own
-    @other = other
+    @own = own.map { |fields| MGQ_MpBattlesCoop::Player.read(fields) }
+    @other = other.map { |fields| MGQ_MpBattlesCoop::Player.read(fields) }
     @same_side = same_side
     @heirs = {}
     @opponents = {}
@@ -68,7 +70,7 @@ module MGQ_MpBattlesTeam
   #
   # @return [String] The name of the other side's first player.
   def self.opponent_name
-    @other.first ? @other.first[1].to_s : ""
+    @other.first ? @other.first.name.to_s : ""
   end
 
   # Rebuilds the other side's characters on its players' Frontline, in its order, each owned by
@@ -77,9 +79,8 @@ module MGQ_MpBattlesTeam
   # @return [Array<MGQ_MpBattlesPvp::Opponent>] The characters.
   def self.opponents
     @other.map do |player|
-      seat, name, builds = player
-      members = MGQ_MpActors::Builds.parse(builds.to_s, MGQ_MpCoopSquad::FRONTLINE)
-      MGQ_MpBattlesCoop.lines_of(player)[0].map { |place| opponent(seat, name.to_s, members[place], place) }
+      members = MGQ_MpActors::Builds.parse(player.builds.to_s, MGQ_MpCoopSquad::FRONTLINE)
+      player.lines[0].map { |place| opponent(player.seat, player.name.to_s, members[place], place) }
     end.flatten.compact
   end
 
@@ -117,7 +118,7 @@ module MGQ_MpBattlesTeam
   # @param seat [Integer] The guest's world seat.
   # @return [Boolean] Whether they do.
   def self.same_side_as_host?(seat)
-    @own.any? { |player_seat, *| player_seat == seat }
+    @own.any? { |player| player.seat == seat }
   end
 
   # Finds who commands the characters of a player who left.
@@ -139,11 +140,11 @@ module MGQ_MpBattlesTeam
 
   # Lists the players of a side still in the duel: the host and the guests who did not leave.
   #
-  # @param side [Array<Array>] The side's players.
+  # @param side [Array<MGQ_MpBattlesCoop::Player>] The side's players.
   # @return [Array<Integer>] Their seats, in the side's order.
   def self.staying(side)
     host = MGQ_MpOverworldSync::Me.seat
-    side.map { |seat, *| seat }.select { |seat| seat == host || MGQ_MpBattlesSync.guests_in.include?(seat) }
+    side.map(&:seat).select { |seat| seat == host || MGQ_MpBattlesSync.guests_in.include?(seat) }
   end
 
   # Reports whether every player of the other side left. Asked by the host.
@@ -160,7 +161,7 @@ module MGQ_MpBattlesTeam
     changed = false
     [@own, @other].each do |side|
       heir = staying(side).first
-      side.each do |seat, *|
+      side.map(&:seat).each do |seat|
         next if staying(side).include?(seat) || @heirs[seat] == heir
 
         @heirs[seat] = heir

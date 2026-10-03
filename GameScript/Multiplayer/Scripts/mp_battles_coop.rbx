@@ -2,7 +2,8 @@
 #  mp_battles_coop.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Held the player through MGQ_MpHooks.hold_player
+#      Paulinchen  2026-10-03: Kept the battle's players as Player records instead of arrays read by position
+#                            - Held the player through MGQ_MpHooks.hold_player
 #                            - Called the scripts that load before this one without asking whether they loaded
 #                            - Sent messages, showed notices and read the world, the own id and the own seat through MGQ_MpOverworldSync
 #                            - Logged through MGQ_MpLog
@@ -70,6 +71,35 @@ module MGQ_MpBattlesCoop
 
   # Characters a player's builds hold at most, the game's largest party.
   MOST_CHARACTERS = 14
+
+  # A player of a co-op battle, or of a side of a team duel. The battle's messages carry a player
+  # as their fields in this order.
+  #
+  # @!attribute seat [Integer] Their world seat.
+  # @!attribute name [String] Their name.
+  # @!attribute builds [String] Their characters' builds.
+  # @!attribute vitals [Array] Their characters' HP and MP.
+  # @!attribute max [Integer] Their party_member_max.
+  # @!attribute order [Array<Integer>, nil] The order of their places, the Frontline's first, once arranged.
+  # @!attribute front [Integer, nil] Their share of the Frontline, once arranged.
+  # @!attribute bench [Integer, nil] Their share of the Backline, once arranged.
+  Player = Struct.new(:seat, :name, :builds, :vitals, :max, :order, :front, :bench) do
+    # Reads a player from the fields a message carries.
+    #
+    # @param fields [Array, Player] The fields in the order of the attributes, or a player already read.
+    # @return [Player] The player.
+    def self.read(fields)
+      fields.is_a?(self) ? fields : new(*Array(fields).first(members.size))
+    end
+
+    # Lists the player's places on the battle's Frontline and on its Backline.
+    #
+    # @return [Array<Array<Integer>>] The Frontline's places and the Backline's.
+    def lines
+      places = Array(order)
+      [places.first(front.to_i), places[front.to_i, bench.to_i] || []]
+    end
+  end
 
   @members = nil
   @players = nil
@@ -350,7 +380,7 @@ module MGQ_MpBattlesCoop
       players << [seat, peer ? peer.state["name"].to_s : "?", builds.to_s, Array(vitals), max.to_i]
     end
     players = arrange(players)
-    channel.post("roster", MGQ_MpBattlesSync::Wire.line([troop_entries, players]))
+    channel.post("roster", MGQ_MpBattlesSync::Wire.line([troop_entries, players.map(&:to_a)]))
     form(scene, players)
     log("battle #{MGQ_MpBattlesSync.battle_id} with #{players.size} players")
     nil
@@ -611,18 +641,19 @@ module MGQ_MpBattlesCoop
   # Orders the battle's players as their party does, the leader first, and tells each player's
   # share of the Frontline and of the Backline in the battle, and the order of their places.
   #
-  # @param players [Array<Array>] Each player's seat, name, builds, HP and MP, party_member_max,
-  #   and the order of their places once they have one.
-  # @return [Array<Array>] Each player's seat, name, builds, HP and MP, party_member_max, the
-  #   order of their places, the Frontline's first, and their shares of the Frontline and of the Backline.
+  # @param players [Array<Player, Array>] The players, or their fields: at least each one's seat,
+  #   name, builds, HP and MP and party_member_max.
+  # @return [Array<Player>] The players in the party's order, each with the order of their places
+  #   and their shares of the Frontline and of the Backline.
   def self.arrange(players)
-    ranked = MGQ_MpCoopSquad.ranked(players.map { |seat, *| [player_id(seat), leads?(seat)] })
-    players = players.sort_by { |seat, *| ranked.index(player_id(seat)) }
-    players.each_with_index.map do |(seat, name, builds, vitals, max, order), position|
-      count = MGQ_MpActors::Builds.parse(builds.to_s, MOST_CHARACTERS).size
-      front, bench = MGQ_MpCoopSquad.share(position, players.size, max.to_i)
+    players = players.map { |fields| Player.read(fields) }
+    ranked = MGQ_MpCoopSquad.ranked(players.map { |player| [player_id(player.seat), leads?(player.seat)] })
+    players = players.sort_by { |player| ranked.index(player_id(player.seat)) }
+    players.each_with_index.map do |player, position|
+      count = MGQ_MpActors::Builds.parse(player.builds.to_s, MOST_CHARACTERS).size
+      front, bench = MGQ_MpCoopSquad.share(position, players.size, player.max.to_i)
       front = [front, count].min
-      [seat, name, builds, vitals, max, valid_order(order, count), front, [bench, count - front].min]
+      Player.new(player.seat, player.name, player.builds, player.vitals, player.max, valid_order(player.order, count), front, [bench, count - front].min)
     end
   end
 
@@ -655,27 +686,18 @@ module MGQ_MpBattlesCoop
     order.is_a?(Array) && order.sort == (0...count).to_a ? order.dup : (0...count).to_a
   end
 
-  # Lists a player's places on the battle's Frontline and on its Backline.
-  #
-  # @param player [Array] The player, see arrange.
-  # @return [Array<Array<Integer>>] The Frontline's places and the Backline's.
-  def self.lines_of(player)
-    order, front, bench = Array(player[5]), player[6].to_i, player[7].to_i
-    [order.first(front), order[front, bench] || []]
-  end
-
   # Lists the world seats of the battle's players.
   #
   # @return [Array<Integer>] The seats, the player's own included; none before the party is formed.
   def self.player_seats
-    Array(@players).map { |seat, *| seat }
+    Array(@players).map(&:seat)
   end
 
   # Finds the player's own entry among the battle's players.
   #
   # @return [Array, nil] The entry, see arrange, nil outside a co-op battle.
   def self.own_player
-    Array(@players).find { |seat, *| seat == MGQ_MpOverworldSync::Me.seat }
+    Array(@players).find { |player| player.seat == MGQ_MpOverworldSync::Me.seat }
   end
 
   # Lists the player's own characters on the battle's Backline, those they may swap in.
@@ -683,7 +705,7 @@ module MGQ_MpBattlesCoop
   # @return [Array<Game_Actor>] The characters.
   def self.own_bench
     player = own_player
-    player && @own_squad ? lines_of(player)[1].map { |place| @own_squad[place] }.compact : []
+    player && @own_squad ? player.lines[1].map { |place| @own_squad[place] }.compact : []
   end
 
   # The order of the player's places, which their commands tell the host.
@@ -691,7 +713,7 @@ module MGQ_MpBattlesCoop
   # @return [Array<Integer>, nil] The places, the Frontline's first, nil outside a co-op battle.
   def self.own_order
     player = own_player
-    player && player[5]
+    player && player.order
   end
 
   # Builds the co-op party every game shares, in the host's order: each player's share of the
@@ -699,18 +721,17 @@ module MGQ_MpBattlesCoop
   # MP. Others' characters the battle had before stay as they are, with what the battle did to them.
   #
   # @param scene [Scene_Battle] The battle.
-  # @param players [Array<Array>] Each player, see arrange.
+  # @param players [Array<Player, Array>] The players as arrange gives them, or their fields.
   def self.form(scene, players)
-    @players = players
+    @players = players.map { |fields| Player.read(fields) }
     @own_squad ||= MGQ_MpCoopSquad.own_order
     members = []
-    players.each do |player|
-      seat, name, builds, vitals = player
-      front = lines_of(player)[0]
-      if seat == MGQ_MpOverworldSync::Me.seat
+    @players.each do |player|
+      front = player.lines[0]
+      if player.seat == MGQ_MpOverworldSync::Me.seat
         members.concat(front.map { |place| @own_squad[place] }.compact)
       else
-        members.concat(front.map { |place| ally(seat, name, builds, vitals, place) }.compact)
+        members.concat(front.map { |place| ally(player.seat, player.name, player.builds, player.vitals, place) }.compact)
       end
     end
     @members = members
@@ -773,7 +794,7 @@ module MGQ_MpBattlesCoop
   def self.settle(scene)
     return unless active?
 
-    staying = @players.select { |seat, *| seat == MGQ_MpOverworldSync::Me.seat || MGQ_MpBattlesSync.guests_in.include?(seat) }
+    staying = @players.select { |player| player.seat == MGQ_MpOverworldSync::Me.seat || MGQ_MpBattlesSync.guests_in.include?(player.seat) }
     return if staying.size == @players.size
 
     return go_solo(scene) if staying.size == 1
@@ -868,11 +889,11 @@ module MGQ_MpBattlesCoop
     player = own_player
     return false unless player && @own_squad
 
-    order = player[5]
-    front = player[6].to_i
+    order = player.order
+    front = player.front.to_i
     at = order.first(front).index { |place| @own_squad[place].equal?(actor) }
     to = front + bench_index
-    return false unless at && bench_index >= 0 && bench_index < player[7].to_i && order[to]
+    return false unless at && bench_index >= 0 && bench_index < player.bench.to_i && order[to]
 
     party = $game_party.all_members
     first = party.index(@own_squad[order[at]])
@@ -889,10 +910,10 @@ module MGQ_MpBattlesCoop
   # @param seat [Integer] The guest's world seat.
   # @param order [Array, nil] The places, the Frontline's first.
   def self.take_order(seat, order)
-    player = Array(@players).find { |player_seat, *| player_seat == seat }
-    return unless player && order.is_a?(Array) && order != player[5]
+    player = Array(@players).find { |candidate| candidate.seat == seat }
+    return unless player && order.is_a?(Array) && order != player.order
 
-    player[5] = valid_order(order, player[5].size)
+    player.order = valid_order(order, player.order.size)
     @reordered = true
     form(SceneManager.scene, @players)
   rescue => e
@@ -910,7 +931,7 @@ module MGQ_MpBattlesCoop
   # As host, sends the guests the party, between two of the host's sends.
   def self.post_party
     MGQ_MpBattlesSync::Recorder.flush if MGQ_MpBattlesSync::Recorder.active?
-    MGQ_MpBattlesSync::Channel.post("coop_party", MGQ_MpBattlesSync::Wire.line([@players]))
+    MGQ_MpBattlesSync::Channel.post("coop_party", MGQ_MpBattlesSync::Wire.line([@players.map(&:to_a)]))
     @reordered = false
   end
 

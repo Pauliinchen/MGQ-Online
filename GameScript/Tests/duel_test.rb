@@ -2,7 +2,8 @@
 #  duel_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Gave the world stand-in tell, notice and the own id and seat
+#      Paulinchen  2026-10-03: Gave the co-op stand-in its Player record
+#                            - Gave the world stand-in tell, notice and the own id and seat
 #                            - Checked that a call to a team duel is taken only from the challenger the player accepted or through their party's leader
 #                            - Checked that a player who declines a challenge is no longer named by it
 #      Paulinchen  2026-10-02: Gave the live battle stand-in tell
@@ -47,8 +48,11 @@ module MGQ_MpBattlesSync
 end
 module MGQ_MpOverworldSync::Me; def self.seat; 0; end; end
 module MGQ_MpBattlesCoop
+  Player = Struct.new(:seat, :name, :builds, :vitals, :max, :order, :front, :bench) do
+    def self.read(fields); fields.is_a?(self) ? fields : new(*fields); end
+  end
   def self.team_build; ["builds-me", 8]; end
-  def self.arrange(players); players; end
+  def self.arrange(players); players.map { |fields| Player.read(fields) }; end
 end
 module MGQ_MpBattlesTeam
   def self.prepare(*args); $prepared = args; end

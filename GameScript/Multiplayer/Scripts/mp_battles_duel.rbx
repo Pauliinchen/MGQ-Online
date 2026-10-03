@@ -2,7 +2,8 @@
 #  mp_battles_duel.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Offered the duel's choices and challenges to the wheel, the World overview and the notification box through MGQ_MpActions
+#      Paulinchen  2026-10-03: Kept a duel waiting to start as a Pending record, and the sides' players as MGQ_MpBattlesCoop::Player records
+#                            - Offered the duel's choices and challenges to the wheel, the World overview and the notification box through MGQ_MpActions
 #                            - Asked MGQ_MpOverworldSync whether the map is quiet or the player free on it
 #                            - Sent messages, showed notices and read the world, the own id and the own seat through MGQ_MpOverworldSync
 #                            - Logged through MGQ_MpLog
@@ -47,6 +48,25 @@ module MGQ_MpBattlesDuel
     "late" => "started the duel without you",
     "no" => "declined your challenge",
   }
+
+  # A duel waiting to start from the map.
+  #
+  # @!attribute role [Symbol] :host or :guest of a duel between two players, :team for a team duel.
+  # @!attribute battle_id [String] The duel's id.
+  # @!attribute peer [MGQ_MpOverworldSync::Peers::Peer, nil] The other player; of a team duel its
+  #   host, nil when the player hosts it.
+  # @!attribute members [Array<MGQ_MpActors::Builds::Member>, nil] The other player's team, nil for a team duel.
+  # @!attribute own [Array<MGQ_MpBattlesCoop::Player>, nil] The players of the player's side of a team duel.
+  # @!attribute other [Array<MGQ_MpBattlesCoop::Player>, nil] The players of the other side of a team duel.
+  # @!attribute same_side [Boolean, nil] Whether the player stands on the host's side of a team duel.
+  Pending = Struct.new(:role, :battle_id, :peer, :members, :own, :other, :same_side) do
+    # Lists the seats of a team duel's players.
+    #
+    # @return [Array<Integer>] The seats of both sides.
+    def seats
+      (Array(own) + Array(other)).map(&:seat)
+    end
+  end
 
   @challenge = MGQ_MpCoop::Invite.new
   @accepted = nil
@@ -198,7 +218,7 @@ module MGQ_MpBattlesDuel
     return gather(peer, battle_id) if team_duel?(peer)
 
     MGQ_MpOverworldSync.tell(peer.seat, { "duel" => "start", "bid" => battle_id }, team_line)
-    @pending = [:host, battle_id, peer, members]
+    @pending = Pending.new(:host, battle_id, peer, members)
   end
 
   # As challenged player, starts the duel the challenger answered.
@@ -219,7 +239,7 @@ module MGQ_MpBattlesDuel
     members = read_team(peer, body)
     return call_off(peer.seat, battle_id) unless members
 
-    @pending = [:guest, battle_id, peer, members]
+    @pending = Pending.new(:guest, battle_id, peer, members)
   end
 
   # Calls off a duel the other player started or is about to start: their battle breaks off, or
@@ -317,10 +337,10 @@ module MGQ_MpBattlesDuel
     own += (ready.keys - others).map { |seat| entry(seat, ready[seat]) }
     own = MGQ_MpBattlesCoop.arrange(own.map { |seat, name, builds, max| [seat, name, builds, [], max] })
     other = MGQ_MpBattlesCoop.arrange(others.map { |seat| entry(seat, ready[seat]) }.map { |seat, name, builds, max| [seat, name, builds, [], max] })
-    body = MGQ_MpBattlesSync::Wire.line([own, other])
+    body = MGQ_MpBattlesSync::Wire.line([own.map(&:to_a), other.map(&:to_a)])
     ready.each_key { |seat| MGQ_MpOverworldSync.tell(seat, { "duel" => "start", "bid" => gathering[:battle_id], "team" => 1 }, body) }
     (gathering[:sides].keys - ready.keys).each { |seat| MGQ_MpOverworldSync.tell(seat, { "duel" => "cancel", "reason" => "late" }) }
-    @pending = [:team, gathering[:battle_id], nil, own, other, true]
+    @pending = Pending.new(:team, gathering[:battle_id], nil, nil, own, other, true)
   end
 
   # Writes a player who got ready as a side's player before its shares are counted.
@@ -465,10 +485,11 @@ module MGQ_MpBattlesDuel
       return MGQ_MpOverworldSync.notice("The duel with #{peer.state['name']} started without you.")
     end
 
-    hosts, others = MGQ_MpBattlesSync::Wire.parse(body.to_s)
-    seat = MGQ_MpOverworldSync::Me.seat
-    same = Array(hosts).any? { |player_seat, *| player_seat == seat }
-    @pending = [:team, battle_id, peer, same ? hosts : others, same ? others : hosts, same]
+    hosts, others = MGQ_MpBattlesSync::Wire.parse(body.to_s).first(2).map do |side|
+      Array(side).map { |fields| MGQ_MpBattlesCoop::Player.read(fields) }
+    end
+    same = hosts.any? { |player| player.seat == MGQ_MpOverworldSync::Me.seat }
+    @pending = Pending.new(:team, battle_id, peer, nil, same ? hosts : others, same ? others : hosts, same)
   end
 
   # Takes the other player's word that the duel is off: a team duel the player was called to, or a
@@ -478,7 +499,7 @@ module MGQ_MpBattlesDuel
   # @param battle_id [String] The duel's id, empty for a call to a team duel.
   # @param reason [String] A key of REASONS.
   def self.take_cancel(peer, battle_id, reason)
-    if @pending && @pending[1] == battle_id && @pending[2] && @pending[2].seat == peer.seat
+    if @pending && @pending.battle_id == battle_id && @pending.peer && @pending.peer.seat == peer.seat
       @pending = nil
     elsif @called && @called[:seat] == peer.seat
       @called = nil
@@ -491,33 +512,29 @@ module MGQ_MpBattlesDuel
   # Starts a team duel from the map: as host with every other player as a guest, else as a guest
   # of the challenger.
   #
-  # @param battle_id [String] The duel's id.
-  # @param host [MGQ_MpOverworldSync::Peers::Peer, nil] The challenger, nil for the player.
-  # @param own [Array<Array>] The players of the player's side.
-  # @param other [Array<Array>] The players of the other side.
-  # @param same_side [Boolean] Whether the player stands on the challenger's side.
-  def self.start_team(battle_id, host, own, other, same_side)
+  # @param pending [Pending] The team duel.
+  def self.start_team(pending)
+    host = pending.peer
     if host
-      MGQ_MpBattlesSync.join_world(:guest, battle_id, [host.seat], host.state["name"].to_s, :pvp, true)
+      MGQ_MpBattlesSync.join_world(:guest, pending.battle_id, [host.seat], host.state["name"].to_s, :pvp, true)
     else
-      seats = (own + other).map { |seat, *| seat } - [MGQ_MpOverworldSync::Me.seat]
-      MGQ_MpBattlesSync.join_world(:host, battle_id, seats, "the duel", :pvp, true)
+      MGQ_MpBattlesSync.join_world(:host, pending.battle_id, pending.seats - [MGQ_MpOverworldSync::Me.seat], "the duel", :pvp, true)
     end
-    MGQ_MpBattlesTeam.prepare(own, other, same_side)
+    MGQ_MpBattlesTeam.prepare(pending.own, pending.other, pending.same_side)
     MGQ_MpBattlesPvp::Battle.start(MGQ_MpBattlesTeam.opponent_name, [], false) { MGQ_MpBattlesTeam.opponents }
-    log("team duel #{battle_id} as #{host ? 'guest' : 'host'}, #{own.size} against #{other.size}")
+    log("team duel #{pending.battle_id} as #{host ? 'guest' : 'host'}, #{pending.own.size} against #{pending.other.size}")
   end
 
   # Calls off a duel waiting to start, telling the other players: a team duel's guest leaves it, so
   # their side takes their characters; anyone else calls it off.
   #
-  # @param pending [Array] The duel, as on_map takes it.
+  # @param pending [Pending] The duel.
   def self.give_up(pending)
-    role, battle_id, peer = pending
+    role, battle_id, peer = pending.role, pending.battle_id, pending.peer
     if role == :team && peer
       MGQ_MpBattlesSync.tell(peer.seat, "leave", battle_id)
     elsif role == :team
-      ((pending[3] + pending[4]).map { |seat, *| seat } - [MGQ_MpOverworldSync::Me.seat]).each { |seat| call_off(seat, battle_id) }
+      (pending.seats - [MGQ_MpOverworldSync::Me.seat]).each { |seat| call_off(seat, battle_id) }
     else
       call_off(peer.seat, battle_id, "busy")
     end
@@ -540,9 +557,9 @@ module MGQ_MpBattlesDuel
     pending = @pending
     @pending = nil
     return give_up(pending) unless free?
-    return start_team(*pending[1..-1]) if pending[0] == :team
+    return start_team(pending) if pending.role == :team
 
-    role, battle_id, peer, members = pending
+    role, battle_id, peer, members = pending.role, pending.battle_id, pending.peer, pending.members
     name = peer.state["name"].to_s
     MGQ_MpBattlesSync.join_world(role, battle_id, [peer.seat], name, :pvp)
     MGQ_MpBattlesPvp::Battle.start(name, members, false)

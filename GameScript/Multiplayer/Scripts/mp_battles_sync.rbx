@@ -2,7 +2,8 @@
 #  mp_battles_sync.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Moved the wire into mp_battles_sync_wire.rbx, the recorder, the playback, and the hooks with the live battle's steps into scripts of their own
+#      Paulinchen  2026-10-03: Read the sides' players as MGQ_MpBattlesCoop::Player records
+#                            - Moved the wire into mp_battles_sync_wire.rbx, the recorder, the playback, and the hooks with the live battle's steps into scripts of their own
 #                            - Built the battle hooks with MGQ_MpHooks.around
 #                            - Called the scripts that load before this one without asking whether they loaded
 #                            - Sent messages, showed notices and read the world, the own id and the own seat through MGQ_MpOverworldSync
@@ -242,7 +243,7 @@ module MGQ_MpBattlesSync
   def self.player_seats
     seats = Array(@seats)
     seats |= MGQ_MpBattlesCoop.player_seats if coop?
-    seats |= (MGQ_MpBattlesTeam.own + MGQ_MpBattlesTeam.other).map(&:first) if team?
+    seats |= (MGQ_MpBattlesTeam.own + MGQ_MpBattlesTeam.other).map(&:seat) if team?
     seats - [MGQ_MpOverworldSync::Me.seat]
   end
 
