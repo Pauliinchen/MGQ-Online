@@ -2,7 +2,8 @@
 #  loader_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Checked that mp_log.rbx loads first
+#      Paulinchen  2026-10-03: Checked that a family's base script loads before its other scripts
+#                            - Checked that mp_log.rbx loads first
 #      Paulinchen  2026-10-02: Checked that mp_hooks.rbx loads first
 #                            - Checked that the scripts whose constants the World overview shares load before it
 #      Paulinchen  2026-09-30: Created
@@ -30,6 +31,8 @@ check("the registries load before the scripts that join them",
       [scripts.index("mp_overworld_sync") < scripts.index("mp_actions"), scripts.index("mp_coop") < scripts.index("mp_coop_events")], [true, true])
 check("the scripts whose constants the World overview shares load before it",
       %w[mp_actions mp_overworld mp_battles_pvp].all? { |name| scripts.index(name) < scripts.index("mp_world_overview") }, true)
+check("a family's base script loads before its other scripts",
+      %w[mp_world mp_battles_sync mp_battles_pvp mp_coop].all? { |base| scripts.select { |name| name.start_with?("#{base}_") }.all? { |name| scripts.index(base) < scripts.index(name) } }, true)
 check("the battle scripts keep the order their late hooks rely on",
       %w[mp_battles mp_battles_coop mp_battles_sync].map { |name| scripts.index(name) }.each_cons(2).all? { |a, b| a < b }, true)
 

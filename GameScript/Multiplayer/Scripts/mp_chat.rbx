@@ -2,7 +2,8 @@
 #  mp_chat.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Filled the wheel's chat choice and told the wheel while the chat box is open
+#      Paulinchen  2026-10-03: Broke lines through MGQ_MpUi.wrap, which the windows share
+#                            - Filled the wheel's chat choice and told the wheel while the chat box is open
 #                            - Asked MGQ_MpOverworldSync whether the map is quiet or the player free on it
 #                            - Sent messages, showed notices and read the world, the own id and the own seat through MGQ_MpOverworldSync
 #                            - Logged through MGQ_MpLog
@@ -256,30 +257,6 @@ module MGQ_MpChat
     @bubbles.keys
   end
 
-  # Breaks a text into lines that fit a width.
-  #
-  # @param bitmap [Bitmap] A bitmap with the font the lines are drawn in.
-  # @param text [String] The text.
-  # @param width [Integer] The width in pixels.
-  # @return [Array<String>] The lines.
-  def self.wrap(bitmap, text, width)
-    lines = [""]
-    text.split(" ").each do |word|
-      candidate = lines.last.empty? ? word : "#{lines.last} #{word}"
-      if bitmap.text_size(candidate).width <= width
-        lines[-1] = candidate
-        next
-      end
-
-      lines.push("") unless lines.last.empty?
-      word.each_char do |char|
-        lines.push("") if bitmap.text_size(lines.last + char).width > width && !lines.last.empty?
-        lines[-1] += char
-      end
-    end
-    lines
-  end
-
   # Reports whether the hooks can be installed.
   #
   # A second copy of this script would wrap the same methods under the same names, and each hook
@@ -430,7 +407,7 @@ class Sprite_MpChatBubble < Sprite
     bitmap.font.size = 16
     bitmap.font.outline = false
     bitmap.font.color = INK
-    lines = MGQ_MpChat.wrap(bitmap, text, WIDTH - PAD * 2)
+    lines = MGQ_MpUi.wrap(bitmap, text, WIDTH - PAD * 2)
     lines = lines[0, MAX_LINES - 1] + ["#{lines[MAX_LINES - 1]} . . ."] if lines.size > MAX_LINES
     width = [lines.map { |line| bitmap.text_size(line).width }.max + PAD * 2, 24].max
     width = [width, WIDTH].min
@@ -510,7 +487,7 @@ class Sprite_MpChatLog < Sprite
     bitmap.font.size = 18
     bitmap.font.outline = true
     bitmap.fill_rect(bitmap.rect, BACK) if chat.typing?
-    rows = lines.map { |line| chat.wrap(bitmap, line, WIDTH - 8) }.flatten.last(ROWS)
+    rows = lines.map { |line| MGQ_MpUi.wrap(bitmap, line, WIDTH - 8) }.flatten.last(ROWS)
     rows.each_with_index { |row, index| bitmap.draw_text(4, (ROWS - rows.size + index) * ROW, WIDTH - 8, ROW, row) }
     draw_box(chat.typed, chat.cursor, chat.cursor_shown?) if chat.typing?
   end

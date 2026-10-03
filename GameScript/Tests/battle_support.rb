@@ -2,7 +2,8 @@
 #  battle_support.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Added stand-ins for the party's events and the chat, which the battle scripts call
+#      Paulinchen  2026-10-03: Loaded the scripts split off the ones under test, and mp_ui.rbx
+#                            - Added stand-ins for the party's events and the chat, which the battle scripts call
 #                            - Gave the world stand-in tell, notice and the own id and seat
 #                            - Gave the characters a battle start and a turn start, which set their hit count
 #                            - Let the map's player refresh, telling which leader it shows
@@ -220,7 +221,7 @@ end
 load_script "mp_coop_squad"
 load_script "mp_battles"
 load_script "mp_battles_coop"
-load_script "mp_battles_sync"
+%w[mp_battles_sync mp_battles_sync_wire mp_battles_sync_recorder mp_battles_sync_playback mp_battles_sync_live].each { |name| load_script name }
 module MGQ_MpBattlesSync::Waiting
   def self.open(text); :window; end
   def self.close(window); nil; end

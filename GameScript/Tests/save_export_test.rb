@@ -2,6 +2,7 @@
 #  save_export_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-03: Loaded the scripts split off the ones under test, and mp_ui.rbx
 #      Paulinchen  2026-10-02: Created
 #
 #----------------------------------------------------------------
@@ -50,7 +51,9 @@ module MGQ_Multiplayer
 end
 
 load_script "mp_save_distribution"
+load_script "mp_ui"
 load_script "mp_world"
+load_script "mp_world_screen"
 load_script "mp_save_export"
 
 Dir.mktmpdir do |root|

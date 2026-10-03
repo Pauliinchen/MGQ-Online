@@ -2,7 +2,8 @@
 #  mp_save_export.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Logged through MGQ_MpLog
+#      Paulinchen  2026-10-03: Built the notice on Window_MpInfo of mp_ui.rbx
+#                            - Logged through MGQ_MpLog
 #      Paulinchen  2026-10-02: Created
 #
 #----------------------------------------------------------------
@@ -99,7 +100,7 @@ end
 
 # What copying a save from the game's menu ended with, in the middle of the screen until OK or
 # Cancel is pressed.
-class Window_MpSaveExportNotice < Window_MpWorldInfo
+class Window_MpSaveExportNotice < Window_MpInfo
   # What the notice says below the result.
   CLOSE_HINT = "Press OK to go on."
 

@@ -2,7 +2,8 @@
 #  overworld_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Followed the choices to the scripts that offer them
+#      Paulinchen  2026-10-03: Checked the word wrap where it lives now, in MGQ_MpUi
+#                            - Followed the choices to the scripts that offer them
 #                            - Checked that a party counts only whom its leader admitted, and that a player whose connection dropped is kept for a while
 #                            - Read the bound keys through MGQ_MpHotkeys, renamed from MGQ_MpKeys
 #                            - Checked that an invite naming a player from afar stands longer, and that a decline ends it for them
@@ -311,8 +312,8 @@ chat.system("Friend left the battle.")
 check("the game's own lines go to the log too", chat.log_lines.last, "* Friend left the battle.")
 
 class FakeBitmap; def text_size(text); Struct.new(:width).new(text.size * 10); end; end
-check("wrapping at spaces", chat.wrap(FakeBitmap.new, "aaa bbb ccc", 70), ["aaa bbb", "ccc"])
-check("wrapping a long word", chat.wrap(FakeBitmap.new, "abcdefghij", 40), ["abcd", "efgh", "ij"])
+check("wrapping at spaces", MGQ_MpUi.wrap(FakeBitmap.new, "aaa bbb ccc", 70), ["aaa bbb", "ccc"])
+check("wrapping a long word", MGQ_MpUi.wrap(FakeBitmap.new, "abcdefghij", 40), ["abcd", "efgh", "ij"])
 
 # Pings.
 ping = MGQ_MpOverworldSync::Ping

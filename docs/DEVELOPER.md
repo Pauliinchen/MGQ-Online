@@ -11,6 +11,8 @@ GameScript/Multiplayer.rb             Ruby, what every way of playing together s
 GameScript/Multiplayer/Scripts/       Ruby, the other scripts, in the order Multiplayer.rb loads them:
   mp_log.rbx                          the log every script writes its lines with
   mp_hooks.rbx                        the game methods several scripts follow, each wrapped once
+  mp_hotkeys.rbx                      the keys the player binds
+  mp_ui.rbx                           what the screens share: word wrap, and the window of lines across the top
   mp_actors.rbx                       characters of another game: builds as numbers, and rebuilt characters
   mp_async.rbx                        the world running on behind menus, battles and story scenes
   mp_overworld_sync.rbx               the world's messages: states, peers, and the registry other scripts join
@@ -23,12 +25,20 @@ GameScript/Multiplayer/Scripts/       Ruby, the other scripts, in the order Mult
   mp_coop_npcs.rbx                    the NPCs a party shares on a map, moved by its Map Owner
   mp_coop_story.rbx                   the story a party plays: the leader's, borrowed by the members
   mp_save_distribution.rbx            a world's starting save: one of its creator's saves, fetched by new players, or each player's own
-  mp_world.rbx                        worlds: the world screen, and each world's own saves
+  mp_world.rbx                        worlds: the directory, and each world's own saves
+  mp_world_text.rbx                   the text screen for names and passwords
+  mp_world_screen.rbx                 the world screen and its windows
   mp_save_export.rbx                  a world's latest save copied into the player's own game
   mp_battles.rbx                       the rules every multiplayer battle shares
   mp_battles_coop.rbx                  co-op battles: the party members on the map join a member's battle
   mp_battles_sync.rbx                  live battles: the host computes, the guest plays back
+  mp_battles_sync_wire.rbx             how a live battle's messages are written
+  mp_battles_sync_recorder.rbx         the host's side of the stream: the battle recorded as events
+  mp_battles_sync_playback.rbx         the guest's side of the stream: the events played
+  mp_battles_sync_live.rbx             the battle hooks, and the steps host and guest differ in
   mp_battles_pvp.rbx                   PvP battles against a friend's team or a mirror match
+  mp_battles_pvp_mirror.rbx            the mirror match's report
+  mp_battles_pvp_lobby.rbx             the PvP battle screen outside a world
   mp_battles_duel.rbx                  duels: PvP battles between two players of a world
   mp_battles_team.rbx                  team duels: two parties against each other
   mp_world_overview.rbx                the World overview: every player online by place, and their invites
@@ -54,6 +64,7 @@ docs/DEVELOPER.md                     this file
 | `mp_log.rbx` | `MGQ_MpLog` | The scripts' lines in `InGame.log`. A script's module extends it and sets `LOG_TAG`, which starts its lines: `log` writes one, `log_once` only the first time for its key, for what would otherwise fail every frame. |
 | `mp_hooks.rbx` | `MGQ_MpHooks` | The game methods several scripts follow, each wrapped once, with the blocks the scripts register (see Hooks above). `Multiplayer.rb` registers its `Graphics.update` and `SceneManager.run` blocks once the scripts loaded. |
 | `mp_hotkeys.rbx` | `MGQ_MpHotkeys` | The keys the player binds: the action wheel (B), the chat (T), the World overview, which outside a world opens the PvP battle screen (F11), and accepting and declining the notification box's first invite (Y, N). `code` reads the key from `Patch/Multiplayer/Player.ini` (`key_wheel`, `key_chat`, `key_overview`, `key_accept`, `key_decline`, Windows key codes), else the default; `pressed?` reads it with `MGQ_Multiplayer::Key`, and `label` names it for the texts. With Mod Config Remake installed, `register` adds a key binding per key (`:keybind`, with `:value` and `:on_change` going to Player.ini, since `$game_system.conf` lives in each save). |
+| `mp_ui.rbx` | `MGQ_MpUi`, `Window_MpInfo` | What the screens and boxes share: `MGQ_MpUi.wrap` breaks a text into lines that fit, at spaces and inside a word that is too long, for the chat and the windows; `Window_MpInfo` is the window of lines across the top of the world screen and the PvP battle screen, and the base of the save copy's notice. |
 | `mp_actors.rbx` | `MGQ_MpActors`, `Game_MpActor` | Characters of another game: `Builds` writes and reads a character's build as plain numbers, `Items` its equipment, and `Game_MpActor` rebuilds it as a real character of this game (see [Team](#pvp-battles-mp_battles_pvprbx) and Rebuilt characters). PvP battles build their enemy side on it, co-op battles the party members' characters. |
 | `mp_async.rbx` | `MGQ_MpAsync` | The world running on behind every other screen while a world is open, and the live map behind menus (see [The world never pauses](#the-world-never-pauses-mp_asyncrbx)). Reaches `MGQ_MpWorld` at run time. |
 | `mp_overworld_sync.rbx` | `MGQ_MpOverworldSync` | The open world's messages: what each game tells the others, the other games by seat, and the registry the scripts after it join for their messages (see [On the map](#on-the-map)). Every script sends through `tell`, shows its notices through `notice`, and reads the player's id and seat from `Me.id` and `Me.seat`. Reaches `MGQ_MpWorld` at run time. |
@@ -67,11 +78,19 @@ docs/DEVELOPER.md                     this file
 | `mp_coop_story.rbx` | `MGQ_MpCoopStory` | The story a party plays: members borrow the leader's switches, variables and self switches and get their own back afterwards (see [The party's story](#the-partys-story-mp_coop_storyrbx)). Reaches `MGQ_MpOverworldSync` and `MGQ_MpActions` at run time. |
 | `mp_save_distribution.rbx` | `MGQ_MpSaveDistribution`, `Scene_MpStartSave` | A world's starting save: the creator picks one of their saves on the game's own save screen, and new players fetch it before entering the world (see [Starting save](#starting-save-mp_save_distributionrbx)). Called by `mp_world.rbx` at run time. |
 | `mp_world.rbx` | `MGQ_MpWorld` | Worlds: the Multiplayer command on the title screen, the world screen, each world's folder with its saves and system save (see [Worlds](#worlds-mp_worldrbx)). |
+| `mp_world_text.rbx` | `Scene_MpText`, `Window_MpTextEdit`, `Window_MpTextInput` | The text screen: names and passwords, typed on the keyboard or picked from the game's letters with a gamepad. |
+| `mp_world_screen.rbx` | `Scene_MpWorlds`, `Window_MpWorldList`, `Window_MpWorldDetail`, `Window_MpChoice`, `Window_MpWorldForm` | The world screen and its windows: the list, a world's details, the forms that create a world or join a hidden one, and the choices in the middle. |
 | `mp_save_export.rbx` | `MGQ_MpSaveExport`, `Window_MpSaveExportNotice` | Copies a world's latest save, an autosave included, with its thumbnail into the first free slot of the player's own `Save` folder; the player's own system save stays as it is. The world screen offers it on a world played on this PC, the game's menu while a world is open (*Copy to my game*, after the game's own extra commands, greyed out until the player saved in the world, with a notice of the slot). It writes through `Files.unmapped`, since `Save/` stands for the world's folder while one is open. |
 | `mp_battles.rbx` | `MGQ_MpBattles` | The rules every multiplayer battle shares, PvP and co-op alike: no ero offers, no Give Up, and in PvP no swapping the Backline in; `begin(kind)` sets them and keeps the game's own settings, `finish` puts those back. |
 | `mp_battles_coop.rbx` | `MGQ_MpBattlesCoop`, `Game_MpAlly` | Co-op battles: who joins, the party every game shares, and the allies other players command (see [Co-op battles](#co-op-battles-mp_battles_cooprbx)). Drives `MGQ_MpBattlesSync`. |
 | `mp_battles_sync.rbx` | `MGQ_MpBattlesSync` | Live battles, for any mode: `join` makes the next battle live, `battle_started` marks it running, `finish` ends it and closes the link, `record_to_file` has the next battle record itself. Knows nothing of PvP battles. |
+| `mp_battles_sync_wire.rbx` | `MGQ_MpBattlesSync::Wire` | How a live battle's messages are written and read: plain values as tab-separated tokens. |
+| `mp_battles_sync_recorder.rbx` | `MGQ_MpBattlesSync::Recorder` | The host's side of the stream: what its battle shows, as events for the guests or a mirror match's file. |
+| `mp_battles_sync_playback.rbx` | `MGQ_MpBattlesSync::Playback` | The guest's side of the stream: the host's events, played on the guest's battle. |
+| `mp_battles_sync_live.rbx` | `MGQ_MpBattlesSync::Hooks`, `MGQ_MpBattlesSync::Live` | The hooks into the game's battle, installed as the game starts running, and the steps host and guest differ in. |
 | `mp_battles_pvp.rbx` | `MGQ_MpBattlesPvp` | PvP battles: the PvP battle screen (F11), the team exchange, the rebuilt characters, the mirror match. Drives `MGQ_MpBattlesSync`. |
+| `mp_battles_pvp_mirror.rbx` | `MGQ_MpBattlesPvp::MirrorReport` | The mirror match's report: the player's team beside its rebuilt copy, turn by turn. |
+| `mp_battles_pvp_lobby.rbx` | `MGQ_MpBattlesPvp::Lobby`, `Scene_PvpLobby`, `Window_PvpLobbyCommand` | The PvP battle screen outside a world (F11): its lines and commands by how the exchange stands. |
 | `mp_battles_duel.rbx` | `MGQ_MpBattlesDuel` | Duels: challenges like party invites, and `MGQ_MpBattlesPvp`'s battle over the world's room (see [Duels](#duels-mp_battles_duelrbx)). Registers with `MGQ_MpOverworldSync`. |
 | `mp_battles_team.rbx` | `MGQ_MpBattlesTeam` | Team duels: the sides once the duel starts, the other side's characters, and who commands the characters of a player who left (see [Team duels](#team-duels-mp_battles_teamrbx)). Driven by `MGQ_MpBattlesDuel` and `MGQ_MpBattlesSync`. |
 | `mp_world_overview.rbx` | `MGQ_MpWorldOverview`, `Sprite_MpWorldOverview`, `Sprite_MpPartyBox` | The World overview (F11 or the wheel's middle), the party box at the top right of the map, and the place, level and story every state tells (see [World overview](#world-overview-mp_world_overviewrbx)). Registers with `MGQ_MpOverworldSync`. |

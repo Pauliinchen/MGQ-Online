@@ -10,7 +10,13 @@
     <File Path="GameScript/Multiplayer/Scripts/mp_battles_coop.rbx" />
     <File Path="GameScript/Multiplayer/Scripts/mp_battles_duel.rbx" />
     <File Path="GameScript/Multiplayer/Scripts/mp_battles_pvp.rbx" />
+    <File Path="GameScript/Multiplayer/Scripts/mp_battles_pvp_lobby.rbx" />
+    <File Path="GameScript/Multiplayer/Scripts/mp_battles_pvp_mirror.rbx" />
     <File Path="GameScript/Multiplayer/Scripts/mp_battles_sync.rbx" />
+    <File Path="GameScript/Multiplayer/Scripts/mp_battles_sync_live.rbx" />
+    <File Path="GameScript/Multiplayer/Scripts/mp_battles_sync_playback.rbx" />
+    <File Path="GameScript/Multiplayer/Scripts/mp_battles_sync_recorder.rbx" />
+    <File Path="GameScript/Multiplayer/Scripts/mp_battles_sync_wire.rbx" />
     <File Path="GameScript/Multiplayer/Scripts/mp_battles_team.rbx" />
     <File Path="GameScript/Multiplayer/Scripts/mp_chat.rbx" />
     <File Path="GameScript/Multiplayer/Scripts/mp_coop.rbx" />
@@ -25,8 +31,11 @@
     <File Path="GameScript/Multiplayer/Scripts/mp_overworld.rbx" />
     <File Path="GameScript/Multiplayer/Scripts/mp_overworld_sync.rbx" />
     <File Path="GameScript/Multiplayer/Scripts/mp_save_distribution.rbx" />
+    <File Path="GameScript/Multiplayer/Scripts/mp_ui.rbx" />
     <File Path="GameScript/Multiplayer/Scripts/mp_world.rbx" />
     <File Path="GameScript/Multiplayer/Scripts/mp_world_overview.rbx" />
+    <File Path="GameScript/Multiplayer/Scripts/mp_world_screen.rbx" />
+    <File Path="GameScript/Multiplayer/Scripts/mp_world_text.rbx" />
   </Folder>
   <Folder Name="/GameScript/Tests/">
     <File Path="GameScript/Tests/async_test.rb" />

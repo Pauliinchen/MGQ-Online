@@ -2,7 +2,8 @@
 #  world_support.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Loaded mp_hotkeys.rbx, renamed from mp_keys.rbx
+#      Paulinchen  2026-10-03: Loaded the scripts split off the ones under test, and mp_ui.rbx
+#                            - Loaded mp_hotkeys.rbx, renamed from mp_keys.rbx
 #      Paulinchen  2026-10-02: Loaded mp_keys.rbx, with Player.ini's settings kept in $player_ini
 #      Paulinchen  2026-10-01: Created
 #
@@ -27,6 +28,7 @@ end
 class Game_Message; attr_accessor :busy; def busy?; @busy; end; end
 class Interpreter; def running?; false; end; end
 class Scene_Map; def update_scene; end; def scene_changing?; false; end; end
+class Window_Base; def initialize(*); end; end unless defined?(Window_Base)
 class Scene_Battle; def update_basic; end; end
 class Spriteset_Battle; def update; end; def dispose; end; end
 module SceneManager; class << self; attr_accessor :scene; end; def self.run; end; end
@@ -105,6 +107,7 @@ module MGQ_MpWorld; def self.open?; $open; end; end
 $player_ini = {}
 
 load_script "mp_hotkeys"
+load_script "mp_ui"
 load_script "mp_overworld_sync"
 load_script "mp_actions"
 load_script "mp_chat"
