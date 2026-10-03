@@ -2,6 +2,8 @@
 #  mp_battles_coop.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-03: Started the battle and each turn for the other players' characters, whose unset hit count crashed the game when hit
+#                            - Showed the player's own leader and followers on the map again once the co-op party is forgotten
 #      Paulinchen  2026-10-02: Started a co-op battle when a player who joined it left the world before the roster went out
 #                            - Followed the map and installed the late hooks through mp_hooks.rbx
 #                            - Turned an invite down through MGQ_MpBattlesSync.tell, and took the seat, place and Luka from Game_MpActor
@@ -479,7 +481,10 @@ module MGQ_MpBattlesCoop
     end
   end
 
-  # Rebuilds another player's character with the HP and MP it has in their game.
+  # Rebuilds another player's character for the battle, with the HP and MP it has in their game.
+  #
+  # The game starts a battle only for the characters of its own party, which leaves the counters of
+  # a rebuilt one unset.
   #
   # @param member [MGQ_MpActors::Builds::Member] The character's build.
   # @param name [String] Its owner's name.
@@ -489,6 +494,7 @@ module MGQ_MpBattlesCoop
   # @return [Game_MpAlly] The character.
   def self.new_ally(member, name, seat, place, vitals)
     ally = Game_MpAlly.new(member, name, seat, place)
+    ally.on_battle_start
     hp, mp = Array(vitals)
     ally.hp = hp if hp.is_a?(Integer) && hp > 0
     ally.mp = mp if mp.is_a?(Integer)
@@ -585,13 +591,18 @@ module MGQ_MpBattlesCoop
     log("ending a co-op battle failed: #{e.class}: #{e.message}")
   end
 
-  # Forgets the co-op party, its players and their characters.
+  # Forgets the co-op party, its players and their characters, and shows the player's own party on
+  # the map again.
+  #
+  # The game draws the map's leader and followers from the battle members whenever it refreshes the
+  # player, which during the battle were the co-op party's.
   def self.forget
     @members = nil
     @players = nil
     @own_squad = nil
     @allies = {}
     @reordered = false
+    $game_player.refresh if $game_player
   end
 
   # Swaps one of the player's characters on the Frontline with one of theirs on the Backline, in
@@ -777,6 +788,12 @@ class Game_MpAlly < Game_MpActor
   def make_actions
     super
     make_auto_battle_actions unless @actions.empty? || inputable?
+  end
+
+  # Starts a turn, with the hit count the game resets only for the characters of its own party.
+  def on_turn_start
+    super
+    @turn_hit_damage_count = 0
   end
 end
 

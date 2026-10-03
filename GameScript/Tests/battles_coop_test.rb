@@ -2,7 +2,9 @@
 #  battles_coop_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Checked that a guest's command the character may not give is left out
+#      Paulinchen  2026-10-03: Checked that the others' characters start the battle and each turn with a hit count
+#                            - Checked that the map shows the player's own leader again after the battle
+#                            - Checked that a guest's command the character may not give is left out
 #      Paulinchen  2026-10-02: Checked that a player who joined and left the world before the roster does not stop the battle
 #                            - Ended the guest's battle through guest_end
 #      Paulinchen  2026-10-01: Checked that every player hears at once when another leaves the battle
@@ -81,6 +83,10 @@ party = $game_party.battle_members
 check("two players bring two each, the host's own first", party.map(&:name), ["Actor1", "Actor2", "Actor7 (Friend)", "Actor8 (Friend)"])
 check("the others' characters keep their HP and MP", party[2, 2].map { |a| [a.hp, a.mp, a.mp_seat] }, [[50, 5, 2], [60, 6, 2]])
 check("the status windows show the party", $refreshed, true)
+check("the others' characters start the battle, which the game does only for its own", party[2, 2].map(&:turn_hit_damage_count), [0, 0])
+party[2].turn_hit_damage_count = 3
+party[2].on_turn_start
+check("and each turn", party[2].turn_hit_damage_count, 0)
 check("strangers and wrong battles are not heard", MGQ_MpBattlesSync.seats, [2])
 
 # Commands.
@@ -103,8 +109,10 @@ check("the host escapes as in any battle", MGQ_MpBattlesSync::Live.escape_leaves
 
 # The end.
 $cancelled = false
+$game_player.leader_shown = party[2]
 MGQ_MpBattlesCoop.ended
 check("the end gives the party back and ends the rules", [MGQ_MpBattlesCoop.active?, MGQ_MpBattlesSync.role, MGQ_MpBattles.running?, $game_party.battle_members], [false, nil, false, mine])
+check("and the map shows the player's own leader again", $game_player.leader_shown, mine[0])
 check("and leaves the world's room open", $cancelled, false)
 
 # A guest.

@@ -2,7 +2,9 @@
 #  battle_support.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Gave the characters skills and the database skills and items, which a guest's commands are checked against
+#      Paulinchen  2026-10-03: Gave the characters a battle start and a turn start, which set their hit count
+#                            - Let the map's player refresh, telling which leader it shows
+#                            - Gave the characters skills and the database skills and items, which a guest's commands are checked against
 #      Paulinchen  2026-10-02: Gave the rebuilt character stand-in its owner's seat and place
 #      Paulinchen  2026-10-01: Created
 #
@@ -72,8 +74,10 @@ class Game_Action
   def set_item(id); @item = [:item, id]; end
 end
 class Game_Actor < Game_Battler
-  attr_accessor :id, :hp, :mp, :actions
+  attr_accessor :id, :hp, :mp, :actions, :turn_hit_damage_count
   def initialize(id); @id = id; @hp = 100; @mp = 10; @actions = []; end
+  def on_battle_start; @turn_hit_damage_count = 0; end
+  def on_turn_start; end
   def name; "Actor#{@id}"; end
   def exist?; true; end
   def all_dead?; @hp == 0; end
@@ -136,7 +140,12 @@ class Game_Temp; attr_accessor :in_memory_battle; end
 class Game_Message; def clear; $cleared = true; end; def add(text); ($game_message_texts ||= []) << text; end; end
 class Interpreter; attr_accessor :busy; def running?; @busy; end; end
 class Game_Map; attr_accessor :map_id, :interpreter; end
-class Game_Player; attr_accessor :moving; def transfer?; false; end; def moving?; @moving; end; end
+class Game_Player
+  attr_accessor :moving, :leader_shown
+  def transfer?; false; end
+  def moving?; @moving; end
+  def refresh; @leader_shown = $game_party.battle_members.first; end
+end
 class Game_Switches; def initialize; @d = {}; end; def [](i); @d[i] || false; end; def []=(i, v); @d[i] = v; end; end
 System = Struct.new(:switches)
 $data_system = System.new(Array.new(100, ""))
