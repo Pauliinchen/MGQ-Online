@@ -2,6 +2,7 @@
 #  mp_battles_team.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-03: Logged through MGQ_MpLog
 #      Paulinchen  2026-10-02: Took the Frontline's size from mp_coop_squad.rbx
 #      Paulinchen  2026-10-01: Created
 #
@@ -23,13 +24,10 @@ module MGQ_MpBattlesTeam
   @heirs = {}
   @opponents = {}
 
-  # Writes a line to the mod's InGame.log.
-  #
-  # @param message [String] The line.
-  def self.log(message)
-    MGQ_Multiplayer::Log.write("team duel: #{message}")
-  rescue
-  end
+  extend MGQ_MpLog
+
+  # What starts this script's lines in the mod's InGame.log.
+  LOG_TAG = "team duel"
 
   # Reports whether this game's side is the host's.
   #

@@ -2,6 +2,7 @@
 #  loader_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-03: Checked that mp_log.rbx loads first
 #      Paulinchen  2026-10-02: Checked that mp_hooks.rbx loads first
 #                            - Checked that the scripts whose constants the World overview shares load before it
 #      Paulinchen  2026-09-30: Created
@@ -22,7 +23,7 @@ files = Dir[File.join(SCRIPTS_DIR, "*.rbx")].map { |file| File.basename(file, ".
 check("every script in SCRIPTS is a file", scripts - files, [])
 check("every file is in SCRIPTS", files - scripts, [])
 check("no script is in SCRIPTS twice", scripts.select { |name| scripts.count(name) > 1 }.uniq, [])
-check("mp_hooks loads first, since every script registers its hooks with it", scripts.first, "mp_hooks")
+check("mp_log and mp_hooks load first, since every script logs and registers its hooks with them", scripts.first(2), %w[mp_log mp_hooks])
 check("mp_actors loads before the scripts whose classes build on Game_MpActor",
       %w[mp_battles_coop mp_battles_pvp].all? { |name| scripts.index("mp_actors") < scripts.index(name) }, true)
 check("the registries load before the scripts that join them",

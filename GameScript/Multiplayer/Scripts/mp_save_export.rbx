@@ -2,6 +2,7 @@
 #  mp_save_export.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-03: Logged through MGQ_MpLog
 #      Paulinchen  2026-10-02: Created
 #
 #----------------------------------------------------------------
@@ -29,13 +30,10 @@ module MGQ_MpSaveExport
     !Scene_Menu.method_defined?(:mgq_mp_save_export_update)
   end
 
-  # Writes a line to the mod's InGame.log.
-  #
-  # @param message [String] The line.
-  def self.log(message)
-    MGQ_Multiplayer::Log.write("save export: #{message}")
-  rescue
-  end
+  extend MGQ_MpLog
+
+  # What starts this script's lines in the mod's InGame.log.
+  LOG_TAG = "save export"
 
   # Copies a world's latest save, an autosave included, into the first free slot of the player's
   # own saves, with its thumbnail.

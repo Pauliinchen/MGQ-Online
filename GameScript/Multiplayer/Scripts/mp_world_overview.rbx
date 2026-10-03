@@ -2,7 +2,8 @@
 #  mp_world_overview.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Read the bound keys through MGQ_MpHotkeys, renamed from MGQ_MpKeys
+#      Paulinchen  2026-10-03: Logged through MGQ_MpLog
+#                            - Read the bound keys through MGQ_MpHotkeys, renamed from MGQ_MpKeys
 #      Paulinchen  2026-10-02: Opened and closed the overview with the key the player bound, which its hint names
 #                            - Followed the map and its sprites through mp_hooks.rbx
 #                            - Dropped the unused scroll reader and the wrapper around another player's choices
@@ -88,13 +89,10 @@ module MGQ_MpWorldOverview
   @scroll = 0
   @frames = 0
 
-  # Writes a line to the mod's InGame.log.
-  #
-  # @param message [String] The line.
-  def self.log(message)
-    MGQ_Multiplayer::Log.write("overview: #{message}")
-  rescue
-  end
+  extend MGQ_MpLog
+
+  # What starts this script's lines in the mod's InGame.log.
+  LOG_TAG = "overview"
 
   # Reports whether the overview is open.
   #
@@ -681,8 +679,7 @@ class Sprite_MpWorldOverview < Sprite
     @shown = drawn
     draw(view)
   rescue => e
-    MGQ_MpWorldOverview.log("drawing failed: #{e.class}: #{e.message}") unless @failed
-    @failed = true
+    MGQ_MpWorldOverview.log_once(:drawing, "drawing failed: #{e.class}: #{e.message}")
   end
 
   # Draws the whole box.
@@ -845,8 +842,7 @@ class Sprite_MpPartyBox < Sprite
     @shown = drawn
     draw(rows)
   rescue => e
-    MGQ_MpWorldOverview.log("drawing the party box failed: #{e.class}: #{e.message}") unless @failed
-    @failed = true
+    MGQ_MpWorldOverview.log_once(:party_box, "drawing the party box failed: #{e.class}: #{e.message}")
   end
 
   # Draws the box, as tall as the party needs, in the top right corner.

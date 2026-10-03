@@ -2,6 +2,7 @@
 #  mp_async.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-03: Logged through MGQ_MpLog
 #      Paulinchen  2026-10-02: Held event commands through mp_hooks.rbx
 #                            - Asked behind? directly where the live map is decided
 #      Paulinchen  2026-09-30: Moved into Patch/Multiplayer/Scripts as mp_async.rbx, which Multiplayer.rb loads
@@ -40,13 +41,10 @@ module MGQ_MpAsync
     !Scene_Base.method_defined?(:mgq_mp_async_update_basic)
   end
 
-  # Writes a line to the mod's InGame.log.
-  #
-  # @param message [String] The line.
-  def self.log(message)
-    MGQ_Multiplayer::Log.write("async: #{message}")
-  rescue
-  end
+  extend MGQ_MpLog
+
+  # What starts this script's lines in the mod's InGame.log.
+  LOG_TAG = "async"
 
   # Reports whether the world runs behind a screen: a world is open, and the player left the map
   # for a screen that returns to it.
@@ -88,8 +86,7 @@ module MGQ_MpAsync
     # A battle runs the timer itself.
     $game_timer.update unless scene.is_a?(Scene_Battle)
   rescue => e
-    log("tick failed: #{e.class}: #{e.message}") unless @tick_failed
-    @tick_failed = true
+    log_once(:tick, "tick failed: #{e.class}: #{e.message}")
   ensure
     @ticking = false
     map.need_refresh = true if deferred

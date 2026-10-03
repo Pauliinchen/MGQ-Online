@@ -2,6 +2,7 @@
 #  mp_actors.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-03: Logged through MGQ_MpLog
 #      Paulinchen  2026-10-02: Kept the owner's seat and place, and that no rebuilt character is Luka, in Game_MpActor for both sides
 #      Paulinchen  2026-09-30: Moved into Patch/Multiplayer/Scripts as mp_actors.rbx, which Multiplayer.rb loads
 #                            - Cleared a rebuilt character's actions, so a pre-battle spell finds its chain input set
@@ -13,13 +14,10 @@
 # characters of this game. PvP battles rebuild a friend's team with them, and co-op battles the
 # party members' characters, so balancing them happens in one place.
 module MGQ_MpActors
-  # Writes a line to the mod's InGame.log.
-  #
-  # @param message [String] The line.
-  def self.log(message)
-    MGQ_Multiplayer::Log.write("actors: #{message}")
-  rescue
-  end
+  extend MGQ_MpLog
+
+  # What starts this script's lines in the mod's InGame.log.
+  LOG_TAG = "actors"
 
   # Characters' builds as plain numbers, which another game turns back into the characters from its
   # own data. Nothing of the save format leaves the game, since loading someone else's save data can

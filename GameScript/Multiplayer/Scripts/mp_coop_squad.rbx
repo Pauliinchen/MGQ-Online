@@ -2,6 +2,7 @@
 #  mp_coop_squad.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-03: Logged through MGQ_MpLog
 #      Paulinchen  2026-10-02: Installed the hooks on the game's plugins through mp_hooks.rbx
 #                            - Took whether the player plays in a party from mp_coop.rbx, and dropped squad, which co-op battles count otherwise
 #      Paulinchen  2026-10-01: Created
@@ -48,13 +49,10 @@ module MGQ_MpCoopSquad
   @shown = nil
   @monochrome = {}
 
-  # Writes a line to the mod's InGame.log.
-  #
-  # @param message [String] The line.
-  def self.log(message)
-    MGQ_Multiplayer::Log.write("co-op squad: #{message}")
-  rescue
-  end
+  extend MGQ_MpLog
+
+  # What starts this script's lines in the mod's InGame.log.
+  LOG_TAG = "co-op squad"
 
   # Splits places between players, one more each for the first ones while some are left over.
   #

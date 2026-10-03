@@ -9,6 +9,7 @@ MGQ-Online.slnx                       Visual Studio solution
 Directory.Build.targets               puts vswhere.exe on the PATH, which the NativeAOT link needs
 GameScript/Multiplayer.rb             Ruby, what every way of playing together shares; loads the others
 GameScript/Multiplayer/Scripts/       Ruby, the other scripts, in the order Multiplayer.rb loads them:
+  mp_log.rbx                          the log every script writes its lines with
   mp_hooks.rbx                        the game methods several scripts follow, each wrapped once
   mp_actors.rbx                       characters of another game: builds as numbers, and rebuilt characters
   mp_async.rbx                        the world running on behind menus, battles and story scenes
@@ -50,6 +51,7 @@ docs/DEVELOPER.md                     this file
 | File | Module | What it is |
 |---|---|---|
 | `Multiplayer.rb` | `MGQ_Multiplayer` | The foundation every mode shares: `Log` (`Patch/Multiplayer/InGame.log`), `load_scripts` (the other scripts), `Link` (the DLL's `mp_*` functions), `Background` (keeps the game running while another window is in front, and has `Input` report no buttons meanwhile), `Key` (F-keys the game's `Input` does not know), `Capture` (takes the buttons away from the game while a screen of the mod reads them), `Discord` (the bridge client, see below). |
+| `mp_log.rbx` | `MGQ_MpLog` | The scripts' lines in `InGame.log`. A script's module extends it and sets `LOG_TAG`, which starts its lines: `log` writes one, `log_once` only the first time for its key, for what would otherwise fail every frame. |
 | `mp_hooks.rbx` | `MGQ_MpHooks` | The game methods several scripts follow, each wrapped once, with the blocks the scripts register (see Hooks above). `Multiplayer.rb` registers its `Graphics.update` and `SceneManager.run` blocks once the scripts loaded. |
 | `mp_hotkeys.rbx` | `MGQ_MpHotkeys` | The keys the player binds: the action wheel (B), the chat (T), the World overview, which outside a world opens the PvP battle screen (F11), and accepting and declining the notification box's first invite (Y, N). `code` reads the key from `Patch/Multiplayer/Player.ini` (`key_wheel`, `key_chat`, `key_overview`, `key_accept`, `key_decline`, Windows key codes), else the default; `pressed?` reads it with `MGQ_Multiplayer::Key`, and `label` names it for the texts. With Mod Config Remake installed, `register` adds a key binding per key (`:keybind`, with `:value` and `:on_change` going to Player.ini, since `$game_system.conf` lives in each save). |
 | `mp_actors.rbx` | `MGQ_MpActors`, `Game_MpActor` | Characters of another game: `Builds` writes and reads a character's build as plain numbers, `Items` its equipment, and `Game_MpActor` rebuilds it as a real character of this game (see [Team](#pvp-battles-mp_battles_pvprbx) and Rebuilt characters). PvP battles build their enemy side on it, co-op battles the party members' characters. |

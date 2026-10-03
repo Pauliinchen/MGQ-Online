@@ -2,7 +2,8 @@
 #  mp_battles_pvp.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Read the bound keys through MGQ_MpHotkeys, renamed from MGQ_MpKeys
+#      Paulinchen  2026-10-03: Logged through MGQ_MpLog
+#                            - Read the bound keys through MGQ_MpHotkeys, renamed from MGQ_MpKeys
 #      Paulinchen  2026-10-02: Opened the PvP battle screen with the key the player bound to the World overview
 #                            - Followed the map and the title screen through mp_hooks.rbx
 #                            - Took the Frontline's size from mp_coop_squad.rbx, and the seat, place and Luka from Game_MpActor
@@ -67,13 +68,10 @@ module MGQ_MpBattlesPvp
     ENABLED && MGQ_Multiplayer.available? && !MGQ_Multiplayer.outdated? && !(defined?(MGQ_MpWorld) && MGQ_MpWorld.open?)
   end
 
-  # Writes a line to the mod's InGame.log.
-  #
-  # @param message [String] The line.
-  def self.log(message)
-    MGQ_Multiplayer::Log.write("pvp battle: #{message}")
-  rescue
-  end
+  extend MGQ_MpLog
+
+  # What starts this script's lines in the mod's InGame.log.
+  LOG_TAG = "pvp battle"
 
   # Has the map start a mirror match against the player's own team, once the screen closed.
   def self.request_mirror
@@ -408,9 +406,7 @@ module MGQ_MpBattlesPvp
     def method_missing(name, *args, &block)
       return super unless Game_Enemy.method_defined?(name) && enemy.respond_to?(name)
 
-      @forwarded ||= {}
-      MGQ_MpBattlesPvp.log("#{name} answered by the monster stand-in") unless @forwarded[name]
-      @forwarded[name] = true
+      MGQ_MpBattlesPvp.log_once([:forwarded, name], "#{name} answered by the monster stand-in")
       enemy.send(name, *args, &block)
     end
 
@@ -1470,8 +1466,7 @@ if MGQ_MpBattlesPvp.hookable?
         begin
           update_hp_bar if respond_to?(:update_hp_bar, true)
         rescue => e
-          MGQ_MpBattlesPvp.log("HP bar failed: #{e.class}: #{e.message}") unless @mgq_mp_battles_pvp_bar_failed
-          @mgq_mp_battles_pvp_bar_failed = true
+          MGQ_MpBattlesPvp.log_once(:bar, "HP bar failed: #{e.class}: #{e.message}")
         end
 
         begin
@@ -1485,8 +1480,7 @@ if MGQ_MpBattlesPvp.hookable?
           end
           self.opacity = MGQ_MpBattlesPvp::Opponent::SILHOUETTE_OPACITY if silhouette
         rescue => e
-          MGQ_MpBattlesPvp.log("silhouette failed: #{e.class}: #{e.message}") unless @mgq_mp_battles_pvp_silhouette_failed
-          @mgq_mp_battles_pvp_silhouette_failed = true
+          MGQ_MpBattlesPvp.log_once(:silhouette, "silhouette failed: #{e.class}: #{e.message}")
         end
       end
     end

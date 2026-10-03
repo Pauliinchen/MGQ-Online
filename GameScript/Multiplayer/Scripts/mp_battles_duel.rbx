@@ -2,7 +2,8 @@
 #  mp_battles_duel.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Took a call to a team duel only from the challenger the player accepted or through the leader of the player's party
+#      Paulinchen  2026-10-03: Logged through MGQ_MpLog
+#                            - Took a call to a team duel only from the challenger the player accepted or through the leader of the player's party
 #                            - Read the bound keys through MGQ_MpHotkeys, renamed from MGQ_MpKeys
 #                            - Told the challenger that a player declined, whom the challenge then stops naming
 #      Paulinchen  2026-10-02: Named the key the player bound to the action wheel in the challenge line above a ghost
@@ -50,13 +51,10 @@ module MGQ_MpBattlesDuel
   @gathering = nil
   @called = nil
 
-  # Writes a line to the mod's InGame.log.
-  #
-  # @param message [String] The line.
-  def self.log(message)
-    MGQ_Multiplayer::Log.write("duel: #{message}")
-  rescue
-  end
+  extend MGQ_MpLog
+
+  # What starts this script's lines in the mod's InGame.log.
+  LOG_TAG = "duel"
 
   # Shows a notice at the bottom left of the map.
   #

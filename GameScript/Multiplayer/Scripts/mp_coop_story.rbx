@@ -2,6 +2,7 @@
 #  mp_coop_story.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-03: Logged through MGQ_MpLog
 #      Paulinchen  2026-10-02: Gave members as far along as the leader the items, gold and departures of the leader's story too
 #                            - Kept what a member as far along as the leader changed in their own game while in the party
 #                            - Ended the awakening switches with the last companion's, as the affection variables end
@@ -67,13 +68,10 @@ module MGQ_MpCoopStory
     !Game_Switches.method_defined?(:mgq_mp_data)
   end
 
-  # Writes a line to the mod's InGame.log.
-  #
-  # @param message [String] The line.
-  def self.log(message)
-    MGQ_Multiplayer::Log.write("co-op story: #{message}")
-  rescue
-  end
+  extend MGQ_MpLog
+
+  # What starts this script's lines in the mod's InGame.log.
+  LOG_TAG = "co-op story"
 
   # Shows a notice at the bottom left of the map, through mp_overworld_sync.rbx.
   #
@@ -110,8 +108,7 @@ module MGQ_MpCoopStory
       follow(leader) if leader
     end
   rescue => e
-    log("update failed: #{e.class}: #{e.message}") unless @update_failed
-    @update_failed = true
+    log_once(:update, "update failed: #{e.class}: #{e.message}")
   end
 
   # As leader, tells the members what of the story changed since the last time.

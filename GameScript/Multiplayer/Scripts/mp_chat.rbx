@@ -2,7 +2,8 @@
 #  mp_chat.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Read the bound keys through MGQ_MpHotkeys, renamed from MGQ_MpKeys
+#      Paulinchen  2026-10-03: Logged through MGQ_MpLog
+#                            - Read the bound keys through MGQ_MpHotkeys, renamed from MGQ_MpKeys
 #      Paulinchen  2026-10-02: Opened the chat box with the key the player bound
 #                            - Followed the map and its sprites through mp_hooks.rbx
 #      Paulinchen  2026-10-01: Let the chat box and the chat log work in battles, above the battle's windows
@@ -278,13 +279,10 @@ module MGQ_MpChat
     !Scene_Battle.method_defined?(:mgq_mp_chat_update_basic)
   end
 
-  # Writes a line to the mod's InGame.log.
-  #
-  # @param message [String] The line.
-  def self.log(message)
-    MGQ_Multiplayer::Log.write("chat: #{message}")
-  rescue
-  end
+  extend MGQ_MpLog
+
+  # What starts this script's lines in the mod's InGame.log.
+  LOG_TAG = "chat"
 
   # Reports whether a world is open, through mp_overworld_sync.rbx.
   #
@@ -639,8 +637,7 @@ if MGQ_MpChat.hookable?
         @mgq_mp_chat_log ||= Sprite_MpChatLog.new(@mgq_mp_chat_viewport, Sprite_MpChatLog::BATTLE_ROOM)
         @mgq_mp_chat_log.update
       rescue => e
-        MGQ_MpChat.log("battle chat log failed: #{e.class}: #{e.message}") unless @mgq_mp_chat_failed
-        @mgq_mp_chat_failed = true
+        MGQ_MpChat.log_once(:battle_log, "battle chat log failed: #{e.class}: #{e.message}")
       end
 
       # Frees the chat log, then the battle's sprites.

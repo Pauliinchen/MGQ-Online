@@ -2,7 +2,8 @@
 #  mp_notices.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Created
+#      Paulinchen  2026-10-03: Logged through MGQ_MpLog
+#                            - Created
 #
 #----------------------------------------------------------------
 
@@ -42,13 +43,10 @@ module MGQ_MpNotices
   @messages = []
   @declined = {}
 
-  # Writes a line to the mod's InGame.log.
-  #
-  # @param message [String] The line.
-  def self.log(message)
-    MGQ_Multiplayer::Log.write("notices: #{message}")
-  rescue
-  end
+  extend MGQ_MpLog
+
+  # What starts this script's lines in the mod's InGame.log.
+  LOG_TAG = "notices"
 
   # Shows a message for a moment, in place of one with the same key.
   #
@@ -123,8 +121,7 @@ module MGQ_MpNotices
     list = notices if answer && !$mgq_text_input && !MGQ_Multiplayer::Capture.on? && answer_first(list, answer)
     show(list)
   rescue => e
-    log("tick failed: #{e.class}: #{e.message}") unless @failed
-    @failed = true
+    log_once(:tick, "tick failed: #{e.class}: #{e.message}")
   end
 
   # Reports whether the box may show in the scene running: on the map while the World overview is

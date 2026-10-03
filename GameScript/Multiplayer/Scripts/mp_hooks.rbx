@@ -2,7 +2,8 @@
 #  mp_hooks.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Kept each method's blocks ready in their order, so a wrapped method looks nothing up and builds nothing when it runs
+#      Paulinchen  2026-10-03: Logged through MGQ_MpLog
+#                            - Kept each method's blocks ready in their order, so a wrapped method looks nothing up and builds nothing when it runs
 #      Paulinchen  2026-10-02: Created
 #
 #----------------------------------------------------------------
@@ -24,16 +25,10 @@ module MGQ_MpHooks
   # The original of each wrapped method by method.
   @originals ||= {}
 
-  # The blocks that failed, each logged once.
-  @failed ||= {}
+  extend MGQ_MpLog
 
-  # Writes a line to the mod's InGame.log.
-  #
-  # @param message [String] The line.
-  def self.log(message)
-    MGQ_Multiplayer::Log.write("hooks: #{message}")
-  rescue
-  end
+  # What starts this script's lines in the mod's InGame.log.
+  LOG_TAG = "hooks"
 
   # Runs a block before a game method, on the object the method runs on and with its arguments.
   #
@@ -116,8 +111,7 @@ module MGQ_MpHooks
       begin
         object.instance_exec(*args, &block)
       rescue => e
-        log("#{script} failed #{label}: #{e.class}: #{e.message}") unless @failed[block]
-        @failed[block] = true
+        log_once(block, "#{script} failed #{label}: #{e.class}: #{e.message}")
       end
     end
   end

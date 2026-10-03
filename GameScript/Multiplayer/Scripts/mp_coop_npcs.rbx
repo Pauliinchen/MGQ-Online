@@ -2,6 +2,7 @@
 #  mp_coop_npcs.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-03: Logged through MGQ_MpLog
 #      Paulinchen  2026-10-02: Followed the map's update through mp_hooks.rbx
 #                            - Took an event's page from mp_coop.rbx, and dropped the unused role
 #      Paulinchen  2026-09-30: Sent and took the party's messages through mp_coop.rbx, which drops those of another party
@@ -53,13 +54,10 @@ module MGQ_MpCoopNpcs
     !Game_Event.method_defined?(:mgq_mp_coop_npcs_update_self_movement)
   end
 
-  # Writes a line to the mod's InGame.log.
-  #
-  # @param message [String] The line.
-  def self.log(message)
-    MGQ_Multiplayer::Log.write("co-op npcs: #{message}")
-  rescue
-  end
+  extend MGQ_MpLog
+
+  # What starts this script's lines in the mod's InGame.log.
+  LOG_TAG = "co-op npcs"
 
   # Reports whether another party member's game moves this map's events.
   #
@@ -102,8 +100,7 @@ module MGQ_MpCoopNpcs
     when :follower then follow
     end
   rescue => e
-    log("update failed: #{e.class}: #{e.message}") unless @update_failed
-    @update_failed = true
+    log_once(:update, "update failed: #{e.class}: #{e.message}")
   end
 
   # Starts a new part, forgetting what the old one sent or followed.
@@ -174,8 +171,7 @@ module MGQ_MpCoopNpcs
     end
     @targets.each { |id, state| place($game_map.events[id], state) } if full
   rescue => e
-    log("taking events failed: #{e.class}: #{e.message}") unless @take_failed
-    @take_failed = true
+    log_once(:take, "taking events failed: #{e.class}: #{e.message}")
   end
 
   # Walks every event toward where the Map Owner's stands.

@@ -2,7 +2,8 @@
 #  mp_battles_coop.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Started the battle and each turn for the other players' characters, whose unset hit count crashed the game when hit
+#      Paulinchen  2026-10-03: Logged through MGQ_MpLog
+#                            - Started the battle and each turn for the other players' characters, whose unset hit count crashed the game when hit
 #                            - Showed the player's own leader and followers on the map again once the co-op party is forgotten
 #                            - Let the party's leader host a battle a member started, so the leader's game and mods decide it
 #                            - Turned down an invite that came during a battle of the player's own, and one older than three seconds
@@ -81,13 +82,10 @@ module MGQ_MpBattlesCoop
     !BattleManager.respond_to?(:mgq_mp_battles_coop_setup)
   end
 
-  # Writes a line to the mod's InGame.log.
-  #
-  # @param message [String] The line.
-  def self.log(message)
-    MGQ_Multiplayer::Log.write("co-op battle: #{message}")
-  rescue
-  end
+  extend MGQ_MpLog
+
+  # What starts this script's lines in the mod's InGame.log.
+  LOG_TAG = "co-op battle"
 
   # The party of the co-op battle running: every player's characters in the order every game shares.
   #

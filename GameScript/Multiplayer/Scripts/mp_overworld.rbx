@@ -2,7 +2,8 @@
 #  mp_overworld.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Hid the ghost of a player whose connection is down
+#      Paulinchen  2026-10-03: Logged through MGQ_MpLog
+#                            - Hid the ghost of a player whose connection is down
 #      Paulinchen  2026-10-02: Followed the map and its sprites through mp_hooks.rbx
 #      Paulinchen  2026-10-01: Showed a party member's followers behind their ghost
 #                            - Showed the size of a player's party after their name and above the player's own head, and a crown for its leader
@@ -70,13 +71,10 @@ module MGQ_MpOverworld
     size >= 2 ? ["#{size} / #{MGQ_MpCoop::MAX_PLAYERS}", MGQ_MpCoop.leads?(player)] : nil
   end
 
-  # Writes a line to the mod's InGame.log.
-  #
-  # @param message [String] The line.
-  def self.log(message)
-    MGQ_Multiplayer::Log.write("overworld: #{message}")
-  rescue
-  end
+  extend MGQ_MpLog
+
+  # What starts this script's lines in the mod's InGame.log.
+  LOG_TAG = "overworld"
 
   # Reports whether a world is open.
   #
@@ -112,8 +110,7 @@ module MGQ_MpOverworld
       end
     end
   rescue => e
-    log("ghost update failed: #{e.class}: #{e.message}") unless @ghosts_failed
-    @ghosts_failed = true
+    log_once(:ghosts, "ghost update failed: #{e.class}: #{e.message}")
   end
 
   # Lists the players whose ghosts are on this map.

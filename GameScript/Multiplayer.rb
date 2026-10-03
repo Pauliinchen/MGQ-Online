@@ -2,7 +2,8 @@
 #  Multiplayer.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Loaded mp_notices.rbx last
+#      Paulinchen  2026-10-03: Loaded mp_log.rbx first
+#                            - Loaded mp_notices.rbx last
 #                            - Loaded mp_hotkeys.rbx, renamed from mp_keys.rbx
 #      Paulinchen  2026-10-02: Loaded mp_keys.rbx after mp_hooks.rbx, and kept other settings in Player.ini besides the name
 #                            - Loaded mp_save_export.rbx after mp_world.rbx
@@ -50,12 +51,12 @@ module MGQ_Multiplayer
 
   # The mod's other scripts in SCRIPTS_DIR, in the order they load.
   #
-  # A script may use only what loaded before it while it loads, such as mp_actors.rbx's
-  # Game_MpActor, or mp_hooks.rbx, mp_overworld_sync.rbx and mp_coop.rbx, which the scripts after
-  # them register with. The battle scripts install their battle hooks once the game runs, the last
+  # A script may use only what loaded before it while it loads, such as mp_log.rbx, which gives
+  # every script its log, mp_actors.rbx's Game_MpActor, or mp_hooks.rbx, mp_overworld_sync.rbx and
+  # mp_coop.rbx, which the scripts after them register with. The battle scripts install their battle hooks once the game runs, the last
   # loaded first, so their order decides how those hooks wrap each other.
   SCRIPTS = %w[
-    mp_hooks mp_hotkeys mp_actors mp_async mp_overworld_sync mp_actions mp_chat mp_overworld
+    mp_log mp_hooks mp_hotkeys mp_actors mp_async mp_overworld_sync mp_actions mp_chat mp_overworld
     mp_coop mp_coop_squad mp_coop_events mp_coop_npcs mp_coop_story
     mp_save_distribution mp_world mp_save_export
     mp_battles mp_battles_coop mp_battles_sync mp_battles_pvp mp_battles_duel mp_battles_team

@@ -2,6 +2,7 @@
 #  mp_battles.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-03: Logged through MGQ_MpLog
 #      Paulinchen  2026-10-02: Installed the battle hooks through mp_hooks.rbx
 #      Paulinchen  2026-10-01: Let co-op battles swap the Backline in, which only PvP battles forbid now
 #      Paulinchen  2026-09-30: Moved into Patch/Multiplayer/Scripts as mp_battles.rbx, which Multiplayer.rb loads
@@ -31,13 +32,10 @@ module MGQ_MpBattles
     attr_reader :kind
   end
 
-  # Writes a line to the mod's InGame.log.
-  #
-  # @param message [String] The line.
-  def self.log(message)
-    MGQ_Multiplayer::Log.write("battle: #{message}")
-  rescue
-  end
+  extend MGQ_MpLog
+
+  # What starts this script's lines in the mod's InGame.log.
+  LOG_TAG = "battle"
 
   # Reports whether a multiplayer battle runs.
   #

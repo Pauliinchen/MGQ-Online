@@ -2,7 +2,8 @@
 #  mp_world.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Put the player's own system save and Save folder back when a world's system save cannot be loaded
+#      Paulinchen  2026-10-03: Logged through MGQ_MpLog
+#                            - Put the player's own system save and Save folder back when a world's system save cannot be loaded
 #      Paulinchen  2026-10-02: Told how many players a world seats, from its code
 #                            - Offered to copy a world's latest save into the player's own game
 #                            - Made worlds without a password, which their players enter without being asked for one
@@ -91,13 +92,10 @@ module MGQ_MpWorld
     ENABLED && MGQ_Multiplayer.available? && !MGQ_Multiplayer.outdated?
   end
 
-  # Writes a line to the mod's InGame.log.
-  #
-  # @param message [String] The line.
-  def self.log(message)
-    MGQ_Multiplayer::Log.write("world: #{message}")
-  rescue
-  end
+  extend MGQ_MpLog
+
+  # What starts this script's lines in the mod's InGame.log.
+  LOG_TAG = "world"
 
   # Reports whether a world is open, which the game's saves then belong to.
   #

@@ -2,6 +2,7 @@
 #  mp_save_distribution.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-03: Logged through MGQ_MpLog
 #      Paulinchen  2026-10-02: Let a new player of a world whose players choose start from one of their own saves
 #      Paulinchen  2026-09-30: Moved into Patch/Multiplayer/Scripts as mp_save_distribution.rbx, which Multiplayer.rb loads
 #                            - Created
@@ -43,13 +44,10 @@ module MGQ_MpSaveDistribution
     :own => "Choose the save you start from in the world. Your own saves stay as they are.",
   }
 
-  # Writes a line to the mod's InGame.log.
-  #
-  # @param message [String] The line.
-  def self.log(message)
-    MGQ_Multiplayer::Log.write("starting save: #{message}")
-  rescue
-  end
+  extend MGQ_MpLog
+
+  # What starts this script's lines in the mod's InGame.log.
+  LOG_TAG = "starting save"
 
   # Opens the save screen to pick a save.
   #

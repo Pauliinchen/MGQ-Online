@@ -2,7 +2,8 @@
 #  mp_actions.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Read the bound keys through MGQ_MpHotkeys, renamed from MGQ_MpKeys
+#      Paulinchen  2026-10-03: Logged through MGQ_MpLog
+#                            - Read the bound keys through MGQ_MpHotkeys, renamed from MGQ_MpKeys
 #      Paulinchen  2026-10-02: Opened the wheel with the key the player bound, and named the bound keys of the chat and the World overview
 #                            - Followed the map and its sprites through mp_hooks.rbx
 #                            - Took a choice through MGQ_MpActions.choose, which the World overview shares
@@ -48,13 +49,10 @@ module MGQ_MpActions
   # The game's globe icon, which stands for the World overview in the wheel's middle.
   WORLD_ICON = 3988
 
-  # Writes a line to the mod's InGame.log.
-  #
-  # @param message [String] The line.
-  def self.log(message)
-    MGQ_Multiplayer::Log.write("actions: #{message}")
-  rescue
-  end
+  extend MGQ_MpLog
+
+  # What starts this script's lines in the mod's InGame.log.
+  LOG_TAG = "actions"
 
   # Reports whether a world is open, through mp_overworld_sync.rbx.
   #

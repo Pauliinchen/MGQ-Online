@@ -2,7 +2,8 @@
 #  mp_coop.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Counted only the players the party's leader admitted as its members, whom the leader's invite reached
+#      Paulinchen  2026-10-03: Logged through MGQ_MpLog
+#                            - Counted only the players the party's leader admitted as its members, whom the leader's invite reached
 #                            - Read the bound keys through MGQ_MpHotkeys, renamed from MGQ_MpKeys
 #                            - Listed an event's pages, for the party's chests
 #                            - Let a party invite to a player named from afar stand a minute instead of fifteen seconds
@@ -54,13 +55,10 @@ module MGQ_MpCoop
 
   @routes = {}
 
-  # Writes a line to the mod's InGame.log.
-  #
-  # @param message [String] The line.
-  def self.log(message)
-    MGQ_Multiplayer::Log.write("co-op: #{message}")
-  rescue
-  end
+  extend MGQ_MpLog
+
+  # What starts this script's lines in the mod's InGame.log.
+  LOG_TAG = "co-op"
 
   # Shows a notice at the bottom left of the map.
   #

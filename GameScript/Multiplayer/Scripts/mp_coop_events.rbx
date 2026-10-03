@@ -2,7 +2,8 @@
 #  mp_coop_events.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Left every starting story event to the leader, so one that starts by itself no longer keeps a member's other events from starting
+#      Paulinchen  2026-10-03: Logged through MGQ_MpLog
+#                            - Left every starting story event to the leader, so one that starts by itself no longer keeps a member's other events from starting
 #                            - Knew a chest by any of its pages, so one the player opened stays their own
 #      Paulinchen  2026-10-02: Told mp_coop_story.rbx the items and gold the leader's story gives or takes
 #                            - Sorted a common event once per depth, so one sorted deep down no longer counts as story when called higher up
@@ -125,13 +126,10 @@ module MGQ_MpCoopEvents
     !Game_Interpreter.method_defined?(:mgq_mp_coop_events_setup)
   end
 
-  # Writes a line to the mod's InGame.log.
-  #
-  # @param message [String] The line.
-  def self.log(message)
-    MGQ_Multiplayer::Log.write("co-op events: #{message}")
-  rescue
-  end
+  extend MGQ_MpLog
+
+  # What starts this script's lines in the mod's InGame.log.
+  LOG_TAG = "co-op events"
 
   # Sorts an event's current page, by what of it can run now.
   #

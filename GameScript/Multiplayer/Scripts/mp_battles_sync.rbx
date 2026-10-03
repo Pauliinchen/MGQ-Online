@@ -2,7 +2,8 @@
 #  mp_battles_sync.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Took from a guest only skills their character has and items a battle allows
+#      Paulinchen  2026-10-03: Logged through MGQ_MpLog
+#                            - Took from a guest only skills their character has and items a battle allows
 #                            - Waited at a member's battle start for the party's leader to lead it
 #                            - Streamed an animation once, played one a battler starts by itself, and kept actions and turn ends to the recording on file
 #      Paulinchen  2026-10-02: Installed the battle hooks through mp_hooks.rbx
@@ -101,13 +102,10 @@ module MGQ_MpBattlesSync
     attr_reader :battle_id
   end
 
-  # Writes a line to the mod's InGame.log.
-  #
-  # @param message [String] The line.
-  def self.log(message)
-    MGQ_Multiplayer::Log.write("battle sync: #{message}")
-  rescue
-  end
+  extend MGQ_MpLog
+
+  # What starts this script's lines in the mod's InGame.log.
+  LOG_TAG = "battle sync"
 
   # Makes the next battle live, when the link to the friend stands. The mode calls battle_started
   # once that battle starts.
@@ -1264,7 +1262,6 @@ module MGQ_MpBattlesSync
     # Forgets events of an earlier battle.
     def self.reset
       @events = []
-      @failed = {}
     end
 
     # Takes the next event of the host's stream, taking a co-op party's change on the way.
@@ -1353,9 +1350,7 @@ module MGQ_MpBattlesSync
         $game_troop.instance_variable_set(:@turn_count, args[0].to_i)
       end
     rescue => e
-      @failed ||= {}
-      MGQ_MpBattlesSync.log("could not play #{kind}: #{e.class}: #{e.message}") unless @failed[kind]
-      @failed[kind] = true
+      MGQ_MpBattlesSync.log_once([:play, kind], "could not play #{kind}: #{e.class}: #{e.message}")
     end
 
     # Reports whether the hooks record a method, which the guest then plays as the host called it.

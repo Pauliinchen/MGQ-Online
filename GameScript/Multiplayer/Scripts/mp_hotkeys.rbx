@@ -2,7 +2,8 @@
 #  mp_hotkeys.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Added the keys that accept and decline the first invite of the notification box
+#      Paulinchen  2026-10-03: Logged through MGQ_MpLog
+#                            - Added the keys that accept and decline the first invite of the notification box
 #                            - Renamed from mp_keys.rbx, with the module MGQ_MpHotkeys
 #      Paulinchen  2026-10-02: Created
 #
@@ -42,13 +43,10 @@ module MGQ_MpHotkeys
   # Highest Windows key code.
   MAX_CODE = 0xFE
 
-  # Writes a line to the mod's InGame.log.
-  #
-  # @param message [String] The line.
-  def self.log(message)
-    MGQ_Multiplayer::Log.write("keys: #{message}")
-  rescue
-  end
+  extend MGQ_MpLog
+
+  # What starts this script's lines in the mod's InGame.log.
+  LOG_TAG = "keys"
 
   # Reads the key bound to an action.
   #

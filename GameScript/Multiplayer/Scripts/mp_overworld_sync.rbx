@@ -2,7 +2,8 @@
 #  mp_overworld_sync.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Kept a player whose connection dropped for fifteen seconds, and every player across the game's own reconnect, so a party and a battle outlast it
+#      Paulinchen  2026-10-03: Logged through MGQ_MpLog
+#                            - Kept a player whose connection dropped for fifteen seconds, and every player across the game's own reconnect, so a party and a battle outlast it
 #      Paulinchen  2026-10-02: Told Discord the open world's name, its players and its seats through the Discord mod
 #                            - Followed Graphics.update through mp_hooks.rbx
 #                            - Marked the player's state, which tells it apart from the scripts' messages
@@ -54,15 +55,11 @@ module MGQ_MpOverworldSync
 
   @routes = {}
   @handlers = Hash.new { |handlers, kind| handlers[kind] = [] }
-  @failed = {}
 
-  # Writes a line to the mod's InGame.log.
-  #
-  # @param message [String] The line.
-  def self.log(message)
-    MGQ_Multiplayer::Log.write("overworld sync: #{message}")
-  rescue
-  end
+  extend MGQ_MpLog
+
+  # What starts this script's lines in the mod's InGame.log.
+  LOG_TAG = "overworld sync"
 
   # Reports whether a world is open.
   #
@@ -153,8 +150,7 @@ module MGQ_MpOverworldSync
       begin
         block.call(*args)
       rescue => e
-        log("#{kind} of #{block.source_location.to_a.first} failed: #{e.class}: #{e.message}") unless @failed[block]
-        @failed[block] = true
+        log_once(block, "#{kind} of #{block.source_location.to_a.first} failed: #{e.class}: #{e.message}")
         nil
       end
     end
@@ -174,8 +170,7 @@ module MGQ_MpOverworldSync
     Me.tell_changes
     Status.look
   rescue => e
-    log("tick failed: #{e.class}: #{e.message}") unless @tick_failed
-    @tick_failed = true
+    log_once(:tick, "tick failed: #{e.class}: #{e.message}")
   end
 
   # Hands a message to the script registered for its field.
