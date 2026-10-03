@@ -2,7 +2,8 @@
 #  mp_coop_story.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Called the scripts that load before this one without asking whether they loaded
+#      Paulinchen  2026-10-03: Kept the warp ban as each player's own, since it tells of the place they stand in
+#                            - Called the scripts that load before this one without asking whether they loaded
 #                            - Sent messages, showed notices and read the world, the own id and the own seat through MGQ_MpOverworldSync
 #                            - Logged through MGQ_MpLog
 #      Paulinchen  2026-10-02: Gave members as far along as the leader the items, gold and departures of the leader's story too
@@ -35,9 +36,15 @@ module MGQ_MpCoopStory
   # Frames between two requests for the leader's story, two seconds, until it came.
   ASK_FRAMES = 120
 
-  # Switches that are the player's own: configuration mirrored in switches (95, 445-447, 502) and
-  # the switches that tell whether a companion is in the party (1001-2000).
-  PERSONAL_SWITCHES = [95, 445, 446, 447, 502, 1001..2000]
+  # The switch that bans warping, such as with a Harpy Feather. The game's events turn it on where
+  # the player enters a cave or a building and off where they leave it, so it tells of the place a
+  # player stands in, not of the story.
+  WARP_BAN = defined?(NWConst::Sw::WARP_BAN) ? NWConst::Sw::WARP_BAN : 100
+
+  # Switches that are the player's own: configuration mirrored in switches (95, 445-447, 502), the
+  # warp ban of the place they stand in, and the switches that tell whether a companion is in the
+  # party (1001-2000).
+  PERSONAL_SWITCHES = [95, WARP_BAN, 445, 446, 447, 502, 1001..2000]
 
   # First switch that tells whether a companion awakened, one per companion.
   AWAKENING_SWITCHES = 6000

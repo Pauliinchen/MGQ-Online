@@ -2,7 +2,8 @@
 #  coop_events_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Gave the world stand-in map_free?
+#      Paulinchen  2026-10-03: Checked that a member brought to the leader takes over the warp ban of the leader's place
+#                            - Gave the world stand-in map_free?
 #                            - Gave the world stand-in tell, notice and the own id and seat
 #                            - Checked that a chest showing its opened page is still a chest, and that a story event left to the leader lets the next event start
 #      Paulinchen  2026-10-02: Checked that members as far along as the leader keep the story, its items, gold and companions, and their own changes
@@ -388,7 +389,8 @@ check("a member about to come over meets no random encounter while steps are lef
 $game_player.encounter_count = 0
 check("nor once they ran out, which draws new steps", [$game_player.encounter, $game_player.encounter_count], [false, 30])
 $frame_count = 150
-MGQ_MpCoopEvents.take(leader, { "pevent" => "gather", "party" => "p1", "map" => "8", "x" => "9", "y" => "3", "d" => "6" })
+$game_switches[MGQ_MpCoopStory::WARP_BAN] = true
+MGQ_MpCoopEvents.take(leader, { "pevent" => "gather", "party" => "p1", "map" => "8", "x" => "9", "y" => "3", "d" => "6", "warp_ban" => "0" })
 check("calls again do not start the time anew", MGQ_MpCoopEvents.own_line, "Joining Leader in 3 s . . .")
 $frame_count = 300
 SceneManager.scene = Scene_Battle.new
@@ -397,6 +399,9 @@ check("a member in battle comes once it is over", [$game_player.reserved, MGQ_Mp
 SceneManager.scene = Scene_Map.new
 MGQ_MpCoopEvents.update
 check("then they are brought to the leader's map", $game_player.reserved, [8, 9, 3, 6])
+check("where warping is allowed again, though they never walked out of the cave they were in", $game_switches[MGQ_MpCoopStory::WARP_BAN], false)
+check("a leader tells whether warping is banned where they stand", MGQ_MpCoopEvents.place_fields["warp_ban"], 0)
+check("the warp ban is each player's own, not the leader's story", MGQ_MpCoopStory.personal_switch?(MGQ_MpCoopStory::WARP_BAN), true)
 $game_player.perform_transfer
 check("and wait no more", MGQ_MpCoopEvents.own_line, nil)
 $game_player.encounter_count = 0

@@ -2,7 +2,8 @@
 #  mp_coop_events.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Said the story's line above the player's own head through MGQ_MpActions
+#      Paulinchen  2026-10-03: Took over the warp ban of the leader's place when a story scene brings the player over, so a Harpy Feather works again outside a cave
+#                            - Said the story's line above the player's own head through MGQ_MpActions
 #                            - Held the player through MGQ_MpHooks.hold_player
 #                            - Asked MGQ_MpOverworldSync whether the map is quiet or the player free on it
 #                            - Sent messages, showed notices and read the world, the own id and the own seat through MGQ_MpOverworldSync
@@ -535,7 +536,8 @@ module MGQ_MpCoopEvents
   #
   # @param peer [MGQ_MpOverworldSync::Peers::Peer] The leader.
   # @param place [Array<Integer>] Where the leader stands: map, x, y and direction.
-  def self.called(peer, place)
+  # @param warp_ban [Boolean] Whether warping is banned where the leader stands.
+  def self.called(peer, place, warp_ban = false)
     mine = { "map" => $game_map.map_id, "x" => $game_player.x, "y" => $game_player.y }
     return @gather = nil if near_place?(mine, place)
 
@@ -544,6 +546,7 @@ module MGQ_MpCoopEvents
       @gather = { :since => Graphics.frame_count, :name => peer.state["name"].to_s }
     end
     @gather[:place] = place
+    @gather[:warp_ban] = warp_ban
     @gather[:called] = Graphics.frame_count
   end
 
@@ -565,7 +568,7 @@ module MGQ_MpCoopEvents
 
   # The leader's call the player has yet to answer, forgetting it once the calls stopped.
   #
-  # @return [Hash, nil] The call: :since, :name, :place and :called; nil for none.
+  # @return [Hash, nil] The call: :since, :name, :place, :warp_ban and :called; nil for none.
   def self.pending_call
     return nil unless @gather
     return @gather if Graphics.frame_count - @gather[:called] < CALL_LAPSE_FRAMES
@@ -597,11 +600,29 @@ module MGQ_MpCoopEvents
     lead.is_a?(MGQ_MpOverworldSync::Peers::Peer) && lead.state["telling"] == "1" && lead.state["map"].to_i == $game_map.map_id
   end
 
-  # Writes where the player stands.
+  # Writes where the player stands, and whether warping is banned there.
   #
-  # @return [Hash] "map", "x", "y" and "d".
+  # @return [Hash] "map", "x", "y", "d" and "warp_ban".
   def self.place_fields
-    { "map" => $game_map.map_id, "x" => $game_player.x, "y" => $game_player.y, "d" => $game_player.direction }
+    { "map" => $game_map.map_id, "x" => $game_player.x, "y" => $game_player.y, "d" => $game_player.direction,
+      "warp_ban" => warp_ban? ? 1 : 0 }
+  end
+
+  # Reports whether warping, such as with a Harpy Feather, is banned where the player stands.
+  #
+  # @return [Boolean] Whether it is.
+  def self.warp_ban?
+    defined?(MGQ_MpCoopStory) && $game_switches[MGQ_MpCoopStory::WARP_BAN] ? true : false
+  end
+
+  # Takes over the warp ban of the place the leader's story scene brought the player to.
+  #
+  # The game sets the ban in the events a player walks through to enter or leave a cave, which a
+  # player brought over never touches, so the ban of the place they left would stay.
+  #
+  # @param banned [Boolean] Whether warping is banned where the leader stands.
+  def self.take_warp_ban(banned)
+    $game_switches[MGQ_MpCoopStory::WARP_BAN] = banned if defined?(MGQ_MpCoopStory)
   end
 
   # Takes a message about the party's events from another member.
@@ -614,7 +635,7 @@ module MGQ_MpCoopEvents
 
     place = [message["map"].to_i, message["x"].to_i, message["y"].to_i, message["d"].to_i]
     case message["pevent"]
-    when "gather" then called(peer, place)
+    when "gather" then called(peer, place, message["warp_ban"] == "1")
     when "say" then hear(peer, message) if place[0] == $game_map.map_id
     when "done" then heard_done(message)
     end
@@ -820,6 +841,7 @@ module MGQ_MpCoopEvents
     return unless place && MGQ_MpOverworldSync.map_free?
 
     map_id, x, y, direction = place
+    warp_ban = @gather[:warp_ban]
     @gather = nil
     return unless MGQ_MpCoop.in_party?
 
@@ -829,6 +851,7 @@ module MGQ_MpCoopEvents
     else
       $game_player.reserve_transfer(map_id, x, y, direction > 0 ? direction : 2)
     end
+    take_warp_ban(warp_ban)
   rescue => e
     log("coming to the leader failed: #{e.class}: #{e.message}")
   end
