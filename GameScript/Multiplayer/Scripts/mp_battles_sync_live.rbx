@@ -2,7 +2,8 @@
 #  mp_battles_sync_live.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Read and wrote the game's private fields and called its private methods through MGQ_MpGame
+#      Paulinchen  2026-10-03: Asked the running battle's mode instead of naming co-op battles and team duels
+#                            - Read and wrote the game's private fields and called its private methods through MGQ_MpGame
 #                            - Created
 #
 #----------------------------------------------------------------
@@ -166,8 +167,7 @@ module MGQ_MpBattlesSync
         unless MGQ_MpGame.call(scene, :scene_changing?)
           # A co-op party changes between two of the host's sends: here, before the command phase is
           # recorded, when a player left, and once the commands came, when a player swapped.
-          MGQ_MpBattlesCoop.settle(scene) if MGQ_MpBattlesSync.coop? && MGQ_MpBattlesSync.host?
-          MGQ_MpBattlesTeam.settle if MGQ_MpBattlesSync.team? && MGQ_MpBattlesSync.host?
+          MGQ_MpBattlesSync.mode.settle(scene) if MGQ_MpBattlesSync.host?
           Recorder.command_phase
         end
         original.call
@@ -221,7 +221,7 @@ module MGQ_MpBattlesSync
     def self.live
       MGQ_MpHooks.around(Scene_Battle, :battle_start) do |scene, _args, original|
         # A member's battle becomes the leader's to host, or stays the member's own to host.
-        MGQ_MpBattlesCoop.await_leader(scene)
+        MGQ_MpBattlesSync.mode.before_start(scene)
         if MGQ_MpBattlesSync.guest?
           Live.guest_start(scene)
         elsif MGQ_MpBattlesSync.host? && !Live.host_start(scene)
@@ -316,13 +316,9 @@ module MGQ_MpBattlesSync
     # @param scene [Scene_Battle] The battle.
     # @return [Boolean] Whether the battle starts, false when it ended early.
     def self.host_start(scene)
-      MGQ_MpBattlesTeam.form(scene) if MGQ_MpBattlesSync.team?
-      if MGQ_MpBattlesSync.coop?
-        gathered = MGQ_MpBattlesCoop.gather(scene)
-        return end_early(scene, gathered) if gathered.is_a?(Symbol)
-        # Nobody joined: the battle is the host's own.
-        return true unless MGQ_MpBattlesSync.host?
-      end
+      formed = MGQ_MpBattlesSync.mode.host_start(scene)
+      return true if formed == :own
+      return end_early(scene, formed) if formed.is_a?(Symbol)
 
       MGQ_MpBattlesSync.show_everything
       Channel.post("ready", MGQ_MpBattlesSync.names)
@@ -354,11 +350,8 @@ module MGQ_MpBattlesSync
       # The game marks the party as fighting in on_battle_start, which the guest leaves out with the
       # rest of the battle's logic. Skills usable only in battle check it, and the end clears it.
       MGQ_MpGame.set($game_party, :in_battle, true)
-      MGQ_MpBattlesTeam.form(scene) if MGQ_MpBattlesSync.team?
-      if MGQ_MpBattlesSync.coop?
-        joined = MGQ_MpBattlesCoop.join(scene)
-        return end_early(scene, joined) if joined.is_a?(Symbol)
-      end
+      joined = MGQ_MpBattlesSync.mode.guest_start(scene)
+      return end_early(scene, joined) if joined.is_a?(Symbol)
 
       Channel.post("ready", MGQ_MpBattlesSync.names)
       names = Waiting.wait_for(scene, "Waiting for #{MGQ_MpBattlesSync.player}...") { Channel.take("ready") }
@@ -401,14 +394,14 @@ module MGQ_MpBattlesSync
     # @param result [String] How the host's battle ended.
     # @param scene [Scene_Battle] The battle.
     def self.guest_end(result, scene)
-      # When the co-op host got away, the guest fights on alone.
-      return same_end(result) { MGQ_MpBattlesCoop.take_over(scene) } if MGQ_MpBattlesSync.coop?
-
-      if MGQ_MpBattlesSync.team? && MGQ_MpBattlesSync.same_side?
-        # The host gave up or left, and with them the game that computes the duel.
+      if MGQ_MpBattlesSync.same_side?
         return same_end(result) do
-          $game_message.add("#{MGQ_MpBattlesSync.player} left the duel.")
-          BattleManager.process_abort
+          # When the co-op host got away, the guest fights on alone. In a team duel the host gave up
+          # or left, and with them the game that computes the duel.
+          unless MGQ_MpBattlesSync.mode.take_over(scene)
+            $game_message.add("#{MGQ_MpBattlesSync.player} left the duel.")
+            BattleManager.process_abort
+          end
         end
       end
 
@@ -467,7 +460,7 @@ module MGQ_MpBattlesSync
       end
       return end_early(scene, answer) if answer.is_a?(Symbol)
 
-      MGQ_MpBattlesCoop.share_order
+      MGQ_MpBattlesSync.mode.share_order
       true
     end
 

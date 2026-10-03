@@ -2,7 +2,8 @@
 #  mp_battles_sync.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Read and wrote the game's private fields and called its private methods through MGQ_MpGame
+#      Paulinchen  2026-10-03: Asked the running battle's mode instead of naming co-op battles and team duels
+#                            - Read and wrote the game's private fields and called its private methods through MGQ_MpGame
 #                            - Read the sides' players as MGQ_MpBattlesCoop::Player records
 #                            - Moved the wire into mp_battles_sync_wire.rbx, the recorder, the playback, and the hooks with the live battle's steps into scripts of their own
 #                            - Built the battle hooks with MGQ_MpHooks.around
@@ -182,7 +183,15 @@ module MGQ_MpBattlesSync
   #
   # @return [Boolean] Whether it is.
   def self.same_side?
-    coop? || (team? && MGQ_MpBattlesTeam.same_side?)
+    mode.same_side?
+  end
+
+  # What the running battle's kind does differently: a co-op battle's or a team duel's
+  # MGQ_MpBattles::Mode, else a duel's.
+  #
+  # @return [MGQ_MpBattles::Mode] The mode.
+  def self.mode
+    MGQ_MpBattles.mode_of(coop? ? :coop : team? ? :team : :duel)
   end
 
   # Reports whether the host takes commands from several guests: in a co-op battle and a team duel.
@@ -243,8 +252,7 @@ module MGQ_MpBattlesSync
   # @return [Array<Integer>] Their world seats.
   def self.player_seats
     seats = Array(@seats)
-    seats |= MGQ_MpBattlesCoop.player_seats if coop?
-    seats |= (MGQ_MpBattlesTeam.own + MGQ_MpBattlesTeam.other).map(&:seat) if team?
+    seats |= mode.player_seats
     seats - [MGQ_MpOverworldSync::Me.seat]
   end
 
@@ -373,10 +381,7 @@ module MGQ_MpBattlesSync
       return true
     end
 
-    if coop?
-      MGQ_MpBattlesCoop.take_over(scene)
-      return false
-    end
+    return false if mode.take_over(scene)
 
     # A team duel's host wins once the other side is empty; a guest on the host's side loses its
     # host, who computes the duel, so the duel breaks off.
@@ -482,7 +487,7 @@ module MGQ_MpBattlesSync
       MGQ_MpBattlesSync.guests_in.each do |seat|
         MGQ_MpBattlesSync.guest_left(seat) if MGQ_MpOverworldSync::Peers.at(seat).nil? || take_from("leave", seat)
       end
-      return true if MGQ_MpBattlesSync.team? && MGQ_MpBattlesSync.host? && MGQ_MpBattlesTeam.other_side_gone?
+      return true if MGQ_MpBattlesSync.host? && MGQ_MpBattlesSync.mode.other_side_gone?
 
       MGQ_MpBattlesSync.guests_in.empty?
     end
@@ -542,7 +547,8 @@ module MGQ_MpBattlesSync
           [action.item.is_a?(RPG::Item) ? "item" : "skill", action.item.id, action.target_index]
         end
       end
-      MGQ_MpBattlesSync.coop? ? Wire.line([commands, MGQ_MpBattlesCoop.own_order]) : Wire.line([commands])
+      order = MGQ_MpBattlesSync.mode.own_order
+      order ? Wire.line([commands, order]) : Wire.line([commands])
     end
 
     # Gives a guest's characters on the host the guest's commands. A character without any keeps
@@ -556,11 +562,11 @@ module MGQ_MpBattlesSync
       commands = values && values[0]
       return MGQ_MpBattlesSync.log("unreadable commands") unless commands.is_a?(Array)
 
-      MGQ_MpBattlesCoop.take_order(seat, values[1]) if MGQ_MpBattlesSync.coop?
+      MGQ_MpBattlesSync.mode.take_order(seat, values[1])
 
       # The guest's party is the host's party in a co-op battle and on the host's side of a team
       # duel, else the host's troop, in the same order.
-      same = MGQ_MpBattlesSync.coop? || (MGQ_MpBattlesSync.team? && MGQ_MpBattlesTeam.same_side_as_host?(seat))
+      same = MGQ_MpBattlesSync.mode.same_side_as_host?(seat)
       battlers = same ? $game_party.battle_members : $game_troop.members
       battlers.each_with_index do |battler, index|
         next if MGQ_MpBattlesSync.several? && !commanded_by?(battler, seat)
@@ -582,7 +588,8 @@ module MGQ_MpBattlesSync
     def self.commanded_by?(battler, seat)
       return false unless battler.respond_to?(:mp_seat)
 
-      battler.mp_seat == seat || (MGQ_MpBattlesSync.team? && MGQ_MpBattlesTeam.heir_of(battler.mp_seat) == seat)
+      heir = MGQ_MpBattlesSync.mode.heir_of(battler.mp_seat)
+      battler.mp_seat == seat || (!heir.nil? && heir == seat)
     end
 
     # Turns a friend's command into an action.

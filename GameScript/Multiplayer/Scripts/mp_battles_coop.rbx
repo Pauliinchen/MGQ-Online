@@ -2,7 +2,8 @@
 #  mp_battles_coop.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Read and wrote the game's private fields and called its private methods through MGQ_MpGame
+#      Paulinchen  2026-10-03: Registered what a co-op battle does differently in a live battle as its Mode
+#                            - Read and wrote the game's private fields and called its private methods through MGQ_MpGame
 #                            - Kept the battle's players as Player records instead of arrays read by position
 #                            - Held the player through MGQ_MpHooks.hold_player
 #                            - Called the scripts that load before this one without asking whether they loaded
@@ -1035,6 +1036,83 @@ module MGQ_MpBattlesCoop
   end
 end
 
+# What a co-op battle does differently in a live battle: every game's party is the host's, the
+# party gathers before the start and re-forms when a player leaves or swaps, and a guest whose
+# host got away fights on alone.
+module MGQ_MpBattlesCoop::Mode
+  extend MGQ_MpBattles::Mode
+
+  # (see MGQ_MpBattles::Mode#same_side?)
+  def self.same_side?
+    true
+  end
+
+  # (see MGQ_MpBattles::Mode#same_side_as_host?)
+  def self.same_side_as_host?(_seat)
+    true
+  end
+
+  # (see MGQ_MpBattles::Mode#player_seats)
+  def self.player_seats
+    MGQ_MpBattlesCoop.player_seats
+  end
+
+  # (see MGQ_MpBattles::Mode#before_start)
+  def self.before_start(scene)
+    MGQ_MpBattlesCoop.await_leader(scene)
+  end
+
+  # (see MGQ_MpBattles::Mode#host_start)
+  def self.host_start(scene)
+    gathered = MGQ_MpBattlesCoop.gather(scene)
+    return gathered if gathered.is_a?(Symbol)
+
+    # Nobody joined: the battle is the host's own.
+    MGQ_MpBattlesSync.host? ? nil : :own
+  end
+
+  # (see MGQ_MpBattles::Mode#guest_start)
+  def self.guest_start(scene)
+    MGQ_MpBattlesCoop.join(scene)
+  end
+
+  # (see MGQ_MpBattles::Mode#settle)
+  def self.settle(scene)
+    MGQ_MpBattlesCoop.settle(scene)
+  end
+
+  # (see MGQ_MpBattles::Mode#own_order)
+  def self.own_order
+    MGQ_MpBattlesCoop.own_order
+  end
+
+  # (see MGQ_MpBattles::Mode#take_order)
+  def self.take_order(seat, order)
+    MGQ_MpBattlesCoop.take_order(seat, order)
+  end
+
+  # (see MGQ_MpBattles::Mode#share_order)
+  def self.share_order
+    MGQ_MpBattlesCoop.share_order
+  end
+
+  # (see MGQ_MpBattles::Mode#stream_kinds)
+  def self.stream_kinds
+    ["coop_party"]
+  end
+
+  # (see MGQ_MpBattles::Mode#take)
+  def self.take(_kind, scene, body)
+    MGQ_MpBattlesCoop.reform(scene, body)
+  end
+
+  # (see MGQ_MpBattles::Mode#take_over)
+  def self.take_over(scene)
+    MGQ_MpBattlesCoop.take_over(scene)
+    true
+  end
+end
+
 # Another player's character in a co-op battle's party. Its owner commands it from their own game;
 # the computer plays it when no command came, as after its owner left.
 class Game_MpAlly < Game_MpActor
@@ -1075,6 +1153,7 @@ end
 
 begin
   MGQ_MpCoop.route("coop") { |peer, message| MGQ_MpBattlesCoop.take(peer, message) }
+  MGQ_MpBattles.mode(:coop, MGQ_MpBattlesCoop::Mode)
 rescue => e
   MGQ_MpBattlesCoop.log("co-op FAILED: #{e.class}: #{e.message}")
 end

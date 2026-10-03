@@ -2,7 +2,8 @@
 #  mp_battles.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Logged through MGQ_MpLog
+#      Paulinchen  2026-10-03: Added Mode, what a kind of live battle does differently from a duel, which the kinds register and the live battle asks
+#                            - Logged through MGQ_MpLog
 #      Paulinchen  2026-10-02: Installed the battle hooks through mp_hooks.rbx
 #      Paulinchen  2026-10-01: Let co-op battles swap the Backline in, which only PvP battles forbid now
 #      Paulinchen  2026-09-30: Moved into Patch/Multiplayer/Scripts as mp_battles.rbx, which Multiplayer.rb loads
@@ -36,6 +37,137 @@ module MGQ_MpBattles
 
   # What starts this script's lines in the mod's InGame.log.
   LOG_TAG = "battle"
+
+  # What a kind of live battle does differently from a duel between two players, such as a co-op
+  # battle or a team duel. A kind's module extends this and answers what it changes; mode
+  # registers it, and mp_battles_sync.rbx asks the running battle's.
+  module Mode
+    # Reports whether this game's party is the host's party.
+    #
+    # @return [Boolean] Whether it is; else the host's party is this game's troop.
+    def same_side?
+      false
+    end
+
+    # Reports whether a guest's characters stand in the host's party. Asked by the host.
+    #
+    # @param _seat [Integer] The guest's world seat.
+    # @return [Boolean] Whether they do; else they stand in the host's troop.
+    def same_side_as_host?(_seat)
+      false
+    end
+
+    # Lists the battle's players the live battle was not started with.
+    #
+    # @return [Array<Integer>] Their world seats.
+    def player_seats
+      []
+    end
+
+    # Runs before the battle starts, on host and guest, while the game's role may still change.
+    #
+    # @param _scene [Scene_Battle] The battle.
+    def before_start(_scene)
+    end
+
+    # Builds the host's battle before it tells the guests it is ready.
+    #
+    # @param _scene [Scene_Battle] The battle.
+    # @return [Symbol, nil] :own when the battle is the host's own after all and no longer live,
+    #   another reason when it ends before it began, nil when it goes on.
+    def host_start(_scene)
+    end
+
+    # Builds the guest's battle before it tells the host it is ready.
+    #
+    # @param _scene [Scene_Battle] The battle.
+    # @return [Symbol, nil] Why the battle ends before it began, nil when it goes on.
+    def guest_start(_scene)
+    end
+
+    # Settles who fights on, as host, when a command phase starts.
+    #
+    # @param _scene [Scene_Battle] The battle.
+    def settle(_scene)
+    end
+
+    # Reports whether the host's opponents all left. Asked by the host.
+    #
+    # @return [Boolean] Whether they did.
+    def other_side_gone?
+      false
+    end
+
+    # The order of the player's places, which their commands carry to the host.
+    #
+    # @return [Array<Integer>, nil] The order, nil when the battle has none.
+    def own_order
+    end
+
+    # Takes the order of a guest's places that came with their commands. Called by the host.
+    #
+    # @param _seat [Integer] The guest's world seat.
+    # @param _order [Array<Integer>, nil] The order.
+    def take_order(_seat, _order)
+    end
+
+    # Tells the guests an order of places that changed, once the host has every guest's commands.
+    def share_order
+    end
+
+    # Tells who commands the characters of a player who left.
+    #
+    # @param _seat [Integer] The world seat of the player who left.
+    # @return [Integer, nil] The world seat of who commands them, nil for nobody else.
+    def heir_of(_seat)
+    end
+
+    # The kinds of the battle's own messages inside the host's stream.
+    #
+    # @return [Array<String>] The kinds.
+    def stream_kinds
+      []
+    end
+
+    # Takes one of the battle's own messages inside the host's stream. Called by the guest.
+    #
+    # @param _kind [String] One of stream_kinds.
+    # @param _scene [Scene_Battle] The battle.
+    # @param _body [String] The message's body.
+    def take(_kind, _scene, _body)
+    end
+
+    # Fights the battle on alone once the host is gone. Called by the guest.
+    #
+    # @param _scene [Scene_Battle] The battle.
+    # @return [Boolean] Whether the battle goes on; else it ends as a duel does.
+    def take_over(_scene)
+      false
+    end
+  end
+
+  # A duel between two players, which changes nothing.
+  module Duel
+    extend Mode
+  end
+
+  @modes = {}
+
+  # Registers what a kind of live battle does differently.
+  #
+  # @param name [Symbol] The kind, such as :coop.
+  # @param mode [Mode] Its module.
+  def self.mode(name, mode)
+    @modes[name] = mode
+  end
+
+  # Finds what a kind of live battle does differently.
+  #
+  # @param name [Symbol, nil] The kind.
+  # @return [Mode] Its module, a duel's when the kind registered none.
+  def self.mode_of(name)
+    @modes[name] || Duel
+  end
 
   # Reports whether a multiplayer battle runs.
   #

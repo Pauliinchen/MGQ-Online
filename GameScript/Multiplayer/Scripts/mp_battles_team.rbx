@@ -2,7 +2,8 @@
 #  mp_battles_team.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Read the sides' players as MGQ_MpBattlesCoop::Player records
+#      Paulinchen  2026-10-03: Registered what a team duel does differently in a live battle as its Mode
+#                            - Read the sides' players as MGQ_MpBattlesCoop::Player records
 #                            - Sent messages, showed notices and read the world, the own id and the own seat through MGQ_MpOverworldSync
 #                            - Logged through MGQ_MpLog
 #      Paulinchen  2026-10-02: Took the Frontline's size from mp_coop_squad.rbx
@@ -186,4 +187,70 @@ module MGQ_MpBattlesTeam
   rescue => e
     log("taking who commands failed: #{e.class}: #{e.message}")
   end
+end
+
+# What a team duel does differently in a live battle: each game's side is its party, the players
+# of the host's side command the host's party, and who left hands their characters to their side.
+module MGQ_MpBattlesTeam::Mode
+  extend MGQ_MpBattles::Mode
+
+  # (see MGQ_MpBattles::Mode#same_side?)
+  def self.same_side?
+    MGQ_MpBattlesTeam.same_side?
+  end
+
+  # (see MGQ_MpBattles::Mode#same_side_as_host?)
+  def self.same_side_as_host?(seat)
+    MGQ_MpBattlesTeam.same_side_as_host?(seat)
+  end
+
+  # (see MGQ_MpBattles::Mode#player_seats)
+  def self.player_seats
+    (MGQ_MpBattlesTeam.own + MGQ_MpBattlesTeam.other).map(&:seat)
+  end
+
+  # (see MGQ_MpBattles::Mode#host_start)
+  def self.host_start(scene)
+    MGQ_MpBattlesTeam.form(scene)
+    nil
+  end
+
+  # (see MGQ_MpBattles::Mode#guest_start)
+  def self.guest_start(scene)
+    MGQ_MpBattlesTeam.form(scene)
+    nil
+  end
+
+  # (see MGQ_MpBattles::Mode#settle)
+  def self.settle(_scene)
+    MGQ_MpBattlesTeam.settle
+  end
+
+  # (see MGQ_MpBattles::Mode#other_side_gone?)
+  def self.other_side_gone?
+    MGQ_MpBattlesTeam.other_side_gone?
+  end
+
+  # (see MGQ_MpBattles::Mode#heir_of)
+  def self.heir_of(seat)
+    MGQ_MpBattlesTeam.heir_of(seat)
+  end
+
+  # (see MGQ_MpBattles::Mode#stream_kinds)
+  def self.stream_kinds
+    ["team_heirs"]
+  end
+
+  # (see MGQ_MpBattles::Mode#take)
+  def self.take(_kind, _scene, body)
+    MGQ_MpBattlesTeam.take_heirs(body)
+  end
+end
+
+# What a team duel does differently in a live battle, through mp_battles.rbx.
+
+begin
+  MGQ_MpBattles.mode(:team, MGQ_MpBattlesTeam::Mode)
+rescue => e
+  MGQ_MpBattlesTeam.log("mode FAILED: #{e.class}: #{e.message}")
 end

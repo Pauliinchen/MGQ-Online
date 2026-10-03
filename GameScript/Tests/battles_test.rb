@@ -2,6 +2,7 @@
 #  battles_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-03: Checked the modes of live battles
 #      Paulinchen  2026-10-01: Checked that only PvP battles forbid swapping the Backline in
 #      Paulinchen  2026-09-30: Created
 #
@@ -52,3 +53,12 @@ MGQ_MpBattles.finish
 check("a switch that was on stays on", [$game_switches[86], $game_switches[27]], [true, false])
 $data_system.switches[86] = "Other name"
 check("the id stands in for a translated name", MGQ_MpBattles.switch_rules(:pvp).keys.sort, [27, 86])
+
+# What a kind of live battle does differently.
+duel = MGQ_MpBattles::Duel
+check("a kind that registered no mode is a duel", MGQ_MpBattles.mode_of(:unknown), duel)
+check("a duel changes nothing", [duel.same_side?, duel.same_side_as_host?(2), duel.player_seats, duel.host_start(nil), duel.heir_of(2), duel.stream_kinds, duel.take_over(nil)],
+      [false, false, [], nil, nil, [], false])
+other = Module.new.extend(MGQ_MpBattles::Mode)
+MGQ_MpBattles.mode(:other, other)
+check("a kind's mode is found by its name", MGQ_MpBattles.mode_of(:other), other)

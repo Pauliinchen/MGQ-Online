@@ -2,7 +2,8 @@
 #  mp_battles_sync_playback.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Read and wrote the game's private fields and called its private methods through MGQ_MpGame
+#      Paulinchen  2026-10-03: Asked the running battle's mode instead of naming co-op battles and team duels
+#                            - Read and wrote the game's private fields and called its private methods through MGQ_MpGame
 #                            - Created
 #
 #----------------------------------------------------------------
@@ -86,17 +87,14 @@ module MGQ_MpBattlesSync
     # @return [Array, nil] The next event of the host's stream, nil while none arrived.
     def self.next_event(scene)
       while @events.empty?
-        kind, body = Channel.take_first(%w(coop_party team_heirs events))
+        mode = MGQ_MpBattlesSync.mode
+        kind, body = Channel.take_first(mode.stream_kinds + ["events"])
         return nil unless kind
 
-        if kind == "team_heirs"
-          MGQ_MpBattlesTeam.take_heirs(body)
-          next
-        end
-
-        # A co-op party changes between two sends, so the next send's battlers are the new party's.
-        if kind == "coop_party"
-          MGQ_MpBattlesCoop.reform(scene, body)
+        # The battle's own messages come between two sends, so the next send's battlers are those
+        # the message leaves, such as a co-op party's once a player left.
+        if kind != "events"
+          mode.take(kind, scene, body)
           next
         end
 
