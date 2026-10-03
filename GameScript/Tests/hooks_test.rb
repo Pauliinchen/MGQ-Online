@@ -2,6 +2,7 @@
 #  hooks_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-03: Checked around and holding the player
 #      Paulinchen  2026-10-02: Created
 #
 #----------------------------------------------------------------
@@ -70,3 +71,29 @@ $calls.clear
 MGQ_MpHooks.after(Frames.singleton_class, :update, "frames") { $calls << [:after_frame, self] }
 Frames.update
 check("a module's method runs its blocks on the module", $calls, [:frame, [:after_frame, Frames]])
+
+# A wrap that decides when the original runs and what the method returns.
+class Scene_Around
+  def double(value); value * 2; end
+  def hidden; :hidden; end
+  private :hidden
+end
+MGQ_MpHooks.around(Scene_Around, :double) { |_scene, args, original| args[0] > 5 ? :refused : original.call + 1 }
+MGQ_MpHooks.around(Scene_Around, :double) { |_scene, _args, original| [original.call] }
+MGQ_MpHooks.around(Scene_Around, :hidden) { |_scene, _args, original| original.call }
+check("around decides what the method returns, and wraps stack", [Scene_Around.new.double(2), Scene_Around.new.double(9)], [[5], [:refused]])
+check("a private method stays private around too", Scene_Around.private_method_defined?(:hidden), true)
+
+# Holding the player: no moving, no menu, while any script says so.
+class Game_Player; def movable?; true; end; end
+class Scene_Map; attr_reader :menu_calling; def update_call_menu; @menu_calling = true; end; end
+$held = false
+MGQ_MpHooks.hold_player("one") { $held }
+MGQ_MpHooks.hold_player("two") { raise "boom" }
+map = Scene_Map.new
+map.update_call_menu
+check("a player nobody holds moves and opens the menu", [Game_Player.new.movable?, map.menu_calling], [true, true])
+$held = true
+map.update_call_menu
+check("a held player stands still and opens no menu", [Game_Player.new.movable?, map.menu_calling], [false, false])
+check("a failing hold is logged once and holds nobody", $log.grep(/two failed holding the player: RuntimeError: boom/).size, 1)

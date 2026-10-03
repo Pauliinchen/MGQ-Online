@@ -2,7 +2,8 @@
 #  mp_battles_sync.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Called the scripts that load before this one without asking whether they loaded
+#      Paulinchen  2026-10-03: Built the battle hooks with MGQ_MpHooks.around
+#                            - Called the scripts that load before this one without asking whether they loaded
 #                            - Sent messages, showed notices and read the world, the own id and the own seat through MGQ_MpOverworldSync
 #                            - Logged through MGQ_MpLog
 #                            - Took from a guest only skills their character has and items a battle allows
@@ -1778,13 +1779,13 @@ module MGQ_MpBattlesSync
       record_before(Game_Message, :add) do |message, args|
         ["message", Recorder.speaker, message.face_name, message.face_index, message.background, message.position, *args]
       end
-      wrap(Scene_Battle, :process_skill_word) do |scene, _args, original|
+      MGQ_MpHooks.around(Scene_Battle, :process_skill_word) do |scene, _args, original|
         Recorder.speaking(scene.instance_variable_get(:@subject)) { original.call }
       end
-      wrap(Scene_Battle, :process_down_word) do |_scene, args, original|
+      MGQ_MpHooks.around(Scene_Battle, :process_down_word) do |_scene, args, original|
         Recorder.speaking(args[0]) { original.call }
       end
-      wrap(Window_Message, :input_pause) do |window, _args, original|
+      MGQ_MpHooks.around(Window_Message, :input_pause) do |window, _args, original|
         next original.call unless MGQ_MpBattlesSync.live? && $game_party.in_battle
 
         window.pause = true
@@ -1826,12 +1827,12 @@ module MGQ_MpBattlesSync
           [kind, battler, args[0]] if args[0] && args[0] != 0 && !Recorder.showing_animation?
         end
       end
-      wrap(Game_Battler, :sprite_effect_type=) do |battler, args, original|
+      MGQ_MpHooks.around(Game_Battler, :sprite_effect_type=) do |battler, args, original|
         Recorder.sprite_effect(battler, args[0])
         original.call
       end
       [Game_Actor, Game_Enemy].product(EFFECT_METHODS).each do |owner, name|
-        wrap(owner, name) do |battler, _args, original|
+        MGQ_MpHooks.around(owner, name) do |battler, _args, original|
           result = original.call
           Recorder.sprite_effect(battler, battler.sprite_effect_type)
           result
@@ -1845,14 +1846,14 @@ module MGQ_MpBattlesSync
     # The battle's course as the host records it: turns, actions, animations and waits, with the
     # values after each action.
     def self.course
-      wrap(Scene_Battle, :turn_start) do |_scene, _args, original|
+      MGQ_MpHooks.around(Scene_Battle, :turn_start) do |_scene, _args, original|
         Recorder.turn_started
         Recorder.event("turn", $game_troop.turn_count + 1)
         original.call
       end
 
       # Recorded before the game checks the skip key, which leaves the animation out on this screen only.
-      wrap(Scene_Battle, :show_animation) do |scene, args, original|
+      MGQ_MpHooks.around(Scene_Battle, :show_animation) do |scene, args, original|
         Recorder.event("animation", scene.instance_variable_get(:@subject), args[0], args[1]) if Recorder.active?
         Recorder.showing_animation { original.call }
       end
@@ -1861,7 +1862,7 @@ module MGQ_MpBattlesSync
 
       # The game also comes back here after a party change or a menu in the same phase, which
       # Recorder.command_phase records only once.
-      wrap(Scene_Battle, :start_party_command_selection) do |scene, _args, original|
+      MGQ_MpHooks.around(Scene_Battle, :start_party_command_selection) do |scene, _args, original|
         unless scene.send(:scene_changing?)
           # A co-op party changes between two of the host's sends: here, before the command phase is
           # recorded, when a player left, and once the commands came, when a player swapped.
@@ -1872,13 +1873,13 @@ module MGQ_MpBattlesSync
         original.call
       end
 
-      wrap(Scene_Battle, :apply_item_effects) do |_scene, _args, original|
+      MGQ_MpHooks.around(Scene_Battle, :apply_item_effects) do |_scene, _args, original|
         result = original.call
         Recorder.values
         result
       end
 
-      wrap(Scene_Battle, :use_item) do |scene, _args, original|
+      MGQ_MpHooks.around(Scene_Battle, :use_item) do |scene, _args, original|
         Recorder.values
         if Recorder.active?
           subject = scene.instance_variable_get(:@subject)
@@ -1894,13 +1895,13 @@ module MGQ_MpBattlesSync
         record_before(Scene_Battle, name) { |_scene, args| ["scene.#{name}", *args] }
       end
 
-      wrap(Scene_Battle, :update_basic) do |_scene, _args, original|
+      MGQ_MpHooks.around(Scene_Battle, :update_basic) do |_scene, _args, original|
         Recorder.tick
         original.call
       end
 
       [:process_victory, :process_defeat, :process_abort].each do |name|
-        wrap(BattleManager.singleton_class, name) do |_manager, _args, original|
+        MGQ_MpHooks.around(BattleManager.singleton_class, name) do |_manager, _args, original|
           if Recorder.active?
             Recorder.event("end", name.to_s)
             Recorder.flush
@@ -1909,7 +1910,7 @@ module MGQ_MpBattlesSync
         end
       end
 
-      wrap(BattleManager.singleton_class, :battle_end) do |_manager, args, original|
+      MGQ_MpHooks.around(BattleManager.singleton_class, :battle_end) do |_manager, args, original|
         Recorder.finish(args[0])
         original.call
       end
@@ -1918,7 +1919,7 @@ module MGQ_MpBattlesSync
     # The live battle's flow on both sides: the start both wait for, the host waiting for the
     # guest's commands, the guest playing the host's stream, forfeits and the end.
     def self.live
-      wrap(Scene_Battle, :battle_start) do |scene, _args, original|
+      MGQ_MpHooks.around(Scene_Battle, :battle_start) do |scene, _args, original|
         # A member's battle becomes the leader's to host, or stays the member's own to host.
         MGQ_MpBattlesCoop.await_leader(scene)
         if MGQ_MpBattlesSync.guest?
@@ -1932,7 +1933,7 @@ module MGQ_MpBattlesSync
         end
       end
 
-      wrap(Scene_Battle, :turn_start) do |scene, _args, original|
+      MGQ_MpHooks.around(Scene_Battle, :turn_start) do |scene, _args, original|
         if MGQ_MpBattlesSync.guest?
           Live.guest_turn(scene)
         elsif MGQ_MpBattlesSync.host? && !MGQ_MpBattlesSync.solo?
@@ -1942,13 +1943,13 @@ module MGQ_MpBattlesSync
         end
       end
 
-      wrap(Scene_Battle, :update) do |scene, _args, original|
+      MGQ_MpHooks.around(Scene_Battle, :update) do |scene, _args, original|
         result = original.call
         Live.watch(scene) if MGQ_MpBattlesSync.live?
         result
       end
 
-      wrap(Scene_Battle, :command_escape) do |scene, _args, original|
+      MGQ_MpHooks.around(Scene_Battle, :command_escape) do |scene, _args, original|
         if Live.escape_leaves?
           Live.forfeit(scene)
         else
@@ -1958,7 +1959,7 @@ module MGQ_MpBattlesSync
         end
       end
 
-      wrap(BattleManager.singleton_class, :judge_win_loss) do |_manager, _args, original|
+      MGQ_MpHooks.around(BattleManager.singleton_class, :judge_win_loss) do |_manager, _args, original|
         MGQ_MpBattlesSync.guest? ? false : original.call
       end
     end
@@ -1967,24 +1968,24 @@ module MGQ_MpBattlesSync
     # the guest makes them itself. See Recorder.call.
     def self.calls
       Window_BattleLog.instance_methods(false).map(&:to_s).grep(LOG_CALL).each do |name|
-        wrap(Window_BattleLog, name.to_sym) do |_log, args, original|
+        MGQ_MpHooks.around(Window_BattleLog, name.to_sym) do |_log, args, original|
           Recorder.call("log", name, args) { original.call }
         end
       end
 
       SCENE_CALLS.select { |name| Scene_Battle.method_defined?(name) }.each do |name|
-        wrap(Scene_Battle, name) do |scene, args, original|
+        MGQ_MpHooks.around(Scene_Battle, name) do |scene, args, original|
           Recorder.call("scene", name, args, scene.instance_variable_get(:@subject)) { original.call }
         end
       end
 
       # Who appears is named with each game's own names, so the guest names the host's characters.
-      wrap(BattleManager.singleton_class, :battle_start) do |_manager, _args, original|
+      MGQ_MpHooks.around(BattleManager.singleton_class, :battle_start) do |_manager, _args, original|
         Recorder.instead("emerge") { original.call }
       end
 
       SKIPPABLE_WAITS.select { |name| Scene_Battle.method_defined?(name) }.each do |name|
-        wrap(Scene_Battle, name) do |_scene, _args, original|
+        MGQ_MpHooks.around(Scene_Battle, name) do |_scene, _args, original|
           original.call unless Playback.skip_wait?
         end
       end
@@ -1998,30 +1999,12 @@ module MGQ_MpBattlesSync
     # @yieldparam args [Array] The method's arguments.
     # @yieldreturn [Array, nil] The event's kind and fields, nil to record nothing.
     def self.record_before(owner, name, &event)
-      wrap(owner, name) do |object, args, original|
+      MGQ_MpHooks.around(owner, name) do |object, args, original|
         if Recorder.active?
           fields = event.call(object, args)
           Recorder.event(*fields) if fields
         end
         original.call
-      end
-    end
-
-    # Wraps a method in a block that decides when the original runs. Every wrap keeps the method it
-    # wraps under a name of its own, since a method can be wrapped twice.
-    #
-    # @param owner [Module] The class that has the method.
-    # @param name [Symbol] The method.
-    # @yieldparam object [Object] The object the method runs on.
-    # @yieldparam args [Array] The method's arguments.
-    # @yieldparam original [Proc] Runs the original with the arguments and returns its result.
-    # @yieldreturn [Object] What the method returns.
-    def self.wrap(owner, name, &body)
-      @wraps = (@wraps || 0) + 1
-      original = :"mgq_mp_battles_sync_#{name.to_s.gsub(/[=?!]/, '_')}_#{@wraps}"
-      owner.send(:alias_method, original, name)
-      owner.send(:define_method, name) do |*args|
-        body.call(self, args, lambda { send(original, *args) })
       end
     end
   end

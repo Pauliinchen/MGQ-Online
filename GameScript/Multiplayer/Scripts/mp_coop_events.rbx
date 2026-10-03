@@ -2,7 +2,8 @@
 #  mp_coop_events.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Asked MGQ_MpOverworldSync whether the map is quiet or the player free on it
+#      Paulinchen  2026-10-03: Held the player through MGQ_MpHooks.hold_player
+#                            - Asked MGQ_MpOverworldSync whether the map is quiet or the player free on it
 #                            - Sent messages, showed notices and read the world, the own id and the own seat through MGQ_MpOverworldSync
 #                            - Logged through MGQ_MpLog
 #                            - Left every starting story event to the leader, so one that starts by itself no longer keeps a member's other events from starting
@@ -992,6 +993,9 @@ begin
 
   # After the map's update, the player is brought to the leader's story scene when they are free.
   MGQ_MpHooks.after(Game_Map, :update, "mp_coop_events") { MGQ_MpCoopEvents.update }
+
+  # The player stands still and opens no menu while their leader's story scene plays.
+  MGQ_MpHooks.hold_player("mp_coop_events") { MGQ_MpCoopEvents.blocked? }
 rescue => e
   MGQ_MpCoopEvents.log("hooks FAILED: #{e.class}: #{e.message}")
 end
@@ -1104,15 +1108,6 @@ if MGQ_MpCoopEvents.hookable?
 
   begin
     class Game_Player
-      alias mgq_mp_coop_events_movable? movable?
-
-      # Reports whether the player may move: not while their leader's story scene plays.
-      #
-      # @return [Boolean] Whether they may.
-      def movable?
-        mgq_mp_coop_events_movable? && !(MGQ_MpCoopEvents.blocked? rescue false)
-      end
-
       alias mgq_mp_coop_events_encounter encounter
 
       # Starts a random encounter when its steps ran out, but not while the leader's story scene is
@@ -1127,19 +1122,8 @@ if MGQ_MpCoopEvents.hookable?
         false
       end
     end
-
-    class Scene_Map
-      alias mgq_mp_coop_events_update_call_menu update_call_menu
-
-      # Opens the menu when asked, but not while the leader's story scene plays.
-      def update_call_menu
-        return @menu_calling = false if (MGQ_MpCoopEvents.blocked? rescue false)
-
-        mgq_mp_coop_events_update_call_menu
-      end
-    end
   rescue => e
-    MGQ_MpCoopEvents.log("story block hooks FAILED: #{e.class}: #{e.message}")
+    MGQ_MpCoopEvents.log("encounter hook FAILED: #{e.class}: #{e.message}")
   end
 
   begin

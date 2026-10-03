@@ -2,7 +2,8 @@
 #  mp_hooks.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Logged through MGQ_MpLog
+#      Paulinchen  2026-10-03: Added around, a wrap that decides when the original runs, and hold_player, which keeps the player standing and the menu shut for every script
+#                            - Logged through MGQ_MpLog
 #                            - Kept each method's blocks ready in their order, so a wrapped method looks nothing up and builds nothing when it runs
 #      Paulinchen  2026-10-02: Created
 #
@@ -11,7 +12,8 @@
 # The game methods several scripts follow, such as Scene_Map#update_scene, each wrapped once here.
 # A script registers a block to run before or after the method instead of wrapping it itself, so no
 # script depends on how the others wrapped it. A hook that changes what a method does or returns
-# stays a wrap of the script's own.
+# is a wrap of the script's own, made with around. What several scripts change the same way is
+# wrapped once here too: holding the player, see hold_player.
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpHooks
@@ -24,6 +26,12 @@ module MGQ_MpHooks
 
   # The original of each wrapped method by method.
   @originals ||= {}
+
+  # How many methods around wrapped, which names each one's original.
+  @arounds ||= 0
+
+  # What holds the player, by the script that registered it.
+  @holds ||= {}
 
   extend MGQ_MpLog
 
@@ -98,6 +106,60 @@ module MGQ_MpHooks
     end
     owner.send(:private, name) if was_private
     @originals[[owner, name]] = original
+  end
+
+  # Wraps a game method in a block that decides when the original runs and what the method returns.
+  #
+  # Every wrap keeps the method it wraps under a name of its own, since a method can be wrapped
+  # more than once. The block's errors reach the game, as the method's own would.
+  #
+  # @param owner [Module] The class that has the method, the singleton class for a module's method.
+  # @param name [Symbol] The method.
+  # @yieldparam object [Object] The object the method runs on.
+  # @yieldparam args [Array] The method's arguments.
+  # @yieldparam original [Proc] Runs the original with the arguments and returns its result.
+  # @yieldreturn [Object] What the method returns.
+  def self.around(owner, name, &body)
+    @arounds += 1
+    original = :"mgq_mp_hooks_around_#{@arounds}_#{name.to_s.gsub(/[?!=]/, '_')}"
+    was_private = owner.private_method_defined?(name)
+    owner.send(:alias_method, original, name)
+    owner.send(:define_method, name) do |*args, &block|
+      body.call(self, args, lambda { send(original, *args, &block) })
+    end
+    owner.send(:private, name) if was_private
+  end
+
+  # Holds the player while a script's block says so: they stand still and the game's menu stays
+  # shut, such as while an encounter waits for the party.
+  #
+  # @param script [String] Who registers, which a second registration of replaces.
+  # @yieldreturn [Boolean] Whether the script holds the player now.
+  def self.hold_player(script, &held)
+    @holds[script] = held
+    return if @holding
+
+    @holding = true
+    around(Game_Player, :movable?) { |_player, _args, original| original.call && !MGQ_MpHooks.player_held? }
+    around(Scene_Map, :update_call_menu) do |scene, _args, original|
+      MGQ_MpHooks.player_held? ? scene.instance_variable_set(:@menu_calling, false) : original.call
+    end
+  rescue => e
+    log("#{script} could not hold the player: #{e.class}: #{e.message}")
+  end
+
+  # Reports whether a script holds the player, logging a failing block once.
+  #
+  # @return [Boolean] Whether one does.
+  def self.player_held?
+    @holds.any? do |script, held|
+      begin
+        held.call
+      rescue => e
+        log_once(held, "#{script} failed holding the player: #{e.class}: #{e.message}")
+        false
+      end
+    end
   end
 
   # Runs the blocks registered for a moment of a method, logging a failing one once.

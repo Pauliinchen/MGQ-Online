@@ -2,7 +2,8 @@
 #  mp_battles_coop.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Called the scripts that load before this one without asking whether they loaded
+#      Paulinchen  2026-10-03: Held the player through MGQ_MpHooks.hold_player
+#                            - Called the scripts that load before this one without asking whether they loaded
 #                            - Sent messages, showed notices and read the world, the own id and the own seat through MGQ_MpOverworldSync
 #                            - Logged through MGQ_MpLog
 #                            - Started the battle and each turn for the other players' characters, whose unset hit count crashed the game when hit
@@ -1072,6 +1073,9 @@ begin
   # Before the title screen starts, an encounter a reset interrupted is forgotten, so it never
   # starts on the map of the save loaded next.
   MGQ_MpHooks.before(Scene_Title, :start, "mp_battles_coop") { MGQ_MpBattlesCoop.drop_hold }
+
+  # The player stands still and opens no menu while their encounter waits for the party.
+  MGQ_MpHooks.hold_player("mp_battles_coop") { MGQ_MpBattlesCoop.holding? }
 rescue => e
   MGQ_MpBattlesCoop.log("title hook FAILED: #{e.class}: #{e.message}")
 end
@@ -1117,7 +1121,6 @@ if MGQ_MpBattlesCoop.hookable?
   begin
     class Game_Player
       alias mgq_mp_battles_coop_encounter encounter
-      alias mgq_mp_battles_coop_movable? movable?
 
       # Starts a random encounter when its steps ran out, held while party members on the map are
       # busy (see MGQ_MpBattlesCoop.hold).
@@ -1126,26 +1129,8 @@ if MGQ_MpBattlesCoop.hookable?
       def encounter
         MGQ_MpBattlesCoop.encounter { mgq_mp_battles_coop_encounter }
       end
-
-      # Reports whether the player may move: not while their encounter waits for the party.
-      #
-      # @return [Boolean] Whether they may.
-      def movable?
-        mgq_mp_battles_coop_movable? && !MGQ_MpBattlesCoop.holding?
-      end
-    end
-
-    class Scene_Map
-      alias mgq_mp_battles_coop_update_call_menu update_call_menu
-
-      # Opens the menu when asked, but not while the player's encounter waits for the party.
-      def update_call_menu
-        return @menu_calling = false if MGQ_MpBattlesCoop.holding?
-
-        mgq_mp_battles_coop_update_call_menu
-      end
     end
   rescue => e
-    MGQ_MpBattlesCoop.log("encounter hooks FAILED: #{e.class}: #{e.message}")
+    MGQ_MpBattlesCoop.log("encounter hook FAILED: #{e.class}: #{e.message}")
   end
 end
