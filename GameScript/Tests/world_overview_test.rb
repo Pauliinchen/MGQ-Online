@@ -2,7 +2,8 @@
 #  world_overview_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Named the member in the leader's invite, which admits them
+#      Paulinchen  2026-10-03: Added a stand-in for duels without PvP battles
+#                            - Named the member in the leader's invite, which admits them
 #      Paulinchen  2026-10-02: Opened the overview with the key mp_keys.rbx binds instead of a stand-in for the PvP battle screen's
 #      Paulinchen  2026-10-01: Created
 #
@@ -30,6 +31,12 @@ end
 MapInfo = Struct.new(:name)
 $data_mapinfos = { 5 => MapInfo.new("Ilias Village (editor)") }
 
+# Duels without PvP battles, which the overview greys out.
+module MGQ_MpBattlesDuel
+  def self.available?; false; end
+  def self.challenged_by?(_peer); false; end
+  def self.inviting?; false; end
+end
 load_script "mp_world_overview"
 
 overview = MGQ_MpWorldOverview

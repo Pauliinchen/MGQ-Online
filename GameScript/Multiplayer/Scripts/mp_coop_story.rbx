@@ -2,7 +2,8 @@
 #  mp_coop_story.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Sent messages, showed notices and read the world, the own id and the own seat through MGQ_MpOverworldSync
+#      Paulinchen  2026-10-03: Called the scripts that load before this one without asking whether they loaded
+#                            - Sent messages, showed notices and read the world, the own id and the own seat through MGQ_MpOverworldSync
 #                            - Logged through MGQ_MpLog
 #      Paulinchen  2026-10-02: Gave members as far along as the leader the items, gold and departures of the leader's story too
 #                            - Kept what a member as far along as the leader changed in their own game while in the party
@@ -85,7 +86,7 @@ module MGQ_MpCoopStory
   #
   # @return [MGQ_MpOverworldSync::Peers::Peer, Symbol, nil] The leader, :me for the player, nil outside a party.
   def self.leader
-    return nil unless defined?(MGQ_MpOverworldSync) && MGQ_MpOverworldSync.in_world? && defined?(MGQ_MpCoop)
+    return nil unless MGQ_MpOverworldSync.in_world?
 
     MGQ_MpCoop::Party.leader
   end
@@ -299,7 +300,7 @@ module MGQ_MpCoopStory
     return false unless leader == :me && !MGQ_MpCoop::Party.members.empty?
     return false if $game_party && $game_party.in_battle
 
-    defined?(MGQ_MpCoopEvents) && MGQ_MpCoopEvents.telling?
+    MGQ_MpCoopEvents.telling?
   end
 
   # Takes a companion who joined the leader in the story the player plays along, back into the
@@ -388,14 +389,14 @@ module MGQ_MpCoopStory
   # @param key [Array] The self switch: map, event and letter.
   # @return [Boolean] Whether it is.
   def self.personal_self_switch?(key)
-    defined?(MGQ_MpCoopEvents) && $game_map ? MGQ_MpCoopEvents.chest_key?(key) : false
+    $game_map ? MGQ_MpCoopEvents.chest_key?(key) : false
   end
 
   # Lists the self switches of the chests on the map, through mp_coop_events.rbx.
   #
   # @return [Array<Array>] Their keys.
   def self.chest_keys
-    defined?(MGQ_MpCoopEvents) && $game_map ? MGQ_MpCoopEvents.chest_keys : []
+    $game_map ? MGQ_MpCoopEvents.chest_keys : []
   end
 
   # Gives the player their own story back, keeping what of their own changed meanwhile.

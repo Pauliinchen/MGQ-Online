@@ -2,7 +2,8 @@
 #  mp_notices.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Logged through MGQ_MpLog
+#      Paulinchen  2026-10-03: Called the scripts that load before this one without asking whether they loaded
+#                            - Logged through MGQ_MpLog
 #                            - Created
 #
 #----------------------------------------------------------------
@@ -97,8 +98,8 @@ module MGQ_MpNotices
   # @param peer [MGQ_MpOverworldSync::Peers::Peer] The other player.
   # @return [Notice, nil] The challenge, nil for none.
   def self.challenge_of(peer)
-    duel = defined?(MGQ_MpBattlesDuel) ? MGQ_MpBattlesDuel : nil
-    return nil unless duel && duel.available? && duel.challenged_by?(peer)
+    duel = MGQ_MpBattlesDuel
+    return nil unless duel.available? && duel.challenged_by?(peer)
 
     on_map = SceneManager.scene.is_a?(Scene_Map)
     Notice.new([:duel, peer.seat], "#{peer.state['name']} challenges you to a duel", MGQ_MpBattlesDuel::CHALLENGE_COLOR, on_map ? "Accept" : nil,

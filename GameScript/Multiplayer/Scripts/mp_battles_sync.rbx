@@ -2,7 +2,8 @@
 #  mp_battles_sync.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Sent messages, showed notices and read the world, the own id and the own seat through MGQ_MpOverworldSync
+#      Paulinchen  2026-10-03: Called the scripts that load before this one without asking whether they loaded
+#                            - Sent messages, showed notices and read the world, the own id and the own seat through MGQ_MpOverworldSync
 #                            - Logged through MGQ_MpLog
 #                            - Took from a guest only skills their character has and items a battle allows
 #                            - Waited at a member's battle start for the party's leader to lead it
@@ -1602,7 +1603,7 @@ module MGQ_MpBattlesSync
 
       @told.push(key)
       @told.shift while @told.size > KEPT
-      MGQ_MpChat.system(text) if defined?(MGQ_MpChat)
+      MGQ_MpChat.system(text)
       MGQ_MpOverworldSync.notice(text)
     rescue => e
       MGQ_MpBattlesSync.log("telling of a departure failed: #{e.class}: #{e.message}")

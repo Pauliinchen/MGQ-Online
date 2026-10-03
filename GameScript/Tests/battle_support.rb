@@ -2,7 +2,8 @@
 #  battle_support.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Gave the world stand-in tell, notice and the own id and seat
+#      Paulinchen  2026-10-03: Added stand-ins for the party's events and the chat, which the battle scripts call
+#                            - Gave the world stand-in tell, notice and the own id and seat
 #                            - Gave the characters a battle start and a turn start, which set their hit count
 #                            - Let the map's player refresh, telling which leader it shows
 #                            - Gave the map's player a random encounter and a menu call, and added the title screen
@@ -48,6 +49,8 @@ module MGQ_MpOverworldSync
     def self.status; { "seat" => $my_seat.to_s }; end
   end
 end
+module MGQ_MpCoopEvents; def self.coming?; false; end; end
+module MGQ_MpChat; def self.system(text); end; end unless defined?(MGQ_MpChat)
 module MGQ_MpCoop
   module Party
     def self.id; "p1"; end

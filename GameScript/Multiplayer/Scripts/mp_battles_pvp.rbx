@@ -2,7 +2,8 @@
 #  mp_battles_pvp.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Logged through MGQ_MpLog
+#      Paulinchen  2026-10-03: Called the scripts that load before this one without asking whether they loaded
+#                            - Logged through MGQ_MpLog
 #                            - Read the bound keys through MGQ_MpHotkeys, renamed from MGQ_MpKeys
 #      Paulinchen  2026-10-02: Opened the PvP battle screen with the key the player bound to the World overview
 #                            - Followed the map and the title screen through mp_hooks.rbx
@@ -65,7 +66,7 @@ module MGQ_MpBattlesPvp
   # @return [Boolean] Whether PvP battles are on, the mod's DLL is installed, no newer
   #   release is out, and no world is open.
   def self.available?
-    ENABLED && MGQ_Multiplayer.available? && !MGQ_Multiplayer.outdated? && !(defined?(MGQ_MpWorld) && MGQ_MpWorld.open?)
+    ENABLED && MGQ_Multiplayer.available? && !MGQ_Multiplayer.outdated? && !MGQ_MpWorld.open?
   end
 
   extend MGQ_MpLog
@@ -86,7 +87,7 @@ module MGQ_MpBattlesPvp
   def self.on_map
     # In a world the same key opens the World overview, and a key press is read only once, by
     # whoever asks first.
-    return if defined?(MGQ_MpWorld) && MGQ_MpWorld.open?
+    return if MGQ_MpWorld.open?
 
     if MGQ_Multiplayer.available? && MGQ_Multiplayer.outdated?
       pressed = MGQ_MpHotkeys.pressed?(:overview)
@@ -131,7 +132,7 @@ module MGQ_MpBattlesPvp
     case state["state"]
     when "received"
       state = MGQ_Multiplayer::Link.state
-      live = defined?(MGQ_MpBattlesSync) && MGQ_MpBattlesSync.join(state)
+      live = MGQ_MpBattlesSync.join(state)
       MGQ_Multiplayer::Link.cancel unless live
       begin_battle(state)
     when "failed"
@@ -208,7 +209,7 @@ module MGQ_MpBattlesPvp
 
     if members.empty?
       $game_message.add("#{opponent}'s team could not be read.")
-      MGQ_MpBattlesSync.finish if defined?(MGQ_MpBattlesSync)
+      MGQ_MpBattlesSync.finish
       MGQ_Multiplayer::Link.cancel
       return
     end
@@ -983,8 +984,8 @@ module MGQ_MpBattlesPvp
       check(opponents)
       MirrorReport.start(opponents) if mirror
       BattleManager.event_proc = Proc.new { |result| MGQ_MpBattlesPvp::Battle.finished(result) }
-      MGQ_MpBattlesSync.record_to_file if mirror && defined?(MGQ_MpBattlesSync)
-      MGQ_MpBattlesSync.battle_started if defined?(MGQ_MpBattlesSync)
+      MGQ_MpBattlesSync.record_to_file if mirror
+      MGQ_MpBattlesSync.battle_started
       SceneManager.call(Scene_Battle)
       MGQ_MpBattlesPvp.log("started against #{opponent}'s team of #{opponents.size}")
     rescue => e
@@ -1050,9 +1051,9 @@ module MGQ_MpBattlesPvp
     # Puts the game back as it was before the battle and says how it went. Called when the map
     # starts again.
     def self.restore
-      @broken = defined?(MGQ_MpBattlesSync) && MGQ_MpBattlesSync.broken?
-      MGQ_MpBattlesSync.finish if defined?(MGQ_MpBattlesSync)
-      MGQ_MpBattles.finish if defined?(MGQ_MpBattles)
+      @broken = MGQ_MpBattlesSync.broken?
+      MGQ_MpBattlesSync.finish
+      MGQ_MpBattles.finish
       return unless @snapshot
 
       contents = Marshal.load(@snapshot)
@@ -1090,7 +1091,7 @@ module MGQ_MpBattlesPvp
     # stops waiting. The title screen makes the save's objects anew, but keeps the Library, system
     # switches and affection all saves share, so those are put back.
     def self.forget
-      MGQ_MpBattlesSync.finish if defined?(MGQ_MpBattlesSync)
+      MGQ_MpBattlesSync.finish
       self.globals = Marshal.load(@globals) if @globals
     rescue => e
       MGQ_MpBattlesPvp.log("could not put the shared data back after a reset: #{e.class}: #{e.message}")

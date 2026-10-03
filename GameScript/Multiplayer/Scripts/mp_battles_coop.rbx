@@ -2,7 +2,8 @@
 #  mp_battles_coop.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Sent messages, showed notices and read the world, the own id and the own seat through MGQ_MpOverworldSync
+#      Paulinchen  2026-10-03: Called the scripts that load before this one without asking whether they loaded
+#                            - Sent messages, showed notices and read the world, the own id and the own seat through MGQ_MpOverworldSync
 #                            - Logged through MGQ_MpLog
 #                            - Started the battle and each turn for the other players' characters, whose unset hit count crashed the game when hit
 #                            - Showed the player's own leader and followers on the map again once the co-op party is forgotten
@@ -220,7 +221,7 @@ module MGQ_MpBattlesCoop
   #
   # @return [Boolean] Whether it may.
   def self.host_possible?
-    return false unless defined?(MGQ_MpOverworldSync) && MGQ_MpOverworldSync.in_world? && defined?(MGQ_MpCoop) && MGQ_MpCoop::Party.id
+    return false unless MGQ_MpOverworldSync.in_world? && MGQ_MpCoop::Party.id
     return false if $game_temp && $game_temp.in_memory_battle
     return false if defined?(MGQ_MpBattlesPvp) && MGQ_MpBattlesPvp::Battle.running?
 
@@ -437,7 +438,7 @@ module MGQ_MpBattlesCoop
     peer = invite[:peer]
     message = invite[:message]
     return decline(peer, message) unless message["map"].to_i == $game_map.map_id && MGQ_MpBattlesSync.role.nil?
-    return decline(peer, message) if expired?(invite) || (defined?(MGQ_MpCoopEvents) && MGQ_MpCoopEvents.coming?)
+    return decline(peer, message) if expired?(invite) || MGQ_MpCoopEvents.coming?
     return unless free?
 
     @invite = nil
@@ -456,7 +457,7 @@ module MGQ_MpBattlesCoop
     unless message["map"].to_i == $game_map.map_id && MGQ_MpBattlesSync.role.nil? && MGQ_MpCoop::Party.leader == :me
       return refuse_lead(peer, message)
     end
-    return refuse_lead(peer, message) if expired?(request) || (defined?(MGQ_MpCoopEvents) && MGQ_MpCoopEvents.coming?)
+    return refuse_lead(peer, message) if expired?(request) || MGQ_MpCoopEvents.coming?
     return unless free?
 
     @request = nil

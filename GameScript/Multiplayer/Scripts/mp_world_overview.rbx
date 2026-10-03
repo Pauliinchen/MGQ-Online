@@ -2,7 +2,8 @@
 #  mp_world_overview.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Asked MGQ_MpOverworldSync whether the map is quiet or the player free on it
+#      Paulinchen  2026-10-03: Called the scripts that load before this one without asking whether they loaded
+#                            - Asked MGQ_MpOverworldSync whether the map is quiet or the player free on it
 #                            - Logged through MGQ_MpLog
 #                            - Read the bound keys through MGQ_MpHotkeys, renamed from MGQ_MpKeys
 #      Paulinchen  2026-10-02: Opened and closed the overview with the key the player bound, which its hint names
@@ -327,7 +328,7 @@ module MGQ_MpWorldOverview
   # @return [Array, nil] The text and its color, nil for none.
   def self.call_of(peer)
     return ["Invites you to a party", MGQ_MpCoop::INVITE_COLOR] if MGQ_MpCoop::Party.invited_by?(peer)
-    return nil unless defined?(MGQ_MpBattlesDuel) && MGQ_MpBattlesDuel.challenged_by?(peer)
+    return nil unless MGQ_MpBattlesDuel.challenged_by?(peer)
 
     ["Challenges you to a duel", MGQ_MpBattlesDuel::CHALLENGE_COLOR]
   end
@@ -390,8 +391,8 @@ module MGQ_MpWorldOverview
   # @return [MGQ_MpActions::Option] The choice.
   def self.duel_option(peer)
     option = MGQ_MpActions::Option
-    duel = defined?(MGQ_MpBattlesDuel) ? MGQ_MpBattlesDuel : nil
-    return option.new("Duel", nil, "Duels need PvP battles, which are off or out of date.") unless duel && duel.available?
+    duel = MGQ_MpBattlesDuel
+    return option.new("Duel", nil, "Duels need PvP battles, which are off or out of date.") unless duel.available?
     return option.new("Accept duel", lambda { close; duel.accept(peer) }, nil) if duel.challenged_by?(peer)
     return option.new("Challenged to a duel", nil, "Your challenge to #{peer.state['name']} stands.") if duel.targets.include?(peer.state["id"].to_s)
 
@@ -407,7 +408,7 @@ module MGQ_MpWorldOverview
     choices = []
     choices << option.new("Leave the party", lambda { party.leave }, nil) unless party.members.empty?
     choices << option.new("Stop inviting", lambda { party.stop_inviting }, nil) if party.inviting?
-    choices << option.new("Stop challenging", lambda { MGQ_MpBattlesDuel.stop }, nil) if defined?(MGQ_MpBattlesDuel) && MGQ_MpBattlesDuel.inviting?
+    choices << option.new("Stop challenging", lambda { MGQ_MpBattlesDuel.stop }, nil) if MGQ_MpBattlesDuel.inviting?
     choices.empty? ? [option.new("Nothing to do", nil, "Pick another player to invite them.")] : choices
   end
 

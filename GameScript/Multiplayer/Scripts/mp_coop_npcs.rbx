@@ -2,7 +2,8 @@
 #  mp_coop_npcs.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Sent messages, showed notices and read the world, the own id and the own seat through MGQ_MpOverworldSync
+#      Paulinchen  2026-10-03: Called the scripts that load before this one without asking whether they loaded
+#                            - Sent messages, showed notices and read the world, the own id and the own seat through MGQ_MpOverworldSync
 #                            - Logged through MGQ_MpLog
 #      Paulinchen  2026-10-02: Followed the map's update through mp_hooks.rbx
 #                            - Took an event's page from mp_coop.rbx, and dropped the unused role
@@ -71,7 +72,7 @@ module MGQ_MpCoopNpcs
   #
   # @return [Array<MGQ_MpOverworldSync::Peers::Peer>] The members.
   def self.party_here
-    return [] unless defined?(MGQ_MpOverworldSync) && MGQ_MpOverworldSync.in_world? && defined?(MGQ_MpCoop)
+    return [] unless MGQ_MpOverworldSync.in_world?
     return [] unless MGQ_MpCoop::Party.id
 
     MGQ_MpOverworldSync::Peers.all.select { |peer| peer.member && peer.state["map"].to_i == $game_map.map_id }
