@@ -18,7 +18,7 @@ Optional:
 
 - [Discord Rich Presence](https://github.com/Pauliinchen/MGQ-Paradox-Discord-Rich-Presence) 1.5.1 or later: invite friends through Discord instead of sending a join code, show on your profile who you're playing with, and use your Discord name in worlds.
 - [Battle Dialogue](https://github.com/Pauliinchen/MGQ-Paradox-Mod-Collection/tree/main/Battle_Dialogue): shows what characters say in boxes at the screen's sides, so nobody waits for another player to press a key.
-- [Mod Config Remake](https://github.com/Pauliinchen/MGQ-Paradox-Mod-Collection/tree/main/0_ModConfigRemake): bind other keys to the action wheel, the chat and the World overview.
+- [Mod Config Remake](https://github.com/Pauliinchen/MGQ-Paradox-Mod-Collection/tree/main/0_ModConfigRemake): bind other keys to the action wheel, the chat, the World overview and the notification box.
 
 ## Install
 
@@ -103,7 +103,6 @@ The list at the left shows every public world and the hidden worlds you joined: 
 When a battle starts for a party member, whether a random encounter, a wandering monster or a story boss, the party members playing on the same map join it.
 
 - A random encounter waits up to 3 seconds for party members on the same map who are in a menu, typing or on a vehicle: you stand still, they read "<name> is in a battle!" in the notification box for a moment, and the battle starts as soon as they're back on the map. Whoever is still busy after 3 seconds misses it.
-
 - Each of you brings your squad: your share of the Frontline fights, your share of the Backline waits. The companions past it stay out of the battle.
 - Everyone commands their own characters and can swap their own Backline in with *Party*. The party leader's game works it out, with the leader's difficulty and mods, whoever met the enemies: "Asking <leader> to lead the battle..." shows while a member's game hands it over. When the leader isn't playing on that map, is busy or doesn't answer within 6 seconds, the game where the battle started works it out.
 - Everyone fights the enemies of the game that works the battle out, even when a mod there changes them, such as one that doubles them.
@@ -134,7 +133,7 @@ Once the teams are swapped, both battles start together. The host's game works t
 
 ## Rules of every multiplayer battle
 
-Ero offers, Give Up and swapping in the backline are off. Battle messages move on by themselves, so nobody waits for another player.
+Ero offers and Give Up are off, and in PvP battles and duels so is swapping in the Backline. Battle messages move on by themselves, so nobody waits for another player.
 
 ## Connection
 

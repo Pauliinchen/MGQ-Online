@@ -30,21 +30,21 @@ GameScript/Multiplayer/Scripts/       Ruby, the other scripts, in the order Mult
   mp_world_text.rbx                   the text screen for names and passwords
   mp_world_screen.rbx                 the world screen and its windows
   mp_save_export.rbx                  a world's latest save copied into the player's own game
-  mp_battles.rbx                       the rules every multiplayer battle shares
-  mp_battles_coop.rbx                  co-op battles: the party members on the map join a member's battle
-  mp_battles_sync.rbx                  live battles: the host computes, the guest plays back
-  mp_battles_sync_wire.rbx             how a live battle's messages are written
-  mp_battles_sync_recorder.rbx         the host's side of the stream: the battle recorded as events
-  mp_battles_sync_playback.rbx         the guest's side of the stream: the events played
-  mp_battles_sync_live.rbx             the battle hooks, and the steps host and guest differ in
-  mp_balance_pvp.rbx                   the balance of a PvP battle: more HP, limited evasion, immunity and walls
-  mp_battles_pvp.rbx                   PvP battles against a friend's team or a mirror match
-  mp_battles_pvp_mirror.rbx            the mirror match's report
-  mp_battles_pvp_lobby.rbx             the PvP battle screen outside a world
-  mp_battles_duel.rbx                  duels: PvP battles between two players of a world
-  mp_battles_team.rbx                  team duels: two parties against each other
-  mp_world_overview.rbx                the World overview: every player online by place, and their invites
-  mp_notices.rbx                       the notification box at the top left and its key
+  mp_battles.rbx                      the rules every multiplayer battle shares
+  mp_battles_coop.rbx                 co-op battles: the party members on the map join a member's battle
+  mp_battles_sync.rbx                 live battles: the host computes, the guest plays back
+  mp_battles_sync_wire.rbx            how a live battle's messages are written
+  mp_battles_sync_recorder.rbx        the host's side of the stream: the battle recorded as events
+  mp_battles_sync_playback.rbx        the guest's side of the stream: the events played
+  mp_battles_sync_live.rbx            the battle hooks, and the steps host and guest differ in
+  mp_balance_pvp.rbx                  the balance of a PvP battle: more HP, limited evasion, immunity and walls
+  mp_battles_pvp.rbx                  PvP battles against a friend's team or a mirror match
+  mp_battles_pvp_mirror.rbx           the mirror match's report
+  mp_battles_pvp_lobby.rbx            the PvP battle screen outside a world
+  mp_battles_duel.rbx                 duels: PvP battles between two players of a world
+  mp_battles_team.rbx                 team duels: two parties against each other
+  mp_world_overview.rbx               the World overview: every player online by place, and their invites
+  mp_notices.rbx                      the notification box at the top left and its key
 GameScript/Tests/                     Ruby, tests of the scripts outside the game, run.rb runs them all
 MGQParadox.Multiplayer/               C# NativeAOT project -> Multiplayer.dll, and the package
 MGQParadox.Multiplayer.Tests/         xUnit tests of the DLL, 32-bit like it
@@ -152,7 +152,7 @@ dotnet run --project MGQParadox.Multiplayer.Tests
 
 The tests run 32-bit like the game and need the x86 .NET 10 runtime (`C:\Program Files (x86)\dotnet`); with `DOTNET_ROOT` pointing at the x64 install they need `DOTNET_ROOT_X86` pointing at the x86 one.
 
-`GameScript/Tests` covers the scripts outside the game, with stand-ins for the parts of RGSS and the game each script touches: how `Multiplayer.rb` loads the others (`loader_test.rb`), the shared hooks (`hooks_test.rb`), the open world with the wheel, chat, parties and the party's message gate (`overworld_test.rb`), the party's events and story (`coop_events_test.rb`), the party's squads (`coop_squad_test.rb`), duels (`duel_test.rb`), team duels in battle (`team_test.rb`), the World overview (`world_overview_test.rb`), worlds without a password and featured worlds (`world_open_test.rb`), copying a world's save into the player's own game (`save_export_test.rb`), where a new player starts (`start_choice_test.rb`), co-op battles (`battles_coop_test.rb`), the shared battle rules (`battles_test.rb`) and the world running behind menus (`async_test.rb`). Each file runs in a Ruby process of its own, since each brings its own stand-ins; `support.rb` gives them `check` and `load_script`, `world_support.rb` the open world's stand-ins that the overworld, duel and overview tests share, and `battle_support.rb` the live battle's that the co-op and team duel tests share. With Ruby 3.3 or later:
+`GameScript/Tests` covers the scripts outside the game, with stand-ins for the parts of RGSS and the game each script touches: how `Multiplayer.rb` loads the others (`loader_test.rb`), the shared hooks (`hooks_test.rb`), the open world with the wheel, chat, parties and the party's message gate (`overworld_test.rb`), the party's events and story (`coop_events_test.rb`), the party's squads (`coop_squad_test.rb`), duels (`duel_test.rb`), team duels in battle (`team_test.rb`), the World overview (`world_overview_test.rb`), worlds without a password and featured worlds (`world_open_test.rb`), copying a world's save into the player's own game (`save_export_test.rb`), where a new player starts (`start_choice_test.rb`), co-op battles (`battles_coop_test.rb`), the shared battle rules (`battles_test.rb`), the PvP balance (`balance_pvp_test.rb`), the keys the player binds (`hotkeys_test.rb`), the notification box (`notices_test.rb`) and the world running behind menus (`async_test.rb`). Each file runs in a Ruby process of its own, since each brings its own stand-ins; `support.rb` gives them `check` and `load_script`, `world_support.rb` the open world's stand-ins that the overworld, duel and overview tests share, and `battle_support.rb` the live battle's that the co-op and team duel tests share. With Ruby 3.3 or later:
 
 ```powershell
 ruby GameScript/Tests/run.rb        # -v shows every check
@@ -368,7 +368,7 @@ Two games swap their Frontline's builds, then fight the same battle live (see [L
 **Rebuilt characters (`Game_MpActor` in `mp_actors.rbx`, `Opponent`).** Each friend's character is a `Game_MpActor`, a `Game_Actor` subclass made for its actor id and given the build (`rebuild`), with its owner's affection, save counters and battle start switches, the extra accessory slot and enchanted equipment its owner's game allowed, and items from its owner's bag; `Opponent` builds on it for the enemy side. The build: job, race, levels (and the matching EXP), stat growth, skills, abilities, equipment, then the game's own `refresh` and `recover_all`. As a real character it has every trait of its equipment, gems, abilities, job and race: pre-battle spells and the other automatic skills, passives, and the stat boosts only a battle applies. It answers for the enemy side where the game assumes the player's party (audited: the battle scripts' references to `$game_party`, `$game_actors`, `actor?`/`enemy?` and Luka):
 - allies `$game_troop`, enemies `$game_party`, its index in the troop, always a battle member;
 - drawn as a sprite (`use_sprite?`), picture by `Pictures`, placed side by side at the screen's bottom;
-- `luca?` false, so Luka's binding, giving up and temptation stay with the player's Luka;
+- `luca?` false, so Luka's binding, giving up and ero offers stay with the player's Luka;
 - `booster_actor_exist_param` counts its own side, where the game counts `$game_party.members`;
 - the hit effect of a monster (blink) instead of shaking the screen, and on defeat a monster's flash and sound (`:whiten`) instead of its collapse: it stays on the battlefield and turns grey and see-through once that flash ends (`Sprite_Battler#update`: the game marks it `dead?` when the hit lands, before the battle log tells of the defeat, so a `:whiten` effect while dead starts the silhouette; the opacity is set every frame, since every sprite effect makes it opaque again when it starts), since its team can revive it. It stays dead to the game, so every target choice (`Game_Unit#random_target`, the enemy window, all-enemy scopes) skips it as it skips dead monsters;
 - the monster data the battle's code reads of the enemy side (`enemy`, `enemy_id`, `friend`, `lose_event_id`, `escape_level`, `escape_not_count?`, `steal_list`, `boss?`, `hide_name`, `lefx`), with no rewards or recruiting; any other method only monsters have is answered by the monster stand-in (`method_missing`) and logged once, so a call the audit missed does not end the game mid-battle;

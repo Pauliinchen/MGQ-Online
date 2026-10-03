@@ -3,10 +3,10 @@ Monster Girl Quest! Online
 An unofficial multiplayer mod for Monster Girl Quest! Paradox RPG.
 
 Play Monster Girl Quest! Paradox RPG together with friends over the
-internet, with nothing to set up in your router. So far: PvP battles, in
-which your Frontline fights your friend's Frontline live, each of you
-commanding your own team; and worlds, which up to 32 players enter and
-see each other walk the same maps.
+internet, with nothing to set up in your router. Worlds: up to 32
+players on the same maps, who form parties to play the story together
+and fight co-op battles. PvP battles: your Frontline against a friend's,
+live, each of you commanding your own team.
 
 
 REQUIREMENT
@@ -32,7 +32,8 @@ Optional, but recommended:
   shows what characters say in boxes at the screen's sides, so neither of
   you waits for the other to press a key.
 - Mod Config Remake (github.com/Pauliinchen/MGQ-Paradox-Mod-Collection):
-  bind other keys to the action wheel, the chat and the World overview.
+  bind other keys to the action wheel, the chat, the World overview and
+  the notification box.
 
 
 INSTALL
@@ -83,9 +84,10 @@ invite at the top left. This README names these default keys.
 
 With Mod Config Remake installed, you can bind others: Mod Config,
 Monster Girl Quest! Online, confirm Action Wheel, Chat, World Overview,
-Accept Notification or Decline Notification, then press the new key (Esc keeps the old one). Keys the game
-uses itself, such as the arrows, Enter, Esc, Z, X, Shift, A, S, D, Q and
-W, cannot be bound, and neither can a key another option already has.
+Accept Notification or Decline Notification, then press the new key (Esc
+keeps the old one). Keys the game uses itself, such as the arrows,
+Enter, Esc, Z, X, Shift, A, S, D, Q and W, cannot be bound, and neither
+can a key another option already has.
 Your keys are kept in Patch\Multiplayer\Player.ini, so they hold in
 every save and every world. The texts in the game name the keys you
 bound.
@@ -109,6 +111,15 @@ silhouette, since their team can still revive it; it cannot be targeted
 meanwhile. Nothing carries over: no EXP, gold or items, no defeat scene,
 and your save, the Library and affection are put back exactly as they
 were before.
+
+PvP balance: skills deal what they deal in a monster's hands, and every
+character has 4 times its max HP. One action takes at most 60% of a
+character's HP however strong it is, so no team falls to the first hit.
+A character that takes no damage at all, as under Quantization, still
+takes a quarter of a hit. Evasion and reflection stop at 75%, an element
+a character nullifies or absorbs still deals a quarter of the damage,
+and a defense wall takes a quarter of max HP off a hit instead of all of
+it.
 
 Press F11 on the map to open the PvP battle screen.
 
@@ -269,22 +280,22 @@ mods, whoever met the enemies; when the leader is not playing on that
 map, is busy or does not answer within 6 seconds, the game where the
 battle started does. Everyone fights the enemies of the game that works
 it out, even when a mod there changes them, such as one that doubles
-them. Each of you can try
-to escape; whoever gets away leaves the battle, and the one
-left alone fights on with their own full team. Each of you gets the full
-EXP, gold and your own item drops, or your own defeat. Chests are everyone's own: when
-a party member opens one, everyone in the party who has not looted it
-yet gets the same items. Everyone goes where they like; only a story
+them. Each of you can try to escape; whoever gets away leaves the
+battle, and the one left alone fights on with their own full team. Each
+of you gets the full EXP, gold and your own item drops, or your own
+defeat. Chests are everyone's own: when a party member opens one,
+everyone in the party who has not looted it yet gets the same items. Everyone goes where they like; only a story
 scene brings the party together. A story scene the player who made the
 party starts waits until every member stands next to them, 30 seconds
 at most: members get 5 seconds to finish what they do, then are
 brought over, wherever they are (after a battle or a menu once it is
 over; no random encounter starts for them meanwhile), and stand still
-while the scene plays. After 30 seconds it starts
-without those who have not come, and they play on where they are. The story itself plays in their game: when you start a story event, it is
-handed to them, and everyone on the map sees its dialogue in their own
-message window, which moves on when that player moves on; only they can
-continue or close it. Conversations, shops and the job change menu stay
+while the scene plays. After 30 seconds it starts without those who have
+not come, and they play on where they are. The story itself plays in the
+game of the player who made the party: when you start a story event, it
+is handed to them, and everyone on the map sees its dialogue in their
+own message window, which moves on when that player moves on; only they
+can continue or close it. Conversations, shops and the job change menu stay
 your own, and so do the companions, merchants, inn and maids of the
 Pocket Castle.
 
@@ -292,14 +303,18 @@ Pocket Castle.
 CONNECTION
 ----------
 Your games meet at the mod's relay, a small server that passes their data
-on. Both only connect out to it, which works on any internet connection,
-so neither of you has to open a port, change a router setting or install
-anything.
+on. Every game only connects out to it, which works on any internet
+connection, so nobody has to open a port, change a router setting or
+install anything.
 
 - Private: everything your games send each other is encrypted with a key
-  from the join code. The relay never gets that key: it passes on data it
-  cannot read and keeps nothing.
-- No addresses: the join code holds a random token and the relay's name,
+  only the players have. The relay never gets it: it passes on data it
+  cannot read.
+- What the relay keeps: the list of worlds, with each world's name, its
+  players' names and who is online; hidden worlds are listed only for
+  their players. A world's password never reaches it, and a starting
+  save arrives encrypted.
+- No addresses: a join code holds a random token and the relay's name,
   so your friend's game never learns your IP address.
 
 
