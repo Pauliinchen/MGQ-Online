@@ -4,6 +4,7 @@
 #  Changelog:
 #      Paulinchen  2026-10-03: Gave the characters a battle start and a turn start, which set their hit count
 #                            - Let the map's player refresh, telling which leader it shows
+#                            - Gave the map's player a random encounter and a menu call, and added the title screen
 #                            - Gave the characters skills and the database skills and items, which a guest's commands are checked against
 #      Paulinchen  2026-10-02: Gave the rebuilt character stand-in its owner's seat and place
 #      Paulinchen  2026-10-01: Created
@@ -145,7 +146,11 @@ class Game_Player
   def transfer?; false; end
   def moving?; @moving; end
   def refresh; @leader_shown = $game_party.battle_members.first; end
+  def movable?; true; end
+  # The game's random encounter: the troop set up once the steps ran out.
+  def encounter; return false unless $encounter_troop; BattleManager.setup($encounter_troop); $encounter_troop = nil; true; end
 end
+class Scene_Title; def start; end; end
 class Game_Switches; def initialize; @d = {}; end; def [](i); @d[i] || false; end; def []=(i, v); @d[i] = v; end; end
 System = Struct.new(:switches)
 $data_system = System.new(Array.new(100, ""))
@@ -185,7 +190,7 @@ class Window_BattleStatus
   attr_accessor :index
   def current_item_enabled?; :original; end
 end
-class Scene_Map; def update_scene; end; def scene_changing?; false; end; end
+class Scene_Map; def update_scene; end; def scene_changing?; false; end; def update_call_menu; @menu_calling = true; end; attr_reader :menu_calling; end
 class Window_Base; end
 module Input; def self.trigger?(*); false; end; end
 

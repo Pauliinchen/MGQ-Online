@@ -6,6 +6,7 @@
 #                            - Checked that the map shows the player's own leader again after the battle
 #                            - Checked that the party's leader leads a member's battle, and that the member hosts once the leader refuses or stays silent
 #                            - Checked that invites during a battle of the player's own or older than three seconds are turned down
+#                            - Checked that a random encounter waits up to three seconds for busy members on the map
 #                            - Checked that a guest's command the character may not give is left out
 #      Paulinchen  2026-10-02: Checked that a player who joined and left the world before the roster does not stop the battle
 #                            - Ended the guest's battle through guest_end
@@ -398,4 +399,44 @@ MGQ_MpBattlesCoop.take(mate, invite_of.call("i2"))
 MGQ_MpBattlesCoop.instance_variable_get(:@invite)[:at] -= 60
 MGQ_MpBattlesCoop.on_map
 check("an invite that waited past three seconds is turned down, not joined", [$sent.map { |_, text| fields_of(text)["battle"] }, MGQ_MpBattlesSync.role], [["decline"], nil])
+
+# A random encounter waits for the party members on the map who are busy.
+$setup.clear
+$sent.clear
+$called = nil
+mate.state["scene"] = "menu"
+map = Scene_Map.new
+$encounter_troop = 70
+check("an encounter with a member in a menu on the map waits", [$game_player.encounter, MGQ_MpBattlesCoop.holding?, $setup], [false, true, [[70, true, false]]])
+check("and tells that member", $sent.map { |seat, text| [seat, fields_of(text)["coop"], fields_of(text)["map"]] }, [[2, "soon", "5"]])
+map.update_call_menu
+check("the player stands still and opens no menu meanwhile", [$game_player.movable?, map.menu_calling], [false, false])
+check("nor meets another encounter", [($encounter_troop = 71) && $game_player.encounter, $setup.size], [false, 1])
+$encounter_troop = nil
+MGQ_MpBattlesCoop.on_map
+check("it waits while the member stays busy", [MGQ_MpBattlesCoop.holding?, $called], [true, nil])
+mate.state["scene"] = "map"
+$sent.clear
+MGQ_MpBattlesCoop.on_map
+invite = $sent.map { |seat, text| [seat, fields_of(text)] }.find { |_, f| f["coop"] == "invite" }
+check("once the member is back on the map, the battle starts and invites them", [MGQ_MpBattlesCoop.holding?, $called, MGQ_MpBattlesSync.role, invite && invite[1]["troop"]],
+      [false, Scene_Battle, :host, "70"])
+MGQ_MpBattlesCoop.ended
+
+$called = nil
+mate.state["scene"] = "menu"
+$encounter_troop = 72
+$game_player.encounter
+MGQ_MpBattlesCoop::HOLD_FRAMES.times { MGQ_MpBattlesCoop.on_map }
+check("after three seconds it starts without a member who stayed busy", [MGQ_MpBattlesCoop.holding?, $called, MGQ_MpBattlesSync.role], [false, Scene_Battle, nil])
+
+$encounter_troop = 73
+$game_player.encounter
+MGQ_MpBattlesCoop.drop_hold
+check("a reset forgets a held encounter", [MGQ_MpBattlesCoop.holding?, $game_player.movable?], [false, true])
+
+mate.state["scene"] = "battle"
+$encounter_troop = 74
+check("a member in a battle of their own is not waited for", [$game_player.encounter, MGQ_MpBattlesCoop.holding?], [true, false])
+mate.state["scene"] = "map"
 $scene_now = scene

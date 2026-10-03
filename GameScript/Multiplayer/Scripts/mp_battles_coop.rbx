@@ -6,6 +6,7 @@
 #                            - Showed the player's own leader and followers on the map again once the co-op party is forgotten
 #                            - Let the party's leader host a battle a member started, so the leader's game and mods decide it
 #                            - Turned down an invite that came during a battle of the player's own, and one older than three seconds
+#                            - Held a random encounter up to three seconds for party members on the map who are busy, telling them
 #      Paulinchen  2026-10-02: Started a co-op battle when a player who joined it left the world before the roster went out
 #                            - Followed the map and installed the late hooks through mp_hooks.rbx
 #                            - Turned an invite down through MGQ_MpBattlesSync.tell, and took the seat, place and Luka from Game_MpActor
@@ -49,6 +50,10 @@ module MGQ_MpBattlesCoop
   # Frames a member's battle waits for the party's leader to lead it, six seconds: longer than the
   # leader waits to be free, so a leader who takes it never finds the member gone.
   LEADER_FRAMES = 360
+
+  # Frames a random encounter waits for the party members on the map who are busy, such as in a
+  # menu, to come back to it and join, three seconds.
+  HOLD_FRAMES = 180
 
   # What another player does, by their state's scene, while they may be invited: walking the map,
   # reading an event's messages, such as the leader's story, or on the map with their window in the
@@ -127,6 +132,7 @@ module MGQ_MpBattlesCoop
   # @param can_lose [Boolean] Whether losing goes on without a game over.
   def self.offer(troop_id, can_escape, can_lose)
     return if @joining || !host_possible?
+    return hold(troop_id, can_escape, can_lose) if @encountering && !busy_members.empty?
 
     @requester, battle_id = @leading
     leader = MGQ_MpCoop::Party.leader
@@ -239,6 +245,83 @@ module MGQ_MpBattlesCoop
     MGQ_MpCoop::Party.members.select { |peer| peer.state["map"].to_i == $game_map.map_id && FREE_SCENES.include?(peer.state["scene"]) }
   end
 
+  # Lists the party members on the player's map who could join once back on it: in a menu, typing
+  # or on a vehicle, but not in a battle of their own.
+  #
+  # @return [Array<MGQ_MpOverworldSync::Peers::Peer>] The members.
+  def self.busy_members
+    MGQ_MpCoop::Party.members.select do |peer|
+      peer.state["map"].to_i == $game_map.map_id && !FREE_SCENES.include?(peer.state["scene"]) && peer.state["scene"] != "battle"
+    end
+  end
+
+  # Runs the game's random encounter, which holds its battle while party members on the map are
+  # busy (see hold). Called by Game_Player#encounter.
+  #
+  # @yieldreturn [Boolean] Whether the game's encounter starts a battle.
+  # @return [Boolean] Whether the battle starts now.
+  def self.encounter
+    return false if @hold
+
+    @encountering = true
+    starts = yield
+    starts && !@hold
+  ensure
+    @encountering = false
+  end
+
+  # Reports whether a random encounter waits for busy party members, while the player stands still.
+  #
+  # @return [Boolean] Whether one does.
+  def self.holding?
+    !@hold.nil?
+  end
+
+  # Forgets a held encounter without starting it.
+  def self.drop_hold
+    @hold = nil
+    MGQ_MpNotices.drop(:hold) if defined?(MGQ_MpNotices)
+  end
+
+  # Holds a random encounter the game just set up for up to HOLD_FRAMES, telling the busy party
+  # members on the map, so they can come back to the map and join; see tick_hold.
+  #
+  # @param troop_id [Integer] The troop.
+  # @param can_escape [Boolean] Whether the party may escape.
+  # @param can_lose [Boolean] Whether losing goes on without a game over.
+  def self.hold(troop_id, can_escape, can_lose)
+    busy = busy_members
+    @hold = { :troop => troop_id, :escape => can_escape, :lose => can_lose, :frames => HOLD_FRAMES, :seats => busy.map(&:seat) }
+    busy.each { |peer| tell(peer.seat, "soon", "map" => $game_map.map_id) }
+    names = busy.map { |peer| peer.state["name"].to_s }.join(", ")
+    MGQ_MpNotices.message(:hold, "Enemies! Waiting for #{names}", HOLD_FRAMES) if defined?(MGQ_MpNotices)
+    log("held an encounter with troop #{troop_id} for #{names}")
+  end
+
+  # Starts the held encounter once every busy member came back to the map or HOLD_FRAMES passed,
+  # inviting whoever plays on the map then. An event that started meanwhile drops it. Called by
+  # the map every frame.
+  def self.tick_hold
+    hold = @hold
+    hold[:frames] -= 1
+    waiting = busy_members.select { |peer| hold[:seats].include?(peer.seat) }
+    return unless waiting.empty? || hold[:frames] <= 0
+
+    drop_hold
+    return log("dropped the held encounter for an event") if $game_map.interpreter.running?
+
+    offer(hold[:troop], hold[:escape], hold[:lose])
+    SceneManager.call(Scene_Battle)
+  end
+
+  # Tells the player for a moment that a party member on their map met enemies, whose battle waits
+  # for them to come back to the map.
+  #
+  # @param peer [MGQ_MpOverworldSync::Peers::Peer] The member.
+  def self.take_soon(peer)
+    MGQ_MpNotices.message([:soon, peer.seat], "#{peer.state['name']} is in a battle!", HOLD_FRAMES) if defined?(MGQ_MpNotices)
+  end
+
   # As host, waits for the invited members to join or turn the battle down, then sends everyone the
   # party and builds it. Without anyone joining, the battle is the host's own. Called at the battle's start.
   #
@@ -311,6 +394,7 @@ module MGQ_MpBattlesCoop
     when "invite" then take_invite(peer, message)
     when "lead" then @request = { :peer => peer, :message => message, :at => Time.now }
     when "no_lead" then answer_of(peer, message, :refused)
+    when "soon" then take_soon(peer)
     end
   rescue => e
     log("taking a co-op message failed: #{e.class}: #{e.message}")
@@ -353,6 +437,8 @@ module MGQ_MpBattlesCoop
   # invite once the player is free on the map, or turns it down when they stay busy. Called by the
   # map every frame, so the battle starts as an encounter would.
   def self.on_map
+    return tick_hold if @hold
+
     serve_request if @request
     return unless @invite
 
@@ -990,6 +1076,14 @@ rescue => e
   MGQ_MpBattlesCoop.log("hooks FAILED: #{e.class}: #{e.message}")
 end
 
+begin
+  # Before the title screen starts, an encounter a reset interrupted is forgotten, so it never
+  # starts on the map of the save loaded next.
+  MGQ_MpHooks.before(Scene_Title, :start, "mp_battles_coop") { MGQ_MpBattlesCoop.drop_hold }
+rescue => e
+  MGQ_MpBattlesCoop.log("title hook FAILED: #{e.class}: #{e.message}")
+end
+
 # Game hooks of this script alone.
 #
 # Each wraps a game method: the original runs first unless said otherwise, and the mod's part never
@@ -1026,5 +1120,40 @@ if MGQ_MpBattlesCoop.hookable?
     end
   rescue => e
     MGQ_MpBattlesCoop.log("battle end hook FAILED: #{e.class}: #{e.message}")
+  end
+
+  begin
+    class Game_Player
+      alias mgq_mp_battles_coop_encounter encounter
+      alias mgq_mp_battles_coop_movable? movable?
+
+      # Starts a random encounter when its steps ran out, held while party members on the map are
+      # busy (see MGQ_MpBattlesCoop.hold).
+      #
+      # @return [Boolean] Whether a battle starts now.
+      def encounter
+        MGQ_MpBattlesCoop.encounter { mgq_mp_battles_coop_encounter }
+      end
+
+      # Reports whether the player may move: not while their encounter waits for the party.
+      #
+      # @return [Boolean] Whether they may.
+      def movable?
+        mgq_mp_battles_coop_movable? && !MGQ_MpBattlesCoop.holding?
+      end
+    end
+
+    class Scene_Map
+      alias mgq_mp_battles_coop_update_call_menu update_call_menu
+
+      # Opens the menu when asked, but not while the player's encounter waits for the party.
+      def update_call_menu
+        return @menu_calling = false if MGQ_MpBattlesCoop.holding?
+
+        mgq_mp_battles_coop_update_call_menu
+      end
+    end
+  rescue => e
+    MGQ_MpBattlesCoop.log("encounter hooks FAILED: #{e.class}: #{e.message}")
   end
 end
