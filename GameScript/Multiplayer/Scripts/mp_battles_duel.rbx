@@ -3,6 +3,8 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-03: Took a call to a team duel only from the challenger the player accepted or through the leader of the player's party
+#                            - Read the bound keys through MGQ_MpHotkeys, renamed from MGQ_MpKeys
+#                            - Told the challenger that a player declined, whom the challenge then stops naming
 #      Paulinchen  2026-10-02: Named the key the player bound to the action wheel in the challenge line above a ghost
 #                            - Followed the map through mp_hooks.rbx
 #                            - Sent the battle's break-off and leaving through MGQ_MpBattlesSync.tell
@@ -39,6 +41,7 @@ module MGQ_MpBattlesDuel
     "team" => "could not read your team",
     "off" => "called the duel off",
     "late" => "started the duel without you",
+    "no" => "declined your challenge",
   }
 
   @challenge = MGQ_MpCoop::Invite.new
@@ -151,7 +154,7 @@ module MGQ_MpBattlesDuel
   # @param peer [MGQ_MpOverworldSync::Peers::Peer] The ghost's player.
   # @return [Array, nil] The text and its color, nil for none.
   def self.label_line(peer)
-    challenged_by?(peer) ? ["Challenges you to a duel (#{MGQ_MpKeys.label(:wheel)})", CHALLENGE_COLOR] : nil
+    challenged_by?(peer) ? ["Challenges you to a duel (#{MGQ_MpHotkeys.label(:wheel)})", CHALLENGE_COLOR] : nil
   end
 
   # Accepts a challenge: sends the challenger the player's team, and waits for theirs.
@@ -243,6 +246,8 @@ module MGQ_MpBattlesDuel
   # @param reason [String] A key of REASONS.
   def self.take_decline(peer, reason)
     @accepted = nil if @accepted && @accepted[:seat] == peer.seat
+    # A player who declined the challenge is no longer named by it.
+    @challenge.drop(peer.state["id"]) if reason == "no"
     notice("#{peer.state['name']} #{REASONS.fetch(reason, 'cannot duel now')}.")
   end
 

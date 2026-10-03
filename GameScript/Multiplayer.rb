@@ -2,6 +2,8 @@
 #  Multiplayer.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-03: Loaded mp_notices.rbx last
+#                            - Loaded mp_hotkeys.rbx, renamed from mp_keys.rbx
 #      Paulinchen  2026-10-02: Loaded mp_keys.rbx after mp_hooks.rbx, and kept other settings in Player.ini besides the name
 #                            - Loaded mp_save_export.rbx after mp_world.rbx
 #                            - Loaded mp_hooks.rbx first and followed Graphics.update and SceneManager.run through it
@@ -53,11 +55,11 @@ module MGQ_Multiplayer
   # them register with. The battle scripts install their battle hooks once the game runs, the last
   # loaded first, so their order decides how those hooks wrap each other.
   SCRIPTS = %w[
-    mp_hooks mp_keys mp_actors mp_async mp_overworld_sync mp_actions mp_chat mp_overworld
+    mp_hooks mp_hotkeys mp_actors mp_async mp_overworld_sync mp_actions mp_chat mp_overworld
     mp_coop mp_coop_squad mp_coop_events mp_coop_npcs mp_coop_story
     mp_save_distribution mp_world mp_save_export
     mp_battles mp_battles_coop mp_battles_sync mp_battles_pvp mp_battles_duel mp_battles_team
-    mp_world_overview
+    mp_world_overview mp_notices
   ]
 
   # Extension of the scripts, which the mod loader skips, since only this script may load them.

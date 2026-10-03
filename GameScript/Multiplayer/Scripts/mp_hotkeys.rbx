@@ -1,17 +1,20 @@
 #----------------------------------------------------------------
-#  mp_keys.rbx
+#  mp_hotkeys.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-03: Added the keys that accept and decline the first invite of the notification box
+#                            - Renamed from mp_keys.rbx, with the module MGQ_MpHotkeys
 #      Paulinchen  2026-10-02: Created
 #
 #----------------------------------------------------------------
 
-# The keys the player binds: what opens the action wheel, the chat and the World overview. Each is
+# The keys the player binds: what opens the action wheel, the chat and the World overview, and what
+# accepts and declines the first invite of the notification box. Each is
 # a key binding in Mod Config Remake when it is installed, and keeps its key in
 # Patch/Multiplayer/Player.ini, so it holds in every save and every world.
 #
 # It must never interrupt the game, so every entry point rescues.
-module MGQ_MpKeys
+module MGQ_MpHotkeys
   # A key the player binds.
   #
   # @!attribute setting [String] Its setting in Player.ini.
@@ -30,6 +33,10 @@ module MGQ_MpKeys
                          "The key that opens the chat box of a world, on the map and in battles."),
     :overview => Binding.new("key_overview", 0x7A, :mp_key_overview, "World Overview",
                              "The key that opens and closes the World overview in a world, and the PvP battle screen outside one."),
+    :accept => Binding.new("key_accept", 0x59, :mp_key_accept, "Accept Notification",
+                           "The key that accepts the first invite or challenge in the notification box at the top left, in a world."),
+    :decline => Binding.new("key_decline", 0x4E, :mp_key_decline, "Decline Notification",
+                            "The key that declines the first invite or challenge in the notification box at the top left, in a world."),
   }
 
   # Highest Windows key code.
@@ -108,7 +115,7 @@ module MGQ_MpKeys
 end
 
 begin
-  MGQ_MpKeys.register
+  MGQ_MpHotkeys.register
 rescue => e
-  MGQ_MpKeys.log("options FAILED: #{e.class}: #{e.message}")
+  MGQ_MpHotkeys.log("options FAILED: #{e.class}: #{e.message}")
 end

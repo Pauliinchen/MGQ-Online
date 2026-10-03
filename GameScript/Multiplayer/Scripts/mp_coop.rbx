@@ -3,7 +3,10 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-03: Counted only the players the party's leader admitted as its members, whom the leader's invite reached
+#                            - Read the bound keys through MGQ_MpHotkeys, renamed from MGQ_MpKeys
 #                            - Listed an event's pages, for the party's chests
+#                            - Let a party invite to a player named from afar stand a minute instead of fifteen seconds
+#                            - Declined a party invite, telling the inviter, whose invite stops naming the player
 #      Paulinchen  2026-10-02: Named the key the player bound to the action wheel in the invite line above a ghost
 #                            - Told whether the player plays in a party with someone else, for every party script
 #                            - Told which page an event shows, for the party's events and NPCs
@@ -30,6 +33,10 @@ module MGQ_MpCoop
 
   # Frames an invite stands, fifteen seconds at 60 frames per second.
   INVITE_FRAMES = 900
+
+  # Frames an invite to a player named from afar stands, a minute: they first have to notice it in
+  # the notification box (mp_notices.rbx) or the World overview.
+  NAMED_INVITE_FRAMES = 3600
 
   # Players a party holds at most, one per place of the Frontline they share.
   MAX_PLAYERS = 4
@@ -185,7 +192,7 @@ module MGQ_MpCoop
   # @param peer [MGQ_MpOverworldSync::Peers::Peer] The ghost's player.
   # @return [Array, nil] The text and its color, nil for none.
   def self.label_line(peer)
-    peer.state["invite"] == "1" && !peer.member ? ["Invites to a party (#{MGQ_MpKeys.label(:wheel)})", INVITE_COLOR] : nil
+    peer.state["invite"] == "1" && !peer.member ? ["Invites to a party (#{MGQ_MpHotkeys.label(:wheel)})", INVITE_COLOR] : nil
   end
 
   # A standing invite of the player: to the players nearby, and to players anywhere named by their
@@ -232,19 +239,27 @@ module MGQ_MpCoop
       inviting? && (Party.near?(state) || @targets.include?(state["id"].to_s))
     end
 
-    # Invites for INVITE_FRAMES from now, keeping the targets of an invite that stands.
+    # Invites for INVITE_FRAMES from now, or NAMED_INVITE_FRAMES for a player named, keeping the
+    # targets of an invite that stands and the longer time left.
     #
     # @param target_id [String, nil] The id of a player the invite reaches wherever they are.
     def invite(target_id = nil)
       @targets = [] unless inviting?
       @targets << target_id.to_s if target_id && !@targets.include?(target_id.to_s)
-      @frames = INVITE_FRAMES
+      @frames = [@frames, target_id ? NAMED_INVITE_FRAMES : INVITE_FRAMES].max
     end
 
     # Stops inviting.
     def stop
       @frames = 0
       @targets = []
+    end
+
+    # Stops naming a player, as once they declined; the invite still reaches them while they stand near.
+    #
+    # @param target_id [String] Their id.
+    def drop(target_id)
+      @targets.delete(target_id.to_s)
     end
 
     # Lets the invite run out. Called every frame.
@@ -427,6 +442,23 @@ module MGQ_MpCoop
       MGQ_MpCoop.peers.each { |peer| peer.member = member?(peer.state) }
     end
 
+    # Declines the invite of a player, telling them.
+    #
+    # @param inviter [MGQ_MpOverworldSync::Peers::Peer] The player.
+    def self.decline(inviter)
+      MGQ_MpOverworldSync::Link.send_to(inviter.seat, MGQ_MpOverworldSync::Me.encode("party_decline" => 1))
+    end
+
+    # Notes that a player the invite reaches declined it: the invite stops naming them.
+    #
+    # @param peer [MGQ_MpOverworldSync::Peers::Peer] The player.
+    def self.declined_by(peer)
+      return unless @invite.covers?(peer.state)
+
+      @invite.drop(peer.state["id"])
+      MGQ_MpCoop.notice("#{peer.state['name']} declined your party invite.")
+    end
+
     # Leaves the party.
     def self.leave
       reset
@@ -589,6 +621,8 @@ begin
   MGQ_MpOverworldSync.on_leave { |peer| MGQ_MpCoop::Party.observe_leaving(peer) }
   MGQ_MpOverworldSync.label_line { |peer| MGQ_MpCoop.label_line(peer) }
   MGQ_MpCoop.route("kick") { |peer, message| MGQ_MpCoop::Party.removed_by(peer, message["kick"]) }
+  # A player declines from outside the party, so their answer passes no party gate.
+  MGQ_MpOverworldSync.route("party_decline") { |peer, _message| MGQ_MpCoop::Party.declined_by(peer) if peer }
 rescue => e
   MGQ_MpCoop.log("overworld sync FAILED: #{e.class}: #{e.message}")
 end

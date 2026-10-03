@@ -2,13 +2,14 @@
 #  world_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-03: Loaded mp_hotkeys.rbx, renamed from mp_keys.rbx
 #      Paulinchen  2026-10-02: Loaded mp_keys.rbx, with Player.ini's settings kept in $player_ini
 #      Paulinchen  2026-10-01: Created
 #
 #----------------------------------------------------------------
 
 # What the tests of the open world share: stand-ins for the game and the DLL, the scripts every
-# one of them builds on (mp_keys.rbx, mp_overworld_sync.rbx, mp_actions.rbx, mp_chat.rbx,
+# one of them builds on (mp_hotkeys.rbx, mp_overworld_sync.rbx, mp_actions.rbx, mp_chat.rbx,
 # mp_overworld.rbx, mp_coop.rbx and mp_coop_squad.rbx), helpers that feed the world room, and a player standing on
 # map 5 of an open world.
 
@@ -103,7 +104,7 @@ end
 module MGQ_MpWorld; def self.open?; $open; end; end
 $player_ini = {}
 
-load_script "mp_keys"
+load_script "mp_hotkeys"
 load_script "mp_overworld_sync"
 load_script "mp_actions"
 load_script "mp_chat"

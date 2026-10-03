@@ -2,6 +2,7 @@
 #  mp_actions.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-03: Read the bound keys through MGQ_MpHotkeys, renamed from MGQ_MpKeys
 #      Paulinchen  2026-10-02: Opened the wheel with the key the player bound, and named the bound keys of the chat and the World overview
 #                            - Followed the map and its sprites through mp_hooks.rbx
 #                            - Took a choice through MGQ_MpActions.choose, which the World overview shares
@@ -27,7 +28,7 @@
 #
 #----------------------------------------------------------------
 
-# The action wheel on the map: its key (B unless the player binds another, see mp_keys.rbx) opens it
+# The action wheel on the map: its key (B unless the player binds another, see mp_hotkeys.rbx) opens it
 # around the player, its party choices go to mp_coop.rbx and its chat choice to mp_chat.rbx. It
 # builds on mp_overworld_sync.rbx, which knows the other players.
 #
@@ -126,7 +127,7 @@ module MGQ_MpActions
       :UP => join_or_invite_option,
       :RIGHT => duel_option,
       :DOWN => leave_option,
-      :LEFT => Option.new("Chat (#{MGQ_MpKeys.label(:chat)})", MGQ_MpChat.available? ? lambda { MGQ_MpChat.start_typing } : nil, "Chat needs the keyboard, which cannot reach the game."),
+      :LEFT => Option.new("Chat (#{MGQ_MpHotkeys.label(:chat)})", MGQ_MpChat.available? ? lambda { MGQ_MpChat.start_typing } : nil, "Chat needs the keyboard, which cannot reach the game."),
     }
   end
 
@@ -135,7 +136,7 @@ module MGQ_MpActions
   # @return [Option] The choice.
   def self.overview_option
     overview = defined?(MGQ_MpWorldOverview) ? MGQ_MpWorldOverview : nil
-    Option.new("World (#{MGQ_MpKeys.label(:overview)})", overview ? lambda { overview.open } : nil, "The World overview is missing.", WORLD_ICON)
+    Option.new("World (#{MGQ_MpHotkeys.label(:overview)})", overview ? lambda { overview.open } : nil, "The World overview is missing.", WORLD_ICON)
   end
 
   # The wheel's duel choice: accepting the challenge of a player nearby, else challenging the
@@ -186,7 +187,7 @@ module MGQ_MpActions
   # Opens, steers or closes the action wheel on the map, but leaves the keys to the chat box while
   # it is open. Called by the map every frame, so a press of the key is seen once.
   def self.on_map
-    wheel_key = MGQ_MpKeys.pressed?(:wheel)
+    wheel_key = MGQ_MpHotkeys.pressed?(:wheel)
     unless in_world? && !$game_map.interpreter.running? && !$game_message.busy?
       Wheel.close
       return

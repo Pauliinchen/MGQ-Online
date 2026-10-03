@@ -2,6 +2,7 @@
 #  mp_battles_pvp.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-03: Read the bound keys through MGQ_MpHotkeys, renamed from MGQ_MpKeys
 #      Paulinchen  2026-10-02: Opened the PvP battle screen with the key the player bound to the World overview
 #                            - Followed the map and the title screen through mp_hooks.rbx
 #                            - Took the Frontline's size from mp_coop_squad.rbx, and the seat, place and Luka from Game_MpActor
@@ -90,7 +91,7 @@ module MGQ_MpBattlesPvp
     return if defined?(MGQ_MpWorld) && MGQ_MpWorld.open?
 
     if MGQ_Multiplayer.available? && MGQ_Multiplayer.outdated?
-      pressed = MGQ_MpKeys.pressed?(:overview)
+      pressed = MGQ_MpHotkeys.pressed?(:overview)
       return if $game_map.interpreter.running? || $game_player.moving?
 
       $game_message.add(MGQ_Multiplayer::UPDATE_MESSAGE) if pressed
@@ -99,7 +100,7 @@ module MGQ_MpBattlesPvp
 
     return unless available?
 
-    pressed = MGQ_MpKeys.pressed?(:overview)
+    pressed = MGQ_MpHotkeys.pressed?(:overview)
     return if $game_map.interpreter.running? || $game_player.moving?
 
     if pressed
@@ -1206,7 +1207,7 @@ module MGQ_MpBattlesPvp
   end
 end
 
-# The PvP battle screen, opened from the map with the World overview's key (MGQ_MpKeys) or when the map
+# The PvP battle screen, opened from the map with the World overview's key (MGQ_MpHotkeys) or when the map
 # joins the host of a Discord invite.
 #
 # Named without "Battle", which the Discord mod reads as being in a fight.

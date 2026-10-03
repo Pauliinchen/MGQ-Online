@@ -18,6 +18,7 @@
     <File Path="GameScript/Multiplayer/Scripts/mp_coop_npcs.rbx" />
     <File Path="GameScript/Multiplayer/Scripts/mp_coop_squad.rbx" />
     <File Path="GameScript/Multiplayer/Scripts/mp_coop_story.rbx" />
+    <File Path="GameScript/Multiplayer/Scripts/mp_notices.rbx" />
     <File Path="GameScript/Multiplayer/Scripts/mp_overworld.rbx" />
     <File Path="GameScript/Multiplayer/Scripts/mp_overworld_sync.rbx" />
     <File Path="GameScript/Multiplayer/Scripts/mp_save_distribution.rbx" />
@@ -33,6 +34,7 @@
     <File Path="GameScript/Tests/coop_squad_test.rb" />
     <File Path="GameScript/Tests/duel_test.rb" />
     <File Path="GameScript/Tests/loader_test.rb" />
+    <File Path="GameScript/Tests/notices_test.rb" />
     <File Path="GameScript/Tests/overworld_test.rb" />
     <File Path="GameScript/Tests/run.rb" />
     <File Path="GameScript/Tests/start_choice_test.rb" />

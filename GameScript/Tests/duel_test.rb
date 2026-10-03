@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-03: Checked that a call to a team duel is taken only from the challenger the player accepted or through their party's leader
+#                            - Checked that a player who declines a challenge is no longer named by it
 #      Paulinchen  2026-10-02: Gave the live battle stand-in tell
 #      Paulinchen  2026-10-01: Created
 #
@@ -110,6 +111,11 @@ $inbox << entry("message", 2, told(friend))
 MGQ_MpOverworldSync.tick
 duel.invite("friend")
 check("a challenge names its target", MGQ_MpOverworldSync::Me.current["challenge_to"], "friend")
+$inbox << entry("message", 2, "duel=decline\nreason=no\n\n")
+MGQ_MpOverworldSync.tick
+check("a player who declines is no longer named, and the challenger hears it",
+      [duel.targets, MGQ_MpOverworldSync::Status.lines.last], [[], "Friend declined your challenge."])
+duel.invite("friend")
 $sent.clear
 $inbox << entry("message", 2, "duel=accept\n\ngame-1\tteam-friend")
 MGQ_MpOverworldSync.tick

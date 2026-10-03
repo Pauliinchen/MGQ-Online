@@ -2,6 +2,7 @@
 #  mp_world_overview.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-03: Read the bound keys through MGQ_MpHotkeys, renamed from MGQ_MpKeys
 #      Paulinchen  2026-10-02: Opened and closed the overview with the key the player bound, which its hint names
 #                            - Followed the map and its sprites through mp_hooks.rbx
 #                            - Dropped the unused scroll reader and the wrapper around another player's choices
@@ -10,7 +11,7 @@
 #----------------------------------------------------------------
 
 # The World overview: a large box over the map, opened with its key (F11 unless the player binds
-# another, see mp_keys.rbx) or the action wheel's middle, that
+# another, see mp_hotkeys.rbx) or the action wheel's middle, that
 # lists every player of the world online, grouped by where they are, with their highest companion
 # level, their place in the story and their ping. A player picked with the arrows and confirm, or
 # with the mouse, opens a menu of party and duel invites; a player's row shows their invite or
@@ -144,7 +145,7 @@ module MGQ_MpWorldOverview
 
   # Opens or closes the overview with its key, and steers it while open. Called by the map every frame.
   def self.on_map
-    pressed = MGQ_MpKeys.pressed?(:overview)
+    pressed = MGQ_MpHotkeys.pressed?(:overview)
     return close if @open && (pressed || !openable_while_open?)
     return unless pressed || @open
 
@@ -696,7 +697,7 @@ class Sprite_MpWorldOverview < Sprite
     lines.each_with_index { |line, index| draw_line(line, TITLE + index * ROW, view[:scroll] + index == view[:selected]) }
     bitmap.font.size = 16
     bitmap.font.color = GREY
-    bitmap.draw_text(8, BOX.height - HINT_HEIGHT, BOX.width - 16, HINT_HEIGHT, "Enter or click: invite or duel    Esc or #{MGQ_MpKeys.label(:overview)}: close", 1)
+    bitmap.draw_text(8, BOX.height - HINT_HEIGHT, BOX.width - 16, HINT_HEIGHT, "Enter or click: invite or duel    Esc or #{MGQ_MpHotkeys.label(:overview)}: close", 1)
     draw_menu(view) if view[:menu]
   end
 

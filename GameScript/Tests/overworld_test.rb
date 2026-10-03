@@ -3,6 +3,8 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-03: Checked that a party counts only whom its leader admitted, and that a player whose connection dropped is kept for a while
+#                            - Read the bound keys through MGQ_MpHotkeys, renamed from MGQ_MpKeys
+#                            - Checked that an invite naming a player from afar stands longer, and that a decline ends it for them
 #      Paulinchen  2026-10-02: Checked what Discord hears of the open world
 #                            - Checked that the state marker tells states apart from the scripts' messages
 #                            - Checked that a full party turns away one player too many and cannot be joined
@@ -297,7 +299,7 @@ check("a battle keeps the chat box open", [chat.typing?, MGQ_Multiplayer::Captur
 $typed = "in battle\r"
 battle.update_basic
 check("and its line goes out from the battle", [chat.typing?, chat.log_lines.last], [false, "Me: in battle"])
-$pressed = MGQ_MpKeys.code(:chat)
+$pressed = MGQ_MpHotkeys.code(:chat)
 battle.update_basic
 check("T opens the chat box in a battle too", chat.typing?, true)
 SceneManager.scene = Scene_Item.new
@@ -463,7 +465,15 @@ check("the player's invite names its target", [MGQ_MpOverworldSync::Me.current["
 MGQ_MpCoop::Party.invite
 check("a wheel invite keeps the targets of the standing invite", MGQ_MpCoop::Party.targets, ["friend"])
 (MGQ_MpCoop::INVITE_FRAMES + 1).times { MGQ_MpCoop::Party.count_down }
+check("an invite naming a player stands longer than one to those near", MGQ_MpCoop::Party.targets, ["friend"])
+(MGQ_MpCoop::NAMED_INVITE_FRAMES - MGQ_MpCoop::INVITE_FRAMES).times { MGQ_MpCoop::Party.count_down }
 check("the targets run out with the invite", MGQ_MpCoop::Party.targets, [])
+MGQ_MpCoop::Party.invite(far.state["id"])
+$inbox << entry("message", 4, "party_decline=1\n\n")
+MGQ_MpOverworldSync.tick
+check("a player who declines is no longer named, and the inviter hears it", [MGQ_MpCoop::Party.targets, MGQ_MpOverworldSync::Status.lines.last.to_s.end_with?("declined your party invite.")],
+      [[], true])
+MGQ_MpCoop::Party.stop_inviting
 
 # The size and leader of a party.
 MGQ_MpCoop::Party.invite
