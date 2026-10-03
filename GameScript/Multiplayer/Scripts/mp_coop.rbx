@@ -2,7 +2,8 @@
 #  mp_coop.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Offered the party's choices and invites to the wheel, the World overview and the notification box through MGQ_MpActions
+#      Paulinchen  2026-10-03: Offered a party's member to teleport to its leader, on the wheel in place of the invite and on the leader's row of the World overview
+#                            - Offered the party's choices and invites to the wheel, the World overview and the notification box through MGQ_MpActions
 #                            - Sent messages, showed notices and read the world, the own id and the own seat through MGQ_MpOverworldSync
 #                            - Logged through MGQ_MpLog
 #                            - Counted only the players the party's leader admitted as its members, whom the leader's invite reached
@@ -584,11 +585,14 @@ module MGQ_MpCoop
   # What the party offers between two players, through mp_actions.rbx: its choices on the action
   # wheel and in the World overview, and its invites in the overview and the notification box.
   module Offers
-    # The wheel's party choice: accepting the invite of a player nearby, else inviting the players
-    # nearby who are outside the party.
+    # The wheel's party choice: as a party's member, teleporting to its leader; else accepting the
+    # invite of a player nearby, or inviting the players nearby who are outside the party.
     #
     # @return [MGQ_MpActions::Option] The choice.
     def self.wheel_option
+      teleport = teleport_option
+      return teleport if teleport
+
       option = MGQ_MpActions::Option
       near = MGQ_MpOverworldSync::Peers.all.select { |peer| Party.near?(peer.state) && !Party.member?(peer.state) }
       inviter = near.find { |peer| peer.state["invite"] == "1" }
@@ -600,6 +604,17 @@ module MGQ_MpCoop
       return option.new("Invite to a party", nil, refusal) if refusal
 
       option.new("Invite to a party", near.empty? ? nil : lambda { Party.invite }, "Nobody is near enough to invite.")
+    end
+
+    # The choice of a party's member that teleports them to the party's leader, which closes the
+    # World overview too.
+    #
+    # @return [MGQ_MpActions::Option, nil] The choice, nil for the leader and outside a party.
+    def self.teleport_option
+      lead = MGQ_MpCoop.in_party? ? Party.leader : nil
+      return nil unless lead.is_a?(MGQ_MpOverworldSync::Peers::Peer) && defined?(MGQ_MpCoopEvents)
+
+      MGQ_MpActions::Option.new("Teleport to #{lead.state['name']}", lambda { MGQ_MpCoopEvents.join_leader }, nil, nil, true)
     end
 
     # The wheel's choice that leaves the party, or stops an invite nobody took.
@@ -632,6 +647,7 @@ module MGQ_MpCoop
       end
       if Party.member?(peer.state)
         return option.new("Remove from party", lambda { Party.remove(peer) }, nil) if Party.leader == :me
+        return teleport_option if Party.leader.equal?(peer) && teleport_option
 
         return option.new("In your party", nil, "#{peer.state['name']} is in your party already.")
       end

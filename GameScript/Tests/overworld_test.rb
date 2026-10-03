@@ -2,7 +2,8 @@
 #  overworld_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Checked the word wrap where it lives now, in MGQ_MpUi
+#      Paulinchen  2026-10-03: Checked that a member's party choice on the wheel teleports to the leader
+#                            - Checked the word wrap where it lives now, in MGQ_MpUi
 #                            - Followed the choices to the scripts that offer them
 #                            - Checked that a party counts only whom its leader admitted, and that a player whose connection dropped is kept for a while
 #                            - Read the bound keys through MGQ_MpHotkeys, renamed from MGQ_MpKeys
@@ -498,7 +499,9 @@ MGQ_MpCoop::Party.remove(far)
 check("and removes a member by telling their game", [$sent.last[0], $sent.last[1].include?("kick=1"), MGQ_MpCoop::Party.members], [4, true, []])
 far.state["id"] = "aa-far"
 MGQ_MpCoop::Party.admitted << "aa-far"
-check("a member may not invite", [MGQ_MpCoop::Party.may_invite?, MGQ_MpActions.wheel_options[:UP].refusal], [false, "Only the party's leader invites."])
+check("a member may not invite, and teleports to the leader with the wheel's party choice instead",
+      [MGQ_MpCoop::Party.may_invite?, MGQ_MpCoop::Offers.invite_refusal("full"), MGQ_MpActions.wheel_options[:UP].text.start_with?("Teleport to ")],
+      [false, "Only the party's leader invites.", true])
 MGQ_MpCoop::Party.remove(far)
 check("nor remove", $sent.size, 1)
 $inbox << entry("message", 4, "kick=1\nparty=#{MGQ_MpCoop::Party.id}\n\n")

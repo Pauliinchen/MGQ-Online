@@ -2,7 +2,8 @@
 #  mp_coop_events.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Took over the warp ban of the leader's place when a story scene brings the player over, so a Harpy Feather works again outside a cave
+#      Paulinchen  2026-10-03: Let a member teleport to the party's leader on their own
+#                            - Took over the warp ban of the leader's place when a story scene brings the player over, so a Harpy Feather works again outside a cave
 #                            - Said the story's line above the player's own head through MGQ_MpActions
 #                            - Held the player through MGQ_MpHooks.hold_player
 #                            - Asked MGQ_MpOverworldSync whether the map is quiet or the player free on it
@@ -550,6 +551,49 @@ module MGQ_MpCoopEvents
     @gather[:called] = Graphics.frame_count
   end
 
+  # As member, asks the leader where they stand, to come over as soon as the player is free.
+  def self.join_leader
+    lead = leader
+    return unless lead.is_a?(MGQ_MpOverworldSync::Peers::Peer)
+
+    name = lead.state["name"].to_s
+    mine = { "map" => $game_map.map_id, "x" => $game_player.x, "y" => $game_player.y }
+    if near_place?(mine, [lead.state["map"].to_i, lead.state["x"].to_i, lead.state["y"].to_i])
+      return MGQ_MpOverworldSync.notice("You are with #{name} already.")
+    end
+
+    @asked = Graphics.frame_count
+    tell(lead.seat, "where")
+    MGQ_MpOverworldSync.notice("Teleporting to #{name} . . .")
+  rescue => e
+    log("asking for the leader's place failed: #{e.class}: #{e.message}")
+  end
+
+  # As leader, tells a member who asked where the player stands.
+  #
+  # @param peer [MGQ_MpOverworldSync::Peers::Peer] The member.
+  def self.answer_where(peer)
+    tell(peer.seat, "come", place_fields) if leader == :me && MGQ_MpCoop::Party.member?(peer.state)
+  end
+
+  # Takes the leader's answer to join_leader: the player comes over at once, unless they never
+  # asked or stand near already.
+  #
+  # @param peer [MGQ_MpOverworldSync::Peers::Peer] The leader.
+  # @param place [Array<Integer>] Where the leader stands: map, x, y and direction.
+  # @param warp_ban [Boolean] Whether warping is banned where the leader stands.
+  def self.answered(peer, place, warp_ban)
+    asked = @asked
+    @asked = nil
+    return unless asked && Graphics.frame_count - asked < CALL_LAPSE_FRAMES
+
+    mine = { "map" => $game_map.map_id, "x" => $game_player.x, "y" => $game_player.y }
+    return if near_place?(mine, place)
+
+    @gather = { :since => Graphics.frame_count - GATHER_FRAMES, :name => peer.state["name"].to_s, :place => place,
+                :warp_ban => warp_ban, :called => Graphics.frame_count, :asked => true }
+  end
+
   # Reports whether the leader's story scene is about to bring the player over, which keeps random
   # encounters and co-op battles away so no battle holds the player up.
   #
@@ -573,7 +617,7 @@ module MGQ_MpCoopEvents
     return nil unless @gather
     return @gather if Graphics.frame_count - @gather[:called] < CALL_LAPSE_FRAMES
 
-    MGQ_MpOverworldSync.notice("#{@gather[:name]}'s story started without you.")
+    MGQ_MpOverworldSync.notice(@gather[:asked] ? "You were too busy to teleport to #{@gather[:name]}." : "#{@gather[:name]}'s story started without you.")
     @gather = nil
   end
 
@@ -631,11 +675,13 @@ module MGQ_MpCoopEvents
   # @param message [Hash] The message's fields.
   def self.take_party(peer, message)
     return take_request(peer, message) if message["pevent"] == "run"
+    return answer_where(peer) if message["pevent"] == "where"
     return unless leader.equal?(peer)
 
     place = [message["map"].to_i, message["x"].to_i, message["y"].to_i, message["d"].to_i]
     case message["pevent"]
     when "gather" then called(peer, place, message["warp_ban"] == "1")
+    when "come" then answered(peer, place, message["warp_ban"] == "1")
     when "say" then hear(peer, message) if place[0] == $game_map.map_id
     when "done" then heard_done(message)
     end

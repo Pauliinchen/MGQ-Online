@@ -2,7 +2,8 @@
 #  coop_events_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Checked that a member brought to the leader takes over the warp ban of the leader's place
+#      Paulinchen  2026-10-03: Checked that a member teleports to the leader on their own
+#                            - Checked that a member brought to the leader takes over the warp ban of the leader's place
 #                            - Gave the world stand-in map_free?
 #                            - Gave the world stand-in tell, notice and the own id and seat
 #                            - Checked that a chest showing its opened page is still a chest, and that a story event left to the leader lets the next event start
@@ -418,6 +419,29 @@ check("asking whether the member is coming once the calls stopped only says no",
 MGQ_MpCoopEvents.update
 check("once the calls stop, the story started without the member, who stays", [MGQ_MpCoopEvents.own_line, $notices.last, $game_player.reserved],
       [nil, "Leader's story started without you.", nil])
+
+# A member teleports to the leader on their own.
+$sent.clear
+come = { "pevent" => "come", "party" => "p1", "map" => "5", "x" => "1", "y" => "1", "d" => "2", "warp_ban" => "1" }
+leader_before = leader.state.dup
+leader.state.merge!("map" => "5", "x" => "1", "y" => "1")
+MGQ_MpCoopEvents.take(leader, come)
+MGQ_MpCoopEvents.update
+check("the leader's place moves nobody who did not ask for it", [$game_player.reserved, MGQ_MpCoopEvents.own_line], [nil, nil])
+MGQ_MpCoopEvents.join_leader
+check("a member who teleports asks the leader where they stand", [$sent.map { |seat, f| [seat, f["pevent"]] }, $notices.last], [[[leader.seat, "where"]], "Teleporting to Leader . . ."])
+MGQ_MpCoopEvents.take(leader, come)
+MGQ_MpCoopEvents.update
+check("and comes at once, taking over the place's warp ban", [$game_player.reserved, $game_switches[MGQ_MpCoopStory::WARP_BAN]], [[5, 1, 1, 2], true])
+$game_player.instance_variable_set(:@reserved, nil)
+$sent.clear
+leader.state.merge!("map" => $game_map.map_id.to_s, "x" => $game_player.x.to_s, "y" => $game_player.y.to_s)
+MGQ_MpCoopEvents.join_leader
+check("a member standing with the leader already asks nothing", [$sent, $notices.last], [[], "You are with Leader already."])
+MGQ_MpCoopEvents.take(friend, { "pevent" => "where", "party" => "p1" })
+check("a member never answers where the leader stands", $sent, [])
+$game_switches[MGQ_MpCoopStory::WARP_BAN] = false
+leader.state.replace(leader_before)
 
 # While the leader's story scene plays, the member stands still.
 check("free while the leader tells no story", [$game_player.movable?, MGQ_MpCoopEvents.blocked?], [true, false])
