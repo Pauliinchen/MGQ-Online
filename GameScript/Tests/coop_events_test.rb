@@ -2,7 +2,8 @@
 #  coop_events_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Checked that a member teleports to the leader on their own
+#      Paulinchen  2026-10-03: Checked that the Pocket Castle item is travel
+#                            - Checked that a member teleports to the leader on their own
 #                            - Checked that a member brought to the leader takes over the warp ban of the leader's place
 #                            - Gave the world stand-in map_free?
 #                            - Gave the world stand-in tell, notice and the own id and seat
@@ -223,6 +224,8 @@ check("an unknown script makes it story", kind([c(355, "$game_party.do_something
 check("a script continued over lines is read whole", kind([c(355, "actor_label_jump"), c(655, "x")]), :talk)
 check("a transfer is travel", kind([c(250, nil), c(201, 0, 5, 1, 1, 2, 0)]), :travel)
 check("a forced transfer is travel", kind([c(355, "forced_transfer(1,2,3)")]), :travel)
+pocket_castle = [c(101, "", 0, 0, 2), c(122, 21, 21, 0, 3, 7, 0, 0), c(122, 22, 22, 0, 3, 5, -1, 0), c(122, 23, 23, 0, 3, 5, -1, 1), c(201, 0, 126, 15, 14, 2, 1)]
+check("the Pocket Castle item, which notes where it was used, is travel and no story scene", [kind(pocket_castle), MGQ_MpCoopEvents.scene?(pocket_castle)], [:travel, false])
 check("items and the event's own switch make a chest", kind([c(126, 1, 0, 0, 1), c(123, "A", 0)]), :chest)
 check("with a found-it message too", kind([c(101, "", 0, 0, 2), c(126, 1, 0, 0, 1), c(123, "A", 0)]), :chest)
 check("its own switch without items is story", kind([c(101, "", 0, 0, 2), c(123, "A", 0)]), :story)

@@ -2,7 +2,8 @@
 #  mp_coop_events.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Let a member teleport to the party's leader on their own
+#      Paulinchen  2026-10-03: Sorted the Pocket Castle item as travel, which no longer gathers the party as a story scene
+#                            - Let a member teleport to the party's leader on their own
 #                            - Took over the warp ban of the leader's place when a story scene brings the player over, so a Harpy Feather works again outside a cave
 #                            - Said the story's line above the player's own head through MGQ_MpActions
 #                            - Held the player through MGQ_MpHooks.hold_player
@@ -60,6 +61,10 @@ module MGQ_MpCoopEvents
 
   # Names of switches and variables the game uses as scratch while an event runs.
   TEMPORARY_NAMES = /general|temp|system only|汎用|一時/i
+
+  # Variables that note where the Pocket Castle item was used: the map (21), x (22) and y (23),
+  # which the way out of the castle returns to. They tell of a place, not of the story.
+  PLACE_VARIABLES = [21, 22, 23]
 
   # Event commands that show dialogue: text, choices, scrolling text.
   MESSAGE_CODES = [101, 102, 105]
@@ -342,11 +347,13 @@ module MGQ_MpCoopEvents
     $data_system.switches[id].to_s =~ TEMPORARY_NAMES || (defined?(MGQ_MpCoopStory) && MGQ_MpCoopStory.personal_switch?(id)) ? true : false
   end
 
-  # Reports whether a variable is only scratch, or the player's own, such as affection.
+  # Reports whether a variable is only scratch, notes a place, or is the player's own, such as affection.
   #
   # @param id [Integer] The variable.
   # @return [Boolean] Whether it is.
   def self.temporary_variable?(id)
+    return true if PLACE_VARIABLES.include?(id)
+
     $data_system.variables[id].to_s =~ TEMPORARY_NAMES || (defined?(MGQ_MpCoopStory) && MGQ_MpCoopStory.personal_variable?(id)) ? true : false
   end
 
