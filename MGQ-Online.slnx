@@ -24,6 +24,7 @@
     <File Path="GameScript/Multiplayer/Scripts/mp_coop_npcs.rbx" />
     <File Path="GameScript/Multiplayer/Scripts/mp_coop_squad.rbx" />
     <File Path="GameScript/Multiplayer/Scripts/mp_coop_story.rbx" />
+    <File Path="GameScript/Multiplayer/Scripts/mp_game_access.rbx" />
     <File Path="GameScript/Multiplayer/Scripts/mp_hooks.rbx" />
     <File Path="GameScript/Multiplayer/Scripts/mp_hotkeys.rbx" />
     <File Path="GameScript/Multiplayer/Scripts/mp_log.rbx" />

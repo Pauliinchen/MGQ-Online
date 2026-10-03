@@ -2,7 +2,8 @@
 #  mp_world.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Moved the text screen into mp_world_text.rbx and the world screen with its windows into mp_world_screen.rbx
+#      Paulinchen  2026-10-03: Read and wrote the game's private fields and called its private methods through MGQ_MpGame
+#                            - Moved the text screen into mp_world_text.rbx and the world screen with its windows into mp_world_screen.rbx
 #                            - Logged through MGQ_MpLog
 #                            - Put the player's own system save and Save folder back when a world's system save cannot be loaded
 #      Paulinchen  2026-10-02: Told how many players a world seats, from its code
@@ -226,7 +227,7 @@ module MGQ_MpWorld
   def self.add_title_command(window)
     return unless MGQ_Multiplayer.available?
 
-    list = window.instance_variable_get(:@list)
+    list = MGQ_MpGame.get(window, :list)
     entry = { :name => COMMAND_NAME, :symbol => :mgq_mp_world, :enabled => !MGQ_Multiplayer.outdated?, :ext => nil }
     continue_at = list.index { |command| command[:symbol] == :continue }
     continue_at ? list.insert(continue_at + 1, entry) : list.push(entry)
@@ -784,7 +785,7 @@ module MGQ_MpWorld
     # @param folder [String] The folder of the world's saves.
     def self.enter(folder)
       DataManager.save_system
-      @own = [$game_library, $game_system_switches, $game_global_system, DataManager.instance_variable_get(:@system_save_count)]
+      @own = [$game_library, $game_system_switches, $game_global_system, MGQ_MpGame.get(DataManager, :system_save_count)]
       Files.root = folder
       $game_library = $game_system_switches = $game_global_system = nil
       DataManager.setup_system
@@ -810,7 +811,7 @@ module MGQ_MpWorld
       return unless @own
 
       $game_library, $game_system_switches, $game_global_system, count = @own
-      DataManager.instance_variable_set(:@system_save_count, count)
+      MGQ_MpGame.set(DataManager, :system_save_count, count)
       @own = nil
     end
   end

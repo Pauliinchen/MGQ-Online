@@ -2,7 +2,8 @@
 #  mp_battles_sync_recorder.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Created
+#      Paulinchen  2026-10-03: Read and wrote the game's private fields and called its private methods through MGQ_MpGame
+#                            - Created
 #
 #----------------------------------------------------------------
 
@@ -297,7 +298,7 @@ module MGQ_MpBattlesSync
     # @return [Array] Its HP and maximum, MP and maximum, SP, state ids and buffs.
     def self.value_fields(battler)
       [battler.hp, battler.mhp, battler.mp, battler.mmp, battler.tp.to_i,
-       battler.states.map(&:id).sort, Array(battler.instance_variable_get(:@buffs)).map(&:to_i)]
+       battler.states.map(&:id).sort, Array(MGQ_MpGame.get(battler, :buffs)).map(&:to_i)]
     end
 
     # Stops recording without sending or writing what is left, such as after a reset.

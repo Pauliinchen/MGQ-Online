@@ -2,7 +2,8 @@
 #  Multiplayer.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Loaded mp_ui.rbx, and the scripts split off the world, battle sync and PvP scripts
+#      Paulinchen  2026-10-03: Loaded mp_game_access.rbx after mp_hooks.rbx
+#                            - Loaded mp_ui.rbx, and the scripts split off the world, battle sync and PvP scripts
 #                            - Loaded mp_log.rbx first
 #                            - Loaded mp_notices.rbx last
 #                            - Loaded mp_hotkeys.rbx, renamed from mp_keys.rbx
@@ -57,7 +58,7 @@ module MGQ_Multiplayer
   # mp_coop.rbx, which the scripts after them register with. The battle scripts install their battle hooks once the game runs, the last
   # loaded first, so their order decides how those hooks wrap each other.
   SCRIPTS = %w[
-    mp_log mp_hooks mp_hotkeys mp_ui mp_actors mp_async mp_overworld_sync mp_actions mp_chat mp_overworld
+    mp_log mp_hooks mp_game_access mp_hotkeys mp_ui mp_actors mp_async mp_overworld_sync mp_actions mp_chat mp_overworld
     mp_coop mp_coop_squad mp_coop_events mp_coop_npcs mp_coop_story
     mp_save_distribution mp_world mp_world_text mp_world_screen mp_save_export
     mp_battles mp_battles_coop

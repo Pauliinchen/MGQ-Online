@@ -2,7 +2,8 @@
 #  mp_battles_coop.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Kept the battle's players as Player records instead of arrays read by position
+#      Paulinchen  2026-10-03: Read and wrote the game's private fields and called its private methods through MGQ_MpGame
+#                            - Kept the battle's players as Player records instead of arrays read by position
 #                            - Held the player through MGQ_MpHooks.hold_player
 #                            - Called the scripts that load before this one without asking whether they loaded
 #                            - Sent messages, showed notices and read the world, the own id and the own seat through MGQ_MpOverworldSync
@@ -599,11 +600,11 @@ module MGQ_MpBattlesCoop
       enemy.hide if hidden.to_i == 1
       enemy
     end
-    $game_troop.instance_variable_set(:@enemies, rebuilt)
+    MGQ_MpGame.set($game_troop, :enemies, rebuilt)
     # The game counts each name's enemies for their letters, so the count starts over as in setup.
-    $game_troop.instance_variable_set(:@names_count, {})
-    $game_troop.send(:make_unique_names)
-    spriteset = scene.instance_variable_get(:@spriteset)
+    MGQ_MpGame.set($game_troop, :names_count, {})
+    MGQ_MpGame.call($game_troop, :make_unique_names)
+    spriteset = MGQ_MpGame.get(scene, :spriteset)
     if spriteset
       spriteset.dispose_enemies
       spriteset.create_enemies
@@ -779,8 +780,8 @@ module MGQ_MpBattlesCoop
   # @param scene [Scene_Battle] The battle.
   # @param members [Array<Game_Actor>] The party.
   def self.show_party(scene, members)
-    Array(scene.instance_variable_get(:@battle_actor_status_windows)).each_with_index { |window, index| window.actor = members[index] }
-    scene.send(:refresh_status) if scene.respond_to?(:refresh_status, true)
+    Array(MGQ_MpGame.get(scene, :battle_actor_status_windows)).each_with_index { |window, index| window.actor = members[index] }
+    MGQ_MpGame.call(scene, :refresh_status) if scene.respond_to?(:refresh_status, true)
   rescue => e
     log("showing the party failed: #{e.class}: #{e.message}")
   end

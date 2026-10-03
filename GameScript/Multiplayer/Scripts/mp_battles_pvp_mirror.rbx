@@ -2,7 +2,8 @@
 #  mp_battles_pvp_mirror.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Created
+#      Paulinchen  2026-10-03: Read and wrote the game's private fields and called its private methods through MGQ_MpGame
+#                            - Created
 #
 #----------------------------------------------------------------
 
@@ -150,7 +151,7 @@ module MGQ_MpBattlesPvp
       return "-" unless item
 
       base = item.respond_to?(:base_data) ? item.base_data : item
-      gems = Array(item.instance_variable_get(:@stones)).compact
+      gems = Array(MGQ_MpGame.get(item, :stones)).compact
       gems.empty? ? base.name : "#{base.name} [#{gems.join(' ')}]"
     end
 

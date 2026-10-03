@@ -2,7 +2,8 @@
 #  mp_battles_sync_live.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Created
+#      Paulinchen  2026-10-03: Read and wrote the game's private fields and called its private methods through MGQ_MpGame
+#                            - Created
 #
 #----------------------------------------------------------------
 
@@ -79,7 +80,7 @@ module MGQ_MpBattlesSync
         ["message", Recorder.speaker, message.face_name, message.face_index, message.background, message.position, *args]
       end
       MGQ_MpHooks.around(Scene_Battle, :process_skill_word) do |scene, _args, original|
-        Recorder.speaking(scene.instance_variable_get(:@subject)) { original.call }
+        Recorder.speaking(MGQ_MpGame.get(scene, :subject)) { original.call }
       end
       MGQ_MpHooks.around(Scene_Battle, :process_down_word) do |_scene, args, original|
         Recorder.speaking(args[0]) { original.call }
@@ -153,7 +154,7 @@ module MGQ_MpBattlesSync
 
       # Recorded before the game checks the skip key, which leaves the animation out on this screen only.
       MGQ_MpHooks.around(Scene_Battle, :show_animation) do |scene, args, original|
-        Recorder.event("animation", scene.instance_variable_get(:@subject), args[0], args[1]) if Recorder.active?
+        Recorder.event("animation", MGQ_MpGame.get(scene, :subject), args[0], args[1]) if Recorder.active?
         Recorder.showing_animation { original.call }
       end
 
@@ -162,7 +163,7 @@ module MGQ_MpBattlesSync
       # The game also comes back here after a party change or a menu in the same phase, which
       # Recorder.command_phase records only once.
       MGQ_MpHooks.around(Scene_Battle, :start_party_command_selection) do |scene, _args, original|
-        unless scene.send(:scene_changing?)
+        unless MGQ_MpGame.call(scene, :scene_changing?)
           # A co-op party changes between two of the host's sends: here, before the command phase is
           # recorded, when a player left, and once the commands came, when a player swapped.
           MGQ_MpBattlesCoop.settle(scene) if MGQ_MpBattlesSync.coop? && MGQ_MpBattlesSync.host?
@@ -181,7 +182,7 @@ module MGQ_MpBattlesSync
       MGQ_MpHooks.around(Scene_Battle, :use_item) do |scene, _args, original|
         Recorder.values
         if Recorder.active?
-          subject = scene.instance_variable_get(:@subject)
+          subject = MGQ_MpGame.get(scene, :subject)
           action = subject && subject.current_action
           Recorder.event("action", subject, action && action.item, action && action.target_index, action && action.symbol)
         end
@@ -274,7 +275,7 @@ module MGQ_MpBattlesSync
 
       SCENE_CALLS.select { |name| Scene_Battle.method_defined?(name) }.each do |name|
         MGQ_MpHooks.around(Scene_Battle, name) do |scene, args, original|
-          Recorder.call("scene", name, args, scene.instance_variable_get(:@subject)) { original.call }
+          Recorder.call("scene", name, args, MGQ_MpGame.get(scene, :subject)) { original.call }
         end
       end
 
@@ -352,7 +353,7 @@ module MGQ_MpBattlesSync
       Playback.reset
       # The game marks the party as fighting in on_battle_start, which the guest leaves out with the
       # rest of the battle's logic. Skills usable only in battle check it, and the end clears it.
-      $game_party.instance_variable_set(:@in_battle, true)
+      MGQ_MpGame.set($game_party, :in_battle, true)
       MGQ_MpBattlesTeam.form(scene) if MGQ_MpBattlesSync.team?
       if MGQ_MpBattlesSync.coop?
         joined = MGQ_MpBattlesCoop.join(scene)
@@ -371,10 +372,10 @@ module MGQ_MpBattlesSync
     #
     # @param scene [Scene_Battle] The battle.
     def self.guest_turn(scene)
-      scene.instance_variable_get(:@party_command_window).close
-      scene.instance_variable_get(:@actor_command_window).close
-      scene.instance_variable_get(:@status_window).unselect
-      scene.instance_variable_get(:@info_viewport).visible = false
+      MGQ_MpGame.get(scene, :party_command_window).close
+      MGQ_MpGame.get(scene, :actor_command_window).close
+      MGQ_MpGame.get(scene, :status_window).unselect
+      MGQ_MpGame.get(scene, :info_viewport).visible = false
       Channel.post("commands", Commands.build)
       play_until_commands(scene)
     end
@@ -475,7 +476,7 @@ module MGQ_MpBattlesSync
     #
     # @param scene [Scene_Battle] The battle.
     def self.watch(scene)
-      return if MGQ_MpBattlesSync.solo? || scene.send(:scene_changing?) || BattleManager.battle_end?
+      return if MGQ_MpBattlesSync.solo? || MGQ_MpGame.call(scene, :scene_changing?) || BattleManager.battle_end?
 
       ending = Channel.ending
       end_early(scene, ending) if ending
@@ -508,7 +509,7 @@ module MGQ_MpBattlesSync
     #
     # @param scene [Scene_Battle] The battle.
     def self.forfeit(scene)
-      scene.instance_variable_get(:@info_viewport).visible = false
+      MGQ_MpGame.get(scene, :info_viewport).visible = false
       # A team duel's guest leaves it, and another player of their side takes their characters over.
       Channel.post(MGQ_MpBattlesSync.coop? || (MGQ_MpBattlesSync.team? && MGQ_MpBattlesSync.guest?) ? "leave" : "forfeit")
       BattleManager.process_abort
@@ -527,7 +528,7 @@ module MGQ_MpBattlesSync
     #
     # @param scene [Scene_Battle] The battle.
     def self.escaped(scene)
-      Channel.post("leave") if MGQ_MpBattlesSync.coop? && MGQ_MpBattlesSync.guest? && scene.send(:scene_changing?)
+      Channel.post("leave") if MGQ_MpBattlesSync.coop? && MGQ_MpBattlesSync.guest? && MGQ_MpGame.call(scene, :scene_changing?)
     end
   end
 end

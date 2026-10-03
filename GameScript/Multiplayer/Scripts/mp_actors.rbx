@@ -2,7 +2,8 @@
 #  mp_actors.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Logged through MGQ_MpLog
+#      Paulinchen  2026-10-03: Read and wrote the game's private fields and called its private methods through MGQ_MpGame
+#                            - Logged through MGQ_MpLog
 #      Paulinchen  2026-10-02: Kept the owner's seat and place, and that no rebuilt character is Luka, in Game_MpActor for both sides
 #      Paulinchen  2026-09-30: Moved into Patch/Multiplayer/Scripts as mp_actors.rbx, which Multiplayer.rb loads
 #                            - Cleared a rebuilt character's actions, so a pre-battle spell finds its chain input set
@@ -94,11 +95,11 @@ module MGQ_MpActors
         actor.class_id,
         actor.tribe_id,
         actor.level_list.map { |id, level| "#{id}:#{level}" }.join(","),
-        Array(actor.instance_variable_get(:@param_plus)).map(&:to_i).join(","),
-        Array(actor.instance_variable_get(:@skills)).join(","),
-        groups(actor.instance_variable_get(:@abilities)),
-        groups(actor.instance_variable_get(:@equip_abilities)),
-        Array(actor.instance_variable_get(:@equips)).map { |slot| Items.write(slot && slot.object) }.join(","),
+        Array(MGQ_MpGame.get(actor, :param_plus)).map(&:to_i).join(","),
+        Array(MGQ_MpGame.get(actor, :skills)).join(","),
+        groups(MGQ_MpGame.get(actor, :abilities)),
+        groups(MGQ_MpGame.get(actor, :equip_abilities)),
+        Array(MGQ_MpGame.get(actor, :equips)).map { |slot| Items.write(slot && slot.object) }.join(","),
         (0...PARAM_COUNT).map { |id| actor.param(id).to_i }.join(","),
         (0...RATE_COUNT).map { |id| (actor.xparam(id) * 1000).round }.join(","),
         COUNTERS.map { |counter| counter_of(actor, counter) }.join(","),
@@ -127,7 +128,7 @@ module MGQ_MpActors
     # @param actor [Game_Actor] The party member.
     # @return [Array<Integer>] The switches its battle start states wait for that are on in this save.
     def self.switches_on(actor)
-      actor.send(:auto_state_with_switch).keys.select { |switch_id| $game_switches[switch_id] }
+      MGQ_MpGame.call(actor, :auto_state_with_switch).keys.select { |switch_id| $game_switches[switch_id] }
     rescue
       []
     end
@@ -311,7 +312,7 @@ module MGQ_MpActors
        item.plus_num.to_i,
        item.socket_num.to_i,
        item.enchant_variance_base.to_i,
-       Array(item.instance_variable_get(:@enchants)).join("+"),
+       Array(MGQ_MpGame.get(item, :enchants)).join("+"),
        Array(item.params_variance).map { |value| (value * 1000).round }.join("+"),
        rolls.join("+"),
        gems_text(item)].join(".")
@@ -322,7 +323,7 @@ module MGQ_MpActors
     # @param item [RPG::EquipItem] A socket or enchanted item.
     # @return [String] Its gems' item ids joined by "+", 0 for an empty socket.
     def self.gems_text(item)
-      Array(item.instance_variable_get(:@stones)).map(&:to_i).join("+")
+      Array(MGQ_MpGame.get(item, :stones)).map(&:to_i).join("+")
     end
 
     # Makes an item from its text.
@@ -364,7 +365,7 @@ module MGQ_MpActors
       return base unless base && base.socket?
 
       item = base.create_socket_item
-      item.instance_variable_set(:@stones, gem_list(gems, item.socket_num))
+      MGQ_MpGame.set(item, :stones, gem_list(gems, item.socket_num))
       item
     end
 
@@ -380,14 +381,14 @@ module MGQ_MpActors
       socket_num = match[5].to_i
       stat_rolls = match[8].split("+").map { |value| value.to_i / 1000.0 }
       item.rarity_num = match[3].to_i
-      item.instance_variable_set(:@plus_num, match[4].to_i)
-      item.instance_variable_set(:@socket_num, socket_num)
+      MGQ_MpGame.set(item, :plus_num, match[4].to_i)
+      MGQ_MpGame.set(item, :socket_num, socket_num)
       item.enchant_variance_base = match[6].to_i
-      item.instance_variable_set(:@enchants, match[7].split("+").map(&:to_i).select { |id| id > 0 && $data_classes[id] })
+      MGQ_MpGame.set(item, :enchants, match[7].split("+").map(&:to_i).select { |id| id > 0 && $data_classes[id] })
       item.params_variance = stat_rolls.size == STAT_ROLLS ? stat_rolls : [1.0] * STAT_ROLLS
       item.enchants_variance = trait_rolls(match[9])
-      item.instance_variable_set(:@stones, gem_list(match[10], socket_num))
-      item.instance_variable_set(:@prefix, "")
+      MGQ_MpGame.set(item, :stones, gem_list(match[10], socket_num))
+      MGQ_MpGame.set(item, :prefix, "")
       item.reset_data
       item
     end

@@ -2,7 +2,8 @@
 #  support.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Loaded mp_log.rbx before the first script too
+#      Paulinchen  2026-10-03: Loaded mp_game_access.rbx before the first script too
+#                            - Loaded mp_log.rbx before the first script too
 #      Paulinchen  2026-10-02: Loaded mp_hooks.rbx before the first script, as Multiplayer.rb does
 #      Paulinchen  2026-09-30: Created
 #
@@ -59,6 +60,7 @@ end
 def load_script(name)
   load File.join(SCRIPTS_DIR, "mp_log.rbx") unless defined?(MGQ_MpLog)
   load File.join(SCRIPTS_DIR, "mp_hooks.rbx") unless defined?(MGQ_MpHooks) || name == "mp_log"
+  load File.join(SCRIPTS_DIR, "mp_game_access.rbx") unless defined?(MGQ_MpGame) || name == "mp_log"
   load File.join(SCRIPTS_DIR, "#{name}.rbx")
 end
 

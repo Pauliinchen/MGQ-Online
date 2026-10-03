@@ -2,7 +2,8 @@
 #  mp_battles_sync.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Read the sides' players as MGQ_MpBattlesCoop::Player records
+#      Paulinchen  2026-10-03: Read and wrote the game's private fields and called its private methods through MGQ_MpGame
+#                            - Read the sides' players as MGQ_MpBattlesCoop::Player records
 #                            - Moved the wire into mp_battles_sync_wire.rbx, the recorder, the playback, and the hooks with the live battle's steps into scripts of their own
 #                            - Built the battle hooks with MGQ_MpHooks.around
 #                            - Called the scripts that load before this one without asking whether they loaded
@@ -568,7 +569,7 @@ module MGQ_MpBattlesSync
         next unless list.is_a?(Array)
 
         actions = list.map { |command| action(battler, command) }.compact
-        battler.instance_variable_set(:@actions, actions) unless actions.empty?
+        MGQ_MpGame.set(battler, :actions, actions) unless actions.empty?
       end
     end
 
@@ -806,7 +807,7 @@ module MGQ_MpBattlesSync
         frames += 1
         return :left if leave?(window, frames)
 
-        scene.send(:update_for_wait)
+        MGQ_MpGame.call(scene, :update_for_wait)
       end
     ensure
       close(window)

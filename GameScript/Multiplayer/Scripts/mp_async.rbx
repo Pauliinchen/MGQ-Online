@@ -2,7 +2,8 @@
 #  mp_async.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Logged through MGQ_MpLog
+#      Paulinchen  2026-10-03: Read and wrote the game's private fields and called its private methods through MGQ_MpGame
+#                            - Logged through MGQ_MpLog
 #      Paulinchen  2026-10-02: Held event commands through mp_hooks.rbx
 #                            - Asked behind? directly where the live map is decided
 #      Paulinchen  2026-09-30: Moved into Patch/Multiplayer/Scripts as mp_async.rbx, which Multiplayer.rb loads
@@ -65,7 +66,7 @@ module MGQ_MpAsync
   #
   # @return [Boolean] Whether one waits.
   def self.map_waiting?
-    stack = SceneManager.instance_variable_get(:@stack)
+    stack = MGQ_MpGame.get(SceneManager, :stack)
     stack.is_a?(Array) && stack.any? { |scene| scene.is_a?(Scene_Map) }
   end
 

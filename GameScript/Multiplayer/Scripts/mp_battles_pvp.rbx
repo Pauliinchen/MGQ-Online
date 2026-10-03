@@ -2,7 +2,8 @@
 #  mp_battles_pvp.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Moved the mirror match's report into mp_battles_pvp_mirror.rbx and the PvP battle screen into mp_battles_pvp_lobby.rbx
+#      Paulinchen  2026-10-03: Read and wrote the game's private fields and called its private methods through MGQ_MpGame
+#                            - Moved the mirror match's report into mp_battles_pvp_mirror.rbx and the PvP battle screen into mp_battles_pvp_lobby.rbx
 #                            - Called the scripts that load before this one without asking whether they loaded
 #                            - Logged through MGQ_MpLog
 #                            - Read the bound keys through MGQ_MpHotkeys, renamed from MGQ_MpKeys
@@ -602,7 +603,7 @@ module MGQ_MpBattlesPvp
       enemy.name = name
       enemy.exp = 0
       enemy.gold = 0
-      enemy.instance_variable_set(:@data_ex, { :no_difficulty => true, :lib_exclude? => true })
+      MGQ_MpGame.set(enemy, :data_ex, { :no_difficulty => true, :lib_exclude? => true })
       enemy
     end
   end
@@ -767,7 +768,7 @@ module MGQ_MpBattlesPvp
     def self.start(opponent, members, mirror)
       @snapshot = Marshal.dump(DataManager.make_save_contents)
       @globals = Marshal.dump(globals)
-      @medals = Array($game_temp.instance_variable_get(:@gain_medals)).dup
+      @medals = Array(MGQ_MpGame.get($game_temp, :gain_medals)).dup
       @opponent = opponent
       @mirror = mirror
       @failed = false
@@ -783,7 +784,7 @@ module MGQ_MpBattlesPvp
       opponents = block_given? ? Opponents.stand(yield) : Opponents.build(members, opponent)
       raise "nobody of #{opponent}'s team could be rebuilt" if opponents.empty?
 
-      $game_troop.instance_variable_set(:@enemies, opponents)
+      MGQ_MpGame.set($game_troop, :enemies, opponents)
       BattleManager.make_escape_ratio if BattleManager.respond_to?(:make_escape_ratio)
       check(opponents)
       MirrorReport.start(opponents) if mirror
@@ -869,9 +870,9 @@ module MGQ_MpBattlesPvp
       $game_temp.in_memory_battle = false
       $game_temp.clear_common_event
       # Medals earned in the battle are gone with the Library's, so their notices are too.
-      $game_temp.instance_variable_set(:@gain_medals, @medals || [])
+      MGQ_MpGame.set($game_temp, :gain_medals, @medals || [])
       # The game's Retry would start the PvP battle again from its own snapshot.
-      BattleManager.instance_variable_set(:@retry_data, nil)
+      MGQ_MpGame.set(BattleManager, :retry_data, nil)
       Opponents.remove
       $game_player.refresh
       $game_map.need_refresh = true

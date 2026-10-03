@@ -2,7 +2,8 @@
 #  mp_battles_sync_playback.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Created
+#      Paulinchen  2026-10-03: Read and wrote the game's private fields and called its private methods through MGQ_MpGame
+#                            - Created
 #
 #----------------------------------------------------------------
 
@@ -41,7 +42,7 @@ module MGQ_MpBattlesSync
       @events ||= []
       quiet = 0
       # The party's status windows show during a turn, which the guest's own battle never has.
-      scene.instance_variable_set(:@battle_actor_status_windows_show, true)
+      MGQ_MpGame.set(scene, :battle_actor_status_windows_show, true)
       window = nil
       held = Waiting.hold_input(scene)
 
@@ -56,7 +57,7 @@ module MGQ_MpBattlesSync
           window ||= Waiting.open("Waiting for #{MGQ_MpBattlesSync.player}...") if quiet == QUIET_FRAMES
           return [:left] if window && Waiting.leave?(window, quiet - QUIET_FRAMES)
 
-          scene.send(:update_for_wait)
+          MGQ_MpGame.call(scene, :update_for_wait)
           next
         end
 
@@ -69,7 +70,7 @@ module MGQ_MpBattlesSync
         show_message if event[0] == "message" && (@events.empty? || @events.first[0] != "message")
       end
     ensure
-      scene.instance_variable_set(:@battle_actor_status_windows_show, false)
+      MGQ_MpGame.set(scene, :battle_actor_status_windows_show, false)
       Waiting.close(window)
       Waiting.release_input(held)
     end
@@ -157,12 +158,12 @@ module MGQ_MpBattlesSync
         wait(scene, method, args[0])
       when "values"
         values(*args)
-        scene.send(:refresh_status)
+        MGQ_MpGame.call(scene, :refresh_status)
       when "time_stop"
         $game_party.od_turn = args[0].to_i
         $game_party.od_user = args[1]
       when "turn"
-        $game_troop.instance_variable_set(:@turn_count, args[0].to_i)
+        MGQ_MpGame.set($game_troop, :turn_count, args[0].to_i)
       end
     rescue => e
       MGQ_MpBattlesSync.log_once([:play, kind], "could not play #{kind}: #{e.class}: #{e.message}")
@@ -195,18 +196,18 @@ module MGQ_MpBattlesSync
       return unless callable?(receiver, name)
 
       Array(results).each do |battler, result|
-        battler.instance_variable_set(:@result, result) if battler && result.is_a?(Game_ActionResult)
+        MGQ_MpGame.set(battler, :result, result) if battler && result.is_a?(Game_ActionResult)
       end
-      earlier = scene.instance_variable_get(:@subject)
+      earlier = MGQ_MpGame.get(scene, :subject)
       begin
-        scene.instance_variable_set(:@subject, subject) if receiver == "scene"
+        MGQ_MpGame.set(scene, :subject, subject) if receiver == "scene"
         @in_call = true
         srand(seed.to_i)
         (receiver == "log" ? log_window(scene) : scene).send(name, *args)
       ensure
         @in_call = false
         srand
-        scene.instance_variable_set(:@subject, earlier)
+        MGQ_MpGame.set(scene, :subject, earlier)
       end
     end
 
@@ -238,7 +239,7 @@ module MGQ_MpBattlesSync
       $game_troop.enemy_names.each { |name| $game_message.add(format(Vocab::Emerge, name)) }
       @speaker = nil
       show_message
-      scene.send(:wait_for_message)
+      MGQ_MpGame.call(scene, :wait_for_message)
     end
 
     # Starts an animation a battler started by itself on the host, outside the battle's own showing
@@ -271,7 +272,7 @@ module MGQ_MpBattlesSync
     # @param scene [Scene_Battle] The battle.
     # @return [Window_BattleLog] Its battle log.
     def self.log_window(scene)
-      scene.instance_variable_get(:@log_window)
+      MGQ_MpGame.get(scene, :log_window)
     end
 
     # Shows a line a character says, with its face.
@@ -321,7 +322,7 @@ module MGQ_MpBattlesSync
     # @param targets [Array] The targets.
     # @param animation_id [Integer] The animation, below 0 for the subject's attack animation.
     def self.animation(scene, subject, targets, animation_id)
-      return if behind? || scene.send(:battle_show_skip?)
+      return if behind? || MGQ_MpGame.call(scene, :battle_show_skip?)
 
       ids = animation_id.to_i < 0 ? (subject && subject.actor? ? subject.atk_animation_ids.first(1) : []) : [animation_id.to_i]
       ids.each do |id|
@@ -370,14 +371,14 @@ module MGQ_MpBattlesSync
     def self.values(battler, hp, _mhp, mp, _mmp, tp, states, buffs)
       return unless battler
 
-      battler.instance_variable_set(:@hp, hp.to_i)
-      battler.instance_variable_set(:@mp, mp.to_i)
-      battler.instance_variable_set(:@tp, tp.to_i)
+      MGQ_MpGame.set(battler, :hp, hp.to_i)
+      MGQ_MpGame.set(battler, :mp, mp.to_i)
+      MGQ_MpGame.set(battler, :tp, tp.to_i)
       ids = Array(states).map(&:to_i).select { |id| $data_states[id] }
-      turns = battler.instance_variable_get(:@state_turns) || {}
+      turns = MGQ_MpGame.get(battler, :state_turns) || {}
       ids.each { |id| turns[id] ||= 1 }
-      battler.instance_variable_set(:@states, ids)
-      battler.instance_variable_set(:@buffs, Array(buffs).map(&:to_i)) if Array(buffs).size == 8
+      MGQ_MpGame.set(battler, :states, ids)
+      MGQ_MpGame.set(battler, :buffs, Array(buffs).map(&:to_i)) if Array(buffs).size == 8
     end
   end
 end
