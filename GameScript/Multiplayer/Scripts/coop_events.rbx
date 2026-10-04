@@ -2,7 +2,8 @@
 #  coop_events.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Sorted called common events by what can run now, shops with a goods script as talks, and story behind a choice as a talk watched as it runs
+#      Paulinchen  2026-10-04: Kept a member's story events from starting anywhere, since only the leader starts story, and no longer asked the leader's game to play them
+#                            - Sorted called common events by what can run now, shops with a goods script as talks, and story behind a choice as a talk watched as it runs
 #                            - Moved gathering the party for story scenes into coop_gather.rbx
 #                            - Moved the Pocket Castle's residents into coop_castle.rbx
 #                            - Renamed from mp_coop_events.rbx
@@ -80,6 +81,10 @@ module MGQ_MpCoopEvents
 
   # Pages of the leader's story a member's game remembers the leader moved past, at most.
   MAX_DONE = 64
+
+  # Frames in which a member hears only once that a story event they started is the leader's,
+  # three seconds.
+  REFUSE_FRAMES = 180
 
   # Frames a page of the leader's story stays after the leader stopped telling the story, two
   # seconds, before a member's game ends it anyway.
@@ -506,7 +511,6 @@ module MGQ_MpCoopEvents
   # @param peer [MGQ_MpOverworldSync::Peers::Peer, nil] Who sent it.
   # @param message [Hash] The message's fields.
   def self.take_party(peer, message)
-    return take_request(peer, message) if message["pevent"] == "run"
     return MGQ_MpCoopGather.take(peer, message) if GATHER_MESSAGES.include?(message["pevent"])
     return unless leader.equal?(peer)
 
@@ -518,28 +522,38 @@ module MGQ_MpCoopEvents
     log("taking #{message['pevent']} failed: #{e.class}: #{e.message}")
   end
 
-  # Hands a story event the player started to the leader, whose game plays the story. Called
-  # when the map's main event would start it.
+  # Keeps a member's story event from starting: only the leader starts story, in their own game.
+  # Called when the map's main event would start it.
   #
   # An event that runs by itself is left to the leader's own game, which runs it on its map.
   #
   # @param event [Game_Event] The event.
-  # @return [Boolean] Whether it was handed over, so it must not run here.
+  # @return [Boolean] Whether it is the leader's, so it must not run here.
   def self.hand_over(event)
     lead = leader
     return false unless lead.is_a?(MGQ_MpOverworldSync::Peers::Peer) && kind(event) == :story
     return true if event.trigger == 3
 
-    if lead.state["map"].to_i == $game_map.map_id
-      tell(lead.seat, "run", "map" => $game_map.map_id, "event" => event.id)
-      MGQ_MpOverworldSync.notice("The story goes on in #{lead.state['name']}'s game.")
-    else
-      MGQ_MpOverworldSync.notice("#{lead.state['name']} leads the party's story. Bring them here to go on.")
-    end
+    refuse_story(event, lead)
     true
   rescue => e
-    log("handing over an event failed: #{e.class}: #{e.message}")
+    log("keeping a story event from starting failed: #{e.class}: #{e.message}")
     false
+  end
+
+  # Tells the member that only the leader moves the story on, once per event in REFUSE_FRAMES,
+  # since an event the player stands on starts again with every step.
+  #
+  # @param event [Game_Event] The story event.
+  # @param lead [MGQ_MpOverworldSync::Peers::Peer] The leader.
+  def self.refuse_story(event, lead)
+    key = [$game_map.map_id, event.id]
+    return if @refused == key && Graphics.frame_count - @refused_at < REFUSE_FRAMES
+
+    @refused = key
+    @refused_at = Graphics.frame_count
+    away = lead.state["map"].to_i == $game_map.map_id ? "" : " Bring them here to go on."
+    MGQ_MpOverworldSync.notice("Only #{lead.state['name']} can move the story on.#{away}")
   end
 
   # Reports whether a common event that runs by itself is left to the leader's game.
@@ -550,26 +564,6 @@ module MGQ_MpCoopEvents
     leader.is_a?(MGQ_MpOverworldSync::Peers::Peer) && kind_of(common.list || []) == :story
   rescue
     false
-  end
-
-  # As leader, takes a member's request to play a story event on the leader's map.
-  #
-  # @param peer [MGQ_MpOverworldSync::Peers::Peer] The member.
-  # @param message [Hash] The message's fields: "map" and "event".
-  def self.take_request(peer, message)
-    return unless leader == :me && MGQ_MpCoop::Party.member?(peer.state) && message["map"].to_i == $game_map.map_id
-
-    @requests ||= []
-    id = message["event"].to_i
-    @requests << id unless @requests.include?(id)
-  end
-
-  # As leader, starts the next event a member asked for, once the player is free.
-  def self.start_requested
-    return if @requests.nil? || @requests.empty? || !MGQ_MpOverworldSync.map_free?
-
-    event = $game_map.events[@requests.shift]
-    event.start if event && kind(event) == :story
   end
 
   # As leader, tells the members on the map the message the player's story shows now. Called
@@ -705,10 +699,8 @@ module MGQ_MpCoopEvents
     @mirrored = { :page => page[:page], :since => Graphics.frame_count }
   end
 
-  # As leader, starts the story events members asked for. Shows the leader's messages. Called after
-  # the map's update.
+  # Shows the leader's messages once the player is free. Called after the map's update.
   def self.update
-    start_requested
     show_heard
   rescue => e
     log("updating the party's events failed: #{e.class}: #{e.message}")

@@ -2,7 +2,8 @@
 #  coop_events_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Checked traders: a side quest that cannot run, a goods script, a quest step behind a choice, a chest that asks first, and the talk's watch
+#      Paulinchen  2026-10-04: Checked that a member's story event starts nowhere and says so once
+#                            - Checked traders: a side quest that cannot run, a goods script, a quest step behind a choice, a chest that asks first, and the talk's watch
 #                            - Checked when the player only waits for the party's story
 #                            - Followed gathering into coop_gather.rbx and the Pocket Castle's residents into coop_castle.rbx
 #                            - Followed the scripts to their new names, without mp_
@@ -548,8 +549,12 @@ leader.state["map"] = "7"
 $sent.clear
 $game_map.events[11].start
 check("a member's story event does not run in their game", [$game_map.setup_starting_map_event, $game_map.events[11].locked], [nil, false])
-check("the leader is asked to play it", $sent.map { |seat, f| [seat, f["pevent"], f["map"], f["event"]] }, [[4, "run", "7", "11"]])
-check("and the member hears where it goes on", $notices.last, "The story goes on in Leader's game.")
+check("nor in the leader's: nobody is asked to play it", $sent, [])
+check("and the member hears that only the leader moves the story on", $notices.last, "Only Leader can move the story on.")
+$notices.clear
+$game_map.events[11].start
+$game_map.setup_starting_map_event
+check("starting it again at once says nothing more", $notices, [])
 $game_map.events[12].start
 check("a talk runs in the member's own game", $game_map.setup_starting_map_event, $game_map.events[12])
 $sent.clear
@@ -562,9 +567,10 @@ $game_map.events[12].start
 check("and does not keep the member's own events from starting", [$game_map.setup_starting_map_event, $game_map.events[13].starting], [events[12], false])
 $game_map.events = events
 leader.state["map"] = "8"
+MGQ_MpCoopEvents.instance_variable_set(:@refused, nil)
 $game_map.events[11].start
 $game_map.setup_starting_map_event
-check("with the leader elsewhere, the member is told to bring them", [$sent.size, $notices.last], [0, "Leader leads the party's story. Bring them here to go on."])
+check("with the leader elsewhere, the member is told to bring them", [$sent.size, $notices.last], [0, "Only Leader can move the story on. Bring them here to go on."])
 leader.state["map"] = "7"
 
 class RPG::CommonEvent; attr_accessor :switch_id; def autorun?; !@switch_id.nil?; end; end
@@ -578,18 +584,12 @@ $members = [friend]
 check("the leader's own game runs it", $game_map.setup_autorun_common_event, $data_common_events[4])
 $data_common_events[4] = nil
 
-# The leader plays requested events and tells the dialogue.
+# The leader tells the dialogue; a member's request to play a story event, as older builds sent, starts nothing.
 $game_message.busy = false
 $game_map.interpreter.busy = false
 MGQ_MpCoopEvents.take(friend, { "pevent" => "run", "party" => "p1", "map" => "7", "event" => "11" })
-MGQ_MpCoopEvents.take(stranger = MGQ_MpOverworldSync::Peers::Peer.new(8, { "party" => "p9" }, nil, false), { "pevent" => "run", "party" => "p1", "map" => "7", "event" => "12" })
-$game_map.interpreter.busy = true
 $game_map.update
-check("a requested event waits while the leader is busy", $game_map.events[11].starting ? true : false, false)
-$game_map.interpreter.busy = false
-$game_map.update
-check("then starts in the leader's game", $game_map.events[11].starting, true)
-check("only for party members", $game_map.events[12].starting, false)
+check("the leader's game starts no story event a member asks for", $game_map.events[11].starting ? true : false, false)
 $sent.clear
 $game_map.interpreter.setup(story_page.list, 11)
 $game_message.face_name = "Alice"
