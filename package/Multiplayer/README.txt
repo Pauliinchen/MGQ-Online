@@ -178,6 +178,11 @@ game's letters appear.
   a game cannot enter. A translated game matches the untranslated one.
   Max Players, Mods and the description can be changed later with
   "Edit the world"; everything else is fixed once the world exists.
+- Worlds and commands: the screen opens with the cursor around the
+  worlds or around the commands below them ("Create new world" and
+  the others). Up and down pick one of the two, confirm moves into
+  it, and cancel moves back out, so a long list does not have to be
+  scrolled through.
 - Players, Mods and the description: the right arrow moves from a
   world into its details; up and down pick the mods, the players or
   the description, and confirm opens a box that lists every player

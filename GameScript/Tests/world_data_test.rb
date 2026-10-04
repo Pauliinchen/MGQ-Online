@@ -2,7 +2,7 @@
 #  world_data_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Checked a long word broken inside it
+#      Paulinchen  2026-10-04: Checked picking the worlds or the commands as a whole before moving into them, and a long word broken inside it
 #                            - Created
 #
 #----------------------------------------------------------------
@@ -33,6 +33,7 @@ Rect = Struct.new(:x, :y, :width, :height)
 class Scene_Title; def start; end; def create_command_window; end; def update; end; def terminate; end; end
 class Window_TitleCommand; def make_command_list; end; end
 module Sound; %w[cursor ok cancel buzzer].each { |s| define_singleton_method("play_#{s}") { $sounds << s } }; end
+module Input; def self.trigger?(button); ($buttons || []).include?(button); end; end
 module SceneManager
   def self.call(scene); $called = scene; end
   def self.scene; Object.new.tap { |scene| def scene.prepare(*); end }; end
@@ -679,7 +680,7 @@ check("the whole description opens in the list box, broken into lines", [box.not
 
 # A window of the left side: keeps its rows, its cursor and whether it takes input.
 class FakeList
-  attr_accessor :index, :active, :pane
+  attr_accessor :index, :active, :boxed
   attr_reader :rows
 
   # Creates the window.
@@ -702,30 +703,72 @@ class FakeList
 end
 
 worlds = FakeList.new([])
-commands = FakeList.new([[:new_world, nil], [:join_hidden, nil], [:rename, nil], [:cancel, nil]])
+commands = FakeList.new([[:new_world, nil], [:join_hidden, nil], [:rename, nil], [:back, nil]])
 pane = MpWorldListPane.new(worlds, commands)
-check("the cursor starts on the first command, before any world arrived", [pane.current_symbol, pane.current_ext, worlds.active, commands.active, worlds.index], [:new_world, nil, false, true, -1])
-check("without worlds the cursor cannot leave the commands", [pane.cross(:worlds, :first), pane.current_symbol], [false, :new_world])
+left = 0
+[:world, :new_world, :cancel].each { |symbol| pane.set_handler(symbol, symbol == :cancel ? lambda { left += 1 } : nil) }
+check("each window takes its own choices, cancel backs out of both, and Back leaves the screen", [worlds.handlers, commands.handlers], [[:world, :cancel], [:new_world, :cancel, :back]])
+check("the commands are picked as a whole, before any world arrived", [pane.inside?, pane.active, commands.boxed, worlds.boxed, pane.current_symbol, worlds.active, commands.active, commands.index], [false, true, true, false, nil, false, false, -1])
+check("without worlds the list cannot be picked", [pane.pick(:worlds), commands.boxed], [false, true])
 pane.entries = [:a, :b, :c]
-check("the first worlds to arrive take the cursor", [pane.current_symbol, pane.current_ext, worlds.active, commands.active, commands.index], [:world, :a, true, false, -1])
-check("the cursor changed windows in this frame only, until the screen starts the next", [pane.settling?, (pane.settle; pane.settling?)], [true, false])
+check("the first worlds to arrive are picked", [worlds.boxed, commands.boxed, pane.current_ext, worlds.index], [true, false, nil, -1])
+$buttons = [:DOWN]
+pane.update
+check("down picks the commands", [commands.boxed, worlds.boxed], [true, false])
+$buttons = [:UP]
+pane.update
+check("up the worlds again", [worlds.boxed, commands.boxed], [true, false])
+$buttons = [:C]
+pane.update
+check("confirm moves into the picked window, onto its first row", [pane.inside?, pane.current_symbol, pane.current_ext, worlds.active, worlds.boxed], [true, :world, :a, true, false])
 worlds.select(2)
-pane.cross(:commands, :first)
-check("from the last world it moves onto the first command", [pane.current_symbol, pane.current_ext, worlds.index, commands.active], [:new_world, nil, -1, true])
-pane.cross(:worlds, :last)
-check("and from the first command back onto the last world", [pane.current_ext, commands.index], [:c, -1])
+$buttons = [:B, :C, :DOWN]
+pane.update
+check("the pane leaves the keys to the window the cursor is in", [pane.current_ext, $buttons.size, left], [:c, 3, 0])
+$buttons = []
+worlds.deactivate
+pane.back_out
+check("cancel there moves back out, around the window", [pane.inside?, pane.active, worlds.boxed, worlds.index, worlds.active], [false, true, true, -1, false])
+$buttons = [:B]
+pane.update
+check("the press that moved out does not also leave the screen", left, 0)
+pane.settle
+pane.update
+check("the next one does", left, 1)
+pane.pick(:commands)
+pane.enter
+commands.select(2)
+commands.deactivate
+pane.back_out
+pane.pick(:worlds)
+pane.enter
+check("a window is entered on the row the cursor left in it", pane.current_ext, :c)
+worlds.deactivate
+pane.back_out
+pane.pick(:commands)
+pane.enter
+check("the commands too", pane.current_symbol, :rename)
 pane.deactivate
 check("the pane takes no input while something else does", [pane.active, worlds.active, commands.active], [false, false, false])
 pane.activate
-check("and gives it back to the window with the cursor", [worlds.active, commands.active], [true, false])
+check("and gives it back to the window with the cursor", [worlds.active, commands.active], [false, true])
+commands.deactivate
+pane.back_out
+pane.pick(:worlds)
+pane.deactivate
+pane.activate
+$buttons = [:C]
+pane.update
+check("a pick that takes the input again waits a frame for its keys", [pane.active, pane.inside?], [true, false])
+$buttons = []
+pane.settle
+pane.enter
 pane.entries = []
-check("the commands take the cursor when the last world goes", [pane.current_symbol, commands.active], [:new_world, true])
+check("the commands are picked when the last world goes", [pane.inside?, commands.boxed, pane.active, pane.enter, pane.current_symbol], [false, true, true, true, :rename])
 pane.entries = [:d]
-check("worlds arriving later leave the cursor where it is", pane.current_symbol, :new_world)
-pane.select_symbol(:rename)
-check("a command is picked by its symbol", [pane.current_symbol, worlds.index], [:rename, -1])
-[:world, :new_world, :cancel].each { |symbol| pane.set_handler(symbol, nil) }
-check("each window takes its own choices, and both cancel", [worlds.handlers, commands.handlers], [[:world, :cancel], [:new_world, :cancel]])
+check("worlds arriving later leave the cursor where it is", pane.current_symbol, :rename)
+pane.select_symbol(:join_hidden)
+check("a command is picked by its symbol", [pane.current_symbol, pane.inside?, worlds.index], [:join_hidden, true, -1])
 check("the pane is as wide as the worlds and as high as both windows", [pane.width, pane.height], [230, 200])
 
 # The creator updates a world's game data.

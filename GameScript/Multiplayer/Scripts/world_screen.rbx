@@ -2,7 +2,8 @@
 #  world_screen.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Created the list box before a cancelled name prompt closes the screen, which disposes it
+#      Paulinchen  2026-10-04: Picked the worlds or the commands as a whole first, then moved into the picked window with confirm and back out with cancel
+#                            - Created the list box before a cancelled name prompt closes the screen, which disposes it
 #                            - Kept a world this PC has saves of from being entered while the list, which tells its mods and game data, has not arrived
 #                            - Broke a description's lines through MGQ_MpUi.wrap, which breaks inside a word longer than a line
 #                            - Renamed from mp_world_screen.rbx
@@ -44,7 +45,7 @@
 # adding a hidden one are forms that take the right side while the list points at them.
 class Scene_MpWorlds < Scene_MenuBase
   # What the screen says while nothing else happened.
-  HINT = "Choose a world to enter it, or create a new one. Right arrow: its details."
+  HINT = "Up and down pick the worlds or the commands, confirm moves into them. Right arrow on a world: its details."
 
   # What the screen says while a text box is typed into.
   TYPING_HINT = "Type on the keyboard. Arrows, Home, End move the cursor. Enter keeps it, Esc or Numpad 0 goes back."
@@ -147,6 +148,7 @@ class Scene_MpWorlds < Scene_MenuBase
         @resume_form = false
         @form_window.activate
       elsif !form && !@busy && !popup_open?
+        @list_window.update
         update_focus
       end
     end
@@ -1115,10 +1117,11 @@ class Scene_MpWorlds < Scene_MenuBase
 end
 
 # The left side of the world screen as the screen sees it: the worlds, which scroll, above the
-# commands, which stay in place. It hands the cursor from one to the other and answers for
-# whichever has it.
+# commands, which stay in place. The player first picks one of the two windows as a whole, so the
+# commands are reached without moving past every world, then confirms to move inside it; cancel
+# goes back to picking a window. The pane answers for whichever window has the cursor.
 class MpWorldListPane
-  # Creates the pane with the cursor on the first command, since the worlds arrive later.
+  # Creates the pane with the commands picked, since the worlds arrive later.
   #
   # @param worlds [Window_MpWorldList] The worlds.
   # @param commands [Window_MpWorldCommands] The commands below them.
@@ -1126,13 +1129,15 @@ class MpWorldListPane
     @worlds = worlds
     @commands = commands
     @focus = :commands
+    @inside = false
+    @picking = true
+    @left_at = {}
     @arrived = false
-    @worlds.pane = self
-    @commands.pane = self
-    @worlds.unselect
-    @worlds.deactivate
-    @commands.select(0)
-    @commands.activate
+    [@worlds, @commands].each do |window|
+      window.unselect
+      window.deactivate
+    end
+    show_pick
   end
 
   # Returns the width of the pane.
@@ -1149,54 +1154,78 @@ class MpWorldListPane
     @worlds.height + @commands.height
   end
 
-  # Sets what a choice does: entering a world's choices, a command, or cancel in either window.
+  # Sets what a choice does: entering a world's choices, a command, or leaving the screen, which
+  # cancel does while a window is picked and the commands' Back does always.
   #
   # @param symbol [Symbol] :world, a command's symbol or :cancel.
-  # @param method [Method] What it does.
-  def set_handler(symbol, method)
-    @worlds.set_handler(symbol, method) if symbol == :world || symbol == :cancel
-    @commands.set_handler(symbol, method) unless symbol == :world
+  # @param handler [Method] What it does.
+  def set_handler(symbol, handler)
+    if symbol == :cancel
+      @leave = handler
+      @worlds.set_handler(:cancel, method(:back_out))
+      @commands.set_handler(:cancel, method(:back_out))
+      @commands.set_handler(:back, handler)
+    elsif symbol == :world
+      @worlds.set_handler(symbol, handler)
+    else
+      @commands.set_handler(symbol, handler)
+    end
   end
 
-  # Finds the window that has the cursor.
+  # Finds the window that is picked, or has the cursor on one of its rows.
   #
   # @return [Window_Command] The worlds or the commands.
   def focused
     @focus == :worlds ? @worlds : @commands
   end
 
+  # Tells whether the cursor is on a row inside a window, not around a window as a whole.
+  #
+  # @return [Boolean] Whether it is.
+  def inside?
+    @inside
+  end
+
   # Returns the world the cursor is on.
   #
-  # @return [MGQ_MpWorld::Entry, nil] The world, nil while the cursor is on a command.
+  # @return [MGQ_MpWorld::Entry, nil] The world, nil while the cursor is on a command or around a window.
   def current_ext
-    @focus == :worlds ? @worlds.current_ext : nil
+    @inside && @focus == :worlds ? @worlds.current_ext : nil
   end
 
   # Returns the symbol of what the cursor is on.
   #
-  # @return [Symbol, nil] :world or a command's symbol.
+  # @return [Symbol, nil] :world or a command's symbol, nil while the cursor is around a window.
   def current_symbol
-    focused.current_symbol
+    @inside ? focused.current_symbol : nil
   end
 
   # Tells whether the pane takes the input.
   #
-  # @return [Boolean] Whether one of its windows does.
+  # @return [Boolean] Whether one of its windows does, or the pick between them.
   def active
-    @worlds.active || @commands.active
+    @inside ? @worlds.active || @commands.active : @picking
   end
 
-  # Lets the window with the cursor take the input.
+  # Lets the window with the cursor take the input, or the pick between the windows.
   def activate
-    @focus = :commands if @worlds.item_max == 0
-    focused.select(0) if focused.index < 0
-    focused.activate
+    back_out if @inside && @focus == :worlds && @worlds.item_max == 0
+
+    if @inside
+      focused.select(0) if focused.index < 0
+      focused.activate
+    else
+      # The press that led here must not also pick or leave.
+      @settling = true
+      @picking = true
+    end
   end
 
-  # Stops both windows from taking the input.
+  # Stops the pane from taking the input.
   def deactivate
     @worlds.deactivate
     @commands.deactivate
+    @picking = false
   end
 
   # Puts the cursor on a command.
@@ -1204,12 +1233,14 @@ class MpWorldListPane
   # @param symbol [Symbol] The command's symbol.
   def select_symbol(symbol)
     @focus = :commands
+    @inside = true
     @worlds.unselect
+    show_pick
     @commands.select_symbol(symbol)
   end
 
-  # Shows other worlds. The first worlds to arrive take the cursor if it still rests where it
-  # started, and the commands take it when the last world went.
+  # Shows other worlds. The first worlds to arrive are picked if the pick still rests where it
+  # started, and the commands when the last world went.
   #
   # @param entries [Array<MGQ_MpWorld::Entry>] The worlds.
   def entries=(entries)
@@ -1217,41 +1248,97 @@ class MpWorldListPane
 
     if !@arrived && !entries.empty?
       @arrived = true
-      cross(:worlds, :first) if @focus == :commands && @commands.index == 0 && @commands.active
+      pick(:worlds) if !@inside && @focus == :commands
     elsif @focus == :worlds && entries.empty?
-      cross(:commands, :first)
+      was_active = active
+      back_out if @inside
+      pick(:commands)
+      @picking = was_active
     end
   end
 
-  # Hands the cursor to the other window, as it leaves one at its edge.
+  # Picks a window as a whole.
   #
   # @param target [Symbol] :worlds or :commands.
-  # @param edge [Symbol] :first or :last, the row it lands on.
-  # @return [Boolean] Whether it moved; not into a list without worlds.
-  def cross(target, edge)
-    return false if target == :worlds && @worlds.item_max == 0
+  # @return [Boolean] Whether it is picked; not a list without worlds.
+  def pick(target)
+    return false if @inside || (target == :worlds && @worlds.item_max == 0)
 
-    @crossed = true
-    was_active = active
-    focused.unselect
-    focused.deactivate
     @focus = target
-    focused.select(edge == :first ? 0 : focused.item_max - 1)
-    focused.activate if was_active
+    show_pick
     true
   end
 
-  # Tells whether the cursor changed windows in this frame, whose key press the window it
-  # landed in must not follow again.
+  # Moves the cursor into the picked window, onto the row it left there.
   #
-  # @return [Boolean] Whether it did.
-  def settling?
-    @crossed == true
+  # @return [Boolean] Whether it moved; not into a list without worlds.
+  def enter
+    return false if @inside || (@focus == :worlds && @worlds.item_max == 0)
+
+    @inside = true
+    @picking = false
+    show_pick
+    focused.select([[@left_at[@focus] || 0, 0].max, focused.item_max - 1].min)
+    focused.activate
+    true
   end
 
-  # Ends the frame the cursor changed windows in. Called by the screen before its windows update.
+  # Moves the cursor out of a window and around it, back to the pick between the windows.
+  def back_out
+    return unless @inside
+
+    @left_at[@focus] = focused.index
+    focused.unselect
+    focused.deactivate
+    @inside = false
+    @picking = true
+    @settling = true
+    show_pick
+  end
+
+  # Follows the keys while a window is picked: up and down pick the other one, confirm moves
+  # into it, cancel leaves the screen. Called by the screen after its windows updated.
+  def update
+    return if @inside || !@picking || @settling
+
+    if Input.trigger?(:C)
+      enter ? Sound.play_ok : Sound.play_buzzer
+    elsif Input.trigger?(:B)
+      Sound.play_cancel
+      @leave.call if @leave
+    elsif Input.trigger?(:DOWN) || Input.trigger?(:UP)
+      Sound.play_cursor if pick(@focus == :worlds ? :commands : :worlds)
+    end
+  end
+
+  # Draws the cursor around the picked window, or around none while the cursor is inside one.
+  def show_pick
+    @worlds.boxed = !@inside && @focus == :worlds
+    @commands.boxed = !@inside && @focus == :commands
+  end
+
+  # Ends the frame the pick began in. Called by the screen before its windows update.
   def settle
-    @crossed = false
+    @settling = false
+  end
+end
+
+# Lets a window of the left side show the cursor around all it shows, while the player picks
+# between the windows.
+module MGQ_MpBoxCursor
+  # Draws the cursor around the whole window, or gives it back to the rows.
+  #
+  # @param boxed [Boolean] Whether the window is picked as a whole.
+  def boxed=(boxed)
+    @boxed = boxed
+    update_cursor
+  end
+
+  # Keeps the cursor around all the window shows while it is picked as a whole.
+  def update_cursor
+    return super unless @boxed
+
+    cursor_rect.set(0, oy, contents_width, height - standard_padding * 2)
   end
 end
 
@@ -1271,8 +1358,7 @@ class Window_MpWorldList < Window_Command
   TRACK_COLOR = Color.new(0, 0, 0, 96)
   THUMB_COLOR = Color.new(255, 255, 255, 160)
 
-  # The pane the window belongs to, which takes the cursor at the window's edges.
-  attr_writer :pane
+  include MGQ_MpBoxCursor
 
   # Creates the list below the lines.
   #
@@ -1330,28 +1416,6 @@ class Window_MpWorldList < Window_Command
     (@entries || []).each { |entry| add_command(entry.name, :world, true, entry) }
   end
 
-  # Moves down, or onto the commands from the last world.
-  #
-  # @param wrap [Boolean] Whether the cursor may leave the list.
-  def cursor_down(wrap = false)
-    return if @pane && @pane.settling?
-
-    return super unless index >= item_max - 1 && @pane
-
-    @pane.cross(:commands, :first)
-  end
-
-  # Moves up, or onto the last command from the first world.
-  #
-  # @param wrap [Boolean] Whether the cursor may leave the list.
-  def cursor_up(wrap = false)
-    return if @pane && @pane.settling?
-
-    return super unless index <= 0 && @pane
-
-    @pane.cross(:commands, :last) if wrap
-  end
-
   # Draws a world with its players online and seats, a featured one in gold, a favourite with a
   # mark, and one its creator deleted pale.
   #
@@ -1401,8 +1465,7 @@ end
 # What the world screen offers besides the worlds, in a window of its own below them, so it stays
 # in place while the worlds scroll.
 class Window_MpWorldCommands < Window_Command
-  # The pane the window belongs to, which takes the cursor at the window's edges.
-  attr_writer :pane
+  include MGQ_MpBoxCursor
 
   # Creates the window at the bottom left of the screen.
   def initialize
@@ -1422,29 +1485,7 @@ class Window_MpWorldCommands < Window_Command
     add_command("Create new world", :new_world)
     add_command("Add a hidden world", :join_hidden)
     add_command("Change your name", :rename)
-    add_command("Back", :cancel)
-  end
-
-  # Moves down, or onto the first world from the last command.
-  #
-  # @param wrap [Boolean] Whether the cursor may leave the commands.
-  def cursor_down(wrap = false)
-    return if @pane && @pane.settling?
-
-    return super unless index >= item_max - 1 && @pane
-
-    super unless wrap && @pane.cross(:worlds, :first)
-  end
-
-  # Moves up, or onto the last world from the first command.
-  #
-  # @param wrap [Boolean] Whether the cursor may leave the commands.
-  def cursor_up(wrap = false)
-    return if @pane && @pane.settling?
-
-    return super unless index <= 0 && @pane
-
-    super unless @pane.cross(:worlds, :last)
+    add_command("Back", :back)
   end
 end
 
