@@ -2,7 +2,8 @@
 #  core_hotkeys.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Added the emote wheel's key, E unless bound
+#      Paulinchen  2026-10-04: Added the party box size key, Tab unless bound, and named Tab
+#                            - Added the emote wheel's key, E unless bound
 #                            - Renamed from mp_hotkeys.rbx
 #      Paulinchen  2026-10-03: Logged through MGQ_MpLog
 #                            - Added the keys that accept and decline the first invite of the notification box
@@ -42,6 +43,8 @@ module MGQ_MpHotkeys
                             "The key that declines the first invite or challenge in the notification box at the top left, in a world."),
     :emotes => Binding.new("key_emotes", 0x45, :mp_key_emotes, "Emote Wheel",
                            "The key that opens and closes the emote wheel on the map of a world: jump, or show a balloon above your character."),
+    :party_box => Binding.new("key_party_box", 0x09, :mp_key_party_box, "Party Box Size",
+                              "The key that makes the party box at the top right small, with only names and pings, and full again."),
   }
 
   # Highest Windows key code.
@@ -91,7 +94,7 @@ module MGQ_MpHotkeys
   end
 
   # Names a key without Mod Config Remake 1.3.0, such as with an older version that bound it before:
-  # letters, digits and F keys by their own name.
+  # letters, digits, F keys and Tab by their own name.
   #
   # @param code [Integer] Windows' code of the key.
   # @return [String] The name, such as "K", "F11" or "key 186".
@@ -99,6 +102,7 @@ module MGQ_MpHotkeys
     case code
     when 0x30..0x39, 0x41..0x5A then code.chr
     when 0x70..0x87 then "F#{code - 0x6F}"
+    when 0x09 then "Tab"
     else "key #{code}"
     end
   end

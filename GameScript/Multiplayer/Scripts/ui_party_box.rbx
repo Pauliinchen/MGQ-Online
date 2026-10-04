@@ -2,16 +2,61 @@
 #  ui_party_box.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Created
+#      Paulinchen  2026-10-04: Made the box small with its key, only names and pings, and kept the choice in Player.ini
+#                            - Created
 #
 #----------------------------------------------------------------
 
+# The party box's size: its key (Tab unless the player binds another, see core_hotkeys.rbx) makes
+# it small, with only each player's name and ping, and full again. The choice holds in every world.
+#
+# It must never interrupt the game, so every entry point rescues.
+module MGQ_MpPartyBox
+  # The setting in Player.ini that keeps the box small.
+  SMALL_SETTING = "party_box_small"
+
+  extend MGQ_MpLog
+
+  # What starts this script's lines in the mod's InGame.log.
+  LOG_TAG = "party box"
+
+  # Reports whether the box shows small, as the player last chose.
+  #
+  # @return [Boolean] Whether it does.
+  def self.small?
+    @small = MGQ_Multiplayer::Player.setting(SMALL_SETTING).to_s == "1" if @small.nil?
+    @small
+  end
+
+  # Makes the box small or full, keeping the choice in Player.ini.
+  def self.toggle
+    @small = !small?
+    MGQ_Multiplayer::Player.store(SMALL_SETTING, @small ? 1 : 0)
+    Sound.play_cursor
+  end
+
+  # Changes the box's size with its key, on the map of a world with no screen of the mod over it.
+  # Called by the map every frame, so a press of the key is seen once.
+  def self.on_map
+    pressed = MGQ_MpHotkeys.pressed?(:party_box)
+    return unless pressed && MGQ_MpOverworldSync.in_world? && MGQ_MpCoop.in_party?
+    return if MGQ_MpChat.typing? || MGQ_MpActions::Wheel.open? || MGQ_MpEmotes.open? || MGQ_MpWorldOverview.open?
+
+    toggle
+  rescue => e
+    log("changing the box's size failed: #{e.class}: #{e.message}")
+  end
+end
+
 # The box at the top right of the map that lists the player's party: the leader first with a crown,
 # then the others by name, each with their highest companion level and ping, and where they are on
-# a smaller line below.
+# a smaller line below. Small, it lists only each player's name and ping.
 class Sprite_MpPartyBox < Sprite
   # Width of the box.
   WIDTH = 230
+
+  # Width of the small box.
+  SMALL_WIDTH = 150
 
   # Height of one line.
   ROW = 22
@@ -62,11 +107,12 @@ class Sprite_MpPartyBox < Sprite
     self.visible = !rows.empty?
     return unless visible
 
-    drawn = rows.map { |row| [row.name, row.level, row.ping && row.ping[0], row.badge, row.place] }
+    small = MGQ_MpPartyBox.small?
+    drawn = [small] + rows.map { |row| [row.name, row.level, row.ping && row.ping[0], row.badge, row.place] }
     return if drawn == @shown
 
     @shown = drawn
-    draw(rows)
+    small ? draw_small(rows) : draw(rows)
   rescue => e
     MGQ_MpWorldOverview.log_once(:party_box, "drawing the party box failed: #{e.class}: #{e.message}")
   end
@@ -76,6 +122,7 @@ class Sprite_MpPartyBox < Sprite
   # @param rows [Array<MGQ_MpWorldOverview::Row>] The party, see MGQ_MpWorldOverview.party_rows.
   def draw(rows)
     height = ROW + PLAYER_ROW * rows.size + 4
+    self.x = Graphics.width - WIDTH - MARGIN
     self.y = MARGIN
     bitmap.clear
     bitmap.fill_rect(0, 0, WIDTH, height, BACK)
@@ -87,15 +134,42 @@ class Sprite_MpPartyBox < Sprite
     rows.each_with_index { |row, index| draw_row(row, ROW + PLAYER_ROW * index + 2) }
   end
 
+  # Draws the small box: a row per player with the crown, the name and the ping, and no title.
+  #
+  # @param rows [Array<MGQ_MpWorldOverview::Row>] The party, see MGQ_MpWorldOverview.party_rows.
+  def draw_small(rows)
+    self.x = Graphics.width - SMALL_WIDTH - MARGIN
+    self.y = MARGIN
+    bitmap.clear
+    bitmap.fill_rect(0, 0, SMALL_WIDTH, ROW * rows.size + 4, BACK)
+    bitmap.font.outline = true
+    bitmap.font.size = 16
+    rows.each_with_index do |row, index|
+      y = ROW * index + 2
+      draw_crown(y) if row.badge && row.badge[1]
+      bitmap.font.color = Sprite_MpWorldOverview::MEMBER_COLOR
+      bitmap.draw_text(COLUMNS[:name], y, SMALL_WIDTH - COLUMNS[:name] - 50, ROW, row.name)
+      next unless row.ping
+
+      bitmap.font.color = row.ping[1]
+      bitmap.draw_text(SMALL_WIDTH - 54, y, 48, ROW, row.ping[0], 2)
+    end
+  end
+
+  # Draws the leader's crown before a name.
+  #
+  # @param y [Integer] The row's top.
+  def draw_crown(y)
+    icon = MGQ_MpOverworld::CROWN_ICON
+    bitmap.stretch_blt(Rect.new(COLUMNS[:crown], y + 1, ROW - 2, ROW - 2), Cache.system("Iconset"), Rect.new(icon % 16 * 24, icon / 16 * 24, 24, 24))
+  end
+
   # Draws one player of the party, with where they are below.
   #
   # @param row [MGQ_MpWorldOverview::Row] The player.
   # @param y [Integer] The player's top.
   def draw_row(row, y)
-    if row.badge && row.badge[1]
-      icon = MGQ_MpOverworld::CROWN_ICON
-      bitmap.stretch_blt(Rect.new(COLUMNS[:crown], y + 1, ROW - 2, ROW - 2), Cache.system("Iconset"), Rect.new(icon % 16 * 24, icon / 16 * 24, 24, 24))
-    end
+    draw_crown(y) if row.badge && row.badge[1]
     bitmap.font.color = Sprite_MpWorldOverview::MEMBER_COLOR
     bitmap.draw_text(COLUMNS[:name], y, COLUMNS[:level] - COLUMNS[:name] - 4, ROW, row.name)
     bitmap.font.color = Color.new(255, 255, 255)
@@ -130,6 +204,10 @@ end
 # Game hooks, through core_hooks.rbx.
 
 begin
+  # After the map's update, the box's key. The game checks its own keys there too, only while no
+  # scene change is in the way.
+  MGQ_MpHooks.after(Scene_Map, :update_scene, "ui_party_box") { MGQ_MpPartyBox.on_map unless scene_changing? }
+
   # After the map's sprites, the party's box.
   MGQ_MpHooks.after(Spriteset_Map, :update, "ui_party_box") { (@mgq_mp_party_box ||= Sprite_MpPartyBox.new(@viewport3)).update }
 
@@ -138,5 +216,5 @@ begin
     @mgq_mp_party_box = nil
   end
 rescue => e
-  MGQ_MpWorldOverview.log("party box hooks FAILED: #{e.class}: #{e.message}")
+  MGQ_MpPartyBox.log("hooks FAILED: #{e.class}: #{e.message}")
 end

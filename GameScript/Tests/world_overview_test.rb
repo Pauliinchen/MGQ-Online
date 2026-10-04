@@ -2,7 +2,8 @@
 #  world_overview_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Followed the scripts to their new names, without mp_
+#      Paulinchen  2026-10-04: Checked the party box's size key, its small rows and its setting
+#                            - Followed the scripts to their new names, without mp_
 #      Paulinchen  2026-10-03: Followed the choices to the scripts that offer them
 #                            - Added a stand-in for duels without PvP battles
 #                            - Named the member in the leader's invite, which admits them
@@ -41,6 +42,8 @@ module MGQ_MpBattlesDuel
 end
 MGQ_MpActions.offer(MGQ_MpBattlesDuel)
 load_script "world_overview"
+module MGQ_MpEmotes; def self.open?; false; end; end
+load_script "ui_party_box"
 
 overview = MGQ_MpWorldOverview
 
@@ -148,6 +151,40 @@ check("in a party the player's own row is green", overview.rows.first.member, tr
 check("the party box lists the party, its leader first, with levels", overview.party_rows.map { |row| [row.name, row.level, row.badge[1]] },
       [["Friend", "Lv 30", true], ["Me", "Lv 55", false]])
 check("and where each one is", overview.party_rows.map(&:place), overview.party_rows.map { |row| overview.rows.find { |r| r.name.start_with?(row.name) }.place })
+
+# The party box's size.
+overview.close
+check("the party box starts full", MGQ_MpPartyBox.small?, false)
+$pressed = MGQ_MpHotkeys.code(:party_box)
+MGQ_MpPartyBox.on_map
+check("Tab makes it small, which Player.ini keeps", [MGQ_MpPartyBox.small?, $player_ini["party_box_small"]], [true, "1"])
+MGQ_MpPartyBox.instance_variable_set(:@small, nil)
+check("so it is small again after a restart", MGQ_MpPartyBox.small?, true)
+drawn = []
+font = Struct.new(:color, :size, :outline).new
+canvas = Object.new
+canvas.define_singleton_method(:font) { font }
+canvas.define_singleton_method(:clear) {}
+canvas.define_singleton_method(:fill_rect) { |*args| drawn << [:fill, args[2]] }
+canvas.define_singleton_method(:stretch_blt) { |*_| drawn << [:crown] }
+canvas.define_singleton_method(:draw_text) { |_x, _y, _w, _h, text, *_| drawn << [:text, text] }
+module Cache; def self.system(_name); nil; end; end
+module Graphics; def self.width; 640; end; end
+box = Sprite_MpPartyBox.allocate
+class << box; attr_accessor :x, :y; end
+box.define_singleton_method(:bitmap) { canvas }
+box.draw_small(overview.party_rows)
+check("small, it lists only the crown, the names and the pings, in a narrower box at the top right",
+      [box.x, drawn.first, drawn.select { |kind, _| kind == :crown }.size, drawn.select { |kind, _| kind == :text }.map(&:last).reject { |text| text.end_with?("ms") }],
+      [640 - Sprite_MpPartyBox::SMALL_WIDTH - Sprite_MpPartyBox::MARGIN, [:fill, Sprite_MpPartyBox::SMALL_WIDTH], 1, ["Friend", "Me"]])
+MGQ_MpChat.start_typing
+$pressed = MGQ_MpHotkeys.code(:party_box)
+MGQ_MpPartyBox.on_map
+check("its key does nothing while the player types", MGQ_MpPartyBox.small?, true)
+MGQ_MpChat.stop_typing
+$pressed = MGQ_MpHotkeys.code(:party_box)
+MGQ_MpPartyBox.on_map
+check("then makes it full again", [MGQ_MpPartyBox.small?, $player_ini["party_box_small"]], [false, "0"])
 
 # Places shortened to fit the party box, measured at 10 pixels a letter in 300 pixels.
 fit = lambda { |place| overview.fit_place(place, 300) { |text| text.length * 10 } }
