@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-04: Created the list box before a cancelled name prompt closes the screen, which disposes it
+#                            - Kept a world this PC has saves of from being entered while the list, which tells its mods and game data, has not arrived
 #                            - Renamed from mp_world_screen.rbx
 #                            - Drew the forms' text boxes through MGQ_MpUi::TextBox, and moved their cursor a line through MGQ_MpUi::TextEdit, which every text box shares
 #                            - Showed a world's description, the mods it needs and whether the player's game data matches its creator's
@@ -279,8 +280,9 @@ class Scene_MpWorlds < Scene_MenuBase
       Sound.play_buzzer
       say("#{@entry.name} is still being set up by its creator. Try again in a moment.")
       back_to_list
-    elsif @entry.local && @entry.listed.nil? && @entry.local.latest_save.nil?
-      # Without the list, a first entry cannot know where the world's players start.
+    elsif @entry.local && @entry.listed.nil? && (@entry.local.latest_save.nil? || !@entry.gone)
+      # Without the list, a first entry cannot know where the world's players start, and no entry
+      # which mods and game data the world asks for.
       refuse(@entry.gone ? "#{@entry.name} is no longer in the list: it was deleted, or you were removed." : "#{@entry.name} is not in the list right now. Try again once the list has loaded.")
       back_to_list
     elsif @entry.local
