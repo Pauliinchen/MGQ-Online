@@ -2,7 +2,8 @@
 #  coop_events_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Checked that a call is kept out of a duel, dropped at its end, and waits for a dark screen
+#      Paulinchen  2026-10-04: Checked that a member not as far along is lent the story's key items, which go back and stay out of saves
+#                            - Checked that a call is kept out of a duel, dropped at its end, and waits for a dark screen
 #                            - Checked that the members near the leader follow where the story moves the leader
 #                            - Checked that a member's story event starts nowhere and says so once
 #                            - Checked traders: a side quest that cannot run, a goods script, a quest step behind a choice, a chest that asks first, and the talk's watch
@@ -64,7 +65,7 @@ module MGQ_MpCoop
 end
 module RPG
   class BaseItem; attr_accessor :id, :name; def initialize(id, name); @id, @name = id, name; end; end
-  class Item < BaseItem; end
+  class Item < BaseItem; attr_writer :key; def key_item?; @key ? true : false; end; end
   class Weapon < BaseItem; end
   class Armor < BaseItem; end
   EventCommand = Struct.new(:code, :indent, :parameters)
@@ -84,7 +85,8 @@ $data_system.switches[20] = "Event General-Purpose 1"
 $data_system.variables[7] = "General 0"
 $data_common_events = [nil, RPG::CommonEvent.new([c(121, 50, 50, 0)]), RPG::CommonEvent.new([c(101, "", 0, 0, 2), c(117, 3)]), RPG::CommonEvent.new([c(117, 2)])]
 $data_actors = Array.new(10)
-$data_items = [nil, RPG::Item.new(1, "Potion"), RPG::Item.new(2, "Elixir")]
+$data_items = [nil, RPG::Item.new(1, "Potion"), RPG::Item.new(2, "Elixir"), RPG::Item.new(3, "Basement Key")]
+$data_items[3].key = true
 $data_weapons = [nil, RPG::Weapon.new(1, "Sword")]
 $data_armors = [nil]
 module Vocab; def self.currency_unit; "G"; end; end
@@ -103,6 +105,7 @@ class Game_Party
   def remove_actor(actor_id); @include_actors.delete(actor_id); @actors.delete(actor_id); end
   def exist_all_actor_id?(actor_id); @include_actors.include?(actor_id); end
   def exist_party_actor_id?(actor_id); @actors.include?(actor_id); end
+  def item_number(item); @items[item.name]; end
   def party_member_full?; @actors.size >= 2; end
 end
 module Graphics; def self.frame_count; $frame_count; end; def self.brightness; $brightness || 255; end; end
@@ -773,11 +776,13 @@ def play_along(own_progress)
   MGQ_MpCoopStory.take($story_leader, { "story" => "delta", "party" => "p1", "s" => "82:1", "v" => "1001:n41", "ss" => "" })
   $game_variables[150] = 7
   $game_switches[90] = true
-  [["gain", "item", "i1x2"], ["gain", "item", "g0x-30"], ["gain", "item", "w1x1"], ["depart", "actor", "3"], ["recruit", "actor", "3"], ["recruit", "actor", "4"]].each do |kind, field, value|
+  [["gain", "item", "i1x2"], ["gain", "item", "g0x-30"], ["gain", "item", "w1x1"], ["gain", "item", "i3x1"], ["depart", "actor", "3"], ["recruit", "actor", "3"],
+   ["recruit", "actor", "4"]].each do |kind, field, value|
     MGQ_MpCoopStory.take($story_leader, { "story" => kind, "party" => "p1", field => value })
   end
-  save = MGQ_MpCoopStory.save_contents(:switches => $game_switches, :variables => $game_variables, :self_switches => $game_self_switches)
-  saved = [save[:switches][82], save[:variables][1001], save[:variables][150]]
+  $key_in_party = $game_party.items["Basement Key"]
+  save = MGQ_MpCoopStory.save_contents(:switches => $game_switches, :variables => $game_variables, :self_switches => $game_self_switches, :party => $game_party)
+  saved = [save[:switches][82], save[:variables][1001], save[:variables][150], save[:party].items["Basement Key"]]
   $party = nil
   $leader = nil
   $members = []
@@ -792,7 +797,8 @@ check("a member as far along hears they keep what they play together", joined,
 check("once the party ends they keep the story played together, not what the leader had before",
       [switches[80], switches[81], switches[82], variables[1001]], [true, false, true, 41])
 check("and what changed in their own game meanwhile", [switches[90], variables[150]], [true, 7])
-check("a save made in the party holds it too", saved, [true, 41, 7])
+check("a save made in the party holds it too, the story's key item included", saved, [true, 41, 7, 1])
+check("which they keep", $game_party.items["Basement Key"], 1)
 check("the story's items and gold are theirs", [$game_party.items["Potion"], $game_party.items["Sword"], $game_party.gold], [2, 1, -30])
 check("a companion the story sent away and brought back is in the party again, a new one waits at the castle",
       [$game_party.actors, $game_party.include_actors], [[3], [3, 4]])
@@ -801,3 +807,6 @@ check("with notices", $notices.include?("Leader's story took 30 G from you too."
 joined, switches, variables, saved = play_along(30)
 check("a member behind the leader keeps none of the leader's story", [switches[80], switches[82], variables[1001], switches[90], variables[150]], [true, false, 30, false, 0])
 check("nor its items, gold or companions", [$game_party.items["Potion"], $game_party.gold, $game_party.include_actors], [0, 0, [3]])
+check("but the story's key item is lent while they play along, and left out of a save", [$key_in_party, saved[3]], [1, 0])
+check("and goes back once the party ends", [$game_party.items["Basement Key"], $notices.include?("Leader lent you Basement Key for the story."),
+                                             $notices.include?("Basement Key went back to the party's leader.")], [0, true, true])

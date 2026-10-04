@@ -2,7 +2,8 @@
 #  coop_story.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Renamed from mp_coop_story.rbx
+#      Paulinchen  2026-10-04: Lent the key items of the leader's story to members not as far along, taken back when they get their own story back and left out of their saves
+#                            - Renamed from mp_coop_story.rbx
 #      Paulinchen  2026-10-03: Kept the warp ban as each player's own, since it tells of the place they stand in
 #                            - Called the scripts that load before this one without asking whether they loaded
 #                            - Sent messages, showed notices and read the world, the own id and the own seat through MGQ_MpOverworldSync
@@ -169,7 +170,7 @@ module MGQ_MpCoopStory
     when "depart"
       depart(peer, message["actor"].to_i) if leader.equal?(peer) && guest? && @same
     when "gain"
-      gain(peer, message["item"].to_s) if leader.equal?(peer) && guest? && @same
+      gain(peer, message["item"].to_s) if leader.equal?(peer) && guest?
     end
   rescue => e
     log("taking #{message['story']} failed: #{e.class}: #{e.message}")
@@ -196,6 +197,7 @@ module MGQ_MpCoopStory
       @same = same_story?(@own, story)
       @recorded = [{}, {}, {}]
       @departed = []
+      @lent = {}
     end
     set_raw(*mix(story, raw_state))
     @borrowed = deep_copy(raw_state)
@@ -339,7 +341,8 @@ module MGQ_MpCoopStory
     MGQ_MpOverworldSync.notice("#{$data_actors[actor_id].name} left you too.")
   end
 
-  # Gives or takes items or gold as the leader's story did.
+  # Gives or takes items or gold as the leader's story did. A member not as far along gets only
+  # its key items, lent until they get their own story back (see lend).
   #
   # @param leader [MGQ_MpOverworldSync::Peers::Peer] The leader.
   # @param text [String] The item as written: kind, id, "x" and amount, below zero for a loss.
@@ -347,6 +350,7 @@ module MGQ_MpCoopStory
     return unless text =~ /\A([iwag])(\d+)x(-?\d+)\z/
 
     kind, id, amount = Regexp.last_match(1), Regexp.last_match(2).to_i, Regexp.last_match(3).to_i
+    return lend(leader, id, amount) unless @same
     if kind == "g"
       $game_party.gain_gold(amount)
       name = "#{amount.abs} #{Vocab.currency_unit}"
@@ -358,6 +362,38 @@ module MGQ_MpCoopStory
       name = amount.abs > 1 ? "#{item.name} x#{amount.abs}" : item.name
     end
     MGQ_MpOverworldSync.notice(amount > 0 ? "#{leader.state['name']}'s story gave you #{name} too." : "#{leader.state['name']}'s story took #{name} from you too.")
+  end
+
+  # Lends a member not as far along a key item the leader's story gave, such as the one that opens
+  # a door, so they can play the story along; one the story took again goes back. Every other item
+  # and gold stays the leader's.
+  #
+  # @param leader [MGQ_MpOverworldSync::Peers::Peer] The leader.
+  # @param id [Integer] The item.
+  # @param amount [Integer] How many, below zero for a loss.
+  def self.lend(leader, id, amount)
+    item = $data_items[id]
+    return unless item && item.key_item?
+
+    amount = -[-amount, @lent[id].to_i].min if amount < 0
+    return if amount == 0
+
+    @lent[id] = @lent[id].to_i + amount
+    @lent.delete(id) if @lent[id] <= 0
+    $game_party.gain_item(item, amount)
+    MGQ_MpOverworldSync.notice(amount > 0 ? "#{leader.state['name']} lent you #{item.name} for the story." : "#{item.name} went back to #{leader.state['name']}.")
+  end
+
+  # Takes back the key items the leader's story lent, as the player gets their own story back.
+  def self.return_lent
+    (@lent || {}).each do |id, amount|
+      item = $data_items[id]
+      next unless item
+
+      $game_party.gain_item(item, -[amount, $game_party.item_number(item)].min)
+      MGQ_MpOverworldSync.notice("#{item.name} went back to the party's leader.")
+    end
+    @lent = {}
   end
 
   # Reads a self switch as it is the player's own, whether or not they play the leader's story.
@@ -410,6 +446,7 @@ module MGQ_MpCoopStory
   # Gives the player their own story back, keeping what of their own changed meanwhile.
   def self.restore
     kept = @same
+    return_lent
     set_raw(*mix(own_story, raw_state))
     forget
     MGQ_MpOverworldSync.notice(kept ? "You are back in your own story, with what you played together." : "You are back in your own story.")
@@ -423,6 +460,7 @@ module MGQ_MpCoopStory
     @recorded = nil
     @borrowed = nil
     @departed = nil
+    @lent = {}
     @leader_id = nil
     @waiting = false
   end
@@ -438,7 +476,25 @@ module MGQ_MpCoopStory
     contents[:switches] = with_data(contents[:switches], switches)
     contents[:variables] = with_data(contents[:variables], variables)
     contents[:self_switches] = with_data(contents[:self_switches], self_switches)
+    contents[:party] = without_lent(contents[:party]) if contents[:party]
     contents
+  end
+
+  # Copies the party the game saves without the key items the leader's story lent, which the
+  # member's own story never had.
+  #
+  # @param party [Game_Party] The party.
+  # @return [Game_Party] The party, a copy when items were lent.
+  def self.without_lent(party)
+    return party if (@lent || {}).empty?
+
+    copy = Marshal.load(Marshal.dump(party))
+    @lent.each { |id, amount| copy.gain_item($data_items[id], -amount) if $data_items[id] }
+    copy
+  rescue => e
+    # The save must still hold the member's own story, which a failure here would cost.
+    log("leaving the lent items out of the save failed: #{e.class}: #{e.message}")
+    party
   end
 
   # Reads the story as the game keeps it, past the game's own handling of single switches and variables.
