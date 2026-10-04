@@ -49,29 +49,47 @@ Each world keeps its own saves, Library, medals and affection in `Patch\Multipla
 
 ### Finding, creating and joining
 
-The list at the left shows every public world and the hidden worlds you joined: your favourites first (marked `*`), then the featured worlds in gold, which the relay's admins run, then the ones you played last. The right side shows what the chosen world's creator wrote about it and the mods it needs, who made it, whether your game data matches the creator's, how many of its players are online, and everyone who ever joined it.
+The world screen has two boxes at the left: the worlds, and below them the commands (*Create new world*, *Add a hidden world*, *Change your name*, *Back*). It opens with the cursor around one of the two boxes. Up and down pick a box, confirm moves into it, and cancel moves back out, so the commands are reached without scrolling through a long list. Cancel with a box picked leaves the screen.
 
-- **Enter a world:** type its password the first time, unless it has none; your game remembers it after that. You continue from your latest save in that world; the first time, you start at the opening or from the creator's save, or choose where to start if the creator let you.
-- **Create new world:** point at it and fill in the form at the right: a name, a password (left empty, anyone may enter), and Max Players (2 to 32). Creating a world does not enter it: it appears in the list, marked as a favourite, and you enter it from there.
-  - *Hidden* leaves the world out of the list. Only its players see it there.
+The worlds box lists every public world, the hidden worlds you joined and the hidden worlds you added by their id: your favourites first (marked `*`), then the featured worlds in gold, which the relay's admins run, then the ones you played last. With the cursor on a world, the right side shows its details: who made it, its password and players, how new players start, the mods it needs, whether your game data matches the creator's, and what its creator wrote about it.
+
+- **Enter a world:** confirm on it and pick *Enter the world*. Type its password the first time, unless it has none; your game remembers it after that. You continue from your latest save in that world; the first time, you start at the opening or from the creator's save, or choose where to start if the creator let you. A world is only entered once the list has loaded, since the list tells what the world asks of your game.
+- **Create new world:** fill in the form at the right: a name, a password (left empty, anyone may enter), and Max Players (2 to 32). Creating a world does not enter it: it appears in the list, marked as a favourite, and you enter it from there.
+  - *Hidden* leaves the world out of the list. Only its players see it there, and whoever adds it by its id.
   - *Shared save* lets every new player start from one of your saves, with your party, items, story and Library, instead of the opening. Choose the save after ticking it.
   - *Player's choice* lets each new player choose when they first enter: at the beginning, from one of their own saves, or from yours if you ticked *Shared save*. Their own save is copied into the world; the original stays untouched.
-  - *Mods* and the *Description* are optional texts shown in the world's details: the mods a game needs to play there, and what the world is about.
-  - *Allow data mismatch* is ticked at first: a game whose data differs from yours is warned before it enters and may enter anyway. Unticked, such a game can't enter. The check compares which actors, classes, skills, items, weapons, armors, enemies, states, troops, common events and maps exist, so a mod that adds or removes any is noticed, while a translated game still matches the untranslated one. A mod that only changes numbers isn't noticed.
-  - Max Players, Mods and the Description can be changed later; everything else is fixed once the world exists.
-- **Updating a world's game data:** when a mod you play with gets an update, your game no longer matches your own world. Move onto *Your game* in the world's details (right arrow, then down) and confirm: the world then takes your game's data as it is now, and everyone else has to match it again. *Edit the world* does the same at once with its button *Update current data scan*. Only the world's creator can do this.
-- **Game data that differs:** the world's details say whether your game matches its creator's and, if not, in what. Entering then asks first, or is refused when the creator unticked *Allow data mismatch*. Worlds made before this check say nothing and take every game.
-- **Worlds and commands:** the screen opens with the cursor around the worlds or around the commands below them (*Create new world* and the others). Up and down pick one of the two, confirm moves into it, and cancel moves back out, so a long list does not have to be scrolled through.
-- **Players, Mods and the Description:** the right arrow moves from a world into its details; up and down pick the mods, the players or the description, and confirm opens a box that lists every player who ever joined, those online first, each mod, or the whole description. A click on them does the same, and the world's choices offer *Players* and *Mods* too. Mods are written into one box, separated by semicolons; a mod written with an exclamation mark in front (`!Name`) is required: a game needs a script `Name.rb` in its `Patch` folder to enter (case, spaces, underscores and hyphens don't matter), and the mod shows first, in green when you have it and in red when you don't; a mod written with a question mark (`?Name`) is essential, for mods that are data files without a script: it keeps nobody out, and shows in green while your game data matches the world's and in gold otherwise; a description may be 1000 characters long. The details show each mod in a box of its own, as many as fit, and count the rest in a last box ("+2 more").
-- **Add a hidden world:** type or paste (Ctrl+V) the world id its creator sent you. The world then shows in your list with its details, and you enter it like any other, with its password if it has one. *Remove from my list* takes it off again as long as you never entered it. The creator copies the id with *Copy the world id* on the world.
+  - *Mods* names the mods a game needs to play there, separated by semicolons, 80 characters at most. See [Mods of a world](#mods-of-a-world).
+  - *Allow data mismatch* is ticked at first: a game whose data differs from yours is warned before it enters and may enter anyway. Unticked, such a game can't enter. See [Game data](#game-data).
+  - The *Description* says what the world is about, in up to 1000 characters.
+- **Edit the world:** the creator changes Max Players, Mods and the Description later; everything else is fixed once the world exists.
+- **Add a hidden world:** type or paste (Ctrl+V) the world id its creator sent you. The world then shows in your list with its details, and you enter it like any other, with its password if it has one. *Remove from my list* takes it off again as long as you never entered it. Your game keeps the 50 worlds you added last. The creator copies the id with *Copy the world id* on the world.
+- **A world's details:** with the cursor on a world, the right arrow moves into its details; up and down pick the mods, *Your game*, the players or the description, and confirm opens a box that lists each mod, every player who ever joined (those online first), or the whole description. A click on them does the same. The left arrow or cancel goes back to the list.
+- **Favourites:** *Mark as a favourite* on a world puts it at the top of your list.
 - **Take a world's save home:** *Copy my latest save to my game* on a world you've played, or *Copy to my game* in the menu while you're in it, copies that world's latest save into the first free slot of your own saves. Your own Library, medals and affection stay as they are.
-- **The creator** can change the world's Max Players, Mods and Description with *Edit the world*, remove a player, who can then no longer enter, or delete the world for everyone. The relay's admins can edit and delete any world.
+- **Delete my saves of it** removes your saves of a world from this PC. You'd start anew there, and need its password again.
+- **The creator** can also remove a player, who can then no longer enter, or delete the world for everyone. The relay's admins can edit and delete any world.
+
+### Mods of a world
+
+A world's *Mods* are names its creator typed; how a name is written decides what it does:
+
+- `Name` only tells the players. It keeps nobody out.
+- `!Name` is **required**: a game needs a script `Name.rb` in its `Patch` folder to enter (case, spaces, underscores and hyphens don't matter). It shows first, in green when you have it and in red when you don't.
+- `?Name` is **essential**, for mods that are data files without a script. It keeps nobody out by itself, and shows in green while your game data matches the world's and in gold otherwise.
+
+The details show each mod in a box of its own, as many as fit the row, and count the rest in a last box.
+
+### Game data
+
+- **What is compared:** which actors, classes, skills, items, weapons, armors, enemies, states, troops, common events and maps exist. A mod that adds or removes any is noticed, while a translated game still matches the untranslated one. A mod that only changes numbers isn't noticed.
+- **A game that differs:** the world's details say whether your game matches its creator's and, if not, in what. Entering then asks first, or is refused when the creator unticked *Allow data mismatch*. Worlds made before this check say nothing and take every game.
+- **Updating your world's data:** when a mod you play with gets an update, your game no longer matches your own world. Move onto *Your game* in the world's details and confirm: the world then takes your game's data as it is now, and everyone else has to match it again. *Edit the world* does the same with its button *Update current data scan*. Only the world's creator can do this.
 
 ### On the map
 
 - **Other players** on your map walk around with their name above them and an icon for what they're doing: fighting, talking or watching an event, typing in the chat, in a menu, the inventory or their equipment, shopping, at the casino, in the Library, sailing, flying, or away. They walk through everything and trigger nothing.
 - **Ping** shows after each player's name, and yours right above your head: green up to 100 ms, yellow up to 200 ms, red beyond.
-- **The bottom left** of the screen tells who joined and left, and when the connection is being restored.
+- **The bottom left** of the screen tells who joined and left, and when the connection is being restored. A player whose connection drops stays in the world and in their party for 15 seconds, so a short break changes nothing.
 - **The world never pauses.** While you're in a menu, a shop, a battle or a story scene, the map goes on behind it: the others walk on, NPCs move, and background events and timers run. Menus show the live map instead of a still picture. Anything that needs you, such as a message, a battle, a move to another map, or an NPC walking into you, waits until you're back on the map.
 - The PvP battle screen is off while you're in a world: challenge other players to a duel instead, and F11 opens the World overview.
 
@@ -99,7 +117,7 @@ The list at the left shows every public world and the hidden worlds you joined: 
 - **Followers:** only your share of the Frontline walks behind you, and behind your ghost on the other members' screens; with one place in front, you walk alone. The player who made the party can show nobody but the players instead: *Mod Config → Monster Girl Quest! Online → Party Followers*.
 - **NPCs:** on a map you share, you all see the same NPCs in the same places. Whoever of you entered the map first is its Map Owner, and the NPCs move as they do in that player's game.
 - **Story:** everyone plays the story of the player who made the party. Its events, doors and conversations are as far along as in that player's game, and story events you start are handed to them. Everyone on the map sees the dialogue in their own message window, which moves on when that player moves on; only they can continue or close it. Conversations, shops and the job change menu stay your own, and so do the companions, merchants, inn and maids of the Pocket Castle.
-- **What stays yours:** your party, companions and affection, and your saves keep your own story. When you leave the party, you're back in your own story. If your story was exactly as far along as theirs when you joined, you keep what you played together, companions who joined in the story included.
+- **What stays yours:** your party, companions and affection, and your saves keep your own story. When you leave the party, you're back in your own story. If your story was exactly as far along as theirs when you joined, you keep what you played together: the story's progress, its items and gold, and the companions who joined or left in it.
 - **Travelling:** everyone goes where they like; only story scenes bring the party together. A member teleports to the party's leader whenever they like: *Teleport to \<leader>* takes the place of *Invite to a party* at the top of the wheel, and the leader's row in the World overview offers it too. It brings you over as soon as you're free on the map.
 - **Story scenes wait for everyone:** when the player who made the party starts a story scene, it waits until every member stands next to them, and they can't move meanwhile. Members see a 5-second countdown above their head to finish what they're doing, then are brought over, wherever they are; a member in a battle or a menu comes once it's over. No random encounter or co-op battle starts for them during the countdown. The scene waits 30 seconds at most, then starts without whoever hasn't come; they play on where they are. While the scene plays, the members on that map stand still and can't open the menu.
 - **Chests** are everyone's own: when a member opens one, everyone in the party who hasn't looted it yet gets the same items.
@@ -113,7 +131,7 @@ When a battle starts for a party member, whether a random encounter, a wandering
 - Everyone commands their own characters and can swap their own Backline in with *Party*. The party leader's game works it out, with the leader's difficulty and mods, whoever met the enemies: "Asking <leader> to lead the battle..." shows while a member's game hands it over. When the leader isn't playing on that map, is busy or doesn't answer within 6 seconds, the game where the battle started works it out.
 - Everyone fights the enemies of the game that works the battle out, even when a mod there changes them, such as one that doubles them.
 - Each of you can try to escape. Whoever gets away leaves the battle, and the others fight on without their characters. Everyone still in the battle reads "<name> left the battle." in the chat log at once; the characters leave at the next round. The one left alone fights on with their own full team.
-- Each of you gets the full EXP, gold and your own item drops, or your own defeat.
+- Each of you gets the full EXP, gold and your own item drops, or your own defeat. After a lost battle, everyone sees the defeat scene of the same enemy, the one the game that worked the battle out chose.
 
 ### Duels
 
@@ -123,13 +141,13 @@ When a battle starts for a party member, whether a random encounter, a wandering
 
 ## PvP battles
 
-Press **F11** on the map to open the PvP battle screen.
+Press **F11** on the map, outside a world, to open the PvP battle screen.
 
 - **Host:** your game waits for a friend and puts a join code on your clipboard. Send it to your friend, or invite them through the **+** in a Discord chat when the Discord mod is installed.
 - **Join:** copy your friend's join code and pick *Join with the copied code*, or accept their Discord invite: your game starts if it's closed, loads your newest save (the one *Continue* picks first) and joins by itself. While you host, invites you accept are ignored; stop hosting first.
-- **Fight your own team:** a mirror match against your own Frontline, no network needed. `Patch\Multiplayer\Mirror Match.log` then lists each of your characters next to its copy and marks every value that differs.
+- **Fight your own team:** a mirror match against a copy of your own team, played by the computer, no network needed. `Patch\Multiplayer\Mirror Match.log` then lists each of your characters next to its copy and marks every value that differs.
 
-Once the teams are swapped, both battles start together. The host's game works the battle out, and the other game shows what happened. You meet your friend's characters as they are: jobs, races, equipment, gems and abilities, pre-battle spells and passives included. A defeated character of your friend stays as a grey silhouette, since their team can still revive it.
+Once the games have sent each other their teams, both battles start together. The host's game works the battle out, and the other game shows what happened. You meet your friend's characters as they are: jobs, races, equipment, gems and abilities, pre-battle spells and passives included. A defeated character of your friend stays as a grey silhouette, since their team can still revive it.
 
 - **Backline:** both of you swap your Backline in with the battle's *Party* command. You choose a swap with the round's commands: the character swapped in gives no commands that round, and an attack hits whoever stands in the place it was aimed at once it lands. A fallen character can be swapped out, and a team loses once its whole Frontline is down.
 - **Frontline only:** the host decides. *Mod Config → Monster Girl Quest! Online → PvP Backline* set to *Frontline Only* takes the *Party* command out of the battles you host and the duels you challenge to, for both players.
@@ -140,14 +158,16 @@ Once the teams are swapped, both battles start together. The host's game works t
 
 ## Rules of every multiplayer battle
 
-Ero offers and Give Up are off, and so is swapping in the Backline in team duels and in PvP battles and duels hosted as *Frontline Only*. Battle messages move on by themselves, so nobody waits for another player.
+- Ero offers and Give Up are off.
+- Battle messages move on by themselves, so nobody waits for another player.
+- **Swapping characters:** the battle's *Party* command swaps your Backline in during co-op battles, PvP battles and duels. It is off only in team duels, and in PvP battles and duels whose host chose *Frontline Only*.
 
 ## Connection
 
 Your games meet at the mod's **relay**, a small server that passes their data on. Every game only connects out to it, which works on any internet connection: nobody has to open a port, change a router setting or install anything.
 
 - **Private:** everything your games send each other is encrypted with a key only the players have. The relay never gets it: it passes on data it can't read.
-- **What the relay keeps:** the list of worlds, with each world's name, its players' names and who is online; hidden worlds are listed only for their players. A world's password never reaches it, and a starting save arrives encrypted.
+- **What the relay keeps:** the list of worlds, with each world's name, description and mods, what tells its creator's game data from another's, its players' names and who is online; hidden worlds are listed only for their players and for whoever names their id. A world's password never reaches it, and a starting save arrives encrypted.
 - **No addresses:** a join code holds a random token and the relay's name, so your friend's game never learns your IP address.
 
 ## Troubleshooting
@@ -157,6 +177,9 @@ Your games meet at the mod's **relay**, a small server that passes their data on
 - **"The relay could not be reached":** your internet connection is down, or something blocks the game from going online, such as a firewall. `Patch\Multiplayer\Multiplayer.log` says what the relay answered.
 - **"This join code comes from another version of the mod":** one of you has an older version; both need the same one.
 - **"Your friend's game uses a relay this version does not know":** your friend has a newer version of the mod; update yours.
+- **"<world> is not in the list right now":** the world list hasn't loaded yet or couldn't be fetched; the top of the world screen says which. Try again once it has loaded.
+- **"<world> only takes matching game data":** its creator unticked *Allow data mismatch*, and your mods differ from theirs. The world's details name what differs and the mods it needs.
+- **"<world> needs ...: no such script in your Patch folder":** the world requires a mod you don't have. Install it, then enter again.
 - **"This is a world code":** you pasted a world's code into a PvP join. Enter worlds through *Multiplayer* on the title screen.
 - **Logs:** `Patch\Multiplayer\InGame.log` only appears when something went wrong inside the game; `Patch\Multiplayer\Multiplayer.log` tells what the connection did. Please attach both to a [bug report](https://github.com/Pauliinchen/MGQ-Online/issues/new?template=bug_report.yml).
 
