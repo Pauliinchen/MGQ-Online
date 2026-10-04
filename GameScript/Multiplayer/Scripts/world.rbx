@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-04: Kept the 50 hidden worlds added last, as many as the relay lists, so ids of deleted worlds do not crowd new ones out
+#                            - Removed Form#add, since MGQ_MpUi::TextEdit takes what is typed
 #                            - Renamed from mp_world.rbx
 #                            - Let the creator describe a world, name the mods it needs and keep out games whose data differs from theirs
 #                            - Told a game's data from another's by which entries of the database and which maps exist
@@ -1266,19 +1267,6 @@ module MGQ_MpWorld
     # @return [Boolean] Whether it can.
     def enabled?(field)
       field.needs.nil? || @values[field.needs] == true
-    end
-
-    # Adds a typed character to a text box, if it takes it.
-    #
-    # @param field [Field] The text box.
-    # @param char [String] The character.
-    # @return [Boolean] Whether it was added.
-    def add(field, char)
-      text = @values[field.key]
-      return false if text.size >= field.max_chars || (field.allowed && char !~ field.allowed)
-
-      @values[field.key] = text + char
-      true
     end
 
     # Checks what a text box holds, and tidies it.

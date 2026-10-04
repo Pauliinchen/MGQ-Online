@@ -683,7 +683,7 @@ class Scene_MpWorlds < Scene_MenuBase
     end
 
     # The numpad's 0 cancels everywhere else in the game, so it leaves the box instead of typing a 0.
-    return type(field, "") if numpad_cancel?
+    return type(field, "\e") if numpad_cancel?
 
     text.each_char do |char|
       type(field, char)

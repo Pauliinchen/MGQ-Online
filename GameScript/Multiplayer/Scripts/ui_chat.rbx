@@ -2,7 +2,8 @@
 #  ui_chat.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Renamed from mp_chat.rbx
+#      Paulinchen  2026-10-04: Removed BLINK_FRAMES, which MGQ_MpUi::TextEdit holds
+#                            - Renamed from mp_chat.rbx
 #                            - Drew the chat box through MGQ_MpUi::TextBox, which every text box shares
 #                            - Typed through MGQ_MpUi::TextEdit, which every text box shares
 #      Paulinchen  2026-10-03: Broke lines through MGQ_MpUi.wrap, which the windows share
@@ -37,9 +38,6 @@ module MGQ_MpChat
 
   # Frames a bubble stays, six seconds.
   BUBBLE_FRAMES = 360
-
-  # Frames the cursor stays shown, then hidden, while it blinks.
-  BLINK_FRAMES = MGQ_MpUi::TextEdit::BLINK_FRAMES
 
   @log = []
   @bubbles = {}

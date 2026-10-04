@@ -2,7 +2,8 @@
 #  overworld_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Followed the scripts to their new names, without mp_
+#      Paulinchen  2026-10-04: Read the cursor's blink frames from MGQ_MpUi::TextEdit
+#                            - Followed the scripts to their new names, without mp_
 #      Paulinchen  2026-10-03: Checked that a member's party choice on the wheel teleports to the leader
 #                            - Checked the word wrap where it lives now, in MGQ_MpUi
 #                            - Followed the choices to the scripts that offer them
@@ -262,7 +263,7 @@ check("end goes to the end, where right and delete stop", [chat.typed, chat.curs
 $typed = "\bre"
 map_frame
 check("the cursor shows right after a change", chat.cursor_shown?, true)
-MGQ_MpChat::BLINK_FRAMES.times { map_frame }
+MGQ_MpUi::TextEdit::BLINK_FRAMES.times { map_frame }
 check("then blinks", chat.cursor_shown?, false)
 $sent.clear
 $typed = "\r"
