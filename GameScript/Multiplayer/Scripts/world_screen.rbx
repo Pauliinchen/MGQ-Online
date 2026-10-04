@@ -2,7 +2,8 @@
 #  world_screen.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Renamed from mp_world_screen.rbx
+#      Paulinchen  2026-10-04: Created the list box before a cancelled name prompt closes the screen, which disposes it
+#                            - Renamed from mp_world_screen.rbx
 #                            - Drew the forms' text boxes through MGQ_MpUi::TextBox, and moved their cursor a line through MGQ_MpUi::TextEdit, which every text box shares
 #                            - Showed a world's description, the mods it needs and whether the player's game data matches its creator's
 #                            - Laid the world's details out like a form, in panels, with the description at the bottom, and gave them more of the screen
@@ -222,6 +223,10 @@ class Scene_MpWorlds < Scene_MenuBase
   # Acts on what the text screen handed back.
   def take_text_result
     kind, text = MGQ_MpWorld.take_text_result
+    # The screen may close below, and terminate disposes the list box.
+    @list_box = Sprite_MpListBox.new
+    @box = nil
+    @focus = nil
 
     case kind
     when :player_name
@@ -234,10 +239,7 @@ class Scene_MpWorlds < Scene_MenuBase
       fill_field(kind[1], text) if text && form
     end
 
-    @list_box = Sprite_MpListBox.new
-    @box = nil
-    @focus = nil
-    @ask_name = MGQ_Multiplayer::Player.name.nil?
+    @ask_name =MGQ_Multiplayer::Player.name.nil?
   end
 
   # Opens what can be done with the chosen world.
