@@ -3,6 +3,19 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-04: Renamed from mp_world.rbx
+#                            - Let the creator describe a world, name the mods it needs and keep out games whose data differs from theirs
+#                            - Told a game's data from another's by which entries of the database and which maps exist
+#                            - Kept the editor of the text box being typed into with its form
+#                            - Took a mod written with an exclamation mark in front as required, and looked for its script in the Patch folder
+#                            - Took a mod written with a question mark in front as essential, which no script tells of
+#                            - Let a world's creator replace its game data with that of their game as it is now, in the edit form too
+#                            - Told two readings of the same world apart from a changed one, so the world screen draws only what changed
+#                            - Marked a world as a favourite as its creator makes it, and took descriptions of up to 1000 characters
+#                            - Split the mods a world needs at each semicolon, and said create where a text said make
+#                            - Added a hidden world to the list by its id instead of entering it at once, and kept the ids added
+#                            - Let the creator or an admin change a world's Max Players, mods and description in a form of its own
+#                            - Shortened the fields' hints to the two lines the world screen has for them
+#                            - Grouped the forms' fields, renamed From my save to Shared save and Players choose their start to Player's choice
 #      Paulinchen  2026-10-03: Read and wrote the game's private fields and called its private methods through MGQ_MpGame
 #                            - Moved the text screen into world_text.rbx and the world screen with its windows into world_screen.rbx
 #                            - Logged through MGQ_MpLog
@@ -29,12 +42,15 @@
 
 # Worlds: lasting places several players play in together, entered through Multiplayer on the
 # title screen. The relay's world directory lists every public world with its players, and hidden
-# ones only for their players and the relay's admins; others join a hidden world by its id. An
+# ones only for their players and the relay's admins; others add a hidden world to their list by its id. An
 # admin may delete any world, and the admins' featured worlds show in gold. A world's password, if
 # it has one, is asked once, after which this game remembers the world. Each world keeps its own saves and its
 # own system save (Library, medals, system switches, affection) in Patch/Multiplayer/Worlds/<id>, so
 # playing in a world never touches the player's own saves. A new world's players start at the
 # beginning, from one of its creator's saves, or where each of them chooses (world_save_distribution.rbx).
+# A world's details show what its creator wrote about it and the mods it needs, and whether the
+# player's game data has the same entries as the creator's; a game that differs is warned, or kept
+# out when the creator said so.
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpWorld
@@ -47,8 +63,14 @@ module MGQ_MpWorld
   # Folder of the worlds on this PC, inside the mod folder.
   WORLDS_DIR = "Patch/Multiplayer/Worlds"
 
+  # The folder the game loads its mods' scripts from.
+  PATCH_DIR = "Patch"
+
   # File of the worlds the player marked as favourites, inside the mod folder.
   FAVOURITES_FILE = "Favourites.ini"
+
+  # File of the hidden worlds the player added to their list by their ids, inside the mod folder.
+  ADDED_FILE = "Added.ini"
 
   # Players a new world seats at most unless the player chooses otherwise.
   DEFAULT_SEATS = 4
@@ -64,6 +86,15 @@ module MGQ_MpWorld
 
   # Longest password.
   MAX_PASSWORD_CHARS = 20
+
+  # Longest description of a world.
+  MAX_DESCRIPTION_CHARS = 1000
+
+  # Longest text that names the mods a world needs.
+  MAX_MODS_CHARS = 80
+
+  # Lines of the description the create form shows at once.
+  DESCRIPTION_LINES = 4
 
   # A world's id, which joins a hidden world.
   WORLD_ID = /\A[0-9a-f]{32}\z/
@@ -337,6 +368,21 @@ module MGQ_MpWorld
     def open?
       !listed.nil? && listed.open
     end
+
+    # Tells everything the world screen shows of the world, by value. Every reading of the list
+    # makes new entries, so only this tells a changed world from the same one read again.
+    #
+    # @return [Array] What it shows.
+    def signature
+      [id, name, listed, favourite, gone, local && [local.name, local.directory_id, local.played_at.to_i]]
+    end
+
+    # Lists what of the player's game data differs from that of the world's creator.
+    #
+    # @return [Array<String>, nil] The parts that differ, none when the games match, nil when the directory does not tell.
+    def differing
+      listed.nil? ? nil : GameData.differing(listed.data)
+    end
   end
 
   # Patch/Multiplayer/Multiplayer.dll's world functions: the folder id of a world code, and the
@@ -374,6 +420,92 @@ module MGQ_MpWorld
     end
   end
 
+  # What tells one game's data from another's: which entries of the database and which maps exist,
+  # so a mod that adds or removes any is noticed.
+  module GameData
+    # The fingerprint's format, which both games must share to be compared.
+    FORMAT = 1
+
+    # What the fingerprint covers, in its order, as a difference is called.
+    PARTS = ["actors", "classes", "skills", "items", "weapons", "armors", "enemies", "states", "troops", "common events", "maps"]
+
+    # Most parts a text names before it counts the rest.
+    NAMED_PARTS = 4
+
+    # Writes the fingerprint of this game's data, once per session.
+    #
+    # It reads no names or texts, so a translated game matches the untranslated one.
+    #
+    # @return [String] FORMAT, then a checksum per part; empty when the data could not be read.
+    def self.fingerprint
+      @fingerprint ||= "#{FORMAT}:" + ids.map { |list| format("%08x", Zlib.crc32(list.join(","))) }.join(".")
+    rescue => e
+      MGQ_MpWorld.log("reading the game data failed: #{e.class}: #{e.message}")
+      ""
+    end
+
+    # Lists the ids that exist of each part.
+    #
+    # @return [Array<Array<Integer>>] The ids, per part in the order of PARTS.
+    def self.ids
+      named = [$data_actors, $data_classes, $data_skills, $data_items, $data_weapons, $data_armors, $data_enemies, $data_states].map do |entries|
+        existing(entries) { |entry| !entry.name.to_s.empty? }
+      end
+      named + [existing($data_troops) { |troop| !troop.members.empty? }, existing($data_common_events) { |event| event.list.size > 1 }, map_ids]
+    end
+
+    # Lists the ids of the maps, as the game numbers them: those of each further map folder a
+    # thousand on from the folder before.
+    #
+    # @return [Array<Integer>] The ids.
+    def self.map_ids
+      ids = []
+      MGQ_MpGame.get($data_mapinfos, :map_lists).each_with_index do |maps, folder|
+        maps.keys.each { |id| ids << folder * 1000 + id }
+      end
+      ids.sort
+    end
+
+    # Lists the ids of the entries that are more than an empty place.
+    #
+    # @param entries [Array] A part of the database, by id.
+    # @yieldparam entry [Object] An entry.
+    # @yieldreturn [Boolean] Whether it is in use.
+    # @return [Array<Integer>] The ids.
+    def self.existing(entries)
+      (0...entries.size).select { |id| entries[id] && yield(entries[id]) }
+    end
+
+    # Lists what of this game's data differs from another game's.
+    #
+    # @param other [String, nil] The other game's fingerprint.
+    # @return [Array<String>, nil] The parts that differ, none when the games match, nil when they cannot be compared.
+    def self.differing(other)
+      return nil if other.to_s.empty?
+
+      format, mine = fingerprint.split(":", 2)
+      other_format, theirs = other.to_s.split(":", 2)
+      return nil unless mine && theirs && format == other_format
+
+      mine = mine.split(".")
+      theirs = theirs.split(".")
+      return nil unless mine.size == PARTS.size && theirs.size == PARTS.size
+
+      (0...PARTS.size).select { |index| mine[index] != theirs[index] }.map { |index| PARTS[index] }
+    end
+
+    # Names parts in a sentence, the first few by name.
+    #
+    # @param parts [Array<String>] The parts.
+    # @param named [Integer] Most parts named before the rest is counted.
+    # @return [String] The text, such as "skills, items and 3 more".
+    def self.text(parts, named = NAMED_PARTS)
+      return parts.join(", ") if parts.size <= named
+
+      "#{parts.first(named).join(', ')} and #{parts.size - named} more"
+    end
+  end
+
   # The relay's world directory, through Patch/Multiplayer/Multiplayer.dll: the list of worlds,
   # fetched again whenever asked, and one action at a time.
   module Directory
@@ -392,7 +524,11 @@ module MGQ_MpWorld
     # @!attribute choose [Boolean] Whether each new player chooses where to start.
     # @!attribute open [Boolean] Whether it has no password.
     # @!attribute featured [Boolean] Whether it is one of the relay's own worlds, which an admin made.
-    ListedWorld = Struct.new(:id, :seats, :online, :creator_id, :active, :creator_name, :name, :start, :members, :hidden, :choose, :open, :featured)
+    # @!attribute strict [Boolean] Whether only games with the same data as its creator's may enter.
+    # @!attribute data [String] Its creator's game data, see GameData.fingerprint; empty when unknown.
+    # @!attribute mods [String] The mods it needs, as its creator wrote them.
+    # @!attribute description [String] What it is about, as its creator wrote it.
+    ListedWorld = Struct.new(:id, :seats, :online, :creator_id, :active, :creator_name, :name, :start, :members, :hidden, :choose, :open, :featured, :strict, :data, :mods, :description)
 
     # A player of a world.
     #
@@ -404,9 +540,18 @@ module MGQ_MpWorld
     # Bytes the DLL may write the list into at first. A larger list asks for a larger buffer.
     LIST_SIZE = 65_536
 
-    # Fetches the list again.
+    # Fetches the list again, with the hidden worlds the player added to it.
     def self.refresh
+      MGQ_Multiplayer::Link.function('mp_dir_watch', 'p').call(Added.all.join(",") + "\0")
       MGQ_Multiplayer::Link.function('mp_dir_refresh', 'v').call
+    end
+
+    # Looks a world up by its id alone; the action tells its name.
+    #
+    # @param id [String] The world's id.
+    # @return [Boolean] Whether the action started.
+    def self.find(id)
+      MGQ_Multiplayer::Link.function('mp_dir_find', 'p').call(id + "\0") == 1
     end
 
     # Reads the list as it stands.
@@ -421,7 +566,7 @@ module MGQ_MpWorld
 
         case fields[0]
         when "world"
-          worlds.push(ListedWorld.new(fields[1], fields[2].to_i, fields[3].to_i, fields[4], fields[5].to_i, fields[6].to_s, fields[7].to_s, fields[8] || "none", [], fields[9] == "1", fields[10] == "1", fields[11] == "1", fields[12] == "1"))
+          worlds.push(ListedWorld.new(fields[1], fields[2].to_i, fields[3].to_i, fields[4], fields[5].to_i, fields[6].to_s, fields[7].to_s, fields[8] || "none", [], fields[9] == "1", fields[10] == "1", fields[11] == "1", fields[12] == "1", fields[13] == "1", fields[14].to_s, fields[15].to_s, fields[16].to_s))
         when "member"
           worlds.last.members.push(Member.new(fields[1], fields[2] == "1", fields[3].to_s)) if worlds.last
         end
@@ -438,20 +583,44 @@ module MGQ_MpWorld
     # @param hidden [Boolean] Whether the list leaves it out for everyone but its players and the relay's admins.
     # @param choose [Boolean] Whether each new player chooses where to start.
     # @param start [String] The starting save's files, see MGQ_MpSaveDistribution.text_of; empty for none.
+    # @param about [Hash] Whichever of :description, :mods, :data (the creator's game data) and :strict (true when only games with the same data may enter) apply.
     # @return [Boolean] Whether the action started.
-    def self.create(name, password, seats, hidden, choose, start)
+    def self.create(name, password, seats, hidden, choose, start, about = {})
       MGQ_Multiplayer::Player.share
-      MGQ_Multiplayer::Link.function('mp_dir_create', 'pplllp').call(name + "\0", password + "\0", seats, hidden ? 1 : 0, choose ? 1 : 0, start + "\0") == 1
+      MGQ_Multiplayer::Link.function('mp_dir_create', 'pplllppppl').call(name + "\0", password + "\0", seats, hidden ? 1 : 0, choose ? 1 : 0, start + "\0",
+                                                                         about[:description].to_s + "\0", about[:mods].to_s + "\0", about[:data].to_s + "\0", about[:strict] ? 1 : 0) == 1
     end
 
-    # Opens a world's lock with its password; the action tells the world's name, its starting save
-    # and whether new players choose where to start too, so a hidden world is joined by its id alone.
+    # Opens a world's lock with its password; the action tells the world's name, its starting save,
+    # whether new players choose where to start, the mods it needs and which games may enter too, so
+    # a hidden world is joined by its id alone.
     #
     # @param id [String] The world's id.
     # @param password [String] The password.
     # @return [Boolean] Whether the action started.
     def self.unlock(id, password)
       MGQ_Multiplayer::Link.function('mp_dir_unlock', 'pp').call(id + "\0", password + "\0") == 1
+    end
+
+    # Changes a world's seats, description and mods, which its creator or an admin may.
+    #
+    # @param id [String] The world.
+    # @param seats [Integer] How many players it seats at once.
+    # @param description [String] What it is about, empty for nothing.
+    # @param mods [String] The mods it needs, empty for none.
+    # @return [Boolean] Whether the action started.
+    def self.edit(id, seats, description, mods)
+      MGQ_Multiplayer::Player.share
+      MGQ_Multiplayer::Link.function('mp_dir_edit', 'plpp').call(id + "\0", seats, description + "\0", mods + "\0") == 1
+    end
+
+    # Replaces a world's game data with this game's as it is now, which only its creator may.
+    #
+    # @param id [String] The world.
+    # @return [Boolean] Whether the action started; not while this game's data cannot be read.
+    def self.set_data(id)
+      MGQ_Multiplayer::Player.share
+      MGQ_Multiplayer::Link.function('mp_dir_set_data', 'pp').call(id + "\0", GameData.fingerprint + "\0") == 1
     end
 
     # Deletes a world for everyone.
@@ -475,9 +644,9 @@ module MGQ_MpWorld
 
     # Reads how the running or last action stands.
     #
-    # @return [Hash] "state" ("idle", "busy", "done" or "failed"), and whichever of "kind", "code", "world", "name", "start", "choose" ("1" when new players choose where to start) and "error" apply.
+    # @return [Hash] "state" ("idle", "busy", "done" or "failed"), and whichever of "kind", "code", "world", "name", "start", "choose" ("1" when new players choose where to start), "mods", "data", "strict" ("1" when only games with the same data may enter) and "error" apply.
     def self.action
-      text = MGQ_Multiplayer::Link.read('mp_dir_action', 1024)
+      text = MGQ_Multiplayer::Link.read('mp_dir_action', 2048)
       text.empty? ? { "state" => "idle" } : MGQ_Multiplayer::Link.parse(text)
     end
 
@@ -495,6 +664,103 @@ module MGQ_MpWorld
     end
   end
 
+  # Splits the mods a world needs, as its creator wrote them, at each semicolon. A mod written
+  # with an exclamation mark in front is required, one with a question mark essential.
+  #
+  # @param text [String, nil] The mods as written.
+  # @return [Array<String>] Each mod's name: the required ones first, then the essential ones, none for an empty text.
+  def self.mods_of(text)
+    names = text.to_s.split(";").map { |mod| mod.strip.sub(/\A[!?]\s*/, "") }.reject { |mod| mod.empty? }
+    required = required_mods(text)
+    essential = essential_mods(text)
+    (names & required) + (names & essential) + (names - required - essential)
+  end
+
+  # Lists the mods a world's creator marked as required, with an exclamation mark in front: a
+  # game needs their script to enter, see installed_mod?.
+  #
+  # @param text [String, nil] The mods as written.
+  # @return [Array<String>] Their names.
+  def self.required_mods(text)
+    marked_mods(text, /!/)
+  end
+
+  # Lists the mods a world's creator marked as essential, with a question mark in front: they
+  # stand out, but nothing is looked for, since a mod of data files has no script.
+  #
+  # @param text [String, nil] The mods as written.
+  # @return [Array<String>] Their names.
+  def self.essential_mods(text)
+    marked_mods(text, /\?/)
+  end
+
+  # Lists the names of the mods written with a mark in front, without the mark.
+  #
+  # @param text [String, nil] The mods as written.
+  # @param mark [Regexp] The mark.
+  # @return [Array<String>] Their names.
+  def self.marked_mods(text, mark)
+    text.to_s.split(";").map { |mod| mod.strip[/\A#{mark}\s*(\S.*)\z/, 1] }.compact
+  end
+
+  # Tells whether a mod's script is installed: a .rb file of the mod's name anywhere in the Patch
+  # folder, whatever its case and whether it writes spaces, underscores or hyphens.
+  #
+  # @param name [String] The mod's name, with or without ".rb".
+  # @return [Boolean] Whether it is; also when the folder cannot be read, so nobody is kept out by mistake.
+  def self.installed_mod?(name)
+    @installed ||= Dir.glob("#{PATCH_DIR}/**/*.rb").map { |path| mod_key(File.basename(path)) }
+    @installed.include?(mod_key(name))
+  rescue => e
+    log("reading the Patch folder failed: #{e.class}: #{e.message}")
+    true
+  end
+
+  # Lists the required mods of a world that this game lacks.
+  #
+  # @param text [String, nil] The mods as the world's creator wrote them.
+  # @return [Array<String>] Their names.
+  def self.missing_mods(text)
+    required_mods(text).reject { |mod| installed_mod?(mod) }
+  end
+
+  # Turns a mod's name or its script's file name into what the two are compared by.
+  #
+  # @param name [String] The name.
+  # @return [String] The name in lower case, without ".rb", spaces, underscores and hyphens.
+  def self.mod_key(name)
+    name.to_s.downcase.sub(/\.rb\z/, "").gsub(/[\s_\-]/, "")
+  end
+
+  # The hidden worlds the player added to their list by their ids, which the relay lists for
+  # whoever names them.
+  module Added
+    # Lists the worlds added.
+    #
+    # @return [Array<String>] Their directory ids.
+    def self.all
+      MGQ_Multiplayer::Ini.read(MGQ_Multiplayer.path(ADDED_FILE)).keys
+    end
+
+    # Adds a world.
+    #
+    # @param id [String] The world's directory id.
+    def self.add(id)
+      values = MGQ_Multiplayer::Ini.read(MGQ_Multiplayer.path(ADDED_FILE))
+      values[id] = "1"
+      MGQ_Multiplayer::Ini.write(MGQ_Multiplayer.path(ADDED_FILE), values)
+    end
+
+    # Takes a world off the list again.
+    #
+    # @param id [String] The world's directory id.
+    def self.remove(id)
+      values = MGQ_Multiplayer::Ini.read(MGQ_Multiplayer.path(ADDED_FILE))
+      values.delete(id)
+      MGQ_Multiplayer::Ini.write(MGQ_Multiplayer.path(ADDED_FILE), values)
+    end
+  end
+
   # The worlds the player marked as favourites, in Patch/Multiplayer/Favourites.ini.
   module Favourites
     # Lists the favourites.
@@ -502,6 +768,13 @@ module MGQ_MpWorld
     # @return [Array<String>] The directory ids of the favourite worlds.
     def self.all
       MGQ_Multiplayer::Ini.read(MGQ_Multiplayer.path(FAVOURITES_FILE)).keys
+    end
+
+    # Marks a world as a favourite, if it is none yet.
+    #
+    # @param id [String] The world's directory id.
+    def self.add(id)
+      toggle(id) unless all.include?(id)
     end
 
     # Marks a world as a favourite, or no longer.
@@ -564,7 +837,7 @@ module MGQ_MpWorld
       world.describe(name, directory_id)
       world.write ? world : nil
     rescue => e
-      MGQ_MpWorld.log("could not make a world's folder: #{e.class}: #{e.message}")
+      MGQ_MpWorld.log("could not create a world's folder: #{e.class}: #{e.message}")
       nil
     end
 
@@ -604,13 +877,16 @@ module MGQ_MpWorld
       @played_at = values["played"] ? Time.at(values["played"].to_i) : nil
     end
 
-    # Takes the world's name and directory id, as the directory says them.
+    # Takes the world's name, directory id and seats, as the directory says them.
     #
     # @param name [String] The world's name.
     # @param directory_id [String] The world's id in the directory.
-    def describe(name, directory_id)
+    # @param seats [Integer, nil] How many players it seats now, which its creator may change; nil to keep what the code tells.
+    def describe(name, directory_id, seats = nil)
       @name = MGQ_Multiplayer.clean(name)
       @directory_id = directory_id
+      parts = @code.to_s.split(";")
+      @code = (parts[0...-1] + [seats.to_s]).join(";") if seats && parts.size > 3 && parts.last =~ /\A\d+\z/
     end
 
     # The world's folder.
@@ -819,7 +1095,7 @@ module MGQ_MpWorld
 
   # A form of the world screen: its fields, laid out in rows, and what is filled in.
   class Form
-    # A field of a form: a text box (:text, :password, :number or :id), a checkbox (:check), a save
+    # A field of a form: a text box (:text, :password, :number or :id), a box of several lines (:area), a checkbox (:check), a save
     # to choose (:save) or the button that sends the form (:button).
     class Field
       # What the form keeps the field's value under.
@@ -846,6 +1122,15 @@ module MGQ_MpWorld
       # The checkbox that must be ticked for the field to be used, nil for none.
       attr_reader :needs
 
+      # Whether a text box may stay empty.
+      attr_reader :optional
+
+      # The heading of the panel it is in, nil for a field outside every panel.
+      attr_reader :group
+
+      # How many lines a box of several lines shows.
+      attr_reader :lines
+
       # What the lines at the top of the world screen say while the cursor is on the field.
       attr_reader :hint
 
@@ -856,7 +1141,7 @@ module MGQ_MpWorld
       # @param label [String] What it is called.
       # @param row [Integer] The row it is on.
       # @param hint [String] What the lines at the top say while the cursor is on it.
-      # @param options [Hash] Whichever of :side, :max_chars, :allowed and :needs apply.
+      # @param options [Hash] Whichever of :side, :max_chars, :allowed, :needs, :optional, :group and :lines apply.
       def initialize(key, kind, label, row, hint, options = {})
         @key = key
         @kind = kind
@@ -867,13 +1152,16 @@ module MGQ_MpWorld
         @max_chars = options[:max_chars]
         @allowed = options[:allowed]
         @needs = options[:needs]
+        @optional = options[:optional] == true
+        @group = options[:group]
+        @lines = options[:lines] || 1
       end
 
       # Tells whether the field is a text box, typed into.
       #
       # @return [Boolean] Whether it is.
       def typed?
-        [:text, :password, :number, :id].include?(@kind)
+        [:text, :password, :number, :id, :area].include?(@kind)
       end
     end
 
@@ -882,28 +1170,46 @@ module MGQ_MpWorld
     # @return [Form] The form, empty but for the default seats.
     def self.create
       fields = [
-        Field.new(:name, :text, "Name", 0, "The name everyone sees in the list.", :max_chars => MAX_NAME_CHARS),
-        Field.new(:password, :password, "Password", 1, "Everyone types it once to enter the world. Left empty, anyone may enter without one.", :max_chars => MAX_PASSWORD_CHARS),
-        Field.new(:seats, :number, "Max Players", 2, "How many players may be in the world at once, #{MIN_SEATS} to #{MAX_SEATS}. It cannot be changed later.", :max_chars => MAX_SEATS.to_s.size, :allowed => /\A\d\z/),
-        Field.new(:hidden, :check, "Hidden", 3, "Ticked, only its players and the relay's admins see it in the list: share its id, and its password if it has one, with those who may join. Otherwise everyone sees it.", :side => :left),
-        Field.new(:from_save, :check, "From my save", 3, "Ticked, new players start from one of your saves instead of the opening; with Players choose their start ticked, it is one of their choices. It cannot be changed later.", :side => :right),
-        Field.new(:save, :save, "Save", 4, "The save every new player starts from.", :needs => :from_save),
-        Field.new(:choose, :check, "Players choose their start", 5, "Ticked, each new player chooses: at the beginning, from one of their own saves, or from your save when From my save is ticked. It cannot be changed later."),
-        Field.new(:confirm, :button, "Create the world", 7, "Makes the world and enters it."),
+        Field.new(:name, :text, "Name", 0, "The name everyone sees in the list.", :max_chars => MAX_NAME_CHARS, :group => "World"),
+        Field.new(:password, :password, "Password", 1, "Typed once to enter the world. Left empty, anyone may enter.", :max_chars => MAX_PASSWORD_CHARS, :side => :left, :group => "World"),
+        Field.new(:seats, :number, "Max Players", 1, "Players in the world at once, #{MIN_SEATS} to #{MAX_SEATS}.", :max_chars => MAX_SEATS.to_s.size, :allowed => /\A\d\z/, :side => :right, :group => "World"),
+        Field.new(:hidden, :check, "Hidden", 2, "Only its players see it in the list. Others add it with its id.", :side => :left, :group => "World"),
+        Field.new(:from_save, :check, "Shared save", 3, "New players start from one of your saves. Fixed once created.", :side => :left, :group => "Starting point"),
+        Field.new(:choose, :check, "Player's choice", 3, "New players pick their start: the opening or a save. Fixed once created.", :side => :right, :group => "Starting point"),
+        Field.new(:save, :save, "Save", 4, "The save every new player starts from.", :needs => :from_save, :group => "Starting point"),
+        Field.new(:mods, :text, "Mods", 5, "Mods, separated by ; . !Name: games need Patch/Name.rb. ?Name: essential, unchecked.", :max_chars => MAX_MODS_CHARS, :optional => true, :group => "Game data"),
+        Field.new(:mismatch, :check, "Allow data mismatch", 6, "Ticked: games with other data are warned. Unticked: kept out. Fixed once created.", :group => "Game data"),
+        Field.new(:description, :area, "What the world is about", 7, "Shown in the world's details. Optional.", :max_chars => MAX_DESCRIPTION_CHARS, :optional => true, :lines => DESCRIPTION_LINES, :group => "Description"),
+        Field.new(:confirm, :button, "Create the world", 8, "Creates the world. You enter it from the list."),
       ]
-      new("Create a new world", fields, :name => "", :password => "", :seats => DEFAULT_SEATS.to_s, :hidden => false, :from_save => false, :save => nil, :choose => false)
+      new("Create a new world", fields, :name => "", :password => "", :seats => DEFAULT_SEATS.to_s, :hidden => false, :from_save => false, :save => nil, :choose => false, :description => "", :mods => "", :mismatch => true)
     end
 
-    # The form that joins a hidden world by its id.
+    # The form that changes a world, for its creator or an admin: what may change after it was made.
+    #
+    # @param listed [Directory::ListedWorld] The world in the directory.
+    # @param own [Boolean] Whether the player made the world, and so may replace its game data.
+    # @return [Form] The form, filled in as the world is.
+    def self.edit(listed, own = false)
+      fields = [
+        Field.new(:seats, :number, "Max Players", 0, "Players in the world at once, #{MIN_SEATS} to #{MAX_SEATS}.", :max_chars => MAX_SEATS.to_s.size, :allowed => /\A\d\z/, :group => "World"),
+        Field.new(:mods, :text, "Mods", 1, "Mods, separated by ; . !Name: games need Patch/Name.rb. ?Name: essential, unchecked.", :max_chars => MAX_MODS_CHARS, :optional => true, :group => "Game data"),
+        Field.new(:description, :area, "What the world is about", 3, "Shown in the world's details. Optional.", :max_chars => MAX_DESCRIPTION_CHARS, :optional => true, :lines => DESCRIPTION_LINES, :group => "Description"),
+        Field.new(:confirm, :button, "Save the changes", 4, "Changes the world for everyone."),
+      ]
+      fields.insert(2, Field.new(:data, :button, "Update current data scan", 2, "Scans your game's data as it is now and makes it the world's, such as after a mod update.", :group => "Game data")) if own
+      new("Edit #{listed.name}", fields, :seats => listed.seats.to_s, :mods => listed.mods.to_s, :description => listed.description.to_s)
+    end
+
+    # The form that adds a hidden world to the list by its id.
     #
     # @return [Form] The form, empty.
     def self.join
       fields = [
-        Field.new(:id, :id, "World id", 0, "The id the world's creator copied for you. Ctrl+V pastes it.", :max_chars => 32, :allowed => /\A[0-9a-f]\z/i),
-        Field.new(:password, :password, "Password", 1, "The world's password; left empty for a world without one.", :max_chars => MAX_PASSWORD_CHARS),
-        Field.new(:confirm, :button, "Join the world", 3, "Opens the world and enters it."),
+        Field.new(:id, :id, "World id", 0, "The id the world's creator copied for you. Ctrl+V pastes it.", :max_chars => 32, :allowed => /\A[0-9a-f]\z/i, :group => "World"),
+        Field.new(:confirm, :button, "Add the world", 1, "Adds the world to your list, where you enter it like any other."),
       ]
-      new("Join a hidden world", fields, :id => "", :password => "")
+      new("Add a hidden world", fields, :id => "")
     end
 
     # What the form is called.
@@ -914,6 +1220,9 @@ module MGQ_MpWorld
 
     # The key of the text box being typed into, nil while none is.
     attr_accessor :editing
+
+    # The editor of the text box being typed into, nil while none is.
+    attr_accessor :edit
 
     # Creates a form.
     #
@@ -983,7 +1292,7 @@ module MGQ_MpWorld
         [text, nil]
       else
         tidy = text.strip
-        tidy.empty? ? [text, "The #{field.label.downcase} cannot be empty."] : [tidy, nil]
+        tidy.empty? && !field.optional ? [text, "The #{field.label.downcase} cannot be empty."] : [tidy, nil]
       end
     end
 

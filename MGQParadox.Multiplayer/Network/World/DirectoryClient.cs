@@ -2,6 +2,10 @@
 //  DirectoryClient.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-04: Replaced a world's game data
+//                            - Listed the hidden worlds named by their ids too
+//                            - Changed a world's seats, description and mods
+//                            - Made worlds with a description, the mods they need, the creator's game data and whether only games with the same data may enter, and read them
 //      Paulinchen  2026-10-02: Made worlds whose new players choose where to start, and read which worlds do
 //                            - Made worlds without a password, and read which worlds have none and which are featured
 //      Paulinchen  2026-09-30: Read whether the list was made for an admin
@@ -68,15 +72,28 @@ internal sealed class DirectoryClient
     }
 
     /// <summary>
-    /// Lists the worlds a player sees: every public world, and the hidden ones the player joined, or
-    /// every world for one of the relay's admins.
+    /// Lists the worlds a player sees: every public world, the hidden ones the player joined or
+    /// names by their ids, or every world for one of the relay's admins.
     /// </summary>
-    /// <param name="playerKey">The player's key, or <see langword="null"/> for the public worlds only.</param>
+    /// <param name="playerKey">The player's key, or <see langword="null"/> for none.</param>
+    /// <param name="ids">The ids of hidden worlds to list too, <see langword="null"/> for none.</param>
     /// <returns>The worlds, and whether the player is an admin.</returns>
     /// <exception cref="DirectoryException">The directory could not be reached or answered with an error.</exception>
-    public WorldListing List(string? playerKey)
+    public WorldListing List(string? playerKey, IReadOnlyCollection<string>? ids = null)
     {
-        var address = playerKey == null ? _worlds : new Uri($"{_worlds}?player={Uri.EscapeDataString(playerKey)}");
+        var query = new List<string>();
+
+        if (playerKey != null)
+        {
+            query.Add($"player={Uri.EscapeDataString(playerKey)}");
+        }
+
+        if (ids is { Count: > 0 })
+        {
+            query.Add($"ids={Uri.EscapeDataString(string.Join(',', ids))}");
+        }
+
+        var address = query.Count == 0 ? _worlds : new Uri($"{_worlds}?{string.Join('&', query)}");
         using var document = Send(HttpMethod.Get, address, null);
         var worlds = new List<ListedWorld>();
 
@@ -103,6 +120,7 @@ internal sealed class DirectoryClient
                 Flag(world, "choose"),
                 Flag(world, "open"),
                 Flag(world, "featured"),
+                new WorldAbout(Text(world, "description"), Text(world, "mods"), Text(world, "data"), Flag(world, "strict")),
                 members));
         }
 
@@ -110,7 +128,7 @@ internal sealed class DirectoryClient
     }
 
     /// <summary>
-    /// Fetches a world's locked token, with the world's name, seats, starting save state and whether new players choose where to start.
+    /// Fetches a world's locked token, with the world's name, seats, starting save state, whether new players choose where to start, the mods it needs, its creator's game data and whether only games with the same data may enter.
     /// </summary>
     /// <param name="id">The world.</param>
     /// <returns>The lock and the world.</returns>
@@ -120,7 +138,7 @@ internal sealed class DirectoryClient
         using var document = Send(HttpMethod.Get, WorldAddress(id, "lock"), null);
         var root = document.RootElement;
         var worldLock = new WorldLock(root.GetProperty("salt").GetString()!, root.GetProperty("iterations").GetInt32(), root.GetProperty("box").GetString()!);
-        return new LockedWorld(worldLock, root.GetProperty("name").GetString() ?? "?", root.GetProperty("seats").GetInt32(), root.GetProperty("start").GetString() ?? "none", Flag(root, "choose"));
+        return new LockedWorld(worldLock, root.GetProperty("name").GetString() ?? "?", root.GetProperty("seats").GetInt32(), root.GetProperty("start").GetString() ?? "none", Flag(root, "choose"), Text(root, "mods"), Text(root, "data"), Flag(root, "strict"));
     }
 
     /// <summary>
@@ -137,8 +155,9 @@ internal sealed class DirectoryClient
     /// <param name="hidden">Whether the list leaves it out for everyone but its players.</param>
     /// <param name="choose">Whether each new player chooses where to start.</param>
     /// <param name="open">Whether its password is empty, so the games enter without asking for it.</param>
+    /// <param name="about">What its creator tells about it.</param>
     /// <exception cref="DirectoryException">The directory could not be reached or refused the world.</exception>
-    public void Create(string id, string name, int seats, string playerKey, string playerName, string authHash, WorldLock worldLock, bool start, bool hidden, bool choose, bool open)
+    public void Create(string id, string name, int seats, string playerKey, string playerName, string authHash, WorldLock worldLock, bool start, bool hidden, bool choose, bool open, WorldAbout about)
     {
         var body = Json(writer =>
         {
@@ -157,6 +176,15 @@ internal sealed class DirectoryClient
             writer.WriteBoolean("hidden", hidden);
             writer.WriteBoolean("choose", choose);
             writer.WriteBoolean("open", open);
+            writer.WriteString("description", about.Description);
+            writer.WriteString("mods", about.Mods);
+
+            if (about.Data.Length > 0)
+            {
+                writer.WriteString("data", about.Data);
+            }
+
+            writer.WriteBoolean("strict", about.Strict);
         });
 
         using var _ = Send(HttpMethod.Post, _worlds, body);
@@ -205,6 +233,46 @@ internal sealed class DirectoryClient
     }
 
     /// <summary>
+    /// Changes a world's seats, description and mods.
+    /// </summary>
+    /// <param name="id">The world.</param>
+    /// <param name="playerKey">The creator's or an admin's key.</param>
+    /// <param name="seats">How many games it seats at once.</param>
+    /// <param name="description">What the world is about.</param>
+    /// <param name="mods">The mods it needs.</param>
+    /// <exception cref="DirectoryException">The directory could not be reached or refused.</exception>
+    public void Edit(string id, string playerKey, int seats, string description, string mods)
+    {
+        var body = Json(writer =>
+        {
+            writer.WriteString("player", playerKey);
+            writer.WriteNumber("seats", seats);
+            writer.WriteString("description", description);
+            writer.WriteString("mods", mods);
+        });
+
+        using var _ = Send(HttpMethod.Post, WorldAddress(id, "edit"), body);
+    }
+
+    /// <summary>
+    /// Replaces a world's game data, which only its creator may.
+    /// </summary>
+    /// <param name="id">The world.</param>
+    /// <param name="playerKey">The creator's key.</param>
+    /// <param name="data">What tells the creator's game data from another's.</param>
+    /// <exception cref="DirectoryException">The directory could not be reached or refused.</exception>
+    public void SetData(string id, string playerKey, string data)
+    {
+        var body = Json(writer =>
+        {
+            writer.WriteString("player", playerKey);
+            writer.WriteString("data", data);
+        });
+
+        using var _ = Send(HttpMethod.Post, WorldAddress(id, "edit"), body);
+    }
+
+    /// <summary>
     /// Deletes a world for everyone.
     /// </summary>
     /// <param name="id">The world.</param>
@@ -239,6 +307,15 @@ internal sealed class DirectoryClient
     /// <returns>Whether it is <see langword="true"/>; <see langword="false"/> when it is missing.</returns>
     private static bool Flag(JsonElement element, string name) =>
         element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.True;
+
+    /// <summary>
+    /// Reads a text of the directory's answer.
+    /// </summary>
+    /// <param name="element">The object holding it.</param>
+    /// <param name="name">The text's name.</param>
+    /// <returns>The text; empty when it is missing.</returns>
+    private static string Text(JsonElement element, string name) =>
+        element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() ?? string.Empty : string.Empty;
 
     /// <summary>
     /// Builds the address of one of a world's routes.
@@ -382,8 +459,9 @@ internal sealed record WorldListing(IReadOnlyList<ListedWorld> Worlds, bool Admi
 /// <param name="Choose">Whether each new player chooses where to start.</param>
 /// <param name="Open">Whether it has no password.</param>
 /// <param name="Featured">Whether it is one of the relay's own worlds, which an admin made.</param>
+/// <param name="About">What its creator tells about it.</param>
 /// <param name="Members">Everyone who ever joined it.</param>
-internal sealed record ListedWorld(string Id, string Name, int Seats, string CreatorId, string CreatorName, int Online, long Active, string Start, bool Hidden, bool Choose, bool Open, bool Featured, IReadOnlyList<ListedMember> Members);
+internal sealed record ListedWorld(string Id, string Name, int Seats, string CreatorId, string CreatorName, int Online, long Active, string Start, bool Hidden, bool Choose, bool Open, bool Featured, WorldAbout About, IReadOnlyList<ListedMember> Members);
 
 /// <summary>
 /// A world's locked token, with what a player who knows only the world's id needs to enter it.
@@ -393,7 +471,25 @@ internal sealed record ListedWorld(string Id, string Name, int Seats, string Cre
 /// <param name="Seats">How many games it seats at once.</param>
 /// <param name="Start">How far it is with its starting save: "none", "pending" or "ready".</param>
 /// <param name="Choose">Whether each new player chooses where to start.</param>
-internal sealed record LockedWorld(WorldLock Lock, string Name, int Seats, string Start, bool Choose);
+/// <param name="Mods">The mods it needs, as its creator wrote them.</param>
+/// <param name="Data">What tells its creator's game data from another's, empty when unknown.</param>
+/// <param name="Strict">Whether only games with the same data may enter.</param>
+internal sealed record LockedWorld(WorldLock Lock, string Name, int Seats, string Start, bool Choose, string Mods, string Data, bool Strict);
+
+/// <summary>
+/// What a world's creator tells about it.
+/// </summary>
+/// <param name="Description">What the world is about.</param>
+/// <param name="Mods">The mods it needs.</param>
+/// <param name="Data">What tells the creator's game data from another's, which the game script writes and compares; empty when unknown.</param>
+/// <param name="Strict">Whether only games with the same data may enter.</param>
+internal sealed record WorldAbout(string Description, string Mods, string Data, bool Strict)
+{
+    /// <summary>
+    /// Nothing told, and every game may enter.
+    /// </summary>
+    public static WorldAbout None { get; } = new(string.Empty, string.Empty, string.Empty, false);
+}
 
 /// <summary>
 /// A player of a world, as the directory lists them.

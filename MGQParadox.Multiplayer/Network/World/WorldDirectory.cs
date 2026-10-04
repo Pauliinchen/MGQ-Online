@@ -2,6 +2,10 @@
 //  WorldDirectory.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-04: Replaced a world's game data for its creator
+//                            - Listed the hidden worlds the game script names by their ids, and looked one up by its id
+//                            - Changed a world's seats, description and mods for its creator or an admin
+//                            - Made worlds with a description, the mods they need, the creator's game data and whether only games with the same data may enter, and told the game script
 //      Paulinchen  2026-10-02: Made worlds whose new players choose where to start, and told the game script which worlds do
 //                            - Made worlds without a password, and told the game script which worlds have none and which are featured
 //      Paulinchen  2026-10-01: Stopped offering admin deletes after the list failed to load
@@ -80,6 +84,21 @@ internal sealed class WorldDirectory
     private const string ChooseHeader = "choose";
 
     /// <summary>
+    /// The mods the world an action opened needs.
+    /// </summary>
+    private const string ModsHeader = "mods";
+
+    /// <summary>
+    /// What tells the game data of the creator of the world an action opened from another's.
+    /// </summary>
+    private const string DataHeader = "data";
+
+    /// <summary>
+    /// Whether only games with the same data may enter the world an action opened.
+    /// </summary>
+    private const string StrictHeader = "strict";
+
+    /// <summary>
     /// Why an action failed when the game script has not said who plays.
     /// </summary>
     private const string NoPlayer = "The game has not said who plays yet.";
@@ -98,6 +117,11 @@ internal sealed class WorldDirectory
     /// The list as the game script reads it, <see langword="null"/> before the first one arrived.
     /// </summary>
     private string? _list;
+
+    /// <summary>
+    /// The ids of the hidden worlds the list is asked for too.
+    /// </summary>
+    private IReadOnlyCollection<string> _watched = [];
 
     /// <summary>
     /// Whether the last fetched list was made for one of the relay's admins; false after a failed fetch.
@@ -155,10 +179,24 @@ internal sealed class WorldDirectory
     public Func<(string Key, string Name)?> Playing { get; init; } = () => Player.Key is { } key && Player.Name is { } name ? (key, name) : null;
 
     /// <summary>
+    /// Sets the hidden worlds the list is asked for too, from the next fetch on.
+    /// </summary>
+    /// <param name="ids">The worlds' ids.</param>
+    public void Watch(IEnumerable<string> ids)
+    {
+        lock (_gate)
+        {
+            _watched = ids.Distinct().ToArray();
+        }
+    }
+
+    /// <summary>
     /// Fetches the list again, unless it is being fetched already.
     /// </summary>
     public void Refresh()
     {
+        IReadOnlyCollection<string> watched;
+
         lock (_gate)
         {
             if (_listing)
@@ -167,6 +205,7 @@ internal sealed class WorldDirectory
             }
 
             _listing = true;
+            watched = _watched;
         }
 
         StartThread("MultiplayerDirectoryList", () =>
@@ -176,7 +215,7 @@ internal sealed class WorldDirectory
 
             try
             {
-                listing = Client().List(Playing()?.Key);
+                listing = Client().List(Playing()?.Key, watched);
             }
             catch (Exception ex)
             {
@@ -201,7 +240,7 @@ internal sealed class WorldDirectory
     /// <summary>
     /// Describes the list for the game script.
     /// </summary>
-    /// <returns><c>state</c> ("loading", "ready" or "failed"), <c>error</c> and <c>admin</c> (1 for an admin), then one line per world and player: <c>world</c>, id, seats, players online, creator's id, when last active, creator's name, name, starting save ("none", "pending" or "ready"), 1 when hidden, 1 when new players choose where to start, 1 without a password, 1 when featured; <c>member</c>, id, 1 when online, name; each separated by tabs.</returns>
+    /// <returns><c>state</c> ("loading", "ready" or "failed"), <c>error</c> and <c>admin</c> (1 for an admin), then one line per world and player: <c>world</c>, id, seats, players online, creator's id, when last active, creator's name, name, starting save ("none", "pending" or "ready"), 1 when hidden, 1 when new players choose where to start, 1 without a password, 1 when featured, 1 when only games with the same data may enter, the creator's game data, the mods it needs, its description; <c>member</c>, id, 1 when online, name; each separated by tabs.</returns>
     public string DescribeList()
     {
         lock (_gate)
@@ -221,8 +260,9 @@ internal sealed class WorldDirectory
     /// <param name="hidden">Whether the list leaves it out for everyone but its players.</param>
     /// <param name="choose">Whether each new player chooses where to start.</param>
     /// <param name="start">The starting save's files, each named as new players get it and where it is read from; empty for none.</param>
+    /// <param name="about">What the creator tells about it, <see langword="null"/> for nothing.</param>
     /// <returns><see langword="false"/> while another action runs.</returns>
-    public bool Create(string name, string password, int seats, bool hidden, bool choose, IReadOnlyList<(string Name, string Path)> start) => Start("create", () =>
+    public bool Create(string name, string password, int seats, bool hidden, bool choose, IReadOnlyList<(string Name, string Path)> start, WorldAbout? about = null) => Start("create", () =>
     {
         var (key, playerName) = Me();
         var token = JoinCode.NewToken();
@@ -233,8 +273,8 @@ internal sealed class WorldDirectory
         var client = Client();
 
         var open = password.Length == 0;
-        client.Create(id, name, seats, key, playerName, WorldKeys.AuthHashOf(WorldKeys.AuthKeyOf(token)), worldLock, box != null, hidden, choose, open);
-        Log.Write($"made world {id}{(hidden ? ", hidden" : string.Empty)}{(choose ? ", players choose where to start" : string.Empty)}{(open ? ", without a password" : string.Empty)}");
+        client.Create(id, name, seats, key, playerName, WorldKeys.AuthHashOf(WorldKeys.AuthKeyOf(token)), worldLock, box != null, hidden, choose, open, about ?? WorldAbout.None);
+        Log.Write($"made world {id}{(hidden ? ", hidden" : string.Empty)}{(choose ? ", players choose where to start" : string.Empty)}{(open ? ", without a password" : string.Empty)}{(about?.Strict == true ? ", for games with the same data only" : string.Empty)}");
 
         if (box != null)
         {
@@ -322,7 +362,8 @@ internal sealed class WorldDirectory
 
     /// <summary>
     /// Opens a world's lock with its password, which gives its world code, its name, how far it is
-    /// with its starting save and whether new players choose where to start, so a hidden world is
+    /// with its starting save, whether new players choose where to start, the mods it needs, its
+    /// creator's game data and whether only games with the same data may enter, so a hidden world is
     /// entered by its id alone.
     /// </summary>
     /// <param name="id">The world.</param>
@@ -343,7 +384,40 @@ internal sealed class WorldDirectory
             throw new ActionException("The world's lock is damaged.");
         }
 
-        return new ActionResult(new WorldCode(token, Relays.Current, world.Seats).ToText(), world.Name, world.Start, world.Choose);
+        return new ActionResult(new WorldCode(token, Relays.Current, world.Seats).ToText(), world.Name, world.Start, world.Choose, world.Mods, world.Data, world.Strict);
+    });
+
+    /// <summary>
+    /// Looks a world up by its id alone, which gives its name, so the game script may add a hidden world to its list.
+    /// </summary>
+    /// <param name="id">The world.</param>
+    /// <returns><see langword="false"/> while another action runs.</returns>
+    public bool Find(string id) => Start("find", () => new ActionResult(string.Empty, Client().Lock(id).Name));
+
+    /// <summary>
+    /// Changes a world's seats, description and mods, which only its creator or one of the relay's admins may.
+    /// </summary>
+    /// <param name="id">The world.</param>
+    /// <param name="seats">How many games it seats at once.</param>
+    /// <param name="description">What the world is about.</param>
+    /// <param name="mods">The mods it needs.</param>
+    /// <returns><see langword="false"/> while another action runs.</returns>
+    public bool Edit(string id, int seats, string description, string mods) => Start("edit", () =>
+    {
+        Client().Edit(id, Me().Key, seats, description, mods);
+        return null;
+    });
+
+    /// <summary>
+    /// Replaces a world's game data with that of the creator's game as it is now, which only its creator may.
+    /// </summary>
+    /// <param name="id">The world.</param>
+    /// <param name="data">What tells the creator's game data from another's.</param>
+    /// <returns><see langword="false"/> while another action runs.</returns>
+    public bool SetData(string id, string data) => Start("data", () =>
+    {
+        Client().SetData(id, Me().Key, data);
+        return null;
     });
 
     /// <summary>
@@ -372,7 +446,7 @@ internal sealed class WorldDirectory
     /// <summary>
     /// Describes the running or last action for the game script.
     /// </summary>
-    /// <returns><c>state</c> ("idle", "busy", "done" or "failed"), and whichever of <c>kind</c>, <c>code</c>, <c>world</c>, <c>name</c>, <c>start</c>, <c>choose</c> (1 when new players choose where to start) and <c>error</c> apply.</returns>
+    /// <returns><c>state</c> ("idle", "busy", "done" or "failed"), and whichever of <c>kind</c>, <c>code</c>, <c>world</c>, <c>name</c>, <c>start</c>, <c>choose</c> (1 when new players choose where to start), <c>mods</c>, <c>data</c>, <c>strict</c> (1 when only games with the same data may enter) and <c>error</c> apply.</returns>
     public string DescribeAction()
     {
         lock (_gate)
@@ -387,6 +461,9 @@ internal sealed class WorldDirectory
                 new(NameHeader, result?.Name is { } name ? OnOneField(name) : null),
                 new(StartHeader, result?.Start),
                 new(ChooseHeader, result?.Choose == true ? "1" : null),
+                new(ModsHeader, result?.Mods is { } mods ? OnOneField(mods) : null),
+                new(DataHeader, result?.Data),
+                new(StrictHeader, result?.Strict == true ? "1" : null),
                 new(ErrorHeader, _action?.State == "failed" ? _actionError : null),
             };
 
@@ -486,7 +563,7 @@ internal sealed class WorldDirectory
         DirectoryException { Status: null } => Unreachable,
         DirectoryException { Status: HttpStatusCode.NotFound } => "The world no longer exists.",
         DirectoryException { Status: HttpStatusCode.Forbidden } => "Only the world's creator may do this.",
-        DirectoryException { Status: HttpStatusCode.TooManyRequests } => "You have made as many worlds as you may. Delete one first.",
+        DirectoryException { Status: HttpStatusCode.TooManyRequests } => "You have created as many worlds as you may. Delete one first.",
         DirectoryException { Status: HttpStatusCode.RequestEntityTooLarge } => "The save is too large to share.",
         DirectoryException directory => $"The relay refused: {directory.Message}",
         _ => $"Something went wrong: {ex.GetBaseException().Message}",
@@ -507,7 +584,9 @@ internal sealed class WorldDirectory
                 .Append('\t').Append(world.Online.ToString(CultureInfo.InvariantCulture)).Append('\t').Append(world.CreatorId)
                 .Append('\t').Append(world.Active.ToString(CultureInfo.InvariantCulture)).Append('\t').Append(OnOneField(world.CreatorName))
                 .Append('\t').Append(OnOneField(world.Name)).Append('\t').Append(OnOneField(world.Start)).Append('\t').Append(world.Hidden ? '1' : '0')
-                .Append('\t').Append(world.Choose ? '1' : '0').Append('\t').Append(world.Open ? '1' : '0').Append('\t').Append(world.Featured ? '1' : '0').Append('\n');
+                .Append('\t').Append(world.Choose ? '1' : '0').Append('\t').Append(world.Open ? '1' : '0').Append('\t').Append(world.Featured ? '1' : '0')
+                .Append('\t').Append(world.About.Strict ? '1' : '0').Append('\t').Append(OnOneField(world.About.Data)).Append('\t').Append(OnOneField(world.About.Mods))
+                .Append('\t').Append(OnOneField(world.About.Description)).Append('\n');
 
             foreach (var member in world.Members.OrderByDescending(member => member.Online).ThenBy(member => member.Name, StringComparer.OrdinalIgnoreCase))
             {
@@ -540,7 +619,10 @@ internal sealed class WorldDirectory
     /// <param name="Name">The world's name, when the action learned it from the directory.</param>
     /// <param name="Start">How far the world is with its starting save, when the action learned it from the directory.</param>
     /// <param name="Choose">Whether each new player of the world chooses where to start, when the action learned it from the directory.</param>
-    private sealed record ActionResult(string Code, string? Name = null, string? Start = null, bool Choose = false);
+    /// <param name="Mods">The mods the world needs, when the action learned them from the directory.</param>
+    /// <param name="Data">What tells the game data of the world's creator from another's, when the action learned it from the directory.</param>
+    /// <param name="Strict">Whether only games with the same data may enter the world, when the action learned it from the directory.</param>
+    private sealed record ActionResult(string Code, string? Name = null, string? Start = null, bool Choose = false, string? Mods = null, string? Data = null, bool Strict = false);
 
     /// <summary>
     /// An action that failed for a reason the player is told as it is.

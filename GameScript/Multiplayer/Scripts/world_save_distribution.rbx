@@ -16,7 +16,7 @@
 # token; a new player's game fetches it into the world's folder before entering the world for the
 # first time, where it is the world's first save.
 #
-# A world made with Players choose instead asks each new player where to start: at the beginning,
+# A world made with Player's choice instead asks each new player where to start: at the beginning,
 # from one of their own saves, copied into the world's folder the same way, or from the starting
 # save when it has one.
 #

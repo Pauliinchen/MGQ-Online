@@ -2,6 +2,10 @@
 //  directory.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-04: Let a world's creator replace its game data with that of their game as it is now
+//                            - Listed the hidden worlds a player names by their ids
+//                            - Let a world's creator or an admin change its seats, description and mods
+//                            - Kept a world's description, the mods it needs, its creator's game data and whether only games with the same data may enter
 //      Paulinchen  2026-10-02: Kept whether a world lets each new player choose where to start
 //                            - Kept whether a world has no password, and let admins make featured worlds beyond the creator limit
 //                            - Listed when each player was last seen in a world, noting it as they leave too
@@ -31,9 +35,12 @@ import { WORLD_SEATS } from "./relay.js";
  */
 export const DIRECTORY_LIMITS = Object.freeze({
   maxNameLength: 32,
+  maxDescriptionLength: 1000,
+  maxModsLength: 80,
   maxWorlds: 2000,
   maxWorldsPerCreator: 20,
   maxMembers: 200,
+  maxListedIds: 50,
   minIterations: 100_000,
   maxIterations: 5_000_000,
   maxLockHex: 512,
@@ -79,6 +86,11 @@ const HEX = /^(?:[0-9a-f]{2})+$/;
  * Characters a name may not hold: control characters, and the tab and line break the games read lists by.
  */
 const NAME_BREAKERS = /[\u0000-\u001f\u007f]/g;
+
+/**
+ * What tells one game's data from another's, as the creator's game wrote it; the relay only keeps it.
+ */
+const GAME_DATA = /^[0-9a-z:.]{1,160}$/;
 
 /**
  * Hashes a text with SHA-256.
@@ -128,6 +140,17 @@ export function cleanName(name, limits = DIRECTORY_LIMITS) {
 }
 
 /**
+ * Tidies a text someone wrote about a world: on one line, without control characters, trimmed and not too long.
+ *
+ * @param {unknown} text The text.
+ * @param {number} maxLength The most characters kept.
+ * @returns {string} The text, empty when there is none.
+ */
+export function cleanText(text, maxLength) {
+  return typeof text === "string" ? [...text.replace(NAME_BREAKERS, "").trim()].slice(0, maxLength).join("") : "";
+}
+
+/**
  * @typedef {object} DirectoryStore Where the directory keeps its worlds, one entry each, and their starting saves.
  * @property {(id: string) => Promise<object | undefined>} get Reads a world's entry.
  * @property {(entry: object) => Promise<void>} put Writes a world's entry.
@@ -155,16 +178,18 @@ export class Directory {
   }
 
   /**
-   * Lists the worlds a player sees: every public world, and the hidden ones the player joined, or
-   * every world for an admin.
+   * Lists the worlds a player sees: every public world, the hidden ones the player joined or
+   * names by their ids, which their creators hand out, or every world for an admin.
    *
-   * @param {unknown} [key] The asking player's key; without one, only the public worlds.
+   * @param {unknown} [key] The asking player's key; without one, only the public worlds and the named ones.
+   * @param {unknown} [ids] The ids of hidden worlds to list too, separated by commas.
    * @returns {Promise<{status: number, body: object}>} The worlds, and whether the player is an admin.
    */
-  async list(key) {
+  async list(key, ids) {
+    const named = new Set(typeof ids === "string" ? ids.split(",").filter((id) => WORLD_ID.test(id)).slice(0, this.limits.maxListedIds) : []);
     const player = typeof key === "string" && PLAYER_KEY.test(key) ? await playerIdOf(key) : null;
     const admin = this.admins.has(player);
-    const worlds = (await this.store.all()).filter((entry) => admin || !entry.hidden || (player && entry.members[player])).map((entry) => publicView(entry));
+    const worlds = (await this.store.all()).filter((entry) => admin || !entry.hidden || (player && entry.members[player]) || named.has(entry.id)).map((entry) => publicView(entry));
     return { status: 200, body: { worlds, admin } };
   }
 
@@ -173,17 +198,17 @@ export class Directory {
    * found it by its id alone needs to enter it.
    *
    * @param {string} id The world.
-   * @returns {Promise<{status: number, body: object}>} The lock with the world's name, seats, starting save state and whether new players choose where to start, or why there is none.
+   * @returns {Promise<{status: number, body: object}>} The lock with the world's name, seats, starting save state, whether new players choose where to start, the mods it needs, its creator's game data and whether only games with the same data may enter, or why there is none.
    */
   async lock(id) {
     const entry = WORLD_ID.test(id) ? await this.store.get(id) : undefined;
-    return entry ? { status: 200, body: { ...entry.lock, name: entry.name, seats: entry.seats, start: entry.start ?? START.none, choose: entry.choose === true } } : notFound();
+    return entry ? { status: 200, body: { ...entry.lock, name: entry.name, seats: entry.seats, start: entry.start ?? START.none, choose: entry.choose === true, mods: entry.mods ?? "", data: entry.data ?? "", strict: entry.strict === true } } : notFound();
   }
 
   /**
    * Makes a world.
    *
-   * @param {object} request The world: id, name, seats, the creator's player key and name, the hash of the auth key, the lock, whether a starting save follows, whether it is hidden from the list, whether each new player chooses where to start, whether it has no password, and whether it is featured.
+   * @param {object} request The world: id, name, seats, the creator's player key and name, the hash of the auth key, the lock, whether a starting save follows, whether it is hidden from the list, whether each new player chooses where to start, whether it has no password, whether it is featured, its description, the mods it needs, the creator's game data and whether only games with the same data may enter.
    * @returns {Promise<{status: number, body: object}>} The world's id, or why it was refused.
    */
   async create(request) {
@@ -228,6 +253,10 @@ export class Directory {
       choose: request.choose === true,
       open: request.open === true,
       featured: request.featured === true,
+      description: cleanText(request.description, this.limits.maxDescriptionLength),
+      mods: cleanText(request.mods, this.limits.maxModsLength),
+      data: request.data ?? "",
+      strict: request.strict === true,
       created: now,
       active: now,
       members: { [creator]: { name: creatorName, seen: now } },
@@ -254,6 +283,50 @@ export class Directory {
 
     await this.store.remove(entry.id);
     return { status: 200, body: { deleted: entry.id }, close: true };
+  }
+
+  /**
+   * Changes what of a world may change after it was made, if the creator or an admin asks: its
+   * seats, its description and the mods it needs. Games already in the world stay when the seats
+   * become fewer. Its game data only the creator replaces, whose game it is the data of.
+   *
+   * @param {string} id The world.
+   * @param {unknown} key The asking player's key.
+   * @param {any} changes Whichever of `seats`, `description`, `mods` and `data` change.
+   * @returns {Promise<{status: number, body: object}>} The answer.
+   */
+  async edit(id, key, changes) {
+    const { entry, refusal } = await this.asCreatorOrAdmin(id, key);
+
+    if (refusal) {
+      return refusal;
+    }
+
+    const { seats, description, mods, data } = changes ?? {};
+
+    if (data !== undefined && (typeof data !== "string" || !GAME_DATA.test(data))) {
+      return badRequest("the game data must be 1 to 160 lowercase letters, digits, colons and dots");
+    }
+
+    if (data !== undefined && (await playerIdOf(key)) !== entry.creator.id) {
+      return { status: 403, body: { error: "only the world's creator may replace its game data" } };
+    }
+
+    if (seats !== undefined && (!Number.isInteger(seats) || seats < WORLD_SEATS.min || seats > WORLD_SEATS.max)) {
+      return badRequest(`the seats must be ${WORLD_SEATS.min} to ${WORLD_SEATS.max}`);
+    }
+
+    if ((description !== undefined && typeof description !== "string") || (mods !== undefined && typeof mods !== "string")) {
+      return badRequest("the description and the mods must be texts");
+    }
+
+    if (seats !== undefined) entry.seats = seats;
+    if (description !== undefined) entry.description = cleanText(description, this.limits.maxDescriptionLength);
+    if (mods !== undefined) entry.mods = cleanText(mods, this.limits.maxModsLength);
+    if (data !== undefined) entry.data = data;
+
+    await this.store.put(entry);
+    return { status: 200, body: { edited: entry.id } };
   }
 
   /**
@@ -518,6 +591,10 @@ export class Directory {
     if (request.choose !== undefined && typeof request.choose !== "boolean") return "choose must be true or false";
     if (request.open !== undefined && typeof request.open !== "boolean") return "open must be true or false";
     if (request.featured !== undefined && typeof request.featured !== "boolean") return "featured must be true or false";
+    if (request.description !== undefined && typeof request.description !== "string") return "the description must be a text";
+    if (request.mods !== undefined && typeof request.mods !== "string") return "the mods must be a text";
+    if (request.data !== undefined && (typeof request.data !== "string" || !GAME_DATA.test(request.data))) return "the game data must be 1 to 160 lowercase letters, digits, colons and dots";
+    if (request.strict !== undefined && typeof request.strict !== "boolean") return "strict must be true or false";
     return null;
   }
 }
@@ -540,7 +617,7 @@ export async function handleDirectoryRequest(directory, method, url, readBody, r
   }
 
   if (parts.length === 2 && method === "GET") {
-    return directory.list(url.searchParams.get("player"));
+    return directory.list(url.searchParams.get("player"), url.searchParams.get("ids"));
   }
 
   if (parts.length === 2 && method === "POST") {
@@ -554,6 +631,11 @@ export async function handleDirectoryRequest(directory, method, url, readBody, r
   if (parts.length === 4 && parts[3] === "delete" && method === "POST") {
     const body = await readJson(readBody);
     return { ...(await directory.remove(parts[2], body?.player)), id: parts[2] };
+  }
+
+  if (parts.length === 4 && parts[3] === "edit" && method === "POST") {
+    const body = await readJson(readBody);
+    return directory.edit(parts[2], body?.player, body);
   }
 
   if (parts.length === 4 && parts[3] === "ban" && method === "POST") {
@@ -606,6 +688,10 @@ export function publicView(entry) {
     choose: entry.choose === true,
     open: entry.open === true,
     featured: entry.featured === true,
+    description: entry.description ?? "",
+    mods: entry.mods ?? "",
+    data: entry.data ?? "",
+    strict: entry.strict === true,
     online: entry.online.length,
     created: entry.created,
     active: entry.active,

@@ -2,6 +2,10 @@
 //  Exports.Directory.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-04: Added mp_dir_set_data, which replaces a world's game data
+//                            - Added mp_dir_watch and mp_dir_find, which list and look up hidden worlds by their ids
+//                            - Added mp_dir_edit, which changes a world's seats, description and mods
+//                            - Took a world's description, the mods it needs, the creator's game data and whether only games with the same data may enter in mp_dir_create
 //      Paulinchen  2026-10-02: Took whether new players choose where to start in mp_dir_create
 //      Paulinchen  2026-09-30: Created
 //
@@ -41,6 +45,45 @@ internal static unsafe partial class Exports
     }
 
     /// <summary>
+    /// Sets the hidden worlds the list is asked for too, from the next <c>mp_dir_refresh</c> on.
+    /// </summary>
+    /// <param name="ids">The worlds' ids, UTF-8 and null-terminated, separated by commas; empty for none.</param>
+    /// <returns>1 when set, 0 when it failed.</returns>
+    [UnmanagedCallersOnly(EntryPoint = "mp_dir_watch", CallConvs = [typeof(CallConvStdcall)])]
+    public static int DirectoryWatch(byte* ids)
+    {
+        try
+        {
+            WorldDirectory.Current.Watch(Text(ids).Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+            return 1;
+        }
+        catch (Exception ex)
+        {
+            Log.Write($"mp_dir_watch failed: {ex}");
+            return 0;
+        }
+    }
+
+    /// <summary>
+    /// Looks a world up by its id alone. Returns at once; the world's name follows in <c>mp_dir_action</c>.
+    /// </summary>
+    /// <param name="id">The world, UTF-8 and null-terminated.</param>
+    /// <returns>1 when started, 0 while another action runs or when it failed.</returns>
+    [UnmanagedCallersOnly(EntryPoint = "mp_dir_find", CallConvs = [typeof(CallConvStdcall)])]
+    public static int DirectoryFind(byte* id)
+    {
+        try
+        {
+            return WorldDirectory.Current.Find(Text(id)) ? 1 : 0;
+        }
+        catch (Exception ex)
+        {
+            Log.Write($"mp_dir_find failed: {ex}");
+            return 0;
+        }
+    }
+
+    /// <summary>
     /// Hands out the world list as it stands, see <see cref="WorldDirectory.DescribeList"/>.
     /// </summary>
     /// <param name="buffer">Receives the list, UTF-8 and null-terminated.</param>
@@ -70,13 +113,17 @@ internal static unsafe partial class Exports
     /// <param name="hidden">1 to leave the world out of the list for everyone but its players, 0 to list it for everyone.</param>
     /// <param name="choose">1 to let each new player choose where to start, 0 to start everyone alike.</param>
     /// <param name="start">The starting save's files, UTF-8 and null-terminated: one line each, the name new players get it under, <c>=</c>, and where it is read from, relative to the game's folder; empty for none.</param>
+    /// <param name="description">What the world is about, UTF-8 and null-terminated; empty for nothing.</param>
+    /// <param name="mods">The mods it needs, UTF-8 and null-terminated; empty for none.</param>
+    /// <param name="data">What tells the creator's game data from another's, UTF-8 and null-terminated; empty when unknown.</param>
+    /// <param name="strict">1 when only games with the same data may enter, 0 when every game may.</param>
     /// <returns>1 when started, 0 while another action runs, for seats out of range or when it failed.</returns>
     [UnmanagedCallersOnly(EntryPoint = "mp_dir_create", CallConvs = [typeof(CallConvStdcall)])]
-    public static int DirectoryCreate(byte* name, byte* password, int seats, int hidden, int choose, byte* start)
+    public static int DirectoryCreate(byte* name, byte* password, int seats, int hidden, int choose, byte* start, byte* description, byte* mods, byte* data, int strict)
     {
         try
         {
-            return seats is >= WorldCode.MinSeats and <= WorldCode.MaxSeats && WorldDirectory.Current.Create(Text(name), Text(password), seats, hidden == 1, choose == 1, StartFiles(Text(start))) ? 1 : 0;
+            return seats is >= WorldCode.MinSeats and <= WorldCode.MaxSeats && WorldDirectory.Current.Create(Text(name), Text(password), seats, hidden == 1, choose == 1, StartFiles(Text(start)), new WorldAbout(Text(description), Text(mods), Text(data), strict == 1)) ? 1 : 0;
         }
         catch (Exception ex)
         {
@@ -108,7 +155,8 @@ internal static unsafe partial class Exports
 
     /// <summary>
     /// Opens a world's lock with its password. Returns at once; the world code, the world's name, how
-    /// far it is with its starting save and whether new players choose where to start follow in
+    /// far it is with its starting save, whether new players choose where to start, the mods it needs, its
+    /// creator's game data and whether only games with the same data may enter follow in
     /// <c>mp_dir_action</c>.
     /// </summary>
     /// <param name="id">The world, UTF-8 and null-terminated.</param>
@@ -124,6 +172,49 @@ internal static unsafe partial class Exports
         catch (Exception ex)
         {
             Log.Write($"mp_dir_unlock failed: {ex}");
+            return 0;
+        }
+    }
+
+    /// <summary>
+    /// Changes a world's seats, description and mods, which only its creator or one of the relay's admins may. Returns at once.
+    /// </summary>
+    /// <param name="id">The world, UTF-8 and null-terminated.</param>
+    /// <param name="seats">How many games it seats at once, 2 to 32.</param>
+    /// <param name="description">What the world is about, UTF-8 and null-terminated; empty for nothing.</param>
+    /// <param name="mods">The mods it needs, UTF-8 and null-terminated; empty for none.</param>
+    /// <returns>1 when started, 0 while another action runs, for seats out of range or when it failed.</returns>
+    [UnmanagedCallersOnly(EntryPoint = "mp_dir_edit", CallConvs = [typeof(CallConvStdcall)])]
+    public static int DirectoryEdit(byte* id, int seats, byte* description, byte* mods)
+    {
+        try
+        {
+            return seats is >= WorldCode.MinSeats and <= WorldCode.MaxSeats && WorldDirectory.Current.Edit(Text(id), seats, Text(description), Text(mods)) ? 1 : 0;
+        }
+        catch (Exception ex)
+        {
+            Log.Write($"mp_dir_edit failed: {ex}");
+            return 0;
+        }
+    }
+
+    /// <summary>
+    /// Replaces a world's game data with that of the creator's game as it is now, which only its creator may. Returns at once.
+    /// </summary>
+    /// <param name="id">The world, UTF-8 and null-terminated.</param>
+    /// <param name="data">What tells the creator's game data from another's, UTF-8 and null-terminated.</param>
+    /// <returns>1 when started, 0 while another action runs, without data or when it failed.</returns>
+    [UnmanagedCallersOnly(EntryPoint = "mp_dir_set_data", CallConvs = [typeof(CallConvStdcall)])]
+    public static int DirectorySetData(byte* id, byte* data)
+    {
+        try
+        {
+            var text = Text(data);
+            return text.Length > 0 && WorldDirectory.Current.SetData(Text(id), text) ? 1 : 0;
+        }
+        catch (Exception ex)
+        {
+            Log.Write($"mp_dir_set_data failed: {ex}");
             return 0;
         }
     }

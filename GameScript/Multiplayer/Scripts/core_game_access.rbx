@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-04: Renamed from mp_game_access.rbx
+#                            - Read the map lists the game keeps, one per map folder
 #      Paulinchen  2026-10-03: Created
 #
 #----------------------------------------------------------------
@@ -72,6 +73,9 @@ module MGQ_MpGame
 
     # Window_Command.
     :list => :@list,
+
+    # $data_mapinfos: the map lists, the main one and one per further map folder.
+    :map_lists => :@data,
   }
 
   # The fields the game sets only once it needs them, so one that is missing is no reason to log.

@@ -2,6 +2,10 @@
 //  TestRelay.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-04: Let a world's creator replace its game data
+//                            - Listed the hidden worlds a player names by their ids
+//                            - Let a world's creator or an admin change its seats, description and mods
+//                            - Kept a world's description, the mods it needs, its creator's game data and whether only games with the same data may enter
 //      Paulinchen  2026-10-02: Kept whether a world lets each new player choose where to start
 //                            - Kept whether a world has no password and whether it is featured
 //                            - Cut the connections outside the lock when stopping, since a cut can end a connection at once
@@ -319,13 +323,15 @@ internal sealed class TestRelay : IDisposable
         {
             answer = parts switch
             {
-                ["v1", "worlds"] when method == "GET" => (200, List(query["player"])),
+                ["v1", "worlds"] when method == "GET" => (200, List(query["player"], query["ids"])),
                 ["v1", "worlds"] when method == "POST" => Create(body!),
                 ["v1", "worlds", var id, "lock"] when _directory.TryGetValue(id, out var world) => (200, LockOf(world)),
                 ["v1", "worlds", var id, "delete"] when CreatorOrAdminOf(id, body?["player"]?.GetValue<string>()) is { } world => Delete(id, toClose, out closeCode),
                 ["v1", "worlds", var id, "ban"] when CreatorOf(id, body?["player"]?.GetValue<string>()) is { } world => Ban(id, world, body!["target"]!.GetValue<string>(), toClose, out closeCode),
                 ["v1", "worlds", var id, "start"] when method == "POST" && CreatorOf(id, query["player"]) is { } world => PutStart(world, upload),
                 ["v1", "worlds", var id, "start"] when method == "GET" && _directory.TryGetValue(id, out var world) => GetStart(world, query["player"], query["auth"], out download),
+                ["v1", "worlds", var id, "edit"] when CreatorOrAdminOf(id, body?["player"]?.GetValue<string>()) is { } world => Edit(world, body!, PlayerIdOf(body!["player"]!.GetValue<string>())),
+                ["v1", "worlds", var id, "edit"] when _directory.ContainsKey(id) => (403, Error("only the world's creator or an admin may do this")),
                 ["v1", "worlds", var id, "delete"] when _directory.ContainsKey(id) => (403, Error("only the world's creator or an admin may do this")),
                 ["v1", "worlds", var id, _] when _directory.ContainsKey(id) => (403, Error("only the world's creator may do this")),
                 _ => (404, Error("there is no such world")),
@@ -348,12 +354,14 @@ internal sealed class TestRelay : IDisposable
     /// Lists the worlds a player sees: the public ones, and the hidden ones the player joined, or every world for an admin. Called with the gate held.
     /// </summary>
     /// <param name="key">The asking player's key, <see langword="null"/> for the public worlds only.</param>
+    /// <param name="ids">The ids of hidden worlds to list too, separated by commas, <see langword="null"/> for none.</param>
     /// <returns>The answer.</returns>
-    private JsonObject List(string? key)
+    private JsonObject List(string? key, string? ids)
     {
+        var named = (ids ?? string.Empty).Split(',', StringSplitOptions.RemoveEmptyEntries).ToHashSet();
         var player = key != null ? PlayerIdOf(key) : null;
         var admin = player != null && Admins.Contains(player);
-        var seen = _directory.Where(entry => admin || !entry.Value.Hidden || (player != null && entry.Value.Members.ContainsKey(player)));
+        var seen = _directory.Where(entry => admin || !entry.Value.Hidden || (player != null && entry.Value.Members.ContainsKey(player)) || named.Contains(entry.Key));
         return new JsonObject { ["worlds"] = new JsonArray(seen.Select(entry => ListedWorld(entry.Key, entry.Value)).ToArray()), ["admin"] = admin };
     }
 
@@ -369,6 +377,9 @@ internal sealed class TestRelay : IDisposable
         answer["seats"] = world.Seats;
         answer["start"] = world.Start;
         answer["choose"] = world.Choose;
+        answer["mods"] = world.Mods;
+        answer["data"] = world.Data;
+        answer["strict"] = world.Strict;
         return answer;
     }
 
@@ -441,9 +452,34 @@ internal sealed class TestRelay : IDisposable
             Choose = body["choose"]?.GetValue<bool>() == true,
             Open = body["open"]?.GetValue<bool>() == true,
             Featured = body["featured"]?.GetValue<bool>() == true,
+            Description = body["description"]?.GetValue<string>() ?? string.Empty,
+            Mods = body["mods"]?.GetValue<string>() ?? string.Empty,
+            Data = body["data"]?.GetValue<string>() ?? string.Empty,
+            Strict = body["strict"]?.GetValue<bool>() == true,
         };
 
         return (201, new JsonObject { ["id"] = id });
+    }
+
+    /// <summary>
+    /// Changes a world's seats, description and mods. Called with the gate held.
+    /// </summary>
+    /// <param name="world">The world's entry.</param>
+    /// <param name="body">The changes.</param>
+    /// <param name="player">The asking player's id.</param>
+    /// <returns>The answer.</returns>
+    private static (int, JsonNode) Edit(DirectoryWorld world, JsonNode body, string player)
+    {
+        if (body["data"] != null && player != world.CreatorId)
+        {
+            return (403, Error("only the world's creator may replace its game data"));
+        }
+
+        world.Data = body["data"]?.GetValue<string>() ?? world.Data;
+        world.Seats = body["seats"]?.GetValue<int>() ?? world.Seats;
+        world.Description = body["description"]?.GetValue<string>() ?? world.Description;
+        world.Mods = body["mods"]?.GetValue<string>() ?? world.Mods;
+        return (200, new JsonObject { ["edited"] = true });
     }
 
     /// <summary>
@@ -534,6 +570,10 @@ internal sealed class TestRelay : IDisposable
             ["choose"] = world.Choose,
             ["open"] = world.Open,
             ["featured"] = world.Featured,
+            ["description"] = world.Description,
+            ["mods"] = world.Mods,
+            ["data"] = world.Data,
+            ["strict"] = world.Strict,
             ["online"] = online.Count,
             ["created"] = 0,
             ["active"] = 0,
@@ -858,7 +898,7 @@ internal sealed class TestRelay : IDisposable
         /// <summary>
         /// How many games it seats.
         /// </summary>
-        public int Seats { get; } = seats;
+        public int Seats { get; set; } = seats;
 
         /// <summary>
         /// The creator's player id.
@@ -904,6 +944,26 @@ internal sealed class TestRelay : IDisposable
         /// Whether each new player chooses where to start.
         /// </summary>
         public bool Choose { get; init; }
+
+        /// <summary>
+        /// What it is about, as its creator wrote it.
+        /// </summary>
+        public string Description { get; set; } = string.Empty;
+
+        /// <summary>
+        /// The mods it needs, as its creator wrote them.
+        /// </summary>
+        public string Mods { get; set; } = string.Empty;
+
+        /// <summary>
+        /// What tells its creator's game data from another's.
+        /// </summary>
+        public string Data { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Whether only games with the same data may enter.
+        /// </summary>
+        public bool Strict { get; init; }
 
         /// <summary>
         /// Whether it has no password.

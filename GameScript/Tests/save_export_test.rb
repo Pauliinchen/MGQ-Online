@@ -32,6 +32,8 @@ end
 class Window_NameEdit < Window_Base; end
 class Window_NameInput < Window_Selectable; end
 class Color; def initialize(*); end; end
+class Sprite; def initialize(*); end; end
+Rect = Struct.new(:x, :y, :width, :height)
 class Scene_Title; def start; end; def create_command_window; end; def update; end; def terminate; end; end
 class Window_TitleCommand; def make_command_list; end; end
 module Sound; %w[cursor ok cancel buzzer].each { |s| define_singleton_method("play_#{s}") { } }; end
@@ -53,6 +55,7 @@ end
 
 load_script "world_save_distribution"
 load_script "ui"
+load_script "ui_text_box"
 load_script "world"
 load_script "world_screen"
 load_script "world_save_export"

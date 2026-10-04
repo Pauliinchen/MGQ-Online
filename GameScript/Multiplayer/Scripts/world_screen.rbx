@@ -3,6 +3,31 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-04: Renamed from mp_world_screen.rbx
+#                            - Drew the forms' text boxes through MGQ_MpUi::TextBox, and moved their cursor a line through MGQ_MpUi::TextEdit, which every text box shares
+#                            - Showed a world's description, the mods it needs and whether the player's game data matches its creator's
+#                            - Laid the world's details out like a form, in panels, with the description at the bottom, and gave them more of the screen
+#                            - Laid the forms out in the same panels, with the whole description in a box of several lines
+#                            - Listed every player of a world, and each mod it needs, in a list box, opened from the world's choices,
+#                              from the details with the right arrow and confirm, or with a click on them
+#                            - Showed the description in a smaller font, and whole in the list box
+#                            - Kept the commands in a window of their own below the worlds, which scroll with a scrollbar
+#                            - Left a new world to be entered from the list, as a favourite, instead of entering it at once
+#                            - Took the players and the mods out of a world's choices, which the details open
+#                            - Left a text box being typed into with the numpad's 0, the game's cancel key, as with Escape
+#                            - Typed into the forms' text boxes with a cursor: arrows, Home, End and Delete, through MGQ_MpUi::TextEdit
+#                            - Showed required mods in green, or in red while this game lacks their script, and kept such a game out
+#                            - Showed essential mods in green while this game's data matches the world's, in gold otherwise
+#                            - Let a world's creator take their game's data as the world's from the details' Your game row and a button of the edit form
+#                            - Drew the list and the details only when what they show changed, not with every reading of the list
+#                            - Logged frames of the world screen that take long, with what took the time
+#                            - Showed each mod in a box of its own in the details, as many as fit the row, and counted the rest in a last box
+#                            - Said create where a text said make
+#                            - Added a hidden world to the list by its id, and offered to take it off again
+#                            - Offered the creator and admins a form that changes a world's Max Players, mods and description
+#                            - Shortened the messages that did not fit the lines at the top
+#                            - Asked whether games whose data differs may enter instead of whether only games like the creator's may
+#                            - Warned a game whose data differs before it enters a world, or kept it out when the creator said so
+#                            - Showed the end of a text too long for its text box
 #      Paulinchen  2026-10-03: Created
 #
 #----------------------------------------------------------------
@@ -13,13 +38,13 @@
 
 # The world screen, opened from the title screen: every world of the relay's directory at the left,
 # the chosen one's players at the right, and what the player can do with it. Creating a world and
-# joining a hidden one are forms that take the right side while the list points at them.
+# adding a hidden one are forms that take the right side while the list points at them.
 class Scene_MpWorlds < Scene_MenuBase
   # What the screen says while nothing else happened.
-  HINT = "Choose a world to enter it, or make a new one."
+  HINT = "Choose a world to enter it, or create a new one. Right arrow: its details."
 
   # What the screen says while a text box is typed into.
-  TYPING_HINT = "Type on the keyboard. Enter keeps it, Esc goes back."
+  TYPING_HINT = "Type on the keyboard. Arrows, Home, End move the cursor. Enter keeps it, Esc or Numpad 0 goes back."
 
   # Frames between two fetches of the list, ten seconds at 60 frames per second.
   REFRESH_FRAMES = 600
@@ -27,12 +52,23 @@ class Scene_MpWorlds < Scene_MenuBase
   # Frames between two looks at the list the DLL holds.
   LOOK_FRAMES = 20
 
+  # Windows' codes of the numpad's 0, the game's cancel key, with Num Lock on and off.
+  NUMPAD_CANCEL_KEYS = [0x60, 0x2D]
+
+  # Seconds a frame of the screen may take before the log says what took them, and seconds between
+  # two such lines.
+  SLOW_FRAME = 0.05
+  SLOW_FRAME_PAUSE = 2.0
+
   # What the screen says while an action runs, by the action's kind.
   BUSY_TEXTS = {
-    "create" => "Making the world . . .",
+    "create" => "Creating the world . . .",
     "unlock" => "Opening the world . . .",
     "delete" => "Deleting the world . . .",
     "ban" => "Removing the player . . .",
+    "edit" => "Saving the changes . . .",
+    "find" => "Looking for the world . . .",
+    "data" => "Updating the game data . . .",
     "start" => "Fetching the starting save . . .",
   }
 
@@ -43,7 +79,9 @@ class Scene_MpWorlds < Scene_MenuBase
   def start
     super
     @info_window = Window_MpInfo.new
-    @list_window = Window_MpWorldList.new(@info_window.height)
+    @commands_window = Window_MpWorldCommands.new
+    @worlds_window = Window_MpWorldList.new(@info_window.height, Graphics.height - @info_window.height - @commands_window.height)
+    @list_window = MpWorldListPane.new(@worlds_window, @commands_window)
     @detail_window = Window_MpWorldDetail.new(@list_window.width, @info_window.height, @list_window.height)
     @form_window = Window_MpWorldForm.new(@detail_window.x, @detail_window.y, @detail_window.width, @detail_window.height)
     @form_window.set_handler(:ok, method(:on_field))
@@ -54,7 +92,7 @@ class Scene_MpWorlds < Scene_MenuBase
     @list_window.set_handler(:rename, method(:on_rename))
     @list_window.set_handler(:cancel, method(:return_scene))
     @actions_window = Window_MpChoice.new
-    [:enter, :favourite, :copy_id, :ban, :delete_world, :export_save, :delete_saves].each { |symbol| @actions_window.set_handler(symbol, method(:"on_#{symbol}")) }
+    [:enter, :favourite, :copy_id, :forget, :edit_world, :ban, :delete_world, :export_save, :delete_saves].each { |symbol| @actions_window.set_handler(symbol, method(:"on_#{symbol}")) }
     @actions_window.set_handler(:cancel, method(:back_to_list))
     @members_window = Window_MpChoice.new
     @members_window.set_handler(:member, method(:on_member))
@@ -82,7 +120,11 @@ class Scene_MpWorlds < Scene_MenuBase
   # Asks for the player's name the first time, takes what is typed into a text box, follows a
   # running action, and keeps the list fresh.
   def update
-    super
+    started = Time.now
+    @spent = {}
+    # The game's frame counter raises on the title screen, so the pane is told of each new frame.
+    @list_window.settle
+    timed(:windows) { super }
 
     if @ask_name
       @ask_name = false
@@ -92,17 +134,25 @@ class Scene_MpWorlds < Scene_MenuBase
 
     return start_from_own if @own_start
 
-    if form && form.editing
-      update_typing
-    elsif @resume_form && !@start_window.active && !Input.press?(:C) && !Input.press?(:B)
-      # The press that ended the typing must not reach the form, or Enter types again at once.
-      @resume_form = false
-      @form_window.activate
+    timed(:input) do
+      if @box
+        update_box
+      elsif form && form.editing
+        update_typing
+      elsif @resume_form && !@start_window.active && !Input.press?(:C) && !Input.press?(:B)
+        # The press that ended the typing must not reach the form, or Enter types again at once.
+        @resume_form = false
+        @form_window.activate
+      elsif !form && !@busy && !popup_open?
+        update_focus
+      end
     end
 
-    follow_action if @busy
-    show_panel
-    show_field_hint
+    timed(:action) { follow_action } if @busy
+    timed(:panel) do
+      show_panel
+      show_field_hint
+    end
 
     @refresh_frames += 1
     if @refresh_frames >= REFRESH_FRAMES && !@busy
@@ -111,15 +161,40 @@ class Scene_MpWorlds < Scene_MenuBase
     end
 
     @look_frames += 1
-    look_at_list if @look_frames >= LOOK_FRAMES
+    timed(:list) { look_at_list } if @look_frames >= LOOK_FRAMES
+    log_slow_frame(Time.now - started)
   rescue => e
     MGQ_MpWorld.log("world screen failed: #{e.class}: #{e.message}")
     return_scene
   end
 
+  # Runs a part of the frame and notes how long it took.
+  #
+  # @param part [Symbol] What the part is called in the log.
+  # @yield The part.
+  # @return [Object] What the part returned.
+  def timed(part)
+    started = Time.now
+    result = yield
+    @spent[part] = Time.now - started
+    result
+  end
+
+  # Logs a frame that took long, with what took the time, a few seconds apart at most.
+  #
+  # @param seconds [Float] How long the frame took.
+  def log_slow_frame(seconds)
+    return if seconds < SLOW_FRAME || (@slow_logged && Time.now - @slow_logged < SLOW_FRAME_PAUSE)
+
+    @slow_logged = Time.now
+    parts = @spent.map { |part, spent| "#{part} #{(spent * 1000).round}" }.join(", ")
+    MGQ_MpWorld.log("world screen: a frame took #{(seconds * 1000).round} ms (#{parts})")
+  end
+
   # Stops taking what is typed, should the screen close while a text box is typed into.
   def terminate
     MGQ_Multiplayer::Link.typing(false) if form && form.editing
+    @list_box.dispose
     super
   end
 
@@ -137,7 +212,7 @@ class Scene_MpWorlds < Scene_MenuBase
 
   # Shows at the right what the list points at: a world's details, or a form.
   def show_panel
-    shown = @forms[@list_window.current_symbol]
+    shown = form || @forms[@list_window.current_symbol]
     @form_window.form = shown if shown
     @form_window.visible = !shown.nil?
     @detail_window.visible = shown.nil?
@@ -159,18 +234,24 @@ class Scene_MpWorlds < Scene_MenuBase
       fill_field(kind[1], text) if text && form
     end
 
+    @list_box = Sprite_MpListBox.new
+    @box = nil
+    @focus = nil
     @ask_name = MGQ_Multiplayer::Player.name.nil?
   end
 
   # Opens what can be done with the chosen world.
   def on_world
     @entry = @list_window.current_ext
+    @data_accepted = false
     listed = @entry.listed
     creator = listed && listed.creator_id == @me
     commands = []
     commands.push(["Enter the world", :enter]) if listed || @entry.local
     commands.push([@entry.favourite ? "No longer a favourite" : "Mark as a favourite", :favourite]) if @entry.id
     commands.push(["Copy the world id", :copy_id]) if creator && listed.hidden
+    commands.push(["Remove from my list", :forget]) if @entry.local.nil? && MGQ_MpWorld::Added.all.include?(@entry.id)
+    commands.push(["Edit the world", :edit_world]) if listed && (creator || @admin)
     commands.push(["Remove a player", :ban, listed.members.size > 1]) if creator
     commands.push(["Delete the world for everyone", :delete_world]) if creator || (listed && @admin)
     commands.push(["Copy my latest save to my game", :export_save]) if @entry.local && @entry.local.latest_save
@@ -179,8 +260,19 @@ class Scene_MpWorlds < Scene_MenuBase
     @actions_window.start(commands)
   end
 
-  # Enters the chosen world, asking for its password the first time, unless it has none.
+  # Enters the chosen world, asking for its password the first time, unless it has none. A game
+  # whose data differs from the creator's is warned or kept out first.
   def on_enter
+    listed = @entry.listed
+    missing = listed ? MGQ_MpWorld.missing_mods(listed.mods) : []
+
+    unless missing.empty?
+      refuse("#{@entry.name} needs #{missing.join(', ')}: no such script in your Patch folder.")
+      return back_to_list
+    end
+
+    return if listed && !data_allows?(@entry.name, listed.data, listed.strict, listed.mods, listed.creator_id == @me) { on_enter }
+
     if @entry.listed && @entry.listed.start == "pending"
       Sound.play_buzzer
       say("#{@entry.name} is still being set up by its creator. Try again in a moment.")
@@ -191,7 +283,7 @@ class Scene_MpWorlds < Scene_MenuBase
       back_to_list
     elsif @entry.local
       listed = @entry.listed
-      @entry.local.describe(listed.name, listed.id) if listed
+      @entry.local.describe(listed.name, listed.id, listed.seats) if listed
       enter(@entry.local, listed && listed.start, listed && listed.choose)
     elsif @entry.listed.online >= @entry.listed.seats
       Sound.play_buzzer
@@ -202,6 +294,35 @@ class Scene_MpWorlds < Scene_MenuBase
     else
       ask_text(:password, "The password of #{@entry.name}", "", :masked => true, :max_chars => MGQ_MpWorld::MAX_PASSWORD_CHARS)
     end
+  end
+
+  # Decides whether the player's game may enter a world now: one whose data differs from the
+  # creator's is kept out of a world for the same data only, and otherwise asked first.
+  #
+  # @param name [String] The world's name.
+  # @param data [String, nil] The creator's game data, see MGQ_MpWorld::GameData.fingerprint.
+  # @param strict [Boolean] Whether only games with the same data may enter.
+  # @param mods [String, nil] The mods the world needs, as its creator wrote them.
+  # @param own [Boolean] Whether the player made the world, and so may update its game data.
+  # @yield What enters the world once the player said to enter anyway.
+  # @return [Boolean] Whether entering goes on now.
+  def data_allows?(name, data, strict, mods, own = false, &enter)
+    differing = MGQ_MpWorld::GameData.differing(data)
+    accepted = @data_accepted
+    @data_accepted = false
+    return true if differing.nil? || differing.empty? || (accepted && !strict)
+
+    needed = MGQ_MpWorld.mods_of(mods)
+    needs = needed.empty? ? "" : " It needs: #{needed.join(', ')}."
+
+    if strict
+      refuse(own ? "#{name} only takes matching game data. Update it under Your game in its details." : "#{name} only takes matching game data.#{needs}")
+      back_to_list
+    else
+      @after_accept = enter
+      confirm(:differing, "Your game data differs.#{needs} Enter anyway?", "Enter anyway")
+    end
+    false
   end
 
   # Marks the chosen world as a favourite, or no longer.
@@ -215,12 +336,206 @@ class Scene_MpWorlds < Scene_MenuBase
   # Puts the chosen hidden world's id on the clipboard, for its creator to hand out.
   def on_copy_id
     if MGQ_MpWorld::Link.copy(@entry.id)
-      say("The id of #{@entry.name} is on the clipboard. Send it#{@entry.open? ? '' : ' with the password'} to those who may join.")
+      say("Copied the id of #{@entry.name}. Share it#{@entry.open? ? '' : ' with the password'}.")
     else
       Sound.play_buzzer
       say("The id could not be put on the clipboard.")
     end
     back_to_list
+  end
+
+  # Opens the list box with the chosen world's players, mods or description.
+  #
+  # @param kind [Symbol] :players, :mods or :description.
+  def open_box(kind)
+    listed = @entry.listed
+    close_popups
+    @list_window.deactivate
+    lines = case kind
+            when :players then player_lines(listed.members)
+            when :mods then mod_lines(listed.mods, @entry.differing)
+            else description_lines(listed.description.to_s)
+            end
+    @box = Sprite_MpListBox::View.of(@entry.name, { :players => "Players", :mods => "Mods" }[kind] || "Description", lines)
+    @box_pointed = nil
+  end
+
+  # Writes the list box's lines for a world's players: those online, then the others.
+  #
+  # @param members [Array<MGQ_MpWorld::Directory::Member>] Everyone who ever joined.
+  # @return [Array<Array>] The lines, see Sprite_MpListBox::View.
+  def player_lines(members)
+    online = members.select { |member| member.online }
+    lines = []
+
+    [["Online", online, :good], ["Offline", members - online, :grey]].each do |heading, group, color|
+      next if group.empty?
+
+      lines.push([:head, "#{heading} (#{group.size})"])
+      group.each { |member| lines.push([:item, member.id == @me ? "#{member.name} (you)" : member.name, color, heading.downcase]) }
+    end
+    lines
+  end
+
+  # Writes the list box's lines for the mods a world needs: the required ones first, green while
+  # this game has their script and red while it lacks it, then the essential ones, green while
+  # this game's data matches the world's and gold otherwise.
+  #
+  # @param text [String, nil] The mods as the world's creator wrote them.
+  # @param differing [Array<String>, nil] What of this game's data differs from the world's, see MGQ_MpWorld::Entry#differing.
+  # @return [Array<Array>] The lines, see Sprite_MpListBox::View.
+  def mod_lines(text, differing = nil)
+    mods = MGQ_MpWorld.mods_of(text)
+    required = MGQ_MpWorld.required_mods(text)
+    essential = MGQ_MpWorld.essential_mods(text)
+    lines = mods.map do |mod|
+      if required.include?(mod)
+        MGQ_MpWorld.installed_mod?(mod) ? [:item, mod, :good, "required, installed"] : [:item, mod, :bad, "required, missing"]
+      elsif essential.include?(mod)
+        if differing.nil?
+          [:item, mod, :gold, "essential, not checked"]
+        else
+          differing.empty? ? [:item, mod, :good, "essential, data matches"] : [:item, mod, :gold, "essential, data differs"]
+        end
+      else
+        [:item, mod, :plain, nil]
+      end
+    end
+    [[:head, "Mods (#{mods.size})"]] + lines
+  end
+
+  # Writes the list box's lines for a world's description, broken to the box's width.
+  #
+  # @param text [String] The description.
+  # @return [Array<Array>] The lines, see Sprite_MpListBox::View.
+  def description_lines(text)
+    measure = @list_box.bitmap
+    measure.font.size = Sprite_MpListBox::ITEM_SIZE
+    width = Sprite_MpListBox::BOX.width - Sprite_MpListBox::ITEM_LEFT - 16
+    MGQ_MpUi.wrap(measure, text, width).map { |line| [:item, line, :plain, nil] }
+  end
+
+  # Follows the arrows, cancel and the mouse while the list box is open.
+  def update_box
+    @box.move(1) if Input.repeat?(:DOWN)
+    @box.move(-1) if Input.repeat?(:UP)
+    position = mouse_position
+    clicked = mouse_clicked?
+
+    if position
+      line = Sprite_MpListBox.line_at(position[0], position[1], @box)
+      @box.pick(line) if line && @box.lines[line][0] == :item && position != @box_pointed
+      @box_pointed = position
+    end
+
+    outside = clicked && position && !Sprite_MpListBox.inside?(position[0], position[1])
+    return close_box if Input.trigger?(:B) || outside
+
+    @list_box.show(@box)
+  end
+
+  # Closes the list box and goes back to where it was opened from.
+  def close_box
+    Sound.play_cancel
+    @box = nil
+    @list_box.hide
+    @list_window.activate unless @focus
+  end
+
+  # Moves between the list and the chosen world's details: the right arrow moves onto what the
+  # details open, up and down between them, confirm or a click opens it, left or cancel goes back.
+  def update_focus
+    targets = @detail_window.visible ? @detail_window.targets : []
+    clicked = clicked_target(targets)
+    return open_target(clicked) if clicked
+
+    if @focus
+      return leave_focus if targets.empty?
+
+      @focus = targets.first unless targets.include?(@focus)
+
+      if Input.trigger?(:B) || Input.trigger?(:LEFT)
+        Sound.play_cancel
+        return leave_focus
+      elsif Input.trigger?(:C)
+        Sound.play_ok
+        return open_target(@focus)
+      elsif Input.repeat?(:DOWN) || Input.repeat?(:UP)
+        Sound.play_cursor
+        @focus = targets[(targets.index(@focus) + (Input.repeat?(:DOWN) ? 1 : -1)) % targets.size]
+      end
+      @detail_window.focus(@focus)
+    elsif @list_window.active && Input.trigger?(:RIGHT) && !targets.empty?
+      Sound.play_cursor
+      @focus = targets.first
+      @list_window.deactivate
+      @detail_window.focus(@focus)
+    end
+  end
+
+  # Moves from the details back to the list.
+  def leave_focus
+    @focus = nil
+    @detail_window.focus(nil)
+    @list_window.activate
+  end
+
+  # Opens the list box for what the details point at.
+  #
+  # @param target [Symbol] :players or :mods.
+  def open_target(target)
+    @entry = @list_window.current_ext
+    return open_box(target) unless target == :data
+
+    @list_window.deactivate
+    ask_data_update
+  end
+
+  # Makes the chosen world take the creator's game data as it is now, at once, as the edit form's
+  # button does.
+  def update_data
+    if MGQ_MpWorld::GameData.fingerprint.empty?
+      refuse("Your game data could not be read.")
+      return back_to_list
+    end
+
+    start_action("data") { MGQ_MpWorld::Directory.set_data(@entry.id) }
+  end
+
+  # Asks the creator whether the chosen world takes their game's data as it is now, from the
+  # details, where a click reaches it.
+  def ask_data_update
+    if MGQ_MpWorld::GameData.fingerprint.empty?
+      refuse("Your game data could not be read.")
+      return back_to_list
+    end
+
+    confirm(:update_data, "Take your game's data as that of #{@entry.name}? Games that differ from yours are then warned or kept out.", "Update it")
+  end
+
+  # Finds what of the details the mouse clicked, while the list or the details take the input.
+  #
+  # @param targets [Array<Symbol>] What the details open.
+  # @return [Symbol, nil] :players or :mods, nil without a click on one.
+  def clicked_target(targets)
+    return nil unless mouse_clicked? && (@focus || @list_window.active) && !targets.empty?
+
+    position = mouse_position
+    position && @detail_window.target_at(position[0], position[1])
+  end
+
+  # Tells where the mouse points on the game's screen.
+  #
+  # @return [Array<Integer>, nil] x and y, nil outside the window or without the mouse.
+  def mouse_position
+    defined?(MGQ_Multiplayer::Mouse) ? MGQ_Multiplayer::Mouse.position : nil
+  end
+
+  # Reports whether the left mouse button went down since the last call.
+  #
+  # @return [Boolean] Whether it went down.
+  def mouse_clicked?
+    defined?(MGQ_Multiplayer::Mouse) ? MGQ_Multiplayer::Mouse.clicked? : false
   end
 
   # Opens the list of the chosen world's players to remove one.
@@ -237,7 +552,7 @@ class Scene_MpWorlds < Scene_MenuBase
 
   # Asks whether to delete the chosen world for everyone.
   def on_delete_world
-    confirm(:delete_world, "Delete #{@entry.name} for everyone? Nobody can enter it again. Saves stay on each PC.", "Delete it")
+    confirm(:delete_world, "Delete #{@entry.name} for everyone? Saves stay on each PC.", "Delete it")
   end
 
   # Copies the chosen world's latest save into the player's own game, see MGQ_MpSaveExport.
@@ -263,6 +578,12 @@ class Scene_MpWorlds < Scene_MenuBase
       say(@entry.local.delete ? "Your saves of #{@entry.name} were deleted." : "Your saves of #{@entry.name} could not be deleted.")
       look_at_list
       back_to_list
+    when :update_data
+      update_data
+    when :differing
+      @confirm_window.finish
+      @data_accepted = true
+      @after_accept.call
     end
   end
 
@@ -285,8 +606,9 @@ class Scene_MpWorlds < Scene_MenuBase
     @form_window.activate
   end
 
-  # Moves from the form back to the list, keeping what was filled in.
+  # Moves from the form back to the list, keeping what was filled in, unless it changed a world.
   def leave_form
+    @forms.delete(:edit_world)
     @form_symbol = nil
     @hinted = nil
     @form_window.unselect
@@ -297,7 +619,7 @@ class Scene_MpWorlds < Scene_MenuBase
 
   # Puts the cursor back on the form after another screen, at the field it left from.
   def return_to_form
-    @list_window.select_symbol(@form_symbol)
+    @list_window.select_symbol(@form_symbol) unless @form_symbol == :edit_world
     @list_window.deactivate
     @form_window.form = form
     @form_window.select(@field_index || 0)
@@ -318,7 +640,7 @@ class Scene_MpWorlds < Scene_MenuBase
     when :save
       MGQ_MpSaveDistribution.choose(:world)
     when :button
-      send_form
+      field.key == :data ? update_data : send_form
     else
       start_typing(field)
     end
@@ -332,15 +654,18 @@ class Scene_MpWorlds < Scene_MenuBase
     return ask_field(field, false) unless MGQ_Multiplayer::Background.running?
 
     form.editing = field.key
+    form.edit = MGQ_MpUi::TextEdit.new(form[field.key], :max_chars => field.max_chars, :allowed => field.allowed)
     @typed_before = form[field.key]
     @typing_frames = 0
+    @cursor_shown = true
     MGQ_Multiplayer::Link.typing(true)
     @form_window.refresh
     say(TYPING_HINT)
   end
 
-  # Takes what was typed into the text box, or moves the typing to the text screen, whose letters
-  # a gamepad can pick, once a button is pressed that did not come from the keyboard.
+  # Takes what was typed into the text box and lets its editor follow the keys that move the
+  # cursor, or moves the typing to the text screen, whose letters a gamepad can pick, once a
+  # button is pressed that did not come from the keyboard.
   def update_typing
     field = @form_window.field
     text, keys = MGQ_Multiplayer::Link.take_typed
@@ -352,40 +677,55 @@ class Scene_MpWorlds < Scene_MenuBase
       return ask_field(field, true)
     end
 
+    # The numpad's 0 cancels everywhere else in the game, so it leaves the box instead of typing a 0.
+    return type(field, "") if numpad_cancel?
+
     text.each_char do |char|
       type(field, char)
-      break unless form.editing
+      return unless form.editing
     end
+
+    editor = form.edit
+    moved = editor.update_keys(field.kind == :area ? @form_window.current_area_spans(editor.text) : nil)
+    form[field.key] = editor.text
+    # The blinking cursor is drawn again as it shows and hides.
+    return unless moved || editor.cursor_shown? != @cursor_shown
+
+    @cursor_shown = editor.cursor_shown?
+    @form_window.redraw_current_item
   end
 
-  # Types one character into the text box: Enter keeps the text if it is valid, Escape puts the
-  # text back as it was, Backspace removes the last character.
+  # Reports whether the numpad's 0 went down, with Num Lock on or off.
+  #
+  # @return [Boolean] Whether it did.
+  def numpad_cancel?
+    NUMPAD_CANCEL_KEYS.map { |code| MGQ_Multiplayer::Key.pressed?(code) }.any?
+  end
+
+  # Types one character into the text box at its cursor: Enter keeps the text if it is valid,
+  # Escape puts the text back as it was.
   #
   # @param field [MGQ_MpWorld::Form::Field] The text box.
   # @param char [String] The character.
   def type(field, char)
-    case char
-    when "\r"
-      text, error = form.check(field, form[field.key])
+    case form.edit.type(char)
+    when :enter
+      text, error = form.check(field, form.edit.text)
       return refuse(error) if error
 
       form[field.key] = text
       Sound.play_ok
-      stop_typing
-    when "\e"
+      return stop_typing
+    when :escape
       form[field.key] = @typed_before
       Sound.play_cancel
-      stop_typing
-    when "\b"
-      return if form[field.key].empty?
-
-      form[field.key] = form[field.key][0...-1]
-      Sound.play_cancel
-    else
-      return if char =~ /[[:cntrl:]]/
-
-      form.add(field, char) ? Sound.play_cursor : Sound.play_buzzer
+      return stop_typing
+    when :refused
+      Sound.play_buzzer
+    when :edited
+      Sound.play_cursor
     end
+    form[field.key] = form.edit.text
     @form_window.redraw_current_item
   end
 
@@ -393,6 +733,7 @@ class Scene_MpWorlds < Scene_MenuBase
   def stop_typing
     MGQ_Multiplayer::Link.typing(false)
     form.editing = nil
+    form.edit = nil
     @form_window.refresh
     @hinted = nil
     @resume_form = true
@@ -451,7 +792,38 @@ class Scene_MpWorlds < Scene_MenuBase
       return @resume_form = true
     end
 
-    @form_symbol == :new_world ? create_world : join_world
+    case @form_symbol
+    when :new_world then create_world
+    when :edit_world then edit_world
+    else join_world
+    end
+  end
+
+  # Takes the chosen hidden world, added by its id and never entered, off the list again.
+  def on_forget
+    MGQ_MpWorld::Added.remove(@entry.id)
+    say("#{@entry.name} was removed from your list.")
+    MGQ_MpWorld::Directory.refresh
+    back_to_list
+  end
+
+  # Opens the form that changes the chosen world, filled in as the world is.
+  def on_edit_world
+    close_popups
+    @forms[:edit_world] = MGQ_MpWorld::Form.edit(@entry.listed, @entry.listed.creator_id == @me)
+    @form_symbol = :edit_world
+    @field_index = 0
+    @hinted = nil
+    @list_window.deactivate
+    @form_window.form = form
+    @form_window.select(0)
+    @resume_form = true
+  end
+
+  # Changes the chosen world as the form says.
+  def edit_world
+    values = form
+    start_action("edit") { MGQ_MpWorld::Directory.edit(@entry.id, values[:seats].to_i, values[:description], values[:mods]) }
   end
 
   # Takes the save picked on the save screen: as the new world's starting save, or as where the
@@ -471,20 +843,27 @@ class Scene_MpWorlds < Scene_MenuBase
     end
   end
 
-  # Makes the world the form describes.
+  # Makes the world the form describes, unless it keeps differing games out and the creator's
+  # game data cannot be read, which would let every game in.
   def create_world
     values = @forms[:new_world]
+
+    if !values[:mismatch] && MGQ_MpWorld::GameData.fingerprint.empty?
+      refuse("Your game data could not be read. Tick Allow data mismatch.")
+      return @resume_form = true
+    end
+
     files = values[:from_save] ? MGQ_MpSaveDistribution.files_of(values[:save]) : []
     @creating = values[:name]
     @start_files = files
-    start_action("create") { MGQ_MpWorld::Directory.create(values[:name], values[:password], values[:seats].to_i, values[:hidden], values[:choose], MGQ_MpSaveDistribution.text_of(files)) }
+    about = { :description => values[:description], :mods => values[:mods], :data => MGQ_MpWorld::GameData.fingerprint, :strict => !values[:mismatch] }
+    start_action("create") { MGQ_MpWorld::Directory.create(values[:name], values[:password], values[:seats].to_i, values[:hidden], values[:choose], MGQ_MpSaveDistribution.text_of(files), about) }
   end
 
-  # Opens the hidden world the form names by its id.
+  # Looks up the hidden world the form names by its id, to add it to the list.
   def join_world
-    values = @forms[:join_hidden]
-    @entry = nil
-    start_action("unlock") { MGQ_MpWorld::Directory.unlock(values[:id], values[:password]) }
+    @adding = @forms[:join_hidden][:id]
+    start_action("find") { MGQ_MpWorld::Directory.find(@adding) }
   end
 
   # Starts a directory action and waits for it, the input held meanwhile.
@@ -527,15 +906,14 @@ class Scene_MpWorlds < Scene_MenuBase
       world = MGQ_MpWorld::World.found(action["code"], @creating, action["world"])
 
       if world && (@start_files.empty? || MGQ_MpSaveDistribution.place(world, @start_files))
-        choose = @forms[:new_world][:choose]
-        # A fresh form keeps going back from the world from making it again.
+        MGQ_MpWorld::Favourites.add(action["world"])
+        # A fresh form keeps the next world from starting as a copy of this one.
         @forms[:new_world] = MGQ_MpWorld::Form.create
         leave_form
-        MGQ_MpWorld::Directory.refresh
-        return enter(world, "none", choose)
+        say("#{@creating} was created. Enter it from the list.")
+      else
+        say(world ? "Your save could not be copied into #{@creating}." : "The world's folder could not be created.")
       end
-
-      say(world ? "Your save could not be copied into #{@creating}." : "The world's folder could not be made.")
     when "unlock"
       return if enter_opened(action)
     when "start"
@@ -544,37 +922,41 @@ class Scene_MpWorlds < Scene_MenuBase
       say("#{@entry.name} was deleted for everyone.")
     when "ban"
       say("#{@target.name} was removed from #{@entry.name}.")
+    when "find"
+      MGQ_MpWorld::Added.add(@adding)
+      @forms[:join_hidden] = MGQ_MpWorld::Form.join
+      leave_form
+      say("#{action['name']} was added to your list.")
+    when "data"
+      say("The data scan of #{@entry.name} was updated to your game.")
+    when "edit"
+      leave_form
+      say("#{@entry.name} was changed.")
     end
 
     MGQ_MpWorld::Directory.refresh
     back_to_list
   end
 
-  # Enters a world whose lock was opened, from the list or by its id, or says why it cannot.
+  # Enters the chosen world, whose lock was opened, or says why it cannot.
   #
-  # @param action [Hash] The ended action, with the world's code, id, name and starting save.
+  # @param action [Hash] The ended action, with the world's code and id.
   # @return [Boolean] Whether it went on to enter the world.
   def enter_opened(action)
-    name = @entry ? @entry.name : action["name"].to_s
-
     if action["start"] == "pending"
       Sound.play_buzzer
-      say("#{name} is still being set up by its creator. Try again in a moment.")
+      say("#{@entry.name} is still being set up by its creator. Try again in a moment.")
       return false
     end
 
-    world = MGQ_MpWorld::World.found(action["code"], name, action["world"])
+    world = MGQ_MpWorld::World.found(action["code"], @entry.name, action["world"])
 
     unless world
-      say("The world's folder could not be made.")
+      say("The world's folder could not be created.")
       return false
     end
 
-    if @entry
-      enter(world, @entry.listed.start, @entry.listed.choose)
-    else
-      enter(world, action["start"] || "none", action["choose"] == "1")
-    end
+    enter(world, @entry.listed.start, @entry.listed.choose)
     true
   end
 
@@ -606,7 +988,7 @@ class Scene_MpWorlds < Scene_MenuBase
     choices.push(["At the beginning", :from_beginning])
     choices.push(["From one of my saves", :from_own])
     choices.push(["Back", :cancel])
-    say("Where do you start in #{world.name}? A save you start from cannot be undone; At the beginning asks again until you save there.")
+    say("Where do you start in #{world.name}? A save cannot be undone.")
     @start_window.start(choices)
   end
 
@@ -690,7 +1072,17 @@ class Scene_MpWorlds < Scene_MenuBase
     show_info
     return if @busy
 
-    form ? @resume_form = true : @list_window.activate
+    return @resume_form = true if form
+
+    # While the cursor is in the details, the list stays still.
+    @list_window.activate unless @focus
+  end
+
+  # Tells whether one of the small windows takes the input.
+  #
+  # @return [Boolean] Whether one does.
+  def popup_open?
+    [@actions_window, @members_window, @confirm_window, @start_window].any? { |window| window.active }
   end
 
   # Closes the small windows.
@@ -717,18 +1109,181 @@ class Scene_MpWorlds < Scene_MenuBase
   end
 end
 
-# The worlds at the left of the world screen, then what else it offers.
+# The left side of the world screen as the screen sees it: the worlds, which scroll, above the
+# commands, which stay in place. It hands the cursor from one to the other and answers for
+# whichever has it.
+class MpWorldListPane
+  # Creates the pane with the cursor on the first command, since the worlds arrive later.
+  #
+  # @param worlds [Window_MpWorldList] The worlds.
+  # @param commands [Window_MpWorldCommands] The commands below them.
+  def initialize(worlds, commands)
+    @worlds = worlds
+    @commands = commands
+    @focus = :commands
+    @arrived = false
+    @worlds.pane = self
+    @commands.pane = self
+    @worlds.unselect
+    @worlds.deactivate
+    @commands.select(0)
+    @commands.activate
+  end
+
+  # Returns the width of the pane.
+  #
+  # @return [Integer] The width.
+  def width
+    @worlds.width
+  end
+
+  # Returns the height of the pane, both windows'.
+  #
+  # @return [Integer] The height.
+  def height
+    @worlds.height + @commands.height
+  end
+
+  # Sets what a choice does: entering a world's choices, a command, or cancel in either window.
+  #
+  # @param symbol [Symbol] :world, a command's symbol or :cancel.
+  # @param method [Method] What it does.
+  def set_handler(symbol, method)
+    @worlds.set_handler(symbol, method) if symbol == :world || symbol == :cancel
+    @commands.set_handler(symbol, method) unless symbol == :world
+  end
+
+  # Finds the window that has the cursor.
+  #
+  # @return [Window_Command] The worlds or the commands.
+  def focused
+    @focus == :worlds ? @worlds : @commands
+  end
+
+  # Returns the world the cursor is on.
+  #
+  # @return [MGQ_MpWorld::Entry, nil] The world, nil while the cursor is on a command.
+  def current_ext
+    @focus == :worlds ? @worlds.current_ext : nil
+  end
+
+  # Returns the symbol of what the cursor is on.
+  #
+  # @return [Symbol, nil] :world or a command's symbol.
+  def current_symbol
+    focused.current_symbol
+  end
+
+  # Tells whether the pane takes the input.
+  #
+  # @return [Boolean] Whether one of its windows does.
+  def active
+    @worlds.active || @commands.active
+  end
+
+  # Lets the window with the cursor take the input.
+  def activate
+    @focus = :commands if @worlds.item_max == 0
+    focused.select(0) if focused.index < 0
+    focused.activate
+  end
+
+  # Stops both windows from taking the input.
+  def deactivate
+    @worlds.deactivate
+    @commands.deactivate
+  end
+
+  # Puts the cursor on a command.
+  #
+  # @param symbol [Symbol] The command's symbol.
+  def select_symbol(symbol)
+    @focus = :commands
+    @worlds.unselect
+    @commands.select_symbol(symbol)
+  end
+
+  # Shows other worlds. The first worlds to arrive take the cursor if it still rests where it
+  # started, and the commands take it when the last world went.
+  #
+  # @param entries [Array<MGQ_MpWorld::Entry>] The worlds.
+  def entries=(entries)
+    @worlds.entries = entries
+
+    if !@arrived && !entries.empty?
+      @arrived = true
+      cross(:worlds, :first) if @focus == :commands && @commands.index == 0 && @commands.active
+    elsif @focus == :worlds && entries.empty?
+      cross(:commands, :first)
+    end
+  end
+
+  # Hands the cursor to the other window, as it leaves one at its edge.
+  #
+  # @param target [Symbol] :worlds or :commands.
+  # @param edge [Symbol] :first or :last, the row it lands on.
+  # @return [Boolean] Whether it moved; not into a list without worlds.
+  def cross(target, edge)
+    return false if target == :worlds && @worlds.item_max == 0
+
+    @crossed = true
+    was_active = active
+    focused.unselect
+    focused.deactivate
+    @focus = target
+    focused.select(edge == :first ? 0 : focused.item_max - 1)
+    focused.activate if was_active
+    true
+  end
+
+  # Tells whether the cursor changed windows in this frame, whose key press the window it
+  # landed in must not follow again.
+  #
+  # @return [Boolean] Whether it did.
+  def settling?
+    @crossed == true
+  end
+
+  # Ends the frame the cursor changed windows in. Called by the screen before its windows update.
+  def settle
+    @crossed = false
+  end
+end
+
+# The worlds at the left of the world screen, which scroll, with a bar at the right that tells
+# where the list stands while not all of them fit.
 class Window_MpWorldList < Window_Command
   # Width of the window.
-  WIDTH = 300
+  WIDTH = 230
 
-  # Creates the list below the lines, reaching down to the bottom of the screen.
+  # Width kept free at the right of a world's name for its players online and seats.
+  COUNT_WIDTH = 52
+
+  # Width of the scrollbar.
+  BAR_WIDTH = 4
+
+  # Colors of the scrollbar's track and of its thumb.
+  TRACK_COLOR = Color.new(0, 0, 0, 96)
+  THUMB_COLOR = Color.new(255, 255, 255, 160)
+
+  # The pane the window belongs to, which takes the cursor at the window's edges.
+  attr_writer :pane
+
+  # Creates the list below the lines.
   #
   # @param y [Integer] The top edge.
-  def initialize(y)
+  # @param height [Integer] The height.
+  def initialize(y, height)
     @entries = []
-    @height = Graphics.height - y
+    @height = height
     super(0, y)
+    @bar = Sprite.new
+    @bar.bitmap = Bitmap.new(BAR_WIDTH, height - standard_padding * 2)
+    @bar.x = WIDTH - BAR_WIDTH - 5
+    @bar.y = y + standard_padding
+    @bar.z = z + 1
+    @bar_drawn = nil
+    update_bar
   end
 
   # Returns the window's width.
@@ -738,41 +1293,58 @@ class Window_MpWorldList < Window_Command
     WIDTH
   end
 
-  # Returns the window's height: down to the bottom of the screen.
+  # Returns the window's height.
   #
   # @return [Integer] The height.
   def window_height
     @height
   end
 
-  # Shows other worlds, keeping the world or command chosen, so a form stays open while worlds
-  # come and go above it.
+  # Shows other worlds, keeping the world chosen, or no cursor while the commands have it.
   #
   # @param entries [Array<MGQ_MpWorld::Entry>] The worlds.
   def entries=(entries)
-    return if entries == @entries
+    signatures = entries.map { |entry| entry.signature }
+    return if signatures == @signatures
 
+    @signatures = signatures
     chosen = current_ext
-    symbol = current_symbol
+    at = index
     @entries = entries
     clear_command_list
     make_command_list
     refresh
-    again = if chosen
-              @list.index { |command| command[:ext] && command[:ext].id == chosen.id && command[:ext].name == chosen.name }
-            else
-              @list.index { |command| command[:symbol] == symbol }
-            end
-    select(again || [[index, 0].max, item_max - 1].min)
+    return unselect if at < 0
+
+    again = chosen && @list.index { |command| command[:ext].id == chosen.id && command[:ext].name == chosen.name }
+    select(again || [[at, 0].max, item_max - 1].min)
   end
 
-  # Lists the worlds, then the other commands.
+  # Lists the worlds.
   def make_command_list
     (@entries || []).each { |entry| add_command(entry.name, :world, true, entry) }
-    add_command("Create new world", :new_world)
-    add_command("Join a hidden world", :join_hidden)
-    add_command("Change your name", :rename)
-    add_command("Back", :cancel)
+  end
+
+  # Moves down, or onto the commands from the last world.
+  #
+  # @param wrap [Boolean] Whether the cursor may leave the list.
+  def cursor_down(wrap = false)
+    return if @pane && @pane.settling?
+
+    return super unless index >= item_max - 1 && @pane
+
+    @pane.cross(:commands, :first)
+  end
+
+  # Moves up, or onto the last command from the first world.
+  #
+  # @param wrap [Boolean] Whether the cursor may leave the list.
+  def cursor_up(wrap = false)
+    return if @pane && @pane.settling?
+
+    return super unless index <= 0 && @pane
+
+    @pane.cross(:commands, :last) if wrap
   end
 
   # Draws a world with its players online and seats, a featured one in gold, a favourite with a
@@ -781,18 +1353,217 @@ class Window_MpWorldList < Window_Command
   # @param index [Integer] The row.
   def draw_item(index)
     entry = @list[index][:ext]
-    return super unless entry
-
     rect = item_rect_for_text(index)
+    rect.width -= BAR_WIDTH + 2
     change_color(entry.featured? ? MGQ_MpWorld::FEATURED_COLOR : entry.favourite ? crisis_color : normal_color, !entry.gone)
-    draw_text(rect, entry.favourite ? "* #{entry.name}" : entry.name)
     draw_text(rect, "#{entry.listed.online}/#{entry.listed.seats}", 2) if entry.listed
+    rect.width -= COUNT_WIDTH if entry.listed
+    draw_text(rect, entry.favourite ? "* #{entry.name}" : entry.name)
+  end
+
+  # Keeps the scrollbar where the list stands.
+  def update
+    super
+    update_bar if @bar
+  end
+
+  # Draws the scrollbar if the list moved or changed its length: a thumb as long as the share of
+  # the worlds in sight, hidden while all of them fit.
+  def update_bar
+    rows = item_max
+    page = page_row_max
+    @bar.visible = visible && rows > page
+    state = [rows, page, top_row]
+    return if state == @bar_drawn || !@bar.visible
+
+    @bar_drawn = state
+    track = @bar.bitmap.height
+    thumb = [track * page / rows, 8].max
+    top = (track - thumb) * top_row / [rows - page, 1].max
+    @bar.bitmap.clear
+    @bar.bitmap.fill_rect(0, 0, BAR_WIDTH, track, TRACK_COLOR)
+    @bar.bitmap.fill_rect(0, top, BAR_WIDTH, thumb, THUMB_COLOR)
+  end
+
+  # Frees the scrollbar with the window.
+  def dispose
+    @bar.bitmap.dispose
+    @bar.dispose
+    super
   end
 end
 
-# The chosen world's details at the right of the world screen: who made it, who is online, and
-# everyone who ever joined.
+# What the world screen offers besides the worlds, in a window of its own below them, so it stays
+# in place while the worlds scroll.
+class Window_MpWorldCommands < Window_Command
+  # The pane the window belongs to, which takes the cursor at the window's edges.
+  attr_writer :pane
+
+  # Creates the window at the bottom left of the screen.
+  def initialize
+    super(0, 0)
+    self.y = Graphics.height - height
+  end
+
+  # Returns the window's width, the world list's.
+  #
+  # @return [Integer] The width.
+  def window_width
+    Window_MpWorldList::WIDTH
+  end
+
+  # Lists the commands.
+  def make_command_list
+    add_command("Create new world", :new_world)
+    add_command("Add a hidden world", :join_hidden)
+    add_command("Change your name", :rename)
+    add_command("Back", :cancel)
+  end
+
+  # Moves down, or onto the first world from the last command.
+  #
+  # @param wrap [Boolean] Whether the cursor may leave the commands.
+  def cursor_down(wrap = false)
+    return if @pane && @pane.settling?
+
+    return super unless index >= item_max - 1 && @pane
+
+    super unless wrap && @pane.cross(:worlds, :first)
+  end
+
+  # Moves up, or onto the last world from the first command.
+  #
+  # @param wrap [Boolean] Whether the cursor may leave the commands.
+  def cursor_up(wrap = false)
+    return if @pane && @pane.settling?
+
+    return super unless index <= 0 && @pane
+
+    super unless @pane.cross(:worlds, :last)
+  end
+end
+
+# What the windows at the right of the world screen share, the world's details and the forms: the
+# measures and colors of their panels, groups of rows under a heading, and how texts are fitted.
+module MGQ_MpWorldPanels
+  # Height of the line at the top: the world's name or the form's title.
+  TITLE_HEIGHT = 24
+
+  # Height of a panel's heading.
+  HEADER_HEIGHT = 16
+
+  # Height of a row.
+  ROW_HEIGHT = 21
+
+  # Height of a line of the description.
+  DESCRIPTION_LINE_HEIGHT = 16
+
+  # Space inside a panel's edge, and between two cells of a row.
+  PAD = 3
+
+  # Space between two panels.
+  GAP = 3
+
+  # Font sizes of the headings, the labels, the values and the description.
+  HEADER_SIZE = 13
+  LABEL_SIZE = 15
+  VALUE_SIZE = 18
+  DESCRIPTION_SIZE = 15
+
+  # Fill behind a panel.
+  PANEL_COLOR = Color.new(0, 0, 0, 56)
+
+  # Fill behind a value.
+  TEXT_BOX_COLOR = Color.new(0, 0, 0, 96)
+
+  # Draws a panel's heading in small capitals, and what it says at its right.
+  #
+  # @param title [String] The heading.
+  # @param note [String, nil] What it says at its right.
+  # @param x [Integer] The left edge.
+  # @param y [Integer] The top edge.
+  def draw_header(title, note, x, y)
+    contents.font.size = HEADER_SIZE
+    change_color(system_color)
+    draw_text(x, y + PAD, contents_width - x - PAD, HEADER_HEIGHT, title.upcase)
+    return unless note
+
+    change_color(normal_color, false)
+    draw_text(x, y + PAD, contents_width - x - PAD, HEADER_HEIGHT, note, 2)
+  end
+
+  # Breaks a text into lines of a width, in the font set.
+  #
+  # @param text [String] The text.
+  # @param width [Integer] The width a line may take.
+  # @return [Array<String>] The lines, none for an empty text.
+  def wrapped(text, width)
+    lines = []
+    text.split(" ").each do |word|
+      longer = lines.empty? ? word : "#{lines.last} #{word}"
+
+      if lines.empty? || text_size(longer).width > width
+        lines.push(word)
+      else
+        lines[-1] = longer
+      end
+    end
+    lines
+  end
+
+  # Cuts a text at its end until it fits, in the font set.
+  #
+  # @param text [String] The text.
+  # @param width [Integer] The width it may take.
+  # @return [String] The text, or its start before two dots.
+  def cut(text, width)
+    return text if text_size(text).width <= width
+
+    text = text[0...-1] while text.size > 1 && text_size("#{text}..").width > width
+    "#{text.rstrip}.."
+  end
+end
+
+# The chosen world's details at the right of the world screen, laid out like its forms: labels with
+# their values on darker boxes, grouped under headings. The world itself comes first, then how the
+# player's game compares with its creator's, its players, and its description at the bottom.
 class Window_MpWorldDetail < Window_Base
+  include MGQ_MpWorldPanels
+
+  # A group of rows under a heading.
+  #
+  # @!attribute title [String] The heading.
+  # @!attribute note [String, nil] What the heading says at its right, nil for nothing.
+  # @!attribute rows [Array<Array<Cell>>] The rows, each one cell across the panel or two side by side.
+  # @!attribute target [Symbol, nil] What the whole panel opens, nil for nothing.
+  Panel = Struct.new(:title, :note, :rows, :target)
+
+  # A value on a darker box.
+  #
+  # @!attribute label [String, nil] What it is called, nil for a box across the whole cell.
+  # @!attribute text [String] The value.
+  # @!attribute color [Symbol] :normal, :good for what is fine or online, or :warn.
+  # @!attribute target [Symbol, nil] What the cell opens, nil for nothing.
+  # @!attribute chips [Array<String>, nil] Values shown in a box each instead of the text, nil for the text.
+  # @!attribute chip_colors [Hash, nil] The color of chips drawn in another than the cell's, by their text: :good, :bad or :gold.
+  Cell = Struct.new(:label, :text, :color, :target, :chips, :chip_colors)
+
+  # Space inside a chip's left and right edge, and between two chips.
+  CHIP_PAD = 6
+  CHIP_GAP = 4
+
+  # Width of the labels in front of the values.
+  LABEL_WIDTH = 68
+
+  # Width of the bar at the left of the description.
+  ACCENT_WIDTH = 3
+
+  # Most players the players' panel names; one more place counts the rest.
+  NAMED_PLAYERS = 4
+
+  # Most parts of the game data a row names before it counts the rest.
+  NAMED_PARTS = 2
+
   # Creates the window beside the list.
   #
   # @param x [Integer] The left edge.
@@ -801,76 +1572,321 @@ class Window_MpWorldDetail < Window_Base
   def initialize(x, y, height)
     super(x, y, Graphics.width - x, height)
     @shown = :nothing
+    @targets = {}
   end
 
-  # Shows a world, if it is another than shown.
+  # Shows a world, if it is another than shown or shows something else by now.
   #
   # @param entry [MGQ_MpWorld::Entry, nil] The world, nil for none.
   # @param me [String] The player's id.
   def show(entry, me)
-    return if entry == @shown
+    signature = [entry && entry.signature, me]
+    return if signature == @shown
 
-    @shown = entry
+    @shown = signature
+    @targets = {}
     contents.clear
     return unless entry
 
-    lines = []
+    y = draw_title(entry) + GAP
+    panels(entry, me).each { |panel| y = draw_panel(panel, y) + GAP }
+    draw_description(entry.listed.description.to_s, y) if entry.listed
+    reset_font_settings
+  end
+
+  # Lists what the panels say about a world.
+  #
+  # @param entry [MGQ_MpWorld::Entry] The world.
+  # @param me [String] The player's id.
+  # @return [Array<Panel>] The panels, from the top.
+  def panels(entry, me)
     listed = entry.listed
-    lines.push([entry.name, entry.featured? ? MGQ_MpWorld::FEATURED_COLOR : system_color])
+    return [Panel.new("World", nil, [[Cell.new("Status", entry.gone ? "Only on this PC: deleted, or you were removed" : "Not in the list right now", :normal)]])] unless listed
 
-    if listed
-      lines.push(["Featured: one of the relay's own worlds.", MGQ_MpWorld::FEATURED_COLOR]) if listed.featured
-      lines.push(["Made by #{listed.creator_id == me ? 'you' : listed.creator_name}", normal_color])
-      lines.push(["#{listed.online} of #{listed.seats} players online", normal_color])
-      start = start_text(listed)
-      lines.push([start, normal_color]) if start
-      lines.push(["No password: anyone may enter.", normal_color]) if listed.open
-      lines.push(["Hidden: only its players and the relay's admins see it in the list.", normal_color]) if listed.hidden
-    elsif entry.gone
-      lines.push(["Only on this PC: it was deleted, or you were removed.", normal_color])
-    else
-      lines.push(["Not in the list right now.", normal_color])
-    end
+    [world_panel(listed, me), data_panel(entry, me), players_panel(listed, me)]
+  end
 
-    lines.push([entry.local ? played_text(entry.local) : "You have not entered it yet.", normal_color])
-    lines.push(["", normal_color])
+  # Tells who made a world, how full it is, how it is entered and where its new players start.
+  #
+  # @param listed [MGQ_MpWorld::Directory::ListedWorld] The world in the directory.
+  # @param me [String] The player's id.
+  # @return [Panel] The panel.
+  def world_panel(listed, me)
+    rows = [
+      [Cell.new("Creator", listed.creator_id == me ? "You" : listed.creator_name, :normal), Cell.new("Players", "#{listed.online} / #{listed.seats} online", :normal)],
+      [Cell.new("Password", listed.open ? "None" : "Needed", :normal), Cell.new("Listed", listed.hidden ? "Hidden" : "Public", :normal)],
+      [Cell.new("Start", start_text(listed), :normal)],
+    ]
+    Panel.new("World", listed.featured ? "featured: one of the relay's own" : nil, rows)
+  end
 
-    if listed
-      lines.push(["Players", system_color])
-      listed.members.each do |member|
-        name = member.id == me ? "#{member.name} (you)" : member.name
-        lines.push([member.online ? "#{name} - online" : name, member.online ? power_up_color : normal_color])
+  # Tells the mods a world needs, whether the player's game data matches that of its creator, and
+  # which games may enter.
+  #
+  # @param entry [MGQ_MpWorld::Entry] The world, which the directory lists.
+  # @param me [String, nil] The player's id, who may update the game data of a world of their own.
+  # @return [Panel] The panel.
+  def data_panel(entry, me = nil)
+    listed = entry.listed
+    mods = MGQ_MpWorld.mods_of(listed.mods)
+    differing = entry.differing
+    # The creator's game is the world's measure: once it differs, or the world tells none, they
+    # may take it as the world's.
+    update = listed.creator_id == me && (differing.nil? || !differing.empty?) ? :data : nil
+    game = if differing.nil?
+             Cell.new("Your game", update ? "Not compared. Confirm to set yours" : "Not compared: the world does not tell", :normal, update)
+           elsif differing.empty?
+             Cell.new("Your game", "Matches the creator's", :good)
+           else
+             Cell.new("Your game", "Differs: #{MGQ_MpWorld::GameData.text(differing, NAMED_PARTS)}", :warn, update)
+           end
+    note = if update
+             "confirm on Your game: update"
+           elsif listed.strict
+             "same data only"
+           elsif differing
+             "differing games are warned"
+           end
+    Panel.new("Game data", note, [[Cell.new("Mods", mods.empty? ? "No mod named" : mods.join(", "), :normal, mods.empty? ? nil : :mods, mods.empty? ? nil : mods, mod_colors(listed.mods, differing))], [game]])
+  end
+
+  # Tells the colors of a world's marked mods: a required one in the color of what is fine while
+  # this game has its script and of what is wrong while it lacks it, an essential one in the color
+  # of what is fine while this game's data matches the world's, and in gold otherwise.
+  #
+  # @param text [String, nil] The mods as the world's creator wrote them.
+  # @param differing [Array<String>, nil] What of this game's data differs from the world's.
+  # @return [Hash] The color by the mod's name.
+  def mod_colors(text, differing = nil)
+    colors = {}
+    MGQ_MpWorld.required_mods(text).each { |mod| colors[mod] = MGQ_MpWorld.installed_mod?(mod) ? :good : :bad }
+    MGQ_MpWorld.essential_mods(text).each { |mod| colors[mod] = differing && differing.empty? ? :good : :gold }
+    colors
+  end
+
+  # Places values in boxes of their own along a row, as many as fit, with a last box that counts
+  # the rest. Measured in the font set.
+  #
+  # @param texts [Array<String>] The values, at least one.
+  # @param width [Integer] The width of the row.
+  # @return [Array<Array>] Each box's text, left edge and width.
+  def chips(texts, width)
+    size = lambda { |text| text_size(text).width + CHIP_PAD * 2 }
+    named = texts.size
+
+    loop do
+      rest = texts.size - named
+      labels = texts.first(named) + (rest > 0 ? ["+#{rest} more"] : [])
+      widths = labels.map { |label| size.call(label) }
+      needed = widths.inject(0) { |sum, chip| sum + chip } + CHIP_GAP * (labels.size - 1)
+
+      if needed > width && named == 1
+        # Not even the first value fits beside the count: it is cut to what is left.
+        labels[0] = cut(labels[0], width - (needed - widths[0]) - CHIP_PAD * 2)
+        widths[0] = size.call(labels[0])
+        needed = width
       end
-    end
 
-    rows = contents_height / line_height
-    lines = lines.first(rows - 1) + [["and #{lines.size - rows + 1} more", normal_color]] if lines.size > rows
-    lines.each_with_index do |(text, color), row|
-      change_color(color)
-      draw_text(0, row * line_height, contents_width, line_height, text)
+      if needed <= width
+        left = 0
+        return labels.each_with_index.map { |label, index| place = [label, left, widths[index]]; left += widths[index] + CHIP_GAP; place }
+      end
+
+      named -= 1
     end
   end
 
-  # Tells where a world's new players start, unless it is the beginning for everyone.
+  # Names a world's players, those online first as the directory lists them, two to a row.
   #
   # @param listed [MGQ_MpWorld::Directory::ListedWorld] The world in the directory.
-  # @return [String, nil] The text, nil for the beginning.
-  def start_text(listed)
-    return "Its creator is still uploading its starting save." if listed.start == "pending"
-    return "New players choose: the beginning, their own save or its creator's." if listed.choose && listed.start == "ready"
-    return "New players choose: the beginning or one of their own saves." if listed.choose
-    return "New players start from its creator's save." if listed.start == "ready"
+  # @param me [String] The player's id.
+  # @return [Panel] The panel.
+  def players_panel(listed, me)
+    members = listed.members
+    named = members.size > NAMED_PLAYERS ? members.first(NAMED_PLAYERS - 1) : members
+    cells = named.map { |member| Cell.new(nil, member.id == me ? "#{member.name} (you)" : member.name, member.online ? :good : :normal) }
+    cells.push(Cell.new(nil, "and #{members.size - named.size} more", :normal)) if named.size < members.size
+    rows = []
+    cells.each_slice(2) { |pair| rows.push(pair.size == 2 ? pair : pair + [nil]) }
+    Panel.new("Players", "#{members.size} joined", rows, :players)
+  end
 
-    nil
+  # Lists what the details shown open, from the top: the mods, the creator's update of the game
+  # data, the players, the description.
+  #
+  # @return [Array<Symbol>] :mods, :data, :players and :description, those the world shown has.
+  def targets
+    [:mods, :data, :players, :description].select { |target| @targets[target] }
+  end
+
+  # Puts the cursor on what the details open, or takes it away.
+  #
+  # @param target [Symbol, nil] :mods or :players, nil for no cursor.
+  def focus(target)
+    rect = target && @targets[target]
+    rect ? cursor_rect.set(rect.x, rect.y, rect.width, rect.height) : cursor_rect.empty
+    self.active = !rect.nil?
+  end
+
+  # Finds what the details open under a point of the screen.
+  #
+  # @param x [Integer] The point's x.
+  # @param y [Integer] The point's y.
+  # @return [Symbol, nil] :mods or :players, nil elsewhere.
+  def target_at(x, y)
+    inside_x = x - self.x - standard_padding
+    inside_y = y - self.y - standard_padding
+    targets.find do |target|
+      rect = @targets[target]
+      inside_x >= rect.x && inside_x < rect.x + rect.width && inside_y >= rect.y && inside_y < rect.y + rect.height
+    end
+  end
+
+  # Tells where a world's new players start.
+  #
+  # @param listed [MGQ_MpWorld::Directory::ListedWorld] The world in the directory.
+  # @return [String] The text.
+  def start_text(listed)
+    return "Its creator is still setting it up" if listed.start == "pending"
+    return "Your choice: beginning, own or creator's save" if listed.choose && listed.start == "ready"
+    return "Your choice: beginning or own save" if listed.choose
+    return "The creator's save" if listed.start == "ready"
+
+    "The beginning"
   end
 
   # Tells when the player last played a world.
   #
-  # @param world [MGQ_MpWorld::World] The world on this PC.
+  # @param world [MGQ_MpWorld::World, nil] The world on this PC, nil before the player entered it.
   # @return [String] The text.
   def played_text(world)
-    world.played_at ? "You last played it on #{world.played_at.strftime('%Y-%m-%d')}." : "You have entered it, but not played yet."
+    return "not entered yet" unless world
+
+    world.played_at ? "last played #{world.played_at.strftime('%Y-%m-%d')}" : "entered, not played yet"
   end
+
+  # Draws the world's name, a featured one in gold, and at its right when the player last played it.
+  #
+  # @param entry [MGQ_MpWorld::Entry] The world.
+  # @return [Integer] The bottom edge.
+  def draw_title(entry)
+    played = played_text(entry.local)
+    contents.font.size = LABEL_SIZE
+    played_width = text_size(played).width + 4
+    change_color(normal_color, false)
+    draw_text(contents_width - played_width, 0, played_width, TITLE_HEIGHT, played, 2)
+    reset_font_settings
+    change_color(entry.featured? ? MGQ_MpWorld::FEATURED_COLOR : system_color)
+    draw_text(0, 0, contents_width - played_width - PAD, TITLE_HEIGHT, entry.name)
+    TITLE_HEIGHT
+  end
+
+  # Draws a panel: its fill, its heading and its rows.
+  #
+  # @param panel [Panel] The panel.
+  # @param y [Integer] The top edge.
+  # @return [Integer] The bottom edge.
+  def draw_panel(panel, y)
+    height = HEADER_HEIGHT + panel.rows.size * ROW_HEIGHT + PAD * 2
+    contents.fill_rect(0, y, contents_width, height, PANEL_COLOR)
+    draw_header(panel.title, panel.note, PAD, y)
+    @targets[panel.target] = Rect.new(0, y, contents_width, height) if panel.target
+
+    panel.rows.each_with_index do |cells, row|
+      width = (contents_width - PAD * (cells.size + 1)) / cells.size
+      cells.each_with_index do |cell, column|
+        draw_cell(cell, PAD + column * (width + PAD), y + HEADER_HEIGHT + PAD + row * ROW_HEIGHT, width) if cell
+      end
+    end
+    y + height
+  end
+
+  # Draws a cell: its label, then its value on a darker box, as a text box of a form, or its
+  # values on a box each.
+  #
+  # @param cell [Cell] The cell.
+  # @param x [Integer] The left edge.
+  # @param y [Integer] The top edge.
+  # @param width [Integer] The width.
+  def draw_cell(cell, x, y, width)
+    label_width = cell.label ? LABEL_WIDTH : 0
+    @targets[cell.target] = Rect.new(x, y, width, ROW_HEIGHT) if cell.target
+
+    if cell.label
+      contents.font.size = LABEL_SIZE
+      change_color(system_color)
+      draw_text(x, y, label_width, ROW_HEIGHT, cell.label)
+    end
+
+    contents.font.size = VALUE_SIZE
+    change_color(color_of(cell.color))
+
+    if cell.chips
+      chips(cell.chips, width - label_width).each do |text, left, chip_width|
+        contents.fill_rect(x + label_width + left, y + 1, chip_width, ROW_HEIGHT - 2, TEXT_BOX_COLOR)
+        change_color(color_of((cell.chip_colors && cell.chip_colors[text]) || cell.color))
+        draw_text(x + label_width + left, y, chip_width, ROW_HEIGHT, text, 1)
+      end
+      return
+    end
+
+    box = Rect.new(x + label_width, y + 1, width - label_width, ROW_HEIGHT - 2)
+    contents.fill_rect(box, TEXT_BOX_COLOR)
+    draw_text(box.x + 4, y, box.width - 8, ROW_HEIGHT, cut(cell.text, box.width - 8))
+  end
+
+  # Draws the description in a panel that takes the rest of the window, as many lines as fit.
+  #
+  # @param text [String] The description, empty for none.
+  # @param y [Integer] The top edge.
+  def draw_description(text, y)
+    height = contents_height - y
+    rows = (height - HEADER_HEIGHT - PAD * 2) / DESCRIPTION_LINE_HEIGHT
+    return if rows < 1
+
+    contents.fill_rect(0, y, contents_width, height, PANEL_COLOR)
+    contents.fill_rect(0, y, ACCENT_WIDTH, height, system_color)
+    @targets[:description] = Rect.new(0, y, contents_width, height) unless text.empty?
+    x = ACCENT_WIDTH + PAD * 2
+    width = contents_width - x - PAD
+    draw_header("Description", nil, x, y)
+    contents.font.size = DESCRIPTION_SIZE
+    change_color(normal_color, !text.empty?)
+
+    description_lines(text, width, rows).each_with_index do |line, row|
+      draw_text(x, y + HEADER_HEIGHT + PAD + row * DESCRIPTION_LINE_HEIGHT, width, DESCRIPTION_LINE_HEIGHT, line)
+    end
+  end
+
+  # Breaks the description into the lines shown, the last one cut when there are more.
+  #
+  # @param text [String] The description, empty for none.
+  # @param width [Integer] The width a line may take.
+  # @param rows [Integer] How many lines fit.
+  # @return [Array<String>] The lines.
+  def description_lines(text, width, rows)
+    lines = text.empty? ? ["No description."] : wrapped(text, width)
+    return lines if lines.size <= rows
+
+    lines = lines.first(rows)
+    lines[-1] = cut("#{lines[-1]} ..", width)
+    lines
+  end
+
+  # Finds the color a cell asks for.
+  #
+  # @param name [Symbol] :normal, :good, :warn, :gold or :bad.
+  # @return [Color] The color.
+  def color_of(name)
+    case name
+    when :good then power_up_color
+    when :warn then crisis_color
+    when :gold then MGQ_MpWorld::FEATURED_COLOR
+    when :bad then knockout_color
+    else normal_color
+    end
+  end
+
 end
 
 # A small command window in the middle of the screen, closed until needed, whose commands are
@@ -883,6 +1899,7 @@ class Window_MpChoice < Window_Command
   def initialize
     @choices = []
     super(0, 0)
+    self.z = 200
     self.openness = 0
     deactivate
   end
@@ -930,21 +1947,24 @@ class Window_MpChoice < Window_Command
   end
 end
 
-# A form at the right of the world screen, in place of a world's details: its title, then text
-# boxes, checkboxes, a save to choose and the button that sends it. Up and down move between rows,
-# left and right between two fields on one row.
+# A form at the right of the world screen, in place of a world's details and laid out like them:
+# its title, then its fields in panels, text boxes, checkboxes, a save to choose and a box of
+# several lines, and below them the button that sends it. Up and down move between rows, left and
+# right between two fields on one row.
 class Window_MpWorldForm < Window_Selectable
+  include MGQ_MpWorldPanels
+
   # Width of the labels in front of the text boxes.
-  LABEL_WIDTH = 120
+  LABEL_WIDTH = 84
 
   # Side of a checkbox.
-  BOX_SIZE = 14
+  BOX_SIZE = 12
 
-  # Fill behind the text of a text box.
-  TEXT_BOX_COLOR = Color.new(0, 0, 0, 96)
+  # Height of the button that sends the form.
+  BUTTON_HEIGHT = 20
 
-  # What a text box being typed into shows after its text.
-  CARET = "_"
+  # Room between a text box's edge and its text.
+  TEXT_INSET = 4
 
   # The form shown, nil for none.
   attr_reader :form
@@ -957,6 +1977,8 @@ class Window_MpWorldForm < Window_Selectable
   # @param height [Integer] The height.
   def initialize(x, y, width, height)
     @form = nil
+    @rects = []
+    @widths = {}
     super
     self.visible = false
     deactivate
@@ -987,17 +2009,13 @@ class Window_MpWorldForm < Window_Selectable
     @form && index >= 0 ? @form.fields[index] : nil
   end
 
-  # Places a field on its row, below the title, across the row or on its half of it.
+  # Tells where a field is drawn, as the last refresh placed it.
   #
   # @param index [Integer] The field's index.
-  # @return [Rect] Where it is drawn.
+  # @return [Rect] Where, a copy the caller may change.
   def item_rect(index)
-    field = @form.fields[index]
-    half = contents_width / 2
-    rect = Rect.new(0, (field.row + 1) * item_height, contents_width, item_height)
-    rect.width = half if field.side
-    rect.x = half if field.side == :right
-    rect
+    rect = @rects[index]
+    rect ? Rect.new(rect.x, rect.y, rect.width, rect.height) : Rect.new(0, 0, 0, 0)
   end
 
   # Tells whether the field the cursor is on can be used.
@@ -1007,32 +2025,108 @@ class Window_MpWorldForm < Window_Selectable
     field ? @form.enabled?(field) : false
   end
 
-  # Draws the title and every field.
+  # Draws the title, the panels and every field.
   def refresh
     contents.clear
     return unless @form
 
+    reset_font_settings
     change_color(system_color)
-    draw_text(0, 0, contents_width, line_height, @form.title)
+    draw_text(0, 0, contents_width, TITLE_HEIGHT, @form.title)
+    @rects = places(@form.fields) { |group, y, height| draw_group(group, y, height) }
     draw_all_items
+    reset_font_settings
   end
 
-  # Draws a field: a text box, a checkbox, a save or the button.
+  # Places the fields below the title: each group's rows in a panel under the group's heading,
+  # and fields without a group, such as the button, in rows of their own.
+  #
+  # @param fields [Array<MGQ_MpWorld::Form::Field>] The fields.
+  # @yieldparam group [String] A group.
+  # @yieldparam y [Integer] The top edge of its panel.
+  # @yieldparam height [Integer] The height of its panel.
+  # @return [Array<Rect>] Where each field is drawn, by the field's index.
+  def places(fields)
+    rects = []
+    y = TITLE_HEIGHT + GAP
+
+    fields.map { |field| field.group }.uniq.each do |group|
+      top = y
+      y += HEADER_HEIGHT + PAD if group
+      grouped = fields.select { |field| field.group == group }
+
+      grouped.map { |field| field.row }.uniq.each do |row|
+        on_row = grouped.select { |field| field.row == row }
+        height = on_row.map { |field| height_of(field) }.max
+        on_row.each { |field| rects[fields.index(field)] = place(field, y, height) }
+        y += height
+      end
+
+      y += PAD if group
+      yield group, top, y - top if group
+      y += GAP
+    end
+    rects
+  end
+
+  # Places a field on its row: across the row, or on its half of it.
+  #
+  # @param field [MGQ_MpWorld::Form::Field] The field.
+  # @param y [Integer] The row's top edge.
+  # @param height [Integer] The row's height.
+  # @return [Rect] Where it is drawn.
+  def place(field, y, height)
+    inset = field.group ? PAD : 0
+    width = contents_width - inset * 2
+    return Rect.new(inset, y, width, height) unless field.side
+
+    half = (width - PAD) / 2
+    Rect.new(field.side == :right ? inset + half + PAD : inset, y, half, height)
+  end
+
+  # Tells how high a field's row is.
+  #
+  # @param field [MGQ_MpWorld::Form::Field] The field.
+  # @return [Integer] The height.
+  def height_of(field)
+    case field.kind
+    when :area then field.lines * DESCRIPTION_LINE_HEIGHT + 2
+    when :button then BUTTON_HEIGHT
+    else ROW_HEIGHT
+    end
+  end
+
+  # Draws a group's panel: its fill and its heading.
+  #
+  # @param group [String] The group.
+  # @param y [Integer] The top edge.
+  # @param height [Integer] The height.
+  def draw_group(group, y, height)
+    contents.fill_rect(0, y, contents_width, height, PANEL_COLOR)
+    draw_header(group, nil, PAD, y)
+  end
+
+  # Clears a field's place, down to its panel's fill.
+  #
+  # @param index [Integer] The field's index.
+  def clear_item(index)
+    rect = item_rect(index)
+    contents.clear_rect(rect)
+    contents.fill_rect(rect, PANEL_COLOR) if @form.fields[index].group
+  end
+
+  # Draws a field: a text box, a checkbox, a save, a box of several lines or the button.
   #
   # @param index [Integer] The field's index.
   def draw_item(index)
     field = @form.fields[index]
-    rect = item_rect_for_text(index)
-    enabled = @form.enabled?(field)
+    rect = item_rect(index)
 
     case field.kind
-    when :check
-      draw_check(rect, field)
-    when :button
-      change_color(normal_color)
-      draw_text(rect, field.label, 1)
-    else
-      draw_box(rect, field, enabled)
+    when :check then draw_check(rect, field)
+    when :button then draw_button(rect, field)
+    when :area then draw_area(rect, field)
+    else draw_box(rect, field, @form.enabled?(field))
     end
   end
 
@@ -1042,12 +2136,75 @@ class Window_MpWorldForm < Window_Selectable
   # @param field [MGQ_MpWorld::Form::Field] The field.
   # @param enabled [Boolean] Whether it can be used.
   def draw_box(rect, field, enabled)
+    contents.font.size = LABEL_SIZE
     change_color(system_color, enabled)
     draw_text(rect.x, rect.y, LABEL_WIDTH, rect.height, field.label)
-    box = Rect.new(rect.x + LABEL_WIDTH, rect.y + 2, rect.width - LABEL_WIDTH, rect.height - 4)
+    box = Rect.new(rect.x + LABEL_WIDTH, rect.y + 1, rect.width - LABEL_WIDTH, rect.height - 2)
     contents.fill_rect(box, TEXT_BOX_COLOR)
+    contents.font.size = VALUE_SIZE
     change_color(normal_color, enabled)
-    draw_text(box.x + 4, rect.y, box.width - 8, rect.height, value_text(field))
+    inner = Rect.new(box.x + TEXT_INSET, rect.y, box.width - TEXT_INSET * 2, rect.height)
+    return draw_text(inner.x, inner.y, inner.width, inner.height, cut(value_text(field), inner.width)) unless @form.editing == field.key
+
+    MGQ_MpUi::TextBox.draw_line(contents, inner, @form.edit, value_text(field))
+  end
+
+  # Draws a box of several lines, such as the description: its text broken into lines, or what it
+  # is for while it is empty. While typed into, it shows the lines around the cursor, and the
+  # cursor; otherwise its first lines.
+  #
+  # @param rect [Rect] Where.
+  # @param field [MGQ_MpWorld::Form::Field] The field.
+  def draw_area(rect, field)
+    box = Rect.new(rect.x, rect.y + 1, rect.width, rect.height - 2)
+    contents.fill_rect(box, TEXT_BOX_COLOR)
+    contents.font.size = DESCRIPTION_SIZE
+    text = @form[field.key].to_s
+    editing = @form.editing == field.key
+    change_color(normal_color, editing || !text.empty?)
+    inner = Rect.new(box.x + TEXT_INSET, box.y, box.width - TEXT_INSET * 2, box.height)
+    return draw_text(inner.x, inner.y, inner.width, DESCRIPTION_LINE_HEIGHT, field.label) if text.empty? && !editing
+
+    spans = area_spans(text, inner.width)
+    return MGQ_MpUi::TextBox.draw_area(contents, inner, @form.edit, spans, DESCRIPTION_LINE_HEIGHT) if editing
+
+    spans.first(field.lines).each_with_index do |(start, length), row|
+      line = text[start, length]
+      line = cut("#{line.rstrip} ..", inner.width) if row == field.lines - 1 && spans.size > field.lines
+      draw_text(inner.x, inner.y + row * DESCRIPTION_LINE_HEIGHT, inner.width, DESCRIPTION_LINE_HEIGHT, line)
+    end
+  end
+
+  # Breaks the text of a box of several lines into lines, each a stretch of the text.
+  #
+  # Words are measured once and their widths kept, since a text is broken again with every key.
+  #
+  # @param text [String] The text.
+  # @param width [Integer] The width a line may take.
+  # @return [Array<Array<Integer>>] Each line's first character and length, see MGQ_MpUi.wrap_spans.
+  def area_spans(text, width)
+    @widths = {} if @widths.size > 2000
+    contents.font.size = DESCRIPTION_SIZE
+    MGQ_MpUi.wrap_spans(text, width) { |part| @widths[part] ||= text_size(part).width }
+  end
+
+  # Breaks a text into the lines the box of several lines the cursor is on draws it in.
+  #
+  # @param text [String] The text.
+  # @return [Array<Array<Integer>>] Each line's first character and length, see MGQ_MpUi.wrap_spans.
+  def current_area_spans(text)
+    area_spans(text, item_rect(index).width - TEXT_INSET * 2)
+  end
+
+  # Draws the button that sends the form, on a darker box.
+  #
+  # @param rect [Rect] Where.
+  # @param field [MGQ_MpWorld::Form::Field] The button.
+  def draw_button(rect, field)
+    contents.fill_rect(rect.x, rect.y + 1, rect.width, rect.height - 2, TEXT_BOX_COLOR)
+    contents.font.size = VALUE_SIZE
+    change_color(normal_color)
+    draw_text(rect, field.label, 1)
   end
 
   # Draws a checkbox and its label, the box filled while ticked.
@@ -1055,15 +2212,17 @@ class Window_MpWorldForm < Window_Selectable
   # @param rect [Rect] Where.
   # @param field [MGQ_MpWorld::Form::Field] The checkbox.
   def draw_check(rect, field)
-    box = Rect.new(rect.x, rect.y + (rect.height - BOX_SIZE) / 2, BOX_SIZE, BOX_SIZE)
+    box = Rect.new(rect.x + 2, rect.y + (rect.height - BOX_SIZE) / 2, BOX_SIZE, BOX_SIZE)
     contents.fill_rect(box, normal_color)
     contents.clear_rect(box.x + 1, box.y + 1, BOX_SIZE - 2, BOX_SIZE - 2)
+    contents.fill_rect(box.x + 1, box.y + 1, BOX_SIZE - 2, BOX_SIZE - 2, TEXT_BOX_COLOR)
     contents.fill_rect(box.x + 3, box.y + 3, BOX_SIZE - 6, BOX_SIZE - 6, normal_color) if @form[field.key]
+    contents.font.size = VALUE_SIZE
     change_color(normal_color)
-    draw_text(rect.x + BOX_SIZE + 6, rect.y, rect.width - BOX_SIZE - 6, rect.height, field.label)
+    draw_text(box.x + BOX_SIZE + 6, rect.y, rect.width - BOX_SIZE - 8, rect.height, field.label)
   end
 
-  # Writes what a text box or the save shows: a password as stars, and the caret while typed into.
+  # Writes what a text box or the save shows: a password as stars.
   #
   # @param field [MGQ_MpWorld::Form::Field] The field.
   # @return [String] The text.
@@ -1071,8 +2230,7 @@ class Window_MpWorldForm < Window_Selectable
     value = @form[field.key]
     return value.nil? ? "Choose one of your saves" : save_text(value) if field.kind == :save
 
-    text = field.kind == :password ? "*" * value.size : value
-    @form.editing == field.key ? text + CARET : text
+    field.kind == :password ? "*" * value.size : value
   end
 
   # Names a save by its slot and, when its header tells it, the time played.
@@ -1119,6 +2277,10 @@ class Window_MpWorldForm < Window_Selectable
 
   # Keeps the cursor still, since the form fits on one page.
   def cursor_pageup
+  end
+
+  # Keeps the page still, since the form fits on one page and its rows differ in height.
+  def ensure_cursor_visible
   end
 
   # Moves to another row, onto the field on the same side when that row has two.

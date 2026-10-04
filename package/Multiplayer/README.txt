@@ -155,22 +155,50 @@ game's letters appear.
 - The list at the left holds every public world and the hidden worlds
   you joined, your favourites first (marked *), then the featured worlds
   in gold, which the relay's admins run, then those you played last. The
-  right side shows who made the chosen world, how many of its players
-  are online, and everyone who ever joined it.
+  right side shows what the chosen world's creator wrote about it and
+  the mods it needs, who made it, whether your game data matches the
+  creator's, how many of its players are online, and everyone who ever
+  joined it.
 - Create new world: point at it and fill in the form at the right: a
   name, a password (left empty, anyone may enter), and Max Players, 2 to
-  32. Tick "Hidden" to leave the world out of the list. Tick "From my
+  32. Tick "Hidden" to leave the world out of the list. Tick "Shared
   save" to have every new player
   start from one of your own saves, with your party, items, story and
-  Library, instead of the opening; then choose the save. Tick "Players
-  choose their start" to let each new player choose when they first
+  Library, instead of the opening; then choose the save. Tick "Player's
+  choice" to let each new player choose when they first
   enter: at the beginning, from one of their own saves (copied into the
-  world, the original stays as it is), or from yours if you ticked "From
-  my save". Max Players, the starting save and Players choose cannot be
+  world, the original stays as it is), or from yours if you ticked "Shared
+  save". The starting save and Player's choice cannot be
   changed later. A save that needs a mod a player lacks tells them which.
-- Join a hidden world: type or paste (Ctrl+V) the world id its creator
-  sent you, and its password if it has one. The creator copies the id
-  with "Copy the world id" on the world.
+  "Mods" and the description are optional texts shown in the world's
+  details: the mods a game needs, and what the world is about. "Allow
+  data mismatch" is ticked at first: a game whose data differs from
+  yours (other actors, skills, items, enemies or maps, as mods add
+  them) is warned before it enters and may enter anyway. Unticked, such
+  a game cannot enter. A translated game matches the untranslated one.
+  Max Players, Mods and the description can be changed later with
+  "Edit the world"; everything else is fixed once the world exists.
+- Players, Mods and the description: the right arrow moves from a
+  world into its details; up and down pick the mods, the players or
+  the description, and confirm opens a box that lists every player
+  who ever joined, those online first, each mod, or the whole
+  description. A click on them does the same. Mods are written into
+  one box, separated by semicolons; "!Name" marks a mod as required:
+  a game needs a script Name.rb in its Patch folder to enter, and the
+  mod shows first, in green when you have it, in red when you do not;
+  "?Name" marks a mod as essential, for mods of data files: it keeps
+  nobody out, and shows in green while your game data matches the
+  world's and in gold otherwise; a description may be 1000
+  characters long. The details show each mod in a box of its own,
+  as many as fit, and count the rest in a last box.
+- Creating a world does not enter it: it appears in the list, marked
+  as a favourite, and you enter it from there.
+- Add a hidden world: type or paste (Ctrl+V) the world id its creator
+  sent you. The world then shows in your list with its details, and
+  you enter it like any other, with its password if it has one.
+  "Remove from my list" takes it off again as long as you never
+  entered it. The creator copies the id with "Copy the world id" on
+  the world.
 - Enter a world: the first time, type its password, unless it has none;
   your game remembers it after that. A world you have saves in loads
   your latest one.
