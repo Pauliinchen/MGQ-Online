@@ -2,7 +2,8 @@
 #  coop_events.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Read where the Pocket Castle's way out returns as the player's own variables
+#      Paulinchen  2026-10-04: Sent the sound a chest played with its items, and let members hear it and see the first item's icon, after a battle once on the map
+#                            - Read where the Pocket Castle's way out returns as the player's own variables
 #                            - Kept the leader's pages of the map a member follows the leader to
 #                            - Kept a member's story events from starting anywhere, since only the leader starts story, and no longer asked the leader's game to play them
 #                            - Sorted called common events by what can run now, shops with a goods script as talks, and story behind a choice as a talk watched as it runs
@@ -97,6 +98,13 @@ module MGQ_MpCoopEvents
 
   # The class of each kind of item a chest gives, by the letter a message writes it with.
   ITEM_CLASSES = { "i" => RPG::Item, "w" => RPG::Weapon, "a" => RPG::Armor }
+
+  # The sound a chest plays when the player opens it, which a member who gets its items hears too
+  # when the chest's own is unknown.
+  CHEST_SOUND = "Chest"
+
+  # A sound's file name, never a path.
+  SOUND_NAME = /\A[\w\- ]+\z/
 
   # Messages about gathering for story scenes, which coop_gather.rbx takes.
   GATHER_MESSAGES = %w(gather come where follow)
@@ -696,9 +704,11 @@ module MGQ_MpCoopEvents
     @mirrored = { :page => page[:page], :since => Graphics.frame_count }
   end
 
-  # Shows the leader's messages once the player is free. Called after the map's update.
+  # Shows the leader's messages once the player is free, and chests other members opened. Called
+  # after the map's update.
   def self.update
     show_heard
+    tell_chest_news
   rescue => e
     log("updating the party's events failed: #{e.class}: #{e.message}")
   end
@@ -752,6 +762,14 @@ module MGQ_MpCoopEvents
     MGQ_MpCoopStory.gave(kind, id, amount) if defined?(MGQ_MpCoopStory) && !@granting
   end
 
+  # Notes the first sound the chest the player opens plays, which the members who get its items
+  # hear too. Called after a sound effect plays.
+  #
+  # @param sound [RPG::SE] The sound.
+  def self.played_sound(sound)
+    @chest[:sound] ||= [sound.name.to_s, sound.volume.to_i, sound.pitch.to_i] if @chest && !@granting
+  end
+
   # Keeps an item or gold a chest gives.
   #
   # @param kind [String] "i", "w", "a", or "g" for gold.
@@ -773,7 +791,8 @@ module MGQ_MpCoopEvents
 
     MGQ_MpCoopStory.keep_own_self_switch(chest[:key], true) if defined?(MGQ_MpCoopStory)
     gains = chest[:gains].map { |kind, id, amount| "#{kind}#{id}x#{amount}" }.join(",")
-    MGQ_MpCoop.tell(-1, "chest", chest[:key].join("."), "gains" => gains)
+    sound = chest[:sound] || [CHEST_SOUND, 80, 100]
+    MGQ_MpCoop.tell(-1, "chest", chest[:key].join("."), "gains" => gains, "se" => sound.join(","))
   rescue => e
     log("telling a chest failed: #{e.class}: #{e.message}")
   end
@@ -800,9 +819,47 @@ module MGQ_MpCoopEvents
     names = grant(message["gains"].to_s)
     MGQ_MpCoopStory.keep_own_self_switch(key, true) if defined?(MGQ_MpCoopStory)
     text = names.empty? ? "#{peer.state['name']} opened a chest for the party." : "#{peer.state['name']} opened a chest for the party: #{names.join(', ')}."
-    MGQ_MpOverworldSync.notice(text)
+    (@chest_news ||= []) << [text, first_icon(message["gains"].to_s), message["se"].to_s]
+    tell_chest_news
   rescue => e
     log("taking a chest failed: #{e.class}: #{e.message}")
+  end
+
+  # Tells the player about chests other members opened, with the chest's sound and the first item's
+  # icon, once the player is on the map; a battle keeps it until it ends.
+  def self.tell_chest_news
+    return if @chest_news.nil? || @chest_news.empty? || !SceneManager.scene.is_a?(Scene_Map)
+
+    @chest_news.each_with_index do |(text, icon, sound), index|
+      play_sound(sound) if index == 0
+      MGQ_MpOverworldSync.notice(text, icon)
+    end
+    @chest_news.clear
+  end
+
+  # Plays a chest's sound as another member's game wrote it.
+  #
+  # @param text [String] The sound: file name, volume and pitch, comma separated.
+  def self.play_sound(text)
+    name, volume, pitch = text.split(",")
+    name = CHEST_SOUND unless name.to_s =~ SOUND_NAME
+    RPG::SE.new(name, [[volume.to_i, 0].max, 100].min.nonzero? || 80, [[pitch.to_i, 50].max, 150].min).play
+  rescue => e
+    log_once(:chest_sound, "playing a chest's sound failed: #{e.class}: #{e.message}")
+  end
+
+  # Finds the icon of the first item a chest gave.
+  #
+  # @param gains [String] The items as written: kind, id, "x", amount, comma separated.
+  # @return [Integer, nil] The icon, nil for gold alone or nothing known.
+  def self.first_icon(gains)
+    gains.split(",").each do |entry|
+      next unless entry =~ /\A([iwa])(\d+)x\d+\z/
+
+      item = { "i" => $data_items, "w" => $data_weapons, "a" => $data_armors }[Regexp.last_match(1)][Regexp.last_match(2).to_i]
+      return item.icon_index if item && item.respond_to?(:icon_index)
+    end
+    nil
   end
 
   # Reads a self switch as it is the player's own, whether or not they play the leader's story.
@@ -859,6 +916,13 @@ begin
   MGQ_MpHooks.before(Game_Interpreter, :execute_command, "coop_events") { MGQ_MpCoopEvents.guard(self) }
 rescue => e
   MGQ_MpCoopEvents.log("hooks FAILED: #{e.class}: #{e.message}")
+end
+
+begin
+  # After a sound effect plays, a chest the player opens notes it for the party.
+  MGQ_MpHooks.after(RPG::SE, :play, "coop_events") { MGQ_MpCoopEvents.played_sound(self) }
+rescue => e
+  MGQ_MpCoopEvents.log("sound hook FAILED: #{e.class}: #{e.message}")
 end
 
 # Game hooks of this script alone.

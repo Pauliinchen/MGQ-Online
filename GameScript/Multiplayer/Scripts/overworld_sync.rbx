@@ -2,7 +2,8 @@
 #  overworld_sync.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Renamed from mp_overworld_sync.rbx
+#      Paulinchen  2026-10-04: Took an icon with a notice
+#                            - Renamed from mp_overworld_sync.rbx
 #      Paulinchen  2026-10-03: Added map_quiet? and map_free?, which the scripts check before they act on the map
 #                            - Added tell, notice, Me.id and Me.seat, which every script sends, notifies and names the player with
 #                            - Logged through MGQ_MpLog
@@ -89,8 +90,9 @@ module MGQ_MpOverworldSync
   # Shows a notice at the bottom left of the map for a few seconds.
   #
   # @param text [String] The notice.
-  def self.notice(text)
-    Status.notice(text)
+  # @param icon [Integer, nil] An icon of the game's iconset before it, such as an item's.
+  def self.notice(text, icon = nil)
+    Status.notice(text, icon)
   end
 
   # Sends a message to one seat or to every other game.
@@ -529,8 +531,9 @@ module MGQ_MpOverworldSync
     # Adds a notice, shown for a few seconds.
     #
     # @param text [String] The notice.
-    def self.notice(text)
-      @notices.push([text, NOTICE_FRAMES])
+    # @param icon [Integer, nil] An icon of the game's iconset before it, such as an item's.
+    def self.notice(text, icon = nil)
+      @notices.push([text, NOTICE_FRAMES, icon])
       @notices.shift while @notices.size > 3
     end
 
@@ -556,7 +559,14 @@ module MGQ_MpOverworldSync
     #
     # @return [Array<String>] The lines, the connection's problem first.
     def self.lines
-      ([@problem] + @notices.map { |text, _| text }).compact
+      shown.map(&:first)
+    end
+
+    # Tells what the line shows now, with each notice's icon.
+    #
+    # @return [Array<Array>] Each line's text and icon, nil for none; the connection's problem first.
+    def self.shown
+      (@problem ? [[@problem, nil]] : []) + @notices.map { |text, _, icon| [text, icon] }
     end
   end
 

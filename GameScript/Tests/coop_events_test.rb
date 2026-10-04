@@ -2,7 +2,8 @@
 #  coop_events_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Checked that the castle shows the leader's residents, those only the leader has as ghosts
+#      Paulinchen  2026-10-04: Checked that a chest's sound and first icon reach the members, after a battle once on the map
+#                            - Checked that the castle shows the leader's residents, those only the leader has as ghosts
 #                            - Checked that the Pocket Castle's way out returns each player where they came from
 #                            - Checked that a member not as far along is lent the story's key items, which go back and stay out of saves
 #                            - Checked that a call is kept out of a duel, dropped at its end, and waits for a dark screen
@@ -41,7 +42,7 @@ $sent = []
 $notices = []
 module MGQ_MpOverworldSync
   def self.in_world?; true; end
-  def self.notice(text); Status.notice(text); end
+  def self.notice(text, icon = nil); Status.notice(text); ($icons ||= []) << icon; end
   def self.map_free?; SceneManager.scene.is_a?(Scene_Map) && !$game_map.interpreter.running? && !$game_message.busy? && !$game_player.transfer?; end
   def self.tell(seat, fields, body = ""); Link.send_to(seat, Me.encode(fields) + body); end
   module Peers; Peer = Struct.new(:seat, :state, :ghost, :member); end
@@ -66,7 +67,9 @@ module MGQ_MpCoop
   def self.in_party?; !$party.nil? && !Array($members).empty?; end
 end
 module RPG
-  class BaseItem; attr_accessor :id, :name; def initialize(id, name); @id, @name = id, name; end; end
+  class BaseItem; attr_accessor :id, :name; def initialize(id, name); @id, @name = id, name; end; def icon_index; 100 + @id; end; end
+  # A sound effect, which notes that it played.
+  class SE < Struct.new(:name, :volume, :pitch); def play; ($played ||= []) << to_a; end; end
   class Item < BaseItem; attr_writer :key; def key_item?; @key ? true : false; end; end
   class Weapon < BaseItem; end
   class Armor < BaseItem; end
@@ -365,17 +368,26 @@ $members = [friend]
 $sent.clear
 $game_map.interpreter.setup(chest_page.list, 5)
 $game_map.interpreter.run
-check("opening a chest tells the party what was in it", $sent.map { |seat, f| [seat, f["chest"], f["gains"]] }, [[-1, "3.5.A", "i1x2"]])
+check("opening a chest tells the party what was in it, and its sound", $sent.map { |seat, f| [seat, f["chest"], f["gains"], f["se"]] }, [[-1, "3.5.A", "i1x2", "Chest,80,100"]])
 $sent.clear
 other = Game_Interpreter.new
 other.setup(talk_page.list, 6)
 other.run
 check("other events tell nothing", $sent.size, 0)
 
-MGQ_MpCoopEvents.take(friend, { "chest" => "4.9.A", "party" => "p1", "gains" => "i2x1,w1x1,g0x50" })
-check("a chest a member opened gives the same items", [$game_party.items["Elixir"], $game_party.items["Sword"], $game_party.gold], [1, 1, 50])
+SceneManager.scene = Scene_Battle.new
+$played = []
+MGQ_MpCoopEvents.take(friend, { "chest" => "4.9.A", "party" => "p1", "gains" => "i2x1,w1x1,g0x50", "se" => "Chest2,90,110" })
+check("a chest a member opened gives the same items, in a battle too", [$game_party.items["Elixir"], $game_party.items["Sword"], $game_party.gold], [1, 1, 50])
 check("and marks it looted", $game_self_switches.mgq_mp_data[[4, 9, "A"]], true)
-check("with a notice", $notices.last, "Friend opened a chest for the party: Elixir, Sword, 50 G.")
+check("its sound and notice wait for the map", [$played, $notices.include?("Friend opened a chest for the party: Elixir, Sword, 50 G.")], [[], false])
+SceneManager.scene = Scene_Map.new
+$game_map.update
+check("then the notice shows with the first item's icon", [$notices.last, $icons.last], ["Friend opened a chest for the party: Elixir, Sword, 50 G.", 102])
+check("and the chest's sound plays", $played, [["Chest2", 90, 110]])
+$played = []
+MGQ_MpCoopEvents.play_sound("../evil,500,1")
+check("a sound named like a path plays the chest's own, within the game's range", $played, [["Chest", 100, 50]])
 $sent.clear
 MGQ_MpCoopEvents.take(friend, { "chest" => "4.9.A", "party" => "p1", "gains" => "i2x1" })
 check("a chest looted already gives nothing more", $game_party.items["Elixir"], 1)

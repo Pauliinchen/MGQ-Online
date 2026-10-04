@@ -2,7 +2,8 @@
 #  overworld.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Renamed from mp_overworld.rbx
+#      Paulinchen  2026-10-04: Drew a notice's icon before its text
+#                            - Renamed from mp_overworld.rbx
 #      Paulinchen  2026-10-03: Sent messages, showed notices and read the world, the own id and the own seat through MGQ_MpOverworldSync
 #                            - Logged through MGQ_MpLog
 #                            - Hid the ghost of a player whose connection is down
@@ -430,18 +431,21 @@ class Sprite_MpWorldStatus < Sprite
     @shown = []
   end
 
-  # Draws what the line shows now, if it changed.
+  # Draws what the line shows now, if it changed: each notice with its icon first, if it has one.
   def update
     super
-    lines = MGQ_MpOverworldSync.in_world? ? MGQ_MpOverworldSync::Status.lines.last(ROWS) : []
+    lines = MGQ_MpOverworldSync.in_world? ? MGQ_MpOverworldSync::Status.shown.last(ROWS) : []
     return if lines == @shown
 
     @shown = lines
     bitmap.clear
     bitmap.font.size = 18
     bitmap.font.outline = true
-    lines.each_with_index do |line, row|
-      bitmap.draw_text(0, (ROWS - lines.size + row) * ROW, WIDTH, ROW, line)
+    lines.each_with_index do |(line, icon), row|
+      y = (ROWS - lines.size + row) * ROW
+      left = icon ? ROW + 2 : 0
+      bitmap.stretch_blt(Rect.new(0, y, ROW, ROW), Cache.system("Iconset"), Rect.new(icon % 16 * 24, icon / 16 * 24, 24, 24)) if icon
+      bitmap.draw_text(left, y, WIDTH - left, ROW, line)
     end
   end
 
