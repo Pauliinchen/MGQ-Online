@@ -2,7 +2,8 @@
 #  coop_events_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Checked that a member not as far along is lent the story's key items, which go back and stay out of saves
+#      Paulinchen  2026-10-04: Checked that the Pocket Castle's way out returns each player where they came from
+#                            - Checked that a member not as far along is lent the story's key items, which go back and stay out of saves
 #                            - Checked that a call is kept out of a duel, dropped at its end, and waits for a dark screen
 #                            - Checked that the members near the leader follow where the story moves the leader
 #                            - Checked that a member's story event starts nowhere and says so once
@@ -572,6 +573,20 @@ $game_map.update
 check("and comes along at once", $game_player.reserved, [624, 63, 27, 2])
 $game_player.instance_variable_set(:@reserved, nil)
 check("then waits for nothing more", MGQ_MpCoopGather.own_line, nil)
+
+# The Pocket Castle's way out returns each player where they came from.
+check("where the castle's way out returns is each player's own", (21..23).map { |id| MGQ_MpCoopStory.personal_variable?(id) }, [true, true, true])
+$game_map.map_id = 7
+$game_player.moveto(12, 30)
+$game_variables[21] = 1
+MGQ_MpCoopEvents.take(leader, { "pevent" => "follow", "party" => "p1", "map" => "126", "x" => "15", "y" => "14", "d" => "2", "warp_ban" => "0" })
+$game_map.update
+check("a member the party brings into the castle returns where they stood", [21, 22, 23].map { |id| $game_variables[id] }, [7, 12, 30])
+$game_player.instance_variable_set(:@reserved, nil)
+$game_map.map_id = 126
+MGQ_MpCoopCastle.arriving(229)
+check("moving inside the castle keeps it", [21, 22, 23].map { |id| $game_variables[id] }, [7, 12, 30])
+$game_map.map_id = 7
 
 # A duel: a call during it is kept out, and one that waited through it is dropped as the duel puts
 # the game back, so the leader's next call brings the player over on a settled map.

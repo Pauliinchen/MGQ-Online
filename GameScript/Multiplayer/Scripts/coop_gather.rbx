@@ -2,7 +2,11 @@
 #  coop_gather.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Created
+#      Paulinchen  2026-10-04: Told coop_castle.rbx where a member brought into the Pocket Castle came from
+#                            - Kept a story's call out of a PvP battle, dropped one a duel's end puts the game back over, and moved a member only on a settled map
+#                            - Took the members near the leader along wherever the story moves the leader, and logged gathering, calls and arrivals
+#                            - Told whether the player only waits for the party's story, which keeps the chat open
+#                            - Created
 #
 #----------------------------------------------------------------
 
@@ -429,6 +433,7 @@ module MGQ_MpCoopGather
     return unless MGQ_MpCoop.in_party?
 
     log("#{gather[:follow] ? 'followed' : 'came to'} #{gather[:name]} on map #{map_id} #{x},#{y}, from map #{$game_map.map_id}")
+    MGQ_MpCoopCastle.arriving(map_id) if defined?(MGQ_MpCoopCastle)
     warp_ban = gather[:warp_ban]
     if map_id == $game_map.map_id
       $game_player.moveto(x, y)

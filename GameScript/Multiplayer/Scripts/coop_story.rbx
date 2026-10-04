@@ -2,7 +2,8 @@
 #  coop_story.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Lent the key items of the leader's story to members not as far along, taken back when they get their own story back and left out of their saves
+#      Paulinchen  2026-10-04: Kept where the Pocket Castle's way out returns each player their own
+#                            - Lent the key items of the leader's story to members not as far along, taken back when they get their own story back and left out of their saves
 #                            - Renamed from mp_coop_story.rbx
 #      Paulinchen  2026-10-03: Kept the warp ban as each player's own, since it tells of the place they stand in
 #                            - Called the scripts that load before this one without asking whether they loaded
@@ -51,10 +52,11 @@ module MGQ_MpCoopStory
   # First switch that tells whether a companion awakened, one per companion.
   AWAKENING_SWITCHES = 6000
 
-  # Variables that are the player's own: the places their party has beyond eight (56), since the
-  # game cuts a party down to its places, where a game over returns them (1002) and monsters'
-  # friendliness (2000-2999).
-  PERSONAL_VARIABLES = [56, 1002, 2000...3000]
+  # Variables that are the player's own: where the Pocket Castle's way out returns them (21-23, the
+  # map, x and y where they used the castle's item), the places their party has beyond eight (56),
+  # since the game cuts a party down to its places, where a game over returns them (1002) and
+  # monsters' friendliness (2000-2999).
+  PERSONAL_VARIABLES = [21..23, 56, 1002, 2000...3000]
 
   # First variable that holds a companion's affection, one per companion.
   AFFECTION_VARIABLES = 3000

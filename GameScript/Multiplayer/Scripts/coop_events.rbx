@@ -2,7 +2,8 @@
 #  coop_events.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Kept the leader's pages of the map a member follows the leader to
+#      Paulinchen  2026-10-04: Read where the Pocket Castle's way out returns as the player's own variables
+#                            - Kept the leader's pages of the map a member follows the leader to
 #                            - Kept a member's story events from starting anywhere, since only the leader starts story, and no longer asked the leader's game to play them
 #                            - Sorted called common events by what can run now, shops with a goods script as talks, and story behind a choice as a talk watched as it runs
 #                            - Moved gathering the party for story scenes into coop_gather.rbx
@@ -69,10 +70,6 @@ module MGQ_MpCoopEvents
 
   # Names of switches and variables the game uses as scratch while an event runs.
   TEMPORARY_NAMES = /general|temp|system only|汎用|一時/i
-
-  # Variables that note where the Pocket Castle item was used: the map (21), x (22) and y (23),
-  # which the way out of the castle returns to. They tell of a place, not of the story.
-  PLACE_VARIABLES = [21, 22, 23]
 
   # Event commands that show dialogue: text, choices, scrolling text.
   MESSAGE_CODES = [101, 102, 105]
@@ -345,13 +342,12 @@ module MGQ_MpCoopEvents
     $data_system.switches[id].to_s =~ TEMPORARY_NAMES || (defined?(MGQ_MpCoopStory) && MGQ_MpCoopStory.personal_switch?(id)) ? true : false
   end
 
-  # Reports whether a variable is only scratch, notes a place, or is the player's own, such as affection.
+  # Reports whether a variable is only scratch, or the player's own, such as affection or where the
+  # Pocket Castle's way out returns them.
   #
   # @param id [Integer] The variable.
   # @return [Boolean] Whether it is.
   def self.temporary_variable?(id)
-    return true if PLACE_VARIABLES.include?(id)
-
     $data_system.variables[id].to_s =~ TEMPORARY_NAMES || (defined?(MGQ_MpCoopStory) && MGQ_MpCoopStory.personal_variable?(id)) ? true : false
   end
 
