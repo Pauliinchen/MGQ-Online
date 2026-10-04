@@ -2,7 +2,8 @@
 #  ui_text_box.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Broke a word longer than a line of a box of several lines inside the word
+#      Paulinchen  2026-10-04: Split a long word into its characters the way Ruby 1.9 can count, which crashed the world screen
+#                            - Broke a word longer than a line of a box of several lines inside the word
 #                            - Created
 #
 #----------------------------------------------------------------
@@ -237,7 +238,7 @@ module MGQ_MpUi
         used = 0
       end
 
-      pieces = part =~ /\S/ && part_width > width ? part.chars : [part]
+      pieces = part =~ /\S/ && part_width > width ? part.each_char.to_a : [part]
       pieces.each do |piece|
         piece_width = pieces.size > 1 ? yield(piece) : part_width
 

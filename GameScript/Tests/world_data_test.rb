@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-04: Checked picking the worlds or the commands as a whole before moving into them, and a long word broken inside it
+#                            - Checked that a long word is broken without String#chars, which Ruby 1.9 cannot count
 #                            - Created
 #
 #----------------------------------------------------------------
@@ -446,6 +447,12 @@ widths = lambda { |part| part.size * 10 }
 check("a text is broken before the word that does not fit, its spaces kept", MGQ_MpUi.wrap_spans("one two  three four", 100, &widths), [[0, 9], [9, 10]])
 check("an empty text is one empty line", MGQ_MpUi.wrap_spans("", 100, &widths), [[0, 0]])
 check("a word longer than a line is broken inside it", MGQ_MpUi.wrap_spans("a verylongwordindeed b", 100, &widths), [[0, 2], [2, 10], [12, 10]])
+# The game's Ruby 1.9 hands String#chars out as an Enumerator, which cannot count itself.
+String.send(:alias_method, :chars_of_ruby_3, :chars)
+String.send(:define_method, :chars) { Object.new }
+spans_on_1_9 = MGQ_MpUi.wrap_spans("a verylongwordindeed b", 100, &widths)
+String.send(:alias_method, :chars, :chars_of_ruby_3)
+check("and is broken without String#chars, as Ruby 1.9 needs", spans_on_1_9, [[0, 2], [2, 10], [12, 10]])
 spans = MGQ_MpUi.wrap_spans("one two three four", 80, &widths)
 check("a place in the text is on the line that starts at or before it", [spans, [0, 7, 8, 13, 18].map { |place| MGQ_MpUi.span_of(spans, place) }], [[[0, 8], [8, 6], [14, 4]], [0, 0, 1, 1, 2]])
 
