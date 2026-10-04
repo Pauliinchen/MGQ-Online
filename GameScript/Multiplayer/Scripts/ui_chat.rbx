@@ -2,7 +2,8 @@
 #  ui_chat.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Sent a line typed with /p to the party only, and colored the senders' names: own yellow, the party's green, others white
+#      Paulinchen  2026-10-04: Named the party tag by its module inside the log line, as Ruby 1.9 finds it
+#                            - Sent a line typed with /p to the party only, and colored the senders' names: own yellow, the party's green, others white
 #                            - Opened the chat box while the player waits for the party's story, and kept an open box once an event starts
 #                            - Left out the character of the key that opened the chat box, which arrived after it opened
 #                            - Removed BLINK_FRAMES, which MGQ_MpUi::TextEdit holds
@@ -66,7 +67,7 @@ module MGQ_MpChat
     def head
       return "* " if who == :system
 
-      "#{party ? PARTY_TAG : ''}#{name}: "
+      "#{party ? MGQ_MpChat::PARTY_TAG : ''}#{name}: "
     end
 
     # Writes the whole line, as the log shows it.

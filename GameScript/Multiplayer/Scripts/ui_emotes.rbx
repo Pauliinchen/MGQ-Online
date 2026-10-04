@@ -2,7 +2,8 @@
 #  ui_emotes.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Created
+#      Paulinchen  2026-10-04: Played an emote's balloon or jump in plain branches
+#                            - Created
 #
 #----------------------------------------------------------------
 
@@ -147,7 +148,11 @@ module MGQ_MpEmotes
   # @param emote [Emote] The emote.
   # @param character [Game_Character] The player's character or a ghost.
   def self.play(emote, character)
-    emote.balloon ? character.balloon_id = emote.balloon : character.jump(0, 0)
+    if emote.balloon
+      character.balloon_id = emote.balloon
+    else
+      character.jump(0, 0)
+    end
   end
 end
 
