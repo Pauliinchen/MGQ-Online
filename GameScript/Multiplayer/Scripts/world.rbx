@@ -644,7 +644,7 @@ module MGQ_MpWorld
 
     # Reads how the running or last action stands.
     #
-    # @return [Hash] "state" ("idle", "busy", "done" or "failed"), and whichever of "kind", "code", "world", "name", "start", "choose" ("1" when new players choose where to start), "mods", "data", "strict" ("1" when only games with the same data may enter) and "error" apply.
+    # @return [Hash] "state" ("idle", "busy", "done" or "failed"), and whichever of "kind", "code", "world", "name", "start", "choose" ("1" when new players choose where to start) and "error" apply.
     def self.action
       text = MGQ_Multiplayer::Link.read('mp_dir_action', 2048)
       text.empty? ? { "state" => "idle" } : MGQ_Multiplayer::Link.parse(text)

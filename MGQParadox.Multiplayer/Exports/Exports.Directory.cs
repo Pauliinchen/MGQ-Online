@@ -155,8 +155,7 @@ internal static unsafe partial class Exports
 
     /// <summary>
     /// Opens a world's lock with its password. Returns at once; the world code, the world's name, how
-    /// far it is with its starting save, whether new players choose where to start, the mods it needs, its
-    /// creator's game data and whether only games with the same data may enter follow in
+    /// far it is with its starting save and whether new players choose where to start follow in
     /// <c>mp_dir_action</c>.
     /// </summary>
     /// <param name="id">The world, UTF-8 and null-terminated.</param>

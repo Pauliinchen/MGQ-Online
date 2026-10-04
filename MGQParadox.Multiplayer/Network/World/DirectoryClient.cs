@@ -2,7 +2,8 @@
 //  DirectoryClient.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-04: Replaced a world's game data
+//      Paulinchen  2026-10-04: Read a world's lock without the mods, the game data and the rule for it, which the list tells
+//                            - Replaced a world's game data
 //                            - Listed the hidden worlds named by their ids too
 //                            - Changed a world's seats, description and mods
 //                            - Made worlds with a description, the mods they need, the creator's game data and whether only games with the same data may enter, and read them
@@ -128,7 +129,7 @@ internal sealed class DirectoryClient
     }
 
     /// <summary>
-    /// Fetches a world's locked token, with the world's name, seats, starting save state, whether new players choose where to start, the mods it needs, its creator's game data and whether only games with the same data may enter.
+    /// Fetches a world's locked token, with the world's name, seats, starting save state, and whether new players choose where to start.
     /// </summary>
     /// <param name="id">The world.</param>
     /// <returns>The lock and the world.</returns>
@@ -138,7 +139,7 @@ internal sealed class DirectoryClient
         using var document = Send(HttpMethod.Get, WorldAddress(id, "lock"), null);
         var root = document.RootElement;
         var worldLock = new WorldLock(root.GetProperty("salt").GetString()!, root.GetProperty("iterations").GetInt32(), root.GetProperty("box").GetString()!);
-        return new LockedWorld(worldLock, root.GetProperty("name").GetString() ?? "?", root.GetProperty("seats").GetInt32(), root.GetProperty("start").GetString() ?? "none", Flag(root, "choose"), Text(root, "mods"), Text(root, "data"), Flag(root, "strict"));
+        return new LockedWorld(worldLock, root.GetProperty("name").GetString() ?? "?", root.GetProperty("seats").GetInt32(), root.GetProperty("start").GetString() ?? "none", Flag(root, "choose"));
     }
 
     /// <summary>
@@ -471,10 +472,7 @@ internal sealed record ListedWorld(string Id, string Name, int Seats, string Cre
 /// <param name="Seats">How many games it seats at once.</param>
 /// <param name="Start">How far it is with its starting save: "none", "pending" or "ready".</param>
 /// <param name="Choose">Whether each new player chooses where to start.</param>
-/// <param name="Mods">The mods it needs, as its creator wrote them.</param>
-/// <param name="Data">What tells its creator's game data from another's, empty when unknown.</param>
-/// <param name="Strict">Whether only games with the same data may enter.</param>
-internal sealed record LockedWorld(WorldLock Lock, string Name, int Seats, string Start, bool Choose, string Mods, string Data, bool Strict);
+internal sealed record LockedWorld(WorldLock Lock, string Name, int Seats, string Start, bool Choose);
 
 /// <summary>
 /// What a world's creator tells about it.

@@ -2,7 +2,8 @@
 //  TestRelay.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-04: Let a world's creator replace its game data
+//      Paulinchen  2026-10-04: Left the mods, the game data and the rule for it out of a world's lock
+//                            - Let a world's creator replace its game data
 //                            - Listed the hidden worlds a player names by their ids
 //                            - Let a world's creator or an admin change its seats, description and mods
 //                            - Kept a world's description, the mods it needs, its creator's game data and whether only games with the same data may enter
@@ -377,9 +378,6 @@ internal sealed class TestRelay : IDisposable
         answer["seats"] = world.Seats;
         answer["start"] = world.Start;
         answer["choose"] = world.Choose;
-        answer["mods"] = world.Mods;
-        answer["data"] = world.Data;
-        answer["strict"] = world.Strict;
         return answer;
     }
 

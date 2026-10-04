@@ -2,7 +2,8 @@
 //  directory.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-04: Covered a creator replacing a world's game data, which an admin may not
+//      Paulinchen  2026-10-04: Expected the lock without the mods, the game data and the rule for it
+//                            - Covered a creator replacing a world's game data, which an admin may not
 //                            - Covered hidden worlds listed for a player who names their ids
 //                            - Covered changing a world's seats, description and mods
 //                            - Covered a world's description, the mods it needs, its creator's game data and whether only games with the same data may enter
@@ -134,7 +135,7 @@ test("the lock is handed out to anyone, since only the password opens it", async
   const { directory } = newDirectory();
   await directory.create(await newWorld());
 
-  assert.deepEqual((await directory.lock(WORLD)).body, { salt: "12".repeat(16), iterations: 200_000, box: "ab".repeat(60), name: "Iliasburg Crew", seats: 4, start: "none", choose: false, mods: "", data: "", strict: false });
+  assert.deepEqual((await directory.lock(WORLD)).body, { salt: "12".repeat(16), iterations: 200_000, box: "ab".repeat(60), name: "Iliasburg Crew", seats: 4, start: "none", choose: false });
   assert.equal((await directory.lock("f".repeat(32))).status, 404);
 });
 
@@ -156,9 +157,6 @@ test("a world tells what its creator wrote about it and which games may enter", 
   assert.equal(world.mods, "x".repeat(80));
   assert.equal(world.data, "1:0a1b2c3d.ffffffff");
   assert.equal(world.strict, true);
-
-  const lock = (await directory.lock(WORLD)).body;
-  assert.deepEqual([lock.mods, lock.data, lock.strict], ["x".repeat(80), "1:0a1b2c3d.ffffffff", true]);
 });
 
 test("a world made without them has no description, mods or game data, and takes every game", async () => {
@@ -180,7 +178,6 @@ test("only the creator replaces a world's game data, with data that reads as suc
   assert.equal((await directory.edit(WORLD, CREATOR, { data: "1:ffffffff" })).status, 200);
   const world = (await directory.list()).body.worlds[0];
   assert.deepEqual([world.data, world.strict, world.seats], ["1:ffffffff", true, 4]);
-  assert.equal((await directory.lock(WORLD)).body.data, "1:ffffffff");
 });
 
 test("a hidden world is listed for whoever names its id, among other ids or none that exist", async () => {

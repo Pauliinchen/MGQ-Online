@@ -2,7 +2,8 @@
 //  WorldDirectory.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-04: Replaced a world's game data for its creator
+//      Paulinchen  2026-10-04: Told the game script the mods, the game data and the rule for it with the list only, no longer with an opened lock
+//                            - Replaced a world's game data for its creator
 //                            - Listed the hidden worlds the game script names by their ids, and looked one up by its id
 //                            - Changed a world's seats, description and mods for its creator or an admin
 //                            - Made worlds with a description, the mods they need, the creator's game data and whether only games with the same data may enter, and told the game script
@@ -82,21 +83,6 @@ internal sealed class WorldDirectory
     /// Whether each new player of the world an action opened chooses where to start.
     /// </summary>
     private const string ChooseHeader = "choose";
-
-    /// <summary>
-    /// The mods the world an action opened needs.
-    /// </summary>
-    private const string ModsHeader = "mods";
-
-    /// <summary>
-    /// What tells the game data of the creator of the world an action opened from another's.
-    /// </summary>
-    private const string DataHeader = "data";
-
-    /// <summary>
-    /// Whether only games with the same data may enter the world an action opened.
-    /// </summary>
-    private const string StrictHeader = "strict";
 
     /// <summary>
     /// Why an action failed when the game script has not said who plays.
@@ -362,8 +348,7 @@ internal sealed class WorldDirectory
 
     /// <summary>
     /// Opens a world's lock with its password, which gives its world code, its name, how far it is
-    /// with its starting save, whether new players choose where to start, the mods it needs, its
-    /// creator's game data and whether only games with the same data may enter, so a hidden world is
+    /// with its starting save and whether new players choose where to start, so a hidden world is
     /// entered by its id alone.
     /// </summary>
     /// <param name="id">The world.</param>
@@ -384,7 +369,7 @@ internal sealed class WorldDirectory
             throw new ActionException("The world's lock is damaged.");
         }
 
-        return new ActionResult(new WorldCode(token, Relays.Current, world.Seats).ToText(), world.Name, world.Start, world.Choose, world.Mods, world.Data, world.Strict);
+        return new ActionResult(new WorldCode(token, Relays.Current, world.Seats).ToText(), world.Name, world.Start, world.Choose);
     });
 
     /// <summary>
@@ -446,7 +431,7 @@ internal sealed class WorldDirectory
     /// <summary>
     /// Describes the running or last action for the game script.
     /// </summary>
-    /// <returns><c>state</c> ("idle", "busy", "done" or "failed"), and whichever of <c>kind</c>, <c>code</c>, <c>world</c>, <c>name</c>, <c>start</c>, <c>choose</c> (1 when new players choose where to start), <c>mods</c>, <c>data</c>, <c>strict</c> (1 when only games with the same data may enter) and <c>error</c> apply.</returns>
+    /// <returns><c>state</c> ("idle", "busy", "done" or "failed"), and whichever of <c>kind</c>, <c>code</c>, <c>world</c>, <c>name</c>, <c>start</c>, <c>choose</c> (1 when new players choose where to start) and <c>error</c> apply.</returns>
     public string DescribeAction()
     {
         lock (_gate)
@@ -461,9 +446,6 @@ internal sealed class WorldDirectory
                 new(NameHeader, result?.Name is { } name ? OnOneField(name) : null),
                 new(StartHeader, result?.Start),
                 new(ChooseHeader, result?.Choose == true ? "1" : null),
-                new(ModsHeader, result?.Mods is { } mods ? OnOneField(mods) : null),
-                new(DataHeader, result?.Data),
-                new(StrictHeader, result?.Strict == true ? "1" : null),
                 new(ErrorHeader, _action?.State == "failed" ? _actionError : null),
             };
 
@@ -619,10 +601,7 @@ internal sealed class WorldDirectory
     /// <param name="Name">The world's name, when the action learned it from the directory.</param>
     /// <param name="Start">How far the world is with its starting save, when the action learned it from the directory.</param>
     /// <param name="Choose">Whether each new player of the world chooses where to start, when the action learned it from the directory.</param>
-    /// <param name="Mods">The mods the world needs, when the action learned them from the directory.</param>
-    /// <param name="Data">What tells the game data of the world's creator from another's, when the action learned it from the directory.</param>
-    /// <param name="Strict">Whether only games with the same data may enter the world, when the action learned it from the directory.</param>
-    private sealed record ActionResult(string Code, string? Name = null, string? Start = null, bool Choose = false, string? Mods = null, string? Data = null, bool Strict = false);
+    private sealed record ActionResult(string Code, string? Name = null, string? Start = null, bool Choose = false);
 
     /// <summary>
     /// An action that failed for a reason the player is told as it is.

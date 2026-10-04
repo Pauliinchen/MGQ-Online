@@ -2,7 +2,8 @@
 //  directory.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-04: Let a world's creator replace its game data with that of their game as it is now
+//      Paulinchen  2026-10-04: Left the mods, the game data and the rule for it out of a world's lock, which the list tells
+//                            - Let a world's creator replace its game data with that of their game as it is now
 //                            - Listed the hidden worlds a player names by their ids
 //                            - Let a world's creator or an admin change its seats, description and mods
 //                            - Kept a world's description, the mods it needs, its creator's game data and whether only games with the same data may enter
@@ -198,11 +199,11 @@ export class Directory {
    * found it by its id alone needs to enter it.
    *
    * @param {string} id The world.
-   * @returns {Promise<{status: number, body: object}>} The lock with the world's name, seats, starting save state, whether new players choose where to start, the mods it needs, its creator's game data and whether only games with the same data may enter, or why there is none.
+   * @returns {Promise<{status: number, body: object}>} The lock with the world's name, seats, starting save state, whether new players choose where to start, or why there is none.
    */
   async lock(id) {
     const entry = WORLD_ID.test(id) ? await this.store.get(id) : undefined;
-    return entry ? { status: 200, body: { ...entry.lock, name: entry.name, seats: entry.seats, start: entry.start ?? START.none, choose: entry.choose === true, mods: entry.mods ?? "", data: entry.data ?? "", strict: entry.strict === true } } : notFound();
+    return entry ? { status: 200, body: { ...entry.lock, name: entry.name, seats: entry.seats, start: entry.start ?? START.none, choose: entry.choose === true } } : notFound();
   }
 
   /**

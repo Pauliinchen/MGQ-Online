@@ -2,7 +2,8 @@
 //  WorldDirectoryTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-04: Covered a creator replacing a world's game data
+//      Paulinchen  2026-10-04: Expected what a creator tells about a world in the list only
+//                            - Covered a creator replacing a world's game data
 //                            - Covered a hidden world looked up and listed by its id
 //                            - Covered changing a world's seats, description and mods
 //                            - Covered a world's description, the mods it needs, its creator's game data and whether only games with the same data may enter
@@ -128,10 +129,10 @@ public sealed class WorldDirectoryTests
     }
 
     /// <summary>
-    /// Asserts that what a creator tells about a world is listed, and told to a player who opens it by its id.
+    /// Asserts that what a creator tells about a world is listed.
     /// </summary>
     [Fact]
-    public void Create_WithAbout_IsListedAndTold()
+    public void Create_WithAbout_IsListed()
     {
         using var relay = new TestRelay();
         var creator = NewDirectory(relay, CreatorKey, "Creator");
@@ -139,11 +140,6 @@ public sealed class WorldDirectoryTests
 
         var made = Act(creator, directory => directory.Create("Modded Run", "secret", 4, false, false, [], new WorldAbout("A slow\trun.", "Some Mod 1.2", "1:0a1b2c3d.ffffffff", true)));
         Assert.Contains(List(guest), line => line.StartsWith($"world\t{made["world"]}\t") && line.EndsWith("\tnone\t0\t0\t0\t0\t1\t1:0a1b2c3d.ffffffff\tSome Mod 1.2\tA slow run."));
-
-        var opened = Act(guest, directory => directory.Unlock(made["world"], "secret"));
-        Assert.Equal("Some Mod 1.2", opened["mods"]);
-        Assert.Equal("1:0a1b2c3d.ffffffff", opened["data"]);
-        Assert.Equal("1", opened["strict"]);
     }
 
     /// <summary>

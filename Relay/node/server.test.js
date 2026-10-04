@@ -2,7 +2,8 @@
 //  server.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-04: Expected the lock to name the mods a world needs, its creator's game data and whether only games with the same data may enter
+//      Paulinchen  2026-10-04: Expected the lock without the mods, the game data and the rule for it again
+//                            - Expected the lock to name the mods a world needs, its creator's game data and whether only games with the same data may enter
 //      Paulinchen  2026-10-02: Expected the lock to say whether new players choose where to start
 //                            - Expected the list to say when each player was last seen
 //      Paulinchen  2026-09-30: Tested the starting save over HTTP, as bytes both ways
@@ -374,7 +375,7 @@ test("a player the creator removes is closed and kept out, and deleting the worl
 test("the directory hands out a world's lock and refuses what is no directory route", async () => {
   await makeWorld(roomId(108), 2);
 
-  assert.deepEqual(await (await fetch(`${directoryBase}/${roomId(108)}/lock`)).json(), { salt: "12".repeat(16), iterations: 200_000, box: "ab".repeat(40), name: `World ${roomId(108).slice(-3)}`, seats: 2, start: "none", choose: false, mods: "", data: "", strict: false });
+  assert.deepEqual(await (await fetch(`${directoryBase}/${roomId(108)}/lock`)).json(), { salt: "12".repeat(16), iterations: 200_000, box: "ab".repeat(40), name: `World ${roomId(108).slice(-3)}`, seats: 2, start: "none", choose: false });
   assert.equal((await fetch(`${directoryBase}/${roomId(109)}/lock`)).status, 404);
   assert.equal((await fetch(directoryBase.replace("/v1/worlds", "/elsewhere"))).status, 426);
 });
