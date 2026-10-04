@@ -2,7 +2,8 @@
 #  core_hotkeys.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Renamed from mp_hotkeys.rbx
+#      Paulinchen  2026-10-04: Added the emote wheel's key, E unless bound
+#                            - Renamed from mp_hotkeys.rbx
 #      Paulinchen  2026-10-03: Logged through MGQ_MpLog
 #                            - Added the keys that accept and decline the first invite of the notification box
 #                            - Renamed from mp_keys.rbx, with the module MGQ_MpHotkeys
@@ -39,6 +40,8 @@ module MGQ_MpHotkeys
                            "The key that accepts the first invite or challenge in the notification box at the top left, in a world."),
     :decline => Binding.new("key_decline", 0x4E, :mp_key_decline, "Decline Notification",
                             "The key that declines the first invite or challenge in the notification box at the top left, in a world."),
+    :emotes => Binding.new("key_emotes", 0x45, :mp_key_emotes, "Emote Wheel",
+                           "The key that opens and closes the emote wheel on the map of a world: jump, or show a balloon above your character."),
   }
 
   # Highest Windows key code.

@@ -2,7 +2,8 @@
 #  Multiplayer.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Loaded coop_scene.rbx after coop_gather.rbx
+#      Paulinchen  2026-10-04: Loaded ui_emotes.rbx after ui_chat.rbx
+#                            - Loaded coop_scene.rbx after coop_gather.rbx
 #                            - Loaded coop_gather.rbx and coop_castle.rbx, split out of coop_events.rbx
 #                            - Loaded the scripts by their new names, which say what each belongs to instead of mp_
 #                            - Loaded ui_text_box.rbx after ui.rbx, and world_save_distribution.rbx after world.rbx
@@ -64,7 +65,7 @@ module MGQ_Multiplayer
   # coop.rbx, which the scripts after them register with. The battle scripts install their battle hooks once the game runs, the last
   # loaded first, so their order decides how those hooks wrap each other.
   SCRIPTS = %w[
-    core_log core_hooks core_game_access core_hotkeys ui ui_text_box core_actors core_async overworld_sync ui_actions ui_chat overworld
+    core_log core_hooks core_game_access core_hotkeys ui ui_text_box core_actors core_async overworld_sync ui_actions ui_chat ui_emotes overworld
     coop coop_squad coop_events coop_gather coop_scene coop_npcs coop_story coop_castle
     world world_save_distribution world_text world_screen world_save_export
     battles battles_coop
