@@ -185,6 +185,7 @@ module MGQ_MpCoopGather
   # @param warp_ban [Boolean] Whether warping is banned where the leader stands.
   def self.called(peer, place, warp_ban = false)
     return @gather = nil if near_place?(own_place, place)
+    return log_once([:duel_call, Graphics.frame_count / HOLD_FRAMES], "a call came during a PvP battle, which keeps it out") if pvp_running?
 
     unless @gather
       MGQ_MpOverworldSync.notice("#{peer.state['name']}'s story is starting. You join them in #{GATHER_FRAMES / 60} seconds.")
@@ -296,12 +297,42 @@ module MGQ_MpCoopGather
     !@gather.nil? && Graphics.frame_count - @gather[:called] < CALL_LAPSE_FRAMES
   end
 
-  # Tells where the player comes to for the leader's story scene, once its five seconds passed.
+  # Tells where the player comes to for the leader's story scene, once its five seconds passed and
+  # the map settled.
   #
   # @return [Array<Integer>, nil] The leader's map, x, y and direction, nil while none or not yet.
   def self.come?
     gather = pending_call
-    gather && Graphics.frame_count - gather[:since] >= GATHER_FRAMES ? gather[:place] : nil
+    gather && Graphics.frame_count - gather[:since] >= GATHER_FRAMES && settled? ? gather[:place] : nil
+  end
+
+  # Reports whether the map settled enough to take the player elsewhere: no PvP battle runs or puts
+  # the game back, and the screen is not fading.
+  #
+  # A duel puts its snapshot of the game back as the map starts again, and a transfer started then
+  # left the screen black.
+  #
+  # @return [Boolean] Whether it did.
+  def self.settled?
+    !pvp_running? && !($game_temp && $game_temp.in_memory_battle) && Graphics.brightness == 255
+  end
+
+  # Reports whether a PvP battle, such as a duel, runs.
+  #
+  # @return [Boolean] Whether one does.
+  def self.pvp_running?
+    defined?(MGQ_MpBattlesPvp) && MGQ_MpBattlesPvp::Battle.running? ? true : false
+  end
+
+  # Forgets the leader's call, as when a duel puts the game back as it was before it, so the player
+  # answers the leader's next call on a settled map.
+  #
+  # @param reason [String] Why, for the log.
+  def self.drop_call(reason)
+    return unless @gather
+
+    log("dropped #{@gather[:name]}'s call: #{reason}")
+    @gather = nil
   end
 
   # The leader's call the player has yet to answer, forgetting it once the calls stopped.

@@ -2,7 +2,8 @@
 #  battles_pvp.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Renamed from mp_battles_pvp.rbx
+#      Paulinchen  2026-10-04: Dropped a story's call that waited through the battle once the game is put back, and logged where it was put back
+#                            - Renamed from mp_battles_pvp.rbx
 #                            - Counted the Backline of the friend's team for the stat boosts the game counts the whole party for
 #                            - Fired the automatic skills of a battle's start, a turn's start and a turn's end by speed instead of the host's team first
 #      Paulinchen  2026-10-03: Swapped the Backline's builds too, with the host's rule, and started a battle with the Backline of battles_pvp_backline.rbx
@@ -962,6 +963,9 @@ module MGQ_MpBattlesPvp
       $game_player.refresh
       $game_map.need_refresh = true
       $game_message.add(result_text)
+      # A story's call that waited through the battle would move the player while the map starts.
+      MGQ_MpCoopGather.drop_call("a PvP battle put the game back") if defined?(MGQ_MpCoopGather)
+      MGQ_MpBattlesPvp.log("put the game back after the battle, on map #{$game_map.map_id} #{$game_player.x},#{$game_player.y}")
     rescue => e
       MGQ_MpBattlesPvp.log("could not put the game back: #{e.class}: #{e.message}")
     end

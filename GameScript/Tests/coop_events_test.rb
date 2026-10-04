@@ -2,7 +2,8 @@
 #  coop_events_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Checked that the members near the leader follow where the story moves the leader
+#      Paulinchen  2026-10-04: Checked that a call is kept out of a duel, dropped at its end, and waits for a dark screen
+#                            - Checked that the members near the leader follow where the story moves the leader
 #                            - Checked that a member's story event starts nowhere and says so once
 #                            - Checked traders: a side quest that cannot run, a goods script, a quest step behind a choice, a chest that asks first, and the talk's watch
 #                            - Checked when the player only waits for the party's story
@@ -104,7 +105,7 @@ class Game_Party
   def exist_party_actor_id?(actor_id); @actors.include?(actor_id); end
   def party_member_full?; @actors.size >= 2; end
 end
-module Graphics; def self.frame_count; $frame_count; end; end
+module Graphics; def self.frame_count; $frame_count; end; def self.brightness; $brightness || 255; end; end
 $frame_count = 0
 class Game_Interpreter
   attr_accessor :busy
@@ -439,6 +440,10 @@ SceneManager.scene = Scene_Battle.new
 $game_map.update
 check("a member in battle comes once it is over", [$game_player.reserved, MGQ_MpCoopGather.own_line], [nil, "Joining Leader once free . . ."])
 SceneManager.scene = Scene_Map.new
+$brightness = 0
+$game_map.update
+check("not while the screen is still dark from the battle", $game_player.reserved, nil)
+$brightness = nil
 $game_map.update
 check("then they are brought to the leader's map", $game_player.reserved, [8, 9, 3, 6])
 check("where warping is allowed again, though they never walked out of the cave they were in", $game_switches[MGQ_MpCoopStory::WARP_BAN], false)
@@ -564,6 +569,21 @@ $game_map.update
 check("and comes along at once", $game_player.reserved, [624, 63, 27, 2])
 $game_player.instance_variable_set(:@reserved, nil)
 check("then waits for nothing more", MGQ_MpCoopGather.own_line, nil)
+
+# A duel: a call during it is kept out, and one that waited through it is dropped as the duel puts
+# the game back, so the leader's next call brings the player over on a settled map.
+module MGQ_MpBattlesPvp; module Battle; def self.running?; $pvp; end; end; end
+$pvp = true
+gather_call = { "pevent" => "gather", "party" => "p1", "map" => "9", "x" => "1", "y" => "1", "d" => "2" }
+MGQ_MpCoopEvents.take(leader, gather_call)
+check("a call during a duel is kept out", MGQ_MpCoopGather.coming?, false)
+$pvp = false
+MGQ_MpCoopEvents.take(leader, gather_call)
+MGQ_MpCoopGather.drop_call("a PvP battle put the game back")
+check("a call the duel's end drops is gone", MGQ_MpCoopGather.coming?, false)
+MGQ_MpCoopEvents.take(leader, gather_call)
+check("the leader's next call stands again", MGQ_MpCoopGather.coming?, true)
+MGQ_MpCoopGather.drop_call("test over")
 
 # Story events in the leader's game.
 story_page = RPG::Page.new([c(101, "", 0, 0, 2), c(401, "Line"), c(121, 60, 60, 0)])
