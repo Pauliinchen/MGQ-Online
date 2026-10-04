@@ -2,7 +2,8 @@
 #  world_open_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Followed the scripts to their new names, without mp_
+#      Paulinchen  2026-10-04: Checked that an outdated game enters no world
+#                            - Followed the scripts to their new names, without mp_
 #                            - Read the details from their panels
 #                            - Expected a hidden world's id alone in the form that adds it
 #      Paulinchen  2026-10-03: Loaded the scripts split off the ones under test, and ui.rbx
@@ -13,7 +14,7 @@
 
 # Checks worlds without a password and featured worlds (world.rbx): the forms taking an empty
 # password, the directory's flags for both, entering a world without a password without being
-# asked, the featured worlds' place in the list and what the details say.
+# asked, the featured worlds' place in the list, what the details say, and an outdated game kept out.
 
 require_relative "support"
 
@@ -42,9 +43,11 @@ module DataManager; def self.save_system; end; end
 $sounds = []
 $calls = []
 $dll = {}
+$outdated = false
 module MGQ_Multiplayer
+  UPDATE_MESSAGE = "Update."
   def self.available?; true; end
-  def self.outdated?; false; end
+  def self.outdated?; $outdated; end
   def self.clean(text); text; end
   def self.path(name); name; end
   module Log; def self.write(_message); end; end
@@ -206,3 +209,13 @@ check("a world without a description says so at the bottom", texts.last, "No des
 # The seats, which the world code tells.
 check("a world's code tells its seats", MGQ_MpWorld::World.new("abcdef012345", "code" => "mgqmp2;abcdefghjkmnpqrs;r1;8").seats, 8)
 check("a code without them tells none", MGQ_MpWorld::World.new("abcdef012345", {}).seats, 0)
+
+# An outdated game.
+$outdated = true
+$calls.clear
+check("an outdated game enters no world", [MGQ_MpWorld.start(MGQ_MpWorld::World.new("abcdef012345", {}), new_scene), MGQ_MpWorld.open?, $calls], ["Update.", false, []])
+title = Window_TitleCommand.new
+title.instance_variable_set(:@list, [{ :symbol => :continue }])
+MGQ_MpWorld.add_title_command(title)
+check("and finds the title command greyed out", title.instance_variable_get(:@list)[1].values_at(:symbol, :enabled), [:mgq_mp_world, false])
+$outdated = false

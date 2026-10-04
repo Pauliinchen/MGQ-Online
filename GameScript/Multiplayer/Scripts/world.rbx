@@ -2,7 +2,8 @@
 #  world.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Kept the 50 hidden worlds added last, as many as the relay lists, so ids of deleted worlds do not crowd new ones out
+#      Paulinchen  2026-10-04: Greyed out the title command once the update check answers, and kept an outdated game out of worlds
+#                            - Kept the 50 hidden worlds added last, as many as the relay lists, so ids of deleted worlds do not crowd new ones out
 #                            - Removed Form#add, since MGQ_MpUi::TextEdit takes what is typed
 #                            - Renamed from mp_world.rbx
 #                            - Let the creator describe a world, name the mods it needs and keep out games whose data differs from theirs
@@ -178,6 +179,8 @@ module MGQ_MpWorld
   # @param scene [Scene_MpWorlds] The world screen.
   # @return [String, nil] Why the world could not be entered, nil when it was.
   def self.start(world, scene)
+    return MGQ_Multiplayer::UPDATE_MESSAGE unless available?
+
     enter(world)
     index = world.latest_save
 
@@ -292,11 +295,14 @@ module MGQ_MpWorld
     Z = 100
 
     # Shows the notice on the title screen once a newer release is out. Called every update.
+    #
+    # @return [Boolean] Whether the notice showed just now.
     def self.refresh
-      return if @sprite || !SceneManager.scene.is_a?(Scene_Title)
-      return unless MGQ_Multiplayer.available? && (version = MGQ_Multiplayer.newer_version)
+      return false if @sprite || !SceneManager.scene.is_a?(Scene_Title)
+      return false unless MGQ_Multiplayer.available? && (version = MGQ_Multiplayer.newer_version)
 
       show(version)
+      true
     end
 
     # Takes the notice off the screen. Called when the title screen ends.
@@ -1320,7 +1326,9 @@ begin
   # update notice shows.
   MGQ_MpHooks.after(Scene_Title, :update, "world") do
     MGQ_MpWorld.on_title_update(self) unless scene_changing?
-    MGQ_MpWorld::UpdateNotice.refresh
+    # The first title screen lists its commands before the update check answers, so the world
+    # screen's command is greyed out only by listing them again.
+    @command_window.refresh if MGQ_MpWorld::UpdateNotice.refresh
   end
 rescue => e
   MGQ_MpWorld.log("title hooks FAILED: #{e.class}: #{e.message}")
