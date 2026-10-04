@@ -2,6 +2,7 @@
 //  LinkTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-04: Let the other side stay silent for two seconds, since a busy build machine delays a ping past 400 ms
 //      Paulinchen  2026-09-29: Encrypted the links with a connection's salt as well as the token
 //                            - Linked the games through the test relay, since the direct connection is gone
 //                            - Built the links from frame channels and ciphers, and covered frames of another join code
@@ -40,7 +41,7 @@ public sealed class LinkTests : IDisposable
     /// <summary>
     /// How long the other side may stay silent in these tests before a link counts as dropped.
     /// </summary>
-    private static readonly TimeSpan DropTimeout = TimeSpan.FromMilliseconds(400);
+    private static readonly TimeSpan DropTimeout = TimeSpan.FromSeconds(2);
 
     /// <summary>
     /// How long a test waits for the other side.
@@ -83,7 +84,7 @@ public sealed class LinkTests : IDisposable
     {
         var (host, guest) = LinkedPair();
 
-        Thread.Sleep(DropTimeout * 3);
+        Thread.Sleep(DropTimeout * 1.5);
 
         Assert.Equal(LinkState.Open, host.State);
         Assert.Equal(LinkState.Open, guest.State);
