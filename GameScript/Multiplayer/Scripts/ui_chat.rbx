@@ -2,7 +2,8 @@
 #  ui_chat.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Left out the character of the key that opened the chat box, which arrived after it opened
+#      Paulinchen  2026-10-04: Opened the chat box while the player waits for the party's story, and kept an open box once an event starts
+#                            - Left out the character of the key that opened the chat box, which arrived after it opened
 #                            - Removed BLINK_FRAMES, which MGQ_MpUi::TextEdit holds
 #                            - Renamed from mp_chat.rbx
 #                            - Drew the chat box through MGQ_MpUi::TextBox, which every text box shares
@@ -287,18 +288,25 @@ module MGQ_MpChat
     typing? ? "typing" : nil
   end
 
+  # Reports whether the map lets the player chat: quiet, or busy only with the party's story, which
+  # the player waits for, through coop_gather.rbx.
+  #
+  # @return [Boolean] Whether it does.
+  def self.map_open?
+    MGQ_MpOverworldSync.map_quiet? || (defined?(MGQ_MpCoopGather) && MGQ_MpCoopGather.waiting?) ? true : false
+  end
+
   # Opens the chat box with its key, and types into it while it is open. Called by the map every
   # frame, so a press of the key is seen once.
   def self.on_map
     chat_key = MGQ_MpHotkeys.pressed?(:chat)
-    unless MGQ_MpOverworldSync.in_world? && MGQ_MpOverworldSync.map_quiet?
-      stop_typing
-      return
-    end
+    return stop_typing unless MGQ_MpOverworldSync.in_world?
 
+    # A box already open stays, so a story that starts meanwhile never throws the line away; the
+    # box holds the buttons, so the story's messages wait for it.
     if typing?
       update_typing
-    elsif chat_key && available? && !MGQ_MpActions::Wheel.open?
+    elsif chat_key && available? && !MGQ_MpActions::Wheel.open? && map_open?
       Sound.play_ok
       start_typing(MGQ_MpHotkeys.code(:chat))
     end

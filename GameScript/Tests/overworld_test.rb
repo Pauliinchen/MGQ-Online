@@ -2,7 +2,8 @@
 #  overworld_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Checked that the chat key does not type its own character into the box it opened
+#      Paulinchen  2026-10-04: Checked that the chat box opens while the player waits for the party's story and stays open once it plays
+#                            - Checked that the chat key does not type its own character into the box it opened
 #                            - Read the cursor's blink frames from MGQ_MpUi::TextEdit
 #                            - Followed the scripts to their new names, without mp_
 #      Paulinchen  2026-10-03: Checked that a member's party choice on the wheel teleports to the leader
@@ -328,6 +329,23 @@ check("a menu closes the chat box", [chat.typing?, MGQ_Multiplayer::Capture.on?]
 SceneManager.scene = Scene_Map.new
 chat.system("Friend left the battle.")
 check("the game's own lines go to the log too", chat.log_lines.last, "* Friend left the battle.")
+
+# The chat while an event runs, and while the party's story waits.
+$game_message.busy = true
+$pressed = 0x54
+map_frame
+check("an event's message keeps the chat box shut", chat.typing?, false)
+module MGQ_MpCoopGather; def self.waiting?; $party_waiting; end; end
+$party_waiting = true
+$pressed = 0x54
+map_frame
+check("but it opens while the player waits for the party's story", chat.typing?, true)
+$party_waiting = false
+$typed = "on"
+map_frame
+check("and stays open, keeping the line, once the story plays", [chat.typing?, chat.typed], [true, "on"])
+chat.stop_typing
+$game_message.busy = false
 
 class FakeBitmap; def text_size(text); Struct.new(:width).new(text.size * 10); end; end
 check("wrapping at spaces", MGQ_MpUi.wrap(FakeBitmap.new, "aaa bbb ccc", 70), ["aaa bbb", "ccc"])

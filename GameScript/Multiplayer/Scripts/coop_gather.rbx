@@ -289,6 +289,16 @@ module MGQ_MpCoopGather
     lead.is_a?(MGQ_MpOverworldSync::Peers::Peer) && lead.state["telling"] == "1" && lead.state["map"].to_i == $game_map.map_id
   end
 
+  # Reports whether the player only waits for the party's story: as leader while it gathers, as
+  # member while called, held by it or reading its pages. The chat stays open meanwhile.
+  #
+  # @return [Boolean] Whether they do.
+  def self.waiting?
+    (holding_story? && leading?) || coming? || blocked? || MGQ_MpCoopEvents.mirroring?
+  rescue
+    false
+  end
+
   # Writes where the player stands, and whether warping is banned there.
   #
   # @return [Hash] "map", "x", "y", "d" and "warp_ban".

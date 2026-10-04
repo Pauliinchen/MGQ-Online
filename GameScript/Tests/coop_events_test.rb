@@ -2,7 +2,8 @@
 #  coop_events_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Followed gathering into coop_gather.rbx and the Pocket Castle's residents into coop_castle.rbx
+#      Paulinchen  2026-10-04: Checked when the player only waits for the party's story
+#                            - Followed gathering into coop_gather.rbx and the Pocket Castle's residents into coop_castle.rbx
 #                            - Followed the scripts to their new names, without mp_
 #      Paulinchen  2026-10-03: Checked that the Pocket Castle item is travel
 #                            - Checked that a member teleports to the leader on their own
@@ -477,6 +478,7 @@ interpreter.setup([c(101, "", 0, 0, 2), c(121, 60, 60, 0)], 1)
 check("a story scene calls the members", [$sent.map { |seat, f| [seat, f["pevent"], f["map"], f["x"]] }, $notices.last], [[[-1, "gather", "3", "5"]], "Gathering the party for the story . . ."])
 interpreter.busy = true
 check("and waits while one is away", [MGQ_MpCoopGather.holding?(interpreter), MGQ_MpCoopGather.own_line, MGQ_MpCoopEvents.state_fields["telling"]], [true, "Gathering the party . . .", 0])
+check("the leader only waits for the party then, so the chat may open", MGQ_MpCoopGather.waiting?, true)
 $sent.clear
 $frame_count = 1100
 MGQ_MpCoopGather.holding?(interpreter)
@@ -487,6 +489,7 @@ check("then once more", $sent.map { |_, f| f["pevent"] }, ["gather"])
 check("other interpreters never wait", MGQ_MpCoopGather.holding?(Game_Interpreter.new), false)
 friend.state.merge!("map" => "3", "x" => "7", "y" => "4")
 check("once everyone stands near, the scene plays", [MGQ_MpCoopGather.holding?(interpreter), $notices.last, MGQ_MpCoopEvents.state_fields["telling"]], [false, "The party is here.", 1])
+check("but no longer once the scene plays", MGQ_MpCoopGather.waiting?, false)
 interpreter.busy = false
 check("and the members are free once it ends", MGQ_MpCoopEvents.state_fields["telling"], 0)
 $sent.clear
