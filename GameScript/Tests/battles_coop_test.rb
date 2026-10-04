@@ -2,7 +2,8 @@
 #  battles_coop_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Checked that a member's encounter holds the party members on the map
+#      Paulinchen  2026-10-04: Checked that new states let the game read a guest's character's features anew
+#                            - Checked that a member's encounter holds the party members on the map
 #                            - Followed the scripts to their new names, without mp_
 #                            - Checked that the guest of a lost battle takes the host's defeat scene, or one of its own enemies
 #      Paulinchen  2026-10-03: Checked that the others' characters start the battle and each turn with a hit count
@@ -473,3 +474,15 @@ MGQ_MpBattlesCoop.instance_variable_set(:@frozen, Time.now - MGQ_MpBattlesCoop::
 check("or ten seconds passed", $game_player.movable?, true)
 mate.state["scene"] = "map"
 $scene_now = scene
+
+# A guest's character takes the host's states, and the game reads its features anew, so a state's
+# extra actions, such as Division's, count on the guest too.
+$data_states = [nil, :poison, :division]
+module CacheActorFeatures; def self.init_actor(actor); ($cleared ||= []) << actor.id; end; end
+class Game_Actor; def actor?; true; end; end
+guest_actor = Game_Actor.new(7)
+$cleared = []
+MGQ_MpBattlesSync::Playback.values(guest_actor, 90, 100, 5, 10, 0, [2], [0] * 8)
+check("new states let the game read the character's features anew", [MGQ_MpGame.get(guest_actor, :states), $cleared], [[2], [7]])
+MGQ_MpBattlesSync::Playback.values(guest_actor, 80, 100, 5, 10, 0, [2], [0] * 8)
+check("the same states only change its values", $cleared, [7])

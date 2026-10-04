@@ -2,7 +2,8 @@
 #  battles_sync_playback.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Renamed from mp_battles_sync_playback.rbx
+#      Paulinchen  2026-10-04: Let the game read a guest's character's features anew once the host's states or buffs changed it, so Division's extra actions count
+#                            - Renamed from mp_battles_sync_playback.rbx
 #      Paulinchen  2026-10-03: Found the characters outside the battle that its mode names
 #                            - Asked the running battle's mode instead of naming co-op battles and team duels
 #                            - Read and wrote the game's private fields and called its private methods through MGQ_MpGame
@@ -378,8 +379,28 @@ module MGQ_MpBattlesSync
       ids = Array(states).map(&:to_i).select { |id| $data_states[id] }
       turns = MGQ_MpGame.get(battler, :state_turns) || {}
       ids.each { |id| turns[id] ||= 1 }
+      before = [MGQ_MpGame.get(battler, :states), MGQ_MpGame.get(battler, :buffs)].map { |list| Array(list).dup }
       MGQ_MpGame.set(battler, :states, ids)
       MGQ_MpGame.set(battler, :buffs, Array(buffs).map(&:to_i)) if Array(buffs).size == 8
+      features_changed(battler) if before != [ids, Array(MGQ_MpGame.get(battler, :buffs))]
+    end
+
+    # Lets the game read a character's features anew once its states or buffs changed.
+    #
+    # The game keeps each character's features until it refreshes the character, which values set
+    # past the game's setters never does, so a state's extra actions, such as Division's, or its
+    # counters never counted on the guest.
+    #
+    # @param battler [Game_Battler] The guest's battler.
+    def self.features_changed(battler)
+      return unless battler.actor?
+
+      if defined?(CacheActorFeatures)
+        CacheActorFeatures.init_actor(battler)
+        CacheUniq.init if defined?(CacheUniq)
+      else
+        battler.refresh
+      end
     end
   end
 end
