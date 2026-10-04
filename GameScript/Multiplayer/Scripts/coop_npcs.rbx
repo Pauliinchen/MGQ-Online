@@ -2,7 +2,8 @@
 #  coop_npcs.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Renamed from mp_coop_npcs.rbx
+#      Paulinchen  2026-10-04: Let a story's forced routes, and every event while the leader's story plays, walk through party members
+#                            - Renamed from mp_coop_npcs.rbx
 #      Paulinchen  2026-10-03: Called the scripts that load before this one without asking whether they loaded
 #                            - Sent messages, showed notices and read the world, the own id and the own seat through MGQ_MpOverworldSync
 #                            - Logged through MGQ_MpLog
@@ -276,13 +277,21 @@ if MGQ_MpCoopNpcs.hookable?
         mgq_mp_coop_npcs_update_self_movement unless MGQ_MpCoopNpcs.following?
       end
 
-      # Reports whether the event collides with a character on a tile, a party member included.
+      # Reports whether the event collides with a character on a tile, a party member included
+      # while the event walks on its own.
+      #
+      # A story moves its events on routes it waits for, which a member standing in the way would
+      # hold up for good, so members never block a forced route or an event while the leader's
+      # story plays.
       #
       # @param x [Integer] The tile's x.
       # @param y [Integer] The tile's y.
       # @return [Boolean] Whether it does.
       def collide_with_characters?(x, y)
-        mgq_mp_coop_npcs_collide_with_characters?(x, y) || (normal_priority? && MGQ_MpCoopNpcs.member_at?(x, y))
+        return true if mgq_mp_coop_npcs_collide_with_characters?(x, y)
+        return false if @move_route_forcing || !normal_priority? || (MGQ_MpCoopEvents.telling? rescue false)
+
+        MGQ_MpCoopNpcs.member_at?(x, y)
       end
 
       # Reports whether the player, or on the Map Owner's map a party member, is near enough for an
