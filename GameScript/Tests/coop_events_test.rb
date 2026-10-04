@@ -2,7 +2,8 @@
 #  coop_events_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Checked that a member's story event starts nowhere and says so once
+#      Paulinchen  2026-10-04: Checked that the members near the leader follow where the story moves the leader
+#                            - Checked that a member's story event starts nowhere and says so once
 #                            - Checked traders: a side quest that cannot run, a goods script, a quest step behind a choice, a chest that asks first, and the talk's watch
 #                            - Checked when the player only waits for the party's story
 #                            - Followed gathering into coop_gather.rbx and the Pocket Castle's residents into coop_castle.rbx
@@ -536,10 +537,33 @@ check("a member who does not come holds the scene up to thirty seconds", MGQ_MpC
 $frame_count = 4800
 check("then it plays without them", [MGQ_MpCoopGather.holding?(interpreter), $notices.last, MGQ_MpCoopEvents.state_fields["telling"]],
       [false, "The story starts without Friend.", 1])
+
+# The story moves the leader elsewhere, as a theater show's stage or a story's own teleport: the
+# members who stood near come along at once, the others stay.
+far_friend = MGQ_MpOverworldSync::Peers::Peer.new(5, { "id" => "g", "name" => "Far", "party" => "p1", "map" => "9" }, nil, true)
+$members = [friend, far_friend]
+friend.state.merge!("map" => "3", "x" => "6", "y" => "5")
+$sent.clear
+$game_player.reserve_transfer(624, 63, 27, 2)
+$game_player.perform_transfer
+check("the members near the leader are told to follow to the new place", $sent.map { |seat, f| [seat, f["pevent"], f["map"], f["x"], f["y"]] },
+      [[2, "follow", "624", "63", "27"]])
 interpreter.busy = false
+$sent.clear
+$game_player.reserve_transfer(3, 5, 5, 2)
+$game_player.perform_transfer
+check("a transfer outside the story takes nobody along", $sent, [])
+$members = [friend]
 $leader = leader
 $members = [leader]
 $game_map.map_id = 7
+$game_player.moveto(2, 2)
+MGQ_MpCoopEvents.take(leader, { "pevent" => "follow", "party" => "p1", "map" => "624", "x" => "63", "y" => "27", "d" => "2", "warp_ban" => "0" })
+check("a member following hears the leader's pages of the new map before arriving", [MGQ_MpCoopGather.story_map?(624), MGQ_MpCoopGather.story_map?(5)], [true, false])
+$game_map.update
+check("and comes along at once", $game_player.reserved, [624, 63, 27, 2])
+$game_player.instance_variable_set(:@reserved, nil)
+check("then waits for nothing more", MGQ_MpCoopGather.own_line, nil)
 
 # Story events in the leader's game.
 story_page = RPG::Page.new([c(101, "", 0, 0, 2), c(401, "Line"), c(121, 60, 60, 0)])

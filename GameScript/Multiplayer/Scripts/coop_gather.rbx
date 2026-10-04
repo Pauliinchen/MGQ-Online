@@ -86,6 +86,7 @@ module MGQ_MpCoopGather
     case message["pevent"]
     when "gather" then called(peer, place, message["warp_ban"] == "1")
     when "come" then answered(peer, place, message["warp_ban"] == "1")
+    when "follow" then followed(peer, place, message["warp_ban"] == "1")
     end
   rescue => e
     log("taking #{message['pevent']} failed: #{e.class}: #{e.message}")
@@ -99,6 +100,7 @@ module MGQ_MpCoopGather
     @hold = { :interpreter => interpreter, :since => Graphics.frame_count, :called => Graphics.frame_count }
     gather
     MGQ_MpOverworldSync.notice("Gathering the party for the story . . .")
+    log("gathering the party for a story scene on map #{$game_map.map_id}, waiting for #{missing.join(', ')}")
   end
 
   # Forgets the story scene the player held, as when another event starts on the map.
@@ -136,6 +138,7 @@ module MGQ_MpCoopGather
     if Graphics.frame_count - @hold[:since] >= HOLD_FRAMES
       @hold = nil
       MGQ_MpOverworldSync.notice("The story starts without #{missing.join(', ')}.")
+      log("the story starts without #{missing.join(', ')}")
       return false
     end
 
@@ -186,6 +189,7 @@ module MGQ_MpCoopGather
     unless @gather
       MGQ_MpOverworldSync.notice("#{peer.state['name']}'s story is starting. You join them in #{GATHER_FRAMES / 60} seconds.")
       @gather = { :since => Graphics.frame_count, :name => peer.state["name"].to_s }
+      log("called by #{peer.state['name']} to map #{place[0]} #{place[1]},#{place[2]}")
     end
     @gather[:place] = place
     @gather[:warp_ban] = warp_ban
@@ -197,6 +201,51 @@ module MGQ_MpCoopGather
   # @return [Hash] "map", "x" and "y".
   def self.own_place
     { "map" => $game_map.map_id, "x" => $game_player.x, "y" => $game_player.y }
+  end
+
+  # As leader, notes where the player stands before a transfer, to take the members standing near
+  # along when the story moves the player. Called before Game_Player#perform_transfer.
+  #
+  # @param player [Game_Player] The player.
+  def self.before_transfer(player)
+    @transfer_from = player.transfer? && MGQ_MpCoopEvents.telling? && leading? ? [$game_map.map_id, player.x, player.y] : nil
+  end
+
+  # As leader, takes along the members who stood near when the story moved the player elsewhere,
+  # such as a theater show's stage or a story's own teleport. Called after
+  # Game_Player#perform_transfer.
+  def self.after_transfer
+    from = @transfer_from
+    @transfer_from = nil
+    return unless from && leading?
+
+    along = MGQ_MpCoop::Party.members.select { |peer| near_place?(peer.state, from) }
+    return if along.empty?
+
+    along.each { |peer| tell(peer.seat, "follow", place_fields) }
+    log("took #{along.map { |peer| peer.state['name'] }.join(', ')} along to map #{$game_map.map_id} #{$game_player.x},#{$game_player.y}")
+  rescue => e
+    log("taking the party along failed: #{e.class}: #{e.message}")
+  end
+
+  # Takes the leader's call to follow them, whom their story moved elsewhere: the player comes at
+  # once, as soon as they are free.
+  #
+  # @param peer [MGQ_MpOverworldSync::Peers::Peer] The leader.
+  # @param place [Array<Integer>] Where the leader stands now: map, x, y and direction.
+  # @param warp_ban [Boolean] Whether warping is banned there.
+  def self.followed(peer, place, warp_ban)
+    @gather = { :since => Graphics.frame_count - GATHER_FRAMES, :name => peer.state["name"].to_s, :place => place,
+                :warp_ban => warp_ban, :called => Graphics.frame_count, :follow => true }
+  end
+
+  # Reports whether the leader's story pages of a map reach the player: the player's map, or the
+  # one they are about to follow the leader to, whose pages wait until they arrived.
+  #
+  # @param map_id [Integer] The map the leader tells the story on.
+  # @return [Boolean] Whether they do.
+  def self.story_map?(map_id)
+    map_id == $game_map.map_id || (!@gather.nil? && @gather[:follow] && @gather[:place][0] == map_id)
   end
 
   # As member, asks the leader where they stand, to come over as soon as the player is free.
@@ -262,8 +311,20 @@ module MGQ_MpCoopGather
     return nil unless @gather
     return @gather if Graphics.frame_count - @gather[:called] < CALL_LAPSE_FRAMES
 
-    MGQ_MpOverworldSync.notice(@gather[:asked] ? "You were too busy to teleport to #{@gather[:name]}." : "#{@gather[:name]}'s story started without you.")
+    MGQ_MpOverworldSync.notice(lapse_notice(@gather))
+    log("#{@gather[:name]}'s call lapsed")
     @gather = nil
+  end
+
+  # Tells the player why the leader's call lapsed.
+  #
+  # @param gather [Hash] The call, see pending_call.
+  # @return [String] The notice.
+  def self.lapse_notice(gather)
+    return "You were too busy to teleport to #{gather[:name]}." if gather[:asked]
+    return "#{gather[:name]}'s story went on without you." if gather[:follow]
+
+    "#{gather[:name]}'s story started without you."
   end
 
   # Tells what the line above the player's own head says about the party's story, if anything:
@@ -332,10 +393,12 @@ module MGQ_MpCoopGather
     return unless place && MGQ_MpOverworldSync.map_free?
 
     map_id, x, y, direction = place
-    warp_ban = @gather[:warp_ban]
+    gather = @gather
     @gather = nil
     return unless MGQ_MpCoop.in_party?
 
+    log("#{gather[:follow] ? 'followed' : 'came to'} #{gather[:name]} on map #{map_id} #{x},#{y}, from map #{$game_map.map_id}")
+    warp_ban = gather[:warp_ban]
     if map_id == $game_map.map_id
       $game_player.moveto(x, y)
       $game_player.set_direction(direction) if direction > 0
@@ -374,6 +437,10 @@ begin
 
   # The player stands still and opens no menu while their leader's story scene plays.
   MGQ_MpHooks.hold_player("coop_gather") { MGQ_MpCoopGather.blocked? }
+
+  # Around the player's transfer, the leader takes along the members the story moves with them.
+  MGQ_MpHooks.before(Game_Player, :perform_transfer, "coop_gather") { MGQ_MpCoopGather.before_transfer(self) }
+  MGQ_MpHooks.after(Game_Player, :perform_transfer, "coop_gather") { MGQ_MpCoopGather.after_transfer }
 rescue => e
   MGQ_MpCoopGather.log("hooks FAILED: #{e.class}: #{e.message}")
 end

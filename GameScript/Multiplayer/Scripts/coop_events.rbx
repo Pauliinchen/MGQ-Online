@@ -2,7 +2,8 @@
 #  coop_events.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Kept a member's story events from starting anywhere, since only the leader starts story, and no longer asked the leader's game to play them
+#      Paulinchen  2026-10-04: Kept the leader's pages of the map a member follows the leader to
+#                            - Kept a member's story events from starting anywhere, since only the leader starts story, and no longer asked the leader's game to play them
 #                            - Sorted called common events by what can run now, shops with a goods script as talks, and story behind a choice as a talk watched as it runs
 #                            - Moved gathering the party for story scenes into coop_gather.rbx
 #                            - Moved the Pocket Castle's residents into coop_castle.rbx
@@ -101,7 +102,7 @@ module MGQ_MpCoopEvents
   ITEM_CLASSES = { "i" => RPG::Item, "w" => RPG::Weapon, "a" => RPG::Armor }
 
   # Messages about gathering for story scenes, which coop_gather.rbx takes.
-  GATHER_MESSAGES = %w(gather come where)
+  GATHER_MESSAGES = %w(gather come where follow)
 
   @common_kinds = {}
   @chest = nil
@@ -515,7 +516,7 @@ module MGQ_MpCoopEvents
     return unless leader.equal?(peer)
 
     case message["pevent"]
-    when "say" then hear(peer, message) if message["map"].to_i == $game_map.map_id
+    when "say" then hear(peer, message) if MGQ_MpCoopGather.story_map?(message["map"].to_i)
     when "done" then heard_done(message)
     end
   rescue => e
