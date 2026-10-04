@@ -2,12 +2,13 @@
 #  notices_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-04: Followed the scripts to their new names, without mp_
 #      Paulinchen  2026-10-03: Offered the challenges through MGQ_MpActions, as the duel script does
 #                            - Created
 #
 #----------------------------------------------------------------
 
-# Covers the notification box, mp_notices.rbx: the invites it lists from anywhere in the world while
+# Covers the notification box, ui_notices.rbx: the invites it lists from anywhere in the world while
 # they stand, the messages it shows for a moment, the scenes it shows in, and its keys.
 
 require_relative "world_support"
@@ -35,7 +36,7 @@ module MGQ_MpBattlesDuel
   def self.accept(peer); $duel_answer = [:accept, peer.state["name"]]; end
   def self.decline(peer, reason); $duel_answer = [:decline, peer.state["name"], reason]; end
 
-  # The challenges the notification box lists, as mp_battles_duel.rbx offers them.
+  # The challenges the notification box lists, as battles_duel.rbx offers them.
   module Offers
     def self.notice_of(peer)
       duel = MGQ_MpBattlesDuel
@@ -49,7 +50,7 @@ module MGQ_MpBattlesDuel
 end
 MGQ_MpActions.offer(MGQ_MpBattlesDuel::Offers)
 
-load_script "mp_notices"
+load_script "ui_notices"
 
 notices = MGQ_MpNotices
 box = lambda { notices.instance_variable_get(:@box) }

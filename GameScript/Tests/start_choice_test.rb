@@ -2,12 +2,13 @@
 #  start_choice_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Loaded the scripts split off the ones under test, and mp_ui.rbx
+#      Paulinchen  2026-10-04: Followed the scripts to their new names, without mp_
+#      Paulinchen  2026-10-03: Loaded the scripts split off the ones under test, and ui.rbx
 #      Paulinchen  2026-10-02: Created
 #
 #----------------------------------------------------------------
 
-# Checks where a new player of a world starts (mp_world.rbx, mp_save_distribution.rbx): the
+# Checks where a new player of a world starts (world.rbx, world_save_distribution.rbx): the
 # creator's Players choose checkbox, the directory's flag for it, and the world screen asking a
 # new player to start at the beginning, from their own save or from the creator's.
 
@@ -59,11 +60,11 @@ module MGQ_Multiplayer
   end
 end
 
-load_script "mp_save_distribution"
-load_script "mp_ui"
-load_script "mp_world"
-load_script "mp_world_text"
-load_script "mp_world_screen"
+load_script "world_save_distribution"
+load_script "ui"
+load_script "world"
+load_script "world_text"
+load_script "world_screen"
 
 $started = []
 $start_error = nil

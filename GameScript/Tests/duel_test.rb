@@ -2,6 +2,7 @@
 #  duel_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-04: Followed the scripts to their new names, without mp_
 #      Paulinchen  2026-10-03: Checked that a duel takes the challenger's rule of the Backline
 #                            - Gave the co-op stand-in its Player record
 #                            - Gave the world stand-in tell, notice and the own id and seat
@@ -12,7 +13,7 @@
 #
 #----------------------------------------------------------------
 
-# Covers duels, mp_battles_duel.rbx with the action wheel: challenging nearby and from afar,
+# Covers duels, battles_duel.rbx with the action wheel: challenging nearby and from afar,
 # accepting, the start on both sides, and why a duel does not start. The PvP battle itself and the
 # live battle stand in, see battles_coop_test.rb and team_test.rb for those. Covers the gathering of
 # a team duel on the map too.
@@ -72,7 +73,7 @@ $joined = []
 $backlines = []
 $backline_wanted = false
 
-load_script "mp_battles_duel"
+load_script "battles_duel"
 
 duel = MGQ_MpBattlesDuel
 # Reads the duel messages this game sent.

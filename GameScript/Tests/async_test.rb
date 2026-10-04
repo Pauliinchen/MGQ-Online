@@ -2,11 +2,12 @@
 #  async_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-04: Followed the scripts to their new names, without mp_
 #      Paulinchen  2026-09-30: Created
 #
 #----------------------------------------------------------------
 
-# Covers mp_async.rbx: the world running on behind menus, battles and story scenes.
+# Covers core_async.rbx: the world running on behind menus, battles and story scenes.
 
 require_relative "support"
 
@@ -122,7 +123,7 @@ module MGQ_MpOverworldSync
   def self.on_leave(*); end
   def self.label_line(*); end
 end
-load_script "mp_async"
+load_script "core_async"
 
 $basic = 0
 $open = true

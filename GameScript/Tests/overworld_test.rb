@@ -2,6 +2,7 @@
 #  overworld_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-04: Followed the scripts to their new names, without mp_
 #      Paulinchen  2026-10-03: Checked that a member's party choice on the wheel teleports to the leader
 #                            - Checked the word wrap where it lives now, in MGQ_MpUi
 #                            - Followed the choices to the scripts that offer them
@@ -21,8 +22,8 @@
 #
 #----------------------------------------------------------------
 
-# Covers the open world as mp_overworld_sync.rbx, mp_actions.rbx, mp_chat.rbx, mp_overworld.rbx,
-# mp_coop.rbx and mp_coop_squad.rbx play it together: states, other players, their ghosts and their
+# Covers the open world as overworld_sync.rbx, ui_actions.rbx, ui_chat.rbx, overworld.rbx,
+# coop.rbx and coop_squad.rbx play it together: states, other players, their ghosts and their
 # followers, the action wheel and parties, chat, pings, and the gate of the party's messages.
 
 require_relative "world_support"

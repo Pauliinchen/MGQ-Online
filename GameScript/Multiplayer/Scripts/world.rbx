@@ -1,0 +1,1084 @@
+#----------------------------------------------------------------
+#  world.rbx
+#
+#  Changelog:
+#      Paulinchen  2026-10-04: Renamed from mp_world.rbx
+#      Paulinchen  2026-10-03: Read and wrote the game's private fields and called its private methods through MGQ_MpGame
+#                            - Moved the text screen into world_text.rbx and the world screen with its windows into world_screen.rbx
+#                            - Logged through MGQ_MpLog
+#                            - Put the player's own system save and Save folder back when a world's system save cannot be loaded
+#      Paulinchen  2026-10-02: Told how many players a world seats, from its code
+#                            - Offered to copy a world's latest save into the player's own game
+#                            - Made worlds without a password, which their players enter without being asked for one
+#                            - Showed the featured worlds, which the relay's admins make, in gold after the favourites
+#                            - Followed the title screen's start and update through core_hooks.rbx
+#                            - Put the Save folder back in one place as a world closes
+#                            - Let the creator tick Players choose, after which each new player starts at the beginning, from one of their own saves or from the starting save
+#      Paulinchen  2026-10-01: Said that the relay's admins see hidden worlds too
+#      Paulinchen  2026-09-30: Let the relay's admins see every world, hidden ones too, and delete any
+#                            - Moved into Patch/Multiplayer/Scripts as world.rbx, which Multiplayer.rb loads, with the worlds in Patch/Multiplayer/Worlds
+#                            - Named the mod Monster Girl Quest! Online in the update notice
+#                            - Greyed out the title command and showed a notice once a newer release is out
+#                            - Let the creator pick one of their saves as the starting save of a new world, which new players fetch before entering it
+#                            - Made and joined worlds through forms at the right of the world screen, typed in place, and made hidden worlds, joined by their id
+#      Paulinchen  2026-09-29: Listed the relay's worlds with their players, favourites first, entered with a password once and typed names on the keyboard
+#                            - Let the creator delete a world or remove a player, and connected to a world while it is open
+#                            - Created
+#
+#----------------------------------------------------------------
+
+# Worlds: lasting places several players play in together, entered through Multiplayer on the
+# title screen. The relay's world directory lists every public world with its players, and hidden
+# ones only for their players and the relay's admins; others join a hidden world by its id. An
+# admin may delete any world, and the admins' featured worlds show in gold. A world's password, if
+# it has one, is asked once, after which this game remembers the world. Each world keeps its own saves and its
+# own system save (Library, medals, system switches, affection) in Patch/Multiplayer/Worlds/<id>, so
+# playing in a world never touches the player's own saves. A new world's players start at the
+# beginning, from one of its creator's saves, or where each of them chooses (world_save_distribution.rbx).
+#
+# It must never interrupt the game, so every entry point rescues.
+module MGQ_MpWorld
+  # Turns worlds off without uninstalling them.
+  ENABLED = true
+
+  # The title screen's command that opens the world screen.
+  COMMAND_NAME = "Multiplayer"
+
+  # Folder of the worlds on this PC, inside the mod folder.
+  WORLDS_DIR = "Patch/Multiplayer/Worlds"
+
+  # File of the worlds the player marked as favourites, inside the mod folder.
+  FAVOURITES_FILE = "Favourites.ini"
+
+  # Players a new world seats at most unless the player chooses otherwise.
+  DEFAULT_SEATS = 4
+
+  # Fewest players a world seats.
+  MIN_SEATS = 2
+
+  # Most players a world seats.
+  MAX_SEATS = 32
+
+  # Longest name of a player or a world.
+  MAX_NAME_CHARS = 16
+
+  # Longest password.
+  MAX_PASSWORD_CHARS = 20
+
+  # A world's id, which joins a hidden world.
+  WORLD_ID = /\A[0-9a-f]{32}\z/
+
+  # Colour of the featured worlds, which the relay's admins make.
+  FEATURED_COLOR = Color.new(255, 200, 64)
+
+  # The buttons whose press, in a frame no key went down, tells a gamepad from the keyboard.
+  #
+  # Directions count by their first frame only, since an arrow key held down reports its
+  # direction in later frames too.
+  GAMEPAD_BUTTONS = [:C, :B, :A, :UP, :DOWN, :LEFT, :RIGHT]
+
+  # Reports whether the hooks can be installed.
+  #
+  # A second copy of this script would wrap the same methods under the same names, and each hook
+  # would then call itself until the stack overflows.
+  #
+  # @return [Boolean] false when the hooks are in place already.
+  def self.hookable?
+    !Scene_Title.method_defined?(:mgq_mp_world_terminate)
+  end
+
+  # Tells whether worlds can be used.
+  #
+  # @return [Boolean] Whether worlds are on, the mod's DLL is installed, and no newer
+  #   release is out.
+  def self.available?
+    ENABLED && MGQ_Multiplayer.available? && !MGQ_Multiplayer.outdated?
+  end
+
+  extend MGQ_MpLog
+
+  # What starts this script's lines in the mod's InGame.log.
+  LOG_TAG = "world"
+
+  # Reports whether a world is open, which the game's saves then belong to.
+  #
+  # @return [Boolean] Whether a world is open.
+  def self.open?
+    !@world.nil?
+  end
+
+  # The open world.
+  #
+  # @return [World, nil] The world, nil while none is open.
+  def self.world
+    @world
+  end
+
+  # What the text screen handed back: what the text was for, and the text, nil when the player left it.
+  #
+  # @return [Array, nil] [kind, text or nil], nil while none waits.
+  def self.take_text_result
+    result = @text_result
+    @text_result = nil
+    result
+  end
+
+  # Keeps what the text screen hands back.
+  #
+  # @param result [Array] [kind, text or nil].
+  def self.text_result=(result)
+    @text_result = result
+  end
+
+  # Reports whether a button or direction was pressed this frame, which only a gamepad does in a
+  # frame no key went down.
+  #
+  # @return [Boolean] Whether one was.
+  def self.gamepad_pressed?
+    GAMEPAD_BUTTONS.any? { |button| Input.trigger?(button) }
+  end
+
+  # Enters a world from the world screen: its latest save when it has one, a new game otherwise,
+  # which the title screen starts once the world screen closed.
+  #
+  # @param world [World] The world.
+  # @param scene [Scene_MpWorlds] The world screen.
+  # @return [String, nil] Why the world could not be entered, nil when it was.
+  def self.start(world, scene)
+    enter(world)
+    index = world.latest_save
+
+    unless index
+      @pending = :new_game
+      scene.return_scene
+      return nil
+    end
+
+    unless DataManager.load_game(index)
+      leave
+      return "The latest save of #{world.name} could not be loaded."
+    end
+
+    log("loaded save #{index} of world #{world.id}")
+    # Scene_Load finishes the game's own loads, so the map starts exactly as after Continue.
+    Scene_Load.new.on_load_success
+    nil
+  rescue => e
+    leave
+    log("could not enter a world: #{e.class}: #{e.message}")
+    "The world could not be entered."
+  end
+
+  # Opens a world: from now on the game's saves and system save are the world's, and the game
+  # holds a seat in the world's room.
+  #
+  # @param world [World] The world.
+  def self.enter(world)
+    leave
+    Dir.mkdir(world.save_folder) unless File.directory?(world.save_folder)
+    System.enter(world.save_folder)
+    @world = world
+    world.played!
+    Link.open(world.code)
+    log("entered world #{world.id}")
+  end
+
+  # Closes the open world, leaving its room and putting the player's own system save back.
+  def self.leave
+    return unless @world
+
+    Link.close
+    System.leave
+    log("left world #{@world.id}")
+    @world = nil
+  rescue => e
+    @world = nil
+    log("could not leave the world cleanly: #{e.class}: #{e.message}")
+  end
+
+  # Closes the open world once the game went back to the title screen, unless the world screen
+  # sent it there to start a new game in the world. Called as the title screen starts.
+  def self.on_title_start
+    leave unless @pending
+  end
+
+  # Starts a new game in the world the world screen opened. Called by the title screen every
+  # frame while nothing else runs.
+  #
+  # The title screen's own command starts it, so everything the game and other mods do for a
+  # new game happens as usual.
+  #
+  # @param scene [Scene_Title] The title screen.
+  def self.on_title_update(scene)
+    return unless @pending == :new_game
+
+    @pending = nil
+    log("new game in world #{@world.id}") if @world
+    scene.command_new_game
+  rescue => e
+    @pending = nil
+    leave
+    log("could not start a new game in a world: #{e.class}: #{e.message}")
+  end
+
+  # Adds the world screen's command to the title screen, below Continue: greyed out, with
+  # UpdateNotice saying why, once a newer release is out.
+  #
+  # @param window [Window_TitleCommand] The title screen's commands.
+  def self.add_title_command(window)
+    return unless MGQ_Multiplayer.available?
+
+    list = MGQ_MpGame.get(window, :list)
+    entry = { :name => COMMAND_NAME, :symbol => :mgq_mp_world, :enabled => !MGQ_Multiplayer.outdated?, :ext => nil }
+    continue_at = list.index { |command| command[:symbol] == :continue }
+    continue_at ? list.insert(continue_at + 1, entry) : list.push(entry)
+  rescue => e
+    log("title command failed: #{e.class}: #{e.message}")
+  end
+
+  # Two lines on the title screen, below Discord's own update notice if it shows one too, once a
+  # newer release of the mod is out.
+  module UpdateNotice
+    # What the notice says, the newer version filled in.
+    LINES = [
+      "Monster Girl Quest! Online %s is out.",
+      "Close the game and run Patch\\Multiplayer\\Update.bat to update.",
+    ]
+
+    # Height of a line, which the font size follows.
+    LINE_HEIGHT = 20
+
+    # Where the notice starts: below the translation's version and Discord's own notice, which
+    # takes up to two lines from TOP 24.
+    TOP = 64
+
+    # Gap to the left and right edges of the screen.
+    MARGIN = 4
+
+    # Layer of the title screen's foreground, which the notice belongs to.
+    Z = 100
+
+    # Shows the notice on the title screen once a newer release is out. Called every update.
+    def self.refresh
+      return if @sprite || !SceneManager.scene.is_a?(Scene_Title)
+      return unless MGQ_Multiplayer.available? && (version = MGQ_Multiplayer.newer_version)
+
+      show(version)
+    end
+
+    # Takes the notice off the screen. Called when the title screen ends.
+    def self.hide
+      return unless @sprite
+
+      @sprite.bitmap.dispose
+      @sprite.dispose
+      @sprite = nil
+    end
+
+    # Draws the notice.
+    #
+    # @param version [String] The newer release's version.
+    def self.show(version)
+      @sprite = Sprite.new
+      @sprite.bitmap = Bitmap.new(Graphics.width, LINE_HEIGHT * LINES.size)
+      @sprite.bitmap.font.size = LINE_HEIGHT
+      @sprite.y = TOP
+      @sprite.z = Z
+
+      LINES.each_with_index do |line, index|
+        @sprite.bitmap.draw_text(MARGIN, index * LINE_HEIGHT, Graphics.width - 2 * MARGIN, LINE_HEIGHT, format(line, version))
+      end
+    end
+  end
+
+  # Builds what the world screen lists: the directory's worlds, and the worlds on this PC the
+  # directory no longer has, favourites first, then the featured ones, then those played last,
+  # then by name.
+  #
+  # @param listed [Array<Directory::ListedWorld>] The directory's worlds.
+  # @param complete [Boolean] Whether the directory's list arrived, so a world missing from it is gone.
+  # @return [Array<Entry>] The entries.
+  def self.entries(listed, complete)
+    local = World.all
+    by_directory_id = {}
+    local.each { |world| by_directory_id[world.directory_id] = world if world.directory_id }
+    favourites = Favourites.all
+
+    entries = listed.map { |world| Entry.new(world.id, world.name, world, by_directory_id[world.id], favourites.include?(world.id), false) }
+    listed_ids = listed.map { |world| world.id }
+    local.each do |world|
+      next if world.directory_id && listed_ids.include?(world.directory_id)
+
+      entries.push(Entry.new(world.directory_id, world.name, nil, world, favourites.include?(world.directory_id), complete || !world.directory_id))
+    end
+
+    entries.sort_by { |entry| [entry.favourite ? 0 : 1, entry.featured? ? 0 : 1, -(entry.local ? entry.local.played_at.to_i : 0), entry.name.downcase] }
+  end
+
+  # A world as the world screen lists it: the directory's, this PC's folder of it, or both.
+  #
+  # @!attribute id [String, nil] The directory's id of the world, nil for a world made before the directory.
+  # @!attribute name [String] The world's name.
+  # @!attribute listed [Directory::ListedWorld, nil] The world in the directory, nil once its creator deleted it.
+  # @!attribute local [World, nil] The world's folder on this PC, nil before the player entered it.
+  # @!attribute favourite [Boolean] Whether the player marked it as a favourite.
+  # @!attribute gone [Boolean] Whether the directory no longer has it, as opposed to its list not having arrived.
+  Entry = Struct.new(:id, :name, :listed, :local, :favourite, :gone) do
+    # Tells whether the directory lists the world as one of the relay's own, which an admin made.
+    #
+    # @return [Boolean] Whether it does.
+    def featured?
+      !listed.nil? && listed.featured
+    end
+
+    # Tells whether the directory lists the world as one without a password.
+    #
+    # @return [Boolean] Whether it does.
+    def open?
+      !listed.nil? && listed.open
+    end
+  end
+
+  # Patch/Multiplayer/Multiplayer.dll's world functions: the folder id of a world code, and the
+  # connection to the open world's room.
+  module Link
+    # Names a world's folder by its code.
+    #
+    # @param code [String] The world code.
+    # @return [String, nil] The folder's id, nil when the text is no world code.
+    def self.id_of(code)
+      buffer = "\0" * 64
+      length = MGQ_Multiplayer::Link.function('mp_world_id', 'ppl').call(code + "\0", buffer, buffer.size)
+      length > 0 ? buffer[0, length] : nil
+    end
+
+    # Takes a seat in a world's room, again whenever the connection breaks, until the world is closed.
+    #
+    # @param code [String] The world code.
+    def self.open(code)
+      MGQ_Multiplayer::Player.share
+      MGQ_MpWorld.log("could not open the world's connection") unless MGQ_Multiplayer::Link.function('mp_world_open', 'p').call(code + "\0") == 1
+    end
+
+    # Leaves the world's room.
+    def self.close
+      MGQ_Multiplayer::Link.function('mp_world_close', 'v').call
+    end
+
+    # Puts a text on the clipboard.
+    #
+    # @param text [String] The text.
+    # @return [Boolean] Whether the clipboard holds it.
+    def self.copy(text)
+      MGQ_Multiplayer::Link.function('mp_copy_text', 'p').call(text + "\0") == 1
+    end
+  end
+
+  # The relay's world directory, through Patch/Multiplayer/Multiplayer.dll: the list of worlds,
+  # fetched again whenever asked, and one action at a time.
+  module Directory
+    # A world as the directory lists it.
+    #
+    # @!attribute id [String] The world's id.
+    # @!attribute seats [Integer] How many players it seats at once.
+    # @!attribute online [Integer] How many are in it now.
+    # @!attribute creator_id [String] The creator's player id.
+    # @!attribute active [Integer] When someone was last in it, in milliseconds since 1970.
+    # @!attribute creator_name [String] The creator's name.
+    # @!attribute name [String] The world's name.
+    # @!attribute start [String] How far it is with its starting save: "none", "pending" or "ready".
+    # @!attribute members [Array<Member>] Everyone who ever joined it, those online first.
+    # @!attribute hidden [Boolean] Whether the list leaves it out for everyone but its players and the relay's admins.
+    # @!attribute choose [Boolean] Whether each new player chooses where to start.
+    # @!attribute open [Boolean] Whether it has no password.
+    # @!attribute featured [Boolean] Whether it is one of the relay's own worlds, which an admin made.
+    ListedWorld = Struct.new(:id, :seats, :online, :creator_id, :active, :creator_name, :name, :start, :members, :hidden, :choose, :open, :featured)
+
+    # A player of a world.
+    #
+    # @!attribute id [String] The player's id.
+    # @!attribute online [Boolean] Whether the player is in the world now.
+    # @!attribute name [String] The player's name.
+    Member = Struct.new(:id, :online, :name)
+
+    # Bytes the DLL may write the list into at first. A larger list asks for a larger buffer.
+    LIST_SIZE = 65_536
+
+    # Fetches the list again.
+    def self.refresh
+      MGQ_Multiplayer::Link.function('mp_dir_refresh', 'v').call
+    end
+
+    # Reads the list as it stands.
+    #
+    # @return [Array] The state ("idle", "loading", "ready" or "failed"), why it failed, the worlds, and whether the player is one of the relay's admins, who sees every world and may delete any.
+    def self.list
+      state = MGQ_Multiplayer::Link.parse(MGQ_Multiplayer::Link.read('mp_dir_list', LIST_SIZE))
+      worlds = []
+
+      state[:payload].split("\n").each do |line|
+        fields = line.split("\t", -1)
+
+        case fields[0]
+        when "world"
+          worlds.push(ListedWorld.new(fields[1], fields[2].to_i, fields[3].to_i, fields[4], fields[5].to_i, fields[6].to_s, fields[7].to_s, fields[8] || "none", [], fields[9] == "1", fields[10] == "1", fields[11] == "1", fields[12] == "1"))
+        when "member"
+          worlds.last.members.push(Member.new(fields[1], fields[2] == "1", fields[3].to_s)) if worlds.last
+        end
+      end
+
+      [state["state"] || "idle", state["error"], worlds, state["admin"] == "1"]
+    end
+
+    # Makes a world, locked with its password, with the starting save new players get, if there is one.
+    #
+    # @param name [String] The world's name.
+    # @param password [String] The password, empty for none.
+    # @param seats [Integer] How many players it seats at once.
+    # @param hidden [Boolean] Whether the list leaves it out for everyone but its players and the relay's admins.
+    # @param choose [Boolean] Whether each new player chooses where to start.
+    # @param start [String] The starting save's files, see MGQ_MpSaveDistribution.text_of; empty for none.
+    # @return [Boolean] Whether the action started.
+    def self.create(name, password, seats, hidden, choose, start)
+      MGQ_Multiplayer::Player.share
+      MGQ_Multiplayer::Link.function('mp_dir_create', 'pplllp').call(name + "\0", password + "\0", seats, hidden ? 1 : 0, choose ? 1 : 0, start + "\0") == 1
+    end
+
+    # Opens a world's lock with its password; the action tells the world's name, its starting save
+    # and whether new players choose where to start too, so a hidden world is joined by its id alone.
+    #
+    # @param id [String] The world's id.
+    # @param password [String] The password.
+    # @return [Boolean] Whether the action started.
+    def self.unlock(id, password)
+      MGQ_Multiplayer::Link.function('mp_dir_unlock', 'pp').call(id + "\0", password + "\0") == 1
+    end
+
+    # Deletes a world for everyone.
+    #
+    # @param id [String] The world.
+    # @return [Boolean] Whether the action started.
+    def self.delete(id)
+      MGQ_Multiplayer::Player.share
+      MGQ_Multiplayer::Link.function('mp_dir_delete', 'p').call(id + "\0") == 1
+    end
+
+    # Removes a player from a world and keeps them out.
+    #
+    # @param id [String] The world.
+    # @param target [String] The player's id.
+    # @return [Boolean] Whether the action started.
+    def self.ban(id, target)
+      MGQ_Multiplayer::Player.share
+      MGQ_Multiplayer::Link.function('mp_dir_ban', 'pp').call(id + "\0", target + "\0") == 1
+    end
+
+    # Reads how the running or last action stands.
+    #
+    # @return [Hash] "state" ("idle", "busy", "done" or "failed"), and whichever of "kind", "code", "world", "name", "start", "choose" ("1" when new players choose where to start) and "error" apply.
+    def self.action
+      text = MGQ_Multiplayer::Link.read('mp_dir_action', 1024)
+      text.empty? ? { "state" => "idle" } : MGQ_Multiplayer::Link.parse(text)
+    end
+
+    # Forgets the last action once its result was taken.
+    def self.clear
+      MGQ_Multiplayer::Link.function('mp_dir_clear', 'v').call
+    end
+
+    # Reads the id everyone sees for the player.
+    #
+    # @return [String] The id, "" while the player has no name.
+    def self.my_id
+      MGQ_Multiplayer::Player.share
+      MGQ_Multiplayer::Link.player_id
+    end
+  end
+
+  # The worlds the player marked as favourites, in Patch/Multiplayer/Favourites.ini.
+  module Favourites
+    # Lists the favourites.
+    #
+    # @return [Array<String>] The directory ids of the favourite worlds.
+    def self.all
+      MGQ_Multiplayer::Ini.read(MGQ_Multiplayer.path(FAVOURITES_FILE)).keys
+    end
+
+    # Marks a world as a favourite, or no longer.
+    #
+    # @param id [String] The world's directory id.
+    # @return [Boolean] Whether it is a favourite now.
+    def self.toggle(id)
+      values = MGQ_Multiplayer::Ini.read(MGQ_Multiplayer.path(FAVOURITES_FILE))
+      favourite = !values.key?(id)
+      favourite ? values[id] = "1" : values.delete(id)
+      MGQ_Multiplayer::Ini.write(MGQ_Multiplayer.path(FAVOURITES_FILE), values)
+      favourite
+    end
+  end
+
+  # A world on this PC: its folder in Patch/Multiplayer/Worlds, named by a hash of its code, with
+  # world.ini (name, world code, directory id, when it was made and last played) and the world's
+  # Save folder.
+  class World
+    # The file inside the world's folder that describes it.
+    FILE = "world.ini"
+
+    # What a world's folder is named.
+    ID = /\A[0-9a-f]{12}\z/
+
+    # Lists the worlds on this PC.
+    #
+    # @return [Array<World>] The worlds.
+    def self.all
+      return [] unless File.directory?(WORLDS_DIR)
+
+      Dir.entries(WORLDS_DIR).select { |entry| entry =~ ID }.map { |id| read(id) }.compact
+    rescue => e
+      MGQ_MpWorld.log("could not list the worlds: #{e.class}: #{e.message}")
+      []
+    end
+
+    # Reads a world.
+    #
+    # @param id [String] The folder's id.
+    # @return [World, nil] The world, nil when its folder holds none.
+    def self.read(id)
+      values = MGQ_Multiplayer::Ini.read("#{folder_of(id)}/#{FILE}")
+      code = values["code"]
+      code && Link.id_of(code) == id ? new(id, values) : nil
+    end
+
+    # Makes a world's folder, or finds the one there is, and describes the world in it.
+    #
+    # @param code [String] The world code.
+    # @param name [String] The world's name.
+    # @param directory_id [String] The world's id in the directory.
+    # @return [World, nil] The world, nil when the text is no world code or the folder could not be made.
+    def self.found(code, name, directory_id)
+      id = Link.id_of(code)
+      return nil unless id
+
+      [WORLDS_DIR, folder_of(id)].each { |dir| Dir.mkdir(dir) unless File.directory?(dir) }
+      world = read(id) || new(id, "code" => code, "created" => Time.now.to_i)
+      world.describe(name, directory_id)
+      world.write ? world : nil
+    rescue => e
+      MGQ_MpWorld.log("could not make a world's folder: #{e.class}: #{e.message}")
+      nil
+    end
+
+    # Builds the folder of a world.
+    #
+    # @param id [String] The folder's id.
+    # @return [String] The folder, relative to the game's folder.
+    def self.folder_of(id)
+      "#{WORLDS_DIR}/#{id}"
+    end
+
+    # The folder's id.
+    attr_reader :id
+
+    # The world's name.
+    attr_reader :name
+
+    # The world code, which lets its holder in.
+    attr_reader :code
+
+    # The world's id in the directory, nil for a world made before the directory.
+    attr_reader :directory_id
+
+    # When the world was played last.
+    attr_reader :played_at
+
+    # Creates a world from what its world.ini says.
+    #
+    # @param id [String] The folder's id.
+    # @param values [Hash] The values of its world.ini.
+    def initialize(id, values)
+      @id = id
+      @name = values["name"].to_s.strip.empty? ? "?" : MGQ_Multiplayer.clean(values["name"])
+      @code = values["code"]
+      @directory_id = values["world"]
+      @created = values["created"].to_i
+      @played_at = values["played"] ? Time.at(values["played"].to_i) : nil
+    end
+
+    # Takes the world's name and directory id, as the directory says them.
+    #
+    # @param name [String] The world's name.
+    # @param directory_id [String] The world's id in the directory.
+    def describe(name, directory_id)
+      @name = MGQ_Multiplayer.clean(name)
+      @directory_id = directory_id
+    end
+
+    # The world's folder.
+    #
+    # @return [String] The folder, relative to the game's folder.
+    def folder
+      World.folder_of(@id)
+    end
+
+    # How many players the world seats at once, which the last field of its code tells.
+    #
+    # @return [Integer] The seats, 0 for a code that tells none.
+    def seats
+      @code.to_s.split(";").last.to_i
+    end
+
+    # The folder of the world's saves, which the game's Save folder stands for while it is open.
+    #
+    # @return [String] The folder, relative to the game's folder.
+    def save_folder
+      "#{folder}/Save"
+    end
+
+    # Notes that the world is played now.
+    def played!
+      @played_at = Time.now
+      write
+    end
+
+    # Writes world.ini.
+    #
+    # @return [Boolean] Whether it was written.
+    def write
+      values = { "name" => @name, "code" => @code, "created" => @created }
+      values["world"] = @directory_id if @directory_id
+      values["played"] = @played_at.to_i if @played_at
+      MGQ_Multiplayer::Ini.write("#{folder}/#{FILE}", values)
+    end
+
+    # Finds the world's latest save, an autosave included.
+    #
+    # @return [Integer, String, nil] The save's index as DataManager takes it, nil without any save.
+    def latest_save
+      latest = latest_save_entry
+      latest && latest[0]
+    end
+
+    # Finds the file of the world's latest save, an autosave included.
+    #
+    # @return [String, nil] Its path, relative to the game's folder; nil without any save.
+    def latest_save_file
+      latest = latest_save_entry
+      latest && "#{save_folder}/#{latest[1]}"
+    end
+
+    # Finds the world's latest save and its file.
+    #
+    # It looks at the files themselves, since the game only finds a world's saves while the world is open.
+    #
+    # @return [Array, nil] The save's index as DataManager takes it and its file's name, nil without any save.
+    def latest_save_entry
+      return nil unless File.directory?(save_folder)
+
+      saves = Dir.entries(save_folder).map do |entry|
+        case entry
+        when /\ASave(\d{2})\.rvdata2\z/i then [$1.to_i - 1, entry]
+        when /\AAutoSave(\d{2})\.rvdata2\z/i then [$1, entry]
+        end
+      end
+      saves.compact.max_by { |_, entry| File.mtime("#{save_folder}/#{entry}") }
+    end
+
+    # Deletes the world's folder with everything in it: this game's saves of the world, and that
+    # it remembers the world's password.
+    #
+    # @return [Boolean] Whether it was deleted.
+    def delete
+      World.remove_tree(folder)
+      true
+    rescue => e
+      MGQ_MpWorld.log("could not delete world #{@id}: #{e.class}: #{e.message}")
+      false
+    end
+
+    # Deletes a folder with everything in it.
+    #
+    # @param path [String] The folder.
+    def self.remove_tree(path)
+      Dir.entries(path).each do |entry|
+        next if entry == "." || entry == ".."
+
+        child = "#{path}/#{entry}"
+        File.directory?(child) ? remove_tree(child) : File.delete(child)
+      end
+      Dir.rmdir(path)
+    end
+  end
+
+  # While a world is open, sends every path below the game's Save folder to the world's instead.
+  #
+  # The game names its Save folder in many places, its thumbnails and backups included, so the
+  # paths are changed where they reach the files rather than where the game builds them.
+  module Files
+    # A path below the game's Save folder.
+    SAVE_PATH = /\ASave(?=[\\\/]|\z)/i
+
+    # The File methods that take paths.
+    FILE_METHODS = [:open, :new, :exist?, :exists?, :file?, :directory?, :delete, :unlink, :rename, :mtime, :size, :stat, :read, :binread]
+
+    # The Dir methods that take paths or patterns.
+    DIR_METHODS = [:glob, :[], :entries, :foreach, :exist?, :exists?, :mkdir]
+
+    # Sets the folder that stands for the Save folder, or nil for the game's own.
+    #
+    # @param folder [String, nil] The folder.
+    def self.root=(folder)
+      @root = folder
+    end
+
+    # Runs a block with the paths below the Save folder reaching the game's own Save folder, also
+    # while a world is open.
+    #
+    # @return [Object] What the block returns.
+    def self.unmapped
+      root = @root
+      @root = nil
+      yield
+    ensure
+      @root = root
+    end
+
+    # Changes the paths among some arguments that lie below the Save folder.
+    #
+    # @param args [Array] The arguments.
+    # @return [Array] The arguments, those paths moved to the open world's folder.
+    def self.mapped(args)
+      return args unless @root
+
+      args.map { |arg| arg.is_a?(String) && arg =~ SAVE_PATH ? @root + arg[4..-1] : arg }
+    end
+
+    # Wraps the File and Dir methods that take paths.
+    def self.install
+      redirect(File, FILE_METHODS)
+      redirect(Dir, DIR_METHODS)
+    end
+
+    # Wraps some class methods so their paths go through mapped.
+    #
+    # @param owner [Class] File or Dir.
+    # @param names [Array<Symbol>] The methods.
+    def self.redirect(owner, names)
+      names.each do |name|
+        next unless owner.respond_to?(name)
+
+        original = :"mgq_mp_world_#{name.to_s.sub('?', '_query').sub('[]', 'index')}"
+        next if owner.respond_to?(original)
+
+        owner.singleton_class.send(:alias_method, original, name)
+        owner.singleton_class.send(:define_method, name) do |*args, &block|
+          send(original, *MGQ_MpWorld::Files.mapped(args), &block)
+        end
+      end
+    end
+  end
+
+  # The data all saves share, the system save: the Library, the system switches and the global
+  # system, which holds the affection. A world keeps its own.
+  module System
+    # Writes the player's own system save and loads the world's, making a new one the first time.
+    # A world's system save that cannot be loaded leaves the player's own in place.
+    #
+    # @param folder [String] The folder of the world's saves.
+    def self.enter(folder)
+      DataManager.save_system
+      @own = [$game_library, $game_system_switches, $game_global_system, MGQ_MpGame.get(DataManager, :system_save_count)]
+      Files.root = folder
+      $game_library = $game_system_switches = $game_global_system = nil
+      DataManager.setup_system
+    rescue
+      # Without this the game would go on in the world's folder with no world open, and the next
+      # world would keep the half-loaded system save as the player's own.
+      put_back
+      raise
+    end
+
+    # Writes the world's system save and puts the player's own back.
+    def self.leave
+      return unless @own
+
+      DataManager.save_system
+    ensure
+      put_back
+    end
+
+    # Puts the player's own system save and Save folder back.
+    def self.put_back
+      Files.root = nil
+      return unless @own
+
+      $game_library, $game_system_switches, $game_global_system, count = @own
+      MGQ_MpGame.set(DataManager, :system_save_count, count)
+      @own = nil
+    end
+  end
+
+  # A form of the world screen: its fields, laid out in rows, and what is filled in.
+  class Form
+    # A field of a form: a text box (:text, :password, :number or :id), a checkbox (:check), a save
+    # to choose (:save) or the button that sends the form (:button).
+    class Field
+      # What the form keeps the field's value under.
+      attr_reader :key
+
+      # What kind of field it is.
+      attr_reader :kind
+
+      # What the field is called.
+      attr_reader :label
+
+      # The row it is on, 0 for the first below the form's title.
+      attr_reader :row
+
+      # :left or :right when it shares its row with another field, nil when it has the row alone.
+      attr_reader :side
+
+      # The longest text a text box takes.
+      attr_reader :max_chars
+
+      # The characters a text box takes, nil for any.
+      attr_reader :allowed
+
+      # The checkbox that must be ticked for the field to be used, nil for none.
+      attr_reader :needs
+
+      # What the lines at the top of the world screen say while the cursor is on the field.
+      attr_reader :hint
+
+      # Creates a field.
+      #
+      # @param key [Symbol] What the form keeps its value under.
+      # @param kind [Symbol] What kind of field it is.
+      # @param label [String] What it is called.
+      # @param row [Integer] The row it is on.
+      # @param hint [String] What the lines at the top say while the cursor is on it.
+      # @param options [Hash] Whichever of :side, :max_chars, :allowed and :needs apply.
+      def initialize(key, kind, label, row, hint, options = {})
+        @key = key
+        @kind = kind
+        @label = label
+        @row = row
+        @hint = hint
+        @side = options[:side]
+        @max_chars = options[:max_chars]
+        @allowed = options[:allowed]
+        @needs = options[:needs]
+      end
+
+      # Tells whether the field is a text box, typed into.
+      #
+      # @return [Boolean] Whether it is.
+      def typed?
+        [:text, :password, :number, :id].include?(@kind)
+      end
+    end
+
+    # The form of a new world.
+    #
+    # @return [Form] The form, empty but for the default seats.
+    def self.create
+      fields = [
+        Field.new(:name, :text, "Name", 0, "The name everyone sees in the list.", :max_chars => MAX_NAME_CHARS),
+        Field.new(:password, :password, "Password", 1, "Everyone types it once to enter the world. Left empty, anyone may enter without one.", :max_chars => MAX_PASSWORD_CHARS),
+        Field.new(:seats, :number, "Max Players", 2, "How many players may be in the world at once, #{MIN_SEATS} to #{MAX_SEATS}. It cannot be changed later.", :max_chars => MAX_SEATS.to_s.size, :allowed => /\A\d\z/),
+        Field.new(:hidden, :check, "Hidden", 3, "Ticked, only its players and the relay's admins see it in the list: share its id, and its password if it has one, with those who may join. Otherwise everyone sees it.", :side => :left),
+        Field.new(:from_save, :check, "From my save", 3, "Ticked, new players start from one of your saves instead of the opening; with Players choose their start ticked, it is one of their choices. It cannot be changed later.", :side => :right),
+        Field.new(:save, :save, "Save", 4, "The save every new player starts from.", :needs => :from_save),
+        Field.new(:choose, :check, "Players choose their start", 5, "Ticked, each new player chooses: at the beginning, from one of their own saves, or from your save when From my save is ticked. It cannot be changed later."),
+        Field.new(:confirm, :button, "Create the world", 7, "Makes the world and enters it."),
+      ]
+      new("Create a new world", fields, :name => "", :password => "", :seats => DEFAULT_SEATS.to_s, :hidden => false, :from_save => false, :save => nil, :choose => false)
+    end
+
+    # The form that joins a hidden world by its id.
+    #
+    # @return [Form] The form, empty.
+    def self.join
+      fields = [
+        Field.new(:id, :id, "World id", 0, "The id the world's creator copied for you. Ctrl+V pastes it.", :max_chars => 32, :allowed => /\A[0-9a-f]\z/i),
+        Field.new(:password, :password, "Password", 1, "The world's password; left empty for a world without one.", :max_chars => MAX_PASSWORD_CHARS),
+        Field.new(:confirm, :button, "Join the world", 3, "Opens the world and enters it."),
+      ]
+      new("Join a hidden world", fields, :id => "", :password => "")
+    end
+
+    # What the form is called.
+    attr_reader :title
+
+    # The fields, in the order the cursor visits them.
+    attr_reader :fields
+
+    # The key of the text box being typed into, nil while none is.
+    attr_accessor :editing
+
+    # Creates a form.
+    #
+    # @param title [String] What the form is called.
+    # @param fields [Array<Field>] The fields.
+    # @param values [Hash] What each field holds at first, by key.
+    def initialize(title, fields, values)
+      @title = title
+      @fields = fields
+      @values = values
+    end
+
+    # Reads what a field holds.
+    #
+    # @param key [Symbol] The field's key.
+    # @return [Object] The value.
+    def [](key)
+      @values[key]
+    end
+
+    # Sets what a field holds.
+    #
+    # @param key [Symbol] The field's key.
+    # @param value [Object] The value.
+    def []=(key, value)
+      @values[key] = value
+    end
+
+    # Tells whether a field can be used, which one whose checkbox is not ticked cannot.
+    #
+    # @param field [Field] The field.
+    # @return [Boolean] Whether it can.
+    def enabled?(field)
+      field.needs.nil? || @values[field.needs] == true
+    end
+
+    # Adds a typed character to a text box, if it takes it.
+    #
+    # @param field [Field] The text box.
+    # @param char [String] The character.
+    # @return [Boolean] Whether it was added.
+    def add(field, char)
+      text = @values[field.key]
+      return false if text.size >= field.max_chars || (field.allowed && char !~ field.allowed)
+
+      @values[field.key] = text + char
+      true
+    end
+
+    # Checks what a text box holds, and tidies it.
+    #
+    # @param field [Field] The text box.
+    # @param text [String] What it holds.
+    # @return [Array] The tidied text, and why it is not accepted, nil when it is.
+    def check(field, text)
+      case field.kind
+      when :number
+        seats = text =~ /\A\d+\z/ ? text.to_i : nil
+        return [text, "#{field.label} must be a number from #{MIN_SEATS} to #{MAX_SEATS}."] unless seats && seats.between?(MIN_SEATS, MAX_SEATS)
+
+        [seats.to_s, nil]
+      when :id
+        id = text.strip.downcase
+        id =~ WORLD_ID ? [id, nil] : [text, "A world id has 32 characters, the digits and a to f."]
+      when :password
+        # A password keeps its spaces, since the others type it exactly, and may be empty.
+        [text, nil]
+      else
+        tidy = text.strip
+        tidy.empty? ? [text, "The #{field.label.downcase} cannot be empty."] : [tidy, nil]
+      end
+    end
+
+    # Finds the first field that keeps the form from being sent.
+    #
+    # @return [Array, nil] The field's index and why, nil when the form can be sent.
+    def problem
+      @fields.each_with_index do |field, index|
+        next unless enabled?(field)
+
+        error = field.typed? ? check(field, @values[field.key])[1] : nil
+        error ||= "Choose the save its players start from." if field.kind == :save && @values[field.key].nil?
+        return [index, error] if error
+      end
+      nil
+    end
+  end
+end
+
+# Game hooks shared with other scripts, through core_hooks.rbx.
+
+begin
+  # Before the title screen starts, a world the game came back from closes.
+  MGQ_MpHooks.before(Scene_Title, :start, "world") { MGQ_MpWorld.on_title_start }
+
+  # After the title screen's update, a new game starts in a world the world screen opened, and the
+  # update notice shows.
+  MGQ_MpHooks.after(Scene_Title, :update, "world") do
+    MGQ_MpWorld.on_title_update(self) unless scene_changing?
+    MGQ_MpWorld::UpdateNotice.refresh
+  end
+rescue => e
+  MGQ_MpWorld.log("title hooks FAILED: #{e.class}: #{e.message}")
+end
+
+# Game hooks of this script alone.
+#
+# Each wraps a game method: the original runs first unless said otherwise, and the mod's part never
+# raises.
+
+if MGQ_MpWorld.hookable?
+  begin
+    MGQ_MpWorld::Files.install
+  rescue => e
+    MGQ_MpWorld.log("file hooks FAILED: #{e.class}: #{e.message}")
+  end
+
+  begin
+    class Bitmap
+      alias mgq_mp_world_initialize initialize
+
+      # Loads a picture below the Save folder, such as a save's thumbnail, from the open world's folder.
+      def initialize(*args)
+        mgq_mp_world_initialize(*MGQ_MpWorld::Files.mapped(args))
+      end
+    end
+  rescue => e
+    MGQ_MpWorld.log("picture hook FAILED: #{e.class}: #{e.message}")
+  end
+
+  begin
+    class Window_TitleCommand
+      alias mgq_mp_world_make_command_list make_command_list
+
+      # Lists the title screen's commands, Multiplayer below Continue.
+      def make_command_list
+        mgq_mp_world_make_command_list
+        MGQ_MpWorld.add_title_command(self)
+      end
+    end
+
+    class Scene_Title
+      alias mgq_mp_world_create_command_window create_command_window
+
+      # Creates the title screen's commands, Multiplayer among them.
+      def create_command_window
+        mgq_mp_world_create_command_window
+        @command_window.set_handler(:mgq_mp_world, method(:mgq_mp_world_command))
+      end
+
+      # Opens the world screen.
+      def mgq_mp_world_command
+        close_command_window
+        SceneManager.call(Scene_MpWorlds)
+      end
+
+      alias mgq_mp_world_terminate terminate
+
+      # Takes the update notice off the screen, then ends the title screen.
+      def terminate
+        MGQ_MpWorld::UpdateNotice.hide rescue nil
+        mgq_mp_world_terminate
+      end
+    end
+  rescue => e
+    MGQ_MpWorld.log("title hooks FAILED: #{e.class}: #{e.message}")
+  end
+end

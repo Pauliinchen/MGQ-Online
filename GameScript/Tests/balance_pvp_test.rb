@@ -2,11 +2,12 @@
 #  balance_pvp_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-04: Followed the scripts to their new names, without mp_
 #      Paulinchen  2026-10-03: Created
 #
 #----------------------------------------------------------------
 
-# Covers mp_balance_pvp.rbx: the skills' formulas for monsters, more HP, an action's damage kept
+# Covers battles_balance_pvp.rbx: the skills' formulas for monsters, more HP, an action's damage kept
 # below a share of max HP, a lowest share of a hit every character takes, limited evasion, reflection and element rates, and defense
 # walls that take a share of a hit, all only while a PvP battle runs with the balance.
 
@@ -70,7 +71,7 @@ end
 attack = Item.new(true)
 heal = Item.new(false)
 
-load_script "mp_balance_pvp"
+load_script "battles_balance_pvp"
 SceneManager.run
 balance = MGQ_MpBalancePvp
 

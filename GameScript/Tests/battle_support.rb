@@ -2,7 +2,8 @@
 #  battle_support.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Loaded the scripts split off the ones under test, and mp_ui.rbx
+#      Paulinchen  2026-10-04: Followed the scripts to their new names, without mp_
+#      Paulinchen  2026-10-03: Loaded the scripts split off the ones under test, and ui.rbx
 #                            - Added stand-ins for the party's events and the chat, which the battle scripts call
 #                            - Gave the world stand-in tell, notice and the own id and seat
 #                            - Gave the characters a battle start and a turn start, which set their hit count
@@ -15,8 +16,8 @@
 #----------------------------------------------------------------
 
 # What the tests of live battles in a world share: stand-ins for the game, the world room and the
-# party, the scripts every one of them builds on (mp_coop_squad.rbx, mp_battles.rbx,
-# mp_battles_coop.rbx and mp_battles_sync.rbx), fields_of, and the game's objects on map 5.
+# party, the scripts every one of them builds on (coop_squad.rbx, battles.rbx,
+# battles_coop.rbx and battles_sync.rbx), fields_of, and the game's objects on map 5.
 
 require_relative "support"
 
@@ -218,10 +219,10 @@ module MGQ_MpOverworldSync
   def self.on_leave(*); end
   def self.label_line(*); end
 end
-load_script "mp_coop_squad"
-load_script "mp_battles"
-load_script "mp_battles_coop"
-%w[mp_battles_sync mp_battles_sync_wire mp_battles_sync_recorder mp_battles_sync_playback mp_battles_sync_live].each { |name| load_script name }
+load_script "coop_squad"
+load_script "battles"
+load_script "battles_coop"
+%w[battles_sync battles_sync_wire battles_sync_recorder battles_sync_playback battles_sync_live].each { |name| load_script name }
 module MGQ_MpBattlesSync::Waiting
   def self.open(text); :window; end
   def self.close(window); nil; end

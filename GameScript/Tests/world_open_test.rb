@@ -2,13 +2,14 @@
 #  world_open_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Loaded the scripts split off the ones under test, and mp_ui.rbx
+#      Paulinchen  2026-10-04: Followed the scripts to their new names, without mp_
+#      Paulinchen  2026-10-03: Loaded the scripts split off the ones under test, and ui.rbx
 #      Paulinchen  2026-10-02: Checked the seats a world code tells
 #                            - Created
 #
 #----------------------------------------------------------------
 
-# Checks worlds without a password and featured worlds (mp_world.rbx): the forms taking an empty
+# Checks worlds without a password and featured worlds (world.rbx): the forms taking an empty
 # password, the directory's flags for both, entering a world without a password without being
 # asked, the featured worlds' place in the list and what the details say.
 
@@ -60,11 +61,11 @@ module MGQ_Multiplayer
   end
 end
 
-load_script "mp_save_distribution"
-load_script "mp_ui"
-load_script "mp_world"
-load_script "mp_world_text"
-load_script "mp_world_screen"
+load_script "world_save_distribution"
+load_script "ui"
+load_script "world"
+load_script "world_text"
+load_script "world_screen"
 
 # A small window of the world screen: keeps the commands it opened with and whether it takes input.
 class FakeChoice

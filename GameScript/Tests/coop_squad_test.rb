@@ -2,6 +2,7 @@
 #  coop_squad_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-04: Followed the scripts to their new names, without mp_
 #      Paulinchen  2026-10-03: Added a stand-in for the action wheel's registries
 #                            - Gave the world stand-in tell, notice and the own id and seat
 #                            - Admitted the party's members, as its leader does
@@ -10,7 +11,7 @@
 #
 #----------------------------------------------------------------
 
-# Covers a party's squads, mp_coop_squad.rbx with mp_coop.rbx: the shares of the Frontline and the
+# Covers a party's squads, coop_squad.rbx with coop.rbx: the shares of the Frontline and the
 # Backline, the leader's choice of followers, the followers shown, the formation screens' cut, the
 # option in the Mod Config, and the cap of four players.
 
@@ -149,8 +150,8 @@ module MGQ_MpActions
   def self.wheel_slot(*); end
   def self.own_doing_from; end
 end
-load_script "mp_coop"
-load_script "mp_coop_squad"
+load_script "coop"
+load_script "coop_squad"
 SceneManager.run
 
 party = MGQ_MpCoop::Party

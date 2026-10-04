@@ -2,7 +2,8 @@
 #  battles_coop_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Checked that the guest of a lost battle takes the host's defeat scene, or one of its own enemies
+#      Paulinchen  2026-10-04: Followed the scripts to their new names, without mp_
+#                            - Checked that the guest of a lost battle takes the host's defeat scene, or one of its own enemies
 #      Paulinchen  2026-10-03: Checked that the others' characters start the battle and each turn with a hit count
 #                            - Checked that the map shows the player's own leader again after the battle
 #                            - Checked that the party's leader leads a member's battle, and that the member hosts once the leader refuses or stays silent
@@ -19,8 +20,8 @@
 #
 #----------------------------------------------------------------
 
-# Covers co-op battles, mp_battles_coop.rbx with mp_battles_sync.rbx, mp_battles.rbx and
-# mp_coop_squad.rbx: from the invite to the end of the battle, for the host and for a guest.
+# Covers co-op battles, battles_coop.rbx with battles_sync.rbx, battles.rbx and
+# coop_squad.rbx: from the invite to the end of the battle, for the host and for a guest.
 
 require_relative "battle_support"
 

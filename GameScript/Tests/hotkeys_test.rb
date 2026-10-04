@@ -2,13 +2,14 @@
 #  hotkeys_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-04: Followed the scripts to their new names, without mp_
 #      Paulinchen  2026-10-03: Checked the keys that accept and decline the first notification
 #                            - Renamed from keys_test.rb
 #      Paulinchen  2026-10-02: Created
 #
 #----------------------------------------------------------------
 
-# Covers the keys the player binds, mp_hotkeys.rbx: the defaults, the keys kept in Player.ini, their
+# Covers the keys the player binds, core_hotkeys.rbx: the defaults, the keys kept in Player.ini, their
 # names in the texts, and their key bindings in Mod Config Remake.
 
 require_relative "support"
@@ -27,7 +28,7 @@ module MGQ_Multiplayer
   end
 end
 
-load_script "mp_hotkeys"
+load_script "core_hotkeys"
 
 keys = MGQ_MpHotkeys
 

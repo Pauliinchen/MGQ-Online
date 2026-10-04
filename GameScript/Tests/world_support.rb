@@ -2,16 +2,17 @@
 #  world_support.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Loaded the scripts split off the ones under test, and mp_ui.rbx
-#                            - Loaded mp_hotkeys.rbx, renamed from mp_keys.rbx
+#      Paulinchen  2026-10-04: Followed the scripts to their new names, without mp_
+#      Paulinchen  2026-10-03: Loaded the scripts split off the ones under test, and ui.rbx
+#                            - Loaded core_hotkeys.rbx, renamed from mp_keys.rbx
 #      Paulinchen  2026-10-02: Loaded mp_keys.rbx, with Player.ini's settings kept in $player_ini
 #      Paulinchen  2026-10-01: Created
 #
 #----------------------------------------------------------------
 
 # What the tests of the open world share: stand-ins for the game and the DLL, the scripts every
-# one of them builds on (mp_hotkeys.rbx, mp_overworld_sync.rbx, mp_actions.rbx, mp_chat.rbx,
-# mp_overworld.rbx, mp_coop.rbx and mp_coop_squad.rbx), helpers that feed the world room, and a player standing on
+# one of them builds on (core_hotkeys.rbx, overworld_sync.rbx, ui_actions.rbx, ui_chat.rbx,
+# overworld.rbx, coop.rbx and coop_squad.rbx), helpers that feed the world room, and a player standing on
 # map 5 of an open world.
 
 require_relative "support"
@@ -106,14 +107,14 @@ end
 module MGQ_MpWorld; def self.open?; $open; end; end
 $player_ini = {}
 
-load_script "mp_hotkeys"
-load_script "mp_ui"
-load_script "mp_overworld_sync"
-load_script "mp_actions"
-load_script "mp_chat"
-load_script "mp_overworld"
-load_script "mp_coop"
-load_script "mp_coop_squad"
+load_script "core_hotkeys"
+load_script "ui"
+load_script "overworld_sync"
+load_script "ui_actions"
+load_script "ui_chat"
+load_script "overworld"
+load_script "coop"
+load_script "coop_squad"
 
 # One frame on the map: the wheel's keys, then the chat's, as the hooks run them.
 def map_frame; MGQ_MpActions.on_map; MGQ_MpChat.on_map; end

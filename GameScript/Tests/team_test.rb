@@ -2,12 +2,13 @@
 #  team_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-04: Followed the scripts to their new names, without mp_
 #      Paulinchen  2026-10-02: Ended the guest's duel through guest_end
 #      Paulinchen  2026-10-01: Created
 #
 #----------------------------------------------------------------
 
-# Covers team duels in battle, mp_battles_team.rbx with mp_battles_sync.rbx and mp_battles_coop.rbx:
+# Covers team duels in battle, battles_team.rbx with battles_sync.rbx and battles_coop.rbx:
 # the two sides on the host and on guests of either side, whose commands reach whose characters,
 # and the characters of a player who left, which another player of their side takes over.
 
@@ -18,7 +19,7 @@ module MGQ_MpBattlesPvp
   class Opponent < Game_MpActor; end
   module Opponents; def self.stand(opponents); opponents; end; end
 end
-load_script "mp_battles_team"
+load_script "battles_team"
 
 team = MGQ_MpBattlesTeam
 sync = MGQ_MpBattlesSync

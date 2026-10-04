@@ -2,6 +2,7 @@
 #  battles_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-04: Followed the scripts to their new names, without mp_
 #      Paulinchen  2026-10-03: Checked that a PvP battle with the Backline may swap it in
 #                            - Checked the modes of live battles
 #      Paulinchen  2026-10-01: Checked that only PvP battles forbid swapping the Backline in
@@ -9,7 +10,7 @@
 #
 #----------------------------------------------------------------
 
-# Covers mp_battles.rbx: the rules every multiplayer battle shares, and putting the game's own back.
+# Covers battles.rbx: the rules every multiplayer battle shares, and putting the game's own back.
 
 require_relative "support"
 
@@ -37,7 +38,7 @@ module MGQ_MpOverworldSync
   def self.on_leave(*); end
   def self.label_line(*); end
 end
-load_script "mp_battles"
+load_script "battles"
 SceneManager.run
 $game_switches[27] = false
 $game_switches[86] = false

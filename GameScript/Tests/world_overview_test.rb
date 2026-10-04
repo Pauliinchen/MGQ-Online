@@ -2,6 +2,7 @@
 #  world_overview_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-04: Followed the scripts to their new names, without mp_
 #      Paulinchen  2026-10-03: Followed the choices to the scripts that offer them
 #                            - Added a stand-in for duels without PvP battles
 #                            - Named the member in the leader's invite, which admits them
@@ -10,7 +11,7 @@
 #
 #----------------------------------------------------------------
 
-# Covers the World overview, mp_world_overview.rbx: what the player tells the others (place,
+# Covers the World overview, world_overview.rbx: what the player tells the others (place,
 # highest companion level, place in the story), the list by place, opening with F11 and the
 # wheel, the arrows, the menu of a player, the mouse, and the places the party box shortens.
 
@@ -39,7 +40,7 @@ module MGQ_MpBattlesDuel
   def self.call_of(_peer); nil; end
 end
 MGQ_MpActions.offer(MGQ_MpBattlesDuel)
-load_script "mp_world_overview"
+load_script "world_overview"
 
 overview = MGQ_MpWorldOverview
 

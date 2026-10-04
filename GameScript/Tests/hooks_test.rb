@@ -2,12 +2,13 @@
 #  hooks_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-04: Followed the scripts to their new names, without mp_
 #      Paulinchen  2026-10-03: Checked around and holding the player
 #      Paulinchen  2026-10-02: Created
 #
 #----------------------------------------------------------------
 
-# Covers mp_hooks.rbx: the blocks run on the object with the method's arguments, in the order nested
+# Covers core_hooks.rbx: the blocks run on the object with the method's arguments, in the order nested
 # wraps would run them, the method's result and visibility stay, a failing block is logged once and
 # keeps the others running, and a second registration replaces the first.
 
@@ -34,7 +35,7 @@ end
 # A stand-in for a module's method, such as Graphics.update.
 module Frames; def self.update; $calls << :frame; end; end
 
-load_script "mp_hooks"
+load_script "core_hooks"
 
 MGQ_MpHooks.before(Scene_Test, :update, "first") { |value| $calls << [:first_before, @name, value] }
 MGQ_MpHooks.after(Scene_Test, :update, "first") { |value| $calls << [:first_after, value] }

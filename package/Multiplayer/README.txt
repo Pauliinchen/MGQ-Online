@@ -49,7 +49,7 @@ like this:
    Patch\Multiplayer\README.txt
    Patch\Multiplayer\Update.bat
    Patch\Multiplayer\Update.ps1
-   Patch\Multiplayer\Scripts\mp_*.rbx   (the mod's other scripts)
+   Patch\Multiplayer\Scripts\*.rbx      (the mod's other scripts)
    ...
 
 Patch\Multiplayer.rb loads the scripts in Patch\Multiplayer\Scripts
@@ -72,7 +72,7 @@ earlier version left behind that this one no longer ships. Your player
 name, favourites and worlds are kept.
 
 To update by hand, close the game and extract the new download over the
-old one; then delete any Patch\Multiplayer\Scripts\mp_*.rbx file the
+old one; then delete any Patch\Multiplayer\Scripts\*.rbx file the
 new release's Manifest.txt no longer lists.
 
 

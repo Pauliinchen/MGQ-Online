@@ -2,11 +2,12 @@
 #  pvp_backline_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-04: Followed the scripts to their new names, without mp_
 #      Paulinchen  2026-10-03: Created
 #
 #----------------------------------------------------------------
 
-# Covers mp_battles_pvp_backline.rbx: the option, the other side's characters outside its
+# Covers battles_pvp_backline.rbx: the option, the other side's characters outside its
 # Frontline, the Frontline each game tells the other, what a swap costs the character swapped in,
 # and the characters outside both Frontlines in the host's stream.
 
@@ -79,9 +80,9 @@ module MGQ_MpBattlesSync
 end
 $posted = []
 
-load File.join(SCRIPTS_DIR, "mp_log.rbx")
+load File.join(SCRIPTS_DIR, "core_log.rbx")
 module MGQ_MpBattlesPvp; extend MGQ_MpLog; LOG_TAG = "pvp battle"; end
-load_script "mp_battles_pvp_backline"
+load_script "battles_pvp_backline"
 SceneManager.run
 backline = MGQ_MpBattlesPvp::Backline
 mode = MGQ_MpBattles.mode_of(:duel)

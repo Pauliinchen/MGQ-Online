@@ -2,12 +2,13 @@
 #  save_export_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Loaded the scripts split off the ones under test, and mp_ui.rbx
+#      Paulinchen  2026-10-04: Followed the scripts to their new names, without mp_
+#      Paulinchen  2026-10-03: Loaded the scripts split off the ones under test, and ui.rbx
 #      Paulinchen  2026-10-02: Created
 #
 #----------------------------------------------------------------
 
-# Checks copying a world's latest save into the player's own game (mp_save_export.rbx): the first
+# Checks copying a world's latest save into the player's own game (world_save_export.rbx): the first
 # free slot, the thumbnail, the own Save folder also while a world is open, a full Save folder, and
 # the game menu's command.
 
@@ -50,11 +51,11 @@ module MGQ_Multiplayer
   module Log; def self.write(_message); end; end
 end
 
-load_script "mp_save_distribution"
-load_script "mp_ui"
-load_script "mp_world"
-load_script "mp_world_screen"
-load_script "mp_save_export"
+load_script "world_save_distribution"
+load_script "ui"
+load_script "world"
+load_script "world_screen"
+load_script "world_save_export"
 
 Dir.mktmpdir do |root|
   Dir.chdir(root) do

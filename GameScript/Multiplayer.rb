@@ -2,23 +2,25 @@
 #  Multiplayer.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-03: Loaded mp_battles_pvp_backline.rbx after mp_battles_pvp.rbx
-#                            - Loaded mp_balance_pvp.rbx before mp_battles_pvp.rbx
-#                            - Loaded mp_game_access.rbx after mp_hooks.rbx
-#                            - Loaded mp_ui.rbx, and the scripts split off the world, battle sync and PvP scripts
-#                            - Loaded mp_log.rbx first
-#                            - Loaded mp_notices.rbx last
-#                            - Loaded mp_hotkeys.rbx, renamed from mp_keys.rbx
-#      Paulinchen  2026-10-02: Loaded mp_keys.rbx after mp_hooks.rbx, and kept other settings in Player.ini besides the name
-#                            - Loaded mp_save_export.rbx after mp_world.rbx
-#                            - Loaded mp_hooks.rbx first and followed Graphics.update and SceneManager.run through it
-#      Paulinchen  2026-10-01: Loaded mp_coop_squad.rbx after mp_coop.rbx
-#                            - Loaded mp_battles_duel.rbx and mp_battles_team.rbx after the PvP battles, and mp_world_overview.rbx last
+#      Paulinchen  2026-10-04: Loaded the scripts by their new names, which say what each belongs to instead of mp_
+#                            - Loaded world_save_distribution.rbx after world.rbx
+#      Paulinchen  2026-10-03: Loaded battles_pvp_backline.rbx after battles_pvp.rbx
+#                            - Loaded battles_balance_pvp.rbx before battles_pvp.rbx
+#                            - Loaded core_game_access.rbx after core_hooks.rbx
+#                            - Loaded ui.rbx, and the scripts split off the world, battle sync and PvP scripts
+#                            - Loaded core_log.rbx first
+#                            - Loaded ui_notices.rbx last
+#                            - Loaded core_hotkeys.rbx, renamed from mp_keys.rbx
+#      Paulinchen  2026-10-02: Loaded mp_keys.rbx after core_hooks.rbx, and kept other settings in Player.ini besides the name
+#                            - Loaded world_save_export.rbx after world.rbx
+#                            - Loaded core_hooks.rbx first and followed Graphics.update and SceneManager.run through it
+#      Paulinchen  2026-10-01: Loaded coop_squad.rbx after coop.rbx
+#                            - Loaded battles_duel.rbx and battles_team.rbx after the PvP battles, and world_overview.rbx last
 #                            - Added Mouse, where the mouse points on the game's screen and its left button
 #      Paulinchen  2026-09-30: Loaded the other scripts from Patch/Multiplayer/Scripts
-#                            - Loaded mp_chat.rbx after the action wheel
-#                            - Loaded mp_coop.rbx before the party scripts that register with it
-#                            - Loaded mp_overworld_sync.rbx before the scripts that register with it
+#                            - Loaded ui_chat.rbx after the action wheel
+#                            - Loaded coop.rbx before the party scripts that register with it
+#                            - Loaded overworld_sync.rbx before the scripts that register with it
 #                            - Moved the mod folder into Patch/Multiplayer and loaded the other scripts from there in a fixed order
 #                            - Called the battle and party scripts by their new names
 #                            - Named the mod Monster Girl Quest! Online in the update message
@@ -55,18 +57,18 @@ module MGQ_Multiplayer
 
   # The mod's other scripts in SCRIPTS_DIR, in the order they load.
   #
-  # A script may use only what loaded before it while it loads, such as mp_log.rbx, which gives
-  # every script its log, mp_actors.rbx's Game_MpActor, or mp_hooks.rbx, mp_overworld_sync.rbx and
-  # mp_coop.rbx, which the scripts after them register with. The battle scripts install their battle hooks once the game runs, the last
+  # A script may use only what loaded before it while it loads, such as core_log.rbx, which gives
+  # every script its log, core_actors.rbx's Game_MpActor, or core_hooks.rbx, overworld_sync.rbx and
+  # coop.rbx, which the scripts after them register with. The battle scripts install their battle hooks once the game runs, the last
   # loaded first, so their order decides how those hooks wrap each other.
   SCRIPTS = %w[
-    mp_log mp_hooks mp_game_access mp_hotkeys mp_ui mp_actors mp_async mp_overworld_sync mp_actions mp_chat mp_overworld
-    mp_coop mp_coop_squad mp_coop_events mp_coop_npcs mp_coop_story
-    mp_save_distribution mp_world mp_world_text mp_world_screen mp_save_export
-    mp_battles mp_battles_coop
-    mp_battles_sync mp_battles_sync_wire mp_battles_sync_recorder mp_battles_sync_playback mp_battles_sync_live
-    mp_balance_pvp mp_battles_pvp mp_battles_pvp_backline mp_battles_pvp_mirror mp_battles_pvp_lobby mp_battles_duel mp_battles_team
-    mp_world_overview mp_notices
+    core_log core_hooks core_game_access core_hotkeys ui core_actors core_async overworld_sync ui_actions ui_chat overworld
+    coop coop_squad coop_events coop_npcs coop_story
+    world world_save_distribution world_text world_screen world_save_export
+    battles battles_coop
+    battles_sync battles_sync_wire battles_sync_recorder battles_sync_playback battles_sync_live
+    battles_balance_pvp battles_pvp battles_pvp_backline battles_pvp_mirror battles_pvp_lobby battles_duel battles_team
+    world_overview ui_notices
   ]
 
   # Extension of the scripts, which the mod loader skips, since only this script may load them.
@@ -823,7 +825,7 @@ end
 MGQ_Multiplayer.start
 MGQ_Multiplayer.load_scripts
 
-# Game hooks, through mp_hooks.rbx.
+# Game hooks, through core_hooks.rbx.
 
 begin
   # After every frame, tells the Discord mod how the connection stands and polls for an update.

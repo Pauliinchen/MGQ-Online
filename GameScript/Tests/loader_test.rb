@@ -2,9 +2,10 @@
 #  loader_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-04: Followed the scripts to their new names, without mp_
 #      Paulinchen  2026-10-03: Checked that a family's base script loads before its other scripts
-#                            - Checked that mp_log.rbx loads first
-#      Paulinchen  2026-10-02: Checked that mp_hooks.rbx loads first
+#                            - Checked that core_log.rbx loads first
+#      Paulinchen  2026-10-02: Checked that core_hooks.rbx loads first
 #                            - Checked that the scripts whose constants the World overview shares load before it
 #      Paulinchen  2026-09-30: Created
 #
@@ -24,17 +25,17 @@ files = Dir[File.join(SCRIPTS_DIR, "*.rbx")].map { |file| File.basename(file, ".
 check("every script in SCRIPTS is a file", scripts - files, [])
 check("every file is in SCRIPTS", files - scripts, [])
 check("no script is in SCRIPTS twice", scripts.select { |name| scripts.count(name) > 1 }.uniq, [])
-check("mp_log and mp_hooks load first, since every script logs and registers its hooks with them", scripts.first(2), %w[mp_log mp_hooks])
-check("mp_actors loads before the scripts whose classes build on Game_MpActor",
-      %w[mp_battles_coop mp_battles_pvp].all? { |name| scripts.index("mp_actors") < scripts.index(name) }, true)
+check("core_log and core_hooks load first, since every script logs and registers its hooks with them", scripts.first(2), %w[core_log core_hooks])
+check("core_actors loads before the scripts whose classes build on Game_MpActor",
+      %w[battles_coop battles_pvp].all? { |name| scripts.index("core_actors") < scripts.index(name) }, true)
 check("the registries load before the scripts that join them",
-      [scripts.index("mp_overworld_sync") < scripts.index("mp_actions"), scripts.index("mp_coop") < scripts.index("mp_coop_events")], [true, true])
+      [scripts.index("overworld_sync") < scripts.index("ui_actions"), scripts.index("coop") < scripts.index("coop_events")], [true, true])
 check("the scripts whose constants the World overview shares load before it",
-      %w[mp_actions mp_overworld mp_battles_pvp].all? { |name| scripts.index(name) < scripts.index("mp_world_overview") }, true)
+      %w[ui_actions overworld battles_pvp].all? { |name| scripts.index(name) < scripts.index("world_overview") }, true)
 check("a family's base script loads before its other scripts",
-      %w[mp_world mp_battles_sync mp_battles_pvp mp_coop].all? { |base| scripts.select { |name| name.start_with?("#{base}_") }.all? { |name| scripts.index(base) < scripts.index(name) } }, true)
+      %w[ui world battles battles_sync battles_pvp coop].all? { |base| scripts.select { |name| name.start_with?("#{base}_") }.all? { |name| scripts.index(base) < scripts.index(name) } }, true)
 check("the battle scripts keep the order their late hooks rely on",
-      %w[mp_battles mp_battles_coop mp_battles_sync].map { |name| scripts.index(name) }.each_cons(2).all? { |a, b| a < b }, true)
+      %w[battles battles_coop battles_sync].map { |name| scripts.index(name) }.each_cons(2).all? { |a, b| a < b }, true)
 
 # The parts of Multiplayer.rb that load, taken out of it, so they run without the game.
 harness = Module.new

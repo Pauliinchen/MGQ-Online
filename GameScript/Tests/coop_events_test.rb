@@ -2,6 +2,7 @@
 #  coop_events_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-04: Followed the scripts to their new names, without mp_
 #      Paulinchen  2026-10-03: Checked that the Pocket Castle item is travel
 #                            - Checked that a member teleports to the leader on their own
 #                            - Checked that a member brought to the leader takes over the warp ban of the leader's place
@@ -10,7 +11,7 @@
 #                            - Checked that a chest showing its opened page is still a chest, and that a story event left to the leader lets the next event start
 #      Paulinchen  2026-10-02: Checked that members as far along as the leader keep the story, its items, gold and companions, and their own changes
 #                            - Checked that a common event sorted deep down is sorted anew higher up, and where the awakening switches end
-#                            - Gave the stand-ins the party check and the event page that mp_coop.rbx now holds
+#                            - Gave the stand-ins the party check and the event page that coop.rbx now holds
 #                            - Checked that no random encounter starts for a member the story scene is about to bring over
 #      Paulinchen  2026-10-01: Checked that a page counts only the branches that can run now
 #                            - Checked that exits noting a flag on the way are travel, and that members come over after five seconds
@@ -21,7 +22,7 @@
 #
 #----------------------------------------------------------------
 
-# Covers mp_coop_events.rbx with mp_coop_story.rbx: how event pages are sorted, chests, gathering
+# Covers coop_events.rbx with coop_story.rbx: how event pages are sorted, chests, gathering
 # for story scenes, and story events played in the leader's game.
 
 require_relative "support"
@@ -201,8 +202,8 @@ module MGQ_MpOverworldSync
   def self.on_leave(*); end
   def self.label_line(*); end
 end
-load_script "mp_coop_story"
-load_script "mp_coop_events"
+load_script "coop_story"
+load_script "coop_events"
 
 # Sorts a list of event commands, see MGQ_MpCoopEvents.kind_of.
 #
