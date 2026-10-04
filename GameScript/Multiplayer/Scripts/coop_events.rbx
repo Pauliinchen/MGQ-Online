@@ -2,7 +2,8 @@
 #  coop_events.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Sent the sound a chest played with its items, and let members hear it and see the first item's icon, after a battle once on the map
+#      Paulinchen  2026-10-04: Held back chests other members open during a PvP battle, and kept gifts out of a chest the player opens
+#                            - Sent the sound a chest played with its items, and let members hear it and see the first item's icon, after a battle once on the map
 #                            - Read where the Pocket Castle's way out returns as the player's own variables
 #                            - Kept the leader's pages of the map a member follows the leader to
 #                            - Kept a member's story events from starting anywhere, since only the leader starts story, and no longer asked the leader's game to play them
@@ -708,9 +709,22 @@ module MGQ_MpCoopEvents
   # after the map's update.
   def self.update
     show_heard
+    take_held_chests
     tell_chest_news
   rescue => e
     log("updating the party's events failed: #{e.class}: #{e.message}")
+  end
+
+  # Gives what the block gives without counting it as what a chest the player opens gives, nor as
+  # what the leader's story gives the party.
+  #
+  # @return [Object] What the block returns.
+  def self.granting
+    granting = @granting
+    @granting = true
+    yield
+  ensure
+    @granting = granting
   end
 
   # Notes that an item is being given, and whether it is the outermost of nested gifts.
@@ -811,6 +825,8 @@ module MGQ_MpCoopEvents
   # @param message [Hash] The message's fields.
   def self.take_chest(peer, message)
     return unless MGQ_MpCoop::Party.member?(peer.state)
+    # A PvP battle puts the game back as it was before it, which would take the items again.
+    return (@held_chests ||= []) << [peer, message] if pvp_running?
 
     map_id, event_id, letter = message["chest"].to_s.split(".")
     key = [map_id.to_i, event_id.to_i, letter]
@@ -823,6 +839,22 @@ module MGQ_MpCoopEvents
     tell_chest_news
   rescue => e
     log("taking a chest failed: #{e.class}: #{e.message}")
+  end
+
+  # Opens the chests other members opened during a PvP battle, once it put the game back.
+  def self.take_held_chests
+    return if @held_chests.nil? || @held_chests.empty? || pvp_running?
+
+    held = @held_chests
+    @held_chests = nil
+    held.each { |peer, message| take_chest(peer, message) }
+  end
+
+  # Reports whether a PvP battle, such as a duel, runs.
+  #
+  # @return [Boolean] Whether one does.
+  def self.pvp_running?
+    defined?(MGQ_MpBattlesPvp) && MGQ_MpBattlesPvp::Battle.running? ? true : false
   end
 
   # Tells the player about chests other members opened, with the chest's sound and the first item's

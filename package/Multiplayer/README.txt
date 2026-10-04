@@ -359,9 +359,10 @@ Parties
   story. If your story was exactly as far along as theirs when you
   joined, you keep what you played together: the story's progress, its
   items and gold, and the companions who joined or left in it. Otherwise
-  the story lends you its key items, such as the one that opens a locked
-  door, while you're in the party; they go back when you leave it and
-  stay out of your saves. Where the Pocket Castle's way out takes you is
+  you borrow the leader's key items you lack, such as the one that opens
+  a locked door, while you're in the party; they go back when you leave
+  it and stay out of your saves, and you borrow them again after a
+  crash, a load or a duel. Where the Pocket Castle's way out takes you is
   your own too: when the party brings you into the castle, you leave it
   where you came from.
 - Travelling: everyone goes where they like; only story scenes bring the

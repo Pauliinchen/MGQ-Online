@@ -2,7 +2,8 @@
 #  coop_story.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Kept where the Pocket Castle's way out returns each player their own
+#      Paulinchen  2026-10-04: Lent members the key items the leader holds, told with the story and on every change, so a crash, a load or a duel lends them again, and held back the story's gifts during a duel or before the story is borrowed again
+#                            - Kept where the Pocket Castle's way out returns each player their own
 #                            - Lent the key items of the leader's story to members not as far along, taken back when they get their own story back and left out of their saves
 #                            - Renamed from mp_coop_story.rbx
 #      Paulinchen  2026-10-03: Kept the warp ban as each player's own, since it tells of the place they stand in
@@ -65,6 +66,13 @@ module MGQ_MpCoopStory
   # progress (1141-1143).
   STORY_MARKERS = [1001, 1141, 1142, 1143]
 
+  # Messages that change what a member holds, which wait while the member cannot keep them, see
+  # held_back?.
+  HOLDINGS = %w(gain recruit depart)
+
+  # Messages that wait at most for the member to keep them.
+  MAX_HELD = 100
+
   @own = nil
   @leader_id = nil
   @sent = nil
@@ -107,6 +115,7 @@ module MGQ_MpCoopStory
   def self.update
     leader = self.leader
     restore if guest? && !leader.is_a?(MGQ_MpOverworldSync::Peers::Peer)
+    take_held(leader)
     if leader == :me
       lead
     else
@@ -121,6 +130,7 @@ module MGQ_MpCoopStory
   def self.lead
     if MGQ_MpCoop::Party.members.empty?
       @sent = nil
+      @sent_keys = nil
       return
     end
 
@@ -131,6 +141,8 @@ module MGQ_MpCoopStory
     now = raw_state
     changes = @sent ? delta(@sent, now) : nil
     @sent = now if changes.nil? || changes.values.all?(&:empty?) || tell(-1, "delta", changes)
+    keys = key_items
+    @sent_keys = keys if keys != @sent_keys && tell(-1, "keys", "k" => write_keys(keys))
   end
 
   # As member, asks the leader for their story until it came, again whenever the leader changes.
@@ -160,13 +172,21 @@ module MGQ_MpCoopStory
   # @param peer [MGQ_MpOverworldSync::Peers::Peer, nil] Who sent it.
   # @param message [Hash] The message's fields.
   def self.take(peer, message)
-    case message["story"]
+    kind = message["story"]
+    return hold_back(message) if HOLDINGS.include?(kind) && leader.equal?(peer) && held_back?
+
+    case kind
     when "ask"
-      tell(peer.seat, "full", full(raw_state)) if leader == :me && MGQ_MpCoop::Party.member?(peer.state)
+      tell(peer.seat, "full", full(raw_state).merge("k" => write_keys(key_items))) if leader == :me && MGQ_MpCoop::Party.member?(peer.state)
     when "full"
-      borrow(peer, decode_full(message)) if leader.equal?(peer)
+      if leader.equal?(peer)
+        borrow(peer, decode_full(message))
+        lend_keys(peer, read_keys(message["k"]))
+      end
     when "delta"
       apply(decode_delta(message)) if leader.equal?(peer) && guest? && !@waiting
+    when "keys"
+      lend_keys(peer, read_keys(message["k"])) if leader.equal?(peer) && guest? && !@waiting
     when "recruit"
       recruit(peer, message["actor"].to_i) if leader.equal?(peer) && guest? && @same
     when "depart"
@@ -343,8 +363,8 @@ module MGQ_MpCoopStory
     MGQ_MpOverworldSync.notice("#{$data_actors[actor_id].name} left you too.")
   end
 
-  # Gives or takes items or gold as the leader's story did. A member not as far along gets only
-  # its key items, lent until they get their own story back (see lend).
+  # Gives or takes items or gold as the leader's story did, to a member as far along. One not as
+  # far along borrows the leader's key items instead, see lend_keys.
   #
   # @param leader [MGQ_MpOverworldSync::Peers::Peer] The leader.
   # @param text [String] The item as written: kind, id, "x" and amount, below zero for a loss.
@@ -352,50 +372,138 @@ module MGQ_MpCoopStory
     return unless text =~ /\A([iwag])(\d+)x(-?\d+)\z/
 
     kind, id, amount = Regexp.last_match(1), Regexp.last_match(2).to_i, Regexp.last_match(3).to_i
-    return lend(leader, id, amount) unless @same
+    return unless @same
+
     if kind == "g"
-      $game_party.gain_gold(amount)
+      MGQ_MpCoopEvents.granting { $game_party.gain_gold(amount) }
       name = "#{amount.abs} #{Vocab.currency_unit}"
     else
       item = { "i" => $data_items, "w" => $data_weapons, "a" => $data_armors }[kind][id]
       return unless item
 
-      $game_party.gain_item(item, amount)
+      MGQ_MpCoopEvents.granting { $game_party.gain_item(item, amount) }
       name = amount.abs > 1 ? "#{item.name} x#{amount.abs}" : item.name
     end
     MGQ_MpOverworldSync.notice(amount > 0 ? "#{leader.state['name']}'s story gave you #{name} too." : "#{leader.state['name']}'s story took #{name} from you too.")
   end
 
-  # Lends a member not as far along a key item the leader's story gave, such as the one that opens
-  # a door, so they can play the story along; one the story took again goes back. Every other item
-  # and gold stays the leader's.
+  # Lends a member not as far along the key items the leader holds and the member does not, such
+  # as the one that opens a door, so they can play the story along; one the leader no longer holds
+  # goes back. Every other item and gold stays the leader's.
+  #
+  # The leader tells what they hold with their story and whenever it changes, so a member who
+  # loaded a save, came back after a crash or a duel borrows the keys again, which no save holds.
   #
   # @param leader [MGQ_MpOverworldSync::Peers::Peer] The leader.
-  # @param id [Integer] The item.
-  # @param amount [Integer] How many, below zero for a loss.
-  def self.lend(leader, id, amount)
-    item = $data_items[id]
-    return unless item && item.key_item?
+  # @param keys [Hash{Integer => Integer}] How many of each key item the leader holds.
+  def self.lend_keys(leader, keys)
+    return if @same || !guest?
 
-    amount = -[-amount, @lent[id].to_i].min if amount < 0
-    return if amount == 0
+    lent_now = []
+    returned = []
+    (keys.keys | @lent.keys).each do |id|
+      item = $data_items[id]
+      next unless item && item.key_item?
 
-    @lent[id] = @lent[id].to_i + amount
-    @lent.delete(id) if @lent[id] <= 0
-    $game_party.gain_item(item, amount)
-    MGQ_MpOverworldSync.notice(amount > 0 ? "#{leader.state['name']} lent you #{item.name} for the story." : "#{item.name} went back to #{leader.state['name']}.")
+      lent = @lent[id].to_i
+      own = $game_party.item_number(item) - lent
+      wanted = [keys[id].to_i - own, 0].max
+      next if wanted == lent
+
+      MGQ_MpCoopEvents.granting { $game_party.gain_item(item, wanted - lent) }
+      wanted > 0 ? @lent[id] = wanted : @lent.delete(id)
+      (wanted > lent ? lent_now : returned) << item.name
+    end
+    name = leader.state["name"]
+    MGQ_MpOverworldSync.notice("#{name} lent you #{key_list(lent_now)} for the story.") unless lent_now.empty?
+    MGQ_MpOverworldSync.notice("#{key_list(returned)} went back to #{name}.") unless returned.empty?
+  end
+
+  # Names key items for a notice: one or two by name, more by their count.
+  #
+  # @param names [Array<String>] The items' names.
+  # @return [String] The names, such as "Basement Key" or "5 key items".
+  def self.key_list(names)
+    names.size > 2 ? "#{names.size} key items" : names.join(" and ")
+  end
+
+  # As leader, counts the key items the player holds, which members not as far along borrow.
+  #
+  # @return [Hash{Integer => Integer}] How many of each, by the item's id.
+  def self.key_items
+    keys = {}
+    $game_party.items.each { |item| keys[item.id] = $game_party.item_number(item) if item.is_a?(RPG::Item) && item.key_item? }
+    keys
+  end
+
+  # Writes key items for a message.
+  #
+  # @param keys [Hash{Integer => Integer}] How many of each, by the item's id.
+  # @return [String] Each item's id and count, "id:count", comma separated.
+  def self.write_keys(keys)
+    keys.map { |id, count| "#{id}:#{count}" }.join(",")
+  end
+
+  # Reads key items a leader wrote.
+  #
+  # @param text [String, nil] The items, see write_keys.
+  # @return [Hash{Integer => Integer}] How many of each, by the item's id; none for a count below one.
+  def self.read_keys(text)
+    keys = {}
+    entries(text).each { |id, count| keys[id.to_i] = count.to_i if id.to_i > 0 && count.to_i > 0 }
+    keys
+  end
+
+  # Reports whether a message that changes what the member holds has to wait: during a PvP
+  # battle, which puts the game back as it was before it, and until the member plays the
+  # leader's story again, as after loading a save, so nothing the leader's story gives is lost.
+  #
+  # @return [Boolean] Whether it has to.
+  def self.held_back?
+    pvp_running? || !guest? || @waiting ? true : false
+  end
+
+  # Reports whether a PvP battle, such as a duel, runs.
+  #
+  # @return [Boolean] Whether one does.
+  def self.pvp_running?
+    defined?(MGQ_MpBattlesPvp) && MGQ_MpBattlesPvp::Battle.running? ? true : false
+  end
+
+  # Keeps a message that changes what the member holds until they can keep it.
+  #
+  # @param message [Hash] The message.
+  def self.hold_back(message)
+    (@held ||= []) << message
+    @held.shift while @held.size > MAX_HELD
+  end
+
+  # Takes the messages kept back, once the member plays the leader's story again outside a PvP
+  # battle; forgets them once the party is over.
+  #
+  # @param leader [MGQ_MpOverworldSync::Peers::Peer, Symbol, nil] The leader.
+  def self.take_held(leader)
+    return if @held.nil? || @held.empty?
+    return @held = nil unless leader.is_a?(MGQ_MpOverworldSync::Peers::Peer)
+    return if held_back?
+
+    held = @held
+    @held = nil
+    held.each { |message| take(leader, message) }
   end
 
   # Takes back the key items the leader's story lent, as the player gets their own story back.
   def self.return_lent
+    names = []
     (@lent || {}).each do |id, amount|
       item = $data_items[id]
       next unless item
 
-      $game_party.gain_item(item, -[amount, $game_party.item_number(item)].min)
-      MGQ_MpOverworldSync.notice("#{item.name} went back to the party's leader.")
+      MGQ_MpCoopEvents.granting { $game_party.gain_item(item, -[amount, $game_party.item_number(item)].min) }
+      names << item.name
     end
     @lent = {}
+    MGQ_MpOverworldSync.notice("#{key_list(names)} went back to the party's leader.") unless names.empty?
   end
 
   # Reads a self switch as it is the player's own, whether or not they play the leader's story.

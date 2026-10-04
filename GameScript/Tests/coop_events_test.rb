@@ -2,7 +2,8 @@
 #  coop_events_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Checked that a chest's sound and first icon reach the members, after a battle once on the map
+#      Paulinchen  2026-10-04: Checked lent key items and gifts through a load, a crash, a duel, a battle and all at once
+#                            - Checked that a chest's sound and first icon reach the members, after a battle once on the map
 #                            - Checked that the castle shows the leader's residents, those only the leader has as ghosts
 #                            - Checked that the Pocket Castle's way out returns each player where they came from
 #                            - Checked that a member not as far along is lent the story's key items, which go back and stay out of saves
@@ -111,6 +112,8 @@ class Game_Party
   def exist_all_actor_id?(actor_id); @include_actors.include?(actor_id); end
   def exist_party_actor_id?(actor_id); @actors.include?(actor_id); end
   def item_number(item); @items[item.name]; end
+  # The items held, as the game lists them.
+  def items_held; $data_items.compact.select { |item| @items[item.name] > 0 }; end
   def party_member_full?; @actors.size >= 2; end
 end
 module Graphics; def self.frame_count; $frame_count; end; def self.brightness; $brightness || 255; end; end
@@ -817,7 +820,7 @@ def play_along(own_progress)
   MGQ_MpCoopStory.take($story_leader, { "story" => "delta", "party" => "p1", "s" => "82:1", "v" => "1001:n41", "ss" => "" })
   $game_variables[150] = 7
   $game_switches[90] = true
-  [["gain", "item", "i1x2"], ["gain", "item", "g0x-30"], ["gain", "item", "w1x1"], ["gain", "item", "i3x1"], ["depart", "actor", "3"], ["recruit", "actor", "3"],
+  [["gain", "item", "i1x2"], ["gain", "item", "g0x-30"], ["gain", "item", "w1x1"], ["gain", "item", "i3x1"], ["keys", "k", "3:1"], ["depart", "actor", "3"], ["recruit", "actor", "3"],
    ["recruit", "actor", "4"]].each do |kind, field, value|
     MGQ_MpCoopStory.take($story_leader, { "story" => kind, "party" => "p1", field => value })
   end
@@ -898,3 +901,101 @@ check("once the player has that companion too, the ghost goes and their own show
 $game_map.map_id = 7
 MGQ_MpCoopCastle.update
 check("off the castle there are no ghosts", MGQ_MpCoopCastle.ghosts, {})
+
+# Key items lent through everything that can go wrong: the leader's key items reach the member with
+# the story and whenever they change, so a load, a crash or a duel lends them again; what the story
+# gives during a duel or before the story is borrowed again waits.
+key = $data_items[3]
+$story_leader = leader
+$party = "p1"
+$leader = leader
+$members = [leader]
+$game_map = Game_Map.new
+$game_party = Game_Party.new
+$game_switches = Game_Switches.new
+$game_variables = Game_Variables.new
+$game_self_switches = Game_SelfSwitches.new
+$game_variables[1001] = 30
+MGQ_MpCoopStory.forget
+$notices.clear
+full_story = { "story" => "full", "party" => "p1", "s" => "", "v" => "1001:n40", "ss" => "", "k" => "3:1" }
+MGQ_MpCoopStory.take(leader, full_story)
+check("a member not as far along borrows the leader's key items with the story", [$game_party.items["Basement Key"], $notices.last],
+      [1, "Leader lent you Basement Key for the story."])
+MGQ_MpCoopStory.take(leader, full_story)
+check("hearing them again lends nothing more", $game_party.items["Basement Key"], 1)
+
+# The member loads a save, or comes back after a crash: no save holds the key.
+saved = MGQ_MpCoopStory.save_contents(:switches => $game_switches, :variables => $game_variables, :self_switches => $game_self_switches, :party => $game_party)
+check("a save made meanwhile leaves the key out", saved[:party].items["Basement Key"], 0)
+$game_party = saved[:party]
+$game_switches, $game_variables, $game_self_switches = saved[:switches], saved[:variables], saved[:self_switches]
+DataManager.extract_save_contents({})
+check("so a loaded save has no key, and the member plays their own story", [$game_party.items["Basement Key"], MGQ_MpCoopStory.guest?], [0, false])
+MGQ_MpCoopStory.take(leader, { "story" => "gain", "party" => "p1", "item" => "i1x1" })
+check("what the story gives before the member plays it again waits", $game_party.items["Potion"], 0)
+MGQ_MpCoopStory.take(leader, full_story)
+check("once they play it again, the key is lent again", $game_party.items["Basement Key"], 1)
+
+# A duel puts the game back as it was before it.
+$pvp = true
+before_duel = MGQ_MpCoopStory.save_contents(:switches => $game_switches, :variables => $game_variables, :self_switches => $game_self_switches, :party => $game_party)
+MGQ_MpCoopEvents.take(friend = MGQ_MpOverworldSync::Peers::Peer.new(2, { "id" => "f", "name" => "Friend", "party" => "p1" }, nil, true),
+                      { "chest" => "9.1.A", "party" => "p1", "gains" => "i2x1" })
+check("a chest another member opens during a duel waits", $game_party.items["Elixir"], 0)
+$game_party = before_duel[:party]
+$game_switches, $game_variables, $game_self_switches = before_duel[:switches], before_duel[:variables], before_duel[:self_switches]
+DataManager.extract_save_contents({})
+$pvp = false
+check("putting the game back after the duel took the key along", $game_party.items["Basement Key"], 0)
+SceneManager.scene = Scene_Map.new
+$game_map.update
+check("then the chest's items come", $game_party.items["Elixir"], 1)
+MGQ_MpCoopStory.take(leader, full_story)
+check("and the key is lent again once the member plays the story again", $game_party.items["Basement Key"], 1)
+
+# The leader leaves while the member is in a battle: the key goes back once the member is on the map.
+$members = []
+$leader = nil
+$party = nil
+check("in a battle the key stays, since the map does not run", $game_party.items["Basement Key"], 1)
+$game_map.update
+check("back on the map it goes back", [$game_party.items["Basement Key"], $notices.include?("Basement Key went back to the party's leader.")], [0, true])
+
+# All at once: lent, in a duel, the leader gives more, the member loads a save, then the leader is gone.
+$party = "p1"
+$leader = leader
+$members = [leader]
+MGQ_MpCoopStory.forget
+MGQ_MpCoopStory.take(leader, full_story)
+$pvp = true
+MGQ_MpCoopStory.take(leader, { "story" => "keys", "party" => "p1", "k" => "3:1,2:1" })
+$game_party = Game_Party.new
+DataManager.extract_save_contents({})
+$pvp = false
+$party = nil
+$leader = nil
+$members = []
+$game_map.update
+check("all at once, the member ends up with none of the leader's keys and nothing held back", [$game_party.items["Basement Key"], MGQ_MpCoopStory.instance_variable_get(:@held)],
+      [0, nil])
+
+# The leader tells the key items they hold, which the game lists as the items themselves.
+class Game_Party; def items; items_held; end; end
+$party = "p1"
+$leader = :me
+$members = [friend]
+$game_party = Game_Party.new
+$game_party.gain_item(key, 1)
+$sent.clear
+MGQ_MpCoopStory.take(friend, { "story" => "ask", "party" => "p1" })
+check("the leader's story carries the key items they hold", $sent.last[1]["k"], "3:1")
+MGQ_MpCoopStory.instance_variable_set(:@frames, MGQ_MpCoopStory::SEND_FRAMES)
+$sent.clear
+MGQ_MpCoopStory.update
+check("and the leader tells them again whenever they change", $sent.select { |_, f| f["story"] == "keys" }.map { |_, f| f["k"] }, ["3:1"])
+$game_party.gain_item(key, -1)
+MGQ_MpCoopStory.instance_variable_set(:@frames, MGQ_MpCoopStory::SEND_FRAMES)
+$sent.clear
+MGQ_MpCoopStory.update
+check("such as when the story takes one", $sent.select { |_, f| f["story"] == "keys" }.map { |_, f| f["k"] }, [""])
