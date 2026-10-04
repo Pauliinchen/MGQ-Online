@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-04: Counted the Backline of the friend's team for the stat boosts the game counts the whole party for
+#                            - Fired the automatic skills of a battle's start, a turn's start and a turn's end by speed instead of the host's team first
 #      Paulinchen  2026-10-03: Swapped the Backline's builds too, with the host's rule, and started a battle with the Backline of mp_battles_pvp_backline.rbx
 #                            - Fought with the balance of mp_balance_pvp.rbx
 #                            - Read and wrote the game's private fields and called its private methods through MGQ_MpGame
@@ -895,6 +896,26 @@ module MGQ_MpBattlesPvp
       false
     end
 
+    # Orders queued automatic skills by their characters' speed, the fastest first, each character
+    # rolling the speed the game rolls for its turn.
+    #
+    # The game queues the party's before the troop's, so the host's team would always act first.
+    #
+    # @param actions [Array<Game_Action>] The queued skills, each character's in its own order.
+    # @return [Array<Game_Action>] The same skills, a faster character's before a slower one's.
+    def self.by_speed(actions)
+      speeds = {}
+      place = 0
+      actions.sort_by do |action|
+        owner = action.subject.master_observer
+        speeds[owner.object_id] ||= owner.agi + rand(5 + owner.agi / 4)
+        [-speeds[owner.object_id], place += 1]
+      end
+    rescue => e
+      MGQ_MpBattlesPvp.log_once(:by_speed, "ordering the automatic skills failed: #{e.class}: #{e.message}")
+      actions
+    end
+
     # Logs an action of one of the friend's characters, with its HP, the first LOGGED_ACTIONS of a battle.
     #
     # @param battler [Opponent] The character.
@@ -1197,6 +1218,26 @@ if MGQ_MpBattlesPvp.hookable?
     end
   rescue => e
     MGQ_MpBattlesPvp.log("automatic skill hook FAILED: #{e.class}: #{e.message}")
+  end
+
+  begin
+    class << BattleManager
+      alias mgq_mp_battles_pvp_set_auto_skill set_auto_skill
+
+      # Queues the automatic skills of a battle's start, a turn's start or a turn's end, in a PvP
+      # battle the faster character's first.
+      #
+      # @yieldparam member [Game_Battler] A character of the battle.
+      # @yieldreturn [Array<Hash>] Its automatic skills of that moment.
+      def set_auto_skill(&skills)
+        mgq_mp_battles_pvp_set_auto_skill(&skills)
+        return unless MGQ_MpBattlesPvp::Battle.running?
+
+        @action_game_masters = MGQ_MpBattlesPvp::Battle.by_speed(@action_game_masters)
+      end
+    end
+  rescue => e
+    MGQ_MpBattlesPvp.log("automatic skill order hook FAILED: #{e.class}: #{e.message}")
   end
 
   begin
