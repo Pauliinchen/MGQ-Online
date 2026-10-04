@@ -2,7 +2,8 @@
 #  coop_events_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Checked that the Pocket Castle's way out returns each player where they came from
+#      Paulinchen  2026-10-04: Checked that the castle shows the leader's residents, those only the leader has as ghosts
+#                            - Checked that the Pocket Castle's way out returns each player where they came from
 #                            - Checked that a member not as far along is lent the story's key items, which go back and stay out of saves
 #                            - Checked that a call is kept out of a duel, dropped at its end, and waits for a dark screen
 #                            - Checked that the members near the leader follow where the story moves the leader
@@ -163,8 +164,21 @@ module SceneManager; class << self; attr_accessor :scene; end; end
 class Game_Interpreter
   def wait_for_message; end
 end
+# A character as the game moves it, enough for a ghost to walk.
+class Game_Character
+  attr_reader :x, :y, :direction, :opacity, :character_name, :tile_id
+  def initialize; @x = 0; @y = 0; @direction = 2; @opacity = 255; @character_name = ""; @tile_id = 0; end
+  def moveto(x, y); @x, @y = x, y; end
+  def update; end
+  def moving?; false; end
+  def set_direction(d); @direction = d; end
+  def move_straight(d); @x += { 4 => -1, 6 => 1 }.fetch(d, 0); @y += { 8 => -1, 2 => 1 }.fetch(d, 0); end
+end
 class Game_Event
   attr_reader :id, :starting, :trigger, :locked
+  attr_writer :character_name
+  def character_name; @character_name.to_s; end
+  def tile_id; 0; end
   def initialize(id, pages, trigger = 0); @id = id; @event = Struct.new(:pages).new(pages); @page = pages[0]; @trigger = trigger; end
   def list; @page && @page.list; end
   def start; @starting = true; @locked = true; end
@@ -825,3 +839,50 @@ check("nor its items, gold or companions", [$game_party.items["Potion"], $game_p
 check("but the story's key item is lent while they play along, and left out of a save", [$key_in_party, saved[3]], [1, 0])
 check("and goes back once the party ends", [$game_party.items["Basement Key"], $notices.include?("Leader lent you Basement Key for the story."),
                                              $notices.include?("Basement Key went back to the party's leader.")], [0, true, true])
+
+# The Pocket Castle shows the party leader's residents: the leader is its Map Owner, and a
+# resident only the leader's game shows stands as a ghost in the member's.
+module MGQ_MpCoopNpcs
+  CATCH_UP_TILES = 3
+  def self.following?; $following_npcs; end
+  def self.targets; $npc_targets; end
+  def self.page_of(event, index); event && index >= 0 ? event.mgq_mp_pages[index] : nil; end
+end
+Graphic = Struct.new(:tile_id, :character_name, :character_index, :direction, :pattern)
+ResidentPage = Struct.new(:graphic, :priority_type, :walk_anime, :step_anime, :move_speed, :list)
+empty_page = ResidentPage.new(Graphic.new(0, "", 0, 2, 0), 0, true, false, 3, [])
+tamamo_page = ResidentPage.new(Graphic.new(0, "tamamo", 1, 2, 1), 1, true, false, 3, [])
+$party = "p1"
+$leader = leader
+$members = [leader]
+$game_map = Game_Map.new
+$game_map.map_id = 228
+check("the leader is the castle's Map Owner while there", [MGQ_MpCoopCastle.owner([leader]), MGQ_MpCoopCastle.owner([])], [leader, nil])
+$game_map.map_id = 7
+check("elsewhere the Map Owner is whoever came first", MGQ_MpCoopCastle.owner([leader]), nil)
+$game_map.map_id = 228
+not_mine = Game_Event.new(31, [empty_page, tamamo_page])
+mine = Game_Event.new(32, [empty_page, tamamo_page])
+mine.show(1)
+mine.character_name = "tamamo"
+only_mine = Game_Event.new(33, [empty_page, tamamo_page])
+only_mine.show(1)
+only_mine.character_name = "tamamo"
+$game_map.events = { 31 => not_mine, 32 => mine, 33 => only_mine }
+$following_npcs = true
+$npc_targets = { 31 => [5, 6, 2, 1], 32 => [7, 6, 2, 1], 33 => [9, 6, 2, 0] }
+MGQ_MpCoopCastle.update
+ghost = MGQ_MpCoopCastle.ghosts[31]
+check("a companion only the leader has stands as a ghost where the leader's does", [MGQ_MpCoopCastle.ghosts.keys, ghost && [ghost.x, ghost.y, ghost.character_name]],
+      [[31], [5, 6, "tamamo"]])
+check("see-through, as players outside the party", ghost.opacity, MGQ_MpCoopCastle::GHOST_OPACITY)
+$npc_targets[31] = [6, 6, 4, 1]
+MGQ_MpCoopCastle.update
+check("and walks where the leader's walks", [ghost.x, ghost.y], [6, 6])
+not_mine.show(1)
+not_mine.character_name = "tamamo"
+MGQ_MpCoopCastle.update
+check("once the player has that companion too, the ghost goes and their own shows", MGQ_MpCoopCastle.ghosts, {})
+$game_map.map_id = 7
+MGQ_MpCoopCastle.update
+check("off the castle there are no ghosts", MGQ_MpCoopCastle.ghosts, {})

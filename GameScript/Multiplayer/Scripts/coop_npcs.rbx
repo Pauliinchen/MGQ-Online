@@ -2,7 +2,8 @@
 #  coop_npcs.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Let a story's forced routes, and every event while the leader's story plays, walk through party members
+#      Paulinchen  2026-10-04: Made the party's leader the Map Owner of the Pocket Castle, and told coop_castle.rbx the Map Owner's events and pages
+#                            - Let a story's forced routes, and every event while the leader's story plays, walk through party members
 #                            - Renamed from mp_coop_npcs.rbx
 #      Paulinchen  2026-10-03: Called the scripts that load before this one without asking whether they loaded
 #                            - Sent messages, showed notices and read the world, the own id and the own seat through MGQ_MpOverworldSync
@@ -81,11 +82,15 @@ module MGQ_MpCoopNpcs
   end
 
   # Finds the Map Owner among the party members on the map: the one who entered it first, the lower
-  # player id among equals, so every member's game finds the same one.
+  # player id among equals, so every member's game finds the same one. On the Pocket Castle's maps
+  # it is the party's leader while they are there, see coop_castle.rbx.
   #
   # @param members [Array<MGQ_MpOverworldSync::Peers::Peer>] The other party members on the map.
   # @return [MGQ_MpOverworldSync::Peers::Peer, Symbol] The member, or :me for the player.
   def self.owner(members)
+    castle = defined?(MGQ_MpCoopCastle) && MGQ_MpCoopCastle.owner(members)
+    return castle if castle
+
     me = [[MGQ_MpOverworldSync::Me.map_since.to_i, MGQ_MpOverworldSync::Me.id], :me]
     others = members.map { |peer| [[peer.state["since"].to_i, peer.state["id"].to_s], peer] }
     ([me] + others).min_by { |key, _| key }[1]
@@ -176,6 +181,22 @@ module MGQ_MpCoopNpcs
     @targets.each { |id, state| place($game_map.events[id], state) } if full
   rescue => e
     log_once(:take, "taking events failed: #{e.class}: #{e.message}")
+  end
+
+  # The Map Owner's events the player's game follows.
+  #
+  # @return [Hash{Integer => Array<Integer>}] Each event's x, y, facing and page by its id.
+  def self.targets
+    @targets
+  end
+
+  # Finds a page of an event, as the Map Owner's game shows it.
+  #
+  # @param event [Game_Event, nil] The event.
+  # @param index [Integer] The page's index, below 0 for none.
+  # @return [RPG::Event::Page, nil] The page, nil for none.
+  def self.page_of(event, index)
+    event && index >= 0 ? event.mgq_mp_pages[index] : nil
   end
 
   # Walks every event toward where the Map Owner's stands.
