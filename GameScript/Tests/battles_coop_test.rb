@@ -2,7 +2,8 @@
 #  battles_coop_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Checked that new states let the game read a guest's character's features anew
+#      Paulinchen  2026-10-04: Checked that the host logs a rebuild that differs
+#                            - Checked that new states let the game read a guest's character's features anew
 #                            - Checked that a member's encounter holds the party members on the map
 #                            - Followed the scripts to their new names, without mp_
 #                            - Checked that the guest of a lost battle takes the host's defeat scene, or one of its own enemies
@@ -486,3 +487,12 @@ MGQ_MpBattlesSync::Playback.values(guest_actor, 90, 100, 5, 10, 0, [2], [0] * 8)
 check("new states let the game read the character's features anew", [MGQ_MpGame.get(guest_actor, :states), $cleared], [[2], [7]])
 MGQ_MpBattlesSync::Playback.values(guest_actor, 80, 100, 5, 10, 0, [2], [0] * 8)
 check("the same states only change its values", $cleared, [7])
+
+# The host logs where a rebuilt character differs from what its owner's game showed, its counter
+# rate among them.
+class Game_MpActor; def differences; $differences || []; end; def on_battle_start; end; end
+$log.clear
+$differences = ["counter 0 (sent 500)"]
+MGQ_MpBattlesCoop.check(Game_MpAlly.allocate.tap { |ally| ally.define_singleton_method(:name) { "Actor9 (Mate)" } })
+check("a rebuild that differs is logged", $log.last, "co-op battle: Actor9 (Mate) differs: counter 0 (sent 500)")
+$differences = nil

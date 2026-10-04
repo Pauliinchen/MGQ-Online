@@ -2,7 +2,8 @@
 #  core_game_access.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Named how deep an interpreter runs
+#      Paulinchen  2026-10-04: Counted a battle's acting battler as set only once needed, which ends the false log line about it
+#                            - Named how deep an interpreter runs
 #                            - Named the command an interpreter runs
 #                            - Renamed from mp_game_access.rbx
 #                            - Read the map lists the game keeps, one per map folder
@@ -82,8 +83,9 @@ module MGQ_MpGame
     :map_lists => :@data,
   }
 
-  # The fields the game sets only once it needs them, so one that is missing is no reason to log.
-  LAZY = [:stones, :enchants, :retry_data, :system_save_count]
+  # The fields the game sets only once it needs them, so one that is missing is no reason to log:
+  # a battle has no acting battler before its first action, which a guest's playback reads first.
+  LAZY = [:stones, :enchants, :retry_data, :system_save_count, :subject]
 
   # The game's private methods the mod calls.
   METHODS = [

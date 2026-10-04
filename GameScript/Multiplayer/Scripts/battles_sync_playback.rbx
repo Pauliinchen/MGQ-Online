@@ -2,7 +2,8 @@
 #  battles_sync_playback.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Let the game read a guest's character's features anew once the host's states or buffs changed it, so Division's extra actions count
+#      Paulinchen  2026-10-04: Logged a host's call the guest leaves out, once per method
+#                            - Let the game read a guest's character's features anew once the host's states or buffs changed it, so Division's extra actions count
 #                            - Renamed from mp_battles_sync_playback.rbx
 #      Paulinchen  2026-10-03: Found the characters outside the battle that its mode names
 #                            - Asked the running battle's mode instead of naming co-op battles and team duels
@@ -195,7 +196,10 @@ module MGQ_MpBattlesSync
     # @param results [Array<Array>] Battlers with their action results.
     # @param args [Array] The method's arguments.
     def self.call(scene, receiver, name, seed, subject, results, *args)
-      return unless callable?(receiver, name)
+      unless callable?(receiver, name)
+        # A call the guest leaves out shows nothing, such as a hit's damage numbers.
+        return MGQ_MpBattlesSync.log_once([:left_out, receiver.to_s, name.to_s[0, 40]], "left out the host's #{receiver} call #{name.to_s[0, 40]}")
+      end
 
       Array(results).each do |battler, result|
         MGQ_MpGame.set(battler, :result, result) if battler && result.is_a?(Game_ActionResult)

@@ -2,7 +2,8 @@
 #  core_actors.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Renamed from mp_actors.rbx
+#      Paulinchen  2026-10-04: Sent and compared a character's magic reflection and counter rate too
+#                            - Renamed from mp_actors.rbx
 #      Paulinchen  2026-10-03: Read and wrote the game's private fields and called its private methods through MGQ_MpGame
 #                            - Logged through MGQ_MpLog
 #      Paulinchen  2026-10-02: Kept the owner's seat and place, and that no rebuilt character is Luka, in Game_MpActor for both sides
@@ -47,8 +48,9 @@ module MGQ_MpActors
     # Stats the game counts, max HP to luck.
     PARAM_COUNT = 8
 
-    # Rates compared: hit, evasion and critical.
-    RATE_COUNT = 3
+    # Rates compared, by the game's extra rate ids and the names a log shows: hit, evasion,
+    # critical, magic reflection and counter.
+    RATES = { 0 => "hit", 1 => "evasion", 2 => "critical", 5 => "magic reflection", 6 => "counter" }
 
     # A whole number, ids and levels included.
     NUMBER = /\A-?\d{1,15}\z/
@@ -102,7 +104,7 @@ module MGQ_MpActors
         groups(MGQ_MpGame.get(actor, :equip_abilities)),
         Array(MGQ_MpGame.get(actor, :equips)).map { |slot| Items.write(slot && slot.object) }.join(","),
         (0...PARAM_COUNT).map { |id| actor.param(id).to_i }.join(","),
-        (0...RATE_COUNT).map { |id| (actor.xparam(id) * 1000).round }.join(","),
+        RATES.keys.map { |id| (actor.xparam(id) * 1000).round }.join(","),
         COUNTERS.map { |counter| counter_of(actor, counter) }.join(","),
         switches_on(actor).join(","),
       ]
@@ -553,8 +555,8 @@ class Game_MpActor < Game_Actor
   # @return [Array<String>] The stats and rates that differ, none when the rebuild matches.
   def differences
     stats = (0...MGQ_MpActors::Builds::PARAM_COUNT).map { |id| [Vocab.param(id), param(id).to_i, @member.params[id]] }
-    rates = (0...MGQ_MpActors::Builds::RATE_COUNT).map do |id|
-      [%w(hit evasion critical)[id], (xparam(id) * 1000).round, @member.rates[id] && (@member.rates[id] * 1000).round]
+    rates = MGQ_MpActors::Builds::RATES.each_with_index.map do |(id, label), index|
+      [label, (xparam(id) * 1000).round, @member.rates[index] && (@member.rates[index] * 1000).round]
     end
     (stats + rates).select { |_, mine, theirs| theirs && mine != theirs }.map { |label, mine, theirs| "#{label} #{mine} (sent #{theirs})" }
   end

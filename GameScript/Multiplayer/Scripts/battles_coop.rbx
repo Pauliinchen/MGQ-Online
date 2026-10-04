@@ -2,7 +2,8 @@
 #  battles_coop.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Held every party member on the map while a member's encounter waits, until they join it, turn it down or ten seconds pass
+#      Paulinchen  2026-10-04: Logged where a guest's rebuilt character differs from what the guest's game showed
+#                            - Held every party member on the map while a member's encounter waits, until they join it, turn it down or ten seconds pass
 #                            - Asked coop_gather.rbx whether the leader's story is about to bring the player over
 #                            - Renamed from mp_battles_coop.rbx
 #      Paulinchen  2026-10-03: Registered what a co-op battle does differently in a live battle as its Mode
@@ -816,7 +817,19 @@ module MGQ_MpBattlesCoop
     hp, mp = Array(vitals)
     ally.hp = hp if hp.is_a?(Integer) && hp > 0
     ally.mp = mp if mp.is_a?(Integer)
+    check(ally)
     ally
+  end
+
+  # Logs where a rebuilt character's stats or rates, its counter rate among them, differ from what
+  # its owner's game showed, which tells a counter the host's battle never makes.
+  #
+  # @param ally [Game_MpAlly] The rebuilt character.
+  def self.check(ally)
+    differences = ally.differences
+    log("#{ally.name} differs: #{differences.join(', ')}") unless differences.empty?
+  rescue => e
+    log_once(:check, "could not check a rebuild: #{e.class}: #{e.message}")
   end
 
   # Shows a party in the battle's windows, which the scene made for the player's own party: the
