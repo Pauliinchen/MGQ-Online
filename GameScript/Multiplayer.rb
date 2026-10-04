@@ -3,7 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-04: Loaded the scripts by their new names, which say what each belongs to instead of mp_
-#                            - Loaded world_save_distribution.rbx after world.rbx
+#                            - Loaded ui_text_box.rbx after ui.rbx, and world_save_distribution.rbx after world.rbx
 #      Paulinchen  2026-10-03: Loaded battles_pvp_backline.rbx after battles_pvp.rbx
 #                            - Loaded battles_balance_pvp.rbx before battles_pvp.rbx
 #                            - Loaded core_game_access.rbx after core_hooks.rbx
@@ -62,7 +62,7 @@ module MGQ_Multiplayer
   # coop.rbx, which the scripts after them register with. The battle scripts install their battle hooks once the game runs, the last
   # loaded first, so their order decides how those hooks wrap each other.
   SCRIPTS = %w[
-    core_log core_hooks core_game_access core_hotkeys ui core_actors core_async overworld_sync ui_actions ui_chat overworld
+    core_log core_hooks core_game_access core_hotkeys ui ui_text_box core_actors core_async overworld_sync ui_actions ui_chat overworld
     coop coop_squad coop_events coop_npcs coop_story
     world world_save_distribution world_text world_screen world_save_export
     battles battles_coop

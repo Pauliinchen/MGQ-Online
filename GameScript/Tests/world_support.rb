@@ -109,6 +109,7 @@ $player_ini = {}
 
 load_script "core_hotkeys"
 load_script "ui"
+load_script "ui_text_box"
 load_script "overworld_sync"
 load_script "ui_actions"
 load_script "ui_chat"

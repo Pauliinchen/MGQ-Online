@@ -32,6 +32,7 @@
     <File Path="GameScript/Multiplayer/Scripts/ui_actions.rbx" />
     <File Path="GameScript/Multiplayer/Scripts/ui_chat.rbx" />
     <File Path="GameScript/Multiplayer/Scripts/ui_notices.rbx" />
+    <File Path="GameScript/Multiplayer/Scripts/ui_text_box.rbx" />
     <File Path="GameScript/Multiplayer/Scripts/world.rbx" />
     <File Path="GameScript/Multiplayer/Scripts/world_overview.rbx" />
     <File Path="GameScript/Multiplayer/Scripts/world_save_distribution.rbx" />
