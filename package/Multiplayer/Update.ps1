@@ -2,6 +2,7 @@
 #  Update.ps1
 #
 #  Changelog:
+#      Paulinchen  2026-10-04: Showed the release notes last and counted the removed files in one line, so they no longer push the notes out of sight
 #      Paulinchen  2026-09-30: Found the game folder two levels up, since the mod lives in Patch\Multiplayer
 #                            - Fetched MGQ-Online-<version>.zip from the repository under its new name, MGQ-Online
 #                            - Created
@@ -70,16 +71,21 @@ function Get-ShippedFiles {
 #
 # $Old: the old manifest's paths.
 # $New: the new manifest's paths.
+#
+# Returns how many files were removed.
 function Remove-StaleFiles([string[]]$Old, [string[]]$New) {
     $stale = $Old | Where-Object { $_ -notin $New -and ($_ -like 'Multiplayer\*' -or $_ -like 'Patch\*') }
+    $removed = 0
 
     foreach ($relative in $stale) {
         $full = Join-Path $GameDir $relative
         if (Test-Path $full) {
             Remove-Item $full -Force
-            Write-Host "Removed $relative, which the new release no longer ships."
+            $removed++
         }
     }
+
+    return $removed
 }
 
 # Prints a release's notes.
@@ -126,7 +132,6 @@ try {
 
     $from = if ($installed) { $installed } else { 'an unknown version' }
     Write-Host "Updating from $from to $latest."
-    Show-ReleaseNotes $release
 
     while (Test-GameRunning) {
         Read-Host 'The game is running. Close it, then press Enter' | Out-Null
@@ -141,9 +146,14 @@ try {
     Expand-Archive -Path $download -DestinationPath $GameDir -Force
     Remove-Item $download
 
-    Remove-StaleFiles -Old $oldFiles -New (Get-ShippedFiles)
+    $removed = Remove-StaleFiles -Old $oldFiles -New (Get-ShippedFiles)
+    if ($removed -gt 0) {
+        Write-Host "Removed $removed file(s) of the old version that the new one no longer ships."
+    }
 
     Write-Host "Updated to $latest. Your player name and worlds are kept."
+    # Last, so nothing the update prints scrolls the notes out of sight.
+    Show-ReleaseNotes $release
 }
 catch {
     Write-Host "The update failed: $($_.Exception.Message)" -ForegroundColor Red
