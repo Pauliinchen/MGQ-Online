@@ -2,7 +2,8 @@
 #  world.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Renamed from mp_world.rbx
+#      Paulinchen  2026-10-04: Kept the 50 hidden worlds added last, as many as the relay lists, so ids of deleted worlds do not crowd new ones out
+#                            - Renamed from mp_world.rbx
 #                            - Let the creator describe a world, name the mods it needs and keep out games whose data differs from theirs
 #                            - Told a game's data from another's by which entries of the database and which maps exist
 #                            - Kept the editor of the text box being typed into with its form
@@ -735,19 +736,27 @@ module MGQ_MpWorld
   # The hidden worlds the player added to their list by their ids, which the relay lists for
   # whoever names them.
   module Added
+    # Most worlds kept, as many as the relay lists by their ids for one player.
+    MAX = 50
+
     # Lists the worlds added.
     #
-    # @return [Array<String>] Their directory ids.
+    # @return [Array<String>] Their directory ids, the one added last at the end.
     def self.all
       MGQ_Multiplayer::Ini.read(MGQ_Multiplayer.path(ADDED_FILE)).keys
     end
 
-    # Adds a world.
+    # Adds a world, and forgets those added longest ago beyond MAX.
+    #
+    # The ids of deleted worlds are never listed again and so never removed by hand; without the
+    # limit they would crowd the newest ones out of what the relay lists.
     #
     # @param id [String] The world's directory id.
     def self.add(id)
       values = MGQ_Multiplayer::Ini.read(MGQ_Multiplayer.path(ADDED_FILE))
+      values.delete(id)
       values[id] = "1"
+      values.shift while values.size > MAX
       MGQ_Multiplayer::Ini.write(MGQ_Multiplayer.path(ADDED_FILE), values)
     end
 
