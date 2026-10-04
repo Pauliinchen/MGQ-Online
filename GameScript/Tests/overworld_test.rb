@@ -2,7 +2,8 @@
 #  overworld_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Checked the party chat and the colors of the senders' names in the chat log
+#      Paulinchen  2026-10-04: Checked that a label goes above the labels already on its tile
+#                            - Checked the party chat and the colors of the senders' names in the chat log
 #                            - Checked that the chat box opens while the player waits for the party's story and stays open once it plays
 #                            - Checked that the chat key does not type its own character into the box it opened
 #                            - Read the cursor's blink frames from MGQ_MpUi::TextEdit
@@ -640,3 +641,13 @@ check("Discord hears of the world and its players", MGQ_MpOverworldSync.status_f
 $open = false
 check("and of none once it closed", MGQ_MpOverworldSync.status_fields, {})
 $open = true
+
+# A ghost's label goes above the labels already on its tile.
+CharacterSprite = Struct.new(:x, :y, :height, :visible, :opacity)
+stacked = Sprite_MpGhostLabel.allocate
+class << stacked; attr_accessor :x, :y, :visible; end
+lone = MGQ_MpOverworldSync::Peers::Peer.new(9, { "name" => "Lone", "scene" => "map", "ping" => "20" }, nil, false)
+stacked.instance_variable_set(:@shown, ["Lone", "map", "20", false, MGQ_MpOverworldSync.label_line_of(lone), MGQ_MpOverworld.party_badge(lone)])
+taken = stacked.show(CharacterSprite.new(100, 200, 48, true, 255), lone, Sprite_MpOwnPing::HEIGHT)
+check("a label on the player's tile goes above the player's ping, and tells the room it takes",
+      [stacked.y, taken], [200 - 48 - Sprite_MpGhostLabel::LINE * 2 + 4 - Sprite_MpOwnPing::HEIGHT, Sprite_MpGhostLabel::LINE])

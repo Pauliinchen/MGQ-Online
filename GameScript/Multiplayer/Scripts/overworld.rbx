@@ -2,7 +2,8 @@
 #  overworld.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Drew a notice's icon before its text
+#      Paulinchen  2026-10-04: Stacked the labels of characters on one tile upwards, above the player's own ping
+#                            - Drew a notice's icon before its text
 #                            - Renamed from mp_overworld.rbx
 #      Paulinchen  2026-10-03: Sent messages, showed notices and read the world, the own id and the own seat through MGQ_MpOverworldSync
 #                            - Logged through MGQ_MpLog
@@ -272,19 +273,23 @@ class Sprite_MpGhostLabel < Sprite
     @shown = nil
   end
 
-  # Draws the label, if it changed, and follows the ghost's sprite.
+  # Draws the label, if it changed, and follows the ghost's sprite, lifted over the labels already
+  # on its tile.
   #
   # @param sprite [Sprite_Character] The ghost's sprite.
   # @param peer [MGQ_MpOverworldSync::Peers::Peer] The ghost's player.
-  def show(sprite, peer)
+  # @param lift [Integer] Pixels the labels already on the ghost's tile take, which it goes above.
+  # @return [Integer] Pixels the label takes, for the next label on the tile.
+  def show(sprite, peer, lift = 0)
     state = peer.state
     self.x = sprite.x
-    self.y = sprite.y - sprite.height - LINE * 2 + 4
+    self.y = sprite.y - sprite.height - LINE * 2 + 4 - lift
     self.visible = sprite.visible && sprite.opacity > 0 && state["hidden"].to_i != 1
     above = MGQ_MpOverworldSync.label_line_of(peer)
+    taken = visible ? LINE * (above ? 2 : 1) : 0
     badge = MGQ_MpOverworld.party_badge(peer)
     drawn = [state["name"], state["scene"], state["ping"], peer.member, above, badge]
-    return if drawn == @shown
+    return taken if drawn == @shown
 
     @shown = drawn
     bitmap.clear
@@ -294,6 +299,7 @@ class Sprite_MpGhostLabel < Sprite
     icons = [MGQ_MpOverworld::STATE_ICONS[state["scene"]], badge && badge[1] ? MGQ_MpOverworld::CROWN_ICON : nil].compact
     extras = [badge && [badge[0], peer.member ? MEMBER_COLOR : SIZE_COLOR], MGQ_MpOverworld.ping_label(state["ping"])].compact
     draw_name(state["name"].to_s, icons, peer.member ? MEMBER_COLOR : Color.new(255, 255, 255), extras)
+    taken
   end
 
   # Draws a centered line of text.
@@ -490,11 +496,14 @@ begin
       (@mgq_mp_followers[follower] ||= Sprite_Character.new(@viewport1, follower)).update
     end
 
+    # Labels on one tile stack upwards, above the player's own ping on the player's tile.
+    taken = { [$game_player.x, $game_player.y] => Sprite_MpOwnPing::HEIGHT }
     peers.each do |peer|
       @mgq_mp_ghosts[peer.ghost] ||= [Sprite_Character.new(@viewport1, peer.ghost), Sprite_MpGhostLabel.new(@viewport1)]
       sprite, label = @mgq_mp_ghosts[peer.ghost]
       sprite.update
-      label.show(sprite, peer)
+      tile = [peer.ghost.x, peer.ghost.y]
+      taken[tile] = taken[tile].to_i + label.show(sprite, peer, taken[tile].to_i)
     end
 
     @mgq_mp_status.update
