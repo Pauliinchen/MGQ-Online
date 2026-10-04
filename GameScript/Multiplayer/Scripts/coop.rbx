@@ -2,7 +2,8 @@
 #  coop.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Teleported to the leader through coop_gather.rbx
+#      Paulinchen  2026-10-04: Handed the party chat's lines to ui_chat.rbx through the party's gate
+#                            - Teleported to the leader through coop_gather.rbx
 #                            - Renamed from mp_coop.rbx
 #      Paulinchen  2026-10-03: Offered a party's member to teleport to its leader, on the wheel in place of the invite and on the leader's row of the World overview
 #                            - Offered the party's choices and invites to the wheel, the World overview and the notification box through MGQ_MpActions
@@ -725,6 +726,8 @@ begin
   MGQ_MpOverworldSync.on_leave { |peer| MGQ_MpCoop::Party.observe_leaving(peer) }
   MGQ_MpOverworldSync.label_line { |peer| MGQ_MpCoop.label_line(peer) }
   MGQ_MpCoop.route("kick") { |peer, message| MGQ_MpCoop::Party.removed_by(peer, message["kick"]) }
+  # The party chat of ui_chat.rbx, which loads before the party's gate.
+  MGQ_MpCoop.route("pchat") { |peer, message| MGQ_MpChat.receive_party(peer, message) }
   # A player declines from outside the party, so their answer passes no party gate.
   MGQ_MpOverworldSync.route("party_decline") { |peer, _message| MGQ_MpCoop::Party.declined_by(peer) if peer }
 rescue => e

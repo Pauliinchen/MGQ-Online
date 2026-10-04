@@ -364,6 +364,8 @@ While the World overview is open, the wheel stays shut and the wheel's key close
 - joins the chat log (`Sprite_MpChatLog`) at the bottom left, above the status line, for 10 s (`LOG_FRAMES`); the open chat box shows the last lines, wrapped, with the box on the row below; in a battle the log sits above its windows (`BATTLE_ROOM`) on a viewport of its own over them, and T and typing work through `Scene_Battle#update_basic` (`on_battle`), which runs in the battle's waits too;
 - shows for 6 s (`BUBBLE_FRAMES`) in a bubble (`Sprite_MpChatBubble`) above the sender, while their ghost is on the player's map, placed from the character's `screen_x`/`screen_y`, so it needs no sprite of `overworld.rbx`.
 
+**Party chat and colors.** A line typed with `/p ` first (`PARTY_PREFIX`) goes to the player's party only: `pchat=<line>` through `MGQ_MpCoop.tell`, so it carries the party's id and the party's gate (`coop.rbx` routes `pchat` to `receive_party`, since `ui_chat.rbx` loads before the gate) drops it for everyone else; outside a party it is refused with a notice. The log keeps each line as a `Line` (name, text, `who`, party, frames left) and draws its head in color (`draw_row`): `[Party] ` in `PARTY_TAG_COLOR`, then the sender's name by `who` (`NAME_COLORS`: the player's own yellow, a member of the player's party green as their label on the map, anyone else white, the game's own lines grey), then the text in white; rows that go on a line are all text. `log_lines` writes the lines as text, as the tests read them.
+
 While the chat box is open, `ui_actions.rbx` leaves the wheel's key to it, and while the wheel is open, the chat's key does nothing.
 
 ## PvP battles (`battles_pvp.rbx`)

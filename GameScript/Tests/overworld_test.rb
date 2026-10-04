@@ -2,7 +2,8 @@
 #  overworld_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Checked that the chat box opens while the player waits for the party's story and stays open once it plays
+#      Paulinchen  2026-10-04: Checked the party chat and the colors of the senders' names in the chat log
+#                            - Checked that the chat box opens while the player waits for the party's story and stays open once it plays
 #                            - Checked that the chat key does not type its own character into the box it opened
 #                            - Read the cursor's blink frames from MGQ_MpUi::TextEdit
 #                            - Followed the scripts to their new names, without mp_
@@ -453,6 +454,12 @@ MGQ_MpCoop.route("gtest") { |peer, message| $gate << [peer.seat, message["gtest"
 $open = true
 $inbox << entry("message", 4, told(friend.merge("x" => 50, "y" => 50)))
 MGQ_MpOverworldSync.tick
+$sent.clear
+chat.start_typing
+$typed = "/p anyone?\r"
+map_frame
+check("outside a party the party chat sends nothing and says why",
+      [$sent, MGQ_MpOverworldSync::Status.lines.last, chat.typing?], [[], "You are in no party, so nobody hears the party chat.", false])
 MGQ_MpCoop::Party.invite
 mine = MGQ_MpCoop::Party.id
 MGQ_MpOverworldSync::Peers.at(4).state["party"] = mine
@@ -479,6 +486,39 @@ MGQ_MpCoop.tell(4, "gtest", "hello", "extra" => 1)
 check("tell adds the party id", [$sent.last[0], $sent.last[1].include?("gtest=hello
 party=#{mine}
 extra=1")], [4, true])
+
+# The party chat, and the senders' colors.
+$sent.clear
+chat.start_typing
+$typed = "/p meet at the inn\r"
+map_frame
+party_line = $sent.last && $sent.last[1]
+check("a line starting with /p goes to the party only", [party_line.include?("pchat=meet at the inn\n"), party_line.include?("party=#{mine}"), party_line =~ /^chat=/ ? true : false],
+      [true, true, false])
+check("and shows tagged in the player's own log", [chat.log_lines.last, chat.log_entries.last.who], ["[Party] Me: meet at the inn", :me])
+$inbox << entry("message", 4, "pchat=on my way\nname=Friend\nparty=#{mine}\n\n")
+$inbox << entry("message", 4, "chat=hello all\nname=Friend\n\n")
+MGQ_MpOverworldSync.tick
+check("a member's party line and world line show, their name in the member's color",
+      chat.log_entries.last(2).map { |line| [line.to_s, line.who] }, [["[Party] Friend: on my way", :member], ["Friend: hello all", :member]])
+$inbox << entry("message", 4, "pchat=sneaky\nname=Friend\nparty=other\n\n")
+MGQ_MpOverworldSync.tick
+check("another party's line is never heard", chat.log_lines.last, "Friend: hello all")
+parts = []
+font = Struct.new(:color, :size, :outline).new
+canvas = Object.new
+canvas.define_singleton_method(:font) { font }
+canvas.define_singleton_method(:text_size) { |text| Struct.new(:width).new(text.size * 10) }
+canvas.define_singleton_method(:draw_text) { |x, _y, _w, _h, text| parts << [x, text, font.color] }
+log_sprite = Sprite_MpChatLog.allocate
+log_sprite.define_singleton_method(:bitmap) { canvas }
+colors = { Sprite_MpChatLog::PARTY_TAG_COLOR => :tag, Sprite_MpChatLog::NAME_COLORS[:member] => :member, Sprite_MpChatLog::TEXT_COLOR => :text }
+log_sprite.draw_row("[Party] Friend: on my way", chat.log_entries[-2], 0)
+check("the log draws the tag, then the name in its color, then the line", parts.map { |x, text, color| [x, text, colors[color]] },
+      [[4, "[Party] ", :tag], [84, "Friend: ", :member], [164, "on my way", :text]])
+parts.clear
+log_sprite.draw_row("on my way", nil, 0)
+check("a row that goes on a line is all text", parts.map { |_, text, color| [text, colors[color]] }, [["on my way", :text]])
 
 # The wheel's middle, and the opposite arrow back to it.
 MGQ_MpActions::Wheel.open

@@ -2,7 +2,8 @@
 #  ui_chat.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Opened the chat box while the player waits for the party's story, and kept an open box once an event starts
+#      Paulinchen  2026-10-04: Sent a line typed with /p to the party only, and colored the senders' names: own yellow, the party's green, others white
+#                            - Opened the chat box while the player waits for the party's story, and kept an open box once an event starts
 #                            - Left out the character of the key that opened the chat box, which arrived after it opened
 #                            - Removed BLINK_FRAMES, which MGQ_MpUi::TextEdit holds
 #                            - Renamed from mp_chat.rbx
@@ -43,6 +44,38 @@ module MGQ_MpChat
 
   # Frames after the chat key opened the box in which the key's own character may still arrive.
   KEY_ECHO_FRAMES = 10
+
+  # What starts a line of the party chat, which only the player's party hears.
+  PARTY_PREFIX = /\A\/p(\s|\z)/i
+
+  # What the log shows before a line of the party chat.
+  PARTY_TAG = "[Party] "
+
+  # A line of the chat log.
+  #
+  # @!attribute name [String, nil] The sender's name, nil for a line of the game's own.
+  # @!attribute text [String] The line.
+  # @!attribute who [Symbol] Whose it is, which colors the name: :me, :member (of the player's
+  #   party), :other or :system.
+  # @!attribute party [Boolean] Whether it is a line of the party chat.
+  # @!attribute left [Integer] Frames it still shows while the chat box is closed.
+  Line = Struct.new(:name, :text, :who, :party, :left) do
+    # Writes what comes before the line itself: the party tag and the sender's name.
+    #
+    # @return [String] The head, "* " for a line of the game's own.
+    def head
+      return "* " if who == :system
+
+      "#{party ? PARTY_TAG : ''}#{name}: "
+    end
+
+    # Writes the whole line, as the log shows it.
+    #
+    # @return [String] The line.
+    def to_s
+      head + text
+    end
+  end
 
   @log = []
   @bubbles = {}
@@ -159,18 +192,29 @@ module MGQ_MpChat
     end
   end
 
-  # Sends the chat box's text, closing the box; an empty box just closes.
+  # Sends the chat box's text, closing the box; an empty box just closes. A line that starts with
+  # PARTY_PREFIX goes to the player's party only.
   def self.send_typed
     text = @edit.text.strip
     stop_typing
+    party = text =~ PARTY_PREFIX ? true : false
+    text = text.sub(PARTY_PREFIX, "").strip if party
     return if text.empty?
+    return refuse("You are in no party, so nobody hears the party chat.") if party && !(defined?(MGQ_MpCoop) && MGQ_MpCoop.in_party?)
 
-    if MGQ_MpChat.tell("chat" => text, "name" => MGQ_Multiplayer::Player.name.to_s)
-      add(:me, MGQ_Multiplayer::Player.name.to_s, text)
-    else
-      Sound.play_buzzer
-      MGQ_MpOverworldSync.notice("The message could not be sent.")
-    end
+    name = MGQ_Multiplayer::Player.name.to_s
+    sent = party ? MGQ_MpCoop.tell(-1, "pchat", text, "name" => name) : MGQ_MpChat.tell("chat" => text, "name" => name)
+    return refuse("The message could not be sent.") unless sent
+
+    add(:me, name, text, party)
+  end
+
+  # Turns a line down that cannot be sent.
+  #
+  # @param text [String] Why, as a notice.
+  def self.refuse(text)
+    Sound.play_buzzer
+    MGQ_MpOverworldSync.notice(text)
   end
 
   # Takes another player's chat line.
@@ -178,10 +222,36 @@ module MGQ_MpChat
   # @param peer [MGQ_MpOverworldSync::Peers::Peer, nil] Who sent it, nil before their first state.
   # @param message [Hash] The message, the line under "chat".
   def self.receive(peer, message)
-    text = message["chat"].to_s.gsub(/[[:cntrl:]]/, "").strip[0, MAX_LENGTH]
+    take_line(peer, message["chat"], message["name"], false)
+  end
+
+  # Takes a party member's line of the party chat. Called by coop.rbx, which drops another party's.
+  #
+  # @param peer [MGQ_MpOverworldSync::Peers::Peer] Who sent it.
+  # @param message [Hash] The message, the line under "pchat".
+  def self.receive_party(peer, message)
+    take_line(peer, message["pchat"], message["name"], true)
+  end
+
+  # Adds another player's line, without control characters and cut to MAX_LENGTH.
+  #
+  # @param peer [MGQ_MpOverworldSync::Peers::Peer, nil] Who sent it.
+  # @param text [String, nil] The line.
+  # @param name [String, nil] The name the message carries, for a sender without a state yet.
+  # @param party [Boolean] Whether it is a line of the party chat.
+  def self.take_line(peer, text, name, party)
+    text = text.to_s.gsub(/[[:cntrl:]]/, "").strip[0, MAX_LENGTH]
     return if text.empty?
 
-    add(peer ? peer.seat : nil, peer ? peer.state["name"] : message["name"], text)
+    add(peer ? peer.seat : nil, peer ? peer.state["name"] : name, text, party, peer && member?(peer))
+  end
+
+  # Reports whether another player is in the player's party, whose name the log shows green.
+  #
+  # @param peer [MGQ_MpOverworldSync::Peers::Peer] The player.
+  # @return [Boolean] Whether they are.
+  def self.member?(peer)
+    defined?(MGQ_MpCoop) && MGQ_MpCoop.in_party? && MGQ_MpCoop::Party.member?(peer.state) ? true : false
   end
 
   # Adds a chat line to the log, and to the sender's bubble.
@@ -189,8 +259,11 @@ module MGQ_MpChat
   # @param sender [Integer, Symbol, nil] The sender's seat, :me for the player, nil for no bubble.
   # @param name [String] The sender's name.
   # @param text [String] The line.
-  def self.add(sender, name, text)
-    push("#{name}: #{text}")
+  # @param party [Boolean] Whether it is a line of the party chat.
+  # @param member [Boolean] Whether another sender is in the player's party.
+  def self.add(sender, name, text, party = false, member = false)
+    who = sender == :me ? :me : (member ? :member : :other)
+    push(Line.new(name.to_s, text, who, party))
     @bubbles[sender] = [text, BUBBLE_FRAMES] unless sender.nil?
   end
 
@@ -199,20 +272,21 @@ module MGQ_MpChat
   #
   # @param text [String] The line.
   def self.system(text)
-    push("* #{text}")
+    push(Line.new(nil, text, :system, false))
   end
 
   # Adds a line to the log, forgetting the oldest beyond KEPT.
   #
-  # @param line [String] The line.
+  # @param line [Line] The line.
   def self.push(line)
-    @log.push([line, LOG_FRAMES])
+    line.left = LOG_FRAMES
+    @log.push(line)
     @log.shift while @log.size > KEPT
   end
 
   # Lets log lines and bubbles run out. Called every frame.
   def self.count_down
-    @log.each { |entry| entry[1] -= 1 if entry[1] > 0 }
+    @log.each { |line| line.left -= 1 if line.left > 0 }
     @bubbles.each_value { |bubble| bubble[1] -= 1 }
     @bubbles.reject! { |_, bubble| bubble[1] <= 0 }
   end
@@ -226,9 +300,16 @@ module MGQ_MpChat
 
   # Lists the log's lines to show: all kept while the chat box is open, else the recent ones.
   #
+  # @return [Array<Line>] The lines, oldest first.
+  def self.log_entries
+    @log.select { |line| typing? || line.left > 0 }
+  end
+
+  # Writes the log's lines to show as text.
+  #
   # @return [Array<String>] The lines, oldest first.
   def self.log_lines
-    @log.select { |_, left| typing? || left > 0 }.map { |line, _| line }
+    log_entries.map(&:to_s)
   end
 
   # Tells what a sender's bubble says.
@@ -445,6 +526,17 @@ class Sprite_MpChatLog < Sprite
   # Background while the chat box is open.
   BACK = Color.new(0, 0, 0, 120)
 
+  # Color of the lines' text.
+  TEXT_COLOR = Color.new(255, 255, 255)
+
+  # Colors of the senders' names: the player's own yellow, the party's members green as their
+  # labels on the map, everyone else's white, and the game's own lines grey.
+  NAME_COLORS = { :me => Color.new(255, 225, 110), :member => Color.new(128, 255, 128), :other => TEXT_COLOR,
+                  :system => Color.new(200, 200, 200) }
+
+  # Color of the tag before a line of the party chat.
+  PARTY_TAG_COLOR = Color.new(190, 170, 255)
+
   # Color of the chat box's hint.
   HINT = Color.new(180, 180, 180)
 
@@ -455,7 +547,7 @@ class Sprite_MpChatLog < Sprite
   TEXT_LEFT = 4
 
   # What the chat box says while it is empty.
-  BOX_HINT = "Type a message. Enter sends, Esc closes."
+  BOX_HINT = "Enter sends, /p first for the party only, Esc closes."
 
   # Creates the log, empty.
   #
@@ -474,8 +566,8 @@ class Sprite_MpChatLog < Sprite
   def update
     super
     chat = MGQ_MpChat
-    lines = MGQ_MpOverworldSync.in_world? ? chat.log_lines.last(ROWS) : []
-    drawn = [lines, chat.typed, chat.cursor, chat.typing? && chat.cursor_shown?]
+    lines = MGQ_MpOverworldSync.in_world? ? chat.log_entries.last(ROWS) : []
+    drawn = [lines.map { |line| [line.to_s, line.who] }, chat.typed, chat.cursor, chat.typing? && chat.cursor_shown?]
     return if drawn == @shown
 
     @shown = drawn
@@ -483,9 +575,40 @@ class Sprite_MpChatLog < Sprite
     bitmap.font.size = 18
     bitmap.font.outline = true
     bitmap.fill_rect(bitmap.rect, BACK) if chat.typing?
-    rows = lines.map { |line| MGQ_MpUi.wrap(bitmap, line, WIDTH - 8) }.flatten.last(ROWS)
-    rows.each_with_index { |row, index| bitmap.draw_text(4, (ROWS - rows.size + index) * ROW, WIDTH - 8, ROW, row) }
+    rows = lines.map { |line| MGQ_MpUi.wrap(bitmap, line.to_s, WIDTH - 8).each_with_index.map { |row, index| [row, index == 0 ? line : nil] } }
+    rows = rows.flatten(1).last(ROWS)
+    rows.each_with_index { |(row, line), index| draw_row(row, line, (ROWS - rows.size + index) * ROW) }
     draw_box(chat.editor) if chat.typing?
+  end
+
+  # Draws one row of the log; a line's first row with its head in the sender's colors.
+  #
+  # @param row [String] The row's text.
+  # @param line [MGQ_MpChat::Line, nil] The line the row starts, nil for a row that goes on a line.
+  # @param y [Integer] The row's top.
+  def draw_row(row, line, y)
+    x = 4
+    if line && row.start_with?(line.head)
+      x = draw_part(x, y, MGQ_MpChat::PARTY_TAG, PARTY_TAG_COLOR) if line.party
+      x = draw_part(x, y, line.head.sub(MGQ_MpChat::PARTY_TAG, ""), NAME_COLORS.fetch(line.who, TEXT_COLOR))
+      row = row[line.head.size..-1]
+    end
+    draw_part(x, y, row, TEXT_COLOR)
+  end
+
+  # Draws a part of a row in a color.
+  #
+  # @param x [Integer] Where it starts.
+  # @param y [Integer] The row's top.
+  # @param text [String] The part.
+  # @param color [Color] Its color.
+  # @return [Integer] Where the next part starts.
+  def draw_part(x, y, text, color)
+    width = bitmap.text_size(text).width
+    bitmap.font.color = color
+    bitmap.draw_text(x, y, width + 2, ROW, text)
+    bitmap.font.color = TEXT_COLOR
+    x + width
   end
 
   # Draws the chat box on the bottom row: the text around the cursor and the cursor, with a hint
