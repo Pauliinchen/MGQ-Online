@@ -2,7 +2,8 @@
 #  coop_events.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Moved gathering the party for story scenes into coop_gather.rbx
+#      Paulinchen  2026-10-04: Sorted called common events by what can run now, shops with a goods script as talks, and story behind a choice as a talk watched as it runs
+#                            - Moved gathering the party for story scenes into coop_gather.rbx
 #                            - Moved the Pocket Castle's residents into coop_castle.rbx
 #                            - Renamed from mp_coop_events.rbx
 #      Paulinchen  2026-10-03: Sorted the Pocket Castle item as travel, which no longer gathers the party as a story scene
@@ -55,7 +56,11 @@ module MGQ_MpCoopEvents
 
   # Scripts a talk may run: companions' own lines, choices, presents and affection, medals,
   # music, skill names on screen, and the menus of job change, synthesis, the casino and the party.
-  TALK_SCRIPTS = /\A\s*(actor_label_jump|unlimited_choices|ex_choice_\w+|present_start|change_friend|gain_medal|gain_coin|play_base_bgm|clear_skill_name|display_skill_name|call_synthesize|call_slot_scene|start_poker|call_party_edit|SceneManager\.call\(Scene_JobChange\)|names = party_members)/
+  # Shops that list their goods in a script, such as the Casino's coin sellers, are talks too.
+  TALK_SCRIPTS = /\A\s*(actor_label_jump|unlimited_choices|ex_choice_\w+|present_start|change_friend|gain_medal|gain_coin|play_base_bgm|clear_skill_name|display_skill_name|call_synthesize|call_slot_scene|start_poker|call_party_edit|SceneManager\.call\(Scene_JobChange\)|names = party_members|@?goods\b)/
+
+  # Event commands that start a choice's branch: one choice (402) and the choice of cancelling (403).
+  CHOICE_BRANCHES = [402, 403]
 
   # Scripts that travel.
   TRAVEL_SCRIPTS = /\A\s*(forced_transfer|forced_get_off_vehicle|forced_get_on_airship)/
@@ -182,7 +187,8 @@ module MGQ_MpCoopEvents
 
   # Sorts a list of event commands by what of it can run now.
   #
-  # Called common events count whole, since they hold most of the story.
+  # Story only behind a choice, such as a trader's "Talk" that moves a side quest on, leaves a page a
+  # talk, which may turn into story once that choice is taken (see may_tell? and guard).
   #
   # @param list [Array<RPG::EventCommand>] The commands.
   # @return [Symbol] :talk, :travel, :chest, :battle or :story.
@@ -195,40 +201,79 @@ module MGQ_MpCoopEvents
     return :battle if list.any? { |c| c.code == 301 } && list.none? { |c| MESSAGE_CODES.include?(c.code) }
 
     marks = marks_of(list, 0)
-    return :story if marks[:story] || marks[:sets]
+    return :story if story_marks?(marks)
     return :chest if marks[:gives] && marks[:own_switch]
     return :story if marks[:own_switch] || marks[:battle]
 
     marks[:travel] ? :travel : :talk
   end
 
-  # Finds what a list of event commands does.
+  # Reports whether marks say story, past a choice or not.
+  #
+  # @param marks [Hash] What a list does, see marks_of.
+  # @return [Boolean] Whether they do.
+  def self.story_marks?(marks)
+    marks[:story] || marks[:sets] ? true : false
+  end
+
+  # Reports whether a talk turns into story behind one of its choices.
+  #
+  # @param list [Array<RPG::EventCommand>] The commands.
+  # @return [Boolean] Whether it does.
+  def self.may_tell?(list)
+    marks_of(runnable(list), 0)[:choice_story] ? true : false
+  end
+
+  # Finds what a list of event commands does. What a choice's branch does that would make it story
+  # counts as :choice_story instead, since the player may never take that choice.
   #
   # @param list [Array<RPG::EventCommand>] The commands.
   # @param depth [Integer] How many common events deep the list is.
   # @return [Hash] :story, :sets (a switch or variable of the story), :says (dialogue), :gives,
-  #   :own_switch, :battle and :travel, each true when found.
+  #   :own_switch, :battle, :travel and :choice_story, each true when found.
   def self.marks_of(list, depth)
     marks = {}
+    choice = {}
+    branches = []
     list.each_with_index do |command, index|
-      params = command.parameters
-      case command.code
-      when 121 then marks[:sets] ||= !(params[0]..params[1]).all? { |id| temporary_switch?(id) }
-      when 122 then marks[:sets] ||= !(params[0]..params[1]).all? { |id| temporary_variable?(id) }
-      when 123 then marks[:own_switch] = true
-      when 125, 126, 127, 128 then marks[:gives] = true
-      when 201 then marks[:travel] = true
-      when 301 then marks[:battle] = true
-      when *MESSAGE_CODES then marks[:says] = true
-      when 355 then mark_script(marks, script_at(list, index))
-      when 117 then merge(marks, common_marks(params[0], depth + 1))
-      else marks[:story] = true if STORY_CODES.include?(command.code)
-      end
+      branches.pop while !branches.empty? && command.indent <= branches.last
+      next branches.push(command.indent) if CHOICE_BRANCHES.include?(command.code)
+
+      mark_command(branches.empty? ? marks : choice, list, index, depth)
     end
+    # A chest asks first whether to open it, so its own switch with items behind a choice keeps it a chest.
+    chest = choice[:gives] && choice[:own_switch]
+    marks[:choice_story] = true if story_marks?(choice) || choice[:battle] || choice[:choice_story] || (choice[:own_switch] && !chest)
+    [:says, :gives, :travel].each { |key| marks[key] ||= choice[key] if choice[key] }
+    marks[:own_switch] ||= true if chest
     marks
   end
 
-  # Adds what a common event does, sorted once per common event and depth.
+  # Marks what one event command does.
+  #
+  # @param marks [Hash] What the list does so far.
+  # @param list [Array<RPG::EventCommand>] The commands.
+  # @param index [Integer] The command's place.
+  # @param depth [Integer] How many common events deep the list is.
+  def self.mark_command(marks, list, index, depth)
+    command = list[index]
+    params = command.parameters
+    case command.code
+    when 121 then marks[:sets] ||= !(params[0]..params[1]).all? { |id| temporary_switch?(id) }
+    when 122 then marks[:sets] ||= !(params[0]..params[1]).all? { |id| temporary_variable?(id) }
+    when 123 then marks[:own_switch] = true
+    when 125, 126, 127, 128 then marks[:gives] = true
+    when 201 then marks[:travel] = true
+    when 301 then marks[:battle] = true
+    when *MESSAGE_CODES then marks[:says] = true
+    when 355 then mark_script(marks, script_at(list, index))
+    when 117 then merge(marks, common_marks(params[0], depth + 1))
+    else marks[:story] = true if STORY_CODES.include?(command.code)
+    end
+  end
+
+  # Adds what a common event does, of what can run now, sorted once per common event and depth in
+  # a frame, since the game's state decides what can run.
   #
   # The depth is part of the key, since a common event sorted deep down counts the events it calls
   # past MAX_DEPTH as story, which a call from higher up must not take over.
@@ -239,9 +284,13 @@ module MGQ_MpCoopEvents
   def self.common_marks(id, depth)
     return { :story => true } if depth > MAX_DEPTH
 
+    unless @common_frame == Graphics.frame_count
+      @common_frame = Graphics.frame_count
+      @common_kinds = {}
+    end
     @common_kinds[[id, depth]] ||= begin
       common = $data_common_events[id]
-      common ? marks_of(common.list || [], depth) : {}
+      common ? marks_of(runnable(common.list || []), depth) : {}
     end
   end
 
@@ -351,9 +400,50 @@ module MGQ_MpCoopEvents
     # A page of the leader's story that a scene change cut short must not hold the player's own.
     @mirrored = nil
     event = event_id > 0 ? $game_map.events[event_id] : nil
-    @telling = leading? && (event ? kind(event) : kind_of(list || [])) == :story
+    sorted = event ? kind(event) : kind_of(list || [])
+    @telling = leading? && sorted == :story
+    @may_tell = sorted == :talk && MGQ_MpCoop.in_party? && may_tell?(list || [])
     MGQ_MpCoopGather.hold(interpreter) if @telling && scene?(list) && !MGQ_MpCoopGather.gathered?
-    @chest = event && kind(event) == :chest && MGQ_MpCoop.in_party? ? { :interpreter => interpreter, :key => chest_key(event), :gains => [] } : nil
+    @chest = event && sorted == :chest && MGQ_MpCoop.in_party? ? { :interpreter => interpreter, :key => chest_key(event), :gains => [] } : nil
+  end
+
+  # Watches a talk that may turn into story, before each of its commands: once it reaches a command
+  # that moves the story on, a member's game ends the talk there, since only the leader moves the
+  # story on, and the leader's game tells the party the story from there.
+  #
+  # @param interpreter [Game_Interpreter] The interpreter about to run a command.
+  def self.guard(interpreter)
+    return unless @may_tell && interpreter.equal?($game_map.interpreter)
+
+    list = MGQ_MpGame.get(interpreter, :list)
+    index = MGQ_MpGame.get(interpreter, :index).to_i
+    return unless list && list[index] && story_command?(list, index)
+
+    @may_tell = false
+    lead = leader
+    if lead.is_a?(MGQ_MpOverworldSync::Peers::Peer)
+      # The list ends with an empty command, which ends the event as its last.
+      MGQ_MpGame.set(interpreter, :index, list.size - 1)
+      MGQ_MpOverworldSync.notice("Only #{lead.state['name']} can move the story on.")
+      log("ended a talk where it would move the story on (command #{list[index].code})")
+    elsif leading?
+      @telling = true
+      log("a talk moves the story on (command #{list[index].code}), the party hears it from here")
+    end
+  rescue => e
+    @may_tell = false
+    log("watching a talk failed: #{e.class}: #{e.message}")
+  end
+
+  # Reports whether an event command moves the story on, as story_marks? sorts it.
+  #
+  # @param list [Array<RPG::EventCommand>] The commands.
+  # @param index [Integer] The command's place.
+  # @return [Boolean] Whether it does.
+  def self.story_command?(list, index)
+    marks = {}
+    mark_command(marks, list, index, 0)
+    story_marks?(marks) || marks[:own_switch] || marks[:battle] || marks[:choice_story] ? true : false
   end
 
   # Reports whether a list of commands is a story scene: story with its own dialogue or novel scene.
@@ -775,6 +865,9 @@ end
 begin
   # After the map's update, the leader's story pages show once the player is free.
   MGQ_MpHooks.after(Game_Map, :update, "coop_events") { MGQ_MpCoopEvents.update }
+
+  # Before an event command runs, a talk that may turn into story is watched.
+  MGQ_MpHooks.before(Game_Interpreter, :execute_command, "coop_events") { MGQ_MpCoopEvents.guard(self) }
 rescue => e
   MGQ_MpCoopEvents.log("hooks FAILED: #{e.class}: #{e.message}")
 end

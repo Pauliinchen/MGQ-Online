@@ -2,7 +2,8 @@
 #  coop_events_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Checked when the player only waits for the party's story
+#      Paulinchen  2026-10-04: Checked traders: a side quest that cannot run, a goods script, a quest step behind a choice, a chest that asks first, and the talk's watch
+#                            - Checked when the player only waits for the party's story
 #                            - Followed gathering into coop_gather.rbx and the Pocket Castle's residents into coop_castle.rbx
 #                            - Followed the scripts to their new names, without mp_
 #      Paulinchen  2026-10-03: Checked that the Pocket Castle item is travel
@@ -284,6 +285,36 @@ $game_variables[1001] = 12
 check("once the story moved past it, the exit is travel", MGQ_MpCoopEvents.kind($game_map.events[24]), :travel)
 $game_switches[61] = false
 check("a branch's else runs when its condition fails", MGQ_MpCoopEvents.kind($game_map.events[24]), :story)
+
+# Traders: a shop calling a side quest's common event, as Vanilla's supply quest in Magistea, is a
+# talk while the quest cannot run; a shop listing its goods in a script, as the Casino's coin
+# sellers, is a talk; a quest step behind a choice leaves a talk that may turn into story.
+$data_common_events[30] = RPG::CommonEvent.new([Command.new(111, 0, [1, 1005, 0, 14, 0]), Command.new(121, 1, [65, 65, 0]), Command.new(412, 0, [])])
+magistea = [c(101, "", 0, 0, 2), c(302, 0, 2, 0, 0, false), c(605, 0, 13, 0, 0), c(117, 30)]
+frames_before = $frame_count
+$game_variables[1005] = 0
+check("a shop whose side quest cannot run now is a talk", [kind(magistea), MGQ_MpCoopEvents.may_tell?(magistea)], [:talk, false])
+$game_variables[1005] = 14
+$frame_count += 1
+check("and story while the quest's step can run", kind(magistea), :story)
+$game_variables[1005] = 15
+check("a common event is sorted anew in the next frame only", kind(magistea), :story)
+$frame_count += 1
+check("then it is a talk again", kind(magistea), :talk)
+coin_seller = [c(101, "", 0, 0, 2), c(355, "goods = []"), c(655, "goods.push([0, 2149, 0, 0])"), c(655, "SceneManager.call(Scene_Shop)")]
+check("a shop that lists its goods in a script is a talk", kind(coin_seller), :talk)
+blacksmith = [c(101, "", 0, 0, 2), Command.new(102, 0, [["Synthesis", "Talk"], 2]),
+              Command.new(402, 0, [0, "Synthesis"]), Command.new(355, 1, ["call_synthesize(14)"]), Command.new(0, 1, []),
+              Command.new(402, 0, [1, "Talk"]), Command.new(101, 1, ["", 0, 0, 2]), Command.new(122, 1, [1007, 1007, 0, 0, 1]), Command.new(0, 1, []),
+              Command.new(404, 0, [])]
+check("a quest step behind a choice leaves a talk that may turn into story", [kind(blacksmith), MGQ_MpCoopEvents.may_tell?(blacksmith)], [:talk, true])
+boxed_chest = [c(101, "", 0, 0, 2), Command.new(102, 0, [["Open it", "Leave it"], 2]), Command.new(402, 0, [0, "Open it"]),
+               Command.new(123, 1, ["A", 0]), Command.new(126, 1, [1, 0, 0, 1]), Command.new(0, 1, []), Command.new(402, 0, [1, "Leave it"]), Command.new(0, 1, []),
+               Command.new(404, 0, [])]
+check("a chest that asks first stays a chest", [kind(boxed_chest), MGQ_MpCoopEvents.may_tell?(boxed_chest)], [:chest, false])
+story_choice = [c(101, "", 0, 0, 2), c(121, 60, 60, 0), Command.new(102, 0, [["Yes", "No"], 2]), Command.new(402, 0, [0, "Yes"]), Command.new(121, 1, [61, 61, 0])]
+check("story outside a choice stays story", kind(story_choice), :story)
+$frame_count = frames_before
 $game_switches = $game_variables = nil
 check("without the game's switches every branch counts", MGQ_MpCoopEvents.kind($game_map.events[24]), :story)
 $game_map = nil
@@ -581,6 +612,28 @@ $game_map.interpreter.setup(talk_page.list, 12)
 $game_message.add("Just talk")
 $game_map.interpreter.wait_for_message
 check("a talk's message stays in the leader's game", $sent.select { |_, f| f["pevent"] == "say" }.size, 0)
+
+# A talk that turns into story behind a choice: the leader's tells the party from there, a
+# member's ends there.
+trader = blacksmith + [Command.new(0, 0, [])]
+interpreter = $game_map.interpreter
+interpreter.busy = true
+interpreter.setup(trader, 0)
+interpreter.instance_variable_set(:@index, 3)
+MGQ_MpCoopEvents.guard(interpreter)
+check("the leader's talk stays a talk while its choice moves nothing on", [MGQ_MpCoopEvents.telling?, interpreter.instance_variable_get(:@index)], [false, 3])
+interpreter.instance_variable_set(:@index, 7)
+MGQ_MpCoopEvents.guard(interpreter)
+check("once its quest step runs, the party hears it as story", [MGQ_MpCoopEvents.telling?, interpreter.instance_variable_get(:@index)], [true, 7])
+$leader = leader
+$members = [leader]
+interpreter.setup(trader, 0)
+interpreter.instance_variable_set(:@index, 7)
+MGQ_MpCoopEvents.guard(interpreter)
+check("a member's talk ends where it would move the story on", [interpreter.instance_variable_get(:@index), $notices.last], [trader.size - 1, "Only Leader can move the story on."])
+interpreter.busy = false
+$leader = :me
+$members = [friend]
 
 # A member sees the leader's dialogue.
 $leader = leader

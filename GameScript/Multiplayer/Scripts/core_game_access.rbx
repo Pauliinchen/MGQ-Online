@@ -2,7 +2,8 @@
 #  core_game_access.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Renamed from mp_game_access.rbx
+#      Paulinchen  2026-10-04: Named the command an interpreter runs
+#                            - Renamed from mp_game_access.rbx
 #                            - Read the map lists the game keeps, one per map folder
 #      Paulinchen  2026-10-03: Created
 #
@@ -71,8 +72,9 @@ module MGQ_MpGame
     :stack => :@stack,
     :system_save_count => :@system_save_count,
 
-    # Window_Command.
+    # Window_Command, and Game_Interpreter with the command it runs.
     :list => :@list,
+    :index => :@index,
 
     # $data_mapinfos: the map lists, the main one and one per further map folder.
     :map_lists => :@data,
