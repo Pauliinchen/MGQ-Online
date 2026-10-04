@@ -2,7 +2,8 @@
 #  ui_text_box.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Created
+#      Paulinchen  2026-10-04: Broke a word longer than a line of a box of several lines inside the word
+#                            - Created
 #
 #----------------------------------------------------------------
 
@@ -119,8 +120,8 @@ module MGQ_MpUi
       target = spans[line + step]
       return if step == 0 || target.nil? || line + step < 0
 
-      # A line that is not the last ends in the space the text was broken at, which the next
-      # line's start stands for.
+      # The place after the last character of a line that is not the last is the next line's
+      # start.
       last = [target[1] - (line + step < spans.size - 1 ? 1 : 0), 0].max
       move_to(target[0] + [@cursor - spans[line][0], last].min)
     end
@@ -213,11 +214,12 @@ module MGQ_MpUi
   end
 
   # Breaks a text into lines that fit a width without changing a character of it, so a place in
-  # the text is a place in a line: each line is a stretch of the text, broken before a word.
+  # the text is a place in a line: each line is a stretch of the text, broken before a word, and
+  # inside a word longer than the width.
   #
   # @param text [String] The text.
   # @param width [Integer] The width in pixels.
-  # @yieldparam part [String] A word or a run of spaces.
+  # @yieldparam part [String] A word, a run of spaces, or a character of a word longer than the width.
   # @yieldreturn [Integer] Its width in the font the lines are drawn in.
   # @return [Array<Array<Integer>>] Each line's first character and length, one empty line for an empty text.
   def self.wrap_spans(text, width)
@@ -235,8 +237,19 @@ module MGQ_MpUi
         used = 0
       end
 
-      used += part_width
-      at += part.length
+      pieces = part =~ /\S/ && part_width > width ? part.chars : [part]
+      pieces.each do |piece|
+        piece_width = pieces.size > 1 ? yield(piece) : part_width
+
+        if pieces.size > 1 && used + piece_width > width && at > start
+          spans.push([start, at - start])
+          start = at
+          used = 0
+        end
+
+        used += piece_width
+        at += piece.length
+      end
     end
     spans.push([start, text.length - start])
   end

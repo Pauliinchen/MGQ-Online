@@ -4,6 +4,7 @@
 #  Changelog:
 #      Paulinchen  2026-10-04: Created the list box before a cancelled name prompt closes the screen, which disposes it
 #                            - Kept a world this PC has saves of from being entered while the list, which tells its mods and game data, has not arrived
+#                            - Broke a description's lines through MGQ_MpUi.wrap, which breaks inside a word longer than a line
 #                            - Renamed from mp_world_screen.rbx
 #                            - Drew the forms' text boxes through MGQ_MpUi::TextBox, and moved their cursor a line through MGQ_MpUi::TextEdit, which every text box shares
 #                            - Showed a world's description, the mods it needs and whether the player's game data matches its creator's
@@ -1496,25 +1497,6 @@ module MGQ_MpWorldPanels
     draw_text(x, y + PAD, contents_width - x - PAD, HEADER_HEIGHT, note, 2)
   end
 
-  # Breaks a text into lines of a width, in the font set.
-  #
-  # @param text [String] The text.
-  # @param width [Integer] The width a line may take.
-  # @return [Array<String>] The lines, none for an empty text.
-  def wrapped(text, width)
-    lines = []
-    text.split(" ").each do |word|
-      longer = lines.empty? ? word : "#{lines.last} #{word}"
-
-      if lines.empty? || text_size(longer).width > width
-        lines.push(word)
-      else
-        lines[-1] = longer
-      end
-    end
-    lines
-  end
-
   # Cuts a text at its end until it fits, in the font set.
   #
   # @param text [String] The text.
@@ -1869,7 +1851,7 @@ class Window_MpWorldDetail < Window_Base
   # @param rows [Integer] How many lines fit.
   # @return [Array<String>] The lines.
   def description_lines(text, width, rows)
-    lines = text.empty? ? ["No description."] : wrapped(text, width)
+    lines = text.empty? ? ["No description."] : MGQ_MpUi.wrap(self, text, width)
     return lines if lines.size <= rows
 
     lines = lines.first(rows)

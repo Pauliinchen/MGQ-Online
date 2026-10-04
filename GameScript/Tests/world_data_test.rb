@@ -2,7 +2,8 @@
 #  world_data_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Created
+#      Paulinchen  2026-10-04: Checked a long word broken inside it
+#                            - Created
 #
 #----------------------------------------------------------------
 
@@ -443,7 +444,7 @@ check("a password shows as many stars", MGQ_MpUi::TextEdit.new("abc").visible(me
 widths = lambda { |part| part.size * 10 }
 check("a text is broken before the word that does not fit, its spaces kept", MGQ_MpUi.wrap_spans("one two  three four", 100, &widths), [[0, 9], [9, 10]])
 check("an empty text is one empty line", MGQ_MpUi.wrap_spans("", 100, &widths), [[0, 0]])
-check("a word longer than a line stands alone", MGQ_MpUi.wrap_spans("a verylongwordindeed b", 100, &widths), [[0, 2], [2, 19], [21, 1]])
+check("a word longer than a line is broken inside it", MGQ_MpUi.wrap_spans("a verylongwordindeed b", 100, &widths), [[0, 2], [2, 10], [12, 10]])
 spans = MGQ_MpUi.wrap_spans("one two three four", 80, &widths)
 check("a place in the text is on the line that starts at or before it", [spans, [0, 7, 8, 13, 18].map { |place| MGQ_MpUi.span_of(spans, place) }], [[[0, 8], [8, 6], [14, 4]], [0, 0, 1, 1, 2]])
 
