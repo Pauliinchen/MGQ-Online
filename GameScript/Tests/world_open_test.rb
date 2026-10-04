@@ -2,7 +2,7 @@
 #  world_open_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Checked that an outdated game enters no world
+#      Paulinchen  2026-10-04: Checked that an outdated game enters no world and is told so in a message box until the player closes it
 #                            - Followed the scripts to their new names, without mp_
 #                            - Read the details from their panels
 #                            - Expected a hidden world's id alone in the form that adds it
@@ -14,7 +14,8 @@
 
 # Checks worlds without a password and featured worlds (world.rbx): the forms taking an empty
 # password, the directory's flags for both, entering a world without a password without being
-# asked, the featured worlds' place in the list, what the details say, and an outdated game kept out.
+# asked, the featured worlds' place in the list, what the details say, and an outdated game kept out
+# and told so.
 
 require_relative "support"
 
@@ -48,11 +49,18 @@ module MGQ_Multiplayer
   UPDATE_MESSAGE = "Update."
   def self.available?; true; end
   def self.outdated?; $outdated; end
+  def self.newer_version; $outdated ? "9.9.9" : nil; end
   def self.clean(text); text; end
   def self.path(name); name; end
   module Log; def self.write(_message); end; end
   module Player; def self.share; end; def self.name; "Me"; end; end
   module Ini; def self.read(_path); {}; end; end
+  module Capture
+    def self.start(owner); $capture = owner; end
+    def self.stop(owner); $capture = nil if $capture == owner; end
+    def self.trigger?(button); $pressed == button; end
+  end
+  module Mouse; def self.clicked?; false; end; end
   module Link
     Function = Struct.new(:name, :signature) do
       def call(*args); $calls << [name, signature, args]; 1; end
@@ -218,4 +226,26 @@ title = Window_TitleCommand.new
 title.instance_variable_set(:@list, [{ :symbol => :continue }])
 MGQ_MpWorld.add_title_command(title)
 check("and finds the title command greyed out", title.instance_variable_get(:@list)[1].values_at(:symbol, :enabled), [:mgq_mp_world, false])
+
+# The update notice, a message box that draws on nothing.
+class Sprite_MpMessageBox
+  attr_accessor :visible
+  attr_reader :shown
+  def initialize; end
+  def show(*args); @shown = args; @visible = true; end
+  def dispose; end
+end
+title_scene = Scene_Title.new
+SceneManager.define_singleton_method(:scene) { title_scene }
+notice = MGQ_MpWorld::UpdateNotice
+check("the update notice shows on the title screen and holds the buttons", [notice.refresh, notice.instance_variable_get(:@box).shown[0], $capture], [true, "Monster Girl Quest! Online 9.9.9 is out", :update_notice])
+check("and stays while nothing is pressed", [notice.refresh, notice.instance_variable_get(:@box).visible], [false, true])
+$pressed = :C
+notice.refresh
+$pressed = nil
+check("confirm closes it and gives the buttons back", [notice.instance_variable_get(:@box).visible, $capture], [false, nil])
+check("it stays closed on this title screen", notice.refresh, false)
+notice.hide
+check("and shows again on the next one", notice.refresh, true)
+notice.hide
 $outdated = false

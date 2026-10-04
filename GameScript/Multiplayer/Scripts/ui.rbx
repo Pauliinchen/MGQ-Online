@@ -2,7 +2,8 @@
 #  ui.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Renamed from mp_ui.rbx
+#      Paulinchen  2026-10-04: Added the message box, a box in the middle of the screen drawn like the list box
+#                            - Renamed from mp_ui.rbx
 #                            - Drew a list box's item in gold when asked
 #                            - Broke the top lines anew only when they changed, and made the list box darker, so the windows behind it show through only a little
 #                            - Added the list box, a large box of headings and items drawn like the World overview
@@ -11,7 +12,8 @@
 #----------------------------------------------------------------
 
 # What the mod's screens and boxes share: breaking a text into lines that fit, the window of lines
-# across the top of a screen, and the list box. The text boxes are in ui_text_box.rbx.
+# across the top of a screen, the list box and the message box. The text boxes are in
+# ui_text_box.rbx.
 module MGQ_MpUi
   # Breaks a text into lines that fit a width, at its spaces, and inside a word longer than the
   # width.
@@ -263,6 +265,71 @@ class Sprite_MpListBox < Sprite
   # Frees the box's picture.
   def dispose
     bitmap.dispose
+    super
+  end
+end
+
+# A box in the middle of the screen that tells the player something, drawn like the list box: a
+# title, the text broken into lines that fit, and a hint at the bottom. Whoever shows it closes it.
+class Sprite_MpMessageBox < Sprite
+  # Width of the box.
+  WIDTH = 480
+
+  # Room between the box's edges and its text.
+  PADDING = 12
+
+  # Height of one line of the text.
+  ROW = 24
+
+  # Creates the box, hidden, above every window.
+  def initialize
+    super(nil)
+    self.z = 1000
+    self.visible = false
+  end
+
+  # Shows a message in the middle of the screen, as high as its lines need.
+  #
+  # @param title [String] The title at the top.
+  # @param text [String] The text.
+  # @param hint [String] What the hint at the bottom says.
+  def show(title, text, hint)
+    measure = Bitmap.new(1, 1)
+    measure.font.size = Sprite_MpListBox::ITEM_SIZE
+    lines = MGQ_MpUi.wrap(measure, text, WIDTH - 2 * PADDING)
+    measure.dispose
+
+    height = Sprite_MpListBox::TITLE + lines.size * ROW + Sprite_MpListBox::HINT_HEIGHT + PADDING
+    bitmap.dispose if bitmap
+    self.bitmap = Bitmap.new(WIDTH, height)
+    self.x = (Graphics.width - WIDTH) / 2
+    self.y = (Graphics.height - height) / 2
+    draw(title, lines, hint)
+    self.visible = true
+  end
+
+  # Draws the whole box.
+  #
+  # @param title [String] The title.
+  # @param lines [Array<String>] The text's lines.
+  # @param hint [String] The hint.
+  def draw(title, lines, hint)
+    text_width = WIDTH - 2 * PADDING
+    bitmap.fill_rect(bitmap.rect, Sprite_MpListBox::BACK)
+    bitmap.font.outline = true
+    bitmap.font.size = 20
+    bitmap.font.color = Color.new(255, 255, 255)
+    bitmap.draw_text(PADDING, 2, text_width, Sprite_MpListBox::TITLE - 4, title)
+    bitmap.font.size = Sprite_MpListBox::ITEM_SIZE
+    lines.each_with_index { |line, index| bitmap.draw_text(PADDING, Sprite_MpListBox::TITLE + index * ROW, text_width, ROW, line) }
+    bitmap.font.size = 16
+    bitmap.font.color = Sprite_MpListBox::GREY
+    bitmap.draw_text(PADDING, bitmap.height - Sprite_MpListBox::HINT_HEIGHT - 4, text_width, Sprite_MpListBox::HINT_HEIGHT, hint, 1)
+  end
+
+  # Frees the box's picture.
+  def dispose
+    bitmap.dispose if bitmap
     super
   end
 end

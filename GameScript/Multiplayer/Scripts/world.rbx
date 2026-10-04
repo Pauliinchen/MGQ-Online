@@ -2,7 +2,8 @@
 #  world.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Greyed out the title command once the update check answers, and kept an outdated game out of worlds
+#      Paulinchen  2026-10-04: Showed the update notice in a message box that stays until the player closes it
+#                            - Greyed out the title command once the update check answers, and kept an outdated game out of worlds
 #                            - Kept the 50 hidden worlds added last, as many as the relay lists, so ids of deleted worlds do not crowd new ones out
 #                            - Removed Form#add, since MGQ_MpUi::TextEdit takes what is typed
 #                            - Renamed from mp_world.rbx
@@ -272,61 +273,72 @@ module MGQ_MpWorld
     log("title command failed: #{e.class}: #{e.message}")
   end
 
-  # Two lines on the title screen, below Discord's own update notice if it shows one too, once a
-  # newer release of the mod is out.
+  # A message box on every title screen once a newer release of the mod is out, which holds the
+  # buttons until the player closes it, so the title menu cannot be used past it unread.
   module UpdateNotice
-    # What the notice says, the newer version filled in.
-    LINES = [
-      "Monster Girl Quest! Online %s is out.",
-      "Close the game and run Patch\\Multiplayer\\Update.bat to update.",
-    ]
+    # The box's title, the newer version filled in.
+    TITLE = "Monster Girl Quest! Online %s is out"
 
-    # Height of a line, which the font size follows.
-    LINE_HEIGHT = 20
+    # What the box says.
+    TEXT = "Close the game and run Patch\\Multiplayer\\Update.bat to update. Until then, Multiplayer and PvP battles stay off."
 
-    # Where the notice starts: below the translation's version and Discord's own notice, which
-    # takes up to two lines from TOP 24.
-    TOP = 64
+    # The hint at the bottom of the box.
+    HINT = "Enter, Esc or a click: close"
 
-    # Gap to the left and right edges of the screen.
-    MARGIN = 4
-
-    # Layer of the title screen's foreground, which the notice belongs to.
-    Z = 100
-
-    # Shows the notice on the title screen once a newer release is out. Called every update.
+    # Shows the box once a newer release is out, and closes it on confirm, cancel or a click. Called
+    # every update of the title screen.
     #
-    # @return [Boolean] Whether the notice showed just now.
+    # @return [Boolean] Whether the box showed just now.
     def self.refresh
-      return false if @sprite || !SceneManager.scene.is_a?(Scene_Title)
+      return false unless SceneManager.scene.is_a?(Scene_Title)
+
+      if @box
+        close if @box.visible && closed_by_player?
+        return false
+      end
       return false unless MGQ_Multiplayer.available? && (version = MGQ_Multiplayer.newer_version)
 
       show(version)
       true
     end
 
-    # Takes the notice off the screen. Called when the title screen ends.
+    # Takes the box off the screen, so the next title screen shows it again. Called when the title
+    # screen ends.
     def self.hide
-      return unless @sprite
+      return unless @box
 
-      @sprite.bitmap.dispose
-      @sprite.dispose
-      @sprite = nil
+      MGQ_Multiplayer::Capture.stop(:update_notice)
+      @box.dispose
+      @box = nil
     end
 
-    # Draws the notice.
+    # Shows the box and takes the buttons from the title menu.
     #
     # @param version [String] The newer release's version.
     def self.show(version)
-      @sprite = Sprite.new
-      @sprite.bitmap = Bitmap.new(Graphics.width, LINE_HEIGHT * LINES.size)
-      @sprite.bitmap.font.size = LINE_HEIGHT
-      @sprite.y = TOP
-      @sprite.z = Z
+      @box = Sprite_MpMessageBox.new
+      @box.show(format(TITLE, version), TEXT, HINT)
+      MGQ_MpWorld.log("update notice shown for #{version}")
+      MGQ_Multiplayer::Capture.start(:update_notice)
+      # Windows keeps a click until it is asked for, so one from before the box would close it.
+      MGQ_Multiplayer::Mouse.clicked?
+    end
 
-      LINES.each_with_index do |line, index|
-        @sprite.bitmap.draw_text(MARGIN, index * LINE_HEIGHT, Graphics.width - 2 * MARGIN, LINE_HEIGHT, format(line, version))
-      end
+    # Reports whether the player closed the box this frame.
+    #
+    # @return [Boolean] Whether confirm, cancel or the left mouse button went down.
+    def self.closed_by_player?
+      capture = MGQ_Multiplayer::Capture
+      # The mouse is asked every frame, so a click in a frame a key closed the box never counts later.
+      clicked = MGQ_Multiplayer::Mouse.clicked?
+      capture.trigger?(:C) || capture.trigger?(:B) || clicked
+    end
+
+    # Hides the box for the rest of this title screen and gives the buttons back.
+    def self.close
+      Sound.play_ok
+      @box.visible = false
+      MGQ_Multiplayer::Capture.stop(:update_notice)
     end
   end
 
