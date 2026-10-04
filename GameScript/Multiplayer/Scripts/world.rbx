@@ -436,7 +436,8 @@ module MGQ_MpWorld
 
     # Writes the fingerprint of this game's data, once per session.
     #
-    # It reads no names or texts, so a translated game matches the untranslated one.
+    # It reads whether an entry has a name, never the name itself, so a translated game matches
+    # the untranslated one as long as both name the same entries.
     #
     # @return [String] FORMAT, then a checksum per part; empty when the data could not be read.
     def self.fingerprint
