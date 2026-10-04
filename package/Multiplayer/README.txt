@@ -95,18 +95,20 @@ other mods.
 
 KEYS
 ----
-B opens the action wheel, T the chat and F11 the World overview, or the
-PvP battle screen outside a world. Y accepts and N declines the first
-invite at the top left. This README names these default keys.
+B opens the action wheel, T the chat, E the emote wheel and F11 the
+World overview, or the PvP battle screen outside a world. Y accepts and
+N declines the first invite at the top left, and Tab makes the party box
+small or full. This README names these default keys.
 
 With Mod Config Remake installed, you can bind others: "Mod Config >
 Monster Girl Quest! Online", confirm "Action Wheel", "Chat", "World
-Overview", "Accept Notification" or "Decline Notification", then press
-the new key (Esc keeps the old one). Keys the game uses itself, such as
-the arrows, Enter, Esc, Z, X, Shift, A, S, D, Q and W, can't be bound,
-and neither can a key another option already has. Your keys are kept in
-Patch\Multiplayer\Player.ini, so they hold in every save and every
-world. The texts in the game name the keys you bound.
+Overview", "Accept Notification", "Decline Notification", "Emote Wheel"
+or "Party Box Size", then press the new key (Esc keeps the old one).
+Keys the game uses itself, such as the arrows, Enter, Esc, Z, X, Shift,
+A, S, D, Q and W, can't be bound, and neither can a key another option
+already has. Your keys are kept in Patch\Multiplayer\Player.ini, so they
+hold in every save and every world. The texts in the game name the keys
+you bound.
 
 
 WORLDS
@@ -263,7 +265,14 @@ Action wheel and chat
   character after it. Your line shows in a speech bubble above your head
   for the players on your map, and in the chat log at the bottom left
   for everyone in the world. The chat works in battles too, where its
-  log sits above the battle's windows.
+  log sits above the battle's windows, and while your party gathers for
+  a story scene. Start a line with /p to send it to your party only; it
+  shows as "[Party]" in the log. Names in the log are yellow for you,
+  green for your party's members and white for everyone else.
+- Emotes: press E on the map for a ring of emotes around your character:
+  a jump, or a balloon such as a heart, a music note or a light bulb
+  above your head. The arrow keys go round it and the confirm button
+  plays it; the players on your map see it on your character too.
 
 World overview
 ~~~~~~~~~~~~~~
@@ -311,7 +320,8 @@ Parties
   and Discord shows it as "(2 of 4)". A box at the top right of the map
   lists your party, its leader first and then by name, with each
   player's highest companion level, ping, and where they are on a line
-  below (long names shortened).
+  below (long names shortened). Tab makes it small, with only names and
+  pings, and full again; it stays as you left it.
 - Your squad: a party shares one team's worth of companions. The
   Frontline's four places and the Backline's are split between you, the
   player who made the party taking any place left over: with two
@@ -328,24 +338,39 @@ Parties
   Party Followers".
 - NPCs: on a map you share, you all see the same NPCs in the same
   places. Whoever of you entered the map first is its Map Owner, and the
-  NPCs move as they do in that player's game.
+  NPCs move as they do in that player's game. In the Pocket Castle it's
+  always the party's leader: you see their companions, and one you don't
+  have yourself stands there see-through, a ghost you can't talk to.
+  Your own companions stay yours to talk to.
 - Story: everyone plays the story of the player who made the party. Its
   events, doors and conversations are as far along as in that player's
-  game, and story events you start are handed to them. Everyone on the
-  map sees the dialogue in their own message window, which moves on when
-  that player moves on; only they can continue or close it.
-  Conversations, shops and the job change menu stay your own, and so do
-  the companions, merchants, inn and maids of the Pocket Castle.
+  game, and only that player starts story events: a member reads "Only
+  <leader> can move the story on." Everyone on the map sees the dialogue
+  in their own message window, which moves on when that player moves on;
+  only they can continue or close it. The story's pictures, such as its
+  CGs, and its fades, tints and flashes show for everyone on the map
+  too. Conversations, shops (the Casino's coin sellers too) and the job
+  change menu stay your own, and so do the companions, merchants, inn
+  and maids of the Pocket Castle. A trader whose talk would move a side
+  quest on stops there for a member; the leader's moves it on for the
+  party.
 - What stays yours: your party, companions and affection, and your saves
   keep your own story. When you leave the party, you're back in your own
   story. If your story was exactly as far along as theirs when you
   joined, you keep what you played together: the story's progress, its
-  items and gold, and the companions who joined or left in it.
+  items and gold, and the companions who joined or left in it. Otherwise
+  the story lends you its key items, such as the one that opens a locked
+  door, while you're in the party; they go back when you leave it and
+  stay out of your saves. Where the Pocket Castle's way out takes you is
+  your own too: when the party brings you into the castle, you leave it
+  where you came from.
 - Travelling: everyone goes where they like; only story scenes bring the
   party together. A member teleports to the party's leader whenever they
   like: "Teleport to <leader>" takes the place of "Invite to a party" at
   the top of the wheel, and the leader's row in the World overview
   offers it too. It brings you over as soon as you're free on the map.
+  When a story scene moves its leader somewhere else, such as onto a
+  theater's stage and back, the members with them come along at once.
 - Story scenes wait for everyone: when the player who made the party
   starts a story scene, it waits until every member stands next to them,
   and they can't move meanwhile. Members see a 5-second countdown above
@@ -354,9 +379,13 @@ Parties
   over. No random encounter or co-op battle starts for them during the
   countdown. The scene waits 30 seconds at most, then starts without
   whoever hasn't come; they play on where they are. While the scene
-  plays, the members on that map stand still and can't open the menu.
+  plays, the members on that map stand still and can't open the menu;
+  the chat stays open meanwhile. Story events don't get stuck on a
+  member standing in their way.
 - Chests are everyone's own: when a member opens one, everyone in the
-  party who hasn't looted it yet gets the same items.
+  party who hasn't looted it yet gets the same items, hears the chest
+  open and sees the first item's icon in the notice; in a battle, once
+  it's over.
 
 Co-op battles
 ~~~~~~~~~~~~~
@@ -369,7 +398,8 @@ map join it.
   map who are in a menu, typing or on a vehicle: you stand still, they
   read "<name> is in a battle!" in the notification box for a moment,
   and the battle starts as soon as they're back on the map. Whoever is
-  still busy after 3 seconds misses it.
+  still busy after 3 seconds misses it. Every party member on that map
+  stands still until they join the battle, so nobody walks off first.
 - Each of you brings your squad: your share of the Frontline fights,
   your share of the Backline waits. The companions past it stay out of
   the battle.
