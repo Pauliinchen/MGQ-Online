@@ -2,7 +2,8 @@
 #  battles_coop_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Followed the scripts to their new names, without mp_
+#      Paulinchen  2026-10-04: Checked that a member's encounter holds the party members on the map
+#                            - Followed the scripts to their new names, without mp_
 #                            - Checked that the guest of a lost battle takes the host's defeat scene, or one of its own enemies
 #      Paulinchen  2026-10-03: Checked that the others' characters start the battle and each turn with a hit count
 #                            - Checked that the map shows the player's own leader again after the battle
@@ -427,7 +428,8 @@ mate.state["scene"] = "menu"
 map = Scene_Map.new
 $encounter_troop = 70
 check("an encounter with a member in a menu on the map waits", [$game_player.encounter, MGQ_MpBattlesCoop.holding?, $setup], [false, true, [[70, true, false]]])
-check("and tells that member", $sent.map { |seat, text| [seat, fields_of(text)["coop"], fields_of(text)["map"]] }, [[2, "soon", "5"]])
+check("and tells that member, and the whole party that the members on the map stand still", $sent.map { |seat, text| [seat, fields_of(text)["coop"], fields_of(text)["map"]] },
+      [[2, "soon", "5"], [-1, "freeze", "5"]])
 map.update_call_menu
 check("the player stands still and opens no menu meanwhile", [$game_player.movable?, map.menu_calling], [false, false])
 check("nor meets another encounter", [($encounter_troop = 71) && $game_player.encounter, $setup.size], [false, 1])
@@ -457,5 +459,17 @@ check("a reset forgets a held encounter", [MGQ_MpBattlesCoop.holding?, $game_pla
 mate.state["scene"] = "battle"
 $encounter_troop = 74
 check("a member in a battle of their own is not waited for", [$game_player.encounter, MGQ_MpBattlesCoop.holding?], [true, false])
+MGQ_MpBattlesCoop.ended
+
+# A member on the map stands still while another member's encounter waits for the party.
+MGQ_MpBattlesCoop.take(mate, { "coop" => "freeze", "map" => "9" })
+check("another map's encounter holds nobody here", $game_player.movable?, true)
+MGQ_MpBattlesCoop.take(mate, { "coop" => "freeze", "map" => "5" })
+check("a member's encounter on the player's map holds them", $game_player.movable?, false)
+MGQ_MpBattlesCoop.decline(mate, invite_of.call("i3"))
+check("until they turn its invite down", $game_player.movable?, true)
+MGQ_MpBattlesCoop.take(mate, { "coop" => "freeze", "map" => "5" })
+MGQ_MpBattlesCoop.instance_variable_set(:@frozen, Time.now - MGQ_MpBattlesCoop::FREEZE_SECONDS)
+check("or ten seconds passed", $game_player.movable?, true)
 mate.state["scene"] = "map"
 $scene_now = scene
