@@ -2,7 +2,8 @@
 #  Multiplayer.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Loaded ui_emotes.rbx after ui_chat.rbx
+#      Paulinchen  2026-10-04: Loaded ui_party_box.rbx after world_overview.rbx
+#                            - Loaded ui_emotes.rbx after ui_chat.rbx
 #                            - Loaded coop_scene.rbx after coop_gather.rbx
 #                            - Loaded coop_gather.rbx and coop_castle.rbx, split out of coop_events.rbx
 #                            - Loaded the scripts by their new names, which say what each belongs to instead of mp_
@@ -71,7 +72,7 @@ module MGQ_Multiplayer
     battles battles_coop
     battles_sync battles_sync_wire battles_sync_recorder battles_sync_playback battles_sync_live
     battles_balance_pvp battles_pvp battles_pvp_backline battles_pvp_mirror battles_pvp_lobby battles_duel battles_team
-    world_overview ui_notices
+    world_overview ui_party_box ui_notices
   ]
 
   # Extension of the scripts, which the mod loader skips, since only this script may load them.

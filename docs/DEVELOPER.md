@@ -50,6 +50,7 @@ GameScript/Multiplayer/Scripts/       Ruby, the other scripts, in the order Mult
   battles_duel.rbx                    duels: PvP battles between two players of a world
   battles_team.rbx                    team duels: two parties against each other
   world_overview.rbx                  the World overview: every player online by place, and their invites
+  ui_party_box.rbx                    the party box at the top right of the map
   ui_notices.rbx                      the notification box at the top left and its key
 GameScript/Tests/                     Ruby, tests of the scripts outside the game, run.rb runs them all
 MGQParadox.Multiplayer/               C# NativeAOT project -> Multiplayer.dll, and the package
@@ -109,7 +110,8 @@ docs/DEVELOPER.md                     this file
 | `battles_pvp_lobby.rbx` | `MGQ_MpBattlesPvp::Lobby`, `Scene_PvpLobby`, `Window_PvpLobbyCommand` | The PvP battle screen outside a world (F11): its lines and commands by how the exchange stands. |
 | `battles_duel.rbx` | `MGQ_MpBattlesDuel` | Duels: challenges like party invites, and `MGQ_MpBattlesPvp`'s battle over the world's room (see [Duels](#duels-battles_duelrbx)). Registers with `MGQ_MpOverworldSync`. |
 | `battles_team.rbx` | `MGQ_MpBattlesTeam` | Team duels: the sides once the duel starts, the other side's characters, and who commands the characters of a player who left (see [Team duels](#team-duels-battles_teamrbx)). Driven by `MGQ_MpBattlesDuel` and `MGQ_MpBattlesSync`. |
-| `world_overview.rbx` | `MGQ_MpWorldOverview`, `Sprite_MpWorldOverview`, `Sprite_MpPartyBox` | The World overview (F11 or the wheel's middle), the party box at the top right of the map, and the place, level and story every state tells (see [World overview](#world-overview-world_overviewrbx)). Registers with `MGQ_MpOverworldSync`. |
+| `world_overview.rbx` | `MGQ_MpWorldOverview`, `Sprite_MpWorldOverview` | The World overview (F11 or the wheel's middle), and the place, level and story every state tells (see [World overview](#world-overview-world_overviewrbx)). Registers with `MGQ_MpOverworldSync`. |
+| `ui_party_box.rbx` | `Sprite_MpPartyBox` | The party box at the top right of the map, built from `MGQ_MpWorldOverview.party_rows`, so it loads after the overview. |
 | `ui_notices.rbx` | `MGQ_MpNotices`, `Sprite_MpNoticeBox` | The notification box at the top left, on the map and in menus. Invites: party invites and duel challenges from anywhere, read from the states every frame, so each stays exactly as long as it stands (a full party's invite drops out). Messages: what other scripts show for a moment (`message`, 3 s by default, `drop`), such as a party member meeting enemies, below the invites and without keys. `MGQ_MpHotkeys` `:accept` (Y) accepts the first invite (a challenge only on the map), `:decline` (N) declines it: `MGQ_MpCoop::Party.decline` (`party_decline`, the inviter drops the player from `invite_to`) or `MGQ_MpBattlesDuel.decline` (`reason=no`, the challenger drops them from `challenge_to`), and the box hides that invite until the inviter sends a new one (`@declined`, by party id or challenger). Loaded last; registers with `MGQ_MpOverworldSync`. |
 
 **`MGQParadox.Multiplayer/`** builds `Multiplayer.dll`: C# compiled with NativeAOT into a native 32-bit DLL, because the game is a 32-bit process. Players need no .NET installed.
