@@ -2,7 +2,8 @@
 #  battle_support.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Followed the scripts to their new names, without mp_
+#      Paulinchen  2026-10-04: Stood in for coop_gather.rbx, which tells whether the player is about to be brought over
+#                            - Followed the scripts to their new names, without mp_
 #      Paulinchen  2026-10-03: Loaded the scripts split off the ones under test, and ui.rbx
 #                            - Added stand-ins for the party's events and the chat, which the battle scripts call
 #                            - Gave the world stand-in tell, notice and the own id and seat
@@ -51,7 +52,7 @@ module MGQ_MpOverworldSync
     def self.status; { "seat" => $my_seat.to_s }; end
   end
 end
-module MGQ_MpCoopEvents; def self.coming?; false; end; end
+module MGQ_MpCoopGather; def self.coming?; false; end; end
 module MGQ_MpChat; def self.system(text); end; end unless defined?(MGQ_MpChat)
 module MGQ_MpCoop
   module Party

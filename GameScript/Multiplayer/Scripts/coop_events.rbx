@@ -2,7 +2,9 @@
 #  coop_events.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Renamed from mp_coop_events.rbx
+#      Paulinchen  2026-10-04: Moved gathering the party for story scenes into coop_gather.rbx
+#                            - Moved the Pocket Castle's residents into coop_castle.rbx
+#                            - Renamed from mp_coop_events.rbx
 #      Paulinchen  2026-10-03: Sorted the Pocket Castle item as travel, which no longer gathers the party as a story scene
 #                            - Let a member teleport to the party's leader on their own
 #                            - Took over the warp ban of the leader's place when a story scene brings the player over, so a Harpy Feather works again outside a cave
@@ -42,10 +44,8 @@
 # a talk (conversations, shops, the job change menu), travel (a transfer), a chest (items and its
 # own self switch), a battle without dialogue, or story (everything that moves the story on).
 # Chests are the player's own, and opening one opens it for the whole party: every member who has
-# not looted it yet gets the same items. A story scene the leader starts waits until every member
-# stands near them, thirty seconds at most: members get five seconds to finish what they do, then
-# are brought over once free, and stand still while the scene plays. It starts without those who
-# did not come, who play on.
+# not looted it yet gets the same items. A story scene the leader starts first gathers the party,
+# see coop_gather.rbx; the Pocket Castle's residents are sorted by coop_castle.rbx.
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpCoopEvents
@@ -70,20 +70,6 @@ module MGQ_MpCoopEvents
   # Event commands that show dialogue: text, choices, scrolling text.
   MESSAGE_CODES = [101, 102, 105]
 
-  # Maps of the Pocket Castle, the home the party returns to, whose companions, merchants, inn and
-  # maids each player talks to in their own game. The maps of the castle's side stories stay out.
-  POCKET_CASTLE_MAPS = [227, 228, 229, 230] + (268..278).to_a
-
-  # Common events of the Pocket Castle's services: Vanilla's shop (106), Papi's smithy (107), the
-  # maids' party saves (111), the item storage (144) and Teeny's inn (270).
-  CASTLE_SERVICES = [106, 107, 111, 144, 270]
-
-  # Scripts of the Pocket Castle's coin shop, which lists its goods itself.
-  CASTLE_SHOP_SCRIPTS = /\A\s*@goods\b/
-
-  # A variable shown in a speaker's name, which a companion's name shows for their affection.
-  SHOWN_VARIABLE = /\\V\[(\d+)\]/i
-
   # Messages of the leader's story kept at most while the player is busy.
   MAX_HEARD = 30
 
@@ -104,29 +90,12 @@ module MGQ_MpCoopEvents
   # The class of each kind of item a chest gives, by the letter a message writes it with.
   ITEM_CLASSES = { "i" => RPG::Item, "w" => RPG::Weapon, "a" => RPG::Armor }
 
-  # Frames a member gets to finish what they do before a story scene brings them to the leader,
-  # five seconds at 60 frames per second.
-  GATHER_FRAMES = 300
-
-  # Tiles a member may stand away from the leader, on the leader's map, to count as gathered.
-  GATHER_TILES = 3
-
-  # Frames between two calls of the members while the leader's story scene waits, three seconds.
-  CALL_FRAMES = 180
-
-  # Frames the leader's story scene waits for the party at most before it starts without the
-  # members who did not come, thirty seconds.
-  HOLD_FRAMES = 1800
-
-  # Frames without a call after which a member's call lapses, two calls missed: the leader's story
-  # started without them, or the leader left.
-  CALL_LAPSE_FRAMES = CALL_FRAMES * 2
+  # Messages about gathering for story scenes, which coop_gather.rbx takes.
+  GATHER_MESSAGES = %w(gather come where)
 
   @common_kinds = {}
   @chest = nil
   @granting = false
-  @hold = nil
-  @gather = nil
 
   # Reports whether the hooks can be installed.
   #
@@ -218,7 +187,7 @@ module MGQ_MpCoopEvents
   # @param list [Array<RPG::EventCommand>] The commands.
   # @return [Symbol] :talk, :travel, :chest, :battle or :story.
   def self.kind_of(list)
-    return :talk if castle_resident?(list)
+    return :talk if defined?(MGQ_MpCoopCastle) && MGQ_MpCoopCastle.resident?(list)
 
     list = runnable(list)
     # Wandering monsters call the game's common events before and after their battle, which set
@@ -231,33 +200,6 @@ module MGQ_MpCoopEvents
     return :story if marks[:own_switch] || marks[:battle]
 
     marks[:travel] ? :travel : :talk
-  end
-
-  # Reports whether a page on the Pocket Castle's maps is one of its residents: a companion, a
-  # merchant, the inn or a maid, which each player talks to in their own game, whatever the talk
-  # sets. The castle's story events show none of these, though they share the companions' scripts.
-  #
-  # @param list [Array<RPG::EventCommand>] The commands.
-  # @return [Boolean] Whether it is.
-  def self.castle_resident?(list)
-    return false unless $game_map && POCKET_CASTLE_MAPS.include?($game_map.map_id)
-
-    companion_talk?(list) || list.any? do |c|
-      (c.code == 117 && CASTLE_SERVICES.include?(c.parameters[0])) || (c.code == 355 && c.parameters[0].to_s =~ CASTLE_SHOP_SCRIPTS)
-    end
-  end
-
-  # Reports whether a page is a companion's talk: its first speaker's name shows their affection.
-  #
-  # @param list [Array<RPG::EventCommand>] The commands.
-  # @return [Boolean] Whether it is.
-  def self.companion_talk?(list)
-    first = list.find { |c| c.code == 401 }
-    return false unless first && defined?(MGQ_MpCoopStory)
-
-    first.parameters[0].to_s.scan(SHOWN_VARIABLE).any? do |(id)|
-      id.to_i >= MGQ_MpCoopStory::AFFECTION_VARIABLES && MGQ_MpCoopStory.personal_variable?(id.to_i)
-    end
   end
 
   # Finds what a list of event commands does.
@@ -405,12 +347,12 @@ module MGQ_MpCoopEvents
   def self.started(interpreter, list, event_id)
     return unless $game_map && interpreter.equal?($game_map.interpreter)
 
-    @hold = nil
+    MGQ_MpCoopGather.drop_hold
     # A page of the leader's story that a scene change cut short must not hold the player's own.
     @mirrored = nil
     event = event_id > 0 ? $game_map.events[event_id] : nil
     @telling = leading? && (event ? kind(event) : kind_of(list || [])) == :story
-    hold(interpreter) if @telling && scene?(list) && !gathered?
+    MGQ_MpCoopGather.hold(interpreter) if @telling && scene?(list) && !MGQ_MpCoopGather.gathered?
     @chest = event && kind(event) == :chest && MGQ_MpCoop.in_party? ? { :interpreter => interpreter, :key => chest_key(event), :gains => [] } : nil
   end
 
@@ -455,82 +397,11 @@ module MGQ_MpCoopEvents
     MGQ_MpCoop.tell(seat, "pevent", kind, fields)
   end
 
-  # As leader, holds a story scene until every member stands near: calls them now and every few
-  # seconds while it waits.
-  #
-  # @param interpreter [Game_Interpreter] The map's interpreter, which waits at its first command.
-  def self.hold(interpreter)
-    @hold = { :interpreter => interpreter, :since => Graphics.frame_count, :called => Graphics.frame_count }
-    gather
-    MGQ_MpOverworldSync.notice("Gathering the party for the story . . .")
-  end
-
-  # As leader, calls the party members to where the player stands.
-  def self.gather
-    tell(-1, "gather", place_fields)
-  end
-
-  # Reports whether the leader's story scene still waits for the party, calling the members again
-  # every CALL_FRAMES, and starting it without those who did not come after HOLD_FRAMES. Asked
-  # before each of the interpreter's commands.
-  #
-  # @param interpreter [Game_Interpreter] The interpreter about to run a command.
-  # @return [Boolean] Whether it waits.
-  def self.holding?(interpreter)
-    return false unless @hold && @hold[:interpreter].equal?(interpreter)
-
-    if !leading? || gathered?
-      @hold = nil
-      MGQ_MpOverworldSync.notice("The party is here.") if leading?
-      return false
-    end
-
-    if Graphics.frame_count - @hold[:since] >= HOLD_FRAMES
-      @hold = nil
-      MGQ_MpOverworldSync.notice("The story starts without #{missing.join(', ')}.")
-      return false
-    end
-
-    if Graphics.frame_count - @hold[:called] >= CALL_FRAMES
-      @hold[:called] = Graphics.frame_count
-      gather
-    end
-    true
-  rescue => e
-    @hold = nil
-    log("holding the story failed: #{e.class}: #{e.message}")
-    false
-  end
-
-  # Reports whether every party member stands near the player, on the player's map.
-  #
-  # @return [Boolean] Whether they do.
-  def self.gathered?
-    missing.empty?
-  end
-
-  # Names the party members who do not stand near the player yet.
-  #
-  # @return [Array<String>] Their names.
-  def self.missing
-    here = [$game_map.map_id, $game_player.x, $game_player.y]
-    MGQ_MpCoop::Party.members.reject { |peer| near_place?(peer.state, here) }.map { |peer| peer.state["name"].to_s }
-  end
-
-  # Reports whether a player stands near a place.
-  #
-  # @param state [Hash] What the player last told, or the player's own "map", "x" and "y".
-  # @param place [Array<Integer>] The place's map, x and y.
-  # @return [Boolean] Whether they stand within GATHER_TILES of it.
-  def self.near_place?(state, place)
-    state["map"].to_i == place[0] && [(state["x"].to_i - place[1]).abs, (state["y"].to_i - place[2]).abs].max <= GATHER_TILES
-  end
-
   # Reports whether the leader's story scene plays now, held no more, which keeps the members still.
   #
   # @return [Boolean] Whether it does.
   def self.story_playing?
-    telling? && @hold.nil?
+    telling? && !MGQ_MpCoopGather.holding_story?
   end
 
   # The fields the party's events add to the state the player's game tells the others.
@@ -540,157 +411,17 @@ module MGQ_MpCoopEvents
     { "telling" => story_playing? ? 1 : 0 }
   end
 
-  # Takes the leader's call to their story scene: the player comes over in GATHER_FRAMES, unless
-  # they stand near already.
-  #
-  # @param peer [MGQ_MpOverworldSync::Peers::Peer] The leader.
-  # @param place [Array<Integer>] Where the leader stands: map, x, y and direction.
-  # @param warp_ban [Boolean] Whether warping is banned where the leader stands.
-  def self.called(peer, place, warp_ban = false)
-    mine = { "map" => $game_map.map_id, "x" => $game_player.x, "y" => $game_player.y }
-    return @gather = nil if near_place?(mine, place)
-
-    unless @gather
-      MGQ_MpOverworldSync.notice("#{peer.state['name']}'s story is starting. You join them in #{GATHER_FRAMES / 60} seconds.")
-      @gather = { :since => Graphics.frame_count, :name => peer.state["name"].to_s }
-    end
-    @gather[:place] = place
-    @gather[:warp_ban] = warp_ban
-    @gather[:called] = Graphics.frame_count
-  end
-
-  # As member, asks the leader where they stand, to come over as soon as the player is free.
-  def self.join_leader
-    lead = leader
-    return unless lead.is_a?(MGQ_MpOverworldSync::Peers::Peer)
-
-    name = lead.state["name"].to_s
-    mine = { "map" => $game_map.map_id, "x" => $game_player.x, "y" => $game_player.y }
-    if near_place?(mine, [lead.state["map"].to_i, lead.state["x"].to_i, lead.state["y"].to_i])
-      return MGQ_MpOverworldSync.notice("You are with #{name} already.")
-    end
-
-    @asked = Graphics.frame_count
-    tell(lead.seat, "where")
-    MGQ_MpOverworldSync.notice("Teleporting to #{name} . . .")
-  rescue => e
-    log("asking for the leader's place failed: #{e.class}: #{e.message}")
-  end
-
-  # As leader, tells a member who asked where the player stands.
-  #
-  # @param peer [MGQ_MpOverworldSync::Peers::Peer] The member.
-  def self.answer_where(peer)
-    tell(peer.seat, "come", place_fields) if leader == :me && MGQ_MpCoop::Party.member?(peer.state)
-  end
-
-  # Takes the leader's answer to join_leader: the player comes over at once, unless they never
-  # asked or stand near already.
-  #
-  # @param peer [MGQ_MpOverworldSync::Peers::Peer] The leader.
-  # @param place [Array<Integer>] Where the leader stands: map, x, y and direction.
-  # @param warp_ban [Boolean] Whether warping is banned where the leader stands.
-  def self.answered(peer, place, warp_ban)
-    asked = @asked
-    @asked = nil
-    return unless asked && Graphics.frame_count - asked < CALL_LAPSE_FRAMES
-
-    mine = { "map" => $game_map.map_id, "x" => $game_player.x, "y" => $game_player.y }
-    return if near_place?(mine, place)
-
-    @gather = { :since => Graphics.frame_count - GATHER_FRAMES, :name => peer.state["name"].to_s, :place => place,
-                :warp_ban => warp_ban, :called => Graphics.frame_count, :asked => true }
-  end
-
-  # Reports whether the leader's story scene is about to bring the player over, which keeps random
-  # encounters and co-op battles away so no battle holds the player up.
-  #
-  # @return [Boolean] Whether it is.
-  def self.coming?
-    !@gather.nil? && Graphics.frame_count - @gather[:called] < CALL_LAPSE_FRAMES
-  end
-
-  # Tells where the player comes to for the leader's story scene, once its five seconds passed.
-  #
-  # @return [Array<Integer>, nil] The leader's map, x, y and direction, nil while none or not yet.
-  def self.come?
-    gather = pending_call
-    gather && Graphics.frame_count - gather[:since] >= GATHER_FRAMES ? gather[:place] : nil
-  end
-
-  # The leader's call the player has yet to answer, forgetting it once the calls stopped.
-  #
-  # @return [Hash, nil] The call: :since, :name, :place, :warp_ban and :called; nil for none.
-  def self.pending_call
-    return nil unless @gather
-    return @gather if Graphics.frame_count - @gather[:called] < CALL_LAPSE_FRAMES
-
-    MGQ_MpOverworldSync.notice(@gather[:asked] ? "You were too busy to teleport to #{@gather[:name]}." : "#{@gather[:name]}'s story started without you.")
-    @gather = nil
-  end
-
-  # Tells what the line above the player's own head says about the party's story, if anything:
-  # the leader's wait, or a member's time left before coming over.
-  #
-  # @return [String, nil] The line.
-  def self.own_line
-    return "Gathering the party . . ." if @hold && leading?
-
-    gather = pending_call
-    return nil unless gather
-
-    seconds = (GATHER_FRAMES - (Graphics.frame_count - gather[:since]) + 59) / 60
-    seconds > 0 ? "Joining #{gather[:name]} in #{seconds} s . . ." : "Joining #{gather[:name]} once free . . ."
-  end
-
-  # Reports whether the player, a member, has to stand still: while their leader's story scene plays
-  # on the player's map. A member it started without plays on elsewhere.
-  #
-  # @return [Boolean] Whether they do.
-  def self.blocked?
-    lead = leader
-    lead.is_a?(MGQ_MpOverworldSync::Peers::Peer) && lead.state["telling"] == "1" && lead.state["map"].to_i == $game_map.map_id
-  end
-
-  # Writes where the player stands, and whether warping is banned there.
-  #
-  # @return [Hash] "map", "x", "y", "d" and "warp_ban".
-  def self.place_fields
-    { "map" => $game_map.map_id, "x" => $game_player.x, "y" => $game_player.y, "d" => $game_player.direction,
-      "warp_ban" => warp_ban? ? 1 : 0 }
-  end
-
-  # Reports whether warping, such as with a Harpy Feather, is banned where the player stands.
-  #
-  # @return [Boolean] Whether it is.
-  def self.warp_ban?
-    defined?(MGQ_MpCoopStory) && $game_switches[MGQ_MpCoopStory::WARP_BAN] ? true : false
-  end
-
-  # Takes over the warp ban of the place the leader's story scene brought the player to.
-  #
-  # The game sets the ban in the events a player walks through to enter or leave a cave, which a
-  # player brought over never touches, so the ban of the place they left would stay.
-  #
-  # @param banned [Boolean] Whether warping is banned where the leader stands.
-  def self.take_warp_ban(banned)
-    $game_switches[MGQ_MpCoopStory::WARP_BAN] = banned if defined?(MGQ_MpCoopStory)
-  end
-
   # Takes a message about the party's events from another member.
   #
   # @param peer [MGQ_MpOverworldSync::Peers::Peer, nil] Who sent it.
   # @param message [Hash] The message's fields.
   def self.take_party(peer, message)
     return take_request(peer, message) if message["pevent"] == "run"
-    return answer_where(peer) if message["pevent"] == "where"
+    return MGQ_MpCoopGather.take(peer, message) if GATHER_MESSAGES.include?(message["pevent"])
     return unless leader.equal?(peer)
 
-    place = [message["map"].to_i, message["x"].to_i, message["y"].to_i, message["d"].to_i]
     case message["pevent"]
-    when "gather" then called(peer, place, message["warp_ban"] == "1")
-    when "come" then answered(peer, place, message["warp_ban"] == "1")
-    when "say" then hear(peer, message) if place[0] == $game_map.map_id
+    when "say" then hear(peer, message) if message["map"].to_i == $game_map.map_id
     when "done" then heard_done(message)
     end
   rescue => e
@@ -764,7 +495,7 @@ module MGQ_MpCoopEvents
 
     @shown = page
     @page = @page.to_i + 1
-    fields = place_fields.merge(
+    fields = MGQ_MpCoopGather.place_fields.merge(
       "page" => page_id, "face" => message.face_name.to_s, "index" => message.face_index.to_i,
       "background" => message.background.to_i, "position" => message.position.to_i,
       "lines" => page[0].map { |line| [line.to_s].pack('m0') }.join(","),
@@ -782,7 +513,7 @@ module MGQ_MpCoopEvents
     return unless @shown && interpreter.equal?($game_map.interpreter)
 
     @shown = nil
-    tell(-1, "done", place_fields.merge("page" => page_id))
+    tell(-1, "done", MGQ_MpCoopGather.place_fields.merge("page" => page_id))
   rescue => e
     log("telling a message's end failed: #{e.class}: #{e.message}")
   end
@@ -884,30 +615,13 @@ module MGQ_MpCoopEvents
     @mirrored = { :page => page[:page], :since => Graphics.frame_count }
   end
 
-  # Moves the player to the leader once a story scene's five seconds passed, once the player is
-  # free: on the map, with no event, message, transfer or battle of their own in the way. As
-  # leader, starts the story events members asked for. Shows the leader's messages. Called after
+  # As leader, starts the story events members asked for. Shows the leader's messages. Called after
   # the map's update.
   def self.update
     start_requested
     show_heard
-    place = come?
-    return unless place && MGQ_MpOverworldSync.map_free?
-
-    map_id, x, y, direction = place
-    warp_ban = @gather[:warp_ban]
-    @gather = nil
-    return unless MGQ_MpCoop.in_party?
-
-    if map_id == $game_map.map_id
-      $game_player.moveto(x, y)
-      $game_player.set_direction(direction) if direction > 0
-    else
-      $game_player.reserve_transfer(map_id, x, y, direction > 0 ? direction : 2)
-    end
-    take_warp_ban(warp_ban)
   rescue => e
-    log("coming to the leader failed: #{e.class}: #{e.message}")
+    log("updating the party's events failed: #{e.class}: #{e.message}")
   end
 
   # Notes that an item is being given, and whether it is the outermost of nested gifts.
@@ -1056,32 +770,11 @@ rescue => e
   MGQ_MpCoopEvents.log("co-op FAILED: #{e.class}: #{e.message}")
 end
 
-# The line above the player's own head while the leader's story calls them, through ui_actions.rbx.
-
-begin
-  MGQ_MpActions.own_line_from { MGQ_MpCoopEvents.own_line }
-rescue => e
-  MGQ_MpCoopEvents.log("actions FAILED: #{e.class}: #{e.message}")
-end
-
 # Game hooks shared with other scripts, through core_hooks.rbx.
 
 begin
-  # Before an event command runs, its interpreter waits while the leader's story scene waits for
-  # the party.
-  MGQ_MpHooks.before(Game_Interpreter, :execute_command, "coop_events") do
-    begin
-      Fiber.yield while MGQ_MpCoopEvents.holding?(self)
-    rescue FiberError
-      # An interpreter run outside a fiber cannot wait, so its command runs at once.
-    end
-  end
-
-  # After the map's update, the player is brought to the leader's story scene when they are free.
+  # After the map's update, the leader's story pages show once the player is free.
   MGQ_MpHooks.after(Game_Map, :update, "coop_events") { MGQ_MpCoopEvents.update }
-
-  # The player stands still and opens no menu while their leader's story scene plays.
-  MGQ_MpHooks.hold_player("coop_events") { MGQ_MpCoopEvents.blocked? }
 rescue => e
   MGQ_MpCoopEvents.log("hooks FAILED: #{e.class}: #{e.message}")
 end
@@ -1190,26 +883,6 @@ if MGQ_MpCoopEvents.hookable?
     end
   rescue => e
     MGQ_MpCoopEvents.log("message hooks FAILED: #{e.class}: #{e.message}")
-  end
-
-  begin
-    class Game_Player
-      alias mgq_mp_coop_events_encounter encounter
-
-      # Starts a random encounter when its steps ran out, but not while the leader's story scene is
-      # about to bring the player over.
-      #
-      # @return [Boolean] Whether a battle starts.
-      def encounter
-        return mgq_mp_coop_events_encounter unless (MGQ_MpCoopEvents.coming? rescue false)
-
-        # Steps that ran out while called would start a battle the moment the player arrives.
-        make_encounter_count if @encounter_count <= 0
-        false
-      end
-    end
-  rescue => e
-    MGQ_MpCoopEvents.log("encounter hook FAILED: #{e.class}: #{e.message}")
   end
 
   begin

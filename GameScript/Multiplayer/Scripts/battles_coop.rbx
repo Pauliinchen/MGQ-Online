@@ -2,7 +2,8 @@
 #  battles_coop.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Renamed from mp_battles_coop.rbx
+#      Paulinchen  2026-10-04: Asked coop_gather.rbx whether the leader's story is about to bring the player over
+#                            - Renamed from mp_battles_coop.rbx
 #      Paulinchen  2026-10-03: Registered what a co-op battle does differently in a live battle as its Mode
 #                            - Read and wrote the game's private fields and called its private methods through MGQ_MpGame
 #                            - Kept the battle's players as Player records instead of arrays read by position
@@ -472,7 +473,7 @@ module MGQ_MpBattlesCoop
     peer = invite[:peer]
     message = invite[:message]
     return decline(peer, message) unless message["map"].to_i == $game_map.map_id && MGQ_MpBattlesSync.role.nil?
-    return decline(peer, message) if expired?(invite) || MGQ_MpCoopEvents.coming?
+    return decline(peer, message) if expired?(invite) || MGQ_MpCoopGather.coming?
     return unless free?
 
     @invite = nil
@@ -491,7 +492,7 @@ module MGQ_MpBattlesCoop
     unless message["map"].to_i == $game_map.map_id && MGQ_MpBattlesSync.role.nil? && MGQ_MpCoop::Party.leader == :me
       return refuse_lead(peer, message)
     end
-    return refuse_lead(peer, message) if expired?(request) || MGQ_MpCoopEvents.coming?
+    return refuse_lead(peer, message) if expired?(request) || MGQ_MpCoopGather.coming?
     return unless free?
 
     @request = nil

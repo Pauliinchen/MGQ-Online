@@ -2,7 +2,8 @@
 #  coop.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Renamed from mp_coop.rbx
+#      Paulinchen  2026-10-04: Teleported to the leader through coop_gather.rbx
+#                            - Renamed from mp_coop.rbx
 #      Paulinchen  2026-10-03: Offered a party's member to teleport to its leader, on the wheel in place of the invite and on the leader's row of the World overview
 #                            - Offered the party's choices and invites to the wheel, the World overview and the notification box through MGQ_MpActions
 #                            - Sent messages, showed notices and read the world, the own id and the own seat through MGQ_MpOverworldSync
@@ -615,7 +616,7 @@ module MGQ_MpCoop
       lead = MGQ_MpCoop.in_party? ? Party.leader : nil
       return nil unless lead.is_a?(MGQ_MpOverworldSync::Peers::Peer) && defined?(MGQ_MpCoopEvents)
 
-      MGQ_MpActions::Option.new("Teleport to #{lead.state['name']}", lambda { MGQ_MpCoopEvents.join_leader }, nil, nil, true)
+      MGQ_MpActions::Option.new("Teleport to #{lead.state['name']}", lambda { MGQ_MpCoopGather.join_leader }, nil, nil, true)
     end
 
     # The wheel's choice that leaves the party, or stops an invite nobody took.

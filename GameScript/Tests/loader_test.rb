@@ -2,7 +2,8 @@
 #  loader_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Followed the scripts to their new names, without mp_
+#      Paulinchen  2026-10-04: Checked that coop_gather.rbx loads after coop_events.rbx and coop_castle.rbx after coop_story.rbx
+#                            - Followed the scripts to their new names, without mp_
 #      Paulinchen  2026-10-03: Checked that a family's base script loads before its other scripts
 #                            - Checked that core_log.rbx loads first
 #      Paulinchen  2026-10-02: Checked that core_hooks.rbx loads first
@@ -34,6 +35,8 @@ check("the scripts whose constants the World overview shares load before it",
       %w[ui_actions overworld battles_pvp].all? { |name| scripts.index(name) < scripts.index("world_overview") }, true)
 check("a family's base script loads before its other scripts",
       %w[ui world battles battles_sync battles_pvp coop].all? { |base| scripts.select { |name| name.start_with?("#{base}_") }.all? { |name| scripts.index(base) < scripts.index(name) } }, true)
+check("the party's gathering loads after the events that hand it its messages, the castle after the story it reads",
+      [scripts.index("coop_events") < scripts.index("coop_gather"), scripts.index("coop_story") < scripts.index("coop_castle")], [true, true])
 check("the battle scripts keep the order their late hooks rely on",
       %w[battles battles_coop battles_sync].map { |name| scripts.index(name) }.each_cons(2).all? { |a, b| a < b }, true)
 

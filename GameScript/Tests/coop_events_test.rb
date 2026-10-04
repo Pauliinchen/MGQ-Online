@@ -2,7 +2,8 @@
 #  coop_events_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Followed the scripts to their new names, without mp_
+#      Paulinchen  2026-10-04: Followed gathering into coop_gather.rbx and the Pocket Castle's residents into coop_castle.rbx
+#                            - Followed the scripts to their new names, without mp_
 #      Paulinchen  2026-10-03: Checked that the Pocket Castle item is travel
 #                            - Checked that a member teleports to the leader on their own
 #                            - Checked that a member brought to the leader takes over the warp ban of the leader's place
@@ -204,6 +205,8 @@ module MGQ_MpOverworldSync
 end
 load_script "coop_story"
 load_script "coop_events"
+load_script "coop_gather"
+load_script "coop_castle"
 
 # Sorts a list of event commands, see MGQ_MpCoopEvents.kind_of.
 #
@@ -375,10 +378,10 @@ $game_map.map_id = 3
 $game_player.moveto(1, 1)
 MGQ_MpCoopEvents.take(leader, { "pevent" => "travel", "party" => "p1", "map" => "7", "x" => "2", "y" => "2", "d" => "4" })
 $game_map.update
-MGQ_MpCoopEvents.update
+$game_map.update
 check("a member stays when the leader goes to another map", $game_player.reserved, nil)
 MGQ_MpCoopEvents.take(friend, { "pevent" => "gather", "party" => "p1", "map" => "7", "x" => "2", "y" => "2", "d" => "4" })
-check("only the leader calls the party to a story scene", MGQ_MpCoopEvents.own_line, nil)
+check("only the leader calls the party to a story scene", MGQ_MpCoopGather.own_line, nil)
 $game_map.map_id = 7
 $game_player.moveto(2, 2)
 
@@ -386,8 +389,8 @@ $game_player.moveto(2, 2)
 $notices.clear
 leader.state.merge!("map" => "8")
 MGQ_MpCoopEvents.take(leader, { "pevent" => "gather", "party" => "p1", "map" => "8", "x" => "9", "y" => "3", "d" => "6" })
-MGQ_MpCoopEvents.update
-check("a member called to the story hears when they come over", [$notices.last, MGQ_MpCoopEvents.own_line], ["Leader's story is starting. You join them in 5 seconds.", "Joining Leader in 5 s . . ."])
+$game_map.update
+check("a member called to the story hears when they come over", [$notices.last, MGQ_MpCoopGather.own_line], ["Leader's story is starting. You join them in 5 seconds.", "Joining Leader in 5 s . . ."])
 check("and is not moved before five seconds", [$game_player.reserved, $game_map.map_id], [nil, 7])
 $game_player.encounter_count = 5
 check("a member about to come over meets no random encounter while steps are left", $game_player.encounter, false)
@@ -396,32 +399,32 @@ check("nor once they ran out, which draws new steps", [$game_player.encounter, $
 $frame_count = 150
 $game_switches[MGQ_MpCoopStory::WARP_BAN] = true
 MGQ_MpCoopEvents.take(leader, { "pevent" => "gather", "party" => "p1", "map" => "8", "x" => "9", "y" => "3", "d" => "6", "warp_ban" => "0" })
-check("calls again do not start the time anew", MGQ_MpCoopEvents.own_line, "Joining Leader in 3 s . . .")
+check("calls again do not start the time anew", MGQ_MpCoopGather.own_line, "Joining Leader in 3 s . . .")
 $frame_count = 300
 SceneManager.scene = Scene_Battle.new
-MGQ_MpCoopEvents.update
-check("a member in battle comes once it is over", [$game_player.reserved, MGQ_MpCoopEvents.own_line], [nil, "Joining Leader once free . . ."])
+$game_map.update
+check("a member in battle comes once it is over", [$game_player.reserved, MGQ_MpCoopGather.own_line], [nil, "Joining Leader once free . . ."])
 SceneManager.scene = Scene_Map.new
-MGQ_MpCoopEvents.update
+$game_map.update
 check("then they are brought to the leader's map", $game_player.reserved, [8, 9, 3, 6])
 check("where warping is allowed again, though they never walked out of the cave they were in", $game_switches[MGQ_MpCoopStory::WARP_BAN], false)
-check("a leader tells whether warping is banned where they stand", MGQ_MpCoopEvents.place_fields["warp_ban"], 0)
+check("a leader tells whether warping is banned where they stand", MGQ_MpCoopGather.place_fields["warp_ban"], 0)
 check("the warp ban is each player's own, not the leader's story", MGQ_MpCoopStory.personal_switch?(MGQ_MpCoopStory::WARP_BAN), true)
 $game_player.perform_transfer
-check("and wait no more", MGQ_MpCoopEvents.own_line, nil)
+check("and wait no more", MGQ_MpCoopGather.own_line, nil)
 $game_player.encounter_count = 0
 check("then random encounters come again", $game_player.encounter, true)
 MGQ_MpCoopEvents.take(leader, { "pevent" => "gather", "party" => "p1", "map" => "8", "x" => "11", "y" => "4", "d" => "6" })
-check("a member standing near already is not moved", [MGQ_MpCoopEvents.own_line, $game_player.x], [nil, 9])
+check("a member standing near already is not moved", [MGQ_MpCoopGather.own_line, $game_player.x], [nil, 9])
 $frame_count = 2000
 MGQ_MpCoopEvents.take(leader, { "pevent" => "gather", "party" => "p1", "map" => "5", "x" => "1", "y" => "1", "d" => "2" })
 $frame_count = 2359
-check("a call stands while the leader still calls", MGQ_MpCoopEvents.own_line, "Joining Leader once free . . .")
+check("a call stands while the leader still calls", MGQ_MpCoopGather.own_line, "Joining Leader once free . . .")
 $frame_count = 2360
 $notices.clear
-check("asking whether the member is coming once the calls stopped only says no", [MGQ_MpCoopEvents.coming?, $notices], [false, []])
-MGQ_MpCoopEvents.update
-check("once the calls stop, the story started without the member, who stays", [MGQ_MpCoopEvents.own_line, $notices.last, $game_player.reserved],
+check("asking whether the member is coming once the calls stopped only says no", [MGQ_MpCoopGather.coming?, $notices], [false, []])
+$game_map.update
+check("once the calls stop, the story started without the member, who stays", [MGQ_MpCoopGather.own_line, $notices.last, $game_player.reserved],
       [nil, "Leader's story started without you.", nil])
 
 # A member teleports to the leader on their own.
@@ -430,17 +433,17 @@ come = { "pevent" => "come", "party" => "p1", "map" => "5", "x" => "1", "y" => "
 leader_before = leader.state.dup
 leader.state.merge!("map" => "5", "x" => "1", "y" => "1")
 MGQ_MpCoopEvents.take(leader, come)
-MGQ_MpCoopEvents.update
-check("the leader's place moves nobody who did not ask for it", [$game_player.reserved, MGQ_MpCoopEvents.own_line], [nil, nil])
-MGQ_MpCoopEvents.join_leader
+$game_map.update
+check("the leader's place moves nobody who did not ask for it", [$game_player.reserved, MGQ_MpCoopGather.own_line], [nil, nil])
+MGQ_MpCoopGather.join_leader
 check("a member who teleports asks the leader where they stand", [$sent.map { |seat, f| [seat, f["pevent"]] }, $notices.last], [[[leader.seat, "where"]], "Teleporting to Leader . . ."])
 MGQ_MpCoopEvents.take(leader, come)
-MGQ_MpCoopEvents.update
+$game_map.update
 check("and comes at once, taking over the place's warp ban", [$game_player.reserved, $game_switches[MGQ_MpCoopStory::WARP_BAN]], [[5, 1, 1, 2], true])
 $game_player.instance_variable_set(:@reserved, nil)
 $sent.clear
 leader.state.merge!("map" => $game_map.map_id.to_s, "x" => $game_player.x.to_s, "y" => $game_player.y.to_s)
-MGQ_MpCoopEvents.join_leader
+MGQ_MpCoopGather.join_leader
 check("a member standing with the leader already asks nothing", [$sent, $notices.last], [[], "You are with Leader already."])
 MGQ_MpCoopEvents.take(friend, { "pevent" => "where", "party" => "p1" })
 check("a member never answers where the leader stands", $sent, [])
@@ -448,13 +451,13 @@ $game_switches[MGQ_MpCoopStory::WARP_BAN] = false
 leader.state.replace(leader_before)
 
 # While the leader's story scene plays, the member stands still.
-check("free while the leader tells no story", [$game_player.movable?, MGQ_MpCoopEvents.blocked?], [true, false])
+check("free while the leader tells no story", [$game_player.movable?, MGQ_MpCoopGather.blocked?], [true, false])
 leader.state["telling"] = "1"
 scene = Scene_Map.new
 scene.update_call_menu
 check("blocked while it plays: no moving, no menu", [$game_player.movable?, scene.menu_calling], [false, false])
 leader.state["map"] = "5"
-check("a member on another map, whom the story started without, plays on", [$game_player.movable?, MGQ_MpCoopEvents.blocked?], [true, false])
+check("a member on another map, whom the story started without, plays on", [$game_player.movable?, MGQ_MpCoopGather.blocked?], [true, false])
 leader.state["map"] = "8"
 leader.state["telling"] = "0"
 scene.update_call_menu
@@ -473,30 +476,30 @@ interpreter = $game_map.interpreter
 interpreter.setup([c(101, "", 0, 0, 2), c(121, 60, 60, 0)], 1)
 check("a story scene calls the members", [$sent.map { |seat, f| [seat, f["pevent"], f["map"], f["x"]] }, $notices.last], [[[-1, "gather", "3", "5"]], "Gathering the party for the story . . ."])
 interpreter.busy = true
-check("and waits while one is away", [MGQ_MpCoopEvents.holding?(interpreter), MGQ_MpCoopEvents.own_line, MGQ_MpCoopEvents.state_fields["telling"]], [true, "Gathering the party . . .", 0])
+check("and waits while one is away", [MGQ_MpCoopGather.holding?(interpreter), MGQ_MpCoopGather.own_line, MGQ_MpCoopEvents.state_fields["telling"]], [true, "Gathering the party . . .", 0])
 $sent.clear
 $frame_count = 1100
-MGQ_MpCoopEvents.holding?(interpreter)
+MGQ_MpCoopGather.holding?(interpreter)
 check("calling again only every three seconds", $sent.size, 0)
 $frame_count = 1200
-MGQ_MpCoopEvents.holding?(interpreter)
+MGQ_MpCoopGather.holding?(interpreter)
 check("then once more", $sent.map { |_, f| f["pevent"] }, ["gather"])
-check("other interpreters never wait", MGQ_MpCoopEvents.holding?(Game_Interpreter.new), false)
+check("other interpreters never wait", MGQ_MpCoopGather.holding?(Game_Interpreter.new), false)
 friend.state.merge!("map" => "3", "x" => "7", "y" => "4")
-check("once everyone stands near, the scene plays", [MGQ_MpCoopEvents.holding?(interpreter), $notices.last, MGQ_MpCoopEvents.state_fields["telling"]], [false, "The party is here.", 1])
+check("once everyone stands near, the scene plays", [MGQ_MpCoopGather.holding?(interpreter), $notices.last, MGQ_MpCoopEvents.state_fields["telling"]], [false, "The party is here.", 1])
 interpreter.busy = false
 check("and the members are free once it ends", MGQ_MpCoopEvents.state_fields["telling"], 0)
 $sent.clear
 interpreter.setup([c(101, "", 0, 0, 2), c(121, 60, 60, 0)], 1)
-check("a party gathered already plays at once", [$sent.size, MGQ_MpCoopEvents.holding?(interpreter)], [0, false])
+check("a party gathered already plays at once", [$sent.size, MGQ_MpCoopGather.holding?(interpreter)], [0, false])
 friend.state.merge!("map" => "9", "x" => "1", "y" => "1")
 $frame_count = 3000
 interpreter.setup([c(101, "", 0, 0, 2), c(121, 60, 60, 0)], 1)
 interpreter.busy = true
 $frame_count = 4799
-check("a member who does not come holds the scene up to thirty seconds", MGQ_MpCoopEvents.holding?(interpreter), true)
+check("a member who does not come holds the scene up to thirty seconds", MGQ_MpCoopGather.holding?(interpreter), true)
 $frame_count = 4800
-check("then it plays without them", [MGQ_MpCoopEvents.holding?(interpreter), $notices.last, MGQ_MpCoopEvents.state_fields["telling"]],
+check("then it plays without them", [MGQ_MpCoopGather.holding?(interpreter), $notices.last, MGQ_MpCoopEvents.state_fields["telling"]],
       [false, "The story starts without Friend.", 1])
 interpreter.busy = false
 $leader = leader
@@ -547,10 +550,10 @@ $game_map.interpreter.busy = false
 MGQ_MpCoopEvents.take(friend, { "pevent" => "run", "party" => "p1", "map" => "7", "event" => "11" })
 MGQ_MpCoopEvents.take(stranger = MGQ_MpOverworldSync::Peers::Peer.new(8, { "party" => "p9" }, nil, false), { "pevent" => "run", "party" => "p1", "map" => "7", "event" => "12" })
 $game_map.interpreter.busy = true
-MGQ_MpCoopEvents.update
+$game_map.update
 check("a requested event waits while the leader is busy", $game_map.events[11].starting ? true : false, false)
 $game_map.interpreter.busy = false
-MGQ_MpCoopEvents.update
+$game_map.update
 check("then starts in the leader's game", $game_map.events[11].starting, true)
 check("only for party members", $game_map.events[12].starting, false)
 $sent.clear
@@ -582,10 +585,10 @@ $members = [leader]
 $game_message.clear
 $game_message.busy = true
 MGQ_MpCoopEvents.take(leader, say)
-MGQ_MpCoopEvents.update
+$game_map.update
 check("a member busy with a message sees the leader's later", $game_message.texts, [])
 $game_message.busy = false
-MGQ_MpCoopEvents.update
+$game_map.update
 check("then the leader's message, with what the leader chooses from", [$game_message.face_name, $game_message.texts], ["Alice", ["Hello, \\N[1]!", "Leader chooses: Yes / No"]])
 
 # Only the leader moves the dialogue on.
@@ -605,7 +608,7 @@ MGQ_MpCoopEvents.take(leader, say.merge("page" => "s.1", "lines" => ["Old page"]
 MGQ_MpCoopEvents.take(leader, { "pevent" => "done", "party" => "p1", "map" => "7", "page" => "s.1" })
 MGQ_MpCoopEvents.take(leader, say.merge("page" => "s.2", "lines" => ["Current page"].pack('m0'), "choices" => ""))
 $game_message.busy = false
-MGQ_MpCoopEvents.update
+$game_map.update
 check("a member busy meanwhile skips the pages the leader moved past", $game_message.texts, ["Current page"])
 leader.state["telling"] = "0"
 $frame_count += MGQ_MpCoopEvents::STALE_FRAMES

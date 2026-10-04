@@ -2,7 +2,8 @@
 #  Multiplayer.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Loaded the scripts by their new names, which say what each belongs to instead of mp_
+#      Paulinchen  2026-10-04: Loaded coop_gather.rbx and coop_castle.rbx, split out of coop_events.rbx
+#                            - Loaded the scripts by their new names, which say what each belongs to instead of mp_
 #                            - Loaded ui_text_box.rbx after ui.rbx, and world_save_distribution.rbx after world.rbx
 #      Paulinchen  2026-10-03: Loaded battles_pvp_backline.rbx after battles_pvp.rbx
 #                            - Loaded battles_balance_pvp.rbx before battles_pvp.rbx
@@ -63,7 +64,7 @@ module MGQ_Multiplayer
   # loaded first, so their order decides how those hooks wrap each other.
   SCRIPTS = %w[
     core_log core_hooks core_game_access core_hotkeys ui ui_text_box core_actors core_async overworld_sync ui_actions ui_chat overworld
-    coop coop_squad coop_events coop_npcs coop_story
+    coop coop_squad coop_events coop_gather coop_npcs coop_story coop_castle
     world world_save_distribution world_text world_screen world_save_export
     battles battles_coop
     battles_sync battles_sync_wire battles_sync_recorder battles_sync_playback battles_sync_live
