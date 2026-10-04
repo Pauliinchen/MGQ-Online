@@ -2,6 +2,7 @@
 #  battles_coop_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-04: Checked that the guest of a lost battle takes the host's defeat scene, or one of its own enemies
 #      Paulinchen  2026-10-03: Checked that the others' characters start the battle and each turn with a hit count
 #                            - Checked that the map shows the player's own leader again after the battle
 #                            - Checked that the party's leader leads a member's battle, and that the member hosts once the leader refuses or stays silent
@@ -267,6 +268,23 @@ $aborted = false
 MGQ_MpBattlesSync::Live.guest_end("process_abort", scene)
 check("when the host gets away, the guest fights on alone", [MGQ_MpBattlesCoop.active?, $game_party.battle_members, MGQ_MpBattlesSync.role, MGQ_MpBattles.running?], [false, mine, nil, false])
 check("from a new command phase", [$turn_ends, $commands_phase, $aborted], [1, true, false])
+
+# The defeat scene of a lost battle, which the guest's own battle never picks.
+class Game_Temp; attr_accessor :lose_event_id, :lose_event_enemy_id; end
+class Game_Enemy; def lose_event_id; 6000 + @enemy_id; end; def id; @enemy_id; end; end
+known_events = $data_common_events
+$data_common_events = []
+$data_common_events[6040] = :scene
+$game_temp.lose_event_id = nil
+MGQ_MpBattlesSync::Live.take_defeat_scene(["end", "process_defeat", 6040, 40])
+check("the guest of a lost battle takes the host's defeat scene", [$game_temp.lose_event_id, $game_temp.lose_event_enemy_id], [6040, 40])
+$data_common_events[6031] = $data_common_events[6032] = :scene
+MGQ_MpBattlesSync::Live.take_defeat_scene(["end", "process_defeat", 9999, 40])
+check("or one of its own enemies when this game lacks the host's", [6031, 6032].include?($game_temp.lose_event_id) && $game_temp.lose_event_enemy_id == $game_temp.lose_event_id - 6000, true)
+$game_temp.lose_event_id = nil
+MGQ_MpBattlesSync::Live.take_defeat_scene(["end", "process_defeat"])
+check("as when an older host names none", [6031, 6032].include?($game_temp.lose_event_id), true)
+$data_common_events = known_events
 
 # Swaps with the Backline: the host with five characters, a friend with four.
 $my_seat = 0

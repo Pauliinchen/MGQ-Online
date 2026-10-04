@@ -2,6 +2,7 @@
 #  mp_battles_sync_live.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-04: Gave the guest of a lost co-op battle the defeat scene the host's battle chose, which crashed without one
 #      Paulinchen  2026-10-03: Told the one guest of a PvP battle an order of places that changed, as the guests of a co-op battle
 #                            - Asked the running battle's mode instead of naming co-op battles and team duels
 #                            - Read and wrote the game's private fields and called its private methods through MGQ_MpGame
@@ -204,7 +205,7 @@ module MGQ_MpBattlesSync
       [:process_victory, :process_defeat, :process_abort].each do |name|
         MGQ_MpHooks.around(BattleManager.singleton_class, name) do |_manager, _args, original|
           if Recorder.active?
-            Recorder.event("end", name.to_s)
+            Recorder.event("end", name.to_s, $game_temp.lose_event_id, $game_temp.lose_event_enemy_id)
             Recorder.flush
           end
           original.call
@@ -381,12 +382,35 @@ module MGQ_MpBattlesSync
     def self.play_until_commands(scene)
       event = Playback.run(scene)
       return end_early(scene, event[0]) if event && event[0].is_a?(Symbol)
-      return guest_end(event[1], scene) if event
+      if event
+        take_defeat_scene(event) if MGQ_MpBattlesSync.same_side?
+        return guest_end(event[1], scene)
+      end
 
       # The guest's own battle never reaches the turn's end, and a command phase started in the
       # middle of one keeps the last turn's actions and skips every command.
       BattleManager.turn_end
       scene.start_party_command_selection
+    end
+
+    # Takes the defeat scene the host's battle chose, or one of an enemy here when the host's is
+    # unknown to this game.
+    #
+    # The game picks the scene at the battle's start and with each enemy's action, both of which the
+    # guest's battle leaves out, and a defeat without a scene raises.
+    #
+    # @param event [Array] The "end" event: its kind, how the battle ended, the scene's common event
+    #   and its enemy.
+    def self.take_defeat_scene(event)
+      scene_id, enemy_id = event[2], event[3]
+      unless scene_id.is_a?(Integer) && scene_id > 0 && $data_common_events[scene_id]
+        enemy = $game_troop.members.sample
+        return unless enemy
+
+        scene_id, enemy_id = enemy.lose_event_id, enemy.id
+      end
+      $game_temp.lose_event_id = scene_id
+      $game_temp.lose_event_enemy_id = enemy_id
     end
 
     # Ends the guest's battle the way the host's ended: as it ended in a co-op battle and on the
