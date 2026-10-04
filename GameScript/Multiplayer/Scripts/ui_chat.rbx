@@ -2,7 +2,8 @@
 #  ui_chat.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Removed BLINK_FRAMES, which MGQ_MpUi::TextEdit holds
+#      Paulinchen  2026-10-04: Left out the character of the key that opened the chat box, which arrived after it opened
+#                            - Removed BLINK_FRAMES, which MGQ_MpUi::TextEdit holds
 #                            - Renamed from mp_chat.rbx
 #                            - Drew the chat box through MGQ_MpUi::TextBox, which every text box shares
 #                            - Typed through MGQ_MpUi::TextEdit, which every text box shares
@@ -38,6 +39,9 @@ module MGQ_MpChat
 
   # Frames a bubble stays, six seconds.
   BUBBLE_FRAMES = 360
+
+  # Frames after the chat key opened the box in which the key's own character may still arrive.
+  KEY_ECHO_FRAMES = 10
 
   @log = []
   @bubbles = {}
@@ -94,10 +98,29 @@ module MGQ_MpChat
   end
 
   # Opens the chat box, which holds the buttons, so keys that type move nobody.
-  def self.start_typing
+  #
+  # @param key [Integer, nil] Windows' code of the key that opened it, nil when the wheel did.
+  def self.start_typing(key = nil)
     @edit = MGQ_MpUi::TextEdit.new("", :max_chars => MAX_LENGTH)
+    @echo = key ? { :key => key, :frames => KEY_ECHO_FRAMES } : nil
     MGQ_Multiplayer::Link.typing(true)
     MGQ_Multiplayer::Capture.start(:chat)
+  end
+
+  # Leaves out the character of the key that opened the chat box.
+  #
+  # The key is seen going down before the game's window gets the character it types, which then
+  # reaches the box that just opened.
+  #
+  # @param text [String] What was typed since the last frame.
+  # @return [String] The same, without the key's own character.
+  def self.without_echo(text)
+    echo = @echo
+    return text unless echo
+
+    echo[:frames] -= 1
+    @echo = nil if echo[:frames] <= 0 || !text.empty?
+    !text.empty? && text[0, 1].upcase.ord == echo[:key] ? text[1..-1] : text
   end
 
   # Closes the chat box, if it is open, and gives the buttons back.
@@ -113,7 +136,7 @@ module MGQ_MpChat
   # that type nothing.
   def self.update_typing
     text, _keys = MGQ_Multiplayer::Link.take_typed
-    text.each_char do |char|
+    without_echo(text.to_s).each_char do |char|
       type(char)
       return unless typing?
     end
@@ -277,7 +300,7 @@ module MGQ_MpChat
       update_typing
     elsif chat_key && available? && !MGQ_MpActions::Wheel.open?
       Sound.play_ok
-      start_typing
+      start_typing(MGQ_MpHotkeys.code(:chat))
     end
   rescue => e
     log("chat failed: #{e.class}: #{e.message}")
@@ -294,7 +317,7 @@ module MGQ_MpChat
       update_typing
     elsif chat_key && available?
       Sound.play_ok
-      start_typing
+      start_typing(MGQ_MpHotkeys.code(:chat))
     end
   rescue => e
     log("battle chat failed: #{e.class}: #{e.message}")

@@ -2,7 +2,8 @@
 #  overworld_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Read the cursor's blink frames from MGQ_MpUi::TextEdit
+#      Paulinchen  2026-10-04: Checked that the chat key does not type its own character into the box it opened
+#                            - Read the cursor's blink frames from MGQ_MpUi::TextEdit
 #                            - Followed the scripts to their new names, without mp_
 #      Paulinchen  2026-10-03: Checked that a member's party choice on the wheel teleports to the leader
 #                            - Checked the word wrap where it lives now, in MGQ_MpUi
@@ -223,6 +224,9 @@ $pressed = 0x54
 map_frame
 check("T opens the chat box and holds the buttons", [chat.typing?, $typing_on, MGQ_Multiplayer::Capture.on?], [true, true, true])
 check("the others see the player types", MGQ_MpOverworldSync::Me.scene, "typing")
+$typed = "t"
+map_frame
+check("the T that opened the box, arriving after it, is left out", chat.typed, "")
 before = chat.typed
 $typed = "a"
 map_frame
@@ -288,6 +292,17 @@ chat.start_typing
 $typed = "x" * 130
 map_frame
 check("a line stops at the most characters", chat.typed.size, MGQ_MpChat::MAX_LENGTH)
+chat.stop_typing
+chat.start_typing(0x54)
+$typed = "go"
+map_frame
+check("a first character other than the key's is typed", chat.typed, "go")
+chat.stop_typing
+chat.start_typing(0x54)
+(MGQ_MpChat::KEY_ECHO_FRAMES + 1).times { map_frame }
+$typed = "t"
+map_frame
+check("as is the key's character once its echo could no longer come", chat.typed, "t")
 chat.stop_typing
 
 (MGQ_MpChat::BUBBLE_FRAMES + 1).times { MGQ_MpOverworldSync.tick }
