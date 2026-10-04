@@ -2,6 +2,7 @@
 #  mp_battles_pvp.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-04: Counted the Backline of the friend's team for the stat boosts the game counts the whole party for
 #      Paulinchen  2026-10-03: Swapped the Backline's builds too, with the host's rule, and started a battle with the Backline of mp_battles_pvp_backline.rbx
 #                            - Fought with the balance of mp_balance_pvp.rbx
 #                            - Read and wrote the game's private fields and called its private methods through MGQ_MpGame
@@ -477,14 +478,26 @@ module MGQ_MpBattlesPvp
       0
     end
 
-    # Boosts a stat for each character on its own side, where the game counts the player's party.
+    # Boosts a stat for each character on its own side, where the game counts the player's party:
+    # the whole team outside of battle, the Frontline in battle.
     #
     # @param param_id [Integer] The stat.
     # @return [Float] The boost.
     def booster_actor_exist_param(param_id)
       return 1.0 unless (2..7).include?(param_id)
 
-      friends_unit.members.inject(1.0) { |rate, member| rate + features_sum_booster(ACTOR_EXIST_PARAM, member.id) }
+      side = $game_party.in_battle ? friends_unit.members : whole_team
+      side.inject(1.0) { |rate, member| rate + features_sum_booster(ACTOR_EXIST_PARAM, member.id) }
+    end
+
+    # Boosts a stat by what every other character of its team gives the team, the Backline's too,
+    # where the game counts the player's whole party.
+    #
+    # @param param_id [Integer] The stat.
+    # @return [Float] The boost.
+    def booster_party_member(param_id)
+      others = whole_team.reject { |member| member.equal?(self) }
+      others.inject(1.0) { |rate, member| rate + member.party_member_boost(param_id) }
     end
 
     # Flashes and sounds like a hit monster instead of shaking the screen.
@@ -536,6 +549,13 @@ module MGQ_MpBattlesPvp
     end
 
     private
+
+    # Lists the friend's whole team.
+    #
+    # @return [Array<Game_Battler>] The troop's members, then the characters outside the Frontline.
+    def whole_team
+      $game_troop.members + Backline.reserve
+    end
 
     # The condition of an automatic skill, seen from the friend's side: 1 an ally of these ids
     # fights along, 2 an enemy of these monster ids is there, which a PvP battle has none of,
