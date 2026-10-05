@@ -2,6 +2,7 @@
 #  battles_sync_live.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-05: Started the newer translation's battle log anew at the guest's battle and turn start, as the host's game does
 #      Paulinchen  2026-10-04: Settled who fights on only as a command phase opens, not each time the game shows the commands again
 #                            - Sent the players back to choose again whose commands lost their target to another player's swap
 #                            - Renamed from mp_battles_sync_live.rbx
@@ -356,6 +357,7 @@ module MGQ_MpBattlesSync
     # @param scene [Scene_Battle] The battle.
     def self.guest_start(scene)
       Playback.reset
+      clear_translation_log(scene)
       # The game marks the party as fighting in on_battle_start, which the guest leaves out with the
       # rest of the battle's logic. Skills usable only in battle check it, and the end clears it.
       MGQ_MpGame.set($game_party, :in_battle, true)
@@ -370,6 +372,15 @@ module MGQ_MpBattlesSync
       play_until_commands(scene)
     end
 
+    # Starts the battle log of the newer translation's Log command anew. Its own battle_start and
+    # turn_start clear it, which the guest leaves out, so it would keep every earlier battle's lines.
+    #
+    # @param scene [Scene_Battle] The battle.
+    def self.clear_translation_log(scene)
+      log = MGQ_MpGame.get(scene, :log_window)
+      log.ctext_clear if log && log.respond_to?(:ctext_clear)
+    end
+
     # The guest sends its commands and plays the host's turn.
     #
     # @param scene [Scene_Battle] The battle.
@@ -378,6 +389,7 @@ module MGQ_MpBattlesSync
       MGQ_MpGame.get(scene, :actor_command_window).close
       MGQ_MpGame.get(scene, :status_window).unselect
       MGQ_MpGame.get(scene, :info_viewport).visible = false
+      clear_translation_log(scene)
       Channel.post("commands", Commands.build)
       play_until_commands(scene)
     end
