@@ -2,6 +2,7 @@
 #  ui_chat.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-05: Took the typing of an open chat box while the map shows a message, which left both stuck
 #      Paulinchen  2026-10-04: Named the party tag by its module inside the log line, as Ruby 1.9 finds it
 #                            - Sent a line typed with /p to the party only, and colored the senders' names: own yellow, the party's green, others white
 #                            - Opened the chat box while the player waits for the party's story, and kept an open box once an event starts
@@ -385,13 +386,25 @@ module MGQ_MpChat
     return stop_typing unless MGQ_MpOverworldSync.in_world?
 
     # A box already open stays, so a story that starts meanwhile never throws the line away; the
-    # box holds the buttons, so the story's messages wait for it.
+    # box holds the buttons, so the story's messages wait for it, and on_message takes the typing.
     if typing?
       update_typing
     elsif chat_key && available? && !MGQ_MpActions::Wheel.open? && map_open?
       Sound.play_ok
       start_typing(MGQ_MpHotkeys.code(:chat))
     end
+  rescue => e
+    log("chat failed: #{e.class}: #{e.message}")
+    stop_typing
+  end
+
+  # Types into an open chat box while the map shows a message, which stops the map's own update
+  # that on_map follows. The box holds the buttons, so without this neither the box nor the message
+  # could go on. Called by the map every frame.
+  #
+  # @param scene [Scene_Map] The map.
+  def self.on_message(scene)
+    on_map if typing? && !scene.scene_change_ok?
   rescue => e
     log("chat failed: #{e.class}: #{e.message}")
     stop_typing
@@ -701,6 +714,20 @@ end
 # Each wraps a game method: the original runs first, and the mod's part never raises.
 
 if MGQ_MpChat.hookable?
+  begin
+    class Scene_Map
+      alias mgq_mp_chat_update update
+
+      # Updates the map, then an open chat box while a message stops the map's own update.
+      def update
+        mgq_mp_chat_update
+        MGQ_MpChat.on_message(self)
+      end
+    end
+  rescue => e
+    MGQ_MpChat.log("map hook FAILED: #{e.class}: #{e.message}")
+  end
+
   begin
     class Scene_Battle
       alias mgq_mp_chat_update_basic update_basic

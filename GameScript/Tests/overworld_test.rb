@@ -2,6 +2,7 @@
 #  overworld_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-05: Checked that an open chat box takes typing and closes while a message shows
 #      Paulinchen  2026-10-04: Checked that a label goes above the labels already on its tile
 #                            - Checked the party chat and the colors of the senders' names in the chat log
 #                            - Checked that the chat box opens while the player waits for the party's story and stays open once it plays
@@ -346,6 +347,20 @@ $party_waiting = false
 $typed = "on"
 map_frame
 check("and stays open, keeping the line, once the story plays", [chat.typing?, chat.typed], [true, "on"])
+# A message on screen stops the map's own update, so the map's update itself types into the box.
+map = Scene_Map.new
+$scene_change_ok = false
+$typed = "ly"
+map.update
+check("while a message shows, the box still takes typing", chat.typed, "only")
+$typed = "\e"
+map.update
+check("and closes, giving the buttons back to the message", [chat.typing?, MGQ_Multiplayer::Capture.on?], [false, false])
+chat.start_typing
+$scene_change_ok = true
+$typed = "x"
+map.update
+check("without a message the map's own update types, not the map", chat.typed, "")
 chat.stop_typing
 $game_message.busy = false
 

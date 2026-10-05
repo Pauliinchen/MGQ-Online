@@ -2,6 +2,7 @@
 #  world_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-05: Gave the map an update and whether a message stops its own
 #      Paulinchen  2026-10-04: Followed the scripts to their new names, without mp_
 #      Paulinchen  2026-10-03: Loaded the scripts split off the ones under test, and ui.rbx
 #                            - Loaded core_hotkeys.rbx, renamed from mp_keys.rbx
@@ -28,7 +29,7 @@ class Game_Map
 end
 class Game_Message; attr_accessor :busy; def busy?; @busy; end; end
 class Interpreter; def running?; false; end; end
-class Scene_Map; def update_scene; end; def scene_changing?; false; end; end
+class Scene_Map; def update; end; def update_scene; end; def scene_changing?; false; end; def scene_change_ok?; $scene_change_ok != false; end; end
 class Window_Base; def initialize(*); end; end unless defined?(Window_Base)
 class Scene_Battle; def update_basic; end; end
 class Spriteset_Battle; def update; end; def dispose; end; end
