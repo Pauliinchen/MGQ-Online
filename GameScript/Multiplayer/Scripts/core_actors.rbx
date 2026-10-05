@@ -2,7 +2,8 @@
 #  core_actors.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Sent and compared a character's magic reflection and counter rate too
+#      Paulinchen  2026-10-04: Sent the hero Luka Replacer plays in Luka's place, for a replaced Luka only, and rebuilt Luka as that hero
+#                            - Sent and compared a character's magic reflection and counter rate too
 #                            - Renamed from mp_actors.rbx
 #      Paulinchen  2026-10-03: Read and wrote the game's private fields and called its private methods through MGQ_MpGame
 #                            - Logged through MGQ_MpLog
@@ -29,7 +30,8 @@ module MGQ_MpActors
     # Starts every member line.
     PREFIX = "member="
 
-    # Fields of a member line.
+    # Fields every member line has; the HERO follows as one more only for a replaced Luka, so a game
+    # of 0.4.1, which takes exactly these, still reads every other character.
     FIELD_COUNT = 14
 
     # The counters of field 12: battles fought in the save, then the character's own count of
@@ -55,12 +57,16 @@ module MGQ_MpActors
     # A whole number, ids and levels included.
     NUMBER = /\A-?\d{1,15}\z/
 
-    # A character's build: its make-up, the stats and rates its owner's game showed, and what of
-    # the owner's save the character reads.
-    Member = Struct.new(:actor_id, :base_level, :class_id, :tribe_id, :level_list, :param_plus, :skill_ids,
-                        :abilities, :equip_abilities, :equips, :params, :rates, :counters, :switches_on)
+    # The key of a hero Luka Replacer plays in Luka's place, empty for Luka.
+    HERO = /\A[a-z0-9_]{0,32}\z/
 
-    # The build format, which both games must share.
+    # A character's build: its make-up, the stats and rates its owner's game showed, what of the
+    # owner's save the character reads, and the hero the owner's game plays in Luka's place.
+    Member = Struct.new(:actor_id, :base_level, :class_id, :tribe_id, :level_list, :param_plus, :skill_ids,
+                        :abilities, :equip_abilities, :equips, :params, :rates, :counters, :switches_on, :hero)
+
+    # The build format, which both games must share. The HERO field kept it, since a line without
+    # it is as before.
     FORMAT = 3
 
     # Tells this game version's data from another's by the size of its databases, which differ
@@ -84,14 +90,16 @@ module MGQ_MpActors
     # Writes a member as PREFIX and its fields, split by ";": 0 actor id, 1 personal level, 2 job,
     # 3 race, 4 every job and race level as id:level, 5 the stat growths from items, 6 the skills
     # learned, 7 the abilities learned and 8 set as skill type:id.id, 9 the equipment per slot (see
-    # Items), 10 the stats and 11 the rates in per mille as the sender sees them, 12 the COUNTERS and
-    # 13 the switches on that the character's battle start states wait for.
+    # Items), 10 the stats and 11 the rates in per mille as the sender sees them, 12 the COUNTERS,
+    # 13 the switches on that the character's battle start states wait for and 14 the HERO, only
+    # when there is one.
     #
-    # Fields 12 and 13 come from the sender's save, which the receiver's save would stand in for.
+    # Fields 12 to 14 come from the sender's save, which the receiver's save would stand in for.
     #
     # @param actor [Game_Actor] The character.
     # @return [String] The member line.
     def self.line_of(actor)
+      hero = hero_of(actor)
       fields = [
         actor.id,
         actor.base_level,
@@ -108,7 +116,18 @@ module MGQ_MpActors
         COUNTERS.map { |counter| counter_of(actor, counter) }.join(","),
         switches_on(actor).join(","),
       ]
+      fields.push(hero) unless hero.empty?
       PREFIX + fields.join(";")
+    end
+
+    # Reads the hero a character shows.
+    #
+    # @param actor [Game_Actor] The character.
+    # @return [String] The HERO, empty without Luka Replacer or for any character but Luka.
+    def self.hero_of(actor)
+      defined?(MGQ_LukaReplacer) ? MGQ_LukaReplacer.hero_key(actor).to_s : ""
+    rescue
+      ""
     end
 
     # Reads a save counter of a party member.
@@ -175,7 +194,7 @@ module MGQ_MpActors
 
       fields = line[PREFIX.size..-1].split(";", -1)
       actor_id = number(fields[0])
-      return nil unless fields.size == FIELD_COUNT && actor_id && actor_id > 0 && $data_actors[actor_id]
+      return nil unless [FIELD_COUNT, FIELD_COUNT + 1].include?(fields.size) && actor_id && actor_id > 0 && $data_actors[actor_id]
 
       Member.new(
         actor_id,
@@ -191,7 +210,8 @@ module MGQ_MpActors
         numbers(fields[10]),
         numbers(fields[11]).map { |value| value / 1000.0 },
         (numbers(fields[12]) + [0] * COUNTERS.size).first(COUNTERS.size).map { |value| [value, 0].max },
-        numbers(fields[13]).select { |id| id > 0 })
+        numbers(fields[13]).select { |id| id > 0 },
+        fields[14].to_s =~ HERO ? fields[14].to_s : "")
     end
 
     # Reads the highest personal level of this game.
@@ -452,7 +472,8 @@ class Game_MpActor < Game_Actor
   # @return [Integer, nil] The place, nil elsewhere.
   attr_accessor :mp_place
 
-  # Rebuilds a character of another game.
+  # Rebuilds a character of another game, Luka as the hero its owner's game plays when this game
+  # has Luka Replacer too.
   #
   # @param member [MGQ_MpActors::Builds::Member] The character's build.
   # @param player [String] Who the character belongs to.
@@ -460,6 +481,7 @@ class Game_MpActor < Game_Actor
     super(member.actor_id)
     @member = member
     @player = player
+    MGQ_LukaReplacer.dress(self, member.hero) if defined?(MGQ_LukaReplacer)
     rebuild
   end
 
