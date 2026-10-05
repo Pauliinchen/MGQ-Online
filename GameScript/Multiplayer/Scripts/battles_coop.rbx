@@ -2,7 +2,8 @@
 #  battles_coop.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Synced the characters above the battle's level, which the host sends with the roster
+#      Paulinchen  2026-10-04: Sent the players back to choose whose command was for a character another player swapped out
+#                            - Synced the characters above the battle's level, which the host sends with the roster
 #                            - Logged where a guest's rebuilt character differs from what the guest's game showed
 #                            - Held every party member on the map while a member's encounter waits, until they join it, turn it down or ten seconds pass
 #                            - Asked coop_gather.rbx whether the leader's story is about to bring the player over
@@ -935,6 +936,7 @@ module MGQ_MpBattlesCoop
   # player, which during the battle were the co-op party's.
   def self.forget
     MGQ_MpCoopLevelSync.finish
+    @seen = nil
     @members = nil
     @players = nil
     @own_squad = nil
@@ -986,12 +988,74 @@ module MGQ_MpBattlesCoop
     log("taking a new order failed: #{e.class}: #{e.message}")
   end
 
-  # As host, tells the guests the party once a player swapped, before the turn's events, so every
-  # game plays the turn with the same characters. Called once every guest's commands came.
+  # As host, tells the guests the party once a player swapped, before the turn's events or before
+  # players choose again, so every game shows the same characters. Called once every guest's
+  # commands came.
   def self.share_order
     post_party if active? && @reordered
   rescue => e
     log("telling the new order failed: #{e.class}: #{e.message}")
+  end
+
+  # As host, notes who stands at each place of the party as a command phase opens, which every
+  # player chooses their commands against.
+  def self.note_places
+    @seen = active? ? @members.dup : nil
+  end
+
+  # As host, lists the players a command of whose was for one character of the party at a place
+  # another player swapped since they saw it. A player sees only their own swaps while choosing,
+  # so the command would reach the character swapped in, or another one the game picks instead.
+  # Notes the places anew, which the players who choose again see.
+  #
+  # @return [Array<Integer>] Their world seats, the host's own and those who left included.
+  def self.lost_targets
+    return [] unless active? && @seen
+
+    seats = []
+    @members.each do |actor|
+      seat = seat_of(actor)
+      seats << seat if !seats.include?(seat) && Array(actor.actions).any? { |action| lost_target?(action, seat) }
+    end
+    @seen = @members.dup
+    seats
+  rescue => e
+    log("checking the targets failed: #{e.class}: #{e.message}")
+    []
+  end
+
+  # Reports whether a command was for one character of the party that another player swapped out.
+  #
+  # @param action [Game_Action] The command.
+  # @param seat [Integer] The world seat of the player who gave it.
+  # @return [Boolean] Whether it was.
+  def self.lost_target?(action, seat)
+    item = action && action.item
+    return false unless item.respond_to?(:for_friend?) && item.for_friend? && item.for_one? && !item.for_user?
+
+    index = action.target_index
+    seen = index.is_a?(Integer) && index >= 0 ? @seen[index] : nil
+    !seen.nil? && !seen.equal?(@members[index]) && seat_of(seen) != seat
+  end
+
+  # Tells whose a character of the party is.
+  #
+  # @param actor [Game_Actor] The character.
+  # @return [Integer] Its owner's world seat.
+  def self.seat_of(actor)
+    own?(actor) ? MGQ_MpOverworldSync::Me.seat : actor.mp_seat
+  end
+
+  # As host, gives the other players' characters whose commands lost their target the computer's
+  # commands, which those still in the battle replace once they chose again, and shows the guests
+  # the party a swap changed.
+  #
+  # @param seats [Array<Integer>] The world seats of the players whose commands lost their target.
+  def self.choose_again(seats)
+    @members.each { |actor| actor.make_actions if !own?(actor) && seats.include?(actor.mp_seat) } if active?
+    share_order
+  rescue => e
+    log("giving the computer's commands failed: #{e.class}: #{e.message}")
   end
 
   # As host, sends the guests the party, between two of the host's sends.
@@ -1143,6 +1207,7 @@ module MGQ_MpBattlesCoop::Mode
   # (see MGQ_MpBattles::Mode#settle)
   def self.settle(scene)
     MGQ_MpBattlesCoop.settle(scene)
+    MGQ_MpBattlesCoop.note_places
   end
 
   # (see MGQ_MpBattles::Mode#own_order)
@@ -1158,6 +1223,16 @@ module MGQ_MpBattlesCoop::Mode
   # (see MGQ_MpBattles::Mode#share_order)
   def self.share_order
     MGQ_MpBattlesCoop.share_order
+  end
+
+  # (see MGQ_MpBattles::Mode#lost_targets)
+  def self.lost_targets
+    MGQ_MpBattlesCoop.lost_targets
+  end
+
+  # (see MGQ_MpBattles::Mode#choose_again)
+  def self.choose_again(seats)
+    MGQ_MpBattlesCoop.choose_again(seats)
   end
 
   # (see MGQ_MpBattles::Mode#stream_kinds)

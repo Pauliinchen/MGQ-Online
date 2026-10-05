@@ -2,7 +2,8 @@
 #  battles.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Renamed from mp_battles.rbx
+#      Paulinchen  2026-10-04: Let a mode name the players whose commands lost their target to a swap, who choose again
+#                            - Renamed from mp_battles.rbx
 #      Paulinchen  2026-10-03: Let a PvP battle with the Backline swap it in, and let a mode name the characters outside the battle
 #                            - Added Mode, what a kind of live battle does differently from a duel, which the kinds register and the live battle asks
 #                            - Logged through MGQ_MpLog
@@ -115,6 +116,22 @@ module MGQ_MpBattles
 
     # Tells the guests an order of places that changed, once the host has every guest's commands.
     def share_order
+    end
+
+    # Lists the players a command of whose lost its target to another player's swap during the
+    # command phase, once the host has every guest's commands. Asked by the host.
+    #
+    # @return [Array<Integer>] Their world seats, the host's own and those who left included.
+    def lost_targets
+      []
+    end
+
+    # Gives the other players' characters whose commands lost their target the computer's commands,
+    # and shows every game the party a swap changed, before the players still in the battle choose
+    # again. Called by the host.
+    #
+    # @param _seats [Array<Integer>] The world seats of the players whose commands lost their target.
+    def choose_again(_seats)
     end
 
     # Tells who commands the characters of a player who left.

@@ -2,7 +2,9 @@
 #  battles_coop_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Checked that the roster carries the battle's level and that the party goes through the level sync
+#      Paulinchen  2026-10-04: Checked that only the players whose command was for a character another player swapped out choose again
+#                            - Checked that a player who leaves mid-phase stays in the party until the next phase
+#                            - Checked that the roster carries the battle's level and that the party goes through the level sync
 #                            - Checked that the host logs a rebuild that differs
 #                            - Checked that new states let the game read a guest's character's features anew
 #                            - Checked that a member's encounter holds the party members on the map
@@ -263,6 +265,19 @@ MGQ_MpBattlesSync::Channel.receive(0, "events", "")
 MGQ_MpBattlesSync::Playback.reset
 MGQ_MpBattlesSync::Playback.next_event(scene)
 check("a new party is taken before the next send", $game_party.battle_members.map(&:name), ["Actor4 (Host)", "Actor5 (Host)", "Actor1", "Actor2"])
+$game_party.battle_members[0].actions = [:hosts]
+$game_party.battle_members[2].actions = [:chosen]
+$chat = []
+$commands_phase = false
+$actor_cleared = false
+$troop_actions = 0
+$turn_ends = 0
+choices = ["choose_again", [3]], ["choose_again", [2]]
+MGQ_MpBattlesSync::Channel.receive(0, "events", choices.map { |event| MGQ_MpBattlesSync::Wire.line(event) }.join("\n"))
+MGQ_MpBattlesSync::Live.play_until_commands(scene)
+check("a guest the host names chooses again within the same command phase", [$commands_phase, $actor_cleared, $turn_ends, $troop_actions], [true, true, 0, 0])
+check("only its own characters' commands start anew", [$game_party.battle_members[2].actions.map(&:item), $game_party.battle_members[0].actions], [[nil], [:hosts]])
+check("told why, once: the host's word for another player passes by", $chat, ["A character you chose a command for left the Frontline. Choose your commands again."])
 
 scene.changing = true
 $sent.clear
@@ -345,6 +360,81 @@ check("and comes back as the battle left it", $game_party.battle_members[2].equa
 MGQ_MpBattlesSync::Commands.apply(MGQ_MpBattlesSync::Wire.line([[[], [], [], []], [0, 0, 1, 2]]), 2)
 check("a broken order puts the guest's characters back in theirs", MGQ_MpBattlesCoop.instance_variable_get(:@players).find { |p| p[0] == 2 }[5], [0, 1, 2, 3])
 
+# Commands for one character of the party, which another player's swap takes away.
+Target = Struct.new(:friend, :one, :user) do
+  def for_friend?; friend; end
+  def for_one?; one; end
+  def for_user?; user; end
+end
+RAISE_SKILL = 141
+RAISE = Target.new(true, true, false)
+class Game_Action
+  alias_method :plain_set_skill, :set_skill
+  def set_skill(id); id == RAISE_SKILL ? @item = RAISE : plain_set_skill(id); end
+end
+# Makes a command.
+#
+# @param actor [Game_Actor] Who gives it.
+# @param item [Target] What it uses.
+# @param target [Integer] The target's index.
+# @return [Game_Action] The command.
+def command(actor, item, target)
+  Game_Action.new(actor).tap { |action| action.item = item; action.target_index = target }
+end
+live = MGQ_MpBattlesSync::Live
+MGQ_MpBattlesCoop.instance_variable_set(:@seen, [])
+live.close_phase
+live.open_phase(scene)
+check("a command phase notes the places anew", MGQ_MpBattlesCoop.instance_variable_get(:@seen), $game_party.battle_members)
+own = $game_party.battle_members
+own[0].actions = [command(own[0], RAISE, 2), command(own[0], Target.new(true, false, false), 2), command(own[0], Target.new(false, true, false), 2)]
+own[1].actions = []
+$chat = []
+$commands_phase = false
+$actor_cleared = false
+$troop_actions = 0
+MGQ_MpBattlesSync::Channel.receive(2, "commands", MGQ_MpBattlesSync::Wire.line([[[], [], [], [["skill", 12, 0]]], [3, 1, 2, 0]]))
+check("the host whose command was for a character a guest swapped out chooses again", [live.host_guests_commands(scene), $commands_phase, $actor_cleared], [false, true, true])
+check("only the host's own commands start anew; the enemies keep theirs", [own[0].actions.map(&:item), $troop_actions], [[nil], 0])
+check("the guest's commands were given as they came, and stay", $game_party.battle_members[3].actions.map(&:item), [[:skill, 12]])
+check("the host is told why", $chat, ["A character you chose a command for left the Frontline. Choose your commands again."])
+check("the log names who lost a target and who chooses again", $log.last.to_s.end_with?("commands of seats 0 lost their target to a swap, choosing again: 0"), true)
+own = $game_party.battle_members
+own[0].actions = [command(own[0], RAISE, 2)]
+check("chosen again, the turn goes on without waiting for the guest again", [live.host_guests_commands(scene), own[3].actions.map(&:item)], [true, [[:skill, 12]]])
+
+live.close_phase
+live.open_phase(scene)
+MGQ_MpBattlesCoop.swap(scene, own[1], 0)
+own = $game_party.battle_members
+own[1].actions = [command(own[1], RAISE, 1)]
+$chat = []
+$commands_phase = false
+$frames = 0
+MGQ_MpBattlesSync::Channel.receive(2, "commands", MGQ_MpBattlesSync::Wire.line([[[], [], [["skill", RAISE_SKILL, 1]], []], [3, 1, 2, 0]]))
+interim = nil
+$inject = lambda do |frame|
+  interim = $game_party.battle_members[2].actions.dup if frame == 1
+  MGQ_MpBattlesSync::Channel.receive(2, "commands", MGQ_MpBattlesSync::Wire.line([[[], [], [["skill", 12, 0]], []], [3, 1, 2, 0]])) if frame == 2
+end
+check("a guest whose command was for a character the host swapped out chooses again, the host waiting", live.host_guests_commands(scene), true)
+$inject = nil
+check("meanwhile the computer commands the guest's characters", interim, [:auto])
+check("its new commands are taken, and the host's own command after its own swap stays", [$game_party.battle_members[2].actions.map(&:item), own[1].actions.size, $commands_phase, $chat], [[[:skill, 12]], 1, false, []])
+check("the log names the guest", $log.grep(/choosing again: 2\z/).size, 1)
+
+live.close_phase
+live.open_phase(scene)
+ally = $game_party.battle_members[2]
+ally.actions = [command(ally, RAISE, 1)]
+MGQ_MpBattlesCoop.swap(scene, $game_party.battle_members[1], 0)
+MGQ_MpBattlesSync.guest_left(2)
+left_party = $game_party.battle_members.map(&:name)
+live.open_phase(scene)
+check("a player who leaves mid-phase stays in the party until the next phase", $game_party.battle_members.map(&:name), left_party)
+$chat = []
+check("a lost command of a player who left gets the computer's, asking nobody", [live.host_guests_commands(scene), ally.actions, $chat], [true, [:auto], []])
+check("the log says nobody chooses again", $log.grep(/commands of seats 2 lost their target to a swap, choosing again: nobody/).size, 1)
 five[0].hp = 0
 five[1].hp = 0
 $game_party.battle_members.each { |member| member.hp = 0 }

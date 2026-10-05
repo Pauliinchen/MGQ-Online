@@ -2,7 +2,8 @@
 #  battle_support.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Stood in for battles_coop_level_sync.rbx, keeping what the co-op battle asks of it
+#      Paulinchen  2026-10-04: Kept the chat's system lines, counted the troop's new actions and cleared the actor choosing
+#                            - Stood in for battles_coop_level_sync.rbx, keeping what the co-op battle asks of it
 #                            - Stood in for coop_gather.rbx, which tells whether the player is about to be brought over
 #                            - Followed the scripts to their new names, without mp_
 #      Paulinchen  2026-10-03: Loaded the scripts split off the ones under test, and ui.rbx
@@ -62,7 +63,7 @@ module MGQ_MpCoopLevelSync
   def self.sync(actor); ($synced ||= []) << actor; end
   def self.finish; $sync_finished = true; end
 end
-module MGQ_MpChat; def self.system(text); end; end unless defined?(MGQ_MpChat)
+module MGQ_MpChat; def self.system(text); ($chat ||= []) << text; end; end unless defined?(MGQ_MpChat)
 module MGQ_MpCoop
   module Party
     def self.id; "p1"; end
@@ -141,6 +142,7 @@ end
 class Game_Troop
   def members; @enemies; end
   def members=(enemies); @enemies = enemies; end
+  def make_actions; $troop_actions = ($troop_actions || 0) + 1; end
   def make_unique_names
     @names_count ||= {}
     @enemies.each do |enemy|
@@ -180,6 +182,7 @@ module BattleManager
   def self.can_giveup?; true; end
   def self.turn_end; $turn_ends = ($turn_ends || 0) + 1; end
   def self.process_abort; $aborted = true; end
+  def self.clear_actor; $actor_cleared = true; end
   def self.shift_change?; $shift; end
   def self.bind?; false; end
 end

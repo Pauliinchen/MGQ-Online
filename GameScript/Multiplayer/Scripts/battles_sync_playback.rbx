@@ -2,7 +2,8 @@
 #  battles_sync_playback.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Logged a host's call the guest leaves out, once per method
+#      Paulinchen  2026-10-04: Stopped playing for the player to choose again when the host names them
+#                            - Logged a host's call the guest leaves out, once per method
 #                            - Let the game read a guest's character's features anew once the host's states or buffs changed it, so Division's extra actions count
 #                            - Renamed from mp_battles_sync_playback.rbx
 #      Paulinchen  2026-10-03: Found the characters outside the battle that its mode names
@@ -38,11 +39,13 @@ module MGQ_MpBattlesSync
     # A picture the host may show: a file name, never a path.
     PICTURE_NAME = /\A[\w\- ]+\z/
 
-    # Plays the host's stream until its next command phase or the battle's end.
+    # Plays the host's stream until its next command phase, the player's choosing again or the
+    # battle's end.
     #
     # @param scene [Scene_Battle] The battle.
-    # @return [Array, nil] The "end" event when the battle ended, an ending of Channel.ending or
-    #   [:left] when it ended early, nil at the next command phase.
+    # @return [Array, nil] The "end" event when the battle ended, the "choose_again" event that names
+    #   the player, an ending of Channel.ending or [:left] when it ended early, nil at the next
+    #   command phase.
     def self.run(scene)
       @events ||= []
       quiet = 0
@@ -70,6 +73,12 @@ module MGQ_MpBattlesSync
         window = Waiting.close(window)
         return nil if event[0] == "commands"
         return event if event[0] == "end"
+        if event[0] == "choose_again"
+          # Only the players named choose again; the others wait on for the turn.
+          return event if Array(event[1]).include?(MGQ_MpOverworldSync::Me.seat)
+
+          next
+        end
 
         play(scene, event)
         show_message if event[0] == "message" && (@events.empty? || @events.first[0] != "message")

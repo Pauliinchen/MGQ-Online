@@ -2,7 +2,9 @@
 #  battles_sync_live.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Renamed from mp_battles_sync_live.rbx
+#      Paulinchen  2026-10-04: Settled who fights on only as a command phase opens, not each time the game shows the commands again
+#                            - Sent the players back to choose again whose commands lost their target to another player's swap
+#                            - Renamed from mp_battles_sync_live.rbx
 #                            - Gave the guest of a lost co-op battle the defeat scene the host's battle chose, which crashed without one
 #      Paulinchen  2026-10-03: Told the one guest of a PvP battle an order of places that changed, as the guests of a co-op battle
 #                            - Asked the running battle's mode instead of naming co-op battles and team duels
@@ -170,7 +172,7 @@ module MGQ_MpBattlesSync
         unless MGQ_MpGame.call(scene, :scene_changing?)
           # A co-op party changes between two of the host's sends: here, before the command phase is
           # recorded, when a player left, and once the commands came, when a player swapped.
-          MGQ_MpBattlesSync.mode.settle(scene) if MGQ_MpBattlesSync.host?
+          Live.open_phase(scene) if MGQ_MpBattlesSync.host?
           Recorder.command_phase
         end
         original.call
@@ -240,7 +242,10 @@ module MGQ_MpBattlesSync
         if MGQ_MpBattlesSync.guest?
           Live.guest_turn(scene)
         elsif MGQ_MpBattlesSync.host? && !MGQ_MpBattlesSync.solo?
-          original.call if Live.host_commands(scene)
+          if Live.host_commands(scene)
+            Live.close_phase
+            original.call
+          end
         else
           original.call
         end
@@ -319,6 +324,7 @@ module MGQ_MpBattlesSync
     # @param scene [Scene_Battle] The battle.
     # @return [Boolean] Whether the battle starts, false when it ended early.
     def self.host_start(scene)
+      close_phase
       formed = MGQ_MpBattlesSync.mode.host_start(scene)
       return true if formed == :own
       return end_early(scene, formed) if formed.is_a?(Symbol)
@@ -376,13 +382,14 @@ module MGQ_MpBattlesSync
       play_until_commands(scene)
     end
 
-    # The guest plays the host's stream, then lets its player choose or ends the battle as the
-    # host's ended.
+    # The guest plays the host's stream, then lets its player choose, choose again when a command
+    # of theirs lost its target, or ends the battle as the host's ended.
     #
     # @param scene [Scene_Battle] The battle.
     def self.play_until_commands(scene)
       event = Playback.run(scene)
       return end_early(scene, event[0]) if event && event[0].is_a?(Symbol)
+      return choose_again(scene) if event && event[0] == "choose_again"
       if event
         take_defeat_scene(event) if MGQ_MpBattlesSync.same_side?
         return guest_end(event[1], scene)
@@ -468,27 +475,88 @@ module MGQ_MpBattlesSync
       true
     end
 
+    # As host, opens a command phase the first time the game shows the party's commands after a
+    # turn: settles who fights on, which re-forms the party, only here. The game shows them again
+    # within the same phase after a swap, a menu or choosing again, when the players' commands
+    # already count places of the party as it stands.
+    #
+    # @param scene [Scene_Battle] The battle.
+    def self.open_phase(scene)
+      return if @phase_open
+
+      @phase_open = true
+      @answered = []
+      MGQ_MpBattlesSync.mode.settle(scene)
+    end
+
+    # As host, closes the command phase, as the turn starts or the battle begins.
+    def self.close_phase
+      @phase_open = false
+      @answered = []
+    end
+
     # The host of a co-op battle or a team duel waits for the commands of every guest still in the
-    # battle. A guest who left sends none, and the computer plays their characters.
+    # battle who has not sent theirs this phase, and gives them to their characters as they come. A
+    # guest who left sends none, and the computer plays their characters. The players whose
+    # commands lost their target to another player's swap choose again.
     #
     # @param scene [Scene_Battle] The battle.
     # @return [Boolean] Whether the turn goes on.
     def self.host_guests_commands(scene)
-      waiting = MGQ_MpBattlesSync.guests_in
+      @answered ||= []
+      waiting = MGQ_MpBattlesSync.guests_in - @answered
       answer = Waiting.wait_for(scene, "Waiting for the party's commands...") do
         waiting.dup.each do |seat|
           commands = Channel.take_from("commands", seat)
           next unless commands || !MGQ_MpBattlesSync.guests_in.include?(seat)
 
           Commands.apply(commands, seat) if commands
+          @answered << seat
           waiting.delete(seat)
         end
         waiting.empty? ? true : nil
       end
       return end_early(scene, answer) if answer.is_a?(Symbol)
 
+      lost = MGQ_MpBattlesSync.mode.lost_targets
+      return choose_again_for(scene, lost) unless lost.empty?
+
       MGQ_MpBattlesSync.mode.share_order
       true
+    end
+
+    # As host, gives the characters of the players whose commands lost their target the computer's
+    # commands, and sends those still in the battle back to choose again, shown the party as it is
+    # now. Waits for the guests' new commands; for those who left, the computer's stay.
+    #
+    # @param scene [Scene_Battle] The battle.
+    # @param seats [Array<Integer>] Their world seats, the host's own and those who left included.
+    # @return [Boolean] Whether the turn goes on: false while the host chooses again.
+    def self.choose_again_for(scene, seats)
+      MGQ_MpBattlesSync.mode.choose_again(seats)
+      asked = seats & (MGQ_MpBattlesSync.guests_in + [MGQ_MpOverworldSync::Me.seat])
+      MGQ_MpBattlesSync.log("commands of seats #{seats.join(', ')} lost their target to a swap, choosing again: #{asked.empty? ? 'nobody' : asked.join(', ')}")
+      return host_guests_commands(scene) if asked.empty?
+
+      @answered -= asked
+      Recorder.event("choose_again", asked)
+      Recorder.flush
+      return host_guests_commands(scene) unless asked.include?(MGQ_MpOverworldSync::Me.seat)
+
+      choose_again(scene)
+      false
+    end
+
+    # Sends the player back to choose their commands again, once a character one of them was for
+    # was swapped out. Only their own characters' commands start anew, the command phase going on,
+    # so neither the enemies nor the other players' characters choose again.
+    #
+    # @param scene [Scene_Battle] The battle.
+    def self.choose_again(scene)
+      MGQ_MpChat.system("A character you chose a command for left the Frontline. Choose your commands again.")
+      $game_party.battle_members.each { |actor| actor.make_actions unless actor.is_a?(Game_MpActor) }
+      BattleManager.clear_actor
+      scene.start_party_command_selection
     end
 
     # Ends the battle when it ended early while this game is not waiting for the friend, such as
