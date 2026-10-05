@@ -2,7 +2,8 @@
 #  battles_coop_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Checked that the host logs a rebuild that differs
+#      Paulinchen  2026-10-04: Checked that the roster carries the battle's level and that the party goes through the level sync
+#                            - Checked that the host logs a rebuild that differs
 #                            - Checked that new states let the game read a guest's character's features anew
 #                            - Checked that a member's encounter holds the party members on the map
 #                            - Followed the scripts to their new names, without mp_
@@ -81,13 +82,17 @@ MGQ_MpBattlesSync.take(friend, { "battle" => "join", "bid" => "other", :payload 
 $sent.clear
 $frames = 0
 $inject = lambda { |frame| MGQ_MpBattlesSync.take(friend, { "battle" => "join", "bid" => bid, :payload => join }) if frame == 3 }
+$sync_level = 30
+$synced = []
 check("the host gathers who joins", MGQ_MpBattlesCoop.gather(scene), nil)
 $inject = nil
 roster = $sent.map { |seat, text| fields_of(text) }.find { |f| f["battle"] == "roster" }
-enemies, players = MGQ_MpBattlesSync::Wire.parse(roster[:payload])
+enemies, players, level = MGQ_MpBattlesSync::Wire.parse(roster[:payload])
 check("and sends the party and the troop to everyone", [enemies, players.map { |p| p[0, 3] }], [[[31, 0, 0, 0], [32, 0, 0, 0]], [[0, "Me", "1,2,3"], [2, "Friend", "7,8,9"]]])
 check("with each player's order and shares, the Backline's as far as their characters go", players.map { |p| p[4, 4] }, [[8, [0, 1, 2], 2, 1], [8, [0, 1, 2], 2, 1]])
 party = $game_party.battle_members
+check("and the battle's level, which the host's level sync starts with", [level, $sync_began], [30, 30])
+check("every character of the party is offered to the level sync", $synced.map(&:name), party.map(&:name))
 check("two players bring two each, the host's own first", party.map(&:name), ["Actor1", "Actor2", "Actor7 (Friend)", "Actor8 (Friend)"])
 check("the others' characters keep their HP and MP", party[2, 2].map { |a| [a.hp, a.mp, a.mp_seat] }, [[50, 5, 2], [60, 6, 2]])
 check("the status windows show the party", $refreshed, true)
@@ -118,8 +123,10 @@ check("the host escapes as in any battle", MGQ_MpBattlesSync::Live.escape_leaves
 # The end.
 $cancelled = false
 $game_player.leader_shown = party[2]
+$sync_finished = false
 MGQ_MpBattlesCoop.ended
 check("the end gives the party back and ends the rules", [MGQ_MpBattlesCoop.active?, MGQ_MpBattlesSync.role, MGQ_MpBattles.running?, $game_party.battle_members], [false, nil, false, mine])
+check("and ends the level sync", $sync_finished, true)
 check("and the map shows the player's own leader again", $game_player.leader_shown, mine[0])
 check("and leaves the world's room open", $cancelled, false)
 
@@ -146,7 +153,7 @@ $scene_now = scene
 
 $sent.clear
 $frames = 0
-roster_body = MGQ_MpBattlesSync::Wire.line([[[31, 0, 0, 0], [32, 0, 0, 0]], [[0, "Host", "4,5", [[80, 8], [90, 9]], 8, [0, 1], 2, 0], [2, "Me", "1,2,3", [[100, 10]] * 3, 8, [0, 1, 2], 2, 1]]])
+roster_body = MGQ_MpBattlesSync::Wire.line([[[31, 0, 0, 0], [32, 0, 0, 0]], [[0, "Host", "4,5", [[80, 8], [90, 9]], 8, [0, 1], 2, 0], [2, "Me", "1,2,3", [[100, 10]] * 3, 8, [0, 1, 2], 2, 1]], 25])
 $inject = lambda { |frame| MGQ_MpBattlesSync.take(host, { "battle" => "roster", "bid" => "b9", :payload => roster_body }) if frame == 2 }
 own_enemies = $game_troop.members.dup
 check("the guest joins", MGQ_MpBattlesCoop.join(scene), nil)
@@ -156,6 +163,7 @@ sent_join = $sent.map { |_, text| fields_of(text) }.find { |f| f["battle"] == "j
 check("with the squad two players bring, and its places", MGQ_MpBattlesSync::Wire.parse(sent_join[:payload]), ["1,2,3", [[100, 10], [100, 10], [100, 10]], 8])
 guest_party = $game_party.battle_members
 check("and fights in the host's order, its own characters as they are", guest_party.map(&:name), ["Actor4 (Host)", "Actor5 (Host)", "Actor1", "Actor2"])
+check("at the level the host sent", $sync_began, 25)
 check("the guest's commands are only for its own", MGQ_MpBattlesSync::Wire.parse(MGQ_MpBattlesSync::Commands.build)[0].map(&:size), [0, 0, 0, 0])
 guest_party[2].actions = [Game_Action.new(guest_party[2]).tap { |a| a.set_skill(5); a.target_index = 0; a.item = RPG::Skill.new; def (a.item).id; 5; end }]
 check("which it sends by the party's places", MGQ_MpBattlesSync::Wire.parse(MGQ_MpBattlesSync::Commands.build)[0][2], [["skill", 5, 0]])
@@ -336,6 +344,7 @@ MGQ_MpBattlesSync::Commands.apply(MGQ_MpBattlesSync::Wire.line([[[], [], [], []]
 check("and comes back as the battle left it", $game_party.battle_members[2].equal?(friend_front), true)
 MGQ_MpBattlesSync::Commands.apply(MGQ_MpBattlesSync::Wire.line([[[], [], [], []], [0, 0, 1, 2]]), 2)
 check("a broken order puts the guest's characters back in theirs", MGQ_MpBattlesCoop.instance_variable_get(:@players).find { |p| p[0] == 2 }[5], [0, 1, 2, 3])
+
 five[0].hp = 0
 five[1].hp = 0
 $game_party.battle_members.each { |member| member.hp = 0 }

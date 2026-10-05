@@ -2,7 +2,8 @@
 #  battles_coop.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Logged where a guest's rebuilt character differs from what the guest's game showed
+#      Paulinchen  2026-10-04: Synced the characters above the battle's level, which the host sends with the roster
+#                            - Logged where a guest's rebuilt character differs from what the guest's game showed
 #                            - Held every party member on the map while a member's encounter waits, until they join it, turn it down or ten seconds pass
 #                            - Asked coop_gather.rbx whether the leader's story is about to bring the player over
 #                            - Renamed from mp_battles_coop.rbx
@@ -390,7 +391,7 @@ module MGQ_MpBattlesCoop
   end
 
   # As host, waits for the invited members to join or turn the battle down, then sends everyone the
-  # party and builds it. Without anyone joining, the battle is the host's own. Called at the battle's start.
+  # party and the battle's level and builds the party. Without anyone joining, the battle is the host's own. Called at the battle's start.
   #
   # @param scene [Scene_Battle] The battle.
   # @return [Symbol, nil] An ending of battles_sync's Channel.ending, nil once the battle may start.
@@ -424,7 +425,9 @@ module MGQ_MpBattlesCoop
       players << [seat, peer ? peer.state["name"].to_s : "?", builds.to_s, Array(vitals), max.to_i]
     end
     players = arrange(players)
-    channel.post("roster", MGQ_MpBattlesSync::Wire.line([troop_entries, players.map(&:to_a)]))
+    level = MGQ_MpCoopLevelSync.level_for(players)
+    channel.post("roster", MGQ_MpBattlesSync::Wire.line([troop_entries, players.map(&:to_a), level.to_i]))
+    MGQ_MpCoopLevelSync.begin(level)
     form(scene, players)
     log("battle #{MGQ_MpBattlesSync.battle_id} with #{players.size} players")
     nil
@@ -615,8 +618,9 @@ module MGQ_MpBattlesCoop
     roster = MGQ_MpBattlesSync::Waiting.wait_for(scene, "Joining #{MGQ_MpBattlesSync.player}'s battle...") { MGQ_MpBattlesSync::Channel.take("roster") }
     return roster if roster.is_a?(Symbol)
 
-    enemies, players = MGQ_MpBattlesSync::Wire.parse(roster.to_s)
+    enemies, players, level = MGQ_MpBattlesSync::Wire.parse(roster.to_s)
     take_troop(scene, Array(enemies))
+    MGQ_MpCoopLevelSync.begin(level)
     form(scene, Array(players))
     nil
   end
@@ -766,6 +770,7 @@ module MGQ_MpBattlesCoop
   # Builds the co-op party every game shares, in the host's order: each player's share of the
   # Frontline, the player's own characters as they are, everyone else's rebuilt with their HP and
   # MP. Others' characters the battle had before stay as they are, with what the battle did to them.
+  # Those above the battle's level fight at it (see battles_coop_level_sync.rbx).
   #
   # @param scene [Scene_Battle] The battle.
   # @param players [Array<Player, Array>] The players as arrange gives them, or their fields.
@@ -781,6 +786,7 @@ module MGQ_MpBattlesCoop
         members.concat(front.map { |place| ally(player.seat, player.name, player.builds, player.vitals, place) }.compact)
       end
     end
+    members.each { |actor| MGQ_MpCoopLevelSync.sync(actor) }
     @members = members
     show_party(scene, members)
   end
@@ -922,12 +928,13 @@ module MGQ_MpBattlesCoop
     log("ending a co-op battle failed: #{e.class}: #{e.message}")
   end
 
-  # Forgets the co-op party, its players and their characters, and shows the player's own party on
-  # the map again.
+  # Forgets the co-op party, its players and their characters, gives synced characters their own
+  # stats back, and shows the player's own party on the map again.
   #
   # The game draws the map's leader and followers from the battle members whenever it refreshes the
   # player, which during the battle were the co-op party's.
   def self.forget
+    MGQ_MpCoopLevelSync.finish
     @members = nil
     @players = nil
     @own_squad = nil

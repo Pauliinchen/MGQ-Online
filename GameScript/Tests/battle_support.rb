@@ -2,7 +2,8 @@
 #  battle_support.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Stood in for coop_gather.rbx, which tells whether the player is about to be brought over
+#      Paulinchen  2026-10-04: Stood in for battles_coop_level_sync.rbx, keeping what the co-op battle asks of it
+#                            - Stood in for coop_gather.rbx, which tells whether the player is about to be brought over
 #                            - Followed the scripts to their new names, without mp_
 #      Paulinchen  2026-10-03: Loaded the scripts split off the ones under test, and ui.rbx
 #                            - Added stand-ins for the party's events and the chat, which the battle scripts call
@@ -53,6 +54,14 @@ module MGQ_MpOverworldSync
   end
 end
 module MGQ_MpCoopGather; def self.coming?; false; end; end
+# The level sync, which level_sync_test.rb covers: the battle's level is $sync_level, and what the
+# co-op battle asks of it is kept.
+module MGQ_MpCoopLevelSync
+  def self.level_for(_players); $sync_level; end
+  def self.begin(level); $sync_began = level; end
+  def self.sync(actor); ($synced ||= []) << actor; end
+  def self.finish; $sync_finished = true; end
+end
 module MGQ_MpChat; def self.system(text); end; end unless defined?(MGQ_MpChat)
 module MGQ_MpCoop
   module Party

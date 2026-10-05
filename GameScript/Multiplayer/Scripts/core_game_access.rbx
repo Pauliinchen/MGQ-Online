@@ -2,7 +2,8 @@
 #  core_game_access.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-04: Counted a battle's acting battler as set only once needed, which ends the false log line about it
+#      Paulinchen  2026-10-04: Named a character's levels, which the level sync reads
+#                            - Counted a battle's acting battler as set only once needed, which ends the false log line about it
 #                            - Named how deep an interpreter runs
 #                            - Named the command an interpreter runs
 #                            - Renamed from mp_game_access.rbx
@@ -31,6 +32,10 @@ module MGQ_MpGame
     :abilities => :@abilities,
     :equip_abilities => :@equip_abilities,
     :equips => :@equips,
+
+    # Game_Actor: its personal, job and race level, which a co-op battle's level sync lowers for a
+    # moment to read its stats at the battle's level.
+    :level => :@level,
 
     # Game_Battler: what the host's battle sets on the guest's battlers. Written past the game's
     # setters, which would refresh the battler and add or remove its death by themselves.
