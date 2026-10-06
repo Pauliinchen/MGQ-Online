@@ -2,6 +2,7 @@
 //  server.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-06: Kept the mod catalog in memory, checked its links every half hour
 //      Paulinchen  2026-09-30: Read the relay's admins from the ADMINS environment variable
 //                            - Kept each world's starting save in memory, taken and handed out as bytes
 //      Paulinchen  2026-09-29: Kept the world directory, and seated a game in a world room only once the directory let it in
@@ -18,6 +19,7 @@ import http from "node:http";
 import { pathToFileURL } from "node:url";
 import { WebSocketServer } from "ws";
 import { Directory, handleDirectoryRequest, parseAdmins } from "../core/directory.js";
+import { ModCatalog, handleModRequest } from "../core/mods.js";
 import {
   CLOSE, IN, LIMITS, OUT, PAIRED, PING, PONG, admit, newPeer, newWorldPeer, overdue, parseRoute, presenceOf, routeWorldMessage, seatChangeText,
   seatText, takeMessage, takeSeat, worldOverdue,
@@ -27,6 +29,11 @@ import {
  * How often the server looks for rooms whose time is up.
  */
 const CHECK_EVERY_MS = 60 * 1000;
+
+/**
+ * How often the server checks the mod catalog's links for new releases, half an hour.
+ */
+const CHECK_MODS_EVERY_MS = 30 * 60 * 1000;
 
 /**
  * Longest request body the directory reads.
@@ -52,6 +59,28 @@ export function memoryStore() {
     all: async () => [...entries.values()].map((entry) => structuredClone(entry)),
     putStart: async (id, bytes) => void starts.set(id, Uint8Array.from(bytes)),
     getStart: async (id) => starts.get(id),
+  };
+}
+
+/**
+ * Keeps the mod catalog and uploaded mods' zips in memory, as the catalog's store.
+ *
+ * @returns {import("../core/mods.js").ModStore} The store.
+ */
+export function memoryModStore() {
+  const mods = new Map();
+  const files = new Map();
+
+  return {
+    getMod: async (key) => (mods.has(key) ? structuredClone(mods.get(key)) : undefined),
+    putMod: async (entry) => void mods.set(entry.key, structuredClone(entry)),
+    removeMod: async (key) => {
+      mods.delete(key);
+      files.delete(key);
+    },
+    allMods: async () => [...mods.values()].map((entry) => structuredClone(entry)),
+    putModFile: async (key, bytes) => void files.set(key, Uint8Array.from(bytes)),
+    getModFile: async (key) => files.get(key),
   };
 }
 
@@ -96,10 +125,12 @@ async function readBody(request) {
 /**
  * Creates a relay server, not yet listening.
  *
- * @param {{limits?: typeof LIMITS, clock?: () => number, checkEveryMs?: number, directory?: Directory}} [options] Limits, clock, check interval and directory, which tests change.
+ * @param {{limits?: typeof LIMITS, clock?: () => number, checkEveryMs?: number, directory?: Directory, mods?: ModCatalog}} [options] Limits, clock, check interval, directory and mod catalog, which tests change.
  * @returns {{server: http.Server, check: () => void, stop: () => Promise<void>}} The HTTP server to listen with, a look at the deadlines, and a way to stop everything.
  */
-export function createRelay({ limits = LIMITS, clock = Date.now, checkEveryMs = CHECK_EVERY_MS, directory = new Directory(memoryStore(), { clock }) } = {}) {
+export function createRelay({
+  limits = LIMITS, clock = Date.now, checkEveryMs = CHECK_EVERY_MS, directory = new Directory(memoryStore(), { clock }), mods = new ModCatalog(memoryModStore(), { clock }),
+} = {}) {
   /** @type {Map<string, {socket: import("ws").WebSocket, record: object}[]>} */
   const rooms = new Map();
   /** @type {Map<string, {socket: import("ws").WebSocket, record: object}[]>} */
@@ -152,7 +183,8 @@ export function createRelay({ limits = LIMITS, clock = Date.now, checkEveryMs = 
   });
 
   /**
-   * Answers a request to the directory, and carries out what it asks beyond answering.
+   * Answers a request to the directory or the mod catalog, and carries out what it asks beyond
+   * answering.
    *
    * @param {http.IncomingMessage} request The request.
    * @param {http.ServerResponse} response The response.
@@ -160,14 +192,17 @@ export function createRelay({ limits = LIMITS, clock = Date.now, checkEveryMs = 
    */
   async function answerDirectory(request, response) {
     const url = new URL(request.url, "http://relay");
+    const catalog = url.pathname === "/v1/mods" || url.pathname.startsWith("/v1/mods/");
 
-    if (!url.pathname.startsWith("/v1/worlds")) {
+    if (!url.pathname.startsWith("/v1/worlds") && !catalog) {
       response.writeHead(426, { "Content-Type": "text/plain" });
-      response.end("the relay takes WebSockets and the world directory only");
+      response.end("the relay takes WebSockets, the world directory and the mod catalog only");
       return;
     }
 
-    const answer = await handleDirectoryRequest(directory, request.method, url, () => readBody(request), (limit) => readBytes(request, limit));
+    const answer = catalog
+      ? await handleModRequest(mods, request.method, url, () => readBody(request), (limit) => readBytes(request, limit))
+      : await handleDirectoryRequest(directory, request.method, url, () => readBody(request), (limit) => readBytes(request, limit));
 
     if (answer.close) {
       closeWorld(answer.id, CLOSE.worldDeleted, "the world was deleted");
@@ -376,6 +411,8 @@ export function createRelay({ limits = LIMITS, clock = Date.now, checkEveryMs = 
 
   const timer = setInterval(check, checkEveryMs);
   timer.unref();
+  const modTimer = setInterval(() => mods.checkAll().catch(() => {}), CHECK_MODS_EVERY_MS);
+  modTimer.unref();
 
   /**
    * Closes every connection and the server.
@@ -384,6 +421,7 @@ export function createRelay({ limits = LIMITS, clock = Date.now, checkEveryMs = 
    */
   function stop() {
     clearInterval(timer);
+    clearInterval(modTimer);
 
     for (const socket of sockets.clients) {
       socket.terminate();
@@ -400,7 +438,9 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   const port = Number(process.env.PORT ?? 8080);
   const host = process.env.HOST ?? "127.0.0.1";
 
-  const directory = new Directory(memoryStore(), { admins: parseAdmins(process.env.ADMINS) });
+  const admins = parseAdmins(process.env.ADMINS);
+  const directory = new Directory(memoryStore(), { admins });
+  const mods = new ModCatalog(memoryModStore(), { admins });
 
-  createRelay({ directory }).server.listen(port, host, () => console.log(`relay listening on ${host}:${port}`));
+  createRelay({ directory, mods }).server.listen(port, host, () => console.log(`relay listening on ${host}:${port}`));
 }

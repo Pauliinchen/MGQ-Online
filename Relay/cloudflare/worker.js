@@ -2,6 +2,8 @@
 //  worker.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-06: Kept the mod catalog in the directory object, checked its links every half hour
+//                            - Stored starting saves and uploaded mods in pieces through the same helpers
 //      Paulinchen  2026-09-30: Read the relay's admins from the ADMINS secret
 //                            - Kept each world's starting save in the directory's storage, in pieces
 //      Paulinchen  2026-09-29: Added the world directory, a Durable Object that world rooms ask before seating a game
@@ -19,6 +21,7 @@
 
 import { DurableObject } from "cloudflare:workers";
 import { Directory as WorldDirectory, handleDirectoryRequest, parseAdmins } from "../core/directory.js";
+import { ModCatalog, handleModRequest } from "../core/mods.js";
 import {
   CLOSE, IN, OUT, PAIRED, PING, PONG, admit, newPeer, newWorldPeer, nextDeadline, nextWorldDeadline, overdue, parseRoute, presenceOf,
   routeWorldMessage, seatChangeText, seatText, takeMessage, takeSeat, worldOverdue,
@@ -44,7 +47,7 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
-    if (url.pathname === "/v1/worlds" || url.pathname.startsWith("/v1/worlds/")) {
+    if (url.pathname === "/v1/worlds" || url.pathname.startsWith("/v1/worlds/") || url.pathname === "/v1/mods" || url.pathname.startsWith("/v1/mods/")) {
       return directoryOf(env).fetch(request);
     }
 
@@ -60,6 +63,17 @@ export default {
 
     const rooms = route.kind === "world" ? env.WORLDS : env.ROOMS;
     return rooms.get(rooms.idFromName(route.roomId)).fetch(request);
+  },
+
+  /**
+   * Checks the mod catalog's links for new releases, on the schedule wrangler.toml sets.
+   *
+   * @param {ScheduledController} _controller The scheduled run.
+   * @param {{DIRECTORY: DurableObjectNamespace}} env The Worker's bindings.
+   * @param {ExecutionContext} ctx The run's context.
+   */
+  async scheduled(_controller, env, ctx) {
+    ctx.waitUntil(internal(directoryOf(env), "check-mods"));
   },
 };
 
@@ -109,9 +123,10 @@ function json(status, body) {
 }
 
 /**
- * Size of the pieces a starting save is stored in, well below the largest value storage takes.
+ * Size of the pieces a starting save or an uploaded mod is stored in, well below the largest value
+ * storage takes.
  */
-const START_CHUNK_BYTES = 128 * 1024;
+const CHUNK_BYTES = 128 * 1024;
 
 /**
  * Names the storage keys of a world's starting save.
@@ -121,6 +136,80 @@ const START_CHUNK_BYTES = 128 * 1024;
  */
 function startPrefix(id) {
   return `start:${id}:`;
+}
+
+/**
+ * Names the storage keys of an uploaded mod's zip.
+ *
+ * @param {string} key The mod.
+ * @returns {string} The keys' common start.
+ */
+function modFilePrefix(key) {
+  return `modfile:${key}:`;
+}
+
+/**
+ * Writes bytes in pieces under a common start, replacing what was there.
+ *
+ * @param {DurableObjectStorage} storage The object's storage.
+ * @param {string} prefix The keys' common start.
+ * @param {Uint8Array} bytes The bytes.
+ */
+async function putPieces(storage, prefix, bytes) {
+  await deletePieces(storage, prefix);
+  const chunks = {};
+
+  for (let offset = 0; offset < bytes.length; offset += CHUNK_BYTES) {
+    // Padded, so the keys list in the order of the pieces.
+    chunks[`${prefix}${String(offset / CHUNK_BYTES).padStart(4, "0")}`] = bytes.slice(offset, offset + CHUNK_BYTES);
+  }
+
+  // Storage takes at most 128 keys per write.
+  const keys = Object.keys(chunks);
+
+  for (let start = 0; start < keys.length; start += 128) {
+    await storage.put(Object.fromEntries(keys.slice(start, start + 128).map((key) => [key, chunks[key]])));
+  }
+}
+
+/**
+ * Reads bytes kept in pieces under a common start.
+ *
+ * @param {DurableObjectStorage} storage The object's storage.
+ * @param {string} prefix The keys' common start.
+ * @returns {Promise<Uint8Array | undefined>} The bytes, undefined when there are none.
+ */
+async function getPieces(storage, prefix) {
+  const chunks = [...(await storage.list({ prefix })).values()];
+
+  if (chunks.length === 0) {
+    return undefined;
+  }
+
+  const bytes = new Uint8Array(chunks.reduce((size, chunk) => size + chunk.length, 0));
+  let offset = 0;
+
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.length;
+  }
+
+  return bytes;
+}
+
+/**
+ * Deletes the pieces under a common start.
+ *
+ * @param {DurableObjectStorage} storage The object's storage.
+ * @param {string} prefix The keys' common start.
+ */
+async function deletePieces(storage, prefix) {
+  const keys = [...(await storage.list({ prefix })).keys()];
+
+  // Storage deletes at most 128 keys at once.
+  for (let start = 0; start < keys.length; start += 128) {
+    await storage.delete(keys.slice(start, start + 128));
+  }
 }
 
 /**
@@ -141,67 +230,64 @@ async function readBytes(request, limit) {
 
 /**
  * The world directory: every world with its players, bans and locked token, one entry per world
- * in the object's storage, and each world's starting save in pieces beside it.
+ * in the object's storage, and each world's starting save in pieces beside it. It also keeps the
+ * mod catalog, one entry per mod and each uploaded mod's zip in pieces.
  */
 export class Directory extends DurableObject {
   /**
-   * Creates the directory over the object's storage, with the admins the ADMINS secret names.
+   * Creates the directory and the mod catalog over the object's storage, with the admins the
+   * ADMINS secret names.
    *
    * @param {DurableObjectState} ctx The object's state.
    * @param {{ADMINS?: string}} env The Worker's bindings.
    */
   constructor(ctx, env) {
     super(ctx, env);
+    const storage = ctx.storage;
+    const admins = parseAdmins(env.ADMINS);
+
     this.directory = new WorldDirectory({
-      get: (id) => ctx.storage.get(`world:${id}`),
-      put: (entry) => ctx.storage.put(`world:${entry.id}`, entry),
+      get: (id) => storage.get(`world:${id}`),
+      put: (entry) => storage.put(`world:${entry.id}`, entry),
       remove: async (id) => {
-        await ctx.storage.delete(`world:${id}`);
-        const chunks = [...(await ctx.storage.list({ prefix: startPrefix(id) })).keys()];
-
-        if (chunks.length > 0) {
-          await ctx.storage.delete(chunks);
-        }
+        await storage.delete(`world:${id}`);
+        await deletePieces(storage, startPrefix(id));
       },
-      all: async () => [...(await ctx.storage.list({ prefix: "world:" })).values()],
-      putStart: async (id, bytes) => {
-        const chunks = {};
+      all: async () => [...(await storage.list({ prefix: "world:" })).values()],
+      putStart: (id, bytes) => putPieces(storage, startPrefix(id), bytes),
+      getStart: (id) => getPieces(storage, startPrefix(id)),
+    }, { admins });
 
-        for (let offset = 0; offset < bytes.length; offset += START_CHUNK_BYTES) {
-          // Padded, so the keys list in the order of the pieces.
-          chunks[`${startPrefix(id)}${String(offset / START_CHUNK_BYTES).padStart(4, "0")}`] = bytes.slice(offset, offset + START_CHUNK_BYTES);
-        }
-
-        await ctx.storage.put(chunks);
+    this.mods = new ModCatalog({
+      getMod: (key) => storage.get(`mod:${key}`),
+      putMod: (entry) => storage.put(`mod:${entry.key}`, entry),
+      removeMod: async (key) => {
+        await storage.delete(`mod:${key}`);
+        await deletePieces(storage, modFilePrefix(key));
       },
-      getStart: async (id) => {
-        const chunks = [...(await ctx.storage.list({ prefix: startPrefix(id) })).values()];
-
-        if (chunks.length === 0) {
-          return undefined;
-        }
-
-        const bytes = new Uint8Array(chunks.reduce((size, chunk) => size + chunk.length, 0));
-        let offset = 0;
-
-        for (const chunk of chunks) {
-          bytes.set(chunk, offset);
-          offset += chunk.length;
-        }
-
-        return bytes;
-      },
-    }, { admins: parseAdmins(env.ADMINS) });
+      allMods: async () => [...(await storage.list({ prefix: "mod:" })).values()],
+      putModFile: (key, bytes) => putPieces(storage, modFilePrefix(key), bytes),
+      getModFile: (key) => getPieces(storage, modFilePrefix(key)),
+    }, { admins });
   }
 
   /**
-   * Answers the directory's routes, and the world rooms' questions under /internal.
+   * Answers the directory's and the mod catalog's routes, the world rooms' questions under
+   * /internal, and the schedule's check of the catalog's links.
    *
    * @param {Request} request The request.
    * @returns {Promise<Response>} The answer.
    */
   async fetch(request) {
     const url = new URL(request.url);
+
+    if (url.pathname === "/internal/check-mods") {
+      return json(200, { changed: await this.mods.checkAll() });
+    }
+
+    if (url.pathname === "/v1/mods" || url.pathname.startsWith("/v1/mods/")) {
+      return respond(await handleModRequest(this.mods, request.method, url, () => request.text(), (limit) => readBytes(request, limit)));
+    }
 
     if (url.pathname === "/internal/admit") {
       const { id, player, auth } = await request.json();
@@ -223,12 +309,22 @@ export class Directory extends DurableObject {
       await internal(worldOf(this.env, answer.id), "kick", { player: answer.kick });
     }
 
-    if (answer.bytes) {
-      return new Response(answer.bytes, { status: answer.status, headers: { "Content-Type": "application/octet-stream" } });
-    }
-
-    return json(answer.status, answer.body);
+    return respond(answer);
   }
+}
+
+/**
+ * Answers with a directory or catalog answer: its bytes when it has any, else its JSON.
+ *
+ * @param {{status: number, body: object, bytes?: Uint8Array}} answer The answer.
+ * @returns {Response} The response.
+ */
+function respond(answer) {
+  if (answer.bytes) {
+    return new Response(answer.bytes, { status: answer.status, headers: { "Content-Type": "application/octet-stream" } });
+  }
+
+  return json(answer.status, answer.body);
 }
 
 /**

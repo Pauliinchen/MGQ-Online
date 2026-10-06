@@ -2,6 +2,7 @@
 #  wrangler.toml
 #
 #  Changelog:
+#      Paulinchen  2026-10-06: Checked the mod catalog's links every half hour
 #      Paulinchen  2026-09-29: Added the world directory's Durable Object
 #                            - Added the world rooms' Durable Object
 #                            - Created
@@ -14,6 +15,10 @@ main = "worker.js"
 compatibility_date = "2026-09-01"
 workers_dev = true
 preview_urls = false
+
+# Checks the mod catalog's links for new releases every half hour.
+[triggers]
+crons = ["*/30 * * * *"]
 
 # One Durable Object per room and per world room, and one for the world directory, SQLite backed,
 # the only kind the free plan offers.

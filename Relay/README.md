@@ -49,6 +49,19 @@ A player's key never appears in the list: everyone sees the player's id, the fir
 
 **Admins** look after the directory: they see every world, hidden ones too, may delete any, and make the featured worlds. They cannot open a world's lock or enter it without its password. The relay reads their player ids from the setting `ADMINS`, separated by commas or spaces; without it there are none. On Cloudflare it is a secret, kept out of the repository: `npx wrangler secret put ADMINS --config cloudflare/wrangler.toml` sets it and deploys it at once. The Node server reads it from the environment variable of the same name. An admin's id is made from the key in their game's `Patch\Multiplayer\Player.ini`, as above.
 
+### Mod catalog
+
+The mods a world may require and games may download. Only admins add them: a single script by a link to a release on `https://github.com/Pauliinchen/`, the same for every version, or a mod of several files that an admin uploads. The relay keeps a link mod's hash and version only, never the script, and checks every link every half hour (a cron trigger on Cloudflare, a timer on Node). A link such as `.../releases/latest/download/Mod.rb` must lead to `.../releases/download/<tag>/Mod.rb`, whose tag (without `v`) is the version, and that file may only come from GitHub's file hosts, at most 2 MB. A script's hash is the SHA-256 of its bytes without carriage returns; any other file's of its bytes.
+
+| Request | What it does |
+|---|---|
+| `GET /v1/mods?player=<key>` | Lists the mods: `mods`, each with `key` (the name in lower case without `.rb`, spaces, underscores and hyphens), `name`, `kind` (`link` or `upload`), `version`, `files` (each file's hash by its name, for an upload by its path inside `Patch`), `versions` (up to 20 earlier `version` and `files`, newest first) and `fileUrl` (a link mod's release file); for an admin also `link`, `size`, `checked` and `error` (why the last check failed, the last good version kept); and `admin`. |
+| `POST /v1/mods` | Adds a link mod or changes its link: `player` (an admin's key), `name`, `link`. Checks it at once and answers the `mod`. |
+| `POST /v1/mods/check` | Checks every link mod now, if `player` is an admin's key, and answers the list. |
+| `POST /v1/mods/<key>/upload?player=<key>&name=<name>&version=<version>` | Keeps a mod of several files, if `player` is an admin's key. The body: one `path<TAB>hash` line per file (paths inside `Patch`, at most 100), an empty line, then the zip; at most 16 MB. |
+| `GET /v1/mods/<key>/file` | Hands out an uploaded mod's zip as bytes. |
+| `POST /v1/mods/<key>/delete` | Removes a mod, if `player` is an admin's key. |
+
 ### World rooms
 
 - **Connect:** `wss://<relay>/v1/world/<world id>?player=<key>&name=<name>&auth=<auth key>`. The relay lets the game in only if the world is in the directory, the SHA-256 of the auth key is the world's `authHash`, and the creator has not removed the player: otherwise HTTP 404, 401 or 403 before the WebSocket opens, and HTTP 409 while the creator is still uploading the starting save. The world's seats come from the directory; once every one is taken, the next game gets HTTP 409. After every change the room tells the directory who is in it.
