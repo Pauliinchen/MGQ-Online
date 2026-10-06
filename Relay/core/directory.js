@@ -2,6 +2,7 @@
 //  directory.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-06: Kept the hashes of a world's required mods outside the catalog and its mod settings, both from its creator's game
 //      Paulinchen  2026-10-04: Left the mods, the game data and the rule for it out of a world's lock, which the list tells
 //                            - Let a world's creator replace its game data with that of their game as it is now
 //                            - Listed the hidden worlds a player names by their ids
@@ -38,6 +39,8 @@ export const DIRECTORY_LIMITS = Object.freeze({
   maxNameLength: 32,
   maxDescriptionLength: 1000,
   maxModsLength: 80,
+  maxModHashesLength: 2000,
+  maxSettingsLength: 2000,
   maxWorlds: 2000,
   maxWorldsPerCreator: 20,
   maxMembers: 200,
@@ -92,6 +95,12 @@ const NAME_BREAKERS = /[\u0000-\u001f\u007f]/g;
  * What tells one game's data from another's, as the creator's game wrote it; the relay only keeps it.
  */
 const GAME_DATA = /^[0-9a-z:.]{1,160}$/;
+
+/**
+ * The hashes of a world's required mods outside the mod catalog, as the creator's game wrote them:
+ * "name=hash" pairs separated by semicolons.
+ */
+const MOD_HASHES = /^(?:[^=;\u0000-\u001f]{1,40}=[0-9a-f]{64})(?:;[^=;\u0000-\u001f]{1,40}=[0-9a-f]{64})*$/;
 
 /**
  * Hashes a text with SHA-256.
@@ -209,7 +218,7 @@ export class Directory {
   /**
    * Makes a world.
    *
-   * @param {object} request The world: id, name, seats, the creator's player key and name, the hash of the auth key, the lock, whether a starting save follows, whether it is hidden from the list, whether each new player chooses where to start, whether it has no password, whether it is featured, its description, the mods it needs, the creator's game data and whether only games with the same data may enter.
+   * @param {object} request The world: id, name, seats, the creator's player key and name, the hash of the auth key, the lock, whether a starting save follows, whether it is hidden from the list, whether each new player chooses where to start, whether it has no password, whether it is featured, its description, the mods it needs, the creator's game data, whether only games with the same data may enter, the hashes of its required mods outside the catalog and its mod settings.
    * @returns {Promise<{status: number, body: object}>} The world's id, or why it was refused.
    */
   async create(request) {
@@ -258,6 +267,8 @@ export class Directory {
       mods: cleanText(request.mods, this.limits.maxModsLength),
       data: request.data ?? "",
       strict: request.strict === true,
+      modHashes: request.modHashes ?? "",
+      settings: cleanText(request.settings, this.limits.maxSettingsLength),
       created: now,
       active: now,
       members: { [creator]: { name: creatorName, seen: now } },
@@ -289,11 +300,12 @@ export class Directory {
   /**
    * Changes what of a world may change after it was made, if the creator or an admin asks: its
    * seats, its description and the mods it needs. Games already in the world stay when the seats
-   * become fewer. Its game data only the creator replaces, whose game it is the data of.
+   * become fewer. Its game data, its mods' hashes and its mod settings only the creator replaces,
+   * whose game they come from.
    *
    * @param {string} id The world.
    * @param {unknown} key The asking player's key.
-   * @param {any} changes Whichever of `seats`, `description`, `mods` and `data` change.
+   * @param {any} changes Whichever of `seats`, `description`, `mods`, `data`, `modHashes` and `settings` change.
    * @returns {Promise<{status: number, body: object}>} The answer.
    */
   async edit(id, key, changes) {
@@ -303,14 +315,22 @@ export class Directory {
       return refusal;
     }
 
-    const { seats, description, mods, data } = changes ?? {};
+    const { seats, description, mods, data, modHashes, settings } = changes ?? {};
 
     if (data !== undefined && (typeof data !== "string" || !GAME_DATA.test(data))) {
       return badRequest("the game data must be 1 to 160 lowercase letters, digits, colons and dots");
     }
 
-    if (data !== undefined && (await playerIdOf(key)) !== entry.creator.id) {
-      return { status: 403, body: { error: "only the world's creator may replace its game data" } };
+    if (modHashes !== undefined && !this.modHashesOk(modHashes)) {
+      return badRequest("the mod hashes must be name=hash pairs separated by semicolons");
+    }
+
+    if (settings !== undefined && typeof settings !== "string") {
+      return badRequest("the mod settings must be a text");
+    }
+
+    if ((data !== undefined || modHashes !== undefined || settings !== undefined) && (await playerIdOf(key)) !== entry.creator.id) {
+      return { status: 403, body: { error: "only the world's creator may replace its game data, mod hashes and mod settings" } };
     }
 
     if (seats !== undefined && (!Number.isInteger(seats) || seats < WORLD_SEATS.min || seats > WORLD_SEATS.max)) {
@@ -325,6 +345,8 @@ export class Directory {
     if (description !== undefined) entry.description = cleanText(description, this.limits.maxDescriptionLength);
     if (mods !== undefined) entry.mods = cleanText(mods, this.limits.maxModsLength);
     if (data !== undefined) entry.data = data;
+    if (modHashes !== undefined) entry.modHashes = modHashes;
+    if (settings !== undefined) entry.settings = cleanText(settings, this.limits.maxSettingsLength);
 
     await this.store.put(entry);
     return { status: 200, body: { edited: entry.id } };
@@ -596,7 +618,19 @@ export class Directory {
     if (request.mods !== undefined && typeof request.mods !== "string") return "the mods must be a text";
     if (request.data !== undefined && (typeof request.data !== "string" || !GAME_DATA.test(request.data))) return "the game data must be 1 to 160 lowercase letters, digits, colons and dots";
     if (request.strict !== undefined && typeof request.strict !== "boolean") return "strict must be true or false";
+    if (request.modHashes !== undefined && !this.modHashesOk(request.modHashes)) return "the mod hashes must be name=hash pairs separated by semicolons";
+    if (request.settings !== undefined && typeof request.settings !== "string") return "the mod settings must be a text";
     return null;
+  }
+
+  /**
+   * Checks the hashes of a world's required mods outside the catalog.
+   *
+   * @param {unknown} text The hashes, empty for none.
+   * @returns {boolean} Whether they are as they should be.
+   */
+  modHashesOk(text) {
+    return typeof text === "string" && text.length <= this.limits.maxModHashesLength && (text === "" || MOD_HASHES.test(text));
   }
 }
 
@@ -693,6 +727,8 @@ export function publicView(entry) {
     mods: entry.mods ?? "",
     data: entry.data ?? "",
     strict: entry.strict === true,
+    modHashes: entry.modHashes ?? "",
+    settings: entry.settings ?? "",
     online: entry.online.length,
     created: entry.created,
     active: entry.active,
