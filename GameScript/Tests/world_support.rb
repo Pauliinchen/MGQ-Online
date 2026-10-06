@@ -2,6 +2,7 @@
 #  world_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-06: Told the buttons held past the capture, from $held, and loaded ui_wheel.rbx
 #      Paulinchen  2026-10-05: Gave the map an update and whether a message stops its own
 #      Paulinchen  2026-10-04: Followed the scripts to their new names, without mp_
 #      Paulinchen  2026-10-03: Loaded the scripts split off the ones under test, and ui.rbx
@@ -85,6 +86,7 @@ module MGQ_Multiplayer
     def self.start(owner); @owner = owner; end
     def self.stop(owner); @owner = nil if @owner == owner; end
     def self.on?; !@owner.nil?; end
+    def self.press?(button); ($held || []).include?(button); end
     def self.trigger?(button); $buttons.delete(button) ? true : false; end
     def self.repeat?(button); $buttons.delete(button) ? true : false; end
   end
@@ -112,6 +114,7 @@ load_script "core_hotkeys"
 load_script "ui"
 load_script "ui_text_box"
 load_script "overworld_sync"
+load_script "ui_wheel"
 load_script "ui_actions"
 load_script "ui_chat"
 load_script "overworld"

@@ -2,7 +2,9 @@
 #  Multiplayer.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-06: Loaded world_mods.rbx after world.rbx
+#      Paulinchen  2026-10-06: Told whether a button is held past the capture, for the wheels' arrows
+#                            - Loaded ui_wheel.rbx before ui_actions.rbx
+#                            - Loaded world_mods.rbx after world.rbx
 #      Paulinchen  2026-10-04: Loaded battles_coop_level_sync.rbx after battles_coop.rbx
 #                            - Loaded ui_party_box.rbx after world_overview.rbx
 #                            - Loaded ui_emotes.rbx after ui_chat.rbx
@@ -68,7 +70,7 @@ module MGQ_Multiplayer
   # coop.rbx, which the scripts after them register with. The battle scripts install their battle hooks once the game runs, the last
   # loaded first, so their order decides how those hooks wrap each other.
   SCRIPTS = %w[
-    core_log core_hooks core_game_access core_hotkeys ui ui_text_box core_actors core_async overworld_sync ui_actions ui_chat ui_emotes overworld
+    core_log core_hooks core_game_access core_hotkeys ui ui_text_box core_actors core_async overworld_sync ui_wheel ui_actions ui_chat ui_emotes overworld
     coop coop_squad coop_events coop_gather coop_scene coop_npcs coop_story coop_castle
     world world_mods world_save_distribution world_text world_screen world_save_export
     battles battles_coop battles_coop_level_sync
@@ -649,6 +651,14 @@ module MGQ_Multiplayer
       read(:trigger?, button)
     end
 
+    # Reports whether a button is held, past the capture, while the game window is in front.
+    #
+    # @param button [Symbol] The game's button, such as :UP.
+    # @return [Boolean] Whether it is held.
+    def self.press?(button)
+      read(:press?, button)
+    end
+
     # Reports whether a button went down or repeats while held, past the capture, while the game
     # window is in front.
     #
@@ -660,7 +670,7 @@ module MGQ_Multiplayer
 
     # Asks Input about a button past the capture, while the game window is in front.
     #
-    # @param method [Symbol] :trigger? or :repeat?.
+    # @param method [Symbol] :press?, :trigger? or :repeat?.
     # @param button [Symbol] The game's button.
     # @return [Boolean] What Input answers.
     def self.read(method, button)

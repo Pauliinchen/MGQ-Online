@@ -2,6 +2,7 @@
 #  overworld_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-06: Steered the action wheel with the arrows held, and checked the middle while none or a diagonal is held
 #      Paulinchen  2026-10-05: Checked that an open chat box takes typing and closes while a message shows
 #      Paulinchen  2026-10-04: Checked that a label goes above the labels already on its tile
 #                            - Checked the party chat and the colors of the senders' names in the chat log
@@ -118,7 +119,15 @@ check("every state but walking has an icon", (%w[battle event menu items equip s
 # Opens the action wheel, presses buttons in it and lets a frame pass.
 #
 # @param buttons [Array<Symbol>] The buttons, such as :DOWN and :C.
-def wheel(*buttons); $pressed = true; map_frame; $buttons.concat(buttons); map_frame; MGQ_MpOverworldSync.tick; end
+def wheel(*buttons)
+  $pressed = true
+  map_frame
+  $held = buttons & MGQ_MpActions::Wheel::DIRECTIONS
+  $buttons.concat(buttons - $held)
+  map_frame
+  $held = []
+  MGQ_MpOverworldSync.tick
+end
 # Reads a choice of the action wheel.
 #
 # @param direction [Symbol] Where the choice sits, such as :UP.
@@ -133,12 +142,14 @@ $pressed = true
 map_frame
 check("B opens the wheel and holds the buttons", [MGQ_MpActions::Wheel.open?, MGQ_Multiplayer::Capture.on?], [true, true])
 check("the wheel opens on its middle", MGQ_MpActions::Wheel.selected, :CENTER)
-$buttons << :UP << :C
+$held = [:UP]
+$buttons << :C
 map_frame
 check("a greyed choice says why", [MGQ_MpActions::Wheel.open?, MGQ_MpOverworldSync::Status.lines.last, $sounds.last], [true, "Nobody is near enough to invite.", "buzzer"])
-$buttons << :LEFT
+$held = [:LEFT]
 map_frame
-check("arrows pick", MGQ_MpActions::Wheel.selected, :LEFT)
+check("the arrow held picks its side", MGQ_MpActions::Wheel.selected, :LEFT)
+$held = []
 $pressed = true
 map_frame
 check("B closes the wheel and gives the buttons back", [MGQ_MpActions::Wheel.open?, MGQ_Multiplayer::Capture.on?], [false, false])
@@ -536,14 +547,18 @@ parts.clear
 log_sprite.draw_row("on my way", nil, 0)
 check("a row that goes on a line is all text", parts.map { |_, text, color| [text, colors[color]] }, [["on my way", :text]])
 
-# The wheel's middle, and the opposite arrow back to it.
+# The wheel's middle, which the arrows point at while none is held.
 MGQ_MpActions::Wheel.open
-$buttons << :UP
+$held = [:UP]
 map_frame
-check("an arrow picks its side", MGQ_MpActions::Wheel.selected, :UP)
-$buttons << :DOWN
+check("an arrow held picks its side", MGQ_MpActions::Wheel.selected, :UP)
+$held = []
 map_frame
-check("the opposite arrow goes back to the middle", MGQ_MpActions::Wheel.selected, :CENTER)
+check("letting go goes back to the middle", MGQ_MpActions::Wheel.selected, :CENTER)
+$held = [:UP, :RIGHT]
+map_frame
+check("a diagonal, which the wheel has no choice for, picks the middle too", MGQ_MpActions::Wheel.selected, :CENTER)
+$held = []
 MGQ_MpActions::Wheel.close
 
 # Invites that name a player reach them anywhere.

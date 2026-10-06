@@ -2,6 +2,7 @@
 #  ui_actions.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-06: Pointed at a choice with the arrows held, like a joystick, and at the middle while no arrow or a diagonal is held
 #      Paulinchen  2026-10-04: Renamed from mp_actions.rbx
 #      Paulinchen  2026-10-03: Took the wheel's choices, the own line and what lies over the map from what the later scripts register, and kept their offers for the World overview and the notification box
 #                            - Asked MGQ_MpOverworldSync whether the map is quiet or the player free on it
@@ -36,8 +37,8 @@
 # The action wheel on the map: its key (B unless the player binds another, see core_hotkeys.rbx) opens it
 # around the player. The scripts after this one fill its directions (wheel_slot), say the line
 # above the player's own head (own_line_from, own_doing_from) and add what they offer between
-# two players to the World overview and the notification box (offer). It builds on
-# overworld_sync.rbx, which knows the other players.
+# two players to the World overview and the notification box (offer). It builds on ui_wheel.rbx,
+# which reads the arrows, and overworld_sync.rbx, which knows the other players.
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpActions
@@ -198,19 +199,16 @@ module MGQ_MpActions
     Wheel.close
   end
 
-  # The action wheel: four choices around the player and one over them, picked with the arrows and
-  # taken with the game's confirm button. It opens on the middle; an arrow picks its side, and the
-  # opposite arrow goes back to the middle. It holds the buttons while open, so the player stands
-  # still and the game's menu stays shut.
+  # The action wheel: four choices around the player and one over them, taken with the game's
+  # confirm button. The arrow held picks its side, like a joystick; while no arrow is held, or two
+  # for a diagonal, the middle is picked. It holds the buttons while open, so the player stands still
+  # and the game's menu stays shut.
   module Wheel
     # The directions around the player, clockwise from the top.
     DIRECTIONS = [:UP, :RIGHT, :DOWN, :LEFT]
 
     # The choice over the player.
     CENTER = :CENTER
-
-    # Each direction's opposite, which goes back to the middle.
-    OPPOSITES = { :UP => :DOWN, :DOWN => :UP, :LEFT => :RIGHT, :RIGHT => :LEFT }
 
     @open = false
     @selected = CENTER
@@ -245,7 +243,8 @@ module MGQ_MpActions
       MGQ_Multiplayer::Capture.stop(:wheel)
     end
 
-    # Follows the arrows, takes the picked choice on confirm, and closes on cancel or the wheel key.
+    # Picks the side the arrow held points to, or the middle, takes the picked choice on confirm, and
+    # closes on cancel or the wheel key.
     #
     # @param pressed [Boolean] Whether the wheel key went down this frame.
     def self.update(pressed)
@@ -255,12 +254,10 @@ module MGQ_MpActions
         return
       end
 
-      DIRECTIONS.each do |direction|
-        next unless MGQ_Multiplayer::Capture.trigger?(direction) && direction != @selected
-
-        @selected = OPPOSITES[direction] == @selected ? CENTER : direction
-        Sound.play_cursor
-      end
+      held = MGQ_MpWheel.held
+      pointed = DIRECTIONS.include?(held) ? held : CENTER
+      Sound.play_cursor if pointed != @selected
+      @selected = pointed
 
       MGQ_MpActions.choose(MGQ_MpActions.wheel_options[@selected]) { close } if MGQ_Multiplayer::Capture.trigger?(:C)
     end

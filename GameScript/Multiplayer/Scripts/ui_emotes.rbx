@@ -2,6 +2,7 @@
 #  ui_emotes.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-06: Pointed at an emote with the arrows held, like a joystick, two for a diagonal, and at none while no arrow is held
 #      Paulinchen  2026-10-04: Played an emote's balloon or jump in plain branches
 #                            - Created
 #
@@ -9,9 +10,11 @@
 
 # The emote wheel on the map: its key (E unless the player binds another, see core_hotkeys.rbx)
 # opens a ring of emotes around the player, a jump and the game's balloons, such as a heart or a
-# light bulb. The arrows go round the ring, the game's confirm button plays the emote on the
-# player's character, and every other game showing the player's map plays it on the player's
-# ghost. It builds on overworld_sync.rbx, which knows the other players.
+# light bulb. The arrows held point at an emote like a joystick, one for a side and two for a
+# diagonal, and at none while no arrow is held; the game's confirm button plays the emote pointed
+# at on the player's character, and every other game showing the player's map plays it on the
+# player's ghost. It builds on ui_wheel.rbx, which reads the arrows, and overworld_sync.rbx, which
+# knows the other players.
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpEmotes
@@ -21,8 +24,8 @@ module MGQ_MpEmotes
   # @!attribute balloon [Integer, nil] The game's balloon it shows, nil for a jump.
   Emote = Struct.new(:name, :balloon)
 
-  # The wheel's emotes, clockwise from the top: a jump, then the game's balloons in Balloon.png's
-  # rows.
+  # The wheel's emotes, one for each of MGQ_MpWheel::DIRECTIONS, clockwise from the top: a jump,
+  # then the game's balloons in Balloon.png's rows.
   EMOTES = [
     Emote.new("Jump", nil), Emote.new("Surprise", 1), Emote.new("Question", 2), Emote.new("Music", 3),
     Emote.new("Heart", 4), Emote.new("Anger", 5), Emote.new("Sweat", 6), Emote.new("Idea", 9),
@@ -32,7 +35,7 @@ module MGQ_MpEmotes
   COOLDOWN_FRAMES = 30
 
   @open = false
-  @selected = 0
+  @selected = nil
   @last = nil
 
   extend MGQ_MpLog
@@ -47,16 +50,17 @@ module MGQ_MpEmotes
     @open
   end
 
-  # The place of the picked emote in EMOTES.
+  # The place in EMOTES of the emote the arrows point at.
   #
-  # @return [Integer] The place.
+  # @return [Integer, nil] The place, nil while no arrow is held.
   def self.selected
     @selected
   end
 
-  # Opens the wheel on the emote picked last, holding the buttons.
+  # Opens the wheel, pointing at no emote, holding the buttons.
   def self.open
     @open = true
+    @selected = nil
     MGQ_Multiplayer::Capture.start(:emotes)
     Sound.play_cursor
   end
@@ -94,8 +98,8 @@ module MGQ_MpEmotes
     close
   end
 
-  # Goes round the ring with the arrows, plays the picked emote on confirm, and closes on cancel or
-  # the wheel's key.
+  # Points at the emote the arrows held point to, plays it on confirm, and closes on cancel or the
+  # wheel's key. Confirm while no arrow is held closes the wheel without an emote.
   #
   # @param key [Boolean] Whether the wheel's key went down this frame.
   def self.update(key)
@@ -105,15 +109,21 @@ module MGQ_MpEmotes
       return Sound.play_cancel
     end
 
-    step = (capture.repeat?(:RIGHT) || capture.repeat?(:DOWN) ? 1 : 0) - (capture.repeat?(:LEFT) || capture.repeat?(:UP) ? 1 : 0)
-    if step != 0
-      @selected = (@selected + step) % EMOTES.size
-      Sound.play_cursor
-    end
+    pointed = held_emote
+    Sound.play_cursor if pointed && pointed != @selected
+    @selected = pointed
     return unless capture.trigger?(:C)
 
     close
-    play_own(@selected)
+    @selected ? play_own(@selected) : Sound.play_cancel
+  end
+
+  # Finds the emote the arrows held point at.
+  #
+  # @return [Integer, nil] Its place in EMOTES, nil while no arrow is held or two opposite ones are.
+  def self.held_emote
+    direction = MGQ_MpWheel.held
+    direction && MGQ_MpWheel::DIRECTIONS.index(direction)
   end
 
   # Plays an emote on the player's character and tells the others, unless the last was too soon.
@@ -156,8 +166,8 @@ module MGQ_MpEmotes
   end
 end
 
-# The emote wheel around the player: a box per emote in a ring, the picked one lit, with its name
-# below the ring.
+# The emote wheel around the player: a box per emote in a ring and a small one in the middle for
+# none, the one the arrows point at lit, with its name below the ring.
 class Sprite_MpEmoteWheel < Sprite
   # Size of an emote's box.
   BOX = 36
@@ -186,6 +196,12 @@ class Sprite_MpEmoteWheel < Sprite
   # Background of the picked box.
   PICKED_BACK = Color.new(48, 96, 176, 220)
 
+  # Size of the box in the middle, which stands for no emote; small, so the player stays in sight.
+  NONE_BOX = 12
+
+  # What the wheel says while no arrow is held.
+  NONE_NAME = "None"
+
   # Creates the wheel, hidden.
   #
   # @param viewport [Viewport] The map's topmost viewport.
@@ -197,6 +213,7 @@ class Sprite_MpEmoteWheel < Sprite
     self.z = 300
     self.visible = false
     @shown = nil
+    @drawn = false
   end
 
   # Draws the wheel around the player's sprite while it is open, if the picked emote changed.
@@ -208,14 +225,17 @@ class Sprite_MpEmoteWheel < Sprite
 
     self.x = sprite.x
     self.y = sprite.y
-    return if @shown == MGQ_MpEmotes.selected
+    return if @drawn && @shown == MGQ_MpEmotes.selected
 
+    @drawn = true
     @shown = MGQ_MpEmotes.selected
     bitmap.clear
     MGQ_MpEmotes::EMOTES.each_with_index { |emote, index| draw_box(emote, index) }
+    middle = (SIZE - NONE_BOX) / 2
+    bitmap.fill_rect(middle, middle, NONE_BOX, NONE_BOX, @shown ? BACK : PICKED_BACK)
     bitmap.font.size = 18
     bitmap.font.outline = true
-    bitmap.draw_text(0, SIZE, SIZE, NAME_HEIGHT, MGQ_MpEmotes::EMOTES[@shown].name, 1)
+    bitmap.draw_text(0, SIZE, SIZE, NAME_HEIGHT, @shown ? MGQ_MpEmotes::EMOTES[@shown].name : NONE_NAME, 1)
   end
 
   # Draws one emote's box on the ring, clockwise from the top.

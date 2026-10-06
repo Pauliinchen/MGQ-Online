@@ -2,6 +2,7 @@
 #  loader_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-06: Checked that ui_wheel.rbx loads before both wheels
 #      Paulinchen  2026-10-04: Checked that coop_gather.rbx loads after coop_events.rbx and coop_castle.rbx after coop_story.rbx
 #                            - Followed the scripts to their new names, without mp_
 #      Paulinchen  2026-10-03: Checked that a family's base script loads before its other scripts
@@ -31,6 +32,7 @@ check("core_actors loads before the scripts whose classes build on Game_MpActor"
       %w[battles_coop battles_pvp].all? { |name| scripts.index("core_actors") < scripts.index(name) }, true)
 check("the registries load before the scripts that join them",
       [scripts.index("overworld_sync") < scripts.index("ui_actions"), scripts.index("coop") < scripts.index("coop_events")], [true, true])
+check("the wheels' shared reading of the arrows loads before both wheels", %w[ui_actions ui_emotes].all? { |name| scripts.index("ui_wheel") < scripts.index(name) }, true)
 check("the scripts whose constants the World overview shares load before it",
       %w[ui_actions overworld battles_pvp].all? { |name| scripts.index(name) < scripts.index("world_overview") }, true)
 check("a family's base script loads before its other scripts",

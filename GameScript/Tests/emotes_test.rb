@@ -2,11 +2,12 @@
 #  emotes_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-06: Pointed at emotes with the arrows held, diagonals and none included
 #      Paulinchen  2026-10-04: Created
 #
 #----------------------------------------------------------------
 
-# Covers ui_emotes.rbx: the emote wheel's key, going round it, playing an emote on the player and
+# Covers ui_emotes.rbx: the emote wheel's key, pointing at an emote with the arrows held, playing an emote on the player and
 # telling the others, and another player's emote on their ghost.
 
 require_relative "world_support"
@@ -22,6 +23,7 @@ end
 module Graphics; def self.frame_count; $frame_count; end; end
 $frame_count = 0
 
+load_script "ui_wheel"
 load_script "ui_emotes"
 
 emotes = MGQ_MpEmotes
@@ -31,44 +33,46 @@ $inbox << entry("message", 2, told(friend))
 MGQ_MpOverworldSync.tick
 MGQ_MpOverworld.update_ghosts
 
-# Opening and going round.
+# Opening and pointing.
 $pressed = MGQ_MpHotkeys.code(:emotes)
 emotes.on_map
-check("E opens the emote wheel on the map, which holds the buttons", [emotes.open?, MGQ_Multiplayer::Capture.on?], [true, true])
-$buttons << :RIGHT
+check("E opens the emote wheel on the map, which holds the buttons and points at none", [emotes.open?, MGQ_Multiplayer::Capture.on?, emotes.selected], [true, true, nil])
+$held = [:RIGHT]
 emotes.on_map
-$buttons << :RIGHT
+check("an arrow held points at the emote on its side", emotes.selected, 2)
+$held = [:UP, :LEFT]
 emotes.on_map
-check("the arrows go round it", emotes.selected, 2)
-$buttons << :LEFT
+check("two point at the diagonal between them", emotes.selected, MGQ_MpEmotes::EMOTES.size - 1)
+$held = [:LEFT, :RIGHT]
 emotes.on_map
-$buttons << :LEFT
+check("opposite ones point at none", emotes.selected, nil)
+$held = []
 emotes.on_map
-$buttons << :UP
+check("letting go points at none", emotes.selected, nil)
+$buttons << :C
 emotes.on_map
-check("past the top to the last", emotes.selected, MGQ_MpEmotes::EMOTES.size - 1)
-$buttons << :RIGHT
-emotes.on_map
-$buttons << :RIGHT
-emotes.on_map
+check("confirm on none closes the wheel without an emote", [emotes.open?, $game_player.balloon_id, $sent.count { |message| message[1].start_with?("emote=") }], [false, nil, 0])
 
 # Playing one.
+emotes.open
 $sent.clear
+$held = [:UP, :RIGHT]
 $buttons << :C
 emotes.on_map
 check("confirm closes the wheel and plays the picked emote, a balloon above the player", [emotes.open?, $game_player.balloon_id], [false, 1])
 check("and tells the others", $sent.last[1].start_with?("emote=1\n") && $sent.last[1].include?("map=5"), true)
 $sent.clear
 emotes.open
-$buttons << :LEFT
-emotes.on_map
+$held = [:LEFT]
 $buttons << :C
 emotes.on_map
 check("a second emote right after is refused", [$sent, $sounds.last], [[], "buzzer"])
 $frame_count += MGQ_MpEmotes::COOLDOWN_FRAMES
 emotes.open
+$held = [:UP]
 $buttons << :C
 emotes.on_map
+$held = []
 check("the jump plays once a moment passed", [$game_player.jumps, $sent.size], [1, 1])
 $pressed = MGQ_MpHotkeys.code(:emotes)
 emotes.on_map
