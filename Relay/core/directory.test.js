@@ -2,7 +2,8 @@
 //  directory.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-06: Covered admins replacing a world's mod settings
+//      Paulinchen  2026-10-06: Expected up to 300 characters of mods
+//                            - Covered admins replacing a world's mod settings
 //                            - Covered a world's mod hashes and mod settings, which only its creator sets
 //      Paulinchen  2026-10-04: Expected the lock without the mods, the game data and the rule for it
 //                            - Covered a creator replacing a world's game data, which an admin may not
@@ -152,11 +153,11 @@ test("a world whose new players choose where to start says so in the list and th
 
 test("a world tells what its creator wrote about it and which games may enter", async () => {
   const { directory } = newDirectory();
-  await directory.create(await newWorld({ description: "  A slow run\tthrough part one.  ", mods: "x".repeat(100), data: "1:0a1b2c3d.ffffffff", strict: true }));
+  await directory.create(await newWorld({ description: "  A slow run\tthrough part one.  ", mods: "x".repeat(320), data: "1:0a1b2c3d.ffffffff", strict: true }));
 
   const world = (await directory.list()).body.worlds[0];
   assert.equal(world.description, "A slow runthrough part one.");
-  assert.equal(world.mods, "x".repeat(80));
+  assert.equal(world.mods, "x".repeat(300));
   assert.equal(world.data, "1:0a1b2c3d.ffffffff");
   assert.equal(world.strict, true);
 });

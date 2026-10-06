@@ -62,7 +62,7 @@ A world's fields, as `POST /v1/worlds` takes them and `GET /v1/worlds` lists the
 | `open` | optional | yes | The password is empty, so the games enter without asking for it. |
 | `featured` | admins only | yes | Shown as one of the relay's own worlds. |
 | `description` | optional | yes | Kept up to 1000 characters. |
-| `mods` | optional | yes | The mods it needs, up to 80 characters. |
+| `mods` | optional | yes | The mods it needs, up to 300 characters. |
 | `data` | optional | yes | What tells the creator's game data from another's; the relay only keeps it. |
 | `strict` | optional | yes | Only games with the same data may enter, which the games check themselves. |
 | `modHashes` | optional | yes | The creator's hashes of required mods outside the mod catalog: `name=hash` pairs separated by semicolons, up to 2000 characters. |

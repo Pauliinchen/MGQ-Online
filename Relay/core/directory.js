@@ -2,7 +2,8 @@
 //  directory.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-06: Let admins replace a world's mod settings too
+//      Paulinchen  2026-10-06: Kept up to 300 characters of the mods a world names
+//                            - Let admins replace a world's mod settings too
 //                            - Kept the hashes of a world's required mods outside the catalog and its mod settings, both from its creator's game
 //      Paulinchen  2026-10-04: Left the mods, the game data and the rule for it out of a world's lock, which the list tells
 //                            - Let a world's creator replace its game data with that of their game as it is now
@@ -39,7 +40,7 @@ import { WORLD_SEATS } from "./relay.js";
 export const DIRECTORY_LIMITS = Object.freeze({
   maxNameLength: 32,
   maxDescriptionLength: 1000,
-  maxModsLength: 80,
+  maxModsLength: 300,
   maxModHashesLength: 2000,
   maxSettingsLength: 2000,
   maxWorlds: 2000,
