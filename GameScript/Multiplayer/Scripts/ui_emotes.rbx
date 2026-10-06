@@ -2,7 +2,7 @@
 #  ui_emotes.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-06: Kept the emote pointed at last once the arrows are let go, instead of pointing at none
+#      Paulinchen  2026-10-06: Kept the emote pointed at last once the arrows are let go, instead of pointing at none, and the diagonal while its arrows are let go one after the other
 #                            - Placed the emotes on the directions MGQ_MpWheel spreads them over, as the action wheel places its choices
 #                            - Pointed at an emote with the arrows held, like a joystick, two for a diagonal, and at none while no arrow is held
 #      Paulinchen  2026-10-04: Played an emote's balloon or jump in plain branches
@@ -63,6 +63,7 @@ module MGQ_MpEmotes
   def self.open
     @open = true
     @selected = nil
+    MGQ_MpWheel.reset
     MGQ_Multiplayer::Capture.start(:emotes)
     Sound.play_cursor
   end
@@ -125,7 +126,7 @@ module MGQ_MpEmotes
   #
   # @return [Integer, nil] Its place in EMOTES, nil while no arrow is held or two opposite ones are.
   def self.held_emote
-    direction = MGQ_MpWheel.held
+    direction = MGQ_MpWheel.steady
     direction && MGQ_MpWheel.places(EMOTES.size).index(direction)
   end
 

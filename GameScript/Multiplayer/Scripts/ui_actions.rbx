@@ -2,7 +2,7 @@
 #  ui_actions.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-06: Kept the choice pointed at last once the arrows are let go, instead of going back to the middle
+#      Paulinchen  2026-10-06: Kept the choice pointed at last once the arrows are let go, instead of going back to the middle, and the diagonal while its arrows are let go one after the other
 #                            - Built the wheel's ring from the choices the scripts register by order, spread over the arrows' eight directions, instead of four fixed sides
 #                            - Pointed at a choice with the arrows held, like a joystick, and at the middle while no arrow or a diagonal is held
 #      Paulinchen  2026-10-04: Renamed from mp_actions.rbx
@@ -256,6 +256,7 @@ module MGQ_MpActions
     def self.open
       @selected = CENTER
       @open = true
+      MGQ_MpWheel.reset
       MGQ_Multiplayer::Capture.start(:wheel)
       Sound.play_cursor
     end
@@ -280,7 +281,7 @@ module MGQ_MpActions
         return
       end
 
-      held = MGQ_MpWheel.held
+      held = MGQ_MpWheel.steady
       pointed = held.nil? ? @selected : MGQ_MpActions.wheel_places.include?(held) ? held : CENTER
       Sound.play_cursor if pointed != @selected
       @selected = pointed

@@ -2,7 +2,7 @@
 #  emotes_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-06: Pointed at emotes with the arrows held, diagonals and none included, and kept the last one once they are let go
+#      Paulinchen  2026-10-06: Pointed at emotes with the arrows held, diagonals and none included, and kept the last one once they are let go, a diagonal also when its arrows are let go one after the other
 #      Paulinchen  2026-10-04: Created
 #
 #----------------------------------------------------------------
@@ -49,6 +49,19 @@ check("opposite ones keep the emote", emotes.selected, MGQ_MpEmotes::EMOTES.size
 $held = []
 emotes.on_map
 check("letting go keeps it too", emotes.selected, MGQ_MpEmotes::EMOTES.size - 1)
+$held = [:DOWN, :RIGHT]
+emotes.on_map
+$held = [:RIGHT]
+emotes.on_map
+$held = []
+emotes.on_map
+check("letting go of a diagonal one arrow after the other keeps the diagonal", emotes.selected, 3)
+$held = [:DOWN, :RIGHT]
+emotes.on_map
+$held = [:RIGHT]
+MGQ_MpWheel::GRACE_FRAMES.times { emotes.on_map }
+check("one arrow held on alone points to its side after a moment", emotes.selected, 2)
+$held = []
 emotes.close
 emotes.open
 $buttons << :C
