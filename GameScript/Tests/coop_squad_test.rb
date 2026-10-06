@@ -2,6 +2,7 @@
 #  coop_squad_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-06: Stood in for wheel_choice instead of wheel_slot
 #      Paulinchen  2026-10-04: Followed the scripts to their new names, without mp_
 #      Paulinchen  2026-10-03: Added a stand-in for the action wheel's registries
 #                            - Gave the world stand-in tell, notice and the own id and seat
@@ -147,7 +148,7 @@ module MGQ_MpActions
   Option = Struct.new(:text, :run, :refusal, :icon, :leaves)
   LINE_COLOR = :line
   def self.offer(*); end
-  def self.wheel_slot(*); end
+  def self.wheel_choice(*); end
   def self.own_doing_from; end
 end
 load_script "coop"

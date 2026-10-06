@@ -2,7 +2,8 @@
 #  overworld_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-06: Steered the action wheel with the arrows held, and checked the middle while none or a diagonal is held
+#      Paulinchen  2026-10-06: Found the wheel's choices by their place on the ring, and checked how the ring spreads and lays out its choices
+#                            - Steered the action wheel with the arrows held, and checked the middle while none or a diagonal is held
 #      Paulinchen  2026-10-05: Checked that an open chat box takes typing and closes while a message shows
 #      Paulinchen  2026-10-04: Checked that a label goes above the labels already on its tile
 #                            - Checked the party chat and the colors of the senders' names in the chat log
@@ -122,8 +123,9 @@ check("every state but walking has an icon", (%w[battle event menu items equip s
 def wheel(*buttons)
   $pressed = true
   map_frame
-  $held = buttons & MGQ_MpActions::Wheel::DIRECTIONS
-  $buttons.concat(buttons - $held)
+  directions = buttons & MGQ_MpWheel::DIRECTIONS
+  $held = directions.map { |direction| arrows(direction) }.flatten
+  $buttons.concat(buttons - directions)
   map_frame
   $held = []
   MGQ_MpOverworldSync.tick
@@ -133,11 +135,22 @@ end
 # @param direction [Symbol] Where the choice sits, such as :UP.
 # @return [Array] Its text and whether it can be taken.
 def option(direction); o = MGQ_MpActions.wheel_options[direction]; [o.text, !o.run.nil?]; end
+# The arrows held to point at a direction.
+#
+# @param direction [Symbol] One of MGQ_MpWheel::DIRECTIONS.
+# @return [Array<Symbol>] The arrows.
+def arrows(direction)
+  row, column = MGQ_MpWheel::STEPS.key(direction)
+  [row < 0 ? :UP : nil, row > 0 ? :DOWN : nil, column < 0 ? :LEFT : nil, column > 0 ? :RIGHT : nil].compact
+end
+# The ring's choices here, in their order: the party's invite, leaving the party and the chat.
+PARTY, LEAVE, CHAT = MGQ_MpActions.wheel_places
 $game_player.x, $game_player.y = 20, 20
 $inbox << entry("message", 2, told(friend.merge("map" => 5, "x" => 40, "y" => 40)))
 MGQ_MpOverworldSync.tick
-check("nobody near: invite greyed", option(:UP), ["Invite to a party", false])
-check("chat offered, and a direction no script fills stays empty", [option(:LEFT), option(:RIGHT)], [["Chat (T)", true], ["", false]])
+check("three choices spread over the ring", [PARTY, LEAVE, CHAT], [:UP, :DOWN_RIGHT, :DOWN_LEFT])
+check("nobody near: invite greyed", option(PARTY), ["Invite to a party", false])
+check("chat offered, and a direction without a choice has none", [option(CHAT), MGQ_MpActions.wheel_options.key?(:RIGHT)], [["Chat (T)", true], false])
 $pressed = true
 map_frame
 check("B opens the wheel and holds the buttons", [MGQ_MpActions::Wheel.open?, MGQ_Multiplayer::Capture.on?], [true, true])
@@ -146,9 +159,9 @@ $held = [:UP]
 $buttons << :C
 map_frame
 check("a greyed choice says why", [MGQ_MpActions::Wheel.open?, MGQ_MpOverworldSync::Status.lines.last, $sounds.last], [true, "Nobody is near enough to invite.", "buzzer"])
-$held = [:LEFT]
+$held = arrows(CHAT)
 map_frame
-check("the arrow held picks its side", MGQ_MpActions::Wheel.selected, :LEFT)
+check("the arrows held pick the choice they point at", MGQ_MpActions::Wheel.selected, CHAT)
 $held = []
 $pressed = true
 map_frame
@@ -163,14 +176,14 @@ check("a stranger is see-through", ghost.opacity, MGQ_MpOverworld::STRANGER_OPAC
 
 $inbox << entry("message", 2, told(friend.merge("map" => 5, "x" => 21, "y" => 22)))
 MGQ_MpOverworldSync.tick
-check("someone near: invite first", option(:UP), ["Invite to a party", true])
+check("someone near: invite first", option(PARTY), ["Invite to a party", true])
 $sent.clear
 wheel(:UP, :C)
 check("inviting", [MGQ_MpCoop::Party.inviting?, MGQ_MpActions::Wheel.open?], [true, false])
 my_party = MGQ_MpCoop::Party.id
 check("the invite is told", $sent.last[1].include?("invite=1") && $sent.last[1].include?("party=#{my_party}"), true)
 check("line above the own head", MGQ_MpActions.own_line, "Inviting to a party . . .")
-check("an invite can be stopped", option(:DOWN), ["Stop inviting", true])
+check("an invite can be stopped", option(LEAVE), ["Stop inviting", true])
 
 $inbox << entry("message", 2, told(friend.merge("map" => 5, "x" => 21, "y" => 22, "party" => my_party)))
 MGQ_MpOverworldSync.tick
@@ -180,7 +193,7 @@ check("members", MGQ_MpCoop::Party.members.map { |peer| peer.state["name"] }, ["
 MGQ_MpOverworld.update_ghosts
 check("a member is solid", ghost.opacity, 255)
 check("the label knows the member", MGQ_MpOverworld.ghosts.first.member, true)
-check("a member is not invited again", option(:UP), ["Invite to a party", false])
+check("a member is not invited again", option(PARTY), ["Invite to a party", false])
 
 # A member's ghost has the followers they show, which step where the one before stood.
 check("followers are told only once shown", [$sent.last[1].include?("trail=\n"), $sent.last[1].include?("follow=0")], [true, true])
@@ -196,16 +209,16 @@ MGQ_MpOverworldSync.tick
 MGQ_MpOverworld.update_ghosts
 check("a jump gathers the followers, as many as told", ghost.followers.map { |f| [f.x, f.y] }, [[24, 40]])
 
-wheel(:DOWN, :C)
+wheel(LEAVE, :C)
 MGQ_MpOverworld.update_ghosts
 check("a stranger's ghost has no followers", ghost.followers, [])
 check("left", [MGQ_MpCoop::Party.id, MGQ_MpOverworldSync::Status.lines.last], [nil, "You left the party."])
-check("no party to leave", option(:DOWN), ["Leave the party", false])
+check("no party to leave", option(LEAVE), ["Leave the party", false])
 
 $inbox << entry("message", 2, told(friend.merge("map" => 5, "x" => 20, "y" => 21, "party" => "theirs", "invite" => 1)))
 MGQ_MpOverworldSync.tick
 check("an inviter shows the invite line", MGQ_MpOverworldSync.label_line_of(MGQ_MpOverworldSync::Peers.at(2)).to_a[0], "Invites to a party (B)")
-check("an invite nearby is offered", option(:UP), ["Accept Friend's invite", true])
+check("an invite nearby is offered", option(PARTY), ["Accept Friend's invite", true])
 taken = []
 MGQ_MpChat.singleton_class.send(:alias_method, :harness_receive, :receive)
 MGQ_MpChat.define_singleton_method(:receive) { |peer, message| taken << [peer && peer.seat, message["chat"]] }
@@ -298,7 +311,7 @@ $inbox << entry("message", 7, "chat=who am i\nname=Stranger\n\n")
 MGQ_MpOverworldSync.tick
 check("a line before the first state names the sender", chat.log_lines.last, "Stranger: who am i")
 
-wheel(:LEFT, :C)
+wheel(CHAT, :C)
 check("the wheel opens the chat box", [chat.typing?, MGQ_MpActions::Wheel.open?, MGQ_Multiplayer::Capture.on?], [true, false, true])
 $typed = "never sent\e"
 map_frame
@@ -561,6 +574,25 @@ check("a diagonal, which the wheel has no choice for, picks the middle too", MGQ
 $held = []
 MGQ_MpActions::Wheel.close
 
+# How the ring spreads and lays out its choices.
+mirror = { :UP_RIGHT => :UP_LEFT, :RIGHT => :LEFT, :DOWN_RIGHT => :DOWN_LEFT }
+mirror.merge!(mirror.invert)
+check("every count of choices comes out mirror-symmetric",
+      (1..8).all? { |count| places = MGQ_MpWheel.places(count); places.map { |d| mirror[d] || d }.sort == places.sort }, true)
+check("four take the sides, five the two lower diagonals for the bottom, six a hexagon",
+      [MGQ_MpWheel.places(4), MGQ_MpWheel.places(5), MGQ_MpWheel.places(6)],
+      [[:UP, :RIGHT, :DOWN, :LEFT], [:UP, :RIGHT, :DOWN_RIGHT, :DOWN_LEFT, :LEFT], [:UP, :UP_RIGHT, :DOWN_RIGHT, :DOWN, :DOWN_LEFT, :UP_LEFT]])
+boxes = Sprite_MpActionWheel.layout(MGQ_MpWheel.places(4))
+check("four choices sit where the wheel always had them",
+      [:UP, :RIGHT, :DOWN, :LEFT, :CENTER].map { |d| [boxes[d].x, boxes[d].y] }, [[-100, -94], [20, -37], [-100, 4], [-220, -37], [-13, -37]])
+boxes = Sprite_MpActionWheel.layout(MGQ_MpWheel.places(6))
+check("the top and bottom boxes clear the diagonal ones beside the player",
+      [boxes[:UP].y + boxes[:UP].height <= boxes[:UP_RIGHT].y, boxes[:DOWN].y >= boxes[:DOWN_RIGHT].y + boxes[:DOWN_RIGHT].height], [true, true])
+before = MGQ_MpActions.wheel_places.size
+(MGQ_MpWheel::DIRECTIONS.size - before + 1).times { |index| MGQ_MpActions.wheel_choice(100 + index) { MGQ_MpActions::NO_OPTION } }
+check("a ring holds eight choices at most", MGQ_MpActions.wheel_places.size, MGQ_MpWheel::DIRECTIONS.size)
+MGQ_MpActions.instance_variable_get(:@choices).reject! { |order, _, _| order >= 100 }
+
 # Invites that name a player reach them anywhere.
 far = MGQ_MpOverworldSync::Peers.at(4)
 far.state.merge!("party" => "far-p", "invite" => "1", "invite_to" => "other-id", "map" => "9")
@@ -606,7 +638,7 @@ check("and removes a member by telling their game", [$sent.last[0], $sent.last[1
 far.state["id"] = "aa-far"
 MGQ_MpCoop::Party.admitted << "aa-far"
 check("a member may not invite, and teleports to the leader with the wheel's party choice instead",
-      [MGQ_MpCoop::Party.may_invite?, MGQ_MpCoop::Offers.invite_refusal("full"), MGQ_MpActions.wheel_options[:UP].text.start_with?("Teleport to ")],
+      [MGQ_MpCoop::Party.may_invite?, MGQ_MpCoop::Offers.invite_refusal("full"), MGQ_MpActions.wheel_options[PARTY].text.start_with?("Teleport to ")],
       [false, "Only the party's leader invites.", true])
 MGQ_MpCoop::Party.remove(far)
 check("nor remove", $sent.size, 1)

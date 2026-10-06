@@ -2,7 +2,8 @@
 #  ui_actions.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-06: Pointed at a choice with the arrows held, like a joystick, and at the middle while no arrow or a diagonal is held
+#      Paulinchen  2026-10-06: Built the wheel's ring from the choices the scripts register by order, spread over the arrows' eight directions, instead of four fixed sides
+#                            - Pointed at a choice with the arrows held, like a joystick, and at the middle while no arrow or a diagonal is held
 #      Paulinchen  2026-10-04: Renamed from mp_actions.rbx
 #      Paulinchen  2026-10-03: Took the wheel's choices, the own line and what lies over the map from what the later scripts register, and kept their offers for the World overview and the notification box
 #                            - Asked MGQ_MpOverworldSync whether the map is quiet or the player free on it
@@ -35,10 +36,11 @@
 #----------------------------------------------------------------
 
 # The action wheel on the map: its key (B unless the player binds another, see core_hotkeys.rbx) opens it
-# around the player. The scripts after this one fill its directions (wheel_slot), say the line
-# above the player's own head (own_line_from, own_doing_from) and add what they offer between
-# two players to the World overview and the notification box (offer). It builds on ui_wheel.rbx,
-# which reads the arrows, and overworld_sync.rbx, which knows the other players.
+# around the player. The scripts after this one fill its ring (wheel_choice) and its middle
+# (wheel_center), say the line above the player's own head (own_line_from, own_doing_from) and add
+# what they offer between two players to the World overview and the notification box (offer). It
+# builds on ui_wheel.rbx, which reads the arrows, and overworld_sync.rbx, which knows the other
+# players.
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpActions
@@ -73,7 +75,8 @@ module MGQ_MpActions
   LINE_COLOR = Color.new(255, 224, 128)
 
   @offers = []
-  @slots = {}
+  @choices = []
+  @center = nil
   @lines = []
   @doings = []
   @covers = []
@@ -127,12 +130,33 @@ module MGQ_MpActions
     @offers
   end
 
-  # Fills a direction of the action wheel.
+  # Adds a choice to the action wheel's ring, which spreads its choices over the directions the
+  # arrows point to (MGQ_MpWheel.places). A ring holds one choice per direction at most.
   #
-  # @param direction [Symbol] Wheel::CENTER or one of Wheel::DIRECTIONS.
+  # @param order [Integer] Its place on the ring, clockwise from the top: the lower, the earlier.
+  # @yieldreturn [Option] The choice the wheel shows now.
+  def self.wheel_choice(order, &option)
+    if @choices.size >= MGQ_MpWheel::DIRECTIONS.size
+      log("action wheel: no room for a choice of order #{order}")
+      return
+    end
+
+    @choices << [order, @choices.size, option]
+    @choices.sort_by! { |place, added, _| [place, added] }
+  end
+
+  # Fills the action wheel's middle, which is picked while the arrows point at no choice.
+  #
   # @yieldreturn [Option] The choice the wheel shows there now.
-  def self.wheel_slot(direction, &option)
-    @slots[direction] = option
+  def self.wheel_center(&option)
+    @center = option
+  end
+
+  # The directions of the ring's choices, in their order.
+  #
+  # @return [Array<Symbol>] Directions of MGQ_MpWheel::DIRECTIONS.
+  def self.wheel_places
+    MGQ_MpWheel.places(@choices.size)
   end
 
   # Lets a script say the line above the player's own head, in place of every other.
@@ -174,9 +198,12 @@ module MGQ_MpActions
 
   # The action wheel's choices, by the direction that picks them.
   #
-  # @return [Hash{Symbol => Option}] The choices under :CENTER, :UP, :RIGHT, :DOWN and :LEFT.
+  # @return [Hash{Symbol => Option}] The middle's choice under Wheel::CENTER, then the ring's under
+  #   their directions.
   def self.wheel_options
-    Hash[([Wheel::CENTER] + Wheel::DIRECTIONS).map { |direction| [direction, @slots[direction] ? @slots[direction].call : NO_OPTION] }]
+    options = { Wheel::CENTER => @center ? @center.call : NO_OPTION }
+    wheel_places.zip(@choices) { |direction, (_, _, option)| options[direction] = option.call }
+    options
   end
 
   # Opens, steers or closes the action wheel on the map, but leaves the keys to a screen that lies
@@ -199,14 +226,11 @@ module MGQ_MpActions
     Wheel.close
   end
 
-  # The action wheel: four choices around the player and one over them, taken with the game's
-  # confirm button. The arrow held picks its side, like a joystick; while no arrow is held, or two
-  # for a diagonal, the middle is picked. It holds the buttons while open, so the player stands still
-  # and the game's menu stays shut.
+  # The action wheel: a ring of choices around the player and one over them, taken with the game's
+  # confirm button. The arrows held point at a choice, like a joystick; while no arrow is held, or a
+  # direction without a choice, the middle is picked. It holds the buttons while open, so the player
+  # stands still and the game's menu stays shut.
   module Wheel
-    # The directions around the player, clockwise from the top.
-    DIRECTIONS = [:UP, :RIGHT, :DOWN, :LEFT]
-
     # The choice over the player.
     CENTER = :CENTER
 
@@ -222,7 +246,7 @@ module MGQ_MpActions
 
     # The direction whose choice is picked.
     #
-    # @return [Symbol] One of DIRECTIONS, or CENTER.
+    # @return [Symbol] One of MGQ_MpWheel::DIRECTIONS, or CENTER.
     def self.selected
       @selected
     end
@@ -243,8 +267,8 @@ module MGQ_MpActions
       MGQ_Multiplayer::Capture.stop(:wheel)
     end
 
-    # Picks the side the arrow held points to, or the middle, takes the picked choice on confirm, and
-    # closes on cancel or the wheel key.
+    # Picks the choice the arrows held point to, or the middle for none or a direction without one,
+    # takes the picked choice on confirm, and closes on cancel or the wheel key.
     #
     # @param pressed [Boolean] Whether the wheel key went down this frame.
     def self.update(pressed)
@@ -255,7 +279,7 @@ module MGQ_MpActions
       end
 
       held = MGQ_MpWheel.held
-      pointed = DIRECTIONS.include?(held) ? held : CENTER
+      pointed = MGQ_MpActions.wheel_places.include?(held) ? held : CENTER
       Sound.play_cursor if pointed != @selected
       @selected = pointed
 
@@ -310,8 +334,9 @@ class Sprite_MpOwnLine < Sprite
   end
 end
 
-# The action wheel around the player: a box per choice above, right of, below and left of them, a
-# square one with an icon over them, the picked one lit, those that cannot be taken grey.
+# The action wheel around the player: the ring's boxes in a column left and right of them and one
+# above and below, a square one with an icon over them, the picked one lit, those that cannot be
+# taken grey. The boxes are laid out from the directions the ring has, so the picture fits them.
 class Sprite_MpActionWheel < Sprite
   # Width of a choice's box.
   BOX_WIDTH = 200
@@ -329,7 +354,7 @@ class Sprite_MpActionWheel < Sprite
   # Opacity of an icon whose choice cannot be taken.
   GREY_OPACITY = 110
 
-  # Room kept free around the player's sprite, which is 32 by 48 pixels.
+  # Room kept free around the player's sprite, which is 32 by 48 pixels, and between boxes.
   GAP = 4
 
   # Height of the player's sprite.
@@ -338,22 +363,12 @@ class Sprite_MpActionWheel < Sprite
   # Half the width of the player's sprite, plus the gap.
   PLAYER_SIDE = 20
 
-  # Width of the wheel's picture.
-  WIDTH = (PLAYER_SIDE + BOX_WIDTH) * 2
-
-  # Row of the wheel's picture at the player's feet.
-  FEET = BOX_HEIGHT + GAP + MGQ_MpActions::HEAD_ROOM + PLAYER_HEIGHT
-
-  # Height of the wheel's picture.
-  HEIGHT = FEET + GAP + BOX_HEIGHT
-
-  # Where each direction's box sits in the picture.
-  BOXES = {
-    :UP => [(WIDTH - BOX_WIDTH) / 2, 0],
-    :RIGHT => [WIDTH / 2 + PLAYER_SIDE, FEET - (PLAYER_HEIGHT + BOX_HEIGHT) / 2],
-    :DOWN => [(WIDTH - BOX_WIDTH) / 2, FEET + GAP],
-    :LEFT => [0, FEET - (PLAYER_HEIGHT + BOX_HEIGHT) / 2],
-    :CENTER => [(WIDTH - CENTER_WIDTH) / 2, FEET - (PLAYER_HEIGHT + BOX_HEIGHT) / 2],
+  # The column and the row of each direction beside the player: -1 for the left column and 1 for
+  # the right; -1 for the row above the side's middle, 0 for the middle and 1 for the row below.
+  # Up and down sit above and below every box beside the player.
+  SIDES = {
+    :UP_RIGHT => [1, -1], :RIGHT => [1, 0], :DOWN_RIGHT => [1, 1],
+    :DOWN_LEFT => [-1, 1], :LEFT => [-1, 0], :UP_LEFT => [-1, -1],
   }
 
   # Background of a box.
@@ -368,17 +383,39 @@ class Sprite_MpActionWheel < Sprite
   # Color of a choice that cannot be taken.
   GREY = Color.new(150, 150, 150)
 
+  # Lays the boxes out around the player.
+  #
+  # @param directions [Array<Symbol>] The directions of the ring's choices.
+  # @return [Hash{Symbol => Rect}] Each box by its direction, the middle's under
+  #   MGQ_MpActions::Wheel::CENTER, measured from the middle of the player's feet.
+  def self.layout(directions)
+    middle = -(PLAYER_HEIGHT + BOX_HEIGHT) / 2
+    boxes = { MGQ_MpActions::Wheel::CENTER => Rect.new(-CENTER_WIDTH / 2, middle, CENTER_WIDTH, BOX_HEIGHT) }
+    directions.each do |direction|
+      column, row = SIDES[direction]
+      next unless column
+
+      x = column > 0 ? PLAYER_SIDE : -PLAYER_SIDE - BOX_WIDTH
+      boxes[direction] = Rect.new(x, middle + row * (BOX_HEIGHT + GAP), BOX_WIDTH, BOX_HEIGHT)
+    end
+    beside = boxes.values
+    top = [-PLAYER_HEIGHT - MGQ_MpActions::HEAD_ROOM, beside.map { |box| box.y }.min].min - GAP - BOX_HEIGHT
+    bottom = [0, beside.map { |box| box.y + box.height }.max].max + GAP
+    boxes[:UP] = Rect.new(-BOX_WIDTH / 2, top, BOX_WIDTH, BOX_HEIGHT) if directions.include?(:UP)
+    boxes[:DOWN] = Rect.new(-BOX_WIDTH / 2, bottom, BOX_WIDTH, BOX_HEIGHT) if directions.include?(:DOWN)
+    boxes
+  end
+
   # Creates the wheel, hidden.
   #
   # @param viewport [Viewport] The map's topmost viewport.
   def initialize(viewport)
     super(viewport)
-    self.bitmap = Bitmap.new(WIDTH, HEIGHT)
-    self.ox = WIDTH / 2
-    self.oy = FEET
     self.z = 300
     self.visible = false
     @shown = nil
+    @places = nil
+    @boxes = {}
   end
 
   # Draws the wheel around the player's sprite while it is open, if it changed.
@@ -388,6 +425,7 @@ class Sprite_MpActionWheel < Sprite
     self.visible = MGQ_MpActions::Wheel.open? && !sprite.nil?
     return unless visible
 
+    arrange(MGQ_MpActions.wheel_places)
     self.x = sprite.x
     self.y = sprite.y
     options = MGQ_MpActions.wheel_options
@@ -401,19 +439,43 @@ class Sprite_MpActionWheel < Sprite
     options.each { |direction, option| draw_box(direction, option) }
   end
 
+  # Lays the boxes out and sizes the picture to them, when the ring's directions changed.
+  #
+  # @param places [Array<Symbol>] The directions of the ring's choices.
+  def arrange(places)
+    return if places == @places
+
+    @places = places
+    @boxes = self.class.layout(places)
+    left = @boxes.values.map { |box| box.x }.min
+    top = @boxes.values.map { |box| box.y }.min
+    right = @boxes.values.map { |box| box.x + box.width }.max
+    bottom = @boxes.values.map { |box| box.y + box.height }.max
+    @boxes.each_value do |box|
+      box.x -= left
+      box.y -= top
+    end
+    bitmap.dispose if bitmap
+    self.bitmap = Bitmap.new(right - left, bottom - top)
+    self.ox = -left
+    self.oy = -top
+    @shown = nil
+  end
+
   # Draws one choice's box.
   #
   # @param direction [Symbol] The direction that picks it.
   # @param option [MGQ_MpActions::Option] The choice.
   def draw_box(direction, option)
-    x, y = BOXES[direction]
-    width = direction == MGQ_MpActions::Wheel::CENTER ? CENTER_WIDTH : BOX_WIDTH
+    box = @boxes[direction]
+    return unless box
+
     picked = direction == MGQ_MpActions::Wheel.selected
-    bitmap.fill_rect(x, y, width, BOX_HEIGHT, picked ? PICKED_BACK : BACK)
-    return draw_icon(option, x + (width - ICON_SIZE) / 2, y + (BOX_HEIGHT - ICON_SIZE) / 2) if option.icon
+    bitmap.fill_rect(box.x, box.y, box.width, box.height, picked ? PICKED_BACK : BACK)
+    return draw_icon(option, box.x + (box.width - ICON_SIZE) / 2, box.y + (box.height - ICON_SIZE) / 2) if option.icon
 
     bitmap.font.color = option.run ? TEXT : GREY
-    bitmap.draw_text(x + 4, y, width - 8, BOX_HEIGHT, option.text, 1)
+    bitmap.draw_text(box.x + 4, box.y, box.width - 8, box.height, option.text, 1)
   end
 
   # Draws a choice's icon, faded while it cannot be taken.
@@ -428,7 +490,7 @@ class Sprite_MpActionWheel < Sprite
 
   # Frees the wheel's picture.
   def dispose
-    bitmap.dispose
+    bitmap.dispose if bitmap
     super
   end
 end

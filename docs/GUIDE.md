@@ -128,7 +128,7 @@ The details show each mod in a box of its own, as many as fit the row, and count
 
 ### Action wheel
 
-Press **B** on the map. Hold an arrow to point at the choice on that side; with no arrow held, the middle is picked: the globe over your character, which opens the World overview. Confirm takes the choice pointed at, and **B** or cancel closes the wheel. Grey choices can't be taken right now and tell you why.
+Press **B** on the map. Its choices sit in a ring around your character. Hold an arrow, or two for a diagonal, to point at a choice; with no arrow held, or a direction without a choice, the middle is picked: the globe over your character, which opens the World overview. Confirm takes the choice pointed at, and **B** or cancel closes the wheel. Grey choices can't be taken right now and tell you why.
 
 ### Chat
 

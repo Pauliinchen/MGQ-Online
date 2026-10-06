@@ -2,6 +2,7 @@
 #  ui_chat.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-06: Added the chat's choice to the action wheel's ring by order instead of to its left
 #      Paulinchen  2026-10-05: Took the typing of an open chat box while the map shows a message, which left both stuck
 #      Paulinchen  2026-10-04: Named the party tag by its module inside the log line, as Ruby 1.9 finds it
 #                            - Sent a line typed with /p to the party only, and colored the senders' names: own yellow, the party's green, others white
@@ -662,7 +663,7 @@ end
 # What the chat adds to the action wheel, through ui_actions.rbx.
 
 begin
-  MGQ_MpActions.wheel_slot(:LEFT) { MGQ_MpChat.wheel_option }
+  MGQ_MpActions.wheel_choice(50) { MGQ_MpChat.wheel_option }
   MGQ_MpActions.cover { |_wheel_key| MGQ_MpChat.typing? }
 rescue => e
   MGQ_MpChat.log("action wheel FAILED: #{e.class}: #{e.message}")

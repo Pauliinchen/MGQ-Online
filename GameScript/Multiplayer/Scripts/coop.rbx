@@ -2,6 +2,7 @@
 #  coop.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-06: Added the party's choices to the action wheel's ring by order instead of to fixed sides
 #      Paulinchen  2026-10-04: Handed the party chat's lines to ui_chat.rbx through the party's gate
 #                            - Teleported to the leader through coop_gather.rbx
 #                            - Renamed from mp_coop.rbx
@@ -739,8 +740,8 @@ end
 
 begin
   MGQ_MpActions.offer(MGQ_MpCoop::Offers)
-  MGQ_MpActions.wheel_slot(:UP) { MGQ_MpCoop::Offers.wheel_option }
-  MGQ_MpActions.wheel_slot(:DOWN) { MGQ_MpCoop::Offers.wheel_leave_option }
+  MGQ_MpActions.wheel_choice(10) { MGQ_MpCoop::Offers.wheel_option }
+  MGQ_MpActions.wheel_choice(40) { MGQ_MpCoop::Offers.wheel_leave_option }
   MGQ_MpActions.own_doing_from { MGQ_MpCoop::Offers.own_doing }
 rescue => e
   MGQ_MpCoop.log("actions FAILED: #{e.class}: #{e.message}")

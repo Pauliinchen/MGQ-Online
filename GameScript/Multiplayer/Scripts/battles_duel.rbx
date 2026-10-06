@@ -2,6 +2,7 @@
 #  battles_duel.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-06: Added the duel's choice to the action wheel's ring by order instead of to its right
 #      Paulinchen  2026-10-04: Renamed from mp_battles_duel.rbx
 #      Paulinchen  2026-10-03: Started a duel with the Backline when the challenger's duels have it, and said so in the challenge
 #                            - Kept a duel waiting to start as a Pending record, and the sides' players as MGQ_MpBattlesCoop::Player records
@@ -680,7 +681,7 @@ end
 
 begin
   MGQ_MpActions.offer(MGQ_MpBattlesDuel::Offers)
-  MGQ_MpActions.wheel_slot(:RIGHT) { MGQ_MpBattlesDuel::Offers.wheel_option }
+  MGQ_MpActions.wheel_choice(20) { MGQ_MpBattlesDuel::Offers.wheel_option }
   MGQ_MpActions.own_doing_from { MGQ_MpBattlesDuel::Offers.own_doing }
 rescue => e
   MGQ_MpBattlesDuel.log("actions FAILED: #{e.class}: #{e.message}")

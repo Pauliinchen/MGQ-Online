@@ -2,6 +2,7 @@
 #  world_overview.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-06: Filled the action wheel's middle through wheel_center
 #      Paulinchen  2026-10-04: Moved the party box into ui_party_box.rbx
 #                            - Renamed from mp_world_overview.rbx
 #      Paulinchen  2026-10-03: Filled the wheel's middle, and built the menus and calls from what the scripts offer through MGQ_MpActions
@@ -771,7 +772,7 @@ end
 # What the overview adds to the action wheel, through ui_actions.rbx.
 
 begin
-  MGQ_MpActions.wheel_slot(:CENTER) { MGQ_MpWorldOverview.wheel_option }
+  MGQ_MpActions.wheel_center { MGQ_MpWorldOverview.wheel_option }
   MGQ_MpActions.cover { |wheel_key| MGQ_MpWorldOverview.cover(wheel_key) }
 rescue => e
   MGQ_MpWorldOverview.log("action wheel FAILED: #{e.class}: #{e.message}")

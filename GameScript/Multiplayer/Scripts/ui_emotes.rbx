@@ -2,7 +2,8 @@
 #  ui_emotes.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-06: Pointed at an emote with the arrows held, like a joystick, two for a diagonal, and at none while no arrow is held
+#      Paulinchen  2026-10-06: Placed the emotes on the directions MGQ_MpWheel spreads them over, as the action wheel places its choices
+#                            - Pointed at an emote with the arrows held, like a joystick, two for a diagonal, and at none while no arrow is held
 #      Paulinchen  2026-10-04: Played an emote's balloon or jump in plain branches
 #                            - Created
 #
@@ -24,8 +25,8 @@ module MGQ_MpEmotes
   # @!attribute balloon [Integer, nil] The game's balloon it shows, nil for a jump.
   Emote = Struct.new(:name, :balloon)
 
-  # The wheel's emotes, one for each of MGQ_MpWheel::DIRECTIONS, clockwise from the top: a jump,
-  # then the game's balloons in Balloon.png's rows.
+  # The wheel's emotes, clockwise from the top, spread over MGQ_MpWheel::DIRECTIONS: a jump, then
+  # the game's balloons in Balloon.png's rows.
   EMOTES = [
     Emote.new("Jump", nil), Emote.new("Surprise", 1), Emote.new("Question", 2), Emote.new("Music", 3),
     Emote.new("Heart", 4), Emote.new("Anger", 5), Emote.new("Sweat", 6), Emote.new("Idea", 9),
@@ -123,7 +124,7 @@ module MGQ_MpEmotes
   # @return [Integer, nil] Its place in EMOTES, nil while no arrow is held or two opposite ones are.
   def self.held_emote
     direction = MGQ_MpWheel.held
-    direction && MGQ_MpWheel::DIRECTIONS.index(direction)
+    direction && MGQ_MpWheel.places(EMOTES.size).index(direction)
   end
 
   # Plays an emote on the player's character and tells the others, unless the last was too soon.
@@ -243,7 +244,8 @@ class Sprite_MpEmoteWheel < Sprite
   # @param emote [MGQ_MpEmotes::Emote] The emote.
   # @param index [Integer] Its place on the ring.
   def draw_box(emote, index)
-    angle = Math::PI * 2 * index / MGQ_MpEmotes::EMOTES.size
+    directions = MGQ_MpWheel::DIRECTIONS
+    angle = Math::PI * 2 * directions.index(MGQ_MpWheel.places(MGQ_MpEmotes::EMOTES.size)[index]) / directions.size
     x = (SIZE / 2 + Math.sin(angle) * RADIUS - BOX / 2).round
     y = (SIZE / 2 - Math.cos(angle) * RADIUS - BOX / 2).round
     bitmap.fill_rect(x, y, BOX, BOX, index == @shown ? PICKED_BACK : BACK)
