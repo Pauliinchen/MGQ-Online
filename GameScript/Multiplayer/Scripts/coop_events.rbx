@@ -2,6 +2,7 @@
 #  coop_events.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-06: Kept a chest the player leaves shut, such as a locked one, closed for them and the party
 #      Paulinchen  2026-10-04: Held back chests other members open during a PvP battle, and kept gifts out of a chest the player opens
 #                            - Sent the sound a chest played with its items, and let members hear it and see the first item's icon, after a battle once on the map
 #                            - Read where the Pocket Castle's way out returns as the player's own variables
@@ -793,7 +794,8 @@ module MGQ_MpCoopEvents
     @chest[:gains] << [kind, id, amount] if @chest && !@granting && amount > 0
   end
 
-  # Tells the party about a chest the player opened, once its event ended.
+  # Tells the party about a chest the player opened, once its event ended; a chest left shut, such
+  # as a locked one, tells nothing.
   #
   # @param interpreter [Game_Interpreter] The interpreter that ended.
   def self.finished(interpreter)
@@ -801,7 +803,7 @@ module MGQ_MpCoopEvents
 
     chest = @chest
     @chest = nil
-    return unless chest[:key] && MGQ_MpCoop.in_party?
+    return unless chest[:key] && $game_self_switches[chest[:key]] && MGQ_MpCoop.in_party?
 
     MGQ_MpCoopStory.keep_own_self_switch(chest[:key], true) if defined?(MGQ_MpCoopStory)
     gains = chest[:gains].map { |kind, id, amount| "#{kind}#{id}x#{amount}" }.join(",")
@@ -819,7 +821,8 @@ module MGQ_MpCoopEvents
     message["chest"] ? take_chest(peer, message) : take_party(peer, message)
   end
 
-  # Takes a chest another member opened: gives its items, unless the player looted it already.
+  # Takes a chest another member opened: gives its items, unless the player looted it already or it
+  # gave nothing, as a locked chest an earlier build tells about.
   #
   # @param peer [MGQ_MpOverworldSync::Peers::Peer, nil] Who opened it.
   # @param message [Hash] The message's fields.
@@ -830,7 +833,7 @@ module MGQ_MpCoopEvents
 
     map_id, event_id, letter = message["chest"].to_s.split(".")
     key = [map_id.to_i, event_id.to_i, letter]
-    return if own_self_switch(key)
+    return if own_self_switch(key) || message["gains"].to_s.empty?
 
     names = grant(message["gains"].to_s)
     MGQ_MpCoopStory.keep_own_self_switch(key, true) if defined?(MGQ_MpCoopStory)

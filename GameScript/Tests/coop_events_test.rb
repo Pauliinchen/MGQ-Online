@@ -2,6 +2,7 @@
 #  coop_events_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-06: Checked that a locked chest stays shut and tells the party nothing
 #      Paulinchen  2026-10-04: Checked lent key items and gifts through a load, a crash, a duel, a battle and all at once
 #                            - Checked that a chest's sound and first icon reach the members, after a battle once on the map
 #                            - Checked that the castle shows the leader's residents, those only the leader has as ghosts
@@ -99,7 +100,7 @@ module Vocab; def self.currency_unit; "G"; end; end
 
 class Game_Switches; def initialize; @data = []; end; def [](id); @data[id] || false; end; def []=(id, value); @data[id] = value; end; end
 class Game_Variables; def initialize; @data = []; end; def [](id); @data[id] || 0; end; def []=(id, value); @data[id] = value; end; end
-class Game_SelfSwitches; def initialize; @data = {}; end; end
+class Game_SelfSwitches; def initialize; @data = {}; end; def [](key); @data[key] == true; end; def []=(key, value); @data[key] = value; end; end
 class Game_Party
   attr_reader :items, :gold, :actors, :include_actors
   attr_accessor :in_battle
@@ -122,7 +123,15 @@ class Game_Interpreter
   attr_accessor :busy
   def execute_command; end
   def setup(list, event_id = 0); @list = list; @event_id = event_id; end
-  def run; @list.each { |command| $game_party.gain_item($data_items[command.parameters[0]], command.parameters[3]) if command.code == 126 }; end
+  # Runs the commands that give items, set self switches and exit the event, the rest skipped.
+  def run
+    @list.each do |command|
+      break if command.code == 115
+
+      $game_party.gain_item($data_items[command.parameters[0]], command.parameters[3]) if command.code == 126
+      $game_self_switches[[$game_map.map_id, @event_id, command.parameters[0]]] = command.parameters[1] == 0 if command.code == 123
+    end
+  end
   def running?; @busy; end
 end
 class Game_Player
@@ -377,6 +386,15 @@ other = Game_Interpreter.new
 other.setup(talk_page.list, 6)
 other.run
 check("other events tell nothing", $sent.size, 0)
+locked_page = RPG::Page.new([c(111, 12, "unlock_level < 1"), c(101, "", 0, 0, 2), c(115), c(123, "A", 0), c(126, 1, 0, 0, 1)])
+$game_map.events[8] = Game_Event.new(8, [locked_page])
+MGQ_MpCoopEvents.instance_variable_set(:@chest_keys_map, nil)
+$game_map.interpreter.setup(locked_page.list, 8)
+$game_map.interpreter.run
+check("a locked chest tells nothing", $sent.size, 0)
+check("and stays shut", $game_self_switches.mgq_mp_data[[3, 8, "A"]], nil)
+$game_map.events.delete(8)
+MGQ_MpCoopEvents.instance_variable_set(:@chest_keys_map, nil)
 
 SceneManager.scene = Scene_Battle.new
 $played = []
@@ -399,6 +417,8 @@ MGQ_MpCoopEvents.take(MGQ_MpOverworldSync::Peers::Peer.new(8, { "party" => "p9" 
 check("strangers give nothing", $game_party.items["Potion"], 2)
 MGQ_MpCoopEvents.take(friend, { "chest" => "4.7.A", "party" => "p1", "gains" => "q1x1,i99x1,i1x1" })
 check("unknown items are skipped", $game_party.items["Potion"], 3)
+MGQ_MpCoopEvents.take(friend, { "chest" => "4.6.A", "party" => "p1", "gains" => "" })
+check("a chest that gave nothing stays shut", $game_self_switches.mgq_mp_data[[4, 6, "A"]], nil)
 
 # Chests while playing the leader's story.
 leader = MGQ_MpOverworldSync::Peers::Peer.new(4, { "id" => "l", "name" => "Leader", "party" => "p1" }, nil, true)
