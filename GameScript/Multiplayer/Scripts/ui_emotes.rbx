@@ -2,7 +2,8 @@
 #  ui_emotes.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-06: Placed the emotes on the directions MGQ_MpWheel spreads them over, as the action wheel places its choices
+#      Paulinchen  2026-10-06: Kept the emote pointed at last once the arrows are let go, instead of pointing at none
+#                            - Placed the emotes on the directions MGQ_MpWheel spreads them over, as the action wheel places its choices
 #                            - Pointed at an emote with the arrows held, like a joystick, two for a diagonal, and at none while no arrow is held
 #      Paulinchen  2026-10-04: Played an emote's balloon or jump in plain branches
 #                            - Created
@@ -11,9 +12,9 @@
 
 # The emote wheel on the map: its key (E unless the player binds another, see core_hotkeys.rbx)
 # opens a ring of emotes around the player, a jump and the game's balloons, such as a heart or a
-# light bulb. The arrows held point at an emote like a joystick, one for a side and two for a
-# diagonal, and at none while no arrow is held; the game's confirm button plays the emote pointed
-# at on the player's character, and every other game showing the player's map plays it on the
+# light bulb. It opens pointing at none; the arrows held point at an emote like a joystick, one for
+# a side and two for a diagonal, which stays pointed at once they are let go; the game's confirm
+# button plays the emote pointed at on the player's character, and every other game showing the player's map plays it on the
 # player's ghost. It builds on ui_wheel.rbx, which reads the arrows, and overworld_sync.rbx, which
 # knows the other players.
 #
@@ -99,8 +100,9 @@ module MGQ_MpEmotes
     close
   end
 
-  # Points at the emote the arrows held point to, plays it on confirm, and closes on cancel or the
-  # wheel's key. Confirm while no arrow is held closes the wheel without an emote.
+  # Points at the emote the arrows held point to, keeping the last one while no arrow is held, plays
+  # it on confirm, and closes on cancel or the wheel's key. Confirm before any emote was pointed at
+  # closes the wheel without one.
   #
   # @param key [Boolean] Whether the wheel's key went down this frame.
   def self.update(key)
@@ -110,8 +112,8 @@ module MGQ_MpEmotes
       return Sound.play_cancel
     end
 
-    pointed = held_emote
-    Sound.play_cursor if pointed && pointed != @selected
+    pointed = held_emote || @selected
+    Sound.play_cursor if pointed != @selected
     @selected = pointed
     return unless capture.trigger?(:C)
 

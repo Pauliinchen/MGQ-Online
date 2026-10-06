@@ -10,8 +10,8 @@
 # What the wheels on the map share, the action wheel (ui_actions.rbx) and the emote wheel
 # (ui_emotes.rbx): the arrows held point like a joystick, one arrow to its side and two to the
 # diagonal between them, and nowhere while none is held. A wheel spreads its choices evenly over
-# those directions (places), picks what lies in the direction pointed to, and its middle while the
-# arrows point nowhere.
+# those directions (places), picks what lies in the direction pointed to, and keeps it picked once
+# the arrows are let go.
 module MGQ_MpWheel
   # The directions the arrows can point to, clockwise from the top.
   DIRECTIONS = [:UP, :UP_RIGHT, :RIGHT, :DOWN_RIGHT, :DOWN, :DOWN_LEFT, :LEFT, :UP_LEFT]

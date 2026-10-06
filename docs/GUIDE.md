@@ -130,7 +130,7 @@ The details show each mod in a box of its own, as many as fit the row, and count
 
 ### Action wheel
 
-Press **B** on the map. Its choices sit in a ring around your character. Hold an arrow, or two for a diagonal, to point at a choice; with no arrow held, or a direction without a choice, the middle is picked: the globe over your character, which opens the World overview. Confirm takes the choice pointed at, and **B** or cancel closes the wheel. Grey choices can't be taken right now and tell you why.
+Press **B** on the map. Its choices sit in a ring around your character. The wheel opens on the middle: the globe over your character, which opens the World overview. Hold an arrow, or two for a diagonal, to point at a choice; it stays picked when you let go, and a direction without a choice goes back to the middle. Confirm takes the choice pointed at, and **B** or cancel closes the wheel. Grey choices can't be taken right now and tell you why.
 
 ### Chat
 
@@ -145,7 +145,7 @@ Press **T**, or pick *Chat* in the wheel. **Enter** sends, **Esc** closes; the a
 
 ![An emote balloon above a player](images/emotes.png)
 
-Press **E** on the map for a ring of eight emotes around your character: a jump, or a balloon such as a heart, a music note or a light bulb. Hold an arrow, or two for a diagonal, to point at one, like a joystick; with no arrow held, none is picked. Confirm plays the emote pointed at, or closes the wheel when none is. The players on your map see it on your character too.
+Press **E** on the map for a ring of eight emotes around your character: a jump, or a balloon such as a heart, a music note or a light bulb. Hold an arrow, or two for a diagonal, to point at one, like a joystick; it stays pointed at when you let go. Confirm plays the emote pointed at, or closes the wheel before you pointed at any. The players on your map see it on your character too.
 
 ### World overview
 

@@ -2,7 +2,8 @@
 #  ui_actions.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-06: Built the wheel's ring from the choices the scripts register by order, spread over the arrows' eight directions, instead of four fixed sides
+#      Paulinchen  2026-10-06: Kept the choice pointed at last once the arrows are let go, instead of going back to the middle
+#                            - Built the wheel's ring from the choices the scripts register by order, spread over the arrows' eight directions, instead of four fixed sides
 #                            - Pointed at a choice with the arrows held, like a joystick, and at the middle while no arrow or a diagonal is held
 #      Paulinchen  2026-10-04: Renamed from mp_actions.rbx
 #      Paulinchen  2026-10-03: Took the wheel's choices, the own line and what lies over the map from what the later scripts register, and kept their offers for the World overview and the notification box
@@ -227,9 +228,9 @@ module MGQ_MpActions
   end
 
   # The action wheel: a ring of choices around the player and one over them, taken with the game's
-  # confirm button. The arrows held point at a choice, like a joystick; while no arrow is held, or a
-  # direction without a choice, the middle is picked. It holds the buttons while open, so the player
-  # stands still and the game's menu stays shut.
+  # confirm button. It opens on the middle; the arrows held point at a choice, like a joystick, which
+  # stays picked once they are let go, and a direction without a choice picks the middle again. It
+  # holds the buttons while open, so the player stands still and the game's menu stays shut.
   module Wheel
     # The choice over the player.
     CENTER = :CENTER
@@ -267,8 +268,9 @@ module MGQ_MpActions
       MGQ_Multiplayer::Capture.stop(:wheel)
     end
 
-    # Picks the choice the arrows held point to, or the middle for none or a direction without one,
-    # takes the picked choice on confirm, and closes on cancel or the wheel key.
+    # Picks the choice the arrows held point to, the middle for a direction without one, keeps the
+    # pick while no arrow is held, takes the picked choice on confirm, and closes on cancel or the
+    # wheel key.
     #
     # @param pressed [Boolean] Whether the wheel key went down this frame.
     def self.update(pressed)
@@ -279,7 +281,7 @@ module MGQ_MpActions
       end
 
       held = MGQ_MpWheel.held
-      pointed = MGQ_MpActions.wheel_places.include?(held) ? held : CENTER
+      pointed = held.nil? ? @selected : MGQ_MpActions.wheel_places.include?(held) ? held : CENTER
       Sound.play_cursor if pointed != @selected
       @selected = pointed
 

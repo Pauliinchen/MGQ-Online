@@ -2,7 +2,7 @@
 #  emotes_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-06: Pointed at emotes with the arrows held, diagonals and none included
+#      Paulinchen  2026-10-06: Pointed at emotes with the arrows held, diagonals and none included, and kept the last one once they are let go
 #      Paulinchen  2026-10-04: Created
 #
 #----------------------------------------------------------------
@@ -45,10 +45,12 @@ emotes.on_map
 check("two point at the diagonal between them", emotes.selected, MGQ_MpEmotes::EMOTES.size - 1)
 $held = [:LEFT, :RIGHT]
 emotes.on_map
-check("opposite ones point at none", emotes.selected, nil)
+check("opposite ones keep the emote", emotes.selected, MGQ_MpEmotes::EMOTES.size - 1)
 $held = []
 emotes.on_map
-check("letting go points at none", emotes.selected, nil)
+check("letting go keeps it too", emotes.selected, MGQ_MpEmotes::EMOTES.size - 1)
+emotes.close
+emotes.open
 $buttons << :C
 emotes.on_map
 check("confirm on none closes the wheel without an emote", [emotes.open?, $game_player.balloon_id, $sent.count { |message| message[1].start_with?("emote=") }], [false, nil, 0])

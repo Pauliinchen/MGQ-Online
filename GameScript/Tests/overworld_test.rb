@@ -2,7 +2,8 @@
 #  overworld_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-06: Found the wheel's choices by their place on the ring, and checked how the ring spreads and lays out its choices
+#      Paulinchen  2026-10-06: Checked that the wheel keeps its pick once the arrows are let go
+#                            - Found the wheel's choices by their place on the ring, and checked how the ring spreads and lays out its choices
 #                            - Steered the action wheel with the arrows held, and checked the middle while none or a diagonal is held
 #      Paulinchen  2026-10-05: Checked that an open chat box takes typing and closes while a message shows
 #      Paulinchen  2026-10-04: Checked that a label goes above the labels already on its tile
@@ -560,14 +561,14 @@ parts.clear
 log_sprite.draw_row("on my way", nil, 0)
 check("a row that goes on a line is all text", parts.map { |_, text, color| [text, colors[color]] }, [["on my way", :text]])
 
-# The wheel's middle, which the arrows point at while none is held.
+# The wheel's middle, which it opens on, and the pick it keeps once the arrows are let go.
 MGQ_MpActions::Wheel.open
 $held = [:UP]
 map_frame
 check("an arrow held picks its side", MGQ_MpActions::Wheel.selected, :UP)
 $held = []
 map_frame
-check("letting go goes back to the middle", MGQ_MpActions::Wheel.selected, :CENTER)
+check("letting go keeps the choice", MGQ_MpActions::Wheel.selected, :UP)
 $held = [:UP, :RIGHT]
 map_frame
 check("a diagonal, which the wheel has no choice for, picks the middle too", MGQ_MpActions::Wheel.selected, :CENTER)
