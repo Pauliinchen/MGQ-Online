@@ -1,0 +1,134 @@
+//----------------------------------------------------------------
+//  WorldModsTests.cs
+//
+//  Changelog:
+//      Paulinchen  2026-10-06: Created
+//
+//----------------------------------------------------------------
+
+using System.IO;
+using System.Linq;
+using System.Text;
+using System.Text.Json.Nodes;
+using MGQParadox.Multiplayer.Mods;
+using MGQParadox.Multiplayer.Network.Transport;
+using MGQParadox.Multiplayer.Network.World;
+using MGQParadox.Multiplayer.Tests.Mods;
+using static MGQParadox.Multiplayer.Tests.Network.World.WorldDirectoryTests;
+
+namespace MGQParadox.Multiplayer.Tests.Network.World;
+
+/// <summary>
+/// Covers a world's mods against a relay inside this process: the mod catalog fetched with the
+/// list, installing its mods, and the creator's mod hashes and mod settings of a world.
+/// </summary>
+public sealed class WorldModsTests
+{
+    /// <summary>
+    /// A script as GitHub serves it.
+    /// </summary>
+    private static readonly byte[] Script = Encoding.UTF8.GetBytes("# Level Cap\n");
+
+    /// <summary>
+    /// Asserts that the catalog comes with the list, every version with its files.
+    /// </summary>
+    [Fact]
+    public void Refresh_FetchesTheCatalog()
+    {
+        using var relay = new TestRelay();
+        relay.CatalogMods.Add(LinkEntry("1.4.0", "bb", ["1.4.0", "bb"], ["1.3.5", "aa"]));
+        var player = NewDirectory(relay, CreatorKey, "Player");
+
+        ListState(player);
+        var mods = Message.Decode(player.DescribeMods());
+
+        Assert.Equal("ready", mods["state"]);
+        Assert.Equal(
+            ["mod\tlevelcap\tLevel Cap\tlink\t1.4.0\tLevel_Cap.rb\tbb", "old\tlevelcap\t1.4.0\tLevel_Cap.rb\tbb", "old\tlevelcap\t1.3.5\tLevel_Cap.rb\taa"],
+            mods.Team.Split('\n', System.StringSplitOptions.RemoveEmptyEntries));
+    }
+
+    /// <summary>
+    /// Asserts that installing a link mod takes its script from the release and checks it.
+    /// </summary>
+    [Fact]
+    public void InstallMods_LinkMod_WritesTheCheckedScript()
+    {
+        using var relay = new TestRelay();
+        using var game = new TempFolder();
+        relay.CatalogMods.Add(LinkEntry("1.4.0", ModHash.Of("Level_Cap.rb", Script), ["1.4.0", ModHash.Of("Level_Cap.rb", Script)]));
+        var player = new WorldDirectory { RelayAddress = _ => relay.Address, Playing = () => (CreatorKey, "Player"), GameFolder = () => game.Path, DownloadRelease = _ => Script };
+
+        ListState(player);
+        var installed = Act(player, directory => directory.InstallMods([("levelcap", "Patch/Level_Cap.rb")]));
+
+        Assert.Equal("done", installed["state"]);
+        Assert.Equal(Script, File.ReadAllBytes(Path.Combine(game.Path, "Patch", "Level_Cap.rb")));
+    }
+
+    /// <summary>
+    /// Asserts that installing an uploaded mod fetches its zip from the relay, and that a mod the
+    /// catalog lacks fails with a reason.
+    /// </summary>
+    [Fact]
+    public void InstallMods_Upload_FetchesTheZipFromTheRelay()
+    {
+        using var relay = new TestRelay();
+        using var game = new TempFolder();
+        var pack = Encoding.UTF8.GetBytes("pack");
+        relay.ModFiles["pack"] = ModInstallerTests.Zip(("Pack/a.luka", pack));
+        relay.CatalogMods.Add(new JsonObject
+        {
+            ["key"] = "pack", ["name"] = "Pack", ["kind"] = "upload", ["version"] = "2", ["fileUrl"] = string.Empty,
+            ["files"] = new JsonObject { ["Pack/a.luka"] = ModHash.Of("a.luka", pack) },
+            ["versions"] = new JsonArray(),
+        });
+        var player = new WorldDirectory { RelayAddress = _ => relay.Address, Playing = () => (CreatorKey, "Player"), GameFolder = () => game.Path };
+
+        ListState(player);
+
+        Assert.Equal("done", Act(player, directory => directory.InstallMods([("pack", string.Empty)]))["state"]);
+        Assert.Equal(pack, File.ReadAllBytes(Path.Combine(game.Path, "Patch", "Pack", "a.luka")));
+        Assert.Contains("no mod", Act(player, directory => directory.InstallMods([("missing", string.Empty)]))["error"]);
+    }
+
+    /// <summary>
+    /// Asserts that a world lists its creator's mod hashes and mod settings, which an admin's edit leaves and the creator's replaces.
+    /// </summary>
+    [Fact]
+    public void CreatorMods_AreListedAndOnlyTheCreatorReplacesThem()
+    {
+        var admin = PlayerKey(9);
+        using var relay = new TestRelay { Admins = [WorldKeys.PlayerIdOf(admin)] };
+        var creator = NewDirectory(relay, CreatorKey, "Creator");
+        var adminDirectory = NewDirectory(relay, admin, "Admin");
+        var hashes = $"Some Mod={new string('a', 64)}";
+
+        var made = Act(creator, directory => directory.Create("Modded", "secret", 4, false, false, [], new WorldAbout(string.Empty, "!Some Mod", string.Empty, false, hashes, "key=i:1")));
+        Assert.Contains(List(creator), line => line.StartsWith($"world\t{made["world"]}\t") && line.EndsWith($"\t{hashes}\tkey=i:1"));
+
+        Assert.Equal("done", Act(adminDirectory, directory => directory.Edit(made["world"], 6, "Edited.", "!Some Mod"))["state"]);
+        Assert.Contains(List(creator), line => line.StartsWith($"world\t{made["world"]}\t6\t") && line.EndsWith($"\t{hashes}\tkey=i:1"));
+
+        Assert.Equal("done", Act(creator, directory => directory.Edit(made["world"], 6, "Edited.", "!Some Mod", (string.Empty, "key=i:2")))["state"]);
+        Assert.Contains(List(creator), line => line.StartsWith($"world\t{made["world"]}\t") && line.EndsWith("\t\tkey=i:2"));
+    }
+
+    /// <summary>
+    /// Writes a link mod as the relay lists it.
+    /// </summary>
+    /// <param name="version">The current version.</param>
+    /// <param name="hash">The current script's hash.</param>
+    /// <param name="versions">Each version seen and its script's hash, newest first.</param>
+    /// <returns>The entry.</returns>
+    private static JsonObject LinkEntry(string version, string hash, params string[][] versions) => new()
+    {
+        ["key"] = "levelcap",
+        ["name"] = "Level Cap",
+        ["kind"] = "link",
+        ["version"] = version,
+        ["fileUrl"] = "https://github.com/Pauliinchen/MGQ-Paradox-Mod-Collection/releases/download/v1.4.0/Level_Cap.rb",
+        ["files"] = new JsonObject { ["Level_Cap.rb"] = hash },
+        ["versions"] = new JsonArray(versions.Select(entry => (JsonNode)new JsonObject { ["version"] = entry[0], ["files"] = new JsonObject { ["Level_Cap.rb"] = entry[1] } }).ToArray()),
+    };
+}

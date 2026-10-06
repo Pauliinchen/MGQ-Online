@@ -2,6 +2,8 @@
 //  WorldDirectory.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-06: Fetched the relay's mod catalog with the list, and installed a world's mods into the Patch folder
+//                            - Made, changed and listed worlds with the creator's hashes of required mods outside the catalog and its mod settings
 //      Paulinchen  2026-10-04: Told the game script the mods, the game data and the rule for it with the list only, no longer with an opened lock
 //                            - Replaced a world's game data for its creator
 //                            - Listed the hidden worlds the game script names by their ids, and looked one up by its id
@@ -25,6 +27,7 @@ using System.Linq;
 using System.Net;
 using System.Text;
 using System.Threading;
+using MGQParadox.Multiplayer.Mods;
 using MGQParadox.Multiplayer.Network.Pvp;
 using MGQParadox.Multiplayer.Network.Relay;
 using MGQParadox.Multiplayer.Network.Transport;
@@ -125,6 +128,16 @@ internal sealed class WorldDirectory
     private string? _listError;
 
     /// <summary>
+    /// The relay's mod catalog as last fetched with the list, <see langword="null"/> before one arrived.
+    /// </summary>
+    private IReadOnlyList<CatalogMod>? _catalog;
+
+    /// <summary>
+    /// Why the last mod catalog could not be fetched.
+    /// </summary>
+    private string? _catalogError;
+
+    /// <summary>
     /// Counts the actions, so a thread of an earlier one changes nothing.
     /// </summary>
     private int _actionGeneration;
@@ -177,7 +190,7 @@ internal sealed class WorldDirectory
     }
 
     /// <summary>
-    /// Fetches the list again, unless it is being fetched already.
+    /// Fetches the list again, and with it the relay's mod catalog, unless they are being fetched already.
     /// </summary>
     public void Refresh()
     {
@@ -197,7 +210,9 @@ internal sealed class WorldDirectory
         StartThread("MultiplayerDirectoryList", () =>
         {
             WorldListing? listing = null;
+            IReadOnlyList<CatalogMod>? catalog = null;
             string? error = null;
+            string? catalogError = null;
 
             try
             {
@@ -209,15 +224,32 @@ internal sealed class WorldDirectory
                 Log.Write($"world list failed: {ex.GetBaseException().Message}");
             }
 
+            try
+            {
+                catalog = Client().Mods();
+            }
+            catch (Exception ex)
+            {
+                // The worlds are listed all the same; the game script then checks only whether required mods are installed.
+                catalogError = ReasonFor(ex);
+                Log.Write($"mod catalog failed: {ex.GetBaseException().Message}");
+            }
+
             lock (_gate)
             {
                 _listing = false;
                 _listError = error;
                 _admin = listing?.Admin == true;
+                _catalogError = catalogError;
 
                 if (listing != null)
                 {
                     _list = ListText(listing.Worlds);
+                }
+
+                if (catalog != null)
+                {
+                    _catalog = catalog;
                 }
             }
         });
@@ -226,7 +258,7 @@ internal sealed class WorldDirectory
     /// <summary>
     /// Describes the list for the game script.
     /// </summary>
-    /// <returns><c>state</c> ("loading", "ready" or "failed"), <c>error</c> and <c>admin</c> (1 for an admin), then one line per world and player: <c>world</c>, id, seats, players online, creator's id, when last active, creator's name, name, starting save ("none", "pending" or "ready"), 1 when hidden, 1 when new players choose where to start, 1 without a password, 1 when featured, 1 when only games with the same data may enter, the creator's game data, the mods it needs, its description; <c>member</c>, id, 1 when online, name; each separated by tabs.</returns>
+    /// <returns><c>state</c> ("loading", "ready" or "failed"), <c>error</c> and <c>admin</c> (1 for an admin), then one line per world and player: <c>world</c>, id, seats, players online, creator's id, when last active, creator's name, name, starting save ("none", "pending" or "ready"), 1 when hidden, 1 when new players choose where to start, 1 without a password, 1 when featured, 1 when only games with the same data may enter, the creator's game data, the mods it needs, its description, the creator's hashes of required mods outside the catalog, its mod settings; <c>member</c>, id, 1 when online, name; each separated by tabs.</returns>
     public string DescribeList()
     {
         lock (_gate)
@@ -235,6 +267,101 @@ internal sealed class WorldDirectory
             return new Message([new(StateHeader, state), new(ErrorHeader, _listError), new(AdminHeader, _admin ? "1" : null)], _list ?? string.Empty).Encode();
         }
     }
+
+/// <summary>
+/// Describes the relay's mod catalog for the game script, as fetched with the list.
+/// </summary>
+/// <returns><c>state</c> ("loading", "ready", "failed" or "idle") and <c>error</c>, then one line per mod and version: <c>mod</c>, key, name, kind ("link" or "upload"), current version, then each current file's name or path and hash; <c>old</c>, key, version, then each of that version's files and hashes; each separated by tabs.</returns>
+public string DescribeMods()
+{
+    lock (_gate)
+    {
+        var state = _listing ? "loading" : _catalog != null ? "ready" : _catalogError != null ? "failed" : "idle";
+        var text = new StringBuilder();
+
+        foreach (var mod in _catalog ?? [])
+        {
+            text.Append("mod\t").Append(mod.Key).Append('\t').Append(OnOneField(mod.Name)).Append('\t').Append(mod.Kind).Append('\t').Append(OnOneField(mod.Version));
+            AppendFiles(text, mod.Files);
+
+            foreach (var version in mod.Versions)
+            {
+                text.Append("old\t").Append(mod.Key).Append('\t').Append(OnOneField(version.Version));
+                AppendFiles(text, version.Files);
+            }
+        }
+
+        return new Message([new(StateHeader, state), new(ErrorHeader, _catalog == null ? _catalogError : null)], text.ToString()).Encode();
+    }
+}
+
+/// <summary>
+/// Installs mods of the catalog as last fetched into the game's Patch folder, checking every
+/// file against the catalog's hash first.
+/// </summary>
+/// <param name="mods">Each mod's key, and for a link mod where its script goes, relative to the game's folder.</param>
+/// <returns><see langword="false"/> while another action runs.</returns>
+public bool InstallMods(IReadOnlyList<(string Key, string Target)> mods) => Start("mods", () =>
+{
+    IReadOnlyList<CatalogMod> catalog;
+
+    lock (_gate)
+    {
+        catalog = _catalog ?? throw new ActionException("The mod catalog has not been fetched yet.");
+    }
+
+    var chosen = mods.Select(mod => (catalog.FirstOrDefault(entry => entry.Key == mod.Key) ?? throw new ActionException($"The relay has no mod {mod.Key}."), mod.Target)).ToList();
+    var client = Client();
+
+    try
+    {
+        var written = ModInstaller.Install(chosen, mod => Download(client, mod), GameFolder());
+        Log.Write($"installed {string.Join(", ", chosen.Select(mod => $"{mod.Item1.Name} {mod.Item1.Version}"))}: {string.Join(", ", written)}");
+    }
+    catch (Exception ex) when (ex is InvalidDataException or InvalidOperationException)
+    {
+        throw new ActionException(ex.Message);
+    }
+    catch (IOException ex)
+    {
+        throw new ActionException($"The mods could not be written: {ex.Message}");
+    }
+
+    return null;
+});
+
+/// <summary>
+/// The game's folder, which the mods are installed into; tests point it elsewhere.
+/// </summary>
+public Func<string> GameFolder { get; init; } = () => ModFolder.GamePathOf(".");
+
+/// <summary>
+/// Downloads a mod: an upload's zip from the relay, a link mod's script from GitHub.
+/// </summary>
+/// <param name="client">The relay's client.</param>
+/// <param name="mod">The mod.</param>
+/// <returns>The zip or the script.</returns>
+private byte[] Download(DirectoryClient client, CatalogMod mod) => mod.IsUpload ? client.ModFile(mod.Key) : DownloadRelease(mod.FileUrl);
+
+/// <summary>
+/// Downloads a link mod's script; tests replace it, since they cannot reach GitHub.
+/// </summary>
+public Func<string, byte[]> DownloadRelease { get; init; } = ReleaseDownload.Get;
+
+/// <summary>
+/// Writes files and their hashes as fields of a line, and ends the line.
+/// </summary>
+/// <param name="text">The line so far.</param>
+/// <param name="files">Each file's hash by its name or path.</param>
+private static void AppendFiles(StringBuilder text, IReadOnlyDictionary<string, string> files)
+{
+    foreach (var (name, hash) in files)
+    {
+        text.Append('\t').Append(OnOneField(name)).Append('\t').Append(hash);
+    }
+
+    text.Append('\n');
+}
 
     /// <summary>
     /// Makes a world: a new token, locked with the password, and the world in the directory, with
@@ -380,16 +507,18 @@ internal sealed class WorldDirectory
     public bool Find(string id) => Start("find", () => new ActionResult(string.Empty, Client().Lock(id).Name));
 
     /// <summary>
-    /// Changes a world's seats, description and mods, which only its creator or one of the relay's admins may.
+    /// Changes a world's seats, description and mods, which only its creator or one of the relay's
+    /// admins may, and for its creator the hashes of its required mods outside the catalog and its mod settings.
     /// </summary>
     /// <param name="id">The world.</param>
     /// <param name="seats">How many games it seats at once.</param>
     /// <param name="description">What the world is about.</param>
     /// <param name="mods">The mods it needs.</param>
+    /// <param name="creatorMods">The creator's mod hashes and mod settings, <see langword="null"/> to leave them, as an admin must.</param>
     /// <returns><see langword="false"/> while another action runs.</returns>
-    public bool Edit(string id, int seats, string description, string mods) => Start("edit", () =>
+    public bool Edit(string id, int seats, string description, string mods, (string ModHashes, string Settings)? creatorMods = null) => Start("edit", () =>
     {
-        Client().Edit(id, Me().Key, seats, description, mods);
+        Client().Edit(id, Me().Key, seats, description, mods, creatorMods);
         return null;
     });
 
@@ -568,7 +697,8 @@ internal sealed class WorldDirectory
                 .Append('\t').Append(OnOneField(world.Name)).Append('\t').Append(OnOneField(world.Start)).Append('\t').Append(world.Hidden ? '1' : '0')
                 .Append('\t').Append(world.Choose ? '1' : '0').Append('\t').Append(world.Open ? '1' : '0').Append('\t').Append(world.Featured ? '1' : '0')
                 .Append('\t').Append(world.About.Strict ? '1' : '0').Append('\t').Append(OnOneField(world.About.Data)).Append('\t').Append(OnOneField(world.About.Mods))
-                .Append('\t').Append(OnOneField(world.About.Description)).Append('\n');
+                .Append('\t').Append(OnOneField(world.About.Description)).Append('\t').Append(OnOneField(world.About.ModHashes))
+                .Append('\t').Append(OnOneField(world.About.Settings)).Append('\n');
 
             foreach (var member in world.Members.OrderByDescending(member => member.Online).ThenBy(member => member.Name, StringComparer.OrdinalIgnoreCase))
             {

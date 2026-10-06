@@ -2,6 +2,7 @@
 #  world.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-06: Read and sent a world's mod hashes and mod settings from its creator
 #      Paulinchen  2026-10-04: Showed the update notice in a message box that stays until the player closes it
 #                            - Greyed out the title command once the update check answers, and kept an outdated game out of worlds
 #                            - Kept the 50 hidden worlds added last, as many as the relay lists, so ids of deleted worlds do not crowd new ones out
@@ -549,7 +550,9 @@ module MGQ_MpWorld
     # @!attribute data [String] Its creator's game data, see GameData.fingerprint; empty when unknown.
     # @!attribute mods [String] The mods it needs, as its creator wrote them.
     # @!attribute description [String] What it is about, as its creator wrote it.
-    ListedWorld = Struct.new(:id, :seats, :online, :creator_id, :active, :creator_name, :name, :start, :members, :hidden, :choose, :open, :featured, :strict, :data, :mods, :description)
+    # @!attribute mod_hashes [String] Its creator's hashes of required mods outside the mod catalog, "name=hash" pairs separated by semicolons.
+    # @!attribute settings [String] Its creator's settings of the required mods, "key=type:value" pairs separated by semicolons.
+    ListedWorld = Struct.new(:id, :seats, :online, :creator_id, :active, :creator_name, :name, :start, :members, :hidden, :choose, :open, :featured, :strict, :data, :mods, :description, :mod_hashes, :settings)
 
     # A player of a world.
     #
@@ -587,7 +590,7 @@ module MGQ_MpWorld
 
         case fields[0]
         when "world"
-          worlds.push(ListedWorld.new(fields[1], fields[2].to_i, fields[3].to_i, fields[4], fields[5].to_i, fields[6].to_s, fields[7].to_s, fields[8] || "none", [], fields[9] == "1", fields[10] == "1", fields[11] == "1", fields[12] == "1", fields[13] == "1", fields[14].to_s, fields[15].to_s, fields[16].to_s))
+          worlds.push(ListedWorld.new(fields[1], fields[2].to_i, fields[3].to_i, fields[4], fields[5].to_i, fields[6].to_s, fields[7].to_s, fields[8] || "none", [], fields[9] == "1", fields[10] == "1", fields[11] == "1", fields[12] == "1", fields[13] == "1", fields[14].to_s, fields[15].to_s, fields[16].to_s, fields[17].to_s, fields[18].to_s))
         when "member"
           worlds.last.members.push(Member.new(fields[1], fields[2] == "1", fields[3].to_s)) if worlds.last
         end
@@ -604,12 +607,13 @@ module MGQ_MpWorld
     # @param hidden [Boolean] Whether the list leaves it out for everyone but its players and the relay's admins.
     # @param choose [Boolean] Whether each new player chooses where to start.
     # @param start [String] The starting save's files, see MGQ_MpSaveDistribution.text_of; empty for none.
-    # @param about [Hash] Whichever of :description, :mods, :data (the creator's game data) and :strict (true when only games with the same data may enter) apply.
+    # @param about [Hash] Whichever of :description, :mods, :data (the creator's game data), :strict (true when only games with the same data may enter), :mod_hashes and :settings apply.
     # @return [Boolean] Whether the action started.
     def self.create(name, password, seats, hidden, choose, start, about = {})
       MGQ_Multiplayer::Player.share
-      MGQ_Multiplayer::Link.function('mp_dir_create', 'pplllppppl').call(name + "\0", password + "\0", seats, hidden ? 1 : 0, choose ? 1 : 0, start + "\0",
-                                                                         about[:description].to_s + "\0", about[:mods].to_s + "\0", about[:data].to_s + "\0", about[:strict] ? 1 : 0) == 1
+      MGQ_Multiplayer::Link.function('mp_dir_create', 'pplllpppplpp').call(name + "\0", password + "\0", seats, hidden ? 1 : 0, choose ? 1 : 0, start + "\0",
+                                                                           about[:description].to_s + "\0", about[:mods].to_s + "\0", about[:data].to_s + "\0", about[:strict] ? 1 : 0,
+                                                                           about[:mod_hashes].to_s + "\0", about[:settings].to_s + "\0") == 1
     end
 
     # Opens a world's lock with its password; the action tells the world's name, its starting save,
@@ -623,16 +627,19 @@ module MGQ_MpWorld
       MGQ_Multiplayer::Link.function('mp_dir_unlock', 'pp').call(id + "\0", password + "\0") == 1
     end
 
-    # Changes a world's seats, description and mods, which its creator or an admin may.
+    # Changes a world's seats, description and mods, which its creator or an admin may, and for its
+    # creator the hashes of its required mods outside the catalog and its mod settings.
     #
     # @param id [String] The world.
     # @param seats [Integer] How many players it seats at once.
     # @param description [String] What it is about, empty for nothing.
     # @param mods [String] The mods it needs, empty for none.
+    # @param creator_mods [Array<String>, nil] The creator's mod hashes and mod settings, nil to leave them, as an admin must.
     # @return [Boolean] Whether the action started.
-    def self.edit(id, seats, description, mods)
+    def self.edit(id, seats, description, mods, creator_mods = nil)
       MGQ_Multiplayer::Player.share
-      MGQ_Multiplayer::Link.function('mp_dir_edit', 'plpp').call(id + "\0", seats, description + "\0", mods + "\0") == 1
+      hashes, settings = creator_mods || ["", ""]
+      MGQ_Multiplayer::Link.function('mp_dir_edit', 'plpppppl').call(id + "\0", seats, description + "\0", mods + "\0", hashes + "\0", settings + "\0", creator_mods ? 1 : 0) == 1
     end
 
     # Replaces a world's game data with this game's as it is now, which only its creator may.

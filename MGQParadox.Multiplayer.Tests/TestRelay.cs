@@ -2,6 +2,8 @@
 //  TestRelay.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-06: Served a mod catalog the tests fill, and uploaded mods' zips
+//                            - Kept a world's mod hashes and mod settings, which only its creator replaces
 //      Paulinchen  2026-10-04: Left the mods, the game data and the rule for it out of a world's lock
 //                            - Let a world's creator replace its game data
 //                            - Listed the hidden worlds a player names by their ids
@@ -112,6 +114,16 @@ internal sealed class TestRelay : IDisposable
     /// The player ids of the admins, who see every world and delete any.
     /// </summary>
     public HashSet<string> Admins { get; init; } = [];
+
+    /// <summary>
+    /// The mod catalog's mods as the relay lists them, which the tests fill.
+    /// </summary>
+    public JsonArray CatalogMods { get; } = [];
+
+    /// <summary>
+    /// The zips of uploaded mods by key, which the tests fill.
+    /// </summary>
+    public Dictionary<string, byte[]> ModFiles { get; } = [];
 
     /// <summary>
     /// How many peers the relay holds in all its rooms.
@@ -231,6 +243,12 @@ internal sealed class TestRelay : IDisposable
             return;
         }
 
+        if (!context.Request.IsWebSocketRequest && parts is ["v1", "mods", ..])
+        {
+            await ServeModsAsync(context, parts);
+            return;
+        }
+
         if (context.Request.IsWebSocketRequest && parts is [_, "world", _])
         {
             await ServeWorldAsync(context, parts[2]);
@@ -300,6 +318,42 @@ internal sealed class TestRelay : IDisposable
             Leave(roomId, role);
         }
     }
+
+/// <summary>
+/// Answers the mod catalog's requests: the list, and an uploaded mod's zip.
+/// </summary>
+/// <param name="context">The request.</param>
+/// <param name="parts">The path's parts, "v1" and "mods" first.</param>
+/// <returns>Completes once answered.</returns>
+private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
+{
+    byte[] bytes;
+    string type = "application/json";
+
+    lock (_gate)
+    {
+        if (parts is ["v1", "mods"])
+        {
+            context.Response.StatusCode = 200;
+            bytes = Encoding.UTF8.GetBytes(new JsonObject { ["mods"] = CatalogMods.DeepClone(), ["admin"] = false }.ToJsonString());
+        }
+        else if (parts is ["v1", "mods", var key, "file"] && ModFiles.TryGetValue(key, out var zip))
+        {
+            context.Response.StatusCode = 200;
+            bytes = zip;
+            type = "application/octet-stream";
+        }
+        else
+        {
+            context.Response.StatusCode = 404;
+            bytes = Encoding.UTF8.GetBytes(Error("there is no such mod").ToJsonString());
+        }
+    }
+
+    context.Response.ContentType = type;
+    await context.Response.OutputStream.WriteAsync(bytes);
+    context.Response.Close();
+}
 
     /// <summary>
     /// Answers the world directory's requests.
@@ -454,6 +508,8 @@ internal sealed class TestRelay : IDisposable
             Mods = body["mods"]?.GetValue<string>() ?? string.Empty,
             Data = body["data"]?.GetValue<string>() ?? string.Empty,
             Strict = body["strict"]?.GetValue<bool>() == true,
+            ModHashes = body["modHashes"]?.GetValue<string>() ?? string.Empty,
+            Settings = body["settings"]?.GetValue<string>() ?? string.Empty,
         };
 
         return (201, new JsonObject { ["id"] = id });
@@ -468,12 +524,14 @@ internal sealed class TestRelay : IDisposable
     /// <returns>The answer.</returns>
     private static (int, JsonNode) Edit(DirectoryWorld world, JsonNode body, string player)
     {
-        if (body["data"] != null && player != world.CreatorId)
+        if ((body["data"] != null || body["modHashes"] != null || body["settings"] != null) && player != world.CreatorId)
         {
-            return (403, Error("only the world's creator may replace its game data"));
+            return (403, Error("only the world's creator may replace its game data, mod hashes and mod settings"));
         }
 
         world.Data = body["data"]?.GetValue<string>() ?? world.Data;
+        world.ModHashes = body["modHashes"]?.GetValue<string>() ?? world.ModHashes;
+        world.Settings = body["settings"]?.GetValue<string>() ?? world.Settings;
         world.Seats = body["seats"]?.GetValue<int>() ?? world.Seats;
         world.Description = body["description"]?.GetValue<string>() ?? world.Description;
         world.Mods = body["mods"]?.GetValue<string>() ?? world.Mods;
@@ -572,6 +630,8 @@ internal sealed class TestRelay : IDisposable
             ["mods"] = world.Mods,
             ["data"] = world.Data,
             ["strict"] = world.Strict,
+            ["modHashes"] = world.ModHashes,
+            ["settings"] = world.Settings,
             ["online"] = online.Count,
             ["created"] = 0,
             ["active"] = 0,
@@ -957,6 +1017,16 @@ internal sealed class TestRelay : IDisposable
         /// What tells its creator's game data from another's.
         /// </summary>
         public string Data { get; set; } = string.Empty;
+
+        /// <summary>
+        /// The creator's hashes of required mods outside the mod catalog.
+        /// </summary>
+        public string ModHashes { get; set; } = string.Empty;
+
+        /// <summary>
+        /// The creator's settings of the required mods.
+        /// </summary>
+        public string Settings { get; set; } = string.Empty;
 
         /// <summary>
         /// Whether only games with the same data may enter.

@@ -2,6 +2,7 @@
 #  world_data_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-06: Expected the longer calls of mp_dir_create and mp_dir_edit
 #      Paulinchen  2026-10-04: Checked picking the worlds or the commands as a whole before moving into them, and a long word broken inside it
 #                            - Checked that a long word is broken without String#chars, which Ruby 1.9 cannot count
 #                            - Created
@@ -229,7 +230,7 @@ check("with the data read, an unticked Allow data mismatch makes a world for the
 
 # The directory.
 MGQ_MpWorld::Directory.create("W", "p", 4, false, false, "", :description => "A slow run.", :mods => "Some Mod", :data => modded, :strict => true)
-check("create hands the description, the mods, the game data and the rule to the DLL", [$calls.last[1], $calls.last[2][6..9]], ["pplllppppl", ["A slow run.\0", "Some Mod\0", "#{modded}\0", 1]])
+check("create hands the description, the mods, the game data and the rule to the DLL", [$calls.last[1], $calls.last[2][6..9]], ["pplllpppplpp", ["A slow run.\0", "Some Mod\0", "#{modded}\0", 1]])
 MGQ_MpWorld::Directory.create("W", "p", 4, false, false, "")
 check("or nothing", $calls.last[2][6..9], ["\0", "\0", "\0", 0])
 $dll["mp_dir_list"] = "state=ready\n\n" \
@@ -556,7 +557,7 @@ scene.form[:seats] = "8"
 scene.form[:mods] = ""
 $calls.clear
 scene.send_form
-check("sending it hands the changes to the DLL", [$calls.last[0], $calls.last[1], $calls.last[2], scene.instance_variable_get(:@busy)], ["mp_dir_edit", "plpp", ["w2\0", 8, "A slow run through part one of the story with friends.\0", "\0"], "edit"])
+check("sending it hands the changes to the DLL", [$calls.last[0], $calls.last[1], $calls.last[2], scene.instance_variable_get(:@busy)], ["mp_dir_edit", "plpppppl", ["w2\0", 8, "A slow run through part one of the story with friends.\0", "\0", "\0", "\0", 0], "edit"])
 $dll["mp_dir_action"] = "state=done\nkind=edit\n\n"
 scene.follow_action
 check("once changed, the form closes and the screen says so", [scene.form, said(scene)], [nil, "Loose was changed."])

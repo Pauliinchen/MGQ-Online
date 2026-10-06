@@ -2,6 +2,8 @@
 //  DirectoryClient.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-06: Read the mod catalog and an uploaded mod's zip
+//                            - Made, changed and read worlds with the creator's hashes of required mods outside the catalog and its mod settings
 //      Paulinchen  2026-10-04: Read a world's lock without the mods, the game data and the rule for it, which the list tells
 //                            - Replaced a world's game data
 //                            - Listed the hidden worlds named by their ids too
@@ -24,6 +26,7 @@ using System.Net.Http;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
+using MGQParadox.Multiplayer.Mods;
 using MGQParadox.Multiplayer.Network.Relay;
 using MGQParadox.Multiplayer.Network.Transport;
 
@@ -63,6 +66,11 @@ internal sealed class DirectoryClient
     private readonly Uri _worlds;
 
     /// <summary>
+    /// The mod catalog's address, /v1/mods at the relay.
+    /// </summary>
+    private readonly Uri _mods;
+
+    /// <summary>
     /// Creates a client for a relay's directory.
     /// </summary>
     /// <param name="relay">The relay's address, wss:// or ws://, as <see cref="Relays"/> names it.</param>
@@ -70,6 +78,8 @@ internal sealed class DirectoryClient
     {
         var web = new UriBuilder(relay) { Scheme = relay.Scheme == "wss" ? "https" : "http", Port = relay.IsDefaultPort ? -1 : relay.Port, Path = "/v1/worlds" };
         _worlds = web.Uri;
+        web.Path = "/v1/mods";
+        _mods = web.Uri;
     }
 
     /// <summary>
@@ -121,7 +131,7 @@ internal sealed class DirectoryClient
                 Flag(world, "choose"),
                 Flag(world, "open"),
                 Flag(world, "featured"),
-                new WorldAbout(Text(world, "description"), Text(world, "mods"), Text(world, "data"), Flag(world, "strict")),
+                new WorldAbout(Text(world, "description"), Text(world, "mods"), Text(world, "data"), Flag(world, "strict"), Text(world, "modHashes"), Text(world, "settings")),
                 members));
         }
 
@@ -186,6 +196,8 @@ internal sealed class DirectoryClient
             }
 
             writer.WriteBoolean("strict", about.Strict);
+            writer.WriteString("modHashes", about.ModHashes);
+            writer.WriteString("settings", about.Settings);
         });
 
         using var _ = Send(HttpMethod.Post, _worlds, body);
@@ -234,15 +246,16 @@ internal sealed class DirectoryClient
     }
 
     /// <summary>
-    /// Changes a world's seats, description and mods.
+    /// Changes a world's seats, description and mods, and for its creator the hashes of its required mods outside the catalog and its mod settings.
     /// </summary>
     /// <param name="id">The world.</param>
     /// <param name="playerKey">The creator's or an admin's key.</param>
     /// <param name="seats">How many games it seats at once.</param>
     /// <param name="description">What the world is about.</param>
     /// <param name="mods">The mods it needs.</param>
+    /// <param name="creatorMods">The creator's mod hashes and mod settings, <see langword="null"/> to leave them, as an admin must.</param>
     /// <exception cref="DirectoryException">The directory could not be reached or refused.</exception>
-    public void Edit(string id, string playerKey, int seats, string description, string mods)
+    public void Edit(string id, string playerKey, int seats, string description, string mods, (string ModHashes, string Settings)? creatorMods = null)
     {
         var body = Json(writer =>
         {
@@ -250,6 +263,12 @@ internal sealed class DirectoryClient
             writer.WriteNumber("seats", seats);
             writer.WriteString("description", description);
             writer.WriteString("mods", mods);
+
+            if (creatorMods is var (modHashes, settings))
+            {
+                writer.WriteString("modHashes", modHashes);
+                writer.WriteString("settings", settings);
+            }
         });
 
         using var _ = Send(HttpMethod.Post, WorldAddress(id, "edit"), body);
@@ -299,6 +318,76 @@ internal sealed class DirectoryClient
             writer.WriteString("target", target);
         }));
     }
+
+/// <summary>
+/// Lists the relay's mod catalog.
+/// </summary>
+/// <returns>The mods.</returns>
+/// <exception cref="DirectoryException">The relay could not be reached or answered with an error.</exception>
+public IReadOnlyList<CatalogMod> Mods()
+{
+    using var document = Send(HttpMethod.Get, _mods, null);
+    var mods = new List<CatalogMod>();
+
+    foreach (var mod in document.RootElement.GetProperty("mods").EnumerateArray())
+    {
+        var versions = new List<ModVersion>();
+
+        if (mod.TryGetProperty("versions", out var listed) && listed.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var version in listed.EnumerateArray())
+            {
+                versions.Add(new ModVersion(Text(version, "version"), FilesOf(version)));
+            }
+        }
+
+        mods.Add(new CatalogMod(Text(mod, "key"), Text(mod, "name"), Text(mod, "kind"), Text(mod, "version"), FilesOf(mod), versions, Text(mod, "fileUrl")));
+    }
+
+    return mods;
+}
+
+/// <summary>
+/// Downloads an uploaded mod's zip.
+/// </summary>
+/// <param name="key">The mod's key.</param>
+/// <returns>The zip.</returns>
+/// <exception cref="DirectoryException">The relay could not be reached, has no such mod, or answered with an error.</exception>
+public byte[] ModFile(string key)
+{
+    using var request = new HttpRequestMessage(HttpMethod.Get, new Uri($"{_mods}/{Uri.EscapeDataString(key)}/file"));
+    using var response = Exchange(request, TransferHttp);
+    ThrowUnlessSuccess(response);
+
+    try
+    {
+        return response.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult();
+    }
+    catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or IOException)
+    {
+        throw new DirectoryException(null, ex.GetBaseException().Message);
+    }
+}
+
+/// <summary>
+/// Reads a catalog entry's files.
+/// </summary>
+/// <param name="element">The entry or version holding them.</param>
+/// <returns>Each file's hash by its name or path.</returns>
+private static Dictionary<string, string> FilesOf(JsonElement element)
+{
+    var files = new Dictionary<string, string>(StringComparer.Ordinal);
+
+    if (element.TryGetProperty("files", out var listed) && listed.ValueKind == JsonValueKind.Object)
+    {
+        foreach (var file in listed.EnumerateObject())
+        {
+            files[file.Name] = file.Value.GetString() ?? string.Empty;
+        }
+    }
+
+    return files;
+}
 
     /// <summary>
     /// Reads a flag of the directory's answer.
@@ -481,7 +570,9 @@ internal sealed record LockedWorld(WorldLock Lock, string Name, int Seats, strin
 /// <param name="Mods">The mods it needs.</param>
 /// <param name="Data">What tells the creator's game data from another's, which the game script writes and compares; empty when unknown.</param>
 /// <param name="Strict">Whether only games with the same data may enter.</param>
-internal sealed record WorldAbout(string Description, string Mods, string Data, bool Strict)
+/// <param name="ModHashes">The creator's hashes of the required mods outside the mod catalog, <c>name=hash</c> pairs separated by semicolons; empty for none.</param>
+/// <param name="Settings">The creator's settings of the required mods, <c>key=type:value</c> pairs separated by semicolons; empty for none.</param>
+internal sealed record WorldAbout(string Description, string Mods, string Data, bool Strict, string ModHashes = "", string Settings = "")
 {
     /// <summary>
     /// Nothing told, and every game may enter.
