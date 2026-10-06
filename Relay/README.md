@@ -36,14 +36,39 @@ Plain HTTP with JSON bodies. A world's id is 32 lowercase hexadecimal characters
 
 | Request | What it does |
 |---|---|
-| `GET /v1/worlds?player=<key>&ids=<id>,<id>` | Lists every public world, and the hidden ones the player of `player` joined or `ids` names (up to 50 ids, which the worlds' creators hand out; without `player` and `ids`, public ones only), or every world for an admin: `worlds`, each with `id`, `name`, `seats`, `creator` (`id`, `name`), `start` (`none`, `pending` or `ready`), `hidden`, `choose`, `open`, `featured`, `description`, `mods`, `data`, `strict`, `modHashes`, `settings`, `online`, `created`, `active`, and `members` (`id`, `name`, `online`, `seen`: when last in the world); and `admin`, true for an admin. |
-| `POST /v1/worlds` | Makes a world: `id`, `name`, `seats` (2 to 32), `player` (the creator's key), `playerName`, `authHash` (SHA-256 of the auth key, hexadecimal) and `lock` (`salt`, `iterations`, `box`: the token encrypted with a key from the password), `start: true` when a starting save follows, `hidden: true` to leave it out of the list for everyone but its players, `choose: true` to let each new player choose where to start: at the beginning, from one of their own saves, or from the starting save, `open: true` when the password is empty, so the games enter without asking for it, `featured: true`, which only an admin may send, to show it as one of the relay's own worlds, and optionally `description` (kept up to 1000 characters), `mods` (the mods it needs, up to 80 characters), `data` (what tells the creator's game data from another's, which the relay only keeps) `strict: true` when only games with the same data may enter, which the games check themselves, `modHashes` (the creator's hashes of required mods outside the mod catalog, `name=hash` pairs separated by semicolons, up to 2000 characters) and `settings` (the creator's settings of the required mods, `key=type:value` pairs separated by semicolons, up to 2000 characters). 201, or 409 when the id is taken, 429 past 20 worlds per creator, a limit admins do not have, or past 2000 worlds in all. |
+| `GET /v1/worlds?player=<key>&ids=<id>,<id>` | Lists every public world, and the hidden ones the player of `player` joined or `ids` names (up to 50 ids, which the worlds' creators hand out; without `player` and `ids`, public ones only), or every world for an admin. Answers `worlds`, each with the listed fields below, and `admin`, true for an admin. |
+| `POST /v1/worlds` | Makes a world from the fields sent on create below. 201, or 409 when the id is taken, 429 past 20 worlds per creator, a limit admins do not have, or past 2000 worlds in all. |
 | `GET /v1/worlds/<id>/lock` | Hands out the world's `lock` (`salt`, `iterations`, `box`), which only the password opens, with its `name`, `seats`, `start` and `choose`, so a hidden world is entered by its id. |
 | `POST /v1/worlds/<id>/edit` | Changes whichever of `seats`, `description` and `mods` the body names, if `player` is the creator's or an admin's key, and replaces `data`, the creator's game data, `modHashes` and `settings`, if it is the creator's. Everything else of a world stays as it was made. |
 | `POST /v1/worlds/<id>/delete` | Deletes the world, if `player` is the creator's or an admin's key, and closes its world room. |
 | `POST /v1/worlds/<id>/ban` | Removes the player whose id is `target` and keeps them out, if `player` is the creator's key. |
 | `POST /v1/worlds/<id>/start?player=<key>` | Keeps the world's starting save, the body as bytes (at most 8 MB), if `player` is the creator's key and the world was made with `start: true`. Only once: 409 afterwards. |
 | `GET /v1/worlds/<id>/start?player=<key>&auth=<auth key>` | Hands out the starting save as bytes, to a game the world room would let in. 404 when the world has none. |
+
+A world's fields, as `POST /v1/worlds` takes them and `GET /v1/worlds` lists them:
+
+| Field | Create | Listed | What it is |
+|---|---|---|---|
+| `id` | yes | yes | The world's id. |
+| `name` | yes | yes | The world's name. |
+| `seats` | yes | yes | Max players, 2 to 32. |
+| `player`, `playerName` | yes | | The creator's key and name. |
+| `creator` | | yes | The creator's `id` and `name`. |
+| `authHash` | yes | | SHA-256 of the auth key, hexadecimal. |
+| `lock` | yes | | `salt`, `iterations`, `box`: the token encrypted with a key from the password. |
+| `start` | `true` | `none`, `pending`, `ready` | Whether a starting save follows, and how far it is. |
+| `hidden` | optional | yes | Left out of the list for everyone but its players. |
+| `choose` | optional | yes | Each new player chooses where to start: the beginning, one of their own saves, or the starting save. |
+| `open` | optional | yes | The password is empty, so the games enter without asking for it. |
+| `featured` | admins only | yes | Shown as one of the relay's own worlds. |
+| `description` | optional | yes | Kept up to 1000 characters. |
+| `mods` | optional | yes | The mods it needs, up to 80 characters. |
+| `data` | optional | yes | What tells the creator's game data from another's; the relay only keeps it. |
+| `strict` | optional | yes | Only games with the same data may enter, which the games check themselves. |
+| `modHashes` | optional | yes | The creator's hashes of required mods outside the mod catalog: `name=hash` pairs separated by semicolons, up to 2000 characters. |
+| `settings` | optional | yes | The settings of the required mods: `key=type:value` pairs separated by semicolons, up to 2000 characters. |
+| `online`, `created`, `active` | | yes | How many players are in the world now, when it was made, when someone was last in it. |
+| `members` | | yes | Every player who joined: `id`, `name`, `online`, `seen` (when last in the world). |
 
 A player's key never appears in the list: everyone sees the player's id, the first 32 characters of the SHA-256 of `mgqmp player <key>`. Names are at most 32 characters, on one line.
 
