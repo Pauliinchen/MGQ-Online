@@ -8,57 +8,15 @@ Monster Girl Quest! Online keeps its first name inside: the `Multiplayer` instal
 MGQ-Online.slnx                       Visual Studio solution
 Directory.Build.targets               puts vswhere.exe on the PATH, which the NativeAOT link needs
 GameScript/Multiplayer.rb             Ruby, what every way of playing together shares; loads the others
-GameScript/Multiplayer/Scripts/       Ruby, the other scripts, in the order Multiplayer.rb loads them:
-  core_log.rbx                        the log every script writes its lines with
-  core_hooks.rbx                      the game methods several scripts follow, each wrapped once
-  core_game_access.rbx                the game's private fields and methods the mod uses, each named once
-  core_hotkeys.rbx                    the keys the player binds
-  ui.rbx                              what the screens share: word wrap, and the window of lines across the top
-  ui_text_box.rbx                     the text boxes: the editor of a text being typed, and how a box typed into is drawn
-  core_actors.rbx                     characters of another game: builds as numbers, and rebuilt characters
-  core_async.rbx                      the world running on behind menus, battles and story scenes
-  overworld_sync.rbx                  the world's messages: states, peers, and the registry other scripts join
-  ui_actions.rbx                      the action wheel on the map
-  ui_chat.rbx                         chat: the chat box, bubbles above the players, the chat log
-  ui_emotes.rbx                       the emote wheel: a jump or a balloon above the player, seen by the others
-  overworld.rbx                       what the player sees of the others: ghosts, labels, pings, status line
-  coop.rbx                            parties: who is in the player's party, and the gate for its messages
-  coop_squad.rbx                      a party's squads: shares of the Frontline and Backline, followers, the cut
-  coop_events.rbx                     the events of a party: what each event page is, and chests opened for all
-  coop_gather.rbx                     gathering a party for the leader's story scenes, and teleporting to the leader
-  coop_scene.rbx                      the leader's story pictures, screen effects and hidden character, shown to the members
-  coop_npcs.rbx                       the NPCs a party shares on a map, moved by its Map Owner
-  coop_story.rbx                      the story a party plays: the leader's, borrowed by the members
-  coop_castle.rbx                     the Pocket Castle in a party: its residents, each player's own talks
-  world.rbx                           worlds: the directory, and each world's own saves
-  world_mods.rbx                      a world's required mods checked against the relay's catalog, and the creator's mod settings
-  world_save_distribution.rbx         a world's starting save: one of its creator's saves, fetched by new players, or each player's own
-  world_text.rbx                      the text screen for names and passwords
-  world_screen.rbx                    the world screen and its windows
-  world_save_export.rbx               a world's latest save copied into the player's own game
-  battles.rbx                         the rules every multiplayer battle shares
-  battles_coop.rbx                    co-op battles: the party members on the map join a member's battle
-  battles_sync.rbx                    live battles: the host computes, the guest plays back
-  battles_sync_wire.rbx               how a live battle's messages are written
-  battles_sync_recorder.rbx           the host's side of the stream: the battle recorded as events
-  battles_sync_playback.rbx           the guest's side of the stream: the events played
-  battles_sync_live.rbx               the battle hooks, and the steps host and guest differ in
-  battles_balance_pvp.rbx             the balance of a PvP battle: more HP, limited evasion, immunity and walls
-  battles_pvp.rbx                     PvP battles against a friend's team or a mirror match
-  battles_pvp_backline.rbx            the Backline in a PvP battle: swaps, what they cost, the host's option
-  battles_pvp_mirror.rbx              the mirror match's report
-  battles_pvp_lobby.rbx               the PvP battle screen outside a world
-  battles_duel.rbx                    duels: PvP battles between two players of a world
-  battles_team.rbx                    team duels: two parties against each other
-  world_overview.rbx                  the World overview: every player online by place, and their invites
-  ui_party_box.rbx                    the party box at the top right of the map
-  ui_notices.rbx                      the notification box at the top left and its key
+GameScript/Multiplayer/Scripts/       Ruby, the other scripts, see the table below
 GameScript/Tests/                     Ruby, tests of the scripts outside the game, run.rb runs them all
 MGQParadox.Multiplayer/               C# NativeAOT project -> Multiplayer.dll, and the package
 MGQParadox.Multiplayer.Tests/         xUnit tests of the DLL, 32-bit like it
 package/Multiplayer/                  static files shipped as-is
 Shipping/                             publish output, git-ignored
 docs/DEVELOPER.md                     this file
+docs/GUIDE.md                         the player guide, which README.md links to
+docs/images/                          the guide's and README's screenshots
 .github/workflows/release.yml         tests, builds and attaches the zip on release
 .github/workflows/scripts.yml         tests the scripts on every push
 .github/ISSUE_TEMPLATE/bug_report.yml the form players report bugs with
@@ -81,14 +39,14 @@ docs/DEVELOPER.md                     this file
 | `core_async.rbx` | `MGQ_MpAsync` | The world running on behind every other screen while a world is open, and the live map behind menus (see [The world never pauses](#the-world-never-pauses-core_asyncrbx)). Reaches `MGQ_MpWorld` at run time. |
 | `overworld_sync.rbx` | `MGQ_MpOverworldSync` | The open world's messages: what each game tells the others, the other games by seat, and the registry the scripts after it join for their messages (see [On the map](#on-the-map)). Every script sends through `tell`, shows its notices through `notice`, and reads the player's id and seat from `Me.id` and `Me.seat`. Reaches `MGQ_MpWorld` at run time. |
 | `ui_actions.rbx` | `MGQ_MpActions` | The action wheel on the map and what the scripts after it offer between players (see [Actions](#actions-ui_actionsrbx)). It names no later script: each fills its direction of the wheel (`wheel_slot`: the overview the middle, the party up and down, duels the right, the chat the left), says the line above the player's own head (`own_line_from` for a line of its own, `own_doing_from` for what the line joins), tells that its screen lies over the map (`cover`), and registers its `Offers` (`offer`): `peer_option` and `own_options` for the World overview's menus, `call_of` for its rows and `notice_of` for the notification box. `MGQ_MpCoop::Offers` and `MGQ_MpBattlesDuel::Offers` are the two. Registers with `MGQ_MpOverworldSync`. |
-| `ui_emotes.rbx` | `MGQ_MpEmotes`, `Sprite_MpEmoteWheel` | The emote wheel on the map (see [Emotes](#emotes-ui_emotesrbx)). Registers with `MGQ_MpOverworldSync` and `MGQ_MpActions`. |
 | `ui_chat.rbx` | `MGQ_MpChat` | Chat: the chat box, the bubble above the sender and the chat log, on the map and in battles (see [Chat](#chat-ui_chatrbx)). Registers with `MGQ_MpOverworldSync`. |
+| `ui_emotes.rbx` | `MGQ_MpEmotes`, `Sprite_MpEmoteWheel` | The emote wheel on the map (see [Emotes](#emotes-ui_emotesrbx)). Registers with `MGQ_MpOverworldSync` and `MGQ_MpActions`. |
 | `overworld.rbx` | `MGQ_MpOverworld` | What the player sees of the other players of the open world: the ghosts, their name labels, the own ping and the status line (see [On the map](#on-the-map)). Reads `MGQ_MpOverworldSync`. |
 | `coop.rbx` | `MGQ_MpCoop` | Parties: `Party` (who is in the player's party, invites, the leader), and the gate that hands the party's messages to the scripts registered for them (see [Parties](#parties-cooprbx)). Registers with `MGQ_MpOverworldSync`. |
 | `coop_squad.rbx` | `MGQ_MpCoopSquad` | A party's squads: each player's share of the Frontline and the Backline, the followers shown, the formation screens' cut and the Party Followers option (see [Squads](#squads-coop_squadrbx)). Registers with `MGQ_MpOverworldSync`. |
 | `coop_events.rbx` | `MGQ_MpCoopEvents` | The events of a party: sorts every event page by what it does, and opens chests for the whole party (see [Events in a party](#events-in-a-party-coop_eventsrbx)). Hands gathering messages to `MGQ_MpCoopGather`; reaches `MGQ_MpOverworldSync`, `MGQ_MpCoopCastle` and `MGQ_MpCoopStory` at run time. |
-| `coop_scene.rbx` | `MGQ_MpCoopScene` | The leader's story pictures, screen effects and hidden character, shown to the members on the leader's map and put back once the story ended (see The story's scene under [Events in a party](#events-in-a-party-coop_eventsrbx)). Reaches `MGQ_MpCoopEvents`, `MGQ_MpCoopGather` and `MGQ_MpBattlesSync::Wire` at run time. |
 | `coop_gather.rbx` | `MGQ_MpCoopGather` | Gathering the party for the leader's story scenes, holding the scene until it came, and a member's teleport to the leader (see Story scenes together under [Events in a party](#events-in-a-party-coop_eventsrbx)). Reaches `MGQ_MpOverworldSync`, `MGQ_MpActions` and `MGQ_MpCoopStory` at run time. |
+| `coop_scene.rbx` | `MGQ_MpCoopScene` | The leader's story pictures, screen effects and hidden character, shown to the members on the leader's map and put back once the story ended (see The story's scene under [Events in a party](#events-in-a-party-coop_eventsrbx)). Reaches `MGQ_MpCoopEvents`, `MGQ_MpCoopGather` and `MGQ_MpBattlesSync::Wire` at run time. |
 | `coop_npcs.rbx` | `MGQ_MpCoopNpcs` | The NPCs a party shares on a map: the Map Owner moves them and the other members follow (see [NPCs in a party](#npcs-in-a-party-coop_npcsrbx)). Reaches `MGQ_MpOverworldSync` and `MGQ_MpActions` at run time. |
 | `coop_story.rbx` | `MGQ_MpCoopStory` | The story a party plays: members borrow the leader's switches, variables and self switches and get their own back afterwards (see [The party's story](#the-partys-story-coop_storyrbx)). Reaches `MGQ_MpOverworldSync` and `MGQ_MpActions` at run time. |
 | `coop_castle.rbx` | `MGQ_MpCoopCastle` | The Pocket Castle in a party: which pages are its residents, each player's own talks (see The Pocket Castle under [Events in a party](#events-in-a-party-coop_eventsrbx)). Reads `MGQ_MpCoopStory`. |
@@ -98,8 +56,9 @@ docs/DEVELOPER.md                     this file
 | `world_text.rbx` | `Scene_MpText`, `Window_MpTextEdit`, `Window_MpTextInput` | The text screen: names and passwords, typed on the keyboard or picked from the game's letters with a gamepad. |
 | `world_screen.rbx` | `Scene_MpWorlds`, `Window_MpWorldList`, `Window_MpWorldDetail`, `Window_MpChoice`, `Window_MpWorldForm` | The world screen and its windows: the list, a world's details, the forms that create a world, change one or add a hidden one to the list, and the choices in the middle. |
 | `world_save_export.rbx` | `MGQ_MpSaveExport`, `Window_MpSaveExportNotice` | Copies a world's latest save, an autosave included, with its thumbnail into the first free slot of the player's own `Save` folder; the player's own system save stays as it is. The world screen offers it on a world played on this PC, the game's menu while a world is open (*Copy to my game*, after the game's own extra commands, greyed out until the player saved in the world, with a notice of the slot). It writes through `Files.unmapped`, since `Save/` stands for the world's folder while one is open. |
-| `battles.rbx` | `MGQ_MpBattles` | The rules every multiplayer battle shares, PvP and co-op alike: no ero offers, no Give Up, and in PvP no swapping the Backline in; `begin(kind)` sets them and keeps the game's own settings, `finish` puts those back. `MGQ_MpBattles::Mode` is what a kind of live battle does differently from a duel between two players (whose party the host's is, who else plays, what happens before the start, at each command phase, when a player or the host leaves); `MGQ_MpBattlesCoop::Mode` and `MGQ_MpBattlesTeam::Mode` register theirs with `MGQ_MpBattles.mode`. |
+| `battles.rbx` | `MGQ_MpBattles` | The rules every multiplayer battle shares, PvP and co-op alike: no ero offers, no Give Up, and no swapping the Backline in where the battle has none (a PvP battle or duel whose host chose *Frontline Only*, a team duel); `begin(kind)` sets them and keeps the game's own settings, `finish` puts those back. `MGQ_MpBattles::Mode` is what a kind of live battle does differently from a duel between two players (whose party the host's is, who else plays, what happens before the start, at each command phase, when a player or the host leaves); `MGQ_MpBattlesCoop::Mode` and `MGQ_MpBattlesTeam::Mode` register theirs with `MGQ_MpBattles.mode`. |
 | `battles_coop.rbx` | `MGQ_MpBattlesCoop`, `Game_MpAlly` | Co-op battles: who joins, the party every game shares, and the allies other players command (see [Co-op battles](#co-op-battles-battles_cooprbx)). Drives `MGQ_MpBattlesSync`. |
+| `battles_coop_level_sync.rbx` | `MGQ_MpCoopLevelSync` | Level Sync in a co-op battle: a character above the battle's level, the highest of the party leader's characters in it, fights with the stats of that level, and its equipment loses half as much as the level takes; its stats come back once the battle ends. Every game syncs to the level the host sent. |
 | `battles_sync.rbx` | `MGQ_MpBattlesSync` | Live battles, for any mode: `join` makes the next battle live, `battle_started` marks it running, `finish` ends it and closes the link, `record_to_file` has the next battle record itself. Knows nothing of PvP battles, and names neither co-op battles nor team duels: it asks the running battle's mode (`MGQ_MpBattlesSync.mode`, see `battles.rbx`). |
 | `battles_sync_wire.rbx` | `MGQ_MpBattlesSync::Wire` | How a live battle's messages are written and read: plain values as tab-separated tokens. |
 | `battles_sync_recorder.rbx` | `MGQ_MpBattlesSync::Recorder` | The host's side of the stream: what its battle shows, as events for the guests or a mirror match's file. |
@@ -170,7 +129,7 @@ dotnet run --project MGQParadox.Multiplayer.Tests
 
 The tests run 32-bit like the game and need the x86 .NET 10 runtime (`C:\Program Files (x86)\dotnet`); with `DOTNET_ROOT` pointing at the x64 install they need `DOTNET_ROOT_X86` pointing at the x86 one.
 
-`GameScript/Tests` covers the scripts outside the game, with stand-ins for the parts of RGSS and the game each script touches: how `Multiplayer.rb` loads the others (`loader_test.rb`), the shared hooks (`hooks_test.rb`), the open world with the wheel, chat, parties and the party's message gate (`overworld_test.rb`), the party's events and story (`coop_events_test.rb`), the party's squads (`coop_squad_test.rb`), duels (`duel_test.rb`), team duels in battle (`team_test.rb`), the World overview (`world_overview_test.rb`), worlds without a password and featured worlds (`world_open_test.rb`), copying a world's save into the player's own game (`save_export_test.rb`), where a new player starts (`start_choice_test.rb`), co-op battles (`battles_coop_test.rb`), the shared battle rules (`battles_test.rb`), the PvP balance (`balance_pvp_test.rb`), the Backline in PvP battles (`pvp_backline_test.rb`), the keys the player binds (`hotkeys_test.rb`), the notification box (`notices_test.rb`), the emote wheel (`emotes_test.rb`), party members in events' way (`coop_npcs_test.rb`), the leader's story scene for the members (`coop_scene_test.rb`) and the world running behind menus (`async_test.rb`). Each file runs in a Ruby process of its own, since each brings its own stand-ins; `support.rb` gives them `check` and `load_script`, `world_support.rb` the open world's stand-ins that the overworld, duel and overview tests share, and `battle_support.rb` the live battle's that the co-op and team duel tests share. With Ruby 3.3 or later:
+`GameScript/Tests` covers the scripts outside the game, one `*_test.rb` file per area (the loader, the shared hooks, the open world, parties, battles, worlds, the keys and the boxes on screen), with stand-ins for the parts of RGSS and the game each script touches. Each file runs in a Ruby process of its own, since each brings its own stand-ins; `support.rb` gives them `check` and `load_script`, `world_support.rb` the open world's stand-ins that the overworld, duel and overview tests share, and `battle_support.rb` the live battle's that the co-op and team duel tests share. With Ruby 3.3 or later:
 
 ```powershell
 ruby GameScript/Tests/run.rb        # -v shows every check
