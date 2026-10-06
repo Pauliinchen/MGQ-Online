@@ -15,6 +15,7 @@ Play Monster Girl Quest! Paradox RPG together with friends over the internet, wi
 - **Parties:** up to four players play the leader's story together and share one team's worth of companions.
 - **Co-op battles:** party members on the same map join each other's battles, each commanding their own characters.
 - **Duels and PvP battles:** your team against a friend's, live, inside a world or outside one.
+- **Trading:** swap items, equipment, stones and gold with a player on your map; the relay sees to it that a disconnect never loses or copies anything.
 
 Worlds, parties and co-op battles are a **prototype**: expect bugs, and please [report them](https://github.com/Pauliinchen/MGQ-Online/issues/new?template=bug_report.yml).
 
@@ -56,7 +57,7 @@ For a PvP battle without a world, press **F11** on the map and host; your friend
 
 | Hotkey | What it does |
 |---|---|
-| **B** | Action wheel: invite, duel, chat, teleport to the leader |
+| **B** | Action wheel: invite, duel, trade, chat, teleport to the leader |
 | **T** | Chat (**/p** at the start sends to your party only) |
 | **E** | Emote wheel |
 | **F11** | World overview, or the PvP battle screen outside a world |
