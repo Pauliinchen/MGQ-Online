@@ -2,7 +2,8 @@
 //  WorldDirectory.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-06: Fetched the relay's mod catalog with the list, and installed a world's mods into the Patch folder
+//      Paulinchen  2026-10-06: Told the game script a link to a zip of a release apart, and installed it from GitHub
+//                            - Fetched the relay's mod catalog with the list, and installed a world's mods into the Patch folder
 //                            - Made, changed and listed worlds with the creator's hashes of required mods outside the catalog and its mod settings
 //      Paulinchen  2026-10-04: Told the game script the mods, the game data and the rule for it with the list only, no longer with an opened lock
 //                            - Replaced a world's game data for its creator
@@ -271,7 +272,7 @@ internal sealed class WorldDirectory
 /// <summary>
 /// Describes the relay's mod catalog for the game script, as fetched with the list.
 /// </summary>
-/// <returns><c>state</c> ("loading", "ready", "failed" or "idle") and <c>error</c>, then one line per mod and version: <c>mod</c>, key, name, kind ("link" or "upload"), current version, then each current file's name or path and hash; <c>old</c>, key, version, then each of that version's files and hashes; each separated by tabs.</returns>
+/// <returns><c>state</c> ("loading", "ready", "failed" or "idle") and <c>error</c>, then one line per mod and version: <c>mod</c>, key, name, kind ("link" for a script, "zip" for a zip of a release, "upload"), current version, then each current file's name or path and hash; <c>old</c>, key, version, then each of that version's files and hashes; each separated by tabs.</returns>
 public string DescribeMods()
 {
     lock (_gate)
@@ -281,7 +282,7 @@ public string DescribeMods()
 
         foreach (var mod in _catalog ?? [])
         {
-            text.Append("mod\t").Append(mod.Key).Append('\t').Append(OnOneField(mod.Name)).Append('\t').Append(mod.Kind).Append('\t').Append(OnOneField(mod.Version));
+            text.Append("mod\t").Append(mod.Key).Append('\t').Append(OnOneField(mod.Name)).Append('\t').Append(mod.ScriptKind).Append('\t').Append(OnOneField(mod.Version));
             AppendFiles(text, mod.Files);
 
             foreach (var version in mod.Versions)

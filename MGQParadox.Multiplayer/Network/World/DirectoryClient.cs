@@ -2,7 +2,8 @@
 //  DirectoryClient.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-06: Read the mod catalog and an uploaded mod's zip
+//      Paulinchen  2026-10-06: Read whether a link mod of the catalog is a zip
+//                            - Read the mod catalog and an uploaded mod's zip
 //                            - Made, changed and read worlds with the creator's hashes of required mods outside the catalog and its mod settings
 //      Paulinchen  2026-10-04: Read a world's lock without the mods, the game data and the rule for it, which the list tells
 //                            - Replaced a world's game data
@@ -341,7 +342,7 @@ public IReadOnlyList<CatalogMod> Mods()
             }
         }
 
-        mods.Add(new CatalogMod(Text(mod, "key"), Text(mod, "name"), Text(mod, "kind"), Text(mod, "version"), FilesOf(mod), versions, Text(mod, "fileUrl")));
+        mods.Add(new CatalogMod(Text(mod, "key"), Text(mod, "name"), Text(mod, "kind"), Text(mod, "version"), FilesOf(mod), versions, Text(mod, "fileUrl"), Flag(mod, "archive")));
     }
 
     return mods;

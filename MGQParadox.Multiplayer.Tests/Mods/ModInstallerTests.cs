@@ -2,7 +2,8 @@
 //  ModInstallerTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-06: Created
+//      Paulinchen  2026-10-06: Covered links to a zip of a release and zips written with backslashes
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -102,6 +103,23 @@ public sealed class ModInstallerTests
         Assert.Throws<InvalidDataException>(() => ModInstaller.Install([(mod, string.Empty)], _ => Zip(("Luka_Replacer.rb", Script)), game.Path));
         Assert.Throws<InvalidDataException>(() => ModInstaller.Install([(mod, string.Empty)], _ => Zip(("Luka_Replacer.rb", Script), ("Luka_Replacer/Heroes/a.luka", [2])), game.Path));
         Assert.False(File.Exists(Path.Combine(game.Path, "Patch", "Luka_Replacer.rb")));
+    }
+
+    /// <summary>
+    /// Asserts that a link to a zip of a release installs like an upload, even from a zip written with backslashes.
+    /// </summary>
+    [Fact]
+    public void Install_LinkToZip_WritesEachFileInsidePatch()
+    {
+        using var game = new TempFolder();
+        var pack = Encoding.UTF8.GetBytes("LUKA pack");
+        var files = new Dictionary<string, string> { ["Luka_Replacer.rb"] = ModHash.Of("x.rb", Script), ["Luka_Replacer/Heroes/cecil.luka"] = ModHash.Of("cecil.luka", pack) };
+        var mod = new CatalogMod("lukareplacer", "Luka Replacer", "link", "1.0", files, [], "https://github.com/Pauliinchen/MGQ-Paradox-Mod-Collection/releases/download/v1.0/Luka_Replacer.zip", Archive: true);
+
+        ModInstaller.Install([(mod, string.Empty)], _ => Zip(("Luka_Replacer.rb", Script), ("Luka_Replacer\\Heroes\\cecil.luka", pack)), game.Path);
+
+        Assert.Equal(Script, File.ReadAllBytes(Path.Combine(game.Path, "Patch", "Luka_Replacer.rb")));
+        Assert.Equal(pack, File.ReadAllBytes(Path.Combine(game.Path, "Patch", "Luka_Replacer", "Heroes", "cecil.luka")));
     }
 
     /// <summary>

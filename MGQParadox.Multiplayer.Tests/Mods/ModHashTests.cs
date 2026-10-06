@@ -2,7 +2,8 @@
 //  ModHashTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-06: Created
+//      Paulinchen  2026-10-06: Covered zips of a release
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -42,7 +43,7 @@ public sealed class ModHashTests
     }
 
     /// <summary>
-    /// Asserts that only release files of the admins' GitHub are downloaded, sent on only to GitHub's file hosts.
+    /// Asserts that only release files of the admins' GitHub, scripts and zips, are downloaded, sent on only to GitHub's file hosts.
     /// </summary>
     [Fact]
     public void ReleaseDownload_TakesOnlyTheAdminsReleaseFiles()
@@ -52,6 +53,7 @@ public sealed class ModHashTests
         Assert.False(ReleaseDownload.IsReleaseFile("https://github.com/Someone/Repo/releases/download/v1/Mod.rb"));
         Assert.False(ReleaseDownload.IsReleaseFile("http://github.com/Pauliinchen/Repo/releases/download/v1/Mod.rb"));
         Assert.False(ReleaseDownload.IsReleaseFile("https://github.com/Pauliinchen/Repo/releases/download/v1/Mod.exe"));
+        Assert.True(ReleaseDownload.IsReleaseFile("https://github.com/Pauliinchen/MGQ-Paradox-Mod-Collection/releases/download/v1.4.0/Luka_Replacer.zip"));
 
         Assert.True(ReleaseDownload.IsFileHost(new Uri("https://release-assets.githubusercontent.com/x")));
         Assert.True(ReleaseDownload.IsFileHost(new Uri("https://objects.githubusercontent.com/x")));

@@ -2,7 +2,8 @@
 #  world_mods_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-06: Created
+#      Paulinchen  2026-10-06: Covered a link to a zip of a release
+#                            - Created
 #
 #----------------------------------------------------------------
 
@@ -185,7 +186,7 @@ Dir.mktmpdir do |folder|
 
   Dir.chdir(folder) do
     catalog("mod\tlevelcap\tLevel Cap\tlink\t1.4.0\tLevel_Cap.rb\tbb", "old\tlevelcap\t1.4.0\tLevel_Cap.rb\tbb", "old\tlevelcap\t1.3.5\tLevel_Cap.rb\taa",
-            "mod\tpack\tPack\tupload\t2\tPack/a.luka\tp1")
+            "mod\tpack\tPack\tupload\t2\tPack/a.luka\tp1", "mod\thero\tHero\tzip\t1.1\tHero.rb\th2\tHero/a.luka\th3", "old\thero\t1.0\tHero.rb\th1\tHero/a.luka\th3")
 
     # Link mods.
     listed.mods = "!Level Cap"
@@ -211,6 +212,16 @@ Dir.mktmpdir do |folder|
     $file_hashes = {}
     mods.forget_installed
     check("one without its files is not installed", mods.differing(listed).first.text, "Pack: not installed, the world's 2")
+
+    # Links to a zip of a release.
+    listed.mods = "!Hero"
+    $file_hashes = { "Patch/Hero.rb" => "h2", "Patch/Hero/a.luka" => "h3" }
+    mods.forget_installed
+    check("a zip of a release whose every file matches lets the game in", mods.differing(listed), [])
+    $file_hashes = { "Patch/Hero.rb" => "h1", "Patch/Hero/a.luka" => "h3" }
+    mods.forget_installed
+    row = mods.differing(listed).first
+    check("an older zip of a release is named by its version and checked file by file", [row.text, row.downloadable?, row.target], ["Hero: yours 1.0, the world's 1.1", true, nil])
 
     # Mods outside the catalog.
     listed.mods = "!Other Mod; !Missing Mod"

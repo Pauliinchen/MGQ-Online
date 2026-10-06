@@ -2,7 +2,8 @@
 //  WorldModsTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-06: Created
+//      Paulinchen  2026-10-06: Covered telling a link to a zip of a release apart
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -46,6 +47,23 @@ public sealed class WorldModsTests
         Assert.Equal(
             ["mod\tlevelcap\tLevel Cap\tlink\t1.4.0\tLevel_Cap.rb\tbb", "old\tlevelcap\t1.4.0\tLevel_Cap.rb\tbb", "old\tlevelcap\t1.3.5\tLevel_Cap.rb\taa"],
             mods.Team.Split('\n', System.StringSplitOptions.RemoveEmptyEntries));
+    }
+
+    /// <summary>
+    /// Asserts that the game script is told a link to a zip of a release apart from a link to a script.
+    /// </summary>
+    [Fact]
+    public void Refresh_TellsAZipOfAReleaseApart()
+    {
+        using var relay = new TestRelay();
+        var entry = LinkEntry("1.4.0", "bb");
+        entry["archive"] = true;
+        relay.CatalogMods.Add(entry);
+        var player = NewDirectory(relay, CreatorKey, "Player");
+
+        ListState(player);
+
+        Assert.StartsWith("mod\tlevelcap\tLevel Cap\tzip\t1.4.0\t", Message.Decode(player.DescribeMods()).Team);
     }
 
     /// <summary>

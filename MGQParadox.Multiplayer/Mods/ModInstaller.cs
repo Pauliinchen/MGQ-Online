@@ -2,7 +2,8 @@
 //  ModInstaller.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-06: Created
+//      Paulinchen  2026-10-06: Installed a link to a zip of a release like an upload, and read zips written with backslashes
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -24,8 +25,8 @@ internal static class ModInstaller
     /// <summary>
     /// Installs mods.
     /// </summary>
-    /// <param name="mods">Each mod, and for a link mod where its script goes, relative to the game's folder; an upload's files go to their paths inside Patch.</param>
-    /// <param name="download">Fetches a mod: a link mod's script, an upload's zip.</param>
+    /// <param name="mods">Each mod, and for a script where it goes, relative to the game's folder; a zip's files go to their paths inside Patch.</param>
+    /// <param name="download">Fetches a mod: a script, or a zip of a release or an upload.</param>
     /// <param name="gameFolder">The game's folder, which holds Patch.</param>
     /// <returns>The files written, relative to the game's folder.</returns>
     /// <exception cref="InvalidDataException">A file differs from the catalog, is missing, or would land outside Patch.</exception>
@@ -39,7 +40,7 @@ internal static class ModInstaller
         {
             foreach (var (mod, target) in mods)
             {
-                var files = mod.IsUpload ? FilesOfUpload(mod, download(mod), patch) : [FileOfLink(mod, download(mod), target, gameFolder, patch)];
+                var files = mod.IsZip ? FilesOfZip(mod, download(mod), patch) : [FileOfLink(mod, download(mod), target, gameFolder, patch)];
 
                 foreach (var (bytes, path) in files)
                 {
@@ -93,20 +94,28 @@ internal static class ModInstaller
     }
 
     /// <summary>
-    /// Checks an uploaded mod's files, each of which the zip must hold with the catalog's hash.
+    /// Checks the files of a mod that comes as a zip, each of which the zip must hold with the catalog's hash.
     /// </summary>
     /// <param name="mod">The mod.</param>
     /// <param name="zip">The zip as downloaded.</param>
     /// <param name="patch">The full path of the Patch folder.</param>
     /// <returns>Each file and its full target path.</returns>
-    private static List<(byte[] Bytes, string Path)> FilesOfUpload(CatalogMod mod, byte[] zip, string patch)
+    private static List<(byte[] Bytes, string Path)> FilesOfZip(CatalogMod mod, byte[] zip, string patch)
     {
         using var archive = new ZipArchive(new MemoryStream(zip), ZipArchiveMode.Read);
+        var entries = new Dictionary<string, ZipArchiveEntry>(StringComparer.Ordinal);
+
+        // Some zip tools of Windows write backslashes, which the relay reads as slashes too.
+        foreach (var entry in archive.Entries)
+        {
+            entries.TryAdd(entry.FullName.Replace('\\', '/'), entry);
+        }
+
         var files = new List<(byte[] Bytes, string Path)>();
 
         foreach (var (name, hash) in mod.Files)
         {
-            var entry = archive.GetEntry(name) ?? throw new InvalidDataException($"{mod.Name} lacks {name}.");
+            var entry = entries.GetValueOrDefault(name) ?? throw new InvalidDataException($"{mod.Name} lacks {name}.");
             using var stream = entry.Open();
             using var copy = new MemoryStream();
             stream.CopyTo(copy);

@@ -2,7 +2,8 @@
 #  world_mods.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-06: Created
+#      Paulinchen  2026-10-06: Checked a link to a zip of a release file by file, like an upload
+#                            - Created
 #
 #----------------------------------------------------------------
 
@@ -40,13 +41,16 @@ module MGQ_MpWorldMods
   # The setting in Player.ini that names the world to enter again once the game started anew.
   REJOIN_SETTING = "rejoin"
 
+  # The kinds of mods that come as a zip whose files go to their paths inside Patch.
+  ZIP_KINDS = %w(upload zip)
+
   # A mod of the catalog.
   #
   # @!attribute key [String] Its key, as MGQ_MpWorld.mod_key makes it.
   # @!attribute name [String] Its name.
-  # @!attribute kind [String] "link" for a script the relay follows on GitHub, "upload" for a mod of several files.
+  # @!attribute kind [String] "link" for a script the relay follows on GitHub, "zip" for a zip of a release there, "upload" for a mod of several files an admin uploaded.
   # @!attribute version [String] Its current version.
-  # @!attribute files [Hash] Its current files' hashes, a link mod's by the script's name, an upload's by each path inside Patch.
+  # @!attribute files [Hash] Its current files' hashes, a script's by its name, a zip's or an upload's by each path inside Patch.
   # @!attribute versions [Array<Array>] Each version the relay saw and its files' hashes, newest first.
   Mod = Struct.new(:key, :name, :kind, :version, :files, :versions)
 
@@ -179,7 +183,7 @@ module MGQ_MpWorldMods
   # @param creator [Hash] The creator's hashes of mods outside the catalog, by key.
   # @return [Row, nil] The difference, nil when this game's copy matches.
   def self.row_for(name, mod, creator)
-    return upload_row(name, mod) if mod && mod.kind == "upload"
+    return zip_row(name, mod) if mod && ZIP_KINDS.include?(mod.kind)
     return link_row(name, mod) if mod
     return Row.new(name, "not installed", nil, nil, nil) unless MGQ_MpWorld.installed_mod?(name)
 
@@ -206,12 +210,12 @@ module MGQ_MpWorldMods
     Row.new(name, version_of(mod, file => hash) || "unknown", mod.version, mod, path)
   end
 
-  # Checks an uploaded mod's files.
+  # Checks the files of a mod that comes as a zip.
   #
   # @param name [String] The mod's name, as the world writes it.
   # @param mod [Mod] The catalog's mod.
   # @return [Row, nil] The difference, nil when every file is the current one.
-  def self.upload_row(name, mod)
+  def self.zip_row(name, mod)
     hashes = {}
     mod.files.each_key { |path| hashes[path] = hash_of("#{MGQ_MpWorld::PATCH_DIR}/#{path}") }
     return nil if hashes == mod.files

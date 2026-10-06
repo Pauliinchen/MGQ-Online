@@ -2,7 +2,8 @@
 //  ReleaseDownload.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-06: Created
+//      Paulinchen  2026-10-06: Took a zip of a release too, up to the size an upload may have
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -21,9 +22,14 @@ namespace MGQParadox.Multiplayer.Mods;
 internal static partial class ReleaseDownload
 {
     /// <summary>
-    /// The largest release file taken, as on the relay.
+    /// The largest script taken, as on the relay.
     /// </summary>
-    public const int MaxBytes = 2 * 1024 * 1024;
+    public const int MaxScriptBytes = 2 * 1024 * 1024;
+
+    /// <summary>
+    /// The largest zip taken, as on the relay.
+    /// </summary>
+    public const int MaxZipBytes = 16 * 1024 * 1024;
 
     /// <summary>
     /// The hosts GitHub serves release files from.
@@ -36,7 +42,7 @@ internal static partial class ReleaseDownload
     private static readonly HttpClient Http = new(new HttpClientHandler { AllowAutoRedirect = false }) { Timeout = TimeSpan.FromMinutes(2) };
 
     /// <summary>
-    /// Tells whether an address is a release file of the admins' GitHub.
+    /// Tells whether an address is a release file of the admins' GitHub, a script or a zip.
     /// </summary>
     /// <param name="url">The address.</param>
     /// <returns>Whether it is.</returns>
@@ -62,6 +68,7 @@ internal static partial class ReleaseDownload
             throw new InvalidOperationException("The mod's address is no release file on the admins' GitHub.");
         }
 
+        var maxBytes = url.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) ? MaxZipBytes : MaxScriptBytes;
         var address = new Uri(url);
 
         for (var hop = 0; hop <= 3; hop++)
@@ -86,21 +93,21 @@ internal static partial class ReleaseDownload
                 throw new InvalidOperationException($"GitHub answered {(int)response.StatusCode}.");
             }
 
-            if (response.Content.Headers.ContentLength > MaxBytes)
+            if (response.Content.Headers.ContentLength > maxBytes)
             {
-                throw new InvalidOperationException("The mod is larger than a script may be.");
+                throw new InvalidOperationException("The mod is larger than the relay takes.");
             }
 
             var bytes = response.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult();
-            return bytes.Length is > 0 and <= MaxBytes ? bytes : throw new InvalidOperationException("The mod is empty or larger than a script may be.");
+            return bytes.Length > 0 && bytes.Length <= maxBytes ? bytes : throw new InvalidOperationException("The mod is empty or larger than the relay takes.");
         }
 
         throw new InvalidOperationException("The mod was sent on too often.");
     }
 
     /// <summary>
-    /// A release file of the admins' GitHub.
+    /// A release file of the admins' GitHub, a script or a zip.
     /// </summary>
-    [GeneratedRegex(@"^https://github\.com/Pauliinchen/[A-Za-z0-9._-]+/releases/download/[^/?#]+/[^/?#]+\.rb$")]
+    [GeneratedRegex(@"^https://github\.com/Pauliinchen/[A-Za-z0-9._-]+/releases/download/[^/?#]+/[^/?#]+\.(?:rb|zip)$", RegexOptions.IgnoreCase)]
     private static partial Regex ReleaseFile();
 }
