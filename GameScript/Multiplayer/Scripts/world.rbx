@@ -2,7 +2,8 @@
 #  world.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-06: Added the form of the player's name
+#      Paulinchen  2026-10-06: Left the world once the player backed out of its new game, as when a question before New Game is cancelled
+#                            - Added the form of the player's name
 #                            - Left Allow data mismatch unticked in a new world's form
 #                            - Kept a mod added by name in the mod picker when unlisted, removed only on its own
 #                            - Listed the installed mods for the mod picker, which names a world's mods in the forms, and took up to 300 characters of them
@@ -258,15 +259,36 @@ module MGQ_MpWorld
   #
   # @param scene [Scene_Title] The title screen.
   def self.on_title_update(scene)
+    return watch_new_game(scene) if @pending == :starting
     return unless @pending == :new_game
 
     @pending = nil
     log("new game in world #{@world.id}") if @world
     scene.command_new_game
+    # New Game may ask something first and leave the title screen only after the answer.
+    @pending = :starting unless MGQ_MpGame.call(scene, :scene_changing?)
   rescue => e
     @pending = nil
     leave
     log("could not start a new game in a world: #{e.class}: #{e.message}")
+  end
+
+  # Leaves the world once the player backed out of its new game: the title's commands take the
+  # input again. Called by the title screen every frame while New Game asks something first.
+  #
+  # @param scene [Scene_Title] The title screen.
+  def self.watch_new_game(scene)
+    commands = MGQ_MpGame.get(scene, :command_window)
+    return unless commands && !commands.disposed? && commands.active
+
+    @pending = nil
+    log("backed out of the new game in world #{@world.id}") if @world
+    leave
+  end
+
+  # Notes that the world's new game started. Called as the game sets a new game up.
+  def self.new_game_started
+    @pending = nil if @pending == :starting
   end
 
   # Adds the world screen's command to the title screen, below Continue: greyed out, with
@@ -1562,6 +1584,12 @@ begin
     # The first title screen lists its commands before the update check answers, so the world
     # screen's command is greyed out only by listing them again.
     @command_window.refresh if MGQ_MpWorld::UpdateNotice.refresh
+  end
+
+  # A world's new game that asked something first has started once the game sets it up.
+  MGQ_MpHooks.around(DataManager.singleton_class, :setup_new_game) do |_manager, _args, original|
+    MGQ_MpWorld.new_game_started
+    original.call
   end
 rescue => e
   MGQ_MpWorld.log("title hooks FAILED: #{e.class}: #{e.message}")

@@ -2,6 +2,7 @@
 #  core_game_access.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-06: Named the title screen's commands, which show whether the player backed out of a world's new game
 #      Paulinchen  2026-10-04: Named a character's levels, which the level sync reads
 #                            - Counted a battle's acting battler as set only once needed, which ends the false log line about it
 #                            - Named how deep an interpreter runs
@@ -66,6 +67,9 @@ module MGQ_MpGame
     :info_viewport => :@info_viewport,
     :battle_actor_status_windows => :@battle_actor_status_windows,
     :battle_actor_status_windows_show => :@battle_actor_status_windows_show,
+
+    # Scene_Title.
+    :command_window => :@command_window,
 
     # $game_troop, $game_party and $game_temp.
     :enemies => :@enemies,

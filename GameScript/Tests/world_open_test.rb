@@ -2,7 +2,8 @@
 #  world_open_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-06: Loaded world_mods.rbx, which the world screen calls
+#      Paulinchen  2026-10-06: Checked that backing out of a world's new game, which asks something first, leaves the world
+#                            - Loaded world_mods.rbx, which the world screen calls
 #      Paulinchen  2026-10-04: Checked that an outdated game enters no world and is told so in a message box until the player closes it
 #                            - Followed the scripts to their new names, without mp_
 #                            - Read the details from their panels
@@ -251,3 +252,35 @@ notice.hide
 check("and shows again on the next one", notice.refresh, true)
 notice.hide
 $outdated = false
+
+# A world's new game that asks something first, such as a hero, and the player backing out of it.
+class TitleCommands
+  attr_reader :active
+  def disposed?; false; end
+  def activate; @active = true; end
+  def deactivate; @active = false; end
+end
+class Scene_Title
+  def command_new_game; @asked = true; @command_window.deactivate; end
+  def asked?; @asked; end
+  def scene_changing?; false; end
+end
+asking = Scene_Title.new
+asking.instance_variable_set(:@command_window, TitleCommands.new)
+MGQ_MpWorld.instance_variable_set(:@world, MGQ_MpWorld::World.new("abcdef012345", {}))
+MGQ_MpWorld.instance_variable_set(:@pending, :new_game)
+MGQ_MpWorld.on_title_update(asking)
+MGQ_MpWorld.on_title_update(asking)
+check("a new game that asks first keeps the world open while the question stands", [asking.asked?, MGQ_MpWorld.open?], [true, true])
+asking.instance_variable_get(:@command_window).activate
+MGQ_MpWorld.on_title_update(asking)
+check("backing out to the title's commands leaves the world", MGQ_MpWorld.open?, false)
+MGQ_MpWorld.instance_variable_set(:@world, MGQ_MpWorld::World.new("abcdef012345", {}))
+MGQ_MpWorld.instance_variable_set(:@pending, :new_game)
+asking.instance_variable_get(:@command_window).deactivate
+MGQ_MpWorld.on_title_update(asking)
+MGQ_MpWorld.new_game_started
+asking.instance_variable_get(:@command_window).activate
+MGQ_MpWorld.on_title_update(asking)
+check("a new game that started keeps the world", MGQ_MpWorld.open?, true)
+MGQ_MpWorld.instance_variable_set(:@world, nil)
