@@ -70,7 +70,7 @@ Confirm on a world and pick *Enter the world*.
 | Shared save | Every new player starts from one of your saves, with your party, items, story and Library, instead of the opening. Choose the save after ticking it. |
 | Player's choice | Each new player chooses when they first enter: the beginning, one of their own saves, or yours if *Shared save* is ticked. Their own save is copied into the world; the original stays untouched. |
 | Mods | The mods of the world, picked from a list of yours. See [Mods of a world](#mods-of-a-world). |
-| Allow data mismatch | Ticked at first: a game whose data differs from yours is warned and may enter anyway. Unticked, it can't enter. See [Game data](#game-data). |
+| Allow data mismatch | Unticked at first: a game whose data differs from yours can't enter. Ticked, it is warned and may enter anyway. See [Game data](#game-data). |
 | Description | What the world is about, up to 1000 characters. |
 
 The creator can change Max Players, Mods and the Description later with *Edit the world*; everything else is fixed once the world exists.
@@ -113,7 +113,7 @@ The details show each mod in a box of its own, as many as fit the row, and count
 ### Game data
 
 - **What is compared:** which actors, classes, skills, items, weapons, armors, enemies, states, troops, common events and maps exist. A mod that adds or removes any is noticed; a mod that only changes numbers isn't. A translated game still matches the untranslated one.
-- **A game that differs:** the world's details say whether your game matches the creator's and, if not, in what. Entering then asks first, or is refused when the creator unticked *Allow data mismatch*. Worlds made before this check say nothing and take every game.
+- **A game that differs:** the world's details say whether your game matches the creator's and, if not, in what. Entering then asks first, or is refused when the creator left *Allow data mismatch* unticked. Worlds made before this check say nothing and take every game.
 - **Updating your world's data:** when a mod you play with gets an update, your game no longer matches your own world. Move onto *Your game* in the world's details and confirm, or press *Update current data scan* in *Edit the world*: the world takes your game's data as it is now, and everyone else has to match it again. Only the creator can do this.
 
 ## On the map
@@ -294,7 +294,7 @@ Your games meet at the mod's **relay**, a small server that passes their data on
 | "This join code comes from another version of the mod" | One of you has an older version; both need the same one. |
 | "Your friend's game uses a relay this version does not know" | Your friend has a newer version of the mod; update yours. |
 | "\<world> is not in the list right now" | The world list hasn't loaded yet or couldn't be fetched; the top of the world screen says which. Try again once it has loaded. |
-| "\<world> only takes matching game data" | Its creator unticked *Allow data mismatch*, and your mods differ from theirs. The world's details name what differs and the mods it needs. |
+| "\<world> only takes matching game data" | Its creator left *Allow data mismatch* unticked, and your mods differ from theirs. The world's details name what differs and the mods it needs. |
 | "\<world> needs ...: no such script in your Patch folder" | The world requires a mod you don't have. Install it, then enter again. |
 | "This is a world code" | You pasted a world's code into a PvP join. Enter worlds through *Multiplayer* on the title screen. |
 

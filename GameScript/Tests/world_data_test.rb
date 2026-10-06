@@ -2,7 +2,8 @@
 #  world_data_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-06: Checked that an added mod stays when unlisted and goes with Delete
+#      Paulinchen  2026-10-06: Expected Allow data mismatch unticked in a new world's form
+#                            - Checked that an added mod stays when unlisted and goes with Delete
 #                            - Checked typing a mod's name in place in the picker
 #                            - Checked that cancel closes the mod picker without drawing it again
 #                            - Checked the mod picker: the installed mods, Enter and the two buttons of each, listing every mod at once, mods added by name and the 300 characters
@@ -229,7 +230,7 @@ modded = MGQ_MpWorld::GameData.fingerprint
 # The form.
 form = MGQ_MpWorld::Form.create
 form[:name] = "Modded Run"
-check("a new world needs no description, no mods, and lets differing games in", [form.problem, form[:description], form[:mods], form[:mismatch]], [nil, "", "", true])
+check("a new world needs no description, no mods, and keeps differing games out until told otherwise", [form.problem, form[:description], form[:mods], form[:mismatch]], [nil, "", "", false])
 description = form.fields.find { |field| field.key == :description }
 check("the description is a box of several lines in a panel of its own", [description.kind, description.lines, description.group, description.max_chars], [:area, 4, "Description", MGQ_MpWorld::MAX_DESCRIPTION_CHARS])
 check("the mods and the mismatch checkbox share the Game data panel", [:mods, :mismatch].map { |key| field = form.fields.find { |candidate| candidate.key == key }; [field.kind, field.label, field.group] }, [[:mods, "Mods", "Game data"], [:check, "Allow data mismatch", "Game data"]])

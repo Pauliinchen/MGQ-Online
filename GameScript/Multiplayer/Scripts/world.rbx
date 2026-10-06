@@ -2,7 +2,8 @@
 #  world.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-06: Kept a mod added by name in the mod picker when unlisted, removed only on its own
+#      Paulinchen  2026-10-06: Left Allow data mismatch unticked in a new world's form
+#                            - Kept a mod added by name in the mod picker when unlisted, removed only on its own
 #                            - Listed the installed mods for the mod picker, which names a world's mods in the forms, and took up to 300 characters of them
 #                            - Sent a world's mod settings on their own, and no longer with an edit
 #                            - Read and sent a world's mod hashes and mod settings from its creator
@@ -1265,7 +1266,7 @@ module MGQ_MpWorld
         Field.new(:description, :area, "What the world is about", 7, "Shown in the world's details. Optional.", :max_chars => MAX_DESCRIPTION_CHARS, :optional => true, :lines => DESCRIPTION_LINES, :group => "Description"),
         Field.new(:confirm, :button, "Create the world", 8, "Creates the world. You enter it from the list."),
       ]
-      new("Create a new world", fields, :name => "", :password => "", :seats => DEFAULT_SEATS.to_s, :hidden => false, :from_save => false, :save => nil, :choose => false, :description => "", :mods => "", :mismatch => true)
+      new("Create a new world", fields, :name => "", :password => "", :seats => DEFAULT_SEATS.to_s, :hidden => false, :from_save => false, :save => nil, :choose => false, :description => "", :mods => "", :mismatch => false)
     end
 
     # The form that changes a world, for its creator or an admin: what may change after it was made.
