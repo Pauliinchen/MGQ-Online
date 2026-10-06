@@ -7,6 +7,9 @@ obj/
 # publish output, the release layout ready to copy into a game folder
 Shipping/
 
+# Mod Config Remake, which the build takes from the Mod Collection
+package/Patch/
+
 # runtime files, in case the game is ever pointed at this folder while testing
 *.log
 

@@ -18,6 +18,12 @@
 
     <PackageDir>$([MSBuild]::NormalizeDirectory($(MSBuildProjectDirectory), .., Shipping))</PackageDir>
     <ZipFile>$(MSBuildProjectDirectory)\bin\$(Configuration)\MGQ-Online-$(Version).zip</ZipFile>
+
+    <!-- Mod Config Remake ships with the mod, for the settings a world sets. The release build
+         downloads it from the Mod Collection's latest release into RemakeDir; a build on this PC
+         copies it there from the Mod Collection beside this repository. -->
+    <RemakeDir>$([MSBuild]::NormalizeDirectory($(MSBuildProjectDirectory), .., package, Patch))</RemakeDir>
+    <RemakeSource>$([MSBuild]::NormalizePath($(MSBuildProjectDirectory), .., .., MGQ-Paradox-Mod-Collection, 0_ModConfigRemake, 0_ModConfigRemake.rb))</RemakeSource>
   </PropertyGroup>
 
   <ItemGroup>
@@ -40,17 +46,23 @@
     <ShippedFile Include="@(ModFile->'Patch\Multiplayer\%(Filename)%(Extension)')" />
     <ShippedFile Include="@(ScriptFile->'Patch\Multiplayer\Scripts\%(Filename)%(Extension)')" />
     <ShippedFile Include="@(PatchFile->'Patch\%(Filename)%(Extension)')" />
+    <ShippedFile Include="Patch\0_ModConfigRemake.rb" />
 
     <None Include="@(ModFile)" Link="Shipped\Patch\Multiplayer\%(Filename)%(Extension)" />
     <None Include="@(ScriptFile)" Link="Shipped\Patch\Multiplayer\Scripts\%(Filename)%(Extension)" />
     <None Include="@(PatchFile)" Link="Shipped\Patch\%(Filename)%(Extension)" />
   </ItemGroup>
 
+  <Target Name="CopyRemake" BeforeTargets="AssemblePackage" Condition="Exists('$(RemakeSource)')">
+    <Copy SourceFiles="$(RemakeSource)" DestinationFolder="$(RemakeDir)" />
+  </Target>
+
   <Target Name="AssemblePackage" AfterTargets="Publish">
+    <Error Condition="!Exists('$(RemakeDir)0_ModConfigRemake.rb')" Text="Mod Config Remake is missing: put 0_ModConfigRemake.rb into $(RemakeDir), or check out the Mod Collection beside this repository." />
     <RemoveDir Directories="$(PackageDir)" />
     <Copy SourceFiles="$(PublishDir)$(AssemblyName).dll;@(ModFile)" DestinationFolder="$(PackageDir)Patch\Multiplayer" />
     <Copy SourceFiles="@(ScriptFile)" DestinationFolder="$(PackageDir)Patch\Multiplayer\Scripts" />
-    <Copy SourceFiles="@(PatchFile)" DestinationFolder="$(PackageDir)Patch" />
+    <Copy SourceFiles="@(PatchFile);$(RemakeDir)0_ModConfigRemake.rb" DestinationFolder="$(PackageDir)Patch" />
     <WriteLinesToFile File="$(PackageDir)Patch\Multiplayer\Manifest.txt" Lines="@(ShippedFile)" Overwrite="true" />
     <Message Importance="high" Text="$(MSBuildProjectName) -> $(PackageDir)" />
   </Target>

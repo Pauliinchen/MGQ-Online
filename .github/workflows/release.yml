@@ -54,6 +54,13 @@ jobs:
       - name: Test the scripts
         run: ruby GameScript/Tests/run.rb
 
+      # Mod Config Remake ships with the mod, from the Mod Collection's latest release.
+      - name: Fetch Mod Config Remake
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download --repo Pauliinchen/MGQ-Paradox-Mod-Collection --pattern 0_ModConfigRemake.rb --dir package/Patch --clobber
+
       # The runner's Visual Studio brings the C++ linker NativeAOT needs for the DLL.
       - name: Publish (Release publishes also zip the package)
         shell: pwsh

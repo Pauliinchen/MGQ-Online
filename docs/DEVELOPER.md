@@ -140,10 +140,12 @@ You need the .NET 10 SDK and the Visual Studio workload **Desktop development wi
 Publishing the DLL project assembles the complete release layout in `Shipping/` at the repository root. Copy its content into a game folder to install or update the mod there:
 
 ```
-Patch/                      Multiplayer.rb
+Patch/                      Multiplayer.rb  0_ModConfigRemake.rb
 Patch/Multiplayer/          Multiplayer.dll  Manifest.txt  README.txt  Update.bat  Update.ps1
 Patch/Multiplayer/Scripts/  *.rbx
 ```
+
+- **Mod Config Remake ships with the mod.** A publish on this PC copies it from the Mod Collection checked out beside this repository (`..\MGQ-Paradox-Mod-Collection`) into `package/Patch/` (ignored by Git); the release workflow downloads it from the Mod Collection's latest release instead. Without it the publish stops with an error.
 
 - **Publish, not build:** only a publish runs NativeAOT, so a plain build gives no usable DLL.
 
