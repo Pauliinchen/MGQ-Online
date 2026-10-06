@@ -2,6 +2,7 @@
 #  world_open_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-06: Loaded world_mods.rbx, which the world screen calls
 #      Paulinchen  2026-10-04: Checked that an outdated game enters no world and is told so in a message box until the player closes it
 #                            - Followed the scripts to their new names, without mp_
 #                            - Read the details from their panels
@@ -80,6 +81,7 @@ load_script "world_save_distribution"
 load_script "ui"
 load_script "ui_text_box"
 load_script "world"
+load_script "world_mods"
 load_script "world_text"
 load_script "world_screen"
 

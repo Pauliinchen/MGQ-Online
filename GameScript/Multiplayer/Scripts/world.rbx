@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-06: Read and sent a world's mod hashes and mod settings from its creator
+#                            - Found a required mod's script in the Patch folder, and read the folder anew when asked
 #      Paulinchen  2026-10-04: Showed the update notice in a message box that stays until the player closes it
 #                            - Greyed out the title command once the update check answers, and kept an outdated game out of worlds
 #                            - Kept the 50 hidden worlds added last, as many as the relay lists, so ids of deleted worlds do not crowd new ones out
@@ -742,6 +743,24 @@ module MGQ_MpWorld
   rescue => e
     log("reading the Patch folder failed: #{e.class}: #{e.message}")
     true
+  end
+
+  # Finds a mod's script in the Patch folder, as installed_mod? does.
+  #
+  # @param name [String] The mod's name, with or without ".rb".
+  # @return [String, nil] Its path relative to the game's folder, nil when it is not installed or the folder cannot be read.
+  def self.installed_path(name)
+    @installed_paths ||= Dir.glob("#{PATCH_DIR}/**/*.rb").each_with_object({}) { |path, paths| paths[mod_key(File.basename(path))] ||= path }
+    @installed_paths[mod_key(name)]
+  rescue => e
+    log("reading the Patch folder failed: #{e.class}: #{e.message}")
+    nil
+  end
+
+  # Forgets which scripts the Patch folder holds, so the next look reads it anew.
+  def self.forget_installed
+    @installed = nil
+    @installed_paths = nil
   end
 
   # Lists the required mods of a world that this game lacks.

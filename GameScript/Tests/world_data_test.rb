@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-06: Expected the longer calls of mp_dir_create and mp_dir_edit
+#                            - Loaded world_mods.rbx, which the world screen calls
 #      Paulinchen  2026-10-04: Checked picking the worlds or the commands as a whole before moving into them, and a long word broken inside it
 #                            - Checked that a long word is broken without String#chars, which Ruby 1.9 cannot count
 #                            - Created
@@ -74,6 +75,7 @@ load_script "world_save_distribution"
 load_script "ui"
 load_script "ui_text_box"
 load_script "world"
+load_script "world_mods"
 load_script "world_text"
 load_script "world_screen"
 

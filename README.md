@@ -74,10 +74,18 @@ The worlds box lists every public world, the hidden worlds you joined and the hi
 A world's *Mods* are names its creator typed; how a name is written decides what it does:
 
 - `Name` only tells the players. It keeps nobody out.
-- `!Name` is **required**: a game needs a script `Name.rb` in its `Patch` folder to enter (case, spaces, underscores and hyphens don't matter). It shows first, in green when you have it and in red when you don't.
+- `!Name` is **required**: a game needs a script `Name.rb` in its `Patch` folder to enter (case, spaces, underscores and hyphens don't matter), and in the same version as the world. It shows first: in green when you have the world's version, in gold when yours is another, and in red when you don't have it.
 - `?Name` is **essential**, for mods that are data files without a script. It keeps nobody out by itself, and shows in green while your game data matches the world's and in gold otherwise.
 
 The details show each mod in a box of its own, as many as fit the row, and count the rest in a last box.
+
+**Same version for everyone.** The relay keeps a list of mods it knows: their current version and what their files look like, never the files themselves. Only the relay's admins add mods to it, by a link to the mod's releases on GitHub, which the relay checks every half hour, or by uploading a mod of several files.
+
+- When you enter a world, your copy of each required mod is compared with the relay's. If one is missing or another version, you can't enter, and the world screen says which: *Download and restart* fetches the world's version, checks every file against the relay's list, puts it in your `Patch` folder, starts the game again and enters the world. *See the mods* lists your version and the world's.
+- A required mod the relay doesn't know is compared with the copy of the world's creator, whose game sends what its files look like when the world is created or edited. If yours differs, get the creator's version from the mod's author; nothing downloads it for you.
+- A new version only reaches players the next time they enter.
+
+**The creator's settings.** When the creator creates or edits a world, the settings of its required mods in the Mod Config Remake menu go with it. While you play in the world, those settings hold and the menu shows them greyed out as set by the world; key bindings and other personal options stay yours. Your own saves keep your own settings.
 
 ### Game data
 

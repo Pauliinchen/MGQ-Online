@@ -2,6 +2,10 @@
 #  world_screen.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-06: Checked a world's required mods against the relay's catalog and the creator's copies on entry, and offered to download the world's versions and restart
+#                            - Entered the world again on its own after a restart for its mods
+#                            - Sent the creator's hashes of required mods outside the catalog and their settings with a world made or changed
+#                            - Showed the installed and the world's version of each required mod in the details
 #      Paulinchen  2026-10-04: Picked the worlds or the commands as a whole first, then moved into the picked window with confirm and back out with cancel
 #                            - Created the list box before a cancelled name prompt closes the screen, which disposes it
 #                            - Kept a world this PC has saves of from being entered while the list, which tells its mods and game data, has not arrived
@@ -74,6 +78,7 @@ class Scene_MpWorlds < Scene_MenuBase
     "find" => "Looking for the world . . .",
     "data" => "Updating the game data . . .",
     "start" => "Fetching the starting save . . .",
+    "mods" => "Downloading the mods . . .",
   }
 
   # Creates the windows, fetches the list, and takes what the text or save screen handed back.
@@ -103,6 +108,7 @@ class Scene_MpWorlds < Scene_MenuBase
     @members_window.set_handler(:cancel, method(:back_to_list))
     @confirm_window = Window_MpChoice.new
     @confirm_window.set_handler(:yes, method(:on_confirmed))
+    @confirm_window.set_handler(:show_mods, method(:on_show_mods))
     @confirm_window.set_handler(:cancel, method(:back_to_list))
     @start_window = Window_MpChoice.new
     [:from_creator, :from_beginning, :from_own].each { |symbol| @start_window.set_handler(symbol, method(:"on_#{symbol}")) }
@@ -110,6 +116,7 @@ class Scene_MpWorlds < Scene_MenuBase
     @forms ||= { :new_world => MGQ_MpWorld::Form.create, :join_hidden => MGQ_MpWorld::Form.join }
     @message ||= HINT
     @me = MGQ_MpWorld::Directory.my_id
+    MGQ_MpWorldMods.forget_installed
     MGQ_MpWorld::Directory.refresh
     @refresh_frames = 0
     @look_frames = LOOK_FRAMES
@@ -213,6 +220,23 @@ class Scene_MpWorlds < Scene_MenuBase
     entries = MGQ_MpWorld.entries(listed, state == "ready")
     @list_window.entries = entries
     show_info
+    rejoin(entries, state)
+  end
+
+  # Enters the world the game started again for, once the list holds it, as if the player chose it.
+  #
+  # @param entries [Array<MGQ_MpWorld::Entry>] The list.
+  # @param state [String] How the list stands.
+  def rejoin(entries, state)
+    id = MGQ_MpWorldMods.rejoining
+    return unless id && state != "loading" && !@busy && !form
+
+    MGQ_MpWorldMods.rejoined
+    @entry = entries.find { |entry| entry.id == id }
+    return say("The world you restarted for is not in the list right now.") unless @entry && state == "ready"
+
+    @data_accepted = false
+    on_enter
   end
 
   # Shows at the right what the list points at: a world's details, or a form.
@@ -270,13 +294,9 @@ class Scene_MpWorlds < Scene_MenuBase
   # whose data differs from the creator's is warned or kept out first.
   def on_enter
     listed = @entry.listed
-    missing = listed ? MGQ_MpWorld.missing_mods(listed.mods) : []
+    return if listed && !mods_allow?(listed)
 
-    unless missing.empty?
-      refuse("#{@entry.name} needs #{missing.join(', ')}: no such script in your Patch folder.")
-      return back_to_list
-    end
-
+    MGQ_MpWorldMods.use(listed && listed.settings)
     return if listed && !data_allows?(@entry.name, listed.data, listed.strict, listed.mods, listed.creator_id == @me) { on_enter }
 
     if @entry.listed && @entry.listed.start == "pending"
@@ -301,6 +321,41 @@ class Scene_MpWorlds < Scene_MenuBase
     else
       ask_text(:password, "The password of #{@entry.name}", "", :masked => true, :max_chars => MGQ_MpWorld::MAX_PASSWORD_CHARS)
     end
+  end
+
+  # Decides whether the player's game may enter a world as far as its required mods go: every one
+  # installed in the world's version. Offers to download what the relay's catalog has, and says
+  # which the player gets from the mod's author.
+  #
+  # @param listed [MGQ_MpWorld::Directory::ListedWorld] The world.
+  # @return [Boolean] Whether entering goes on now.
+  def mods_allow?(listed)
+    rows = MGQ_MpWorldMods.differing(listed)
+    return true if rows.empty?
+
+    @mod_rows = rows
+    unavailable = rows.reject { |row| row.downloadable? }
+
+    if unavailable.size == rows.size && rows.all? { |row| row.yours == "not installed" }
+      refuse("#{@entry.name} needs #{rows.map(&:name).join(', ')}: no such script in your Patch folder.")
+      back_to_list
+    elsif unavailable.empty?
+      @confirming = :mods
+      say(MGQ_MpWorldMods.summary(@entry.name, rows))
+      @confirm_window.start([["Download and restart", :yes], ["See the mods", :show_mods], ["Back", :cancel]])
+    else
+      @confirming = :mods
+      Sound.play_buzzer
+      say(MGQ_MpWorldMods.summary(@entry.name, rows))
+      @confirm_window.start([["See the mods", :show_mods], ["Back", :cancel]])
+    end
+    false
+  end
+
+  # Shows each required mod with the player's and the world's version.
+  def on_show_mods
+    @confirm_window.finish
+    open_box(:mods)
   end
 
   # Decides whether the player's game may enter a world now: one whose data differs from the
@@ -360,7 +415,7 @@ class Scene_MpWorlds < Scene_MenuBase
     @list_window.deactivate
     lines = case kind
             when :players then player_lines(listed.members)
-            when :mods then mod_lines(listed.mods, @entry.differing)
+            when :mods then mod_lines(listed.mods, @entry.differing, MGQ_MpWorldMods.differing(listed))
             else description_lines(listed.description.to_s)
             end
     @box = Sprite_MpListBox::View.of(@entry.name, { :players => "Players", :mods => "Mods" }[kind] || "Description", lines)
@@ -385,18 +440,24 @@ class Scene_MpWorlds < Scene_MenuBase
   end
 
   # Writes the list box's lines for the mods a world needs: the required ones first, green while
-  # this game has their script and red while it lacks it, then the essential ones, green while
-  # this game's data matches the world's and gold otherwise.
+  # this game has their script in the world's version, gold in another version and red while it
+  # lacks it, then the essential ones, green while this game's data matches the world's and gold
+  # otherwise.
   #
   # @param text [String, nil] The mods as the world's creator wrote them.
   # @param differing [Array<String>, nil] What of this game's data differs from the world's, see MGQ_MpWorld::Entry#differing.
+  # @param rows [Array<MGQ_MpWorldMods::Row>, nil] The required mods this game has in another version or lacks, see MGQ_MpWorldMods.differing.
   # @return [Array<Array>] The lines, see Sprite_MpListBox::View.
-  def mod_lines(text, differing = nil)
+  def mod_lines(text, differing = nil, rows = nil)
     mods = MGQ_MpWorld.mods_of(text)
     required = MGQ_MpWorld.required_mods(text)
     essential = MGQ_MpWorld.essential_mods(text)
     lines = mods.map do |mod|
-      if required.include?(mod)
+      row = rows && rows.find { |candidate| candidate.name == mod }
+
+      if row && row.yours != "not installed"
+        [:item, mod, :gold, "required, #{row.text.sub(/\A[^:]*: /, '')}"]
+      elsif required.include?(mod)
         MGQ_MpWorld.installed_mod?(mod) ? [:item, mod, :good, "required, installed"] : [:item, mod, :bad, "required, missing"]
       elsif essential.include?(mod)
         if differing.nil?
@@ -591,6 +652,8 @@ class Scene_MpWorlds < Scene_MenuBase
       @confirm_window.finish
       @data_accepted = true
       @after_accept.call
+    when :mods
+      start_action("mods") { MGQ_MpWorldMods.install(@mod_rows) }
     end
   end
 
@@ -827,10 +890,13 @@ class Scene_MpWorlds < Scene_MenuBase
     @resume_form = true
   end
 
-  # Changes the chosen world as the form says.
+  # Changes the chosen world as the form says; its creator's game sends the hashes of its required
+  # mods outside the catalog and their settings too.
   def edit_world
     values = form
-    start_action("edit") { MGQ_MpWorld::Directory.edit(@entry.id, values[:seats].to_i, values[:description], values[:mods]) }
+    own = @entry.listed.creator_id == @me
+    creator_mods = own ? [MGQ_MpWorldMods.creator_hashes(values[:mods]), MGQ_MpWorldMods.settings_of(values[:mods])] : nil
+    start_action("edit") { MGQ_MpWorld::Directory.edit(@entry.id, values[:seats].to_i, values[:description], values[:mods], creator_mods) }
   end
 
   # Takes the save picked on the save screen: as the new world's starting save, or as where the
@@ -863,7 +929,8 @@ class Scene_MpWorlds < Scene_MenuBase
     files = values[:from_save] ? MGQ_MpSaveDistribution.files_of(values[:save]) : []
     @creating = values[:name]
     @start_files = files
-    about = { :description => values[:description], :mods => values[:mods], :data => MGQ_MpWorld::GameData.fingerprint, :strict => !values[:mismatch] }
+    about = { :description => values[:description], :mods => values[:mods], :data => MGQ_MpWorld::GameData.fingerprint, :strict => !values[:mismatch],
+              :mod_hashes => MGQ_MpWorldMods.creator_hashes(values[:mods]), :settings => MGQ_MpWorldMods.settings_of(values[:mods]) }
     start_action("create") { MGQ_MpWorld::Directory.create(values[:name], values[:password], values[:seats].to_i, values[:hidden], values[:choose], MGQ_MpSaveDistribution.text_of(files), about) }
   end
 
@@ -925,6 +992,8 @@ class Scene_MpWorlds < Scene_MenuBase
       return if enter_opened(action)
     when "start"
       return start_world(@fetched, true)
+    when "mods"
+      return restart_for_mods
     when "delete"
       say("#{@entry.name} was deleted for everyone.")
     when "ban"
@@ -942,6 +1011,16 @@ class Scene_MpWorlds < Scene_MenuBase
     end
 
     MGQ_MpWorld::Directory.refresh
+    back_to_list
+  end
+
+  # Starts the game again once the world's mods are installed, so they load, and enters the world
+  # once it is back; says what to do when the game cannot start itself again.
+  def restart_for_mods
+    MGQ_MpWorldMods.forget_installed
+    return SceneManager.exit if MGQ_MpWorldMods.restart(@entry.id)
+
+    say("The mods were installed. Close the game and start it again to enter #{@entry.name}.")
     back_to_list
   end
 
@@ -1674,19 +1753,23 @@ class Window_MpWorldDetail < Window_Base
            elsif differing
              "differing games are warned"
            end
-    Panel.new("Game data", note, [[Cell.new("Mods", mods.empty? ? "No mod named" : mods.join(", "), :normal, mods.empty? ? nil : :mods, mods.empty? ? nil : mods, mod_colors(listed.mods, differing))], [game]])
+    colors = mod_colors(listed.mods, differing, MGQ_MpWorldMods.differing(listed))
+    Panel.new("Game data", note, [[Cell.new("Mods", mods.empty? ? "No mod named" : mods.join(", "), :normal, mods.empty? ? nil : :mods, mods.empty? ? nil : mods, colors)], [game]])
   end
 
   # Tells the colors of a world's marked mods: a required one in the color of what is fine while
-  # this game has its script and of what is wrong while it lacks it, an essential one in the color
-  # of what is fine while this game's data matches the world's, and in gold otherwise.
+  # this game has its script in the world's version, in gold in another version, and in the color
+  # of what is wrong while it lacks it; an essential one in the color of what is fine while this
+  # game's data matches the world's, and in gold otherwise.
   #
   # @param text [String, nil] The mods as the world's creator wrote them.
   # @param differing [Array<String>, nil] What of this game's data differs from the world's.
+  # @param rows [Array<MGQ_MpWorldMods::Row>, nil] The required mods this game has in another version or lacks.
   # @return [Hash] The color by the mod's name.
-  def mod_colors(text, differing = nil)
+  def mod_colors(text, differing = nil, rows = nil)
     colors = {}
     MGQ_MpWorld.required_mods(text).each { |mod| colors[mod] = MGQ_MpWorld.installed_mod?(mod) ? :good : :bad }
+    (rows || []).each { |row| colors[row.name] = :gold if row.yours != "not installed" }
     MGQ_MpWorld.essential_mods(text).each { |mod| colors[mod] = differing && differing.empty? ? :good : :gold }
     colors
   end

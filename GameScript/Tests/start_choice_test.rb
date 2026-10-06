@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-06: Expected the longer calls of mp_dir_create and mp_dir_edit
+#                            - Loaded world_mods.rbx, which the world screen calls
 #      Paulinchen  2026-10-04: Followed the scripts to their new names, without mp_
 #                            - Expected the button below the new rows of the form, and the longer call of mp_dir_create
 #                            - Expected the shorter texts of the details' Start row
@@ -74,6 +75,7 @@ load_script "world_save_distribution"
 load_script "ui"
 load_script "ui_text_box"
 load_script "world"
+load_script "world_mods"
 load_script "world_text"
 load_script "world_screen"
 

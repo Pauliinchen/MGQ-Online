@@ -2,6 +2,7 @@
 #  Multiplayer.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-06: Loaded world_mods.rbx after world.rbx
 #      Paulinchen  2026-10-04: Loaded battles_coop_level_sync.rbx after battles_coop.rbx
 #                            - Loaded ui_party_box.rbx after world_overview.rbx
 #                            - Loaded ui_emotes.rbx after ui_chat.rbx
@@ -69,7 +70,7 @@ module MGQ_Multiplayer
   SCRIPTS = %w[
     core_log core_hooks core_game_access core_hotkeys ui ui_text_box core_actors core_async overworld_sync ui_actions ui_chat ui_emotes overworld
     coop coop_squad coop_events coop_gather coop_scene coop_npcs coop_story coop_castle
-    world world_save_distribution world_text world_screen world_save_export
+    world world_mods world_save_distribution world_text world_screen world_save_export
     battles battles_coop battles_coop_level_sync
     battles_sync battles_sync_wire battles_sync_recorder battles_sync_playback battles_sync_live
     battles_balance_pvp battles_pvp battles_pvp_backline battles_pvp_mirror battles_pvp_lobby battles_duel battles_team

@@ -2,6 +2,7 @@
 #  save_export_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-06: Loaded world_mods.rbx, which the world screen calls
 #      Paulinchen  2026-10-04: Followed the scripts to their new names, without mp_
 #      Paulinchen  2026-10-03: Loaded the scripts split off the ones under test, and ui.rbx
 #      Paulinchen  2026-10-02: Created
@@ -57,6 +58,7 @@ load_script "world_save_distribution"
 load_script "ui"
 load_script "ui_text_box"
 load_script "world"
+load_script "world_mods"
 load_script "world_screen"
 load_script "world_save_export"
 
