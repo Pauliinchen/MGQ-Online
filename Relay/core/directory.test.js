@@ -2,7 +2,8 @@
 //  directory.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-06: Covered a world's mod hashes and mod settings, which only its creator sets
+//      Paulinchen  2026-10-06: Covered admins replacing a world's mod settings
+//                            - Covered a world's mod hashes and mod settings, which only its creator sets
 //      Paulinchen  2026-10-04: Expected the lock without the mods, the game data and the rule for it
 //                            - Covered a creator replacing a world's game data, which an admin may not
 //                            - Covered hidden worlds listed for a player who names their ids
@@ -192,18 +193,19 @@ test("a world keeps its creator's hashes of mods outside the catalog and its mod
   assert.deepEqual([world.modHashes, world.settings], [hashes, "mod_level_cap=i:1;mod_x=b:true"]);
 });
 
-test("only the creator replaces a world's mod hashes and mod settings", async () => {
+test("only the creator replaces a world's mod hashes, and the creator or an admin its mod settings", async () => {
   const { directory } = newDirectory(DIRECTORY_LIMITS, [await playerIdOf(ADMIN)]);
   await directory.create(await newWorld());
 
   assert.equal((await directory.edit(WORLD, ADMIN, { modHashes: "" })).status, 403);
-  assert.equal((await directory.edit(WORLD, ADMIN, { settings: "a=i:1" })).status, 403);
   assert.equal((await directory.edit(WORLD, CREATOR, { modHashes: "x".repeat(10) })).status, 400);
   assert.equal((await directory.edit(WORLD, CREATOR, { modHashes: `Mod=${"c3".repeat(32)}`, settings: "a=i:2" })).status, 200);
 
   const world = (await directory.list()).body.worlds[0];
   assert.deepEqual([world.modHashes, world.settings], [`Mod=${"c3".repeat(32)}`, "a=i:2"]);
   assert.equal((await directory.edit(WORLD, ADMIN, { seats: 6 })).status, 200);
+  assert.equal((await directory.edit(WORLD, ADMIN, { settings: "a=i:3" })).status, 200);
+  assert.equal((await directory.list()).body.worlds[0].settings, "a=i:3");
 });
 
 test("a hidden world is listed for whoever names its id, among other ids or none that exist", async () => {

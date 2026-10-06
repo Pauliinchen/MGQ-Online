@@ -2,7 +2,8 @@
 //  Exports.Directory.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-06: Took the creator's hashes of required mods outside the catalog and its mod settings in mp_dir_create and mp_dir_edit
+//      Paulinchen  2026-10-06: Added mp_dir_set_settings, which replaces a world's mod settings, and left them out of mp_dir_edit
+//                            - Took the creator's hashes of required mods outside the catalog and its mod settings in mp_dir_create and mp_dir_edit
 //      Paulinchen  2026-10-04: Added mp_dir_set_data, which replaces a world's game data
 //                            - Added mp_dir_watch and mp_dir_find, which list and look up hidden worlds by their ids
 //                            - Added mp_dir_edit, which changes a world's seats, description and mods
@@ -181,27 +182,46 @@ internal static unsafe partial class Exports
 
     /// <summary>
     /// Changes a world's seats, description and mods, which only its creator or one of the relay's
-    /// admins may, and for its creator its mod hashes and mod settings. Returns at once.
+    /// admins may, and for its creator its mod hashes. Returns at once.
     /// </summary>
     /// <param name="id">The world, UTF-8 and null-terminated.</param>
     /// <param name="seats">How many games it seats at once, 2 to 32.</param>
     /// <param name="description">What the world is about, UTF-8 and null-terminated; empty for nothing.</param>
     /// <param name="mods">The mods it needs, UTF-8 and null-terminated; empty for none.</param>
     /// <param name="modHashes">The creator's hashes of required mods outside the mod catalog, UTF-8 and null-terminated.</param>
-    /// <param name="settings">The creator's settings of the required mods, UTF-8 and null-terminated.</param>
-    /// <param name="own">1 when the player is the world's creator, whose mod hashes and mod settings go along; 0 for an admin, who leaves them.</param>
+    /// <param name="own">1 when the player is the world's creator, whose mod hashes go along; 0 for an admin, who leaves them.</param>
     /// <returns>1 when started, 0 while another action runs, for seats out of range or when it failed.</returns>
     [UnmanagedCallersOnly(EntryPoint = "mp_dir_edit", CallConvs = [typeof(CallConvStdcall)])]
-    public static int DirectoryEdit(byte* id, int seats, byte* description, byte* mods, byte* modHashes, byte* settings, int own)
+    public static int DirectoryEdit(byte* id, int seats, byte* description, byte* mods, byte* modHashes, int own)
     {
         try
         {
-            (string, string)? creatorMods = own == 1 ? (Text(modHashes), Text(settings)) : null;
-            return seats is >= WorldCode.MinSeats and <= WorldCode.MaxSeats && WorldDirectory.Current.Edit(Text(id), seats, Text(description), Text(mods), creatorMods) ? 1 : 0;
+            var hashes = own == 1 ? Text(modHashes) : null;
+            return seats is >= WorldCode.MinSeats and <= WorldCode.MaxSeats && WorldDirectory.Current.Edit(Text(id), seats, Text(description), Text(mods), hashes) ? 1 : 0;
         }
         catch (Exception ex)
         {
             Log.Write($"mp_dir_edit failed: {ex}");
+            return 0;
+        }
+    }
+
+    /// <summary>
+    /// Replaces a world's mod settings, which only its creator or one of the relay's admins may. Returns at once.
+    /// </summary>
+    /// <param name="id">The world, UTF-8 and null-terminated.</param>
+    /// <param name="settings">The settings, "key=type:value" pairs separated by semicolons, UTF-8 and null-terminated; empty for none.</param>
+    /// <returns>1 when started, 0 while another action runs or when it failed.</returns>
+    [UnmanagedCallersOnly(EntryPoint = "mp_dir_set_settings", CallConvs = [typeof(CallConvStdcall)])]
+    public static int DirectorySetSettings(byte* id, byte* settings)
+    {
+        try
+        {
+            return WorldDirectory.Current.SetSettings(Text(id), Text(settings)) ? 1 : 0;
+        }
+        catch (Exception ex)
+        {
+            Log.Write($"mp_dir_set_settings failed: {ex}");
             return 0;
         }
     }

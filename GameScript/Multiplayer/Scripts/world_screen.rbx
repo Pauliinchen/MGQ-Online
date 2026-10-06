@@ -2,7 +2,8 @@
 #  world_screen.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-06: Checked a world's required mods against the relay's catalog and the creator's copies on entry, and offered to download the world's versions and restart
+#      Paulinchen  2026-10-06: Left the mod settings out of creating and changing a world, which its creator now sets in Mod Config, and noted whose world is entered
+#                            - Checked a world's required mods against the relay's catalog and the creator's copies on entry, and offered to download the world's versions and restart
 #                            - Entered the world again on its own after a restart for its mods
 #                            - Sent the creator's hashes of required mods outside the catalog and their settings with a world made or changed
 #                            - Showed the installed and the world's version of each required mod in the details
@@ -297,6 +298,7 @@ class Scene_MpWorlds < Scene_MenuBase
     return if listed && !mods_allow?(listed)
 
     MGQ_MpWorldMods.use(listed && listed.settings)
+    MGQ_MpWorldMods.own_world(listed && listed.creator_id == @me ? [@entry.id, listed.mods] : nil)
     return if listed && !data_allows?(@entry.name, listed.data, listed.strict, listed.mods, listed.creator_id == @me) { on_enter }
 
     if @entry.listed && @entry.listed.start == "pending"
@@ -891,12 +893,11 @@ class Scene_MpWorlds < Scene_MenuBase
   end
 
   # Changes the chosen world as the form says; its creator's game sends the hashes of its required
-  # mods outside the catalog and their settings too.
+  # mods outside the catalog too.
   def edit_world
     values = form
-    own = @entry.listed.creator_id == @me
-    creator_mods = own ? [MGQ_MpWorldMods.creator_hashes(values[:mods]), MGQ_MpWorldMods.settings_of(values[:mods])] : nil
-    start_action("edit") { MGQ_MpWorld::Directory.edit(@entry.id, values[:seats].to_i, values[:description], values[:mods], creator_mods) }
+    hashes = @entry.listed.creator_id == @me ? MGQ_MpWorldMods.creator_hashes(values[:mods]) : nil
+    start_action("edit") { MGQ_MpWorld::Directory.edit(@entry.id, values[:seats].to_i, values[:description], values[:mods], hashes) }
   end
 
   # Takes the save picked on the save screen: as the new world's starting save, or as where the
@@ -930,7 +931,7 @@ class Scene_MpWorlds < Scene_MenuBase
     @creating = values[:name]
     @start_files = files
     about = { :description => values[:description], :mods => values[:mods], :data => MGQ_MpWorld::GameData.fingerprint, :strict => !values[:mismatch],
-              :mod_hashes => MGQ_MpWorldMods.creator_hashes(values[:mods]), :settings => MGQ_MpWorldMods.settings_of(values[:mods]) }
+              :mod_hashes => MGQ_MpWorldMods.creator_hashes(values[:mods]), :settings => "" }
     start_action("create") { MGQ_MpWorld::Directory.create(values[:name], values[:password], values[:seats].to_i, values[:hidden], values[:choose], MGQ_MpSaveDistribution.text_of(files), about) }
   end
 

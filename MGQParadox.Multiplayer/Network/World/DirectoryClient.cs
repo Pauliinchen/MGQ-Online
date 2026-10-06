@@ -2,7 +2,8 @@
 //  DirectoryClient.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-06: Read whether a link mod of the catalog is a zip
+//      Paulinchen  2026-10-06: Sent a world's mod settings on their own, which the creator or an admin may, and no longer with the other changes
+//                            - Read whether a link mod of the catalog is a zip
 //                            - Read the mod catalog and an uploaded mod's zip
 //                            - Made, changed and read worlds with the creator's hashes of required mods outside the catalog and its mod settings
 //      Paulinchen  2026-10-04: Read a world's lock without the mods, the game data and the rule for it, which the list tells
@@ -247,16 +248,16 @@ internal sealed class DirectoryClient
     }
 
     /// <summary>
-    /// Changes a world's seats, description and mods, and for its creator the hashes of its required mods outside the catalog and its mod settings.
+    /// Changes a world's seats, description and mods, and for its creator the hashes of its required mods outside the catalog.
     /// </summary>
     /// <param name="id">The world.</param>
     /// <param name="playerKey">The creator's or an admin's key.</param>
     /// <param name="seats">How many games it seats at once.</param>
     /// <param name="description">What the world is about.</param>
     /// <param name="mods">The mods it needs.</param>
-    /// <param name="creatorMods">The creator's mod hashes and mod settings, <see langword="null"/> to leave them, as an admin must.</param>
+    /// <param name="modHashes">The creator's mod hashes, <see langword="null"/> to leave them, as an admin must.</param>
     /// <exception cref="DirectoryException">The directory could not be reached or refused.</exception>
-    public void Edit(string id, string playerKey, int seats, string description, string mods, (string ModHashes, string Settings)? creatorMods = null)
+    public void Edit(string id, string playerKey, int seats, string description, string mods, string? modHashes = null)
     {
         var body = Json(writer =>
         {
@@ -265,11 +266,28 @@ internal sealed class DirectoryClient
             writer.WriteString("description", description);
             writer.WriteString("mods", mods);
 
-            if (creatorMods is var (modHashes, settings))
+            if (modHashes != null)
             {
                 writer.WriteString("modHashes", modHashes);
-                writer.WriteString("settings", settings);
             }
+        });
+
+        using var _ = Send(HttpMethod.Post, WorldAddress(id, "edit"), body);
+    }
+
+    /// <summary>
+    /// Replaces a world's mod settings, which its creator or an admin may.
+    /// </summary>
+    /// <param name="id">The world.</param>
+    /// <param name="playerKey">The creator's or an admin's key.</param>
+    /// <param name="settings">The settings, "key=type:value" pairs separated by semicolons.</param>
+    /// <exception cref="DirectoryException">The directory could not be reached or refused.</exception>
+    public void SetSettings(string id, string playerKey, string settings)
+    {
+        var body = Json(writer =>
+        {
+            writer.WriteString("player", playerKey);
+            writer.WriteString("settings", settings);
         });
 
         using var _ = Send(HttpMethod.Post, WorldAddress(id, "edit"), body);

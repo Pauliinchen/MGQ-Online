@@ -2,7 +2,8 @@
 //  WorldDirectory.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-06: Told the game script a link to a zip of a release apart, and installed it from GitHub
+//      Paulinchen  2026-10-06: Replaced a world's mod settings on their own, and no longer with the other changes
+//                            - Told the game script a link to a zip of a release apart, and installed it from GitHub
 //                            - Fetched the relay's mod catalog with the list, and installed a world's mods into the Patch folder
 //                            - Made, changed and listed worlds with the creator's hashes of required mods outside the catalog and its mod settings
 //      Paulinchen  2026-10-04: Told the game script the mods, the game data and the rule for it with the list only, no longer with an opened lock
@@ -509,17 +510,29 @@ private static void AppendFiles(StringBuilder text, IReadOnlyDictionary<string, 
 
     /// <summary>
     /// Changes a world's seats, description and mods, which only its creator or one of the relay's
-    /// admins may, and for its creator the hashes of its required mods outside the catalog and its mod settings.
+    /// admins may, and for its creator the hashes of its required mods outside the catalog.
     /// </summary>
     /// <param name="id">The world.</param>
     /// <param name="seats">How many games it seats at once.</param>
     /// <param name="description">What the world is about.</param>
     /// <param name="mods">The mods it needs.</param>
-    /// <param name="creatorMods">The creator's mod hashes and mod settings, <see langword="null"/> to leave them, as an admin must.</param>
+    /// <param name="modHashes">The creator's mod hashes, <see langword="null"/> to leave them, as an admin must.</param>
     /// <returns><see langword="false"/> while another action runs.</returns>
-    public bool Edit(string id, int seats, string description, string mods, (string ModHashes, string Settings)? creatorMods = null) => Start("edit", () =>
+    public bool Edit(string id, int seats, string description, string mods, string? modHashes = null) => Start("edit", () =>
     {
-        Client().Edit(id, Me().Key, seats, description, mods, creatorMods);
+        Client().Edit(id, Me().Key, seats, description, mods, modHashes);
+        return null;
+    });
+
+    /// <summary>
+    /// Replaces a world's mod settings, which only its creator or one of the relay's admins may.
+    /// </summary>
+    /// <param name="id">The world.</param>
+    /// <param name="settings">The settings, "key=type:value" pairs separated by semicolons.</param>
+    /// <returns><see langword="false"/> while another action runs.</returns>
+    public bool SetSettings(string id, string settings) => Start("settings", () =>
+    {
+        Client().SetSettings(id, Me().Key, settings);
         return null;
     });
 

@@ -2,7 +2,8 @@
 #  world_mods_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-06: Covered a load_game that a translation plugin replaced
+#      Paulinchen  2026-10-06: Covered the creator's button in Mod Config and the creator's unlocked options
+#                            - Covered a load_game that a translation plugin replaced
 #                            - Covered a link to a zip of a release
 #                            - Created
 #
@@ -18,7 +19,7 @@ require "tmpdir"
 require_relative "support"
 
 # Stand-ins for the game.
-class Scene_Base; def return_scene; $returned = true; end; end
+class Scene_Base; def return_scene; $returned = true; end; def update; end; end
 class Scene_MenuBase < Scene_Base; end
 class Scene_Load < Scene_Base; end
 class Window_Base; def initialize(*); end; end
@@ -66,6 +67,13 @@ end
 module ModConfigRemake
   class << self; attr_accessor :world_keys; end
 end
+class Window_ModConfig < Window_Selectable
+  attr_accessor :help_window
+  def initialize; @handlers = {}; end
+  def set_handler(symbol, method); @handlers[symbol] = method; end
+  def call_handler(symbol); @handlers[symbol].call; end
+end
+HelpLine = Struct.new(:text) { def set_text(text); self.text = text; end }
 
 # Stand-ins for the mod's base script and its DLL.
 $sounds = []
@@ -330,4 +338,40 @@ $world_open = false
 $game_system.conf = {}
 DataManager.setup_new_game
 check("outside a world nothing is set", $game_system.conf, {})
+# The creator's button in Mod Config.
+button = NWConst::Config::MOD_CONTENTS.find { |entry| entry[:key] == MGQ_MpWorldMods::SHARE_BUTTON }
+check("Mod Config Remake gets the creator's button, before Return", [button[:sub], NWConst::Config::MOD_CONTENTS.last[:key]], [false, :return])
+$world_open = true
+mods.own_world(nil)
+check("it is greyed out in another player's world", button[:enable].call, false)
+mods.own_world(["w1", "!Level Cap"])
+check("in their own world the creator may press it", button[:enable].call, true)
+mods.use("mod_level_cap=i:0")
+$game_system.conf = {}
+DataManager.load_game(1)
+check("the world's settings apply to the creator too, but stay unlocked", [$game_system.conf[:mod_level_cap], ModConfigRemake.world_keys], [0, []])
+$game_system.conf[:mod_level_cap] = 1
+window = Window_ModConfig.new
+window.help_window = HelpLine.new("")
+$calls.clear
+window.call_handler(MGQ_MpWorldMods::SHARE_BUTTON)
+check("pressing it sends the creator's options of the required mods as the world's",
+      [$calls.find { |call| call[0] == "mp_dir_set_settings" }, window.help_window.text],
+      [["mp_dir_set_settings", "pp", ["w1\0", "mod_level_cap=i:1;mod_level_cap_limits=i:1\0"]], "Saving your settings for the world . . ."])
+window.call_handler(MGQ_MpWorldMods::SHARE_BUTTON)
+check("a second press waits for the first", window.help_window.text, "Another request is still running. Try again in a moment.")
+$dll["mp_dir_action"] = "state=busy\nkind=settings\n\n"
+$calls.clear
+mods.follow_share
+check("while the relay has not answered, nothing is taken", $calls.map(&:first), [])
+$dll["mp_dir_action"] = "state=done\nkind=settings\n\n"
+Scene_Base.new.update
+check("its answer is taken in any scene and logged", [$calls.map(&:first), $log.last], [["mp_dir_clear"], "world mods: The world's mod settings were saved. Players get them the next time they load."])
+$game_system.conf = {}
+DataManager.load_game(1)
+check("the creator's next load takes the settings sent", $game_system.conf[:mod_level_cap], 1)
+Scene_Title.new.start
+check("the title screen forgets whose world it was", button[:enable].call, false)
+$world_open = false
+
 check("nothing failed", ($log || []).grep(/FAILED|failed/), [])

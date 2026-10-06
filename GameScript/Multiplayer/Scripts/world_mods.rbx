@@ -2,7 +2,8 @@
 #  world_mods.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-06: Took the world's mod settings from every mod it names, listed ones too, not only the required ones
+#      Paulinchen  2026-10-06: Added a button to Mod Config for the world's creator, who sets the world's mod settings from their own, and left the creator's options unlocked
+#                            - Took the world's mod settings from every mod it names, listed ones too, not only the required ones
 #                            - Read decimal settings with a plus sign in their exponent, as Ruby writes large ones
 #                            - Applied the world's mod settings from load_game_without_rescue, which the newest translation's load_game still calls
 #                            - Checked a link to a zip of a release file by file, like an upload
@@ -43,6 +44,12 @@ module MGQ_MpWorldMods
 
   # The setting in Player.ini that names the world to enter again once the game started anew.
   REJOIN_SETTING = "rejoin"
+
+  # The button in Mod Config that makes the creator's options the world's settings.
+  SHARE_BUTTON = :mgq_mp_world_settings
+
+  # The kind of directory action that sends them.
+  SHARE_ACTION = "settings"
 
   # The kinds of mods that come as a zip whose files go to their paths inside Patch.
   ZIP_KINDS = %w(upload zip)
@@ -431,6 +438,70 @@ module MGQ_MpWorldMods
     end
   end
 
+  # Notes whether the world being entered is the player's own, whose settings they may set.
+  #
+  # @param world [Array(String, String), nil] The world's id and mods, nil for another's world.
+  def self.own_world(world)
+    @own = world
+  end
+
+  # Tells whether the player plays in a world they created.
+  #
+  # @return [Boolean] Whether they do.
+  def self.own_world?
+    MGQ_MpWorld.open? && @own ? true : false
+  end
+
+  # Makes the creator's options of the world's mods its settings, which every player gets
+  # the next time they load a save in it. Called by the button in Mod Config.
+  #
+  # @param window [Window_ModConfig] The menu's window, whose help line tells how it went.
+  def self.share(window)
+    return Sound.play_buzzer unless own_world?
+
+    id, mods = @own
+    text = settings_of(mods)
+
+    if @sharing || !MGQ_MpWorld::Directory.set_settings(id, text)
+      Sound.play_buzzer
+      window.help_window.set_text("Another request is still running. Try again in a moment.") if window.help_window
+      return
+    end
+
+    @sharing = true
+    @settings = settings_from(text)
+    window.help_window.set_text("Saving your settings for the world . . .") if window.help_window
+    log("sending #{@settings.size} mod setting(s) as the world's")
+  rescue => e
+    log("sending the world's mod settings failed: #{e.class}: #{e.message}")
+  end
+
+  # Tells how sending the settings went once the relay answered. Called every frame of every scene.
+  def self.follow_share
+    return unless @sharing
+
+    action = MGQ_MpWorld::Directory.action
+    return if action["state"] == "busy" || action["kind"] != SHARE_ACTION
+
+    @sharing = false
+    MGQ_MpWorld::Directory.clear
+    text = action["state"] == "done" ? "The world's mod settings were saved. Players get them the next time they load." : "The world's mod settings could not be saved: #{action['error']}"
+    MGQ_MpNotices.message(SHARE_ACTION, text) if defined?(MGQ_MpNotices)
+    log(text)
+  rescue => e
+    @sharing = false
+    log("following the world's mod settings failed: #{e.class}: #{e.message}")
+  end
+
+  # Adds the button to Mod Config Remake, which presses it through the handler of its key.
+  def self.register
+    return unless defined?(ModConfigRemake) && defined?(Window_ModConfig) && defined?(NWConst::Config::MOD_CONTENTS)
+
+    NWConst::Config::MOD_CONTENTS.insert(-2, :key => SHARE_BUTTON, :name => "[Monster Girl Quest! Online] Use My Settings for This World", :sub => false,
+                                             :help => "Makes your options of the mods this world names its settings for every player, who get them the next time they load. Only for the world's creator, while playing in it.",
+                                             :enable => lambda { MGQ_MpWorldMods.own_world? })
+  end
+
   # Notes the settings of the world being entered, which apply once its game is loaded or started.
   #
   # @param text [String, nil] The world's settings.
@@ -444,7 +515,8 @@ module MGQ_MpWorldMods
     return unless MGQ_MpWorld.open? && @settings && $game_system
 
     @settings.each { |key, value| $game_system.conf[key] = value }
-    lock(@settings.keys)
+    # The creator changes them in Mod Config, then makes them the world's with the button.
+    lock(own_world? ? [] : @settings.keys)
     log("applied #{@settings.size} mod setting(s) of the world") unless @settings.empty?
   rescue => e
     log("applying the world's mod settings failed: #{e.class}: #{e.message}")
@@ -460,6 +532,7 @@ module MGQ_MpWorldMods
   # Lets the options be changed again once the game went back to the title screen.
   def self.on_title_start
     lock([])
+    @own = nil
   end
 end
 
@@ -471,6 +544,9 @@ begin
 
   # The title screen opens the world screen to enter a world again after a restart for its mods.
   MGQ_MpHooks.after(Scene_Title, :update, "world_mods") { MGQ_MpWorldMods.on_title_update(self) }
+
+  # Every scene hears how sending the world's settings went, the options screen above all.
+  MGQ_MpHooks.after(Scene_Base, :update, "world_mods") { MGQ_MpWorldMods.follow_share }
 rescue => e
   MGQ_MpWorldMods.log("title hooks FAILED: #{e.class}: #{e.message}")
 end
@@ -494,4 +570,16 @@ begin
   end
 rescue => e
   MGQ_MpWorldMods.log("save hooks FAILED: #{e.class}: #{e.message}")
+end
+
+begin
+  # The button of the world's creator in Mod Config Remake.
+  if defined?(Window_ModConfig)
+    MGQ_MpWorldMods.register
+    MGQ_MpHooks.after(Window_ModConfig, :initialize, "world_mods") do
+      set_handler(MGQ_MpWorldMods::SHARE_BUTTON, lambda { MGQ_MpWorldMods.share(self) })
+    end
+  end
+rescue => e
+  MGQ_MpWorldMods.log("Mod Config button FAILED: #{e.class}: #{e.message}")
 end

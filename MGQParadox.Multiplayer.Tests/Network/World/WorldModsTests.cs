@@ -2,7 +2,8 @@
 //  WorldModsTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-06: Covered telling a link to a zip of a release apart
+//      Paulinchen  2026-10-06: Covered a world's mod settings set on their own by its creator or an admin
+//                            - Covered telling a link to a zip of a release apart
 //                            - Created
 //
 //----------------------------------------------------------------
@@ -111,7 +112,7 @@ public sealed class WorldModsTests
     }
 
     /// <summary>
-    /// Asserts that a world lists its creator's mod hashes and mod settings, which an admin's edit leaves and the creator's replaces.
+    /// Asserts that a world lists its creator's mod hashes and mod settings; an edit by an admin leaves the hashes, the creator's replaces them, and neither touches the settings.
     /// </summary>
     [Fact]
     public void CreatorMods_AreListedAndOnlyTheCreatorReplacesThem()
@@ -128,8 +129,29 @@ public sealed class WorldModsTests
         Assert.Equal("done", Act(adminDirectory, directory => directory.Edit(made["world"], 6, "Edited.", "!Some Mod"))["state"]);
         Assert.Contains(List(creator), line => line.StartsWith($"world\t{made["world"]}\t6\t") && line.EndsWith($"\t{hashes}\tkey=i:1"));
 
-        Assert.Equal("done", Act(creator, directory => directory.Edit(made["world"], 6, "Edited.", "!Some Mod", (string.Empty, "key=i:2")))["state"]);
-        Assert.Contains(List(creator), line => line.StartsWith($"world\t{made["world"]}\t") && line.EndsWith("\t\tkey=i:2"));
+        Assert.Equal("done", Act(creator, directory => directory.Edit(made["world"], 6, "Edited.", "!Some Mod", string.Empty))["state"]);
+        Assert.Contains(List(creator), line => line.StartsWith($"world\t{made["world"]}\t") && line.EndsWith("\t\tkey=i:1"));
+    }
+
+    /// <summary>
+    /// Asserts that a world's creator and an admin replace its mod settings on their own, and another player may not.
+    /// </summary>
+    [Fact]
+    public void SetSettings_TheCreatorAndAnAdminMay()
+    {
+        var admin = PlayerKey(9);
+        using var relay = new TestRelay { Admins = [WorldKeys.PlayerIdOf(admin)] };
+        var creator = NewDirectory(relay, CreatorKey, "Creator");
+        var adminDirectory = NewDirectory(relay, admin, "Admin");
+        var guest = NewDirectory(relay, PlayerKey(5), "Guest");
+
+        var made = Act(creator, directory => directory.Create("Modded", "secret", 4, false, false, [], new WorldAbout(string.Empty, "!Some Mod", string.Empty, false, string.Empty, string.Empty)));
+        Assert.Equal("done", Act(creator, directory => directory.SetSettings(made["world"], "key=i:1"))["state"]);
+        Assert.Contains(List(creator), line => line.StartsWith($"world\t{made["world"]}\t") && line.EndsWith("\tkey=i:1"));
+
+        Assert.Equal("done", Act(adminDirectory, directory => directory.SetSettings(made["world"], "key=i:2"))["state"]);
+        Assert.Contains(List(creator), line => line.StartsWith($"world\t{made["world"]}\t") && line.EndsWith("\tkey=i:2"));
+        Assert.Equal("failed", Act(guest, directory => directory.SetSettings(made["world"], "key=i:3"))["state"]);
     }
 
     /// <summary>

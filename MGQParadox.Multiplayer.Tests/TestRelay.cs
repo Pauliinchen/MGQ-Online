@@ -2,7 +2,8 @@
 //  TestRelay.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-06: Served a mod catalog the tests fill, and uploaded mods' zips
+//      Paulinchen  2026-10-06: Let an admin replace a world's mod settings too
+//                            - Served a mod catalog the tests fill, and uploaded mods' zips
 //                            - Kept a world's mod hashes and mod settings, which only its creator replaces
 //      Paulinchen  2026-10-04: Left the mods, the game data and the rule for it out of a world's lock
 //                            - Let a world's creator replace its game data
@@ -524,9 +525,9 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
     /// <returns>The answer.</returns>
     private static (int, JsonNode) Edit(DirectoryWorld world, JsonNode body, string player)
     {
-        if ((body["data"] != null || body["modHashes"] != null || body["settings"] != null) && player != world.CreatorId)
+        if ((body["data"] != null || body["modHashes"] != null) && player != world.CreatorId)
         {
-            return (403, Error("only the world's creator may replace its game data, mod hashes and mod settings"));
+            return (403, Error("only the world's creator may replace its game data and mod hashes"));
         }
 
         world.Data = body["data"]?.GetValue<string>() ?? world.Data;

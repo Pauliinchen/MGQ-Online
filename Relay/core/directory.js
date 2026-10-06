@@ -2,7 +2,8 @@
 //  directory.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-06: Kept the hashes of a world's required mods outside the catalog and its mod settings, both from its creator's game
+//      Paulinchen  2026-10-06: Let admins replace a world's mod settings too
+//                            - Kept the hashes of a world's required mods outside the catalog and its mod settings, both from its creator's game
 //      Paulinchen  2026-10-04: Left the mods, the game data and the rule for it out of a world's lock, which the list tells
 //                            - Let a world's creator replace its game data with that of their game as it is now
 //                            - Listed the hidden worlds a player names by their ids
@@ -299,8 +300,8 @@ export class Directory {
 
   /**
    * Changes what of a world may change after it was made, if the creator or an admin asks: its
-   * seats, its description and the mods it needs. Games already in the world stay when the seats
-   * become fewer. Its game data, its mods' hashes and its mod settings only the creator replaces,
+   * seats, its description, the mods it needs and its mod settings. Games already in the world stay
+   * when the seats become fewer. Its game data and its mods' hashes only the creator replaces,
    * whose game they come from.
    *
    * @param {string} id The world.
@@ -329,8 +330,8 @@ export class Directory {
       return badRequest("the mod settings must be a text");
     }
 
-    if ((data !== undefined || modHashes !== undefined || settings !== undefined) && (await playerIdOf(key)) !== entry.creator.id) {
-      return { status: 403, body: { error: "only the world's creator may replace its game data, mod hashes and mod settings" } };
+    if ((data !== undefined || modHashes !== undefined) && (await playerIdOf(key)) !== entry.creator.id) {
+      return { status: 403, body: { error: "only the world's creator may replace its game data and mod hashes" } };
     }
 
     if (seats !== undefined && (!Number.isInteger(seats) || seats < WORLD_SEATS.min || seats > WORLD_SEATS.max)) {

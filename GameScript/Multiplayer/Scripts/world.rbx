@@ -2,7 +2,8 @@
 #  world.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-06: Read and sent a world's mod hashes and mod settings from its creator
+#      Paulinchen  2026-10-06: Sent a world's mod settings on their own, and no longer with an edit
+#                            - Read and sent a world's mod hashes and mod settings from its creator
 #                            - Found a required mod's script in the Patch folder, and read the folder anew when asked
 #      Paulinchen  2026-10-04: Showed the update notice in a message box that stays until the player closes it
 #                            - Greyed out the title command once the update check answers, and kept an outdated game out of worlds
@@ -629,18 +630,27 @@ module MGQ_MpWorld
     end
 
     # Changes a world's seats, description and mods, which its creator or an admin may, and for its
-    # creator the hashes of its required mods outside the catalog and its mod settings.
+    # creator the hashes of its required mods outside the catalog.
     #
     # @param id [String] The world.
     # @param seats [Integer] How many players it seats at once.
     # @param description [String] What it is about, empty for nothing.
     # @param mods [String] The mods it needs, empty for none.
-    # @param creator_mods [Array<String>, nil] The creator's mod hashes and mod settings, nil to leave them, as an admin must.
+    # @param mod_hashes [String, nil] The creator's mod hashes, nil to leave them, as an admin must.
     # @return [Boolean] Whether the action started.
-    def self.edit(id, seats, description, mods, creator_mods = nil)
+    def self.edit(id, seats, description, mods, mod_hashes = nil)
       MGQ_Multiplayer::Player.share
-      hashes, settings = creator_mods || ["", ""]
-      MGQ_Multiplayer::Link.function('mp_dir_edit', 'plpppppl').call(id + "\0", seats, description + "\0", mods + "\0", hashes + "\0", settings + "\0", creator_mods ? 1 : 0) == 1
+      MGQ_Multiplayer::Link.function('mp_dir_edit', 'plppppl').call(id + "\0", seats, description + "\0", mods + "\0", mod_hashes.to_s + "\0", mod_hashes ? 1 : 0) == 1
+    end
+
+    # Replaces a world's mod settings, which its creator or an admin may.
+    #
+    # @param id [String] The world.
+    # @param settings [String] "key=type:value" pairs separated by semicolons.
+    # @return [Boolean] Whether the action started.
+    def self.set_settings(id, settings)
+      MGQ_Multiplayer::Player.share
+      MGQ_Multiplayer::Link.function('mp_dir_set_settings', 'pp').call(id + "\0", settings + "\0") == 1
     end
 
     # Replaces a world's game data with this game's as it is now, which only its creator may.
