@@ -2,7 +2,8 @@
 #  world_mods_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-06: Covered a link to a zip of a release
+#      Paulinchen  2026-10-06: Covered a load_game that a translation plugin replaced
+#                            - Covered a link to a zip of a release
 #                            - Created
 #
 #----------------------------------------------------------------
@@ -39,7 +40,8 @@ module SceneManager
 end
 module DataManager
   def self.save_system; end
-  def self.load_game(_index); $loaded = true; end
+  def self.load_game(index); load_game_without_rescue(index) rescue false; end
+  def self.load_game_without_rescue(_index); $loaded = true; end
   def self.setup_new_game; $new_game = true; end
 end
 GameSystem = Struct.new(:conf)
@@ -312,6 +314,11 @@ mods.use("mod_level_cap=i:0;broken;mod_party_sheet_theme=y:dark")
 DataManager.load_game(1)
 check("a save loaded in a world takes the world's settings, and Mod Config Remake shows them as set by the world",
       [$game_system.conf, ModConfigRemake.world_keys], [{ :mod_level_cap => 0, :mod_party_sheet_theme => :dark }, [:mod_level_cap, :mod_party_sheet_theme]])
+# The newest translation's plugin 299 replaces load_game after the Patch folder loaded.
+module DataManager; def self.load_game(index); load_game_without_rescue(index); end; end
+$game_system.conf = { :mod_level_cap => 1 }
+DataManager.load_game(1)
+check("a load_game a translation plugin replaced still takes the world's settings", $game_system.conf[:mod_level_cap], 0)
 $game_system.conf = {}
 DataManager.setup_new_game
 check("so does a new game in a world", $game_system.conf, { :mod_level_cap => 0, :mod_party_sheet_theme => :dark })

@@ -2,7 +2,8 @@
 #  world_mods.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-06: Checked a link to a zip of a release file by file, like an upload
+#      Paulinchen  2026-10-06: Applied the world's mod settings from load_game_without_rescue, which the newest translation's load_game still calls
+#                            - Checked a link to a zip of a release file by file, like an upload
 #                            - Created
 #
 #----------------------------------------------------------------
@@ -474,8 +475,10 @@ end
 # Game hooks of this script alone.
 
 begin
-  # A save loaded or a new game started in a world takes the world's mod settings.
-  MGQ_MpHooks.around(DataManager.singleton_class, :load_game) do |_manager, _args, original|
+  # A save loaded or a new game started in a world takes the world's mod settings. The newest
+  # translation's plugins load after the Patch folder and replace load_game, which still calls
+  # load_game_without_rescue.
+  MGQ_MpHooks.around(DataManager.singleton_class, :load_game_without_rescue) do |_manager, _args, original|
     loaded = original.call
     MGQ_MpWorldMods.apply if loaded
     loaded
