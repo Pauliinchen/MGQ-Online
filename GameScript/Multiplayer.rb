@@ -2,7 +2,8 @@
 #  Multiplayer.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-06: Told whether a button is held past the capture, for the wheels' arrows
+#      Paulinchen  2026-10-06: Loaded trade.rbx and ui_trade.rbx after battles_team.rbx
+#                            - Told whether a button is held past the capture, for the wheels' arrows
 #                            - Loaded ui_wheel.rbx before ui_actions.rbx
 #                            - Loaded world_mods.rbx after world.rbx
 #      Paulinchen  2026-10-04: Loaded battles_coop_level_sync.rbx after battles_coop.rbx
@@ -76,6 +77,7 @@ module MGQ_Multiplayer
     battles battles_coop battles_coop_level_sync
     battles_sync battles_sync_wire battles_sync_recorder battles_sync_playback battles_sync_live
     battles_balance_pvp battles_pvp battles_pvp_backline battles_pvp_mirror battles_pvp_lobby battles_duel battles_team
+    trade ui_trade
     world_overview ui_party_box ui_notices
   ]
 
