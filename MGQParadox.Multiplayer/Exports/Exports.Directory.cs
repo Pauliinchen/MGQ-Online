@@ -2,7 +2,8 @@
 //  Exports.Directory.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-06: Added mp_dir_set_settings, which replaces a world's mod settings, and left them out of mp_dir_edit
+//      Paulinchen  2026-10-06: Added mp_dir_unlock_code, which opens a world with its world code
+//                            - Added mp_dir_set_settings, which replaces a world's mod settings, and left them out of mp_dir_edit
 //                            - Took the creator's hashes of required mods outside the catalog and its mod settings in mp_dir_create and mp_dir_edit
 //      Paulinchen  2026-10-04: Added mp_dir_set_data, which replaces a world's game data
 //                            - Added mp_dir_watch and mp_dir_find, which list and look up hidden worlds by their ids
@@ -176,6 +177,26 @@ internal static unsafe partial class Exports
         catch (Exception ex)
         {
             Log.Write($"mp_dir_unlock failed: {ex}");
+            return 0;
+        }
+    }
+
+    /// <summary>
+    /// Opens a world with its world code instead of its password, as a Discord invite hands it over.
+    /// Returns at once; the action tells the same as mp_dir_unlock.
+    /// </summary>
+    /// <param name="code">The world code, UTF-8 and null-terminated.</param>
+    /// <returns>1 when started, 0 while another action runs or when it failed.</returns>
+    [UnmanagedCallersOnly(EntryPoint = "mp_dir_unlock_code", CallConvs = [typeof(CallConvStdcall)])]
+    public static int DirectoryUnlockWithCode(byte* code)
+    {
+        try
+        {
+            return WorldDirectory.Current.UnlockWithCode(Text(code)) ? 1 : 0;
+        }
+        catch (Exception ex)
+        {
+            Log.Write($"mp_dir_unlock_code failed: {ex}");
             return 0;
         }
     }

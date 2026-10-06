@@ -2,7 +2,8 @@
 #  Multiplayer.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-06: Kept the last name Discord told, which stands in while Discord has not told one yet, as right after a restart
+#      Paulinchen  2026-10-06: Handed a Discord invite into a world to world.rbx instead of the PvP connection
+#                            - Kept the last name Discord told, which stands in while Discord has not told one yet, as right after a restart
 #                            - Wrote the in-game log as Multiplayer InGame.log into the game folder's Logs folder
 #                            - Loaded trade.rbx and ui_trade.rbx after battles_team.rbx
 #                            - Told whether a button is held past the capture, for the wheels' arrows
@@ -805,7 +806,7 @@ module MGQ_Multiplayer
     end
 
     # Hands the connection to the Discord mod when it changed, and takes an invite the player
-    # accepted in Discord. Called every frame, acts every DISCORD_FRAMES.
+    # accepted in Discord: into a world, or to a PvP battle. Called every frame, acts every DISCORD_FRAMES.
     def self.tick
       @frames = (@frames || 0) + 1
       return if @frames < DISCORD_FRAMES
@@ -814,7 +815,7 @@ module MGQ_Multiplayer
       return unless MGQ_Multiplayer.available? && available?
 
       invite = MGQ_Discord::Bridge.take_invite
-      Link.receive_invite(invite) if invite
+      Link.receive_invite(invite) if invite && !(defined?(MGQ_MpWorld) && MGQ_MpWorld::Invite.receive(invite))
       report(Link.status)
     rescue => e
       Log.write("discord hand-over failed: #{e.class}: #{e.message}")

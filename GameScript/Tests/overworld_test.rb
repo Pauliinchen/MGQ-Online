@@ -2,7 +2,8 @@
 #  overworld_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-06: Checked that the wheel keeps its pick once the arrows are let go
+#      Paulinchen  2026-10-06: Checked that Discord hears of the world code, which its invites carry
+#                            - Checked that the wheel keeps its pick once the arrows are let go
 #                            - Found the wheel's choices by their place on the ring, and checked how the ring spreads and lays out its choices
 #                            - Steered the action wheel with the arrows held, and checked the middle while none or a diagonal is held
 #      Paulinchen  2026-10-05: Checked that an open chat box takes typing and closes while a message shows
@@ -693,14 +694,16 @@ MGQ_MpCoop::Party.reset
 MGQ_MpCoop::Party.join(MGQ_MpOverworldSync::Peers.at(10))
 check("a full party cannot be joined", [MGQ_MpCoop::Party.id, MGQ_MpOverworldSync::Status.lines.last], [nil, "M10's party is full."])
 
-# Discord hears of the open world: its name, its players and its seats.
-valley = Struct.new(:name, :id, :seats).new("Valley", "w1", 8)
+# Discord hears of the open world: its name, its players, its seats and the code its invites carry.
+valley = Struct.new(:name, :id, :seats, :code, :directory_id).new("Valley", "w1", 8, "mgqmp2;abcdefghjkmnpqrs;r1;8", "d1")
 MGQ_MpWorld.define_singleton_method(:world) { valley }
 MGQ_MpOverworldSync::Peers.clear
 $inbox << entry("message", 2, told(friend))
 MGQ_MpOverworldSync.tick
-check("Discord hears of the world and its players", MGQ_MpOverworldSync.status_fields,
-      { "mp_world" => "Valley", "mp_world_id" => "w1", "mp_world_size" => 2, "mp_world_max" => 8 })
+check("Discord hears of the world, its players and its code", MGQ_MpOverworldSync.status_fields,
+      { "mp_world" => "Valley", "mp_world_id" => "w1", "mp_world_size" => 2, "mp_world_max" => 8, "mp_world_invite" => "mgqmp2;abcdefghjkmnpqrs;r1;8" })
+valley.directory_id = nil
+check("but not of the code of a world from before the directory, which an invite could not find", MGQ_MpOverworldSync.status_fields.key?("mp_world_invite"), false)
 $open = false
 check("and of none once it closed", MGQ_MpOverworldSync.status_fields, {})
 $open = true

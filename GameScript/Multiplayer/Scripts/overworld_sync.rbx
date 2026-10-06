@@ -2,6 +2,7 @@
 #  overworld_sync.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-06: Handed the Discord mod the world code, which its invites into the world carry
 #      Paulinchen  2026-10-04: Took an icon with a notice
 #                            - Renamed from mp_overworld_sync.rbx
 #      Paulinchen  2026-10-03: Added map_quiet? and map_free?, which the scripts check before they act on the map
@@ -106,14 +107,17 @@ module MGQ_MpOverworldSync
   end
 
   # The fields the Discord mod publishes about the open world, which Discord shows as its name and
-  # its players, such as "(3 of 8)".
+  # its players, such as "(3 of 8)", and whose code its invites carry.
   #
-  # @return [Hash] The world's name, id, players and seats, none outside a world.
+  # @return [Hash] The world's name, id, players, seats and code, none outside a world.
   def self.status_fields
     world = in_world? ? MGQ_MpWorld.world : nil
     return {} unless world
 
-    { "mp_world" => world.name, "mp_world_id" => world.id, "mp_world_size" => Peers.all.size + 1, "mp_world_max" => world.seats }
+    fields = { "mp_world" => world.name, "mp_world_id" => world.id, "mp_world_size" => Peers.all.size + 1, "mp_world_max" => world.seats }
+    # A world from before the directory cannot be found in the list, so an invite could not enter it.
+    fields["mp_world_invite"] = world.code if world.directory_id
+    fields
   end
 
   # Hands every message marked by a field to a script. The first field registered wins when a

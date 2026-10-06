@@ -2,7 +2,9 @@
 #  world.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-06: Left the world once the player backed out of its new game, as when a question before New Game is cancelled
+#      Paulinchen  2026-10-06: Took Discord invites into a world, which open the world screen on the title screen
+#                            - Opened a world's lock with its world code, and told the directory's id of a code
+#                            - Left the world once the player backed out of its new game, as when a question before New Game is cancelled
 #                            - Added the form of the player's name
 #                            - Left Allow data mismatch unticked in a new world's form
 #                            - Kept a mod added by name in the mod picker when unlisted, removed only on its own
@@ -251,8 +253,8 @@ module MGQ_MpWorld
     leave unless @pending
   end
 
-  # Starts a new game in the world the world screen opened. Called by the title screen every
-  # frame while nothing else runs.
+  # Starts a new game in the world the world screen opened, or opens the world screen for a
+  # Discord invite. Called by the title screen every frame while nothing else runs.
   #
   # The title screen's own command starts it, so everything the game and other mods do for a
   # new game happens as usual.
@@ -260,7 +262,7 @@ module MGQ_MpWorld
   # @param scene [Scene_Title] The title screen.
   def self.on_title_update(scene)
     return watch_new_game(scene) if @pending == :starting
-    return unless @pending == :new_game
+    return Invite.on_title_update unless @pending == :new_game
 
     @pending = nil
     log("new game in world #{@world.id}") if @world
@@ -451,6 +453,16 @@ module MGQ_MpWorld
       length > 0 ? buffer[0, length] : nil
     end
 
+    # Tells the directory's id of a world by its code.
+    #
+    # @param code [String] The world code.
+    # @return [String, nil] The id, nil when the text is no world code.
+    def self.directory_id(code)
+      buffer = "\0" * 64
+      length = MGQ_Multiplayer::Link.function('mp_world_directory_id', 'ppl').call(code + "\0", buffer, buffer.size)
+      length > 0 ? buffer[0, length] : nil
+    end
+
     # Takes a seat in a world's room, again whenever the connection breaks, until the world is closed.
     #
     # @param code [String] The world code.
@@ -470,6 +482,49 @@ module MGQ_MpWorld
     # @return [Boolean] Whether the clipboard holds it.
     def self.copy(text)
       MGQ_Multiplayer::Link.function('mp_copy_text', 'p').call(text + "\0") == 1
+    end
+  end
+
+  # Discord invites into a world: the Discord mod hands over the world code an invite carries, and
+  # the world screen enters that world with it instead of asking for its password.
+  module Invite
+    # What the notification box says when an invite comes in during a game.
+    LATER_TEXT = "Discord invite taken: the title screen opens the world."
+
+    # Takes an invite the player accepted in Discord, if it is into a world.
+    #
+    # @param code [String] The invite's join secret.
+    # @return [Boolean] Whether it was into a world, which leaves it to the world screen.
+    def self.receive(code)
+      id = Link.directory_id(code)
+      return false unless id
+
+      if MGQ_MpWorld.open? && MGQ_MpWorld.world.directory_id == id
+        MGQ_MpWorld.log("ignored an invite into world #{id}, which is open already")
+      else
+        @pending = [id, code]
+        MGQ_MpWorld.log("took an invite into world #{id}")
+        MGQ_MpNotices.message(:world_invite, LATER_TEXT) if defined?(MGQ_MpNotices) && !SceneManager.scene.is_a?(Scene_Title)
+      end
+      true
+    end
+
+    # Opens the world screen for the invite taken last. Called by the title screen every frame
+    # while nothing else runs.
+    def self.on_title_update
+      return unless @pending && MGQ_MpWorld.available?
+
+      MGQ_MpWorld.log("opening the world screen for the invite into world #{@pending[0]}")
+      SceneManager.call(Scene_MpWorlds)
+    end
+
+    # Takes the invite for the world screen, once.
+    #
+    # @return [Array, nil] The world's directory id and code, nil without an invite.
+    def self.take
+      pending = @pending
+      @pending = nil
+      pending
     end
   end
 
@@ -657,6 +712,15 @@ module MGQ_MpWorld
     # @return [Boolean] Whether the action started.
     def self.unlock(id, password)
       MGQ_Multiplayer::Link.function('mp_dir_unlock', 'pp').call(id + "\0", password + "\0") == 1
+    end
+
+    # Opens a world's lock with its world code instead of its password, as a Discord invite hands
+    # it over; the action tells the same as unlock.
+    #
+    # @param code [String] The world code.
+    # @return [Boolean] Whether the action started.
+    def self.unlock_code(code)
+      MGQ_Multiplayer::Link.function('mp_dir_unlock_code', 'p').call(code + "\0") == 1
     end
 
     # Changes a world's seats, description and mods, which its creator or an admin may, and for its

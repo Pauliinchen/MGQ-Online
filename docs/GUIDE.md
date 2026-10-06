@@ -58,6 +58,7 @@ Confirm on a world and pick *Enter the world*.
 - Type its password the first time, unless it has none; your game remembers it after that.
 - You continue from your latest save in that world. The first time, you start at the opening or from the creator's save, or choose where to start if the creator lets you.
 - A world is only entered once the list has loaded, since the list tells what the world asks of your game.
+- **Through Discord** (with the Discord mod): while you play in a world, friends can be invited through the **+** in a Discord chat or ask to join from your profile. Accepting starts their game if it's closed and enters the world from the title screen, without its password; a friend in the middle of a game is told to go back to the title screen. Discord offers no invite while the party it shows is full.
 
 ### Creating a world
 

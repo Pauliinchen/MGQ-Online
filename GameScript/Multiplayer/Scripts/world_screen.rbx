@@ -2,7 +2,8 @@
 #  world_screen.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-06: Asked for the player's name in a form typed in place instead of on the text screen
+#      Paulinchen  2026-10-06: Entered the world of a Discord invite once the list holds it, opened with the invite instead of the password
+#                            - Asked for the player's name in a form typed in place instead of on the text screen
 #                            - Kept a mod added by name when unlisted, and removed it with Delete, which the hint names while it is picked
 #                            - Typed a mod's name in place in the picker, on the keyboard, instead of on the text screen
 #                            - Named a mod in the picker with Enter and its red ! and orange ? buttons under titled columns instead of a menu, and listed or unlisted every mod at once
@@ -143,6 +144,7 @@ class Scene_MpWorlds < Scene_MenuBase
     @message ||= HINT
     @me = MGQ_MpWorld::Directory.my_id
     MGQ_MpWorldMods.forget_installed
+    take_invite
     MGQ_MpWorld::Directory.refresh
     @refresh_frames = 0
     @look_frames = LOOK_FRAMES
@@ -249,6 +251,42 @@ class Scene_MpWorlds < Scene_MenuBase
     show_info
     MGQ_MpWorldMods.report_options(admin) if state == "ready"
     rejoin(entries, state)
+    join_invited(entries, state)
+  end
+
+  # Takes a Discord invite into a world, whose code then opens the world instead of its password,
+  # and adds the world to the list, since a hidden one is listed only by its id.
+  def take_invite
+    id, code = MGQ_MpWorld::Invite.take
+    return unless id
+
+    @invite_codes ||= {}
+    @invite_codes[id] = code
+    @invited = id
+    @invite_retried = false
+    MGQ_MpWorld::Added.add(id)
+  end
+
+  # Enters the world a Discord invite named, once the list holds it, as if the player chose it.
+  #
+  # @param entries [Array<MGQ_MpWorld::Entry>] The list.
+  # @param state [String] How the list stands.
+  def join_invited(entries, state)
+    return unless @invited && state != "loading" && !@busy && !form && MGQ_Multiplayer::Player.name
+
+    @entry = entries.find { |entry| entry.id == @invited }
+
+    # A list fetched before the world was added misses a hidden one, so it is fetched once more.
+    if !@entry && state == "ready" && !@invite_retried
+      @invite_retried = true
+      return MGQ_MpWorld::Directory.refresh
+    end
+
+    @invited = nil
+    return say("The world of your Discord invite is not in the list right now.") unless @entry && state == "ready"
+
+    @data_accepted = false
+    on_enter
   end
 
   # Enters the world the game started again for, once the list holds it, as if the player chose it.
@@ -314,8 +352,8 @@ class Scene_MpWorlds < Scene_MenuBase
     @actions_window.start(commands)
   end
 
-  # Enters the chosen world, asking for its password the first time, unless it has none. A game
-  # whose data differs from the creator's is warned or kept out first.
+  # Enters the chosen world, asking for its password the first time, unless it has none or a
+  # Discord invite into it came. A game whose data differs from the creator's is warned or kept out first.
   def on_enter
     listed = @entry.listed
     return if listed && !mods_allow?(listed)
@@ -343,6 +381,8 @@ class Scene_MpWorlds < Scene_MenuBase
       back_to_list
     elsif @entry.open?
       start_action("unlock") { MGQ_MpWorld::Directory.unlock(@entry.id, "") }
+    elsif @invite_codes && (code = @invite_codes[@entry.id])
+      start_action("unlock") { MGQ_MpWorld::Directory.unlock_code(code) }
     else
       ask_text(:password, "The password of #{@entry.name}", "", :masked => true, :max_chars => MGQ_MpWorld::MAX_PASSWORD_CHARS)
     end

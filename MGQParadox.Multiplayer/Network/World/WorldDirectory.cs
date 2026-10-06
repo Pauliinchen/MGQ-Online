@@ -2,7 +2,8 @@
 //  WorldDirectory.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-06: Sent the Mod Config options of a catalog mod on a thread of their own, and told the game script the version the relay keeps them of
+//      Paulinchen  2026-10-06: Opened a world with its world code, which a Discord invite carries, instead of its password
+//                            - Sent the Mod Config options of a catalog mod on a thread of their own, and told the game script the version the relay keeps them of
 //                            - Replaced a world's mod settings on their own, and no longer with the other changes
 //                            - Told the game script a link to a zip of a release apart, and installed it from GitHub
 //                            - Fetched the relay's mod catalog with the list, and installed a world's mods into the Patch folder
@@ -536,6 +537,19 @@ private static void AppendFiles(StringBuilder text, IReadOnlyDictionary<string, 
         }
 
         return new ActionResult(new WorldCode(token, Relays.Current, world.Seats).ToText(), world.Name, world.Start, world.Choose);
+    });
+
+    /// <summary>
+    /// Opens a world with its world code instead of its password, as a Discord invite hands it over,
+    /// which gives the same as <see cref="Unlock"/>.
+    /// </summary>
+    /// <param name="code">The world code.</param>
+    /// <returns><see langword="false"/> while another action runs.</returns>
+    public bool UnlockWithCode(string code) => Start("unlock", () =>
+    {
+        var given = WorldCode.Parse(code) ?? throw new ActionException("The world code is damaged.");
+        var world = Client().Lock(Relays.WorldRoomOf(given.Token));
+        return new ActionResult(new WorldCode(given.Token, Relays.Current, world.Seats).ToText(), world.Name, world.Start, world.Choose);
     });
 
     /// <summary>

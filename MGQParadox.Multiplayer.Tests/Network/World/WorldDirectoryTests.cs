@@ -2,7 +2,8 @@
 //  WorldDirectoryTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-06: Expected the creator's mod hashes and mod settings at the end of a world's line
+//      Paulinchen  2026-10-06: Covered opening a world with its world code
+//                            - Expected the creator's mod hashes and mod settings at the end of a world's line
 //      Paulinchen  2026-10-04: Expected what a creator tells about a world in the list only
 //                            - Covered a creator replacing a world's game data
 //                            - Covered a hidden world looked up and listed by its id
@@ -88,6 +89,31 @@ public sealed class WorldDirectoryTests
 
         var missing = Act(guest, directory => directory.Unlock(new string('f', 32), "secret"));
         Assert.Contains("no longer exists", missing["error"]);
+    }
+
+    /// <summary>
+    /// Asserts that a world code, as a Discord invite carries it, opens a hidden world with a password
+    /// like the password does, and that a damaged one fails with a reason.
+    /// </summary>
+    [Fact]
+    public void UnlockWithCode_OpensTheWorldWithoutThePassword()
+    {
+        using var relay = new TestRelay();
+        var creator = NewDirectory(relay, CreatorKey, "Creator");
+        var guest = NewDirectory(relay, PlayerKey(2), "Guest");
+        var made = Act(creator, directory => directory.Create("Secret Base", "secret", 6, true, true, []));
+
+        var opened = Act(guest, directory => directory.UnlockWithCode(made["code"]));
+        Assert.Equal("done", opened["state"]);
+        Assert.Equal("unlock", opened["kind"]);
+        Assert.Equal(made["code"], opened["code"]);
+        Assert.Equal(made["world"], opened["world"]);
+        Assert.Equal("Secret Base", opened["name"]);
+        Assert.Equal("1", opened["choose"]);
+
+        var damaged = Act(guest, directory => directory.UnlockWithCode("mgqmp1;nonsense"));
+        Assert.Equal("failed", damaged["state"]);
+        Assert.Contains("damaged", damaged["error"]);
     }
 
     /// <summary>

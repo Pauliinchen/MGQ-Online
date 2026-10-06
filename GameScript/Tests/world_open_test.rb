@@ -2,7 +2,8 @@
 #  world_open_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-06: Checked that backing out of a world's new game, which asks something first, leaves the world
+#      Paulinchen  2026-10-06: Checked a Discord invite into a world, which opens the world screen and enters the world without its password
+#                            - Checked that backing out of a world's new game, which asks something first, leaves the world
 #                            - Loaded world_mods.rbx, which the world screen calls
 #      Paulinchen  2026-10-04: Checked that an outdated game enters no world and is told so in a message box until the player closes it
 #                            - Followed the scripts to their new names, without mp_
@@ -284,3 +285,31 @@ asking.instance_variable_get(:@command_window).activate
 MGQ_MpWorld.on_title_update(asking)
 check("a new game that started keeps the world", MGQ_MpWorld.open?, true)
 MGQ_MpWorld.instance_variable_set(:@world, nil)
+
+# A Discord invite into a world, which carries the world code.
+MGQ_MpWorld::Link.define_singleton_method(:directory_id) { |code| code.start_with?("mgqmp2;") ? "w3" : nil }
+added = []
+MGQ_MpWorld::Added.define_singleton_method(:add) { |id| added << id }
+check("an invite that is no world code is left to PvP battles", MGQ_MpWorld::Invite.receive("mgqmp1;abcdefghjk;47625;203.0.113.7"), false)
+MGQ_MpWorld.instance_variable_set(:@world, MGQ_MpWorld::World.new("abcdef012345", "world" => "w3"))
+check("an invite into the world already open is dropped", [MGQ_MpWorld::Invite.receive("mgqmp2;token;r1;4"), MGQ_MpWorld::Invite.take], [true, nil])
+MGQ_MpWorld.instance_variable_set(:@world, nil)
+check("an invite into a world is taken", MGQ_MpWorld::Invite.receive("mgqmp2;token;r1;4"), true)
+$called = nil
+MGQ_MpWorld.on_title_update(asking)
+check("the title screen opens the world screen for it", $called, Scene_MpWorlds)
+
+invited = new_scene
+invited.take_invite
+check("the world screen takes it once and adds the world to the list, since a hidden one needs that", [added, MGQ_MpWorld::Invite.take], [["w3"], nil])
+$calls.clear
+invited.join_invited(entries, "loading")
+check("it waits for the list", $calls, [])
+invited.join_invited(entries.reject { |entry| entry.id == "w3" }, "ready")
+check("a list without the world is fetched once more", [$calls.map(&:first), invited.instance_variable_get(:@entry)], [["mp_dir_watch", "mp_dir_refresh"], nil])
+$calls.clear
+invited.join_invited(entries, "ready")
+check("then the world is opened with the invite instead of its password", [$calls.last[0], $calls.last[2], $called], ["mp_dir_unlock_code", ["mgqmp2;token;r1;4\0"], Scene_MpWorlds])
+$calls.clear
+invited.join_invited(entries, "ready")
+check("once", $calls, [])
