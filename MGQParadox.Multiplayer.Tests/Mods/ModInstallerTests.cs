@@ -2,7 +2,8 @@
 //  ModInstallerTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-06: Covered links to a zip of a release and zips written with backslashes
+//      Paulinchen  2026-10-06: Covered zips whose files sit in a Patch folder
+//                            - Covered links to a zip of a release and zips written with backslashes
 //                            - Created
 //
 //----------------------------------------------------------------
@@ -120,6 +121,24 @@ public sealed class ModInstallerTests
 
         Assert.Equal(Script, File.ReadAllBytes(Path.Combine(game.Path, "Patch", "Luka_Replacer.rb")));
         Assert.Equal(pack, File.ReadAllBytes(Path.Combine(game.Path, "Patch", "Luka_Replacer", "Heroes", "cecil.luka")));
+    }
+
+    /// <summary>
+    /// Asserts that a zip whose files sit in a Patch folder installs them at their paths inside Patch.
+    /// </summary>
+    [Fact]
+    public void Install_ZipWithPatchFolder_WritesEachFileInsidePatch()
+    {
+        using var game = new TempFolder();
+        var pack = Encoding.UTF8.GetBytes("LUKA pack");
+        var files = new Dictionary<string, string> { ["Luka_Replacer.rb"] = ModHash.Of("x.rb", Script), ["Luka_Replacer/Heroes/cecil.luka"] = ModHash.Of("cecil.luka", pack) };
+        var mod = new CatalogMod("lukareplacer", "Luka Replacer", "link", "1.0", files, [], "https://github.com/Pauliinchen/MGQ-Paradox-Mod-Collection/releases/download/v1.0/Luka_Replacer.zip", Archive: true);
+
+        ModInstaller.Install([(mod, string.Empty)], _ => Zip(("Patch/Luka_Replacer.rb", Script), ("Patch/Luka_Replacer/Heroes/cecil.luka", pack)), game.Path);
+
+        Assert.Equal(Script, File.ReadAllBytes(Path.Combine(game.Path, "Patch", "Luka_Replacer.rb")));
+        Assert.Equal(pack, File.ReadAllBytes(Path.Combine(game.Path, "Patch", "Luka_Replacer", "Heroes", "cecil.luka")));
+        Assert.False(Directory.Exists(Path.Combine(game.Path, "Patch", "Patch")));
     }
 
     /// <summary>

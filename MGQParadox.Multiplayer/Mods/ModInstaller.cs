@@ -2,7 +2,8 @@
 //  ModInstaller.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-06: Installed a link to a zip of a release like an upload, and read zips written with backslashes
+//      Paulinchen  2026-10-06: Read a zip whose files sit in a Patch folder, to extract into the game folder
+//                            - Installed a link to a zip of a release like an upload, and read zips written with backslashes
 //                            - Created
 //
 //----------------------------------------------------------------
@@ -22,6 +23,11 @@ namespace MGQParadox.Multiplayer.Mods;
 /// </summary>
 internal static class ModInstaller
 {
+    /// <summary>
+    /// The folder a zip for players holds its files in, read as the Patch folder itself.
+    /// </summary>
+    private const string PatchFolder = "Patch/";
+
     /// <summary>
     /// Installs mods.
     /// </summary>
@@ -105,10 +111,12 @@ internal static class ModInstaller
         using var archive = new ZipArchive(new MemoryStream(zip), ZipArchiveMode.Read);
         var entries = new Dictionary<string, ZipArchiveEntry>(StringComparer.Ordinal);
 
-        // Some zip tools of Windows write backslashes, which the relay reads as slashes too.
+        // Some zip tools of Windows write backslashes, and a zip for players holds a Patch folder to
+        // extract into the game folder; the relay reads both the same way.
         foreach (var entry in archive.Entries)
         {
-            entries.TryAdd(entry.FullName.Replace('\\', '/'), entry);
+            var name = entry.FullName.Replace('\\', '/');
+            entries.TryAdd(name.StartsWith(PatchFolder, StringComparison.OrdinalIgnoreCase) ? name[PatchFolder.Length..] : name, entry);
         }
 
         var files = new List<(byte[] Bytes, string Path)>();

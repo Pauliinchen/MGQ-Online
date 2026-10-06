@@ -2,7 +2,8 @@
 //  mods.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-06: Covered zips of a release, hashed file by file
+//      Paulinchen  2026-10-06: Covered zips whose files sit in a Patch folder
+//                            - Covered zips of a release, hashed file by file
 //                            - Created
 //
 //----------------------------------------------------------------
@@ -327,6 +328,12 @@ test("zipHashes hashes every file of a zip by its path, plain or deflated, scrip
   assert.deepEqual(Object.keys(files), ["Luka_Replacer.rb", "Luka_Replacer/Heroes/cecil.luka"]);
   assert.equal(files["Luka_Replacer.rb"], await hashModFile("x.rb", new TextEncoder().encode("# hero\n")));
   assert.equal(files["Luka_Replacer/Heroes/cecil.luka"], await hashModFile("cecil.luka", new TextEncoder().encode("LUKA")));
+});
+
+test("zipHashes reads a zip whose files sit in a Patch folder by their paths inside it", async () => {
+  const zip = await makeZip([["Patch/", ""], ["Patch/Luka_Replacer.rb", "# hero"], ["Patch/Luka_Replacer/Heroes/cecil.luka", "LUKA", true]]);
+
+  assert.deepEqual(Object.keys(await zipHashes(zip)), ["Luka_Replacer.rb", "Luka_Replacer/Heroes/cecil.luka"]);
 });
 
 test("zipHashes refuses paths outside Patch, too many or too large files, and what is no zip", async () => {

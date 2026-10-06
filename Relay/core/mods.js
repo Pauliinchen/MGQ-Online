@@ -2,7 +2,8 @@
 //  mods.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-06: Took a zip of a release too, laid out as in Patch, hashing each file inside
+//      Paulinchen  2026-10-06: Read a zip whose files sit in a Patch folder, to extract into the game folder
+//                            - Took a zip of a release too, laid out as in Patch, hashing each file inside
 //                            - Created
 //
 //----------------------------------------------------------------
@@ -463,11 +464,12 @@ export async function zipHashes(bytes, limits = MOD_LIMITS) {
     const nameLength = view.getUint16(at + 28, true);
     const skip = nameLength + view.getUint16(at + 30, true) + view.getUint16(at + 32, true);
     const local = view.getUint32(at + 42, true);
-    // Some zip tools of Windows write backslashes.
-    const name = new TextDecoder().decode(bytes.subarray(at + 46, at + 46 + nameLength)).replace(/\\/g, "/");
+    // Some zip tools of Windows write backslashes. A zip for players holds a Patch folder, to
+    // extract into the game folder.
+    const name = new TextDecoder().decode(bytes.subarray(at + 46, at + 46 + nameLength)).replace(/\\/g, "/").replace(/^Patch\//i, "");
     at += 46 + skip;
 
-    if (name.endsWith("/")) {
+    if (name === "" || name.endsWith("/")) {
       continue;
     }
 
