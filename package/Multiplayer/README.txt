@@ -49,8 +49,8 @@ like this:
    Patch\Multiplayer\Scripts\*.rbx      (the mod's other scripts)
    ...
 
-Your player name, hotkeys, favourites, worlds and the logs go into
-Patch\Multiplayer.
+Your player name, hotkeys, favourites and worlds go into
+Patch\Multiplayer, the logs into the Logs folder of the game folder.
 
 While the mod is installed, the game keeps running when its window is in
 the background, so no player holds the others up. A gamepad does nothing
