@@ -2,6 +2,7 @@
 #  battles_sync_playback.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-06: Showed the host's battle messages through the game's message alone, naming their speaker on it
 #      Paulinchen  2026-10-04: Stopped playing for the player to choose again when the host names them
 #                            - Logged a host's call the guest leaves out, once per method
 #                            - Let the game read a guest's character's features anew once the host's states or buffs changed it, so Division's extra actions count
@@ -81,7 +82,7 @@ module MGQ_MpBattlesSync
         end
 
         play(scene, event)
-        show_message if event[0] == "message" && (@events.empty? || @events.first[0] != "message")
+        @message_complete = @events.empty? || @events.first[0] != "message" if event[0] == "message"
       end
     ensure
       MGQ_MpGame.set(scene, :battle_actor_status_windows_show, false)
@@ -92,6 +93,7 @@ module MGQ_MpBattlesSync
     # Forgets events of an earlier battle.
     def self.reset
       @events = []
+      @message_complete = false
     end
 
     # Takes the next event of the host's stream, taking a co-op party's change on the way.
@@ -151,7 +153,7 @@ module MGQ_MpBattlesSync
       when "popup"
         log_window(scene).popup.push(Names.swap(args[0].to_s), args[1])
       when "message"
-        message(*args)
+        message(scene, *args)
       when /\Apicture\./
         picture(method, args)
       when /\Ascreen\./
@@ -251,9 +253,8 @@ module MGQ_MpBattlesSync
     #
     # @param scene [Scene_Battle] The battle.
     def self.emerge(scene)
+      $game_message.speaker = nil
       $game_troop.enemy_names.each { |name| $game_message.add(format(Vocab::Emerge, name)) }
-      @speaker = nil
-      show_message
       MGQ_MpGame.call(scene, :wait_for_message)
     end
 
@@ -290,30 +291,28 @@ module MGQ_MpBattlesSync
       MGQ_MpGame.get(scene, :log_window)
     end
 
-    # Shows a line a character says, with its face.
+    # Shows a line a character says, with its face, through the game's message, which names its
+    # speaker for a mod that shows battle messages by their side.
     #
-    # @param speaker [Game_Battler, nil] Who says it, which decides the side of its box.
+    # The first line of a message lets the game move an earlier one on first, unless the guest has
+    # to catch up, so two messages never show as one.
+    #
+    # @param scene [Scene_Battle] The battle.
+    # @param speaker [Game_Battler, nil] Who says it.
     # @param face_name [String] The face file.
     # @param face_index [Integer] The face in the file.
     # @param background [Integer] The window's background.
     # @param position [Integer] The window's position.
     # @param text [String] The line.
-    def self.message(speaker, face_name, face_index, background, position, text)
-      @speaker = speaker
+    def self.message(scene, speaker, face_name, face_index, background, position, text)
+      MGQ_MpGame.call(scene, :wait_for_message) if @message_complete && $game_message.has_text? && !behind?
+      @message_complete = false
+      $game_message.speaker = speaker
       $game_message.face_name = face_name.to_s
       $game_message.face_index = face_index.to_i
       $game_message.background = background.to_i
       $game_message.position = position.to_i
       $game_message.add(Names.readable(Names.swap_message(text.to_s)))
-    end
-
-    # Puts a message whose last line arrived into a box of the Battle Dialogue mod of the
-    # MGQ-Paradox-Mod-Collection, which the host's battle did the same with, so the guest never
-    # waits for its message window. Without the mod, the message window moves on by itself.
-    def self.show_message
-      return unless defined?(Battle_Dialogue) && Battle_Dialogue.active?
-
-      Battle_Dialogue.speaking(@speaker) { Battle_Dialogue.take_message }
     end
 
     # Changes a picture, such as a cut-in.
@@ -416,4 +415,9 @@ module MGQ_MpBattlesSync
       end
     end
   end
+end
+
+class Game_Message
+  # The battler who says the message, for a mod that shows battle messages by their side.
+  attr_accessor :speaker unless method_defined?(:speaker)
 end

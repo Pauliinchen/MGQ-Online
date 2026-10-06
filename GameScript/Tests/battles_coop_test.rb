@@ -2,6 +2,7 @@
 #  battles_coop_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-06: Checked that the guest shows the host's messages through the game's message, with their speaker
 #      Paulinchen  2026-10-04: Checked that only the players whose command was for a character another player swapped out choose again
 #                            - Checked that a player who leaves mid-phase stays in the party until the next phase
 #                            - Checked that the roster carries the battle's level and that the party goes through the level sync
@@ -595,3 +596,27 @@ $differences = ["counter 0 (sent 500)"]
 MGQ_MpBattlesCoop.check(Game_MpAlly.allocate.tap { |ally| ally.define_singleton_method(:name) { "Actor9 (Mate)" } })
 check("a rebuild that differs is logged", $log.last, "co-op battle: Actor9 (Mate) differs: counter 0 (sent 500)")
 $differences = nil
+
+# The guest shows the host's messages through the game's message, which names their speaker, and
+# lets the game move an earlier message on before a new one starts.
+class Game_Message
+  attr_accessor :face_name, :face_index, :background, :position
+  def has_text?; !$game_message_texts.to_a.empty?; end
+end
+class Scene_Battle; def wait_for_message; $message_waits += 1; $game_message_texts = []; end; end
+playback = MGQ_MpBattlesSync::Playback
+speaker = $game_troop.members[0]
+MGQ_MpBattlesSync.join_world(:guest, "g8", [0], "Host")
+playback.reset
+$message_waits = 0
+$game_message_texts = []
+playback.message(scene, speaker, "face", 1, 0, 2, "First line")
+playback.message(scene, speaker, "face", 1, 0, 2, "Second line")
+check("a message's lines go into the game's message with their speaker", [$game_message_texts, $game_message.speaker, $message_waits], [["First line", "Second line"], speaker, 0])
+playback.instance_variable_set(:@message_complete, true)
+playback.message(scene, nil, "", 0, 0, 2, "Next message")
+check("a new message lets the game move the earlier one on first", [$message_waits, $game_message_texts, $game_message.speaker], [1, ["Next message"], nil])
+$game_message_texts = []
+playback.instance_variable_set(:@message_complete, true)
+playback.message(scene, speaker, "face", 1, 0, 2, "Alone")
+check("with nothing waiting it starts at once", [$message_waits, $game_message_texts], [1, ["Alone"]])
