@@ -2,7 +2,8 @@
 //  TestRelay.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-06: Kept the Mod Config options games send for a catalog mod
+//      Paulinchen  2026-10-06: Refereed trades between two players of a world, committed once both sent the same hash
+//                            - Kept the Mod Config options games send for a catalog mod
 //                            - Let an admin replace a world's mod settings too
 //                            - Served a mod catalog the tests fill, and uploaded mods' zips
 //                            - Kept a world's mod hashes and mod settings, which only its creator replaces
@@ -44,7 +45,7 @@ namespace MGQParadox.Multiplayer.Tests;
 /// A relay inside the test process, following the protocol of Relay/README.md as far as the tests
 /// need: one host and one guest per room, <c>paired</c> once both are in, <c>ping</c> answered with
 /// <c>pong</c>, binary messages passed on, and the other side closed when one leaves; a world
-/// directory; and world rooms that seat the directory's players, tell who comes and goes, and pass
+/// directory; trades between its players; and world rooms that seat the directory's players, tell who comes and goes, and pass
 /// messages on with the sender's seat in front.
 /// </summary>
 internal sealed class TestRelay : IDisposable
@@ -95,6 +96,11 @@ internal sealed class TestRelay : IDisposable
     private readonly Dictionary<string, Dictionary<string, Peer?>> _rooms = new();
 
     /// <summary>
+    /// The trades by id.
+    /// </summary>
+    private readonly Dictionary<string, TestTrade> _trades = new();
+
+    /// <summary>
     /// Starts the relay.
     /// </summary>
     public TestRelay()
@@ -142,6 +148,20 @@ internal sealed class TestRelay : IDisposable
             lock (_gate)
             {
                 return _rooms.Values.Sum(room => room.Values.Count(peer => peer != null));
+            }
+        }
+    }
+
+    /// <summary>
+    /// How many trades the relay keeps.
+    /// </summary>
+    public int Trades
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _trades.Count;
             }
         }
     }
@@ -253,6 +273,12 @@ internal sealed class TestRelay : IDisposable
         if (!context.Request.IsWebSocketRequest && parts is ["v1", "mods", ..])
         {
             await ServeModsAsync(context, parts);
+            return;
+        }
+
+        if (!context.Request.IsWebSocketRequest && parts is ["v1", "trades", ..])
+        {
+            await ServeTradesAsync(context, parts);
             return;
         }
 
@@ -370,6 +396,166 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
     await context.Response.OutputStream.WriteAsync(bytes);
     context.Response.Close();
 }
+
+    /// <summary>
+    /// Answers the trades' requests: commit, cancel, state, done, and the committed trades a player has not marked done.
+    /// </summary>
+    /// <param name="context">The request.</param>
+    /// <param name="parts">The path's parts, "v1" and "trades" first.</param>
+    /// <returns>Completes once answered.</returns>
+    private async Task ServeTradesAsync(HttpListenerContext context, string[] parts)
+    {
+        var method = context.Request.HttpMethod;
+        var query = context.Request.QueryString;
+        using var reader = new StreamReader(context.Request.InputStream, Encoding.UTF8);
+        var body = method == "POST" ? JsonNode.Parse(await reader.ReadToEndAsync()) : null;
+        var player = PlayerIdOf((method == "POST" ? body?["player"]?.GetValue<string>() : query["player"]) ?? string.Empty);
+        (int Status, JsonNode Body) answer;
+
+        lock (_gate)
+        {
+            answer = parts switch
+            {
+                ["v1", "trades"] when method == "GET" => (200, PendingTrades(player, query["world"] ?? string.Empty)),
+                ["v1", "trades", var id] when method == "GET" && TradeOf(id, player) is { } trade => (200, trade.Answer()),
+                ["v1", "trades", var id, "commit"] when method == "POST" => CommitTrade(id, player, body!),
+                ["v1", "trades", var id, "cancel"] when method == "POST" && TradeOf(id, player) is { } trade => CancelTrade(trade),
+                ["v1", "trades", var id, "done"] when method == "POST" && TradeOf(id, player) is { } trade => TradeDone(id, trade, player),
+                _ => (404, Error("there is no such trade")),
+            };
+        }
+
+        var bytes = Encoding.UTF8.GetBytes(answer.Body.ToJsonString());
+        context.Response.StatusCode = answer.Status;
+        context.Response.ContentType = "application/json";
+        await context.Response.OutputStream.WriteAsync(bytes);
+        context.Response.Close();
+    }
+
+    /// <summary>
+    /// Takes one player's commit of a trade: the first makes it pending, the partner's with the same
+    /// hash commits it, a different hash cancels it. Called with the gate held.
+    /// </summary>
+    /// <param name="id">The trade's id.</param>
+    /// <param name="player">The committing player's id.</param>
+    /// <param name="body">The commit.</param>
+    /// <returns>The answer.</returns>
+    private (int, JsonNode) CommitTrade(string id, string player, JsonNode body)
+    {
+        var world = body["world"]!.GetValue<string>();
+        var partner = body["partner"]!.GetValue<string>();
+        var commit = (Hash: body["hash"]!.GetValue<string>(), Sealed: body["sealed"]!.GetValue<string>());
+
+        if (!_directory.TryGetValue(world, out var entry))
+        {
+            return (404, Error("there is no such world"));
+        }
+
+        if (!IsTrader(entry, player) || !IsTrader(entry, partner) || player == partner)
+        {
+            return (403, Error("both players must be players of the world"));
+        }
+
+        if (!_trades.TryGetValue(id, out var trade))
+        {
+            trade = _trades[id] = new TestTrade(world, player, partner);
+            trade.Commits[player] = commit;
+            return (200, trade.Answer());
+        }
+
+        if (trade.World != world || trade.OtherOf(player) != partner)
+        {
+            return (409, Error("the trade id belongs to another trade"));
+        }
+
+        if (trade.State == "cancelled")
+        {
+            return (200, trade.Answer());
+        }
+
+        if (trade.Commits.TryGetValue(player, out var own))
+        {
+            return own == commit ? (200, trade.Answer()) : (409, Error("the player committed other offers already"));
+        }
+
+        trade.Commits[player] = commit;
+        (trade.State, trade.Reason) = trade.Commits[partner].Hash == commit.Hash ? ("committed", null) : ("cancelled", "differ");
+        return (200, trade.Answer());
+    }
+
+    /// <summary>
+    /// Cancels a pending trade; a committed one stays committed. Called with the gate held.
+    /// </summary>
+    /// <param name="trade">The trade.</param>
+    /// <returns>The answer.</returns>
+    private static (int, JsonNode) CancelTrade(TestTrade trade)
+    {
+        if (trade.State == "pending")
+        {
+            (trade.State, trade.Reason) = ("cancelled", "cancelled");
+        }
+
+        return (200, trade.Answer());
+    }
+
+    /// <summary>
+    /// Marks a committed trade done for one of its players, and deletes it once both did. Called with the gate held.
+    /// </summary>
+    /// <param name="id">The trade's id.</param>
+    /// <param name="trade">The trade.</param>
+    /// <param name="player">The player's id.</param>
+    /// <returns>The answer.</returns>
+    private (int, JsonNode) TradeDone(string id, TestTrade trade, string player)
+    {
+        if (trade.State != "committed")
+        {
+            return (409, Error("the trade is not committed"));
+        }
+
+        trade.Done.Add(player);
+
+        if (trade.Done.Count == 2)
+        {
+            _trades.Remove(id);
+        }
+
+        return (200, trade.Answer());
+    }
+
+    /// <summary>
+    /// Lists a world's committed trades a player has not marked done, with the offers the player sealed. Called with the gate held.
+    /// </summary>
+    /// <param name="player">The player's id.</param>
+    /// <param name="world">The world.</param>
+    /// <returns>The answer's body.</returns>
+    private JsonNode PendingTrades(string player, string world)
+    {
+        var listed = new JsonArray();
+
+        foreach (var (id, trade) in _trades.Where(entry => entry.Value.World == world && entry.Value.State == "committed" && entry.Value.Commits.ContainsKey(player) && !entry.Value.Done.Contains(player)))
+        {
+            listed.Add(new JsonObject { ["id"] = id, ["hash"] = trade.Commits[player].Hash, ["sealed"] = trade.Commits[player].Sealed });
+        }
+
+        return new JsonObject { ["trades"] = listed };
+    }
+
+    /// <summary>
+    /// Finds a trade for one of its two players. Called with the gate held.
+    /// </summary>
+    /// <param name="id">The trade's id.</param>
+    /// <param name="player">The player's id.</param>
+    /// <returns>The trade, or <see langword="null"/> when there is none or the player is not one of its two.</returns>
+    private TestTrade? TradeOf(string id, string player) =>
+        _trades.TryGetValue(id, out var trade) && (trade.First == player || trade.Second == player) ? trade : null;
+
+    /// <summary>
+    /// Tells whether a player may trade in a world: one of its players, not removed.
+    /// </summary>
+    /// <param name="world">The world.</param>
+    /// <param name="player">The player's id.</param>
+    /// <returns>Whether they may.</returns>
+    private static bool IsTrader(DirectoryWorld world, string player) => world.Members.ContainsKey(player) && !world.Bans.Contains(player);
 
     /// <summary>
     /// Answers the world directory's requests.
@@ -1063,5 +1249,62 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
         /// Its starting save, <see langword="null"/> before its creator uploaded one.
         /// </summary>
         public byte[]? StartBytes { get; set; }
+    }
+
+    /// <summary>
+    /// A trade between two players of a world.
+    /// </summary>
+    /// <param name="world">The world.</param>
+    /// <param name="first">The id of the player who committed first.</param>
+    /// <param name="second">The other player's id.</param>
+    private sealed class TestTrade(string world, string first, string second)
+    {
+        /// <summary>
+        /// The world.
+        /// </summary>
+        public string World { get; } = world;
+
+        /// <summary>
+        /// The id of the player who committed first.
+        /// </summary>
+        public string First { get; } = first;
+
+        /// <summary>
+        /// The other player's id.
+        /// </summary>
+        public string Second { get; } = second;
+
+        /// <summary>
+        /// Each player's commit by id.
+        /// </summary>
+        public Dictionary<string, (string Hash, string Sealed)> Commits { get; } = [];
+
+        /// <summary>
+        /// "pending", "committed" or "cancelled".
+        /// </summary>
+        public string State { get; set; } = "pending";
+
+        /// <summary>
+        /// Why it was cancelled, <see langword="null"/> otherwise.
+        /// </summary>
+        public string? Reason { get; set; }
+
+        /// <summary>
+        /// The players who marked it done.
+        /// </summary>
+        public HashSet<string> Done { get; } = [];
+
+        /// <summary>
+        /// Names the other player.
+        /// </summary>
+        /// <param name="player">One player's id.</param>
+        /// <returns>The other's id, or <see langword="null"/> when the player is neither.</returns>
+        public string? OtherOf(string player) => player == First ? Second : player == Second ? First : null;
+
+        /// <summary>
+        /// Makes what a player is told of the trade.
+        /// </summary>
+        /// <returns>The state, and why it was cancelled.</returns>
+        public JsonNode Answer() => Reason == null ? new JsonObject { ["state"] = State } : new JsonObject { ["state"] = State, ["reason"] = Reason };
     }
 }

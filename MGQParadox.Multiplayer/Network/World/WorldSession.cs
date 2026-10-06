@@ -2,6 +2,7 @@
 //  WorldSession.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-06: Kept the world opened last, whose token seals the offers of a trade
 //      Paulinchen  2026-09-29: Pinged the relay every few seconds and told the round trip as the ping
 //                            - Entered as the player the game script set, and stopped for good once the world was deleted or the player removed
 //                            - Created
@@ -184,6 +185,11 @@ internal sealed class WorldSession
     private Connection? _connection;
 
     /// <summary>
+    /// The world entered, until it is left; <see langword="null"/> while none is.
+    /// </summary>
+    private WorldCode? _world;
+
+    /// <summary>
     /// The game's world connection, which the game script uses.
     /// </summary>
     public static WorldSession Current { get; } = new();
@@ -247,6 +253,7 @@ internal sealed class WorldSession
             }
             else
             {
+                _world = world;
                 StartThread("MultiplayerWorld", () => Run(generation, world, player.Key, player.Name));
                 opened = true;
             }
@@ -269,6 +276,19 @@ internal sealed class WorldSession
         }
 
         previous?.Stop();
+    }
+
+    /// <summary>
+    /// Hands out the world entered, while the game is in it, even while its connection breaks and is taken again.
+    /// </summary>
+    /// <param name="id">The world's id, its room's.</param>
+    /// <returns>The world's code, or <see langword="null"/> when the game is not in that world.</returns>
+    public WorldCode? OpenWorld(string id)
+    {
+        lock (_gate)
+        {
+            return _world is { } world && Relays.WorldRoomOf(world.Token) == id ? world : null;
+        }
     }
 
     /// <summary>
@@ -639,6 +659,7 @@ internal sealed class WorldSession
         _others.Clear();
         _inbox.Clear();
         _connection = null;
+        _world = null;
         Monitor.PulseAll(_gate);
         return previous;
     }

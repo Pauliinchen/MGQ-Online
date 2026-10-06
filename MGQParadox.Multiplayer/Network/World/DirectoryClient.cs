@@ -2,7 +2,8 @@
 //  DirectoryClient.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-06: Sent the Mod Config options of a catalog mod, and read the version they came from
+//      Paulinchen  2026-10-06: Committed, cancelled, read and finished trades, and listed those committed and not yet done
+//                            - Sent the Mod Config options of a catalog mod, and read the version they came from
 //                            - Sent a world's mod settings on their own, which the creator or an admin may, and no longer with the other changes
 //                            - Read whether a link mod of the catalog is a zip
 //                            - Read the mod catalog and an uploaded mod's zip
@@ -74,6 +75,11 @@ internal sealed class DirectoryClient
     private readonly Uri _mods;
 
     /// <summary>
+    /// The trades' address, /v1/trades at the relay.
+    /// </summary>
+    private readonly Uri _trades;
+
+    /// <summary>
     /// Creates a client for a relay's directory.
     /// </summary>
     /// <param name="relay">The relay's address, wss:// or ws://, as <see cref="Relays"/> names it.</param>
@@ -83,6 +89,8 @@ internal sealed class DirectoryClient
         _worlds = web.Uri;
         web.Path = "/v1/mods";
         _mods = web.Uri;
+        web.Path = "/v1/trades";
+        _trades = web.Uri;
     }
 
     /// <summary>
@@ -453,6 +461,104 @@ private static Dictionary<string, string> FilesOf(JsonElement element)
 }
 
     /// <summary>
+    /// Commits this player's side of a trade: the hash of the offers both games agreed on, and the offers sealed.
+    /// </summary>
+    /// <param name="trade">The trade's id.</param>
+    /// <param name="playerKey">The player's key.</param>
+    /// <param name="world">The world both players trade in.</param>
+    /// <param name="partner">The other player's id.</param>
+    /// <param name="hash">The SHA-256 of the offers, hexadecimal.</param>
+    /// <param name="sealedOffers">The offers, see <see cref="TradeSeal.Seal"/>.</param>
+    /// <returns>Where the trade stands.</returns>
+    /// <exception cref="DirectoryException">The relay could not be reached or refused.</exception>
+    public TradeAnswer CommitTrade(string trade, string playerKey, string world, string partner, string hash, string sealedOffers)
+    {
+        var body = Json(writer =>
+        {
+            writer.WriteString("player", playerKey);
+            writer.WriteString("world", world);
+            writer.WriteString("partner", partner);
+            writer.WriteString("hash", hash);
+            writer.WriteString("sealed", sealedOffers);
+        });
+
+        using var document = Send(HttpMethod.Post, TradeAddress(trade, "commit"), body);
+        return AnswerOf(document.RootElement);
+    }
+
+    /// <summary>
+    /// Cancels a trade while it is pending; a committed one stays committed.
+    /// </summary>
+    /// <param name="trade">The trade's id.</param>
+    /// <param name="playerKey">The key of one of its two players.</param>
+    /// <returns>Where the trade stands.</returns>
+    /// <exception cref="DirectoryException">The relay could not be reached, knows no such trade, or refused.</exception>
+    public TradeAnswer CancelTrade(string trade, string playerKey)
+    {
+        using var document = Send(HttpMethod.Post, TradeAddress(trade, "cancel"), Json(writer => writer.WriteString("player", playerKey)));
+        return AnswerOf(document.RootElement);
+    }
+
+    /// <summary>
+    /// Reads where a trade stands.
+    /// </summary>
+    /// <param name="trade">The trade's id.</param>
+    /// <param name="playerKey">The key of one of its two players.</param>
+    /// <returns>Where the trade stands.</returns>
+    /// <exception cref="DirectoryException">The relay could not be reached, knows no such trade, or refused.</exception>
+    public TradeAnswer TradeState(string trade, string playerKey)
+    {
+        using var document = Send(HttpMethod.Get, new Uri($"{_trades}/{Uri.EscapeDataString(trade)}?player={Uri.EscapeDataString(playerKey)}"), null);
+        return AnswerOf(document.RootElement);
+    }
+
+    /// <summary>
+    /// Marks a committed trade done for this player, whose game applied and saved it.
+    /// </summary>
+    /// <param name="trade">The trade's id.</param>
+    /// <param name="playerKey">The player's key.</param>
+    /// <exception cref="DirectoryException">The relay could not be reached, knows no such trade, or refused.</exception>
+    public void TradeDone(string trade, string playerKey)
+    {
+        using var _ = Send(HttpMethod.Post, TradeAddress(trade, "done"), Json(writer => writer.WriteString("player", playerKey)));
+    }
+
+    /// <summary>
+    /// Lists the committed trades of a world this player has not marked done.
+    /// </summary>
+    /// <param name="playerKey">The player's key.</param>
+    /// <param name="world">The world.</param>
+    /// <returns>The trades, each with the offers as this player's game sealed them.</returns>
+    /// <exception cref="DirectoryException">The relay could not be reached or refused.</exception>
+    public IReadOnlyList<SealedTrade> PendingTrades(string playerKey, string world)
+    {
+        using var document = Send(HttpMethod.Get, new Uri($"{_trades}?player={Uri.EscapeDataString(playerKey)}&world={Uri.EscapeDataString(world)}"), null);
+        var trades = new List<SealedTrade>();
+
+        foreach (var trade in document.RootElement.GetProperty("trades").EnumerateArray())
+        {
+            trades.Add(new SealedTrade(Text(trade, "id"), Text(trade, "hash"), Text(trade, "sealed")));
+        }
+
+        return trades;
+    }
+
+    /// <summary>
+    /// Reads the relay's answer about a trade.
+    /// </summary>
+    /// <param name="element">The answer.</param>
+    /// <returns>The trade's state, and why it was cancelled.</returns>
+    private static TradeAnswer AnswerOf(JsonElement element) => new(Text(element, "state"), Text(element, "reason"));
+
+    /// <summary>
+    /// Builds the address of one of a trade's routes.
+    /// </summary>
+    /// <param name="trade">The trade's id.</param>
+    /// <param name="route">The route.</param>
+    /// <returns>The address.</returns>
+    private Uri TradeAddress(string trade, string route) => new($"{_trades}/{Uri.EscapeDataString(trade)}/{route}");
+
+    /// <summary>
     /// Reads a flag of the directory's answer.
     /// </summary>
     /// <param name="element">The object holding it.</param>
@@ -642,6 +748,21 @@ internal sealed record WorldAbout(string Description, string Mods, string Data, 
     /// </summary>
     public static WorldAbout None { get; } = new(string.Empty, string.Empty, string.Empty, false);
 }
+
+/// <summary>
+/// Where a trade stands, as the relay answers.
+/// </summary>
+/// <param name="State">"pending", "committed" or "cancelled".</param>
+/// <param name="Reason">Why it was cancelled: "cancelled", "differ" or "expired"; empty otherwise.</param>
+internal sealed record TradeAnswer(string State, string Reason);
+
+/// <summary>
+/// A committed trade as the relay keeps it for one of its players.
+/// </summary>
+/// <param name="Id">The trade's id.</param>
+/// <param name="Hash">The SHA-256 of its offers, hexadecimal.</param>
+/// <param name="Sealed">Its offers as this player's game sealed them, see <see cref="TradeSeal.Seal"/>.</param>
+internal sealed record SealedTrade(string Id, string Hash, string Sealed);
 
 /// <summary>
 /// A player of a world, as the directory lists them.
