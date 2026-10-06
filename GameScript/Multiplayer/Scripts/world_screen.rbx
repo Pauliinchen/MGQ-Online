@@ -2,7 +2,11 @@
 #  world_screen.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-06: Left the mod settings out of creating and changing a world, which its creator now sets in Mod Config, and noted whose world is entered
+#      Paulinchen  2026-10-06: Kept a mod added by name when unlisted, and removed it with Delete, which the hint names while it is picked
+#                            - Typed a mod's name in place in the picker, on the keyboard, instead of on the text screen
+#                            - Named a mod in the picker with Enter and its red ! and orange ? buttons under titled columns instead of a menu, and listed or unlisted every mod at once
+#                            - Picked a world's mods in the mod picker, a list of the installed ones and those added by name, each left out, listed, required or essential
+#                            - Left the mod settings out of creating and changing a world, which its creator now sets in Mod Config, and noted whose world is entered
 #                            - Checked a world's required mods against the relay's catalog and the creator's copies on entry, and offered to download the world's versions and restart
 #                            - Entered the world again on its own after a restart for its mods
 #                            - Sent the creator's hashes of required mods outside the catalog and their settings with a world made or changed
@@ -82,6 +86,24 @@ class Scene_MpWorlds < Scene_MenuBase
     "mods" => "Downloading the mods . . .",
   }
 
+  # What the bottom of the mod picker says.
+  MOD_PICK_HINT = "Enter: list or unlist    →: ! required, ? essential    Esc: done"
+
+  # What the bottom of the mod picker says while a mod added by name is picked.
+  MOD_PICK_ADDED_HINT = "Enter: list or unlist    →: ! required, ? essential    Del: remove    Esc: done"
+
+  # Windows' code of the Delete key, which removes a mod added by name from the picker.
+  DELETE_KEY = 0x2E
+
+  # The titles of the mod picker's button columns.
+  MOD_PICK_COLUMNS = ["Required", "Essential"]
+
+  # What the right end of a mod's row says, by how it is named.
+  MOD_STATE_LABELS = { :unlisted => "unlisted", :listed => "listed", :required => "required", :essential => "essential" }
+
+  # The colour of a mod's row, by how it is named, as its buttons show it.
+  MOD_STATE_COLORS = { :unlisted => :grey, :listed => :plain, :required => :bad, :essential => :gold }
+
   # Creates the windows, fetches the list, and takes what the text or save screen handed back.
   #
   # The scene is the same object again when those screens return, so the forms keep what was
@@ -147,7 +169,9 @@ class Scene_MpWorlds < Scene_MenuBase
     return start_from_own if @own_start
 
     timed(:input) do
-      if @box
+      if @mod_view
+        update_mod_pick
+      elsif @box
         update_box
       elsif form && form.editing
         update_typing
@@ -206,7 +230,7 @@ class Scene_MpWorlds < Scene_MenuBase
 
   # Stops taking what is typed, should the screen close while a text box is typed into.
   def terminate
-    MGQ_Multiplayer::Link.typing(false) if form && form.editing
+    MGQ_Multiplayer::Link.typing(false) if (form && form.editing) || @mod_edit
     @list_box.dispose
     super
   end
@@ -713,6 +737,8 @@ class Scene_MpWorlds < Scene_MenuBase
       MGQ_MpSaveDistribution.choose(:world)
     when :button
       field.key == :data ? update_data : send_form
+    when :mods
+      open_mod_pick
     else
       start_typing(field)
     end
@@ -835,6 +861,225 @@ class Scene_MpWorlds < Scene_MenuBase
       form[key] = checked
       @hinted = nil
     end
+  end
+
+  # Opens the mod picker over the form: the installed mods and those added by name, as the form
+  # names them.
+  def open_mod_pick
+    @mod_pick = MGQ_MpWorld::ModPick.new(form[:mods], MGQ_MpWorld.installed_mod_names)
+    @mod_view = Sprite_MpListBox::View.of("Mods of the world", nil, [], MOD_PICK_HINT)
+    @form_window.deactivate
+    @mod_pick_hold = true
+    show_mod_pick
+  end
+
+  # Lists the mod picker anew, keeping the item picked where it can.
+  def show_mod_pick
+    lines, @mod_targets = mod_pick_lines
+    line = @mod_view.selected || 0
+    line = [line, lines.size - 1].min
+    line -= 1 while line > 0 && lines[line][0] != :item
+    @mod_view.lines = lines
+    @mod_view.note = nil
+    @mod_view.pick(lines[line][0] == :item ? line : @mod_view.items.first)
+    @mod_view.column = 0 unless mod_buttons?
+    @mod_view.hint = added_mod_picked? ? MOD_PICK_ADDED_HINT : MOD_PICK_HINT unless @mod_edit
+  end
+
+  # Tells whether the item picked is a mod added by name, which Delete removes.
+  #
+  # @return [Boolean] Whether it is.
+  def added_mod_picked?
+    target = @mod_targets && @mod_view.selected && @mod_targets[@mod_view.selected]
+    target.is_a?(Integer) && !@mod_pick.entries[target].installed
+  end
+
+  # Takes the mod added by name that is picked out of the picker and the form.
+  def remove_added_mod
+    return unless added_mod_picked? && @mod_pick.remove(@mod_targets[@mod_view.selected])
+
+    Sound.play_cancel
+    form[:mods] = @mod_pick.text
+    show_mod_pick
+  end
+
+  # Writes the mod picker's lines: the row that lists or unlists every installed mod, the installed
+  # mods, the added ones, then the row that adds one. Each mod has a red ! button for required and
+  # an orange ? button for essential, below their columns' titles.
+  #
+  # @return [Array] The lines, see Sprite_MpListBox::View, and what each stands for: a mod's index
+  #   in the picker's entries, :all, :add, or nil for a heading. While a name is typed, the last row
+  #   is its text box.
+  def mod_pick_lines
+    entries = @mod_pick.entries
+    lines = [[:item, @mod_pick.all_listed? ? "Unlist all your mods" : "List all your mods", :plain, nil]]
+    targets = [:all]
+
+    [["Your mods", true], ["Added by name", false]].each do |heading, installed|
+      group = (0...entries.size).select { |index| entries[index].installed == installed }
+      next if group.empty? && !installed
+
+      lines.push([:head, "#{heading} (#{group.size})", MOD_PICK_COLUMNS])
+      targets.push(nil)
+      group.each do |index|
+        state = entries[index].state
+        lines.push([:item, entries[index].name, MOD_STATE_COLORS[state], MOD_STATE_LABELS[state], [["!", :red, state == :required], ["?", :orange, state == :essential]]])
+        targets.push(index)
+      end
+    end
+    lines.push(@mod_edit ? [:item, "Name:", :plain, nil, nil, [@mod_edit, @mod_edit.text, @mod_edit.cursor, @mod_edit.cursor_shown?]] : [:item, "Add a mod by name . . .", :plain, nil])
+    targets.push(:add)
+    [lines, targets]
+  end
+
+  # Tells whether the item picked is a mod, with its two buttons.
+  #
+  # @return [Boolean] Whether it is.
+  def mod_buttons?
+    @mod_view.selected && @mod_view.lines[@mod_view.selected][4] ? true : false
+  end
+
+  # Follows the arrows, confirm, cancel and the mouse while the mod picker is open: up and down
+  # pick a row, left and right a mod's buttons, confirm or a click acts on what is picked.
+  def update_mod_pick
+    @list_box.show(@mod_view)
+    return update_mod_typing if @mod_edit
+
+    # The key that opened the picker or ended the typing must not act on it before it is let go.
+    return @mod_pick_hold = Input.press?(:C) || Input.press?(:B) if @mod_pick_hold
+
+    if Input.repeat?(:DOWN) || Input.repeat?(:UP)
+      @mod_view.move(Input.repeat?(:DOWN) ? 1 : -1)
+      @mod_view.column = 0 unless mod_buttons?
+    end
+    move_mod_column(1) if Input.repeat?(:RIGHT)
+    move_mod_column(-1) if Input.repeat?(:LEFT)
+    remove_added_mod if MGQ_Multiplayer::Key.pressed?(DELETE_KEY)
+
+    position = mouse_position
+    clicked = mouse_clicked?
+    line = position && Sprite_MpListBox.line_at(position[0], position[1], @mod_view)
+
+    if line && @mod_view.lines[line][0] == :item && position != @box_pointed
+      @mod_view.pick(line)
+      @mod_view.column = @mod_view.lines[line][4] ? Sprite_MpListBox.button_at(position[0], 2).to_i : 0
+    end
+    @box_pointed = position if position
+
+    # Closing the picker clears it, so nothing may draw it afterwards.
+    return close_mod_pick if Input.trigger?(:B) || (clicked && position && !Sprite_MpListBox.inside?(position[0], position[1]))
+
+    act_on_mod(@mod_targets[@mod_view.selected], @mod_view.column.to_i) if Input.trigger?(:C) || (clicked && line && @mod_view.lines[line][0] == :item)
+    @mod_view.hint = added_mod_picked? ? MOD_PICK_ADDED_HINT : MOD_PICK_HINT
+    @list_box.show(@mod_view)
+  end
+
+  # Moves the cursor between a mod's name and its two buttons.
+  #
+  # @param step [Integer] 1 to the right, -1 to the left.
+  def move_mod_column(step)
+    return unless mod_buttons?
+
+    column = [[@mod_view.column.to_i + step, 0].max, 2].min
+    Sound.play_cursor if column != @mod_view.column.to_i
+    @mod_view.column = column
+  end
+
+  # Acts on what the mod picker points at: lists or unlists a mod, makes it required or essential
+  # with its buttons, lists or unlists every installed mod, or asks for the name of a mod to add.
+  #
+  # @param target [Integer, Symbol] The mod's index in the picker's entries, :all or :add.
+  # @param column [Integer] 0 for the mod's name, 1 for its required button, 2 for its essential one.
+  def act_on_mod(target, column)
+    Sound.play_ok
+    return start_mod_typing if target == :add
+
+    error = if target == :all
+              @mod_pick.all_listed? ? @mod_pick.unlist_all : @mod_pick.list_all
+            elsif column == 0
+              @mod_pick.toggle(target)
+            else
+              @mod_pick.mark(target, column == 1 ? :required : :essential)
+            end
+    form[:mods] = @mod_pick.text
+    show_mod_pick
+    refuse_in_pick(error) if error
+  end
+
+  # Turns the last row of the picker into a text box for a mod's name, typed on the keyboard.
+  def start_mod_typing
+    @mod_edit = MGQ_MpUi::TextEdit.new("", :max_chars => MGQ_MpWorld::MAX_MODS_CHARS)
+    MGQ_Multiplayer::Link.typing(true)
+    @mod_view.hint = TYPING_HINT
+    show_mod_pick
+  end
+
+  # Takes what was typed into the name's text box: Enter adds the mod, Escape or the numpad's 0 goes
+  # back to the picker.
+  def update_mod_typing
+    text, _keys = MGQ_Multiplayer::Link.take_typed
+    # The numpad's 0 cancels everywhere else in the game, so it leaves the box instead of typing a 0.
+    return finish_mod_typing(nil) if numpad_cancel?
+
+    text.each_char do |char|
+      case @mod_edit.type(char)
+      when :enter then return finish_mod_typing(@mod_edit.text)
+      when :escape then return finish_mod_typing(nil)
+      when :refused then Sound.play_buzzer
+      when :edited then Sound.play_cursor
+      end
+    end
+
+    @mod_edit.update_keys
+    show_mod_pick
+    @list_box.show(@mod_view)
+  end
+
+  # Stops typing the name, and adds the mod when it was entered.
+  #
+  # @param name [String, nil] The name, nil when the player went back.
+  def finish_mod_typing(name)
+    MGQ_Multiplayer::Link.typing(false)
+    @mod_edit = nil
+    @mod_pick_hold = true
+    name ? add_mod(name) : Sound.play_cancel
+    show_mod_pick unless name
+    @list_box.show(@mod_view)
+  end
+
+  # Adds a mod by the name typed, picked, or says why it cannot be.
+  #
+  # @param name [String] The name.
+  def add_mod(name)
+    return unless @mod_pick
+
+    error = @mod_pick.add(name)
+    form[:mods] = @mod_pick.text
+    show_mod_pick
+    return refuse_in_pick(error) if error
+
+    @mod_view.pick(@mod_targets.index(@mod_pick.entries.size - 1))
+    @mod_view.hint = MOD_PICK_ADDED_HINT
+  end
+
+  # Says in the mod picker's title row why a change was refused, since the box covers the lines
+  # at the top.
+  #
+  # @param error [String] Why.
+  def refuse_in_pick(error)
+    Sound.play_buzzer
+    @mod_view.note = error
+  end
+
+  # Closes the mod picker, back to the form, which shows the mods picked.
+  def close_mod_pick
+    Sound.play_cancel
+    @mod_view = nil
+    @mod_pick = nil
+    @list_box.hide
+    @form_window.refresh
+    @hinted = nil
+    @resume_form = true
   end
 
   # Says why something typed or the form is not accepted.
@@ -2333,13 +2578,14 @@ class Window_MpWorldForm < Window_Selectable
     draw_text(box.x + BOX_SIZE + 6, rect.y, rect.width - BOX_SIZE - 8, rect.height, field.label)
   end
 
-  # Writes what a text box or the save shows: a password as stars.
+  # Writes what a text box, the save or the mods show: a password as stars.
   #
   # @param field [MGQ_MpWorld::Form::Field] The field.
   # @return [String] The text.
   def value_text(field)
     value = @form[field.key]
     return value.nil? ? "Choose one of your saves" : save_text(value) if field.kind == :save
+    return value.to_s.empty? ? "None. Confirm to pick them." : value if field.kind == :mods
 
     field.kind == :password ? "*" * value.size : value
   end

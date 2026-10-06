@@ -2,6 +2,9 @@
 #  ui.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-06: Let a list box say a hint of its own at the bottom, and named how high it lies
+#                            - Drew an item being typed into as a text box with its cursor, and the picked item opaque
+#                            - Drew buttons at the right end of an item, each a mark outlined in its color or filled with it, the column titles at the heading above, and the one the cursor is on
 #      Paulinchen  2026-10-04: Added the message box, a box in the middle of the screen drawn like the list box
 #                            - Renamed from mp_ui.rbx
 #                            - Drew a list box's item in gold when asked
@@ -78,6 +81,9 @@ class Sprite_MpListBox < Sprite
   # Where the box sits on the screen.
   BOX = Rect.new(40, 32, 560, 404)
 
+  # How far above the screen's windows the box lies.
+  Z = 1000
+
   # Height of one line of the list.
   ROW = 24
 
@@ -99,11 +105,29 @@ class Sprite_MpListBox < Sprite
   # Width kept at the right of an item for what it says there.
   RIGHT_WIDTH = 120
 
+  # Side of a button at the right end of an item.
+  BUTTON_SIZE = 18
+
+  # Width of a column of buttons, wide enough for the column's title above it.
+  BUTTON_COLUMN = 70
+
+  # Room between the last column of buttons and the box's edge.
+  BUTTON_MARGIN = 6
+
+  # Width of the label in front of a text box in an item.
+  TYPING_LABEL = 60
+
+  # Background of a text box in an item, opaque, so nothing behind the box shows through the text.
+  TEXT_BOX_BACK = Color.new(12, 16, 28)
+
+  # The colors a button may have, by name.
+  BUTTON_COLORS = { :red => Color.new(230, 50, 50), :orange => Color.new(255, 150, 20) }
+
   # Background of the box.
   BACK = Color.new(0, 0, 0, 228)
 
-  # Background of the item picked.
-  PICKED_BACK = Color.new(48, 96, 176, 220)
+  # Background of the item picked, opaque, so nothing behind the box shows through it.
+  PICKED_BACK = Color.new(48, 96, 176)
 
   # Color of a heading.
   HEAD_COLOR = Color.new(160, 200, 255)
@@ -120,25 +144,28 @@ class Sprite_MpListBox < Sprite
   # Color of the hint and of an item that is away.
   GREY = Color.new(150, 150, 150)
 
-  # What the hint says.
+  # What the hint says unless the list says another.
   HINT = "Up and down: move    Esc or a click outside: close"
 
   # What the box lists.
   #
   # @!attribute title [String] The title at the top left.
   # @!attribute note [String, nil] What the top right says.
-  # @!attribute lines [Array<Array>] [:head, text] for a heading, [:item, text, color, right] for an item: color is :plain, :good, :gold, :bad or :grey, right what its right end says or nil.
+  # @!attribute lines [Array<Array>] [:head, text, titles] for a heading, titles nil or those of the button columns below it; [:item, text, color, right, buttons] for an item: color is :plain, :good, :gold, :bad or :grey, right what its right end says or nil, buttons nil or each button's mark, color (:red or :orange) and whether it is on. An item being typed into adds [editor, text, cursor, cursor shown], its text the box's label.
   # @!attribute selected [Integer, nil] The line of the item picked, nil without items.
   # @!attribute scroll [Integer] The first line in sight.
-  View = Struct.new(:title, :note, :lines, :selected, :scroll) do
+  # @!attribute hint [String, nil] What the bottom says, nil for HINT.
+  # @!attribute column [Integer, nil] The button of the picked item the cursor is on, from 1; nil or 0 for the item itself.
+  View = Struct.new(:title, :note, :lines, :selected, :scroll, :hint, :column) do
     # Makes a list with its first item picked.
     #
     # @param title [String] The title.
     # @param note [String, nil] What the top right says.
     # @param lines [Array<Array>] The lines.
+    # @param hint [String, nil] What the bottom says, nil for HINT.
     # @return [View] The list.
-    def self.of(title, note, lines)
-      new(title, note, lines, (0...lines.size).find { |line| lines[line][0] == :item }, 0)
+    def self.of(title, note, lines, hint = nil)
+      new(title, note, lines, (0...lines.size).find { |line| lines[line][0] == :item }, 0, hint)
     end
 
     # Lists the lines that are items.
@@ -173,7 +200,7 @@ class Sprite_MpListBox < Sprite
     self.bitmap = Bitmap.new(BOX.width, BOX.height)
     self.x = BOX.x
     self.y = BOX.y
-    self.z = 1000
+    self.z = Z
     self.visible = false
     @shown = nil
   end
@@ -185,6 +212,36 @@ class Sprite_MpListBox < Sprite
   # @return [Boolean] Whether it does.
   def self.inside?(x, y)
     x >= BOX.x && x < BOX.x + BOX.width && y >= BOX.y && y < BOX.y + BOX.height
+  end
+
+  # Finds the button of an item under a point of the screen.
+  #
+  # @param x [Integer] The point's x.
+  # @param count [Integer] How many buttons the item has.
+  # @return [Integer, nil] The button, from 1 at the left; nil outside them.
+  def self.button_at(x, count)
+    (1..count).find do |button|
+      left = BOX.x + column_left(button, count)
+      x >= left && x < left + BUTTON_COLUMN
+    end
+  end
+
+  # Tells where a column of buttons starts, inside the box.
+  #
+  # @param button [Integer] The column, from 1 at the left.
+  # @param count [Integer] How many columns there are.
+  # @return [Integer] Its left edge.
+  def self.column_left(button, count)
+    BOX.width - BUTTON_MARGIN - (count - button + 1) * BUTTON_COLUMN
+  end
+
+  # Tells where a button of an item starts, inside the box: in the middle of its column.
+  #
+  # @param button [Integer] The button, from 1 at the left.
+  # @param count [Integer] How many buttons the item has.
+  # @return [Integer] Its left edge.
+  def self.button_left(button, count)
+    column_left(button, count) + (BUTTON_COLUMN - BUTTON_SIZE) / 2
   end
 
   # Finds the line of the list under a point of the screen.
@@ -232,36 +289,111 @@ class Sprite_MpListBox < Sprite
     bitmap.font.color = GOOD_COLOR
     bitmap.draw_text(10, 2, BOX.width - 20, TITLE - 4, view.note, 2) if view.note
     lines = view.lines[view.scroll, LIST_ROWS] || []
-    lines.each_with_index { |line, index| draw_line(line, TITLE + index * ROW, view.scroll + index == view.selected) }
+    lines.each_with_index { |line, index| draw_line(line, TITLE + index * ROW, view.scroll + index == view.selected, view.column.to_i) }
     bitmap.font.size = 16
     bitmap.font.color = GREY
-    bitmap.draw_text(8, BOX.height - HINT_HEIGHT, BOX.width - 16, HINT_HEIGHT, HINT, 1)
+    bitmap.draw_text(8, BOX.height - HINT_HEIGHT, BOX.width - 16, HINT_HEIGHT, view.hint || HINT, 1)
   end
 
-  # Draws one line of the list: a heading or an item.
+  # Draws one line of the list: a heading, with the titles of the button columns below it, or an
+  # item.
   #
   # @param line [Array] The line, see View.
   # @param y [Integer] The line's top.
   # @param picked [Boolean] Whether it is the item picked.
-  def draw_line(line, y, picked)
-    kind, text, color, right = line
+  # @param column [Integer] The button the cursor is on while it is picked, 0 for the item itself.
+  def draw_line(line, y, picked, column = 0)
+    kind, text, color, right, buttons, typing = line
     bitmap.font.size = ITEM_SIZE
 
     if kind == :head
-      bitmap.font.color = HEAD_COLOR
-      bitmap.draw_text(8, y, BOX.width - 16, ROW, text)
+      draw_heading(text, color, y)
       return
     end
 
     bitmap.fill_rect(4, y, BOX.width - 8, ROW, PICKED_BACK) if picked
     bitmap.font.color = { :good => GOOD_COLOR, :gold => GOLD_COLOR, :bad => BAD_COLOR, :grey => GREY }[color] || Color.new(255, 255, 255)
-    bitmap.draw_text(ITEM_LEFT, y, BOX.width - ITEM_LEFT - 16 - (right ? RIGHT_WIDTH : 0), ROW, text)
-    return unless right
+    return draw_typing(text, typing[0], y) if typing
 
-    bitmap.font.size = 16
-    bitmap.draw_text(BOX.width - RIGHT_WIDTH - 10, y, RIGHT_WIDTH, ROW, right, 2)
+    buttons_width = buttons ? buttons.size * BUTTON_COLUMN + BUTTON_MARGIN : 0
+    bitmap.draw_text(ITEM_LEFT, y, BOX.width - ITEM_LEFT - 16 - (right ? RIGHT_WIDTH : 0) - buttons_width, ROW, text)
+
+    if right
+      bitmap.font.size = 16
+      bitmap.draw_text(BOX.width - RIGHT_WIDTH - 10 - buttons_width, y, RIGHT_WIDTH, ROW, right, 2)
+    end
+
+    (buttons || []).each_with_index do |(glyph, tint, on), index|
+      x = self.class.button_left(index + 1, buttons.size)
+      draw_button(glyph, BUTTON_COLORS[tint] || GREY, on, x, y + (ROW - BUTTON_SIZE) / 2, picked && column == index + 1)
+    end
   end
 
+  # Draws an item being typed into: its label, then a text box with the text and the cursor.
+  #
+  # @param label [String] What the text is for.
+  # @param editor [MGQ_MpUi::TextEdit] The text box's editor.
+  # @param y [Integer] The line's top.
+  def draw_typing(label, editor, y)
+    bitmap.draw_text(ITEM_LEFT, y, TYPING_LABEL, ROW, label)
+    box = Rect.new(ITEM_LEFT + TYPING_LABEL, y + 2, BOX.width - ITEM_LEFT - TYPING_LABEL - 16, ROW - 4)
+    bitmap.fill_rect(box, TEXT_BOX_BACK)
+    bitmap.font.color = Color.new(255, 255, 255)
+    MGQ_MpUi::TextBox.draw_line(bitmap, Rect.new(box.x + 4, y, box.width - 8, ROW), editor)
+  end
+
+  # Draws a heading, and the titles of the button columns of the items below it at its right.
+  #
+  # @param text [String] The heading.
+  # @param titles [Array<String>, nil] The columns' titles, from the left; nil for none.
+  # @param y [Integer] The line's top.
+  def draw_heading(text, titles, y)
+    bitmap.font.color = HEAD_COLOR
+    bitmap.draw_text(8, y, BOX.width - 16, ROW, text)
+    bitmap.font.size = 14
+
+    (titles || []).each_with_index do |title, index|
+      left = self.class.column_left(index + 1, titles.size)
+      bitmap.draw_text(left, y, BUTTON_COLUMN, ROW, title, 1)
+    end
+  end
+
+  # Draws a button: its mark in a square outlined in its color while off, filled while on, and
+  # framed in white while the cursor is on it.
+  #
+  # @param glyph [String] Its mark, such as "!".
+  # @param color [Color] Its color.
+  # @param on [Boolean] Whether it is on.
+  # @param x [Integer] Its left edge.
+  # @param y [Integer] Its top edge.
+  # @param focused [Boolean] Whether the cursor is on it.
+  def draw_button(glyph, color, on, x, y, focused)
+    draw_frame(x - 3, y - 3, BUTTON_SIZE + 6, Color.new(255, 255, 255)) if focused
+
+    if on
+      bitmap.fill_rect(x, y, BUTTON_SIZE, BUTTON_SIZE, color)
+    else
+      draw_frame(x, y, BUTTON_SIZE, color)
+      draw_frame(x + 1, y + 1, BUTTON_SIZE - 2, color)
+    end
+
+    bitmap.font.size = 16
+    bitmap.font.color = on ? Color.new(255, 255, 255) : color
+    bitmap.draw_text(x, y, BUTTON_SIZE, BUTTON_SIZE, glyph, 1)
+  end
+
+  # Draws a square frame, one pixel wide.
+  #
+  # @param x [Integer] Its left edge.
+  # @param y [Integer] Its top edge.
+  # @param size [Integer] Its side.
+  # @param color [Color] Its color.
+  def draw_frame(x, y, size, color)
+    bitmap.fill_rect(x, y, size, 1, color)
+    bitmap.fill_rect(x, y + size - 1, size, 1, color)
+    bitmap.fill_rect(x, y, 1, size, color)
+    bitmap.fill_rect(x + size - 1, y, 1, size, color)
+  end
   # Frees the box's picture.
   def dispose
     bitmap.dispose

@@ -2,7 +2,9 @@
 #  world.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-06: Sent a world's mod settings on their own, and no longer with an edit
+#      Paulinchen  2026-10-06: Kept a mod added by name in the mod picker when unlisted, removed only on its own
+#                            - Listed the installed mods for the mod picker, which names a world's mods in the forms, and took up to 300 characters of them
+#                            - Sent a world's mod settings on their own, and no longer with an edit
 #                            - Read and sent a world's mod hashes and mod settings from its creator
 #                            - Found a required mod's script in the Patch folder, and read the folder anew when asked
 #      Paulinchen  2026-10-04: Showed the update notice in a message box that stays until the player closes it
@@ -98,7 +100,11 @@ module MGQ_MpWorld
   MAX_DESCRIPTION_CHARS = 1000
 
   # Longest text that names the mods a world needs.
-  MAX_MODS_CHARS = 80
+  MAX_MODS_CHARS = 300
+
+  # Scripts every player of a world has, which the mod picker leaves out: the mod loader, this mod
+  # and Mod Config Remake, which ships with it. Compared by mod_key.
+  SHARED_SCRIPTS = %w[patch multiplayer 0modconfigremake]
 
   # Lines of the description the create form shows at once.
   DESCRIPTION_LINES = 4
@@ -767,6 +773,18 @@ module MGQ_MpWorld
     nil
   end
 
+  # Lists the mods the Patch folder holds, for the mod picker: each script once, by its file's name,
+  # without the scripts every player has.
+  #
+  # @return [Array<String>] The names, sorted whatever their case; none when the folder cannot be read.
+  def self.installed_mod_names
+    names = Dir.glob("#{PATCH_DIR}/**/*.rb").map { |path| File.basename(path, ".rb") }
+    names.reject { |name| SHARED_SCRIPTS.include?(mod_key(name)) }.uniq { |name| mod_key(name) }.sort_by { |name| name.downcase }
+  rescue => e
+    log("reading the Patch folder failed: #{e.class}: #{e.message}")
+    []
+  end
+
   # Forgets which scripts the Patch folder holds, so the next look reads it anew.
   def self.forget_installed
     @installed = nil
@@ -1161,7 +1179,7 @@ module MGQ_MpWorld
   # A form of the world screen: its fields, laid out in rows, and what is filled in.
   class Form
     # A field of a form: a text box (:text, :password, :number or :id), a box of several lines (:area), a checkbox (:check), a save
-    # to choose (:save) or the button that sends the form (:button).
+    # to choose (:save), the mods picked in the mod picker (:mods) or the button that sends the form (:button).
     class Field
       # What the form keeps the field's value under.
       attr_reader :key
@@ -1242,7 +1260,7 @@ module MGQ_MpWorld
         Field.new(:from_save, :check, "Shared save", 3, "New players start from one of your saves. Fixed once created.", :side => :left, :group => "Starting point"),
         Field.new(:choose, :check, "Player's choice", 3, "New players pick their start: the opening or a save. Fixed once created.", :side => :right, :group => "Starting point"),
         Field.new(:save, :save, "Save", 4, "The save every new player starts from.", :needs => :from_save, :group => "Starting point"),
-        Field.new(:mods, :text, "Mods", 5, "Mods, separated by ; . !Name: games need Patch/Name.rb. ?Name: essential, unchecked.", :max_chars => MAX_MODS_CHARS, :optional => true, :group => "Game data"),
+        Field.new(:mods, :mods, "Mods", 5, "The mods of the world: listed, required to enter or essential. Enter picks them.", :group => "Game data"),
         Field.new(:mismatch, :check, "Allow data mismatch", 6, "Ticked: games with other data are warned. Unticked: kept out. Fixed once created.", :group => "Game data"),
         Field.new(:description, :area, "What the world is about", 7, "Shown in the world's details. Optional.", :max_chars => MAX_DESCRIPTION_CHARS, :optional => true, :lines => DESCRIPTION_LINES, :group => "Description"),
         Field.new(:confirm, :button, "Create the world", 8, "Creates the world. You enter it from the list."),
@@ -1258,7 +1276,7 @@ module MGQ_MpWorld
     def self.edit(listed, own = false)
       fields = [
         Field.new(:seats, :number, "Max Players", 0, "Players in the world at once, #{MIN_SEATS} to #{MAX_SEATS}.", :max_chars => MAX_SEATS.to_s.size, :allowed => /\A\d\z/, :group => "World"),
-        Field.new(:mods, :text, "Mods", 1, "Mods, separated by ; . !Name: games need Patch/Name.rb. ?Name: essential, unchecked.", :max_chars => MAX_MODS_CHARS, :optional => true, :group => "Game data"),
+        Field.new(:mods, :mods, "Mods", 1, "The mods of the world: listed, required to enter or essential. Enter picks them.", :group => "Game data"),
         Field.new(:description, :area, "What the world is about", 3, "Shown in the world's details. Optional.", :max_chars => MAX_DESCRIPTION_CHARS, :optional => true, :lines => DESCRIPTION_LINES, :group => "Description"),
         Field.new(:confirm, :button, "Save the changes", 4, "Changes the world for everyone."),
       ]
@@ -1360,6 +1378,159 @@ module MGQ_MpWorld
         return [index, error] if error
       end
       nil
+    end
+  end
+
+  # The mods of a world as the mod picker shows them: every mod the Patch folder holds, each
+  # unlisted, listed, required or essential, then the mods added by name, which this game lacks.
+  class ModPick
+    # How a mod can be named, in the order the picker offers them.
+    STATES = [:unlisted, :listed, :required, :essential]
+
+    # The mark in front of a mod's name for each state it is named in.
+    MARKS = { :listed => "", :required => "!", :essential => "?" }
+
+    # A mod of the picker.
+    #
+    # @!attribute name [String] Its name, the script's file name for an installed one.
+    # @!attribute state [Symbol] One of STATES.
+    # @!attribute installed [Boolean] Whether the Patch folder holds it.
+    Entry = Struct.new(:name, :state, :installed)
+
+    # The mods, the installed ones first.
+    attr_reader :entries
+
+    # Reads the mods a world names into the player's installed ones; a named mod the player lacks
+    # follows them as added.
+    #
+    # @param text [String, nil] The mods as written, see MGQ_MpWorld.mods_of.
+    # @param installed [Array<String>] The installed mods' names, see MGQ_MpWorld.installed_mod_names.
+    def initialize(text, installed)
+      @entries = installed.map { |name| Entry.new(name, :unlisted, true) }
+      required = MGQ_MpWorld.required_mods(text)
+      essential = MGQ_MpWorld.essential_mods(text)
+
+      MGQ_MpWorld.mods_of(text).each do |name|
+        state = required.include?(name) ? :required : (essential.include?(name) ? :essential : :listed)
+        entry = find(name)
+        entry ? entry.state = state : @entries.push(Entry.new(name, state, false))
+      end
+    end
+
+    # Writes the mods named, the way a world keeps them.
+    #
+    # @return [String] Each named mod with its mark, separated by semicolons.
+    def text
+      @entries.reject { |entry| entry.state == :unlisted }.map { |entry| "#{MARKS[entry.state]}#{entry.name}" }.join("; ")
+    end
+
+    # Names a mod another way. An added mod unlisted stays in the picker, but out of the text.
+    #
+    # @param index [Integer] The mod's index in entries.
+    # @param state [Symbol] One of STATES.
+    # @return [String, nil] Why it cannot, nil when it was done.
+    def set(index, state)
+      entry = @entries[index]
+      before = entry.state
+      entry.state = state
+      return too_long(entry, before) if text.size > MAX_MODS_CHARS
+
+      nil
+    end
+
+    # Takes a mod added by name out of the picker. An installed mod stays, since the Patch folder
+    # holds it.
+    #
+    # @param index [Integer] The mod's index in entries.
+    # @return [Boolean] Whether it was taken out.
+    def remove(index)
+      return false if @entries[index].installed
+
+      @entries.delete_at(index)
+      true
+    end
+
+    # Lists an unlisted mod, or unlists a named one.
+    #
+    # @param index [Integer] The mod's index in entries.
+    # @return [String, nil] Why it cannot, nil when it was done.
+    def toggle(index)
+      set(index, @entries[index].state == :unlisted ? :listed : :unlisted)
+    end
+
+    # Makes a mod required or essential, or only listed again when it is so already.
+    #
+    # @param index [Integer] The mod's index in entries.
+    # @param state [Symbol] :required or :essential.
+    # @return [String, nil] Why it cannot, nil when it was done.
+    def mark(index, state)
+      set(index, @entries[index].state == state ? :listed : state)
+    end
+
+    # Tells whether every installed mod is named.
+    #
+    # @return [Boolean] Whether it is; also when none is installed.
+    def all_listed?
+      @entries.all? { |entry| !entry.installed || entry.state != :unlisted }
+    end
+
+    # Lists every unlisted installed mod, in order, until the text would grow too long.
+    #
+    # @return [String, nil] Why the rest could not be listed, nil when all were.
+    def list_all
+      @entries.each_index do |index|
+        next unless @entries[index].installed && @entries[index].state == :unlisted
+
+        error = set(index, :listed)
+        return error if error
+      end
+      nil
+    end
+
+    # Unlists every installed mod; the mods added by name stay.
+    #
+    # @return [nil] Nothing, since unlisting always fits.
+    def unlist_all
+      @entries.each { |entry| entry.state = :unlisted if entry.installed }
+      nil
+    end
+
+    # Adds a mod the player lacks by its name, listed.
+    #
+    # @param name [String] The name as typed.
+    # @return [String, nil] Why it cannot, nil when it was added.
+    def add(name)
+      name = name.to_s.strip.sub(/\A[!?]\s*/, "")
+      return "A mod's name cannot be empty." if name.empty?
+      return "A mod's name cannot hold a semicolon." if name.include?(";")
+      return "#{find(name).name} is in the list already." if find(name)
+
+      @entries.push(Entry.new(name, :listed, false))
+      return nil if text.size <= MAX_MODS_CHARS
+
+      @entries.pop
+      "The mods may take #{MAX_MODS_CHARS} characters at most."
+    end
+
+    # Finds a mod by its name, whatever its case, spaces, underscores and hyphens.
+    #
+    # @param name [String] The name.
+    # @return [Entry, nil] The mod, nil when the picker has none of that name.
+    def find(name)
+      key = MGQ_MpWorld.mod_key(name)
+      @entries.find { |entry| MGQ_MpWorld.mod_key(entry.name) == key }
+    end
+
+    private
+
+    # Puts a mod's state back, since the text grew too long with the new one.
+    #
+    # @param entry [Entry] The mod.
+    # @param state [Symbol] Its state before.
+    # @return [String] Why the change was refused.
+    def too_long(entry, state)
+      entry.state = state
+      "The mods may take #{MAX_MODS_CHARS} characters at most."
     end
   end
 end

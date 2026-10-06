@@ -2,7 +2,11 @@
 #  world_data_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-06: Expected mp_dir_edit without the mod settings
+#      Paulinchen  2026-10-06: Checked that an added mod stays when unlisted and goes with Delete
+#                            - Checked typing a mod's name in place in the picker
+#                            - Checked that cancel closes the mod picker without drawing it again
+#                            - Checked the mod picker: the installed mods, Enter and the two buttons of each, listing every mod at once, mods added by name and the 300 characters
+#                            - Expected mp_dir_edit without the mod settings
 #                            - Expected the longer calls of mp_dir_create and mp_dir_edit
 #                            - Loaded world_mods.rbx, which the world screen calls
 #      Paulinchen  2026-10-04: Checked picking the worlds or the commands as a whole before moving into them, and a long word broken inside it
@@ -37,7 +41,7 @@ Rect = Struct.new(:x, :y, :width, :height)
 class Scene_Title; def start; end; def create_command_window; end; def update; end; def terminate; end; end
 class Window_TitleCommand; def make_command_list; end; end
 module Sound; %w[cursor ok cancel buzzer].each { |s| define_singleton_method("play_#{s}") { $sounds << s } }; end
-module Input; def self.trigger?(button); ($buttons || []).include?(button); end; end
+module Input; def self.trigger?(button); ($buttons || []).include?(button); end; def self.repeat?(button); trigger?(button); end; def self.press?(button); ($held || []).include?(button); end; end
 module SceneManager
   def self.call(scene); $called = scene; end
   def self.scene; Object.new.tap { |scene| def scene.prepare(*); end }; end
@@ -62,6 +66,8 @@ module MGQ_Multiplayer
     end
     def self.function(name, signature); Function.new(name, signature); end
     def self.read(name, _size); $dll[name].to_s; end
+    def self.typing(on); $typing = on; end
+    def self.take_typed; typed = $typed.to_s; $typed = nil; [typed, 0]; end
     def self.parse(text)
       head, payload = text.split("\n\n", 2)
       state = { :payload => payload.to_s }
@@ -103,6 +109,31 @@ class FakeChoice
   #
   # @return [Integer] -1, no cursor.
   def index; -1; end
+
+  # The row picked last with select.
+  attr_reader :selected
+
+  # Picks a row.
+  #
+  # @param index [Integer] The row.
+  def select(index); @selected = index; end
+
+  # Draws nothing.
+  def refresh; end
+end
+
+# The list box of the world screen: keeps what it shows and whether it was hidden.
+class FakeBox
+  # What it shows, nil while hidden.
+  attr_reader :view
+
+  # Shows a list, reading its title as the real box draws it, so a closed list fails here too.
+  #
+  # @param view [Sprite_MpListBox::View] The list.
+  def show(view); view.title; @view = view; end
+
+  # Hides the box.
+  def hide; @view = nil; end
 end
 
 # The lines at the top of the world screen: keeps what they show.
@@ -201,7 +232,7 @@ form[:name] = "Modded Run"
 check("a new world needs no description, no mods, and lets differing games in", [form.problem, form[:description], form[:mods], form[:mismatch]], [nil, "", "", true])
 description = form.fields.find { |field| field.key == :description }
 check("the description is a box of several lines in a panel of its own", [description.kind, description.lines, description.group, description.max_chars], [:area, 4, "Description", MGQ_MpWorld::MAX_DESCRIPTION_CHARS])
-check("the mods and the mismatch checkbox share the Game data panel", [:mods, :mismatch].map { |key| field = form.fields.find { |candidate| candidate.key == key }; [field.kind, field.label, field.group] }, [[:text, "Mods", "Game data"], [:check, "Allow data mismatch", "Game data"]])
+check("the mods and the mismatch checkbox share the Game data panel", [:mods, :mismatch].map { |key| field = form.fields.find { |candidate| candidate.key == key }; [field.kind, field.label, field.group] }, [[:mods, "Mods", "Game data"], [:check, "Allow data mismatch", "Game data"]])
 check("the starting point has its own panel", form.fields.select { |field| field.group == "Starting point" }.map { |field| field.label }, ["Shared save", "Player's choice", "Save"])
 check("a description is tidied", form.check(description, "  A slow run.  "), ["A slow run.", nil])
 check("and may be empty", form.check(description, "  "), ["", nil])
@@ -845,3 +876,142 @@ detail.show(MGQ_MpWorld::Entry.new("w2", "Loose", listed[1], folder, false, fals
 texts.clear
 detail.show(MGQ_MpWorld::Entry.new("w2", "Loose", listed[1], same_folder, false, false), "me")
 check("so the details are not drawn again for it", texts, [])
+
+# The mod picker.
+pick = MGQ_MpWorld::ModPick.new("!level cap; Unknown Mod; ?Data Pack", ["Battle_Dialogue", "Level_Cap"])
+check("named mods take their state, matched whatever their case or spaces, and those not installed follow as added", pick.entries.map { |entry| entry.to_a },
+      [["Battle_Dialogue", :unlisted, true], ["Level_Cap", :required, true], ["Data Pack", :essential, false], ["Unknown Mod", :listed, false]])
+check("the text names the mods as the world keeps them, an installed one by its file's name", pick.text, "!Level_Cap; ?Data Pack; Unknown Mod")
+pick.toggle(0)
+check("enter lists an unlisted mod", pick.text, "Battle_Dialogue; !Level_Cap; ?Data Pack; Unknown Mod")
+pick.toggle(3)
+check("and unlists a named one; an added mod unlisted stays in the picker, out of the text", [pick.entries.size, pick.text], [4, "Battle_Dialogue; !Level_Cap; ?Data Pack"])
+check("a mod added by name is removed on its own, an installed one not", [pick.remove(3), pick.remove(0), pick.entries.size], [true, false, 3])
+pick.toggle(1)
+check("an installed one unlisted stays, unnamed, even a required one", [pick.entries.size, pick.text], [3, "Battle_Dialogue; ?Data Pack"])
+pick.mark(0, :required)
+check("the red button makes a mod required", pick.text, "!Battle_Dialogue; ?Data Pack")
+pick.mark(0, :essential)
+check("the warning sign makes it essential instead", pick.text, "?Battle_Dialogue; ?Data Pack")
+pick.mark(0, :essential)
+check("pressed again, it is only listed", pick.text, "Battle_Dialogue; ?Data Pack")
+pick.mark(1, :required)
+check("a button names an unlisted mod at once", pick.text, "Battle_Dialogue; !Level_Cap; ?Data Pack")
+check("a mod is added by name, listed, without a mark typed in front", [pick.add(" !New One "), pick.text], [nil, "Battle_Dialogue; !Level_Cap; ?Data Pack; New One"])
+check("a name already in the list, an empty one or one with a semicolon is refused", [pick.add("level_cap"), pick.add(" "), pick.add("a;b")],
+      ["Level_Cap is in the list already.", "A mod's name cannot be empty.", "A mod's name cannot hold a semicolon."])
+all = MGQ_MpWorld::ModPick.new("?Data Pack; !B", ["A", "B", "C"])
+check("not every installed mod is listed yet", all.all_listed?, false)
+check("list all lists the unlisted installed mods and keeps how the others are named", [all.list_all, all.text, all.all_listed?], [nil, "A; !B; C; ?Data Pack", true])
+check("unlist all unlists every installed mod and keeps the added ones", [all.unlist_all, all.text], [nil, "?Data Pack"])
+long = MGQ_MpWorld::ModPick.new("", ["A" * 150, "B" * 150])
+long.toggle(0)
+check("a change past 300 characters is refused and undone, and so is an added mod", [long.mark(1, :required), long.add("C" * 160), long.text, long.entries.size],
+      ["The mods may take 300 characters at most.", "The mods may take 300 characters at most.", "A" * 150, 2])
+long.unlist_all
+check("list all lists as many as fit and says why the rest are not", [long.list_all, long.text], ["The mods may take 300 characters at most.", "A" * 150])
+
+Dir.mktmpdir do |folder|
+  FileUtils.mkdir_p(File.join(folder, "Patch", "Sub"))
+  %w[Patch.rb Multiplayer.rb 0_ModConfigRemake.rb Level_Cap.rb battle_dialogue.rb Zeta.rb].each { |name| File.write(File.join(folder, "Patch", name), "") }
+  File.write(File.join(folder, "Patch", "Sub", "Party Sheet.rb"), "")
+  File.write(File.join(folder, "Patch", "Sub", "Level Cap.rb"), "")
+
+  Dir.chdir(folder) do
+    check("the picker lists each installed mod once by its file's name, sorted, without the loader, this mod and Mod Config Remake", MGQ_MpWorld.installed_mod_names,
+          ["battle_dialogue", "Level_Cap", "Party Sheet", "Zeta"])
+
+    off = [["!", :red, false], ["?", :orange, false]]
+    scene = new_scene
+    box = FakeBox.new
+    scene.instance_variable_set(:@form_symbol, :new_world)
+    scene.instance_variable_set(:@list_box, box)
+    form = scene.form
+    form[:mods] = "?Data Pack"
+    scene.open_mod_pick
+    view = scene.instance_variable_get(:@mod_view)
+    check("the picker lists the row that lists every mod, the installed mods with their two buttons, the added ones and the row that adds one", [view.lines, view.selected, view.note],
+          [[[:item, "List all your mods", :plain, nil], [:head, "Your mods (4)", ["Required", "Essential"]], [:item, "battle_dialogue", :grey, "unlisted", off], [:item, "Level_Cap", :grey, "unlisted", off],
+            [:item, "Party Sheet", :grey, "unlisted", off], [:item, "Zeta", :grey, "unlisted", off], [:head, "Added by name (1)", ["Required", "Essential"]],
+            [:item, "Data Pack", :gold, "essential", [["!", :red, false], ["?", :orange, true]]], [:item, "Add a mod by name . . .", :plain, nil]], 0, nil])
+    scene.act_on_mod(1, 0)
+    check("enter on a mod lists it in the form at once", [form[:mods], view.lines[3]], ["Level_Cap; ?Data Pack", [:item, "Level_Cap", :plain, "listed", off]])
+    scene.act_on_mod(1, 1)
+    check("its red button makes it required, the button lit", [form[:mods], view.lines[3]], ["!Level_Cap; ?Data Pack", [:item, "Level_Cap", :bad, "required", [["!", :red, true], ["?", :orange, false]]]])
+    scene.act_on_mod(1, 2)
+    check("its warning sign makes it essential", [form[:mods], view.lines[3][4]], ["?Level_Cap; ?Data Pack", [["!", :red, false], ["?", :orange, true]]])
+    scene.act_on_mod(1, 0)
+    check("enter unlists it again", form[:mods], "?Data Pack")
+    scene.act_on_mod(:all, 0)
+    check("the first row lists every installed mod, then offers to unlist them", [form[:mods], view.lines[0][1]], ["battle_dialogue; Level_Cap; Party Sheet; Zeta; ?Data Pack", "Unlist all your mods"])
+    scene.act_on_mod(:all, 0)
+    check("and unlists them", [form[:mods], view.lines[0][1]], ["?Data Pack", "List all your mods"])
+    scene.act_on_mod(4, 0)
+    check("enter unlists an added mod, which stays in the list", [form[:mods], view.lines[7]], ["", [:item, "Data Pack", :grey, "unlisted", off]])
+    view.pick(7)
+    scene.update_mod_pick
+    scene.update_mod_pick
+    check("while it is picked, the hint names Delete", view.hint, Scene_MpWorlds::MOD_PICK_ADDED_HINT)
+    $key_down = 0x2E
+    scene.update_mod_pick
+    $key_down = nil
+    check("Delete removes it from the list, and the pick stays on an item", [view.lines.map { |line| line[1] }, view.lines[view.selected][0], view.hint],
+          [["List all your mods", "Your mods (4)", "battle_dialogue", "Level_Cap", "Party Sheet", "Zeta", "Add a mod by name . . ."], :item, Scene_MpWorlds::MOD_PICK_HINT])
+    view.pick(2)
+    $key_down = 0x2E
+    scene.update_mod_pick
+    $key_down = nil
+    check("Delete leaves an installed mod in place", view.lines.size, 7)
+    view.pick(3)
+    scene.move_mod_column(1)
+    scene.move_mod_column(1)
+    scene.move_mod_column(1)
+    right = view.column
+    scene.move_mod_column(-1)
+    check("right and left move between a mod's name and its two buttons", [right, view.column], [2, 1])
+    view.pick(0)
+    view.column = 0
+    scene.move_mod_column(1)
+    check("a row without buttons keeps the cursor on itself", view.column, 0)
+    scene.add_mod("Other")
+    check("a mod added by name is listed and picked", [form[:mods], view.lines[view.selected][1]], ["Other", "Other"])
+    $sounds.clear
+    scene.add_mod("level cap")
+    check("a name already listed is refused in the title row", [$sounds, view.note], [["buzzer"], "Level_Cap is in the list already."])
+    scene.close_mod_pick
+    check("closing goes back to the form", [scene.instance_variable_get(:@mod_view), scene.instance_variable_get(:@resume_form), box.view], [nil, true, nil])
+    scene.open_mod_pick
+    scene.update_mod_pick
+    $buttons = [:B]
+    scene.update_mod_pick
+    $buttons = nil
+    check("cancel closes the picker without drawing it again", [scene.instance_variable_get(:@mod_view), box.view], [nil, nil])
+
+    form[:mods] = ""
+    scene.open_mod_pick
+    view = scene.instance_variable_get(:@mod_view)
+    scene.act_on_mod(:add, 0)
+    check("adding a mod by name turns its row into a text box typed on the keyboard", [$typing, view.lines.last[1], view.lines.last[5][1], $called], [true, "Name:", "", nil])
+    $typed = "New Mod"
+    scene.update_mod_pick
+    check("what is typed shows in the box", view.lines.last[5][1], "New Mod")
+    $typed = "\r"
+    scene.update_mod_pick
+    check("Enter adds the mod, picked, and the keyboard goes back to the game", [form[:mods], view.lines[view.selected][1], $typing, view.lines.last[1]], ["New Mod", "New Mod", false, "Add a mod by name . . ."])
+    $held = [:C]
+    scene.update_mod_pick
+    check("the Enter that added it does not act on the picker while held", [form[:mods], scene.instance_variable_get(:@mod_pick_hold)], ["New Mod", true])
+    $held = []
+    scene.update_mod_pick
+    scene.act_on_mod(:add, 0)
+    $typed = "Other\e"
+    scene.update_mod_pick
+    check("Escape goes back without adding", [form[:mods], $typing], ["New Mod", false])
+    scene.act_on_mod(:add, 0)
+    $typed = "0"
+    $key_down = 0x60
+    scene.update_mod_pick
+    $key_down = nil
+    check("so does the numpad's 0, typing nothing", [form[:mods], $typing, scene.instance_variable_get(:@mod_edit)], ["New Mod", false, nil])
+  end
+end

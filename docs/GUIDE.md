@@ -69,7 +69,7 @@ Confirm on a world and pick *Enter the world*.
 | Hidden | Leaves the world out of the list. Only its players see it, and whoever adds it by its id. |
 | Shared save | Every new player starts from one of your saves, with your party, items, story and Library, instead of the opening. Choose the save after ticking it. |
 | Player's choice | Each new player chooses when they first enter: the beginning, one of their own saves, or yours if *Shared save* is ticked. Their own save is copied into the world; the original stays untouched. |
-| Mods | The mods a game needs to play there, separated by semicolons, 80 characters at most. See [Mods of a world](#mods-of-a-world). |
+| Mods | The mods of the world, picked from a list of yours. See [Mods of a world](#mods-of-a-world). |
 | Allow data mismatch | Ticked at first: a game whose data differs from yours is warned and may enter anyway. Unticked, it can't enter. See [Game data](#game-data). |
 | Description | What the world is about, up to 1000 characters. |
 
@@ -85,13 +85,20 @@ The creator can change Max Players, Mods and the Description later with *Edit th
 
 ### Mods of a world
 
-How the creator writes a name in *Mods* decides what it does:
+*Mods* in the create or edit form opens a list of the mods in your `Patch` folder, all unlisted at first. The mod loader, this mod and Mod Config Remake aren't in it, since every player has them.
 
-| Written as | Meaning |
+- **Enter** or a click on a mod lists or unlists it. *List all your mods* at the top lists every one at once, and then *Unlist all your mods* unlists them again.
+- Each mod has two buttons at the right, under the columns *Required* and *Essential*, reached with the right arrow or a click: the red **!** makes it required, the orange **?** essential. A filled button shows how a mod is named; pressing it again makes the mod only listed.
+
+
+| Mod is | Meaning |
 |---|---|
-| `Name` | Only tells the players; keeps nobody out. |
-| `!Name` | **Required:** a game needs a script `Name.rb` in its `Patch` folder, in the world's version, to enter. Case, spaces, underscores and hyphens don't matter. Shows first: green when you have the world's version, gold when yours is another, red when you don't have it. |
-| `?Name` | **Essential**, for mods that are data files without a script. Keeps nobody out by itself; green while your game data matches the world's, gold otherwise. |
+| Listed | Only tells the players; keeps nobody out. |
+| Required | A game needs a script `Name.rb` in its `Patch` folder, in the world's version, to enter. Case, spaces, underscores and hyphens don't matter. Shows first: green when you have the world's version, gold when yours is another, red when you don't have it. |
+| Essential | For mods that are data files without a script. Keeps nobody out by itself; green while your game data matches the world's, gold otherwise. |
+
+- *Add a mod by name* names a mod you don't have yourself, such as a mod of data files: its row becomes a text box, **Enter** adds the name you typed, **Esc** goes back. Such a mod stays in the list when unlisted; **Del** removes it.
+- The mods take 300 characters at most; the top right of the list says when a change would pass that. **Esc** goes back to the form, which shows them as the world keeps them: `!` in front of a required mod, `?` in front of an essential one.
 
 The details show each mod in a box of its own, as many as fit the row, and count the rest in a last box.
 
