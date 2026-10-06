@@ -305,6 +305,7 @@ check("the creator's settings are those of the required mods' options, no key bi
       "mod_level_cap=i:0;mod_level_cap_limits=i:1;mod_party_sheet_theme=y:dark")
 check("values keep their type, and semicolons and equal signs survive", ["i:-3", "f:1.5", "b:true", "b:false", "y:dark", mods.encode("a;b=c%")].map { |text| mods.decode(text) },
       [[true, -3], [true, 1.5], [true, true], [true, false], [true, :dark], [true, "a;b=c%"]])
+check("a large decimal as Ruby writes it survives", mods.decode(mods.encode(1.0e20)), [true, 1.0e20])
 check("an unknown type is left out", [mods.decode("x:1"), mods.encode([1])], [[false, nil], nil])
 
 module MGQ_MpWorld; def self.open?; $world_open; end; end

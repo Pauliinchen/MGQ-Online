@@ -2,7 +2,8 @@
 #  world_mods.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-06: Applied the world's mod settings from load_game_without_rescue, which the newest translation's load_game still calls
+#      Paulinchen  2026-10-06: Read decimal settings with a plus sign in their exponent, as Ruby writes large ones
+#                            - Applied the world's mod settings from load_game_without_rescue, which the newest translation's load_game still calls
 #                            - Checked a link to a zip of a release file by file, like an upload
 #                            - Created
 #
@@ -408,7 +409,7 @@ module MGQ_MpWorldMods
 
     case type
     when "i" then raw =~ /\A-?\d+\z/ ? [true, raw.to_i] : [false, nil]
-    when "f" then raw =~ /\A-?\d+(\.\d+)?(e-?\d+)?\z/i ? [true, raw.to_f] : [false, nil]
+    when "f" then raw =~ /\A-?\d+(\.\d+)?(e[-+]?\d+)?\z/i ? [true, raw.to_f] : [false, nil]
     when "b" then [true, raw == "true"]
     when "y" then raw.empty? ? [false, nil] : [true, raw.to_sym]
     when "s" then [true, raw]
