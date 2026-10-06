@@ -28,7 +28,7 @@ Optional:
 - [Discord Rich Presence](https://github.com/Pauliinchen/MGQ-Paradox-Discord-Rich-Presence) 1.5.1 or later: invite friends through Discord instead of sending a join code, show on your profile who you're playing with, and use your Discord name in worlds.
 - [Battle Dialogue](https://github.com/Pauliinchen/MGQ-Paradox-Mod-Collection/tree/main/Battle_Dialogue): shows what characters say in boxes at the screen's sides, so nobody waits for another player to press a key.
 
-[Mod Config Remake](https://github.com/Pauliinchen/MGQ-Paradox-Mod-Collection/tree/main/0_ModConfigRemake) comes with the mod as `Patch\0_ModConfigRemake.rb`; it binds other keys and shows which options a world sets. It replaces a copy from the Mod Collection with the same file.
+[Mod Config Remake](https://github.com/Pauliinchen/MGQ-Paradox-Mod-Collection/tree/main/0_ModConfigRemake) comes with the mod as `Patch\0_ModConfigRemake.rb`; it binds other hotkeys and shows which options a world sets. It replaces a copy from the Mod Collection with the same file.
 
 ## Install
 
@@ -39,7 +39,7 @@ You then have `Multiplayer.rb` in your `Patch` folder, and next to it a `Multipl
 
 While the mod is installed, the game keeps running when its window is in the background, so no player holds the others up. A gamepad does nothing meanwhile.
 
-**Update:** when a new release is out, the title screen says so, and *Multiplayer* and F11's PvP battles stay off until you update, since everyone needs the same version. Close the game and double-click `Patch\Multiplayer\Update.bat`: it shows what's new, installs the release and removes files an older version left behind. Your name, keys, favourites and worlds are kept.
+**Update:** when a new release is out, the title screen says so, and *Multiplayer* and F11's PvP battles stay off until you update, since everyone needs the same version. Close the game and double-click `Patch\Multiplayer\Update.bat`: it shows what's new, installs the release and removes files an older version left behind. Your name, hotkeys, favourites and worlds are kept.
 
 **Uninstall:** close the game and delete `Multiplayer.rb` and the `Multiplayer` folder in `Patch`. Keep `Patch\Multiplayer\Worlds` if you want to play your worlds again later.
 
@@ -52,9 +52,9 @@ While the mod is installed, the game keeps running when its window is in the bac
 
 For a PvP battle without a world, press **F11** on the map and host; your friend joins with the join code you send them.
 
-## Keys
+## Hotkeys
 
-| Key | What it does |
+| Hotkey | What it does |
 |---|---|
 | **B** | Action wheel: invite, duel, chat, teleport to the leader |
 | **T** | Chat (**/p** at the start sends to your party only) |

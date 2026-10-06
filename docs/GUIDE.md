@@ -2,7 +2,7 @@
 
 Everything Monster Girl Quest! Online does, for players. To install the mod, see the [README](../README.md).
 
-- [Keys](#keys)
+- [Hotkeys](#hotkeys)
 - [Worlds](#worlds)
 - [On the map](#on-the-map)
 - [Parties](#parties)
@@ -13,9 +13,9 @@ Everything Monster Girl Quest! Online does, for players. To install the mod, see
 - [Connection and privacy](#connection-and-privacy)
 - [Troubleshooting](#troubleshooting)
 
-## Keys
+## Hotkeys
 
-| Key | What it does |
+| Hotkey | What it does |
 |---|---|
 | **B** | Opens the action wheel. |
 | **T** | Opens the chat. |
@@ -24,10 +24,10 @@ Everything Monster Girl Quest! Online does, for players. To install the mod, see
 | **Y** / **N** | Accepts / declines the first invite in the notification box. |
 | **Tab** | Makes the party box small or full. |
 
-This guide names these default keys. To bind others, open *Mod Config → Monster Girl Quest! Online*, confirm the key's row (*Action Wheel*, *Chat*, *World Overview*, *Accept Notification*, *Decline Notification*, *Emote Wheel* or *Party Box Size*) and press the new key; **Esc** keeps the old one.
+This guide names the default hotkeys. To bind others, open *Mod Config → Monster Girl Quest! Online*, confirm the hotkey's row (*Action Wheel*, *Chat*, *World Overview*, *Accept Notification*, *Decline Notification*, *Emote Wheel* or *Party Box Size*) and press the new key; **Esc** keeps the old one.
 
-- Keys the game uses itself can't be bound: the arrows, Enter, Esc, Z, X, Shift, A, S, D, Q and W. Neither can a key another option already has.
-- Your keys are kept in `Patch\Multiplayer\Player.ini`, so they hold in every save and every world, and the texts in the game name the keys you bound.
+- Keys the game uses itself can't be bound: the arrows, Enter, Esc, Z, X, Shift, A, S, D, Q and W. Neither can a key another hotkey already uses.
+- Your hotkeys are kept in `Patch\Multiplayer\Player.ini`, so they hold in every save and every world, and the texts in the game name the hotkeys you bound.
 
 ## Worlds
 
@@ -101,7 +101,7 @@ The details show each mod in a box of its own, as many as fit the row, and count
 - A required mod the catalog doesn't know is compared with the creator's copy. If yours differs, get the creator's version from the mod's author; nothing downloads it for you.
 - A new version only reaches players the next time they enter.
 
-**The creator's settings.** When the creator creates or edits a world, the settings of its required mods in the Mod Config Remake menu go with it. While you play in the world, those settings hold and the menu shows them greyed out as set by the world; key bindings and other personal options stay yours. Your own saves keep your own settings.
+**The creator's settings.** When the creator creates or edits a world, the settings of its required mods in the Mod Config Remake menu go with it. While you play in the world, those settings hold and the menu shows them greyed out as set by the world; hotkeys and other personal options stay yours. Your own saves keep your own settings.
 
 ### Game data
 

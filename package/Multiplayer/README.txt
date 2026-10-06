@@ -29,7 +29,7 @@ folder mods, you have it.
    https://mgq.miraheze.org/wiki/Paradox_mods#Patch.rb_(enable_Type_1_mods)
 
 Mod Config Remake comes with the mod (Patch\0_ModConfigRemake.rb): with
-it you bind other keys and see which options a world sets.
+it you bind other hotkeys and see which options a world sets.
 
 
 INSTALL
@@ -49,7 +49,7 @@ like this:
    Patch\Multiplayer\Scripts\*.rbx      (the mod's other scripts)
    ...
 
-Your player name, keys, favourites, worlds and the logs go into
+Your player name, hotkeys, favourites, worlds and the logs go into
 Patch\Multiplayer.
 
 While the mod is installed, the game keeps running when its window is in
@@ -65,7 +65,7 @@ everyone needs the same version.
 
 Close the game and double-click Patch\Multiplayer\Update.bat. It shows
 what's new, downloads the release, installs it, and removes files an
-older version left behind. Your player name, keys, favourites and worlds
+older version left behind. Your player name, hotkeys, favourites and worlds
 are kept.
 
 To update by hand, close the game and extract the new download over the
@@ -96,8 +96,8 @@ For a PvP battle without a world, press F11 on the map and host; your
 friend joins with the join code you send them.
 
 
-KEYS
-----
+HOTKEYS
+-------
    B        action wheel: invite, duel, chat, teleport to the leader
    T        chat (/p at the start sends to your party only)
    E        emote wheel
