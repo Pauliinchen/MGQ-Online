@@ -11,6 +11,8 @@ core/relay.js          the rules: routes, pairing, size and rate limits, deadlin
 core/relay.test.js     tests of the rules
 core/directory.js      the world directory's rules, over a store the platform passes in
 core/directory.test.js tests of the directory
+core/trades.js         the referee of trades between two players of a world
+core/trades.test.js    tests of the trades
 cloudflare/worker.js   the relay on Cloudflare Workers, one Durable Object per room and per world room, one for the directory
 cloudflare/wrangler.toml
 node/server.js         the relay as a plain Node server, for a rented machine
@@ -87,6 +89,20 @@ The mods a world may require and games may download. Only admins add them: a sin
 | `POST /v1/mods/<key>/options` | Keeps the mod's Mod Config options, if `player` is an admin's key and `version` is the mod's current version (409 otherwise): `options`, at most 100, each with `key` (the option's symbol), `name`, `type` (`i`, `f`, `b`, `y` or `s`, as in a world's `settings`), `default` and `choices` (at most 64, each `value` and `name`). Only a running game can read them, since mods build their options when they load; the World Admin tool lists them. The body may be up to 64 KB. |
 | `GET /v1/mods/<key>/file` | Hands out an uploaded mod's zip as bytes. |
 | `POST /v1/mods/<key>/delete` | Removes a mod, if `player` is an admin's key. |
+
+### Trades
+
+Two players of a world swap items through their games, and the relay referees the swap, so a disconnect or crash never copies or loses anything. Each game commits a hash of the offers both games agreed on; the relay marks the trade committed once both hashes match, in one write, and only then do the games apply it. The offers travel sealed with a key from the world's token, so the relay keeps their bytes only, for a game that crashed before it applied the trade to fetch again. A trade's id is 32 lowercase hexadecimal characters, which the games make.
+
+| Request | What it does |
+|---|---|
+| `POST /v1/trades/<id>/commit` | Commits one side: `player` (the key), `world`, `partner` (the other player's id), `hash` (SHA-256 of the offers, hexadecimal) and `sealed` (the sealed offers in base64, at most 64 KB; 413 beyond). Both players must be players of the world, whom the directory lists as members and the creator has not removed (403 otherwise; the creator always is one). The first commit makes the trade `pending`; the partner's commit with the same hash makes it `committed`, a different hash `cancelled` with `reason` `differ`. The same commit again changes nothing; other offers from a player who committed already, or a commit naming another world or partner than the trade's, get 409. A player may open at most 20 trades that are pending or committed and not yet done (429). Answers `state` and, when cancelled, `reason`. |
+| `POST /v1/trades/<id>/cancel` | Cancels a pending trade with `reason` `cancelled`, if `player` is the key of one of its two players. A committed trade stays committed. Answers `state` and `reason` as above. |
+| `GET /v1/trades/<id>?player=<key>` | Answers `state` and `reason` to one of the trade's two players, 404 to anyone else. A trade still pending 2 minutes after its first commit is cancelled with `reason` `expired`. |
+| `GET /v1/trades?player=<key>&world=<id>` | Lists the world's committed trades the player has not marked done: `trades`, each `id`, `hash` and `sealed`, the offers as the player's own game sealed them. |
+| `POST /v1/trades/<id>/done` | Marks a committed trade done for `player`, whose game applied and saved it (409 for a trade not committed). The trade is deleted once both players marked it done. |
+
+Committed trades nobody finished are dropped after 30 days, cancelled ones after a day.
 
 ### World rooms
 

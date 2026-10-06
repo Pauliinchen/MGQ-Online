@@ -2,6 +2,7 @@
 //  server.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-06: Tested a trade between two players of a world over HTTP
 //      Paulinchen  2026-10-04: Expected the lock without the mods, the game data and the rule for it again
 //                            - Expected the lock to name the mods a world needs, its creator's game data and whether only games with the same data may enter
 //      Paulinchen  2026-10-02: Expected the lock to say whether new players choose where to start
@@ -408,4 +409,31 @@ test("the creator uploads a starting save as bytes, which the world's players fe
   assert.equal(fetched.status, 200);
   assert.deepEqual(new Uint8Array(await fetched.arrayBuffer()), save);
   assert.equal((await fetch(`${directoryBase}/${room}/start?player=${playerKey(7)}&auth=${"cd".repeat(32)}`)).status, 401);
+});
+
+test("two players of a world commit a trade over HTTP, which each finds again until done", async () => {
+  const room = roomId(111);
+  const trade = "7".repeat(32);
+  const tradesBase = directoryBase.replace("/v1/worlds", "/v1/trades");
+  await makeWorld(room, 4);
+  const first = await sit(room, 21);
+  const second = await sit(room, 22);
+  await until(async () => (await listed(room)).online === 2);
+
+  const commit = async (player, partner, sealed) => (await fetch(`${tradesBase}/${trade}/commit`, {
+    method: "POST",
+    body: JSON.stringify({ player: playerKey(player), world: room, partner: await playerIdOf(playerKey(partner)), hash: "ab".repeat(32), sealed }),
+  })).json();
+
+  assert.deepEqual(await commit(21, 22, "A".repeat(60_000)), { state: "pending" });
+  assert.deepEqual(await commit(22, 21, "Qg=="), { state: "committed" });
+  assert.deepEqual(await (await fetch(`${tradesBase}/${trade}?player=${playerKey(21)}`)).json(), { state: "committed" });
+  assert.deepEqual(await (await fetch(`${tradesBase}?player=${playerKey(22)}&world=${room}`)).json(), { trades: [{ id: trade, hash: "ab".repeat(32), sealed: "Qg==" }] });
+
+  const done = await fetch(`${tradesBase}/${trade}/done`, { method: "POST", body: JSON.stringify({ player: playerKey(22) }) });
+  assert.equal(done.status, 200);
+  assert.deepEqual(await (await fetch(`${tradesBase}?player=${playerKey(22)}&world=${room}`)).json(), { trades: [] });
+
+  first.socket.close();
+  second.socket.close();
 });

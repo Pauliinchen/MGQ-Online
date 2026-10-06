@@ -2,7 +2,8 @@
 //  server.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-06: Kept the mod catalog in memory, checked its links every half hour
+//      Paulinchen  2026-10-06: Kept the trades between two players of a world in memory
+//                            - Kept the mod catalog in memory, checked its links every half hour
 //      Paulinchen  2026-09-30: Read the relay's admins from the ADMINS environment variable
 //                            - Kept each world's starting save in memory, taken and handed out as bytes
 //      Paulinchen  2026-09-29: Kept the world directory, and seated a game in a world room only once the directory let it in
@@ -20,6 +21,7 @@ import { pathToFileURL } from "node:url";
 import { WebSocketServer } from "ws";
 import { Directory, handleDirectoryRequest, parseAdmins } from "../core/directory.js";
 import { ModCatalog, handleModRequest } from "../core/mods.js";
+import { TradeBook, handleTradeRequest } from "../core/trades.js";
 import {
   CLOSE, IN, LIMITS, OUT, PAIRED, PING, PONG, admit, newPeer, newWorldPeer, overdue, parseRoute, presenceOf, routeWorldMessage, seatChangeText,
   seatText, takeMessage, takeSeat, worldOverdue,
@@ -85,6 +87,22 @@ export function memoryModStore() {
 }
 
 /**
+ * Keeps the trades in memory, as the trades' store.
+ *
+ * @returns {import("../core/trades.js").TradeStore} The store.
+ */
+export function memoryTradeStore() {
+  const trades = new Map();
+
+  return {
+    getTrade: async (id) => (trades.has(id) ? structuredClone(trades.get(id)) : undefined),
+    putTrade: async (record) => void trades.set(record.id, structuredClone(record)),
+    removeTrade: async (id) => void trades.delete(id),
+    allTrades: async () => [...trades.values()].map((record) => structuredClone(record)),
+  };
+}
+
+/**
  * Reads a request's body as bytes, stopping past a limit.
  *
  * @param {http.IncomingMessage} request The request.
@@ -125,11 +143,12 @@ async function readBody(request) {
 /**
  * Creates a relay server, not yet listening.
  *
- * @param {{limits?: typeof LIMITS, clock?: () => number, checkEveryMs?: number, directory?: Directory, mods?: ModCatalog}} [options] Limits, clock, check interval, directory and mod catalog, which tests change.
+ * @param {{limits?: typeof LIMITS, clock?: () => number, checkEveryMs?: number, directory?: Directory, mods?: ModCatalog, trades?: TradeBook}} [options] Limits, clock, check interval, directory, mod catalog and trades, which tests change.
  * @returns {{server: http.Server, check: () => void, stop: () => Promise<void>}} The HTTP server to listen with, a look at the deadlines, and a way to stop everything.
  */
 export function createRelay({
   limits = LIMITS, clock = Date.now, checkEveryMs = CHECK_EVERY_MS, directory = new Directory(memoryStore(), { clock }), mods = new ModCatalog(memoryModStore(), { clock }),
+  trades = new TradeBook(memoryTradeStore(), (id) => directory.store.get(id), { clock }),
 } = {}) {
   /** @type {Map<string, {socket: import("ws").WebSocket, record: object}[]>} */
   const rooms = new Map();
@@ -183,8 +202,8 @@ export function createRelay({
   });
 
   /**
-   * Answers a request to the directory or the mod catalog, and carries out what it asks beyond
-   * answering.
+   * Answers a request to the directory, the mod catalog or the trades, and carries out what it asks
+   * beyond answering.
    *
    * @param {http.IncomingMessage} request The request.
    * @param {http.ServerResponse} response The response.
@@ -193,16 +212,21 @@ export function createRelay({
   async function answerDirectory(request, response) {
     const url = new URL(request.url, "http://relay");
     const catalog = url.pathname === "/v1/mods" || url.pathname.startsWith("/v1/mods/");
+    const trading = url.pathname === "/v1/trades" || url.pathname.startsWith("/v1/trades/");
 
-    if (!url.pathname.startsWith("/v1/worlds") && !catalog) {
+    if (!url.pathname.startsWith("/v1/worlds") && !catalog && !trading) {
       response.writeHead(426, { "Content-Type": "text/plain" });
-      response.end("the relay takes WebSockets, the world directory and the mod catalog only");
+      response.end("the relay takes WebSockets, the world directory, the mod catalog and trades only");
       return;
     }
 
-    const answer = catalog
-      ? await handleModRequest(mods, request.method, url, () => readBody(request), (limit) => readBytes(request, limit))
-      : await handleDirectoryRequest(directory, request.method, url, () => readBody(request), (limit) => readBytes(request, limit));
+    // A commit's sealed offers are larger than any other body the relay reads as text.
+    const readTradeBody = async () => (await readBytes(request, trades.limits.maxBodyLength))?.toString("utf8") ?? null;
+    const answer = trading
+      ? await handleTradeRequest(trades, request.method, url, readTradeBody)
+      : catalog
+        ? await handleModRequest(mods, request.method, url, () => readBody(request), (limit) => readBytes(request, limit))
+        : await handleDirectoryRequest(directory, request.method, url, () => readBody(request), (limit) => readBytes(request, limit));
 
     if (answer.close) {
       closeWorld(answer.id, CLOSE.worldDeleted, "the world was deleted");
@@ -441,6 +465,7 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   const admins = parseAdmins(process.env.ADMINS);
   const directory = new Directory(memoryStore(), { admins });
   const mods = new ModCatalog(memoryModStore(), { admins });
+  const trades = new TradeBook(memoryTradeStore(), (id) => directory.store.get(id));
 
-  createRelay({ directory, mods }).server.listen(port, host, () => console.log(`relay listening on ${host}:${port}`));
+  createRelay({ directory, mods, trades }).server.listen(port, host, () => console.log(`relay listening on ${host}:${port}`));
 }

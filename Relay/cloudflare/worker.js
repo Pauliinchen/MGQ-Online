@@ -2,7 +2,8 @@
 //  worker.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-06: Kept the mod catalog in the directory object, checked its links every half hour
+//      Paulinchen  2026-10-06: Kept the trades between two players of a world in the directory object
+//                            - Kept the mod catalog in the directory object, checked its links every half hour
 //                            - Stored starting saves and uploaded mods in pieces through the same helpers
 //      Paulinchen  2026-09-30: Read the relay's admins from the ADMINS secret
 //                            - Kept each world's starting save in the directory's storage, in pieces
@@ -22,6 +23,7 @@
 import { DurableObject } from "cloudflare:workers";
 import { Directory as WorldDirectory, handleDirectoryRequest, parseAdmins } from "../core/directory.js";
 import { ModCatalog, handleModRequest } from "../core/mods.js";
+import { TradeBook, handleTradeRequest } from "../core/trades.js";
 import {
   CLOSE, IN, OUT, PAIRED, PING, PONG, admit, newPeer, newWorldPeer, nextDeadline, nextWorldDeadline, overdue, parseRoute, presenceOf,
   routeWorldMessage, seatChangeText, seatText, takeMessage, takeSeat, worldOverdue,
@@ -47,7 +49,7 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
-    if (url.pathname === "/v1/worlds" || url.pathname.startsWith("/v1/worlds/") || url.pathname === "/v1/mods" || url.pathname.startsWith("/v1/mods/")) {
+    if (["worlds", "mods", "trades"].some((route) => url.pathname === `/v1/${route}` || url.pathname.startsWith(`/v1/${route}/`))) {
       return directoryOf(env).fetch(request);
     }
 
@@ -231,12 +233,13 @@ async function readBytes(request, limit) {
 /**
  * The world directory: every world with its players, bans and locked token, one entry per world
  * in the object's storage, and each world's starting save in pieces beside it. It also keeps the
- * mod catalog, one entry per mod and each uploaded mod's zip in pieces.
+ * mod catalog, one entry per mod and each uploaded mod's zip in pieces, and the trades, one entry
+ * per trade.
  */
 export class Directory extends DurableObject {
   /**
-   * Creates the directory and the mod catalog over the object's storage, with the admins the
-   * ADMINS secret names.
+   * Creates the directory, the mod catalog and the trades over the object's storage, with the
+   * admins the ADMINS secret names.
    *
    * @param {DurableObjectState} ctx The object's state.
    * @param {{ADMINS?: string}} env The Worker's bindings.
@@ -269,11 +272,18 @@ export class Directory extends DurableObject {
       putModFile: (key, bytes) => putPieces(storage, modFilePrefix(key), bytes),
       getModFile: (key) => getPieces(storage, modFilePrefix(key)),
     }, { admins });
+
+    this.trades = new TradeBook({
+      getTrade: (id) => storage.get(`trade:${id}`),
+      putTrade: (record) => storage.put(`trade:${record.id}`, record),
+      removeTrade: (id) => storage.delete(`trade:${id}`),
+      allTrades: async () => [...(await storage.list({ prefix: "trade:" })).values()],
+    }, (id) => storage.get(`world:${id}`));
   }
 
   /**
-   * Answers the directory's and the mod catalog's routes, the world rooms' questions under
-   * /internal, and the schedule's check of the catalog's links.
+   * Answers the directory's, the mod catalog's and the trades' routes, the world rooms' questions
+   * under /internal, and the schedule's check of the catalog's links.
    *
    * @param {Request} request The request.
    * @returns {Promise<Response>} The answer.
@@ -287,6 +297,10 @@ export class Directory extends DurableObject {
 
     if (url.pathname === "/v1/mods" || url.pathname.startsWith("/v1/mods/")) {
       return respond(await handleModRequest(this.mods, request.method, url, () => request.text(), (limit) => readBytes(request, limit)));
+    }
+
+    if (url.pathname === "/v1/trades" || url.pathname.startsWith("/v1/trades/")) {
+      return respond(await handleTradeRequest(this.trades, request.method, url, () => request.text()));
     }
 
     if (url.pathname === "/internal/admit") {
