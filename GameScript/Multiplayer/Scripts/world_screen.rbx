@@ -5,6 +5,7 @@
 #      Paulinchen  2026-10-06: Kept a mod added by name when unlisted, and removed it with Delete, which the hint names while it is picked
 #                            - Typed a mod's name in place in the picker, on the keyboard, instead of on the text screen
 #                            - Named a mod in the picker with Enter and its red ! and orange ? buttons under titled columns instead of a menu, and listed or unlisted every mod at once
+#                            - Had an admin's game send the Mod Config options of the catalog's mods as the list arrives
 #                            - Picked a world's mods in the mod picker, a list of the installed ones and those added by name, each left out, listed, required or essential
 #                            - Left the mod settings out of creating and changing a world, which its creator now sets in Mod Config, and noted whose world is entered
 #                            - Checked a world's required mods against the relay's catalog and the creator's copies on entry, and offered to download the world's versions and restart
@@ -245,6 +246,7 @@ class Scene_MpWorlds < Scene_MenuBase
     entries = MGQ_MpWorld.entries(listed, state == "ready")
     @list_window.entries = entries
     show_info
+    MGQ_MpWorldMods.report_options(admin) if state == "ready"
     rejoin(entries, state)
   end
 

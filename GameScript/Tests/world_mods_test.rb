@@ -2,7 +2,8 @@
 #  world_mods_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-06: Covered the creator's button in Mod Config and the creator's unlocked options
+#      Paulinchen  2026-10-06: Covered the Mod Config options an admin's game sends for the catalog
+#                            - Covered the creator's button in Mod Config and the creator's unlocked options
 #                            - Covered a load_game that a translation plugin replaced
 #                            - Covered a link to a zip of a release
 #                            - Created
@@ -52,6 +53,8 @@ $game_system = GameSystem.new({})
 module NWConst
   module Config
     DEFAULT = { :mod_level_cap => 1, :mod_level_cap_limits => 1 }
+    DATA = { :mod_level_cap => [1, 0] }
+    DATA_TEXT = { :mod_level_cap => { 1 => { :name => "On" }, 0 => { :name => "Off" } } }
     MOD_CONTENTS = [
       { :key => :mod_level_cap, :name => "[Level Cap] Level Cap", :sub => true },
       { :key => :mod_level_cap_limits, :name => "     -> Job and Race Limits", :sub => true },
@@ -374,4 +377,27 @@ Scene_Title.new.start
 check("the title screen forgets whose world it was", button[:enable].call, false)
 $world_open = false
 
+# The Mod Config options an admin's game sends for the catalog.
+Dir.mktmpdir do |folder|
+  FileUtils.mkdir_p(File.join(folder, "Patch"))
+  File.write(File.join(folder, "Patch", "Level_Cap.rb"), "")
+  File.write(File.join(folder, "Patch", "Party_Sheet.rb"), "")
+
+  Dir.chdir(folder) do
+    catalog("mod\tlevelcap\tLevel Cap\tlink\t1.4.0\tLevel_Cap.rb\tbb", "mod\tpartysheet\tParty Sheet\tlink\t1.3.5\tParty_Sheet.rb\tps", "opts\tpartysheet\t1.3.5",
+            "mod\tpack\tPack\tupload\t2\tPack/a.luka\tp1")
+    $file_hashes = { "Patch/Level_Cap.rb" => "bb", "Patch/Party_Sheet.rb" => "ps" }
+    check("the catalog tells which version's options the relay keeps", mods.catalog.map(&:options_version), [nil, "1.3.5", nil])
+    $calls.clear
+    mods.report_options(false)
+    check("a game that is no admin's sends none", $calls.map(&:first).grep(/options/), [])
+    mods.report_options(true)
+    sent = $calls.select { |call| call[0] == "mp_mods_options" }.map { |call| call[2] }
+    check("an admin's game sends the options of each mod it has in the catalog's version that the relay lacks, without key bindings, buttons or personal ones", sent,
+          [["levelcap\0", "1.4.0\0", "mod_level_cap\tLevel Cap\ti\t1\t1\tOn\t0\tOff\nmod_level_cap_limits\tJob and Race Limits\ti\t1\0"]])
+    $calls.clear
+    mods.report_options(true)
+    check("once a session", $calls.map(&:first).grep(/options/), [])
+  end
+end
 check("nothing failed", ($log || []).grep(/FAILED|failed/), [])

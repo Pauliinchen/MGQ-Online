@@ -2,7 +2,8 @@
 //  CatalogMod.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-06: Told a link to a zip of a release from a link to a script
+//      Paulinchen  2026-10-06: Knew the version whose Mod Config options the relay keeps
+//                            - Told a link to a zip of a release from a link to a script
 //                            - Created
 //
 //----------------------------------------------------------------
@@ -23,7 +24,8 @@ namespace MGQParadox.Multiplayer.Mods;
 /// <param name="Versions">The versions the relay saw, newest first, the current one among them.</param>
 /// <param name="FileUrl">A link mod's release file on GitHub; empty for an upload.</param>
 /// <param name="Archive">Whether a link mod's release file is a zip laid out as in Patch rather than a script.</param>
-internal sealed record CatalogMod(string Key, string Name, string Kind, string Version, IReadOnlyDictionary<string, string> Files, IReadOnlyList<ModVersion> Versions, string FileUrl, bool Archive = false)
+/// <param name="OptionsVersion">The version whose Mod Config options the relay keeps; empty before an admin's game sent any.</param>
+internal sealed record CatalogMod(string Key, string Name, string Kind, string Version, IReadOnlyDictionary<string, string> Files, IReadOnlyList<ModVersion> Versions, string FileUrl, bool Archive = false, string OptionsVersion = "")
 {
     /// <summary>
     /// Whether an admin uploaded the mod's files, which the relay hands out; else it is on GitHub.

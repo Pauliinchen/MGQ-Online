@@ -2,7 +2,8 @@
 //  mods.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-06: Read a zip whose files sit in a Patch folder, to extract into the game folder
+//      Paulinchen  2026-10-06: Kept the Mod Config options of a mod's current version, which an admin's game reads and sends
+//                            - Read a zip whose files sit in a Patch folder, to extract into the game folder
 //                            - Took a zip of a release too, laid out as in Patch, hashing each file inside
 //                            - Created
 //
@@ -13,7 +14,9 @@
 // admins' GitHub, whose releases the relay checks on a schedule, or a mod of several files that an
 // admin uploads. The relay keeps a link mod's
 // hash and version only, never the script, and never runs anything it reads. Games compare their
-// installed files with the catalog's hashes and download what differs, checking every hash.
+// installed files with the catalog's hashes and download what differs, checking every hash. An
+// admin's game that has a mod's current version sends the options the mod offers in Mod Config,
+// which the relay keeps for the World Admin tool, since only a running game can read them.
 
 import { playerIdOf } from "./directory.js";
 
@@ -31,6 +34,10 @@ export const MOD_LIMITS = Object.freeze({
   maxUploadBytes: 16 * 1024 * 1024,
   maxUnpackedBytes: 64 * 1024 * 1024,
   maxRedirects: 3,
+  maxOptions: 100,
+  maxChoices: 64,
+  maxOptionText: 200,
+  maxOptionsBytes: 64 * 1024,
 });
 
 /**
@@ -62,6 +69,17 @@ const HASH = /^[0-9a-f]{64}$/;
  * A path inside the game's Patch folder: forward slashes, no step up, no drive, no start at the root.
  */
 const PATCH_PATH = /^(?!\/)(?!.*(?:^|\/)\.\.?(?:\/|$))[^\\:*?"<>|\u0000-\u001f]+$/;
+
+/**
+ * An option's key, the name of the Ruby symbol the game keeps its value under.
+ */
+const OPTION_KEY = /^[A-Za-z_][A-Za-z0-9_]*[?!]?$/;
+
+/**
+ * The types an option's value may have, as the games write them: whole number, decimal, on/off,
+ * symbol and text.
+ */
+const OPTION_TYPES = Object.freeze(["i", "f", "b", "y", "s"]);
 
 /**
  * Characters a name or version may not hold.
@@ -223,6 +241,42 @@ export class ModCatalog {
     entry.checked = this.clock();
     entry.error = "";
     await this.store.putModFile(entry.key, parsed.zip);
+    await this.store.putMod(entry);
+    return { status: 200, body: { mod: adminView(entry) } };
+  }
+
+  /**
+   * Keeps the Mod Config options of a mod's current version, as an admin's game read them.
+   *
+   * @param {unknown} key The asking player's key.
+   * @param {string} modKeyOf The mod's key.
+   * @param {unknown} version The version the game has, which must be the current one.
+   * @param {unknown} options The options: each with key, name, type, default and choices (value, name).
+   * @returns {Promise<{status: number, body: object}>} The answer.
+   */
+  async setOptions(key, modKeyOf, version, options) {
+    if (!(await this.isAdmin(key))) {
+      return forbidden();
+    }
+
+    const entry = await this.store.getMod(modKeyOf);
+
+    if (!entry) {
+      return notFound();
+    }
+
+    if (version !== entry.version) {
+      return { status: 409, body: { error: `the catalog's version is ${entry.version}` } };
+    }
+
+    const cleaned = cleanOptions(options, this.limits);
+
+    if (typeof cleaned === "string") {
+      return badRequest(cleaned);
+    }
+
+    entry.options = cleaned;
+    entry.optionsVersion = version;
     await this.store.putMod(entry);
     return { status: 200, body: { mod: adminView(entry) } };
   }
@@ -656,6 +710,8 @@ export function publicView(entry) {
     versions: (entry.versions ?? []).map(({ version, files }) => ({ version, files })),
     fileUrl: entry.kind === "link" ? entry.fileUrl : "",
     archive: entry.kind === "link" && entry.archive === true,
+    options: entry.options ?? [],
+    optionsVersion: entry.optionsVersion ?? "",
   };
 }
 
@@ -678,6 +734,49 @@ function adminView(entry) {
  */
 function cleanText(text, maxLength) {
   return typeof text === "string" ? [...text.replace(BREAKERS, "").trim()].slice(0, maxLength).join("") : "";
+}
+
+/**
+ * Checks and tidies the Mod Config options a game sent.
+ *
+ * @param {unknown} options The options.
+ * @param {typeof MOD_LIMITS} limits The limits.
+ * @returns {object[] | string} The options, each with key, name, type, default and choices, or what is wrong.
+ */
+export function cleanOptions(options, limits = MOD_LIMITS) {
+  if (!Array.isArray(options) || options.length > limits.maxOptions) {
+    return `the options must be a list of at most ${limits.maxOptions}`;
+  }
+
+  const cleaned = [];
+
+  for (const option of options) {
+    const key = option?.key;
+
+    if (typeof key !== "string" || !OPTION_KEY.test(key) || key.length > limits.maxOptionText) {
+      return "an option needs a key: letters, digits and underscores";
+    }
+
+    if (!OPTION_TYPES.includes(option.type)) {
+      return `the option ${key} has no type the games know`;
+    }
+
+    const choices = option.choices ?? [];
+
+    if (!Array.isArray(choices) || choices.length > limits.maxChoices || choices.some((choice) => typeof choice?.value !== "string")) {
+      return `the option ${key} may have at most ${limits.maxChoices} choices, each with a value`;
+    }
+
+    cleaned.push({
+      key,
+      name: cleanText(option.name, limits.maxOptionText) || key,
+      type: option.type,
+      default: typeof option.default === "string" ? option.default.slice(0, limits.maxOptionText) : "",
+      choices: choices.map((choice) => ({ value: choice.value.slice(0, limits.maxOptionText), name: cleanText(choice.name, limits.maxOptionText) || choice.value })),
+    });
+  }
+
+  return cleaned;
 }
 
 /**
@@ -721,6 +820,11 @@ export async function handleModRequest(catalog, method, url, readBody, readBytes
     return catalog.upload(params.get("player"), params.get("name"), params.get("version"), await readBytes(catalog.limits.maxUploadBytes));
   }
 
+  if (parts.length === 4 && parts[3] === "options" && method === "POST") {
+    const body = await readJson(readBody, catalog.limits.maxOptionsBytes);
+    return catalog.setOptions(body?.player, parts[2], body?.version, body?.options);
+  }
+
   if (parts.length === 4 && parts[3] === "file" && method === "GET") {
     return catalog.file(parts[2]);
   }
@@ -732,12 +836,13 @@ export async function handleModRequest(catalog, method, url, readBody, readBytes
  * Reads a JSON body, small ones only.
  *
  * @param {() => Promise<string>} readBody Reads the request's body.
+ * @param {number} [maxLength] The most characters it may have.
  * @returns {Promise<any>} The parsed body, or null when it is no JSON or too large.
  */
-async function readJson(readBody) {
+async function readJson(readBody, maxLength = 8192) {
   try {
     const text = await readBody();
-    return text.length <= 8192 ? JSON.parse(text) : null;
+    return text.length <= maxLength ? JSON.parse(text) : null;
   } catch {
     return null;
   }

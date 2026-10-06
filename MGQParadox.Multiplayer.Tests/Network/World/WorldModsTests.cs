@@ -2,7 +2,8 @@
 //  WorldModsTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-06: Covered a world's mod settings set on their own by its creator or an admin
+//      Paulinchen  2026-10-06: Covered the Mod Config options sent for a catalog mod, and the version the relay keeps them of
+//                            - Covered a world's mod settings set on their own by its creator or an admin
 //                            - Covered telling a link to a zip of a release apart
 //                            - Created
 //
@@ -65,6 +66,50 @@ public sealed class WorldModsTests
         ListState(player);
 
         Assert.StartsWith("mod\tlevelcap\tLevel Cap\tzip\t1.4.0\t", Message.Decode(player.DescribeMods()).Team);
+    }
+
+    /// <summary>
+    /// Asserts that the game script is told which version's Mod Config options the relay keeps.
+    /// </summary>
+    [Fact]
+    public void Refresh_TellsTheVersionOfTheOptions()
+    {
+        using var relay = new TestRelay();
+        var entry = LinkEntry("1.4.0", "bb");
+        entry["optionsVersion"] = "1.3.5";
+        relay.CatalogMods.Add(entry);
+        var player = NewDirectory(relay, CreatorKey, "Player");
+
+        ListState(player);
+
+        Assert.Contains("opts\tlevelcap\t1.3.5", Message.Decode(player.DescribeMods()).Team.Split('\n'));
+    }
+
+    /// <summary>
+    /// Asserts that the options the game script read reach the relay as the catalog keeps them.
+    /// </summary>
+    [Fact]
+    public void SendModOptions_PostsTheOptions()
+    {
+        using var relay = new TestRelay();
+        var player = NewDirectory(relay, CreatorKey, "Player");
+        var options = ModOption.Parse("mod_level_cap\tLevel Cap\ti\t1\t1\tOn\t0\tOff\nbroken\n");
+
+        Assert.True(player.SendModOptions("levelcap", "1.4.0", options));
+        var deadline = System.DateTime.UtcNow.AddSeconds(5);
+
+        while (relay.SentModOptions.Count == 0 && System.DateTime.UtcNow < deadline)
+        {
+            System.Threading.Thread.Sleep(20);
+        }
+
+        var (key, body) = Assert.Single(relay.SentModOptions);
+        Assert.Equal("levelcap", key);
+        Assert.Equal(CreatorKey, body["player"]!.GetValue<string>());
+        Assert.Equal("1.4.0", body["version"]!.GetValue<string>());
+        Assert.Equal(
+            """[{"key":"mod_level_cap","name":"Level Cap","type":"i","default":"1","choices":[{"value":"1","name":"On"},{"value":"0","name":"Off"}]}]""",
+            body["options"]!.ToJsonString());
     }
 
     /// <summary>

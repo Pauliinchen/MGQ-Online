@@ -2,7 +2,8 @@
 //  mods.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-06: Covered zips whose files sit in a Patch folder
+//      Paulinchen  2026-10-06: Covered the options of a mod's current version, which only admins send
+//                            - Covered zips whose files sit in a Patch folder
 //                            - Covered zips of a release, hashed file by file
 //                            - Created
 //
@@ -98,6 +99,34 @@ async function newCatalog(state, limits = MOD_LIMITS, fetcher = fakeGitHub(state
 function upload(files, zip) {
   return new TextEncoder().encode(`${files.map(([path, hash]) => `${path}\t${hash}`).join("\n")}\n\n${zip}`);
 }
+
+test("an admin's game keeps the options of a mod's current version, which everyone lists", async () => {
+  const { catalog } = await newCatalog({ tag: "v1.4.0", script: "# cap" });
+  await catalog.setLink(ADMIN, "Level Cap", LATEST);
+  const options = [{ key: "mod_level_cap", name: "Level Cap", type: "i", default: "1", choices: [{ value: "1", name: "On" }, { value: "0", name: "Off" }] }];
+
+  assert.equal((await catalog.setOptions(OTHER, "levelcap", "1.4.0", options)).status, 403);
+  assert.equal((await catalog.setOptions(ADMIN, "nomod", "1.4.0", options)).status, 404);
+  assert.equal((await catalog.setOptions(ADMIN, "levelcap", "1.3.5", options)).status, 409, "only the current version's options are kept");
+  assert.equal((await catalog.setOptions(ADMIN, "levelcap", "1.4.0", [{ key: "1bad", type: "i" }])).status, 400);
+  assert.equal((await catalog.setOptions(ADMIN, "levelcap", "1.4.0", [{ key: "mod_x", type: "q" }])).status, 400);
+  assert.equal((await catalog.setOptions(ADMIN, "levelcap", "1.4.0", options)).status, 200);
+
+  const [mod] = (await catalog.list()).body.mods;
+  assert.deepEqual([mod.options, mod.optionsVersion], [options, "1.4.0"]);
+});
+
+test("the options route reads a body larger than the other routes take", async () => {
+  const { catalog } = await newCatalog({ tag: "v1.4.0", script: "# cap" });
+  await catalog.setLink(ADMIN, "Level Cap", LATEST);
+  const choices = Array.from({ length: 60 }, (_, index) => ({ value: String(index), name: `Choice ${index} `.padEnd(150, "x") }));
+  const body = JSON.stringify({ player: ADMIN, version: "1.4.0", options: [{ key: "mod_level_cap", name: "Level Cap", type: "i", default: "0", choices }] });
+
+  assert.ok(body.length > 8192);
+  const answer = await handleModRequest(catalog, "POST", new URL("https://relay/v1/mods/levelcap/options"), async () => body, async () => null);
+  assert.equal(answer.status, 200);
+  assert.equal((await catalog.list()).body.mods[0].options[0].choices.length, 60);
+});
 
 test("modKey compares names the way the games do", () => {
   assert.equal(modKey("Level_Cap.rb"), "levelcap");

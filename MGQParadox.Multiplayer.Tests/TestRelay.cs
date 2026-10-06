@@ -2,7 +2,8 @@
 //  TestRelay.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-06: Let an admin replace a world's mod settings too
+//      Paulinchen  2026-10-06: Kept the Mod Config options games send for a catalog mod
+//                            - Let an admin replace a world's mod settings too
 //                            - Served a mod catalog the tests fill, and uploaded mods' zips
 //                            - Kept a world's mod hashes and mod settings, which only its creator replaces
 //      Paulinchen  2026-10-04: Left the mods, the game data and the rule for it out of a world's lock
@@ -125,6 +126,11 @@ internal sealed class TestRelay : IDisposable
     /// The zips of uploaded mods by key, which the tests fill.
     /// </summary>
     public Dictionary<string, byte[]> ModFiles { get; } = [];
+
+    /// <summary>
+    /// The Mod Config options games sent, each with the mod's key, in the order they arrived.
+    /// </summary>
+    public List<(string Key, JsonNode Body)> SentModOptions { get; } = [];
 
     /// <summary>
     /// How many peers the relay holds in all its rooms.
@@ -321,7 +327,8 @@ internal sealed class TestRelay : IDisposable
     }
 
 /// <summary>
-/// Answers the mod catalog's requests: the list, and an uploaded mod's zip.
+/// Answers the mod catalog's requests: the list, an uploaded mod's zip, and the Mod Config options
+/// a game sends.
 /// </summary>
 /// <param name="context">The request.</param>
 /// <param name="parts">The path's parts, "v1" and "mods" first.</param>
@@ -330,10 +337,18 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
 {
     byte[] bytes;
     string type = "application/json";
+    using var reader = new StreamReader(context.Request.InputStream, Encoding.UTF8);
+    var sent = context.Request.HttpMethod == "POST" ? await reader.ReadToEndAsync() : null;
 
     lock (_gate)
     {
-        if (parts is ["v1", "mods"])
+        if (parts is ["v1", "mods", var optionsOf, "options"] && sent != null)
+        {
+            SentModOptions.Add((optionsOf, JsonNode.Parse(sent)!));
+            context.Response.StatusCode = 200;
+            bytes = Encoding.UTF8.GetBytes("{}");
+        }
+        else if (parts is ["v1", "mods"])
         {
             context.Response.StatusCode = 200;
             bytes = Encoding.UTF8.GetBytes(new JsonObject { ["mods"] = CatalogMods.DeepClone(), ["admin"] = false }.ToJsonString());

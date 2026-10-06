@@ -2,7 +2,8 @@
 //  Exports.Mods.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-06: Created
+//      Paulinchen  2026-10-06: Sent the Mod Config options an admin's game reads for the catalog
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -18,7 +19,8 @@ namespace MGQParadox.Multiplayer;
 
 /// <summary>
 /// The functions of a world's mods: the relay's mod catalog, the hashes of installed mods,
-/// installing a world's mods and starting the game again so they load.
+/// installing a world's mods, starting the game again so they load, and the Mod Config options an
+/// admin's game reads for the catalog.
 /// </summary>
 internal static unsafe partial class Exports
 {
@@ -85,6 +87,28 @@ internal static unsafe partial class Exports
         catch (Exception ex)
         {
             Log.Write($"mp_mods_install failed: {ex}");
+            return 0;
+        }
+    }
+
+    /// <summary>
+    /// Sends the Mod Config options of a catalog mod's current version, as an admin's game read
+    /// them. Returns at once; how it went is only logged.
+    /// </summary>
+    /// <param name="key">The mod's key, UTF-8 and null-terminated.</param>
+    /// <param name="version">The version the game has, UTF-8 and null-terminated.</param>
+    /// <param name="options">One line per option, see <see cref="ModOption.Parse"/>, UTF-8 and null-terminated.</param>
+    /// <returns>1 when started, 0 without a player or when it failed.</returns>
+    [UnmanagedCallersOnly(EntryPoint = "mp_mods_options", CallConvs = [typeof(CallConvStdcall)])]
+    public static int ModsOptions(byte* key, byte* version, byte* options)
+    {
+        try
+        {
+            return WorldDirectory.Current.SendModOptions(Text(key), Text(version), ModOption.Parse(Text(options))) ? 1 : 0;
+        }
+        catch (Exception ex)
+        {
+            Log.Write($"mp_mods_options failed: {ex}");
             return 0;
         }
     }

@@ -2,7 +2,8 @@
 //  WorldDirectory.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-06: Replaced a world's mod settings on their own, and no longer with the other changes
+//      Paulinchen  2026-10-06: Sent the Mod Config options of a catalog mod on a thread of their own, and told the game script the version the relay keeps them of
+//                            - Replaced a world's mod settings on their own, and no longer with the other changes
 //                            - Told the game script a link to a zip of a release apart, and installed it from GitHub
 //                            - Fetched the relay's mod catalog with the list, and installed a world's mods into the Patch folder
 //                            - Made, changed and listed worlds with the creator's hashes of required mods outside the catalog and its mod settings
@@ -273,7 +274,7 @@ internal sealed class WorldDirectory
 /// <summary>
 /// Describes the relay's mod catalog for the game script, as fetched with the list.
 /// </summary>
-/// <returns><c>state</c> ("loading", "ready", "failed" or "idle") and <c>error</c>, then one line per mod and version: <c>mod</c>, key, name, kind ("link" for a script, "zip" for a zip of a release, "upload"), current version, then each current file's name or path and hash; <c>old</c>, key, version, then each of that version's files and hashes; each separated by tabs.</returns>
+/// <returns><c>state</c> ("loading", "ready", "failed" or "idle") and <c>error</c>, then one line per mod and version: <c>mod</c>, key, name, kind ("link" for a script, "zip" for a zip of a release, "upload"), current version, then each current file's name or path and hash; <c>old</c>, key, version, then each of that version's files and hashes; <c>opts</c>, key, the version whose Mod Config options the relay keeps, for a mod that has any; each separated by tabs.</returns>
 public string DescribeMods()
 {
     lock (_gate)
@@ -290,6 +291,11 @@ public string DescribeMods()
             {
                 text.Append("old\t").Append(mod.Key).Append('\t').Append(OnOneField(version.Version));
                 AppendFiles(text, version.Files);
+            }
+
+            if (mod.OptionsVersion.Length > 0)
+            {
+                text.Append("opts\t").Append(mod.Key).Append('\t').Append(OnOneField(mod.OptionsVersion)).Append('\n');
             }
         }
 
@@ -331,6 +337,37 @@ public bool InstallMods(IReadOnlyList<(string Key, string Target)> mods) => Star
 
     return null;
 });
+
+/// <summary>
+/// Sends the Mod Config options of a catalog mod's current version on a thread of its own, outside
+/// the actions, so the world screen stays free; how it went is only logged.
+/// </summary>
+/// <param name="key">The mod's key.</param>
+/// <param name="version">The version the options came from.</param>
+/// <param name="options">The options.</param>
+/// <returns><see langword="false"/> without a player.</returns>
+public bool SendModOptions(string key, string version, IReadOnlyList<ModOption> options)
+{
+    if (Playing() is not { } player)
+    {
+        return false;
+    }
+
+    var client = Client();
+    StartThread("MultiplayerModOptions", () =>
+    {
+        try
+        {
+            client.SetModOptions(key, player.Key, version, options);
+            Log.Write($"sent {options.Count} Mod Config option(s) of {key} {version}");
+        }
+        catch (Exception ex)
+        {
+            Log.Write($"sending the Mod Config options of {key} failed: {ex.GetBaseException().Message}");
+        }
+    });
+    return true;
+}
 
 /// <summary>
 /// The game's folder, which the mods are installed into; tests point it elsewhere.

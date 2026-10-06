@@ -2,7 +2,8 @@
 #  world_mods.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-06: Added a button to Mod Config for the world's creator, who sets the world's mod settings from their own, and left the creator's options unlocked
+#      Paulinchen  2026-10-06: Sent the Mod Config options of each catalog mod this admin's game has in the catalog's version, for the World Admin tool
+#                            - Added a button to Mod Config for the world's creator, who sets the world's mod settings from their own, and left the creator's options unlocked
 #                            - Took the world's mod settings from every mod it names, listed ones too, not only the required ones
 #                            - Read decimal settings with a plus sign in their exponent, as Ruby writes large ones
 #                            - Applied the world's mod settings from load_game_without_rescue, which the newest translation's load_game still calls
@@ -23,7 +24,8 @@
 #
 # The creator's settings come from the options each mod offers in Mod Config Remake, which the
 # game keeps in each save: a world has saves of its own, so the player's own saves keep their own
-# settings, and Mod Config Remake shows the world's as set by the world.
+# settings, and Mod Config Remake shows the world's as set by the world. Mods build those options
+# as they load, so an admin's game reads them for the catalog, which the World Admin tool lists.
 #
 # world_screen.rbx, which loads later, checks and installs from the world screen. It must never
 # interrupt the game, so every entry point rescues.
@@ -62,7 +64,8 @@ module MGQ_MpWorldMods
   # @!attribute version [String] Its current version.
   # @!attribute files [Hash] Its current files' hashes, a script's by its name, a zip's or an upload's by each path inside Patch.
   # @!attribute versions [Array<Array>] Each version the relay saw and its files' hashes, newest first.
-  Mod = Struct.new(:key, :name, :kind, :version, :files, :versions)
+  # @!attribute options_version [String, nil] The version whose Mod Config options the relay keeps, nil before an admin's game sent any.
+  Mod = Struct.new(:key, :name, :kind, :version, :files, :versions, :options_version)
 
   # A required mod this game lacks or has in another version.
   #
@@ -91,6 +94,7 @@ module MGQ_MpWorldMods
   end
 
   @hashes = {}
+  @reported = {}
 
   # Reads the relay's mod catalog as fetched with the world list, at most once a second, since the
   # world screen asks every frame.
@@ -127,6 +131,9 @@ module MGQ_MpWorldMods
       when "old"
         mod = mods.find { |known| known.key == fields[1] }
         mod.versions.push([fields[2].to_s, files_of(fields[3..-1])]) if mod
+      when "opts"
+        mod = mods.find { |known| known.key == fields[1] }
+        mod.options_version = fields[2].to_s if mod
       end
     end
 
@@ -172,6 +179,7 @@ module MGQ_MpWorldMods
   # after an install.
   def self.forget_installed
     @hashes = {}
+  @reported = {}
     @catalog_read = nil
     MGQ_MpWorld.forget_installed
   end
@@ -365,13 +373,22 @@ module MGQ_MpWorldMods
   end
 
   # Lists the options of some mods that a world may set: those with values, not key bindings,
-  # and not marked personal. An option without "[Mod Name]" in front belongs to the one above it.
+  # and not marked personal.
   #
   # @param keys [Array<String>] The mods' keys.
   # @return [Array<Symbol>] The options' keys.
   def self.world_options(keys)
+    world_entries(keys).map { |entry| entry[:key] }
+  end
+
+  # Finds the Mod Config entries of some mods that a world may set. An entry without "[Mod Name]"
+  # in front belongs to the one above it.
+  #
+  # @param keys [Array<String>] The mods' keys.
+  # @return [Array<Hash>] The entries, in the menu's order.
+  def self.world_entries(keys)
     group = nil
-    NWConst::Config::MOD_CONTENTS.map do |entry|
+    NWConst::Config::MOD_CONTENTS.select do |entry|
       name = entry[:name].to_s
       if name =~ /\A\s*\[([^\]]+)\]/
         group = MGQ_MpWorld.mod_key($1)
@@ -379,8 +396,48 @@ module MGQ_MpWorldMods
         group = nil
       end
 
-      entry[:key] if group && keys.include?(group) && entry[:sub] && !entry[:keybind] && !entry[:personal] && entry[:key]
-    end.compact
+      group && keys.include?(group) && entry[:sub] && !entry[:keybind] && !entry[:personal] && entry[:key]
+    end
+  end
+
+  # Sends the Mod Config options of each catalog mod this game has in the catalog's version, whose
+  # options the relay lacks for that version, once a session. Only an admin's game sends them; the
+  # World Admin tool lists them. Called by the world screen whenever it reads the list.
+  #
+  # @param admin [Boolean] Whether the player is one of the relay's admins.
+  def self.report_options(admin)
+    mods = admin && defined?(NWConst::Config::MOD_CONTENTS) ? catalog : nil
+
+    (mods || []).each do |mod|
+      next if mod.options_version == mod.version || @reported[mod.key] == mod.version || !row_for(mod.name, mod, {}).nil?
+
+      @reported[mod.key] = mod.version
+      lines = world_entries([mod.key]).map { |entry| option_line(entry) }.compact
+      MGQ_Multiplayer::Link.function('mp_mods_options', 'ppp').call(mod.key + "\0", mod.version + "\0", lines.join("\n") + "\0")
+      log("sending #{lines.size} Mod Config option(s) of #{mod.name} #{mod.version}")
+    end
+  rescue => e
+    log_once(:report_options, "sending the Mod Config options failed: #{e.class}: #{e.message}")
+  end
+
+  # Writes one Mod Config option for the catalog: its key, name, type, default and choices.
+  #
+  # @param entry [Hash] The option's entry in MOD_CONTENTS.
+  # @return [String, nil] Tab-separated fields, see ModOption.Parse in the DLL; nil for an option
+  #   whose value has a type a world does not keep.
+  def self.option_line(entry)
+    config = NWConst::Config
+    key = entry[:key]
+    values = config.const_defined?(:DATA) ? Array(config::DATA[key]) : []
+    texts = (config.const_defined?(:DATA_TEXT) && config::DATA_TEXT[key]) || {}
+    default = config.const_defined?(:DEFAULT) ? config::DEFAULT[key] : nil
+    default = values.first if default.nil?
+    type = type_of(default)
+    return nil unless type
+
+    name = entry[:name].to_s.sub(/\A\s*\[[^\]]+\]\s*/, "").sub(/\A[\s\->]+/, "")
+    choices = values.map { |value| type_of(value) && [value, (texts[value] && texts[value][:name]) || value] }.compact
+    ([key, name, type, default] + choices.flatten).map { |field| field.to_s.gsub(/[\t\r\n]/, " ") }.join("\t")
   end
 
   # Reads an option's current value.
@@ -397,15 +454,23 @@ module MGQ_MpWorldMods
   # @param value [Object] The value.
   # @return [String, nil] Such as "i:1", nil for a type a world does not keep.
   def self.encode(value)
-    # Ruby 1.9's whole numbers are Fixnum or Bignum, which case finds as Integer.
-    type = case value
-           when Integer then "i"
-           when Float then "f"
-           when true, false then "b"
-           when Symbol then "y"
-           when String then "s"
-           end
+    type = type_of(value)
     type && "#{type}:#{value.to_s.gsub('%', '%25').gsub(';', '%3B').gsub('=', '%3D')}"
+  end
+
+  # Names a value's type as a world's settings write it.
+  #
+  # @param value [Object] The value.
+  # @return [String, nil] "i", "f", "b", "y" or "s", nil for a type a world does not keep.
+  def self.type_of(value)
+    # Ruby 1.9's whole numbers are Fixnum or Bignum, which case finds as Integer.
+    case value
+    when Integer then "i"
+    when Float then "f"
+    when true, false then "b"
+    when Symbol then "y"
+    when String then "s"
+    end
   end
 
   # Reads a value written with its type.

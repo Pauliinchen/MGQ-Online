@@ -2,7 +2,8 @@
 //  DirectoryClient.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-06: Sent a world's mod settings on their own, which the creator or an admin may, and no longer with the other changes
+//      Paulinchen  2026-10-06: Sent the Mod Config options of a catalog mod, and read the version they came from
+//                            - Sent a world's mod settings on their own, which the creator or an admin may, and no longer with the other changes
 //                            - Read whether a link mod of the catalog is a zip
 //                            - Read the mod catalog and an uploaded mod's zip
 //                            - Made, changed and read worlds with the creator's hashes of required mods outside the catalog and its mod settings
@@ -360,10 +361,53 @@ public IReadOnlyList<CatalogMod> Mods()
             }
         }
 
-        mods.Add(new CatalogMod(Text(mod, "key"), Text(mod, "name"), Text(mod, "kind"), Text(mod, "version"), FilesOf(mod), versions, Text(mod, "fileUrl"), Flag(mod, "archive")));
+        mods.Add(new CatalogMod(Text(mod, "key"), Text(mod, "name"), Text(mod, "kind"), Text(mod, "version"), FilesOf(mod), versions, Text(mod, "fileUrl"), Flag(mod, "archive"), Text(mod, "optionsVersion")));
     }
 
     return mods;
+}
+
+/// <summary>
+/// Sends the Mod Config options of a catalog mod's current version, which only an admin may.
+/// </summary>
+/// <param name="key">The mod's key.</param>
+/// <param name="playerKey">An admin's key.</param>
+/// <param name="version">The version the options came from, which must be the mod's current one.</param>
+/// <param name="options">The options.</param>
+/// <exception cref="DirectoryException">The relay could not be reached or refused.</exception>
+public void SetModOptions(string key, string playerKey, string version, IReadOnlyList<ModOption> options)
+{
+    var body = Json(writer =>
+    {
+        writer.WriteString("player", playerKey);
+        writer.WriteString("version", version);
+        writer.WriteStartArray("options");
+
+        foreach (var option in options)
+        {
+            writer.WriteStartObject();
+            writer.WriteString("key", option.Key);
+            writer.WriteString("name", option.Name);
+            writer.WriteString("type", option.Type);
+            writer.WriteString("default", option.Default);
+            writer.WriteStartArray("choices");
+
+            foreach (var (value, name) in option.Choices)
+            {
+                writer.WriteStartObject();
+                writer.WriteString("value", value);
+                writer.WriteString("name", name);
+                writer.WriteEndObject();
+            }
+
+            writer.WriteEndArray();
+            writer.WriteEndObject();
+        }
+
+        writer.WriteEndArray();
+    });
+
+    using var _ = Send(HttpMethod.Post, new Uri($"{_mods}/{Uri.EscapeDataString(key)}/options"), body);
 }
 
 /// <summary>
