@@ -113,7 +113,7 @@ module MGQ_MpBattlesSync
 
   extend MGQ_MpLog
 
-  # What starts this script's lines in the mod's InGame.log.
+  # What starts this script's lines in Multiplayer InGame.log.
   LOG_TAG = "battle sync"
 
   # Makes the next battle live, when the link to the friend stands. The mode calls battle_started
@@ -298,7 +298,7 @@ module MGQ_MpBattlesSync
 
   # Breaks the live battle off without a winner, once something went wrong on either side.
   #
-  # @param reason [String] What went wrong, for InGame.log.
+  # @param reason [String] What went wrong, for Multiplayer InGame.log.
   # @param tell_friend [Boolean] Whether the friend's game still has to hear of it.
   def self.break_off(reason, tell_friend = true)
     return if @broken || !@role

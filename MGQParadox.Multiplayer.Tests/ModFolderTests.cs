@@ -2,6 +2,7 @@
 //  ModFolderTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-06: Checked that the DLL's log lands in the game folder's Logs folder
 //      Paulinchen  2026-10-01: Created
 //
 //----------------------------------------------------------------
@@ -28,6 +29,15 @@ public sealed class ModFolderTests
     {
         Assert.Equal(@"C:\Games\MGQ\Save\Save01.rvdata2", ModFolder.GamePathOf("Save/Save01.rvdata2", ModFolderPath));
         Assert.Equal(@"C:\Games\MGQ\Patch\Multiplayer\Worlds\ab12", ModFolder.GamePathOf("Patch/Multiplayer/Worlds/ab12", ModFolderPath));
+    }
+
+    /// <summary>
+    /// Asserts that the DLL's log lands in the game folder's Logs folder, which every mod writes its logs to.
+    /// </summary>
+    [Fact]
+    public void GamePathOf_Log_IsInTheLogsFolder()
+    {
+        Assert.Equal(@"C:\Games\MGQ\Logs\Multiplayer.log", ModFolder.GamePathOf(@"Logs\Multiplayer.log", ModFolderPath));
     }
 
     /// <summary>

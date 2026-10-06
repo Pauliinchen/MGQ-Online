@@ -51,7 +51,7 @@ module MGQ_MpCoopGather
 
   extend MGQ_MpLog
 
-  # What starts this script's lines in the mod's InGame.log.
+  # What starts this script's lines in Multiplayer InGame.log.
   LOG_TAG = "co-op gather"
 
   # Finds the leader of the player's party, through coop_events.rbx.

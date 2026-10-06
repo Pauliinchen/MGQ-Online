@@ -2,6 +2,7 @@
 #  battles_pvp_mirror.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-06: Wrote the report into the game folder's Logs folder
 #      Paulinchen  2026-10-04: Renamed from mp_battles_pvp_mirror.rbx
 #      Paulinchen  2026-10-03: Read and wrote the game's private fields and called its private methods through MGQ_MpGame
 #                            - Created
@@ -13,11 +14,11 @@
 # battles_pvp.rbx.
 
 module MGQ_MpBattlesPvp
-  # Patch/Multiplayer/Mirror Match.log: each character of a mirror match next to its rebuild,
+  # Logs/Mirror Match.log: each character of a mirror match next to its rebuild,
   # outside of battle and at the first turn, every value that differs marked. Written anew for every
   # match.
   module MirrorReport
-    # File inside the mod folder.
+    # File inside the Logs folder.
     FILE = "Mirror Match.log"
 
     # Names of the extra rates, in the game's order.
@@ -64,7 +65,7 @@ module MGQ_MpBattlesPvp
       blocks = @pairs.map { |yours, rebuilt| block(yours, rebuilt) }
       differences = blocks.inject(0) { |sum, (_, count)| sum + count }
       lines = ["=" * 70, "#{title}: #{differences} value(s) differ", "=" * 70, ""] + blocks.map(&:first).flatten
-      File.open(MGQ_Multiplayer.path(FILE), mode) { |file| file.write(lines.join("\n") + "\n") }
+      File.open(MGQ_Multiplayer.log_path(FILE), mode) { |file| file.write(lines.join("\n") + "\n") }
     rescue => e
       MGQ_MpBattlesPvp.log("mirror report failed: #{e.class}: #{e.message}")
     end

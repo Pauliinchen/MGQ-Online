@@ -121,7 +121,7 @@ module MGQ_MpTrade
 
   extend MGQ_MpLog
 
-  # What starts this script's lines in the mod's InGame.log.
+  # What starts this script's lines in Multiplayer InGame.log.
   LOG_TAG = "trade"
 
   # Reports whether trades can run: the mod's DLL is installed and up to date, and a world is open.

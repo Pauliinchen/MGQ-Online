@@ -30,7 +30,7 @@ module MGQ_MpBattlesTeam
 
   extend MGQ_MpLog
 
-  # What starts this script's lines in the mod's InGame.log.
+  # What starts this script's lines in Multiplayer InGame.log.
   LOG_TAG = "team duel"
 
   # Reports whether this game's side is the host's.

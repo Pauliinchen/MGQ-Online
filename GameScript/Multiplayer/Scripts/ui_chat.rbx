@@ -342,7 +342,7 @@ module MGQ_MpChat
 
   extend MGQ_MpLog
 
-  # What starts this script's lines in the mod's InGame.log.
+  # What starts this script's lines in Multiplayer InGame.log.
   LOG_TAG = "chat"
 
   # Tells every other game of the world something, through overworld_sync.rbx.

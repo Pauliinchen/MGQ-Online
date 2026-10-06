@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-06: Kept the last name Discord told, which stands in while Discord has not told one yet, as right after a restart
+#                            - Wrote the in-game log as Multiplayer InGame.log into the game folder's Logs folder
 #                            - Loaded trade.rbx and ui_trade.rbx after battles_team.rbx
 #                            - Told whether a button is held past the capture, for the wheels' arrows
 #                            - Loaded ui_wheel.rbx before ui_actions.rbx
@@ -59,8 +60,11 @@ module MGQ_Multiplayer
   ENABLED = true
 
   # Folder inside the game's Patch folder that holds the DLL, the other scripts and everything the
-  # mod writes.
+  # mod writes but its logs.
   MOD_DIR = "Patch\\Multiplayer"
+
+  # Folder in the game folder that holds the logs, shared with the user's other mods.
+  LOG_DIR = "Logs"
 
   # Folder of the other scripts inside the mod folder.
   SCRIPTS_DIR = "Scripts"
@@ -145,6 +149,16 @@ module MGQ_Multiplayer
     "#{MOD_DIR}\\#{name}"
   end
 
+  # Builds the path of a log file in the game folder's Logs folder, which holds the logs of every
+  # mod, and makes the folder when it is missing.
+  #
+  # @param name [String] The log's file name.
+  # @return [String] The path, relative to the game folder.
+  def self.log_path(name)
+    Dir.mkdir(LOG_DIR) unless File.directory?(LOG_DIR)
+    "#{LOG_DIR}\\#{name}"
+  end
+
   # Loads the mod's other scripts in the order of SCRIPTS. One that is missing or fails is logged,
   # and the others load all the same.
   def self.load_scripts
@@ -170,7 +184,7 @@ module MGQ_Multiplayer
     "A friend"
   end
 
-  # Patch/Multiplayer/InGame.log, which only appears when something went wrong inside the game.
+  # Logs/Multiplayer InGame.log, which only appears when something went wrong inside the game.
   module Log
     # Lines written per session at most, an error repeating every frame would flood the file.
     MAX_LINES = 60
@@ -184,7 +198,7 @@ module MGQ_Multiplayer
       return if @lines >= MAX_LINES
       @lines += 1
 
-      File.open(MGQ_Multiplayer.path("InGame.log"), "ab") { |file| file.write("#{Time.now}  #{message}\n") }
+      File.open(MGQ_Multiplayer.log_path("Multiplayer InGame.log"), "ab") { |file| file.write("#{Time.now}  #{message}\n") }
     rescue
     end
   end

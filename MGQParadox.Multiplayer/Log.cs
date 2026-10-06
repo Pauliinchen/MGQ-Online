@@ -2,6 +2,7 @@
 //  Log.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-06: Wrote the log into the game folder's Logs folder
 //      Paulinchen  2026-09-29: Kept the game and network threads from writing at once
 //      Paulinchen  2026-09-28: Created
 //
@@ -15,7 +16,7 @@ using System.Text;
 namespace MGQParadox.Multiplayer;
 
 /// <summary>
-/// Multiplayer.log in the mod folder, written by the DLL.
+/// Multiplayer.log in the game folder's Logs folder, written by the DLL.
 /// </summary>
 /// <remarks>
 /// Never throws, since a failing log must not take down the code writing it, least of all the game.
@@ -25,7 +26,7 @@ internal static class Log
     /// <summary>
     /// Full path of the log file.
     /// </summary>
-    private static string FilePath => ModFolder.PathOf("Multiplayer.log");
+    private static string FilePath => ModFolder.GamePathOf(@"Logs\Multiplayer.log");
 
     /// <summary>
     /// Keeps the game thread and the network threads from writing at once.
@@ -47,6 +48,7 @@ internal static class Log
         {
             lock (Gate)
             {
+                Directory.CreateDirectory(Path.GetDirectoryName(FilePath)!);
                 File.AppendAllText(FilePath, $"{time}  {message}\r\n", Encoding.UTF8);
             }
         }

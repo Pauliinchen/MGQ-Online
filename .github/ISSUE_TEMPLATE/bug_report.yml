@@ -68,7 +68,7 @@ body:
       label: Logs
       description: |
         Drag these files in here, from every game that took part if you can:
-        - `Patch\Multiplayer\InGame.log` and `Patch\Multiplayer\Multiplayer.log`
+        - `Logs\Multiplayer InGame.log` and `Logs\Multiplayer.log`
         - `errors.txt` in the game folder, if the game crashed
     validations:
       required: true

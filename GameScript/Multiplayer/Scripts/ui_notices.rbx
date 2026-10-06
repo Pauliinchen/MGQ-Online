@@ -36,7 +36,7 @@ module MGQ_MpNotices
 
   extend MGQ_MpLog
 
-  # What starts this script's lines in the mod's InGame.log.
+  # What starts this script's lines in Multiplayer InGame.log.
   LOG_TAG = "notices"
 
   # Shows a message for a moment, in place of one with the same key.

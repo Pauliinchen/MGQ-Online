@@ -38,7 +38,7 @@ module MGQ_MpBattles
 
   extend MGQ_MpLog
 
-  # What starts this script's lines in the mod's InGame.log.
+  # What starts this script's lines in Multiplayer InGame.log.
   LOG_TAG = "battle"
 
   # What a kind of live battle does differently from a duel between two players, such as a co-op

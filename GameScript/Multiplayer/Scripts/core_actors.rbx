@@ -20,7 +20,7 @@
 module MGQ_MpActors
   extend MGQ_MpLog
 
-  # What starts this script's lines in the mod's InGame.log.
+  # What starts this script's lines in Multiplayer InGame.log.
   LOG_TAG = "actors"
 
   # Characters' builds as plain numbers, which another game turns back into the characters from its

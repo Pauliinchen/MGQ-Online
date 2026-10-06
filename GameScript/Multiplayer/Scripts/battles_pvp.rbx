@@ -2,6 +2,7 @@
 #  battles_pvp.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-06: Named the log in the game folder's Logs folder in the messages of a failed or broken battle
 #      Paulinchen  2026-10-04: Dropped a story's call that waited through the battle once the game is put back, and logged where it was put back
 #                            - Renamed from mp_battles_pvp.rbx
 #                            - Counted the Backline of the friend's team for the stat boosts the game counts the whole party for
@@ -80,7 +81,7 @@ module MGQ_MpBattlesPvp
 
   extend MGQ_MpLog
 
-  # What starts this script's lines in the mod's InGame.log.
+  # What starts this script's lines in Multiplayer InGame.log.
   LOG_TAG = "pvp battle"
 
   # Has the map start a mirror match against the player's own team, once the screen closed.
@@ -779,10 +780,10 @@ module MGQ_MpBattlesPvp
     }
 
     # What the map says when the battle could not start.
-    FAILED = "The battle could not start, Patch\\Multiplayer\\InGame.log says why."
+    FAILED = "The battle could not start, Logs\\Multiplayer InGame.log says why."
 
     # What the map says after a live battle broke off without a winner.
-    BROKEN = "The PvP battle against %s's team broke off, Patch\\Multiplayer\\InGame.log says why."
+    BROKEN = "The PvP battle against %s's team broke off, Logs\\Multiplayer InGame.log says why."
 
     # What the map says after a mirror match, by the game's battle result.
     MIRROR_RESULTS = {

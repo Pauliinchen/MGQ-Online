@@ -45,7 +45,7 @@ module MGQ_MpAsync
 
   extend MGQ_MpLog
 
-  # What starts this script's lines in the mod's InGame.log.
+  # What starts this script's lines in Multiplayer InGame.log.
   LOG_TAG = "async"
 
   # Reports whether the world runs behind a screen: a world is open, and the player left the map

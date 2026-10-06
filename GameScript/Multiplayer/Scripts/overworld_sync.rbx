@@ -62,7 +62,7 @@ module MGQ_MpOverworldSync
 
   extend MGQ_MpLog
 
-  # What starts this script's lines in the mod's InGame.log.
+  # What starts this script's lines in Multiplayer InGame.log.
   LOG_TAG = "overworld sync"
 
   # Reports whether a world is open.

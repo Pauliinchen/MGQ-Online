@@ -91,7 +91,7 @@ module MGQ_MpCoopStory
 
   extend MGQ_MpLog
 
-  # What starts this script's lines in the mod's InGame.log.
+  # What starts this script's lines in Multiplayer InGame.log.
   LOG_TAG = "co-op story"
 
   # Reports whether the player plays the leader's story now.

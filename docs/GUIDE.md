@@ -261,7 +261,7 @@ Press **F11** on the map, outside a world, to open the PvP battle screen.
 
 - **Host:** your game waits for a friend and puts a join code on your clipboard. Send it to your friend, or invite them through the **+** in a Discord chat when the Discord mod is installed.
 - **Join:** copy your friend's join code and pick *Join with the copied code*, or accept their Discord invite: your game starts if it's closed, loads your newest save (the one *Continue* picks first) and joins by itself. While you host, invites you accept are ignored; stop hosting first.
-- **Fight your own team:** a mirror match against a copy of your own team, played by the computer, no network needed. `Patch\Multiplayer\Mirror Match.log` then lists each of your characters next to its copy and marks every value that differs.
+- **Fight your own team:** a mirror match against a copy of your own team, played by the computer, no network needed. `Logs\Mirror Match.log` then lists each of your characters next to its copy and marks every value that differs.
 
 Once the games have exchanged their teams, both battles start together. The host's game runs the battle, and the other game shows what happened. You meet your friend's characters as they are: jobs, races, equipment, gems and abilities, pre-battle spells and passives included. A defeated character of your friend stays as a grey silhouette, since their team can still revive it.
 
@@ -304,7 +304,7 @@ Your games meet at the mod's **relay**, a small server that passes their data on
 |---|---|
 | *Multiplayer* is greyed out on the title screen | A new release is out. Update with `Patch\Multiplayer\Update.bat`. |
 | "Your friend's game is not hosting with this join code any more" | Your friend stopped hosting, or hosted again, which makes a new join code. Ask for the new one. |
-| "The relay could not be reached" | Your internet connection is down, or something such as a firewall blocks the game from going online. `Patch\Multiplayer\Multiplayer.log` says what the relay answered. |
+| "The relay could not be reached" | Your internet connection is down, or something such as a firewall blocks the game from going online. `Logs\Multiplayer.log` in the game folder says what the relay answered. |
 | "This join code comes from another version of the mod" | One of you has an older version; both need the same one. |
 | "Your friend's game uses a relay this version does not know" | Your friend has a newer version of the mod; update yours. |
 | "\<world> is not in the list right now" | The world list hasn't loaded yet or couldn't be fetched; the top of the world screen says which. Try again once it has loaded. |
@@ -312,4 +312,4 @@ Your games meet at the mod's **relay**, a small server that passes their data on
 | "\<world> needs ...: no such script in your Patch folder" | The world requires a mod you don't have. Install it, then enter again. |
 | "This is a world code" | You pasted a world's code into a PvP join. Enter worlds through *Multiplayer* on the title screen. |
 
-**Logs:** `Patch\Multiplayer\InGame.log` only appears when something went wrong inside the game; `Patch\Multiplayer\Multiplayer.log` tells what the connection did. Please attach both to a [bug report](https://github.com/Pauliinchen/MGQ-Online/issues/new?template=bug_report.yml).
+**Logs:** both are in the `Logs` folder of your game folder. `Multiplayer InGame.log` only appears when something went wrong inside the game; `Multiplayer.log` tells what the connection did. Please attach both to a [bug report](https://github.com/Pauliinchen/MGQ-Online/issues/new?template=bug_report.yml).

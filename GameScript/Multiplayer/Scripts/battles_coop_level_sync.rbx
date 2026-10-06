@@ -18,7 +18,7 @@
 module MGQ_MpCoopLevelSync
   extend MGQ_MpLog
 
-  # What starts this script's lines in the mod's InGame.log.
+  # What starts this script's lines in Multiplayer InGame.log.
   LOG_TAG = "level sync"
 
   # Turns the level sync off without uninstalling it.

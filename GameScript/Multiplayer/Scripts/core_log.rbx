@@ -7,7 +7,7 @@
 #
 #----------------------------------------------------------------
 
-# The scripts' lines in the mod's InGame.log. A script's module extends this and names its lines
+# The scripts' lines in Multiplayer InGame.log. A script's module extends this and names its lines
 # with LOG_TAG, which starts each of them, such as "co-op".
 #
 # It must never interrupt the game, so writing a line never raises.
@@ -26,7 +26,7 @@ module MGQ_MpLog
     @logged[[owner, key]] = true
   end
 
-  # Writes a line to the mod's InGame.log, after the script's LOG_TAG.
+  # Writes a line to Multiplayer InGame.log, after the script's LOG_TAG.
   #
   # @param message [String] The line.
   def log(message)

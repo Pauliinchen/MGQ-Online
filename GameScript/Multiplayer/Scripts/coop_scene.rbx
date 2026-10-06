@@ -43,7 +43,7 @@ module MGQ_MpCoopScene
 
   extend MGQ_MpLog
 
-  # What starts this script's lines in the mod's InGame.log.
+  # What starts this script's lines in Multiplayer InGame.log.
   LOG_TAG = "co-op scene"
 
   # Notes the interpreter about to run a command, which tells whether the next change of a picture

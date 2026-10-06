@@ -129,7 +129,7 @@ module MGQ_MpBattlesCoop
 
   extend MGQ_MpLog
 
-  # What starts this script's lines in the mod's InGame.log.
+  # What starts this script's lines in Multiplayer InGame.log.
   LOG_TAG = "co-op battle"
 
   # The party of the co-op battle running: every player's characters in the order every game shares.

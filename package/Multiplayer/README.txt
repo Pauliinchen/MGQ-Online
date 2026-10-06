@@ -114,9 +114,10 @@ The guide's troubleshooting section explains the game's messages:
 
    https://github.com/Pauliinchen/MGQ-Online/blob/main/docs/GUIDE.md#troubleshooting
 
-Patch\Multiplayer\InGame.log only appears when something went wrong
-inside the game; Patch\Multiplayer\Multiplayer.log tells what the
-connection did. Please attach both to a bug report.
+Both logs are in the Logs folder of your game folder:
+Multiplayer InGame.log only appears when something went wrong inside
+the game; Multiplayer.log tells what the connection did. Please attach
+both to a bug report.
 
 
 CREDITS

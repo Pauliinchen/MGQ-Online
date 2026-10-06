@@ -34,7 +34,7 @@ module MGQ_MpSaveExport
 
   extend MGQ_MpLog
 
-  # What starts this script's lines in the mod's InGame.log.
+  # What starts this script's lines in Multiplayer InGame.log.
   LOG_TAG = "save export"
 
   # Copies a world's latest save, an autosave included, into the first free slot of the player's

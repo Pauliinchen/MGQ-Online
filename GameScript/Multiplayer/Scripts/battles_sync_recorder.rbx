@@ -2,6 +2,7 @@
 #  battles_sync_recorder.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-06: Wrote the recording into the game folder's Logs folder
 #      Paulinchen  2026-10-04: Renamed from mp_battles_sync_recorder.rbx
 #      Paulinchen  2026-10-03: Recorded the characters outside the battle that its mode names
 #                            - Read and wrote the game's private fields and called its private methods through MGQ_MpGame
@@ -275,7 +276,7 @@ module MGQ_MpBattlesSync
       if @sink == :link
         Channel.post("events", @events.join("\n"))
       else
-        File.open(MGQ_Multiplayer.path(RECORDING_FILE), @file_mode) { |file| file.write(@events.join("\n") + "\n") }
+        File.open(MGQ_Multiplayer.log_path(RECORDING_FILE), @file_mode) { |file| file.write(@events.join("\n") + "\n") }
         @file_mode = "ab"
       end
       @events = []
@@ -310,7 +311,7 @@ module MGQ_MpBattlesSync
       @events = []
     end
 
-    # Stops recording after an error, which stays in InGame.log, and breaks a live battle off, since
+    # Stops recording after an error, which stays in Multiplayer InGame.log, and breaks a live battle off, since
     # the guest sees nothing but the stream.
     #
     # @param error [Exception] The error.

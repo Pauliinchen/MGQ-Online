@@ -80,7 +80,7 @@ module MGQ_MpBattlesDuel
 
   extend MGQ_MpLog
 
-  # What starts this script's lines in the mod's InGame.log.
+  # What starts this script's lines in Multiplayer InGame.log.
   LOG_TAG = "duel"
 
   # Reports whether duels can run: PvP battles are on and up to date, and a world is open.
