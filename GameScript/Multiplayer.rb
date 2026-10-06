@@ -2,7 +2,8 @@
 #  Multiplayer.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-06: Loaded trade.rbx and ui_trade.rbx after battles_team.rbx
+#      Paulinchen  2026-10-06: Kept the last name Discord told, which stands in while Discord has not told one yet, as right after a restart
+#                            - Loaded trade.rbx and ui_trade.rbx after battles_team.rbx
 #                            - Told whether a button is held past the capture, for the wheels' arrows
 #                            - Loaded ui_wheel.rbx before ui_actions.rbx
 #                            - Loaded world_mods.rbx after world.rbx
@@ -229,6 +230,9 @@ module MGQ_Multiplayer
     # File that keeps the id and the chosen name, inside the mod folder.
     FILE = "Player.ini"
 
+    # Setting that keeps the last name Discord told.
+    DISCORD_NAME = "discord_name"
+
     # Reads the player's id, making one the first time.
     #
     # @return [String] The id, "" when none could be made.
@@ -241,15 +245,21 @@ module MGQ_Multiplayer
       values["id"].to_s
     end
 
-    # Reads the name the others see: the one the player chose for Multiplayer, or else their name on Discord.
+    # Reads the name the others see: the one the player chose for Multiplayer, or else their name on
+    # Discord, or the last one Discord told while it has not told one yet.
     #
-    # @return [String, nil] The name, nil while the player chose none and Discord told none.
+    # @return [String, nil] The name, nil while the player chose none and Discord never told one.
     def self.name
       chosen = load["name"].to_s
       return MGQ_Multiplayer.clean(chosen) unless chosen.empty?
 
-      discord = Discord.player_name
-      discord && !discord.empty? ? MGQ_Multiplayer.clean(discord) : nil
+      discord = Discord.player_name.to_s
+      if discord.empty?
+        discord = load[DISCORD_NAME].to_s
+      elsif load[DISCORD_NAME] != discord
+        store(DISCORD_NAME, discord)
+      end
+      discord.empty? ? nil : MGQ_Multiplayer.clean(discord)
     end
 
     # Keeps the name the player chose, which replaces their name on Discord.

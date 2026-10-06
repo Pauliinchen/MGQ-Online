@@ -2,7 +2,8 @@
 #  world_screen.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-06: Kept a mod added by name when unlisted, and removed it with Delete, which the hint names while it is picked
+#      Paulinchen  2026-10-06: Asked for the player's name in a form typed in place instead of on the text screen
+#                            - Kept a mod added by name when unlisted, and removed it with Delete, which the hint names while it is picked
 #                            - Typed a mod's name in place in the picker, on the keyboard, instead of on the text screen
 #                            - Named a mod in the picker with Enter and its red ! and orange ? buttons under titled columns instead of a menu, and listed or unlisted every mod at once
 #                            - Had an admin's game send the Mod Config options of the catalog's mods as the list arrives
@@ -122,7 +123,7 @@ class Scene_MpWorlds < Scene_MenuBase
     @list_window.set_handler(:world, method(:on_world))
     @list_window.set_handler(:new_world, method(:enter_form))
     @list_window.set_handler(:join_hidden, method(:enter_form))
-    @list_window.set_handler(:rename, method(:on_rename))
+    @list_window.set_handler(:rename, method(:enter_form))
     @list_window.set_handler(:cancel, method(:return_scene))
     @actions_window = Window_MpChoice.new
     [:enter, :favourite, :copy_id, :forget, :edit_world, :ban, :delete_world, :export_save, :delete_saves].each { |symbol| @actions_window.set_handler(symbol, method(:"on_#{symbol}")) }
@@ -138,6 +139,7 @@ class Scene_MpWorlds < Scene_MenuBase
     [:from_creator, :from_beginning, :from_own].each { |symbol| @start_window.set_handler(symbol, method(:"on_#{symbol}")) }
     @start_window.set_handler(:cancel, method(:back_to_list))
     @forms ||= { :new_world => MGQ_MpWorld::Form.create, :join_hidden => MGQ_MpWorld::Form.join }
+    @forms[:rename] = MGQ_MpWorld::Form.rename(MGQ_Multiplayer::Player.name.to_s)
     @message ||= HINT
     @me = MGQ_MpWorld::Directory.my_id
     MGQ_MpWorldMods.forget_installed
@@ -163,8 +165,7 @@ class Scene_MpWorlds < Scene_MenuBase
 
     if @ask_name
       @ask_name = false
-      ask_text(:player_name, "Your name, which the others see", MGQ_Multiplayer::Player.name.to_s, :max_chars => MGQ_MpWorld::MAX_NAME_CHARS)
-      return
+      return ask_name
     end
 
     return start_from_own if @own_start
@@ -284,17 +285,13 @@ class Scene_MpWorlds < Scene_MenuBase
     @focus = nil
 
     case kind
-    when :player_name
-      MGQ_Multiplayer::Player.name = text if text
-      @me = MGQ_MpWorld::Directory.my_id
-      return return_scene if MGQ_Multiplayer::Player.name.nil?
     when :password
       start_action("unlock") { MGQ_MpWorld::Directory.unlock(@entry.id, text) } if text && @entry && @entry.listed
     when Array
       fill_field(kind[1], text) if text && form
     end
 
-    @ask_name =MGQ_Multiplayer::Player.name.nil?
+    @ask_name = MGQ_Multiplayer::Player.name.nil?
   end
 
   # Opens what can be done with the chosen world.
@@ -685,9 +682,27 @@ class Scene_MpWorlds < Scene_MenuBase
     end
   end
 
-  # Asks for the player's name again.
-  def on_rename
-    ask_text(:player_name, "Your name, which the others see", MGQ_Multiplayer::Player.name.to_s, :max_chars => MGQ_MpWorld::MAX_NAME_CHARS)
+  # Opens the form of the player's name and starts typing into it, as when the screen opens and
+  # the player has no name.
+  def ask_name
+    @list_window.select_symbol(:rename)
+    @list_window.deactivate
+    @form_symbol = :rename
+    @field_index = 0
+    @hinted = nil
+    @form_window.form = form
+    @form_window.select(0)
+    start_typing(form.fields.first)
+  end
+
+  # Keeps the name the form holds, which the others see from now on.
+  def rename_player
+    MGQ_Multiplayer::Player.name = form[:name]
+    @me = MGQ_MpWorld::Directory.my_id
+    @forms[:rename] = MGQ_MpWorld::Form.rename(MGQ_Multiplayer::Player.name.to_s)
+    leave_form
+    @resume_form = false
+    say("The others see you as #{MGQ_Multiplayer::Player.name}.")
   end
 
   # The form the player fills in, nil while the list has the cursor.
@@ -706,6 +721,9 @@ class Scene_MpWorlds < Scene_MenuBase
 
   # Moves from the form back to the list, keeping what was filled in, unless it changed a world.
   def leave_form
+    # Without a name the player cannot be in a world, so the screen closes.
+    return return_scene if @form_symbol == :rename && MGQ_Multiplayer::Player.name.nil?
+
     @forms.delete(:edit_world)
     @form_symbol = nil
     @hinted = nil
@@ -815,7 +833,9 @@ class Scene_MpWorlds < Scene_MenuBase
 
       form[field.key] = text
       Sound.play_ok
-      return stop_typing
+      stop_typing
+      # The name's form has nothing else to fill in, so Enter keeps the name at once.
+      return @form_symbol == :rename ? send_form : nil
     when :escape
       form[field.key] = @typed_before
       Sound.play_cancel
@@ -1114,6 +1134,7 @@ class Scene_MpWorlds < Scene_MenuBase
     case @form_symbol
     when :new_world then create_world
     when :edit_world then edit_world
+    when :rename then rename_player
     else join_world
     end
   end

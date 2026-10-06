@@ -41,6 +41,8 @@ Each world keeps its own saves, Library, medals and affection in `Patch\Multipla
 
 The left side has two boxes: the worlds, and below them the commands (*Create new world*, *Add a hidden world*, *Change your name*, *Back*). Up and down pick a box, confirm moves into it and cancel moves back out, so the commands are reached without scrolling through a long list. Cancel with a box picked leaves the screen.
 
+**Your name** is the one the others see: your name on Discord, until you choose one in *Change your name*, typed in place at the right; **Enter** keeps it. Without Discord and without a name, the world screen asks for one when it opens. The last name Discord told stands in while Discord is still connecting, such as right after a restart.
+
 The worlds box lists every public world, the hidden worlds you joined and the hidden worlds you added by their id, in this order:
 
 1. your favourites, marked `*`;

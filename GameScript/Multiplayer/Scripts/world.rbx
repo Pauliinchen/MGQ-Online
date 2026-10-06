@@ -2,7 +2,8 @@
 #  world.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-06: Left Allow data mismatch unticked in a new world's form
+#      Paulinchen  2026-10-06: Added the form of the player's name
+#                            - Left Allow data mismatch unticked in a new world's form
 #                            - Kept a mod added by name in the mod picker when unlisted, removed only on its own
 #                            - Listed the installed mods for the mod picker, which names a world's mods in the forms, and took up to 300 characters of them
 #                            - Sent a world's mod settings on their own, and no longer with an edit
@@ -1283,6 +1284,18 @@ module MGQ_MpWorld
       ]
       fields.insert(2, Field.new(:data, :button, "Update current data scan", 2, "Scans your game's data as it is now and makes it the world's, such as after a mod update.", :group => "Game data")) if own
       new("Edit #{listed.name}", fields, :seats => listed.seats.to_s, :mods => listed.mods.to_s, :description => listed.description.to_s)
+    end
+
+    # The form of the name the others see.
+    #
+    # @param name [String] The name as it is, "" for none.
+    # @return [Form] The form, filled in with the name.
+    def self.rename(name)
+      fields = [
+        Field.new(:name, :text, "Your name", 0, "The name the others see. Without one, your name on Discord.", :max_chars => MAX_NAME_CHARS, :group => "Player"),
+        Field.new(:confirm, :button, "Use this name", 1, "Keeps the name for every world."),
+      ]
+      new("Your name", fields, :name => name)
     end
 
     # The form that adds a hidden world to the list by its id.
