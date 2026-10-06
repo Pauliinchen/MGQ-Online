@@ -2,14 +2,15 @@
 //  mods.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-06: Created
+//      Paulinchen  2026-10-06: Covered zips of a release, hashed file by file
+//                            - Created
 //
 //----------------------------------------------------------------
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { playerIdOf } from "./directory.js";
-import { MOD_LIMITS, ModCatalog, handleModRequest, hashModFile, modKey, splitUpload } from "./mods.js";
+import { MOD_LIMITS, ModCatalog, handleModRequest, hashModFile, modKey, splitUpload, zipHashes } from "./mods.js";
 
 /**
  * An admin's player key.
@@ -67,7 +68,7 @@ function fakeGitHub(state) {
  * @param {object} [limits] The limits.
  * @returns {Promise<{catalog: ModCatalog, time: {now: number}, files: Map}>} The catalog, its clock and the uploaded zips.
  */
-async function newCatalog(state, limits = MOD_LIMITS) {
+async function newCatalog(state, limits = MOD_LIMITS, fetcher = fakeGitHub(state)) {
   const mods = new Map();
   const files = new Map();
   const time = { now: 1_000_000 };
@@ -83,7 +84,7 @@ async function newCatalog(state, limits = MOD_LIMITS) {
     getModFile: async (key) => files.get(key),
   };
 
-  return { catalog: new ModCatalog(store, { clock: () => time.now, limits, admins: [await playerIdOf(ADMIN)], fetch: fakeGitHub(state) }), time, files };
+  return { catalog: new ModCatalog(store, { clock: () => time.now, limits, admins: [await playerIdOf(ADMIN)], fetch: fetcher }), time, files };
 }
 
 /**
@@ -244,4 +245,119 @@ test("handleModRequest routes the catalog's requests", async () => {
   assert.equal((await handleModRequest(catalog, "POST", url("/v1/mods/pack/delete"), body({ player: ADMIN }), none)).status, 200);
   assert.equal((await handleModRequest(catalog, "PUT", url("/v1/mods"), body({}), none)).status, 405);
   assert.equal((await handleModRequest(catalog, "GET", url("/v1/worlds"), body({}), none)).status, 404);
+});
+
+/**
+ * Makes a zip, its files plain or deflated.
+ *
+ * @param {Array<[string, string, boolean?]>} entries Each file's name, text, and whether to deflate it.
+ * @returns {Promise<Uint8Array>} The zip.
+ */
+async function makeZip(entries) {
+  const parts = [];
+  const directory = [];
+  let offset = 0;
+
+  for (const [name, text, deflate] of entries) {
+    const data = new TextEncoder().encode(text);
+    const packed = deflate ? new Uint8Array(await new Response(new Blob([data]).stream().pipeThrough(new CompressionStream("deflate-raw"))).arrayBuffer()) : data;
+    const nameBytes = new TextEncoder().encode(name);
+    const local = new DataView(new ArrayBuffer(30));
+    local.setUint32(0, 0x04034b50, true);
+    local.setUint16(8, deflate ? 8 : 0, true);
+    local.setUint32(18, packed.length, true);
+    local.setUint32(22, data.length, true);
+    local.setUint16(26, nameBytes.length, true);
+    const central = new DataView(new ArrayBuffer(46));
+    central.setUint32(0, 0x02014b50, true);
+    central.setUint16(10, deflate ? 8 : 0, true);
+    central.setUint32(20, packed.length, true);
+    central.setUint32(24, data.length, true);
+    central.setUint16(28, nameBytes.length, true);
+    central.setUint32(42, offset, true);
+    parts.push(new Uint8Array(local.buffer), nameBytes, packed);
+    directory.push(new Uint8Array(central.buffer), nameBytes);
+    offset += 30 + nameBytes.length + packed.length;
+  }
+
+  const directorySize = directory.reduce((size, part) => size + part.length, 0);
+  const end = new DataView(new ArrayBuffer(22));
+  end.setUint32(0, 0x06054b50, true);
+  end.setUint16(8, entries.length, true);
+  end.setUint16(10, entries.length, true);
+  end.setUint32(12, directorySize, true);
+  end.setUint32(16, offset, true);
+  const all = [...parts, ...directory, new Uint8Array(end.buffer)];
+  const zip = new Uint8Array(all.reduce((size, part) => size + part.length, 0));
+  let at = 0;
+
+  for (const part of all) {
+    zip.set(part, at);
+    at += part.length;
+  }
+
+  return zip;
+}
+
+/**
+ * A fake GitHub whose latest release holds a zip.
+ *
+ * @param {{tag: string, zip: Uint8Array}} state The current release.
+ * @returns {typeof fetch} The fake fetch.
+ */
+function fakeZipRelease(state) {
+  const base = "https://github.com/Pauliinchen/MGQ-Paradox-Mod-Collection/releases";
+  return async (url) => {
+    if (url === `${base}/latest/download/Luka_Replacer.zip`) {
+      return new Response(null, { status: 302, headers: { Location: `${base}/download/${state.tag}/Luka_Replacer.zip` } });
+    }
+
+    if (url === `${base}/download/${state.tag}/Luka_Replacer.zip`) {
+      return new Response(null, { status: 302, headers: { Location: "https://release-assets.githubusercontent.com/zip" } });
+    }
+
+    return url === "https://release-assets.githubusercontent.com/zip" ? new Response(state.zip, { status: 200 }) : new Response("not found", { status: 404 });
+  };
+}
+
+test("zipHashes hashes every file of a zip by its path, plain or deflated, scripts without carriage returns", async () => {
+  const zip = await makeZip([["Luka_Replacer.rb", "# hero\r\n", true], ["Luka_Replacer\\Heroes\\cecil.luka", "LUKA", false], ["Luka_Replacer/", ""]]);
+  const files = await zipHashes(zip);
+
+  assert.deepEqual(Object.keys(files), ["Luka_Replacer.rb", "Luka_Replacer/Heroes/cecil.luka"]);
+  assert.equal(files["Luka_Replacer.rb"], await hashModFile("x.rb", new TextEncoder().encode("# hero\n")));
+  assert.equal(files["Luka_Replacer/Heroes/cecil.luka"], await hashModFile("cecil.luka", new TextEncoder().encode("LUKA")));
+});
+
+test("zipHashes refuses paths outside Patch, too many or too large files, and what is no zip", async () => {
+  await assert.rejects(zipHashes(await makeZip([["../Game.exe", "x"]])), /no path inside Patch/);
+  await assert.rejects(zipHashes(await makeZip([["a.rb", "x"], ["b.rb", "y"]]), { ...MOD_LIMITS, maxFiles: 1 }), /at most 1 files/);
+  await assert.rejects(zipHashes(await makeZip([["a.rb", "x".repeat(20), true]]), { ...MOD_LIMITS, maxUnpackedBytes: 10 }), /bytes in all/);
+  await assert.rejects(zipHashes(new TextEncoder().encode("# just a script")), /no zip/);
+  await assert.rejects(zipHashes(await makeZip([["Folder/", ""]])), /no files/);
+});
+
+test("a link to a zip of a release keeps a hash per file and is marked as an archive", async () => {
+  const state = { tag: "v1.0.0", zip: await makeZip([["Luka_Replacer.rb", "# one", true], ["Luka_Replacer/Heroes/a.luka", "A"]]) };
+  const { catalog } = await newCatalog({ tag: "v1", script: "" }, MOD_LIMITS, fakeZipRelease(state));
+
+  const answer = await catalog.setLink(ADMIN, "Luka Replacer", "https://github.com/Pauliinchen/MGQ-Paradox-Mod-Collection/releases/latest/download/Luka_Replacer.zip");
+  assert.equal(answer.body.mod.error, "");
+
+  let mod = (await catalog.list()).body.mods[0];
+  assert.deepEqual([mod.kind, mod.archive, mod.version, Object.keys(mod.files)], ["link", true, "1.0.0", ["Luka_Replacer.rb", "Luka_Replacer/Heroes/a.luka"]]);
+  assert.match(mod.fileUrl, /\/download\/v1\.0\.0\/Luka_Replacer\.zip$/);
+
+  state.tag = "v1.1.0";
+  state.zip = await makeZip([["Luka_Replacer.rb", "# two", true], ["Luka_Replacer/Heroes/a.luka", "A"]]);
+  assert.equal(await catalog.checkAll(), 1);
+  mod = (await catalog.list()).body.mods[0];
+  assert.deepEqual(mod.versions.map((version) => version.version), ["1.1.0", "1.0.0"]);
+
+  state.zip = await makeZip([["../evil.rb", "x"]]);
+  state.tag = "v1.2.0";
+  await catalog.checkAll();
+  mod = (await catalog.list(ADMIN)).body.mods[0];
+  assert.equal(mod.version, "1.1.0");
+  assert.match(mod.error, /no path inside Patch/);
 });

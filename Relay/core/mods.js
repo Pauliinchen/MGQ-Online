@@ -2,13 +2,15 @@
 //  mods.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-06: Created
+//      Paulinchen  2026-10-06: Took a zip of a release too, laid out as in Patch, hashing each file inside
+//                            - Created
 //
 //----------------------------------------------------------------
 
 // The catalog of mods a world may require, the same on every server. Only the relay's admins add
-// mods: a single script by a download link on the admins' GitHub, whose releases the relay checks
-// on a schedule, or a mod of several files that an admin uploads. The relay keeps a link mod's
+// mods: a single script or a zip laid out as in the game's Patch folder, by a download link on the
+// admins' GitHub, whose releases the relay checks on a schedule, or a mod of several files that an
+// admin uploads. The relay keeps a link mod's
 // hash and version only, never the script, and never runs anything it reads. Games compare their
 // installed files with the catalog's hashes and download what differs, checking every hash.
 
@@ -26,6 +28,7 @@ export const MOD_LIMITS = Object.freeze({
   maxPathLength: 120,
   maxLinkBytes: 2 * 1024 * 1024,
   maxUploadBytes: 16 * 1024 * 1024,
+  maxUnpackedBytes: 64 * 1024 * 1024,
   maxRedirects: 3,
 });
 
@@ -35,9 +38,9 @@ export const MOD_LIMITS = Object.freeze({
 export const LINK_START = "https://github.com/Pauliinchen/";
 
 /**
- * A release file on the admins' GitHub, with the release's tag and the file's name.
+ * A release file on the admins' GitHub, a script or a zip, with the release's tag and the file's name.
  */
-const RELEASE_FILE = /^https:\/\/github\.com\/Pauliinchen\/[A-Za-z0-9._-]+\/releases\/download\/([^/?#]+)\/([^/?#]+\.rb)$/;
+const RELEASE_FILE = /^https:\/\/github\.com\/Pauliinchen\/[A-Za-z0-9._-]+\/releases\/download\/([^/?#]+)\/([^/?#]+\.(?:rb|zip))$/i;
 
 /**
  * The hosts GitHub serves release files from, which a release file's address may redirect to.
@@ -307,11 +310,13 @@ export class ModCatalog {
 
     try {
       const release = await readRelease(entry.link, this.fetch, this.limits);
-      const hash = await hashModFile(release.file, release.bytes);
+      const archive = isZip(release.file);
+      const files = archive ? await zipHashes(release.bytes, this.limits) : { [release.file]: await hashModFile(release.file, release.bytes) };
       entry.fileUrl = release.url;
+      entry.archive = archive;
       entry.size = release.bytes.length;
       entry.error = "";
-      remember(entry, release.version, { [release.file]: hash }, this.clock(), this.limits);
+      remember(entry, release.version, files, this.clock(), this.limits);
     } catch (error) {
       entry.error = String(error?.message ?? error).slice(0, 200);
     }
@@ -343,7 +348,7 @@ export class ModCatalog {
  * Reads a link's release file: the link must lead to a release file on the admins' GitHub, whose
  * tag is the version, and that file may only come from GitHub's file hosts.
  *
- * @param {string} link The link, such as .../releases/latest/download/Mod.rb.
+ * @param {string} link The link, such as .../releases/latest/download/Mod.rb or .../Mod.zip.
  * @param {typeof fetch} fetcher Fetches an address.
  * @param {typeof MOD_LIMITS} limits The limits.
  * @returns {Promise<{url: string, file: string, version: string, bytes: Uint8Array}>} The release file's address, its name, the version and the file.
@@ -365,11 +370,12 @@ export async function readRelease(link, fetcher, limits = MOD_LIMITS) {
   const match = RELEASE_FILE.exec(url);
 
   if (!match) {
-    throw new Error("the link does not lead to a script of a release on GitHub");
+    throw new Error("the link does not lead to a script or zip of a release on GitHub");
   }
 
-  const bytes = await download(url, fetcher, limits);
-  return { url, file: decodeURIComponent(match[2]), version: decodeURIComponent(match[1]).replace(/^v/i, ""), bytes };
+  const file = decodeURIComponent(match[2]);
+  const bytes = await download(url, fetcher, limits, isZip(file) ? limits.maxUploadBytes : limits.maxLinkBytes);
+  return { url, file, version: decodeURIComponent(match[1]).replace(/^v/i, ""), bytes };
 }
 
 /**
@@ -378,9 +384,10 @@ export async function readRelease(link, fetcher, limits = MOD_LIMITS) {
  * @param {string} url The release file's address.
  * @param {typeof fetch} fetcher Fetches an address.
  * @param {typeof MOD_LIMITS} limits The limits.
+ * @param {number} maxBytes The most bytes the file may have.
  * @returns {Promise<Uint8Array>} The file.
  */
-async function download(url, fetcher, limits) {
+async function download(url, fetcher, limits, maxBytes) {
   let address = url;
 
   for (let hop = 0; hop <= limits.maxRedirects; hop += 1) {
@@ -401,20 +408,147 @@ async function download(url, fetcher, limits) {
       throw new Error(`the release file answered ${answer.status}`);
     }
 
-    if (Number(answer.headers.get("Content-Length") ?? 0) > limits.maxLinkBytes) {
-      throw new Error(`the release file is larger than ${limits.maxLinkBytes} bytes`);
+    if (Number(answer.headers.get("Content-Length") ?? 0) > maxBytes) {
+      throw new Error(`the release file is larger than ${maxBytes} bytes`);
     }
 
     const bytes = new Uint8Array(await answer.arrayBuffer());
 
-    if (bytes.length === 0 || bytes.length > limits.maxLinkBytes) {
-      throw new Error(`the release file must be 1 to ${limits.maxLinkBytes} bytes`);
+    if (bytes.length === 0 || bytes.length > maxBytes) {
+      throw new Error(`the release file must be 1 to ${maxBytes} bytes`);
     }
 
     return bytes;
   }
 
   throw new Error("the release file was sent on too often");
+}
+
+/**
+ * Tells a zip from a script by its name.
+ *
+ * @param {string} file The file's name.
+ * @returns {boolean} Whether it is a zip.
+ */
+function isZip(file) {
+  return file.toLowerCase().endsWith(".zip");
+}
+
+/**
+ * Hashes every file of a zip laid out as in the game's Patch folder.
+ *
+ * Only plain and deflated files are read, which every zip tool writes; the sizes the zip claims are
+ * checked against the limits before anything is unpacked, and again after.
+ *
+ * @param {Uint8Array} bytes The zip.
+ * @param {typeof MOD_LIMITS} limits The limits.
+ * @returns {Promise<Record<string, string>>} Each file's hash by its path inside Patch.
+ */
+export async function zipHashes(bytes, limits = MOD_LIMITS) {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const end = findEndOfDirectory(view);
+  const count = view.getUint16(end + 10, true);
+  let at = view.getUint32(end + 16, true);
+  let unpacked = 0;
+  const files = {};
+
+  for (let index = 0; index < count; index += 1) {
+    if (at + 46 > bytes.length || view.getUint32(at, true) !== 0x02014b50) {
+      throw new Error("the zip's list of files is damaged");
+    }
+
+    const method = view.getUint16(at + 10, true);
+    const packedSize = view.getUint32(at + 20, true);
+    const size = view.getUint32(at + 24, true);
+    const nameLength = view.getUint16(at + 28, true);
+    const skip = nameLength + view.getUint16(at + 30, true) + view.getUint16(at + 32, true);
+    const local = view.getUint32(at + 42, true);
+    // Some zip tools of Windows write backslashes.
+    const name = new TextDecoder().decode(bytes.subarray(at + 46, at + 46 + nameLength)).replace(/\\/g, "/");
+    at += 46 + skip;
+
+    if (name.endsWith("/")) {
+      continue;
+    }
+
+    if (name.length > limits.maxPathLength || !PATCH_PATH.test(name)) {
+      throw new Error(`the zip holds ${name.slice(0, 80)}, which is no path inside Patch`);
+    }
+
+    unpacked += size;
+
+    if (Object.keys(files).length >= limits.maxFiles || unpacked > limits.maxUnpackedBytes) {
+      throw new Error(`the zip may hold at most ${limits.maxFiles} files of ${limits.maxUnpackedBytes} bytes in all`);
+    }
+
+    const data = await unpack(bytes, view, local, method, packedSize, size, name);
+    files[name] = await hashModFile(name, data);
+  }
+
+  if (Object.keys(files).length === 0) {
+    throw new Error("the zip holds no files");
+  }
+
+  return files;
+}
+
+/**
+ * Finds where a zip's end record starts.
+ *
+ * @param {DataView} view The zip.
+ * @returns {number} The end record's offset.
+ */
+function findEndOfDirectory(view) {
+  // The end record is 22 bytes, followed by a comment of at most 65535 bytes.
+  for (let at = view.byteLength - 22; at >= 0 && at >= view.byteLength - 22 - 65535; at -= 1) {
+    if (view.getUint32(at, true) === 0x06054b50) {
+      return at;
+    }
+  }
+
+  throw new Error("the release file is no zip");
+}
+
+/**
+ * Unpacks one file of a zip.
+ *
+ * @param {Uint8Array} bytes The zip.
+ * @param {DataView} view The zip.
+ * @param {number} local Where the file's own header starts.
+ * @param {number} method 0 for a plain file, 8 for a deflated one.
+ * @param {number} packedSize Its size in the zip.
+ * @param {number} size Its size unpacked.
+ * @param {string} name Its path, for the error.
+ * @returns {Promise<Uint8Array>} The file.
+ */
+async function unpack(bytes, view, local, method, packedSize, size, name) {
+  if (local + 30 > bytes.length || view.getUint32(local, true) !== 0x04034b50) {
+    throw new Error(`the zip's entry ${name.slice(0, 80)} is damaged`);
+  }
+
+  const start = local + 30 + view.getUint16(local + 26, true) + view.getUint16(local + 28, true);
+  const packed = bytes.subarray(start, start + packedSize);
+
+  if (packed.length !== packedSize) {
+    throw new Error(`the zip's entry ${name.slice(0, 80)} is cut short`);
+  }
+
+  let data;
+
+  if (method === 0) {
+    data = packed;
+  } else if (method === 8) {
+    const stream = new Blob([packed]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
+    data = new Uint8Array(await new Response(stream).arrayBuffer());
+  } else {
+    throw new Error(`the zip packs ${name.slice(0, 80)} in a way the relay does not read`);
+  }
+
+  if (data.length !== size) {
+    throw new Error(`the zip's entry ${name.slice(0, 80)} is not the size the zip says`);
+  }
+
+  return data;
 }
 
 /**
@@ -519,6 +653,7 @@ export function publicView(entry) {
     files: entry.files,
     versions: (entry.versions ?? []).map(({ version, files }) => ({ version, files })),
     fileUrl: entry.kind === "link" ? entry.fileUrl : "",
+    archive: entry.kind === "link" && entry.archive === true,
   };
 }
 
