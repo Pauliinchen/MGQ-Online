@@ -119,7 +119,7 @@ internal static unsafe partial class Exports
     /// <param name="data">What tells the creator's game data from another's, UTF-8 and null-terminated; empty when unknown.</param>
     /// <param name="strict">1 when only games with the same data may enter, 0 when every game may.</param>
     /// <param name="modHashes">The creator's hashes of required mods outside the mod catalog, <c>name=hash</c> pairs separated by semicolons, UTF-8 and null-terminated; empty for none.</param>
-    /// <param name="settings">The creator's settings of the required mods, <c>key=type:value</c> pairs separated by semicolons, UTF-8 and null-terminated; empty for none.</param>
+    /// <param name="settings">The creator's settings of the mods the world names, <c>key=type:value</c> pairs separated by semicolons, UTF-8 and null-terminated; empty for none.</param>
     /// <returns>1 when started, 0 while another action runs, for seats out of range or when it failed.</returns>
     [UnmanagedCallersOnly(EntryPoint = "mp_dir_create", CallConvs = [typeof(CallConvStdcall)])]
     public static int DirectoryCreate(byte* name, byte* password, int seats, int hidden, int choose, byte* start, byte* description, byte* mods, byte* data, int strict, byte* modHashes, byte* settings)

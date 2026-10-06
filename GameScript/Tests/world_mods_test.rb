@@ -301,8 +301,9 @@ check("then enters the world, once", [entered, mods.rejoining], [["w1"], nil])
 
 # The creator's settings.
 $game_system.conf = { :mod_level_cap => 0, :mod_party_sheet_theme => :dark, :mod_party_sheet_hotkey => 0x51, :global_thing => 5 }
-check("the creator's settings are those of the required mods' options, no key bindings, buttons or personal ones", mods.settings_of("!Level_Cap; !Party Sheet; Free"),
+check("the creator's settings are those of the named mods' options, required or listed, no key bindings, buttons or personal ones", mods.settings_of("!Level_Cap; Party Sheet; Free"),
       "mod_level_cap=i:0;mod_level_cap_limits=i:1;mod_party_sheet_theme=y:dark")
+check("a mod the world does not name keeps its options out", mods.settings_of("!Level_Cap"), "mod_level_cap=i:0;mod_level_cap_limits=i:1")
 check("values keep their type, and semicolons and equal signs survive", ["i:-3", "f:1.5", "b:true", "b:false", "y:dark", mods.encode("a;b=c%")].map { |text| mods.decode(text) },
       [[true, -3], [true, 1.5], [true, true], [true, false], [true, :dark], [true, "a;b=c%"]])
 check("a large decimal as Ruby writes it survives", mods.decode(mods.encode(1.0e20)), [true, 1.0e20])

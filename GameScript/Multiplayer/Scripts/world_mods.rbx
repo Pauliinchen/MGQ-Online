@@ -2,7 +2,8 @@
 #  world_mods.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-06: Read decimal settings with a plus sign in their exponent, as Ruby writes large ones
+#      Paulinchen  2026-10-06: Took the world's mod settings from every mod it names, listed ones too, not only the required ones
+#                            - Read decimal settings with a plus sign in their exponent, as Ruby writes large ones
 #                            - Applied the world's mod settings from load_game_without_rescue, which the newest translation's load_game still calls
 #                            - Checked a link to a zip of a release file by file, like an upload
 #                            - Created
@@ -10,8 +11,8 @@
 #----------------------------------------------------------------
 
 # A world's mods: the ones its creator marked as required, which every game that enters must have
-# in the same version, and the creator's settings of them, which hold while the player is in the
-# world.
+# in the same version, and the creator's settings of every mod it names, required or listed, which
+# hold while the player is in the world.
 #
 # The relay's mod catalog, which only its admins fill, names the current version of each mod it
 # knows and the hashes of its files. A game whose copy is missing or differs cannot enter, and may
@@ -340,15 +341,16 @@ module MGQ_MpWorldMods
 
   # Settings.
 
-  # Writes the creator's settings of the options the required mods offer in Mod Config Remake,
-  # leaving out key bindings, buttons and options marked personal.
+  # Writes the creator's settings of the options the world's mods offer in Mod Config Remake, the
+  # required ones and the listed ones alike, leaving out key bindings, buttons and options marked
+  # personal.
   #
   # @param mods [String] The mods as the creator wrote them.
   # @return [String] "key=type:value" pairs separated by semicolons.
   def self.settings_of(mods)
     return "" unless defined?(NWConst::Config::MOD_CONTENTS) && $game_system
 
-    wanted = MGQ_MpWorld.required_mods(mods).map { |name| MGQ_MpWorld.mod_key(name) }
+    wanted = MGQ_MpWorld.mods_of(mods).map { |name| MGQ_MpWorld.mod_key(name) }
     world_options(wanted).map { |key| (encoded = encode(option_value(key))) && "#{key}=#{encoded}" }.compact.join(";")
   rescue => e
     log("reading the mod settings failed: #{e.class}: #{e.message}")

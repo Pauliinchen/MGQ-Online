@@ -66,7 +66,7 @@ A world's fields, as `POST /v1/worlds` takes them and `GET /v1/worlds` lists the
 | `data` | optional | yes | What tells the creator's game data from another's; the relay only keeps it. |
 | `strict` | optional | yes | Only games with the same data may enter, which the games check themselves. |
 | `modHashes` | optional | yes | The creator's hashes of required mods outside the mod catalog: `name=hash` pairs separated by semicolons, up to 2000 characters. |
-| `settings` | optional | yes | The settings of the required mods: `key=type:value` pairs separated by semicolons, up to 2000 characters. |
+| `settings` | optional | yes | The creator's settings of the mods it names: `key=type:value` pairs separated by semicolons, up to 2000 characters. |
 | `online`, `created`, `active` | | yes | How many players are in the world now, when it was made, when someone was last in it. |
 | `members` | | yes | Every player who joined: `id`, `name`, `online`, `seen` (when last in the world). |
 

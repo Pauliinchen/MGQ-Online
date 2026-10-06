@@ -1024,7 +1024,7 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
         public string ModHashes { get; set; } = string.Empty;
 
         /// <summary>
-        /// The creator's settings of the required mods.
+        /// The creator's settings of the mods the world names.
         /// </summary>
         public string Settings { get; set; } = string.Empty;
 

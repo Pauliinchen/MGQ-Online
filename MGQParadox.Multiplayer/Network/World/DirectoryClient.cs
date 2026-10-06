@@ -572,7 +572,7 @@ internal sealed record LockedWorld(WorldLock Lock, string Name, int Seats, strin
 /// <param name="Data">What tells the creator's game data from another's, which the game script writes and compares; empty when unknown.</param>
 /// <param name="Strict">Whether only games with the same data may enter.</param>
 /// <param name="ModHashes">The creator's hashes of the required mods outside the mod catalog, <c>name=hash</c> pairs separated by semicolons; empty for none.</param>
-/// <param name="Settings">The creator's settings of the required mods, <c>key=type:value</c> pairs separated by semicolons; empty for none.</param>
+/// <param name="Settings">The creator's settings of the mods the world names, <c>key=type:value</c> pairs separated by semicolons; empty for none.</param>
 internal sealed record WorldAbout(string Description, string Mods, string Data, bool Strict, string ModHashes = "", string Settings = "")
 {
     /// <summary>

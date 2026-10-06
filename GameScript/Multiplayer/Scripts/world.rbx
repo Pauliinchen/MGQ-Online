@@ -552,7 +552,7 @@ module MGQ_MpWorld
     # @!attribute mods [String] The mods it needs, as its creator wrote them.
     # @!attribute description [String] What it is about, as its creator wrote it.
     # @!attribute mod_hashes [String] Its creator's hashes of required mods outside the mod catalog, "name=hash" pairs separated by semicolons.
-    # @!attribute settings [String] Its creator's settings of the required mods, "key=type:value" pairs separated by semicolons.
+    # @!attribute settings [String] Its creator's settings of the mods it names, "key=type:value" pairs separated by semicolons.
     ListedWorld = Struct.new(:id, :seats, :online, :creator_id, :active, :creator_name, :name, :start, :members, :hidden, :choose, :open, :featured, :strict, :data, :mods, :description, :mod_hashes, :settings)
 
     # A player of a world.
