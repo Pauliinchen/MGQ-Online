@@ -2,7 +2,8 @@
 #  story_rewards.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-07: Read the maps from 1000 on where the game keeps them, as the Final Chapter's, and the companions set_actors brings
+#      Paulinchen  2026-10-07: Listed the variables the game sets per area and battle among each player's own, as coop_story.rbx does
+#                            - Read the maps from 1000 on where the game keeps them, as the Final Chapter's, and the companions set_actors brings
 #                            - Wrote the skills, companions and items only the Final Chapter gives
 #      Paulinchen  2026-10-06: Created
 #
@@ -72,7 +73,7 @@ AFFECTION_VARIABLES = 3000
 # @param actors [Integer] How many actors the database holds.
 # @return [Array<Range, Integer>] The variables.
 def personal_variables(actors)
-  [21..23, 56, 1002, 2000...(AFFECTION_VARIABLES + actors)]
+  [9, 21..23, 46..48, 56, 57, 150, 200..201, 1002, 2000...(AFFECTION_VARIABLES + actors)]
 end
 
 # The file written when the command line names none.

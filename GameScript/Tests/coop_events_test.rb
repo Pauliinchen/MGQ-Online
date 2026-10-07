@@ -2,7 +2,8 @@
 #  coop_events_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-07: Stood in for the helpers of coop.rbx the party scripts share now, and gave the game's switches their full count, which the story bounds another game's by
+#      Paulinchen  2026-10-07: Took variable 151 as the story's sample, since 150 is each player's own now
+#                            - Stood in for the helpers of coop.rbx the party scripts share now, and gave the game's switches their full count, which the story bounds another game's by
 #                            - Checked the story's choices a member makes: what is asked, each outcome, the outcomes kept from the leader's story, the choices' companions left out, the prompts of synced play, the leader's offer declined, accepted and taken back, and the other route's start
 #                            - Checked when a member follows the leader's story: the rule's edges, a member too far behind, across the Great Decision, on another route, drifting apart and caught up, the leader's followers, and chests shared all the same
 #                            - Checked the generator's maps from 1000 on and set_actors, and that the table holds Puruel and Inuel
@@ -912,7 +913,7 @@ def play_along(own_progress)
   MGQ_MpCoopStory.take($story_leader, { "story" => "full", "party" => "p1", "s" => "81", "v" => "1001:n40", "ss" => "" })
   joined = $notices.last
   MGQ_MpCoopStory.take($story_leader, { "story" => "delta", "party" => "p1", "s" => "82:1", "v" => "1001:n41", "ss" => "" })
-  $game_variables[150] = 7
+  $game_variables[151] = 7
   $game_switches[90] = true
   [["gain", "item", "i1x2"], ["gain", "item", "g0x-30"], ["gain", "item", "w1x1"], ["gain", "item", "i3x1"], ["keys", "k", "3:1"], ["depart", "actor", "3"], ["recruit", "actor", "3"],
    ["recruit", "actor", "4"]].each do |kind, field, value|
@@ -920,7 +921,7 @@ def play_along(own_progress)
   end
   $key_in_party = $game_party.items["Basement Key"]
   save = MGQ_MpCoopStory.save_contents(:switches => $game_switches, :variables => $game_variables, :self_switches => $game_self_switches, :party => $game_party)
-  saved = [save[:switches][82], save[:variables][1001], save[:variables][150], save[:party].items["Basement Key"]]
+  saved = [save[:switches][82], save[:variables][1001], save[:variables][151], save[:party].items["Basement Key"]]
   $party = nil
   $leader = nil
   $members = []
@@ -934,7 +935,7 @@ check("a member as far along hears they keep what they play together", joined,
       "You follow Leader's story while in the party. You are as far along, so you keep what you play together.")
 check("once the party ends they keep the story played together, not what the leader had before",
       [switches[80], switches[81], switches[82], variables[1001]], [true, false, true, 41])
-check("and what changed in their own game meanwhile", [switches[90], variables[150]], [true, 7])
+check("and what changed in their own game meanwhile", [switches[90], variables[151]], [true, 7])
 check("a save made in the party holds it too, the story's key item included", saved, [true, 41, 7, 1])
 check("which they keep", $game_party.items["Basement Key"], 1)
 check("the story's items and gold are theirs", [$game_party.items["Potion"], $game_party.items["Sword"], $game_party.gold], [2, 1, -30])
@@ -947,12 +948,12 @@ check("a member behind the leader hears they catch up and keep what they play to
       "You follow Leader's story while in the party. You catch up with it and keep what you play together.")
 check("once the party ends they keep the leader's story, what the leader had before included, and their own switch the leader never set",
       [switches[80], switches[81], switches[82], variables[1001]], [true, true, true, 41])
-check("and what changed in their own game meanwhile, in a save made in the party too", [switches[90], variables[150], saved], [true, 7, [true, 41, 7, 1]])
+check("and what changed in their own game meanwhile, in a save made in the party too", [switches[90], variables[151], saved], [true, 7, [true, 41, 7, 1]])
 check("with the story's items, gold and companions", [$game_party.items["Potion"], $game_party.items["Basement Key"], $game_party.gold, $game_party.include_actors],
       [2, 1, -30, [3, 4]])
 
 joined, switches, variables, saved = play_along(50)
-check("a member ahead of the leader keeps none of the leader's story", [switches[80], switches[82], variables[1001], switches[90], variables[150]], [true, false, 50, false, 0])
+check("a member ahead of the leader keeps none of the leader's story", [switches[80], switches[82], variables[1001], switches[90], variables[151]], [true, false, 50, false, 0])
 check("nor its items, gold or companions", [$game_party.items["Potion"], $game_party.gold, $game_party.include_actors], [0, 0, [3]])
 check("but the story's key item is lent while they play along, and left out of a save", [$key_in_party, saved[3]], [1, 0])
 check("and goes back once the party ends", [$game_party.items["Basement Key"], $notices.include?("Leader lent you Basement Key for the story."),

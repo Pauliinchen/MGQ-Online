@@ -2,7 +2,8 @@
 #  coop_story.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-07: Dropped the switches, variables and key items of another game's story beyond this game's own, logged once per kind
+#      Paulinchen  2026-10-07: Kept the variables the game sets for each area and battle, such as the rarity of enchanted drops, each player's own, since the leader's ended a member's game at a drop
+#                            - Dropped the switches, variables and key items of another game's story beyond this game's own, logged once per kind
 #                            - Registered the companion, map and save hooks through core_hooks.rbx instead of wraps of its own
 #                            - Named players, entries of the game's data and a message's bytes through overworld_sync.rbx, core_log.rbx and coop.rbx instead of copies of their helpers
 #                            - Kept the outcomes of the story's choices the member made their own, left the choices' companions out of the catch-up, and followed the leader whose offer to sync the story the member accepted
@@ -97,11 +98,14 @@ module MGQ_MpCoopStory
   # bosses the player defeated, such as "Eden Defeated", and belong to the story.
   AWAKENING_LAST = 6999
 
-  # Variables that are the player's own: where the Pocket Castle's way out returns them (21-23, the
-  # map, x and y where they used the castle's item), the places their party has beyond eight (56),
-  # since the game cuts a party down to its places, where a game over returns them (1002) and
-  # monsters' friendliness (2000-2999).
-  PERSONAL_VARIABLES = [21..23, 56, 1002, 2000...3000]
+  # Variables that are the player's own: the last choice's answer (9), which an event of their own
+  # reads, where the Pocket Castle's way out returns them (21-23, the map, x and y where they used
+  # the castle's item), the enemies' experience, gold and MP corrections (46-48) and the rarity of
+  # enchanted drops (150), which the events of each area set for the battles there, the places
+  # their party has beyond eight (56), since the game cuts a party down to its places, the map a
+  # transfer goes on to (57), where a game over returns them (1002), the counts of their enchanted
+  # weapons and armors (200-201) and monsters' friendliness (2000-2999).
+  PERSONAL_VARIABLES = [9, 21..23, 46..48, 56, 57, 150, 200..201, 1002, 2000...3000]
 
   # First variable that holds a companion's affection, one per companion.
   AFFECTION_VARIABLES = 3000
