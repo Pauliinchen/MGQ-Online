@@ -2,6 +2,7 @@
 #  coop_scene_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-07: Checked that the scene goes to the members who follow the story alone, and that one who plays their own sees none of it
 #      Paulinchen  2026-10-06: Covered the first change after the party gathered, the member's own tint coming back, the grace before the leader's state and picture names with dots
 #      Paulinchen  2026-10-04: Created
 #
@@ -79,7 +80,14 @@ module MGQ_MpCoop
   def self.party_leader; $leader; end
   def self.party_leading?; $leader == :me; end
 end
-module MGQ_MpCoopEvents; def self.story_playing?; $playing; end; end
+module MGQ_MpCoopEvents
+  def self.story_playing?; $playing; end
+  def self.leading_story?; $leader == :me && !$followers.empty?; end
+  def self.following?; $follows != false; end
+end
+# The members who follow the leader's story, as coop_story.rbx tells them.
+module MGQ_MpCoopStory; def self.synced_members; $followers; end; end
+$followers = [MGQ_MpOverworldSync::Peers::Peer.new(4, { "name" => "Friend" })]
 module Graphics; def self.frame_count; $frame_count; end; end
 
 module MGQ_MpCoopGather; def self.story_map?(map_id); map_id == $game_map.map_id || map_id == $following; end; end
@@ -103,9 +111,15 @@ run.call(main, lambda do
   $game_map.screen.start_tone_change(Tone.new(-68, -68, 0, 0), 30)
   $game_player.transparent = true
 end)
-check("the story's picture, tint and hidden leader go to the party",
+check("the story's picture, tint and hidden leader go to the members who follow the story",
       $sent.map { |seat, fields| [seat, fields["pscene"], fields["map"]] },
-      [[-1, "picture.show", 7], [-1, "screen.start_tone_change", 7], [-1, "player.transparent", 7]])
+      [[4, "picture.show", 7], [4, "screen.start_tone_change", 7], [4, "player.transparent", 7]])
+$sent.clear
+following = $followers
+$followers = []
+run.call(main, lambda { pictures[5].show("story_cg", 0, 0, 0, 100, 100, 255, 0) })
+check("with no member following it, the story's scene goes to nobody", $sent, [])
+$followers = following
 $sent.clear
 parallel = Game_Interpreter.new
 run.call(parallel, lambda { pictures[20].show("hud", 0, 0, 0, 100, 100, 255, 0) })
@@ -156,6 +170,10 @@ check("a path, a number past the pictures or an unknown method is left out",
       [[], [], [], 2])
 take.call("picture.show", [10, "ev_aguni._hb1", 0, 0, 0, 100, 100, 255, 0])
 check("a picture whose name holds a dot shows", $game_map.screen.pictures[10].done.size, 1)
+$follows = false
+take.call("picture.show", [11, "story_cg", 0, 0, 0, 100, 100, 255, 0])
+check("a member who plays their own story sees none of the leader's scene", [$game_map.screen.pictures[11].done, MGQ_MpCoopScene.watching?], [[], false])
+$follows = true
 take.call("picture.show", [6, "elsewhere", 0, 0, 0, 100, 100, 255, 0], 8)
 check("a change on another map is left out", $game_map.screen.pictures[6].done, [])
 $following = 8

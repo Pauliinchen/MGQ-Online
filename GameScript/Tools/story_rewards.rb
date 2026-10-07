@@ -2,6 +2,8 @@
 #  story_rewards.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-07: Read the maps from 1000 on where the game keeps them, as the Final Chapter's, and the companions set_actors brings
+#                            - Wrote the skills, companions and items only the Final Chapter gives
 #      Paulinchen  2026-10-06: Created
 #
 #----------------------------------------------------------------
@@ -29,6 +31,13 @@ ROUTE_VARIABLES = [1141, 1142, 1143]
 
 # Scripts that bring a companion into the party.
 RECRUIT_SCRIPT = /\A\s*(?:add_actor_ex|add_actor_ex_nc|add_stand_actor)\((\d+)\)/
+
+# A script that sets the whole party at once, its companions listed, such as the Chaos route's
+# revival of the Pocket Castle.
+SET_ACTORS_SCRIPT = /\A\s*set_actors\(([\d,\s]+)\)/
+
+# Maps per folder: the game keeps map 1000 and above in further folders, see map_folders.
+MAPS_PER_FOLDER = 1000
 
 # Event commands that give items: items (126), weapons (127) and armors (128), by their letter.
 ITEM_CODES = { 126 => "i", 127 => "w", 128 => "a" }
@@ -186,7 +195,11 @@ def rewards(list, side)
     when 129
       yield :actor, params[0], 1, current if params[1] == 0
     when 355, 655
-      yield :actor, Regexp.last_match(1).to_i, 1, current if params[0].to_s =~ RECRUIT_SCRIPT
+      script = params[0].to_s
+      yield :actor, Regexp.last_match(1).to_i, 1, current if script =~ RECRUIT_SCRIPT
+      if script =~ SET_ACTORS_SCRIPT
+        Regexp.last_match(1).scan(/\d+/).map(&:to_i).each { |id| yield :actor, id, 1, current unless id == HERO }
+      end
     when *ITEM_CODES.keys
       yield ITEM_CODES[code], params[0], params[3], current if params[1] == 0 && params[2] == 0
     end
@@ -249,6 +262,25 @@ def chosen_side(list)
   chosen.size == 1 ? SIDE_SWITCHES[chosen.first] : nil
 end
 
+# Lists the folders that hold the game's maps, as the game's DataManager.map_file_name finds them:
+# maps 1-999 in the Data folder, 1000-1999 in Data/Map/Data, 2000-2999 in Data/Map2/Data and so on,
+# each folder with its own MapInfos.rvdata2 by the id within the folder.
+#
+# @param data [String] The Data folder.
+# @return [Array<Array>] Each folder and the id its maps start from.
+def map_folders(data)
+  folders = [[data, 0]]
+  number = 1
+  loop do
+    folder = File.join(data, "Map#{number == 1 ? '' : number}", "Data")
+    break unless File.exist?(File.join(folder, "MapInfos.rvdata2"))
+
+    folders << [folder, number * MAPS_PER_FOLDER]
+    number += 1
+  end
+  folders
+end
+
 # Reports whether a list plays in the Final Chapter: its page or one of its branches reads a route's
 # progress.
 #
@@ -287,22 +319,27 @@ load_data(File.join(data, "CommonEvents.rvdata2")).each_with_index do |common, i
   final = iv(common, :name).to_s =~ FINAL_CHAPTER || index >= CHAOS_ROUTE_EVENTS || final_chapter?(list, nil)
   lists << ["ce:#{index}", list, nil, nil, final ? true : false]
 end
-infos = load_data(File.join(data, "MapInfos.rvdata2"))
-infos.keys.sort.each do |map_id|
-  path = File.join(data, format("Map%03d.rvdata2", map_id))
-  next unless File.exist?(path)
+map_folders(data).each do |folder, first_id|
+  infos = load_data(File.join(folder, "MapInfos.rvdata2"))
+  infos.keys.sort.each do |number|
+    path = File.join(folder, format("Map%03d.rvdata2", number))
+    next unless File.exist?(path)
 
-  side = map_side(iv(infos[map_id], :name).to_s.force_encoding("UTF-8"))
-  iv(load_data(path), :events).each do |event_id, event|
-    iv(event, :pages).each do |page|
-      list = iv(page, :list) || []
-      if chest?(list)
-        letter = list.map { |command| iv(command, :parameters) if iv(command, :code) == 123 && iv(command, :parameters)[1] == 0 }.compact.first
-        chests |= [[map_id, event_id, letter[0]]] if letter
-        next
+    map_id = first_id + number
+    side = map_side(iv(infos[number], :name).to_s.force_encoding("UTF-8"))
+    iv(load_data(path), :events).each do |event_id, event|
+      iv(event, :pages).each do |page|
+        list = iv(page, :list) || []
+        if chest?(list)
+          letter = list.map { |command| iv(command, :parameters) if iv(command, :code) == 123 && iv(command, :parameters)[1] == 0 }.compact.first
+          chests |= [[map_id, event_id, letter[0]]] if letter
+          next
+        end
+
+        # The maps from 1000 on hold the Final Chapter's routes alone; none of them sets the main story's progress.
+        final = first_id > 0 || final_chapter?(list, page)
+        lists << ["map:#{map_id}:#{event_id}", list, page_side(page, side), [map_id, event_id], final]
       end
-
-      lists << ["map:#{map_id}:#{event_id}", list, page_side(page, side), [map_id, event_id], final_chapter?(list, page)]
     end
   end
 end
@@ -314,6 +351,11 @@ items = Hash.new(0)
 unsided = { :skills => [], :actors => [] }
 # The skills and companions the Final Chapter's events give.
 final_rewards = { :skills => [], :actors => [] }
+# The skills and companions the events before the Final Chapter give.
+early_rewards = { :skills => [], :actors => [] }
+# The items the story's events give in the Final Chapter, and before it.
+final_items = []
+early_items = []
 groups = Hash.new do |hash, key|
   hash[key] = { :alice => { :skills => [], :actors => [] }, :ilias => { :skills => [], :actors => [] }, :choice => false, :marks => [] }
 end
@@ -333,13 +375,15 @@ lists.each do |key, list, side, self_key, final|
     next unless [:skill, :actor].include?(kind)
 
     reward_kind = kind == :skill ? :skills : :actors
-    next final_rewards[reward_kind] |= [id] if final
+    (final ? final_rewards : early_rewards)[reward_kind] |= [id]
+    next if final
     next unsided[reward_kind] |= [id] unless current
 
     sided = true
     groups[key][current][reward_kind] |= [id]
   end
   given.each { |item, amount| items[item] += amount }
+  final ? final_items.concat(given.keys) : early_items.concat(given.keys)
   list_marks = sided && !final ? marks(list, self_key, names) : []
   groups[key][:marks] << list_marks unless list_marks.empty? || groups[key][:marks].include?(list_marks)
 end
@@ -350,6 +394,8 @@ sided_rewards = [:skills, :actors].map do |kind|
   groups.values.flat_map { |group| group[:alice][kind] + group[:ilias][kind] }.uniq - unsided[kind]
 end
 route_rewards = [:skills, :actors].each_with_index.map { |kind, index| sided_rewards[index] & final_rewards[kind] }
+late_rewards = [:skills, :actors].map { |kind| final_rewards[kind] - early_rewards[kind] }
+late_items = final_items.uniq - early_items
 
 table = lambda do |ids|
   ids.sort.each_slice(16).map { |row| "    " + row.join(", ") }.join(",\n")
@@ -405,6 +451,14 @@ File.write(output, <<~RUBY)
     ROUTE = {
       :skills => #{route_rewards[0].sort.inspect},
       :actors => #{route_rewards[1].sort.inspect}
+    }
+
+    # The skills, companions and story items only the Final Chapter's events give, along one route,
+    # which a member who starts another route than the leader's never catches up with.
+    FINAL = {
+      :skills => #{late_rewards[0].sort.inspect},
+      :actors => #{late_rewards[1].sort.inspect},
+      :items => #{late_items.sort.inspect}
     }
 
     # The events that give each side other skills or companions, before the Great Decision: each
