@@ -2,7 +2,13 @@
 #  coop_events.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-06: Found a chest's items through MGQ_MpGame.item
+#      Paulinchen  2026-10-07: Ended the telling of the leader's story with its event, so the result of a PvP battle no longer reaches the party
+#      Paulinchen  2026-10-06: Took sound names that hold dots, as picture names may
+#                            - Asked coop.rbx for the party's leader
+#                            - Forgot the pages of the story a former leader told, once another member leads
+#                            - Took a time from before a save the player loaded as long past
+#                            - Gave a chest's items with the gifts kept apart as every other gift
+#                            - Found a chest's items through MGQ_MpGame.item
 #                            - Kept a chest the player leaves shut, such as a locked one, closed for them and the party
 #      Paulinchen  2026-10-04: Held back chests other members open during a PvP battle, and kept gifts out of a chest the player opens
 #                            - Sent the sound a chest played with its items, and let members hear it and see the first item's icon, after a battle once on the map
@@ -106,8 +112,8 @@ module MGQ_MpCoopEvents
   # when the chest's own is unknown.
   CHEST_SOUND = "Chest"
 
-  # A sound's file name, never a path.
-  SOUND_NAME = /\A[\w\- ]+\z/
+  # A sound's file name, which may hold dots, but is never a path.
+  SOUND_NAME = /\A[\w\- ]+(\.[\w\- ]+)*\z/
 
   # Messages about gathering for story scenes, which coop_gather.rbx takes.
   GATHER_MESSAGES = %w(gather come where follow)
@@ -414,7 +420,7 @@ module MGQ_MpCoopEvents
     @mirrored = nil
     event = event_id > 0 ? $game_map.events[event_id] : nil
     sorted = event ? kind(event) : kind_of(list || [])
-    @telling = leading? && sorted == :story
+    @telling = MGQ_MpCoop.party_leading? && sorted == :story
     @may_tell = sorted == :talk && MGQ_MpCoop.in_party? && may_tell?(list || [])
     MGQ_MpCoopGather.hold(interpreter) if @telling && scene?(list) && !MGQ_MpCoopGather.gathered?
     @chest = event && sorted == :chest && MGQ_MpCoop.in_party? ? { :interpreter => interpreter, :key => chest_key(event), :gains => [] } : nil
@@ -433,13 +439,13 @@ module MGQ_MpCoopEvents
     return unless list && list[index] && story_command?(list, index)
 
     @may_tell = false
-    lead = leader
+    lead = MGQ_MpCoop.party_leader
     if lead.is_a?(MGQ_MpOverworldSync::Peers::Peer)
       # The list ends with an empty command, which ends the event as its last.
       MGQ_MpGame.set(interpreter, :index, list.size - 1)
       MGQ_MpOverworldSync.notice("Only #{lead.state['name']} can move the story on.")
       log("ended a talk where it would move the story on (command #{list[index].code})")
-    elsif leading?
+    elsif MGQ_MpCoop.party_leading?
       @telling = true
       log("a talk moves the story on (command #{list[index].code}), the party hears it from here")
     end
@@ -476,20 +482,6 @@ module MGQ_MpCoopEvents
     @telling && $game_map && $game_map.interpreter.running? ? true : false
   end
 
-  # Finds the leader of the player's party, through coop.rbx.
-  #
-  # @return [MGQ_MpOverworldSync::Peers::Peer, Symbol, nil] The leader, :me for the player, nil outside a party.
-  def self.leader
-    MGQ_MpCoop.in_party? ? MGQ_MpCoop::Party.leader : nil
-  end
-
-  # Reports whether the player leads a party with other members in it.
-  #
-  # @return [Boolean] Whether they do.
-  def self.leading?
-    leader == :me && !MGQ_MpCoop::Party.members.empty?
-  end
-
   # Sends the party a message about events.
   #
   # @param seat [Integer] A member's seat, -1 for everyone, who ignore it outside the party.
@@ -520,7 +512,7 @@ module MGQ_MpCoopEvents
   # @param message [Hash] The message's fields.
   def self.take_party(peer, message)
     return MGQ_MpCoopGather.take(peer, message) if GATHER_MESSAGES.include?(message["pevent"])
-    return unless leader.equal?(peer)
+    return unless MGQ_MpCoop.party_leader.equal?(peer)
 
     case message["pevent"]
     when "say" then hear(peer, message) if MGQ_MpCoopGather.story_map?(message["map"].to_i)
@@ -538,7 +530,7 @@ module MGQ_MpCoopEvents
   # @param event [Game_Event] The event.
   # @return [Boolean] Whether it is the leader's, so it must not run here.
   def self.hand_over(event)
-    lead = leader
+    lead = MGQ_MpCoop.party_leader
     return false unless lead.is_a?(MGQ_MpOverworldSync::Peers::Peer) && kind(event) == :story
     return true if event.trigger == 3
 
@@ -556,7 +548,7 @@ module MGQ_MpCoopEvents
   # @param lead [MGQ_MpOverworldSync::Peers::Peer] The leader.
   def self.refuse_story(event, lead)
     key = [$game_map.map_id, event.id]
-    return if @refused == key && Graphics.frame_count - @refused_at < REFUSE_FRAMES
+    return if @refused == key && !past?(@refused_at, REFUSE_FRAMES)
 
     @refused = key
     @refused_at = Graphics.frame_count
@@ -564,12 +556,24 @@ module MGQ_MpCoopEvents
     MGQ_MpOverworldSync.notice("Only #{lead.state['name']} can move the story on.#{away}")
   end
 
+  # Reports whether some frames have passed since a frame.
+  #
+  # A loaded save sets the frame count back, so a frame ahead of it is long past.
+  #
+  # @param since [Integer] The frame.
+  # @param frames [Integer] How many frames.
+  # @return [Boolean] Whether they have.
+  def self.past?(since, frames)
+    elapsed = Graphics.frame_count - since.to_i
+    elapsed < 0 || elapsed >= frames
+  end
+
   # Reports whether a common event that runs by itself is left to the leader's game.
   #
   # @param common [RPG::CommonEvent] The common event.
   # @return [Boolean] Whether it is.
   def self.leave_to_leader?(common)
-    leader.is_a?(MGQ_MpOverworldSync::Peers::Peer) && kind_of(common.list || []) == :story
+    MGQ_MpCoop.party_leader.is_a?(MGQ_MpOverworldSync::Peers::Peer) && kind_of(common.list || []) == :story
   rescue
     false
   end
@@ -624,7 +628,7 @@ module MGQ_MpCoopEvents
   # @param peer [MGQ_MpOverworldSync::Peers::Peer] The leader.
   # @param message [Hash] The message's fields.
   def self.hear(peer, message)
-    @heard ||= []
+    forget_former_leader
     lines = message["lines"].to_s.split(",").map { |line| decode(line) }
     choices = message["choices"].to_s.split(",").map { |choice| decode(choice) }
     lines += ["#{peer.state['name']} chooses: #{choices.join(' / ')}"] unless choices.empty?
@@ -639,7 +643,8 @@ module MGQ_MpCoopEvents
   #
   # @param message [Hash] The message's fields, the page's id under "page".
   def self.heard_done(message)
-    (@done ||= []).push(message["page"].to_s)
+    forget_former_leader
+    @done.push(message["page"].to_s)
     @done.shift while @done.size > MAX_DONE
   end
 
@@ -670,10 +675,10 @@ module MGQ_MpCoopEvents
     return true unless @mirrored
     return true if done?(@mirrored[:page])
 
-    lead = leader
+    lead = MGQ_MpCoop.party_leader
     return true unless lead.is_a?(MGQ_MpOverworldSync::Peers::Peer)
 
-    lead.state["telling"] != "1" && Graphics.frame_count - @mirrored[:since] >= STALE_FRAMES
+    lead.state["telling"] != "1" && past?(@mirrored[:since], STALE_FRAMES)
   end
 
   # Notes that the window finished the page of the leader's story.
@@ -707,9 +712,22 @@ module MGQ_MpCoopEvents
     @mirrored = { :page => page[:page], :since => Graphics.frame_count }
   end
 
+  # Forgets the pages of the story a former leader told and moved past, once another member leads
+  # or the party is over, so they never show after the story they belong to.
+  def self.forget_former_leader
+    lead = MGQ_MpCoop.party_leader
+    id = lead.is_a?(MGQ_MpOverworldSync::Peers::Peer) ? lead.state["id"].to_s : nil
+    return if id == @heard_from
+
+    @heard_from = id
+    @heard = []
+    @done = []
+  end
+
   # Shows the leader's messages once the player is free, and chests other members opened. Called
   # after the map's update.
   def self.update
+    forget_former_leader
     show_heard
     take_held_chests
     tell_chest_news
@@ -795,11 +813,15 @@ module MGQ_MpCoopEvents
     @chest[:gains] << [kind, id, amount] if @chest && !@granting && amount > 0
   end
 
-  # Tells the party about a chest the player opened, once its event ended; a chest left shut, such
-  # as a locked one, tells nothing.
+  # Ends the telling of the map's main event once it ended, and tells the party about a chest the
+  # player opened; a chest left shut, such as a locked one, tells nothing.
+  #
+  # A loaded save, or the game put back after a PvP battle, runs the map's last event's list once
+  # more from its end, which would tell the party whatever message waits, such as the battle's result.
   #
   # @param interpreter [Game_Interpreter] The interpreter that ended.
   def self.finished(interpreter)
+    @telling = false if $game_map && interpreter.equal?($game_map.interpreter)
     return unless @chest && @chest[:interpreter].equal?(interpreter)
 
     chest = @chest
@@ -911,24 +933,23 @@ module MGQ_MpCoopEvents
   # @param gains [String] The items as written: kind, id, "x", amount, comma separated.
   # @return [Array<String>] What was given, as shown.
   def self.grant(gains)
-    @granting = true
-    gains.split(",").map do |entry|
-      next unless entry =~ /\A([iwag])(\d+)x(\d+)\z/
+    granting do
+      gains.split(",").map do |entry|
+        next unless entry =~ /\A([iwag])(\d+)x(\d+)\z/
 
-      kind, id, amount = Regexp.last_match(1), Regexp.last_match(2).to_i, Regexp.last_match(3).to_i
-      if kind == "g"
-        $game_party.gain_gold(amount)
-        "#{amount} #{Vocab.currency_unit}"
-      else
-        item = MGQ_MpGame.item(kind, id)
-        next unless item
+        kind, id, amount = Regexp.last_match(1), Regexp.last_match(2).to_i, Regexp.last_match(3).to_i
+        if kind == "g"
+          $game_party.gain_gold(amount)
+          "#{amount} #{Vocab.currency_unit}"
+        else
+          item = MGQ_MpGame.item(kind, id)
+          next unless item
 
-        $game_party.gain_item(item, amount)
-        amount > 1 ? "#{item.name} x#{amount}" : item.name
-      end
-    end.compact
-  ensure
-    @granting = false
+          $game_party.gain_item(item, amount)
+          amount > 1 ? "#{item.name} x#{amount}" : item.name
+        end
+      end.compact
+    end
   end
 end
 

@@ -33,6 +33,12 @@ RECRUIT_SCRIPT = /\A\s*(?:add_actor_ex|add_actor_ex_nc|add_stand_actor)\((\d+)\)
 # Event commands that give items: items (126), weapons (127) and armors (128), by their letter.
 ITEM_CODES = { 126 => "i", 127 => "w", 128 => "a" }
 
+# Event commands a chest gives with: gold (125) and the items of ITEM_CODES.
+CHEST_CODES = [125] + ITEM_CODES.keys
+
+# Switches that bring a companion into the party when turned on, the companion's id plus 1000.
+ACTOR_SWITCHES = 1001..2000
+
 # Event commands that make a page more than a chest: switches, variables, party changes, battles
 # and scripts.
 STORY_CODES = [121, 122, 129, 301, 355]
@@ -100,14 +106,14 @@ def iv(object, name)
   object.instance_variable_get("@#{name}")
 end
 
-# Reports whether a page only gives items and shuts itself, as a chest does, whose items each
-# player loots in their own game.
+# Reports whether a page only gives items or gold and shuts itself, as a chest does, whose items
+# each player loots in their own game.
 #
 # @param list [Array] The page's commands.
 # @return [Boolean] Whether it does.
 def chest?(list)
   codes = list.map { |command| iv(command, :code) }
-  codes.include?(123) && codes.any? { |code| ITEM_CODES.key?(code) } && (codes & STORY_CODES).empty?
+  codes.include?(123) && !(codes & CHEST_CODES).empty? && (codes & STORY_CODES).empty?
 end
 
 # Reports whether a list moves the story's progress on, which makes the items it gives the story's.
@@ -149,8 +155,8 @@ end
 #
 # @param list [Array] The commands.
 # @param side [Symbol, nil] The side of the whole list, as its page asks for or it chooses.
-# @yield [kind, id, amount, side] Each reward: :skill, :actor or the item's letter; :choice with
-#   the side chosen.
+# @yield [kind, id, amount, side] Each reward: :skill, :actor (by a party change, a script or the
+#   companion's switch) or the item's letter; :choice with the side chosen.
 def rewards(list, side)
   branches = {}
   list.each do |command|
@@ -167,12 +173,13 @@ def rewards(list, side)
       branches[indent] = (SIDE_SWITCHES.values - [branches[indent]]).first if branches[indent]
       next
     end
+    current = branches.values.last || side
     if code == 121 && params[2] == 0
       chosen = SIDE_SWITCHES.keys.find { |id| (params[0]..params[1]).include?(id) }
       yield :choice, 0, 0, SIDE_SWITCHES[chosen] if chosen
+      (params[0]..params[1]).each { |id| yield :actor, id - 1000, 1, current if ACTOR_SWITCHES.include?(id) && id - 1000 != HERO }
     end
 
-    current = branches.values.last || side
     case code
     when 318
       yield :skill, params[3], 1, current if params[0] == 0 && params[1] == HERO && params[2] == 0
@@ -305,6 +312,8 @@ actors = []
 items = Hash.new(0)
 # The skills and companions some event gives without a side before the Great Decision.
 unsided = { :skills => [], :actors => [] }
+# The skills and companions the Final Chapter's events give.
+final_rewards = { :skills => [], :actors => [] }
 groups = Hash.new do |hash, key|
   hash[key] = { :alice => { :skills => [], :actors => [] }, :ilias => { :skills => [], :actors => [] }, :choice => false, :marks => [] }
 end
@@ -321,9 +330,10 @@ lists.each do |key, list, side, self_key, final|
     when :actor then actors |= [id]
     else given["#{kind}#{id}"] = [given["#{kind}#{id}"], amount].max if story
     end
-    next unless [:skill, :actor].include?(kind) && !final
+    next unless [:skill, :actor].include?(kind)
 
     reward_kind = kind == :skill ? :skills : :actors
+    next final_rewards[reward_kind] |= [id] if final
     next unsided[reward_kind] |= [id] unless current
 
     sided = true
@@ -339,6 +349,7 @@ groups.reject! { |_, group| group[:alice] == group[:ilias] }
 sided_rewards = [:skills, :actors].map do |kind|
   groups.values.flat_map { |group| group[:alice][kind] + group[:ilias][kind] }.uniq - unsided[kind]
 end
+route_rewards = [:skills, :actors].each_with_index.map { |kind, index| sided_rewards[index] & final_rewards[kind] }
 
 table = lambda do |ids|
   ids.sort.each_slice(16).map { |row| "    " + row.join(", ") }.join(",\n")
@@ -387,6 +398,13 @@ File.write(output, <<~RUBY)
     SIDED = {
       :skills => #{sided_rewards[0].sort.inspect},
       :actors => #{sided_rewards[1].sort.inspect}
+    }
+
+    # The skills and companions of SIDED that the Final Chapter's events give too, such as the Great
+    # Decision, which come as the leader holds them once the story is past it.
+    ROUTE = {
+      :skills => #{route_rewards[0].sort.inspect},
+      :actors => #{route_rewards[1].sort.inspect}
     }
 
     # The events that give each side other skills or companions, before the Great Decision: each
