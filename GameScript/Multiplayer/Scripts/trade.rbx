@@ -2,7 +2,8 @@
 #  trade.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-06: Created
+#      Paulinchen  2026-10-06: Found a plain item through MGQ_MpGame.item
+#                            - Created
 #
 #----------------------------------------------------------------
 
@@ -717,9 +718,7 @@ module MGQ_MpTrade
       match = /\A([iwa])(\d{1,6})\z/.match(token)
       return nil unless match
 
-      table = { "i" => $data_items, "w" => $data_weapons, "a" => $data_armors }[match[1]]
-      item = table[match[2].to_i]
-      item && !item.name.to_s.empty? ? item : nil
+      MGQ_MpGame.item(match[1], match[2].to_i)
     end
 
     # Writes an offer as one line: g and the gold, then each item's token, a star and its amount,

@@ -2,6 +2,7 @@
 #  core_actors.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-06: Found a database item through MGQ_MpGame.item
 #      Paulinchen  2026-10-04: Sent the hero Luka Replacer plays in Luka's place, for a replaced Luka only, and rebuilt Luka as that hero
 #                            - Sent and compared a character's magic reflection and counter rate too
 #                            - Renamed from mp_actors.rbx
@@ -372,11 +373,7 @@ module MGQ_MpActors
     # @param id [Integer] The item's id in the database.
     # @return [RPG::EquipItem, nil] The item, nil when this game's data lacks it.
     def self.base(kind, id)
-      table = kind == "w" ? $data_weapons : $data_armors
-      return nil unless id > 0 && id < table.size
-
-      item = table[id]
-      item && !item.name.empty? ? item : nil
+      MGQ_MpGame.item(kind, id)
     end
 
     # Makes this game's copy of a socket item.

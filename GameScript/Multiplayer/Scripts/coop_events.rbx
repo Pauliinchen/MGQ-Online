@@ -2,7 +2,8 @@
 #  coop_events.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-06: Kept a chest the player leaves shut, such as a locked one, closed for them and the party
+#      Paulinchen  2026-10-06: Found a chest's items through MGQ_MpGame.item
+#                            - Kept a chest the player leaves shut, such as a locked one, closed for them and the party
 #      Paulinchen  2026-10-04: Held back chests other members open during a PvP battle, and kept gifts out of a chest the player opens
 #                            - Sent the sound a chest played with its items, and let members hear it and see the first item's icon, after a battle once on the map
 #                            - Read where the Pocket Castle's way out returns as the player's own variables
@@ -891,7 +892,7 @@ module MGQ_MpCoopEvents
     gains.split(",").each do |entry|
       next unless entry =~ /\A([iwa])(\d+)x\d+\z/
 
-      item = { "i" => $data_items, "w" => $data_weapons, "a" => $data_armors }[Regexp.last_match(1)][Regexp.last_match(2).to_i]
+      item = MGQ_MpGame.item(Regexp.last_match(1), Regexp.last_match(2).to_i)
       return item.icon_index if item && item.respond_to?(:icon_index)
     end
     nil
@@ -919,7 +920,7 @@ module MGQ_MpCoopEvents
         $game_party.gain_gold(amount)
         "#{amount} #{Vocab.currency_unit}"
       else
-        item = { "i" => $data_items, "w" => $data_weapons, "a" => $data_armors }[kind][id]
+        item = MGQ_MpGame.item(kind, id)
         next unless item
 
         $game_party.gain_item(item, amount)

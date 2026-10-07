@@ -2,7 +2,8 @@
 #  core_game_access.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-06: Named the title screen's commands, which show whether the player backed out of a world's new game
+#      Paulinchen  2026-10-06: Found the database's items, weapons and armors by the letter of their kind, for every script that writes items as text
+#                            - Named the title screen's commands, which show whether the player backed out of a world's new game
 #      Paulinchen  2026-10-04: Named a character's levels, which the level sync reads
 #                            - Counted a battle's acting battler as set only once needed, which ends the false log line about it
 #                            - Named how deep an interpreter runs
@@ -136,5 +137,19 @@ module MGQ_MpGame
     raise ArgumentError, "#{method} is none of the game's methods the mod calls" unless METHODS.include?(method)
 
     object.send(method, *args)
+  end
+
+  # Finds an item of the game's database by the letter of its kind.
+  #
+  # @param kind [String] "i" for an item, "w" for a weapon, "a" for an armor.
+  # @param id [Integer] Its id in the database.
+  # @return [RPG::BaseItem, nil] The item, nil for another letter, an id the database lacks or an
+  #   unnamed entry.
+  def self.item(kind, id)
+    table = { "i" => $data_items, "w" => $data_weapons, "a" => $data_armors }[kind]
+    return nil unless table && id > 0 && id < table.size
+
+    item = table[id]
+    item && !item.name.to_s.empty? ? item : nil
   end
 end
