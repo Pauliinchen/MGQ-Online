@@ -2,7 +2,8 @@
 #  overworld.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-07: Took icons, white and the depths from MGQ_MpUi
+#      Paulinchen  2026-10-07: Showed Luka's sprite of the game's data for a ghost whose sprite this game lacks, which kept the map's sprites from drawing
+#                            - Took icons, white and the depths from MGQ_MpUi
 #                            - Logged each ghost shown and hidden, with the map and why
 #                            - Broke a notice longer than the status line into rows instead of cutting it off
 #      Paulinchen  2026-10-04: Stacked the labels of characters on one tile upwards, above the player's own ping
@@ -117,6 +118,42 @@ module MGQ_MpOverworld
     log_once(:ghosts, "ghost update failed: #{e.class}: #{e.message}")
   end
 
+  # Tells which sprite a ghost or its follower shows for one its player's game sent: that one, or
+  # Luka's of the game's data while this game lacks its file, such as a hero another mod added
+  # there. A missing file raised in the map's sprites every frame, which kept the ghosts after it
+  # and the status line from drawing.
+  #
+  # @param name [String] The sprite's file.
+  # @param index [Integer] The sprite's index in the file.
+  # @return [Array] The file and the index to show.
+  def self.sprite(name, index)
+    @sprites ||= {}
+    unless @sprites.key?(name)
+      @sprites[name] = begin
+        Cache.character(name)
+        true
+      rescue => e
+        log("this game has no sprite #{name} (#{e.class}), ghosts showing it show #{stand_in[0]} instead")
+        false
+      end
+    end
+    @sprites[name] ? [name, index] : stand_in
+  end
+
+  # Tells Luka's sprite as the game's data has it, read from the file itself, since a mod may have
+  # changed the actor in the database meanwhile.
+  #
+  # @return [Array] The file and the index.
+  def self.stand_in
+    @stand_in ||= begin
+      luka = load_data("Data/Actors.rvdata2")[1]
+      [luka.character_name.to_s, luka.character_index.to_i]
+    rescue => e
+      log("reading Luka's sprite failed: #{e.class}: #{e.message}")
+      ["", 0]
+    end
+  end
+
   # Lists the players whose ghosts are on this map.
   #
   # @return [Array<MGQ_MpOverworldSync::Peers::Peer>] The players.
@@ -190,7 +227,9 @@ class Game_MpGhost < Game_Character
   #
   # @param state [Hash] What the player last told.
   def look_like(state)
-    set_graphic(state["sprite"].to_s, state["index"].to_i) if @character_name != state["sprite"].to_s || @character_index != state["index"].to_i
+    look = [state["sprite"].to_s, state["index"].to_i]
+    set_graphic(*MGQ_MpOverworld.sprite(*look)) if look != @sent_look
+    @sent_look = look
     @move_speed = [[state["speed"].to_i, 1].max, 6].min
     @transparent = state["hidden"].to_i == 1
   end
@@ -218,7 +257,8 @@ class Game_MpGhostFollower < Game_Character
   # @param index [Integer] The sprite's index in the file.
   # @param ghost [Game_MpGhost] The ghost it follows.
   def look_like(name, index, ghost)
-    set_graphic(name, index) if @character_name != name || @character_index != index
+    set_graphic(*MGQ_MpOverworld.sprite(name, index)) if [name, index] != @sent_look
+    @sent_look = [name, index]
     @move_speed = ghost.move_speed
     @opacity = ghost.opacity
     @transparent = ghost.transparent

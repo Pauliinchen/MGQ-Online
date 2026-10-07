@@ -2,7 +2,8 @@
 #  overworld_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-07: Checked the player's seat kept from the inbox and the status until the world closes
+#      Paulinchen  2026-10-07: Checked the stand-in for a sprite this game lacks
+#                            - Checked the player's seat kept from the inbox and the status until the world closes
 #                            - Checked that the status line breaks a long notice into rows, its icon before the first
 #      Paulinchen  2026-10-06: Checked that a player who just joined counts for the leader only once admitted, and that a player on a new seat while the old one stands is moved there
 #                            - Checked that the chat box opens while a message shows, and stays shut while an event runs without one
@@ -42,6 +43,16 @@
 
 require_relative "world_support"
 
+# The game's sprites, of which this game lacks one, and its data files, Luka's sprite in its actors.
+module Cache
+  def self.character(name)
+    raise Errno::ENOENT, "Graphics/Characters/#{name}" if name == "$missing"
+  end
+end
+def load_data(path)
+  path == "Data/Actors.rvdata2" ? [nil, Struct.new(:character_name, :character_index).new("Luka", 0)] : Object.new
+end
+
 # A new seat tells everyone everything.
 $inbox << entry("seat", 0)
 MGQ_MpOverworldSync.tick
@@ -74,6 +85,14 @@ peer = MGQ_MpOverworld.ghosts.first
 ghost, state = peer.ghost, peer.state
 check("ghost where the friend stands", [ghost.x, ghost.y, ghost.character_name, ghost.character_index], [10, 10, "Actor2", 3])
 check("ghost faces as the friend", ghost.direction, 4)
+$inbox << entry("message", 2, told(friend.merge("sprite" => "$missing", "index" => 2)))
+MGQ_MpOverworldSync.tick
+MGQ_MpOverworld.update_ghosts
+check("a sprite this game lacks shows Luka's of the game's data instead", [ghost.character_name, ghost.character_index], ["Luka", 0])
+$inbox << entry("message", 2, told(friend))
+MGQ_MpOverworldSync.tick
+MGQ_MpOverworld.update_ghosts
+check("and the friend's own again once they show one this game has", [ghost.character_name, ghost.character_index], ["Actor2", 3])
 
 # One tile away: the ghost walks; far away: it jumps.
 $inbox << entry("message", 2, told(friend.merge("x" => 11)))
@@ -580,6 +599,8 @@ check("the log draws the tag, then the name in its color, then the line", parts.
 parts.clear
 log_sprite.draw_row("on my way", nil, 0)
 check("a row that goes on a line is all text", parts.map { |_, text, color| [text, colors[color]] }, [["on my way", :text]])
+
+
 
 # The wheel's middle, which it opens on, and the pick it keeps once the arrows are let go.
 MGQ_MpActions::Wheel.open
