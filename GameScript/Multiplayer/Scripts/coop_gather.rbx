@@ -2,7 +2,8 @@
 #  coop_gather.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-07: Registered the encounter hook through core_hooks.rbx instead of a wrap of its own
+#      Paulinchen  2026-10-07: Dropped a call to a map this game lacks, which ended the game at the transfer
+#                            - Registered the encounter hook through core_hooks.rbx instead of a wrap of its own
 #                            - Gathered, held and called for the leader's story only the members synced with the leader, who follow it
 #                            - Logged every gathering message sent and taken, the hold's end and why, teleports and their reason, calls ignored, waits for a free moment, standing still and encounters kept away
 #      Paulinchen  2026-10-06: Forgot the calls, the question where the leader stands and the hold once the world closes or a save is loaded, and counted a moment before a loaded save's frame count as long past
@@ -471,6 +472,10 @@ module MGQ_MpCoopGather
     @gather = nil
     return log("dropped #{gather[:name]}'s call: the player is no longer in a party") unless MGQ_MpCoop.in_party?
 
+    unless map_id == $game_map.map_id || map_known?(map_id)
+      return log("dropped #{gather[:name]}'s call to map #{map_id}: this game has no such map")
+    end
+
     reason = gather[:follow] ? "the story moved them" : (gather[:asked] ? "the player asked to teleport" : "their story scene called")
     log("#{gather[:follow] ? 'followed' : 'came to'} #{gather[:name]} on map #{map_id} #{x},#{y}, from map #{$game_map.map_id} #{$game_player.x},#{$game_player.y}: #{reason}")
     MGQ_MpCoopCastle.arriving(map_id) if defined?(MGQ_MpCoopCastle)
@@ -484,6 +489,27 @@ module MGQ_MpCoopGather
     take_warp_ban(warp_ban)
   rescue => e
     log("coming to the leader failed: #{e.class}: #{e.message}")
+  end
+
+  # Reports whether this game has a map, reading its file once per map.
+  #
+  # A leader whose game has maps this one lacks, such as a mod's, would otherwise end this game at
+  # the transfer, which loads the map's file past every rescue.
+  #
+  # @param map_id [Integer] The map.
+  # @return [Boolean] Whether its data loads, always outside the game.
+  def self.map_known?(map_id)
+    return true unless defined?(load_data)
+
+    @known_maps ||= {}
+    return @known_maps[map_id] if @known_maps.key?(map_id)
+
+    @known_maps[map_id] = begin
+      load_data(sprintf("Data/Map%03d.rvdata2", map_id))
+      true
+    rescue StandardError, Errno::ENOENT
+      false
+    end
   end
 
   # Logs once per call why the player does not come to the leader yet, once its five seconds passed.
