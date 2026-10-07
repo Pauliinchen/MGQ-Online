@@ -2,6 +2,8 @@
 //  directory.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-07: Covered the auth key header, the cap on removed players, and rate turns taken only after every check
+//                            - Expected 413 for a JSON body over the limit and 404 for an unknown sub-route
 //      Paulinchen  2026-10-06: Covered the deleting of worlds whose starting save did not come in time, the budget for starting saves and the rate limits per address
 //                            - Covered refused mod settings over the limit, mod names of up to 100 characters, the codes of refusals and the player key header
 //                            - Expected up to 300 characters of mods
@@ -25,6 +27,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { DIRECTORY_LIMITS, Directory, cleanName, handleDirectoryRequest, parseAdmins, playerIdOf, sha256Hex } from "./directory.js";
+import { RateLimiter } from "./relay.js";
 
 /**
  * The creator's player key, as games make them.
@@ -414,7 +417,8 @@ test("handleDirectoryRequest routes the public requests and names the world an e
   assert.equal((await handleDirectoryRequest(directory, "GET", url(`/v1/worlds?player=${CREATOR}`), body(null))).body.worlds.length, 1);
   assert.equal((await handleDirectoryRequest(directory, "GET", url(`/v1/worlds/${WORLD}/lock`), body(null))).status, 200);
   assert.equal((await handleDirectoryRequest(directory, "POST", url("/v1/worlds"), async () => "not json")).status, 400);
-  assert.equal((await handleDirectoryRequest(directory, "PUT", url("/v1/worlds"), body(null))).status, 405);
+  assert.equal((await handleDirectoryRequest(directory, "PUT", url("/v1/worlds"), body(null))).status, 404);
+  assert.equal((await handleDirectoryRequest(directory, "GET", url(`/v1/worlds/${WORLD}/elsewhere`), body(null))).status, 404);
 
   assert.equal((await handleDirectoryRequest(directory, "POST", url(`/v1/worlds/${WORLD}/start?player=${CREATOR}`), body(null), bytes(Uint8Array.of(9, 8)))).status, 200);
   assert.deepEqual((await handleDirectoryRequest(directory, "GET", url(`/v1/worlds/${WORLD}/start?player=${OTHER}&auth=${AUTH}`), body(null))).bytes, Uint8Array.of(9, 8));
@@ -534,5 +538,48 @@ test("handleDirectoryRequest takes the player key of the header before the body'
   assert.equal((await handleDirectoryRequest(directory, "POST", url(`/v1/worlds/${WORLD}/edit`), body({ player: OTHER, seats: 8 }), undefined, { player: CREATOR })).status, 200);
 
   const tooLong = async () => JSON.stringify(await newWorld({ id: "1".repeat(32), description: "x".repeat(DIRECTORY_LIMITS.maxJsonLength) }));
-  assert.equal((await handleDirectoryRequest(directory, "POST", url("/v1/worlds"), tooLong)).status, 400);
+  assert.equal((await handleDirectoryRequest(directory, "POST", url("/v1/worlds"), tooLong)).status, 413);
+  assert.equal((await handleDirectoryRequest(directory, "POST", url(`/v1/worlds/${WORLD}/edit`), async () => null)).status, 413, "a body the platform could not read whole is too large too");
+});
+
+test("handleDirectoryRequest takes the auth key of the header before the address's", async () => {
+  const { directory } = newDirectory();
+  const url = (path) => new URL(`https://relay.test${path}`);
+  const none = async () => "";
+  await directory.create(await newWorld({ start: true }));
+  await directory.putStart(WORLD, CREATOR, Uint8Array.of(7));
+
+  assert.equal((await handleDirectoryRequest(directory, "GET", url(`/v1/worlds/${WORLD}/start`), none, undefined, { player: OTHER, auth: AUTH })).status, 200);
+  assert.equal((await handleDirectoryRequest(directory, "GET", url(`/v1/worlds/${WORLD}/start?auth=${"cd".repeat(32)}`), none, undefined, { player: OTHER, auth: AUTH })).status, 200);
+  assert.equal((await handleDirectoryRequest(directory, "GET", url(`/v1/worlds/${WORLD}/start?auth=${AUTH}`), none, undefined, { player: OTHER })).status, 200, "released games send it in the address");
+  assert.equal((await handleDirectoryRequest(directory, "GET", url(`/v1/worlds/${WORLD}/start?auth=${AUTH}`), none, undefined, { player: OTHER, auth: "cd".repeat(32) })).status, 401);
+});
+
+test("a world keeps at most so many removed players", async () => {
+  const { directory } = newDirectory({ ...DIRECTORY_LIMITS, maxBans: 2 });
+  await directory.create(await newWorld());
+  const other = await playerIdOf(OTHER);
+
+  assert.equal((await directory.ban(WORLD, CREATOR, other)).status, 200);
+  assert.equal((await directory.ban(WORLD, CREATOR, "1".repeat(32))).status, 200);
+  assert.equal((await directory.ban(WORLD, CREATOR, "2".repeat(32))).status, 429);
+  assert.equal((await directory.ban(WORLD, CREATOR, other)).status, 200, "a player removed already stays removed");
+  assert.deepEqual((await directory.admit(WORLD, OTHER, AUTH)).body.code, "removed");
+  assert.equal((await directory.admit(WORLD, "2".repeat(32), AUTH)).status, 200);
+});
+
+test("a request the directory refuses anyway costs its address no rate turn", async () => {
+  const once = { burst: 1, refillMs: 3_600_000 };
+  const { directory } = newDirectory();
+  directory.rates.creates = new RateLimiter(once);
+  directory.rates.starts = new RateLimiter(once);
+
+  assert.equal((await directory.create(await newWorld({ seats: 1 }), "1.2.3.4")).status, 400);
+  assert.equal((await directory.create(await newWorld({ start: true }), "1.2.3.4")).status, 201);
+  assert.equal((await directory.create(await newWorld(), "1.2.3.4")).status, 409, "a taken id costs no turn either");
+  assert.equal((await directory.create(await newWorld({ id: "1".repeat(32) }), "1.2.3.4")).status, 429);
+
+  assert.equal((await directory.putStart(WORLD, OTHER, Uint8Array.of(1), "1.2.3.4")).status, 403);
+  assert.equal((await directory.putStart(WORLD, CREATOR, new Uint8Array(0), "1.2.3.4")).status, 413);
+  assert.equal((await directory.putStart(WORLD, CREATOR, Uint8Array.of(1), "1.2.3.4")).status, 200);
 });

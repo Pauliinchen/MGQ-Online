@@ -2,6 +2,8 @@
 //  mods.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-07: Uploaded real zips, whose hashes the relay makes itself, and covered a file list that says otherwise and a header that lies about a file's size
+//                            - Expected 404 for an unknown sub-route, and made the test zips through test_zip.js
 //      Paulinchen  2026-10-06: Covered escaped keys, too large bodies, unchecked links listed for admins only and zips holding a file twice
 //                            - Covered the options of a mod's current version, which only admins send
 //                            - Covered zips whose files sit in a Patch folder
@@ -14,6 +16,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { playerIdOf } from "./directory.js";
 import { MOD_LIMITS, ModCatalog, handleModRequest, hashModFile, modKey, splitUpload, zipHashes } from "./mods.js";
+import { makeUpload, makeZip } from "./test_zip.js";
 
 /**
  * An admin's player key.
@@ -99,6 +102,18 @@ async function newCatalog(state, limits = MOD_LIMITS, fetcher = fakeGitHub(state
  */
 function upload(files, zip) {
   return new TextEncoder().encode(`${files.map(([path, hash]) => `${path}\t${hash}`).join("\n")}\n\n${zip}`);
+}
+
+/**
+ * Makes a real upload: a zip of the files, and the file list with the hashes the relay will make.
+ *
+ * @param {Array<[string, string, boolean?]>} entries Each file's name, text, and whether to deflate it.
+ * @returns {Promise<{zip: Uint8Array, upload: Uint8Array, files: Record<string, string>}>} The zip, the upload and the hashes.
+ */
+async function packed(entries) {
+  const zip = await makeZip(entries);
+  const files = await zipHashes(zip);
+  return { zip, upload: makeUpload(files, zip), files };
 }
 
 test("an admin's game keeps the options of a mod's current version, which everyone lists", async () => {
@@ -229,27 +244,48 @@ test("splitUpload reads the file list and refuses paths outside Patch", () => {
 });
 
 test("only an admin uploads a mod of several files, which games then fetch", async () => {
-  const hash = "cd".repeat(32);
   const { catalog, time } = await newCatalog({ tag: "v1", script: "" });
+  const first = await packed([["Luka_Replacer.rb", "# one", true]]);
+  const second = await packed([["Luka_Replacer.rb", "# two"], ["Luka_Replacer/Heroes/a.luka", "A", true]]);
 
-  assert.equal((await catalog.upload(OTHER, "Luka Replacer", "1.0", upload([["Luka_Replacer.rb", hash]], "PK1"))).status, 403);
-  assert.equal((await catalog.upload(ADMIN, "Luka Replacer", "", upload([["Luka_Replacer.rb", hash]], "PK1"))).status, 400);
+  assert.equal((await catalog.upload(OTHER, "Luka Replacer", "1.0", first.upload)).status, 403);
+  assert.equal((await catalog.upload(ADMIN, "Luka Replacer", "", first.upload)).status, 400);
   assert.equal((await catalog.upload(ADMIN, "Luka Replacer", "1.0", null)).status, 413);
-  assert.equal((await catalog.upload(ADMIN, "Luka Replacer", "1.0", upload([["Luka_Replacer.rb", hash]], "PK1"))).status, 200);
+  assert.equal((await catalog.upload(ADMIN, "Luka Replacer", "1.0", first.upload)).status, 200);
 
   time.now += 1000;
-  await catalog.upload(ADMIN, "Luka Replacer", "1.1", upload([["Luka_Replacer.rb", "ef".repeat(32)]], "PK2"));
+  assert.equal((await catalog.upload(ADMIN, "Luka Replacer", "1.1", second.upload)).status, 200);
 
   const [mod] = (await catalog.list()).body.mods;
   assert.deepEqual([mod.key, mod.kind, mod.version, mod.fileUrl], ["lukareplacer", "upload", "1.1", ""]);
   assert.deepEqual(mod.versions.map((version) => version.version), ["1.1", "1.0"]);
-  assert.equal(new TextDecoder().decode((await catalog.file("lukareplacer")).bytes), "PK2");
+  assert.deepEqual(mod.files, second.files);
+  assert.deepEqual((await catalog.file("lukareplacer")).bytes, second.zip);
   assert.equal((await catalog.file("levelcap")).status, 404);
+});
+
+test("an upload's hashes come from its zip, and a file list that says otherwise is refused", async () => {
+  const { catalog } = await newCatalog({ tag: "v1", script: "" });
+  const { zip, files } = await packed([["Pack.rb", "# pack"], ["Pack/a.luka", "A"]]);
+  const wrongHash = makeUpload({ ...files, "Pack.rb": "00".repeat(32) }, zip);
+  const missingFile = makeUpload({ "Pack.rb": files["Pack.rb"] }, zip);
+  const extraFile = makeUpload({ ...files, "Pack/b.luka": "00".repeat(32) }, zip);
+  const noZip = makeUpload(files, new TextEncoder().encode("PK"));
+
+  for (const [upload, reason] of [[wrongHash, /does not match the zip at Pack\.rb/], [missingFile, /does not match the zip at Pack\/a\.luka/], [extraFile, /does not match/], [noZip, /no zip/]]) {
+    const answer = await catalog.upload(ADMIN, "Pack", "1.0", upload);
+    assert.equal(answer.status, 400);
+    assert.match(answer.body.error, reason);
+  }
+
+  assert.deepEqual((await catalog.list()).body.mods, []);
+  assert.equal((await catalog.upload(ADMIN, "Pack", "1.0", makeUpload(files, zip))).status, 200);
+  assert.deepEqual((await catalog.list()).body.mods[0].files, files);
 });
 
 test("only an admin removes a mod, with its uploaded files", async () => {
   const { catalog, files } = await newCatalog({ tag: "v1", script: "" });
-  await catalog.upload(ADMIN, "Luka Replacer", "1.0", upload([["Luka_Replacer.rb", "cd".repeat(32)]], "PK"));
+  await catalog.upload(ADMIN, "Luka Replacer", "1.0", (await packed([["Luka_Replacer.rb", "# hero"]])).upload);
 
   assert.equal((await catalog.remove(OTHER, "lukareplacer")).status, 403);
   assert.equal((await catalog.remove(ADMIN, "nothing")).status, 404);
@@ -272,65 +308,13 @@ test("handleModRequest routes the catalog's requests", async () => {
   assert.equal(checked.body.mods[0].version, "1.4.0");
   assert.equal((await handleModRequest(catalog, "POST", url("/v1/mods/check"), body({ player: OTHER }), none)).status, 403);
 
-  const zip = upload([["Pack/a.luka", "ab".repeat(32)]], "PK");
-  assert.equal((await handleModRequest(catalog, "POST", url(`/v1/mods/pack/upload?player=${ADMIN}&name=Pack&version=2`), body({}), async () => zip)).status, 200);
-  assert.equal(new TextDecoder().decode((await handleModRequest(catalog, "GET", url("/v1/mods/pack/file"), body({}), none)).bytes), "PK");
+  const pack = await packed([["Pack/a.luka", "A"]]);
+  assert.equal((await handleModRequest(catalog, "POST", url(`/v1/mods/pack/upload?player=${ADMIN}&name=Pack&version=2`), body({}), async () => pack.upload)).status, 200);
+  assert.deepEqual((await handleModRequest(catalog, "GET", url("/v1/mods/pack/file"), body({}), none)).bytes, pack.zip);
   assert.equal((await handleModRequest(catalog, "POST", url("/v1/mods/pack/delete"), body({ player: ADMIN }), none)).status, 200);
-  assert.equal((await handleModRequest(catalog, "PUT", url("/v1/mods"), body({}), none)).status, 405);
+  assert.equal((await handleModRequest(catalog, "PUT", url("/v1/mods"), body({}), none)).status, 404);
   assert.equal((await handleModRequest(catalog, "GET", url("/v1/worlds"), body({}), none)).status, 404);
 });
-
-/**
- * Makes a zip, its files plain or deflated.
- *
- * @param {Array<[string, string, boolean?]>} entries Each file's name, text, and whether to deflate it.
- * @returns {Promise<Uint8Array>} The zip.
- */
-async function makeZip(entries) {
-  const parts = [];
-  const directory = [];
-  let offset = 0;
-
-  for (const [name, text, deflate] of entries) {
-    const data = new TextEncoder().encode(text);
-    const packed = deflate ? new Uint8Array(await new Response(new Blob([data]).stream().pipeThrough(new CompressionStream("deflate-raw"))).arrayBuffer()) : data;
-    const nameBytes = new TextEncoder().encode(name);
-    const local = new DataView(new ArrayBuffer(30));
-    local.setUint32(0, 0x04034b50, true);
-    local.setUint16(8, deflate ? 8 : 0, true);
-    local.setUint32(18, packed.length, true);
-    local.setUint32(22, data.length, true);
-    local.setUint16(26, nameBytes.length, true);
-    const central = new DataView(new ArrayBuffer(46));
-    central.setUint32(0, 0x02014b50, true);
-    central.setUint16(10, deflate ? 8 : 0, true);
-    central.setUint32(20, packed.length, true);
-    central.setUint32(24, data.length, true);
-    central.setUint16(28, nameBytes.length, true);
-    central.setUint32(42, offset, true);
-    parts.push(new Uint8Array(local.buffer), nameBytes, packed);
-    directory.push(new Uint8Array(central.buffer), nameBytes);
-    offset += 30 + nameBytes.length + packed.length;
-  }
-
-  const directorySize = directory.reduce((size, part) => size + part.length, 0);
-  const end = new DataView(new ArrayBuffer(22));
-  end.setUint32(0, 0x06054b50, true);
-  end.setUint16(8, entries.length, true);
-  end.setUint16(10, entries.length, true);
-  end.setUint32(12, directorySize, true);
-  end.setUint32(16, offset, true);
-  const all = [...parts, ...directory, new Uint8Array(end.buffer)];
-  const zip = new Uint8Array(all.reduce((size, part) => size + part.length, 0));
-  let at = 0;
-
-  for (const part of all) {
-    zip.set(part, at);
-    at += part.length;
-  }
-
-  return zip;
-}
 
 /**
  * A fake GitHub whose latest release holds a zip.
@@ -403,7 +387,7 @@ test("a link to a zip of a release keeps a hash per file and is marked as an arc
 
 test("a mod's key in a request's address is read percent-decoded, as the games escape it", async () => {
   const { catalog } = await newCatalog({ tag: "v1", script: "" });
-  await catalog.upload(ADMIN, "Pack!", "1.0", upload([["Pack.rb", "cd".repeat(32)]], "PK"));
+  await catalog.upload(ADMIN, "Pack!", "1.0", (await packed([["Pack.rb", "# pack"]])).upload);
   const url = (path) => new URL(`https://relay.test${path}`);
   const none = async () => null;
 
@@ -424,4 +408,13 @@ test("a body larger than a route takes is answered with 413", async () => {
 
 test("zipHashes refuses a zip that holds a file twice", async () => {
   await assert.rejects(zipHashes(await makeZip([["Patch/a.rb", "x"], ["a.rb", "x"]])), /twice/);
+});
+
+test("zipHashes stops inflating an entry past the size its header claims", async () => {
+  const text = "x".repeat(100_000);
+
+  await assert.rejects(zipHashes(await makeZip([["a.rb", text, true, 10]])), /inflates past the size/);
+  await assert.rejects(zipHashes(await makeZip([["a.rb", text, true, 200_000]])), /not the size the zip says/);
+  await assert.rejects(zipHashes(await makeZip([["a.rb", text, false, 10]])), /not the size the zip says/);
+  assert.deepEqual(Object.keys(await zipHashes(await makeZip([["a.rb", text, true]]))), ["a.rb"]);
 });

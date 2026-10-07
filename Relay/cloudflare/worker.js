@@ -2,6 +2,8 @@
 //  worker.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-07: Passed the X-MGQ-Auth header on to the world rooms and the directory
+//                            - Answered a text body over 256 KB with 413 instead of taking it for no JSON, and named the routes by the core's version
 //      Paulinchen  2026-10-06: Passed the X-MGQ-Player header on to the trade and mod catalog routes too
 //                            - Told the directory who is in a world room after its alarm closed connections too
 //                            - Closed a player's earlier connection to a world room once the same player enters it again
@@ -28,12 +30,13 @@
 
 import { DurableObject } from "cloudflare:workers";
 import { Directory as WorldDirectory, handleDirectoryRequest, parseAdmins } from "../core/directory.js";
+import { routeIs } from "../core/http.js";
 import { ModCatalog, handleModRequest } from "../core/mods.js";
 import { TradeBook, handleTradeRequest } from "../core/trades.js";
 import {
-  CLOSE, IN, OUT, PAIRED, PING, PLAYER_HEADER, PONG, RATE_LIMITS, REFUSAL_HEADER, RateLimiter, admit, newPeer, newWorldPeer, nextDeadline,
-  nextWorldDeadline, overdue, parseRoute, presenceOf, replacedBy, routeWorldMessage, seatChangeText, seatText, takeMessage, takeSeat,
-  worldOverdue,
+  AUTH_HEADER, CLOSE, IN, OUT, PAIRED, PING, PLAYER_HEADER, PONG, RATE_LIMITS, REFUSAL_HEADER, RateLimiter, admit, newPeer, newWorldPeer,
+  nextDeadline, nextWorldDeadline, overdue, parseRoute, presenceOf, replacedBy, routeWorldMessage, seatChangeText, seatText, takeMessage,
+  takeSeat, worldOverdue,
 } from "../core/relay.js";
 
 /**
@@ -73,11 +76,11 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
-    if (["worlds", "mods", "trades"].some((route) => url.pathname === `/v1/${route}` || url.pathname.startsWith(`/v1/${route}/`))) {
+    if (["worlds", "mods", "trades"].some((route) => routeIs(url, route))) {
       return directoryOf(env).fetch(request);
     }
 
-    const route = parseRoute(url, request.headers.get(PLAYER_HEADER));
+    const route = parseRoute(url, request.headers.get(PLAYER_HEADER), request.headers.get(AUTH_HEADER));
 
     if ("error" in route) {
       return new Response(route.error, { status: 400 });
@@ -259,7 +262,8 @@ async function readBytes(request, limit) {
 }
 
 /**
- * Reads a request's body as text, unless it is longer than MAX_TEXT_BYTES.
+ * Reads a request's body as text, unless it is longer than MAX_TEXT_BYTES, which the routers then
+ * answer with 413.
  *
  * @param {Request} request The request.
  * @returns {Promise<string | null>} The body, or null when it is too long.
@@ -267,17 +271,6 @@ async function readBytes(request, limit) {
 async function readText(request) {
   const bytes = await readBytes(request, MAX_TEXT_BYTES);
   return bytes ? new TextDecoder().decode(bytes) : null;
-}
-
-/**
- * Reads a request's body as text for a reader that takes no null, empty when it is too long, which
- * the reader then refuses as no JSON.
- *
- * @param {Request} request The request.
- * @returns {Promise<string>} The body, or "".
- */
-async function readTextOrEmpty(request) {
-  return (await readText(request)) ?? "";
 }
 
 /**
@@ -345,11 +338,11 @@ export class Directory extends DurableObject {
       return json(200, { changed: await this.mods.checkAll() });
     }
 
-    if (url.pathname === "/v1/mods" || url.pathname.startsWith("/v1/mods/")) {
-      return respond(await handleModRequest(this.mods, request.method, url, () => readTextOrEmpty(request), (limit) => readBytes(request, limit), request.headers.get(PLAYER_HEADER)));
+    if (routeIs(url, "mods")) {
+      return respond(await handleModRequest(this.mods, request.method, url, () => readText(request), (limit) => readBytes(request, limit), request.headers.get(PLAYER_HEADER)));
     }
 
-    if (url.pathname === "/v1/trades" || url.pathname.startsWith("/v1/trades/")) {
+    if (routeIs(url, "trades")) {
       return respond(await handleTradeRequest(this.trades, request.method, url, () => readText(request), request.headers.get(PLAYER_HEADER)));
     }
 
@@ -363,8 +356,8 @@ export class Directory extends DurableObject {
       return json(200, await this.directory.presence(id, online));
     }
 
-    const client = { player: request.headers.get(PLAYER_HEADER), address: request.headers.get(ADDRESS_HEADER) };
-    const answer = await handleDirectoryRequest(this.directory, request.method, url, () => readTextOrEmpty(request), (limit) => readBytes(request, limit), client);
+    const client = { player: request.headers.get(PLAYER_HEADER), auth: request.headers.get(AUTH_HEADER), address: request.headers.get(ADDRESS_HEADER) };
+    const answer = await handleDirectoryRequest(this.directory, request.method, url, () => readText(request), (limit) => readBytes(request, limit), client);
 
     if (answer.close) {
       await internal(worldOf(this.env, answer.id), "close");
@@ -609,7 +602,7 @@ export class World extends DurableObject {
       return json(200, {});
     }
 
-    const route = parseRoute(url, request.headers.get(PLAYER_HEADER));
+    const route = parseRoute(url, request.headers.get(PLAYER_HEADER), request.headers.get(AUTH_HEADER));
     const address = request.headers.get(ADDRESS_HEADER);
     const answer = await internal(directoryOf(this.env), "admit", { id: route.roomId, player: route.player, auth: route.auth, address });
 

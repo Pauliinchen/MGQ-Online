@@ -2,6 +2,7 @@
 //  trades.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-07: Answered an unknown sub-route with 404, and read ids, hashes and bodies through ids.js and http.js
 //      Paulinchen  2026-10-06: Took the player's key from the X-MGQ-Player header too
 //                            - Created
 //
@@ -15,6 +16,9 @@
 // their bytes, for a game that crashed before it applied the trade to fetch again.
 
 import { playerIdOf } from "./directory.js";
+import { badRequest, notFound, withJson } from "./http.js";
+import { ID, isHash, isId } from "./ids.js";
+import { VERSION } from "./relay.js";
 
 /**
  * The limits the trades keep.
@@ -38,16 +42,6 @@ export const TRADE_STATE = Object.freeze({ pending: "pending", committed: "commi
  * Why a trade was cancelled: a player cancelled it, the two hashes differ, or the second commit never came.
  */
 export const CANCEL_REASON = Object.freeze({ cancelled: "cancelled", differ: "differ", expired: "expired" });
-
-/**
- * A trade id, a world id, a player's key or a player's id: 32 lowercase hexadecimal characters.
- */
-const ID = /^[0-9a-f]{32}$/;
-
-/**
- * A SHA-256 hash as 64 lowercase hexadecimal characters.
- */
-const HASH = /^[0-9a-f]{64}$/;
 
 /**
  * Base64 text.
@@ -171,7 +165,7 @@ export class TradeBook {
       const record = await this.current(id);
 
       if (!record || !record.players.includes(player)) {
-        return notFound();
+        return noTrade();
       }
 
       if (record.state === TRADE_STATE.pending) {
@@ -201,7 +195,7 @@ export class TradeBook {
 
     return this.exclusive(async () => {
       const record = await this.current(id);
-      return record && record.players.includes(player) ? { status: 200, body: answerOf(record) } : notFound();
+      return record && record.players.includes(player) ? { status: 200, body: answerOf(record) } : noTrade();
     });
   }
 
@@ -215,7 +209,7 @@ export class TradeBook {
   async pending(key, world) {
     const player = await this.playerOf(key);
 
-    if (!player || typeof world !== "string" || !ID.test(world)) {
+    if (!player || !isId(world)) {
       return badRequest("a player key and a world id are needed");
     }
 
@@ -248,7 +242,7 @@ export class TradeBook {
       const record = await this.current(id);
 
       if (!record || !record.players.includes(player)) {
-        return notFound();
+        return noTrade();
       }
 
       if (record.state !== TRADE_STATE.committed) {
@@ -369,10 +363,10 @@ export class TradeBook {
   checkCommit(id, request) {
     if (!ID.test(id)) return badRequest("the trade id must be 32 lowercase hexadecimal characters");
     if (!request || typeof request !== "object") return badRequest("the commit must be a JSON object");
-    if (typeof request.player !== "string" || !ID.test(request.player)) return badRequest("a player key is needed");
-    if (typeof request.world !== "string" || !ID.test(request.world)) return badRequest("the world id must be 32 lowercase hexadecimal characters");
-    if (typeof request.partner !== "string" || !ID.test(request.partner)) return badRequest("the partner must be a player id");
-    if (typeof request.hash !== "string" || !HASH.test(request.hash)) return badRequest("the hash must be 64 lowercase hexadecimal characters");
+    if (!isId(request.player)) return badRequest("a player key is needed");
+    if (!isId(request.world)) return badRequest("the world id must be 32 lowercase hexadecimal characters");
+    if (!isId(request.partner)) return badRequest("the partner must be a player id");
+    if (!isHash(request.hash)) return badRequest("the hash must be 64 lowercase hexadecimal characters");
     if (typeof request.sealed !== "string" || !BASE64.test(request.sealed)) return badRequest("the sealed offers must be base64");
     if (request.sealed.length > this.limits.maxSealedLength) return { status: 413, body: { error: `the sealed offers may have at most ${this.limits.maxSealedLength} characters` } };
     return null;
@@ -385,7 +379,7 @@ export class TradeBook {
    * @returns {Promise<string | null>} The id, or null when it is no player key.
    */
   async playerOf(key) {
-    return typeof key === "string" && ID.test(key) ? playerIdOf(key) : null;
+    return isId(key) ? playerIdOf(key) : null;
   }
 
   /**
@@ -460,8 +454,8 @@ export async function handleTradeRequest(trades, method, url, readBody, player =
   const parts = url.pathname.split("/").filter((part) => part.length > 0);
   const fromQuery = () => player || url.searchParams.get("player");
 
-  if (parts[0] !== "v1" || parts[1] !== "trades") {
-    return notFound();
+  if (parts[0] !== VERSION || parts[1] !== "trades") {
+    return notFound("route");
   }
 
   if (parts.length === 2 && method === "GET") {
@@ -473,37 +467,18 @@ export async function handleTradeRequest(trades, method, url, readBody, player =
   }
 
   if (parts.length === 4 && method === "POST" && ["commit", "cancel", "done"].includes(parts[3])) {
-    const text = await readBody();
+    return withJson(readBody, trades.limits.maxBodyLength, (parsed) => {
+      const body = player && parsed && typeof parsed === "object" ? { ...parsed, player } : parsed;
 
-    if (text === null || text.length > trades.limits.maxBodyLength) {
-      return { status: 413, body: { error: "the request is too large" } };
-    }
+      if (parts[3] === "commit") {
+        return trades.commit(parts[2], body);
+      }
 
-    const parsed = parseJson(text);
-    const body = player && parsed && typeof parsed === "object" ? { ...parsed, player } : parsed;
-
-    if (parts[3] === "commit") {
-      return trades.commit(parts[2], body);
-    }
-
-    return parts[3] === "cancel" ? trades.cancel(parts[2], body?.player) : trades.done(parts[2], body?.player);
+      return parts[3] === "cancel" ? trades.cancel(parts[2], body?.player) : trades.done(parts[2], body?.player);
+    });
   }
 
-  return { status: 405, body: { error: "not a trade route" } };
-}
-
-/**
- * Parses a JSON body.
- *
- * @param {string} text The body.
- * @returns {any} The parsed body, or null when it is no JSON.
- */
-function parseJson(text) {
-  try {
-    return JSON.parse(text);
-  } catch {
-    return null;
-  }
+  return notFound("route");
 }
 
 /**
@@ -511,16 +486,6 @@ function parseJson(text) {
  *
  * @returns {{status: number, body: object}} The answer.
  */
-function notFound() {
-  return { status: 404, body: { error: "there is no such trade" } };
-}
-
-/**
- * The answer for a request that is not as it should be.
- *
- * @param {string} reason Why.
- * @returns {{status: number, body: object}} The answer.
- */
-function badRequest(reason) {
-  return { status: 400, body: { error: reason } };
+function noTrade() {
+  return notFound("trade");
 }

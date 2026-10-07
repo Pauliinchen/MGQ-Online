@@ -2,6 +2,11 @@
 //  directory.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-07: Took the auth key for a starting save from the X-MGQ-Auth header too
+//                            - Answered a JSON body longer than a route takes with 413, and an unknown sub-route with 404
+//                            - Counted a world or a starting save against its address only once it passed every check
+//                            - Kept at most 500 removed players per world
+//                            - Read ids, hashes and texts by the rules of ids.js, and answered through http.js
 //      Paulinchen  2026-10-06: Took the player's key from the X-MGQ-Player header too
 //                            - Limited making worlds, uploading starting saves and entering world rooms per address
 //                            - Kept starting saves within a total budget, and deleted worlds whose starting save did not come within 10 minutes
@@ -29,16 +34,17 @@
 
 // The world directory's rules, the same on every server: the list of worlds, public ones for
 // everyone and hidden ones only for their players and the relay's admins, whose own worlds may be
-// featured; who may make, enter,
-// delete or leave out whom; and who was in which world. The relay never learns a
-// world's token or password: it keeps the token locked with the password, and checks entering
-// against a hash of a key only the token's holders can make. A world's starting save reaches it
-// encrypted with a key from the token, so the relay only keeps its bytes.
+// featured; who may make, enter, delete or leave out whom; and who was in which world. The relay
+// never learns a world's token or password: it keeps the token locked with the password, and
+// checks entering against a hash of a key only the token's holders can make. A world's starting
+// save reaches it encrypted with a key from the token, so the relay only keeps its bytes.
 //
 // It keeps its worlds through a store the platform layer passes in, and hands back what the layer
 // must do beyond answering, such as closing a removed player's connection.
 
-import { RATE_LIMITS, RateLimiter, WORLD_SEATS } from "./relay.js";
+import { badRequest, notFound, withJson } from "./http.js";
+import { CONTROL_CHARACTERS, ID, cleanText, hexOf, isHash, isId } from "./ids.js";
+import { RATE_LIMITS, RateLimiter, VERSION, WORLD_SEATS } from "./relay.js";
 
 /**
  * The limits the directory keeps.
@@ -52,6 +58,7 @@ export const DIRECTORY_LIMITS = Object.freeze({
   maxWorlds: 2000,
   maxWorldsPerCreator: 20,
   maxMembers: 200,
+  maxBans: 500,
   maxListedIds: 50,
   // Released games lock with 200 000 iterations, newer ones with more.
   minIterations: 100_000,
@@ -82,39 +89,9 @@ export const REFUSAL = Object.freeze({
 export const START = Object.freeze({ none: "none", pending: "pending", ready: "ready" });
 
 /**
- * A world id: 32 lowercase hexadecimal characters, the world room's id.
- */
-const WORLD_ID = /^[0-9a-f]{32}$/;
-
-/**
- * A player's key: 32 lowercase hexadecimal characters, which only the player's game knows.
- */
-const PLAYER_KEY = /^[0-9a-f]{32}$/;
-
-/**
- * A player's id, as playerIdOf makes it: 32 lowercase hexadecimal characters.
- */
-const PLAYER_ID = /^[0-9a-f]{32}$/;
-
-/**
- * A key or hash of 32 bytes, as 64 lowercase hexadecimal characters.
- */
-const HEX_32 = /^[0-9a-f]{64}$/;
-
-/**
- * A salt of 16 bytes, as 32 lowercase hexadecimal characters.
- */
-const SALT = /^[0-9a-f]{32}$/;
-
-/**
  * Lowercase hexadecimal of any length.
  */
 const HEX = /^(?:[0-9a-f]{2})+$/;
-
-/**
- * Characters a name may not hold: control characters, and the tab and line break the games read lists by.
- */
-const NAME_BREAKERS = /[\u0000-\u001f\u007f]/g;
 
 /**
  * What tells one game's data from another's, as the creator's game wrote it; the relay only keeps it.
@@ -134,8 +111,7 @@ const MOD_HASHES = /^(?:[^=;\u0000-\u001f]{1,100}=[0-9a-f]{64})(?:;[^=;\u0000-\u
  * @returns {Promise<string>} The hash as 64 lowercase hexadecimal characters.
  */
 export async function sha256Hex(text) {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
-  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  return hexOf(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)));
 }
 
 /**
@@ -155,7 +131,7 @@ export async function playerIdOf(key) {
  * @returns {string[]} The admins' player ids, empty for none; anything else in the setting is left out.
  */
 export function parseAdmins(text) {
-  return typeof text === "string" ? text.toLowerCase().split(/[\s,]+/).filter((id) => PLAYER_ID.test(id)) : [];
+  return typeof text === "string" ? text.toLowerCase().split(/[\s,]+/).filter((id) => ID.test(id)) : [];
 }
 
 /**
@@ -166,23 +142,8 @@ export function parseAdmins(text) {
  * @returns {string | null} The name, or null when nothing is left of it.
  */
 export function cleanName(name, limits = DIRECTORY_LIMITS) {
-  if (typeof name !== "string") {
-    return null;
-  }
-
-  const cleaned = [...name.replace(NAME_BREAKERS, "").trim()].slice(0, limits.maxNameLength).join("");
+  const cleaned = cleanText(name, limits.maxNameLength);
   return cleaned.length > 0 ? cleaned : null;
-}
-
-/**
- * Tidies a text someone wrote about a world: on one line, without control characters, trimmed and not too long.
- *
- * @param {unknown} text The text.
- * @param {number} maxLength The most characters kept.
- * @returns {string} The text, empty when there is none.
- */
-export function cleanText(text, maxLength) {
-  return typeof text === "string" ? [...text.replace(NAME_BREAKERS, "").trim()].slice(0, maxLength).join("") : "";
 }
 
 /**
@@ -226,8 +187,8 @@ export class Directory {
    * @returns {Promise<{status: number, body: object}>} The worlds, and whether the player is an admin.
    */
   async list(key, ids) {
-    const named = new Set(typeof ids === "string" ? ids.split(",").filter((id) => WORLD_ID.test(id)).slice(0, this.limits.maxListedIds) : []);
-    const player = typeof key === "string" && PLAYER_KEY.test(key) ? await playerIdOf(key) : null;
+    const named = new Set(typeof ids === "string" ? ids.split(",").filter((id) => ID.test(id)).slice(0, this.limits.maxListedIds) : []);
+    const player = isId(key) ? await playerIdOf(key) : null;
     const admin = this.admins.has(player);
     const worlds = (await this.entries()).filter((entry) => admin || !entry.hidden || (player && entry.members[player]) || named.has(entry.id)).map((entry) => publicView(entry));
     return { status: 200, body: { worlds, admin } };
@@ -242,7 +203,7 @@ export class Directory {
    */
   async lock(id) {
     const entry = await this.load(id);
-    return entry ? { status: 200, body: { ...entry.lock, name: entry.name, seats: entry.seats, start: entry.start ?? START.none, choose: entry.choose === true } } : notFound();
+    return entry ? { status: 200, body: { ...entry.lock, name: entry.name, seats: entry.seats, start: entry.start ?? START.none, choose: entry.choose === true } } : noWorld();
   }
 
   /**
@@ -253,10 +214,6 @@ export class Directory {
    * @returns {Promise<{status: number, body: object}>} The world's id, or why it was refused.
    */
   async create(request, address = null) {
-    if (!this.rates.creates.take(address)) {
-      return tooMany();
-    }
-
     const refusal = this.checkNewWorld(request);
 
     if (refusal) {
@@ -265,6 +222,11 @@ export class Directory {
 
     if (await this.load(request.id)) {
       return { status: 409, body: { error: "a world with this id exists" } };
+    }
+
+    // Counted only now, so a request the relay refuses anyway costs its address no turn.
+    if (!this.rates.creates.take(address)) {
+      return tooMany();
     }
 
     const creator = await playerIdOf(request.player);
@@ -402,16 +364,20 @@ export class Directory {
       return refusal;
     }
 
-    if (typeof target !== "string" || !PLAYER_ID.test(target) || target === entry.creator.id) {
+    if (!isId(target) || target === entry.creator.id) {
       return badRequest("the player to remove must be another player's id");
+    }
+
+    if (!entry.bans.includes(target)) {
+      if (entry.bans.length >= this.limits.maxBans) {
+        return { status: 429, body: { error: `a world may keep at most ${this.limits.maxBans} removed players` } };
+      }
+
+      entry.bans.push(target);
     }
 
     delete entry.members[target];
     entry.online = entry.online.filter((player) => player !== target);
-
-    if (!entry.bans.includes(target)) {
-      entry.bans.push(target);
-    }
 
     await this.store.put(entry);
     return { status: 200, body: { removed: target }, kick: target };
@@ -454,10 +420,6 @@ export class Directory {
    * @returns {Promise<{status: number, body: object}>} The answer.
    */
   async putStart(id, key, bytes, address = null) {
-    if (!this.rates.starts.take(address)) {
-      return tooMany();
-    }
-
     const { entry, refusal } = await this.asCreator(id, key);
 
     if (refusal) {
@@ -470,6 +432,11 @@ export class Directory {
 
     if (!bytes || bytes.length === 0 || bytes.length > this.limits.maxStartBytes) {
       return { status: 413, body: { error: `the starting save must be 1 to ${this.limits.maxStartBytes} bytes` } };
+    }
+
+    // Counted only now, so an upload the relay refuses anyway costs its address no turn.
+    if (!this.rates.starts.take(address)) {
+      return tooMany();
     }
 
     // Saves kept before their sizes were noted count as nothing.
@@ -517,7 +484,7 @@ export class Directory {
     const entry = await this.load(id);
 
     if (!entry) {
-      return notFound();
+      return noWorld();
     }
 
     const now = this.clock();
@@ -554,7 +521,7 @@ export class Directory {
    * @returns {Promise<object | undefined>} The entry, undefined when there is none.
    */
   async load(id) {
-    const entry = typeof id === "string" && WORLD_ID.test(id) ? await this.store.get(id) : undefined;
+    const entry = isId(id) ? await this.store.get(id) : undefined;
 
     if (entry && this.stale(entry)) {
       await this.store.remove(entry.id);
@@ -606,10 +573,10 @@ export class Directory {
     const entry = await this.load(id);
 
     if (!entry) {
-      return { refusal: notFound() };
+      return { refusal: noWorld() };
     }
 
-    if (typeof key !== "string" || !PLAYER_KEY.test(key) || typeof auth !== "string" || !HEX_32.test(auth)) {
+    if (!isId(key) || !isHash(auth)) {
       return { refusal: badRequest("a player key and an auth key are needed") };
     }
 
@@ -683,10 +650,10 @@ export class Directory {
     const entry = await this.load(id);
 
     if (!entry) {
-      return { refusal: notFound() };
+      return { refusal: noWorld() };
     }
 
-    const player = typeof key === "string" && PLAYER_KEY.test(key) ? await playerIdOf(key) : null;
+    const player = isId(key) ? await playerIdOf(key) : null;
     return { entry, player };
   }
 
@@ -700,13 +667,13 @@ export class Directory {
     const lock = request?.lock;
 
     if (!request || typeof request !== "object") return "the world must be a JSON object";
-    if (typeof request.id !== "string" || !WORLD_ID.test(request.id)) return "the id must be 32 lowercase hexadecimal characters";
+    if (!isId(request.id)) return "the id must be 32 lowercase hexadecimal characters";
     if (!cleanName(request.name, this.limits)) return "the world needs a name";
     if (!Number.isInteger(request.seats) || request.seats < WORLD_SEATS.min || request.seats > WORLD_SEATS.max) return `the seats must be ${WORLD_SEATS.min} to ${WORLD_SEATS.max}`;
-    if (typeof request.player !== "string" || !PLAYER_KEY.test(request.player)) return "the creator's player key is missing";
+    if (!isId(request.player)) return "the creator's player key is missing";
     if (!cleanName(request.playerName, this.limits)) return "the creator needs a name";
-    if (typeof request.authHash !== "string" || !HEX_32.test(request.authHash)) return "the auth hash must be 64 lowercase hexadecimal characters";
-    if (!lock || typeof lock.salt !== "string" || !SALT.test(lock.salt)) return "the lock needs a salt of 32 lowercase hexadecimal characters";
+    if (!isHash(request.authHash)) return "the auth hash must be 64 lowercase hexadecimal characters";
+    if (!lock || !isId(lock.salt)) return "the lock needs a salt of 32 lowercase hexadecimal characters";
     if (!Number.isInteger(lock.iterations) || lock.iterations < this.limits.minIterations || lock.iterations > this.limits.maxIterations) return "the lock's iterations are out of range";
     if (typeof lock.box !== "string" || !HEX.test(lock.box) || lock.box.length > this.limits.maxLockHex) return "the lock's box must be lowercase hexadecimal";
     if (request.start !== undefined && typeof request.start !== "boolean") return "start must be true or false";
@@ -752,7 +719,7 @@ export class Directory {
  * @returns {string} The settings, empty for none.
  */
 function cleanSettings(text) {
-  return typeof text === "string" ? text.replace(NAME_BREAKERS, "") : "";
+  return typeof text === "string" ? text.replace(CONTROL_CHARACTERS, "") : "";
 }
 
 /**
@@ -761,9 +728,9 @@ function cleanSettings(text) {
  * @param {Directory} directory The directory.
  * @param {string} method The HTTP method.
  * @param {URL} url The request's address.
- * @param {() => Promise<string>} readBody Reads the request's body as text.
+ * @param {() => Promise<string | null>} readBody Reads the request's body as text, null when it is too large to read.
  * @param {(limit: number) => Promise<Uint8Array | null>} readBytes Reads the request's body as bytes, null when it is longer than the limit.
- * @param {{player?: string | null, address?: string | null}} [client] The PLAYER_HEADER of the request, which wins over the key in its body or address, and the address it came from.
+ * @param {{player?: string | null, auth?: string | null, address?: string | null}} [client] The PLAYER_HEADER and AUTH_HEADER of the request, which win over the key and auth key in its body or address, and the address it came from.
  * @returns {Promise<{status: number, body: object, bytes?: Uint8Array, close?: boolean, kick?: string, id?: string}>} The answer, sent as the bytes when there are any, and what the platform layer must do beyond it for the world with that id.
  */
 export async function handleDirectoryRequest(directory, method, url, readBody, readBytes, client = {}) {
@@ -772,9 +739,11 @@ export async function handleDirectoryRequest(directory, method, url, readBody, r
   const address = client.address ?? null;
   const fromQuery = () => header ?? url.searchParams.get("player");
   const fromBody = (body) => header ?? body?.player;
+  const authOf = () => client.auth || url.searchParams.get("auth");
+  const json = (handle) => withJson(readBody, directory.limits.maxJsonLength, handle);
 
-  if (parts[0] !== "v1" || parts[1] !== "worlds") {
-    return notFound();
+  if (parts[0] !== VERSION || parts[1] !== "worlds") {
+    return notFound("route");
   }
 
   if (parts.length === 2 && method === "GET") {
@@ -782,8 +751,7 @@ export async function handleDirectoryRequest(directory, method, url, readBody, r
   }
 
   if (parts.length === 2 && method === "POST") {
-    const body = await readJson(readBody, directory.limits.maxJsonLength);
-    return directory.create(body && typeof body === "object" && header ? { ...body, player: header } : body, address);
+    return json((body) => directory.create(body && typeof body === "object" && header ? { ...body, player: header } : body, address));
   }
 
   if (parts.length === 4 && parts[3] === "lock" && method === "GET") {
@@ -791,18 +759,15 @@ export async function handleDirectoryRequest(directory, method, url, readBody, r
   }
 
   if (parts.length === 4 && parts[3] === "delete" && method === "POST") {
-    const body = await readJson(readBody, directory.limits.maxJsonLength);
-    return { ...(await directory.remove(parts[2], fromBody(body))), id: parts[2] };
+    return json(async (body) => ({ ...(await directory.remove(parts[2], fromBody(body))), id: parts[2] }));
   }
 
   if (parts.length === 4 && parts[3] === "edit" && method === "POST") {
-    const body = await readJson(readBody, directory.limits.maxJsonLength);
-    return directory.edit(parts[2], fromBody(body), body);
+    return json((body) => directory.edit(parts[2], fromBody(body), body));
   }
 
   if (parts.length === 4 && parts[3] === "ban" && method === "POST") {
-    const body = await readJson(readBody, directory.limits.maxJsonLength);
-    return { ...(await directory.ban(parts[2], fromBody(body), body?.target)), id: parts[2] };
+    return json(async (body) => ({ ...(await directory.ban(parts[2], fromBody(body), body?.target)), id: parts[2] }));
   }
 
   if (parts.length === 4 && parts[3] === "start" && method === "POST") {
@@ -810,26 +775,10 @@ export async function handleDirectoryRequest(directory, method, url, readBody, r
   }
 
   if (parts.length === 4 && parts[3] === "start" && method === "GET") {
-    return directory.getStart(parts[2], fromQuery(), url.searchParams.get("auth"));
+    return directory.getStart(parts[2], fromQuery(), authOf());
   }
 
-  return { status: 405, body: { error: "not a directory route" } };
-}
-
-/**
- * Reads a JSON body, small ones only.
- *
- * @param {() => Promise<string>} readBody Reads the request's body.
- * @param {number} maxLength The most characters read.
- * @returns {Promise<any>} The parsed body, or null when it is no JSON or too large.
- */
-async function readJson(readBody, maxLength) {
-  try {
-    const text = await readBody();
-    return text.length <= maxLength ? JSON.parse(text) : null;
-  } catch {
-    return null;
-  }
+  return notFound("route");
 }
 
 /**
@@ -869,18 +818,8 @@ export function publicView(entry) {
  *
  * @returns {{status: number, body: object}} The answer.
  */
-function notFound() {
-  return { status: 404, body: { error: "there is no such world" } };
-}
-
-/**
- * The answer for a request that is not as it should be.
- *
- * @param {string} reason Why.
- * @returns {{status: number, body: object}} The answer.
- */
-function badRequest(reason) {
-  return { status: 400, body: { error: reason } };
+function noWorld() {
+  return notFound("world");
 }
 
 /**

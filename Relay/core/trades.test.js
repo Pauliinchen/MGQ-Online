@@ -2,6 +2,7 @@
 //  trades.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-07: Expected 404 for an unknown sub-route and 413 for a body the platform could not read whole
 //      Paulinchen  2026-10-06: Covered the player's key in the X-MGQ-Player header
 //                            - Created
 //
@@ -271,7 +272,9 @@ test("the routes reach the trades, and a body past the limit is refused", async 
   assert.deepEqual((await ask("POST", `/v1/trades/${TRADE}/cancel`, { player: ALICE })).body, { state: "committed" });
   assert.equal((await ask("POST", `/v1/trades/${tradeId(5)}/commit`, "x".repeat(TRADE_LIMITS.maxBodyLength + 1))).status, 413);
   assert.equal((await ask("POST", `/v1/trades/${tradeId(5)}/commit`, "no json")).status, 400);
-  assert.equal((await ask("DELETE", `/v1/trades/${TRADE}`)).status, 405);
+  assert.equal((await ask("DELETE", `/v1/trades/${TRADE}`)).status, 404);
+  assert.equal((await ask("POST", `/v1/trades/${TRADE}/elsewhere`, {})).status, 404);
+  assert.equal((await handleTradeRequest(trades, "POST", new URL(`https://relay/v1/trades/${tradeId(6)}/commit`), async () => null)).status, 413, "a body the platform could not read whole is too large too");
 });
 
 test("the routes take the player's key from the X-MGQ-Player header before the body or the address", async () => {

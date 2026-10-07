@@ -2,6 +2,7 @@
 //  relay.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-07: Covered the auth key header
 //      Paulinchen  2026-10-06: Covered a guest waiting alone, the player key header, the rate limiter and replaced connections
 //      Paulinchen  2026-09-29: Read a world room's player key, name and auth key instead of its seats
 //                            - Tested world rooms: seats, routing and each connection's lifetime
@@ -186,6 +187,16 @@ test("parseRoute takes a world room's player key from the header before the addr
   assert.equal(parseRoute(new URL(`https://relay.test/v1/world/${ROOM}?player=${other}&name=Luka&auth=${AUTH}`), KEY).player, KEY);
   assert.equal(parseRoute(new URL(`https://relay.test/v1/world/${ROOM}?player=${other}&name=Luka&auth=${AUTH}`)).player, other);
   assert.ok("error" in parseRoute(new URL(`https://relay.test/v1/world/${ROOM}?name=Luka&auth=${AUTH}`), "nope"));
+});
+
+test("parseRoute takes a world room's auth key from the header before the address", () => {
+  const other = "cd".repeat(32);
+
+  assert.equal(parseRoute(new URL(`https://relay.test/v1/world/${ROOM}?player=${KEY}&name=Luka`), null, AUTH).auth, AUTH);
+  assert.equal(parseRoute(new URL(`https://relay.test/v1/world/${ROOM}?name=Luka&auth=${other}`), KEY, AUTH).auth, AUTH);
+  assert.equal(parseRoute(new URL(`https://relay.test/v1/world/${ROOM}?player=${KEY}&name=Luka&auth=${other}`)).auth, other);
+  assert.ok("error" in parseRoute(new URL(`https://relay.test/v1/world/${ROOM}?player=${KEY}&name=Luka`), null, "nope"));
+  assert.ok("error" in parseRoute(new URL(`https://relay.test/v1/world/${ROOM}?player=${KEY}&name=Luka&auth=${AUTH}`), null, "nope"), "a header that is no auth key is not helped by the address");
 });
 
 test("RateLimiter lets each address go on a burst, then once per refill, and forgets the least recent addresses", () => {

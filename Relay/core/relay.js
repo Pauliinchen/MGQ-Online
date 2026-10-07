@@ -2,6 +2,8 @@
 //  relay.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-07: Took a world room's auth key from the X-MGQ-Auth header too
+//                            - Read ids, keys and names by the rules of ids.js
 //      Paulinchen  2026-10-06: Closed a peer that waited alone too long whatever its role, not only a host
 //                            - Took a world room's player key from the X-MGQ-Player header too
 //                            - Added the rate limits per address, and the replacing of a player's earlier connection to a world room
@@ -18,6 +20,8 @@
 // A room pairs one host with one guest, for a PvP battle. A world room seats several games that
 // play in the same world; each gets a seat number, which the relay puts in front of every message
 // it passes on, since it cannot read who sent what.
+
+import { CONTROL_CHARACTERS, isHash, isId } from "./ids.js";
 
 /**
  * The protocol version the relay speaks, the first part of every room's path.
@@ -116,6 +120,12 @@ export const REPLACED = "replaced";
 export const PLAYER_HEADER = "X-MGQ-Player";
 
 /**
+ * The request header that carries the auth key a game made from a world's token, so it stays out
+ * of addresses too.
+ */
+export const AUTH_HEADER = "X-MGQ-Auth";
+
+/**
  * The response header that names why the relay turned a game away from a world room, since a
  * refused WebSocket hands its client the status and headers only.
  */
@@ -184,51 +194,37 @@ export class RateLimiter {
 }
 
 /**
- * A room id, 32 lowercase hexadecimal characters: the start of a hash the client made from its
- * join code, never the join code itself.
- */
-const ROOM_ID = /^[0-9a-f]{32}$/;
-
-/**
- * A player's key, 32 lowercase hexadecimal characters.
- */
-const PLAYER_KEY = /^[0-9a-f]{32}$/;
-
-/**
- * An auth key made from a world's token, 64 lowercase hexadecimal characters.
- */
-const AUTH_KEY = /^[0-9a-f]{64}$/;
-
-/**
  * Longest player name a world room passes on to the directory.
  */
 const MAX_PLAYER_NAME = 32;
 
 /**
  * Reads the room a request asks for: a room with its role, or a world room with the player's key,
- * name and auth key.
+ * name and auth key. The room id is the start of a hash the client made from its join code or the
+ * world's token, never the join code or token itself.
  *
  * @param {URL} url The request's address, such as /v1/room/<room id>?role=host or /v1/world/<world id>?name=…&auth=….
  * @param {string | null} [playerHeader] The PLAYER_HEADER of the request, which wins over the address's `player`, which released games send.
+ * @param {string | null} [authHeader] The AUTH_HEADER of the request, which wins over the address's `auth`, which released games send.
  * @returns {{kind: "room", roomId: string, role: string} | {kind: "world", roomId: string, player: string, name: string, auth: string} | {error: string}} The room, or why the request is refused.
  */
-export function parseRoute(url, playerHeader = null) {
+export function parseRoute(url, playerHeader = null, authHeader = null) {
   const parts = url.pathname.split("/").filter((part) => part.length > 0);
 
   if (parts.length !== 3 || parts[0] !== VERSION || (parts[1] !== "room" && parts[1] !== "world")) {
     return { error: `the address must be /${VERSION}/room/<room id> or /${VERSION}/world/<room id>` };
   }
 
-  if (!ROOM_ID.test(parts[2])) {
+  if (!isId(parts[2])) {
     return { error: "the room id must be 32 lowercase hexadecimal characters" };
   }
 
   if (parts[1] === "world") {
     const player = playerHeader || (url.searchParams.get("player") ?? "");
-    const auth = url.searchParams.get("auth") ?? "";
-    const name = (url.searchParams.get("name") ?? "").replace(/[\u0000-\u001f\u007f]/g, "").trim();
+    const auth = authHeader || (url.searchParams.get("auth") ?? "");
+    const name = (url.searchParams.get("name") ?? "").replace(CONTROL_CHARACTERS, "").trim();
 
-    if (!PLAYER_KEY.test(player) || !AUTH_KEY.test(auth)) {
+    if (!isId(player) || !isHash(auth)) {
       return { error: "a world room needs the player's key and an auth key" };
     }
 

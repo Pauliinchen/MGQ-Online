@@ -2,6 +2,9 @@
 //  mods.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-07: Hashed an uploaded zip's files itself and refused an upload whose file list says otherwise
+//                            - Stopped inflating a zip entry past the size the zip says, so a lying header cannot fill the memory
+//                            - Answered an unknown sub-route with 404, and read ids, hashes, texts and bodies through ids.js and http.js
 //      Paulinchen  2026-10-06: Took the player's key from the X-MGQ-Player header too
 //                            - Read a mod's key in a request's address percent-decoded, as the games escape it
 //                            - Listed only checked mods for players, so a link the relay could not read yet keeps no game out
@@ -17,13 +20,16 @@
 // The catalog of mods a world may require, the same on every server. Only the relay's admins add
 // mods: a single script or a zip laid out as in the game's Patch folder, by a download link on the
 // admins' GitHub, whose releases the relay checks on a schedule, or a mod of several files that an
-// admin uploads. The relay keeps a link mod's
-// hash and version only, never the script, and never runs anything it reads. Games compare their
-// installed files with the catalog's hashes and download what differs, checking every hash. An
-// admin's game that has a mod's current version sends the options the mod offers in Mod Config,
-// which the relay keeps for the World Admin tool, since only a running game can read them.
+// admin uploads. The relay keeps a link mod's hash and version only, never the script, and never
+// runs anything it reads. Games compare their installed files with the catalog's hashes and
+// download what differs, checking every hash. An admin's game that has a mod's current version
+// sends the options the mod offers in Mod Config, which the relay keeps for the World Admin tool,
+// since only a running game can read them.
 
 import { playerIdOf } from "./directory.js";
+import { badRequest, notFound, tooLarge, withJson } from "./http.js";
+import { HASH, cleanText, hexOf, isId } from "./ids.js";
+import { VERSION } from "./relay.js";
 
 /**
  * The limits the catalog keeps.
@@ -43,6 +49,8 @@ export const MOD_LIMITS = Object.freeze({
   maxChoices: 64,
   maxOptionText: 200,
   maxOptionsBytes: 64 * 1024,
+  // The most characters a JSON body of the catalog's routes may have, unless a route says otherwise.
+  maxJsonLength: 8192,
 });
 
 /**
@@ -61,16 +69,6 @@ const RELEASE_FILE = /^https:\/\/github\.com\/Pauliinchen\/[A-Za-z0-9._-]+\/rele
 export const FILE_HOSTS = Object.freeze(["objects.githubusercontent.com", "release-assets.githubusercontent.com"]);
 
 /**
- * A player's key: 32 lowercase hexadecimal characters.
- */
-const PLAYER_KEY = /^[0-9a-f]{32}$/;
-
-/**
- * A file's hash: 64 lowercase hexadecimal characters.
- */
-const HASH = /^[0-9a-f]{64}$/;
-
-/**
  * A path inside the game's Patch folder: forward slashes, no step up, no drive, no start at the root.
  */
 const PATCH_PATH = /^(?!\/)(?!.*(?:^|\/)\.\.?(?:\/|$))[^\\:*?"<>|\u0000-\u001f]+$/;
@@ -85,11 +83,6 @@ const OPTION_KEY = /^[A-Za-z_][A-Za-z0-9_]*[?!]?$/;
  * symbol and text.
  */
 const OPTION_TYPES = Object.freeze(["i", "f", "b", "y", "s"]);
-
-/**
- * Characters a name or version may not hold.
- */
-const BREAKERS = /[\u0000-\u001f\u007f]/g;
 
 /**
  * Turns a mod's name or its script's file name into what the two are compared by, as the games do.
@@ -111,8 +104,7 @@ export function modKey(name) {
  */
 export async function hashModFile(path, bytes) {
   const data = path.toLowerCase().endsWith(".rb") ? bytes.filter((byte) => byte !== 13) : bytes;
-  const digest = await crypto.subtle.digest("SHA-256", data);
-  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  return hexOf(await crypto.subtle.digest("SHA-256", data));
 }
 
 /**
@@ -201,7 +193,8 @@ export class ModCatalog {
   }
 
   /**
-   * Keeps a mod of several files that an admin uploads as a zip, with each file's hash.
+   * Keeps a mod of several files that an admin uploads as a zip, with each file's hash, which the
+   * relay takes from the zip itself: the file list only has to agree.
    *
    * @param {unknown} key The asking player's key.
    * @param {unknown} name The mod's name, as worlds write it.
@@ -222,13 +215,19 @@ export class ModCatalog {
     }
 
     if (!body) {
-      return { status: 413, body: { error: `an upload may be at most ${this.limits.maxUploadBytes} bytes` } };
+      return tooLarge(this.limits.maxUploadBytes, "bytes");
     }
 
     const parsed = splitUpload(body, this.limits);
 
     if (typeof parsed === "string") {
       return badRequest(parsed);
+    }
+
+    const files = await this.hashesOf(parsed);
+
+    if (typeof files === "string") {
+      return badRequest(files);
     }
 
     const refusal = await this.roomFor(modKey(cleaned));
@@ -244,7 +243,7 @@ export class ModCatalog {
       await this.store.removeMod(existing.key);
     }
 
-    remember(entry, label, parsed.files, this.clock(), this.limits);
+    remember(entry, label, files, this.clock(), this.limits);
     entry.size = parsed.zip.length;
     entry.checked = this.clock();
     entry.error = "";
@@ -270,7 +269,7 @@ export class ModCatalog {
     const entry = await this.store.getMod(modKeyOf);
 
     if (!entry) {
-      return notFound();
+      return noMod();
     }
 
     if (version !== entry.version) {
@@ -302,7 +301,7 @@ export class ModCatalog {
     }
 
     if (!(await this.store.getMod(modKeyOf))) {
-      return notFound();
+      return noMod();
     }
 
     await this.store.removeMod(modKeyOf);
@@ -359,7 +358,7 @@ export class ModCatalog {
   async file(modKeyOf) {
     const entry = await this.store.getMod(modKeyOf);
     const bytes = entry?.kind === "upload" ? await this.store.getModFile(entry.key) : undefined;
-    return bytes ? { status: 200, body: {}, bytes } : notFound();
+    return bytes ? { status: 200, body: {}, bytes } : noMod();
   }
 
   /**
@@ -397,13 +396,34 @@ export class ModCatalog {
   }
 
   /**
+   * Hashes an upload's zip and checks that its file list says the same, so the catalog only ever
+   * holds hashes the relay made.
+   *
+   * @param {{files: Record<string, string>, zip: Uint8Array}} parsed The upload's file list and zip.
+   * @returns {Promise<Record<string, string> | string>} Each file's hash by its path inside Patch, or what is wrong.
+   */
+  async hashesOf(parsed) {
+    let files;
+
+    try {
+      files = await zipHashes(parsed.zip, this.limits);
+    } catch (error) {
+      return String(error?.message ?? error);
+    }
+
+    const listed = Object.keys(parsed.files);
+    const differing = listed.find((path) => parsed.files[path] !== files[path]) ?? Object.keys(files).find((path) => !(path in parsed.files));
+    return differing === undefined && listed.length === Object.keys(files).length ? files : `the file list does not match the zip at ${(differing ?? "").slice(0, 80)}`;
+  }
+
+  /**
    * Tells whether a key is one of the relay's admins'.
    *
    * @param {unknown} key The player's key.
    * @returns {Promise<boolean>} Whether it is.
    */
   async isAdmin(key) {
-    return typeof key === "string" && PLAYER_KEY.test(key) && this.admins.has(await playerIdOf(key));
+    return isId(key) && this.admins.has(await playerIdOf(key));
   }
 }
 
@@ -606,14 +626,55 @@ async function unpack(bytes, view, local, method, packedSize, size, name) {
   if (method === 0) {
     data = packed;
   } else if (method === 8) {
-    const stream = new Blob([packed]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
-    data = new Uint8Array(await new Response(stream).arrayBuffer());
+    data = await inflate(packed, size, name);
   } else {
     throw new Error(`the zip packs ${name.slice(0, 80)} in a way the relay does not read`);
   }
 
   if (data.length !== size) {
     throw new Error(`the zip's entry ${name.slice(0, 80)} is not the size the zip says`);
+  }
+
+  return data;
+}
+
+/**
+ * Inflates a deflated zip entry, stopping as soon as it grows past the size the zip claims, so a
+ * header that lies about a small entry cannot fill the memory.
+ *
+ * @param {Uint8Array} packed The deflated bytes.
+ * @param {number} size The size the zip claims, which the directory's limits already bound.
+ * @param {string} name The entry's path, for the error.
+ * @returns {Promise<Uint8Array>} The inflated bytes.
+ */
+async function inflate(packed, size, name) {
+  const reader = new Blob([packed]).stream().pipeThrough(new DecompressionStream("deflate-raw")).getReader();
+  const chunks = [];
+  let length = 0;
+
+  for (;;) {
+    const { done, value } = await reader.read();
+
+    if (done) {
+      break;
+    }
+
+    length += value.length;
+
+    if (length > size) {
+      await reader.cancel();
+      throw new Error(`the zip's entry ${name.slice(0, 80)} inflates past the size the zip says`);
+    }
+
+    chunks.push(value);
+  }
+
+  const data = new Uint8Array(length);
+  let at = 0;
+
+  for (const chunk of chunks) {
+    data.set(chunk, at);
+    at += chunk.length;
   }
 
   return data;
@@ -749,17 +810,6 @@ function adminView(entry) {
 }
 
 /**
- * Tidies a name or version: on one line, without control characters, trimmed and not too long.
- *
- * @param {unknown} text The text.
- * @param {number} maxLength The most characters kept.
- * @returns {string} The text, empty when there is none.
- */
-function cleanText(text, maxLength) {
-  return typeof text === "string" ? [...text.replace(BREAKERS, "").trim()].slice(0, maxLength).join("") : "";
-}
-
-/**
  * Checks and tidies the Mod Config options a game sent.
  *
  * @param {unknown} options The options.
@@ -808,7 +858,7 @@ export function cleanOptions(options, limits = MOD_LIMITS) {
  * @param {ModCatalog} catalog The catalog.
  * @param {string} method The HTTP method.
  * @param {URL} url The request's address.
- * @param {() => Promise<string>} readBody Reads the request's body as text.
+ * @param {() => Promise<string | null>} readBody Reads the request's body as text, null when it is too large to read.
  * @param {(limit: number) => Promise<Uint8Array | null>} readBytes Reads the request's body as bytes, null when it is longer than the limit.
  * @param {string | null} [player] The X-MGQ-Player header of the request, which wins over the key in its body or address, which released games send.
  * @returns {Promise<{status: number, body: object, bytes?: Uint8Array}>} The answer, sent as the bytes when there are any.
@@ -817,9 +867,10 @@ export async function handleModRequest(catalog, method, url, readBody, readBytes
   const parts = url.pathname.split("/").filter((part) => part.length > 0);
   const fromQuery = () => player || url.searchParams.get("player");
   const fromBody = (body) => player || body?.player;
+  const json = (handle, maxLength = catalog.limits.maxJsonLength) => withJson(readBody, maxLength, handle);
 
-  if (parts[0] !== "v1" || parts[1] !== "mods") {
-    return notFound();
+  if (parts[0] !== VERSION || parts[1] !== "mods") {
+    return notFound("route");
   }
 
   // The games escape a key's characters past letters and digits, such as "!" or Japanese ones.
@@ -827,7 +878,7 @@ export async function handleModRequest(catalog, method, url, readBody, readBytes
     try {
       parts[2] = decodeURIComponent(parts[2]);
     } catch {
-      return notFound();
+      return noMod();
     }
   }
 
@@ -836,18 +887,15 @@ export async function handleModRequest(catalog, method, url, readBody, readBytes
   }
 
   if (parts.length === 2 && method === "POST") {
-    const body = await readJson(readBody);
-    return body === TOO_LARGE ? tooLarge() : catalog.setLink(fromBody(body), body?.name, body?.link);
+    return json((body) => catalog.setLink(fromBody(body), body?.name, body?.link));
   }
 
   if (parts.length === 3 && parts[2] === "check" && method === "POST") {
-    const body = await readJson(readBody);
-    return body === TOO_LARGE ? tooLarge() : catalog.check(fromBody(body));
+    return json((body) => catalog.check(fromBody(body)));
   }
 
   if (parts.length === 4 && parts[3] === "delete" && method === "POST") {
-    const body = await readJson(readBody);
-    return body === TOO_LARGE ? tooLarge() : catalog.remove(fromBody(body), parts[2]);
+    return json((body) => catalog.remove(fromBody(body), parts[2]));
   }
 
   if (parts.length === 4 && parts[3] === "upload" && method === "POST") {
@@ -856,51 +904,14 @@ export async function handleModRequest(catalog, method, url, readBody, readBytes
   }
 
   if (parts.length === 4 && parts[3] === "options" && method === "POST") {
-    const body = await readJson(readBody, catalog.limits.maxOptionsBytes);
-    return body === TOO_LARGE ? tooLarge(catalog.limits.maxOptionsBytes) : catalog.setOptions(fromBody(body), parts[2], body?.version, body?.options);
+    return json((body) => catalog.setOptions(fromBody(body), parts[2], body?.version, body?.options), catalog.limits.maxOptionsBytes);
   }
 
   if (parts.length === 4 && parts[3] === "file" && method === "GET") {
     return catalog.file(parts[2]);
   }
 
-  return { status: 405, body: { error: "not a mod catalog route" } };
-}
-
-/**
- * The most characters a JSON body of the catalog's routes may have, unless a route says otherwise.
- */
-const MAX_JSON_LENGTH = 8192;
-
-/**
- * What readJson hands back for a body longer than it takes.
- */
-const TOO_LARGE = Symbol("too large");
-
-/**
- * Reads a JSON body, small ones only.
- *
- * @param {() => Promise<string>} readBody Reads the request's body.
- * @param {number} [maxLength] The most characters it may have.
- * @returns {Promise<any>} The parsed body, TOO_LARGE when it is longer than maxLength, or null when it is no JSON.
- */
-async function readJson(readBody, maxLength = MAX_JSON_LENGTH) {
-  try {
-    const text = await readBody();
-    return text.length <= maxLength ? JSON.parse(text) : TOO_LARGE;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * The answer for a body longer than a route takes.
- *
- * @param {number} [maxLength] The most characters the route takes.
- * @returns {{status: number, body: object}} The answer.
- */
-function tooLarge(maxLength = MAX_JSON_LENGTH) {
-  return { status: 413, body: { error: `the request may be at most ${maxLength} characters` } };
+  return notFound("route");
 }
 
 /**
@@ -908,8 +919,8 @@ function tooLarge(maxLength = MAX_JSON_LENGTH) {
  *
  * @returns {{status: number, body: object}} The answer.
  */
-function notFound() {
-  return { status: 404, body: { error: "there is no such mod" } };
+function noMod() {
+  return notFound("mod");
 }
 
 /**
@@ -919,14 +930,4 @@ function notFound() {
  */
 function forbidden() {
   return { status: 403, body: { error: "only the relay's admins may change the mod catalog" } };
-}
-
-/**
- * The answer for a request that is not as it should be.
- *
- * @param {string} reason Why.
- * @returns {{status: number, body: object}} The answer.
- */
-function badRequest(reason) {
-  return { status: 400, body: { error: reason } };
 }
