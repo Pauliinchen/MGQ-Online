@@ -2,7 +2,8 @@
 #  Multiplayer.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-07: Gave the background wrap its script, as every around now names who registers
+#      Paulinchen  2026-10-07: Kept the press that closes a screen of the mod from reaching the game in the same frame, which left a PvP battle when Escape closed the chat box
+#                            - Gave the background wrap its script, as every around now names who registers
 #                            - Named every export of the DLL with its signature once in Link, so a call names the export alone
 #                            - Loaded coop_choices.rbx, the story's choices a member makes for themselves, after the world screen whose form it draws with
 #                            - Wrote the in-game log without a line or size limit into a file per game session, named after the time the game started
@@ -789,7 +790,10 @@ module MGQ_Multiplayer
       return if @input_guarded
 
       input = Input.singleton_class
-      MGQ_MpHooks.before(input, :update, "Multiplayer") { MGQ_Multiplayer::Background.refresh }
+      MGQ_MpHooks.before(input, :update, "Multiplayer") do
+        MGQ_Multiplayer::Background.refresh
+        MGQ_Multiplayer::Capture.next_frame
+      end
       IDLE_INPUT.each do |method, idle|
         MGQ_MpHooks.around(input, method, "background") { |_input, _args, original| MGQ_Multiplayer::Background.passes? ? original.call : idle }
       end
@@ -797,12 +801,13 @@ module MGQ_Multiplayer
       Log.write("guarded the game's Input")
     end
 
-    # Reports whether Input answers as the game's own would: while the game is in front, and no
-    # screen of the mod holds the buttons unless it asks past the capture.
+    # Reports whether Input answers as the game's own would: while the game is in front, no screen
+    # of the mod gave the buttons back in this frame, and none holds them unless it asks past the
+    # capture.
     #
     # @return [Boolean] Whether it does.
     def self.passes?
-      in_front? && (!Capture.on? || Capture.reading?)
+      in_front? && !Capture.released? && (!Capture.on? || Capture.reading?)
     end
 
     # Asks Windows whether the window in front belongs to this game, once per frame.
@@ -843,13 +848,31 @@ module MGQ_Multiplayer
       Log.write("buttons taken by #{owner}, held by #{@owners.join(', ')}")
     end
 
-    # Gives the buttons back for a screen. The game gets them once no other screen holds them.
+    # Gives the buttons back for a screen. The game gets them once no other screen holds them, from
+    # the next frame on.
     #
     # @param owner [Symbol] The screen.
     def self.stop(owner)
       return unless @owners.delete(owner)
 
-      Log.write("buttons given back by #{owner}, #{@owners.empty? ? 'the game has them again' : "still held by #{@owners.join(', ')}"}")
+      @released = true if @owners.empty?
+      Log.write("buttons given back by #{owner}, #{@owners.empty? ? 'the game has them again from the next frame' : "still held by #{@owners.join(', ')}"}")
+    end
+
+    # Reports whether the last screen gave the buttons back in this frame.
+    #
+    # The press that closed the screen, such as the Escape that closed the chat box, still reads
+    # as pressed until the next Input.update, and a battle's wait took it as leaving the battle.
+    #
+    # @return [Boolean] Whether it did.
+    def self.released?
+      @released == true
+    end
+
+    # Starts a frame, in which buttons given back in the frame before reach the game again. Called
+    # before every Input.update.
+    def self.next_frame
+      @released = false
     end
 
     # Reports whether a screen holds the buttons.

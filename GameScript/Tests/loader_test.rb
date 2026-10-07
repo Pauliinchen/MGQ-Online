@@ -2,7 +2,8 @@
 #  loader_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-07: Checked that the DLL's export table names each export once, every export the scripts call and every one the DLL has
+#      Paulinchen  2026-10-07: Checked that the press closing the last screen reaches the game from the next frame only
+#                            - Checked that the DLL's export table names each export once, every export the scripts call and every one the DLL has
 #                            - Checked that the in-game log writes a file per session, named after the game's start, without a line limit, and counts the scripts loaded
 #                            - Checked that clearing the chosen name brings the name on Discord back instead of A friend
 #      Paulinchen  2026-10-06: Checked that a screen closing leaves the buttons with another that holds them, and that the guard passes Input on only while the game is in front
@@ -169,7 +170,9 @@ capture.stop(:emotes)
 check("a screen closing leaves the buttons with another that holds them", [capture.on?, Input.trigger?(:C), Input.dir8], [true, false, 0])
 check("which still reads them past the capture", [capture.trigger?(:C), capture.press?(:C), capture.repeat?(:C), Input.trigger?(:C)], [true, true, true, false])
 capture.stop(:overview)
-check("the last one gives them back to the game", [capture.on?, Input.trigger?(:C)], [false, true])
+check("the last one gives them back, but the press that closed it never reaches the game in the same frame", [capture.on?, Input.trigger?(:C), capture.trigger?(:C)], [false, false, false])
+Input.update
+check("the game has them again from the next frame", Input.trigger?(:C), true)
 $front = false
 Input.update
 check("another window in front takes every button away", [Input.press?(:C), capture.trigger?(:C)], [false, false])
