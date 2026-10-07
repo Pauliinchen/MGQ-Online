@@ -2,7 +2,8 @@
 #  coop_events.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-07: Registered the interpreter, map, message and party hooks through core_hooks.rbx instead of wraps of its own
+#      Paulinchen  2026-10-07: Took a common event's setup, which passes the list alone, instead of failing on it
+#                            - Registered the interpreter, map, message and party hooks through core_hooks.rbx instead of wraps of its own
 #                            - Let a page of the leader's story outside a fiber move on at once instead of failing, as the other waits do
 #                            - Named players, counted a message's bytes and made up the session's tag through coop.rbx and overworld_sync.rbx instead of copies of their helpers
 #                            - Blocked, watched and mirrored the leader's story only for members synced with the leader, whose own story events run otherwise, and told the leader's pages to them alone
@@ -1135,8 +1136,9 @@ end
 # Game hooks of this script alone, through core_hooks.rbx.
 
 begin
-  # After a list of commands is set up, a chest the map's main event opens is noticed.
-  MGQ_MpHooks.after(Game_Interpreter, :setup, "coop_events") { |list, event_id = 0| MGQ_MpCoopEvents.started(self, list, event_id) }
+  # After a list of commands is set up, a chest the map's main event opens is noticed. A common
+  # event passes the list alone, which a block of two parameters would spread over both.
+  MGQ_MpHooks.after(Game_Interpreter, :setup, "coop_events") { |*args| MGQ_MpCoopEvents.started(self, args[0], args[1] || 0) }
 
   # After the commands ran, the party hears of a chest they opened.
   MGQ_MpHooks.after(Game_Interpreter, :run, "coop_events") { MGQ_MpCoopEvents.finished(self) }

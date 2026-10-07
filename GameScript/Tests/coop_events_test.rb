@@ -2,7 +2,8 @@
 #  coop_events_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-07: Took variable 151 as the story's sample, since 150 is each player's own now
+#      Paulinchen  2026-10-07: Checked that a common event set up with its list alone is sorted
+#                            - Took variable 151 as the story's sample, since 150 is each player's own now
 #                            - Stood in for the helpers of coop.rbx the party scripts share now, and gave the game's switches their full count, which the story bounds another game's by
 #                            - Checked the story's choices a member makes: what is asked, each outcome, the outcomes kept from the leader's story, the choices' companions left out, the prompts of synced play, the leader's offer declined, accepted and taken back, and the other route's start
 #                            - Checked when a member follows the leader's story: the rule's edges, a member too far behind, across the Great Decision, on another route, drifting apart and caught up, the leader's followers, and chests shared all the same
@@ -527,6 +528,9 @@ $sent.clear
 $game_map.interpreter.setup([c(101, "", 0, 0, 2)], 1)
 Game_Interpreter.new.setup([c(101, "", 0, 0, 2), c(121, 60, 60, 0)], 1)
 check("but not for a talk, or for other interpreters", $sent.size, 0)
+$game_map.interpreter.setup([c(101, "", 0, 0, 2), c(121, 60, 60, 0)])
+check("a common event, set up with its list alone, gathers the party for its story scene too", $sent.map { |seat, f| [seat, f["pevent"], f["map"]] }, [[-1, "gather", "9"]])
+$sent.clear
 
 $leader = leader
 $members = [leader]
