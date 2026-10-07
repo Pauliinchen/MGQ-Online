@@ -2,7 +2,8 @@
 #  overworld_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-07: Checked that the numpad's 0 closes the chat box
+#      Paulinchen  2026-10-07: Checked scrolling the chat log
+#                            - Checked that the numpad's 0 closes the chat box
 #                            - Checked the stand-in for a sprite this game lacks
 #                            - Checked the player's seat kept from the inbox and the status until the world closes
 #                            - Checked that the status line breaks a long notice into rows, its icon before the first
@@ -609,6 +610,43 @@ $pressed = MGQ_MpChat::NUMPAD_0_KEY
 map_frame
 check("the numpad's 0 closes the chat box as it closes the game's windows, typing nothing", [chat.typing?, MGQ_Multiplayer::Capture.on?, $sounds], [false, false, ["cancel"]])
 
+# Scrolling the chat log while the box is open.
+class Sprite; def update; end; end
+fills = []
+canvas.define_singleton_method(:clear) { parts.clear }
+canvas.define_singleton_method(:fill_rect) { |*args| fills << args }
+canvas.define_singleton_method(:rect) { Rect.new(0, 0, 400, 154) }
+log_sprite.instance_variable_set(:@wrapped, {})
+last_row = lambda do
+  log_sprite.update
+  parts.map { |_, text, _| text }.select { |text| text =~ /\Aline \d+\z/ }.last
+end
+(1..12).each { |n| chat.system("line #{n}") }
+chat.start_typing
+check("the open box shows the newest rows", last_row.call, "line 12")
+$buttons << :UP
+map_frame
+check("up scrolls the log a row", [chat.scroll, last_row.call], [1, "line 11"])
+$pressed = MGQ_MpChat::PAGE_UP_KEY
+map_frame
+check("page up a page", [chat.scroll, last_row.call], [1 + MGQ_MpChat::PAGE_ROWS, "line 6"])
+chat.system("line 13")
+shown_row = last_row.call
+check("a line coming in while scrolled up keeps the rows shown where they are", [shown_row, chat.scroll], ["line 6", 2 + MGQ_MpChat::PAGE_ROWS])
+10.times do
+  $pressed = MGQ_MpChat::PAGE_UP_KEY
+  map_frame
+end
+last_row.call
+oldest = chat.log_entries.size - Sprite_MpChatLog::ROWS
+check("the log scrolls no farther than its oldest row", chat.scroll, oldest)
+$pressed = MGQ_MpChat::PAGE_DOWN_KEY
+map_frame
+$buttons << :DOWN
+map_frame
+check("page down and down scroll back", chat.scroll, oldest - MGQ_MpChat::PAGE_ROWS - 1)
+chat.stop_typing
+check("closing the box shows the newest rows again", [chat.scroll, last_row.call], [0, "line 13"])
 
 # The wheel's middle, which it opens on, and the pick it keeps once the arrows are let go.
 MGQ_MpActions::Wheel.open

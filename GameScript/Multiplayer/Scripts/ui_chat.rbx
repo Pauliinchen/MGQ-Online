@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-07: Closed the chat box with the numpad's 0, as the game's windows close
+#                            - Scrolled the chat log while the box is open with up, down, Page Up and Page Down, keeping the rows in place as lines come in
 #                            - Registered the map's, the battle's and its sprites' hooks through core_hooks.rbx instead of wraps of this script
 #                            - Named senders through MGQ_MpOverworldSync.who and took white and the depths from MGQ_MpUi
 #                            - Logged the chat box opening and closing with why, each line sent, refused or received with a count, cut to 80 characters, the game's own lines and the chat forgotten
@@ -56,6 +57,13 @@ module MGQ_MpChat
   # Windows' code of the numpad's 0, which closes the chat box as it closes the game's windows.
   NUMPAD_0_KEY = 0x60
 
+  # Windows' codes of Page Up and Page Down, which scroll the chat log a page.
+  PAGE_UP_KEY = 0x21
+  PAGE_DOWN_KEY = 0x22
+
+  # Rows Page Up and Page Down scroll the chat log by.
+  PAGE_ROWS = 5
+
   # What starts a line of the party chat, which only the player's party hears.
   PARTY_PREFIX = /\A\/p(\s|\z)/i
 
@@ -93,6 +101,7 @@ module MGQ_MpChat
   @edit = nil
   @sent = 0
   @received = 0
+  @scroll = 0
 
   # Reports whether the keyboard reaches the game, which only happens once its window is hooked.
   #
@@ -150,6 +159,7 @@ module MGQ_MpChat
   def self.start_typing(key = nil)
     @edit = MGQ_MpUi::TextEdit.new("", :max_chars => MAX_LENGTH)
     @echo = key ? { :key => key, :frames => KEY_ECHO_FRAMES } : nil
+    @scroll = 0
     MGQ_Multiplayer::Link.typing(true)
     MGQ_Multiplayer::Capture.start(:chat)
     log("chat box opened #{key ? 'with its key' : 'from the action wheel'} in #{SceneManager.scene.class.name}")
@@ -178,13 +188,14 @@ module MGQ_MpChat
     return unless typing?
 
     @edit = nil
+    @scroll = 0
     MGQ_Multiplayer::Link.typing(false)
     MGQ_Multiplayer::Capture.stop(:chat)
     log("chat box closed#{reason ? ": #{reason}" : ''}")
   end
 
   # Types what came from the keyboard since the last frame, then lets the editor follow the keys
-  # that type nothing. The numpad's 0 closes the box instead.
+  # that type nothing, and scrolls the chat log. The numpad's 0 closes the box instead.
   def self.update_typing
     text, _keys = MGQ_Multiplayer::Link.take_typed
     if MGQ_Multiplayer::Key.pressed?(NUMPAD_0_KEY)
@@ -200,6 +211,40 @@ module MGQ_MpChat
       return unless typing?
     end
     @edit.update_keys
+    update_scroll
+  end
+
+  # Scrolls the chat log while the box is open: up and down a row, Page Up and Page Down a page.
+  def self.update_scroll
+    capture = MGQ_Multiplayer::Capture
+    keys = MGQ_Multiplayer::Key
+    step = (capture.repeat?(:UP) ? 1 : 0) - (capture.repeat?(:DOWN) ? 1 : 0)
+    step += PAGE_ROWS if keys.pressed?(PAGE_UP_KEY)
+    step -= PAGE_ROWS if keys.pressed?(PAGE_DOWN_KEY)
+    scroll_by(step)
+  end
+
+  # Scrolls the chat log, never below its newest row. The log's sprite keeps it above its oldest.
+  #
+  # @param rows [Integer] Rows to scroll up, a negative number to scroll down.
+  def self.scroll_by(rows)
+    @scroll = [@scroll + rows, 0].max
+  end
+
+  # Tells how far the chat log is scrolled up.
+  #
+  # @return [Integer] The rows below the last one shown, 0 while it shows the newest.
+  def self.scroll
+    @scroll
+  end
+
+  # Keeps the chat log scrolled no farther than its rows go, which only its sprite counts, having
+  # broken the lines into rows.
+  #
+  # @param most [Integer] The most rows it may be scrolled.
+  # @return [Integer] How far it is scrolled now.
+  def self.limit_scroll(most)
+    @scroll = [[@scroll, most].min, 0].max
   end
 
   # Types one character at the cursor: Enter sends, Escape closes.
@@ -598,7 +643,19 @@ class Sprite_MpChatLog < Sprite
   TEXT_LEFT = 4
 
   # What the chat box says while it is empty.
-  BOX_HINT = "Enter sends, /p first for the party only, Esc closes."
+  BOX_HINT = "Enter sends, /p party only, Up/Down scroll, Esc closes."
+
+  # Room at the right of the rows for the arrows that show the log scrolls on.
+  ARROW_ROOM = 14
+
+  # Width a line of the log breaks at.
+  TEXT_WIDTH = WIDTH - 8 - ARROW_ROOM
+
+  # Color of the arrows that show the log scrolls on.
+  ARROW_COLOR = Color.new(200, 200, 200)
+
+  # Lines whose rows the log remembers before it forgets them all, since each new line breaks once.
+  WRAP_CACHE = 200
 
   # Creates the log, empty.
   #
@@ -607,29 +664,73 @@ class Sprite_MpChatLog < Sprite
   def initialize(viewport, bottom_room = STATUS_ROOM)
     super(viewport)
     self.bitmap = Bitmap.new(WIDTH, ROW * (ROWS + 1))
+    bitmap.font.size = 18
+    bitmap.font.outline = true
     self.x = 8
     self.y = Graphics.height - bottom_room - bitmap.height
     self.z = MGQ_MpUi::Z[:lines]
     @shown = nil
+    @wrapped = {}
   end
 
-  # Draws the log and the chat box, if they changed.
+  # Draws the log and the chat box, if they changed: the rows the log is scrolled to, with an
+  # arrow at the top while older rows lie above and one at the bottom while newer ones lie below.
   def update
     super
     chat = MGQ_MpChat
-    lines = MGQ_MpOverworldSync.in_world? ? chat.log_entries.last(ROWS) : []
-    drawn = [lines.map { |line| [line.to_s, line.who] }, chat.typed, chat.cursor, chat.typing? && chat.cursor_shown?]
+    entries = MGQ_MpOverworldSync.in_world? ? chat.log_entries : []
+    keep_place(chat, entries)
+    lines = entries.last(ROWS + chat.scroll)
+    rows = lines.map { |line| rows_of(line).each_with_index.map { |row, index| [row, index == 0 ? line : nil] } }.flatten(1)
+    scroll = chat.limit_scroll(lines.size < entries.size ? chat.scroll : [rows.size - ROWS, 0].max)
+    shown = rows[0, rows.size - scroll].last(ROWS)
+    older = lines.size < entries.size || rows.size - scroll > ROWS
+    drawn = [shown.map { |row, line| [row, line && line.who] }, older, scroll, chat.typed, chat.cursor, chat.typing? && chat.cursor_shown?]
     return if drawn == @shown
 
     @shown = drawn
     bitmap.clear
-    bitmap.font.size = 18
-    bitmap.font.outline = true
     bitmap.fill_rect(bitmap.rect, BACK) if chat.typing?
-    rows = lines.map { |line| MGQ_MpUi.wrap(bitmap, line.to_s, WIDTH - 8).each_with_index.map { |row, index| [row, index == 0 ? line : nil] } }
-    rows = rows.flatten(1).last(ROWS)
-    rows.each_with_index { |(row, line), index| draw_row(row, line, (ROWS - rows.size + index) * ROW) }
+    shown.each_with_index { |(row, line), index| draw_row(row, line, (ROWS - shown.size + index) * ROW) }
+    draw_arrow(0, true) if chat.typing? && older
+    draw_arrow((ROWS - 1) * ROW, false) if chat.typing? && scroll > 0
     draw_box(chat.editor) if chat.typing?
+  end
+
+  # Breaks a line of the log into rows, once for each text.
+  #
+  # @param line [MGQ_MpChat::Line] The line.
+  # @return [Array<String>] Its rows.
+  def rows_of(line)
+    @wrapped.clear if @wrapped.size > WRAP_CACHE
+    @wrapped[line.to_s] ||= MGQ_MpUi.wrap(bitmap, line.to_s, TEXT_WIDTH)
+  end
+
+  # Keeps the rows shown where they are while lines come in with the log scrolled up, scrolling up
+  # by the rows of the lines that came.
+  #
+  # @param chat [Module] MGQ_MpChat.
+  # @param entries [Array<MGQ_MpChat::Line>] The log's lines to show, oldest first.
+  def keep_place(chat, entries)
+    newest = entries.last
+    if chat.scroll > 0 && @newest && !newest.equal?(@newest)
+      at = entries.rindex { |line| line.equal?(@newest) }
+      came = at ? entries[at + 1..-1] : []
+      chat.scroll_by(came.inject(0) { |sum, line| sum + rows_of(line).size })
+    end
+    @newest = newest
+  end
+
+  # Draws a small arrow at the right of a row: up for older rows above, down for newer ones below.
+  #
+  # @param y [Integer] The row's top.
+  # @param up [Boolean] Whether it points up.
+  def draw_arrow(y, up)
+    left = WIDTH - ARROW_ROOM + 2
+    5.times do |step|
+      width = up ? step * 2 + 1 : (4 - step) * 2 + 1
+      bitmap.fill_rect(left + 4 - width / 2, y + ROW / 2 - 2 + step, width, 1, ARROW_COLOR)
+    end
   end
 
   # Draws one row of the log; a line's first row with its head in the sender's colors.
