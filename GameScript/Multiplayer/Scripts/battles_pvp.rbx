@@ -2,7 +2,8 @@
 #  battles_pvp.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-07: Registered the map, troop, sprite, save and automatic skill hooks through core_hooks.rbx instead of wraps of its own, and the action and turn hooks once the game runs, where plugins define them anew
+#      Paulinchen  2026-10-07: Drew the friend's Luka with the rebuilt character's face, not this game's database's, which Luka Replacer fills with this game's hero
+#                            - Registered the map, troop, sprite, save and automatic skill hooks through core_hooks.rbx instead of wraps of its own, and the action and turn hooks once the game runs, where plugins define them anew
 #                            - Named characters through battles_sync.rbx, and took the faces' columns from coop_squad.rbx
 #                            - Logged the exchange's stages, the teams swapped, the Backline rule, the result and the game put back
 #      Paulinchen  2026-10-06: Named the log in the game folder's Logs folder in the messages of a failed or broken battle
@@ -754,7 +755,7 @@ module MGQ_MpBattlesPvp
       picture = @pictures[battler.id]
       return picture if picture && !picture.disposed?
 
-      @pictures[battler.id] = library_picture(battler.id) || face(battler.id)
+      @pictures[battler.id] = library_picture(battler.id) || face(battler)
     rescue => e
       MGQ_MpBattlesPvp.log("no picture for actor #{battler.id rescue '?'}: #{e.class}: #{e.message}")
       nil
@@ -804,16 +805,18 @@ module MGQ_MpBattlesPvp
 
     # Cuts a character's face out of its face file and enlarges it.
     #
-    # @param actor_id [Integer] The character.
+    # The face is the rebuilt character's, not the database's: with Luka Replacer the database
+    # holds this game's hero in Luka's place, while the friend's Luka was rebuilt as their own.
+    #
+    # @param battler [Game_Actor] The friend's character.
     # @return [Bitmap, nil] The face, nil without a face file.
-    def self.face(actor_id)
-      actor = $data_actors[actor_id]
-      return nil if actor.face_name.to_s.empty?
+    def self.face(battler)
+      return nil if battler.face_name.to_s.empty?
 
-      sheet = Cache.face(actor.face_name)
+      sheet = Cache.face(battler.face_name)
       width = sheet.width / FACE_COLUMNS
       height = sheet.height / FACE_ROWS
-      source = Rect.new(actor.face_index % FACE_COLUMNS * width, actor.face_index / FACE_COLUMNS * height, width, height)
+      source = Rect.new(battler.face_index % FACE_COLUMNS * width, battler.face_index / FACE_COLUMNS * height, width, height)
       bitmap = Bitmap.new(width * FACE_ZOOM, height * FACE_ZOOM)
       bitmap.stretch_blt(bitmap.rect, sheet, source)
       bitmap
