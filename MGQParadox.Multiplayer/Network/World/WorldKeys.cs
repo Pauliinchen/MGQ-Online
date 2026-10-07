@@ -2,6 +2,7 @@
 //  WorldKeys.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-06: Wrote hexadecimal in lowercase at once
 //      Paulinchen  2026-09-29: Created
 //
 //----------------------------------------------------------------
@@ -62,5 +63,5 @@ internal static class WorldKeys
     /// </summary>
     /// <param name="bytes">The bytes.</param>
     /// <returns>The hexadecimal text.</returns>
-    public static string Hex(ReadOnlySpan<byte> bytes) => Convert.ToHexString(bytes).ToLowerInvariant();
+    public static string Hex(ReadOnlySpan<byte> bytes) => Convert.ToHexStringLower(bytes);
 }

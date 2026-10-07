@@ -2,6 +2,8 @@
 //  Relays.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-06: Pointed every relay at the address in MGQMP_RELAY when it is set, for testing against a relay on this PC
+//                            - Wrote hexadecimal in lowercase at once
 //      Paulinchen  2026-09-29: Named the world room of a world's token
 //                            - Created
 //
@@ -53,11 +55,33 @@ internal static class Relays
     };
 
     /// <summary>
+    /// Environment variable that points every relay at another address, such as a relay on this PC
+    /// for testing, for example "ws://127.0.0.1:8080".
+    /// </summary>
+    public const string OverrideVariable = "MGQMP_RELAY";
+
+    /// <summary>
     /// Looks a relay up.
     /// </summary>
     /// <param name="id">The relay's id.</param>
     /// <returns>Its address, or <see langword="null"/> for a relay this version does not know.</returns>
-    public static Uri? AddressOf(string id) => Addresses.TryGetValue(id, out var address) ? address : null;
+    public static Uri? AddressOf(string id) => AddressOf(id, Environment.GetEnvironmentVariable(OverrideVariable));
+
+    /// <summary>
+    /// Looks a relay up, unless another address stands in for every relay.
+    /// </summary>
+    /// <param name="id">The relay's id.</param>
+    /// <param name="replacement">The address that stands in, <see langword="null"/> or not a WebSocket address for none.</param>
+    /// <returns>Its address, or <see langword="null"/> for a relay this version does not know.</returns>
+    internal static Uri? AddressOf(string id, string? replacement)
+    {
+        if (!Addresses.TryGetValue(id, out var address))
+        {
+            return null;
+        }
+
+        return Uri.TryCreate(replacement, UriKind.Absolute, out var local) && local.Scheme is "ws" or "wss" ? local : address;
+    }
 
     /// <summary>
     /// Names the relay room of a join code.
@@ -84,5 +108,5 @@ internal static class Relays
     /// <param name="info">What the id is for, which keeps ids for different uses apart.</param>
     /// <returns>32 lowercase hexadecimal characters.</returns>
     private static string HexOf(string token, byte[] info) =>
-        Convert.ToHexString(HKDF.DeriveKey(HashAlgorithmName.SHA256, Encoding.UTF8.GetBytes(token), RoomBytes, info: info)).ToLowerInvariant();
+        Convert.ToHexStringLower(HKDF.DeriveKey(HashAlgorithmName.SHA256, Encoding.UTF8.GetBytes(token), RoomBytes, info: info));
 }

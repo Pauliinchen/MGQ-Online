@@ -2,6 +2,7 @@
 //  Player.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-06: Read the key and name at once, and said what the DLL says while they are not set
 //      Paulinchen  2026-09-29: Created
 //
 //----------------------------------------------------------------
@@ -28,6 +29,11 @@ internal static class Player
     private const int MaxNameLength = 32;
 
     /// <summary>
+    /// What the DLL says while the game script has not set the player.
+    /// </summary>
+    public const string NotSet = "The game has not said who plays yet.";
+
+    /// <summary>
     /// The player's key and name, swapped as one.
     /// </summary>
     private static Identity? current;
@@ -41,6 +47,12 @@ internal static class Player
     /// The player's name, <see langword="null"/> until the game script set one.
     /// </summary>
     public static string? Name => Volatile.Read(ref current)?.Name;
+
+    /// <summary>
+    /// Reads the player's key and name at once.
+    /// </summary>
+    /// <returns>The key and name, <see langword="null"/> until the game script set them.</returns>
+    public static (string Key, string Name)? Current() => Volatile.Read(ref current) is { } identity ? (identity.Key, identity.Name) : null;
 
     /// <summary>
     /// Sets the player's key and name.
