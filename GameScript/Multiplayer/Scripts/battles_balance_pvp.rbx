@@ -2,6 +2,7 @@
 #  battles_balance_pvp.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-06: Let a check read the stats without the balance, and dropped active?, which only the tests asked
 #      Paulinchen  2026-10-04: Renamed from mp_balance_pvp.rbx
 #      Paulinchen  2026-10-03: Created
 #
@@ -59,11 +60,16 @@ module MGQ_MpBalancePvp
   # The id of max HP among the game's stats.
   MAX_HP = 0
 
-  # Reports whether the balance applies.
+  # Runs a block with the stats as the game works them out, such as a check of a character against
+  # what its owner's game measured outside a battle.
   #
-  # @return [Boolean] Whether a PvP battle runs with it.
-  def self.active?
-    @active ? true : false
+  # @return [Object] What the block returns.
+  def self.unbalanced
+    was = @active
+    @active = false
+    yield
+  ensure
+    @active = was
   end
 
   # Starts the balance for a PvP battle and fills the HP it adds.

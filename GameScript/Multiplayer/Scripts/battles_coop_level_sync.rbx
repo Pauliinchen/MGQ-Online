@@ -2,6 +2,7 @@
 #  battles_coop_level_sync.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-06: Dropped level, which only the tests read
 #      Paulinchen  2026-10-04: Created
 #
 #----------------------------------------------------------------
@@ -37,13 +38,6 @@ module MGQ_MpCoopLevelSync
   @level = nil
   @synced = {}
   @told = false
-
-  # Returns the level of the running co-op battle.
-  #
-  # @return [Integer, nil] The level, nil while no co-op battle syncs.
-  def self.level
-    @level
-  end
 
   # Works out the level of a co-op battle: the highest of the party leader's characters in it, on
   # its Frontline and Backline.

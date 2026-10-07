@@ -2,6 +2,7 @@
 #  battles_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-06: Checked that a reset forgets the rules without touching the switches of the save loaded next
 #      Paulinchen  2026-10-04: Followed the scripts to their new names, without mp_
 #      Paulinchen  2026-10-03: Checked that a PvP battle with the Backline may swap it in
 #                            - Checked the modes of live battles
@@ -16,6 +17,7 @@ require_relative "support"
 
 module MGQ_Multiplayer; module Log; def self.write(m); puts "  log: #{m}"; end; end; end
 module SceneManager; def self.run; end; end
+class Scene_Title; def start; end; end
 module BattleManager; def self.can_giveup?; true; end; end
 module NWConst; module Sw; FORBID_BATTLE_SHIFT_CHANGE = 27; end; end
 System = Struct.new(:switches)
@@ -67,3 +69,12 @@ check("a duel changes nothing", [duel.same_side?, duel.same_side_as_host?(2), du
 other = Module.new.extend(MGQ_MpBattles::Mode)
 MGQ_MpBattles.mode(:other, other)
 check("a kind's mode is found by its name", MGQ_MpBattles.mode_of(:other), other)
+
+# A reset in the middle of a battle.
+$data_system.switches[86] = "No Seduction"
+MGQ_MpBattles.begin(:coop)
+$game_switches = Game_Switches.new
+Scene_Title.new.start
+check("a reset forgets the rules", [MGQ_MpBattles.running?, BattleManager.can_giveup?], [false, true])
+MGQ_MpBattles.finish
+check("and never puts their switches into the save loaded next", [$game_switches[86], $game_switches[27]], [false, false])

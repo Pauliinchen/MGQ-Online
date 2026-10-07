@@ -2,7 +2,16 @@
 #  battles_coop_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-06: Checked that the guest shows the host's messages through the game's message, with their speaker
+#      Paulinchen  2026-10-07: Checked that a guest who leaves takes their characters' actions along, and that the host's computer chooses none while it waits
+#                            - Checked that a guest's party is named after its own characters
+#      Paulinchen  2026-10-06: Checked that another player's fallen character comes fallen
+#                            - Checked that a skill reaching the Backline too reaches the co-op party, and that the Library counts only the player's own characters
+#                            - Checked that the end drops the game's Retry, and that a reset forgets the co-op battle and its rules
+#                            - Checked that a guest who takes over starts the battle or sets its counters, and that a guest left out ends its battle
+#                            - Checked that invites and requests the player cannot take are turned down at once
+#                            - Checked that a guest's commands go no further than the host's actions, and that an empty list takes them away
+#                            - Checked that the guest takes the turns the host's states have left
+#                            - Checked that the guest shows the host's messages through the game's message, with their speaker
 #      Paulinchen  2026-10-04: Checked that only the players whose command was for a character another player swapped out choose again
 #                            - Checked that a player who leaves mid-phase stays in the party until the next phase
 #                            - Checked that the roster carries the battle's level and that the party goes through the level sync
@@ -107,16 +116,21 @@ check("strangers and wrong battles are not heard", MGQ_MpBattlesSync.seats, [2])
 
 # Commands.
 party[2].make_actions
-check("the computer plays a character without commands", party[2].actions, [:auto])
+check("the host's computer chooses nothing for a guest's character while it waits for the guest", party[2].actions.map(&:item), [nil])
 commands = MGQ_MpBattlesSync::Wire.line([[[], [], [["skill", 12, 0]], [["item", 3, 1]]]])
 MGQ_MpBattlesSync::Commands.apply(commands, 2)
 check("a guest's commands go to their characters", [party[2].actions.map(&:item), party[3].actions.map(&:item)], [[[:skill, 12]], [[:item, 3]]])
-MGQ_MpBattlesSync::Commands.apply(MGQ_MpBattlesSync::Wire.line([[[["skill", 99, 0]], [], [], []]]), 2)
+MGQ_MpBattlesSync::Commands.apply(MGQ_MpBattlesSync::Wire.line([[[["skill", 99, 0]], [], nil, nil]]), 2)
 check("never to the host's own", party[0].actions, [])
+check("a character the guest names no commands for keeps its own", [party[2].actions.map(&:item), party[3].actions.map(&:item)], [[[:skill, 12]], [[:item, 3]]])
 MGQ_MpBattlesSync::Commands.apply(MGQ_MpBattlesSync::Wire.line([[[], [], [["skill", KNOWN_SKILLS, 0]], [["item", FIELD_ITEMS, 0]]]]), 2)
 check("a skill the character lacks and an item no battle allows are left out", [party[2].actions.map(&:item), party[3].actions.map(&:item)], [[[:skill, 12]], [[:item, 3]]])
 MGQ_MpBattlesSync::Commands.apply(MGQ_MpBattlesSync::Wire.line([[[], [], [["skill", 199, 0]], [["skill", -1, 0]]]]), 2)
 check("a skill of no skill type is taken, an id below the database is not", [party[2].actions.map(&:item), party[3].actions.map(&:item)], [[[:skill, 199]], [[:item, 3]]])
+MGQ_MpBattlesSync::Commands.apply(MGQ_MpBattlesSync::Wire.line([[nil, nil, [["skill", 5, 0], ["skill", 6, 0]], nil]]), 2)
+check("a guest's commands go no further than the actions the host gave the character", party[2].actions.map(&:item), [[:skill, 5]])
+MGQ_MpBattlesSync::Commands.apply(MGQ_MpBattlesSync::Wire.line([[nil, nil, [], nil]]), 2)
+check("and an empty list, as after a failed escape, takes its actions away", [party[2].actions, party[3].actions.map(&:item)], [[], [[:item, 3]]])
 check("the host's own characters are commanded here", [party[0].is_a?(Game_MpAlly), party[2].inputable?], [false, false])
 
 # Playback and escape.
@@ -166,8 +180,9 @@ sent_join = $sent.map { |_, text| fields_of(text) }.find { |f| f["battle"] == "j
 check("with the squad two players bring, and its places", MGQ_MpBattlesSync::Wire.parse(sent_join[:payload]), ["1,2,3", [[100, 10], [100, 10], [100, 10]], 8])
 guest_party = $game_party.battle_members
 check("and fights in the host's order, its own characters as they are", guest_party.map(&:name), ["Actor4 (Host)", "Actor5 (Host)", "Actor1", "Actor2"])
+check("its party, as it runs away or is defeated, is named after its own characters", $game_party.name, "Actor1's party")
 check("at the level the host sent", $sync_began, 25)
-check("the guest's commands are only for its own", MGQ_MpBattlesSync::Wire.parse(MGQ_MpBattlesSync::Commands.build)[0].map(&:size), [0, 0, 0, 0])
+check("the guest's commands are only for its own, none named for the others'", MGQ_MpBattlesSync::Wire.parse(MGQ_MpBattlesSync::Commands.build)[0].map { |list| list && list.size }, [nil, nil, 0, 0])
 guest_party[2].actions = [Game_Action.new(guest_party[2]).tap { |a| a.set_skill(5); a.target_index = 0; a.item = RPG::Skill.new; def (a.item).id; 5; end }]
 check("which it sends by the party's places", MGQ_MpBattlesSync::Wire.parse(MGQ_MpBattlesSync::Commands.build)[0][2], [["skill", 5, 0]])
 check("with the order of its own places", MGQ_MpBattlesSync::Wire.parse(MGQ_MpBattlesSync::Commands.build)[1], [0, 1, 2])
@@ -420,7 +435,7 @@ $inject = lambda do |frame|
 end
 check("a guest whose command was for a character the host swapped out chooses again, the host waiting", live.host_guests_commands(scene), true)
 $inject = nil
-check("meanwhile the computer commands the guest's characters", interim, [:auto])
+check("meanwhile the computer chooses nothing for the guest's characters", interim.map(&:item), [nil])
 check("its new commands are taken, and the host's own command after its own swap stays", [$game_party.battle_members[2].actions.map(&:item), own[1].actions.size, $commands_phase, $chat], [[[:skill, 12]], 1, false, []])
 check("the log names the guest", $log.grep(/choosing again: 2\z/).size, 1)
 
@@ -430,11 +445,13 @@ ally = $game_party.battle_members[2]
 ally.actions = [command(ally, RAISE, 1)]
 MGQ_MpBattlesCoop.swap(scene, $game_party.battle_members[1], 0)
 MGQ_MpBattlesSync.guest_left(2)
+check("a player who leaves takes their characters' actions along", ally.actions, [])
 left_party = $game_party.battle_members.map(&:name)
 live.open_phase(scene)
-check("a player who leaves mid-phase stays in the party until the next phase", $game_party.battle_members.map(&:name), left_party)
+check("and stays in the party until the next phase", $game_party.battle_members.map(&:name), left_party)
 $chat = []
-check("a lost command of a player who left gets the computer's, asking nobody", [live.host_guests_commands(scene), ally.actions, $chat], [true, [:auto], []])
+ally.actions = [command(ally, RAISE, 1)]
+check("a lost command of a player who left gives way to nothing, asking nobody", [live.host_guests_commands(scene), ally.actions, $chat], [true, [], []])
 check("the log says nobody chooses again", $log.grep(/commands of seats 2 lost their target to a swap, choosing again: nobody/).size, 1)
 five[0].hp = 0
 five[1].hp = 0
@@ -583,10 +600,11 @@ module CacheActorFeatures; def self.init_actor(actor); ($cleared ||= []) << acto
 class Game_Actor; def actor?; true; end; end
 guest_actor = Game_Actor.new(7)
 $cleared = []
-MGQ_MpBattlesSync::Playback.values(guest_actor, 90, 100, 5, 10, 0, [2], [0] * 8)
+MGQ_MpBattlesSync::Playback.values(guest_actor, 90, 5, 0, [2], [3], [0] * 8, 0)
 check("new states let the game read the character's features anew", [MGQ_MpGame.get(guest_actor, :states), $cleared], [[2], [7]])
-MGQ_MpBattlesSync::Playback.values(guest_actor, 80, 100, 5, 10, 0, [2], [0] * 8)
-check("the same states only change its values", $cleared, [7])
+check("with the turns the host's states have left", MGQ_MpGame.get(guest_actor, :state_turns), { 2 => 3 })
+MGQ_MpBattlesSync::Playback.values(guest_actor, 80, 5, 0, [2], [2], [0] * 8, 0)
+check("the same states only change its values", [$cleared, MGQ_MpGame.get(guest_actor, :state_turns)], [[7], { 2 => 2 }])
 
 # The host logs where a rebuilt character differs from what its owner's game showed, its counter
 # rate among them.
@@ -620,3 +638,130 @@ $game_message_texts = []
 playback.instance_variable_set(:@message_complete, true)
 playback.message(scene, speaker, "face", 1, 0, 2, "Alone")
 check("with nothing waiting it starts at once", [$message_waits, $game_message_texts], [1, ["Alone"]])
+MGQ_MpBattlesSync.finish
+
+# Another player's fallen character comes fallen; one without HP sent comes as rebuilt.
+fallen = MGQ_MpBattlesCoop.new_ally(MGQ_MpActors::Builds::Member.new(12), "Mate", 2, 0, [0, 3])
+whole = MGQ_MpBattlesCoop.new_ally(MGQ_MpActors::Builds::Member.new(13), "Mate", 2, 1, nil)
+check("another player's fallen character is rebuilt fallen", [fallen.hp, fallen.mp, whole.hp], [0, 3, 100])
+
+# Forms a guest's co-op battle with the host at seat 0 and the player's four characters at seat 2,
+# two of them on the Backline.
+def form_guest_battle(scene, bid)
+  $my_seat = 2
+  MGQ_MpBattlesSync.join_world(:guest, bid, [0], "Host")
+  MGQ_MpBattlesSync.battle_started
+  MGQ_MpBattles.begin(:coop)
+  MGQ_MpBattlesCoop.own_build
+  MGQ_MpBattlesCoop.form(scene, [[0, "Host", "4,5", [[80, 8], [90, 9]], 8, [0, 1], 2, 0], [2, "Me", "1,2,3,4", [[100, 10]] * 4, 8, [0, 1, 2, 3], 2, 2]])
+end
+
+# A skill or item that reaches the Backline too.
+class TargetItem
+  def initialize(bench); @bench = bench; end
+  def include_bench?; @bench; end
+end
+$game_party.own = five.dup
+form_guest_battle(scene, "g30")
+check("a skill that reaches the Backline too reaches the co-op party and the player's own Backline",
+      $game_party.item_target_members(TargetItem.new(true)).map(&:name), ["Actor4 (Host)", "Actor5 (Host)", "Actor1", "Actor2", "Actor3", "Actor4"])
+check("any other reaches the co-op party", $game_party.item_target_members(TargetItem.new(false)).map(&:name), ["Actor4 (Host)", "Actor5 (Host)", "Actor1", "Actor2"])
+
+# The Library all saves share counts only the player's own characters.
+$counted = []
+members = $game_party.battle_members
+BattleManager.battle_end(0)
+check("the battle's end counts only the player's own characters' battles", $counted, [[1, :battle], [2, :battle]])
+$counted = []
+enemy = $game_troop.members[0]
+scene.count_up_defeat(members[0], enemy)
+check("a defeat by another player's character counts nothing", $counted, [])
+scene.count_up_defeat(enemy, members[2])
+check("one between the player's own and an enemy counts", $counted, [[enemy.id, :defeat], [1, :down]])
+
+# The end drops the game's Retry, whose snapshot holds synced stats or an older battle.
+BattleManager.instance_variable_set(:@retry_data, "the start of the battle")
+MGQ_MpBattlesCoop.ended
+check("the end of a co-op battle drops the game's Retry", BattleManager.instance_variable_get(:@retry_data), nil)
+$counted = []
+BattleManager.battle_end(0)
+check("outside a co-op battle the battle's end counts as the game does", $counted.size, 4)
+
+# A reset in the middle of a co-op battle.
+form_guest_battle(scene, "g31")
+MGQ_MpBattlesCoop.instance_variable_set(:@asking, { :seat => 2, :bid => "g31" })
+$game_switches = Game_Switches.new
+Scene_Title.new.start
+check("a reset forgets the co-op party, the rules and the request to the leader",
+      [MGQ_MpBattlesCoop.active?, MGQ_MpBattles.running?, $game_party.battle_members.map(&:name), MGQ_MpBattlesCoop.instance_variable_get(:@asking)],
+      [false, false, five.first(4).map(&:name), nil])
+MGQ_MpBattles.finish
+check("and never puts the rules' switches into the save loaded next", $game_switches[86], false)
+MGQ_MpBattlesSync.finish
+
+# A guest whose host leaves takes the battle over: one before the host's party came starts it as
+# its own, one later sets the counters the start sets and picks a defeat scene.
+class Game_Battler; attr_reader :counters_set; def set_counter; @counters_set = true; end; end
+$my_seat = 2
+MGQ_MpBattlesSync.join_world(:guest, "g32", [0], "Host")
+MGQ_MpBattlesSync.battle_started
+MGQ_MpBattles.begin(:coop)
+$battle_started = false
+$turn_ends = 0
+$commands_phase = false
+MGQ_MpBattlesCoop.take_over(scene)
+check("a guest whose host left before the party came starts the battle as its own",
+      [$battle_started, $turn_ends, $commands_phase, MGQ_MpBattlesSync.role, MGQ_MpBattles.running?], [true, 0, true, nil, false])
+form_guest_battle(scene, "g33")
+$battle_started = false
+$game_temp.lose_event_id = 0
+MGQ_MpBattlesCoop.take_over(scene)
+check("one whose host left later goes on with the counters the start sets",
+      [$battle_started, $turn_ends, ($game_party.battle_members + $game_troop.members).all?(&:counters_set)], [false, 1, true])
+check("and a defeat scene of its enemies", $game_troop.members.map(&:lose_event_id).include?($game_temp.lose_event_id), true)
+
+# A guest the host's party leaves out, since it joined after the host stopped waiting.
+$my_seat = 7
+MGQ_MpOverworldSync::Peers.all.clear
+MGQ_MpOverworldSync::Peers.all.push(mate)
+MGQ_MpBattlesSync.join_world(:guest, "late1", [2], "Friend")
+MGQ_MpBattlesSync.battle_started
+late = MGQ_MpBattlesSync::Wire.line([[[31, 0, 0, 0]], [[2, "Friend", "4,5", [[80, 8], [90, 9]], 8, [0, 1], 2, 0]], 0])
+$frames = 0
+$inject = lambda { |frame| MGQ_MpBattlesSync.take(mate, { "battle" => "roster", "bid" => "late1", :payload => late }) if frame == 2 }
+check("a guest the host's party leaves out ends its battle", [MGQ_MpBattlesCoop.join(scene), MGQ_MpBattlesSync.broken?, MGQ_MpBattlesCoop.active?], [:broken, true, false])
+$inject = nil
+MGQ_MpBattlesSync.finish
+MGQ_MpBattlesSync.join_world(:guest, "late2", [2], "Friend")
+MGQ_MpBattlesSync.battle_started
+$frames = 0
+check("so does one whose host's party never comes", [MGQ_MpBattlesCoop.join(scene), $frames], [:broken, MGQ_MpBattlesCoop::ROSTER_FRAMES - 1])
+MGQ_MpBattlesSync.finish
+
+# Invites and requests the player cannot take are turned down at once.
+$my_seat = 0
+pal = MGQ_MpOverworldSync::Peers::Peer.new(3, { "id" => "id-pal", "name" => "Pal", "map" => "5", "scene" => "menu" }, nil, true)
+MGQ_MpOverworldSync::Peers.all.push(pal)
+$leader = mate
+$game_party.own = five.dup
+$sent.clear
+BattleManager.setup(65)
+asked = MGQ_MpBattlesSync.battle_id
+$sent.clear
+MGQ_MpBattlesCoop.take(pal, { "coop" => "invite", "bid" => "p1", "seats" => "0", "map" => "5" })
+check("another member's invite while the player asks the leader is turned down at once",
+      $sent.map { |seat, text| [seat, fields_of(text)["battle"], fields_of(text)["bid"]] }, [[3, "decline", "p1"]])
+MGQ_MpBattlesCoop.take(mate, { "coop" => "no_lead", "bid" => asked })
+MGQ_MpBattlesCoop.await_leader(scene)
+$sent.clear
+MGQ_MpBattlesCoop.take(mate, { "coop" => "invite", "bid" => asked, "seats" => "0", "map" => "5" })
+check("so is the leader's late invite to the battle the player hosts instead",
+      $sent.map { |seat, text| [seat, fields_of(text)["battle"], fields_of(text)["bid"]] }, [[2, "decline", asked]])
+MGQ_MpBattlesCoop.ended
+$leader = :me
+$sent.clear
+MGQ_MpBattlesCoop.take(mate, { "coop" => "lead", "bid" => "r1", "troop" => "64", "map" => "5" })
+MGQ_MpBattlesCoop.take(pal, { "coop" => "lead", "bid" => "r2", "troop" => "64", "map" => "5" })
+check("a second request to lead refuses the one that waits",
+      [$sent.map { |seat, text| [seat, fields_of(text)["coop"], fields_of(text)["bid"]] }, MGQ_MpBattlesCoop.instance_variable_get(:@request)[:message]["bid"]], [[[2, "no_lead", "r1"]], "r2"])
+MGQ_MpBattlesCoop.drop

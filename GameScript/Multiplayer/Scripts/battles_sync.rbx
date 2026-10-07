@@ -2,6 +2,13 @@
 #  battles_sync.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-07: Told the battle's mode on the host when a guest leaves, which stops a co-op guest's characters at once
+#      Paulinchen  2026-10-06: Put the host's settings that leave parts of a battle unshown back once the live battle ends, which a co-op battle kept off
+#                            - Sent a battle's messages to its players alone instead of the whole world
+#                            - Stopped streaming once the computer plays on for the guests who left
+#                            - Let a guest's empty commands take its characters' actions away, so a failed escape costs their turn
+#                            - Took no more of a guest's commands than the host's game gave the character actions
+#                            - Dropped the reader of the battle's kind, which the battle's mode had replaced
 #      Paulinchen  2026-10-04: Renamed from mp_battles_sync.rbx
 #      Paulinchen  2026-10-03: Named the characters outside the battle to the guest too, which a PvP battle with the Backline swaps in
 #                            - Asked the running battle's mode instead of naming co-op battles and team duels
@@ -52,7 +59,7 @@
 # Each game sees its own team as the party, so the two would draw their random numbers in a
 # different order if both computed.
 module MGQ_MpBattlesSync
-  # File inside the Multiplayer folder that a recorded battle writes into.
+  # File inside the game folder's Logs folder that a recorded battle writes into.
   RECORDING_FILE = "Battle Recording.log"
 
   # What happens when the friend leaves or the connection drops: :win ends the battle as won,
@@ -78,8 +85,7 @@ module MGQ_MpBattlesSync
   BEHIND_SENDS = 4
 
   # The host's settings that leave parts of a battle unshown. The host turns them off for a live
-  # battle, since the guest sees only what the host's battle shows; the battle's snapshot puts
-  # them back after it.
+  # battle, since the guest sees only what the host's battle shows; finish puts them back after it.
   SKIP_SETTINGS = [:bt_skip, :bt_skip_cutin, :bt_skip_enemy_cutin, :bt_skip_chain_action_cutin,
                    :skip_battle_start_skill_effect, :skip_skill_effect]
 
@@ -93,12 +99,6 @@ module MGQ_MpBattlesSync
     #
     # @return [String] The friend's name.
     attr_reader :player
-
-    # The kind of live battle.
-    #
-    # @return [Symbol] :pvp, the two teams against each other, or :coop, the party together against
-    #   the troop.
-    attr_reader :mode
 
     # The world seats of the other games of a co-op battle: the guests for the host, the host for a guest.
     #
@@ -126,7 +126,7 @@ module MGQ_MpBattlesSync
 
     @role = state["role"].to_sym
     @player = MGQ_Multiplayer.clean(state["opponent"])
-    @mode = :pvp
+    @kind = :pvp
     @transport = :link
     @seats = []
     @battle_id = nil
@@ -153,7 +153,7 @@ module MGQ_MpBattlesSync
   def self.join_world(role, battle_id, seats, player, mode = :coop, team = false)
     @role = role
     @player = player
-    @mode = mode
+    @kind = mode
     @team = team
     @transport = :world
     @seats = seats.dup
@@ -170,14 +170,14 @@ module MGQ_MpBattlesSync
   #
   # @return [Boolean] Whether it is.
   def self.coop?
-    @role && @mode == :coop ? true : false
+    @role && @kind == :coop ? true : false
   end
 
   # Reports whether the live battle is a team duel, two parties fighting each other.
   #
   # @return [Boolean] Whether it is.
   def self.team?
-    @role && @mode == :pvp && @team ? true : false
+    @role && @kind == :pvp && @team ? true : false
   end
 
   # Reports whether this game's party is the host's party: in a co-op battle, and on the host's
@@ -224,15 +224,17 @@ module MGQ_MpBattlesSync
     @seats - (@left || [])
   end
 
-  # Notes that a guest left a co-op battle. The computer plays their characters for the rest of the
-  # turn; the next command phase takes them out of the party (see MGQ_MpBattlesCoop.settle).
+  # Notes that a guest left a co-op battle, and on the host tells the battle's mode, see
+  # MGQ_MpBattles::Mode#left. In a co-op battle their characters do nothing more; the next command
+  # phase takes them out of the party (see MGQ_MpBattlesCoop.settle).
   #
   # @param seat [Integer] The guest's seat.
   def self.guest_left(seat)
     return if (@left ||= []).include?(seat)
 
     @left << seat
-    log("a guest left the co-op battle, their characters leave at the next command phase")
+    mode.left(seat) if host?
+    log("a guest left the battle, their characters leave at the next command phase")
   end
 
   # Takes a message of a co-op battle or a duel from the world's room. Called by overworld_sync.rbx.
@@ -277,11 +279,12 @@ module MGQ_MpBattlesSync
     recording
   end
 
-  # Ends the live battle and closes the link, and stops a recording. Called by the mode when it puts
-  # the game back, and after a reset.
+  # Ends the live battle and closes the link, stops a recording and puts the host's settings back.
+  # Called by the mode when it puts the game back, and after a reset.
   def self.finish
     Recorder.stop
     @record_next = false
+    restore_settings
     return unless @role
 
     world = world?
@@ -345,9 +348,23 @@ module MGQ_MpBattlesSync
     @solo ? true : false
   end
 
-  # Turns off the host's settings that would keep parts of the battle from the guest.
+  # Turns off the host's settings that would keep parts of the battle from the guest, keeping their
+  # values for restore_settings.
   def self.show_everything
-    SKIP_SETTINGS.each { |key| $game_system.conf[key] = false if $game_system.conf.key?(key) }
+    @kept_settings ||= {}
+    SKIP_SETTINGS.each do |key|
+      next unless $game_system.conf.key?(key)
+
+      @kept_settings[key] = $game_system.conf[key] unless @kept_settings.key?(key)
+      $game_system.conf[key] = false
+    end
+  end
+
+  # Puts back the settings show_everything turned off.
+  def self.restore_settings
+    kept = @kept_settings
+    @kept_settings = nil
+    Array(kept).each { |key, value| $game_system.conf[key] = value } if $game_system
   end
 
   # Lists the names the guest swaps.
@@ -395,6 +412,7 @@ module MGQ_MpBattlesSync
     # alone.
     if host? && (DROPOUT == :computer || coop?)
       @solo = true
+      Recorder.stop
       return true
     end
 
@@ -424,17 +442,20 @@ module MGQ_MpBattlesSync
       @gone = false
     end
 
-    # Sends a message.
+    # Sends a message: over the world's room to each of the battle's other players, see
+    # MGQ_MpBattlesSync.player_seats, else over the link.
     #
     # @param kind [String] What it is.
     # @param body [String] The rest.
-    # @return [Boolean] Whether it went out.
+    # @return [Boolean] Whether it went out to anyone.
     def self.post(kind, body = "")
-      if MGQ_MpBattlesSync.world?
-        MGQ_MpBattlesSync.tell(-1, kind, MGQ_MpBattlesSync.battle_id, body)
-      else
-        MGQ_Multiplayer::Link.post("#{kind}\n#{body}")
+      return MGQ_Multiplayer::Link.post("#{kind}\n#{body}") unless MGQ_MpBattlesSync.world?
+
+      sent = false
+      MGQ_MpBattlesSync.player_seats.each do |seat|
+        sent = true if MGQ_MpBattlesSync.tell(seat, kind, MGQ_MpBattlesSync.battle_id, body)
       end
+      sent
     end
 
     # Takes a message that arrived over the world's room: a guest takes only the host's, the host
@@ -550,15 +571,15 @@ module MGQ_MpBattlesSync
   # in a co-op battle every game has the same party in the same order. Either way a target's index
   # means the same battler on both sides.
   module Commands
-    # Writes the guest's commands: for every party member, its actions, none for the other
-    # players' characters in a co-op battle, where the order of the guest's places follows, which a
-    # swap with their Backline changed.
+    # Writes the guest's commands: for every party member, its actions, an empty list when it has
+    # none, such as after a failed escape, and nil for the other players' characters in a co-op
+    # battle; then the order of the guest's places, which a swap with their Backline changed.
     #
     # @return [String] The commands.
     def self.build
       commands = $game_party.battle_members.map do |actor|
         # Others' characters send nothing, but those this player took over from a player who left.
-        next [] if actor.is_a?(Game_MpActor) && !actor.inputable?
+        next nil if actor.is_a?(Game_MpActor) && !actor.inputable?
 
         actor.actions.select(&:item).map do |action|
           [action.item.is_a?(RPG::Item) ? "item" : "skill", action.item.id, action.target_index]
@@ -568,9 +589,9 @@ module MGQ_MpBattlesSync
       order ? Wire.line([commands, order]) : Wire.line([commands])
     end
 
-    # Gives a guest's characters on the host the guest's commands. A character without any keeps
-    # what the computer chose. In a co-op battle the guest's swaps come first, so the commands
-    # find the characters the guest sees.
+    # Gives a guest's characters on the host the guest's commands, see command. A character the
+    # guest named none for keeps what the computer chose. In a co-op battle the guest's swaps come
+    # first, so the commands find the characters the guest sees.
     #
     # @param body [String] The commands.
     # @param seat [Integer, nil] The guest's world seat in a co-op battle, whose characters take them.
@@ -589,11 +610,33 @@ module MGQ_MpBattlesSync
         next if MGQ_MpBattlesSync.several? && !commanded_by?(battler, seat)
 
         list = commands[index]
-        next unless list.is_a?(Array)
-
-        actions = list.map { |command| action(battler, command) }.compact
-        MGQ_MpGame.set(battler, :actions, actions) unless actions.empty?
+        command(battler, list) if list.is_a?(Array)
       end
+    end
+
+    # Gives a character its owner's commands: an empty list takes its actions away, as its owner's
+    # game did; of a list, as many as the host's game gave it actions, the computer's staying when
+    # the character may give none of them.
+    #
+    # The host rolls a character's extra actions, so the owner's game never decides how often it acts.
+    #
+    # @param battler [Game_Battler] The character.
+    # @param list [Array<Array>] Its commands, see action.
+    def self.command(battler, list)
+      return MGQ_MpGame.set(battler, :actions, []) if list.empty?
+
+      actions = list.first(action_count(battler)).map { |command| action(battler, command) }.compact
+      MGQ_MpGame.set(battler, :actions, actions) unless actions.empty?
+    end
+
+    # Counts the actions the host's game gives a character this turn, making them first for one that
+    # has none yet, such as one a swap just brought into the battle.
+    #
+    # @param battler [Game_Battler] The character.
+    # @return [Integer] How many actions it takes.
+    def self.action_count(battler)
+      battler.make_actions if Array(MGQ_MpGame.get(battler, :actions)).empty?
+      Array(MGQ_MpGame.get(battler, :actions)).size
     end
 
     # Reports whether a guest commands a character: their own, or in a team duel one of a player
@@ -632,7 +675,8 @@ module MGQ_MpBattlesSync
     # Reports whether a character may be commanded to use a skill or an item: a skill it has, or
     # one of no skill type, as attacking, guarding and struggling are, and an item a battle allows.
     #
-    # The owner's bag is not known here, so their own game alone counts their items.
+    # The owner's bag is not known here, so their own game uses an item up as the host's stream
+    # tells it, see Playback.use_up.
     #
     # @param battler [Game_Battler] The character.
     # @param item [RPG::UsableItem] The skill or item.

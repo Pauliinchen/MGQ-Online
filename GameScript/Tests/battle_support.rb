@@ -2,6 +2,8 @@
 #  battle_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-07: Let the characters clear their actions, and named the party after its first character
+#      Paulinchen  2026-10-06: Gave the party the targets of a skill that reaches the Backline too, and added the Library's counts of the battle's end and of a defeat
 #      Paulinchen  2026-10-04: Kept the chat's system lines, counted the troop's new actions and cleared the actor choosing
 #                            - Stood in for battles_coop_level_sync.rbx, keeping what the co-op battle asks of it
 #                            - Stood in for coop_gather.rbx, which tells whether the player is about to be brought over
@@ -106,6 +108,7 @@ class Game_Actor < Game_Battler
   def inputable?; true; end
   def luca?; false; end
   def make_actions; @actions = [Game_Action.new(self)]; end
+  def clear_actions; @actions = []; end
   def attack_skill_id; 1; end
   def guard_skill_id; 2; end
   def skills; $data_skills[3...KNOWN_SKILLS]; end
@@ -138,7 +141,15 @@ class Game_Party
   def battle_members; @own.first(4); end
   def bench_members; @own[4..-1] || []; end
   def swap_order(a, b); @own[a], @own[b] = @own[b], @own[a]; end
+  def item_target_members(item); item.include_bench? ? all_members : battle_members; end
+  def name; "#{battle_members.first.name}'s party"; end
 end
+module Vocab; PartyName = "%s's party"; end
+# The Library all saves share, which counts each character's deeds by its id.
+class Game_Library
+  def count_up_actor_data(id, symbol); ($counted ||= []) << [id, symbol]; end
+end
+$game_library = Game_Library.new
 class Game_Troop
   def members; @enemies; end
   def members=(enemies); @enemies = enemies; end
@@ -185,6 +196,8 @@ module BattleManager
   def self.clear_actor; $actor_cleared = true; end
   def self.shift_change?; $shift; end
   def self.bind?; false; end
+  def self.battle_start; $battle_started = true; end
+  def self.battle_end(_result); $game_party.battle_members.each { |actor| $game_library.count_up_actor_data(actor.id, :battle) }; end
 end
 $setup = []
 # Every character has the skills below KNOWN_SKILLS; of those from there on, only the last has no
@@ -208,6 +221,10 @@ class Scene_Battle
   def no_change_all_dead_on_bench?; :original; end
   def bench_member_ok; :original; end
   def bench_member_cancel; $bench_cancelled = true; end
+  def count_up_defeat(subject, target, _item = nil)
+    $game_library.count_up_actor_data(subject.id, :defeat)
+    $game_library.count_up_actor_data(target.id, :down)
+  end
 end
 class Window_BattleStatus
   attr_accessor :index

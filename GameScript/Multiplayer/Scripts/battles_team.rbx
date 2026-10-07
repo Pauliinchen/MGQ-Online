@@ -42,14 +42,14 @@ module MGQ_MpBattlesTeam
 
   # The players of this game's side, see MGQ_MpBattlesCoop.arrange.
   #
-  # @return [Array<Array>] The players.
+  # @return [Array<MGQ_MpBattlesCoop::Player>] The players.
   def self.own
     @own
   end
 
   # The players of the other side, see MGQ_MpBattlesCoop.arrange.
   #
-  # @return [Array<Array>] The players.
+  # @return [Array<MGQ_MpBattlesCoop::Player>] The players.
   def self.other
     @other
   end

@@ -2,6 +2,19 @@
 #  battles_coop.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-07: Stopped a guest's characters at once when the guest leaves, instead of letting the computer play them for the rest of the turn
+#                            - Let the host's computer choose nothing for a guest's characters while it waits for the guest's commands
+#                            - Named the party after the player's own characters while a co-op battle runs, as when it runs away or is defeated
+#      Paulinchen  2026-10-06: Forgot the co-op battle, its invites and its requests when a reset interrupts them
+#                            - Rebuilt another player's fallen character fallen, which fought at full HP and came back to life on its owner's game
+#                            - Ended a guest's battle that the host's party left out or never came for, instead of playing it back or waiting on
+#                            - Aimed the skills that reach the Backline too at the co-op party and the player's own Backline
+#                            - Kept the other players' characters out of the Library's battle, defeat and steal counts all saves share
+#                            - Dropped the game's Retry of a co-op battle, whose snapshot held synced stats or an older battle
+#                            - Started the battle of a guest that takes over before the host's party came, and set the counters of one that takes over later
+#                            - Brought no share of the Backline to a team duel
+#                            - Turned down at once the invites and requests to lead the player cannot take, instead of leaving them unanswered
+#                            - Compared a rebuilt character of a team duel with what its owner's game showed without the PvP balance
 #      Paulinchen  2026-10-04: Sent the players back to choose whose command was for a character another player swapped out
 #                            - Synced the characters above the battle's level, which the host sends with the roster
 #                            - Logged where a guest's rebuilt character differs from what the guest's game showed
@@ -56,6 +69,10 @@
 module MGQ_MpBattlesCoop
   # Frames the host waits for the invited members to join, six seconds.
   JOIN_FRAMES = 360
+
+  # Frames a guest waits for the host's party, ten seconds: longer than the host waits for the
+  # players to join after it sent the invite.
+  ROSTER_FRAMES = JOIN_FRAMES + 240
 
   # Frames an invite waits for the player to be free before it is turned down, three seconds.
   ACCEPT_FRAMES = 180
@@ -132,11 +149,51 @@ module MGQ_MpBattlesCoop
   # What starts this script's lines in Multiplayer InGame.log.
   LOG_TAG = "co-op battle"
 
-  # The party of the co-op battle running: every player's characters in the order every game shares.
+  # The party of the co-op battle running: every player's characters in the order every game shares,
+  # only the player's own while the game counts them (see own_only).
   #
   # @return [Array<Game_Actor>, nil] The party, nil outside a co-op battle.
   def self.members
-    @members
+    @own_only && @members ? @members.reject { |actor| actor.is_a?(Game_MpActor) } : @members
+  end
+
+  # Runs a block in which the co-op party holds only the player's own characters, such as the end
+  # of a battle, which counts each character's battles in the Library all saves share by its id.
+  #
+  # @return [Object] What the block returns.
+  def self.own_only
+    was = @own_only
+    @own_only = true
+    yield
+  ensure
+    @own_only = was
+  end
+
+  # Runs a block in which the Library counts no character's deeds, such as an action between
+  # another player's character and someone else, whose count belongs to its owner's game.
+  #
+  # @return [Object] What the block returns.
+  def self.uncounted
+    was = @uncounted
+    @uncounted = true
+    yield
+  ensure
+    @uncounted = was
+  end
+
+  # Reports whether the Library counts no character's deeds now, see uncounted.
+  #
+  # @return [Boolean] Whether it does not.
+  def self.uncounted?
+    @uncounted ? true : false
+  end
+
+  # Reports whether the Library counts what some characters did: none of them is another player's.
+  #
+  # @param battlers [Array<Game_Battler, nil>] The characters.
+  # @return [Boolean] Whether it does.
+  def self.counted?(*battlers)
+    battlers.none? { |battler| battler.is_a?(Game_MpActor) }
   end
 
   # Reports whether a co-op battle's party stands in for the player's.
@@ -463,7 +520,7 @@ module MGQ_MpBattlesCoop
   def self.take(peer, message)
     case message["coop"]
     when "invite" then take_invite(peer, message)
-    when "lead" then @request = { :peer => peer, :message => message, :at => Time.now }
+    when "lead" then take_request(peer, message)
     when "no_lead" then answer_of(peer, message, :refused)
     when "soon" then take_soon(peer)
     when "freeze" then take_freeze(peer, message)
@@ -479,11 +536,26 @@ module MGQ_MpBattlesCoop
   # @param message [Hash] The invite.
   def self.take_invite(peer, message)
     return unless message["seats"].to_s.split(",").map(&:to_i).include?(MGQ_MpOverworldSync::Me.seat)
-    return answer_of(peer, message, :leads) if @asking
-    return if message["bid"] == @dropped_bid
-    return MGQ_MpBattlesSync.tell(peer.seat, "decline", message["bid"].to_s) if MGQ_MpBattlesSync.role || SceneManager.scene.is_a?(Scene_Battle)
+    return answer_of(peer, message, :leads) if asked?(peer, message)
+
+    # Turned down at once, so the host need not wait for the player: while the player waits for the
+    # leader, or is in a battle, and the leader's late invite to a battle the player hosts instead.
+    if @asking || message["bid"] == @dropped_bid || MGQ_MpBattlesSync.role || SceneManager.scene.is_a?(Scene_Battle)
+      return MGQ_MpBattlesSync.tell(peer.seat, "decline", message["bid"].to_s)
+    end
 
     @invite = { :peer => peer, :message => message, :at => Time.now }
+  end
+
+  # Keeps a member's request that the player lead their battle, refusing an earlier one that waits
+  # still, whose member would otherwise wait for an answer in vain.
+  #
+  # @param peer [MGQ_MpOverworldSync::Peers::Peer] The member.
+  # @param message [Hash] The request.
+  def self.take_request(peer, message)
+    waiting = @request
+    refuse_lead(waiting[:peer], waiting[:message]) if waiting && !(waiting[:peer].equal?(peer) && waiting[:message]["bid"] == message["bid"])
+    @request = { :peer => peer, :message => message, :at => Time.now }
   end
 
   # Reports whether an invite or a request to lead waited longer than ACCEPT_FRAMES. It counts by the
@@ -501,8 +573,18 @@ module MGQ_MpBattlesCoop
   # @param message [Hash] The answer.
   # @param answer [Symbol] :leads or :refused.
   def self.answer_of(peer, message, answer)
+    @asking[:answer] = answer if asked?(peer, message)
+  end
+
+  # Reports whether a message answers the player's request to lead their battle: from the leader
+  # asked, about that battle.
+  #
+  # @param peer [MGQ_MpOverworldSync::Peers::Peer] Who sent it.
+  # @param message [Hash] The message.
+  # @return [Boolean] Whether it does.
+  def self.asked?(peer, message)
     asking = @asking
-    asking[:answer] = answer if asking && peer.seat == asking[:seat] && message["bid"] == asking[:bid]
+    !asking.nil? && peer.seat == asking[:seat] && message["bid"] == asking[:bid]
   end
 
   # Leads a member's battle once the player is free on the map, refuses it otherwise, then joins an
@@ -616,14 +698,32 @@ module MGQ_MpBattlesCoop
   def self.join(scene)
     # The host's party says how many of them fight and how many wait on the Backline.
     MGQ_MpBattlesSync::Channel.post("join", MGQ_MpBattlesSync::Wire.line(own_build))
-    roster = MGQ_MpBattlesSync::Waiting.wait_for(scene, "Joining #{MGQ_MpBattlesSync.player}'s battle...") { MGQ_MpBattlesSync::Channel.take("roster") }
+    frames = 0
+    roster = MGQ_MpBattlesSync::Waiting.wait_for(scene, "Joining #{MGQ_MpBattlesSync.player}'s battle...") do
+      frames += 1
+      MGQ_MpBattlesSync::Channel.take("roster") || (frames >= ROSTER_FRAMES ? :late : nil)
+    end
+    return left_out("the host's party never came") if roster == :late
     return roster if roster.is_a?(Symbol)
 
     enemies, players, level = MGQ_MpBattlesSync::Wire.parse(roster.to_s)
+    players = Array(players).map { |fields| Player.read(fields) }
+    return left_out("the host's party came without the player") unless players.any? { |player| player.seat == MGQ_MpOverworldSync::Me.seat }
+
     take_troop(scene, Array(enemies))
     MGQ_MpCoopLevelSync.begin(level)
-    form(scene, Array(players))
+    form(scene, players)
     nil
+  end
+
+  # Ends a guest's battle the host's party left out, since the guest joined after the host stopped
+  # waiting.
+  #
+  # @param reason [String] Why, for Multiplayer InGame.log.
+  # @return [Symbol] :broken, which ends the battle.
+  def self.left_out(reason)
+    MGQ_MpBattlesSync.break_off(reason, false)
+    :broken
   end
 
   # Describes the troop's enemies as the guests rebuild them.
@@ -695,9 +795,11 @@ module MGQ_MpBattlesCoop
   #
   # @param players [Array<Player, Array>] The players, or their fields: at least each one's seat,
   #   name, builds, HP and MP and party_member_max.
+  # @param backline [Boolean] Whether the players bring a share of the Backline, which a team duel's
+  #   do not.
   # @return [Array<Player>] The players in the party's order, each with the order of their places
   #   and their shares of the Frontline and of the Backline.
-  def self.arrange(players)
+  def self.arrange(players, backline = true)
     players = players.map { |fields| Player.read(fields) }
     ranked = MGQ_MpCoopSquad.ranked(players.map { |player| [player_id(player.seat), leads?(player.seat)] })
     players = players.sort_by { |player| ranked.index(player_id(player.seat)) }
@@ -705,7 +807,8 @@ module MGQ_MpBattlesCoop
       count = MGQ_MpActors::Builds.parse(player.builds.to_s, MOST_CHARACTERS).size
       front, bench = MGQ_MpCoopSquad.share(position, players.size, player.max.to_i)
       front = [front, count].min
-      Player.new(player.seat, player.name, player.builds, player.vitals, player.max, valid_order(player.order, count), front, [bench, count - front].min)
+      bench = backline ? [bench, count - front].min : 0
+      Player.new(player.seat, player.name, player.builds, player.vitals, player.max, valid_order(player.order, count), front, bench)
     end
   end
 
@@ -747,7 +850,7 @@ module MGQ_MpBattlesCoop
 
   # Finds the player's own entry among the battle's players.
   #
-  # @return [Array, nil] The entry, see arrange, nil outside a co-op battle.
+  # @return [Player, nil] The entry, see arrange, nil outside a co-op battle.
   def self.own_player
     Array(@players).find { |player| player.seat == MGQ_MpOverworldSync::Me.seat }
   end
@@ -807,7 +910,8 @@ module MGQ_MpBattlesCoop
     end
   end
 
-  # Rebuilds another player's character for the battle, with the HP and MP it has in their game.
+  # Rebuilds another player's character for the battle, with the HP and MP it has in their game, a
+  # fallen one fallen.
   #
   # The game starts a battle only for the characters of its own party, which leaves the counters of
   # a rebuilt one unset.
@@ -816,24 +920,25 @@ module MGQ_MpBattlesCoop
   # @param name [String] Its owner's name.
   # @param seat [Integer] Its owner's world seat.
   # @param place [Integer] Its place among its owner's characters.
-  # @param vitals [Array, nil] Its HP and MP.
+  # @param vitals [Array, nil] Its HP and MP, none for a character at full HP and MP.
   # @return [Game_MpAlly] The character.
   def self.new_ally(member, name, seat, place, vitals)
     ally = Game_MpAlly.new(member, name, seat, place)
     ally.on_battle_start
     hp, mp = Array(vitals)
-    ally.hp = hp if hp.is_a?(Integer) && hp > 0
+    ally.hp = hp if hp.is_a?(Integer) && hp >= 0
     ally.mp = mp if mp.is_a?(Integer)
     check(ally)
     ally
   end
 
   # Logs where a rebuilt character's stats or rates, its counter rate among them, differ from what
-  # its owner's game showed, which tells a counter the host's battle never makes.
+  # its owner's game showed, which tells a counter the host's battle never makes. Its owner's game
+  # measured without the PvP balance of a team duel.
   #
   # @param ally [Game_MpAlly] The rebuilt character.
   def self.check(ally)
-    differences = ally.differences
+    differences = defined?(MGQ_MpBalancePvp) ? MGQ_MpBalancePvp.unbalanced { ally.differences } : ally.differences
     log("#{ally.name} differs: #{differences.join(', ')}") unless differences.empty?
   rescue => e
     log_once(:check, "could not check a rebuild: #{e.class}: #{e.message}")
@@ -894,15 +999,46 @@ module MGQ_MpBattlesCoop
   # As guest, fights on alone once the host got away or is gone: the player's own full team takes
   # the battle over from where the host's stream left it, as a battle of their own.
   #
+  # The guest's battle never started as the game starts one, since the host's stream stood in for
+  # it: one the host left before its party came starts now, one it left later gets the counters
+  # the start sets.
+  #
   # @param scene [Scene_Battle] The battle.
   def self.take_over(scene)
     log("the host left battle #{MGQ_MpBattlesSync.battle_id}, it goes on alone")
+    formed = active?
     stand_alone(scene)
-    BattleManager.turn_end
+    if formed
+      resume_alone
+      BattleManager.turn_end
+    else
+      BattleManager.battle_start
+      scene.process_event if scene.respond_to?(:process_event)
+    end
     scene.start_party_command_selection
   rescue => e
     log("taking the battle over failed: #{e.class}: #{e.message}")
     BattleManager.process_abort
+  end
+
+  # Readies the battle a guest takes over from the host's stream: the counters the game sets for
+  # every battler at a battle's start, keeping the barriers the stream gave, and a defeat scene,
+  # which the game picks at the start and with each enemy's action.
+  def self.resume_alone
+    ($game_party.battle_members + $game_troop.members).each do |battler|
+      next unless battler.respond_to?(:set_counter)
+
+      walls = battler.respond_to?(:defence_wall) ? battler.defence_wall : nil
+      battler.set_counter
+      MGQ_MpBattlesSync::Playback.set_walls(battler, walls) if walls
+    end
+    return unless $game_temp.respond_to?(:lose_event_id) && $game_temp.lose_event_id.to_i <= 0
+
+    enemy = $game_troop.members.sample
+    return unless enemy && enemy.respond_to?(:lose_event_id)
+
+    $game_temp.lose_event_id = enemy.lose_event_id
+    $game_temp.lose_event_enemy_id = enemy.id
   end
 
   # Ends the co-op side of the battle, which goes on as the player's own: their own full team, the
@@ -930,12 +1066,31 @@ module MGQ_MpBattlesCoop
   end
 
   # Forgets the co-op party, its players and their characters, gives synced characters their own
-  # stats back, and shows the player's own party on the map again.
+  # stats back, and shows the player's own party on the map again. The game's Retry is gone too:
+  # its snapshot of the battle's start holds synced stats, or on a guest an older battle's.
   #
   # The game draws the map's leader and followers from the battle members whenever it refreshes the
   # player, which during the battle were the co-op party's.
   def self.forget
     MGQ_MpCoopLevelSync.finish
+    MGQ_MpGame.set(BattleManager, :retry_data, nil)
+    clear
+    $game_player.refresh if $game_player
+  end
+
+  # Forgets a co-op battle a reset interrupted, and every invite, request and hold, without touching
+  # any character, whose save the reset dropped.
+  def self.drop
+    drop_hold
+    clear
+    @asking = nil
+    @invite = nil
+    @request = nil
+    @frozen = nil
+  end
+
+  # Forgets the co-op party, its players and their characters.
+  def self.clear
     @seen = nil
     @members = nil
     @players = nil
@@ -943,7 +1098,6 @@ module MGQ_MpBattlesCoop
     @allies = {}
     @reordered = false
     @requester = nil
-    $game_player.refresh if $game_player
   end
 
   # Swaps one of the player's characters on the Frontline with one of theirs on the Backline, in
@@ -1046,13 +1200,19 @@ module MGQ_MpBattlesCoop
     own?(actor) ? MGQ_MpOverworldSync::Me.seat : actor.mp_seat
   end
 
-  # As host, gives the other players' characters whose commands lost their target the computer's
-  # commands, which those still in the battle replace once they chose again, and shows the guests
-  # the party a swap changed.
+  # As host, makes the other players' characters whose commands lost their target new actions,
+  # which those still in the battle fill once they chose again, takes those of the players who left
+  # away, and shows the guests the party a swap changed.
   #
   # @param seats [Array<Integer>] The world seats of the players whose commands lost their target.
   def self.choose_again(seats)
-    @members.each { |actor| actor.make_actions if !own?(actor) && seats.include?(actor.mp_seat) } if active?
+    if active?
+      @members.each do |actor|
+        next if own?(actor) || !seats.include?(actor.mp_seat)
+
+        MGQ_MpBattlesSync.guests_in.include?(actor.mp_seat) ? actor.make_actions : actor.clear_actions
+      end
+    end
     share_order
   rescue => e
     log("giving the computer's commands failed: #{e.class}: #{e.message}")
@@ -1073,6 +1233,37 @@ module MGQ_MpBattlesCoop
     !actor.nil? && !actor.is_a?(Game_MpActor)
   end
 
+  # As host, takes away the actions of the characters of a guest who left, so they do nothing more
+  # before the next command phase takes them out of the party.
+  #
+  # @param seat [Integer] The guest's world seat.
+  def self.idle(seat)
+    Array(@members).each { |actor| actor.clear_actions if !own?(actor) && actor.mp_seat == seat }
+  rescue => e
+    log("stopping a guest's characters failed: #{e.class}: #{e.message}")
+  end
+
+  # Reports whether the host waits for a character's commands from its owner, still in the battle,
+  # in which case the computer chooses none for it.
+  #
+  # @param ally [Game_MpAlly] The character.
+  # @return [Boolean] Whether it does.
+  def self.awaits_commands?(ally)
+    MGQ_MpBattlesSync.coop? && MGQ_MpBattlesSync.host? && MGQ_MpBattlesSync.guests_in.include?(ally.mp_seat)
+  end
+
+  # Names the player's side of the co-op party the way the game names a party, after the player's
+  # own first character, since the party's first character may be another player's.
+  #
+  # @return [String] The name.
+  def self.party_name
+    own = Array(@members).select { |actor| own?(actor) }
+    own = Array(@own_squad).first(1) if own.empty?
+    return "" if own.empty?
+
+    own.size == 1 ? own[0].name : format(Vocab::PartyName, own[0].name)
+  end
+
   # Reports whether a swap would leave the party with nobody standing, as the game forbids.
   #
   # @param actor [Game_Actor, nil] The character on the Frontline.
@@ -1091,7 +1282,50 @@ module MGQ_MpBattlesCoop
 
     @installed = true
     install_party
+    install_targets
     install_shift_change
+    install_counts
+  end
+
+  # Aims the skills and items that reach the Backline too at the co-op party and the player's own
+  # Backline, where the game takes the player's whole party, without the other players' characters.
+  def self.install_targets
+    return unless Game_Party.method_defined?(:item_target_members)
+
+    MGQ_MpHooks.around(Game_Party, :item_target_members) do |party, args, original|
+      item = args[0]
+      bench = MGQ_MpBattlesCoop.active? && item.respond_to?(:include_bench?) && item.include_bench?
+      bench ? party.battle_members + party.bench_members : original.call
+    end
+  rescue => e
+    log("target hook FAILED: #{e.class}: #{e.message}")
+  end
+
+  # Keeps the other players' characters out of the Library all saves share, which counts each
+  # character's battles, defeats and steals by its id: those belong to their owners' games.
+  def self.install_counts
+    if BattleManager.respond_to?(:battle_end)
+      MGQ_MpHooks.around(BattleManager.singleton_class, :battle_end) do |_manager, _args, original|
+        MGQ_MpBattlesCoop.active? ? MGQ_MpBattlesCoop.own_only { original.call } : original.call
+      end
+    end
+    if Scene_Battle.method_defined?(:count_up_defeat)
+      MGQ_MpHooks.around(Scene_Battle, :count_up_defeat) do |_scene, args, original|
+        MGQ_MpBattlesCoop.counted?(args[0], args[1]) ? original.call : MGQ_MpBattlesCoop.uncounted { original.call }
+      end
+    end
+    [:item_effect_steal, :item_effect_force_steal].select { |name| Game_Enemy.method_defined?(name) }.each do |name|
+      MGQ_MpHooks.around(Game_Enemy, name) do |_enemy, args, original|
+        MGQ_MpBattlesCoop.counted?(args[0]) ? original.call : MGQ_MpBattlesCoop.uncounted { original.call }
+      end
+    end
+    return unless defined?(Game_Library) && Game_Library.method_defined?(:count_up_actor_data)
+
+    MGQ_MpHooks.around(Game_Library, :count_up_actor_data) do |_library, _args, original|
+      original.call unless MGQ_MpBattlesCoop.uncounted?
+    end
+  rescue => e
+    log("count hooks FAILED: #{e.class}: #{e.message}")
   end
 
   # Puts the co-op party in the place of the player's in battle.
@@ -1113,6 +1347,16 @@ module MGQ_MpBattlesCoop
       # @return [Array<Game_Actor>] The members.
       def bench_members
         MGQ_MpBattlesCoop.active? ? MGQ_MpBattlesCoop.own_bench : mgq_mp_battles_coop_bench_members
+      end
+
+      alias_method :mgq_mp_battles_coop_name, :name
+
+      # Names the party, as the battle says it runs away or was defeated: the player's own side
+      # while a co-op battle runs.
+      #
+      # @return [String] The name.
+      def name
+        MGQ_MpBattlesCoop.active? ? MGQ_MpBattlesCoop.party_name : mgq_mp_battles_coop_name
       end
     end
   rescue => e
@@ -1250,10 +1494,16 @@ module MGQ_MpBattlesCoop::Mode
     MGQ_MpBattlesCoop.take_over(scene)
     true
   end
+
+  # (see MGQ_MpBattles::Mode#left)
+  def self.left(seat)
+    MGQ_MpBattlesCoop.idle(seat)
+  end
 end
 
 # Another player's character in a co-op battle's party. Its owner commands it from their own game;
-# the computer plays it when no command came, as after its owner left.
+# while the owner is in a co-op battle it does nothing without their commands, and once they left
+# it does nothing more. In a team duel the computer plays it when no command came.
 class Game_MpAlly < Game_MpActor
   # Rebuilds another player's character.
   #
@@ -1275,10 +1525,11 @@ class Game_MpAlly < Game_MpActor
     defined?(MGQ_MpBattlesTeam) && MGQ_MpBattlesTeam.commands?(self) ? super : false
   end
 
-  # Makes the turn's actions with the game's own auto-battle, which the owner's commands replace.
+  # Makes the turn's actions, which the owner's commands fill; without an owner to wait for, with
+  # the game's own auto-battle.
   def make_actions
     super
-    make_auto_battle_actions unless @actions.empty? || inputable?
+    make_auto_battle_actions unless @actions.empty? || inputable? || MGQ_MpBattlesCoop.awaits_commands?(self)
   end
 
   # Starts a turn, with the hit count the game resets only for the characters of its own party.
@@ -1310,9 +1561,9 @@ rescue => e
 end
 
 begin
-  # Before the title screen starts, an encounter a reset interrupted is forgotten, so it never
-  # starts on the map of the save loaded next.
-  MGQ_MpHooks.before(Scene_Title, :start, "battles_coop") { MGQ_MpBattlesCoop.drop_hold }
+  # Before the title screen starts, a battle and an encounter a reset interrupted are forgotten, so
+  # neither reaches the save loaded next.
+  MGQ_MpHooks.before(Scene_Title, :start, "battles_coop") { MGQ_MpBattlesCoop.drop }
 
   # The player stands still and opens no menu while their encounter waits for the party, or a
   # party member's encounter on their map waits for them.

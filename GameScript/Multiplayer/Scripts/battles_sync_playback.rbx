@@ -2,7 +2,15 @@
 #  battles_sync_playback.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-06: Showed the host's battle messages through the game's message alone, naming their speaker on it
+#      Paulinchen  2026-10-07: Gave a battler the host's HP, MP, SP and states after the game read its features anew, which held HP below this game's own maximum
+#                            - Logged once per character when the host's HP lies above this game's maximum
+#      Paulinchen  2026-10-06: Showed how the host's battle began, and kept a surprised party from choosing in its first command phase
+#                            - Used up the consumable items the player's own characters used in the host's battle
+#                            - Took the turns each state has left and the barriers from the host
+#                            - Let a real monster's defeat on the host fade it out here too, keeping the silhouette to the other player's characters
+#                            - Checked the host's calls against the names the hooks list as texts, never making a symbol of the host's text
+#                            - Played the battle log's methods the hooks record, from their one list
+#                            - Showed the host's battle messages through the game's message alone, naming their speaker on it
 #      Paulinchen  2026-10-04: Stopped playing for the player to choose again when the host names them
 #                            - Logged a host's call the guest leaves out, once per method
 #                            - Let the game read a guest's character's features anew once the host's states or buffs changed it, so Division's extra actions count
@@ -22,9 +30,6 @@ module MGQ_MpBattlesSync
   # computing its own; in a PvP battle with the host's party as its troop and the host's troop as
   # its party.
   module Playback
-    # Battle log methods the host may have called.
-    LOG_METHODS = %w(add_text replace_text back_one back_to clear clear_popup)
-
     # Scene waits the host may have called, with a duration.
     TIMED_WAITS = %w(wait abs_wait)
 
@@ -94,6 +99,7 @@ module MGQ_MpBattlesSync
     def self.reset
       @events = []
       @message_complete = false
+      @encounter = nil
     end
 
     # Takes the next event of the host's stream, taking a co-op party's change on the way.
@@ -147,9 +153,11 @@ module MGQ_MpBattlesSync
       when "call"
         call(scene, *args)
       when "emerge"
-        emerge(scene)
+        emerge(scene, *args)
+      when "item_used"
+        use_up(*args)
       when /\Alog\./
-        log_window(scene).send(method, *args.map { |arg| arg.is_a?(String) ? Names.swap(arg) : arg }) if LOG_METHODS.include?(method)
+        log_window(scene).send(method, *args.map { |arg| arg.is_a?(String) ? Names.swap(arg) : arg }) if recorded?(Hooks::LOG_METHODS, method)
       when "popup"
         log_window(scene).popup.push(Names.swap(args[0].to_s), args[1])
       when "message"
@@ -235,8 +243,8 @@ module MGQ_MpBattlesSync
     # @return [Boolean] Whether the guest makes the call.
     def self.callable?(receiver, name)
       case receiver
-      when "log" then name =~ Hooks::LOG_CALL && Window_BattleLog.method_defined?(name) ? true : false
-      when "scene" then Hooks::SCENE_CALLS.include?(name.to_s.to_sym)
+      when "log" then Hooks.log_calls.include?(name)
+      when "scene" then Hooks::SCENE_CALL_NAMES.include?(name)
       else false
       end
     end
@@ -248,14 +256,51 @@ module MGQ_MpBattlesSync
       @in_call && behind? ? true : false
     end
 
-    # Says which of the host's characters appear, in this game's language, as the host's battle
-    # did at its start.
+    # Says which of the host's characters appear, and whether a side struck first, in this game's
+    # language, as the host's battle did at its start. Keeps how the battle began for
+    # take_encounter.
     #
     # @param scene [Scene_Battle] The battle.
-    def self.emerge(scene)
+    # @param preemptive [Boolean] Whether the host's party struck first.
+    # @param surprise [Boolean] Whether the host's party was surprised.
+    def self.emerge(scene, preemptive = false, surprise = false)
+      # The host's party is this game's troop in a PvP battle, so its first strike is a surprise here.
+      preemptive, surprise = surprise, preemptive unless MGQ_MpBattlesSync.same_side?
       $game_message.speaker = nil
       $game_troop.enemy_names.each { |name| $game_message.add(format(Vocab::Emerge, name)) }
+      if preemptive
+        $game_message.add(format(Vocab::Preemptive, $game_party.name))
+      elsif surprise
+        $game_message.add(format(Vocab::Surprise, $game_party.name))
+      end
+      @encounter = [preemptive ? true : false, surprise ? true : false]
       MGQ_MpGame.call(scene, :wait_for_message)
+    end
+
+    # Gives the guest's first command phase how the host's battle began, which emerge kept: a
+    # surprised party chooses no commands, and one that struck first gets away for sure.
+    #
+    # The guest's battle sets these at its own setup, which knows nothing of the host's encounter.
+    def self.take_encounter
+      encounter = @encounter
+      @encounter = nil
+      return unless encounter
+
+      MGQ_MpGame.set(BattleManager, :preemptive, encounter[0])
+      MGQ_MpGame.set(BattleManager, :surprise, encounter[1])
+    rescue => e
+      MGQ_MpBattlesSync.log_once(:take_encounter, "could not take how the battle began: #{e.class}: #{e.message}")
+    end
+
+    # Uses up an item one of this game's own characters used in the host's battle, which the host's
+    # game leaves to the owner's bag.
+    #
+    # @param battler [Game_Battler, nil] The guest's battler who used it.
+    # @param item [RPG::Item, nil] The item.
+    def self.use_up(battler, item)
+      return unless battler && item.is_a?(RPG::Item) && battler.actor? && !battler.is_a?(Game_MpActor)
+
+      $game_party.consume_item(item)
     end
 
     # Starts an animation a battler started by itself on the host, outside the battle's own showing
@@ -271,8 +316,9 @@ module MGQ_MpBattlesSync
       battler.animation_id = value.to_i if $data_animations[value.to_i]
     end
 
-    # Starts a sprite effect the host started. The host's characters fall with an actor's collapse,
-    # but on the guest they are the enemy side, which stays as a silhouette after the defeat flash.
+    # Starts a sprite effect the host started. In a PvP battle the host's characters fall with an
+    # actor's collapse, but on the guest they are the enemy side, which stays as a silhouette after
+    # the defeat flash; a co-op battle's monsters fall as they do on the host.
     #
     # @param battler [Game_Battler, nil] The guest's battler.
     # @param effect [Symbol] The effect.
@@ -280,7 +326,8 @@ module MGQ_MpBattlesSync
       return unless battler && SPRITE_EFFECTS.include?(effect)
 
       collapse = [:collapse, :boss_collapse, :instant_collapse].include?(effect)
-      battler.sprite_effect_type = collapse && $game_troop.members.include?(battler) ? :whiten : effect
+      silhouette = collapse && !MGQ_MpBattlesSync.same_side? && $game_troop.members.include?(battler)
+      battler.sprite_effect_type = silhouette ? :whiten : effect
     end
 
     # Finds the battle log of a battle scene.
@@ -376,25 +423,53 @@ module MGQ_MpBattlesSync
     #
     # @param battler [Game_Battler, nil] The guest's battler.
     # @param hp [Integer] Its HP.
-    # @param _mhp [Integer] Its maximum HP on the host.
     # @param mp [Integer] Its MP.
-    # @param _mmp [Integer] Its maximum MP on the host.
     # @param tp [Integer] Its SP.
     # @param states [Array<Integer>] Its state ids.
+    # @param turns [Array<Integer>] The turns each of those states has left.
     # @param buffs [Array<Integer>] Its buffs.
-    def self.values(battler, hp, _mhp, mp, _mmp, tp, states, buffs)
+    # @param walls [Integer] Its barriers.
+    def self.values(battler, hp, mp, tp, states, turns, buffs, walls)
       return unless battler
 
-      MGQ_MpGame.set(battler, :hp, hp.to_i)
-      MGQ_MpGame.set(battler, :mp, mp.to_i)
-      MGQ_MpGame.set(battler, :tp, tp.to_i)
-      ids = Array(states).map(&:to_i).select { |id| $data_states[id] }
-      turns = MGQ_MpGame.get(battler, :state_turns) || {}
-      ids.each { |id| turns[id] ||= 1 }
+      known = Array(states).map(&:to_i).zip(Array(turns)).select { |id, _| $data_states[id] }
+      ids = known.map(&:first)
+      state_turns = MGQ_MpGame.get(battler, :state_turns) || MGQ_MpGame.set(battler, :state_turns, {})
+      known.each { |id, count| state_turns[id] = count.to_i }
       before = [MGQ_MpGame.get(battler, :states), MGQ_MpGame.get(battler, :buffs)].map { |list| Array(list).dup }
       MGQ_MpGame.set(battler, :states, ids)
       MGQ_MpGame.set(battler, :buffs, Array(buffs).map(&:to_i)) if Array(buffs).size == 8
       features_changed(battler) if before != [ids, Array(MGQ_MpGame.get(battler, :buffs))]
+      # Reading the features anew lets the game hold HP below this game's own maximum and add or
+      # remove a death, so the host's values go in last.
+      MGQ_MpGame.set(battler, :states, ids)
+      MGQ_MpGame.set(battler, :hp, hp.to_i)
+      MGQ_MpGame.set(battler, :mp, mp.to_i)
+      MGQ_MpGame.set(battler, :tp, tp.to_i)
+      over_maximum(battler, hp.to_i)
+      set_walls(battler, walls)
+    end
+
+    # Logs once per character that the host's HP of it lies above this game's maximum, which tells a
+    # rebuild that differs between the two games.
+    #
+    # @param battler [Game_Battler] The guest's battler.
+    # @param hp [Integer] Its HP on the host.
+    def self.over_maximum(battler, hp)
+      return unless battler.respond_to?(:mhp) && hp > battler.mhp
+
+      MGQ_MpBattlesSync.log_once([:over_maximum, battler.name], "#{battler.name} has #{hp} HP on the host, above this game's maximum of #{battler.mhp}")
+    end
+
+    # Gives a battler as many barriers as the host's battle shows.
+    #
+    # @param battler [Game_Battler] The guest's battler.
+    # @param count [Integer] Its barriers.
+    def self.set_walls(battler, count)
+      counters = MGQ_MpGame.get(battler, :counters)
+      counters[:defense_wall] = [true] * count.to_i if counters.is_a?(Hash) && counters[:defense_wall].is_a?(Array)
+    rescue => e
+      MGQ_MpBattlesSync.log_once(:walls, "could not set the barriers: #{e.class}: #{e.message}")
     end
 
     # Lets the game read a character's features anew once its states or buffs changed.

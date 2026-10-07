@@ -2,6 +2,8 @@
 #  duel_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-06: Checked that a duel whose battle could not start is called off, and that a call-off of a duel that started tells why
+#                            - Checked that a team duel brings no share of the Backline
 #      Paulinchen  2026-10-04: Followed the scripts to their new names, without mp_
 #      Paulinchen  2026-10-03: Checked that a duel takes the challenger's rule of the Backline
 #                            - Gave the co-op stand-in its Player record
@@ -37,8 +39,10 @@ module MGQ_MpBattlesPvp
   end
   module Backline; def self.wanted?; $backline_wanted; end; end
   module Battle
-    def self.running?; false; end
+    # Runs from its start until the first look at it, so the next duel finds the player free.
+    def self.running?; running = @started; @started = false; running; end
     def self.start(name, members, mirror, backline = false)
+      @started = !$start_fails
       $backlines << backline
       $started << [name, members, mirror, block_given? ? yield : nil]
     end
@@ -60,7 +64,8 @@ module MGQ_MpBattlesCoop
     def self.read(fields); fields.is_a?(self) ? fields : new(*fields); end
   end
   def self.team_build; ["builds-me", 8]; end
-  def self.arrange(players); players.map { |fields| Player.read(fields) }; end
+  def self.arrange(players, backline = true); $arranged << backline; players.map { |fields| Player.read(fields) }; end
+  def self.new_battle_id; rand(36**8).to_s(36); end
 end
 module MGQ_MpBattlesTeam
   def self.prepare(*args); $prepared = args; end
@@ -71,6 +76,7 @@ $game_print = "game-1"
 $started = []
 $joined = []
 $backlines = []
+$arranged = []
 $backline_wanted = false
 
 load_script "battles_duel"
@@ -217,6 +223,7 @@ starts = duel_sent.select { |_, f| f["duel"] == "start" }
 own, other = MGQ_MpBattlesSync::Wire.parse(starts.first[1][:payload])
 check("once all are ready, everyone hears both sides", [starts.map(&:first).sort, starts.map { |_, f| f["team"] }.uniq, own.map(&:first), other.map(&:first)],
       [[2, 3], ["1"], [0, 3], [2]])
+check("with no share of the Backline", $arranged.last(2), [false, false])
 frame
 check("then the host starts the team duel", [$joined.last, $prepared[2], $started.last.values_at(0, 3)], [[:host, bid, [3, 2], "the duel", :pvp, true], true, ["Side leader", [:opponents]]])
 
@@ -312,7 +319,7 @@ duel.accept(challenger)
 $sent.clear
 $inbox << entry("message", 2, "duel=start\nbid=s2\n\ngame-1\t")
 MGQ_MpOverworldSync.tick
-check("an unreadable team is declined and the battle called off", [duel_sent.map { |_, f| f["duel"] }, broken_to], [["decline", "cancel"], [2]])
+check("an unreadable team calls the battle off, once, saying why", [duel_sent.map { |_, f| f.values_at("duel", "reason") }, broken_to], [[["cancel", "team"]], [2]])
 duel.accept(challenger)
 $inbox << entry("message", 2, "duel=start\nbid=s3\n\ngame-1\tteam-friend")
 MGQ_MpOverworldSync.tick
@@ -345,3 +352,25 @@ $inbox << entry("message", 2, "duel_call=g22\nparty=friend\nseat=3\n\n")
 MGQ_MpOverworldSync.tick
 ready = duel_sent.find { |_, f| f["duel"] == "ready" }
 check("a call the leader passes on is answered to the challenger", [ready[0], ready[1]["bid"]], [3, "g22"])
+
+# A duel whose battle could not start is called off for the other player.
+$start_fails = true
+duel.accept(challenger)
+$inbox << entry("message", 2, "duel=start\nbid=s5\n\ngame-1\tteam-friend")
+MGQ_MpOverworldSync.tick
+$sent.clear
+frame
+$start_fails = false
+check("a duel whose battle could not start is called off", [broken_to, duel_sent.last[1].values_at("duel", "bid", "reason")], [[2], ["cancel", "s5", "off"]])
+
+# A call-off of a duel that started already tells why.
+duel.accept(challenger)
+$inbox << entry("message", 2, "duel=start\nbid=s6\n\ngame-1\tteam-friend")
+MGQ_MpOverworldSync.tick
+frame
+$inbox << entry("message", 2, "duel=cancel\nbid=s6\nreason=busy\n\n")
+MGQ_MpOverworldSync.tick
+check("a call-off of a duel that started already tells why", MGQ_MpOverworldSync::Status.lines.last, "Friend is busy.")
+$inbox << entry("message", 2, "duel=cancel\nbid=s0\nreason=team\n\n")
+MGQ_MpOverworldSync.tick
+check("one of another duel is not heard", MGQ_MpOverworldSync::Status.lines.last, "Friend is busy.")

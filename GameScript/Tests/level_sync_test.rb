@@ -2,6 +2,7 @@
 #  level_sync_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-06: Checked that the end syncs nothing more by a character's stats instead of the sync's level
 #      Paulinchen  2026-10-04: Created
 #
 #----------------------------------------------------------------
@@ -103,7 +104,8 @@ check("syncing a character again changes nothing", [high.mhp, high.hp], [225, 15
 sync.finish
 check("the end gives the stats back with the share of HP and MP", [high.mhp, high.hp, high.mp], [705, 470, 705])
 check("and leaves a fallen character fallen", [fallen.mhp, fallen.hp], [605, 0])
-check("and syncs nothing more", [sync.level, sync.of(high)], [nil, nil])
+sync.sync(high)
+check("and syncs nothing more", [high.mhp, sync.of(high)], [705, nil])
 
 # Other battles.
 $kind = :pvp

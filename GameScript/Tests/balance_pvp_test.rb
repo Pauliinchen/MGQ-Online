@@ -2,6 +2,7 @@
 #  balance_pvp_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-06: Checked that a check reads the stats without the balance, and the balance by the stats alone
 #      Paulinchen  2026-10-04: Followed the scripts to their new names, without mp_
 #      Paulinchen  2026-10-03: Created
 #
@@ -82,7 +83,7 @@ fighter.reflection = 1.0
 fighter.element = 0.0
 fighter.walls = 2
 
-check("outside a PvP battle the stats are the game's", [balance.active?, fighter.mhp, fighter.param(2)], [false, 7500, 490])
+check("outside a PvP battle the stats are the game's", [fighter.mhp, fighter.param(2)], [7500, 490])
 check("outside a PvP battle a character's skills use the formulas for players", fighter.enemy_calculation?, false)
 check("outside a PvP battle a hit deals what the game works out", fighter.apply_guard(52_000_000_000_000), 52_000_000_000_000)
 check("outside a PvP battle evasion, reflection and elements are the game's",
@@ -90,9 +91,10 @@ check("outside a PvP battle evasion, reflection and elements are the game's",
 check("outside a PvP battle a defense wall takes the whole hit", [fighter.apply_defense_wall(90_000, attack), fighter.walls], [0, 1])
 
 balance.begin([fighter, fallen])
-check("the balance raises max HP and no other stat", [balance.active?, fighter.mhp, fighter.param(2)], [true, 30_000, 490])
+check("the balance raises max HP and no other stat", [fighter.mhp, fighter.param(2)], [30_000, 490])
 check("a character's skills use the formulas for monsters", fighter.enemy_calculation?, true)
 check("the added HP is filled, except for a dead character", [fighter.hp, fallen.hp], [30_000, 0])
+check("a check reads the stats as they are without the balance, which then holds again", [balance.unbalanced { [fighter.mhp, fighter.enemy_calculation?] }, fighter.mhp], [[7500, false], 30_000])
 check("a damage formula reads max HP as it is without the balance", [DamageEvalBattler.new(fighter).mhp, DamageEvalBattler.new(fighter).atk], [7500, 490])
 check("a hit up to the knee deals its damage", fighter.apply_guard(3000).round, 3000)
 scene.use_item
@@ -127,7 +129,7 @@ fighter.walls = 1
 check("a hit smaller than the wall's share deals nothing", fighter.apply_defense_wall(7000, attack), 0)
 
 balance.finish
-check("after the battle the stats are the game's again", [balance.active?, fighter.mhp, DamageEvalBattler.new(fighter).mhp, fighter.enemy_calculation?], [false, 7500, 7500, false])
+check("after the battle the stats are the game's again", [fighter.mhp, DamageEvalBattler.new(fighter).mhp, fighter.enemy_calculation?], [7500, 7500, false])
 check("after the battle a hit deals what the game works out again", fighter.apply_guard(30_000), 30_000)
 check("after the battle a character takes no damage again where the game says so", fighter.mdr, 0.0)
 check("after the battle evasion and elements are the game's again", [fighter.tap { |f| f.evasion = 1.0 }.item_eva(nil, attack), fighter.tap { |f| f.element = 0.0 }.item_element_rate(nil, attack)], [1.0, 0.0])

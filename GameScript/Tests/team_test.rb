@@ -2,6 +2,8 @@
 #  team_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-06: Checked that the players of a team duel bring no share of the Backline
+#                            - Checked that a guest names no commands for the others' characters
 #      Paulinchen  2026-10-04: Followed the scripts to their new names, without mp_
 #      Paulinchen  2026-10-02: Ended the guest's duel through guest_end
 #      Paulinchen  2026-10-01: Created
@@ -40,11 +42,11 @@ $leaders = [rival]
 $my_seat = 0
 builds, max = MGQ_MpBattlesCoop.team_build
 check("a player of a team duel sends their Frontline", [builds, max], ["1,2,3,4", 8])
-own = MGQ_MpBattlesCoop.arrange([[2, "Friend", "7,8,9,10", [], 8], [0, "Me", builds, [], max]])
-other = MGQ_MpBattlesCoop.arrange([[6, "Mate", "30,31,32,33", [], 8], [5, "Rival", "20,21,22,23", [], 8]])
-check("each side has its leader first and two of each player's Frontline in front", [own, other].map { |side| side.map { |p| [p[0], p[6], p[7]] } },
-      [[[0, 2, 2], [2, 2, 2]], [[5, 2, 2], [6, 2, 2]]])
-solo = MGQ_MpBattlesCoop.arrange([[5, "Rival", "20,21,22,23", [], 8]])
+own = MGQ_MpBattlesCoop.arrange([[2, "Friend", "7,8,9,10", [], 8], [0, "Me", builds, [], max]], false)
+other = MGQ_MpBattlesCoop.arrange([[6, "Mate", "30,31,32,33", [], 8], [5, "Rival", "20,21,22,23", [], 8]], false)
+check("each side has its leader first and two of each player's Frontline in front, none on the Backline", [own, other].map { |side| side.map { |p| [p[0], p[6], p[7]] } },
+      [[[0, 2, 0], [2, 2, 0]], [[5, 2, 0], [6, 2, 0]]])
+solo = MGQ_MpBattlesCoop.arrange([[5, "Rival", "20,21,22,23", [], 8]], false)
 check("a single player brings their whole Frontline", solo.map { |p| p[6] }, [4])
 
 sync.join_world(:host, "t1", [2, 5, 6], "the duel", :pvp, true)
@@ -57,6 +59,7 @@ check("the host's party is its side, its troop the other side", [$game_party.bat
 check("the other side's characters know their owners", $game_troop.members.map { |o| [o.mp_seat, o.mp_place] }, [[5, 0], [5, 1], [6, 0], [6, 1]])
 check("a team duel is a PvP battle with several guests", [sync.team?, sync.coop?, sync.several?, sync.same_side?], [true, false, true, true])
 check("Discord names the other side's leader", team.opponent_name, "Rival")
+check("the player's Frontline characters past their share wait on no Backline", $game_party.bench_members, [])
 
 # Commands reach their owner's characters, on either side.
 skill = lambda { |id| [["skill", id, 0]] }
@@ -104,7 +107,7 @@ check("the other side's guest has its side as party, the host's as troop", [$gam
       [["Actor1", "Actor2", "Actor30 (Mate)", "Actor31 (Mate)"], ["Actor1 (Me)", "Actor2 (Me)", "Actor7 (Friend)", "Actor8 (Friend)"]])
 check("so the host's references swap", [sync.same_side?, MGQ_MpBattlesSync::Playback.battler("a1").name, MGQ_MpBattlesSync::Playback.battler("e2").name],
       [false, "Actor2 (Me)", "Actor30 (Mate)"])
-check("its commands are its own characters'", wire.parse(MGQ_MpBattlesSync::Commands.build)[0].map(&:size), [0, 0, 0, 0])
+check("its commands are its own characters'", wire.parse(MGQ_MpBattlesSync::Commands.build)[0].map { |list| list && list.size }, [0, 0, nil, nil])
 MGQ_MpBattlesSync::Channel.receive(0, "team_heirs", wire.line([[6, 5]]))
 MGQ_MpBattlesSync::Channel.receive(0, "events", "")
 MGQ_MpBattlesSync::Playback.reset

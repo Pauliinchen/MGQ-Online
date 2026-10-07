@@ -2,7 +2,11 @@
 #  battles_duel.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-06: Added the duel's choice to the action wheel's ring by order instead of to its right
+#      Paulinchen  2026-10-06: Called a duel off whose battle could not start, so the other players never wait for it
+#                            - Told a player who already started the duel why it was called off, once, instead of a decline followed by a call-off
+#                            - Brought no share of the Backline to a team duel
+#                            - Made up a duel's id as a co-op battle's
+#                            - Added the duel's choice to the action wheel's ring by order instead of to its right
 #      Paulinchen  2026-10-04: Renamed from mp_battles_duel.rbx
 #      Paulinchen  2026-10-03: Started a duel with the Backline when the challenger's duels have it, and said so in the challenge
 #                            - Kept a duel waiting to start as a Pending record, and the sides' players as MGQ_MpBattlesCoop::Player records
@@ -22,7 +26,8 @@
 
 # Duels: PvP battles between two players of a world, the same battle as the PvP battle screen's (battles_pvp.rbx)
 # carried over the world's room (battles_sync.rbx). A player challenges like a party invite: the
-# players nearby, or one player anywhere picked in the World overview, for fifteen seconds. The
+# players nearby for fifteen seconds, or one player anywhere picked in the World overview for a
+# minute. The
 # challenged player accepts and sends their team; the challenger answers with theirs, hosts, and
 # both battles start from the map.
 #
@@ -77,6 +82,7 @@ module MGQ_MpBattlesDuel
   @pending = nil
   @gathering = nil
   @called = nil
+  @started = nil
 
   extend MGQ_MpLog
 
@@ -140,6 +146,7 @@ module MGQ_MpBattlesDuel
     @pending = nil
     @gathering = nil
     @called = nil
+    @started = nil
   end
 
   # Lets a challenge run out, and an accepted one that the challenger never answered. Called every
@@ -227,7 +234,7 @@ module MGQ_MpBattlesDuel
     members = read_team(peer, body)
     return unless members
 
-    battle_id = rand(36**8).to_s(36)
+    battle_id = MGQ_MpBattlesCoop.new_battle_id
     stop
     return gather(peer, battle_id) if team_duel?(peer)
 
@@ -251,8 +258,8 @@ module MGQ_MpBattlesDuel
       return MGQ_MpOverworldSync.notice("The duel with #{peer.state['name']} could not start.")
     end
 
-    members = read_team(peer, body)
-    return call_off(peer.seat, battle_id) unless members
+    members, reason = team_of(body)
+    return call_off(peer.seat, battle_id, reason) if reason
 
     @pending = Pending.new(:guest, battle_id, peer, members)
     # The challenger hosts, so the rule their team brought holds.
@@ -287,11 +294,21 @@ module MGQ_MpBattlesDuel
   # @param body [String] Their game's fingerprint and their team.
   # @return [Array<MGQ_MpActors::Builds::Member>, nil] The team, nil when declined.
   def self.read_team(peer, body)
+    members, reason = team_of(body)
+    reason ? decline(peer, reason) : members
+  end
+
+  # Reads the other player's team, or why it cannot be read.
+  #
+  # @param body [String] Their game's fingerprint and their team.
+  # @return [Array] The members, see MGQ_MpBattlesPvp::Team.parse, and nil; or nil and a key of
+  #   REASONS.
+  def self.team_of(body)
     game, team = MGQ_MpBattlesSync::Wire.parse(body.to_s)
-    return decline(peer, "data") unless game.to_s == MGQ_MpBattlesPvp::Team.game
+    return [nil, "data"] unless game.to_s == MGQ_MpBattlesPvp::Team.game
 
     members = MGQ_MpBattlesPvp::Team.parse(team.to_s)
-    members.empty? ? decline(peer, "team") : members
+    members.empty? ? [nil, "team"] : [members, nil]
   end
 
   # Turns the other player down, telling them why.
@@ -352,8 +369,8 @@ module MGQ_MpBattlesDuel
 
     own = [[MGQ_MpOverworldSync::Me.seat, MGQ_Multiplayer::Player.name.to_s] + MGQ_MpBattlesCoop.team_build]
     own += (ready.keys - others).map { |seat| entry(seat, ready[seat]) }
-    own = MGQ_MpBattlesCoop.arrange(own.map { |seat, name, builds, max| [seat, name, builds, [], max] })
-    other = MGQ_MpBattlesCoop.arrange(others.map { |seat| entry(seat, ready[seat]) }.map { |seat, name, builds, max| [seat, name, builds, [], max] })
+    own = MGQ_MpBattlesCoop.arrange(own.map { |seat, name, builds, max| [seat, name, builds, [], max] }, false)
+    other = MGQ_MpBattlesCoop.arrange(others.map { |seat| entry(seat, ready[seat]) }.map { |seat, name, builds, max| [seat, name, builds, [], max] }, false)
     body = MGQ_MpBattlesSync::Wire.line([own.map(&:to_a), other.map(&:to_a)])
     ready.each_key { |seat| MGQ_MpOverworldSync.tell(seat, { "duel" => "start", "bid" => gathering[:battle_id], "team" => 1 }, body) }
     (gathering[:sides].keys - ready.keys).each { |seat| MGQ_MpOverworldSync.tell(seat, { "duel" => "cancel", "reason" => "late" }) }
@@ -509,8 +526,8 @@ module MGQ_MpBattlesDuel
     @pending = Pending.new(:team, battle_id, peer, nil, same ? hosts : others, same ? others : hosts, same)
   end
 
-  # Takes the other player's word that the duel is off: a team duel the player was called to, or a
-  # duel of theirs waiting to start.
+  # Takes the other player's word that the duel is off: a team duel the player was called to, a
+  # duel of theirs waiting to start, or one that started already, which its battle's break-off ends.
   #
   # @param peer [MGQ_MpOverworldSync::Peers::Peer] The other player.
   # @param battle_id [String] The duel's id, empty for a call to a team duel.
@@ -520,7 +537,7 @@ module MGQ_MpBattlesDuel
       @pending = nil
     elsif @called && @called[:seat] == peer.seat
       @called = nil
-    else
+    elsif battle_id.empty? || battle_id != @started
       return
     end
     MGQ_MpOverworldSync.notice("#{peer.state['name']} #{REASONS.fetch(reason, 'called the duel off')}.")
@@ -542,21 +559,37 @@ module MGQ_MpBattlesDuel
     log("team duel #{pending.battle_id} as #{host ? 'guest' : 'host'}, #{pending.own.size} against #{pending.other.size}")
   end
 
-  # Calls off a duel waiting to start, telling the other players: a team duel's guest leaves it, so
-  # their side takes their characters; anyone else calls it off.
+  # Calls off a duel waiting to start, since the player got busy.
   #
   # @param pending [Pending] The duel.
   def self.give_up(pending)
+    withdraw(pending, "busy")
+    MGQ_MpOverworldSync.notice("The duel could not start.")
+    log("duel #{pending.battle_id} given up, the player got busy")
+  end
+
+  # Calls off a duel whose battle could not start, which the PvP battle tells the player itself.
+  #
+  # @param pending [Pending] The duel.
+  def self.fail_start(pending)
+    withdraw(pending, "off")
+    log("duel #{pending.battle_id} called off, its battle could not start")
+  end
+
+  # Tells the other players of a duel that the player is not in it: a team duel's guest leaves it,
+  # so their side takes their characters; anyone else calls it off.
+  #
+  # @param pending [Pending] The duel.
+  # @param reason [String] A key of REASONS, for a duel between two players.
+  def self.withdraw(pending, reason)
     role, battle_id, peer = pending.role, pending.battle_id, pending.peer
     if role == :team && peer
       MGQ_MpBattlesSync.tell(peer.seat, "leave", battle_id)
     elsif role == :team
       (pending.seats - [MGQ_MpOverworldSync::Me.seat]).each { |seat| call_off(seat, battle_id) }
     else
-      call_off(peer.seat, battle_id, "busy")
+      call_off(peer.seat, battle_id, reason)
     end
-    MGQ_MpOverworldSync.notice("The duel could not start.")
-    log("duel #{battle_id} given up, the player got busy")
   end
 
   # Writes the player's game fingerprint and team, which the other player's game rebuilds.
@@ -567,23 +600,32 @@ module MGQ_MpBattlesDuel
   end
 
   # Starts a duel waiting to start, from the map, as an encounter starts, or calls it off once an
-  # event, a transfer or a menu came first. Called by the map every frame.
+  # event, a transfer or a menu came first, or its battle could not start. Called by the map every
+  # frame.
   def self.on_map
     return unless @pending
 
     pending = @pending
     @pending = nil
     return give_up(pending) unless free?
-    return start_team(pending) if pending.role == :team
 
+    @started = pending.battle_id
+    pending.role == :team ? start_team(pending) : start_duel(pending)
+    fail_start(pending) unless MGQ_MpBattlesPvp::Battle.running?
+  rescue => e
+    @pending = nil
+    log("starting a duel failed: #{e.class}: #{e.message}")
+  end
+
+  # Starts a duel between two players from the map.
+  #
+  # @param pending [Pending] The duel.
+  def self.start_duel(pending)
     role, battle_id, peer, members = pending.role, pending.battle_id, pending.peer, pending.members
     name = peer.state["name"].to_s
     MGQ_MpBattlesSync.join_world(role, battle_id, [peer.seat], name, :pvp)
     MGQ_MpBattlesPvp::Battle.start(name, members, false, pending.backline)
     log("duel #{battle_id} with #{name} as #{role}#{' with the Backline' if pending.backline}")
-  rescue => e
-    @pending = nil
-    log("starting a duel failed: #{e.class}: #{e.message}")
   end
 
   # What duels offer between two players, through ui_actions.rbx: their choices on the action wheel

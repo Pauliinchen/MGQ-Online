@@ -2,6 +2,8 @@
 #  battles.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-07: Let a mode take in that a guest left the battle
+#      Paulinchen  2026-10-06: Forgot the rules of a battle a reset interrupted, keeping the switches of the save loaded next
 #      Paulinchen  2026-10-04: Let a mode name the players whose commands lost their target to a swap, who choose again
 #                            - Renamed from mp_battles.rbx
 #      Paulinchen  2026-10-03: Let a PvP battle with the Backline swap it in, and let a mode name the characters outside the battle
@@ -101,6 +103,12 @@ module MGQ_MpBattles
       false
     end
 
+    # Takes in that a guest left the battle. Called by the host.
+    #
+    # @param _seat [Integer] The guest's world seat.
+    def left(_seat)
+    end
+
     # The order of the player's places, which their commands carry to the host.
     #
     # @return [Array<Integer>, nil] The order, nil when the battle has none.
@@ -193,7 +201,8 @@ module MGQ_MpBattles
     end
   end
 
-  # A duel between two players, which changes nothing.
+  # What a kind of live battle that registered no mode does: nothing differently from a duel
+  # between two players.
   module Duel
     extend Mode
   end
@@ -251,6 +260,13 @@ module MGQ_MpBattles
     log("could not end the rules: #{e.class}: #{e.message}")
   end
 
+  # Forgets a multiplayer battle's rules without putting the settings back, whose save a reset
+  # dropped: they would overwrite the switches of the save loaded next.
+  def self.drop
+    @kept = nil
+    @kind = nil
+  end
+
   # The switches a multiplayer battle sets.
   #
   # @param kind [Symbol] :pvp or :coop.
@@ -288,6 +304,9 @@ end
 begin
   # Installs the battle hooks as the game starts running.
   MGQ_MpHooks.before(SceneManager.singleton_class, :run, "battles") { MGQ_MpBattles.install }
+
+  # Before the title screen starts, the rules of a battle a reset interrupted are forgotten.
+  MGQ_MpHooks.before(Scene_Title, :start, "battles") { MGQ_MpBattles.drop }
 rescue => e
-  MGQ_MpBattles.log("SceneManager hook FAILED: #{e.class}: #{e.message}")
+  MGQ_MpBattles.log("hooks FAILED: #{e.class}: #{e.message}")
 end

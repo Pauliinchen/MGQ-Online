@@ -2,7 +2,11 @@
 #  battles_sync_recorder.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-06: Wrote the recording into the game folder's Logs folder
+#      Paulinchen  2026-10-06: Recorded the turns each state has left and the barriers with the battlers' values, without the maximum HP and MP no guest read
+#                            - Kept the battle's end to the recording on file, which no guest plays
+#                            - Let an event recorded in place of what the game does carry values, such as how the battle began
+#                            - Dropped the speaker of the lines a skill or a defeat shows, which the guest's own calls show
+#                            - Wrote the recording into the game folder's Logs folder
 #      Paulinchen  2026-10-04: Renamed from mp_battles_sync_recorder.rbx
 #      Paulinchen  2026-10-03: Recorded the characters outside the battle that its mode names
 #                            - Read and wrote the game's private fields and called its private methods through MGQ_MpGame
@@ -23,7 +27,7 @@ module MGQ_MpBattlesSync
     FLUSH_EVENTS = 200
 
     # The events only the recording on file keeps, which no guest plays.
-    FILE_ONLY = ["action", "turn_end"]
+    FILE_ONLY = ["action", "turn_end", "battle_end"]
 
     # Seeds a call's random choices are drawn from.
     SEED_RANGE = 1 << 30
@@ -161,9 +165,10 @@ module MGQ_MpBattlesSync
     # Records an event and leaves out what the block does, which the guest does its own way.
     #
     # @param kind [String] What happened.
+    # @param fields [Array] Its values, see Wire.line.
     # @return [Object] What the block returns.
-    def self.instead(kind)
-      event(kind)
+    def self.instead(kind, *fields)
+      event(kind, *fields)
       muted { yield }
     end
 
@@ -237,24 +242,6 @@ module MGQ_MpBattlesSync
       event("battler.sprite_effect_type", battler, effect)
     end
 
-    # Names the battler who speaks.
-    #
-    # @return [Game_Battler, nil] The battler whose line the game is showing.
-    def self.speaker
-      @speaker
-    end
-
-    # Marks a battler as the speaker of the lines the block shows.
-    #
-    # @param battler [Game_Battler] The battler.
-    # @return [Object] What the block returns.
-    def self.speaking(battler)
-      @speaker = battler
-      yield
-    ensure
-      @speaker = nil
-    end
-
     # Names a battler by its side and place, "a0" for the party's first, "e0" for the troop's, or as
     # the battle's mode names a character outside the battle.
     #
@@ -299,10 +286,14 @@ module MGQ_MpBattlesSync
     # Reads the values the stream carries of a battler.
     #
     # @param battler [Game_Battler] The battler.
-    # @return [Array] Its HP and maximum, MP and maximum, SP, state ids and buffs.
+    # @return [Array] Its HP, MP and SP, its state ids, the turns each of them has left, its buffs
+    #   and its barriers.
     def self.value_fields(battler)
-      [battler.hp, battler.mhp, battler.mp, battler.mmp, battler.tp.to_i,
-       battler.states.map(&:id).sort, Array(MGQ_MpGame.get(battler, :buffs)).map(&:to_i)]
+      ids = battler.states.map(&:id).sort
+      turns = MGQ_MpGame.get(battler, :state_turns) || {}
+      walls = battler.respond_to?(:defence_wall) ? battler.defence_wall.to_i : 0
+      [battler.hp, battler.mp, battler.tp.to_i, ids, ids.map { |id| turns[id].to_i },
+       Array(MGQ_MpGame.get(battler, :buffs)).map(&:to_i), walls]
     end
 
     # Stops recording without sending or writing what is left, such as after a reset.

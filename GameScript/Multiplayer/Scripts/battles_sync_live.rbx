@@ -2,6 +2,15 @@
 #  battles_sync_live.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-07: Left out the commands a guest sent before leaving the battle
+#      Paulinchen  2026-10-06: Asked a scene directly whether it changes, since the game makes that public
+#                            - Told the guest how the battle began, which shows its first strike or surprise and keeps a surprised party from choosing
+#                            - Recorded a consumable item a guest's character used, which the guest's own game uses up
+#                            - Settled who fights on at the next command phase too once the computer plays on for the guests who left
+#                            - Recorded the speaker the game's message names instead of one of the mod's own
+#                            - Recorded the battle log's waits only as the scene's, which the guest plays
+#                            - Listed the battle log's methods the guest calls itself as texts, which the host's stream is checked against
+#                            - Sent the guest's word that its battle is ready without names, which the host never read
 #      Paulinchen  2026-10-05: Started the newer translation's battle log anew at the guest's battle and turn start, as the host's game does
 #      Paulinchen  2026-10-04: Settled who fights on only as a command phase opens, not each time the game shows the commands again
 #                            - Sent the players back to choose again whose commands lost their target to another player's swap
@@ -25,8 +34,9 @@ module MGQ_MpBattlesSync
   # The game's plugins load after the Patch folder and some define battle methods anew, which drops
   # a hook installed before them, so the hooks go in once the first scene starts.
   module Hooks
-    # The battle log's primitives, which every battle log line goes through.
-    LOG_METHODS = [:add_text, :replace_text, :back_one, :back_to, :clear, :clear_popup, :wait]
+    # The battle log's primitives, which every battle log line goes through. Its waits call the
+    # scene's, see SCENE_WAITS.
+    LOG_METHODS = [:add_text, :replace_text, :back_one, :back_to, :clear, :clear_popup]
 
     # What pictures do, such as a cut-in.
     PICTURE_METHODS = [:show, :move, :rotate, :start_tone_change, :erase]
@@ -58,6 +68,16 @@ module MGQ_MpBattlesSync
     # The scene's waits a call the guest makes itself skips while the guest catches up.
     SKIPPABLE_WAITS = [:wait, :abs_wait]
 
+    # SCENE_CALLS as texts, which the names in the host's stream are compared with.
+    SCENE_CALL_NAMES = SCENE_CALLS.map(&:to_s)
+
+    # Lists the battle log's methods the hooks record as calls, as texts.
+    #
+    # @return [Array<String>] The methods' names, none before the hooks are in.
+    def self.log_calls
+      @log_calls || []
+    end
+
     # Installs the hooks, a failing group alone left out. Calling it again does nothing.
     def self.install
       return if @installed
@@ -81,16 +101,11 @@ module MGQ_MpBattlesSync
     # Messages with their face and speaker, such as the lines characters say when they use a skill
     # or fall, which move on by themselves in a live battle.
     #
-    # A line names its speaker by name only, which both teams can share.
+    # A line names its speaker by name only, which both teams can share, and the battler as the
+    # game's message names it, see Game_Message#speaker.
     def self.messages
       record_before(Game_Message, :add) do |message, args|
-        ["message", Recorder.speaker, message.face_name, message.face_index, message.background, message.position, *args]
-      end
-      MGQ_MpHooks.around(Scene_Battle, :process_skill_word) do |scene, _args, original|
-        Recorder.speaking(MGQ_MpGame.get(scene, :subject)) { original.call }
-      end
-      MGQ_MpHooks.around(Scene_Battle, :process_down_word) do |_scene, args, original|
-        Recorder.speaking(args[0]) { original.call }
+        ["message", message.speaker, message.face_name, message.face_index, message.background, message.position, *args]
       end
       MGQ_MpHooks.around(Window_Message, :input_pause) do |window, _args, original|
         next original.call unless MGQ_MpBattlesSync.live? && $game_party.in_battle
@@ -148,6 +163,10 @@ module MGQ_MpBattlesSync
       record_before(Game_Unit, :display_skill_name=) do |unit, args|
         ["skill_name", unit.equal?($game_party) ? "party" : "troop", args[0]]
       end
+      # The host's game uses up nothing of a guest's bag, so the guest's own game is told.
+      record_before(Game_MpActor, :consume_item) do |battler, args|
+        ["item_used", battler, args[0]] if args[0].is_a?(RPG::Item) && args[0].consumable
+      end
     end
 
     # The battle's course as the host records it: turns, actions, animations and waits, with the
@@ -170,7 +189,7 @@ module MGQ_MpBattlesSync
       # The game also comes back here after a party change or a menu in the same phase, which
       # Recorder.command_phase records only once.
       MGQ_MpHooks.around(Scene_Battle, :start_party_command_selection) do |scene, _args, original|
-        unless MGQ_MpGame.call(scene, :scene_changing?)
+        unless scene.scene_changing?
           # A co-op party changes between two of the host's sends: here, before the command phase is
           # recorded, when a player left, and once the commands came, when a player swapped.
           Live.open_phase(scene) if MGQ_MpBattlesSync.host?
@@ -242,8 +261,9 @@ module MGQ_MpBattlesSync
       MGQ_MpHooks.around(Scene_Battle, :turn_start) do |scene, _args, original|
         if MGQ_MpBattlesSync.guest?
           Live.guest_turn(scene)
-        elsif MGQ_MpBattlesSync.host? && !MGQ_MpBattlesSync.solo?
-          if Live.host_commands(scene)
+        elsif MGQ_MpBattlesSync.host?
+          # Alone, the host closes the phase too, so the next one settles who fights on.
+          if MGQ_MpBattlesSync.solo? || Live.host_commands(scene)
             Live.close_phase
             original.call
           end
@@ -276,7 +296,8 @@ module MGQ_MpBattlesSync
     # The calls whose lines each game writes in its own language: the host records them as calls,
     # the guest makes them itself. See Recorder.call.
     def self.calls
-      Window_BattleLog.instance_methods(false).map(&:to_s).grep(LOG_CALL).each do |name|
+      @log_calls = Window_BattleLog.instance_methods(false).map(&:to_s).grep(LOG_CALL)
+      @log_calls.each do |name|
         MGQ_MpHooks.around(Window_BattleLog, name.to_sym) do |_log, args, original|
           Recorder.call("log", name, args) { original.call }
         end
@@ -290,7 +311,7 @@ module MGQ_MpBattlesSync
 
       # Who appears is named with each game's own names, so the guest names the host's characters.
       MGQ_MpHooks.around(BattleManager.singleton_class, :battle_start) do |_manager, _args, original|
-        Recorder.instead("emerge") { original.call }
+        Recorder.instead("emerge", *Live.encounter) { original.call }
       end
 
       SKIPPABLE_WAITS.select { |name| Scene_Battle.method_defined?(name) }.each do |name|
@@ -364,7 +385,7 @@ module MGQ_MpBattlesSync
       joined = MGQ_MpBattlesSync.mode.guest_start(scene)
       return end_early(scene, joined) if joined.is_a?(Symbol)
 
-      Channel.post("ready", MGQ_MpBattlesSync.names)
+      Channel.post("ready")
       names = Waiting.wait_for(scene, "Waiting for #{MGQ_MpBattlesSync.player}...") { Channel.take("ready") }
       return end_early(scene, names) if names.is_a?(Symbol)
 
@@ -410,7 +431,19 @@ module MGQ_MpBattlesSync
       # The guest's own battle never reaches the turn's end, and a command phase started in the
       # middle of one keeps the last turn's actions and skips every command.
       BattleManager.turn_end
+      Playback.take_encounter
       scene.start_party_command_selection
+    end
+
+    # Reads how the host's battle began, which the guest's start shows and its first command phase
+    # follows.
+    #
+    # @return [Array<Boolean>] Whether the party struck first, and whether it was surprised.
+    def self.encounter
+      [MGQ_MpGame.get(BattleManager, :preemptive) ? true : false, MGQ_MpGame.get(BattleManager, :surprise) ? true : false]
+    rescue => e
+      MGQ_MpBattlesSync.log_once(:encounter, "could not read how the battle began: #{e.class}: #{e.message}")
+      [false, false]
     end
 
     # Takes the defeat scene the host's battle chose, or one of an enemy here when the host's is
@@ -509,7 +542,7 @@ module MGQ_MpBattlesSync
 
     # The host of a co-op battle or a team duel waits for the commands of every guest still in the
     # battle who has not sent theirs this phase, and gives them to their characters as they come. A
-    # guest who left sends none, and the computer plays their characters. The players whose
+    # guest who left is answered without commands, see MGQ_MpBattles::Mode#left. The players whose
     # commands lost their target to another player's swap choose again.
     #
     # @param scene [Scene_Battle] The battle.
@@ -519,10 +552,11 @@ module MGQ_MpBattlesSync
       waiting = MGQ_MpBattlesSync.guests_in - @answered
       answer = Waiting.wait_for(scene, "Waiting for the party's commands...") do
         waiting.dup.each do |seat|
+          staying = MGQ_MpBattlesSync.guests_in.include?(seat)
           commands = Channel.take_from("commands", seat)
-          next unless commands || !MGQ_MpBattlesSync.guests_in.include?(seat)
+          next unless commands || !staying
 
-          Commands.apply(commands, seat) if commands
+          Commands.apply(commands, seat) if commands && staying
           @answered << seat
           waiting.delete(seat)
         end
@@ -537,9 +571,9 @@ module MGQ_MpBattlesSync
       true
     end
 
-    # As host, gives the characters of the players whose commands lost their target the computer's
-    # commands, and sends those still in the battle back to choose again, shown the party as it is
-    # now. Waits for the guests' new commands; for those who left, the computer's stay.
+    # As host, makes the characters of the players whose commands lost their target new actions, and
+    # sends those still in the battle back to choose again, shown the party as it is now. Waits for
+    # the guests' new commands; the characters of those who left do nothing.
     #
     # @param scene [Scene_Battle] The battle.
     # @param seats [Array<Integer>] Their world seats, the host's own and those who left included.
@@ -576,7 +610,7 @@ module MGQ_MpBattlesSync
     #
     # @param scene [Scene_Battle] The battle.
     def self.watch(scene)
-      return if MGQ_MpBattlesSync.solo? || MGQ_MpGame.call(scene, :scene_changing?) || BattleManager.battle_end?
+      return if MGQ_MpBattlesSync.solo? || scene.scene_changing? || BattleManager.battle_end?
 
       ending = Channel.ending
       end_early(scene, ending) if ending
@@ -628,7 +662,7 @@ module MGQ_MpBattlesSync
     #
     # @param scene [Scene_Battle] The battle.
     def self.escaped(scene)
-      Channel.post("leave") if MGQ_MpBattlesSync.coop? && MGQ_MpBattlesSync.guest? && MGQ_MpGame.call(scene, :scene_changing?)
+      Channel.post("leave") if MGQ_MpBattlesSync.coop? && MGQ_MpBattlesSync.guest? && scene.scene_changing?
     end
   end
 end
