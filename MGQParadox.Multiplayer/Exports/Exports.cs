@@ -2,6 +2,8 @@
 //  Exports.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-07: Kept every log, which no longer starts over, and logged the version started and whether the game keeps running in the background
+//                            - Answered a null buffer with the length needed, and opened Copy and Text to the tests
 //      Paulinchen  2026-09-30: Split the exports into files per area: Pvp, World, Directory and Input
 //                            - Added mp_check_for_update and mp_newer_version
 //                            - Took a starting save in mp_dir_create, and added mp_dir_fetch_start, which fetches it for new players
@@ -18,6 +20,7 @@
 
 using System;
 using System.IO;
+using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -34,11 +37,6 @@ namespace MGQParadox.Multiplayer;
 internal static unsafe partial class Exports
 {
     /// <summary>
-    /// Size at which the log starts over.
-    /// </summary>
-    private const long MaxLogBytes = 200_000;
-
-    /// <summary>
     /// Finds the mod folder and starts the log. Calling it again does nothing harmful.
     /// </summary>
     /// <returns>1 when started, 0 when it failed.</returns>
@@ -52,8 +50,8 @@ internal static unsafe partial class Exports
                 ModFolder.SetRoot(Path.GetDirectoryName(dll)!);
             }
 
-            Log.ClearIfLargerThan(MaxLogBytes);
-            Log.Write("--- multiplayer started ---");
+            var version = typeof(Exports).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "unknown";
+            Log.Write($"--- multiplayer {version} started ---");
             return 1;
         }
         catch (Exception ex)
@@ -72,7 +70,9 @@ internal static unsafe partial class Exports
     {
         try
         {
-            return GameWindow.KeepRunning() ? 1 : 0;
+            var running = GameWindow.KeepRunning();
+            Log.Write(running ? "the game keeps running in the background" : "the game cannot keep running in the background: its window was not found or not hooked");
+            return running ? 1 : 0;
         }
         catch (Exception ex)
         {
@@ -125,14 +125,14 @@ internal static unsafe partial class Exports
     /// Writes a text into a buffer of the game script.
     /// </summary>
     /// <param name="text">The text.</param>
-    /// <param name="buffer">Receives the text, UTF-8 and null-terminated.</param>
-    /// <param name="size">The size of the buffer in bytes.</param>
-    /// <returns>The text's length in bytes, or its length negated when the buffer is too small.</returns>
-    private static int Copy(string text, byte* buffer, int size)
+    /// <param name="buffer">Receives the text, UTF-8 and null-terminated; <see langword="null"/> to only ask how much room it needs.</param>
+    /// <param name="size">The size of the buffer in bytes, which the text and its terminating null must fit in.</param>
+    /// <returns>The text's length in bytes, or its length negated when the buffer is missing or too small.</returns>
+    internal static int Copy(string text, byte* buffer, int size)
     {
         var bytes = Encoding.UTF8.GetBytes(text);
 
-        if (bytes.Length >= size)
+        if (buffer == null || size < 0 || bytes.Length >= size)
         {
             return -bytes.Length;
         }
@@ -147,5 +147,5 @@ internal static unsafe partial class Exports
     /// </summary>
     /// <param name="text">The text, UTF-8 and null-terminated.</param>
     /// <returns>The text, empty for a null pointer.</returns>
-    private static string Text(byte* text) => Marshal.PtrToStringUTF8((nint)text) ?? string.Empty;
+    internal static string Text(byte* text) => Marshal.PtrToStringUTF8((nint)text) ?? string.Empty;
 }

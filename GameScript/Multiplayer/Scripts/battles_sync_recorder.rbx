@@ -2,6 +2,7 @@
 #  battles_sync_recorder.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-07: Logged the recording's start and end and what each turn streamed
 #      Paulinchen  2026-10-06: Recorded the turns each state has left and the barriers with the battlers' values, without the maximum HP and MP no guest read
 #                            - Kept the battle's end to the recording on file, which no guest plays
 #                            - Let an event recorded in place of what the game does carry values, such as how the battle began
@@ -51,6 +52,9 @@ module MGQ_MpBattlesSync
       @events = []
       @values = {}
       @file_mode = "wb"
+      @counts = [0, 0]
+      @totals = [0, 0]
+      MGQ_MpBattlesSync.log(sink == :file ? "recording the battle into #{RECORDING_FILE}" : "recording the battle for the guests' stream")
       event("battle", "settings", display_settings) if sink == :file
     rescue => e
       stop_after(e)
@@ -65,6 +69,8 @@ module MGQ_MpBattlesSync
       event("battle_end", result)
       flush
       @active = false
+      totals = @totals || [0, 0]
+      MGQ_MpBattlesSync.log("recording finished, battle result #{result.inspect}: #{totals[0]} events in #{totals[1]} sends")
     rescue => e
       stop_after(e)
     end
@@ -87,6 +93,7 @@ module MGQ_MpBattlesSync
 
       line = Wire.line([kind] + fields)
       @events << (@sink == :file ? "#{@frame.to_s.rjust(6)}\t#{line}" : line)
+      (@counts ||= [0, 0])[0] += 1
       flush if @events.size >= FLUSH_EVENTS
     rescue => e
       stop_after(e)
@@ -123,6 +130,11 @@ module MGQ_MpBattlesSync
       values(true)
       event("commands")
       flush
+      turn = MGQ_MpBattlesSync.turn
+      counts = @counts || [0, 0]
+      MGQ_MpBattlesSync.log("#{@sink == :file ? 'recorded' : 'streamed'} #{turn == 0 ? "the battle's start" : "turn #{turn}"}: " \
+                            "#{counts[0]} events in #{counts[1]} sends, every battler's values anew")
+      @counts = [0, 0]
     rescue => e
       stop_after(e)
     end
@@ -152,6 +164,7 @@ module MGQ_MpBattlesSync
     # @param name [String] The method.
     # @param args [Array] Its arguments.
     # @param subject [Game_Battler, nil] Who acts, which a call of the battle reads.
+    # @yield The call itself, which the guest makes too.
     # @return [Object] What the block returns.
     def self.call(receiver, name, args, subject = nil)
       return yield unless active? && !muted? && Wire.encodable?(args)
@@ -166,6 +179,7 @@ module MGQ_MpBattlesSync
     #
     # @param kind [String] What happened.
     # @param fields [Array] Its values, see Wire.line.
+    # @yield What the game does, which the guest does its own way.
     # @return [Object] What the block returns.
     def self.instead(kind, *fields)
       event(kind, *fields)
@@ -174,6 +188,7 @@ module MGQ_MpBattlesSync
 
     # Leaves out every event the block records.
     #
+    # @yield What runs unrecorded.
     # @return [Object] What the block returns.
     def self.muted
       @muted = (@muted || 0) + 1
@@ -212,6 +227,7 @@ module MGQ_MpBattlesSync
     # random choices, then goes on with random numbers the seed does not predict.
     #
     # @param seed [Integer] The seed.
+    # @yield What draws the random numbers.
     # @return [Object] What the block returns.
     def self.seeded(seed)
       resume = rand(SEED_RANGE)
@@ -260,6 +276,9 @@ module MGQ_MpBattlesSync
     def self.flush
       return if @events.empty?
 
+      (@counts ||= [0, 0])[1] += 1
+      (@totals ||= [0, 0])[0] += @events.size
+      @totals[1] += 1
       if @sink == :link
         Channel.post("events", @events.join("\n"))
       else
@@ -298,6 +317,7 @@ module MGQ_MpBattlesSync
 
     # Stops recording without sending or writing what is left, such as after a reset.
     def self.stop
+      MGQ_MpBattlesSync.log("recording stopped, #{Array(@events).size} events left unsent") if active?
       @active = false
       @events = []
     end

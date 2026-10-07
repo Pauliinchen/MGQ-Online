@@ -2,7 +2,8 @@
 #  battles.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-07: Let a mode take in that a guest left the battle
+#      Paulinchen  2026-10-07: Logged the rules a battle sets and puts back, switch by switch
+#                            - Let a mode take in that a guest left the battle
 #      Paulinchen  2026-10-06: Forgot the rules of a battle a reset interrupted, keeping the switches of the save loaded next
 #      Paulinchen  2026-10-04: Let a mode name the players whose commands lost their target to a swap, who choose again
 #                            - Renamed from mp_battles.rbx
@@ -244,6 +245,7 @@ module MGQ_MpBattles
       @kept[id] = $game_switches[id]
       $game_switches[id] = value
     end
+    log("#{kind} rules on, Give Up hidden#{', Backline may swap in' if backline}: #{switches_text(@kept, true)}")
   rescue => e
     log("could not start the rules: #{e.class}: #{e.message}")
   end
@@ -253,6 +255,7 @@ module MGQ_MpBattles
     return unless running?
 
     (@kept || {}).each { |id, value| $game_switches[id] = value }
+    log("#{@kind} rules off, the game's own settings back: #{switches_text(@kept || {}, false)}")
     @kept = nil
     @kind = nil
   rescue => e
@@ -263,8 +266,25 @@ module MGQ_MpBattles
   # Forgets a multiplayer battle's rules without putting the settings back, whose save a reset
   # dropped: they would overwrite the switches of the save loaded next.
   def self.drop
+    log("forgot the #{@kind} rules a reset interrupted, keeping the next save's switches") if running?
     @kept = nil
     @kind = nil
+  end
+
+  # Describes the switches a battle's rules set, for Multiplayer InGame.log.
+  #
+  # @param kept [Hash{Integer => Boolean}] Each switch's value before the battle.
+  # @param starting [Boolean] Whether the rules start, which shows each switch as before -> during;
+  #   else as during -> after.
+  # @return [String] The switches, such as "switch 86 No Seduction false -> true".
+  def self.switches_text(kept, starting)
+    kept.map do |id, own|
+      name = ($data_system.switches[id] rescue nil).to_s
+      during = $game_switches[id]
+      starting ? "switch #{id} #{name} #{own.inspect} -> #{during.inspect}" : "switch #{id} #{name} -> #{own.inspect}"
+    end.join(", ")
+  rescue => e
+    "switches unknown (#{e.class})"
   end
 
   # The switches a multiplayer battle sets.

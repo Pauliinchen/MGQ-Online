@@ -2,6 +2,7 @@
 //  Keyboard.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-07: Logged once when the keyboard's state could not be read
 //      Paulinchen  2026-10-06: Kept a take the game script had no room for, which the next take hands out first
 //      Paulinchen  2026-09-29: Created
 //
@@ -55,6 +56,11 @@ internal static partial class Keyboard
     /// Whether a text screen wants what is typed.
     /// </summary>
     private static bool active;
+
+    /// <summary>
+    /// Whether reading the keyboard's state failed once, which the log tells only the first time.
+    /// </summary>
+    private static bool stateFailed;
 
     /// <summary>
     /// Whether a WM_CHAR ever arrived, so RGSS translates key presses and those characters count.
@@ -192,6 +198,12 @@ internal static partial class Keyboard
 
         if (!GetKeyboardState(state))
         {
+            if (!stateFailed)
+            {
+                stateFailed = true;
+                Log.Write($"keyboard: its state could not be read, Windows error {Marshal.GetLastPInvokeError()}, so keys type nothing");
+            }
+
             return string.Empty;
         }
 
@@ -204,7 +216,7 @@ internal static partial class Keyboard
     /// </summary>
     /// <param name="state">256 bytes, one per virtual key.</param>
     /// <returns><see langword="true"/> when it was read.</returns>
-    [LibraryImport("user32.dll")]
+    [LibraryImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static unsafe partial bool GetKeyboardState(byte* state);
 

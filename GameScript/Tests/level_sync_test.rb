@@ -2,6 +2,7 @@
 #  level_sync_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-07: Checked that the log tells each character's level and stats before and after the sync
 #      Paulinchen  2026-10-06: Checked that the end syncs nothing more by a character's stats instead of the sync's level
 #      Paulinchen  2026-10-04: Created
 #
@@ -99,11 +100,15 @@ check("a rebuilt character of another player is synced too", ally.mhp, 238)
 check("the player is told once, for their own characters", $chat, ["Level Sync: your characters fight at level 10, the party leader's."])
 sync.sync(high)
 check("syncing a character again changes nothing", [high.mhp, high.hp], [225, 150])
+check("the log tells each synced character's level and stats before and after, and why one stays",
+      [$log.grep(/synced \? Actor from level 50 to 10: max HP 705, HP 470, MP 705\/705 -> max HP 225, HP 150, MP 225\/225/).size,
+       $log.grep(/\? Actor not synced: level 8 is at or below 10/).size], [1, 1])
 
 # The end.
 sync.finish
 check("the end gives the stats back with the share of HP and MP", [high.mhp, high.hp, high.mp], [705, 470, 705])
 check("and leaves a fallen character fallen", [fallen.mhp, fallen.hp], [605, 0])
+check("the log tells the stats each character gets back", $log.grep(/gave \? Actor its own stats back at level 50: max HP 225, HP 150, MP 225\/225 -> max HP 705, HP 470, MP 705\/705/).size, 1)
 sync.sync(high)
 check("and syncs nothing more", [high.mhp, sync.of(high)], [705, nil])
 

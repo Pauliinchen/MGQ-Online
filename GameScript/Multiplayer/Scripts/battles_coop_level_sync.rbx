@@ -2,6 +2,7 @@
 #  battles_coop_level_sync.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-07: Logged the battle's level and why, and each character's level and stats before and after the sync
 #      Paulinchen  2026-10-06: Dropped level, which only the tests read
 #      Paulinchen  2026-10-04: Created
 #
@@ -38,6 +39,7 @@ module MGQ_MpCoopLevelSync
   @level = nil
   @synced = {}
   @told = false
+  @noted = {}
 
   # Works out the level of a co-op battle: the highest of the party leader's characters in it, on
   # its Frontline and Backline.
@@ -47,10 +49,15 @@ module MGQ_MpCoopLevelSync
   # @return [Integer, nil] The level, nil when the leader is not among the players.
   def self.level_for(players)
     leader = players.find { |player| MGQ_MpBattlesCoop.leads?(player.seat) }
-    return nil unless leader
+    unless leader
+      log("no level: the party leader is not among the battle's players (seats #{players.map(&:seat).join(', ')})")
+      return nil
+    end
 
     builds = MGQ_MpActors::Builds.parse(leader.builds.to_s, MGQ_MpBattlesCoop::MOST_CHARACTERS)
-    leader.lines.flatten.map { |place| builds[place] && builds[place].base_level }.compact.max
+    levels = leader.lines.flatten.map { |place| builds[place] && builds[place].base_level }.compact
+    log("level #{levels.max.inspect}: the highest of the leader's (seat #{leader.seat}) characters in the battle, at levels #{levels.join(', ')}")
+    levels.max
   rescue => e
     log("working the level out failed: #{e.class}: #{e.message}")
     nil
@@ -62,7 +69,9 @@ module MGQ_MpCoopLevelSync
   def self.begin(level)
     finish
     @level = ENABLED && level.is_a?(Integer) && level > 0 ? level : nil
-    log("battle at level #{@level}") if @level
+    return log("battle at level #{@level}, characters above it fight at it") if @level
+
+    log("no level sync this battle: #{ENABLED ? "no level (#{level.inspect})" : 'the level sync is off'}")
   end
 
   # Syncs a character of the co-op party when it is above the battle's level, keeping its share of
@@ -70,9 +79,13 @@ module MGQ_MpCoopLevelSync
   #
   # @param actor [Game_Actor] The character, the player's own or a rebuilt one.
   def self.sync(actor)
-    return unless @level && MGQ_MpBattles.kind == :coop && !@synced.key?(actor) && actor.base_level > @level
+    return unless @level && !@synced.key?(actor)
+    return note(actor, "not synced in a #{MGQ_MpBattles.kind.inspect} battle") unless MGQ_MpBattles.kind == :coop
+    return note(actor, "not synced: level #{actor.base_level} is at or below #{@level}") unless actor.base_level > @level
 
+    before = vitals_text(actor)
     keep_vitals(actor) { @synced[actor] = sync_of(actor) }
+    log("synced #{label(actor)} from level #{actor.base_level} to #{@level}: #{before} -> #{vitals_text(actor)}")
     tell unless actor.is_a?(Game_MpActor)
   rescue => e
     @synced.delete(actor)
@@ -85,6 +98,42 @@ module MGQ_MpCoopLevelSync
   # @return [Sync, nil] Its sync, nil when it fights with its own stats.
   def self.of(actor)
     @synced.empty? ? nil : @synced[actor]
+  end
+
+  # Counts the characters fighting synced.
+  #
+  # @return [Integer] The count.
+  def self.synced_count
+    @synced.size
+  end
+
+  # Logs once a battle why a character fights with its own stats.
+  #
+  # @param actor [Game_Actor] The character.
+  # @param reason [String] Why.
+  def self.note(actor, reason)
+    return if @noted[actor]
+
+    @noted[actor] = true
+    log("#{label(actor)} #{reason}")
+  end
+
+  # Names a character by its id and name, for Multiplayer InGame.log.
+  #
+  # @param actor [Game_Actor] The character.
+  # @return [String] Its id and name.
+  def self.label(actor)
+    "#{actor.id rescue '?'} #{actor.name rescue '?'}"
+  end
+
+  # Describes a character's max HP, HP and MP, for Multiplayer InGame.log.
+  #
+  # @param actor [Game_Actor] The character.
+  # @return [String] Its max HP, HP and MP.
+  def self.vitals_text(actor)
+    "max HP #{actor.mhp}, HP #{actor.hp}, MP #{actor.mp}/#{actor.mmp}"
+  rescue
+    "?"
   end
 
   # Works out a stat's growth from items and equipment while the character is synced.
@@ -104,7 +153,9 @@ module MGQ_MpCoopLevelSync
   def self.finish
     @synced.keys.each do |actor|
       begin
+        before = vitals_text(actor)
         keep_vitals(actor) { @synced.delete(actor) }
+        log("gave #{label(actor)} its own stats back at level #{actor.base_level rescue '?'}: #{before} -> #{vitals_text(actor)}")
       rescue => e
         @synced.delete(actor)
         log("giving #{actor.name rescue '?'} its stats back failed: #{e.class}: #{e.message}")
@@ -114,13 +165,16 @@ module MGQ_MpCoopLevelSync
     @synced = {}
     @level = nil
     @told = false
+    @noted = {}
   end
 
   # Forgets the level sync without touching any character, whose save a reset dropped.
   def self.drop
+    log("forgot the sync of #{@synced.size} characters after a reset, leaving their stats alone") unless @synced.empty?
     @synced = {}
     @level = nil
     @told = false
+    @noted = {}
   end
 
   # Works out a character's sync for the battle's level.
@@ -172,6 +226,7 @@ module MGQ_MpCoopLevelSync
 
     @told = true
     MGQ_MpChat.system("Level Sync: your characters fight at level #{@level}, the party leader's.")
+    log("told the player in the chat that their characters fight at level #{@level}")
   end
 
   # Installs the stat and victory hooks. The game's plugins load after the Patch folder and define
@@ -182,7 +237,8 @@ module MGQ_MpCoopLevelSync
     @installed = true
     install_stats
     # The rewards come with the stats back, so the victory and its level-ups show them in full.
-    MGQ_MpHooks.around(BattleManager.singleton_class, :process_victory) do |_manager, _args, original|
+    MGQ_MpHooks.around(BattleManager.singleton_class, :process_victory, "battles_coop_level_sync") do |_manager, _args, original|
+      MGQ_MpCoopLevelSync.log("victory: #{MGQ_MpCoopLevelSync.synced_count} synced characters get their own stats back before the rewards") if MGQ_MpCoopLevelSync.synced_count > 0
       finish
       original.call
     end

@@ -2,6 +2,7 @@
 #  battles_pvp_mirror.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-07: Logged the mirror report's sections and the characters it leaves out
 #      Paulinchen  2026-10-06: Wrote the report into the game folder's Logs folder
 #      Paulinchen  2026-10-04: Renamed from mp_battles_pvp_mirror.rbx
 #      Paulinchen  2026-10-03: Read and wrote the game's private fields and called its private methods through MGQ_MpGame
@@ -44,6 +45,9 @@ module MGQ_MpBattlesPvp
     def self.start(opponents)
       @pairs = opponents.map { |rebuilt| [$game_party.battle_members.find { |actor| actor.id == rebuilt.id }, rebuilt] }
       @pairs.reject! { |yours, _| yours.nil? }
+      unless @pairs.size == opponents.size
+        MGQ_MpBattlesPvp.log("the mirror report leaves out #{opponents.size - @pairs.size} rebuilt characters not in the Frontline")
+      end
       @turn_written = false
       write("wb", "Outside of battle (#{Time.now.strftime('%Y-%m-%d %H:%M:%S')})")
     end
@@ -66,6 +70,8 @@ module MGQ_MpBattlesPvp
       differences = blocks.inject(0) { |sum, (_, count)| sum + count }
       lines = ["=" * 70, "#{title}: #{differences} value(s) differ", "=" * 70, ""] + blocks.map(&:first).flatten
       File.open(MGQ_Multiplayer.log_path(FILE), mode) { |file| file.write(lines.join("\n") + "\n") }
+      MGQ_MpBattlesPvp.log("wrote the mirror report's section #{title.sub(/ \(.*\)\z/, '').inspect} into #{FILE}: " \
+                           "#{@pairs.size} characters, #{differences} values differ")
     rescue => e
       MGQ_MpBattlesPvp.log("mirror report failed: #{e.class}: #{e.message}")
     end

@@ -2,6 +2,7 @@
 #  balance_pvp_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-07: Checked that the log tells each character's changes, the hits the balance lowers and its end
 #      Paulinchen  2026-10-06: Checked that a check reads the stats without the balance, and the balance by the stats alone
 #      Paulinchen  2026-10-04: Followed the scripts to their new names, without mp_
 #      Paulinchen  2026-10-03: Created
@@ -134,3 +135,5 @@ check("after the battle a hit deals what the game works out again", fighter.appl
 check("after the battle a character takes no damage again where the game says so", fighter.mdr, 0.0)
 check("after the battle evasion and elements are the game's again", [fighter.tap { |f| f.evasion = 1.0 }.item_eva(nil, attack), fighter.tap { |f| f.element = 0.0 }.item_element_rate(nil, attack)], [1.0, 0.0])
 check("starting the balance is logged, and nothing failed", [$log.grep(/pvp balance: on for 2 characters/).size, $log.grep(/FAILED|could not/).size], [1, 0])
+check("so are each character's changes, the hits it lowers and its end",
+      [$log.grep(/pvp balance: \?: max HP 7500 -> 30000/).size, $log.grep(/pvp balance: hit on .* lowered from 30000 -> 10937 of 30000 max HP/).empty?, $log.grep(/pvp balance: off/).size], [1, false, 1])

@@ -68,7 +68,7 @@ body:
       label: Logs
       description: |
         Drag these files in here, from every game that took part if you can:
-        - `Logs\Multiplayer InGame.log` and `Logs\Multiplayer.log`
+        - `Logs\Multiplayer InGame <date and time>.log` and `Logs\Multiplayer <date and time>.log` of the session that went wrong (both carry the time that game started)
         - `errors.txt` in the game folder, if the game crashed
     validations:
       required: true

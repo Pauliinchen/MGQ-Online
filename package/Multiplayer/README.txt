@@ -114,10 +114,13 @@ The guide's troubleshooting section explains the game's messages:
 
    https://github.com/Pauliinchen/MGQ-Online/blob/main/docs/GUIDE.md#troubleshooting
 
-Both logs are in the Logs folder of your game folder:
-Multiplayer InGame.log only appears when something went wrong inside
-the game; Multiplayer.log tells what the connection did. Please attach
-both to a bug report.
+Both logs are in the Logs folder of your game folder, a pair per time
+you played, named after when the game started, such as
+"Multiplayer InGame 2026-10-07 18-30-05.log" and
+"Multiplayer 2026-10-07 18-30-05.log". The Multiplayer InGame log tells
+what the mod did inside the game; the Multiplayer log tells what the
+connection did. Please attach both of the session that went wrong to a
+bug report.
 
 
 CREDITS

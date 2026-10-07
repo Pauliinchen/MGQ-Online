@@ -2,6 +2,7 @@
 #  world_text.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-07: Logged the text screen opening, showing its letters for a gamepad, and how it was left, never the text
 #      Paulinchen  2026-10-04: Renamed from mp_world_text.rbx
 #      Paulinchen  2026-10-03: Created
 #
@@ -39,6 +40,7 @@ class Scene_MpText < Scene_MenuBase
     @input_window.set_handler(:cancel, method(:on_input_cancel))
     MGQ_Multiplayer::Link.typing(true)
     MGQ_Multiplayer::Background.running? && !@options[:letters] ? hide_letters : show_letters
+    MGQ_MpWorld.log("text screen opened for #{@caption}, #{@input_window.visible ? 'with the letters for a gamepad' : 'typed on the keyboard'}")
   end
 
   # Types what came from the keyboard, then lets the letters take a gamepad's buttons, showing
@@ -53,6 +55,7 @@ class Scene_MpText < Scene_MenuBase
 
     if !keyboard && !@input_window.visible && MGQ_MpWorld.gamepad_pressed?
       show_letters
+      MGQ_MpWorld.log("text screen: a gamepad button showed the letters")
       # The press that showed the letters picks nothing.
       @input_window.keyboard_used = true
     end
@@ -106,12 +109,14 @@ class Scene_MpText < Scene_MenuBase
 
   # Hands the text back.
   def on_input_ok
+    MGQ_MpWorld.log("text screen confirmed for #{@caption} (#{@edit_window.name.size} characters)")
     MGQ_MpWorld.text_result = [@kind, @edit_window.name]
     return_scene
   end
 
   # Leaves without a text.
   def on_input_cancel
+    MGQ_MpWorld.log("text screen left without a text for #{@caption}")
     MGQ_MpWorld.text_result = [@kind, nil]
     return_scene
   end

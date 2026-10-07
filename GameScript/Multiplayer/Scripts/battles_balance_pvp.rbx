@@ -2,6 +2,7 @@
 #  battles_balance_pvp.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-07: Logged what the balance changes per character as it starts, each hit it lowers and its end
 #      Paulinchen  2026-10-06: Let a check read the stats without the balance, and dropped active?, which only the tests asked
 #      Paulinchen  2026-10-04: Renamed from mp_balance_pvp.rbx
 #      Paulinchen  2026-10-03: Created
@@ -63,6 +64,7 @@ module MGQ_MpBalancePvp
   # Runs a block with the stats as the game works them out, such as a check of a character against
   # what its owner's game measured outside a battle.
   #
+  # @yield The reading of the stats.
   # @return [Object] What the block returns.
   def self.unbalanced
     was = @active
@@ -82,13 +84,43 @@ module MGQ_MpBalancePvp
     @taken = {}
     battlers.each { |battler| battler.hp = battler.mhp unless battler.dead? }
     log("on for #{battlers.size} characters: HP x#{HP_RATE}#{', monster formulas' if MONSTER_FORMULAS}")
+    battlers.each { |battler| log_changes(battler) }
   rescue => e
     @active = false
     log("could not start: #{e.class}: #{e.message}")
   end
 
+  # Logs what the balance changes of a character as it starts: its max HP, and the rates the
+  # balance holds to its floors and ceilings.
+  #
+  # @param battler [Game_Battler] The character.
+  def self.log_changes(battler)
+    own = unbalanced { rates_of(battler) }
+    now = rates_of(battler)
+    changes = own.keys.reject { |name| own[name] == now[name] }.map { |name| "#{name} #{own[name]} -> #{now[name]}" }
+    changes << "evasion #{own['evasion']} held to #{AVOID_CEILING}" if own["evasion"].to_f > AVOID_CEILING
+    changes << "magic reflection #{own['magic reflection']} held to #{AVOID_CEILING}" if own["magic reflection"].to_f > AVOID_CEILING
+    log("#{battler.name rescue '?'}#{" (#{battler.id})" if battler.respond_to?(:id)}: #{changes.join(', ')}, #{battler.hp} HP")
+  rescue => e
+    log("#{battler.name rescue '?'}: changes unknown (#{e.class})")
+  end
+
+  # Reads the values of a character the balance changes, for Multiplayer InGame.log.
+  #
+  # @param battler [Game_Battler] The character.
+  # @return [Hash{String => Numeric}] Each value by its name.
+  def self.rates_of(battler)
+    rates = { "max HP" => battler.mhp }
+    { "physical damage taken" => :pdr, "magical damage taken" => :mdr, "sure-hit damage taken" => :certain_damage_rate,
+      "evasion" => :eva, "magic reflection" => :mrf }.each do |name, method|
+      rates[name] = battler.send(method).to_f.round(2) if battler.respond_to?(method)
+    end
+    rates
+  end
+
   # Ends the balance.
   def self.finish
+    log("off") if @active
     @active = false
     @taken = {}
   end
@@ -116,7 +148,18 @@ module MGQ_MpBalancePvp
     after = before + value.abs
     @taken[key] = after
     left = mhp * (share(after / mhp) - share(before / mhp))
+    note_hit(battler, value, left) if left.round < value.abs
     value < 0 ? -left : left
+  end
+
+  # Logs a hit or healing the balance lowered.
+  #
+  # @param battler [Game_Battler] The target.
+  # @param value [Numeric] The damage as the game works it out, negative for healing.
+  # @param left [Numeric] What the balance leaves of it.
+  def self.note_hit(battler, value, left)
+    log("#{value < 0 ? 'healing' : 'hit'} on #{battler.name rescue '?'} lowered from #{value.abs.round} -> #{left.round} of #{battler.mhp} max HP")
+  rescue
   end
 
   # Works out the share of max HP an action takes or gives for the share it would without the
@@ -191,7 +234,19 @@ module MGQ_MpBalancePvp
   def self.wall(battler, damage, left)
     return left unless @active && left == 0 && damage > 0
 
-    [damage - (battler.mhp * WALL_SHARE).to_i, 0].max
+    through = [damage - (battler.mhp * WALL_SHARE).to_i, 0].max
+    note_wall(battler, damage, through)
+    through
+  end
+
+  # Logs a hit a defense wall took only a share of.
+  #
+  # @param battler [Game_Battler] The character behind the wall.
+  # @param damage [Numeric] The hit before the wall.
+  # @param through [Numeric] What gets through.
+  def self.note_wall(battler, damage, through)
+    log("#{battler.name rescue '?'}'s defense wall held back #{damage - through} of a hit of #{damage} instead of all of it, #{through} gets through")
+  rescue
   end
 
   # Installs the battle hooks. The game's plugins load after the Patch folder and define battle
@@ -202,16 +257,16 @@ module MGQ_MpBalancePvp
     @installed = true
     install_stats
     install_formulas
-    MGQ_MpHooks.around(Game_Battler, :enemy_calculation?) { |_battler, _args, original| MGQ_MpBalancePvp.monster_formulas?(original.call) }
+    MGQ_MpHooks.around(Game_Battler, :enemy_calculation?, "battles_balance_pvp") { |_battler, _args, original| MGQ_MpBalancePvp.monster_formulas?(original.call) }
     MGQ_MpHooks.before(Scene_Battle, :use_item, "battles_balance_pvp") { MGQ_MpBalancePvp.action_started }
     [:pdr, :mdr, :certain_damage_rate].each do |name|
-      MGQ_MpHooks.around(Game_BattlerBase, name) { |_battler, _args, original| MGQ_MpBalancePvp.taken_rate(original.call) }
+      MGQ_MpHooks.around(Game_BattlerBase, name, "battles_balance_pvp") { |_battler, _args, original| MGQ_MpBalancePvp.taken_rate(original.call) }
     end
-    MGQ_MpHooks.around(Game_Battler, :apply_guard) { |battler, _args, original| MGQ_MpBalancePvp.damage(battler, original.call) }
-    MGQ_MpHooks.around(Game_Battler, :item_eva) { |_battler, _args, original| MGQ_MpBalancePvp.avoidance(original.call) }
-    MGQ_MpHooks.around(Game_Battler, :item_mrf) { |_battler, _args, original| MGQ_MpBalancePvp.avoidance(original.call) }
-    MGQ_MpHooks.around(Game_Battler, :item_element_rate) { |_battler, args, original| MGQ_MpBalancePvp.element_rate(args[1], original.call) }
-    MGQ_MpHooks.around(Game_Battler, :apply_defense_wall) { |battler, args, original| MGQ_MpBalancePvp.wall(battler, args[0], original.call) }
+    MGQ_MpHooks.around(Game_Battler, :apply_guard, "battles_balance_pvp") { |battler, _args, original| MGQ_MpBalancePvp.damage(battler, original.call) }
+    MGQ_MpHooks.around(Game_Battler, :item_eva, "battles_balance_pvp") { |_battler, _args, original| MGQ_MpBalancePvp.avoidance(original.call) }
+    MGQ_MpHooks.around(Game_Battler, :item_mrf, "battles_balance_pvp") { |_battler, _args, original| MGQ_MpBalancePvp.avoidance(original.call) }
+    MGQ_MpHooks.around(Game_Battler, :item_element_rate, "battles_balance_pvp") { |_battler, args, original| MGQ_MpBalancePvp.element_rate(args[1], original.call) }
+    MGQ_MpHooks.around(Game_Battler, :apply_defense_wall, "battles_balance_pvp") { |battler, args, original| MGQ_MpBalancePvp.wall(battler, args[0], original.call) }
   rescue => e
     log("battle hooks FAILED: #{e.class}: #{e.message}")
   end

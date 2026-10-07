@@ -2,6 +2,7 @@
 //  ModInstaller.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-07: Logged each file's hash check, each file written or put back, and the files a zip holds that no catalog entry names
 //      Paulinchen  2026-10-06: Put every replaced file back when one cannot be written, so a failed install leaves the old version whole
 //                            - Deleted the files an older version of a zip mod shipped that the installed one no longer has
 //                            - Refused a zip that holds a file twice, as the relay does
@@ -60,7 +61,7 @@ internal static class ModInstaller
                 }
             }
 
-            MoveIntoPlace(staged, stage);
+            MoveIntoPlace(staged, stage, patch);
             var written = new HashSet<string>(staged.Select(file => file.Target), StringComparer.OrdinalIgnoreCase);
 
             foreach (var (mod, _) in mods.Where(mod => mod.Mod.IsZip))
@@ -88,9 +89,10 @@ internal static class ModInstaller
     /// </summary>
     /// <param name="staged">Each checked file in the staging folder and its full target path.</param>
     /// <param name="stage">The staging folder, which also keeps the replaced files.</param>
+    /// <param name="patch">The full path of the Patch folder, which the log names the files from.</param>
     /// <exception cref="IOException">A file could not be written; every file written before it is put back.</exception>
     /// <exception cref="UnauthorizedAccessException">A file may not be written; every file written before it is put back.</exception>
-    private static void MoveIntoPlace(IReadOnlyList<(string Staged, string Target)> staged, string stage)
+    private static void MoveIntoPlace(IReadOnlyList<(string Staged, string Target)> staged, string stage, string patch)
     {
         var done = new List<(string Target, string? Backup)>();
 
@@ -109,11 +111,12 @@ internal static class ModInstaller
                 done.Add((target, backup));
                 Directory.CreateDirectory(Path.GetDirectoryName(target)!);
                 File.Copy(file, target, overwrite: true);
+                Log.Write($"wrote {Path.GetRelativePath(patch, target)} in Patch{(backup != null ? ", replacing the file there" : ", a new file")}");
             }
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            PutBack(done);
+            PutBack(done, patch);
             throw;
         }
     }
@@ -122,7 +125,8 @@ internal static class ModInstaller
     /// Puts back the files an install wrote before one failed, the last written first.
     /// </summary>
     /// <param name="done">Each file written and the copy of the file it replaced, <see langword="null"/> for a new one.</param>
-    private static void PutBack(List<(string Target, string? Backup)> done)
+    /// <param name="patch">The full path of the Patch folder, which the log names the files from.</param>
+    private static void PutBack(List<(string Target, string? Backup)> done, string patch)
     {
         for (var index = done.Count - 1; index >= 0; index--)
         {
@@ -133,15 +137,17 @@ internal static class ModInstaller
                 if (backup != null)
                 {
                     File.Copy(backup, target, overwrite: true);
+                    Log.Write($"put the earlier {Path.GetRelativePath(patch, target)} in Patch back");
                 }
                 else if (File.Exists(target))
                 {
                     File.Delete(target);
+                    Log.Write($"deleted the new {Path.GetRelativePath(patch, target)} in Patch again");
                 }
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
-                Log.Write($"could not put {target} back: {ex.Message}");
+                Log.Write($"could not put {Path.GetRelativePath(patch, target)} in Patch back: {ex.Message}");
             }
         }
     }
@@ -179,7 +185,7 @@ internal static class ModInstaller
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
                 {
-                    Log.Write($"could not remove {path} of an older {mod.Name}: {ex.Message}");
+                    Log.Write($"could not remove {Path.GetRelativePath(patch, path)} of an older {mod.Name}: {ex.Message}");
                 }
             }
         }
@@ -204,7 +210,7 @@ internal static class ModInstaller
             throw new InvalidDataException($"{mod.Name} would not be installed as a script.");
         }
 
-        return ModHash.Of(name, bytes) == hash ? (bytes, path) : throw new InvalidDataException($"{mod.Name} differs from the version the relay checked. It may just have been updated: try again in a minute.");
+        return Checked(mod, name, bytes, hash) ? (bytes, path) : throw new InvalidDataException($"{mod.Name} differs from the version the relay checked. It may just have been updated: try again in a minute.");
     }
 
     /// <summary>
@@ -242,7 +248,7 @@ internal static class ModInstaller
             stream.CopyTo(copy);
             var bytes = copy.ToArray();
 
-            if (ModHash.Of(name, bytes) != hash)
+            if (!Checked(mod, name, bytes, hash))
             {
                 throw new InvalidDataException($"{name} of {mod.Name} differs from the version the relay keeps.");
             }
@@ -250,7 +256,30 @@ internal static class ModInstaller
             files.Add((bytes, Inside(patch, Path.Combine(patch, name), mod)));
         }
 
+        foreach (var path in entries.Keys.Where(path => path.Length > 0 && !path.EndsWith('/') && !mod.Files.ContainsKey(path)))
+        {
+            Log.Write($"left out {path} of {mod.Name}, which the catalog does not name");
+        }
+
         return files;
+    }
+
+    /// <summary>
+    /// Checks a downloaded file against the catalog's hash, and logs the outcome.
+    /// </summary>
+    /// <param name="mod">The mod it belongs to.</param>
+    /// <param name="name">The file's name or path, as the catalog names it.</param>
+    /// <param name="bytes">The file as downloaded.</param>
+    /// <param name="hash">The catalog's hash.</param>
+    /// <returns>Whether the hashes match.</returns>
+    private static bool Checked(CatalogMod mod, string name, byte[] bytes, string hash)
+    {
+        var actual = ModHash.Of(name, bytes);
+        var matches = actual == hash;
+        Log.Write(matches
+            ? $"{name} of {mod.Name} {mod.Version} matches the catalog, {bytes.Length} bytes"
+            : $"{name} of {mod.Name} {mod.Version} differs from the catalog: hash {Log.Short(actual)}, the catalog says {Log.Short(hash)}");
+        return matches;
     }
 
     /// <summary>

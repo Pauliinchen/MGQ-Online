@@ -2,6 +2,7 @@
 //  Message.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-07: Summed a message up for the log by its keys alone
 //      Paulinchen  2026-09-29: Dropped the token header, since decrypting the first frame proves the join code
 //      Paulinchen  2026-09-28: Created
 //
@@ -47,6 +48,11 @@ internal sealed class Message
     /// Ends the header lines, the team follows.
     /// </summary>
     private const string HeaderEnd = "\n\n";
+
+    /// <summary>
+    /// The longest key <see cref="FirstFieldOf"/> names in full.
+    /// </summary>
+    private const int MaxLoggedKeyLength = 32;
 
     /// <summary>
     /// The header values by key.
@@ -123,6 +129,32 @@ internal sealed class Message
         }
 
         return new Message(headers, end < 0 ? string.Empty : text.Substring(end + HeaderEnd.Length));
+    }
+
+    /// <summary>
+    /// Sums a message up for the log by its keys alone, since its values may hold what the log must not.
+    /// </summary>
+    /// <param name="text">The message's text, as <see cref="Encode"/> writes it.</param>
+    /// <returns>The first key, which the game script routes the message by, and how many keys it has, such as "trade (4 keys)"; "no keys" without any.</returns>
+    public static string FirstFieldOf(string text)
+    {
+        var end = text.IndexOf(HeaderEnd, StringComparison.Ordinal);
+        var head = end < 0 ? text : text.Substring(0, end);
+        string? first = null;
+        var count = 0;
+
+        foreach (var line in head.Split('\n'))
+        {
+            var separator = line.IndexOf('=');
+
+            if (separator > 0)
+            {
+                first ??= separator <= MaxLoggedKeyLength ? line.Substring(0, separator) : line.Substring(0, MaxLoggedKeyLength) + "...";
+                count++;
+            }
+        }
+
+        return first == null ? "no keys" : $"{first} ({count} {(count == 1 ? "key" : "keys")})";
     }
 
     /// <summary>

@@ -2,6 +2,7 @@
 //  MessageTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-07: Covered summing a message up for the log by its keys alone
 //      Paulinchen  2026-09-29: Dropped the frame tests, which went with the direct connection
 //                            - Covered frames of bytes, and dropping frames of the earlier exchange
 //      Paulinchen  2026-09-28: Created
@@ -59,5 +60,16 @@ public sealed class MessageTests
 
         Assert.Equal("\n", new Message(headers).Encode());
         Assert.Equal(string.Empty, Message.Decode("\n")[Message.Player]);
+    }
+
+    /// <summary>
+    /// Asserts that a message is summed up by its first key and how many it has, never a value.
+    /// </summary>
+    [Fact]
+    public void FirstFieldOf_NamesTheFirstKeyAndTheCount()
+    {
+        Assert.Equal("trade (2 keys)", Message.FirstFieldOf("trade=secret\nitem=5\n\nbody=x\n"));
+        Assert.Equal("chat (1 key)", Message.FirstFieldOf("chat=a=b"));
+        Assert.Equal("no keys", Message.FirstFieldOf("just text"));
     }
 }

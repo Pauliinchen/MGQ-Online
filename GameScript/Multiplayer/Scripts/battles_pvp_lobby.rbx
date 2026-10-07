@@ -2,6 +2,7 @@
 #  battles_pvp_lobby.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-07: Logged the player's choices on the PvP battle screen and the exchange's stages
 #      Paulinchen  2026-10-04: Renamed from mp_battles_pvp_lobby.rbx
 #      Paulinchen  2026-10-03: Spoke of the friend's team, which may have its Backline
 #                            - Created
@@ -107,10 +108,14 @@ class Scene_PvpLobby < Scene_MenuBase
   def refresh_state
     @state = MGQ_Multiplayer::Link.status
     @state = MGQ_Multiplayer::Link.status if MGQ_MpBattlesPvp.join_invite(@state)
+    MGQ_MpBattlesPvp.note_state(@state)
     @ignored_invite ||= MGQ_MpBattlesPvp.ignored_invite?(@state)
     @info_window.show((@ignored_invite ? [MGQ_MpBattlesPvp::IGNORED_INVITE] : []) + MGQ_MpBattlesPvp::Lobby.lines_for(@state))
     @command_window.state = @state
-    return_scene if @state["state"] == "received"
+    return unless @state["state"] == "received"
+
+    MGQ_MpBattlesPvp.log("the friend's team arrived: back to the map, which starts the battle")
+    return_scene
   rescue => e
     MGQ_MpBattlesPvp.log("screen failed: #{e.class}: #{e.message}")
     return_scene
@@ -118,37 +123,45 @@ class Scene_PvpLobby < Scene_MenuBase
 
   # Starts hosting.
   def on_host
+    MGQ_MpBattlesPvp.log("chose to host a PvP battle")
     MGQ_Multiplayer::Link.host(MGQ_MpBattlesPvp::Team.game, MGQ_MpBattlesPvp::Team.build)
     after_command
   end
 
   # Joins with the join code on the clipboard.
   def on_join_clipboard
+    MGQ_MpBattlesPvp.log("chose to join with the join code on the clipboard")
     MGQ_Multiplayer::Link.join_clipboard(MGQ_MpBattlesPvp::Team.game, MGQ_MpBattlesPvp::Team.build)
     after_command
   end
 
   # Puts the join code on the clipboard again.
   def on_copy
-    MGQ_Multiplayer::Link.copy_code ? Sound.play_ok : Sound.play_buzzer
+    copied = MGQ_Multiplayer::Link.copy_code
+    MGQ_MpBattlesPvp.log(copied ? "put the join code on the clipboard again" : "could not put the join code on the clipboard again")
+    copied ? Sound.play_ok : Sound.play_buzzer
     after_command
   end
 
   # Stops hosting or joining.
   def on_stop
+    MGQ_MpBattlesPvp.log("stopped #{@state && @state['state'] == 'joining' ? 'joining' : 'hosting'}")
     MGQ_Multiplayer::Link.cancel
     after_command
   end
 
   # Goes back to the map, which starts the mirror match there.
   def on_mirror
+    MGQ_MpBattlesPvp.log("chose a mirror match")
     MGQ_MpBattlesPvp.request_mirror
     return_scene
   end
 
   # Closes the screen. Hosting and joining go on meanwhile, a failure is cleared.
   def on_close
-    MGQ_Multiplayer::Link.cancel if @state && @state["state"] == "failed"
+    failed = @state && @state["state"] == "failed"
+    MGQ_MpBattlesPvp.log("closed the PvP battle screen#{failed ? ', clearing the failure' : @state ? " while #{@state['state'] || 'idle'}" : ''}")
+    MGQ_Multiplayer::Link.cancel if failed
     return_scene
   end
 

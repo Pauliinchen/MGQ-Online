@@ -197,28 +197,39 @@ Your Formation screens show your whole team: your share of the Frontline as the 
 
 ### The story
 
-Everyone plays the leader's story. Its events, doors and conversations are as far along as in the leader's game, and only the leader starts story events: a member reads "Only \<leader> can move the story on."
+Members close to the leader in the story play the leader's story. Its events, doors and conversations are as far along as in the leader's game, and only the leader starts story events: a member reads "Only \<leader> can move the story on."
 
-- Everyone on the map sees the dialogue in their own message window, which moves on when the leader moves on; only the leader can continue or close it.
-- The story's pictures, such as its CGs, and its fades, tints and flashes show for everyone on the map too.
+- **Who plays the leader's story:** before the Great Decision, a member at most two story steps ahead of or behind the leader; after it, a member on the same route as the leader, at most five steps apart on it. You read "You follow \<leader>'s story while in the party." when it starts.
+- Everyone else plays their own story while in the party: their own story events, scenes and progress, untouched by the leader's. They read why, such as "You and \<leader> are too far apart in the story; each of you plays your own.", or that you're on different sides of the Great Decision or on different routes. The map, battles, chat, trading, duels, the Pocket Castle and the chests you open stay shared all the same.
+- This is checked again whenever your or the leader's story moves on, so two players who drift apart each go on with their own, and two who come close play together.
+
+- Every member on the map who plays the leader's story sees the dialogue in their own message window, which moves on when the leader moves on; only the leader can continue or close it.
+- The story's pictures, such as its CGs, and its fades, tints and flashes show for them too.
 - Conversations, shops (the Casino's coin sellers too) and the job change menu stay your own, and so do the companions, merchants, inn and maids of the Pocket Castle.
 - A trader whose talk would move a side quest on stops there for a member; the leader's talk moves it on for the party.
 
 **What stays yours:** your party, companions and affection, the side you chose (Alice or Ilias), and your saves keep your own story. When you leave the party, you're back in your own story.
 
 - If your story was as far along as the leader's or behind it when you joined, you keep what you play together: the story's progress, its items and gold, and the companions who join or leave in it.
-- If you were behind, you catch up with the leader's story at once: you get the story's skills, companions and items the leader has, and keep the leader's progress when you leave. Side quests you played that the leader never touched stay yours, and so do chests: one only the leader looted is still there for you to open.
+- If you were a step or two behind, you catch up with the leader's story at once: you get the story's skills, companions and items the leader has, and keep the leader's progress when you leave. Side quests you played that the leader never touched stay yours, and so do chests: one only the leader looted is still there for you to open.
 - Where Alice's and Ilias's side get different skills or companions, such as Luka's training at the camps or the companions who join at the Strategy Conference, you get those of your own side once the leader's story gets past that point, even where only your side gets someone. If you have not chosen a side yet, you choose once the leader has, and your companion joins you.
 - After the Great Decision you follow the leader's route and get its companions.
 - If you were ahead of the leader, you borrow the leader's key items you lack, such as the one that opens a locked door, while you're in the party. They go back when you leave it and stay out of your saves, and you borrow them again after a crash, a load or a duel.
 - When the party brings you into the Pocket Castle, its way out takes you back to where you came from.
+
+**Your own choices:** the story's choices are yours, whatever the leader chose: Alice or Ilias, Amira in Iliasburg, Lily or Lucia in Magistea Village, the Priestess or the Queen Bee at Plansect, Natasha or the mayor in Succubus Village, the Spider Princess or the Queen Ants, the Sphinx, and the Great Decision. The companions they bring join you only by your own answer.
+
+- **Sync story:** a leader can bring a member who is behind up to their own point in the story: *Sync story* in the member's menu of the World overview. The member accepts or declines in the notification box ("\<leader> offers to bring your story up to theirs").
+- Accepting opens one screen with every choice the jump carries you past, in story order, each with what your answer brings ("Lucia joins.", "Nobody joins: Natasha joins only while Lily is with you."). Left/Right, Enter or a click change an answer; *Bring me there* takes them all, *Cancel* leaves your story as it is. Amira is always asked until she joined you, since a killed Amira comes back.
+- **The Great Decision:** "Side with the Dark Goddess (World Breaker)" leads to the Angelic Dominion route, "Side with the Goddess Ilias (Judgement)" to the Monster Realm route, and "Search for a third way (Chaos)" shows only if your own save cleared both endings. The leader's route catches you up with them; another route starts you at that route's beginning, where you play it on your own ("You start your own route. Each of you plays your own story.").
+- While you play the leader's story, the same screen asks your own answer whenever the story passes one of these choices, or the leader makes one you haven't.
 
 ### Travelling and story scenes
 
 Everyone goes where they like; only story scenes bring the party together.
 
 - **Teleport to the leader:** *Teleport to \<leader>* takes the place of *Invite to a party* at the top of the wheel, and the leader's row in the World overview offers it too. It brings you over as soon as you're free on the map.
-- **Story scenes wait for everyone.** When the leader starts one, it waits until every member stands next to them, and the leader can't move meanwhile. Members see a 5-second countdown above their head to finish what they're doing, then are brought over from wherever they are; a member in a battle or a menu comes once it's over. No random encounter or co-op battle starts for them during the countdown.
+- **Story scenes wait for everyone who plays the leader's story.** When the leader starts one, it waits until every such member stands next to them, and the leader can't move meanwhile. Members see a 5-second countdown above their head to finish what they're doing, then are brought over from wherever they are; a member in a battle or a menu comes once it's over. No random encounter or co-op battle starts for them during the countdown.
 - The scene waits 30 seconds at most, then starts without whoever hasn't come; they play on where they are.
 - While the scene plays, the members on that map stand still and can't open the menu; the chat stays open. Story events don't get stuck on a member standing in their way.
 - When a scene moves the leader somewhere else, such as onto a theater's stage and back, the members with them come along at once.
@@ -310,7 +321,7 @@ Your games meet at the mod's **relay**, a small server that passes their data on
 | "Your friend's game is not hosting with this join code right now" | Your friend stopped hosting, or hosted again, which makes a new join code: ask for the new one. Or their game is reconnecting to the relay: try again in a minute. |
 | "Nobody joined in time, so hosting stopped" | Hosting waits 30 minutes for a friend. Host again for a new join code. |
 | "Your team is too large to send" | Your party has more characters, skills or equipment than one PvP exchange carries. Leave a few characters out of the party and try again. |
-| "The relay could not be reached" | Your internet connection is down, or something such as a firewall blocks the game from going online. `Logs\Multiplayer.log` in the game folder says what the relay answered. |
+| "The relay could not be reached" | Your internet connection is down, or something such as a firewall blocks the game from going online. The newest `Logs\Multiplayer <date and time>.log` in the game folder says what the relay answered. |
 | "This join code comes from another version of the mod" | One of you has an older version; both need the same one. |
 | "Your friend's game uses a relay this version does not know" | Your friend has a newer version of the mod; update yours. |
 | "\<world> is not in the list right now" | The world list hasn't loaded yet or couldn't be fetched; the top of the world screen says which. Try again once it has loaded. |
@@ -318,4 +329,4 @@ Your games meet at the mod's **relay**, a small server that passes their data on
 | "\<world> needs ...: no such script in your Patch folder" | The world requires a mod you don't have. Install it, then enter again. |
 | "This is a world code" | You pasted a world's code into a PvP join. Enter worlds through *Multiplayer* on the title screen. |
 
-**Logs:** both are in the `Logs` folder of your game folder. `Multiplayer InGame.log` only appears when something went wrong inside the game; `Multiplayer.log` tells what the connection did. Please attach both to a [bug report](https://github.com/Pauliinchen/MGQ-Online/issues/new?template=bug_report.yml).
+**Logs:** both are in the `Logs` folder of your game folder, a pair per time you played, named after when the game started, such as `Multiplayer InGame 2026-10-07 18-30-05.log` and `Multiplayer 2026-10-07 18-30-05.log`. The `Multiplayer InGame` log tells what the mod did inside the game; the `Multiplayer` log tells what the connection did. Please attach both of the session that went wrong to a [bug report](https://github.com/Pauliinchen/MGQ-Online/issues/new?template=bug_report.yml).

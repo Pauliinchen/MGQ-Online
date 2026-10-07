@@ -2,6 +2,7 @@
 #  core_hotkeys.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-07: Logged the hotkeys bound as the game starts, each hotkey pressed and what it is for, and a setting that is no key
 #      Paulinchen  2026-10-04: Added the party box size key, Tab unless bound, and named Tab
 #                            - Added the emote wheel's key, E unless bound
 #                            - Renamed from mp_hotkeys.rbx
@@ -62,7 +63,10 @@ module MGQ_MpHotkeys
   def self.code(action)
     binding = BINDINGS[action]
     stored = MGQ_Multiplayer::Player.setting(binding.setting).to_s
-    stored =~ /\A\d+\z/ && stored.to_i.between?(1, MAX_CODE) ? stored.to_i : binding.default
+    return stored.to_i if stored =~ /\A\d+\z/ && stored.to_i.between?(1, MAX_CODE)
+
+    log_once([:unreadable, action, stored], "#{binding.setting}=#{stored} in Player.ini is no key, #{action} keeps #{plain_name(binding.default)}") unless stored.empty?
+    binding.default
   rescue
     BINDINGS[action].default
   end
@@ -73,7 +77,7 @@ module MGQ_MpHotkeys
   # @param code [Integer] Windows' code of the key.
   def self.bind(action, code)
     MGQ_Multiplayer::Player.store(BINDINGS[action].setting, code)
-    log("bound #{action} to #{label(action)}")
+    log("bound #{BINDINGS[action].name} to #{label(action)} (key code #{code})")
   end
 
   # Reports whether the key bound to an action went down since the last call for that key.
@@ -81,7 +85,27 @@ module MGQ_MpHotkeys
   # @param action [Symbol] A key of BINDINGS.
   # @return [Boolean] Whether it went down.
   def self.pressed?(action)
-    MGQ_Multiplayer::Key.pressed?(code(action))
+    pressed = MGQ_Multiplayer::Key.pressed?(code(action))
+    log_press(action) if pressed && !$mgq_text_input
+    pressed
+  end
+
+  # Logs a hotkey pressed and what it is for. Not while the player types, whose letters would land
+  # in the log.
+  #
+  # @param action [Symbol] A key of BINDINGS.
+  def self.log_press(action)
+    log("hotkey #{label(action)} pressed: #{BINDINGS[action].name}")
+  rescue
+  end
+
+  # Lists every hotkey with the key bound to it, for the log.
+  #
+  # @return [String] Each hotkey's name and key.
+  def self.summary
+    BINDINGS.map { |action, binding| "#{binding.name} #{label(action)}" }.join(", ")
+  rescue => e
+    "unreadable (#{e.class})"
   end
 
   # Names the key bound to an action, for the texts that tell the player which key to press.
@@ -110,13 +134,18 @@ module MGQ_MpHotkeys
   # Adds a key binding per action to Mod Config Remake 1.3.0 or later. With an older version or the
   # Mod Config Menu, which would show them as buttons that do nothing, the keys in Player.ini stay.
   def self.register
-    return unless defined?(ModConfigRemake::Keys)
+    log("hotkeys: #{summary}")
+    unless defined?(ModConfigRemake::Keys)
+      log("no key bindings in the Mod Config: Mod Config Remake 1.3.0 or later is not installed, the hotkeys stay as Player.ini keeps them")
+      return
+    end
 
     menu = NWConst::Config::MOD_CONTENTS
     BINDINGS.each do |action, binding|
       menu.insert(-2, :key => binding.option, :name => "[Monster Girl Quest! Online] #{binding.name}", :keybind => true,
                       :help => binding.help, :value => lambda { code(action) }, :on_change => lambda { |key| bind(action, key) })
     end
+    log("added #{BINDINGS.size} key bindings to Mod Config Remake")
   end
 end
 
