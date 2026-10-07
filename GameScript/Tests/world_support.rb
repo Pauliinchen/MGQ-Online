@@ -2,6 +2,7 @@
 #  world_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-07: Stood in for the chat lines mirrored to the relay
 #      Paulinchen  2026-10-06: Read the texts of the line at the bottom left here, since overworld_sync.rbx no longer offers them
 #                            - Kept the buttons held while any screen holds them, as Multiplayer.rb does
 #                            - Told the buttons held past the capture, from $held, and loaded ui_wheel.rbx
@@ -127,9 +128,11 @@ load_script "coop_squad"
 # One frame on the map: the wheel's keys, then the chat's, as the hooks run them.
 def map_frame; MGQ_MpActions.on_map; MGQ_MpChat.on_map; end
 
+$said = []
 module MGQ_MpOverworldSync::Link
   def self.next_entry; $inbox.shift; end
   def self.send_to(target, text); $sent << [target, text]; true; end
+  def self.say(text); $said << text; true; end
   def self.status; { "state" => "open", "ping" => $status_ping }; end
 end
 

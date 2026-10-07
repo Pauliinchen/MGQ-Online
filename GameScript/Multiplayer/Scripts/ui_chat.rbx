@@ -2,7 +2,8 @@
 #  ui_chat.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-07: Closed the chat box with the numpad's 0, as the game's windows close
+#      Paulinchen  2026-10-07: Mirrored every line sent to everyone to the relay for the world's admins, and showed an admin's line from the relay as [Admin] in gold
+#                            - Closed the chat box with the numpad's 0, as the game's windows close
 #                            - Scrolled the chat log while the box is open with up, down, Page Up and Page Down, keeping the rows in place as lines come in
 #                            - Registered the map's, the battle's and its sprites' hooks through core_hooks.rbx instead of wraps of this script
 #                            - Named senders through MGQ_MpOverworldSync.who and took white and the depths from MGQ_MpUi
@@ -70,22 +71,25 @@ module MGQ_MpChat
   # What the log shows before a line of the party chat.
   PARTY_TAG = "[Party] "
 
+  # What the log shows before a line an admin said from outside the game, through the relay.
+  ADMIN_TAG = "[Admin] "
+
   # A line of the chat log.
   #
   # @!attribute name [String, nil] The sender's name, nil for a line of the game's own.
   # @!attribute text [String] The line.
   # @!attribute who [Symbol] Whose it is, which colors the name: :me, :member (of the player's
-  #   party), :other or :system.
+  #   party), :other, :admin (said through the relay) or :system.
   # @!attribute party [Boolean] Whether it is a line of the party chat.
   # @!attribute left [Integer] Frames it still shows while the chat box is closed.
   Line = Struct.new(:name, :text, :who, :party, :left) do
-    # Writes what comes before the line itself: the party tag and the sender's name.
+    # Writes what comes before the line itself: the party or admin tag and the sender's name.
     #
     # @return [String] The head, "* " for a line of the game's own.
     def head
       return "* " if who == :system
 
-      "#{party ? MGQ_MpChat::PARTY_TAG : ''}#{name}: "
+      "#{party ? MGQ_MpChat::PARTY_TAG : who == :admin ? MGQ_MpChat::ADMIN_TAG : ''}#{name}: "
     end
 
     # Writes the whole line, as the log shows it.
@@ -278,6 +282,7 @@ module MGQ_MpChat
 
     @sent += 1
     log("sent #{party ? 'to the party' : 'to everyone'} (line #{@sent} sent): #{MGQ_MpLog.short(text)}")
+    log("the relay did not take the line for the world's chat") if !party && !MGQ_MpOverworldSync.say(text)
     add(:me, name, text, party)
   end
 
@@ -290,12 +295,12 @@ module MGQ_MpChat
     MGQ_MpOverworldSync.notice(text)
   end
 
-  # Takes another player's chat line.
+  # Takes another player's chat line, or an admin's that the relay said, marked "relay".
   #
-  # @param peer [MGQ_MpOverworldSync::Peers::Peer, nil] Who sent it, nil before their first state.
+  # @param peer [MGQ_MpOverworldSync::Peers::Peer, nil] Who sent it, nil before their first state or for the relay.
   # @param message [Hash] The message, the line under "chat".
   def self.receive(peer, message)
-    take_line(peer, message["chat"], message["name"], false)
+    take_line(peer, message["chat"], message["name"], false, message["relay"] == "1")
   end
 
   # Takes a party member's line of the party chat. Called by coop.rbx, which drops another party's.
@@ -310,16 +315,17 @@ module MGQ_MpChat
   #
   # @param peer [MGQ_MpOverworldSync::Peers::Peer, nil] Who sent it.
   # @param text [String, nil] The line.
-  # @param name [String, nil] The name the message carries, for a sender without a state yet.
+  # @param name [String, nil] The name the message carries, for a sender without a state yet or an admin.
   # @param party [Boolean] Whether it is a line of the party chat.
-  def self.take_line(peer, text, name, party)
+  # @param admin [Boolean] Whether an admin said it through the relay, from outside the game.
+  def self.take_line(peer, text, name, party, admin = false)
     text = text.to_s.gsub(/[[:cntrl:]]/, "").strip[0, MAX_LENGTH]
-    sender = peer ? MGQ_MpOverworldSync.who(peer) : "#{name} (no state yet, no bubble)"
+    sender = peer ? MGQ_MpOverworldSync.who(peer) : admin ? "the admin #{name} through the relay" : "#{name} (no state yet, no bubble)"
     return log("dropped an empty #{party ? 'party ' : ''}chat line from #{sender}") if text.empty?
 
     @received += 1
     log("#{party ? 'party line' : 'line'} from #{sender} (line #{@received} received): #{MGQ_MpLog.short(text)}")
-    add(peer ? peer.seat : nil, peer ? peer.state["name"] : name, text, party, peer && member?(peer))
+    add(peer ? peer.seat : nil, peer ? peer.state["name"] : name, text, party, peer && member?(peer), admin)
   end
 
   # Reports whether another player is in the player's party, whose name the log shows green.
@@ -337,8 +343,9 @@ module MGQ_MpChat
   # @param text [String] The line.
   # @param party [Boolean] Whether it is a line of the party chat.
   # @param member [Boolean] Whether another sender is in the player's party.
-  def self.add(sender, name, text, party = false, member = false)
-    who = sender == :me ? :me : (member ? :member : :other)
+  # @param admin [Boolean] Whether an admin said it through the relay.
+  def self.add(sender, name, text, party = false, member = false, admin = false)
+    who = sender == :me ? :me : admin ? :admin : (member ? :member : :other)
     push(Line.new(name.to_s, text, who, party))
     @bubbles[sender] = [text, BUBBLE_FRAMES] unless sender.nil?
   end
@@ -626,9 +633,10 @@ class Sprite_MpChatLog < Sprite
   TEXT_COLOR = MGQ_MpUi::WHITE
 
   # Colors of the senders' names: the player's own yellow, the party's members green as their
-  # labels on the map, everyone else's white, and the game's own lines grey.
+  # labels on the map, everyone else's white, an admin's gold as the featured worlds, and the
+  # game's own lines grey.
   NAME_COLORS = { :me => Color.new(255, 225, 110), :member => Color.new(128, 255, 128), :other => TEXT_COLOR,
-                  :system => Color.new(200, 200, 200) }
+                  :admin => Color.new(255, 200, 64), :system => Color.new(200, 200, 200) }
 
   # Color of the tag before a line of the party chat.
   PARTY_TAG_COLOR = Color.new(190, 170, 255)

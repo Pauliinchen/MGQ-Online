@@ -2,7 +2,8 @@
 #  overworld_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-07: Checked scrolling the chat log
+#      Paulinchen  2026-10-07: Checked the lines mirrored to the relay, the party chat kept from it, and an admin's line from the relay
+#                            - Checked scrolling the chat log
 #                            - Checked that the numpad's 0 closes the chat box
 #                            - Checked the stand-in for a sprite this game lacks
 #                            - Checked the player's seat kept from the inbox and the status until the world closes
@@ -330,6 +331,7 @@ map_frame
 check("enter sends and closes", [chat.typing?, $typing_on, MGQ_Multiplayer::Capture.on?], [false, false, false])
 check("the line is told", $sent.last[1].include?("chat=hi there") && !$sent.last[1].include?("map="), true)
 check("own line in the log and bubble", [chat.log_lines.last, chat.bubble(:me)], ["Me: hi there", "hi there"])
+check("the line is mirrored to the relay for the world's admins", $said, ["hi there"])
 
 $inbox << entry("message", 2, "chat=hello\x01 you\nname=Friend\n\n")
 MGQ_MpOverworldSync.tick
@@ -337,12 +339,16 @@ check("a friend's line", [chat.log_lines.last, chat.bubble(2)], ["Friend: hello 
 $inbox << entry("message", 7, "chat=who am i\nname=Stranger\n\n")
 MGQ_MpOverworldSync.tick
 check("a line before the first state names the sender", chat.log_lines.last, "Stranger: who am i")
+$inbox << { "kind" => "chat", "seat" => "0", "name" => "Global", :payload => "welcome\x01 all" }
+MGQ_MpOverworldSync.tick
+check("an admin's line from the relay shows tagged as the admin's, without a bubble",
+      [chat.log_lines.last, chat.log_entries.last.who, chat.senders.include?(nil)], ["[Admin] Global: welcome all", :admin, false])
 
 wheel(CHAT, :C)
 check("the wheel opens the chat box", [chat.typing?, MGQ_MpActions::Wheel.open?, MGQ_Multiplayer::Capture.on?], [true, false, true])
 $typed = "never sent\e"
 map_frame
-check("escape closes without sending", [chat.typing?, chat.log_lines.last], [false, "Stranger: who am i"])
+check("escape closes without sending", [chat.typing?, chat.log_lines.last], [false, "[Admin] Global: welcome all"])
 chat.start_typing
 $typed = "x" * 130
 map_frame
@@ -362,11 +368,11 @@ chat.stop_typing
 
 (MGQ_MpChat::BUBBLE_FRAMES + 1).times { MGQ_MpOverworldSync.tick }
 check("bubbles run out", chat.senders, [])
-check("log lines stay a while longer", chat.log_lines.size, 3)
+check("log lines stay a while longer", chat.log_lines.size, 4)
 (MGQ_MpChat::LOG_FRAMES).times { MGQ_MpOverworldSync.tick }
 check("then the log goes quiet", chat.log_lines, [])
 chat.start_typing
-check("but shows again while typing", chat.log_lines.size, 3)
+check("but shows again while typing", chat.log_lines.size, 4)
 battle = Scene_Battle.new
 SceneManager.scene = battle
 MGQ_MpOverworldSync.tick
@@ -571,6 +577,7 @@ extra=1")], [4, true])
 
 # The party chat, and the senders' colors.
 $sent.clear
+mirrored_before = $said.size
 chat.start_typing
 $typed = "/p meet at the inn\r"
 map_frame
@@ -578,6 +585,7 @@ party_line = $sent.last && $sent.last[1]
 check("a line starting with /p goes to the party only", [party_line.include?("pchat=meet at the inn\n"), party_line.include?("party=#{mine}"), party_line =~ /^chat=/ ? true : false],
       [true, true, false])
 check("and shows tagged in the player's own log", [chat.log_lines.last, chat.log_entries.last.who], ["[Party] Me: meet at the inn", :me])
+check("the party chat never reaches the relay", $said.size, mirrored_before)
 $inbox << entry("message", 4, "pchat=on my way\nname=Friend\nparty=#{mine}\n\n")
 $inbox << entry("message", 4, "chat=hello all\nname=Friend\n\n")
 MGQ_MpOverworldSync.tick

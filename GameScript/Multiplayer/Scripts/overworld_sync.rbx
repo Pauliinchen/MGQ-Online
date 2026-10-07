@@ -2,7 +2,8 @@
 #  overworld_sync.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-07: Kept the player's seat as the inbox and the status tell it, asking the DLL only while none was told
+#      Paulinchen  2026-10-07: Mirrored a chat line to the relay through say, and handed an admin's line from the relay to the chat's route
+#                            - Kept the player's seat as the inbox and the status tell it, asking the DLL only while none was told
 #                            - Logged a failing route once
 #                            - Named the DLL's exports alone, their signatures living in Multiplayer.rb
 #                            - Logged players joining, leaving, going away, coming back and moving seats, their changes of map and screen, the player's own, every change of the connection's status with how it closed, the notices and dropped messages
@@ -144,6 +145,15 @@ module MGQ_MpOverworldSync
     Link.send_to(seat, Me.encode(fields) + body)
   end
 
+  # Mirrors a line of the world's chat to the relay, which keeps the last lines of every world for
+  # its admins and passes it to nobody; the line itself goes to the others through tell.
+  #
+  # @param text [String] The line.
+  # @return [Boolean] Whether it went out.
+  def self.say(text)
+    Link.say(text)
+  end
+
   # The fields the Discord mod publishes about the open world, which Discord shows as its name and
   # its players, such as "(3 of 8)", and whose code its invites carry.
   #
@@ -278,8 +288,9 @@ module MGQ_MpOverworldSync
   module Link
     # Hands out the oldest inbox entry.
     #
-    # @return [Hash, nil] "kind" ("seat", "in", "out" or "message"), "seat", "others", and the
-    #   message's text under :payload; nil while none waits.
+    # @return [Hash, nil] "kind" ("seat", "in", "out", "message" or "chat"), "seat", "others",
+    #   "name" for a chat entry, and the message's or the chat line's text under :payload; nil
+    #   while none waits.
     def self.next_entry
       text = MGQ_Multiplayer::Link.read('mp_world_receive', ENTRY_SIZE)
       text.empty? ? nil : MGQ_Multiplayer::Link.parse(text)
@@ -292,6 +303,14 @@ module MGQ_MpOverworldSync
     # @return [Boolean] Whether it went out.
     def self.send_to(target, text)
       MGQ_Multiplayer::Link.function('mp_world_send').call(target, text + "\0") == 1
+    end
+
+    # Mirrors a line of the world's chat to the relay, which keeps it for the world's admins.
+    #
+    # @param text [String] The line.
+    # @return [Boolean] Whether it went out.
+    def self.say(text)
+      MGQ_Multiplayer::Link.function('mp_world_say').call(text + "\0") == 1
     end
 
     # Reads how the connection stands.
@@ -606,6 +625,12 @@ module MGQ_MpOverworldSync
       when "out"
         MGQ_MpOverworldSync.log("the game on seat #{seat} went out#{Peers.at(seat) ? '' : ', which never told its state'}")
         Peers.wait_for(seat)
+      when "chat"
+        # An admin's line, said in the World Admin tool: no seat said it, so the chat takes it
+        # without a sender's state.
+        name = entry["name"].to_s
+        MGQ_MpOverworldSync.log("chat line from the relay for #{name}")
+        MGQ_MpOverworldSync.hand_over(nil, { "chat" => entry[:payload].to_s, "name" => name, "relay" => "1" })
       when "message"
         message = MGQ_Multiplayer::Link.parse(entry[:payload].dup)
         # A state may carry a field named like a route, and a script's message may name a map, so

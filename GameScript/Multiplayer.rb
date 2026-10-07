@@ -2,7 +2,8 @@
 #  Multiplayer.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-07: Logged how the game closes and each F12 reset, so a log that just stops tells a crash
+#      Paulinchen  2026-10-07: Named mp_world_say, which mirrors a chat line to the relay for the world's admins
+#                            - Logged how the game closes and each F12 reset, so a log that just stops tells a crash
 #                            - Kept the press that closes a screen of the mod from reaching the game in the same frame, which left a PvP battle when Escape closed the chat box
 #                            - Gave the background wrap its script, as every around now names who registers
 #                            - Named every export of the DLL with its signature once in Link, so a call names the export alone
@@ -523,6 +524,7 @@ module MGQ_Multiplayer
       'mp_world_open' => 'p',
       'mp_world_close' => 'v',
       'mp_world_send' => 'lp',
+      'mp_world_say' => 'p',
       'mp_world_receive' => READ_ARGUMENTS,
       'mp_world_status' => READ_ARGUMENTS,
 
