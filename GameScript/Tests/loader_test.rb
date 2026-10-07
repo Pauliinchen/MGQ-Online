@@ -2,7 +2,8 @@
 #  loader_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-06: Checked that ui_wheel.rbx loads before both wheels
+#      Paulinchen  2026-10-06: Checked that the in-game log counts a repeated line, while it repeats and when the game closes, and moves a log grown too large aside
+#                            - Checked that ui_wheel.rbx loads before both wheels
 #      Paulinchen  2026-10-04: Checked that coop_gather.rbx loads after coop_events.rbx and coop_castle.rbx after coop_story.rbx
 #                            - Followed the scripts to their new names, without mp_
 #      Paulinchen  2026-10-03: Checked that a family's base script loads before its other scripts
@@ -71,3 +72,26 @@ check("a script loads at the top level, past a byte order mark",
 check("the scripts after one that fails or is missing still load", defined?(LoaderTestAfter) ? true : false, true)
 check("a script that does not parse is logged by name", log.any? { |line| line.start_with?("broken.rbx did not load: SyntaxError") }, true)
 check("a missing script is logged by name", log.any? { |line| line.start_with?("missing.rbx did not load: Errno::ENOENT") }, true)
+
+# The in-game log: a line repeated is counted, and a log grown too large is moved aside once a
+# session starts.
+module MGQ_Multiplayer; end
+MGQ_Multiplayer.const_set(:LOG_DIR, "Logs")
+MGQ_Multiplayer.module_eval(source[/  def self\.log_path\(name\)\n.*?\n  end\n/m])
+MGQ_Multiplayer.module_eval(source[/  module Log\n.*?\n  end\n/m])
+Dir.mktmpdir do |game|
+  Dir.chdir(game) do
+    Dir.mkdir("Logs")
+    File.write(File.join("Logs", "Multiplayer InGame.log"), "x" * (MGQ_Multiplayer::Log::MAX_BYTES + 1))
+    3.times { MGQ_Multiplayer::Log.write("same") }
+    MGQ_Multiplayer::Log.write("other")
+    lines = File.read(File.join("Logs", "Multiplayer InGame.log")).lines.map { |line| line.split("  ", 2)[1].to_s.chomp }
+    check("a line repeated is written once, with how often it repeated before the next one", lines, ["same", "(the line above repeated 2 times in all)", "other"])
+    12.times { MGQ_Multiplayer::Log.write("flood") }
+    MGQ_Multiplayer::Log.flush
+    lines = File.read(File.join("Logs", "Multiplayer InGame.log")).lines.map { |line| line.split("  ", 2)[1].to_s.chomp }
+    check("a line that keeps repeating says so while it goes on, and in all when the game closes", lines.last(3),
+          ["flood", "(the line above repeated 10 times so far)", "(the line above repeated 11 times in all)"])
+    check("the log of earlier sessions, grown past its limit, is kept as the old log", File.size(File.join("Logs", "Multiplayer InGame.old.log")), MGQ_Multiplayer::Log::MAX_BYTES + 1)
+  end
+end

@@ -2,7 +2,8 @@
 #  Multiplayer.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-06: Handed a Discord invite into a world to world.rbx instead of the PvP connection
+#      Paulinchen  2026-10-06: Kept up to 3000 lines of the in-game log per session instead of 60, which ended it within minutes, counted a repeated line instead of writing it again, saying so while it repeats and when the game closes, and moved a log grown past 1 MB aside as the old log when a session starts
+#                            - Handed a Discord invite into a world to world.rbx instead of the PvP connection
 #                            - Kept the last name Discord told, which stands in while Discord has not told one yet, as right after a restart
 #                            - Wrote the in-game log as Multiplayer InGame.log into the game folder's Logs folder
 #                            - Loaded trade.rbx and ui_trade.rbx after battles_team.rbx
@@ -187,19 +188,76 @@ module MGQ_Multiplayer
 
   # Logs/Multiplayer InGame.log, which only appears when something went wrong inside the game.
   module Log
-    # Lines written per session at most, an error repeating every frame would flood the file.
-    MAX_LINES = 60
+    # Lines written per session at most, an error repeating every frame would flood the file. A
+    # session of a few hours' play writes some hundred.
+    MAX_LINES = 3000
+
+    # Size from which a session moves the log aside as BACKUP_NAME, 1 MB. The backup then holds
+    # every session before, up to the one that crossed it.
+    MAX_BYTES = 1024 * 1024
+
+    # The log's file name.
+    NAME = "Multiplayer InGame.log"
+
+    # The file name of the log's last copy.
+    BACKUP_NAME = "Multiplayer InGame.old.log"
+
+    # How often a line repeats before the log says so while it still repeats, so a flood shows even
+    # when the game closes or the log ends first.
+    REPEAT_REPORTS = [10, 100, 1000, 10_000]
 
     @lines = 0
+    @last = nil
+    @streak = 0
+    @reported = 0
 
-    # Appends a line, prefixed with the time.
+    # Appends a line, prefixed with the time. A line the same as the one before is only counted;
+    # the count is written once the streak ends, and at REPEAT_REPORTS while it goes on.
     #
     # @param message [String] The line to append.
     def self.write(message)
       return if @lines >= MAX_LINES
-      @lines += 1
 
-      File.open(MGQ_Multiplayer.log_path("Multiplayer InGame.log"), "ab") { |file| file.write("#{Time.now}  #{message}\n") }
+      if message == @last
+        @streak += 1
+        append("(the line above repeated #{@streak} times so far)") if REPEAT_REPORTS.include?(@streak)
+        @reported = @streak if REPEAT_REPORTS.include?(@streak)
+        return
+      end
+
+      start_session if @lines == 0
+      flush
+      @last = message
+      append(message)
+    rescue
+    end
+
+    # Writes how often the last line repeated, unless the log said so already. Called when another
+    # line comes and when the game closes.
+    def self.flush
+      append("(the line above repeated #{@streak} times in all)") if @streak > @reported
+      @streak = 0
+      @reported = 0
+    rescue
+    end
+
+    # Appends one line, prefixed with the time.
+    #
+    # @param text [String] The line.
+    def self.append(text)
+      @lines += 1
+      File.open(MGQ_Multiplayer.log_path(NAME), "ab") { |file| file.write("#{Time.now}  #{text}\n") }
+    end
+
+    # Moves a log grown past MAX_BYTES aside as BACKUP_NAME, so the file stops growing across
+    # sessions while the sessions before stay readable.
+    def self.start_session
+      path = MGQ_Multiplayer.log_path(NAME)
+      return unless File.exist?(path) && File.size(path) > MAX_BYTES
+
+      backup = MGQ_Multiplayer.log_path(BACKUP_NAME)
+      File.delete(backup) if File.exist?(backup)
+      File.rename(path, backup)
     rescue
     end
   end
@@ -867,6 +925,8 @@ end
 
 MGQ_Multiplayer.start
 MGQ_Multiplayer.load_scripts
+# When the game closes, the log writes how often its last line repeated.
+at_exit { MGQ_Multiplayer::Log.flush }
 
 # Game hooks, through core_hooks.rbx.
 
