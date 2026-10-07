@@ -2,7 +2,8 @@
 #  ui_chat.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-06: Added the chat's choice to the action wheel's ring by order instead of to its left
+#      Paulinchen  2026-10-06: Opened the chat box while the map shows a message, such as the story's dialogue
+#                            - Added the chat's choice to the action wheel's ring by order instead of to its left
 #      Paulinchen  2026-10-05: Took the typing of an open chat box while the map shows a message, which left both stuck
 #      Paulinchen  2026-10-04: Named the party tag by its module inside the log line, as Ruby 1.9 finds it
 #                            - Sent a line typed with /p to the party only, and colored the senders' names: own yellow, the party's green, others white
@@ -372,17 +373,20 @@ module MGQ_MpChat
     typing? ? "typing" : nil
   end
 
-  # Reports whether the map lets the player chat: quiet, or busy only with the party's story, which
-  # the player waits for, through coop_gather.rbx.
+  # Reports whether the map lets the player chat: quiet, showing a message, or busy only with the
+  # party's story, which the player waits for, through coop_gather.rbx.
   #
   # @return [Boolean] Whether it does.
   def self.map_open?
-    MGQ_MpOverworldSync.map_quiet? || (defined?(MGQ_MpCoopGather) && MGQ_MpCoopGather.waiting?) ? true : false
+    return true if MGQ_MpOverworldSync.map_quiet? || $game_message.busy?
+
+    defined?(MGQ_MpCoopGather) && MGQ_MpCoopGather.waiting? ? true : false
   end
 
   # Opens the chat box with its key, and types into it while it is open. Called by the map every
   # frame, so a press of the key is seen once.
   def self.on_map
+    @map_ran = true
     chat_key = MGQ_MpHotkeys.pressed?(:chat)
     return stop_typing unless MGQ_MpOverworldSync.in_world?
 
@@ -399,13 +403,20 @@ module MGQ_MpChat
     stop_typing
   end
 
-  # Types into an open chat box while the map shows a message, which stops the map's own update
-  # that on_map follows. The box holds the buttons, so without this neither the box nor the message
-  # could go on. Called by the map every frame.
+  # Notes that the map's update starts, in which on_map has not run yet. Called by the map every
+  # frame.
+  def self.map_updating
+    @map_ran = false
+  end
+
+  # Opens the chat box and types into it while the map shows a message, which stops the map's own
+  # update that on_map follows. The box holds the buttons, so the message waits for it. Called by
+  # the map every frame.
   #
   # @param scene [Scene_Map] The map.
   def self.on_message(scene)
-    on_map if typing? && !scene.scene_change_ok?
+    # A message that starts during the map's own update comes after on_map ran in that update.
+    on_map unless @map_ran || scene.scene_change_ok?
   rescue => e
     log("chat failed: #{e.class}: #{e.message}")
     stop_typing
@@ -719,8 +730,9 @@ if MGQ_MpChat.hookable?
     class Scene_Map
       alias mgq_mp_chat_update update
 
-      # Updates the map, then an open chat box while a message stops the map's own update.
+      # Updates the map, then the chat box while a message stops the map's own update.
       def update
+        MGQ_MpChat.map_updating
         mgq_mp_chat_update
         MGQ_MpChat.on_message(self)
       end

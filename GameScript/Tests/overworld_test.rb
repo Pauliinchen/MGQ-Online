@@ -2,7 +2,8 @@
 #  overworld_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-06: Checked that Discord hears of the world code, which its invites carry
+#      Paulinchen  2026-10-06: Checked that the chat box opens while a message shows, and stays shut while an event runs without one
+#                            - Checked that Discord hears of the world code, which its invites carry
 #                            - Checked that the wheel keeps its pick once the arrows are let go
 #                            - Found the wheel's choices by their place on the ring, and checked how the ring spreads and lays out its choices
 #                            - Steered the action wheel with the arrows held, and checked the middle while none or a diagonal is held
@@ -363,13 +364,28 @@ check("the game's own lines go to the log too", chat.log_lines.last, "* Friend l
 $game_message.busy = true
 $pressed = 0x54
 map_frame
-check("an event's message keeps the chat box shut", chat.typing?, false)
+check("an event's message lets the chat box open", chat.typing?, true)
+chat.stop_typing
+$pressed = 0x54
+$scene_change_ok = false
+Scene_Map.new.update
+check("also from the map's update while the message stops the map's own", chat.typing?, true)
+chat.stop_typing
+$scene_change_ok = true
+$game_message.busy = false
+class Interpreter; attr_writer :running; def running?; @running ? true : false; end; end
+$game_map.interpreter.running = true
+$pressed = 0x54
+map_frame
+check("an event without a message keeps the chat box shut", chat.typing?, false)
 module MGQ_MpCoopGather; def self.waiting?; $party_waiting; end; end
 $party_waiting = true
 $pressed = 0x54
 map_frame
 check("but it opens while the player waits for the party's story", chat.typing?, true)
 $party_waiting = false
+$game_map.interpreter.running = false
+$game_message.busy = true
 $typed = "on"
 map_frame
 check("and stays open, keeping the line, once the story plays", [chat.typing?, chat.typed], [true, "on"])
