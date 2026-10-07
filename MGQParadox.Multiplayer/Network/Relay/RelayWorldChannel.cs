@@ -2,6 +2,7 @@
 //  RelayWorldChannel.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-07: Sent the world's auth key in the X-MGQ-Auth header instead of the address, and closed the WebSocket through the shared helper
 //      Paulinchen  2026-10-06: Sent the player's key in the X-MGQ-Player header instead of the address, and read the code a refusal names why with and the reason of a close
 //      Paulinchen  2026-09-29: Named the relay's answer to a ping, which times the round trip
 //                            - Entered with the player's key and name and the world's auth key, and told how the relay refused or closed
@@ -58,11 +59,6 @@ internal sealed class RelayWorldChannel : IDisposable
     private const string Ping = "ping";
 
     /// <summary>
-    /// How long closing may take before the connection is simply dropped.
-    /// </summary>
-    private static readonly TimeSpan CloseTimeout = TimeSpan.FromSeconds(1);
-
-    /// <summary>
     /// The WebSocket to the relay, which the channel owns.
     /// </summary>
     private readonly ClientWebSocket _socket;
@@ -109,7 +105,8 @@ internal sealed class RelayWorldChannel : IDisposable
         var socket = new ClientWebSocket();
         socket.Options.CollectHttpResponseDetails = true;
         socket.Options.SetRequestHeader(DirectoryClient.PlayerHeader, playerKey);
-        var address = new Uri(relay, $"/v1/world/{room}?name={Uri.EscapeDataString(playerName)}&auth={authKey}");
+        socket.Options.SetRequestHeader(DirectoryClient.AuthHeader, authKey);
+        var address = new Uri(relay, $"/v1/world/{room}?name={Uri.EscapeDataString(playerName)}");
         refusal = null;
         refusalCode = null;
 
@@ -195,24 +192,9 @@ internal sealed class RelayWorldChannel : IDisposable
     /// <inheritdoc />
     public void Dispose()
     {
-        if (Interlocked.Exchange(ref _disposed, 1) == 1)
+        if (Interlocked.Exchange(ref _disposed, 1) == 0)
         {
-            return;
+            WebSocketMessages.CloseAndDispose(_socket);
         }
-
-        try
-        {
-            if (_socket.State == WebSocketState.Open)
-            {
-                using var cancel = new CancellationTokenSource(CloseTimeout);
-                _socket.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, "closed", cancel.Token).Wait(CloseTimeout);
-            }
-        }
-        catch
-        {
-            // Closing is a courtesy to the relay; the connection ends either way.
-        }
-
-        _socket.Dispose();
     }
 }

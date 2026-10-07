@@ -2,6 +2,7 @@
 //  TestRelay.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-07: Took the world's auth key from the X-MGQ-Auth header too, for the starting save as well
 //      Paulinchen  2026-10-06: Took the player's key from the X-MGQ-Player header too, for the trades as well, and closed a player's earlier world room connection with 4009 "replaced" once the same player entered again
 //                            - Closed every room's peers with a close code on request
 //                            - Refereed trades between two players of a world, committed once both sent the same hash
@@ -607,7 +608,7 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
                 ["v1", "worlds", var id, "delete"] when CreatorOrAdminOf(id, body?["player"]?.GetValue<string>()) is { } world => Delete(id, toClose, out closeCode),
                 ["v1", "worlds", var id, "ban"] when CreatorOf(id, body?["player"]?.GetValue<string>()) is { } world => Ban(id, world, body!["target"]!.GetValue<string>(), toClose, out closeCode),
                 ["v1", "worlds", var id, "start"] when method == "POST" && CreatorOf(id, PlayerKeyOf(context)) is { } world => PutStart(world, upload),
-                ["v1", "worlds", var id, "start"] when method == "GET" && _directory.TryGetValue(id, out var world) => GetStart(world, PlayerKeyOf(context), query["auth"], out download),
+                ["v1", "worlds", var id, "start"] when method == "GET" && _directory.TryGetValue(id, out var world) => GetStart(world, PlayerKeyOf(context), AuthKeyOf(context), out download),
                 ["v1", "worlds", var id, "edit"] when CreatorOrAdminOf(id, body?["player"]?.GetValue<string>()) is { } world => Edit(world, body!, PlayerIdOf(body!["player"]!.GetValue<string>())),
                 ["v1", "worlds", var id, "edit"] when _directory.ContainsKey(id) => (403, Error("only the world's creator or an admin may do this")),
                 ["v1", "worlds", var id, "delete"] when _directory.ContainsKey(id) => (403, Error("only the world's creator or an admin may do this")),
@@ -884,7 +885,7 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
                 return;
             }
 
-            if (Hash(query["auth"] ?? string.Empty) != world.AuthHash)
+            if (Hash(AuthKeyOf(context) ?? string.Empty) != world.AuthHash)
             {
                 Refuse(context, 401);
                 return;
@@ -1020,6 +1021,14 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
     /// <returns>The key, <see langword="null"/> without one.</returns>
     private static string? PlayerKeyOf(HttpListenerContext context) =>
         context.Request.Headers[DirectoryClient.PlayerHeader] ?? context.Request.QueryString["player"];
+
+    /// <summary>
+    /// Reads the world's auth key a request carries: in the X-MGQ-Auth header, or in its address as released games send it.
+    /// </summary>
+    /// <param name="context">The request.</param>
+    /// <returns>The key, <see langword="null"/> without one.</returns>
+    private static string? AuthKeyOf(HttpListenerContext context) =>
+        context.Request.Headers[DirectoryClient.AuthHeader] ?? context.Request.QueryString["auth"];
 
     /// <summary>
     /// Hashes a text with SHA-256, as the relay does.

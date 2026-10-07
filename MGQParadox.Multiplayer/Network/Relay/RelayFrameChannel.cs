@@ -2,6 +2,7 @@
 //  RelayFrameChannel.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-07: Closed the WebSocket through the shared helper
 //      Paulinchen  2026-10-06: Told when the relay ended a host's lone wait
 //                            - Took the failures of the reads a timeout leaves behind
 //      Paulinchen  2026-09-29: Read whole messages through WebSocketMessages, which the world channel shares
@@ -49,11 +50,6 @@ internal sealed class RelayFrameChannel : IFrameChannel
     /// How often a waiting host sends <see cref="Ping"/>.
     /// </summary>
     private static readonly TimeSpan KeepAliveInterval = TimeSpan.FromSeconds(25);
-
-    /// <summary>
-    /// How long closing may take before the connection is simply dropped.
-    /// </summary>
-    private static readonly TimeSpan CloseTimeout = TimeSpan.FromSeconds(1);
 
     /// <summary>
     /// The WebSocket to the relay, which the channel owns.
@@ -195,25 +191,10 @@ internal sealed class RelayFrameChannel : IFrameChannel
     /// <inheritdoc />
     public void Dispose()
     {
-        if (Interlocked.Exchange(ref _disposed, 1) == 1)
+        if (Interlocked.Exchange(ref _disposed, 1) == 0)
         {
-            return;
+            WebSocketMessages.CloseAndDispose(_socket);
         }
-
-        try
-        {
-            if (_socket.State == WebSocketState.Open)
-            {
-                using var cancel = new CancellationTokenSource(CloseTimeout);
-                _socket.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, "closed", cancel.Token).Wait(CloseTimeout);
-            }
-        }
-        catch
-        {
-            // Closing is a courtesy to the relay; the connection ends either way.
-        }
-
-        _socket.Dispose();
     }
 
     /// <summary>

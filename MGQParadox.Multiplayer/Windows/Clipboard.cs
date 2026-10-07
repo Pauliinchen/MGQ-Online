@@ -2,13 +2,14 @@
 //  Clipboard.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-07: Logged why the clipboard could not be written or read, with the Windows error
+//                            - Found the game's window through GameWindow, not through the process's main window
 //      Paulinchen  2026-10-06: Read the clipboard's text no further than its memory goes
 //      Paulinchen  2026-09-28: Created
 //
 //----------------------------------------------------------------
 
 using System;
-using System.Diagnostics;
 using System.Runtime.InteropServices;
 
 namespace MGQParadox.Multiplayer.Windows;
@@ -38,10 +39,9 @@ internal static unsafe partial class Clipboard
     /// <returns><see langword="true"/> when the clipboard holds it.</returns>
     public static bool SetText(string text)
     {
-        using var game = Process.GetCurrentProcess();
-
-        if (!OpenClipboard(game.MainWindowHandle))
+        if (!OpenClipboard(GameWindow.Find()))
         {
+            LogError("could not be opened to write");
             return false;
         }
 
@@ -54,6 +54,7 @@ internal static unsafe partial class Clipboard
 
             if (memory == 0)
             {
+                LogError($"got no memory for {text.Length} characters");
                 return false;
             }
 
@@ -61,6 +62,7 @@ internal static unsafe partial class Clipboard
 
             if (target == null)
             {
+                LogError("could not lock its memory to write");
                 GlobalFree(memory);
                 return false;
             }
@@ -74,6 +76,7 @@ internal static unsafe partial class Clipboard
                 return true;
             }
 
+            LogError("did not take the text");
             GlobalFree(memory);
             return false;
         }
@@ -91,6 +94,7 @@ internal static unsafe partial class Clipboard
     {
         if (!OpenClipboard(0))
         {
+            LogError("could not be opened to read");
             return null;
         }
 
@@ -109,6 +113,7 @@ internal static unsafe partial class Clipboard
             {
                 if (source == null)
                 {
+                    LogError("could not lock its memory to read");
                     return null;
                 }
 
@@ -130,11 +135,17 @@ internal static unsafe partial class Clipboard
     }
 
     /// <summary>
+    /// Logs why the clipboard failed, with the error Windows names.
+    /// </summary>
+    /// <param name="what">What failed.</param>
+    private static void LogError(string what) => Log.Write($"clipboard {what}, Windows error {Marshal.GetLastPInvokeError()}");
+
+    /// <summary>
     /// Opens the clipboard for this thread.
     /// </summary>
     /// <param name="owner">The window that owns what is put on it.</param>
     /// <returns><see langword="true"/> when it opened.</returns>
-    [LibraryImport("user32.dll")]
+    [LibraryImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static partial bool OpenClipboard(nint owner);
 
@@ -160,7 +171,7 @@ internal static unsafe partial class Clipboard
     /// <param name="format">The clipboard format.</param>
     /// <param name="memory">The memory, which the clipboard owns once this succeeds.</param>
     /// <returns>The memory, or 0 when it failed.</returns>
-    [LibraryImport("user32.dll")]
+    [LibraryImport("user32.dll", SetLastError = true)]
     private static partial nint SetClipboardData(uint format, nint memory);
 
     /// <summary>
@@ -177,7 +188,7 @@ internal static unsafe partial class Clipboard
     /// <param name="flags">How to allocate it.</param>
     /// <param name="size">The size in bytes.</param>
     /// <returns>The memory, or 0 when it failed.</returns>
-    [LibraryImport("kernel32.dll")]
+    [LibraryImport("kernel32.dll", SetLastError = true)]
     private static partial nint GlobalAlloc(uint flags, nuint size);
 
     /// <summary>
@@ -201,7 +212,7 @@ internal static unsafe partial class Clipboard
     /// </summary>
     /// <param name="memory">The memory.</param>
     /// <returns>Its address, or <see langword="null"/> when it failed.</returns>
-    [LibraryImport("kernel32.dll")]
+    [LibraryImport("kernel32.dll", SetLastError = true)]
     private static partial void* GlobalLock(nint memory);
 
     /// <summary>

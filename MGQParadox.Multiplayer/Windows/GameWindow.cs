@@ -2,6 +2,9 @@
 //  GameWindow.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-07: Logged why the game cannot keep running in the background
+//                            - Caught what the window procedure's own work throws, logged once, and handed the message on all the same
+//                            - Let the clipboard find the game's window
 //      Paulinchen  2026-09-29: Passed key presses and typed characters on to Keyboard while a text screen wants them
 //      Paulinchen  2026-09-28: Created
 //
@@ -10,6 +13,7 @@
 using System;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Threading;
 
 namespace MGQParadox.Multiplayer.Windows;
 
@@ -54,6 +58,11 @@ internal static unsafe partial class GameWindow
     private static nint previousProcedure;
 
     /// <summary>
+    /// 1 once the procedure's own work failed and was logged, so a failure on every message is logged once.
+    /// </summary>
+    private static int procedureFailed;
+
+    /// <summary>
     /// Keeps the game running while another application is active, once.
     /// </summary>
     /// <remarks>
@@ -72,6 +81,7 @@ internal static unsafe partial class GameWindow
 
         if (window == 0)
         {
+            Log.Write("game window: none of this game found");
             return false;
         }
 
@@ -80,6 +90,7 @@ internal static unsafe partial class GameWindow
 
         if (previousProcedure == 0)
         {
+            Log.Write($"game window: could not be hooked, Windows error {Marshal.GetLastPInvokeError()}");
             return false;
         }
 
@@ -92,7 +103,7 @@ internal static unsafe partial class GameWindow
     /// Finds the window of this game, not of another game running next to it.
     /// </summary>
     /// <returns>The window, or 0 when there is none.</returns>
-    private static nint Find()
+    public static nint Find()
     {
         var process = (uint)Environment.ProcessId;
         nint window = 0;
@@ -114,6 +125,9 @@ internal static unsafe partial class GameWindow
     /// Hands every message on, telling the game its application is active whenever Windows says
     /// either, and passing what is typed to <see cref="Keyboard"/> while it wants it.
     /// </summary>
+    /// <remarks>
+    /// Nothing may throw out of it, since an exception crossing into the game ends it, so a failure of its own work is logged once and the message handed on.
+    /// </remarks>
     /// <param name="window">The game's window.</param>
     /// <param name="message">The message.</param>
     /// <param name="wParam">The message's first value.</param>
@@ -122,19 +136,29 @@ internal static unsafe partial class GameWindow
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvStdcall)])]
     private static nint Procedure(nint window, uint message, nint wParam, nint lParam)
     {
-        if (message == ActivateApp)
+        try
         {
-            wParam = 1;
-        }
-        else if (Keyboard.Active)
-        {
-            if (message == Character)
+            if (message == ActivateApp)
             {
-                Keyboard.TakeCharacter((char)wParam);
+                wParam = 1;
             }
-            else if (message is KeyDown or SystemKeyDown)
+            else if (Keyboard.Active)
             {
-                Keyboard.TakeKey((uint)wParam, (uint)(lParam >> 16) & 0xFF);
+                if (message == Character)
+                {
+                    Keyboard.TakeCharacter((char)wParam);
+                }
+                else if (message is KeyDown or SystemKeyDown)
+                {
+                    Keyboard.TakeKey((uint)wParam, (uint)(lParam >> 16) & 0xFF);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            if (Interlocked.Exchange(ref procedureFailed, 1) == 0)
+            {
+                Log.Write($"game window procedure failed on message 0x{message:X}: {ex}");
             }
         }
 
@@ -171,7 +195,7 @@ internal static unsafe partial class GameWindow
     /// <param name="index">Which value.</param>
     /// <param name="value">The new value.</param>
     /// <returns>The previous value, or 0 when it failed.</returns>
-    [LibraryImport("user32.dll")]
+    [LibraryImport("user32.dll", SetLastError = true)]
     private static partial nint SetWindowLongW(nint window, int index, nint value);
 
     /// <summary>

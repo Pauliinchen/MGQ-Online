@@ -2,6 +2,8 @@
 //  DirectoryClient.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-07: Logged every request with its method, route and outcome, and its time when it failed or was slow, a repeated request only once its outcome changed
+//                            - Sent the world's auth key in the X-MGQ-Auth header instead of the address, and kept the outcomes last logged to a bounded number
 //      Paulinchen  2026-10-06: Sent the player's key in the X-MGQ-Player header, and no longer in the addresses of the directory and the trades
 //                            - Wrote JSON without escaping letters beyond ASCII, which made long descriptions too large for the relay
 //                            - Read the code a refusal names why with
@@ -27,6 +29,8 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Net;
 using System.Net.Http;
@@ -54,6 +58,16 @@ internal sealed class DirectoryClient
     public const string PlayerHeader = "X-MGQ-Player";
 
     /// <summary>
+    /// The request header that carries the world's auth key, which an address would leave in logs.
+    /// </summary>
+    public const string AuthHeader = "X-MGQ-Auth";
+
+    /// <summary>
+    /// How many outcomes last logged are kept; once full they are forgotten, which only has a repeated request log once more.
+    /// </summary>
+    private const int MaxLastOutcomes = 64;
+
+    /// <summary>
     /// Writes JSON with letters beyond ASCII as they are, since escaping each as six characters makes long texts too large for the relay.
     /// </summary>
     private static readonly JsonWriterOptions JsonOptions = new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
@@ -67,6 +81,16 @@ internal sealed class DirectoryClient
     /// How long uploading or downloading a starting save may take, on a slow line too.
     /// </summary>
     private static readonly TimeSpan TransferTimeout = TimeSpan.FromMinutes(3);
+
+    /// <summary>
+    /// How long a request may take before the log names its time even when it succeeded.
+    /// </summary>
+    private static readonly TimeSpan SlowRequest = TimeSpan.FromSeconds(2);
+
+    /// <summary>
+    /// The outcome last logged of each request the game repeats, by its repeat key, at most <see cref="MaxLastOutcomes"/>.
+    /// </summary>
+    private static readonly Dictionary<string, string> LastOutcomes = new(StringComparer.Ordinal);
 
     /// <summary>
     /// Sends the requests, shared by every client.
@@ -118,7 +142,7 @@ internal sealed class DirectoryClient
     public WorldListing List(string? playerKey, IReadOnlyCollection<string>? ids = null)
     {
         var address = ids is { Count: > 0 } ? new Uri($"{_worlds}?ids={Uri.EscapeDataString(string.Join(',', ids))}") : _worlds;
-        using var document = Send(HttpMethod.Get, address, null, playerKey);
+        using var document = Send(HttpMethod.Get, address, "worlds", null, playerKey, "worlds");
         var worlds = new List<ListedWorld>();
 
         foreach (var world in document.RootElement.GetProperty("worlds").EnumerateArray())
@@ -159,7 +183,7 @@ internal sealed class DirectoryClient
     /// <exception cref="DirectoryException">The directory could not be reached, knows no such world, or answered with an error.</exception>
     public LockedWorld Lock(string id)
     {
-        using var document = Send(HttpMethod.Get, WorldAddress(id, "lock"), null);
+        using var document = Send(HttpMethod.Get, WorldAddress(id, "lock"), $"world lock {Log.Short(id)}", null);
         var root = document.RootElement;
         var worldLock = new WorldLock(root.GetProperty("salt").GetString()!, root.GetProperty("iterations").GetInt32(), root.GetProperty("box").GetString()!);
         return new LockedWorld(worldLock, root.GetProperty("name").GetString() ?? "?", root.GetProperty("seats").GetInt32(), root.GetProperty("start").GetString() ?? "none", Flag(root, "choose"));
@@ -213,7 +237,7 @@ internal sealed class DirectoryClient
             writer.WriteString("settings", about.Settings);
         });
 
-        using var _ = Send(HttpMethod.Post, _worlds, body, playerKey);
+        using var _ = Send(HttpMethod.Post, _worlds, $"world create {Log.Short(id)}", body, playerKey);
     }
 
     /// <summary>
@@ -231,8 +255,7 @@ internal sealed class DirectoryClient
         };
 
         request.Headers.Add(PlayerHeader, playerKey);
-        using var response = Exchange(request, TransferHttp);
-        ThrowUnlessSuccess(response);
+        using var response = Exchange(request, TransferHttp, $"world start upload {Log.Short(id)}, {box.Length} bytes");
     }
 
     /// <summary>
@@ -245,10 +268,10 @@ internal sealed class DirectoryClient
     /// <exception cref="DirectoryException">The directory could not be reached, the world has no starting save, or the player may not have it.</exception>
     public byte[] GetStart(string id, string playerKey, string authKey)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Get, WorldAddress(id, $"start?auth={Uri.EscapeDataString(authKey)}"));
+        using var request = new HttpRequestMessage(HttpMethod.Get, WorldAddress(id, "start"));
         request.Headers.Add(PlayerHeader, playerKey);
-        using var response = Exchange(request, TransferHttp);
-        ThrowUnlessSuccess(response);
+        request.Headers.Add(AuthHeader, authKey);
+        using var response = Exchange(request, TransferHttp, $"world start download {Log.Short(id)}");
 
         try
         {
@@ -285,7 +308,7 @@ internal sealed class DirectoryClient
             }
         });
 
-        using var _ = Send(HttpMethod.Post, WorldAddress(id, "edit"), body, playerKey);
+        using var _ = Send(HttpMethod.Post, WorldAddress(id, "edit"), $"world edit {Log.Short(id)}", body, playerKey);
     }
 
     /// <summary>
@@ -303,7 +326,7 @@ internal sealed class DirectoryClient
             writer.WriteString("settings", settings);
         });
 
-        using var _ = Send(HttpMethod.Post, WorldAddress(id, "edit"), body, playerKey);
+        using var _ = Send(HttpMethod.Post, WorldAddress(id, "edit"), $"world settings {Log.Short(id)}", body, playerKey);
     }
 
     /// <summary>
@@ -321,7 +344,7 @@ internal sealed class DirectoryClient
             writer.WriteString("data", data);
         });
 
-        using var _ = Send(HttpMethod.Post, WorldAddress(id, "edit"), body, playerKey);
+        using var _ = Send(HttpMethod.Post, WorldAddress(id, "edit"), $"world data {Log.Short(id)}", body, playerKey);
     }
 
     /// <summary>
@@ -332,7 +355,7 @@ internal sealed class DirectoryClient
     /// <exception cref="DirectoryException">The directory could not be reached or refused.</exception>
     public void Delete(string id, string playerKey)
     {
-        using var _ = Send(HttpMethod.Post, WorldAddress(id, "delete"), Json(writer => writer.WriteString("player", playerKey)), playerKey);
+        using var _ = Send(HttpMethod.Post, WorldAddress(id, "delete"), $"world delete {Log.Short(id)}", Json(writer => writer.WriteString("player", playerKey)), playerKey);
     }
 
     /// <summary>
@@ -344,7 +367,7 @@ internal sealed class DirectoryClient
     /// <exception cref="DirectoryException">The directory could not be reached or refused.</exception>
     public void Ban(string id, string playerKey, string target)
     {
-        using var _ = Send(HttpMethod.Post, WorldAddress(id, "ban"), Json(writer =>
+        using var _ = Send(HttpMethod.Post, WorldAddress(id, "ban"), $"world ban {Log.Short(id)} of player {Log.Short(target)}", Json(writer =>
         {
             writer.WriteString("player", playerKey);
             writer.WriteString("target", target);
@@ -358,7 +381,7 @@ internal sealed class DirectoryClient
     /// <exception cref="DirectoryException">The relay could not be reached or answered with an error.</exception>
     public IReadOnlyList<CatalogMod> Mods()
     {
-        using var document = Send(HttpMethod.Get, _mods, null);
+        using var document = Send(HttpMethod.Get, _mods, "mods", null, repeatKey: "mods");
         var mods = new List<CatalogMod>();
 
         foreach (var mod in document.RootElement.GetProperty("mods").EnumerateArray())
@@ -419,7 +442,7 @@ internal sealed class DirectoryClient
             writer.WriteEndArray();
         });
 
-        using var _ = Send(HttpMethod.Post, new Uri($"{_mods}/{Uri.EscapeDataString(key)}/options"), body, playerKey);
+        using var _ = Send(HttpMethod.Post, new Uri($"{_mods}/{Uri.EscapeDataString(key)}/options"), $"mod options {key} {version}, {options.Count} option(s)", body, playerKey);
     }
 
     /// <summary>
@@ -431,8 +454,7 @@ internal sealed class DirectoryClient
     public byte[] ModFile(string key)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, new Uri($"{_mods}/{Uri.EscapeDataString(key)}/file"));
-        using var response = Exchange(request, TransferHttp);
-        ThrowUnlessSuccess(response);
+        using var response = Exchange(request, TransferHttp, $"mod file {key}");
 
         try
         {
@@ -486,7 +508,7 @@ internal sealed class DirectoryClient
             writer.WriteString("sealed", sealedOffers);
         });
 
-        using var document = Send(HttpMethod.Post, TradeAddress(trade, "commit"), body, playerKey);
+        using var document = Send(HttpMethod.Post, TradeAddress(trade, "commit"), $"trade commit {Log.Short(trade)}", body, playerKey, $"trade commit {trade}");
         return AnswerOf(document.RootElement);
     }
 
@@ -499,7 +521,7 @@ internal sealed class DirectoryClient
     /// <exception cref="DirectoryException">The relay could not be reached, knows no such trade, or refused.</exception>
     public TradeAnswer CancelTrade(string trade, string playerKey)
     {
-        using var document = Send(HttpMethod.Post, TradeAddress(trade, "cancel"), Json(writer => writer.WriteString("player", playerKey)), playerKey);
+        using var document = Send(HttpMethod.Post, TradeAddress(trade, "cancel"), $"trade cancel {Log.Short(trade)}", Json(writer => writer.WriteString("player", playerKey)), playerKey);
         return AnswerOf(document.RootElement);
     }
 
@@ -512,7 +534,7 @@ internal sealed class DirectoryClient
     /// <exception cref="DirectoryException">The relay could not be reached, knows no such trade, or refused.</exception>
     public TradeAnswer TradeState(string trade, string playerKey)
     {
-        using var document = Send(HttpMethod.Get, new Uri($"{_trades}/{Uri.EscapeDataString(trade)}"), null, playerKey);
+        using var document = Send(HttpMethod.Get, new Uri($"{_trades}/{Uri.EscapeDataString(trade)}"), $"trade state {Log.Short(trade)}", null, playerKey, $"trade state {trade}");
         return AnswerOf(document.RootElement);
     }
 
@@ -524,7 +546,7 @@ internal sealed class DirectoryClient
     /// <exception cref="DirectoryException">The relay could not be reached, knows no such trade, or refused.</exception>
     public void TradeDone(string trade, string playerKey)
     {
-        using var _ = Send(HttpMethod.Post, TradeAddress(trade, "done"), Json(writer => writer.WriteString("player", playerKey)), playerKey);
+        using var _ = Send(HttpMethod.Post, TradeAddress(trade, "done"), $"trade done {Log.Short(trade)}", Json(writer => writer.WriteString("player", playerKey)), playerKey);
     }
 
     /// <summary>
@@ -536,7 +558,7 @@ internal sealed class DirectoryClient
     /// <exception cref="DirectoryException">The relay could not be reached or refused.</exception>
     public IReadOnlyList<SealedTrade> PendingTrades(string playerKey, string world)
     {
-        using var document = Send(HttpMethod.Get, new Uri($"{_trades}?world={Uri.EscapeDataString(world)}"), null, playerKey);
+        using var document = Send(HttpMethod.Get, new Uri($"{_trades}?world={Uri.EscapeDataString(world)}"), $"trades pending {Log.Short(world)}", null, playerKey);
         var trades = new List<SealedTrade>();
 
         foreach (var trade in document.RootElement.GetProperty("trades").EnumerateArray())
@@ -593,11 +615,13 @@ internal sealed class DirectoryClient
     /// </summary>
     /// <param name="method">The method.</param>
     /// <param name="address">The address.</param>
+    /// <param name="route">What the request does, for the log; never a key.</param>
     /// <param name="body">The JSON body, or <see langword="null"/> for none.</param>
     /// <param name="playerKey">The player's key, sent in <see cref="PlayerHeader"/>; <see langword="null"/> for none.</param>
+    /// <param name="repeatKey">Names a request the game repeats, see <see cref="Exchange"/>.</param>
     /// <returns>The answer, which the caller disposes.</returns>
     /// <exception cref="DirectoryException">The directory could not be reached, or answered with an error.</exception>
-    private static JsonDocument Send(HttpMethod method, Uri address, string? body, string? playerKey = null)
+    private static JsonDocument Send(HttpMethod method, Uri address, string route, string? body, string? playerKey = null, string? repeatKey = null)
     {
         using var request = new HttpRequestMessage(method, address);
 
@@ -611,8 +635,7 @@ internal sealed class DirectoryClient
             request.Headers.Add(PlayerHeader, playerKey);
         }
 
-        using var response = Exchange(request, Http);
-        ThrowUnlessSuccess(response);
+        using var response = Exchange(request, Http, route, repeatKey);
 
         try
         {
@@ -625,22 +648,93 @@ internal sealed class DirectoryClient
     }
 
     /// <summary>
-    /// Sends a request.
+    /// Sends a request and logs how it went.
     /// </summary>
     /// <param name="request">The request.</param>
     /// <param name="http">The client to send it with.</param>
-    /// <returns>The answer, which the caller disposes.</returns>
-    /// <exception cref="DirectoryException">The directory could not be reached.</exception>
-    private static HttpResponseMessage Exchange(HttpRequestMessage request, HttpClient http)
+    /// <param name="route">What the request does, for the log, such as "world lock 1a2b3c4d5e6f"; never a key.</param>
+    /// <param name="repeatKey">Names a request the game repeats, which is logged only when its outcome changes or it was slow; <see langword="null"/> to log it every time.</param>
+    /// <returns>The successful answer, which the caller disposes.</returns>
+    /// <exception cref="DirectoryException">The directory could not be reached, or answered with an error.</exception>
+    private static HttpResponseMessage Exchange(HttpRequestMessage request, HttpClient http, string route, string? repeatKey = null)
     {
+        var started = Stopwatch.GetTimestamp();
+
         try
         {
-            return http.Send(request);
+            HttpResponseMessage response;
+
+            try
+            {
+                response = http.Send(request);
+            }
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or IOException)
+            {
+                throw new DirectoryException(null, ex.GetBaseException().Message);
+            }
+
+            try
+            {
+                ThrowUnlessSuccess(response);
+            }
+            catch
+            {
+                response.Dispose();
+                throw;
+            }
+
+            LogRequest(request.Method, route, ((int)response.StatusCode).ToString(CultureInfo.InvariantCulture), Stopwatch.GetElapsedTime(started), false, repeatKey);
+            return response;
         }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or IOException)
+        catch (DirectoryException ex)
         {
-            throw new DirectoryException(null, ex.GetBaseException().Message);
+            LogRequest(request.Method, route, OutcomeOf(ex), Stopwatch.GetElapsedTime(started), true, repeatKey);
+            throw;
         }
+    }
+
+    /// <summary>
+    /// Describes a failed request for the log.
+    /// </summary>
+    /// <param name="ex">Why it failed.</param>
+    /// <returns>The status and the code the directory named its reason with, or "unreachable", then the reason.</returns>
+    private static string OutcomeOf(DirectoryException ex) =>
+        ex.Status is { } status ? $"{(int)status}{(ex.Code != null ? $" {ex.Code}" : string.Empty)} ({ex.Message})" : $"unreachable ({ex.Message})";
+
+    /// <summary>
+    /// Logs how a request went, with its time when it failed or was slow.
+    /// </summary>
+    /// <param name="method">The request's method.</param>
+    /// <param name="route">What the request does.</param>
+    /// <param name="outcome">How it went.</param>
+    /// <param name="elapsed">How long it took.</param>
+    /// <param name="failed">Whether it failed.</param>
+    /// <param name="repeatKey">Names a request the game repeats, see <see cref="Exchange"/>.</param>
+    private static void LogRequest(HttpMethod method, string route, string outcome, TimeSpan elapsed, bool failed, string? repeatKey)
+    {
+        var slow = elapsed >= SlowRequest;
+
+        if (repeatKey != null)
+        {
+            lock (LastOutcomes)
+            {
+                var same = LastOutcomes.TryGetValue(repeatKey, out var last) && last == outcome;
+
+                if (!same && LastOutcomes.Count >= MaxLastOutcomes)
+                {
+                    LastOutcomes.Clear();
+                }
+
+                LastOutcomes[repeatKey] = outcome;
+
+                if (same && !slow)
+                {
+                    return;
+                }
+            }
+        }
+
+        Log.Write($"relay {method.Method} {route}: {outcome}{(failed || slow ? $" after {elapsed.TotalMilliseconds.ToString("0", CultureInfo.InvariantCulture)} ms" : string.Empty)}");
     }
 
     /// <summary>

@@ -2,6 +2,7 @@
 //  UpdateCheck.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-07: Started its thread through Threads, shared with the connections
 //      Paulinchen  2026-09-30: Asked the repository under its new name, MGQ-Online
 //                            - Created
 //
@@ -79,7 +80,7 @@ internal static class UpdateCheck
             return;
         }
 
-        new Thread(() => Run(installed)) { IsBackground = true, Name = "UpdateCheck" }.Start();
+        Threads.Start("MultiplayerUpdateCheck", () => Run(installed));
     }
 
     /// <summary>
@@ -110,9 +111,6 @@ internal static class UpdateCheck
     /// <summary>
     /// Asks GitHub and keeps the answer.
     /// </summary>
-    /// <remarks>
-    /// Catches everything, since an exception escaping this thread would end the whole game.
-    /// </remarks>
     /// <param name="installed">The version of this DLL.</param>
     private static void Run(Version installed)
     {
