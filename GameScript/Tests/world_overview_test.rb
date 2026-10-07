@@ -2,7 +2,8 @@
 #  world_overview_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-07: Expected no place on a map the game names nowhere, headed Unnamed place in the list
+#      Paulinchen  2026-10-07: Measured places with an object that measures texts, and checked the log of a name the game lacks
+#                            - Expected no place on a map the game names nowhere, headed Unnamed place in the list
 #      Paulinchen  2026-10-06: Checked that the emote wheel keeps the overview shut, and the menu of a player nothing is offered with
 #                            - Read the open menu without the reader the overview dropped
 #      Paulinchen  2026-10-04: Checked the party box's size key, its small rows and its setting
@@ -66,6 +67,12 @@ check("Part 3 with a route", [overview.story_code, overview.story_text(overview.
 $data_system.variables[1001] = "総合イベント進行度"
 check("the untranslated game's names count too", overview.story_code, "3:destroyer")
 check("an unknown place shows nothing", overview.story_text(""), "")
+logged = []
+write = MGQ_Multiplayer::Log.method(:write)
+MGQ_Multiplayer::Log.define_singleton_method(:write) { |line| logged << line }
+check("a name the game lacks reads 0 or off, logged once", [overview.variable(["No Such"]), overview.variable(["No Such"]), overview.switch?(["Nor This"]), logged],
+      [0, 0, false, ["overview: no variable of the game is named No Such, reading 0", "overview: no switch of the game is named Nor This, reading off"]])
+MGQ_Multiplayer::Log.define_singleton_method(:write, write)
 
 # The highest companion level and the place.
 $game_party.all_members = [Actor.new(99, true), Actor.new(40, false)]
@@ -202,7 +209,9 @@ MGQ_MpPartyBox.on_map
 check("then makes it full again", [MGQ_MpPartyBox.small?, $player_ini["party_box_small"]], [false, "0"])
 
 # Places shortened to fit the party box, measured at 10 pixels a letter in 300 pixels.
-fit = lambda { |place| overview.fit_place(place, 300) { |text| text.length * 10 } }
+ruler = Object.new
+ruler.define_singleton_method(:text_size) { |text| Struct.new(:width).new(text.length * 10) }
+fit = lambda { |place| overview.fit_place(place, 300, ruler) }
 check("a short place stays", fit.call("Iliasville"), "Iliasville")
 check("the Pocket Castle takes its short name", fit.call("Pocket Monster Lord's Castle Conference Room"), "Pocket Castle Conference Room")
 check("then the part in brackets goes", fit.call("Tartarus (Western Hellgondo Continent)"), "Tartarus")

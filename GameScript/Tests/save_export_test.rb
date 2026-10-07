@@ -2,6 +2,7 @@
 #  save_export_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-07: Checked the menu's handler once its commands are made
 #      Paulinchen  2026-10-06: Loaded world_mods.rbx, which the world screen calls
 #      Paulinchen  2026-10-04: Followed the scripts to their new names, without mp_
 #      Paulinchen  2026-10-03: Loaded the scripts split off the ones under test, and ui.rbx
@@ -113,7 +114,11 @@ Dir.mktmpdir do |root|
   end
 end
 
-check("the menu's handler is in place", Scene_Menu.method_defined?(:mgq_mp_save_export_command), true)
+handlers = {}
+menu_scene = Scene_Menu.new
+menu_scene.instance_variable_set(:@command_window, Struct.new(:handlers) { def set_handler(symbol, handler); handlers[symbol] = handler; end }.new(handlers))
+menu_scene.create_command_window
+check("the menu's handler is in place once its commands are made", handlers.keys, [:mgq_mp_save_export])
 
 # The notice ignores the press that opened it.
 module Input; def self.trigger?(button); button == :C; end; end

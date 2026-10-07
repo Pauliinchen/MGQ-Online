@@ -2,6 +2,9 @@
 #  world_save_export.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-07: Registered the menu's hooks through core_hooks.rbx instead of wraps of this script
+#                            - Took the notice's depth from MGQ_MpUi
+#                            - Logged why a save is not copied and the thumbnail copied with it
 #      Paulinchen  2026-10-04: Renamed from mp_save_export.rbx
 #      Paulinchen  2026-10-03: Built the notice on Window_MpInfo of ui.rbx
 #                            - Logged through MGQ_MpLog
@@ -22,16 +25,6 @@ module MGQ_MpSaveExport
   # What a save file's thumbnail is named after, its extension swapped.
   SAVE_EXTENSION = /\.rvdata2\z/i
 
-  # Reports whether the hooks can be installed.
-  #
-  # A second copy of this script would wrap the same methods under the same names, and each hook
-  # would then call itself until the stack overflows.
-  #
-  # @return [Boolean] false when the hooks are in place already.
-  def self.hookable?
-    !Scene_Menu.method_defined?(:mgq_mp_save_export_update)
-  end
-
   extend MGQ_MpLog
 
   # What starts this script's lines in Multiplayer InGame.log.
@@ -44,17 +37,25 @@ module MGQ_MpSaveExport
   # @return [String] What happened, for the player.
   def self.export(world)
     source = world.latest_save_file
-    return "You have no save of #{world.name} yet. Save in the world first." unless source
+    unless source
+      log("not copying a save of world #{world.id} (#{world.name}): it has none here")
+      return "You have no save of #{world.name} yet. Save in the world first."
+    end
 
     saved = File.mtime(source).strftime("%Y-%m-%d %H:%M")
     MGQ_MpWorld::Files.unmapped do
       index = free_slot
-      return "Your own game has no free save slot. Delete one of your saves first." unless index
+      unless index
+        log("not copying #{source} of world #{world.id}: all #{DataManager.savefile_max} slots of the player's own game hold a save")
+        return "Your own game has no free save slot. Delete one of your saves first."
+      end
 
-      copy(source, DataManager.make_filename(index))
+      target = DataManager.make_filename(index)
+      copy(source, target)
       thumbnail = source.sub(SAVE_EXTENSION, ".png")
-      copy(thumbnail, DataManager.make_thumbnailname(index)) if File.exist?(thumbnail) && DataManager.respond_to?(:make_thumbnailname)
-      log("copied #{source} of world #{world.id} into slot #{index + 1}")
+      with_thumbnail = File.exist?(thumbnail) && DataManager.respond_to?(:make_thumbnailname)
+      copy(thumbnail, DataManager.make_thumbnailname(index)) if with_thumbnail
+      log("copied #{source} (saved #{saved}) of world #{world.id} (#{world.name}) into slot #{index + 1}, #{target}, #{with_thumbnail ? 'with' : 'without'} its thumbnail")
       "Your save of #{world.name} from #{saved} is now save #{index + 1} of your own game."
     end
   rescue => e
@@ -95,7 +96,21 @@ module MGQ_MpSaveExport
   #
   # @return [String] What happened, for the player.
   def self.export_open_world
+    log("Copy to my game chosen in the menu")
     MGQ_MpWorld.open? ? export(MGQ_MpWorld.world) : "No world is open."
+  end
+
+  # Copies the open world's latest save from the game's menu and opens the notice that shows how it
+  # went; when the notice cannot open, the menu's commands take input again.
+  #
+  # @param scene [Scene_Menu] The menu.
+  # @return [Window_MpSaveExportNotice, nil] The notice, nil when it could not open.
+  def self.open_notice(scene)
+    Window_MpSaveExportNotice.new(export_open_world)
+  rescue => e
+    log("menu export failed: #{e.class}: #{e.message}")
+    MGQ_MpGame.get(scene, :command_window).activate
+    nil
   end
 end
 
@@ -106,7 +121,7 @@ class Window_MpSaveExportNotice < Window_MpInfo
   CLOSE_HINT = "Press OK to go on."
 
   # Layer above the menu's windows.
-  Z = 300
+  Z = MGQ_MpUi::Z[:wheels]
 
   # Creates the notice in the middle of the screen.
   #
@@ -128,60 +143,30 @@ class Window_MpSaveExportNotice < Window_MpInfo
   end
 end
 
-# Game hooks of this script alone.
-#
-# Each wraps a game method: the original runs first, and the mod's part never raises.
+# Game hooks, through core_hooks.rbx.
 
-if MGQ_MpSaveExport.hookable?
-  begin
-    class Window_MenuCommand
-      alias mgq_mp_save_export_add_original_commands add_original_commands
+begin
+  # After the game's own extra commands, Copy to my game while a world is open.
+  MGQ_MpHooks.after(Window_MenuCommand, :add_original_commands, "world_save_export") { MGQ_MpSaveExport.add_menu_command(self) }
 
-      # Lists the game's own extra commands, then Copy to my game while a world is open.
-      def add_original_commands
-        mgq_mp_save_export_add_original_commands
-        MGQ_MpSaveExport.add_menu_command(self)
-      end
-    end
-
-    class Scene_Menu
-      alias mgq_mp_save_export_create_command_window create_command_window
-
-      # Creates the menu's commands, Copy to my game among them.
-      def create_command_window
-        mgq_mp_save_export_create_command_window
-        @command_window.set_handler(:mgq_mp_save_export, method(:mgq_mp_save_export_command))
-      end
-
-      # Copies the open world's latest save and shows how it went.
-      def mgq_mp_save_export_command
-        @mgq_mp_save_export_notice = Window_MpSaveExportNotice.new(MGQ_MpSaveExport.export_open_world)
-      rescue => e
-        MGQ_MpSaveExport.log("menu export failed: #{e.class}: #{e.message}")
-        @command_window.activate
-      end
-
-      alias mgq_mp_save_export_update update
-
-      # Updates the menu, then closes the notice once the player pressed OK or Cancel.
-      def update
-        mgq_mp_save_export_update
-        return unless @mgq_mp_save_export_notice && @mgq_mp_save_export_notice.closed?
-
-        @mgq_mp_save_export_notice.dispose
-        @mgq_mp_save_export_notice = nil
-        @command_window.activate
-      end
-
-      alias mgq_mp_save_export_terminate terminate
-
-      # Takes the notice off the screen, then ends the menu.
-      def terminate
-        @mgq_mp_save_export_notice.dispose if @mgq_mp_save_export_notice
-        mgq_mp_save_export_terminate
-      end
-    end
-  rescue => e
-    MGQ_MpSaveExport.log("menu hooks FAILED: #{e.class}: #{e.message}")
+  # After the menu's commands are made, Copy to my game gets its handler.
+  MGQ_MpHooks.after(Scene_Menu, :create_command_window, "world_save_export") do
+    @command_window.set_handler(:mgq_mp_save_export, lambda { @mgq_mp_save_export_notice = MGQ_MpSaveExport.open_notice(self) })
   end
+
+  # After the menu's update, the notice closes once the player pressed OK or Cancel.
+  MGQ_MpHooks.after(Scene_Menu, :update, "world_save_export") do
+    if @mgq_mp_save_export_notice && @mgq_mp_save_export_notice.closed?
+      @mgq_mp_save_export_notice.dispose
+      @mgq_mp_save_export_notice = nil
+      @command_window.activate
+    end
+  end
+
+  # Before the menu ends, the notice goes off the screen.
+  MGQ_MpHooks.before(Scene_Menu, :terminate, "world_save_export") do
+    @mgq_mp_save_export_notice.dispose if @mgq_mp_save_export_notice
+  end
+rescue => e
+  MGQ_MpSaveExport.log("menu hooks FAILED: #{e.class}: #{e.message}")
 end

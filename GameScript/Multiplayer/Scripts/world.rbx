@@ -2,6 +2,11 @@
 #  world.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-07: Registered the title screen's commands, its end and a world's new game through core_hooks.rbx, keeping only the path wraps as wraps of this script
+#                            - Kept the worlds on this PC and the favourites read until one changes, since the world screen asks every few frames
+#                            - Named the DLL's exports alone, their signatures living in Multiplayer.rb
+#                            - Added a form's switch between several outcomes, with a line of what the outcome picked brings
+#                            - Logged entering and leaving a world with the reason, the directory's requests and list, the hidden and favourite worlds, the folders and the system saves
 #      Paulinchen  2026-10-06: Built the form of a world's password, which world_screen.rbx typed into in place
 #                            - Asked a scene directly whether it changes, since the game makes that public
 #                            - Called mp_dir_edit with as many arguments as its signature names
@@ -131,14 +136,14 @@ module MGQ_MpWorld
   # direction in later frames too.
   GAMEPAD_BUTTONS = [:C, :B, :A, :UP, :DOWN, :LEFT, :RIGHT]
 
-  # Reports whether the hooks can be installed.
+  # Reports whether the path wraps can be installed.
   #
-  # A second copy of this script would wrap the same methods under the same names, and each hook
+  # A second copy of this script would wrap the same methods under the same names, and each wrap
   # would then call itself until the stack overflows.
   #
-  # @return [Boolean] false when the hooks are in place already.
+  # @return [Boolean] false when the wraps are in place already.
   def self.hookable?
-    !Scene_Title.method_defined?(:mgq_mp_world_terminate)
+    !(defined?(Bitmap) && Bitmap.method_defined?(:mgq_mp_world_initialize))
   end
 
   # Tells whether worlds can be used.
@@ -192,6 +197,22 @@ module MGQ_MpWorld
     GAMEPAD_BUTTONS.any? { |button| Input.trigger?(button) }
   end
 
+  # Shortens a long id for the log, which tells worlds apart well enough by its start.
+  #
+  # @param id [String, nil] The id.
+  # @return [String] Its first 12 characters, "none" for nil.
+  def self.short(id)
+    id.nil? ? "none" : id.to_s[0, 12]
+  end
+
+  # Names a save as the log does.
+  #
+  # @param index [Integer, String] The save's index as DataManager takes it, a String for an autosave.
+  # @return [String] Such as "save 3" or "autosave 01".
+  def self.save_name(index)
+    index.is_a?(Integer) ? "save #{index + 1}" : "autosave #{index}"
+  end
+
   # Tells whether Discord told the player's name, now or in an earlier session, which an empty
   # chosen name falls back to.
   #
@@ -211,28 +232,32 @@ module MGQ_MpWorld
   # @param scene [Scene_MpWorlds] The world screen.
   # @return [String, nil] Why the world could not be entered, nil when it was.
   def self.start(world, scene)
-    return MGQ_Multiplayer::UPDATE_MESSAGE unless available?
+    unless available?
+      log("not entering world #{world.id}: worlds are off, the DLL is missing or the mod is outdated")
+      return MGQ_Multiplayer::UPDATE_MESSAGE
+    end
 
     enter(world)
     index = world.latest_save
 
     unless index
+      log("world #{world.id} has no save here: starting a new game in it")
       @pending = :new_game
       scene.return_scene
       return nil
     end
 
     unless DataManager.load_game(index)
-      leave
+      leave("its #{save_name(index)} could not be loaded")
       return "The latest save of #{world.name} could not be loaded."
     end
 
-    log("loaded save #{index} of world #{world.id}")
+    log("loaded #{save_name(index)} of world #{world.id}")
     # Scene_Load finishes the game's own loads, so the map starts exactly as after Continue.
     Scene_Load.new.on_load_success
     nil
   rescue => e
-    leave
+    leave("entering failed")
     log("could not enter a world: #{e.class}: #{e.message}")
     "The world could not be entered."
   end
@@ -242,22 +267,24 @@ module MGQ_MpWorld
   #
   # @param world [World] The world.
   def self.enter(world)
-    leave
+    leave("another world opens")
     Dir.mkdir(world.save_folder) unless File.directory?(world.save_folder)
     System.enter(world.save_folder)
     @world = world
     world.played!
     Link.open(world.code)
-    log("entered world #{world.id}")
+    log("entered world #{world.id} (#{world.name}, directory #{short(world.directory_id)}, #{world.seats} seats)")
   end
 
   # Closes the open world, leaving its room and putting the player's own system save back.
-  def self.leave
+  #
+  # @param reason [String] Why, for the log.
+  def self.leave(reason = "closed")
     return unless @world
 
     Link.close
     System.leave
-    log("left world #{@world.id}")
+    log("left world #{@world.id} (#{@world.name}): #{reason}")
     @world = nil
   rescue => e
     @world = nil
@@ -267,7 +294,11 @@ module MGQ_MpWorld
   # Closes the open world once the game went back to the title screen, unless the world screen
   # sent it there to start a new game in the world. Called as the title screen starts.
   def self.on_title_start
-    leave unless @pending
+    if @pending
+      log("kept world #{@world.id} open on the title screen: its new game starts there") if @world
+    else
+      leave("the game went back to the title screen")
+    end
   end
 
   # Starts a new game in the world the world screen opened, or opens the world screen for a
@@ -285,10 +316,13 @@ module MGQ_MpWorld
     log("new game in world #{@world.id}") if @world
     scene.command_new_game
     # New Game may ask something first and leave the title screen only after the answer.
-    @pending = :starting unless scene.scene_changing?
+    return if scene.scene_changing?
+
+    @pending = :starting
+    log("New Game asks something first, waiting for the answer")
   rescue => e
     @pending = nil
-    leave
+    leave("the new game could not start")
     log("could not start a new game in a world: #{e.class}: #{e.message}")
   end
 
@@ -301,13 +335,15 @@ module MGQ_MpWorld
     return unless commands && !commands.disposed? && commands.active
 
     @pending = nil
-    log("backed out of the new game in world #{@world.id}") if @world
-    leave
+    leave("the player backed out of its new game")
   end
 
   # Notes that the world's new game started. Called as the game sets a new game up.
   def self.new_game_started
-    @pending = nil if @pending == :starting
+    return unless @pending == :starting
+
+    @pending = nil
+    log("the new game of world #{@world.id} started after its question") if @world
   end
 
   # Adds the world screen's command to the title screen, below Continue: greyed out, with
@@ -321,8 +357,17 @@ module MGQ_MpWorld
     entry = { :name => COMMAND_NAME, :symbol => :mgq_mp_world, :enabled => !MGQ_Multiplayer.outdated?, :ext => nil }
     continue_at = list.index { |command| command[:symbol] == :continue }
     continue_at ? list.insert(continue_at + 1, entry) : list.push(entry)
+    log_once([:title_command, entry[:enabled]], entry[:enabled] ? "title command added" : "title command greyed out: a newer release is out")
   rescue => e
     log("title command failed: #{e.class}: #{e.message}")
+  end
+
+  # Opens the world screen from the title screen's command.
+  #
+  # @param scene [Scene_Title] The title screen.
+  def self.open_world_screen(scene)
+    MGQ_MpGame.call(scene, :close_command_window)
+    SceneManager.call(Scene_MpWorlds)
   end
 
   # A message box on every title screen once a newer release of the mod is out, which holds the
@@ -389,6 +434,7 @@ module MGQ_MpWorld
     # Hides the box for the rest of this title screen and gives the buttons back.
     def self.close
       Sound.play_ok
+      MGQ_MpWorld.log("update notice closed by the player")
       @box.visible = false
       MGQ_Multiplayer::Capture.stop(:update_notice)
     end
@@ -466,7 +512,7 @@ module MGQ_MpWorld
     # @return [String, nil] The folder's id, nil when the text is no world code.
     def self.id_of(code)
       buffer = "\0" * 64
-      length = MGQ_Multiplayer::Link.function('mp_world_id', 'ppl').call(code + "\0", buffer, buffer.size)
+      length = MGQ_Multiplayer::Link.function('mp_world_id').call(code + "\0", buffer, buffer.size)
       length > 0 ? buffer[0, length] : nil
     end
 
@@ -476,7 +522,7 @@ module MGQ_MpWorld
     # @return [String, nil] The id, nil when the text is no world code.
     def self.directory_id(code)
       buffer = "\0" * 64
-      length = MGQ_Multiplayer::Link.function('mp_world_directory_id', 'ppl').call(code + "\0", buffer, buffer.size)
+      length = MGQ_Multiplayer::Link.function('mp_world_directory_id').call(code + "\0", buffer, buffer.size)
       length > 0 ? buffer[0, length] : nil
     end
 
@@ -485,12 +531,12 @@ module MGQ_MpWorld
     # @param code [String] The world code.
     def self.open(code)
       MGQ_Multiplayer::Player.share
-      MGQ_MpWorld.log("could not open the world's connection") unless MGQ_Multiplayer::Link.function('mp_world_open', 'p').call(code + "\0") == 1
+      MGQ_MpWorld.log("could not open the world's connection") unless MGQ_Multiplayer::Link.function('mp_world_open').call(code + "\0") == 1
     end
 
     # Leaves the world's room.
     def self.close
-      MGQ_Multiplayer::Link.function('mp_world_close', 'v').call
+      MGQ_Multiplayer::Link.function('mp_world_close').call
     end
 
     # Puts a text on the clipboard.
@@ -498,7 +544,7 @@ module MGQ_MpWorld
     # @param text [String] The text.
     # @return [Boolean] Whether the clipboard holds it.
     def self.copy(text)
-      MGQ_Multiplayer::Link.function('mp_copy_text', 'p').call(text + "\0") == 1
+      MGQ_Multiplayer::Link.function('mp_copy_text').call(text + "\0") == 1
     end
   end
 
@@ -517,10 +563,10 @@ module MGQ_MpWorld
       return false unless id
 
       if MGQ_MpWorld.open? && MGQ_MpWorld.world.directory_id == id
-        MGQ_MpWorld.log("ignored an invite into world #{id}, which is open already")
+        MGQ_MpWorld.log("ignored an invite into world #{MGQ_MpWorld.short(id)}, which is open already")
       else
         @pending = [id, code]
-        MGQ_MpWorld.log("took an invite into world #{id}")
+        MGQ_MpWorld.log("took an invite into world #{MGQ_MpWorld.short(id)}")
         MGQ_MpNotices.message(:world_invite, LATER_TEXT) if defined?(MGQ_MpNotices) && !SceneManager.scene.is_a?(Scene_Title)
       end
       true
@@ -531,7 +577,7 @@ module MGQ_MpWorld
     def self.on_title_update
       return unless @pending && MGQ_MpWorld.available?
 
-      MGQ_MpWorld.log("opening the world screen for the invite into world #{@pending[0]}")
+      MGQ_MpWorld.log("opening the world screen for the invite into world #{MGQ_MpWorld.short(@pending[0])}")
       SceneManager.call(Scene_MpWorlds)
     end
 
@@ -564,9 +610,13 @@ module MGQ_MpWorld
     #
     # @return [String] FORMAT, then a checksum per part; empty when the data could not be read.
     def self.fingerprint
-      @fingerprint ||= "#{FORMAT}:" + ids.map { |list| format("%08x", Zlib.crc32(list.join(","))) }.join(".")
+      return @fingerprint if @fingerprint
+
+      @fingerprint = "#{FORMAT}:" + ids.map { |list| format("%08x", Zlib.crc32(list.join(","))) }.join(".")
+      MGQ_MpWorld.log("this game's data: #{@fingerprint}")
+      @fingerprint
     rescue => e
-      MGQ_MpWorld.log("reading the game data failed: #{e.class}: #{e.message}")
+      MGQ_MpWorld.log_once(:fingerprint, "reading the game data failed: #{e.class}: #{e.message}")
       ""
     end
 
@@ -670,8 +720,8 @@ module MGQ_MpWorld
 
     # Fetches the list again, with the hidden worlds the player added to it.
     def self.refresh
-      MGQ_Multiplayer::Link.function('mp_dir_watch', 'p').call(Added.all.join(",") + "\0")
-      MGQ_Multiplayer::Link.function('mp_dir_refresh', 'v').call
+      MGQ_Multiplayer::Link.function('mp_dir_watch').call(Added.all.join(",") + "\0")
+      MGQ_Multiplayer::Link.function('mp_dir_refresh').call
     end
 
     # Looks a world up by its id alone; the action tells its name.
@@ -679,7 +729,17 @@ module MGQ_MpWorld
     # @param id [String] The world's id.
     # @return [Boolean] Whether the action started.
     def self.find(id)
-      MGQ_Multiplayer::Link.function('mp_dir_find', 'p').call(id + "\0") == 1
+      started(MGQ_Multiplayer::Link.function('mp_dir_find').call(id + "\0") == 1, "find world #{MGQ_MpWorld.short(id)}")
+    end
+
+    # Logs a request sent to the directory, or that it could not start.
+    #
+    # @param started [Boolean] Whether it started.
+    # @param what [String] The request, without secrets.
+    # @return [Boolean] started.
+    def self.started(started, what)
+      MGQ_MpWorld.log(started ? "directory request sent: #{what}" : "directory request could not start: #{what}")
+      started
     end
 
     # Reads the list as it stands.
@@ -700,7 +760,26 @@ module MGQ_MpWorld
         end
       end
 
-      [state["state"] || "idle", state["error"], worlds, state["admin"] == "1"]
+      result = [state["state"] || "idle", state["error"], worlds, state["admin"] == "1"]
+      log_list(result)
+      result
+    end
+
+    # Logs how the list stands whenever that changed.
+    #
+    # @param result [Array] What list returns.
+    def self.log_list(result)
+      state, error, worlds, admin = result
+      # The list is fetched again every few seconds, which is no news.
+      return if state == "loading" && @logged_list
+
+      seen = [state, error, worlds.map { |world| [world.id, world.name, world.online, world.seats, world.members.size] }, admin]
+      return if seen == @logged_list
+
+      @logged_list = seen
+      described = worlds.map { |world| "#{world.name} (#{MGQ_MpWorld.short(world.id)}, #{world.online}/#{world.seats} online)" }
+      MGQ_MpWorld.log("list #{state}#{error ? " (#{error})" : ''}#{admin ? ', as an admin' : ''}: #{worlds.size} world(s)#{described.empty? ? '' : ': ' + described.join(', ')}")
+    rescue
     end
 
     # Makes a world, locked with its password, with the starting save new players get, if there is one.
@@ -715,9 +794,13 @@ module MGQ_MpWorld
     # @return [Boolean] Whether the action started.
     def self.create(name, password, seats, hidden, choose, start, about = {})
       MGQ_Multiplayer::Player.share
-      MGQ_Multiplayer::Link.function('mp_dir_create', 'pplllpppplpp').call(name + "\0", password + "\0", seats, hidden ? 1 : 0, choose ? 1 : 0, start + "\0",
-                                                                           about[:description].to_s + "\0", about[:mods].to_s + "\0", about[:data].to_s + "\0", about[:strict] ? 1 : 0,
-                                                                           about[:mod_hashes].to_s + "\0", about[:settings].to_s + "\0") == 1
+      sent = MGQ_Multiplayer::Link.function('mp_dir_create').call(name + "\0", password + "\0", seats, hidden ? 1 : 0, choose ? 1 : 0, start + "\0",
+                                                                                  about[:description].to_s + "\0", about[:mods].to_s + "\0", about[:data].to_s + "\0", about[:strict] ? 1 : 0,
+                                                                                  about[:mod_hashes].to_s + "\0", about[:settings].to_s + "\0") == 1
+      files = start.empty? ? "no starting save" : "a starting save of #{start.split("\n").size} file(s)"
+      started(sent, "create #{name}: #{seats} seats, #{password.empty? ? 'no password' : 'a password'}, #{hidden ? 'hidden' : 'public'}, " \
+                    "#{choose ? "player's choice" : 'no choice'}, #{files}, mods \"#{about[:mods]}\", #{about[:strict] ? 'strict' : 'mismatch allowed'}, " \
+                    "data #{about[:data].to_s.empty? ? 'unknown' : about[:data]}, description of #{about[:description].to_s.size} chars, creator hashes \"#{about[:mod_hashes]}\"")
     end
 
     # Opens a world's lock with its password; the action tells the world's name, its starting save,
@@ -728,7 +811,8 @@ module MGQ_MpWorld
     # @param password [String] The password.
     # @return [Boolean] Whether the action started.
     def self.unlock(id, password)
-      MGQ_Multiplayer::Link.function('mp_dir_unlock', 'pp').call(id + "\0", password + "\0") == 1
+      sent = MGQ_Multiplayer::Link.function('mp_dir_unlock').call(id + "\0", password + "\0") == 1
+      started(sent, "unlock world #{MGQ_MpWorld.short(id)} #{password.empty? ? 'without a password' : 'with a password'}")
     end
 
     # Opens a world's lock with its world code instead of its password, as a Discord invite hands
@@ -737,7 +821,7 @@ module MGQ_MpWorld
     # @param code [String] The world code.
     # @return [Boolean] Whether the action started.
     def self.unlock_code(code)
-      MGQ_Multiplayer::Link.function('mp_dir_unlock_code', 'p').call(code + "\0") == 1
+      started(MGQ_Multiplayer::Link.function('mp_dir_unlock_code').call(code + "\0") == 1, "unlock a world with an invite")
     end
 
     # Changes a world's seats, description and mods, which its creator or an admin may, and for its
@@ -751,7 +835,8 @@ module MGQ_MpWorld
     # @return [Boolean] Whether the action started.
     def self.edit(id, seats, description, mods, mod_hashes = nil)
       MGQ_Multiplayer::Player.share
-      MGQ_Multiplayer::Link.function('mp_dir_edit', 'plpppl').call(id + "\0", seats, description + "\0", mods + "\0", mod_hashes.to_s + "\0", mod_hashes ? 1 : 0) == 1
+      sent = MGQ_Multiplayer::Link.function('mp_dir_edit').call(id + "\0", seats, description + "\0", mods + "\0", mod_hashes.to_s + "\0", mod_hashes ? 1 : 0) == 1
+      started(sent, "edit world #{MGQ_MpWorld.short(id)}: #{seats} seats, mods \"#{mods}\", description of #{description.size} chars, creator hashes #{mod_hashes ? "\"#{mod_hashes}\"" : 'kept'}")
     end
 
     # Replaces a world's mod settings, which its creator or an admin may.
@@ -761,7 +846,8 @@ module MGQ_MpWorld
     # @return [Boolean] Whether the action started.
     def self.set_settings(id, settings)
       MGQ_Multiplayer::Player.share
-      MGQ_Multiplayer::Link.function('mp_dir_set_settings', 'pp').call(id + "\0", settings + "\0") == 1
+      sent = MGQ_Multiplayer::Link.function('mp_dir_set_settings').call(id + "\0", settings + "\0") == 1
+      started(sent, "set the mod settings of world #{MGQ_MpWorld.short(id)}: \"#{settings}\"")
     end
 
     # Replaces a world's game data with this game's as it is now, which only its creator may.
@@ -770,7 +856,8 @@ module MGQ_MpWorld
     # @return [Boolean] Whether the action started; not while this game's data cannot be read.
     def self.set_data(id)
       MGQ_Multiplayer::Player.share
-      MGQ_Multiplayer::Link.function('mp_dir_set_data', 'pp').call(id + "\0", GameData.fingerprint + "\0") == 1
+      sent = MGQ_Multiplayer::Link.function('mp_dir_set_data').call(id + "\0", GameData.fingerprint + "\0") == 1
+      started(sent, "set the game data of world #{MGQ_MpWorld.short(id)} to #{GameData.fingerprint}")
     end
 
     # Deletes a world for everyone.
@@ -779,7 +866,7 @@ module MGQ_MpWorld
     # @return [Boolean] Whether the action started.
     def self.delete(id)
       MGQ_Multiplayer::Player.share
-      MGQ_Multiplayer::Link.function('mp_dir_delete', 'p').call(id + "\0") == 1
+      started(MGQ_Multiplayer::Link.function('mp_dir_delete').call(id + "\0") == 1, "delete world #{MGQ_MpWorld.short(id)}")
     end
 
     # Removes a player from a world and keeps them out.
@@ -789,7 +876,8 @@ module MGQ_MpWorld
     # @return [Boolean] Whether the action started.
     def self.ban(id, target)
       MGQ_Multiplayer::Player.share
-      MGQ_Multiplayer::Link.function('mp_dir_ban', 'pp').call(id + "\0", target + "\0") == 1
+      sent = MGQ_Multiplayer::Link.function('mp_dir_ban').call(id + "\0", target + "\0") == 1
+      started(sent, "remove player #{MGQ_MpWorld.short(target)} from world #{MGQ_MpWorld.short(id)}")
     end
 
     # Reads how the running or last action stands.
@@ -802,7 +890,7 @@ module MGQ_MpWorld
 
     # Forgets the last action once its result was taken.
     def self.clear
-      MGQ_Multiplayer::Link.function('mp_dir_clear', 'v').call
+      MGQ_Multiplayer::Link.function('mp_dir_clear').call
     end
 
     # Reads the id everyone sees for the player.
@@ -859,7 +947,10 @@ module MGQ_MpWorld
   # @param name [String] The mod's name, with or without ".rb".
   # @return [Boolean] Whether it is; also when the folder cannot be read, so nobody is kept out by mistake.
   def self.installed_mod?(name)
-    @installed ||= Dir.glob("#{PATCH_DIR}/**/*.rb").map { |path| mod_key(File.basename(path)) }
+    unless @installed
+      @installed = Dir.glob("#{PATCH_DIR}/**/*.rb").map { |path| mod_key(File.basename(path)) }
+      log("the Patch folder holds #{@installed.size} script(s): #{@installed.join(', ')}")
+    end
     @installed.include?(mod_key(name))
   rescue => e
     log("reading the Patch folder failed: #{e.class}: #{e.message}")
@@ -927,8 +1018,11 @@ module MGQ_MpWorld
       values = MGQ_Multiplayer::Ini.read(MGQ_Multiplayer.path(ADDED_FILE))
       values.delete(id)
       values[id] = "1"
-      values.shift while values.size > MAX
+      dropped = []
+      dropped.push(values.shift[0]) while values.size > MAX
       MGQ_Multiplayer::Ini.write(MGQ_Multiplayer.path(ADDED_FILE), values)
+      forgot = dropped.empty? ? "" : ", forgot the oldest: #{dropped.map { |old| MGQ_MpWorld.short(old) }.join(', ')}"
+      MGQ_MpWorld.log("added hidden world #{MGQ_MpWorld.short(id)} to the list#{forgot}")
     end
 
     # Takes a world off the list again.
@@ -938,16 +1032,23 @@ module MGQ_MpWorld
       values = MGQ_Multiplayer::Ini.read(MGQ_Multiplayer.path(ADDED_FILE))
       values.delete(id)
       MGQ_Multiplayer::Ini.write(MGQ_Multiplayer.path(ADDED_FILE), values)
+      MGQ_MpWorld.log("removed hidden world #{MGQ_MpWorld.short(id)} from the list")
     end
   end
 
   # The worlds the player marked as favourites, in Patch/Multiplayer/Favourites.ini.
   module Favourites
-    # Lists the favourites.
+    # Lists the favourites, read from their file once until one changes, since the world screen
+    # asks every few frames.
     #
     # @return [Array<String>] The directory ids of the favourite worlds.
     def self.all
-      MGQ_Multiplayer::Ini.read(MGQ_Multiplayer.path(FAVOURITES_FILE)).keys
+      @all ||= MGQ_Multiplayer::Ini.read(MGQ_Multiplayer.path(FAVOURITES_FILE)).keys
+    end
+
+    # Forgets the favourites read, so the next look reads their file again.
+    def self.forget
+      @all = nil
     end
 
     # Marks a world as a favourite, if it is none yet.
@@ -966,6 +1067,8 @@ module MGQ_MpWorld
       favourite = !values.key?(id)
       favourite ? values[id] = "1" : values.delete(id)
       MGQ_Multiplayer::Ini.write(MGQ_Multiplayer.path(FAVOURITES_FILE), values)
+      forget
+      MGQ_MpWorld.log("world #{MGQ_MpWorld.short(id)} #{favourite ? 'is a favourite now' : 'is no longer a favourite'}")
       favourite
     end
   end
@@ -980,10 +1083,23 @@ module MGQ_MpWorld
     # What a world's folder is named.
     ID = /\A[0-9a-f]{12}\z/
 
-    # Lists the worlds on this PC.
+    # Lists the worlds on this PC, read from their folders once until one is made, written or
+    # deleted, since the world screen asks every few frames.
     #
     # @return [Array<World>] The worlds.
     def self.all
+      @all ||= list
+    end
+
+    # Forgets the worlds read, so the next look reads their folders again.
+    def self.forget
+      @all = nil
+    end
+
+    # Reads the worlds on this PC from their folders.
+    #
+    # @return [Array<World>] The worlds.
+    def self.list
       return [] unless File.directory?(WORLDS_DIR)
 
       Dir.entries(WORLDS_DIR).select { |entry| entry =~ ID }.map { |id| read(id) }.compact
@@ -1010,12 +1126,18 @@ module MGQ_MpWorld
     # @return [World, nil] The world, nil when the text is no world code or the folder could not be made.
     def self.found(code, name, directory_id)
       id = Link.id_of(code)
-      return nil unless id
+      unless id
+        MGQ_MpWorld.log("no folder for world #{MGQ_MpWorld.short(directory_id)}: the relay's answer holds no world code")
+        return nil
+      end
 
       [WORLDS_DIR, folder_of(id)].each { |dir| Dir.mkdir(dir) unless File.directory?(dir) }
-      world = read(id) || new(id, "code" => code, "created" => Time.now.to_i)
+      known = read(id)
+      world = known || new(id, "code" => code, "created" => Time.now.to_i)
       world.describe(name, directory_id)
-      world.write ? world : nil
+      written = world.write
+      MGQ_MpWorld.log("#{known ? 'found' : 'made'} folder #{id} of world #{MGQ_MpWorld.short(directory_id)} (#{world.name})#{written ? '' : ', but world.ini could not be written'}")
+      written ? world : nil
     rescue => e
       MGQ_MpWorld.log("could not create a world's folder: #{e.class}: #{e.message}")
       nil
@@ -1103,6 +1225,7 @@ module MGQ_MpWorld
       values = { "name" => @name, "code" => @code, "created" => @created }
       values["world"] = @directory_id if @directory_id
       values["played"] = @played_at.to_i if @played_at
+      World.forget
       MGQ_Multiplayer::Ini.write("#{folder}/#{FILE}", values)
     end
 
@@ -1144,7 +1267,9 @@ module MGQ_MpWorld
     #
     # @return [Boolean] Whether it was deleted.
     def delete
+      World.forget
       World.remove_tree(folder)
+      MGQ_MpWorld.log("deleted folder #{@id} of world #{MGQ_MpWorld.short(@directory_id)} (#{@name}) with its saves")
       true
     rescue => e
       MGQ_MpWorld.log("could not delete world #{@id}: #{e.class}: #{e.message}")
@@ -1246,7 +1371,9 @@ module MGQ_MpWorld
       Files.root = folder
       $game_library = $game_system_switches = $game_global_system = nil
       DataManager.setup_system
-    rescue
+      MGQ_MpWorld.log("saved the player's own system save and loaded the world's from #{folder}")
+    rescue => e
+      MGQ_MpWorld.log("the world's system save could not be loaded, the player's own is back: #{e.class}: #{e.message}")
       # Without this the game would go on in the world's folder with no world open, and the next
       # world would keep the half-loaded system save as the player's own.
       put_back
@@ -1258,6 +1385,7 @@ module MGQ_MpWorld
       return unless @own
 
       DataManager.save_system
+      MGQ_MpWorld.log("saved the world's system save and put the player's own back")
     ensure
       put_back
     end
@@ -1276,7 +1404,8 @@ module MGQ_MpWorld
   # A form of the world screen: its fields, laid out in rows, and what is filled in.
   class Form
     # A field of a form: a text box (:text, :password, :number or :id), a box of several lines (:area), a checkbox (:check), a save
-    # to choose (:save), the mods picked in the mod picker (:mods) or the button that sends the form (:button).
+    # to choose (:save), the mods picked in the mod picker (:mods), a switch between several outcomes (:switch) or a button
+    # (:button).
     class Field
       # What the form keeps the field's value under.
       attr_reader :key
@@ -1320,6 +1449,13 @@ module MGQ_MpWorld
       # Why a text box that must be filled in is refused while empty.
       attr_reader :empty_text
 
+      # The outcomes a switch moves between, as shown.
+      attr_reader :choices
+
+      # Tells a switch's line below its outcome, such as what the outcome picked brings: called with
+      # the form and the outcome's index, nil for no line.
+      attr_reader :note
+
       # Creates a field.
       #
       # @param key [Symbol] What the form keeps its value under.
@@ -1327,7 +1463,8 @@ module MGQ_MpWorld
       # @param label [String] What it is called.
       # @param row [Integer] The row it is on.
       # @param hint [String] What the lines at the top say while the cursor is on it.
-      # @param options [Hash] Whichever of :side, :max_chars, :allowed, :needs, :optional, :group, :lines, :empty_ok (a proc) and :empty_text apply.
+      # @param options [Hash] Whichever of :side, :max_chars, :allowed, :needs, :optional, :group, :lines, :empty_ok (a proc),
+      #   :empty_text, :choices and :note (a proc) apply.
       def initialize(key, kind, label, row, hint, options = {})
         @key = key
         @kind = kind
@@ -1343,6 +1480,18 @@ module MGQ_MpWorld
         @lines = options[:lines] || 1
         @empty_ok = options[:empty_ok]
         @empty_text = options[:empty_text] || "This field cannot be empty."
+        @choices = options[:choices] || []
+        @note = options[:note]
+      end
+
+      # Tells the line below a switch's outcome.
+      #
+      # @param form [Form] The form, whose other fields the line may follow.
+      # @return [String] The line, empty for none.
+      def note_of(form)
+        @note ? @note.call(form, form[@key].to_i).to_s : ""
+      rescue
+        ""
       end
 
       # Tells whether the text box may stay empty.
@@ -1477,6 +1626,16 @@ module MGQ_MpWorld
     # @return [Boolean] Whether it can.
     def enabled?(field)
       field.needs.nil? || @values[field.needs] == true
+    end
+
+    # Moves a switch to its next or its previous outcome, round.
+    #
+    # @param field [Field] The switch.
+    # @param step [Integer] 1 for the next outcome, -1 for the previous.
+    # @return [Integer] The outcome's index now.
+    def turn(field, step)
+      count = [field.choices.size, 1].max
+      @values[field.key] = (@values[field.key].to_i + step) % count
     end
 
     # Checks what a text box holds, and tidies it.
@@ -1688,18 +1847,22 @@ begin
   end
 
   # A world's new game that asked something first has started once the game sets it up.
-  MGQ_MpHooks.around(DataManager.singleton_class, :setup_new_game) do |_manager, _args, original|
-    MGQ_MpWorld.new_game_started
-    original.call
+  MGQ_MpHooks.before(DataManager.singleton_class, :setup_new_game, "world") { MGQ_MpWorld.new_game_started }
+
+  # The title screen's commands, Multiplayer below Continue, which opens the world screen.
+  MGQ_MpHooks.after(Window_TitleCommand, :make_command_list, "world") { MGQ_MpWorld.add_title_command(self) }
+  MGQ_MpHooks.after(Scene_Title, :create_command_window, "world") do
+    @command_window.set_handler(:mgq_mp_world, lambda { MGQ_MpWorld.open_world_screen(self) })
   end
+
+  # Before the title screen ends, the update notice goes off the screen.
+  MGQ_MpHooks.before(Scene_Title, :terminate, "world") { MGQ_MpWorld::UpdateNotice.hide rescue nil }
 rescue => e
   MGQ_MpWorld.log("title hooks FAILED: #{e.class}: #{e.message}")
 end
 
-# Game hooks of this script alone.
-#
-# Each wraps a game method: the original runs first unless said otherwise, and the mod's part never
-# raises.
+# Game hooks of this script alone: the paths below the Save folder, which core_hooks.rbx cannot
+# wrap, since they change what the game's methods get.
 
 if MGQ_MpWorld.hookable?
   begin
@@ -1719,43 +1882,5 @@ if MGQ_MpWorld.hookable?
     end
   rescue => e
     MGQ_MpWorld.log("picture hook FAILED: #{e.class}: #{e.message}")
-  end
-
-  begin
-    class Window_TitleCommand
-      alias mgq_mp_world_make_command_list make_command_list
-
-      # Lists the title screen's commands, Multiplayer below Continue.
-      def make_command_list
-        mgq_mp_world_make_command_list
-        MGQ_MpWorld.add_title_command(self)
-      end
-    end
-
-    class Scene_Title
-      alias mgq_mp_world_create_command_window create_command_window
-
-      # Creates the title screen's commands, Multiplayer among them.
-      def create_command_window
-        mgq_mp_world_create_command_window
-        @command_window.set_handler(:mgq_mp_world, method(:mgq_mp_world_command))
-      end
-
-      # Opens the world screen.
-      def mgq_mp_world_command
-        close_command_window
-        SceneManager.call(Scene_MpWorlds)
-      end
-
-      alias mgq_mp_world_terminate terminate
-
-      # Takes the update notice off the screen, then ends the title screen.
-      def terminate
-        MGQ_MpWorld::UpdateNotice.hide rescue nil
-        mgq_mp_world_terminate
-      end
-    end
-  rescue => e
-    MGQ_MpWorld.log("title hooks FAILED: #{e.class}: #{e.message}")
   end
 end

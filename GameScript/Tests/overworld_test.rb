@@ -2,7 +2,8 @@
 #  overworld_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-07: Checked that the status line breaks a long notice into rows, its icon before the first
+#      Paulinchen  2026-10-07: Checked the player's seat kept from the inbox and the status until the world closes
+#                            - Checked that the status line breaks a long notice into rows, its icon before the first
 #      Paulinchen  2026-10-06: Checked that a player who just joined counts for the leader only once admitted, and that a player on a new seat while the old one stands is moved there
 #                            - Checked that the chat box opens while a message shows, and stays shut while an event runs without one
 #                            - Checked that Discord hears of the world code, which its invites carry
@@ -780,3 +781,30 @@ check("a long notice takes as many rows as it needs, each fitting the line", [ro
       [4, true, long])
 check("a notice's icon stands before its first row only", rows.map { |_, icon, _| icon }, [4, nil, nil, nil])
 check("the line keeps its newest rows", [status.rows_of([[long, nil], [long, nil]]).size, status.rows_of([[long, nil], [long, nil]]).last[0]], [4, "what you play together."])
+
+# The player's seat: asked of the DLL only while none was told, kept from the inbox and the
+# status, and forgotten once the world closes.
+$status_calls = 0
+$status_seat = "2"
+MGQ_MpOverworldSync::Link.define_singleton_method(:status) { $status_calls += 1; { "state" => "open", "seat" => $status_seat, "ping" => $status_ping } }
+me = MGQ_MpOverworldSync::Me
+me.forget_seat
+check("the seat is asked of the DLL the first time", [me.seat, $status_calls], [2, 1])
+check("and kept after that", [me.seat, me.seat, $status_calls], [2, 2, 1])
+$inbox << entry("seat", 5)
+MGQ_MpOverworldSync.tick
+check("a new connection's seat replaces it", me.seat, 5)
+$status_seat = "6"
+(MGQ_MpOverworldSync::STATUS_FRAMES + 2).times { MGQ_MpOverworldSync.tick }
+check("so does the status when it looks", me.seat, 6)
+$status_seat = ""
+(MGQ_MpOverworldSync::STATUS_FRAMES + 2).times { MGQ_MpOverworldSync.tick }
+$status_calls = 0
+check("a status without a seat has the DLL asked again, which answers none", [me.seat, me.seat, $status_calls], [-1, -1, 2])
+$status_seat = "7"
+MGQ_MpOverworldSync::Status.look
+$open = false
+MGQ_MpOverworldSync.tick
+$status_calls = 0
+check("the world closing forgets the seat", [me.seat, $status_calls], [7, 1])
+$open = true

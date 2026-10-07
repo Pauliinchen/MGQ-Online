@@ -2,7 +2,9 @@
 #  world_save_distribution.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-07: Shortened the save screen's help texts to fit its one line
+#      Paulinchen  2026-10-07: Named the DLL's exports alone, their signatures living in Multiplayer.rb
+#                            - Logged the save picked, the files placed, the fetch started, the check of a fetched save and the files thrown away
+#                            - Shortened the save screen's help texts to fit its one line
 #      Paulinchen  2026-10-04: Renamed from mp_save_distribution.rbx
 #      Paulinchen  2026-10-03: Logged through MGQ_MpLog
 #      Paulinchen  2026-10-02: Let a new player of a world whose players choose start from one of their own saves
@@ -59,6 +61,7 @@ module MGQ_MpSaveDistribution
   def self.choose(purpose)
     @chosen = nil
     @purpose = purpose
+    log("opening the save screen: #{help}")
     SceneManager.call(Scene_MpStartSave)
   end
 
@@ -74,6 +77,7 @@ module MGQ_MpSaveDistribution
   # @param index [Integer] The save's index, as DataManager takes it.
   def self.chosen=(index)
     @chosen = index
+    log("picked #{MGQ_MpWorld.save_name(index)} (#{@purpose})")
   end
 
   # Hands out what the save screen was opened for and the save the player picked, once.
@@ -98,6 +102,7 @@ module MGQ_MpSaveDistribution
     files.push([THUMBNAIL_NAME, thumbnail]) if thumbnail && File.exist?(thumbnail)
     system = newest_system_save
     files.push([SYSTEM_NAME, system]) if File.exist?(system)
+    log("the starting save of #{MGQ_MpWorld.save_name(index)} is #{files.map { |name, path| "#{path} as #{name}" }.join(', ')}")
     files
   end
 
@@ -130,7 +135,7 @@ module MGQ_MpSaveDistribution
       bytes = File.open(path, "rb") { |file| file.read }
       File.open("#{world.save_folder}/#{name}", "wb") { |file| file.write(bytes) }
     end
-    log("placed the starting save in world #{world.id}")
+    log("placed the starting save in world #{world.id} (#{world.name}): #{files.map { |name, path| "#{path} as #{name}" }.join(', ')}")
     true
   rescue => e
     log("could not place the starting save: #{e.class}: #{e.message}")
@@ -171,7 +176,9 @@ module MGQ_MpSaveDistribution
   # @return [Boolean] Whether the action started.
   def self.fetch(world)
     MGQ_Multiplayer::Player.share
-    MGQ_Multiplayer::Link.function('mp_dir_fetch_start', 'pp').call(world.code + "\0", world.save_folder + "\0") == 1
+    started = MGQ_Multiplayer::Link.function('mp_dir_fetch_start').call(world.code + "\0", world.save_folder + "\0") == 1
+    log(started ? "fetching the starting save of world #{world.id} (#{world.name}) into #{world.save_folder}" : "fetching the starting save of world #{world.id} could not start")
+    started
   end
 
   # Checks that this game can load a fetched starting save, and throws it away when it cannot, so
@@ -188,6 +195,7 @@ module MGQ_MpSaveDistribution
 
       File.open(path, "rb") { |file| Marshal.load(file) until file.eof? }
     end
+    log("the starting save of world #{world.id} loads in this game")
     nil
   rescue => e
     log("the starting save of world #{world.id} cannot be loaded: #{e.class}: #{e.message}")
@@ -200,10 +208,11 @@ module MGQ_MpSaveDistribution
   #
   # @param world [MGQ_MpWorld::World] The world on this PC.
   def self.discard(world)
-    [SAVE_NAME, THUMBNAIL_NAME, SYSTEM_NAME].each do |name|
+    deleted = [SAVE_NAME, THUMBNAIL_NAME, SYSTEM_NAME].select do |name|
       path = "#{world.save_folder}/#{name}"
-      File.delete(path) if File.exist?(path)
+      File.exist?(path) && File.delete(path)
     end
+    log("threw away the starting save of world #{world.id}: #{deleted.empty? ? 'no files there' : deleted.join(', ')}")
   rescue => e
     log("could not delete the starting save: #{e.class}: #{e.message}")
   end
@@ -222,6 +231,7 @@ class Scene_MpStartSave < Scene_Load
   # Hands the chosen save back to the world screen, if there is a save in that slot.
   def on_savefile_ok
     unless File.exist?(DataManager.make_filename(@index))
+      MGQ_MpSaveDistribution.log("save slot #{@index + 1} is empty, not taken")
       Sound.play_buzzer
       return
     end

@@ -2,6 +2,7 @@
 #  world_mods_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-07: Looked each DLL call's signature up in the export table of Multiplayer.rb
 #      Paulinchen  2026-10-06: Expected the summary to name mods that are missing or in another version
 #                            - Told whether a small window of the world screen takes input, which an entry after a restart waits for
 #                            - Covered the catalog kept while the list loads, links the relay could not read yet, options with :values,
@@ -108,7 +109,7 @@ module MGQ_Multiplayer
   module Link
     Function = Struct.new(:name, :signature) do
       def call(*args)
-        check_dll_call(name, signature, args)
+        check_dll_call(name, args)
         $calls << [name, signature, args]
         case name
         when "mp_mod_hash"
@@ -122,7 +123,7 @@ module MGQ_Multiplayer
         end
       end
     end
-    def self.function(name, signature); Function.new(name, signature); end
+    def self.function(name); Function.new(name, dll_signature(name)); end
     def self.read(name, _size); $dll[name].to_s; end
     def self.open(_code); end
     def self.close; end

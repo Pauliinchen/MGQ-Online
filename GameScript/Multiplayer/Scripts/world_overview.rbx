@@ -2,7 +2,10 @@
 #  world_overview.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-07: Left the place of a map the game names nowhere empty instead of its untranslated editor name, and headed it Unnamed place in the list
+#      Paulinchen  2026-10-07: Logged once when the game has no variable or switch of a name, reading 0 or off
+#                            - Named players through MGQ_MpOverworldSync.who, cut places through MGQ_MpUi.cut with what measures them, and took icons, white and the depth from MGQ_MpUi
+#                            - Logged the overview opening and closing with why, each menu with its choices, the choice taken or refused, and the level and story told to the others
+#                            - Left the place of a map the game names nowhere empty instead of its untranslated editor name, and headed it Unnamed place in the list
 #      Paulinchen  2026-10-06: Kept the overview shut while the emote wheel is open
 #                            - Left out what a script offers as nothing, and said Nothing to do in an empty menu of another player
 #                            - Took the box's measures, its headings' color and its background from the list box and the action wheel
@@ -123,7 +126,7 @@ module MGQ_MpWorldOverview
   #
   # @return [MGQ_MpActions::Option] The choice.
   def self.wheel_option
-    MGQ_MpActions::Option.new("World (#{MGQ_MpHotkeys.label(:overview)})", lambda { open }, nil, WORLD_ICON)
+    MGQ_MpActions::Option.new("World (#{MGQ_MpHotkeys.label(:overview)})", lambda { open("the action wheel") }, nil, WORLD_ICON)
   end
 
   # Tells the action wheel whether the overview lies over the map, closing it on the wheel's key.
@@ -133,14 +136,15 @@ module MGQ_MpWorldOverview
   def self.cover(wheel_key)
     return false unless @open
 
-    close if wheel_key
+    close("the wheel key") if wheel_key
     true
   end
 
   # Opens the overview on the player's own row.
-  def self.open
+  #
+  # @param via [String] What opened it, for the log.
+  def self.open(via = "the action wheel")
     return if @open
-
     @open = true
     @fresh = true
     @menu = nil
@@ -148,13 +152,17 @@ module MGQ_MpWorldOverview
     @scroll = 0
     @mouse = nil
     @view = view
+    log("opened through #{via}, #{@view[:lines].count { |kind, _| kind == :player }} player(s) online")
     MGQ_Multiplayer::Capture.start(:overview)
   end
 
   # Closes the overview, if it is open, and gives the buttons back.
-  def self.close
+  #
+  # @param reason [String] Why, for the log.
+  def self.close(reason = "closed from outside")
     return unless @open
 
+    log("closed: #{reason}")
     @open = false
     @menu = nil
     @view = nil
@@ -173,18 +181,20 @@ module MGQ_MpWorldOverview
   # Opens or closes the overview with its key, and steers it while open. Called by the map every frame.
   def self.on_map
     pressed = MGQ_MpHotkeys.pressed?(:overview)
-    return close if @open && (pressed || !openable_while_open?)
+    return close(pressed ? "its hotkey" : "an event, a message or the chat box took over") if @open && (pressed || !openable_while_open?)
     return unless pressed || @open
 
     if @open
       update
     elsif openable?
       Sound.play_ok
-      open
+      open("its hotkey")
+    else
+      log("hotkey ignored: not on a quiet map in a world, or the chat or a wheel is open")
     end
   rescue => e
     log("overview failed: #{e.class}: #{e.message}")
-    close
+    close("it failed")
   end
 
   # Reports whether the open overview may stay: still in a world and on the map, with no event or
@@ -200,15 +210,18 @@ module MGQ_MpWorldOverview
   #
   # @param in_world [Boolean] Whether a world is open.
   def self.tick(in_world)
-    close unless in_world && SceneManager.scene.is_a?(Scene_Map)
+    close(in_world ? "the map was left" : "the world closed") unless in_world && SceneManager.scene.is_a?(Scene_Map)
     return unless in_world
 
     @frames -= 1
     return if @frames > 0
 
     @frames = READ_FRAMES
-    @level = top_level
-    @story = story_code
+    level = top_level
+    story = story_code
+    log("told the others: level #{@level.inspect} -> #{level}, story #{@story.inspect} -> #{story.inspect}") if [level, story] != [@level, @story]
+    @level = level
+    @story = story
   end
 
   # The fields the overview adds to the state the player's game tells the others.
@@ -231,20 +244,17 @@ module MGQ_MpWorldOverview
   #
   # @param place [String] The name.
   # @param width [Integer] The room for it.
-  # @yieldparam text [String] A text to measure.
-  # @yieldreturn [Integer] Its width.
+  # @param measure [Bitmap, Window_Base] What measures a text with the font it is drawn in.
   # @return [String] The name as it fits.
-  def self.fit_place(place, width)
+  def self.fit_place(place, width, measure)
     text = SHORT_PLACES.inject(place.to_s) { |name, (long, short)| name.sub(long, short) }
-    return text if yield(text) <= width
+    return text if measure.text_size(text).width <= width
 
     text = text.sub(/\s*\([^)]*\)/, "")
-    return text if yield(text) <= width
+    return text if measure.text_size(text).width <= width
 
     floor = text[PLACE_FLOOR].to_s
-    head = text[0, text.length - floor.length]
-    head = head[0...-1].rstrip while !head.empty? && yield("#{head}...#{floor}") > width
-    "#{head}...#{floor}"
+    MGQ_MpUi.cut(measure, text[0, text.length - floor.length], width, floor)
   end
 
   # Reads the highest base level of the player's companions, in the party and waiting, Luka left out.
@@ -294,6 +304,7 @@ module MGQ_MpWorldOverview
   # @return [Integer] Its value, 0 when the game has none of these names.
   def self.variable(names)
     id = names.map { |name| $data_system.variables.index(name) }.compact.first
+    log_once([:variable, names], "no variable of the game is named #{names.join(' or ')}, reading 0") unless id
     id ? $game_variables[id].to_i : 0
   end
 
@@ -303,6 +314,7 @@ module MGQ_MpWorldOverview
   # @return [Boolean] Whether it is on, false when the game has none of these names.
   def self.switch?(names)
     id = names.map { |name| $data_system.switches.index(name) }.compact.first
+    log_once([:switch, names], "no switch of the game is named #{names.join(' or ')}, reading off") unless id
     id ? $game_switches[id] == true : false
   end
 
@@ -448,8 +460,8 @@ module MGQ_MpWorldOverview
   # @param players [Array<Integer>] The lines that are players.
   def self.update_list(view, players)
     capture = MGQ_Multiplayer::Capture
-    return (Sound.play_cancel; close) if capture.trigger?(:B)
-    return open_menu if capture.trigger?(:C)
+    return (Sound.play_cancel; close("cancel")) if capture.trigger?(:B)
+    return open_menu(view[:lines][view[:selected]][1]) if capture.trigger?(:C)
 
     step = capture.repeat?(:DOWN) ? 1 : capture.repeat?(:UP) ? -1 : 0
     return if step == 0
@@ -465,8 +477,8 @@ module MGQ_MpWorldOverview
   # @param view [Hash] What the overview shows, see view.
   def self.update_menu(view)
     capture = MGQ_Multiplayer::Capture
-    return (Sound.play_cancel; @menu = nil) if capture.trigger?(:B)
-    return choose(view[:menu][@menu]) if capture.trigger?(:C)
+    return (Sound.play_cancel; log("menu closed with cancel"); @menu = nil) if capture.trigger?(:B)
+    return choose(view[:menu][@menu], view[:lines][view[:selected]][1]) if capture.trigger?(:C)
 
     step = capture.repeat?(:DOWN) ? 1 : capture.repeat?(:UP) ? -1 : 0
     return if step == 0
@@ -476,18 +488,34 @@ module MGQ_MpWorldOverview
   end
 
   # Opens the menu of the player picked.
-  def self.open_menu
+  #
+  # @param row [Row] The player.
+  def self.open_menu(row)
     Sound.play_ok
     @menu = 0
+    options = menu_options(row).map { |option| option.run ? option.text : "#{option.text} (refused: #{option.refusal})" }
+    log("menu of #{who(row)}: #{options.join(', ')}")
+  end
+
+  # Names a player of the list for the log.
+  #
+  # @param row [Row, nil] The player.
+  # @return [String] Their name and seat, or "the player" for the player.
+  def self.who(row)
+    return "nobody" unless row
+
+    MGQ_MpOverworldSync.who(row.player)
   end
 
   # Takes a choice of the menu, closing the menu, or tells why it cannot be taken.
   #
   # @param option [MGQ_MpActions::Option, nil] The choice.
-  def self.choose(option)
+  # @param row [Row, nil] The player whose menu it is.
+  def self.choose(option, row = nil)
+    log(option.run ? "chose #{option.text} for #{who(row)}" : "#{option.text} for #{who(row)} refused: #{option.refusal || 'no reason given'}") if option
     MGQ_MpActions.choose(option) do
       @menu = nil
-      close if option.leaves
+      close("the choice leaves it") if option.leaves
     end
   end
 
@@ -508,18 +536,19 @@ module MGQ_MpWorldOverview
       choice = Sprite_MpWorldOverview.choice_at(x, y, view)
       @menu = choice if choice && moved
       return unless clicked
-      return choose(view[:menu][choice]) if choice
+      return choose(view[:menu][choice], view[:lines][view[:selected]][1]) if choice
 
+      log("menu closed with a click outside it")
       @menu = nil
     end
 
     line = Sprite_MpWorldOverview.line_at(x, y, view)
     if line && players.include?(line)
       @selected = key_of(view[:lines][line][1]) if moved || clicked
-      open_menu if clicked
+      open_menu(view[:lines][line][1]) if clicked
     elsif clicked && !Sprite_MpWorldOverview.inside?(x, y)
       Sound.play_cancel
-      close
+      close("a click outside the box")
     end
   end
 
@@ -587,7 +616,7 @@ class Sprite_MpWorldOverview < Sprite
     self.bitmap = Bitmap.new(BOX.width, BOX.height)
     self.x = BOX.x
     self.y = BOX.y
-    self.z = 400
+    self.z = MGQ_MpUi::Z[:overview]
     self.visible = false
     @shown = nil
   end
@@ -689,7 +718,7 @@ class Sprite_MpWorldOverview < Sprite
     world = MGQ_MpWorld.world
     badge = MGQ_MpOverworld.party_badge(:me)
     bitmap.font.size = 20
-    bitmap.font.color = Color.new(255, 255, 255)
+    bitmap.font.color = MGQ_MpUi::WHITE
     bitmap.draw_text(10, 2, BOX.width - 20, TITLE - 4, world ? world.name.to_s : "World")
     return unless badge
 
@@ -713,13 +742,13 @@ class Sprite_MpWorldOverview < Sprite
 
     bitmap.fill_rect(4, y, BOX.width - 8, ROW, PICKED_BACK) if picked
     draw_icons(value, y)
-    bitmap.font.color = value.member ? MEMBER_COLOR : Color.new(255, 255, 255)
+    bitmap.font.color = value.member ? MEMBER_COLOR : MGQ_MpUi::WHITE
     bitmap.draw_text(COLUMNS[:name], y, COLUMNS[:party] - COLUMNS[:name] - 4, ROW, value.name)
     bitmap.font.size = 16
     bitmap.draw_text(COLUMNS[:party], y, COLUMNS[:level] - COLUMNS[:party], ROW, value.badge[0]) if value.badge
-    bitmap.font.color = Color.new(255, 255, 255)
+    bitmap.font.color = MGQ_MpUi::WHITE
     bitmap.draw_text(COLUMNS[:level], y, COLUMNS[:story] - COLUMNS[:level], ROW, value.level)
-    text, color = value.call || [value.story, Color.new(255, 255, 255)]
+    text, color = value.call || [value.story, MGQ_MpUi::WHITE]
     bitmap.font.color = color
     bitmap.draw_text(COLUMNS[:story], y, COLUMNS[:ping_right] - 60 - COLUMNS[:story], ROW, text)
     return unless value.ping
@@ -738,7 +767,7 @@ class Sprite_MpWorldOverview < Sprite
 
     iconset = Cache.system("Iconset")
     icons.each_with_index do |icon, index|
-      bitmap.blt(COLUMNS[:icons] + index * 26, y, iconset, Rect.new(icon % 16 * 24, icon / 16 * 24, 24, 24))
+      bitmap.blt(COLUMNS[:icons] + index * 26, y, iconset, MGQ_MpUi.icon_rect(icon))
     end
   end
 
@@ -752,7 +781,7 @@ class Sprite_MpWorldOverview < Sprite
     view[:menu].each_with_index do |option, index|
       y = top + index * ROW
       bitmap.fill_rect(left, y, MENU_WIDTH, ROW, PICKED_BACK) if index == view[:menu_index]
-      bitmap.font.color = option.run ? Color.new(255, 255, 255) : GREY
+      bitmap.font.color = option.run ? MGQ_MpUi::WHITE : GREY
       bitmap.draw_text(left + 8, y, MENU_WIDTH - 16, ROW, option.text)
     end
   end

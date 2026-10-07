@@ -2,7 +2,8 @@
 #  trade_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-07: Tested the messages kept for the trade screen
+#      Paulinchen  2026-10-07: Looked each DLL call's signature up in the export table of Multiplayer.rb
+#                            - Tested the messages kept for the trade screen
 #      Paulinchen  2026-10-06: Tested confirming again after a cancelled commit, and cancels and a failed commit while the relay decides
 #                            - Tested that the relay hears of a trade only once a save holds it, and that a trade applies once
 #                            - Tested the room checks counting the own offer, and prefixes written by their enchantment
@@ -99,9 +100,9 @@ module MGQ_Multiplayer
   def self.available?; true; end
   def self.outdated?; false; end
   module Link
-    def self.function(name, signature)
+    def self.function(name)
       lambda do |*args|
-        check_dll_call(name, signature, args)
+        check_dll_call(name, args)
         $dll << [name] + args.map { |arg| arg.to_s.chomp("\0") }
         1
       end

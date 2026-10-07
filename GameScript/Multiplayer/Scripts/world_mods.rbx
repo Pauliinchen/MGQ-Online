@@ -2,6 +2,9 @@
 #  world_mods.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-07: Followed a new game through an after block, since the hook only applies the world's mods
+#                            - Named the DLL's exports alone, their signatures living in Multiplayer.rb
+#                            - Logged each required mod's check, the catalog read, the downloads, the restart and rejoin, and the settings taken, applied or left out
 #      Paulinchen  2026-10-06: Said a world needs mods that are missing or in another version, since some may not be installed at all
 #                            - Asked a scene directly whether it changes, since the game makes that public
 #                            - Kept the catalog while the list is fetched again, so a mod is never let in by name only meanwhile
@@ -131,10 +134,25 @@ module MGQ_MpWorldMods
     when "loading" then @catalog = parse(payload) unless payload.empty?
     else @catalog = nil
     end
+    log_catalog(state["state"])
     @catalog
   rescue => e
     log_once(:catalog, "reading the mod catalog failed: #{e.class}: #{e.message}")
     nil
+  end
+
+  # Logs the catalog whenever what it holds changed.
+  #
+  # @param state [String, nil] How the DLL's list stands.
+  def self.log_catalog(state)
+    seen = @catalog && @catalog.map { |mod| [mod.key, mod.version, mod.kind, mod.options_version] }
+    return if seen == @logged_catalog
+
+    @logged_catalog = seen
+    return log("mod catalog unknown (#{state == 'failed' ? 'the list did not arrive' : "list #{state.inspect}"}): required mods are only checked for being installed") unless @catalog
+
+    mods = @catalog.map { |mod| "#{mod.name} #{mod.version} (#{mod.kind}, #{mod.files.size} file(s))" }
+    log("mod catalog (list #{state}): #{@catalog.size} mod(s)#{mods.empty? ? '' : ': ' + mods.join(', ')}")
   end
 
   # Reads the catalog's lines.
@@ -192,7 +210,7 @@ module MGQ_MpWorldMods
     return @hashes[path] if @hashes.key?(path)
 
     buffer = "\0" * HASH_SIZE
-    length = MGQ_Multiplayer::Link.function('mp_mod_hash', 'ppl').call(path + "\0", buffer, buffer.size)
+    length = MGQ_Multiplayer::Link.function('mp_mod_hash').call(path + "\0", buffer, buffer.size)
     @hashes[path] = length > 0 ? buffer[0, length] : nil
   rescue => e
     log_once(:hash, "hashing an installed mod failed: #{e.class}: #{e.message}")
@@ -286,6 +304,34 @@ module MGQ_MpWorldMods
     end
   end
 
+  # Logs how each required mod of a world compares with this game's, as the player enters it.
+  #
+  # @param world [String] The world's name.
+  # @param listed [MGQ_MpWorld::Directory::ListedWorld] The world.
+  # @param rows [Array<Row>] The mods that differ, see differing.
+  def self.log_check(world, listed, rows)
+    required = MGQ_MpWorld.required_mods(listed.mods)
+    return log("mod check of #{world}: no required mods (mods \"#{listed.mods}\")") if required.empty?
+
+    creator = hashes_of(listed.mod_hashes)
+    results = required.map do |name|
+      row = rows.find { |candidate| candidate.name == name }
+      next "#{row.text}#{row.downloadable? ? ', downloadable' : ', from its author only'}" if row
+
+      mod = mod_named(name)
+      if mod
+        "#{name}: matches #{mod.version}"
+      elsif creator[MGQ_MpWorld.mod_key(name)]
+        "#{name}: matches the creator's copy"
+      else
+        "#{name}: installed, not compared (outside the catalog, no creator's hash)"
+      end
+    end
+    log("mod check of #{world}: #{rows.empty? ? 'all match' : "#{rows.size} differ"}#{catalog ? '' : ' (catalog unknown)'}: #{results.join('; ')}")
+  rescue => e
+    log("logging the mod check failed: #{e.class}: #{e.message}")
+  end
+
   # Writes the creator's hashes of the required mods outside the catalog, for a world being made
   # or changed. A mod the creator's game lacks, or whose name is longer than the relay takes, is
   # left out, so it is only checked for being installed.
@@ -299,6 +345,7 @@ module MGQ_MpWorldMods
 
       path = MGQ_MpWorld.installed_path(name)
       hash = path && hash_of(path)
+      log("creator's hash of #{name} left out: #{path ? 'it could not be read' : 'not installed here'}") unless hash
       hash && "#{name}=#{hash}"
     end.compact.join(";")
   rescue => e
@@ -323,7 +370,10 @@ module MGQ_MpWorldMods
   # @return [Boolean] Whether the installation started.
   def self.install(rows)
     lines = rows.map { |row| "#{row.mod.key}\t#{row.target}" }.join("\n")
-    MGQ_Multiplayer::Link.function('mp_mods_install', 'p').call(lines + "\0") == 1
+    started = MGQ_Multiplayer::Link.function('mp_mods_install').call(lines + "\0") == 1
+    described = rows.map { |row| "#{row.name} #{row.yours} -> #{row.worlds}#{row.target ? " into #{row.target}" : ''}" }.join(", ")
+    log(started ? "downloading #{described}" : "the download of #{described} could not start")
+    started
   end
 
   # Starts the game again so the installed mods load, and enters the world once it is back.
@@ -332,9 +382,13 @@ module MGQ_MpWorldMods
   # @return [Boolean] Whether the game closes now to start again; false when it could not, and stays open.
   def self.restart(world_id)
     MGQ_Multiplayer::Player.store(REJOIN_SETTING, world_id)
-    return true if MGQ_Multiplayer::Link.function('mp_restart_game', 'v').call == 1
+    if MGQ_Multiplayer::Link.function('mp_restart_game').call == 1
+      log("starting the game again, to enter world #{MGQ_MpWorld.short(world_id)} once it is back")
+      return true
+    end
 
     MGQ_Multiplayer::Player.store(REJOIN_SETTING, "")
+    log("the game could not start itself again, so world #{MGQ_MpWorld.short(world_id)} is not entered on its own")
     false
   end
 
@@ -357,10 +411,14 @@ module MGQ_MpWorldMods
     return if @rejoining || scene.scene_changing?
 
     id = take_rejoin
-    return unless id && MGQ_Multiplayer.available? && !MGQ_Multiplayer.outdated?
+    return unless id
+
+    unless MGQ_Multiplayer.available? && !MGQ_Multiplayer.outdated?
+      return log("not entering world #{MGQ_MpWorld.short(id)} again after the restart: the DLL is missing or the mod is outdated")
+    end
 
     @rejoining = id
-    log("entering world #{id} again after the restart")
+    log("entering world #{MGQ_MpWorld.short(id)} again after the restart")
     SceneManager.call(Scene_MpWorlds)
   rescue => e
     log("entering the world again failed: #{e.class}: #{e.message}")
@@ -393,6 +451,7 @@ module MGQ_MpWorldMods
     wanted = MGQ_MpWorld.mods_of(mods).map { |name| MGQ_MpWorld.mod_key(name) }
     pairs = world_options(wanted).map { |key| (encoded = encode(option_value(key))) && [key, "#{key}=#{encoded}"] }.compact
     text, left_out = fit_settings(pairs)
+    log("read #{pairs.size - left_out.size} mod setting(s) of #{wanted.join(', ')} for the world: #{text}")
     log("left out #{left_out.size} mod setting(s) past #{MAX_SETTINGS_CHARS} characters: #{left_out.join(', ')}") unless left_out.empty?
     [text, left_out]
   rescue => e
@@ -460,7 +519,7 @@ module MGQ_MpWorldMods
 
       @reported[mod.key] = mod.version
       lines = world_entries([mod.key]).map { |entry| option_line(entry) }.compact
-      MGQ_Multiplayer::Link.function('mp_mods_options', 'ppp').call(mod.key + "\0", mod.version + "\0", lines.join("\n") + "\0")
+      MGQ_Multiplayer::Link.function('mp_mods_options').call(mod.key + "\0", mod.version + "\0", lines.join("\n") + "\0")
       log("sending #{lines.size} Mod Config option(s) of #{mod.name} #{mod.version}")
     end
   rescue => e
@@ -570,6 +629,7 @@ module MGQ_MpWorldMods
   # @param world [Array(String, String), nil] The world's id and mods, nil for another's world.
   def self.own_world(world)
     @own = world
+    log("entering the player's own world #{MGQ_MpWorld.short(world[0])}: they may set its mod settings") if world
   end
 
   # Tells whether the player plays in a world they created.
@@ -584,12 +644,16 @@ module MGQ_MpWorldMods
   #
   # @param window [Window_ModConfig] The menu's window, whose help line tells how it went.
   def self.share(window)
-    return Sound.play_buzzer unless own_world?
+    unless own_world?
+      log("not sending the world's mod settings: the player is not in a world they created")
+      return Sound.play_buzzer
+    end
 
     id, mods = @own
     text, left_out = settings_of(mods)
 
     if @sharing || !MGQ_MpWorld::Directory.set_settings(id, text)
+      log("not sending the world's mod settings: #{@sharing ? 'the last ones are still on their way' : 'the request could not start'}")
       Sound.play_buzzer
       window.help_window.set_text("Another request is still running. Try again in a moment.") if window.help_window
       return
@@ -644,6 +708,15 @@ module MGQ_MpWorldMods
   # @param text [String, nil] The world's settings.
   def self.use(text)
     @settings = settings_from(text)
+    log("the world sets #{@settings.size} mod setting(s)#{@settings.empty? ? '' : ': ' + settings_text(@settings)}")
+  end
+
+  # Writes settings for the log.
+  #
+  # @param settings [Hash] The values by the options' keys.
+  # @return [String] Such as "lv_cap=true, rate=2".
+  def self.settings_text(settings)
+    settings.map { |key, value| "#{key}=#{value.inspect}" }.join(", ")
   end
 
   # Writes the world's settings into the game's options and has Mod Config Remake show them as
@@ -651,10 +724,12 @@ module MGQ_MpWorldMods
   def self.apply
     return unless MGQ_MpWorld.open? && @settings && $game_system
 
+    changed = @settings.select { |key, value| $game_system.conf[key] != value }
+    before = changed.map { |key, value| "#{key} #{$game_system.conf[key].inspect} -> #{value.inspect}" }
     @settings.each { |key, value| $game_system.conf[key] = value }
     # The creator changes them in Mod Config, then makes them the world's with the button.
     lock(own_world? ? [] : @settings.keys)
-    log("applied #{@settings.size} mod setting(s) of the world") unless @settings.empty?
+    log("applied #{@settings.size} mod setting(s) of the world, #{changed.size} changed#{before.empty? ? '' : ': ' + before.join(', ')}; #{own_world? ? 'left unlocked for the creator' : 'locked in Mod Config'}") unless @settings.empty?
   rescue => e
     log("applying the world's mod settings failed: #{e.class}: #{e.message}")
   end
@@ -694,17 +769,13 @@ begin
   # A save loaded or a new game started in a world takes the world's mod settings. The newest
   # translation's plugins load after the Patch folder and replace load_game, which still calls
   # load_game_without_rescue.
-  MGQ_MpHooks.around(DataManager.singleton_class, :load_game_without_rescue) do |_manager, _args, original|
+  MGQ_MpHooks.around(DataManager.singleton_class, :load_game_without_rescue, "world_mods") do |_manager, _args, original|
     loaded = original.call
     MGQ_MpWorldMods.apply if loaded
     loaded
   end
 
-  MGQ_MpHooks.around(DataManager.singleton_class, :setup_new_game) do |_manager, _args, original|
-    result = original.call
-    MGQ_MpWorldMods.apply
-    result
-  end
+  MGQ_MpHooks.after(DataManager.singleton_class, :setup_new_game, "world_mods") { MGQ_MpWorldMods.apply }
 rescue => e
   MGQ_MpWorldMods.log("save hooks FAILED: #{e.class}: #{e.message}")
 end

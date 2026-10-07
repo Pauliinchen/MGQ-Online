@@ -2,6 +2,8 @@
 #  world_data_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-07: Expected cut texts to end in three dots
+#                            - Looked each DLL call's signature up in the export table of Multiplayer.rb
 #      Paulinchen  2026-10-06: Checked a name kept with Enter or from the text screen, the numpad's 0 in Max Players, a form's tidied values,
 #                              the cursor put back on the chosen world, the typing hint and clicks of the mod picker and a mod's name on the text screen
 #                            - Expected mp_dir_edit with as many arguments as its signature names, and refused a DLL call whose arguments differ
@@ -68,9 +70,9 @@ module MGQ_Multiplayer
   module Ini; def self.read(_path); {}; end; end
   module Link
     Function = Struct.new(:name, :signature) do
-      def call(*args); check_dll_call(name, signature, args); $calls << [name, signature, args]; 1; end
+      def call(*args); check_dll_call(name, args); $calls << [name, signature, args]; 1; end
     end
-    def self.function(name, signature); Function.new(name, signature); end
+    def self.function(name); Function.new(name, dll_signature(name)); end
     def self.read(name, _size); $dll[name].to_s; end
     def self.typing(on); $typing = on; end
     def self.take_typed; typed = $typed.to_s; $typed = nil; [typed, 0]; end
@@ -434,7 +436,7 @@ detail.show(entries[1], "me")
 start = texts.index("DESCRIPTION")
 check("the description comes last, on as many lines as it needs", texts[start + 1..-1], ["A slow run through part one of the story with", "friends."])
 check("a long one is cut where the panel ends", detail.description_lines("one two three four five six", 80, 2), ["one", "two .."])
-check("a long value is cut at its end", detail.cut("Differs: actors, classes and 9 more", 200), "Differs: actor..")
+check("a long value is cut at its end", detail.cut("Differs: actors, classes and 9 more", 200), "Differs: acto...")
 
 # Where the form's fields are drawn.
 window = Window_MpWorldForm.allocate
@@ -693,7 +695,7 @@ check("the boxes sit side by side, as wide as their texts", detail.chips(["Mod A
 check("mods that do not fit are counted in a last box", detail.chips(["First Long Mod", "Second Long Mod", "Third Long Mod", "Fourth Long Mod"], 304).map { |chip| chip[0] }, ["First Long Mod", "+3 more"])
 check("as many as fit are named", detail.chips(["A", "B", "C", "A Very Long Mod Name That Fills The Row"], 304).map { |chip| chip[0] }, ["A", "B", "C", "+1 more"])
 tight = detail.chips(["A Very Long Mod Name That Fills The Whole Row", "B"], 304)
-check("a first mod too long for the row is cut beside the count", [tight.map { |chip| chip[0] }, tight.last[1] + tight.last[2] <= 304], [["A Very Long Mod Name..", "+1 more"], true])
+check("a first mod too long for the row is cut beside the count", [tight.map { |chip| chip[0] }, tight.last[1] + tight.last[2] <= 304], [["A Very Long Mod Name...", "+1 more"], true])
 check("a world that names no mod shows the plain text", cell_of(detail.panels(entries[3], "me"), "Mods").chips, nil)
 
 # The list box's pick.

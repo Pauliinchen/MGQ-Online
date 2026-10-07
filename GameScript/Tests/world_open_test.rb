@@ -2,6 +2,9 @@
 #  world_open_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-07: Checked that the worlds on this PC and the favourites are read once until one changes
+#                            - Looked each DLL call's signature up in the export table of Multiplayer.rb
+#                            - Checked that a form's switch turns round between its outcomes
 #      Paulinchen  2026-10-06: Checked a world's password typed in place, an invite's failed code giving way to the password,
 #                              a full world kept shut to players with saves of it, and an invite waiting for an open window
 #                            - Refused a DLL call whose arguments differ from its signature
@@ -24,6 +27,7 @@
 # and told so.
 
 require_relative "support"
+require "tmpdir"
 
 # Stand-ins for the game.
 class Scene_Base; def return_scene; $returned = true; end; end
@@ -69,9 +73,9 @@ module MGQ_Multiplayer
   module Mouse; def self.clicked?; false; end; end
   module Link
     Function = Struct.new(:name, :signature) do
-      def call(*args); check_dll_call(name, signature, args); $calls << [name, signature, args]; 1; end
+      def call(*args); check_dll_call(name, args); $calls << [name, signature, args]; 1; end
     end
-    def self.function(name, signature); Function.new(name, signature); end
+    def self.function(name); Function.new(name, dll_signature(name)); end
     def self.read(name, _size); $dll[name].to_s; end
     def self.parse(text)
       head, payload = text.split("\n\n", 2)
@@ -142,6 +146,9 @@ check("a password keeps its spaces", form.check(password, " a b "), [" a b ", ni
 join = MGQ_MpWorld::Form.join
 join[:id] = "a" * 32
 check("a hidden world is added by its id alone", [join.problem, join.fields.map { |field| field.key }], [nil, [:id, :confirm]])
+switch = MGQ_MpWorld::Form::Field.new(:way, :switch, "Way", 0, "Which way.", :choices => %w(Left Middle Right), :note => lambda { |_, index| "Picked #{index}" })
+ways = MGQ_MpWorld::Form.new("Ways", [switch], :way => 0)
+check("a switch turns round between its outcomes, with the line of the one picked", [ways.turn(switch, -1), switch.note_of(ways), ways.turn(switch, 1)], [2, "Picked 2", 0])
 MGQ_MpWorld::Directory.create("Open Fields", "", 4, false, false, "")
 check("an empty password goes to the DLL as it is", $calls.last[2][1], "\0")
 
@@ -153,6 +160,38 @@ $dll["mp_dir_list"] = "state=ready\n\n" \
 _, _, listed, = MGQ_MpWorld::Directory.list
 check("the list reads which worlds have no password", listed.map { |world| world.open }, [false, true, false])
 check("and which are featured", listed.map { |world| world.featured }, [false, true, false])
+
+# The worlds on this PC and the favourites are read once, until one is made, written, deleted or
+# marked.
+ini = {}
+reads = [0]
+MGQ_Multiplayer::Ini.define_singleton_method(:read) { |path| reads[0] += 1; (ini[path] || {}).dup }
+MGQ_Multiplayer::Ini.define_singleton_method(:write) { |path, values| ini[path] = values.dup; true }
+dll_id_of = MGQ_MpWorld::Link.method(:id_of)
+MGQ_MpWorld::Link.define_singleton_method(:id_of) { |code| code[/\A[0-9a-f]{12}/] }
+Dir.mktmpdir do |root|
+  Dir.chdir(root) do
+    FileUtils.mkdir_p(File.join("Patch", "Multiplayer"))
+    check("without a Worlds folder there is no world", MGQ_MpWorld::World.all, [])
+    made = MGQ_MpWorld::World.found("0123456789ab;token;relay;4", "First", "w1")
+    check("a world made is listed", MGQ_MpWorld::World.all.map { |world| [world.id, world.name] }, [["0123456789ab", "First"]])
+    before = reads[0]
+    3.times { MGQ_MpWorld::World.all }
+    check("and the folders are read once for it", reads[0], before)
+    made.played!
+    check("a world written is read again", [MGQ_MpWorld::World.all[0].played_at.nil?, reads[0] > before], [false, true])
+    made.delete
+    check("a world deleted is gone from the list", MGQ_MpWorld::World.all, [])
+    before = reads[0]
+    favourites = [MGQ_MpWorld::Favourites.all, MGQ_MpWorld::Favourites.all]
+    check("the favourites are read once too", [favourites, reads[0] - before], [[[], []], 1])
+    check("a world marked is a favourite at once", [MGQ_MpWorld::Favourites.toggle("w1"), MGQ_MpWorld::Favourites.all], [true, ["w1"]])
+    check("and no longer once unmarked", [MGQ_MpWorld::Favourites.toggle("w1"), MGQ_MpWorld::Favourites.all], [false, []])
+  end
+end
+MGQ_MpWorld::Link.define_singleton_method(:id_of, dll_id_of)
+MGQ_MpWorld::World.forget
+MGQ_MpWorld::Favourites.forget
 
 # The list's order.
 MGQ_MpWorld::Favourites.define_singleton_method(:all) { ["w3"] }

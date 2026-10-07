@@ -2,7 +2,8 @@
 #  start_choice_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-07: Checked that every text of the save screen fits its line of help
+#      Paulinchen  2026-10-07: Looked each DLL call's signature up in the export table of Multiplayer.rb
+#                            - Checked that every text of the save screen fits its line of help
 #      Paulinchen  2026-10-06: Refused a DLL call whose arguments differ from its signature
 #                            - Expected the longer calls of mp_dir_create and mp_dir_edit
 #                            - Loaded world_mods.rbx, which the world screen calls
@@ -60,9 +61,9 @@ module MGQ_Multiplayer
   def self.path(name); name; end
   module Link
     Function = Struct.new(:name, :signature) do
-      def call(*args); check_dll_call(name, signature, args); $calls << [name, signature, args]; 1; end
+      def call(*args); check_dll_call(name, args); $calls << [name, signature, args]; 1; end
     end
-    def self.function(name, signature); Function.new(name, signature); end
+    def self.function(name); Function.new(name, dll_signature(name)); end
     def self.read(name, _size); $dll[name].to_s; end
     def self.parse(text)
       head, payload = text.split("\n\n", 2)
