@@ -2,6 +2,8 @@
 #  duel_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-07: Gave the live battle stand-in who, which the duel names players by their seat with
+#                            - Checked that the log says why a duel's start was refused
 #      Paulinchen  2026-10-06: Checked that a duel whose battle could not start is called off, and that a call-off of a duel that started tells why
 #                            - Checked that a team duel brings no share of the Backline
 #      Paulinchen  2026-10-04: Followed the scripts to their new names, without mp_
@@ -56,6 +58,7 @@ module MGQ_MpBattlesSync
   end
   def self.role; $role; end
   def self.join_world(*args); $joined << args; end
+  def self.who(seat); peer = MGQ_MpOverworldSync::Peers.at(seat); seat == 0 ? "the player (seat 0)" : (peer ? "#{peer.state['name']} (seat #{seat})" : "seat #{seat}"); end
   def self.tell(seat, kind, battle_id, body = ""); MGQ_MpOverworldSync::Link.send_to(seat, "battle=#{kind}\nbid=#{battle_id}\n\n#{body}"); end
 end
 module MGQ_MpOverworldSync::Me; def self.seat; 0; end; end
@@ -80,6 +83,15 @@ $arranged = []
 $backline_wanted = false
 
 load_script "battles_duel"
+
+# Keeps the duel's log lines for the checks, writing them on as before.
+$duel_log = []
+module MGQ_MpBattlesDuel
+  def self.log(message)
+    $duel_log << message
+    super
+  end
+end
 
 duel = MGQ_MpBattlesDuel
 # Reads the duel messages this game sent.
@@ -320,6 +332,7 @@ $sent.clear
 $inbox << entry("message", 2, "duel=start\nbid=s2\n\ngame-1\t")
 MGQ_MpOverworldSync.tick
 check("an unreadable team calls the battle off, once, saying why", [duel_sent.map { |_, f| f.values_at("duel", "reason") }, broken_to], [[["cancel", "team"]], [2]])
+check("and the log says why too", $duel_log.grep(/start of duel s2 from Friend \(seat 2\) refused: could not read your team \(team\)/).size, 1)
 duel.accept(challenger)
 $inbox << entry("message", 2, "duel=start\nbid=s3\n\ngame-1\tteam-friend")
 MGQ_MpOverworldSync.tick

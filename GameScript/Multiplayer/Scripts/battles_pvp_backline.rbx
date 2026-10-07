@@ -2,6 +2,8 @@
 #  battles_pvp_backline.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-07: Registered the option through coop.rbx and named characters through battles_sync.rbx instead of copies of their helpers
+#                            - Logged the Backline's start, both sides' swaps and the commands they take away
 #      Paulinchen  2026-10-04: Renamed from mp_battles_pvp_backline.rbx
 #      Paulinchen  2026-10-03: Created
 #
@@ -47,14 +49,8 @@ module MGQ_MpBattlesPvp
 
     # Adds the option to the Mod Config, or to the game's options without it.
     def self.register
-      config = NWConst::Config
-      menu = config.const_defined?(:MOD_CONTENTS) ? config::MOD_CONTENTS : config::CONTENTS
-      menu.insert(-2, :key => OPTION, :name => "[Monster Girl Quest! Online] PvP Backline", :sub => true,
-                      :help => "Whether the PvP battles you host and the duels you challenge to have the Backline.\r\n←/→ Toggle")
-      config::DATA[OPTION] = OPTION_VALUES.keys
-      config::DATA_TEXT[OPTION] = {}
-      OPTION_VALUES.each { |value, (label, text)| config::DATA_TEXT[OPTION][value] = { :name => label, :help => text } }
-      config::DEFAULT[OPTION] = OPTION_VALUES.keys.first
+      MGQ_MpCoop.register_option(OPTION, "[Monster Girl Quest! Online] PvP Backline",
+                                 "Whether the PvP battles you host and the duels you challenge to have the Backline.", OPTION_VALUES)
     end
 
     # Reports whether the running PvP battle has the Backline.
@@ -74,6 +70,8 @@ module MGQ_MpBattlesPvp
       @round_front = nil
       @swapped_in = []
       @told_front = front_ids
+      MGQ_MpBattlesPvp.log("the Backline is on: the other side brings #{MGQ_MpBattlesSync.named_list(opponents)}; this side's Frontline #{MGQ_MpBattlesSync.named_list($game_party.battle_members)}; " \
+                           "this side's Backline #{MGQ_MpBattlesSync.named_list($game_party.bench_members)}")
     end
 
     # Ends the Backline with its battle.
@@ -143,6 +141,18 @@ module MGQ_MpBattlesPvp
       false
     end
 
+    # Logs a swap of the player's own, which changed their Frontline.
+    #
+    # @param before [Array<Integer>] The actor ids on the Frontline before the swap.
+    def self.swapped(before)
+      return if front_ids == before
+
+      MGQ_MpBattlesPvp.log("the player swapped in turn #{$game_troop.turn_count + 1}: Frontline now #{MGQ_MpBattlesSync.named_list($game_party.battle_members)}; " \
+                           "swapped in, giving no commands this round: #{MGQ_MpBattlesSync.named_list($game_party.battle_members.reject { |actor| round_front.include?(actor.id) })}")
+    rescue => e
+      MGQ_MpBattlesPvp.log_once(:swapped, "could not log a swap: #{e.class}: #{e.message}")
+    end
+
     # Puts the other side's Frontline in the troop as the other game tells it. A character swapped in
     # loses the actions it had left from an earlier round.
     #
@@ -162,7 +172,7 @@ module MGQ_MpBattlesPvp
       MGQ_MpGame.set($game_troop, :enemies, front)
       Opponents.stand(front)
       redraw
-      MGQ_MpBattlesPvp.log("the other side's Frontline is now #{front.map(&:name).join(', ')}")
+      MGQ_MpBattlesPvp.log("the other side's Frontline is now #{MGQ_MpBattlesSync.named_list(front)}; swapped in, without their leftover actions: #{MGQ_MpBattlesSync.named_list(@swapped_in)}")
     rescue => e
       MGQ_MpBattlesPvp.log("taking the other side's Frontline failed: #{e.class}: #{e.message}")
     end
@@ -185,12 +195,16 @@ module MGQ_MpBattlesPvp
     def self.settle_round
       return unless on?
 
+      unless Array(@swapped_in).empty?
+        MGQ_MpBattlesPvp.log("took away the commands the other side sent for #{MGQ_MpBattlesSync.named_list(@swapped_in)}, swapped in this round")
+      end
       Array(@swapped_in).each(&:clear_actions)
       @swapped_in = []
       ids = front_ids
       return if ids == @told_front
 
       @told_front = ids
+      MGQ_MpBattlesPvp.log("telling the other side this side's new Frontline: #{MGQ_MpBattlesSync.named_list($game_party.battle_members)}")
       MGQ_MpBattlesSync::Recorder.flush if MGQ_MpBattlesSync::Recorder.active?
       MGQ_MpBattlesSync::Channel.post(FRONT_MESSAGE, MGQ_MpBattlesSync::Wire.line([ids]))
     rescue => e
@@ -216,20 +230,25 @@ module MGQ_MpBattlesPvp
       return if @installed
 
       @installed = true
-      MGQ_MpHooks.around(Game_Actor, :inputable?) do |actor, _args, original|
+      MGQ_MpHooks.around(Game_Actor, :inputable?, "battles_pvp_backline") do |actor, _args, original|
         original.call && !MGQ_MpBattlesPvp::Backline.swapped_in?(actor)
       end
-      MGQ_MpHooks.around(Game_Actor, :make_actions) do |actor, _args, original|
+      MGQ_MpHooks.around(Game_Actor, :make_actions, "battles_pvp_backline") do |actor, _args, original|
         result = original.call
         actor.clear_actions if MGQ_MpBattlesPvp::Backline.swapped_in?(actor)
         result
       end
       # The round's Frontline must be read before the first swap changes it.
-      MGQ_MpHooks.around(Scene_Battle, :bench_member_ok) do |_scene, _args, original|
-        MGQ_MpBattlesPvp::Backline.round_front if MGQ_MpBattlesPvp::Backline.on?
-        original.call
+      MGQ_MpHooks.around(Scene_Battle, :bench_member_ok, "battles_pvp_backline") do |_scene, _args, original|
+        next original.call unless MGQ_MpBattlesPvp::Backline.on?
+
+        MGQ_MpBattlesPvp::Backline.round_front
+        before = MGQ_MpBattlesPvp::Backline.front_ids
+        result = original.call
+        MGQ_MpBattlesPvp::Backline.swapped(before)
+        result
       end
-      MGQ_MpHooks.around(Game_Troop, :item_target_members) do |_troop, args, original|
+      MGQ_MpHooks.around(Game_Troop, :item_target_members, "battles_pvp_backline") do |_troop, args, original|
         MGQ_MpBattlesPvp::Backline.troop_targets(args[0], original.call)
       end
     rescue => e

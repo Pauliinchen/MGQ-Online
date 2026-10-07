@@ -2,6 +2,7 @@
 #  pvp_backline_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-07: Loaded coop.rbx, which registers the option now, and stood in for the live battle's list of names
 #      Paulinchen  2026-10-04: Followed the scripts to their new names, without mp_
 #      Paulinchen  2026-10-03: Created
 #
@@ -14,7 +15,33 @@
 require_relative "support"
 
 $log = []
-module MGQ_Multiplayer; module Log; def self.write(m); $log << m; end; end; end
+module MGQ_Multiplayer
+  module Log; def self.write(m); $log << m; end; end
+  module Link; def self.player_id; "me-id-000"; end; end
+  module Discord; def self.available?; false; end; end
+end
+# What coop.rbx, which registers the option, asks of the world and the action wheel.
+module MGQ_MpOverworldSync
+  def self.in_world?; false; end
+  def self.route(*); end
+  def self.on_tick(*); end
+  def self.state_fields(*); end
+  def self.on_observe(*); end
+  def self.on_leave(*); end
+  def self.label_line(*); end
+  module Peers
+    Peer = Struct.new(:seat, :state, :ghost, :member)
+    def self.all; []; end
+  end
+  module Me; def self.identity; ["me-id-000", "Me"]; end; def self.id; identity[0]; end; end
+end
+module MGQ_MpActions
+  LINE_COLOR = :line
+  def self.offer(*); end
+  def self.wheel_choice(*); end
+  def self.own_doing_from; end
+end
+class Color; def initialize(*); end; end
 module SceneManager
   def self.run; end
   def self.scene; $scene; end
@@ -71,6 +98,7 @@ module MGQ_MpBattlesPvp
 end
 module MGQ_MpBattlesSync
   def self.host?; true; end
+  def self.named_list(battlers); battlers.empty? ? "nobody" : battlers.map { |battler| "#{battler.name} (#{battler.id})" }.join(", "); end
   module Recorder; def self.active?; true; end; def self.flush; $posted << [:flush]; end; end
   module Channel; def self.post(kind, body); $posted << [kind, body]; end; end
   module Wire
@@ -82,6 +110,7 @@ $posted = []
 
 load File.join(SCRIPTS_DIR, "core_log.rbx")
 module MGQ_MpBattlesPvp; extend MGQ_MpLog; LOG_TAG = "pvp battle"; end
+load_script "coop"
 load_script "battles_pvp_backline"
 SceneManager.run
 backline = MGQ_MpBattlesPvp::Backline

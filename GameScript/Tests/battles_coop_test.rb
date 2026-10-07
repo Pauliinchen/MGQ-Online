@@ -2,7 +2,9 @@
 #  battles_coop_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-07: Checked that a guest who leaves takes their characters' actions along, and that the host's computer chooses none while it waits
+#      Paulinchen  2026-10-07: Read a rebuilt character's log line as the live battle names characters, its id after its name
+#                            - Checked that the log names the leader's answer, who joined, the roster, each rebuild and why an invite was turned down
+#                            - Checked that a guest who leaves takes their characters' actions along, and that the host's computer chooses none while it waits
 #                            - Checked that a guest's party is named after its own characters
 #      Paulinchen  2026-10-06: Checked that another player's fallen character comes fallen
 #                            - Checked that a skill reaching the Backline too reaches the co-op party, and that the Library counts only the player's own characters
@@ -485,12 +487,15 @@ $sent.clear
 MGQ_MpBattlesCoop.await_leader(scene)
 invite = $sent.map { |seat, text| [seat, fields_of(text)] }.find { |_, f| f["coop"] == "invite" }
 check("a leader who refuses leaves the battle to the member, who hosts it", [MGQ_MpBattlesSync.role, invite && invite[1]["troop"], MGQ_MpBattlesSync.battle_id == asked], [:host, "61", false])
+check("the log names the leader's answer and the invite sent", [$log.grep(/answered for battle #{asked}: refused/).size, $log.grep(/sent invite to the party: bid=/).size > 0], [1, true])
 MGQ_MpBattlesCoop.take(mate, { "coop" => "invite", "bid" => asked, "seats" => "0", "map" => "5" })
 check("and a late invite for the battle it asked for is dropped", MGQ_MpBattlesCoop.instance_variable_get(:@invite), nil)
 MGQ_MpBattlesSync.take(mate, { "battle" => "join", "bid" => MGQ_MpBattlesSync.battle_id, :payload => MGQ_MpBattlesSync::Wire.line(["7,8,9,10", [[50, 5]] * 4, 8]) })
 $frames = 0
 MGQ_MpBattlesCoop.gather(scene)
 check("the party's leader leads the battle's party too", $game_party.battle_members.map(&:name).first, "Actor7 (Friend)")
+check("the log names who joined, the roster and each rebuilt character", [$log.grep(/gathered battle .*Friend \(seat 2\) joined/).size > 0, $log.grep(/party of 2 players: Friend \(seat 2\): Frontline/).size > 0,
+                                                                           $log.grep(/rebuilt Actor7 \(Friend\) \(7\) of seat 2, place 0/).size > 0], [true, true, true])
 MGQ_MpBattlesCoop.ended
 
 # A silent leader: the member hosts once the wait runs out.
@@ -538,6 +543,7 @@ MGQ_MpBattlesCoop.take(mate, invite_of.call("i2"))
 MGQ_MpBattlesCoop.instance_variable_get(:@invite)[:at] -= 60
 MGQ_MpBattlesCoop.on_map
 check("an invite that waited past three seconds is turned down, not joined", [$sent.map { |_, text| fields_of(text)["battle"] }, MGQ_MpBattlesSync.role], [["decline"], nil])
+check("and the log says why", $log.grep(/declined Friend \(seat 2\)'s invite to battle i2: the player stayed busy for 3 s/).size, 1)
 
 # A random encounter waits for the party members on the map who are busy.
 $setup.clear

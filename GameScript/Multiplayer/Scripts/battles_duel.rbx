@@ -2,6 +2,8 @@
 #  battles_duel.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-07: Named players through overworld_sync.rbx and battles_sync.rbx instead of copies of their helpers
+#                            - Logged every duel message sent and taken, and each challenge, answer, call, side, start and call-off with its reason
 #      Paulinchen  2026-10-06: Called a duel off whose battle could not start, so the other players never wait for it
 #                            - Told a player who already started the duel why it was called off, once, instead of a decline followed by a call-off
 #                            - Brought no share of the Backline to a team duel
@@ -89,6 +91,18 @@ module MGQ_MpBattlesDuel
   # What starts this script's lines in Multiplayer InGame.log.
   LOG_TAG = "duel"
 
+  # Sends a duel message to another game, and logs it without its body, which holds a team.
+  #
+  # @param seat [Integer] The game's seat.
+  # @param fields [Hash] The message's fields.
+  # @param body [String] What follows the fields, such as a team.
+  # @return [Boolean] Whether it went out.
+  def self.tell(seat, fields, body = "")
+    sent = MGQ_MpOverworldSync.tell(seat, fields, body)
+    log("sent #{fields.map { |key, value| "#{key}=#{value}" }.join(' ')} to #{MGQ_MpBattlesSync.who(seat)}#{" (#{body.size} bytes)" unless body.empty?}#{' (not sent)' unless sent}")
+    sent
+  end
+
   # Reports whether duels can run: PvP battles are on and up to date, and a world is open.
   #
   # @return [Boolean] Whether they can.
@@ -132,15 +146,18 @@ module MGQ_MpBattlesDuel
   # @param target_id [String, nil] The id of a player the challenge reaches wherever they are.
   def self.invite(target_id = nil)
     @challenge.invite(target_id)
+    log("challenges the players nearby#{" and player #{target_id.to_s[0, 12]} anywhere" if target_id}#{' with the Backline' if MGQ_MpBattlesPvp::Backline.wanted?}")
   end
 
   # Stops challenging.
   def self.stop
+    log("stops challenging") if inviting?
     @challenge.stop
   end
 
   # Forgets every challenge and answer, as when the world closes.
   def self.reset
+    log("forgot every challenge and answer, the world closed") if @accepted || @pending || @gathering || @called
     stop
     @accepted = nil
     @pending = nil
@@ -162,6 +179,7 @@ module MGQ_MpBattlesDuel
     return unless @accepted && (@accepted[:frames] += 1) > ANSWER_FRAMES
 
     MGQ_MpOverworldSync.notice("#{@accepted[:name]} did not answer the duel.")
+    log("#{@accepted[:name]} did not answer the accepted duel within #{ANSWER_FRAMES / 60} s")
     @accepted = nil
   end
 
@@ -195,9 +213,13 @@ module MGQ_MpBattlesDuel
   #
   # @param peer [MGQ_MpOverworldSync::Peers::Peer] The challenger.
   def self.accept(peer)
-    return MGQ_MpOverworldSync.notice("Finish what you are doing first.") unless free?
+    unless free?
+      log("could not accept #{MGQ_MpOverworldSync.who(peer)}'s duel: the player is busy")
+      return MGQ_MpOverworldSync.notice("Finish what you are doing first.")
+    end
 
-    MGQ_MpOverworldSync.tell(peer.seat, { "duel" => "accept" }, team_line)
+    tell(peer.seat, { "duel" => "accept" }, team_line)
+    log("accepted #{MGQ_MpOverworldSync.who(peer)}'s duel, waiting up to #{ANSWER_FRAMES / 60} s for their answer")
     @accepted = { :seat => peer.seat, :name => peer.state["name"].to_s, :frames => 0 }
     MGQ_MpOverworldSync.notice("You accepted #{peer.state['name']}'s duel.")
   end
@@ -207,7 +229,9 @@ module MGQ_MpBattlesDuel
   # @param peer [MGQ_MpOverworldSync::Peers::Peer, nil] Who sent it.
   # @param message [Hash] The message's fields, its body under :payload.
   def self.take(peer, message)
-    return unless peer
+    fields = message.reject { |key, _| key.is_a?(Symbol) }.map { |key, value| "#{key}=#{value}" }.join(" ")
+    log("took #{fields} from #{MGQ_MpOverworldSync.who(peer)} (#{message[:payload].to_s.size} bytes)")
+    return log("dropped a duel message from a player without a state yet") unless peer
 
     case message["duel"]
     when "accept" then take_accept(peer, message[:payload])
@@ -238,9 +262,10 @@ module MGQ_MpBattlesDuel
     stop
     return gather(peer, battle_id) if team_duel?(peer)
 
-    MGQ_MpOverworldSync.tell(peer.seat, { "duel" => "start", "bid" => battle_id }, team_line)
+    tell(peer.seat, { "duel" => "start", "bid" => battle_id }, team_line)
     @pending = Pending.new(:host, battle_id, peer, members)
     @pending.backline = MGQ_MpBattlesPvp::Team.sent_backline?
+    log("duel #{battle_id} with #{MGQ_MpOverworldSync.who(peer)} waits to start from the map as host, their team of #{members.size}#{', with the Backline' if @pending.backline}")
   end
 
   # As challenged player, starts the duel the challenger answered.
@@ -250,20 +275,28 @@ module MGQ_MpBattlesDuel
   # @param body [String] Their game's fingerprint and their team.
   def self.take_start(peer, battle_id, body)
     # The challenger already waits in their battle, so every refusal calls it off.
-    return call_off(peer.seat, battle_id, "busy") unless @accepted && @accepted[:seat] == peer.seat
+    unless @accepted && @accepted[:seat] == peer.seat
+      log("start of duel #{battle_id} from #{MGQ_MpOverworldSync.who(peer)} refused: the player accepted no duel of theirs")
+      return call_off(peer.seat, battle_id, "busy")
+    end
 
     @accepted = nil
     unless free?
+      log("start of duel #{battle_id} from #{MGQ_MpOverworldSync.who(peer)} refused: the player is busy")
       call_off(peer.seat, battle_id, "busy")
       return MGQ_MpOverworldSync.notice("The duel with #{peer.state['name']} could not start.")
     end
 
     members, reason = team_of(body)
-    return call_off(peer.seat, battle_id, reason) if reason
+    if reason
+      log("start of duel #{battle_id} from #{MGQ_MpOverworldSync.who(peer)} refused: #{REASONS[reason]} (#{reason})")
+      return call_off(peer.seat, battle_id, reason)
+    end
 
     @pending = Pending.new(:guest, battle_id, peer, members)
     # The challenger hosts, so the rule their team brought holds.
     @pending.backline = MGQ_MpBattlesPvp::Team.backline?(MGQ_MpBattlesSync::Wire.parse(body.to_s)[1])
+    log("duel #{battle_id} with #{MGQ_MpOverworldSync.who(peer)} waits to start from the map as guest, their team of #{members.size}#{', with the Backline' if @pending.backline}")
   end
 
   # Calls off a duel the other player started or is about to start: their battle breaks off, or
@@ -273,7 +306,8 @@ module MGQ_MpBattlesDuel
   # @param battle_id [String] The duel's id.
   # @param reason [String] A key of REASONS.
   def self.call_off(seat, battle_id, reason = "off")
-    MGQ_MpOverworldSync.tell(seat, { "duel" => "cancel", "bid" => battle_id, "reason" => reason })
+    log("calls duel #{battle_id} off for #{MGQ_MpBattlesSync.who(seat)}: #{reason}, and breaks its battle off")
+    tell(seat, { "duel" => "cancel", "bid" => battle_id, "reason" => reason })
     MGQ_MpBattlesSync.tell(seat, "broken", battle_id)
   end
 
@@ -286,6 +320,7 @@ module MGQ_MpBattlesDuel
     # A player who declined the challenge is no longer named by it.
     @challenge.drop(peer.state["id"]) if reason == "no"
     MGQ_MpOverworldSync.notice("#{peer.state['name']} #{REASONS.fetch(reason, 'cannot duel now')}.")
+    log("#{MGQ_MpOverworldSync.who(peer)} could not duel: #{REASONS.fetch(reason, 'cannot duel now')} (#{reason})#{', no longer challenged by name' if reason == 'no'}")
   end
 
   # Reads the other player's team, declining when it is from another game or unreadable.
@@ -317,8 +352,8 @@ module MGQ_MpBattlesDuel
   # @param reason [String] A key of REASONS.
   # @return [nil] Nothing.
   def self.decline(peer, reason)
-    MGQ_MpOverworldSync.tell(peer.seat, { "duel" => "decline", "reason" => reason })
-    log("declined #{peer.state['name']}: #{reason}")
+    tell(peer.seat, { "duel" => "decline", "reason" => reason })
+    log("declined #{MGQ_MpOverworldSync.who(peer)}: #{reason}")
     nil
   end
 
@@ -345,16 +380,16 @@ module MGQ_MpBattlesDuel
 
     @gathering = { :battle_id => battle_id, :frames => 0, :sides => sides, :ready => {}, :early => {},
                    :other => peer.seat, :name => peer.state["name"].to_s }
-    sides.each_key { |seat| MGQ_MpOverworldSync.tell(seat, { "duel" => "team", "bid" => battle_id }) }
+    sides.each_key { |seat| tell(seat, { "duel" => "team", "bid" => battle_id }) }
     MGQ_MpOverworldSync.notice("Getting both sides ready for the duel . . .")
-    log("team duel #{battle_id}: calling #{sides.inspect}")
+    log("team duel #{battle_id}: calling #{sides.map { |seat, side| "#{MGQ_MpBattlesSync.who(seat)} for the #{side} side" }.join(', ')}, waiting up to #{READY_FRAMES / 60} s")
   end
 
   # As challenger, starts the team duel once every player called is ready, or ten seconds passed,
   # or calls it off once the player is busy. Called every frame.
   def self.tick_gathering
     gathering = @gathering
-    return cancel_gathering("off") unless free?
+    return cancel_gathering("off", "the player got busy") unless free?
 
     gathering[:frames] += 1
     return unless gathering[:ready].size == gathering[:sides].size || gathering[:frames] > READY_FRAMES
@@ -362,9 +397,13 @@ module MGQ_MpBattlesDuel
     @gathering = nil
     ready = gathering[:ready]
     others = ready.keys.select { |seat| gathering[:sides][seat] == :other }
+    late = gathering[:sides].keys - ready.keys
+    log("team duel #{gathering[:battle_id]} gathered after #{gathering[:frames]} frames: ready #{ready.empty? ? 'nobody' : ready.keys.map { |seat| MGQ_MpBattlesSync.who(seat) }.join(', ')};" +
+        "not ready #{late.empty? ? 'nobody' : late.map { |seat| MGQ_MpBattlesSync.who(seat) }.join(', ')}")
     if others.empty?
       MGQ_MpOverworldSync.notice("Nobody of #{gathering[:name]}'s side was ready, the duel is off.")
-      return gathering[:sides].each_key { |seat| MGQ_MpOverworldSync.tell(seat, { "duel" => "cancel", "reason" => "off" }) }
+      log("team duel #{gathering[:battle_id]} is off: nobody of #{gathering[:name]}'s side was ready")
+      return gathering[:sides].each_key { |seat| tell(seat, { "duel" => "cancel", "reason" => "off" }) }
     end
 
     own = [[MGQ_MpOverworldSync::Me.seat, MGQ_Multiplayer::Player.name.to_s] + MGQ_MpBattlesCoop.team_build]
@@ -372,9 +411,10 @@ module MGQ_MpBattlesDuel
     own = MGQ_MpBattlesCoop.arrange(own.map { |seat, name, builds, max| [seat, name, builds, [], max] }, false)
     other = MGQ_MpBattlesCoop.arrange(others.map { |seat| entry(seat, ready[seat]) }.map { |seat, name, builds, max| [seat, name, builds, [], max] }, false)
     body = MGQ_MpBattlesSync::Wire.line([own.map(&:to_a), other.map(&:to_a)])
-    ready.each_key { |seat| MGQ_MpOverworldSync.tell(seat, { "duel" => "start", "bid" => gathering[:battle_id], "team" => 1 }, body) }
-    (gathering[:sides].keys - ready.keys).each { |seat| MGQ_MpOverworldSync.tell(seat, { "duel" => "cancel", "reason" => "late" }) }
+    ready.each_key { |seat| tell(seat, { "duel" => "start", "bid" => gathering[:battle_id], "team" => 1 }, body) }
+    late.each { |seat| tell(seat, { "duel" => "cancel", "reason" => "late" }) }
     @pending = Pending.new(:team, gathering[:battle_id], nil, nil, own, other, true)
+    log("team duel #{gathering[:battle_id]} waits to start from the map as host, #{own.size} players against #{other.size}")
   end
 
   # Writes a player who got ready as a side's player before its shares are counted.
@@ -390,10 +430,12 @@ module MGQ_MpBattlesDuel
   # As challenger, calls the team duel off, telling every player called.
   #
   # @param reason [String] A key of REASONS.
-  def self.cancel_gathering(reason)
+  # @param why [String] Why, for Multiplayer InGame.log.
+  def self.cancel_gathering(reason, why)
     gathering = @gathering
     @gathering = nil
-    gathering[:sides].each_key { |seat| MGQ_MpOverworldSync.tell(seat, { "duel" => "cancel", "reason" => reason }) }
+    log("team duel #{gathering[:battle_id]} is off: #{why}")
+    gathering[:sides].each_key { |seat| tell(seat, { "duel" => "cancel", "reason" => reason }) }
     MGQ_MpOverworldSync.notice("The duel is off.")
   end
 
@@ -406,13 +448,15 @@ module MGQ_MpBattlesDuel
   # @param battle_id [String] The duel's id.
   # @param body [String] The answer.
   def self.take_ready(peer, battle_id, body)
-    return unless @gathering && @gathering[:battle_id] == battle_id
+    return log("ready for duel #{battle_id} from #{MGQ_MpOverworldSync.who(peer)} ignored: the player gathers no such duel") unless @gathering && @gathering[:battle_id] == battle_id
 
     game, builds, max = MGQ_MpBattlesSync::Wire.parse(body.to_s)
     return decline(peer, "data") unless game.to_s == MGQ_MpBattlesPvp::Team.game
 
-    answers = @gathering[:sides].key?(peer.seat) ? @gathering[:ready] : @gathering[:early]
+    named = @gathering[:sides].key?(peer.seat)
+    answers = named ? @gathering[:ready] : @gathering[:early]
     answers[peer.seat] = [builds.to_s, max.to_i]
+    log("#{MGQ_MpOverworldSync.who(peer)} is ready for team duel #{battle_id}#{named ? '' : ', kept until their leader names them'}")
   end
 
   # As challenger, takes whom the player who accepted called of their party, who join the other side.
@@ -422,15 +466,22 @@ module MGQ_MpBattlesDuel
   # @param seats [String] The world seats of the players they called, joined by commas.
   def self.take_side(peer, battle_id, seats)
     gathering = @gathering
-    return unless gathering && gathering[:battle_id] == battle_id && gathering[:other] == peer.seat
-    return if peer.state["party"].to_s.empty?
+    unless gathering && gathering[:battle_id] == battle_id && gathering[:other] == peer.seat
+      return log("side of duel #{battle_id} from #{MGQ_MpOverworldSync.who(peer)} ignored: not the player who accepted the gathered duel")
+    end
+    return log("side of duel #{battle_id} from #{MGQ_MpOverworldSync.who(peer)} ignored: they are in no party") if peer.state["party"].to_s.empty?
 
     seats.split(",").map(&:to_i).first(MGQ_MpCoop::MAX_PLAYERS - 1).each do |seat|
       other = MGQ_MpOverworldSync::Peers.at(seat)
-      next if gathering[:sides].key?(seat) || other.nil? || other.state["party"] != peer.state["party"]
+      reason = if gathering[:sides].key?(seat) then "called already"
+               elsif other.nil? then "not in the world"
+               elsif other.state["party"] != peer.state["party"] then "not in their party"
+               end
+      next log("#{MGQ_MpBattlesSync.who(seat)} left out of the other side: #{reason}") if reason
 
       gathering[:sides][seat] = :other
       gathering[:ready][seat] = gathering[:early].delete(seat) if gathering[:early].key?(seat)
+      log("#{MGQ_MpBattlesSync.who(seat)} joins the other side#{', ready already' if gathering[:ready].key?(seat)}")
     end
   end
 
@@ -441,7 +492,7 @@ module MGQ_MpBattlesDuel
   # @param battle_id [String] The duel's id.
   def self.take_call(peer, battle_id)
     accepted = @accepted && @accepted[:seat] == peer.seat
-    return unless accepted || led_by?(peer)
+    return log("call to team duel #{battle_id} from #{MGQ_MpOverworldSync.who(peer)} ignored: neither the challenger the player accepted nor their leader") unless accepted || led_by?(peer)
 
     answer_call(peer, battle_id)
     call_party(peer, battle_id) if accepted
@@ -452,10 +503,13 @@ module MGQ_MpBattlesDuel
   # @param peer [MGQ_MpOverworldSync::Peers::Peer] The leader.
   # @param message [Hash] The message's fields: the duel's id under "duel_call", the challenger's world seat under "seat".
   def self.take_passed_call(peer, message)
-    return unless led_by?(peer)
+    log("took the call to team duel #{message['duel_call']} from #{MGQ_MpOverworldSync.who(peer)}, challenger seat #{message['seat']}")
+    return log("passed call ignored: #{MGQ_MpOverworldSync.who(peer)} does not lead the player's party") unless led_by?(peer)
 
     challenger = MGQ_MpOverworldSync::Peers.at(message["seat"].to_i)
-    answer_call(challenger, message["duel_call"].to_s) if challenger
+    return log("passed call ignored: the challenger at seat #{message['seat']} is not in the world") unless challenger
+
+    answer_call(challenger, message["duel_call"].to_s)
   end
 
   # Reports whether another player leads the party the player is in.
@@ -474,6 +528,7 @@ module MGQ_MpBattlesDuel
     @accepted = nil
     @called = { :seat => challenger.seat, :name => challenger.state["name"].to_s, :battle_id => battle_id, :frames => 0, :sent => false }
     MGQ_MpOverworldSync.notice("#{challenger.state['name']}'s duel is a team duel. Get ready on the map.")
+    log("called to #{MGQ_MpOverworldSync.who(challenger)}'s team duel #{battle_id}, answers once free on the map")
   end
 
   # As the leader of a party who accepted a duel, passes the challenger's call on to the party,
@@ -486,7 +541,8 @@ module MGQ_MpBattlesDuel
 
     members = MGQ_MpCoop::Party.members
     members.each { |member| MGQ_MpCoop.tell(member.seat, "duel_call", battle_id, "seat" => challenger.seat) }
-    MGQ_MpOverworldSync.tell(challenger.seat, { "duel" => "side", "bid" => battle_id, "seats" => members.map { |member| member.seat }.join(",") })
+    log("passed the call to team duel #{battle_id} on to the party: #{members.map { |member| MGQ_MpOverworldSync.who(member) }.join(', ')}")
+    tell(challenger.seat, { "duel" => "side", "bid" => battle_id, "seats" => members.map { |member| member.seat }.join(",") })
   end
 
   # Answers the challenger's call once the player is free, and forgets a call never answered.
@@ -494,12 +550,14 @@ module MGQ_MpBattlesDuel
   def self.tick_called
     called = @called
     called[:frames] += 1
-    return @called = nil if called[:frames] > READY_FRAMES + ANSWER_FRAMES
+    if called[:frames] > READY_FRAMES + ANSWER_FRAMES
+      log("forgot the call to #{called[:name]}'s team duel #{called[:battle_id]}: it never started")
+      return @called = nil
+    end
     return if called[:sent] || !free?
 
     builds, max = MGQ_MpBattlesCoop.team_build
-    MGQ_MpOverworldSync.tell(called[:seat], { "duel" => "ready", "bid" => called[:battle_id] },
-            MGQ_MpBattlesSync::Wire.line([MGQ_MpBattlesPvp::Team.game, builds, max]))
+    tell(called[:seat], { "duel" => "ready", "bid" => called[:battle_id] }, MGQ_MpBattlesSync::Wire.line([MGQ_MpBattlesPvp::Team.game, builds, max]))
     called[:sent] = true
     MGQ_MpOverworldSync.notice("Ready for the duel. Waiting for the others . . .")
   end
@@ -510,11 +568,14 @@ module MGQ_MpBattlesDuel
   # @param battle_id [String] The duel's id.
   # @param body [String] The challenger's side and the other side, see MGQ_MpBattlesCoop.arrange.
   def self.take_team_start(peer, battle_id, body)
-    return unless @called && @called[:seat] == peer.seat && @called[:battle_id] == battle_id
+    unless @called && @called[:seat] == peer.seat && @called[:battle_id] == battle_id
+      return log("start of team duel #{battle_id} from #{MGQ_MpOverworldSync.who(peer)} ignored: the player was not called to it")
+    end
 
     @called = nil
     unless free?
       # The duel counts the player in already; leaving hands their characters to their side.
+      log("leaves team duel #{battle_id} at its start: the player is busy, their side takes their characters")
       MGQ_MpBattlesSync.tell(peer.seat, "leave", battle_id)
       return MGQ_MpOverworldSync.notice("The duel with #{peer.state['name']} started without you.")
     end
@@ -524,6 +585,7 @@ module MGQ_MpBattlesDuel
     end
     same = hosts.any? { |player| player.seat == MGQ_MpOverworldSync::Me.seat }
     @pending = Pending.new(:team, battle_id, peer, nil, same ? hosts : others, same ? others : hosts, same)
+    log("team duel #{battle_id} waits to start from the map as guest on the #{same ? 'host' : 'other'} side, #{@pending.own.size} players against #{@pending.other.size}")
   end
 
   # Takes the other player's word that the duel is off: a team duel the player was called to, a
@@ -535,12 +597,17 @@ module MGQ_MpBattlesDuel
   def self.take_cancel(peer, battle_id, reason)
     if @pending && @pending.battle_id == battle_id && @pending.peer && @pending.peer.seat == peer.seat
       @pending = nil
+      what = "dropped the duel waiting to start"
     elsif @called && @called[:seat] == peer.seat
       @called = nil
+      what = "dropped the call to the team duel"
     elsif battle_id.empty? || battle_id != @started
-      return
+      return log("call-off of duel #{battle_id} from #{MGQ_MpOverworldSync.who(peer)} ignored: no such duel of the player's")
+    else
+      what = "its battle breaks off"
     end
     MGQ_MpOverworldSync.notice("#{peer.state['name']} #{REASONS.fetch(reason, 'called the duel off')}.")
+    log("#{MGQ_MpOverworldSync.who(peer)} called duel #{battle_id} off (#{reason}): #{what}")
   end
 
   # Starts a team duel from the map: as host with every other player as a guest, else as a guest
@@ -583,6 +650,7 @@ module MGQ_MpBattlesDuel
   # @param reason [String] A key of REASONS, for a duel between two players.
   def self.withdraw(pending, reason)
     role, battle_id, peer = pending.role, pending.battle_id, pending.peer
+    log("withdraws from duel #{battle_id} (#{role}): #{reason}")
     if role == :team && peer
       MGQ_MpBattlesSync.tell(peer.seat, "leave", battle_id)
     elsif role == :team

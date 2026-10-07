@@ -2,6 +2,9 @@
 #  battles_pvp.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-07: Registered the map, troop, sprite, save and automatic skill hooks through core_hooks.rbx instead of wraps of its own, and the action and turn hooks once the game runs, where plugins define them anew
+#                            - Named characters through battles_sync.rbx, and took the faces' columns from coop_squad.rbx
+#                            - Logged the exchange's stages, the teams swapped, the Backline rule, the result and the game put back
 #      Paulinchen  2026-10-06: Named the log in the game folder's Logs folder in the messages of a failed or broken battle
 #      Paulinchen  2026-10-04: Dropped a story's call that waited through the battle once the game is put back, and logged where it was put back
 #                            - Renamed from mp_battles_pvp.rbx
@@ -59,16 +62,6 @@ module MGQ_MpBattlesPvp
   # What the game says when a Discord invite arrived while this game hosted, which the DLL ignores.
   IGNORED_INVITE = "You're hosting, so the Discord invite you accepted was ignored."
 
-  # Reports whether the hooks can be installed.
-  #
-  # A second copy of this script would wrap the same methods under the same names, and each hook
-  # would then call itself until the stack overflows.
-  #
-  # @return [Boolean] false when the hooks are in place already.
-  def self.hookable?
-    !Scene_Map.method_defined?(:mgq_mp_battles_pvp_start)
-  end
-
   # Tells whether PvP battles can run.
   #
   # A world keeps a connection of its own, and the two would both claim the Discord status.
@@ -103,7 +96,10 @@ module MGQ_MpBattlesPvp
       pressed = MGQ_MpHotkeys.pressed?(:overview)
       return if $game_map.interpreter.running? || $game_player.moving?
 
-      $game_message.add(MGQ_Multiplayer::UPDATE_MESSAGE) if pressed
+      if pressed
+        log("the PvP battle screen stays closed: a newer release is out")
+        $game_message.add(MGQ_Multiplayer::UPDATE_MESSAGE)
+      end
       return
     end
 
@@ -113,12 +109,14 @@ module MGQ_MpBattlesPvp
     return if $game_map.interpreter.running? || $game_player.moving?
 
     if pressed
+      log("opened the PvP battle screen")
       SceneManager.call(Scene_PvpLobby)
       return
     end
 
     if @mirror_requested
       @mirror_requested = false
+      log("starting the requested mirror match")
       begin_mirror
       return
     end
@@ -137,25 +135,48 @@ module MGQ_MpBattlesPvp
   #
   # @param state [Hash] The state without the friend's team, see MGQ_Multiplayer::Link.status.
   def self.look_at(state)
+    note_state(state)
     $game_message.add(IGNORED_INVITE) if ignored_invite?(state)
 
     case state["state"]
     when "received"
       state = MGQ_Multiplayer::Link.state
       live = MGQ_MpBattlesSync.join(state)
+      log("#{MGQ_Multiplayer.clean(state['opponent'])}'s team arrived (#{state[:payload].to_s.size} bytes), " +
+          (live ? "the battle is live as #{state['role']}" : "the link is not open, so the battle is not live and the link closes"))
       MGQ_Multiplayer::Link.cancel unless live
       begin_battle(state)
     when "failed"
       # Cancelling would turn down an invite the player accepted since, which makes the failure old news.
       if join_invite(state)
+        log("the exchange failed, but a Discord invite was accepted since: opening the PvP battle screen")
         SceneManager.call(Scene_PvpLobby)
       else
+        log("the exchange failed (#{state['error']}): closed it and told the player")
         MGQ_Multiplayer::Link.cancel
         $game_message.add("PvP battle: #{state['error']}")
       end
     else
       SceneManager.call(Scene_PvpLobby) if join_invite(state)
     end
+  end
+
+  # Logs how the exchange stands once it changed, never its join code.
+  #
+  # @param state [Hash] The state without the friend's team, see MGQ_Multiplayer::Link.status.
+  def self.note_state(state)
+    current = state["state"].to_s
+    current = "idle" if current.empty?
+    return if current == (@logged_state || "idle")
+
+    details = []
+    details << "as #{state['role']}" if state["role"]
+    details << "join code ready" if current == "hosting" && state["code"]
+    details << state["error"].to_s if current == "failed"
+    log("the PvP exchange went from #{@logged_state || 'idle'} to #{current}#{details.empty? ? '' : " (#{details.join(', ')})"}")
+    @logged_state = current
+  rescue => e
+    log_once(:note_state, "could not log the exchange: #{e.class}: #{e.message}")
   end
 
   # Tells once per invite that one arrived while this game hosted and was ignored.
@@ -166,6 +187,7 @@ module MGQ_MpBattlesPvp
     count = state["ignored"].to_i
     fresh = count > (@ignored_seen || 0)
     @ignored_seen = count
+    log("a Discord invite arrived while hosting and was ignored (#{count} so far)") if fresh
     fresh
   end
 
@@ -218,6 +240,7 @@ module MGQ_MpBattlesPvp
     members = Team.parse(state[:payload])
 
     if members.empty?
+      log("#{opponent}'s team could not be read (#{state[:payload].to_s.size} bytes): no battle, the link closes")
       $game_message.add("#{opponent}'s team could not be read.")
       MGQ_MpBattlesSync.finish
       MGQ_Multiplayer::Link.cancel
@@ -226,6 +249,8 @@ module MGQ_MpBattlesPvp
 
     # The host's rule holds: the one it sent with its own team, or the one its team brought.
     backline = state["role"] == "host" ? Team.sent_backline? : Team.backline?(state[:payload])
+    log("read #{members.size} members of #{opponent}'s team; the host's rule: #{backline ? 'with' : 'without'} the Backline" +
+        " (#{state['role'] == 'host' ? 'this game hosts' : "the host's team says so"})")
     Battle.start(opponent, members, false, backline)
   end
 
@@ -245,6 +270,37 @@ module MGQ_MpBattlesPvp
     return {} unless Battle.running? && scene == "battle"
 
     Battle.mirror? ? { "pvp_battle" => "mirror" } : { "pvp_battle_with" => Battle.opponent }
+  end
+
+  # Installs the hooks on methods the game's plugins may define anew. Called once the first scene
+  # starts.
+  def self.install
+    return if @installed
+
+    @installed = true
+    install_targetless
+    install_turns
+  end
+
+  # Leaves out an action without a target the way the game leaves out one without a skill.
+  def self.install_targetless
+    MGQ_MpHooks.around(Scene_Battle, :use_item, "battles_pvp") do |scene, _args, original|
+      subject = MGQ_MpGame.get(scene, :subject)
+      next original.call unless Battle.running? && Battle.targetless?(subject)
+
+      log("left out #{subject.name}'s action in turn #{$game_troop.turn_count}: it finds no target") rescue nil
+      MGQ_MpGame.get(scene, :log_window).display_target_empty(subject)
+      true
+    end
+  rescue => e
+    log("use_item hook FAILED: #{e.class}: #{e.message}")
+  end
+
+  # Adds to a mirror match's report how both teams look as each turn starts.
+  def self.install_turns
+    MGQ_MpHooks.after(BattleManager.singleton_class, :turn_start, "battles_pvp") { MGQ_MpBattlesPvp::MirrorReport.turn_started if MGQ_MpBattlesPvp::Battle.running? }
+  rescue => e
+    log("turn hook FAILED: #{e.class}: #{e.message}")
   end
 
   # The team two games swap: the builds of the Frontline and the Backline, see MGQ_MpActors::Builds,
@@ -273,7 +329,10 @@ module MGQ_MpBattlesPvp
     def self.build
       @sent_backline = Backline.wanted?
       party = $game_party.battle_members.first(MGQ_MpCoopSquad::FRONTLINE) + $game_party.bench_members
-      "#{RULE}#{@sent_backline ? 1 : 0}\n" + MGQ_MpActors::Builds.write(party.first(MOST_MEMBERS))
+      sent = party.first(MOST_MEMBERS)
+      MGQ_MpBattlesPvp.log("built the team to send: #{MGQ_MpBattlesSync.named_list(sent)}; " \
+                           "#{@sent_backline ? 'with' : 'without'} the Backline")
+      "#{RULE}#{@sent_backline ? 1 : 0}\n" + MGQ_MpActors::Builds.write(sent)
     end
 
     # Reports whether the team the player sent last said their battles have the Backline.
@@ -679,7 +738,7 @@ module MGQ_MpBattlesPvp
     FACE_ZOOM = 2
 
     # Faces in a row of a face file.
-    FACE_COLUMNS = 4
+    FACE_COLUMNS = MGQ_MpCoopSquad::FACE_COLUMNS
 
     # Rows of faces in a face file.
     FACE_ROWS = 2
@@ -795,6 +854,9 @@ module MGQ_MpBattlesPvp
     # Actions of the friend's characters logged per battle, the log holds few lines per session.
     LOGGED_ACTIONS = 12
 
+    # The game's battle results as Multiplayer InGame.log names them.
+    RESULT_NAMES = { 0 => "won", 1 => "left", 2 => "lost" }
+
     class << self
       # The friend whose team is fought.
       #
@@ -825,7 +887,9 @@ module MGQ_MpBattlesPvp
     # @yieldreturn [Array<Opponent>] The characters of the other side, rebuilt by a team duel; without
     #   a block, the friend's team is rebuilt.
     def self.start(opponent, members, mirror, backline = false)
-      backline &&= !block_given?
+      # A team duel rebuilds the other side itself, and never has the Backline.
+      team_duel = block_given?
+      backline = false if team_duel
       members = Array(members).first(MGQ_MpCoopSquad::FRONTLINE) unless backline
       @snapshot = Marshal.dump(DataManager.make_save_contents)
       @globals = Marshal.dump(globals)
@@ -843,7 +907,7 @@ module MGQ_MpBattlesPvp
       $game_temp.in_memory_battle = true
       BattleManager.setup(troop_id, true, true)
 
-      everyone = block_given? ? yield : Opponents.build(members, opponent)
+      everyone = team_duel ? yield : Opponents.build(members, opponent)
       opponents = Opponents.stand(backline ? everyone.first(MGQ_MpCoopSquad::FRONTLINE) : everyone)
       raise "nobody of #{opponent}'s team could be rebuilt" if opponents.empty?
 
@@ -857,7 +921,9 @@ module MGQ_MpBattlesPvp
       MGQ_MpBattlesSync.record_to_file if mirror
       MGQ_MpBattlesSync.battle_started
       SceneManager.call(Scene_Battle)
-      MGQ_MpBattlesPvp.log("started against #{opponent}'s team of #{opponents.size}, #{everyone.size - opponents.size} more on the Backline")
+      MGQ_MpBattlesPvp.log("started #{mirror ? 'a mirror match' : 'a PvP battle'} against #{opponent}'s team of #{opponents.size}, " \
+                           "#{everyone.size - opponents.size} more on the Backline, with #{own.size} of the player's own " \
+                           "(#{backline ? 'with' : 'without'} the Backline): #{MGQ_MpBattlesSync.named_list(opponents)}")
     rescue => e
       MGQ_MpBattlesPvp.log("could not start: #{e.class}: #{e.message}")
       @failed = true
@@ -936,6 +1002,7 @@ module MGQ_MpBattlesPvp
     # @param result [Integer] 0 won, 1 left, 2 lost.
     def self.finished(result)
       @result = result
+      MGQ_MpBattlesPvp.log("the battle against #{@opponent}'s team ended: #{RESULT_NAMES.fetch(result, result.inspect)}")
     end
 
     # Puts the game back as it was before the battle and says how it went. Called when the map
@@ -966,7 +1033,7 @@ module MGQ_MpBattlesPvp
       $game_message.add(result_text)
       # A story's call that waited through the battle would move the player while the map starts.
       MGQ_MpCoopGather.drop_call("a PvP battle put the game back") if defined?(MGQ_MpCoopGather)
-      MGQ_MpBattlesPvp.log("put the game back after the battle, on map #{$game_map.map_id} #{$game_player.x},#{$game_player.y}")
+      MGQ_MpBattlesPvp.log("put the game back after the battle, on map #{$game_map.map_id} #{$game_player.x},#{$game_player.y}; told the player: #{result_text}")
     rescue => e
       MGQ_MpBattlesPvp.log("could not put the game back: #{e.class}: #{e.message}")
     end
@@ -986,6 +1053,7 @@ module MGQ_MpBattlesPvp
     # stops waiting. The title screen makes the save's objects anew, but keeps the Library, system
     # switches and affection all saves share, so those are put back.
     def self.forget
+      MGQ_MpBattlesPvp.log("a reset interrupted the PvP battle against #{@opponent}'s team: dropped it, the shared data put back") if @snapshot
       MGQ_MpBattlesSync.finish
       self.globals = Marshal.load(@globals) if @globals
     rescue => e
@@ -1059,211 +1127,111 @@ begin
 
   # After the title screen's update, the last save loads once the player accepted a Discord invite.
   MGQ_MpHooks.after(Scene_Title, :update, "battles_pvp") { MGQ_MpBattlesPvp.on_title unless scene_changing? }
+
+  # Installs the hooks on methods the game's plugins may define anew, as the game starts running.
+  MGQ_MpHooks.before(SceneManager.singleton_class, :run, "battles_pvp") { MGQ_MpBattlesPvp.install }
 rescue => e
   MGQ_MpBattlesPvp.log("hooks FAILED: #{e.class}: #{e.message}")
 end
 
-# Game hooks of this script alone.
-#
-# Each wraps a game method: the original runs first unless said otherwise, and the mod's part never
-# raises.
+# Game hooks of this script alone, through core_hooks.rbx.
 
-if MGQ_MpBattlesPvp.hookable?
-  begin
-    class Scene_Map
-      alias mgq_mp_battles_pvp_start start
+begin
+  # Before the map starts, the game is put back after a PvP battle: the map starts again after one,
+  # so it is built from the game as it was before.
+  MGQ_MpHooks.before(Scene_Map, :start, "battles_pvp") { MGQ_MpBattlesPvp::Battle.restore if MGQ_MpBattlesPvp::Battle.running? }
+rescue => e
+  MGQ_MpBattlesPvp.log("map hook FAILED: #{e.class}: #{e.message}")
+end
 
-      # Puts the game back after a PvP battle, then starts the map.
-      #
-      # The map starts again after a PvP battle, so it is built from the game as it was before.
-      def start
-        MGQ_MpBattlesPvp::Battle.restore if MGQ_MpBattlesPvp::Battle.running?
-        mgq_mp_battles_pvp_start
-      end
+# Other mods, such as a victory screen, read the troop's totals even though the game skips them in
+# a PvP battle, and the friend's characters cannot give them.
+begin
+  [:exp_total, :class_exp_total, :gold_total].select { |name| Game_Troop.method_defined?(name) }.each do |name|
+    MGQ_MpHooks.around(Game_Troop, name, "battles_pvp") { |_troop, _args, original| MGQ_MpBattlesPvp::Battle.running? ? 0 : original.call }
+  end
+  MGQ_MpHooks.around(Game_Troop, :make_drop_items, "battles_pvp") { |_troop, _args, original| MGQ_MpBattlesPvp::Battle.running? ? [] : original.call }
+rescue => e
+  MGQ_MpBattlesPvp.log("troop hooks FAILED: #{e.class}: #{e.message}")
+end
+
+begin
+  # The Library's picture for the friend's characters, the original for other battlers.
+  MGQ_MpHooks.around(Sprite_Battler, :update_bitmap, "battles_pvp") do |sprite, _args, original|
+    stand_in = MGQ_MpBattlesPvp::Pictures.stand_in_for(sprite.battler)
+    next original.call unless stand_in
+
+    sprite.bitmap = stand_in if sprite.bitmap != stand_in
+  end
+
+  # After a battler's sprite updates, the HP bar of a friend's character, which the game draws only
+  # for monsters, and a dead one turned into a grey, see-through silhouette once its defeat flash
+  # ends, or at once when it was swapped in dead, which the game draws as not there. The game marks
+  # a character dead as the hit lands, before the battle log tells of it, and every sprite effect
+  # makes the picture opaque again, so the flash starts the silhouette and its opacity is set every
+  # frame.
+  MGQ_MpHooks.after(Sprite_Battler, :update, "battles_pvp") do
+    next unless @battler.is_a?(MGQ_MpBattlesPvp::Opponent)
+
+    begin
+      update_hp_bar if respond_to?(:update_hp_bar, true)
+    rescue => e
+      MGQ_MpBattlesPvp.log_once(:bar, "HP bar failed: #{e.class}: #{e.message}")
     end
-  rescue => e
-    MGQ_MpBattlesPvp.log("map hook FAILED: #{e.class}: #{e.message}")
-  end
 
-  begin
-    class Scene_Battle
-      alias mgq_mp_battles_pvp_use_item use_item
-
-      # Leaves out an action without a target the way the game leaves out one without a skill.
-      #
-      # @return [Object] The original's result, true for an action left out.
-      def use_item
-        if MGQ_MpBattlesPvp::Battle.running? && MGQ_MpBattlesPvp::Battle.targetless?(@subject)
-          @log_window.display_target_empty(@subject)
-          return true
-        end
-        mgq_mp_battles_pvp_use_item
+    begin
+      dead = @battler.dead?
+      @mgq_mp_battles_pvp_defeat_shown = dead && (@mgq_mp_battles_pvp_defeat_shown || @effect_type == :whiten || !@battler_visible)
+      silhouette = @mgq_mp_battles_pvp_defeat_shown && @effect_type != :whiten
+      if silhouette != @mgq_mp_battles_pvp_silhouette
+        @mgq_mp_battles_pvp_silhouette = silhouette
+        self.tone = Tone.new(0, 0, 0, silhouette ? MGQ_MpBattlesPvp::Opponent::SILHOUETTE_GRAY : 0)
+        self.opacity = 255 unless silhouette
       end
+      self.opacity = MGQ_MpBattlesPvp::Opponent::SILHOUETTE_OPACITY if silhouette
+    rescue => e
+      MGQ_MpBattlesPvp.log_once(:silhouette, "silhouette failed: #{e.class}: #{e.message}")
     end
-  rescue => e
-    MGQ_MpBattlesPvp.log("use_item hook FAILED: #{e.class}: #{e.message}")
   end
+rescue => e
+  MGQ_MpBattlesPvp.log("battler picture hooks FAILED: #{e.class}: #{e.message}")
+end
 
-  # Other mods, such as a victory screen, read the troop's totals even though the game skips them
-  # in a PvP battle, and the friend's characters cannot give them.
-  begin
-    class Game_Troop
-      [:exp_total, :class_exp_total, :gold_total].select { |name| method_defined?(name) }.each do |name|
-        alias_method "mgq_mp_battles_pvp_#{name}", name
-        define_method(name) do
-          MGQ_MpBattlesPvp::Battle.running? ? 0 : send("mgq_mp_battles_pvp_#{name}")
-        end
-      end
-
-      alias mgq_mp_battles_pvp_make_drop_items make_drop_items
-
-      # Drops nothing in a PvP battle.
-      #
-      # @return [Array<RPG::BaseItem>] The drops, none in a PvP battle.
-      def make_drop_items
-        MGQ_MpBattlesPvp::Battle.running? ? [] : mgq_mp_battles_pvp_make_drop_items
-      end
+# Nothing of a PvP battle reaches the disk: while one runs, every save write gets the save and the
+# shared data as they were before it. The game writes the system save at every scene change and
+# when it closes, so a battle's end would write the battle's changes before the map puts the game
+# back.
+begin
+  MGQ_MpHooks.around(DataManager.singleton_class, :save_system, "battles_pvp") do |_manager, _args, original|
+    MGQ_MpBattlesPvp::Battle.as_before_for_system { original.call }
+  end
+  [:save_game_without_rescue, :auto_save_game_without_rescue, :save_game_backup_without_rescue].select { |name| DataManager.singleton_class.method_defined?(name) }.each do |name|
+    MGQ_MpHooks.around(DataManager.singleton_class, name, "battles_pvp") do |_manager, _args, original|
+      MGQ_MpBattlesPvp::Battle.as_before_for_save { original.call }
     end
-  rescue => e
-    MGQ_MpBattlesPvp.log("troop hooks FAILED: #{e.class}: #{e.message}")
+  end
+rescue => e
+  MGQ_MpBattlesPvp.log("save hooks FAILED: #{e.class}: #{e.message}")
+end
+
+begin
+  # The automatic skills that fire, picked from the friend's side for the friend's characters.
+  MGQ_MpHooks.around(BattleManager.singleton_class, :_auto_skill_per, "battles_pvp") do |_manager, args, original|
+    args[1].is_a?(MGQ_MpBattlesPvp::Opponent) ? args[1].firing_auto_skills(args[0]) : original.call
   end
 
-  begin
-    class Sprite_Battler
-      alias mgq_mp_battles_pvp_update_bitmap update_bitmap
-
-      # Shows the Library's picture for the friend's characters, the original for other battlers.
-      def update_bitmap
-        stand_in = MGQ_MpBattlesPvp::Pictures.stand_in_for(@battler)
-        return mgq_mp_battles_pvp_update_bitmap unless stand_in
-
-        self.bitmap = stand_in if bitmap != stand_in
-      end
-
-      alias mgq_mp_battles_pvp_update update
-
-      # Draws the HP bar of a friend's character, which the game draws only for monsters, and turns
-      # a dead one into a grey, see-through silhouette once its defeat flash ends, or at once when
-      # it was swapped in dead, which the game draws as not there.
-      #
-      # The game marks a character dead as the hit lands, before the battle log tells of it, and
-      # every sprite effect makes the picture opaque again, so the flash starts the silhouette and
-      # its opacity is set every frame.
-      def update
-        mgq_mp_battles_pvp_update
-        return unless @battler.is_a?(MGQ_MpBattlesPvp::Opponent)
-
-        begin
-          update_hp_bar if respond_to?(:update_hp_bar, true)
-        rescue => e
-          MGQ_MpBattlesPvp.log_once(:bar, "HP bar failed: #{e.class}: #{e.message}")
-        end
-
-        begin
-          dead = @battler.dead?
-          @mgq_mp_battles_pvp_defeat_shown = dead && (@mgq_mp_battles_pvp_defeat_shown || @effect_type == :whiten || !@battler_visible)
-          silhouette = @mgq_mp_battles_pvp_defeat_shown && @effect_type != :whiten
-          if silhouette != @mgq_mp_battles_pvp_silhouette
-            @mgq_mp_battles_pvp_silhouette = silhouette
-            self.tone = Tone.new(0, 0, 0, silhouette ? MGQ_MpBattlesPvp::Opponent::SILHOUETTE_GRAY : 0)
-            self.opacity = 255 unless silhouette
-          end
-          self.opacity = MGQ_MpBattlesPvp::Opponent::SILHOUETTE_OPACITY if silhouette
-        rescue => e
-          MGQ_MpBattlesPvp.log_once(:silhouette, "silhouette failed: #{e.class}: #{e.message}")
-        end
-      end
-    end
-  rescue => e
-    MGQ_MpBattlesPvp.log("battler picture hooks FAILED: #{e.class}: #{e.message}")
+  # After the automatic skills of a battle's start, a turn's start or a turn's end are queued, in a
+  # PvP battle the faster character's go first.
+  MGQ_MpHooks.after(BattleManager.singleton_class, :set_auto_skill, "battles_pvp") do
+    @action_game_masters = MGQ_MpBattlesPvp::Battle.by_speed(@action_game_masters) if MGQ_MpBattlesPvp::Battle.running?
   end
+rescue => e
+  MGQ_MpBattlesPvp.log("automatic skill hooks FAILED: #{e.class}: #{e.message}")
+end
 
-  # Nothing of a PvP battle reaches the disk: while one runs, every save write gets the save and
-  # the shared data as they were before it.
-  begin
-    class << DataManager
-      alias mgq_mp_battles_pvp_save_system save_system
-
-      # Writes the system save as it was before a running PvP battle.
-      #
-      # The game writes it at every scene change and when it closes, so a battle's end would write
-      # the battle's changes before the map puts the game back.
-      #
-      # @return [Object] The original's result.
-      def save_system
-        MGQ_MpBattlesPvp::Battle.as_before_for_system { mgq_mp_battles_pvp_save_system }
-      end
-
-      [:save_game_without_rescue, :auto_save_game_without_rescue, :save_game_backup_without_rescue].each do |name|
-        next unless method_defined?(name)
-
-        alias_method "mgq_mp_battles_pvp_#{name}", name
-        define_method(name) do |*args|
-          MGQ_MpBattlesPvp::Battle.as_before_for_save { send("mgq_mp_battles_pvp_#{name}", *args) }
-        end
-      end
-    end
-  rescue => e
-    MGQ_MpBattlesPvp.log("save hooks FAILED: #{e.class}: #{e.message}")
-  end
-
-  begin
-    class << BattleManager
-      alias mgq_mp_battles_pvp_auto_skill_per _auto_skill_per
-
-      # Picks the automatic skills that fire, from the friend's side for the friend's characters.
-      #
-      # @param skills [Array<Hash>] The automatic skills to check.
-      # @param battler [Game_Battler] Who has them.
-      # @return [Array<Hash>] Those that fire.
-      def _auto_skill_per(skills, battler)
-        return mgq_mp_battles_pvp_auto_skill_per(skills, battler) unless battler.is_a?(MGQ_MpBattlesPvp::Opponent)
-
-        battler.firing_auto_skills(skills)
-      end
-    end
-  rescue => e
-    MGQ_MpBattlesPvp.log("automatic skill hook FAILED: #{e.class}: #{e.message}")
-  end
-
-  begin
-    class << BattleManager
-      alias mgq_mp_battles_pvp_set_auto_skill set_auto_skill
-
-      # Queues the automatic skills of a battle's start, a turn's start or a turn's end, in a PvP
-      # battle the faster character's first.
-      #
-      # @yieldparam member [Game_Battler] A character of the battle.
-      # @yieldreturn [Array<Hash>] Its automatic skills of that moment.
-      def set_auto_skill(&skills)
-        mgq_mp_battles_pvp_set_auto_skill(&skills)
-        return unless MGQ_MpBattlesPvp::Battle.running?
-
-        @action_game_masters = MGQ_MpBattlesPvp::Battle.by_speed(@action_game_masters)
-      end
-    end
-  rescue => e
-    MGQ_MpBattlesPvp.log("automatic skill order hook FAILED: #{e.class}: #{e.message}")
-  end
-
-  begin
-    class << BattleManager
-      alias mgq_mp_battles_pvp_turn_start turn_start
-
-      # Starts the turn, then adds to a mirror match's report how both teams look.
-      def turn_start
-        mgq_mp_battles_pvp_turn_start
-        MGQ_MpBattlesPvp::MirrorReport.turn_started if MGQ_MpBattlesPvp::Battle.running?
-      end
-    end
-  rescue => e
-    MGQ_MpBattlesPvp.log("turn hook FAILED: #{e.class}: #{e.message}")
-  end
-
-  # Discord shows whose team the player fights, through the Discord mod's bridge when it is installed.
-  begin
-    MGQ_Discord::Bridge.add_status { |scene| MGQ_MpBattlesPvp.status_fields(scene) } if MGQ_Multiplayer::Discord.available?
-  rescue => e
-    MGQ_MpBattlesPvp.log("status source FAILED: #{e.class}: #{e.message}")
-  end
+# Discord shows whose team the player fights, through the Discord mod's bridge when it is installed.
+begin
+  MGQ_Discord::Bridge.add_status { |scene| MGQ_MpBattlesPvp.status_fields(scene) } if MGQ_Multiplayer::Discord.available?
+rescue => e
+  MGQ_MpBattlesPvp.log("status source FAILED: #{e.class}: #{e.message}")
 end

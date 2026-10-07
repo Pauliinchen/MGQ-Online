@@ -2,7 +2,8 @@
 #  battle_support.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-07: Let the characters clear their actions, and named the party after its first character
+#      Paulinchen  2026-10-07: Stood in for the helpers of coop.rbx, overworld_sync.rbx and coop_scene.rbx the battle scripts share now: who, random_id and the pictures' count
+#                            - Let the characters clear their actions, and named the party after its first character
 #      Paulinchen  2026-10-06: Gave the party the targets of a skill that reaches the Backline too, and added the Library's counts of the battle's end and of a defeat
 #      Paulinchen  2026-10-04: Kept the chat's system lines, counted the troop's new actions and cleared the actor choosing
 #                            - Stood in for battles_coop_level_sync.rbx, keeping what the co-op battle asks of it
@@ -38,6 +39,7 @@ module MGQ_MpOverworldSync
   def self.in_world?; true; end
   def self.notice(text); Status.notice(text); end
   def self.tell(seat, fields, body = ""); Link.send_to(seat, Me.encode(fields) + body); end
+  def self.who(peer); peer == :me ? "the player" : (peer ? "#{peer.state['name']} (seat #{peer.seat})" : "an unknown player"); end
   module Peers
     Peer = Struct.new(:seat, :state, :ghost, :member)
     @all = []
@@ -57,6 +59,7 @@ module MGQ_MpOverworldSync
   end
 end
 module MGQ_MpCoopGather; def self.coming?; false; end; end
+module MGQ_MpCoopScene; MAX_PICTURE = 100; end
 # The level sync, which level_sync_test.rb covers: the battle's level is $sync_level, and what the
 # co-op battle asks of it is kept.
 module MGQ_MpCoopLevelSync
@@ -73,6 +76,7 @@ module MGQ_MpCoop
     def self.leader; $leader; end
   end
   def self.leads?(player); player == :me ? $leader == :me : ($leader.equal?(player) || Array($leaders).any? { |l| l.equal?(player) }); end
+  def self.random_id(length); rand(36**length).to_s(36); end
 end
 module RPG
   class Item

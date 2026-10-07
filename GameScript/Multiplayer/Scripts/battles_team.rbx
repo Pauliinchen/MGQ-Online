@@ -2,6 +2,8 @@
 #  battles_team.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-07: Named players and characters through battles_sync.rbx instead of the co-op battle's copies
+#                            - Logged the sides and their shares, the rebuilt opponents and who takes over the characters of a player who left
 #      Paulinchen  2026-10-04: Renamed from mp_battles_team.rbx
 #      Paulinchen  2026-10-03: Registered what a team duel does differently in a live battle as its Mode
 #                            - Read the sides' players as MGQ_MpBattlesCoop::Player records
@@ -66,6 +68,32 @@ module MGQ_MpBattlesTeam
     @same_side = same_side
     @heirs = {}
     @opponents = {}
+    log("sides, the player's #{same_side ? 'hosting' : 'guest'} side: #{side_text(@own)}; the other side: #{side_text(@other)}")
+  end
+
+  # Describes a side's players with their share of the Frontline, for Multiplayer InGame.log.
+  #
+  # @param side [Array<MGQ_MpBattlesCoop::Player>] The side's players.
+  # @return [String] Each player's name, seat and characters.
+  def self.side_text(side)
+    side.map { |player| MGQ_MpBattlesCoop.player_text(player) }.join(" | ")
+  rescue
+    "#{side.size} players"
+  end
+
+  # Logs the line a block makes, which never raises: a line that cannot be made is left out.
+  #
+  # @yieldreturn [String] The line.
+  def self.say
+    log(yield)
+  rescue
+  end
+
+  # Describes who commands the characters of the players who left, for Multiplayer InGame.log.
+  #
+  # @return [String] Each player who left and who took their characters over.
+  def self.heirs_text
+    @heirs.map { |seat, heir| "#{MGQ_MpBattlesSync.who(seat)} by #{heir ? MGQ_MpBattlesSync.who(heir) : 'nobody, their side is gone'}" }.join(", ")
   end
 
   # Names who leads the other side, whose team Discord says the player fights.
@@ -80,10 +108,12 @@ module MGQ_MpBattlesTeam
   #
   # @return [Array<MGQ_MpBattlesPvp::Opponent>] The characters.
   def self.opponents
-    @other.map do |player|
+    opponents = @other.map do |player|
       members = MGQ_MpActors::Builds.parse(player.builds.to_s, MGQ_MpCoopSquad::FRONTLINE)
       player.lines[0].map { |place| opponent(player.seat, player.name.to_s, members[place], place) }
     end.flatten.compact
+    say { "the other side fights with #{MGQ_MpBattlesCoop.members_text(opponents)}" }
+    opponents
   end
 
   # Rebuilds one of the other side's characters, once per duel.
@@ -99,6 +129,7 @@ module MGQ_MpBattlesTeam
     @opponents[[seat, place]] ||= MGQ_MpBattlesPvp::Opponent.new(member, name).tap do |opponent|
       opponent.mp_seat = seat
       opponent.mp_place = place
+      say { "rebuilt #{MGQ_MpBattlesSync.named(opponent)} of seat #{seat}, place #{place}, Lv#{member.base_level}" }
     end
   rescue => e
     log("could not rebuild actor #{member.actor_id} of #{name}: #{e.class}: #{e.message}")
@@ -174,7 +205,7 @@ module MGQ_MpBattlesTeam
 
     MGQ_MpBattlesSync::Recorder.flush if MGQ_MpBattlesSync::Recorder.active?
     MGQ_MpBattlesSync::Channel.post("team_heirs", MGQ_MpBattlesSync::Wire.line([@heirs.reject { |_, heir| heir.nil? }.to_a.flatten]))
-    log("characters taken over: #{@heirs.inspect}")
+    say { "characters taken over: #{heirs_text}" }
   rescue => e
     log("settling the sides failed: #{e.class}: #{e.message}")
   end
@@ -185,6 +216,7 @@ module MGQ_MpBattlesTeam
   def self.take_heirs(body)
     pairs = Array(MGQ_MpBattlesSync::Wire.parse(body.to_s)[0])
     @heirs = Hash[pairs.each_slice(2).select { |pair| pair.size == 2 }]
+    say { "took who commands the characters of who left: #{heirs_text}" }
   rescue => e
     log("taking who commands failed: #{e.class}: #{e.message}")
   end

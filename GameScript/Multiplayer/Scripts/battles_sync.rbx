@@ -2,7 +2,9 @@
 #  battles_sync.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-07: Told the battle's mode on the host when a guest leaves, which stops a co-op guest's characters at once
+#      Paulinchen  2026-10-07: Named a player by their name and seat as the other scripts do, the player themselves too, and listed characters with their ids for every battle script
+#                            - Logged the live battle's players, the messages sent and received, the commands given per character and what happens once a player leaves
+#                            - Told the battle's mode on the host when a guest leaves, which stops a co-op guest's characters at once
 #      Paulinchen  2026-10-06: Put the host's settings that leave parts of a battle unshown back once the live battle ends, which a co-op battle kept off
 #                            - Sent a battle's messages to its players alone instead of the whole world
 #                            - Stopped streaming once the computer plays on for the guests who left
@@ -134,7 +136,7 @@ module MGQ_MpBattlesSync
     @broken = false
     @battle_running = false
     Channel.reset
-    log("live battle as #{@role}")
+    log("live PvP battle with #{@player} over the link, as #{@role}")
     true
   rescue => e
     log("could not go live: #{e.class}: #{e.message}")
@@ -163,7 +165,56 @@ module MGQ_MpBattlesSync
     @broken = false
     @battle_running = false
     Channel.reset
-    log("#{mode == :pvp ? 'duel' : 'co-op battle'} #{battle_id} as #{role}")
+    kind = mode == :pvp ? (team ? 'team duel' : 'duel') : 'co-op battle'
+    log("#{kind} #{battle_id} as #{role}, with #{seats.empty? ? 'nobody yet' : seats.map { |seat| who(seat) }.join(', ')}")
+  end
+
+  # Names a player of the world by their seat for Multiplayer InGame.log.
+  #
+  # @param seat [Integer, nil] Their world seat, nil for the friend over the link.
+  # @return [String] Their name and seat, such as "Name (seat 2)", "the player (seat 0)" for the
+  #   player, the seat alone for a player the game does not know.
+  def self.who(seat)
+    return @player.to_s if seat.nil?
+    return "the player (seat #{seat})" if seat == MGQ_MpOverworldSync::Me.seat
+
+    peer = MGQ_MpOverworldSync::Peers.at(seat)
+    name = peer && peer.state && peer.state["name"]
+    name ? "#{name} (seat #{seat})" : "seat #{seat}"
+  rescue
+    "seat #{seat}"
+  end
+
+  # Names a battler with its id for Multiplayer InGame.log.
+  #
+  # @param battler [Game_Battler, nil] The battler.
+  # @return [String] Its name and actor or monster id, such as "Alice (2)".
+  def self.named(battler)
+    return "nobody" unless battler
+
+    id = battler.respond_to?(:id) ? battler.id : (battler.respond_to?(:enemy_id) ? battler.enemy_id : nil)
+    id ? "#{battler.name} (#{id})" : battler.name.to_s
+  rescue
+    "?"
+  end
+
+  # Names battlers with their ids for Multiplayer InGame.log, see named.
+  #
+  # @param battlers [Array<Game_Battler>] The battlers.
+  # @return [String] Their names and ids, "nobody" for none.
+  def self.named_list(battlers)
+    battlers.empty? ? "nobody" : battlers.map { |battler| named(battler) }.join(", ")
+  rescue
+    "?"
+  end
+
+  # Reads the battle's turn count for Multiplayer InGame.log.
+  #
+  # @return [Integer] The turns that started, 0 before the first.
+  def self.turn
+    $game_troop.turn_count.to_i
+  rescue
+    0
   end
 
   # Reports whether the live battle is a co-op battle.
@@ -214,7 +265,10 @@ module MGQ_MpBattlesSync
   #
   # @param seats [Array<Integer>] Their world seats.
   def self.keep_seats(seats)
+    dropped = Array(@seats) - seats
     @seats = seats.dup
+    log("guests who joined battle #{@battle_id}: #{seats.empty? ? 'nobody' : seats.map { |seat| who(seat) }.join(', ')}" +
+        (dropped.empty? ? "" : "; not joined: #{dropped.map { |seat| who(seat) }.join(', ')}"))
   end
 
   # Lists the guests of a co-op battle who are still in it.
@@ -234,7 +288,8 @@ module MGQ_MpBattlesSync
 
     @left << seat
     mode.left(seat) if host?
-    log("a guest left the battle, their characters leave at the next command phase")
+    log("#{who(seat)} left battle #{@battle_id} in turn #{turn}, their characters leave at the next command phase; " \
+        "#{guests_in.size} of #{Array(@seats).size} other players still in")
   end
 
   # Takes a message of a co-op battle or a duel from the world's room. Called by overworld_sync.rbx.
@@ -242,12 +297,23 @@ module MGQ_MpBattlesSync
   # @param peer [MGQ_MpOverworldSync::Peers::Peer, nil] Who sent it.
   # @param message [Hash] The message: "battle" its kind, "bid" the battle's id, and the body.
   def self.take(peer, message)
-    return unless peer && world? && @role && message["bid"] == @battle_id
-
     kind = message["battle"].to_s
+    return unless peer
+    return dropped(kind, peer, "no live battle over the world runs") unless world? && @role
+    return dropped(kind, peer, "it is for another battle") unless message["bid"] == @battle_id
+
     # Every player of the battle hears of one who leaves, not only the host who takes them out.
     Departures.left(peer) if kind == "leave"
     Channel.receive(peer.seat, kind, message[:payload].to_s)
+  end
+
+  # Logs a battle message from the world's room that is left untaken, once per kind, reason and battle.
+  #
+  # @param kind [String] The message's kind.
+  # @param peer [MGQ_MpOverworldSync::Peers::Peer] Who sent it.
+  # @param reason [String] Why it is left untaken.
+  def self.dropped(kind, peer, reason)
+    log_once([:dropped, kind[0, 40], reason, @battle_id], "ignored a battle message #{kind[0, 40]} from #{who(peer.seat)}: #{reason}")
   end
 
   # Lists the other players of a live battle over the world's room: the host or the guests, and in
@@ -288,6 +354,9 @@ module MGQ_MpBattlesSync
     return unless @role
 
     world = world?
+    log("live battle #{@battle_id || 'over the link'} finished as #{@role} after #{turn} turns" +
+        "#{@broken ? ', broken off' : ''}#{@solo ? ', the computer playing for those who left' : ''}" +
+        "#{world ? '' : ', closing the link'}")
     @role = nil
     @team = false
     @broken = false
@@ -358,13 +427,25 @@ module MGQ_MpBattlesSync
       @kept_settings[key] = $game_system.conf[key] unless @kept_settings.key?(key)
       $game_system.conf[key] = false
     end
+    log("turned the skip settings off for the live battle, kept to put back: #{settings_text(@kept_settings)}")
   end
 
   # Puts back the settings show_everything turned off.
   def self.restore_settings
     kept = @kept_settings
     @kept_settings = nil
-    Array(kept).each { |key, value| $game_system.conf[key] = value } if $game_system
+    return unless kept && $game_system
+
+    kept.each { |key, value| $game_system.conf[key] = value }
+    log("put the skip settings back: #{settings_text(kept)}")
+  end
+
+  # Writes settings for Multiplayer InGame.log.
+  #
+  # @param settings [Hash] The settings by their key.
+  # @return [String] Each key with its value, "none" without any.
+  def self.settings_text(settings)
+    settings.empty? ? "none" : settings.map { |key, value| "#{key}=#{value.inspect}" }.join(", ")
   end
 
   # Lists the names the guest swaps.
@@ -413,19 +494,25 @@ module MGQ_MpBattlesSync
     if host? && (DROPOUT == :computer || coop?)
       @solo = true
       Recorder.stop
+      log("the host plays on alone, the computer playing for the guests who left, streaming stopped")
       return true
     end
 
-    return false if mode.take_over(scene)
+    if mode.take_over(scene)
+      log("this game takes the battle over and fights on alone")
+      return false
+    end
 
     # A team duel's host wins once the other side is empty; a guest on the host's side loses its
     # host, who computes the duel, so the duel breaks off.
     if team? && (host? || same_side?)
+      log(host? ? "everyone on the other side left: the host's side wins" : "the host left the team duel: it ends without a winner")
       $game_message.add(host? ? "Everyone on the other side left." : "#{@player} left the duel.")
       host? ? BattleManager.process_victory : BattleManager.process_abort
       return false
     end
 
+    log("#{@player} left: this game wins")
     $game_message.add("#{@player} left the battle.")
     BattleManager.process_victory
     false
@@ -449,13 +536,43 @@ module MGQ_MpBattlesSync
     # @param body [String] The rest.
     # @return [Boolean] Whether it went out to anyone.
     def self.post(kind, body = "")
-      return MGQ_Multiplayer::Link.post("#{kind}\n#{body}") unless MGQ_MpBattlesSync.world?
-
-      sent = false
-      MGQ_MpBattlesSync.player_seats.each do |seat|
-        sent = true if MGQ_MpBattlesSync.tell(seat, kind, MGQ_MpBattlesSync.battle_id, body)
+      unless MGQ_MpBattlesSync.world?
+        sent = MGQ_Multiplayer::Link.post("#{kind}\n#{body}")
+        noted_post(kind, body, sent ? "over the link" : nil)
+        return sent
       end
-      sent
+
+      reached = MGQ_MpBattlesSync.player_seats.select do |seat|
+        MGQ_MpBattlesSync.tell(seat, kind, MGQ_MpBattlesSync.battle_id, body)
+      end
+      noted_post(kind, body, reached.empty? ? nil : "to #{reached.map { |seat| MGQ_MpBattlesSync.who(seat) }.join(', ')}")
+      !reached.empty?
+    end
+
+    # Logs a message sent, except the host's stream, which the recorder sums up per turn.
+    #
+    # @param kind [String] What it is.
+    # @param body [String] The rest.
+    # @param whereto [String, nil] Whom it reached, nil when it reached nobody.
+    def self.noted_post(kind, body, whereto)
+      if kind == "events"
+        return if whereto
+
+        return MGQ_MpBattlesSync.log_once([:unsent, MGQ_MpBattlesSync.battle_id], "could not send the stream: it reached nobody")
+      end
+
+      MGQ_MpBattlesSync.log(whereto ? "sent #{kind} (#{body.to_s.size} bytes) #{whereto}" : "could not send #{kind}: it reached nobody")
+    end
+
+    # Logs a message that arrived, except the host's stream, which the playback sums up per turn.
+    #
+    # @param kind [String] What it is.
+    # @param body [String] The rest.
+    # @param seat [Integer, nil] The sender's world seat, nil over the link.
+    def self.noted_receive(kind, body, seat)
+      return if kind == "events"
+
+      MGQ_MpBattlesSync.log("received #{kind[0, 40]} (#{body.to_s.size} bytes) from #{MGQ_MpBattlesSync.who(seat)}")
     end
 
     # Takes a message that arrived over the world's room: a guest takes only the host's, the host
@@ -465,8 +582,13 @@ module MGQ_MpBattlesSync
     # @param kind [String] What it is.
     # @param body [String] The rest.
     def self.receive(seat, kind, body)
-      return unless MGQ_MpBattlesSync.seats.include?(seat)
+      unless MGQ_MpBattlesSync.seats.include?(seat)
+        return MGQ_MpBattlesSync.log_once([:not_taken, kind[0, 40], seat, MGQ_MpBattlesSync.battle_id],
+                                          "ignored #{kind[0, 40]} from #{MGQ_MpBattlesSync.who(seat)}: " \
+                                          "#{MGQ_MpBattlesSync.role == :host ? 'not a guest of this battle' : 'not the host'}")
+      end
 
+      noted_receive(kind, body, seat)
       (@messages ||= []) << [kind, body, seat]
     end
 
@@ -514,6 +636,8 @@ module MGQ_MpBattlesSync
 
       @checked = 0
       @gone = MGQ_MpBattlesSync.world? ? world_gone? : MGQ_Multiplayer::Link.status["link"] != "open"
+      MGQ_MpBattlesSync.log(MGQ_MpBattlesSync.world? ? "the other side of the battle is gone" : "the link is no longer open") if @gone
+      @gone
     end
 
     # Looks at who of a co-op battle or a duel is still in the world's room.
@@ -561,6 +685,7 @@ module MGQ_MpBattlesSync
 
       while (text = MGQ_Multiplayer::Link.next_message)
         kind, body = text.split("\n", 2)
+        noted_receive(kind.to_s, body, nil)
         @messages << [kind.to_s, body.to_s]
       end
     end
@@ -586,7 +711,44 @@ module MGQ_MpBattlesSync
         end
       end
       order = MGQ_MpBattlesSync.mode.own_order
+      @built = "#{summary($game_party.battle_members, commands)}#{order ? "; order #{order.join(', ')}" : ''}"
       order ? Wire.line([commands, order]) : Wire.line([commands])
+    end
+
+    # Sums up the commands build wrote last, for Multiplayer InGame.log.
+    #
+    # @return [String] Each own character with its commands, and the order of places.
+    def self.built
+      @built.to_s
+    end
+
+    # Sums up commands for Multiplayer InGame.log.
+    #
+    # @param battlers [Array<Game_Battler>] The characters, by place.
+    # @param commands [Array<Array, nil>] The commands of each, nil for one commanded elsewhere.
+    # @return [String] Each commanded character with its commands, "none" for an empty list.
+    def self.summary(battlers, commands)
+      lines = []
+      battlers.each_with_index do |battler, index|
+        list = commands[index]
+        next unless list.is_a?(Array)
+
+        lines << "#{MGQ_MpBattlesSync.named(battler)}: #{list.empty? ? 'none' : list.map { |command| command_text(command) }.join(', ')}"
+      end
+      lines.empty? ? "no characters" : lines.join("; ")
+    end
+
+    # Writes a command for Multiplayer InGame.log.
+    #
+    # @param command [Array] "skill" or "item", the id and the target's index.
+    # @return [String] Its kind, id and name, and the target's index.
+    def self.command_text(command)
+      kind, id, target = command
+      item = { "skill" => $data_skills, "item" => $data_items }.fetch(kind, [])[id.to_i] if id.is_a?(Integer)
+      name = item.respond_to?(:name) ? " #{item.name}" : ""
+      "#{kind} #{id}#{name} at #{target.inspect}"
+    rescue
+      command.inspect
     end
 
     # Gives a guest's characters on the host the guest's commands, see command. A character the
@@ -598,7 +760,7 @@ module MGQ_MpBattlesSync
     def self.apply(body, seat = nil)
       values = Wire.parse(body.to_s)
       commands = values && values[0]
-      return MGQ_MpBattlesSync.log("unreadable commands") unless commands.is_a?(Array)
+      return MGQ_MpBattlesSync.log("unreadable commands from #{MGQ_MpBattlesSync.who(seat)} (#{body.to_s.size} bytes), the computer's kept") unless commands.is_a?(Array)
 
       MGQ_MpBattlesSync.mode.take_order(seat, values[1])
 
@@ -606,12 +768,16 @@ module MGQ_MpBattlesSync
       # duel, else the host's troop, in the same order.
       same = MGQ_MpBattlesSync.mode.same_side_as_host?(seat)
       battlers = same ? $game_party.battle_members : $game_troop.members
+      given = []
       battlers.each_with_index do |battler, index|
         next if MGQ_MpBattlesSync.several? && !commanded_by?(battler, seat)
 
         list = commands[index]
-        command(battler, list) if list.is_a?(Array)
+        given << "#{MGQ_MpBattlesSync.named(battler)}: #{command(battler, list)}" if list.is_a?(Array)
       end
+      MGQ_MpBattlesSync.log("gave the commands of #{MGQ_MpBattlesSync.who(seat)} for turn #{MGQ_MpBattlesSync.turn + 1}: " \
+                            "#{given.empty? ? 'none for their characters' : given.join('; ')}" +
+                            (values[1] ? "; order #{Array(values[1]).join(', ')}" : ""))
     end
 
     # Gives a character its owner's commands: an empty list takes its actions away, as its owner's
@@ -623,10 +789,18 @@ module MGQ_MpBattlesSync
     # @param battler [Game_Battler] The character.
     # @param list [Array<Array>] Its commands, see action.
     def self.command(battler, list)
-      return MGQ_MpGame.set(battler, :actions, []) if list.empty?
+      if list.empty?
+        MGQ_MpGame.set(battler, :actions, [])
+        return "none, its actions taken away"
+      end
 
-      actions = list.first(action_count(battler)).map { |command| action(battler, command) }.compact
+      count = action_count(battler)
+      actions = list.first(count).map { |command| action(battler, command) }.compact
       MGQ_MpGame.set(battler, :actions, actions) unless actions.empty?
+      taken = list.first(count)
+      given = actions.empty? ? "none it may give, the computer's actions kept" : taken.map { |command| command_text(command) }.join(", ")
+      given += " (#{taken.size - actions.size} left out)" unless actions.empty? || actions.size == taken.size
+      list.size > count ? "#{given} (took #{count} of #{list.size}: the host's game gives it #{count} actions)" : given
     end
 
     # Counts the actions the host's game gives a character this turn, making them first for one that
@@ -694,7 +868,8 @@ module MGQ_MpBattlesSync
     # @param item [RPG::UsableItem] The skill or item.
     # @return [nil] Nothing.
     def self.refuse(battler, item)
-      MGQ_MpBattlesSync.log("left out #{item.class.name.split('::').last.downcase} #{item.id} for #{battler.name}, who may not use it")
+      name = item.name rescue nil
+      MGQ_MpBattlesSync.log("left out #{item.class.name.split('::').last.downcase} #{item.id} #{name} for #{MGQ_MpBattlesSync.named(battler)}, who may not use it")
       nil
     end
   end
@@ -724,6 +899,8 @@ module MGQ_MpBattlesSync
       Array(troop).each_with_index { |name, index| add(name, own_troop[index]) }
       names = @swaps.keys.sort_by { |name| -name.size }
       @pattern = names.empty? ? nil : Regexp.union(names)
+      MGQ_MpBattlesSync.log("the host names #{Array(party).size} party and #{Array(troop).size} troop characters; swapping " +
+                            (@swaps.empty? ? "none" : @swaps.map { |from, to| "#{from} -> #{to}" }.join(", ")))
     end
 
     # Swaps the names in a text.
@@ -799,6 +976,7 @@ module MGQ_MpBattlesSync
 
       @told.push(key)
       @told.shift while @told.size > KEPT
+      MGQ_MpBattlesSync.log("told the player: #{text}")
       MGQ_MpChat.system(text)
       MGQ_MpOverworldSync.notice(text)
     rescue => e
@@ -826,6 +1004,7 @@ module MGQ_MpBattlesSync
     # @param text [String] What the game waits for.
     # @return [Window_Base] The box.
     def self.open(text)
+      @text = text
       window = Window_Base.new((Graphics.width - WIDTH) / 2, 120, WIDTH, HEIGHT)
       window.z = 250
       window.contents.draw_text(0, 0, window.contents.width, window.line_height, text, 1)
@@ -841,6 +1020,7 @@ module MGQ_MpBattlesSync
       return false if frames < LEAVE_FRAMES
 
       if frames == LEAVE_FRAMES
+        MGQ_MpBattlesSync.log("still waiting after #{LEAVE_FRAMES / 60} s (#{@text}), Cancel now leaves the battle")
         window.contents.draw_text(0, window.line_height, window.contents.width, window.line_height, LEAVE_TEXT, 1)
       end
       Input.trigger?(:B)
@@ -874,7 +1054,10 @@ module MGQ_MpBattlesSync
 
         window ||= open(text)
         frames += 1
-        return :left if leave?(window, frames)
+        if leave?(window, frames)
+          MGQ_MpBattlesSync.log("the player left the battle during the wait (#{text})")
+          return :left
+        end
 
         MGQ_MpGame.call(scene, :update_for_wait)
       end
