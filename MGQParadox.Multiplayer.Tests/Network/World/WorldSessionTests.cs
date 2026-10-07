@@ -2,6 +2,7 @@
 //  WorldSessionTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-06: Covered a player entering the same world from another game, and took the entry the inbox handed out
 //      Paulinchen  2026-10-02: Made the test world with every player starting alike
 //      Paulinchen  2026-09-30: Made the test world without a starting save, public
 //      Paulinchen  2026-09-29: Covered the ping an open connection tells
@@ -281,6 +282,32 @@ public sealed class WorldSessionTests
     }
 
     /// <summary>
+    /// Asserts that a player entering a world from another game ends the earlier game's session for
+    /// good, with a reason, and takes its seat.
+    /// </summary>
+    [Fact]
+    public void SamePlayerElsewhere_ReplacesTheEarlierGame()
+    {
+        using var relay = new TestRelay();
+        var code = MakeWorld(relay, 2);
+        var key = WorldDirectoryTests.PlayerKey(8);
+        var earlier = NewSession(relay.Address, key);
+        var later = NewSession(relay.Address, key);
+
+        earlier.Open(code);
+        AwaitState(earlier, "open");
+        later.Open(code);
+        AwaitState(later, "open");
+
+        var ended = AwaitError(earlier);
+        Assert.Equal("failed", ended["state"]);
+        Assert.Contains("another game", ended["error"]);
+        AwaitOthers(later, string.Empty);
+
+        later.Close();
+    }
+
+    /// <summary>
     /// Asserts that a session without a player cannot open a world.
     /// </summary>
     [Fact]
@@ -365,7 +392,7 @@ public sealed class WorldSessionTests
         {
             if (session.PeekMessage() is { } text)
             {
-                session.TakeMessage();
+                session.TakeMessage(text);
                 var entry = Message.Decode(text);
 
                 if (kind == null || entry[Message.Kind] == kind)
@@ -390,9 +417,9 @@ public sealed class WorldSessionTests
     {
         foreach (var session in sessions)
         {
-            while (session.PeekMessage() != null)
+            while (session.PeekMessage() is { } text)
             {
-                session.TakeMessage();
+                session.TakeMessage(text);
             }
         }
     }

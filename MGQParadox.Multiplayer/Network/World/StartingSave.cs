@@ -2,6 +2,7 @@
 //  StartingSave.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-06: Named the most bytes the relay keeps of a starting save
 //      Paulinchen  2026-09-30: Created
 //
 //----------------------------------------------------------------
@@ -31,6 +32,11 @@ internal static partial class StartingSave
     /// Most bytes its files may have together once unpacked.
     /// </summary>
     public const long MaxUnpackedBytes = 64L * 1024 * 1024;
+
+    /// <summary>
+    /// Most bytes the relay keeps of a sealed starting save.
+    /// </summary>
+    public const int MaxSealedBytes = 8 * 1024 * 1024;
 
     /// <summary>
     /// Size of the key.

@@ -2,7 +2,11 @@
 //  WorldSession.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-06: Kept the world opened last, whose token seals the offers of a trade
+//      Paulinchen  2026-10-06: Started its threads through Threads and read who plays through Player.Current, both shared with the world's other parts
+//                            - Told a world with as many players as it may, a starting save still on its way, too many tries and an entry from another game apart from a removal or a full world
+//                            - Kept one cipher for every connection to the world, so the others' frames seen before a break are refused after it
+//                            - Took the inbox's oldest entry only when it is the one the game script read, and forgot the world once it failed for good
+//                            - Kept the world opened last, whose token seals the offers of a trade
 //      Paulinchen  2026-09-29: Pinged the relay every few seconds and told the round trip as the ping
 //                            - Entered as the player the game script set, and stopped for good once the world was deleted or the player removed
 //                            - Created
@@ -100,11 +104,6 @@ internal sealed class WorldSession
     private const string NoWorldCode = "There is no world code to enter the world with.";
 
     /// <summary>
-    /// Why a world cannot be entered before the game script said who plays.
-    /// </summary>
-    private const string NoPlayer = "The game has not said who plays yet.";
-
-    /// <summary>
     /// Why a world its creator deleted cannot be entered.
     /// </summary>
     private const string Deleted = "This world no longer exists: its creator deleted it.";
@@ -118,6 +117,41 @@ internal sealed class WorldSession
     /// Why a world cannot be entered whose token no longer fits, as when it was made anew under the same id.
     /// </summary>
     private const string TokenMismatch = "The password this game remembers no longer fits this world.";
+
+    /// <summary>
+    /// Why a world cannot be entered that has as many players as it may.
+    /// </summary>
+    private const string MembersFull = "The world has as many players as it may.";
+
+    /// <summary>
+    /// Why the game waits while the world's creator still uploads its starting save.
+    /// </summary>
+    private const string StartPending = "The world's starting save is still on its way. The game tries again until it arrived.";
+
+    /// <summary>
+    /// Why the game waits after the relay took too many tries from this connection.
+    /// </summary>
+    private const string TooManyTries = "Too many tries from your connection. The game tries again shortly.";
+
+    /// <summary>
+    /// Why the game left a world the same player entered from another game.
+    /// </summary>
+    private const string Replaced = "You entered this world from another game, which took your place.";
+
+    /// <summary>
+    /// The close reason of a connection the same player replaced from another game, sent with <see cref="RemovedClose"/>.
+    /// </summary>
+    private const string ReplacedReason = "replaced";
+
+    /// <summary>
+    /// The refusal code of a world with as many players as it may.
+    /// </summary>
+    private const string MembersCode = "members";
+
+    /// <summary>
+    /// The refusal code of a world whose starting save is still on its way.
+    /// </summary>
+    private const string PendingCode = "pending";
 
     /// <summary>
     /// The close code of a connection whose player the creator removed.
@@ -202,7 +236,7 @@ internal sealed class WorldSession
     /// <summary>
     /// Tells who plays: the game script's <see cref="Player"/>, or another for tests that run several players at once.
     /// </summary>
-    public Func<(string Key, string Name)?> Playing { get; init; } = () => Player.Key is { } key && Player.Name is { } name ? (key, name) : null;
+    public Func<(string Key, string Name)?> Playing { get; init; } = Player.Current;
 
     /// <summary>
     /// How often the connection pings the relay, which times the round trip and keeps it open.
@@ -248,13 +282,13 @@ internal sealed class WorldSession
             else if (Playing() is not { } player)
             {
                 _state = WorldState.Failed;
-                _error = NoPlayer;
+                _error = Player.NotSet;
                 opened = false;
             }
             else
             {
                 _world = world;
-                StartThread("MultiplayerWorld", () => Run(generation, world, player.Key, player.Name));
+                Threads.Start("MultiplayerWorld", () => Run(generation, world, player.Key, player.Name));
                 opened = true;
             }
         }
@@ -296,7 +330,7 @@ internal sealed class WorldSession
     /// </summary>
     /// <param name="target">The seat, or a negative number for every other game.</param>
     /// <param name="text">The message.</param>
-    /// <returns><see langword="false"/> without a seat, for a seat outside the room, or when the message is too long.</returns>
+    /// <returns><see langword="false"/> without a seat, for a seat of 255 or above, or when the message is too long.</returns>
     public bool Send(int target, string text)
     {
         var plain = Encoding.UTF8.GetBytes(text);
@@ -316,12 +350,28 @@ internal sealed class WorldSession
     /// Looks at the oldest inbox entry, without taking it.
     /// </summary>
     /// <returns>The entry: <c>kind</c> and <c>seat</c> headers, <c>others</c> for a seat entry, and a message's text; or <see langword="null"/> while none waits.</returns>
-    public string? PeekMessage() => _inbox.TryPeek(out var text) ? text : null;
+    public string? PeekMessage()
+    {
+        lock (_gate)
+        {
+            return _inbox.TryPeek(out var text) ? text : null;
+        }
+    }
 
     /// <summary>
-    /// Takes the oldest inbox entry.
+    /// Takes the oldest inbox entry, if it is still the one <see cref="PeekMessage"/> handed out, since a full inbox drops its oldest entry meanwhile.
     /// </summary>
-    public void TakeMessage() => _inbox.TryDequeue(out _);
+    /// <param name="entry">The entry <see cref="PeekMessage"/> handed out.</param>
+    public void TakeMessage(string entry)
+    {
+        lock (_gate)
+        {
+            if (_inbox.TryPeek(out var oldest) && ReferenceEquals(oldest, entry))
+            {
+                _inbox.TryDequeue(out _);
+            }
+        }
+    }
 
     /// <summary>
     /// Describes the connection for the game script.
@@ -365,6 +415,7 @@ internal sealed class WorldSession
 
         var room = Relays.WorldRoomOf(world.Token);
         var authKey = WorldKeys.AuthKeyOf(world.Token);
+        var cipher = new WorldCipher(world.Token);
         var retries = 0;
 
         while (IsCurrent(generation))
@@ -374,22 +425,23 @@ internal sealed class WorldSession
 
             try
             {
-                channel = RelayWorldChannel.Connect(relay, room, playerKey, playerName, authKey, ConnectTimeout, out var refusal);
+                channel = RelayWorldChannel.Connect(relay, room, playerKey, playerName, authKey, ConnectTimeout, out var refusal, out var refusalCode);
 
                 if (channel == null)
                 {
-                    if (FinalReasonFor(refusal) is { } reason)
+                    if (FinalReasonFor(refusal, refusalCode) is { } reason)
                     {
                         Fail(generation, reason);
                         return;
                     }
 
-                    Wait(generation, refusal == HttpStatusCode.Conflict ? WorldFull : RelayUnreachable);
+                    Wait(generation, WaitReasonFor(refusal, refusalCode));
                 }
                 else
                 {
                     connectedAt = DateTime.UtcNow;
-                    var connection = new Connection(channel, new WorldCipher(world.Token), PingInterval);
+                    cipher.Renew();
+                    var connection = new Connection(channel, cipher, PingInterval);
 
                     if (!Adopt(generation, connection))
                     {
@@ -400,7 +452,7 @@ internal sealed class WorldSession
 
                     if (channel.CloseCode is RemovedClose or DeletedClose)
                     {
-                        Fail(generation, channel.CloseCode == RemovedClose ? Removed : Deleted);
+                        Fail(generation, channel.CloseCode == DeletedClose ? Deleted : channel.CloseReason == ReplacedReason ? Replaced : Removed);
                         return;
                     }
                 }
@@ -428,14 +480,30 @@ internal sealed class WorldSession
     /// Tells why the relay refused the game for good, as opposed to for now.
     /// </summary>
     /// <param name="refusal">The HTTP status the relay refused the game with.</param>
+    /// <param name="code">The code the relay named why with, <see langword="null"/> for none.</param>
     /// <returns>The reason, or <see langword="null"/> when trying again may help.</returns>
-    private static string? FinalReasonFor(HttpStatusCode? refusal) => refusal switch
+    private static string? FinalReasonFor(HttpStatusCode? refusal, string? code) => refusal switch
     {
         HttpStatusCode.NotFound => Deleted,
+        HttpStatusCode.Forbidden when code == MembersCode => MembersFull,
         HttpStatusCode.Forbidden => Removed,
         HttpStatusCode.Unauthorized => TokenMismatch,
         HttpStatusCode.BadRequest => "The relay turned the request down. Update the mod.",
         _ => null,
+    };
+
+    /// <summary>
+    /// Tells why the game waits after the relay refused it for now, or could not be reached.
+    /// </summary>
+    /// <param name="refusal">The HTTP status the relay refused the game with, <see langword="null"/> when it could not be reached.</param>
+    /// <param name="code">The code the relay named why with, <see langword="null"/> for none.</param>
+    /// <returns>The reason.</returns>
+    private static string WaitReasonFor(HttpStatusCode? refusal, string? code) => refusal switch
+    {
+        HttpStatusCode.Conflict when code == PendingCode => StartPending,
+        HttpStatusCode.Conflict => WorldFull,
+        HttpStatusCode.TooManyRequests => TooManyTries,
+        _ => RelayUnreachable,
     };
 
     /// <summary>
@@ -530,7 +598,7 @@ internal sealed class WorldSession
     /// <param name="data">The sender's seat, then the sealed frame.</param>
     private void TakeFrame(int generation, Connection connection, byte[] data)
     {
-        if (data.Length < 1 || connection.Cipher.Open(data[0], data.AsSpan(1)) is not { } plain)
+        if (data.Length < 1 || connection.Cipher.Open(data[0], connection.Seat, data.AsSpan(1)) is not { } plain)
         {
             Log.Write("world frame failed its check, dropped");
             return;
@@ -606,6 +674,7 @@ internal sealed class WorldSession
             {
                 _state = WorldState.Failed;
                 _error = error;
+                _world = null;
             }
         }
 
@@ -708,14 +777,6 @@ internal sealed class WorldSession
     }
 
     /// <summary>
-    /// Runs work on a background thread, which ends with the game.
-    /// </summary>
-    /// <param name="name">The thread's name.</param>
-    /// <param name="work">The work, which must catch everything itself.</param>
-    private static void StartThread(string name, Action work) =>
-        new Thread(() => work()) { IsBackground = true, Name = name }.Start();
-
-    /// <summary>
     /// One connection to the world room: its channel, its cipher and the writer that sends the game
     /// script's messages and keeps the connection alive.
     /// </summary>
@@ -757,7 +818,7 @@ internal sealed class WorldSession
             Channel = channel;
             Cipher = cipher;
             _pingInterval = pingInterval;
-            StartThread("MultiplayerWorldWrite", WriteAll);
+            Threads.Start("MultiplayerWorldWrite", WriteAll);
         }
 
         /// <summary>
@@ -852,7 +913,7 @@ internal sealed class WorldSession
                     {
                         if (_outbox.TryTake(out var frame, wait))
                         {
-                            Channel.Send(frame.Target, Cipher.Seal(Seat, frame.Plain), SendTimeout);
+                            Channel.Send(frame.Target, Cipher.Seal(Seat, frame.Target, frame.Plain), SendTimeout);
                         }
 
                         continue;

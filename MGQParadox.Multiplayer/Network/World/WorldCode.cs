@@ -2,6 +2,7 @@
 //  WorldCode.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-06: Wrote hexadecimal in lowercase at once
 //      Paulinchen  2026-09-29: Created
 //
 //----------------------------------------------------------------
@@ -83,5 +84,5 @@ internal sealed record WorldCode(string Token, string Relay, int Seats)
     /// <param name="token">The world's token.</param>
     /// <returns>12 lowercase hexadecimal characters.</returns>
     public static string IdOf(string token) =>
-        Convert.ToHexString(HKDF.DeriveKey(HashAlgorithmName.SHA256, Encoding.UTF8.GetBytes(token), IdBytes, info: IdInfo)).ToLowerInvariant();
+        Convert.ToHexStringLower(HKDF.DeriveKey(HashAlgorithmName.SHA256, Encoding.UTF8.GetBytes(token), IdBytes, info: IdInfo));
 }

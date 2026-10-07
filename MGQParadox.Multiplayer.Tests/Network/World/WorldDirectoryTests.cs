@@ -2,7 +2,8 @@
 //  WorldDirectoryTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-06: Covered opening a world with its world code
+//      Paulinchen  2026-10-06: Covered a starting save too large to share, which leaves no world behind, and expected the unknown relay's new reason
+//                            - Covered opening a world with its world code
 //                            - Expected the creator's mod hashes and mod settings at the end of a world's line
 //      Paulinchen  2026-10-04: Expected what a creator tells about a world in the list only
 //                            - Covered a creator replacing a world's game data
@@ -315,7 +316,7 @@ public sealed class WorldDirectoryTests
         var lost = new WorldDirectory { RelayAddress = _ => null, Iterations = 1_000, Playing = () => (CreatorKey, "Creator") };
 
         Assert.Contains("who plays", Act(nobody, directory => directory.Create("World", "secret", 4, false, false, []))["error"]);
-        Assert.Contains("unknown", Act(lost, directory => directory.Create("World", "secret", 4, false, false, []))["error"]);
+        Assert.Contains("does not know", Act(lost, directory => directory.Create("World", "secret", 4, false, false, []))["error"]);
     }
 
     /// <summary>
@@ -359,6 +360,24 @@ public sealed class WorldDirectoryTests
 
         Assert.Equal("failed", made["state"]);
         Assert.Contains("could not be read", made["error"]);
+        Assert.Empty(List(creator));
+    }
+
+    /// <summary>
+    /// Asserts that a starting save larger than the relay keeps fails with a reason before the world is made.
+    /// </summary>
+    [Fact]
+    public void Create_WithTooLargeSave_MakesNoWorld()
+    {
+        using var relay = new TestRelay();
+        using var folder = new TempFolder();
+        var save = folder.Write("Save01.rvdata2", StartingSave.MaxSealedBytes + 1);
+        var creator = NewDirectory(relay, CreatorKey, "Creator");
+
+        var made = Act(creator, directory => directory.Create("World", "secret", 4, false, false, [("Save01.rvdata2", save)]));
+
+        Assert.Equal("failed", made["state"]);
+        Assert.Contains("too large", made["error"]);
         Assert.Empty(List(creator));
     }
 

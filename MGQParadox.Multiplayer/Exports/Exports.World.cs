@@ -2,7 +2,9 @@
 //  Exports.World.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-06: Added mp_world_directory_id, which tells the directory's id of a world by its code
+//      Paulinchen  2026-10-06: Wrote hexadecimal in lowercase at once
+//                            - Took the inbox entry mp_world_receive handed out, not whichever is oldest by then
+//                            - Added mp_world_directory_id, which tells the directory's id of a world by its code
 //      Paulinchen  2026-09-30: Created
 //
 //----------------------------------------------------------------
@@ -37,7 +39,7 @@ internal static unsafe partial class Exports
     {
         try
         {
-            return Copy(Convert.ToHexString(RandomNumberGenerator.GetBytes(IdBytes)).ToLowerInvariant(), buffer, size);
+            return Copy(Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(IdBytes)), buffer, size);
         }
         catch (Exception ex)
         {
@@ -191,7 +193,7 @@ internal static unsafe partial class Exports
     /// </summary>
     /// <param name="target">The seat, or -1 for every other game.</param>
     /// <param name="text">The message, UTF-8 and null-terminated.</param>
-    /// <returns>1 when it goes out, 0 without a seat, for a seat out of range, or when it is too long.</returns>
+    /// <returns>1 when it goes out, 0 without a seat, for a seat of 255 or above, or when it is too long.</returns>
     [UnmanagedCallersOnly(EntryPoint = "mp_world_send", CallConvs = [typeof(CallConvStdcall)])]
     public static int WorldSend(int target, byte* text)
     {
@@ -226,7 +228,7 @@ internal static unsafe partial class Exports
 
             if (length >= 0)
             {
-                WorldSession.Current.TakeMessage();
+                WorldSession.Current.TakeMessage(entry);
             }
 
             return length;

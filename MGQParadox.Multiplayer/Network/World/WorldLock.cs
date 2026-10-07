@@ -2,6 +2,7 @@
 //  WorldLock.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-06: Hashed new locks' passwords 600 000 times instead of 200 000
 //      Paulinchen  2026-09-29: Created
 //
 //----------------------------------------------------------------
@@ -28,7 +29,7 @@ internal sealed record WorldLock(string Salt, int Iterations, string Box)
     /// <summary>
     /// How often PBKDF2 hashes a new lock's password: a moment for the game, long for someone trying passwords.
     /// </summary>
-    public const int DefaultIterations = 200_000;
+    public const int DefaultIterations = 600_000;
 
     /// <summary>
     /// Size of the salt.

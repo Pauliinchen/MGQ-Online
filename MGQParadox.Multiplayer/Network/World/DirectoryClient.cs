@@ -2,7 +2,10 @@
 //  DirectoryClient.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-06: Committed, cancelled, read and finished trades, and listed those committed and not yet done
+//      Paulinchen  2026-10-06: Sent the player's key in the X-MGQ-Player header, and no longer in the addresses of the directory and the trades
+//                            - Wrote JSON without escaping letters beyond ASCII, which made long descriptions too large for the relay
+//                            - Read the code a refusal names why with
+//                            - Committed, cancelled, read and finished trades, and listed those committed and not yet done
 //                            - Sent the Mod Config options of a catalog mod, and read the version they came from
 //                            - Sent a world's mod settings on their own, which the creator or an admin may, and no longer with the other changes
 //                            - Read whether a link mod of the catalog is a zip
@@ -28,6 +31,7 @@ using System.IO;
 using System.Net;
 using System.Net.Http;
 using System.Text;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Threading.Tasks;
 using MGQParadox.Multiplayer.Mods;
@@ -44,6 +48,16 @@ namespace MGQParadox.Multiplayer.Network.World;
 /// </remarks>
 internal sealed class DirectoryClient
 {
+    /// <summary>
+    /// The request header that carries the player's key, which an address would leave in logs.
+    /// </summary>
+    public const string PlayerHeader = "X-MGQ-Player";
+
+    /// <summary>
+    /// Writes JSON with letters beyond ASCII as they are, since escaping each as six characters makes long texts too large for the relay.
+    /// </summary>
+    private static readonly JsonWriterOptions JsonOptions = new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
+
     /// <summary>
     /// How long one request may take.
     /// </summary>
@@ -103,20 +117,8 @@ internal sealed class DirectoryClient
     /// <exception cref="DirectoryException">The directory could not be reached or answered with an error.</exception>
     public WorldListing List(string? playerKey, IReadOnlyCollection<string>? ids = null)
     {
-        var query = new List<string>();
-
-        if (playerKey != null)
-        {
-            query.Add($"player={Uri.EscapeDataString(playerKey)}");
-        }
-
-        if (ids is { Count: > 0 })
-        {
-            query.Add($"ids={Uri.EscapeDataString(string.Join(',', ids))}");
-        }
-
-        var address = query.Count == 0 ? _worlds : new Uri($"{_worlds}?{string.Join('&', query)}");
-        using var document = Send(HttpMethod.Get, address, null);
+        var address = ids is { Count: > 0 } ? new Uri($"{_worlds}?ids={Uri.EscapeDataString(string.Join(',', ids))}") : _worlds;
+        using var document = Send(HttpMethod.Get, address, null, playerKey);
         var worlds = new List<ListedWorld>();
 
         foreach (var world in document.RootElement.GetProperty("worlds").EnumerateArray())
@@ -211,7 +213,7 @@ internal sealed class DirectoryClient
             writer.WriteString("settings", about.Settings);
         });
 
-        using var _ = Send(HttpMethod.Post, _worlds, body);
+        using var _ = Send(HttpMethod.Post, _worlds, body, playerKey);
     }
 
     /// <summary>
@@ -223,11 +225,12 @@ internal sealed class DirectoryClient
     /// <exception cref="DirectoryException">The directory could not be reached or refused.</exception>
     public void PutStart(string id, string playerKey, byte[] box)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Post, WorldAddress(id, $"start?player={Uri.EscapeDataString(playerKey)}"))
+        using var request = new HttpRequestMessage(HttpMethod.Post, WorldAddress(id, "start"))
         {
             Content = new ByteArrayContent(box),
         };
 
+        request.Headers.Add(PlayerHeader, playerKey);
         using var response = Exchange(request, TransferHttp);
         ThrowUnlessSuccess(response);
     }
@@ -242,7 +245,8 @@ internal sealed class DirectoryClient
     /// <exception cref="DirectoryException">The directory could not be reached, the world has no starting save, or the player may not have it.</exception>
     public byte[] GetStart(string id, string playerKey, string authKey)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Get, WorldAddress(id, $"start?player={Uri.EscapeDataString(playerKey)}&auth={Uri.EscapeDataString(authKey)}"));
+        using var request = new HttpRequestMessage(HttpMethod.Get, WorldAddress(id, $"start?auth={Uri.EscapeDataString(authKey)}"));
+        request.Headers.Add(PlayerHeader, playerKey);
         using var response = Exchange(request, TransferHttp);
         ThrowUnlessSuccess(response);
 
@@ -281,7 +285,7 @@ internal sealed class DirectoryClient
             }
         });
 
-        using var _ = Send(HttpMethod.Post, WorldAddress(id, "edit"), body);
+        using var _ = Send(HttpMethod.Post, WorldAddress(id, "edit"), body, playerKey);
     }
 
     /// <summary>
@@ -299,7 +303,7 @@ internal sealed class DirectoryClient
             writer.WriteString("settings", settings);
         });
 
-        using var _ = Send(HttpMethod.Post, WorldAddress(id, "edit"), body);
+        using var _ = Send(HttpMethod.Post, WorldAddress(id, "edit"), body, playerKey);
     }
 
     /// <summary>
@@ -317,7 +321,7 @@ internal sealed class DirectoryClient
             writer.WriteString("data", data);
         });
 
-        using var _ = Send(HttpMethod.Post, WorldAddress(id, "edit"), body);
+        using var _ = Send(HttpMethod.Post, WorldAddress(id, "edit"), body, playerKey);
     }
 
     /// <summary>
@@ -328,7 +332,7 @@ internal sealed class DirectoryClient
     /// <exception cref="DirectoryException">The directory could not be reached or refused.</exception>
     public void Delete(string id, string playerKey)
     {
-        using var _ = Send(HttpMethod.Post, WorldAddress(id, "delete"), Json(writer => writer.WriteString("player", playerKey)));
+        using var _ = Send(HttpMethod.Post, WorldAddress(id, "delete"), Json(writer => writer.WriteString("player", playerKey)), playerKey);
     }
 
     /// <summary>
@@ -344,121 +348,121 @@ internal sealed class DirectoryClient
         {
             writer.WriteString("player", playerKey);
             writer.WriteString("target", target);
-        }));
+        }), playerKey);
     }
 
-/// <summary>
-/// Lists the relay's mod catalog.
-/// </summary>
-/// <returns>The mods.</returns>
-/// <exception cref="DirectoryException">The relay could not be reached or answered with an error.</exception>
-public IReadOnlyList<CatalogMod> Mods()
-{
-    using var document = Send(HttpMethod.Get, _mods, null);
-    var mods = new List<CatalogMod>();
-
-    foreach (var mod in document.RootElement.GetProperty("mods").EnumerateArray())
+    /// <summary>
+    /// Lists the relay's mod catalog.
+    /// </summary>
+    /// <returns>The mods.</returns>
+    /// <exception cref="DirectoryException">The relay could not be reached or answered with an error.</exception>
+    public IReadOnlyList<CatalogMod> Mods()
     {
-        var versions = new List<ModVersion>();
+        using var document = Send(HttpMethod.Get, _mods, null);
+        var mods = new List<CatalogMod>();
 
-        if (mod.TryGetProperty("versions", out var listed) && listed.ValueKind == JsonValueKind.Array)
+        foreach (var mod in document.RootElement.GetProperty("mods").EnumerateArray())
         {
-            foreach (var version in listed.EnumerateArray())
+            var versions = new List<ModVersion>();
+
+            if (mod.TryGetProperty("versions", out var listed) && listed.ValueKind == JsonValueKind.Array)
             {
-                versions.Add(new ModVersion(Text(version, "version"), FilesOf(version)));
+                foreach (var version in listed.EnumerateArray())
+                {
+                    versions.Add(new ModVersion(Text(version, "version"), FilesOf(version)));
+                }
             }
+
+            mods.Add(new CatalogMod(Text(mod, "key"), Text(mod, "name"), Text(mod, "kind"), Text(mod, "version"), FilesOf(mod), versions, Text(mod, "fileUrl"), Flag(mod, "archive"), Text(mod, "optionsVersion")));
         }
 
-        mods.Add(new CatalogMod(Text(mod, "key"), Text(mod, "name"), Text(mod, "kind"), Text(mod, "version"), FilesOf(mod), versions, Text(mod, "fileUrl"), Flag(mod, "archive"), Text(mod, "optionsVersion")));
+        return mods;
     }
 
-    return mods;
-}
-
-/// <summary>
-/// Sends the Mod Config options of a catalog mod's current version, which only an admin may.
-/// </summary>
-/// <param name="key">The mod's key.</param>
-/// <param name="playerKey">An admin's key.</param>
-/// <param name="version">The version the options came from, which must be the mod's current one.</param>
-/// <param name="options">The options.</param>
-/// <exception cref="DirectoryException">The relay could not be reached or refused.</exception>
-public void SetModOptions(string key, string playerKey, string version, IReadOnlyList<ModOption> options)
-{
-    var body = Json(writer =>
+    /// <summary>
+    /// Sends the Mod Config options of a catalog mod's current version, which only an admin may.
+    /// </summary>
+    /// <param name="key">The mod's key.</param>
+    /// <param name="playerKey">An admin's key.</param>
+    /// <param name="version">The version the options came from, which must be the mod's current one.</param>
+    /// <param name="options">The options.</param>
+    /// <exception cref="DirectoryException">The relay could not be reached or refused.</exception>
+    public void SetModOptions(string key, string playerKey, string version, IReadOnlyList<ModOption> options)
     {
-        writer.WriteString("player", playerKey);
-        writer.WriteString("version", version);
-        writer.WriteStartArray("options");
-
-        foreach (var option in options)
+        var body = Json(writer =>
         {
-            writer.WriteStartObject();
-            writer.WriteString("key", option.Key);
-            writer.WriteString("name", option.Name);
-            writer.WriteString("type", option.Type);
-            writer.WriteString("default", option.Default);
-            writer.WriteStartArray("choices");
+            writer.WriteString("player", playerKey);
+            writer.WriteString("version", version);
+            writer.WriteStartArray("options");
 
-            foreach (var (value, name) in option.Choices)
+            foreach (var option in options)
             {
                 writer.WriteStartObject();
-                writer.WriteString("value", value);
-                writer.WriteString("name", name);
+                writer.WriteString("key", option.Key);
+                writer.WriteString("name", option.Name);
+                writer.WriteString("type", option.Type);
+                writer.WriteString("default", option.Default);
+                writer.WriteStartArray("choices");
+
+                foreach (var (value, name) in option.Choices)
+                {
+                    writer.WriteStartObject();
+                    writer.WriteString("value", value);
+                    writer.WriteString("name", name);
+                    writer.WriteEndObject();
+                }
+
+                writer.WriteEndArray();
                 writer.WriteEndObject();
             }
 
             writer.WriteEndArray();
-            writer.WriteEndObject();
-        }
+        });
 
-        writer.WriteEndArray();
-    });
-
-    using var _ = Send(HttpMethod.Post, new Uri($"{_mods}/{Uri.EscapeDataString(key)}/options"), body);
-}
-
-/// <summary>
-/// Downloads an uploaded mod's zip.
-/// </summary>
-/// <param name="key">The mod's key.</param>
-/// <returns>The zip.</returns>
-/// <exception cref="DirectoryException">The relay could not be reached, has no such mod, or answered with an error.</exception>
-public byte[] ModFile(string key)
-{
-    using var request = new HttpRequestMessage(HttpMethod.Get, new Uri($"{_mods}/{Uri.EscapeDataString(key)}/file"));
-    using var response = Exchange(request, TransferHttp);
-    ThrowUnlessSuccess(response);
-
-    try
-    {
-        return response.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult();
+        using var _ = Send(HttpMethod.Post, new Uri($"{_mods}/{Uri.EscapeDataString(key)}/options"), body, playerKey);
     }
-    catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or IOException)
-    {
-        throw new DirectoryException(null, ex.GetBaseException().Message);
-    }
-}
 
-/// <summary>
-/// Reads a catalog entry's files.
-/// </summary>
-/// <param name="element">The entry or version holding them.</param>
-/// <returns>Each file's hash by its name or path.</returns>
-private static Dictionary<string, string> FilesOf(JsonElement element)
-{
-    var files = new Dictionary<string, string>(StringComparer.Ordinal);
-
-    if (element.TryGetProperty("files", out var listed) && listed.ValueKind == JsonValueKind.Object)
+    /// <summary>
+    /// Downloads an uploaded mod's zip.
+    /// </summary>
+    /// <param name="key">The mod's key.</param>
+    /// <returns>The zip.</returns>
+    /// <exception cref="DirectoryException">The relay could not be reached, has no such mod, or answered with an error.</exception>
+    public byte[] ModFile(string key)
     {
-        foreach (var file in listed.EnumerateObject())
+        using var request = new HttpRequestMessage(HttpMethod.Get, new Uri($"{_mods}/{Uri.EscapeDataString(key)}/file"));
+        using var response = Exchange(request, TransferHttp);
+        ThrowUnlessSuccess(response);
+
+        try
         {
-            files[file.Name] = file.Value.GetString() ?? string.Empty;
+            return response.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult();
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or IOException)
+        {
+            throw new DirectoryException(null, ex.GetBaseException().Message);
         }
     }
 
-    return files;
-}
+    /// <summary>
+    /// Reads a catalog entry's files.
+    /// </summary>
+    /// <param name="element">The entry or version holding them.</param>
+    /// <returns>Each file's hash by its name or path.</returns>
+    private static Dictionary<string, string> FilesOf(JsonElement element)
+    {
+        var files = new Dictionary<string, string>(StringComparer.Ordinal);
+
+        if (element.TryGetProperty("files", out var listed) && listed.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var file in listed.EnumerateObject())
+            {
+                files[file.Name] = file.Value.GetString() ?? string.Empty;
+            }
+        }
+
+        return files;
+    }
 
     /// <summary>
     /// Commits this player's side of a trade: the hash of the offers both games agreed on, and the offers sealed.
@@ -482,7 +486,7 @@ private static Dictionary<string, string> FilesOf(JsonElement element)
             writer.WriteString("sealed", sealedOffers);
         });
 
-        using var document = Send(HttpMethod.Post, TradeAddress(trade, "commit"), body);
+        using var document = Send(HttpMethod.Post, TradeAddress(trade, "commit"), body, playerKey);
         return AnswerOf(document.RootElement);
     }
 
@@ -495,7 +499,7 @@ private static Dictionary<string, string> FilesOf(JsonElement element)
     /// <exception cref="DirectoryException">The relay could not be reached, knows no such trade, or refused.</exception>
     public TradeAnswer CancelTrade(string trade, string playerKey)
     {
-        using var document = Send(HttpMethod.Post, TradeAddress(trade, "cancel"), Json(writer => writer.WriteString("player", playerKey)));
+        using var document = Send(HttpMethod.Post, TradeAddress(trade, "cancel"), Json(writer => writer.WriteString("player", playerKey)), playerKey);
         return AnswerOf(document.RootElement);
     }
 
@@ -508,7 +512,7 @@ private static Dictionary<string, string> FilesOf(JsonElement element)
     /// <exception cref="DirectoryException">The relay could not be reached, knows no such trade, or refused.</exception>
     public TradeAnswer TradeState(string trade, string playerKey)
     {
-        using var document = Send(HttpMethod.Get, new Uri($"{_trades}/{Uri.EscapeDataString(trade)}?player={Uri.EscapeDataString(playerKey)}"), null);
+        using var document = Send(HttpMethod.Get, new Uri($"{_trades}/{Uri.EscapeDataString(trade)}"), null, playerKey);
         return AnswerOf(document.RootElement);
     }
 
@@ -520,7 +524,7 @@ private static Dictionary<string, string> FilesOf(JsonElement element)
     /// <exception cref="DirectoryException">The relay could not be reached, knows no such trade, or refused.</exception>
     public void TradeDone(string trade, string playerKey)
     {
-        using var _ = Send(HttpMethod.Post, TradeAddress(trade, "done"), Json(writer => writer.WriteString("player", playerKey)));
+        using var _ = Send(HttpMethod.Post, TradeAddress(trade, "done"), Json(writer => writer.WriteString("player", playerKey)), playerKey);
     }
 
     /// <summary>
@@ -532,7 +536,7 @@ private static Dictionary<string, string> FilesOf(JsonElement element)
     /// <exception cref="DirectoryException">The relay could not be reached or refused.</exception>
     public IReadOnlyList<SealedTrade> PendingTrades(string playerKey, string world)
     {
-        using var document = Send(HttpMethod.Get, new Uri($"{_trades}?player={Uri.EscapeDataString(playerKey)}&world={Uri.EscapeDataString(world)}"), null);
+        using var document = Send(HttpMethod.Get, new Uri($"{_trades}?world={Uri.EscapeDataString(world)}"), null, playerKey);
         var trades = new List<SealedTrade>();
 
         foreach (var trade in document.RootElement.GetProperty("trades").EnumerateArray())
@@ -590,15 +594,21 @@ private static Dictionary<string, string> FilesOf(JsonElement element)
     /// <param name="method">The method.</param>
     /// <param name="address">The address.</param>
     /// <param name="body">The JSON body, or <see langword="null"/> for none.</param>
+    /// <param name="playerKey">The player's key, sent in <see cref="PlayerHeader"/>; <see langword="null"/> for none.</param>
     /// <returns>The answer, which the caller disposes.</returns>
     /// <exception cref="DirectoryException">The directory could not be reached, or answered with an error.</exception>
-    private static JsonDocument Send(HttpMethod method, Uri address, string? body)
+    private static JsonDocument Send(HttpMethod method, Uri address, string? body, string? playerKey = null)
     {
         using var request = new HttpRequestMessage(method, address);
 
         if (body != null)
         {
             request.Content = new StringContent(body, Encoding.UTF8, "application/json");
+        }
+
+        if (playerKey != null)
+        {
+            request.Headers.Add(PlayerHeader, playerKey);
         }
 
         using var response = Exchange(request, Http);
@@ -646,21 +656,23 @@ private static Dictionary<string, string> FilesOf(JsonElement element)
         }
 
         string? error = null;
+        string? code = null;
 
         try
         {
             using var document = JsonDocument.Parse(response.Content.ReadAsStream());
 
-            if (document.RootElement.ValueKind == JsonValueKind.Object && document.RootElement.TryGetProperty("error", out var reason))
+            if (document.RootElement.ValueKind == JsonValueKind.Object)
             {
-                error = reason.GetString();
+                error = Text(document.RootElement, "error") is { Length: > 0 } reason ? reason : null;
+                code = Text(document.RootElement, "code") is { Length: > 0 } named ? named : null;
             }
         }
         catch (Exception ex) when (ex is JsonException or IOException or HttpRequestException)
         {
         }
 
-        throw new DirectoryException(response.StatusCode, error ?? $"HTTP {(int)response.StatusCode}");
+        throw new DirectoryException(response.StatusCode, error ?? $"HTTP {(int)response.StatusCode}", code);
     }
 
     /// <summary>
@@ -672,7 +684,7 @@ private static Dictionary<string, string> FilesOf(JsonElement element)
     {
         using var stream = new MemoryStream();
 
-        using (var writer = new Utf8JsonWriter(stream))
+        using (var writer = new Utf8JsonWriter(stream, JsonOptions))
         {
             writer.WriteStartObject();
             write(writer);
@@ -688,12 +700,18 @@ private static Dictionary<string, string> FilesOf(JsonElement element)
 /// </summary>
 /// <param name="status">The HTTP status the directory answered with, <see langword="null"/> when it was not reached.</param>
 /// <param name="reason">The directory's reason, or what went wrong on the way.</param>
-internal sealed class DirectoryException(HttpStatusCode? status, string reason) : Exception(reason)
+/// <param name="code">The code the directory named its reason with, such as "removed", <see langword="null"/> for none.</param>
+internal sealed class DirectoryException(HttpStatusCode? status, string reason, string? code = null) : Exception(reason)
 {
     /// <summary>
     /// The HTTP status the directory answered with, <see langword="null"/> when it was not reached.
     /// </summary>
     public HttpStatusCode? Status { get; } = status;
+
+    /// <summary>
+    /// The code the directory named its reason with, such as "removed", <see langword="null"/> for none.
+    /// </summary>
+    public string? Code { get; } = code;
 }
 
 /// <summary>

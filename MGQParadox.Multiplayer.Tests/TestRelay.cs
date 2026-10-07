@@ -2,7 +2,9 @@
 //  TestRelay.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-06: Refereed trades between two players of a world, committed once both sent the same hash
+//      Paulinchen  2026-10-06: Took the player's key from the X-MGQ-Player header too, for the trades as well, and closed a player's earlier world room connection with 4009 "replaced" once the same player entered again
+//                            - Closed every room's peers with a close code on request
+//                            - Refereed trades between two players of a world, committed once both sent the same hash
 //                            - Kept the Mod Config options games send for a catalog mod
 //                            - Let an admin replace a world's mod settings too
 //                            - Served a mod catalog the tests fill, and uploaded mods' zips
@@ -196,6 +198,25 @@ internal sealed class TestRelay : IDisposable
         foreach (var peer in seated)
         {
             peer.Socket.Abort();
+        }
+    }
+
+    /// <summary>
+    /// Closes every room's peers with a close code, as the relay closes a host that waited alone too long.
+    /// </summary>
+    /// <param name="code">The close code.</param>
+    public void CloseRooms(int code)
+    {
+        Peer[] peers;
+
+        lock (_gate)
+        {
+            peers = _rooms.Values.SelectMany(room => room.Values).OfType<Peer>().ToArray();
+        }
+
+        foreach (var peer in peers)
+        {
+            peer.CloseAsync(code).Wait();
         }
     }
 
@@ -409,7 +430,7 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
         var query = context.Request.QueryString;
         using var reader = new StreamReader(context.Request.InputStream, Encoding.UTF8);
         var body = method == "POST" ? JsonNode.Parse(await reader.ReadToEndAsync()) : null;
-        var player = PlayerIdOf((method == "POST" ? body?["player"]?.GetValue<string>() : query["player"]) ?? string.Empty);
+        var player = PlayerIdOf(context.Request.Headers[DirectoryClient.PlayerHeader] ?? (method == "POST" ? body?["player"]?.GetValue<string>() : query["player"]) ?? string.Empty);
         (int Status, JsonNode Body) answer;
 
         lock (_gate)
@@ -580,13 +601,13 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
         {
             answer = parts switch
             {
-                ["v1", "worlds"] when method == "GET" => (200, List(query["player"], query["ids"])),
+                ["v1", "worlds"] when method == "GET" => (200, List(PlayerKeyOf(context), query["ids"])),
                 ["v1", "worlds"] when method == "POST" => Create(body!),
                 ["v1", "worlds", var id, "lock"] when _directory.TryGetValue(id, out var world) => (200, LockOf(world)),
                 ["v1", "worlds", var id, "delete"] when CreatorOrAdminOf(id, body?["player"]?.GetValue<string>()) is { } world => Delete(id, toClose, out closeCode),
                 ["v1", "worlds", var id, "ban"] when CreatorOf(id, body?["player"]?.GetValue<string>()) is { } world => Ban(id, world, body!["target"]!.GetValue<string>(), toClose, out closeCode),
-                ["v1", "worlds", var id, "start"] when method == "POST" && CreatorOf(id, query["player"]) is { } world => PutStart(world, upload),
-                ["v1", "worlds", var id, "start"] when method == "GET" && _directory.TryGetValue(id, out var world) => GetStart(world, query["player"], query["auth"], out download),
+                ["v1", "worlds", var id, "start"] when method == "POST" && CreatorOf(id, PlayerKeyOf(context)) is { } world => PutStart(world, upload),
+                ["v1", "worlds", var id, "start"] when method == "GET" && _directory.TryGetValue(id, out var world) => GetStart(world, PlayerKeyOf(context), query["auth"], out download),
                 ["v1", "worlds", var id, "edit"] when CreatorOrAdminOf(id, body?["player"]?.GetValue<string>()) is { } world => Edit(world, body!, PlayerIdOf(body!["player"]!.GetValue<string>())),
                 ["v1", "worlds", var id, "edit"] when _directory.ContainsKey(id) => (403, Error("only the world's creator or an admin may do this")),
                 ["v1", "worlds", var id, "delete"] when _directory.ContainsKey(id) => (403, Error("only the world's creator or an admin may do this")),
@@ -850,9 +871,10 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
     private async Task ServeWorldAsync(HttpListenerContext context, string roomId)
     {
         var query = context.Request.QueryString;
-        var playerId = PlayerIdOf(query["player"] ?? string.Empty);
+        var playerId = PlayerIdOf(PlayerKeyOf(context) ?? string.Empty);
         int seat;
         int[] others;
+        Peer[] replaced;
 
         lock (_gate)
         {
@@ -892,6 +914,7 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
             // Held while the handshake runs, so no other game takes the seat meanwhile.
             seats[seat] = null;
             others = seats.Keys.Where(taken => taken != seat).ToArray();
+            replaced = seats.Values.OfType<Peer>().Where(other => other.PlayerId == playerId).ToArray();
             world.Members[playerId] = query["name"] ?? "?";
         }
 
@@ -900,6 +923,12 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
         lock (_gate)
         {
             _worlds[roomId][seat] = peer;
+        }
+
+        // Unlike the relay, which frees the earlier connection's seat at once, the earlier game gives it up as it leaves.
+        foreach (var earlier in replaced)
+        {
+            await earlier.CloseAsync(Removed, "replaced");
         }
 
         await peer.SendAsync(Encoding.UTF8.GetBytes(string.Join(' ', new[] { "seat", seat.ToString() }.Concat(others.Select(other => other.ToString())))), WebSocketMessageType.Text);
@@ -983,6 +1012,14 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
     /// <param name="key">The player's key.</param>
     /// <returns>The id.</returns>
     private static string PlayerIdOf(string key) => Hash($"mgqmp player {key}")[..32];
+
+    /// <summary>
+    /// Reads the player's key a request carries: in the X-MGQ-Player header, or in its address as released games send it.
+    /// </summary>
+    /// <param name="context">The request.</param>
+    /// <returns>The key, <see langword="null"/> without one.</returns>
+    private static string? PlayerKeyOf(HttpListenerContext context) =>
+        context.Request.Headers[DirectoryClient.PlayerHeader] ?? context.Request.QueryString["player"];
 
     /// <summary>
     /// Hashes a text with SHA-256, as the relay does.
@@ -1095,14 +1132,15 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
         /// Closes the peer's connection with a close code, taking its turn like a send.
         /// </summary>
         /// <param name="code">The close code.</param>
+        /// <param name="reason">The close reason.</param>
         /// <returns>Completes once the close went out.</returns>
-        public async Task CloseAsync(int code)
+        public async Task CloseAsync(int code, string reason = "closed by the directory")
         {
             await _sending.WaitAsync();
 
             try
             {
-                await Socket.CloseOutputAsync((WebSocketCloseStatus)code, "closed by the directory", CancellationToken.None);
+                await Socket.CloseOutputAsync((WebSocketCloseStatus)code, reason, CancellationToken.None);
             }
             catch
             {

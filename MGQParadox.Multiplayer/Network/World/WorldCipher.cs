@@ -2,6 +2,8 @@
 //  WorldCipher.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-06: Authenticated each frame's target seat, which receivers check is theirs or everyone's
+//                            - Picked a new salt for each connection while keeping what the others sent, so frames seen before a reconnect are refused again
 //      Paulinchen  2026-09-29: Created
 //
 //----------------------------------------------------------------
@@ -11,6 +13,7 @@ using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.Security.Cryptography;
 using System.Text;
+using MGQParadox.Multiplayer.Network.Relay;
 
 namespace MGQParadox.Multiplayer.Network.World;
 
@@ -21,15 +24,15 @@ namespace MGQParadox.Multiplayer.Network.World;
 /// <remarks>
 /// Every game encrypts with a key of its own, from the world's token and a salt it picks for the
 /// connection, and sends the salt along; many games share a world, and one key per sender keeps
-/// their counters, which make the nonces, from ever meeting. The sender's seat is authenticated too,
-/// so a frame passed on under another seat fails its check.
+/// their counters, which make the nonces, from ever meeting. The sender's and the target's seats are
+/// authenticated too, so the relay can neither pass a frame on under another seat nor to another game.
 /// </remarks>
 internal sealed class WorldCipher
 {
     /// <summary>
-    /// Bytes a sealed frame carries on top of its text: the salt, the counter and the tag.
+    /// Bytes a sealed frame carries on top of its text: the salt, the counter, the target seat and the tag.
     /// </summary>
-    public const int Overhead = SaltSize + CounterSize + TagSize;
+    public const int Overhead = SaltSize + CounterSize + TargetSize + TagSize;
 
     /// <summary>
     /// Size of the salt that makes each sender's key its own.
@@ -40,6 +43,16 @@ internal sealed class WorldCipher
     /// Size of the counter behind the salt.
     /// </summary>
     private const int CounterSize = 8;
+
+    /// <summary>
+    /// Size of the target seat behind the counter.
+    /// </summary>
+    private const int TargetSize = 1;
+
+    /// <summary>
+    /// Where the encrypted text starts.
+    /// </summary>
+    private const int TextOffset = SaltSize + CounterSize + TargetSize;
 
     /// <summary>
     /// Size of the authentication tag behind each sealed frame.
@@ -67,16 +80,6 @@ internal sealed class WorldCipher
     private readonly byte[] _token;
 
     /// <summary>
-    /// This game's salt, sent ahead of each of its frames.
-    /// </summary>
-    private readonly byte[] _salt;
-
-    /// <summary>
-    /// The cipher with this game's key.
-    /// </summary>
-    private readonly AesGcm _own;
-
-    /// <summary>
     /// The other games' keys by seat, with the counter each one's next frame must reach.
     /// </summary>
     private readonly Dictionary<int, Sender> _senders = new();
@@ -87,9 +90,19 @@ internal sealed class WorldCipher
     private readonly HashSet<string> _retired = new(StringComparer.Ordinal);
 
     /// <summary>
-    /// Guards the counters and the senders.
+    /// Guards the salt, the counters and the senders.
     /// </summary>
     private readonly object _gate = new();
+
+    /// <summary>
+    /// This game's salt on the current connection, sent ahead of each of its frames.
+    /// </summary>
+    private byte[] _salt = [];
+
+    /// <summary>
+    /// The cipher with this game's key on the current connection.
+    /// </summary>
+    private AesGcm? _own;
 
     /// <summary>
     /// The counter of the next frame this game sends.
@@ -103,27 +116,43 @@ internal sealed class WorldCipher
     public WorldCipher(string token)
     {
         _token = Encoding.UTF8.GetBytes(token);
-        _salt = RandomNumberGenerator.GetBytes(SaltSize);
-        _own = new AesGcm(Key(_salt), TagSize);
+        Renew();
+    }
+
+    /// <summary>
+    /// Picks a new salt and key for this game's frames, as a new connection needs, since the others
+    /// refuse the salt of a game that left its seat. What the others sent stays known.
+    /// </summary>
+    public void Renew()
+    {
+        lock (_gate)
+        {
+            _own?.Dispose();
+            _salt = RandomNumberGenerator.GetBytes(SaltSize);
+            _own = new AesGcm(Key(_salt), TagSize);
+            _sent = 0;
+        }
     }
 
     /// <summary>
     /// Encrypts a frame to send.
     /// </summary>
     /// <param name="seat">This game's seat, which the receivers check the frame against.</param>
+    /// <param name="target">The seat the frame is for, or <see cref="RelayWorldChannel.Everyone"/>.</param>
     /// <param name="plain">The frame's text.</param>
-    /// <returns>The salt, the counter, the encrypted text and the tag.</returns>
-    public byte[] Seal(int seat, ReadOnlySpan<byte> plain)
+    /// <returns>The salt, the counter, the target seat, the encrypted text and the tag.</returns>
+    public byte[] Seal(int seat, int target, ReadOnlySpan<byte> plain)
     {
         var sealedFrame = new byte[Overhead + plain.Length];
-        _salt.CopyTo(sealedFrame, 0);
 
         lock (_gate)
         {
             var counter = _sent++;
 
+            _salt.CopyTo(sealedFrame, 0);
             BinaryPrimitives.WriteUInt64BigEndian(sealedFrame.AsSpan(SaltSize), counter);
-            _own.Encrypt(Nonce(counter), plain, sealedFrame.AsSpan(SaltSize + CounterSize, plain.Length), sealedFrame.AsSpan(SaltSize + CounterSize + plain.Length), SeatData(seat));
+            sealedFrame[SaltSize + CounterSize] = (byte)target;
+            _own!.Encrypt(Nonce(counter), plain, sealedFrame.AsSpan(TextOffset, plain.Length), sealedFrame.AsSpan(TextOffset + plain.Length), SeatData(seat, target));
         }
 
         return sealedFrame;
@@ -137,9 +166,10 @@ internal sealed class WorldCipher
     /// seats alone never arrive here.
     /// </remarks>
     /// <param name="seat">The sender's seat, as the relay named it.</param>
+    /// <param name="ownSeat">This game's seat, which a frame for one game alone must be for.</param>
     /// <param name="sealedFrame">The frame as <see cref="Seal"/> wrote it on the other side.</param>
     /// <returns>The frame's text, or <see langword="null"/> when the frame fails the check.</returns>
-    public byte[]? Open(int seat, ReadOnlySpan<byte> sealedFrame)
+    public byte[]? Open(int seat, int ownSeat, ReadOnlySpan<byte> sealedFrame)
     {
         if (sealedFrame.Length < Overhead)
         {
@@ -148,8 +178,14 @@ internal sealed class WorldCipher
 
         var salt = sealedFrame[..SaltSize];
         var counter = BinaryPrimitives.ReadUInt64BigEndian(sealedFrame.Slice(SaltSize, CounterSize));
+        var target = sealedFrame[SaltSize + CounterSize];
         var textLength = sealedFrame.Length - Overhead;
         var plain = new byte[textLength];
+
+        if (target != ownSeat && target != RelayWorldChannel.Everyone)
+        {
+            return null;
+        }
 
         lock (_gate)
         {
@@ -170,7 +206,7 @@ internal sealed class WorldCipher
 
             try
             {
-                sender.Aes.Decrypt(Nonce(counter), sealedFrame.Slice(SaltSize + CounterSize, textLength), sealedFrame[^TagSize..], plain, SeatData(seat));
+                sender.Aes.Decrypt(Nonce(counter), sealedFrame.Slice(TextOffset, textLength), sealedFrame[^TagSize..], plain, SeatData(seat, target));
             }
             catch (AuthenticationTagMismatchException)
             {
@@ -230,11 +266,12 @@ internal sealed class WorldCipher
     }
 
     /// <summary>
-    /// Makes the authenticated data of a frame: its sender's seat.
+    /// Makes the authenticated data of a frame: its sender's seat and its target seat.
     /// </summary>
-    /// <param name="seat">The seat.</param>
+    /// <param name="seat">The sender's seat.</param>
+    /// <param name="target">The target seat.</param>
     /// <returns>The data.</returns>
-    private static byte[] SeatData(int seat) => [(byte)seat];
+    private static byte[] SeatData(int seat, int target) => [(byte)seat, (byte)target];
 
     /// <summary>
     /// Another game's key, and the counter its next frame must reach.

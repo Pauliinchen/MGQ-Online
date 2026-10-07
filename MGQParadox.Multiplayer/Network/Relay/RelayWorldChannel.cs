@@ -2,6 +2,7 @@
 //  RelayWorldChannel.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-06: Sent the player's key in the X-MGQ-Player header instead of the address, and read the code a refusal names why with and the reason of a close
 //      Paulinchen  2026-09-29: Named the relay's answer to a ping, which times the round trip
 //                            - Entered with the player's key and name and the world's auth key, and told how the relay refused or closed
 //                            - Created
@@ -10,6 +11,7 @@
 
 using System;
 using System.IO;
+using System.Linq;
 using System.Net;
 using System.Net.WebSockets;
 using System.Text;
@@ -46,6 +48,11 @@ internal sealed class RelayWorldChannel : IDisposable
     public const string Pong = "pong";
 
     /// <summary>
+    /// The response header the relay names why it turned the game away in.
+    /// </summary>
+    private const string RefusalHeader = "X-MGQ-Refusal";
+
+    /// <summary>
     /// What keeps an idle connection open and times the round trip, which the relay answers without waking the room.
     /// </summary>
     private const string Ping = "ping";
@@ -80,6 +87,11 @@ internal sealed class RelayWorldChannel : IDisposable
     public int? CloseCode => (int?)_socket.CloseStatus;
 
     /// <summary>
+    /// The reason the relay closed the connection with, such as "replaced" when the same player entered from elsewhere, once it did.
+    /// </summary>
+    public string? CloseReason => _socket.CloseStatusDescription;
+
+    /// <summary>
     /// Connects to a world room.
     /// </summary>
     /// <param name="relay">The relay's address.</param>
@@ -89,14 +101,17 @@ internal sealed class RelayWorldChannel : IDisposable
     /// <param name="authKey">The key that proves the game holds the world's token, see <see cref="WorldKeys.AuthKeyOf"/>.</param>
     /// <param name="timeout">How long connecting may take.</param>
     /// <param name="refusal">The HTTP status the relay refused the game with, such as 409 when every seat is taken.</param>
+    /// <param name="refusalCode">The code the relay named why with, such as "members" or "pending", <see langword="null"/> for none.</param>
     /// <returns>The channel, or <see langword="null"/> when the relay refused the game.</returns>
     /// <exception cref="WebSocketException">The relay could not be reached.</exception>
-    public static RelayWorldChannel? Connect(Uri relay, string room, string playerKey, string playerName, string authKey, TimeSpan timeout, out HttpStatusCode? refusal)
+    public static RelayWorldChannel? Connect(Uri relay, string room, string playerKey, string playerName, string authKey, TimeSpan timeout, out HttpStatusCode? refusal, out string? refusalCode)
     {
         var socket = new ClientWebSocket();
         socket.Options.CollectHttpResponseDetails = true;
-        var address = new Uri(relay, $"/v1/world/{room}?player={playerKey}&name={Uri.EscapeDataString(playerName)}&auth={authKey}");
+        socket.Options.SetRequestHeader(DirectoryClient.PlayerHeader, playerKey);
+        var address = new Uri(relay, $"/v1/world/{room}?name={Uri.EscapeDataString(playerName)}&auth={authKey}");
         refusal = null;
+        refusalCode = null;
 
         try
         {
@@ -107,6 +122,7 @@ internal sealed class RelayWorldChannel : IDisposable
         catch (WebSocketException) when (socket.HttpStatusCode is >= HttpStatusCode.BadRequest and < HttpStatusCode.InternalServerError)
         {
             refusal = socket.HttpStatusCode;
+            refusalCode = RefusalCodeOf(socket);
             socket.Dispose();
             return null;
         }
@@ -116,6 +132,14 @@ internal sealed class RelayWorldChannel : IDisposable
             throw;
         }
     }
+
+    /// <summary>
+    /// Reads the code the relay named why it turned a game away with.
+    /// </summary>
+    /// <param name="socket">The refused WebSocket.</param>
+    /// <returns>The code, <see langword="null"/> for none.</returns>
+    private static string? RefusalCodeOf(ClientWebSocket socket) =>
+        socket.HttpResponseHeaders?.FirstOrDefault(header => string.Equals(header.Key, RefusalHeader, StringComparison.OrdinalIgnoreCase)).Value?.FirstOrDefault();
 
     /// <summary>
     /// Receives one message from the relay.

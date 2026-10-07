@@ -2,7 +2,10 @@
 //  WorldDirectory.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-06: Opened a world with its world code, which a Discord invite carries, instead of its password
+//      Paulinchen  2026-10-06: Started its threads through Threads and read who plays through Player.Current, both shared with the world's other parts
+//                            - Told a player removed from a world, a world with as many players as it may and too many requests from one address apart from a creator-only refusal
+//                            - Refused a starting save too large to share before making the world, and opened a world code at the relay it names
+//                            - Opened a world with its world code, which a Discord invite carries, instead of its password
 //                            - Sent the Mod Config options of a catalog mod on a thread of their own, and told the game script the version the relay keeps them of
 //                            - Replaced a world's mod settings on their own, and no longer with the other changes
 //                            - Told the game script a link to a zip of a release apart, and installed it from GitHub
@@ -92,14 +95,19 @@ internal sealed class WorldDirectory
     private const string ChooseHeader = "choose";
 
     /// <summary>
-    /// Why an action failed when the game script has not said who plays.
-    /// </summary>
-    private const string NoPlayer = "The game has not said who plays yet.";
-
-    /// <summary>
     /// Why an action failed when the relay could not be reached.
     /// </summary>
     private const string Unreachable = "The relay could not be reached. Check your internet connection.";
+
+    /// <summary>
+    /// Why an action failed for a relay this version does not know.
+    /// </summary>
+    private const string UnknownRelay = "This world meets at a relay this version does not know. Update the mod.";
+
+    /// <summary>
+    /// Why a starting save cannot be shared.
+    /// </summary>
+    private const string SaveTooLarge = "The save is too large to share.";
 
     /// <summary>
     /// Guards every field below.
@@ -179,7 +187,7 @@ internal sealed class WorldDirectory
     /// <summary>
     /// Tells who plays: the game script's <see cref="Player"/>, or another for tests that run several players at once.
     /// </summary>
-    public Func<(string Key, string Name)?> Playing { get; init; } = () => Player.Key is { } key && Player.Name is { } name ? (key, name) : null;
+    public Func<(string Key, string Name)?> Playing { get; init; } = Player.Current;
 
     /// <summary>
     /// Sets the hidden worlds the list is asked for too, from the next fetch on.
@@ -211,7 +219,7 @@ internal sealed class WorldDirectory
             watched = _watched;
         }
 
-        StartThread("MultiplayerDirectoryList", () =>
+        Threads.Start("MultiplayerDirectoryList", () =>
         {
             WorldListing? listing = null;
             IReadOnlyList<CatalogMod>? catalog = null;
@@ -272,136 +280,136 @@ internal sealed class WorldDirectory
         }
     }
 
-/// <summary>
-/// Describes the relay's mod catalog for the game script, as fetched with the list.
-/// </summary>
-/// <returns><c>state</c> ("loading", "ready", "failed" or "idle") and <c>error</c>, then one line per mod and version: <c>mod</c>, key, name, kind ("link" for a script, "zip" for a zip of a release, "upload"), current version, then each current file's name or path and hash; <c>old</c>, key, version, then each of that version's files and hashes; <c>opts</c>, key, the version whose Mod Config options the relay keeps, for a mod that has any; each separated by tabs.</returns>
-public string DescribeMods()
-{
-    lock (_gate)
+    /// <summary>
+    /// Describes the relay's mod catalog for the game script, as fetched with the list.
+    /// </summary>
+    /// <returns><c>state</c> ("loading", "ready", "failed" or "idle") and <c>error</c>, then one line per mod and version: <c>mod</c>, key, name, kind ("link" for a script, "zip" for a zip of a release, "upload"), current version, then each current file's name or path and hash; <c>old</c>, key, version, then each of that version's files and hashes; <c>opts</c>, key, the version whose Mod Config options the relay keeps, for a mod that has any; each separated by tabs.</returns>
+    public string DescribeMods()
     {
-        var state = _listing ? "loading" : _catalog != null ? "ready" : _catalogError != null ? "failed" : "idle";
-        var text = new StringBuilder();
-
-        foreach (var mod in _catalog ?? [])
+        lock (_gate)
         {
-            text.Append("mod\t").Append(mod.Key).Append('\t').Append(OnOneField(mod.Name)).Append('\t').Append(mod.ScriptKind).Append('\t').Append(OnOneField(mod.Version));
-            AppendFiles(text, mod.Files);
+            var state = _listing ? "loading" : _catalog != null ? "ready" : _catalogError != null ? "failed" : "idle";
+            var text = new StringBuilder();
 
-            foreach (var version in mod.Versions)
+            foreach (var mod in _catalog ?? [])
             {
-                text.Append("old\t").Append(mod.Key).Append('\t').Append(OnOneField(version.Version));
-                AppendFiles(text, version.Files);
+                text.Append("mod\t").Append(mod.Key).Append('\t').Append(OnOneField(mod.Name)).Append('\t').Append(mod.ScriptKind).Append('\t').Append(OnOneField(mod.Version));
+                AppendFiles(text, mod.Files);
+
+                foreach (var version in mod.Versions)
+                {
+                    text.Append("old\t").Append(mod.Key).Append('\t').Append(OnOneField(version.Version));
+                    AppendFiles(text, version.Files);
+                }
+
+                if (mod.OptionsVersion.Length > 0)
+                {
+                    text.Append("opts\t").Append(mod.Key).Append('\t').Append(OnOneField(mod.OptionsVersion)).Append('\n');
+                }
             }
 
-            if (mod.OptionsVersion.Length > 0)
-            {
-                text.Append("opts\t").Append(mod.Key).Append('\t').Append(OnOneField(mod.OptionsVersion)).Append('\n');
-            }
+            return new Message([new(StateHeader, state), new(ErrorHeader, _catalog == null ? _catalogError : null)], text.ToString()).Encode();
+        }
+    }
+
+    /// <summary>
+    /// Installs mods of the catalog as last fetched into the game's Patch folder, checking every
+    /// file against the catalog's hash first.
+    /// </summary>
+    /// <param name="mods">Each mod's key, and for a link mod where its script goes, relative to the game's folder.</param>
+    /// <returns><see langword="false"/> while another action runs.</returns>
+    public bool InstallMods(IReadOnlyList<(string Key, string Target)> mods) => Start("mods", () =>
+    {
+        IReadOnlyList<CatalogMod> catalog;
+
+        lock (_gate)
+        {
+            catalog = _catalog ?? throw new ActionException("The mod catalog has not been fetched yet.");
         }
 
-        return new Message([new(StateHeader, state), new(ErrorHeader, _catalog == null ? _catalogError : null)], text.ToString()).Encode();
-    }
-}
+        var chosen = mods.Select(mod => (catalog.FirstOrDefault(entry => entry.Key == mod.Key) ?? throw new ActionException($"The relay has no mod {mod.Key}."), mod.Target)).ToList();
+        var client = Client();
 
-/// <summary>
-/// Installs mods of the catalog as last fetched into the game's Patch folder, checking every
-/// file against the catalog's hash first.
-/// </summary>
-/// <param name="mods">Each mod's key, and for a link mod where its script goes, relative to the game's folder.</param>
-/// <returns><see langword="false"/> while another action runs.</returns>
-public bool InstallMods(IReadOnlyList<(string Key, string Target)> mods) => Start("mods", () =>
-{
-    IReadOnlyList<CatalogMod> catalog;
-
-    lock (_gate)
-    {
-        catalog = _catalog ?? throw new ActionException("The mod catalog has not been fetched yet.");
-    }
-
-    var chosen = mods.Select(mod => (catalog.FirstOrDefault(entry => entry.Key == mod.Key) ?? throw new ActionException($"The relay has no mod {mod.Key}."), mod.Target)).ToList();
-    var client = Client();
-
-    try
-    {
-        var written = ModInstaller.Install(chosen, mod => Download(client, mod), GameFolder());
-        Log.Write($"installed {string.Join(", ", chosen.Select(mod => $"{mod.Item1.Name} {mod.Item1.Version}"))}: {string.Join(", ", written)}");
-    }
-    catch (Exception ex) when (ex is InvalidDataException or InvalidOperationException)
-    {
-        throw new ActionException(ex.Message);
-    }
-    catch (IOException ex)
-    {
-        throw new ActionException($"The mods could not be written: {ex.Message}");
-    }
-
-    return null;
-});
-
-/// <summary>
-/// Sends the Mod Config options of a catalog mod's current version on a thread of its own, outside
-/// the actions, so the world screen stays free; how it went is only logged.
-/// </summary>
-/// <param name="key">The mod's key.</param>
-/// <param name="version">The version the options came from.</param>
-/// <param name="options">The options.</param>
-/// <returns><see langword="false"/> without a player.</returns>
-public bool SendModOptions(string key, string version, IReadOnlyList<ModOption> options)
-{
-    if (Playing() is not { } player)
-    {
-        return false;
-    }
-
-    var client = Client();
-    StartThread("MultiplayerModOptions", () =>
-    {
         try
         {
-            client.SetModOptions(key, player.Key, version, options);
-            Log.Write($"sent {options.Count} Mod Config option(s) of {key} {version}");
+            var written = ModInstaller.Install(chosen, mod => Download(client, mod), GameFolder());
+            Log.Write($"installed {string.Join(", ", chosen.Select(mod => $"{mod.Item1.Name} {mod.Item1.Version}"))}: {string.Join(", ", written)}");
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is InvalidDataException or InvalidOperationException)
         {
-            Log.Write($"sending the Mod Config options of {key} failed: {ex.GetBaseException().Message}");
+            throw new ActionException(ex.Message);
         }
+        catch (IOException ex)
+        {
+            throw new ActionException($"The mods could not be written: {ex.Message}");
+        }
+
+        return null;
     });
-    return true;
-}
 
-/// <summary>
-/// The game's folder, which the mods are installed into; tests point it elsewhere.
-/// </summary>
-public Func<string> GameFolder { get; init; } = () => ModFolder.GamePathOf(".");
-
-/// <summary>
-/// Downloads a mod: an upload's zip from the relay, a link mod's script from GitHub.
-/// </summary>
-/// <param name="client">The relay's client.</param>
-/// <param name="mod">The mod.</param>
-/// <returns>The zip or the script.</returns>
-private byte[] Download(DirectoryClient client, CatalogMod mod) => mod.IsUpload ? client.ModFile(mod.Key) : DownloadRelease(mod.FileUrl);
-
-/// <summary>
-/// Downloads a link mod's script; tests replace it, since they cannot reach GitHub.
-/// </summary>
-public Func<string, byte[]> DownloadRelease { get; init; } = ReleaseDownload.Get;
-
-/// <summary>
-/// Writes files and their hashes as fields of a line, and ends the line.
-/// </summary>
-/// <param name="text">The line so far.</param>
-/// <param name="files">Each file's hash by its name or path.</param>
-private static void AppendFiles(StringBuilder text, IReadOnlyDictionary<string, string> files)
-{
-    foreach (var (name, hash) in files)
+    /// <summary>
+    /// Sends the Mod Config options of a catalog mod's current version on a thread of its own, outside
+    /// the actions, so the world screen stays free; how it went is only logged.
+    /// </summary>
+    /// <param name="key">The mod's key.</param>
+    /// <param name="version">The version the options came from.</param>
+    /// <param name="options">The options.</param>
+    /// <returns><see langword="false"/> without a player.</returns>
+    public bool SendModOptions(string key, string version, IReadOnlyList<ModOption> options)
     {
-        text.Append('\t').Append(OnOneField(name)).Append('\t').Append(hash);
+        if (Playing() is not { } player)
+        {
+            return false;
+        }
+
+        var client = Client();
+        Threads.Start("MultiplayerModOptions", () =>
+        {
+            try
+            {
+                client.SetModOptions(key, player.Key, version, options);
+                Log.Write($"sent {options.Count} Mod Config option(s) of {key} {version}");
+            }
+            catch (Exception ex)
+            {
+                Log.Write($"sending the Mod Config options of {key} failed: {ex.GetBaseException().Message}");
+            }
+        });
+        return true;
     }
 
-    text.Append('\n');
-}
+    /// <summary>
+    /// The game's folder, which the mods are installed into; tests point it elsewhere.
+    /// </summary>
+    public Func<string> GameFolder { get; init; } = () => ModFolder.GamePathOf(".");
+
+    /// <summary>
+    /// Downloads a mod: an upload's zip from the relay, a link mod's script from GitHub.
+    /// </summary>
+    /// <param name="client">The relay's client.</param>
+    /// <param name="mod">The mod.</param>
+    /// <returns>The zip or the script.</returns>
+    private byte[] Download(DirectoryClient client, CatalogMod mod) => mod.IsUpload ? client.ModFile(mod.Key) : DownloadRelease(mod.FileUrl);
+
+    /// <summary>
+    /// Downloads a link mod's script; tests replace it, since they cannot reach GitHub.
+    /// </summary>
+    public Func<string, byte[]> DownloadRelease { get; init; } = ReleaseDownload.Get;
+
+    /// <summary>
+    /// Writes files and their hashes as fields of a line, and ends the line.
+    /// </summary>
+    /// <param name="text">The line so far.</param>
+    /// <param name="files">Each file's hash by its name or path.</param>
+    private static void AppendFiles(StringBuilder text, IReadOnlyDictionary<string, string> files)
+    {
+        foreach (var (name, hash) in files)
+        {
+            text.Append('\t').Append(OnOneField(name)).Append('\t').Append(hash);
+        }
+
+        text.Append('\n');
+    }
 
     /// <summary>
     /// Makes a world: a new token, locked with the password, and the world in the directory, with
@@ -472,16 +480,21 @@ private static void AppendFiles(StringBuilder text, IReadOnlyDictionary<string, 
     /// <param name="token">The world's token.</param>
     /// <param name="files">The files, each named as new players get it and where it is read from.</param>
     /// <returns>The starting save as the relay keeps it.</returns>
+    /// <exception cref="ActionException">A file could not be read, or the save is larger than the relay keeps.</exception>
     private static byte[] SealStart(string token, IReadOnlyList<(string Name, string Path)> files)
     {
+        byte[] box;
+
         try
         {
-            return StartingSave.Seal(token, files.Select(file => (file.Name, ModFolder.GamePathOf(file.Path))).ToList());
+            box = StartingSave.Seal(token, files.Select(file => (file.Name, ModFolder.GamePathOf(file.Path))).ToList());
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
         {
             throw new ActionException($"The save could not be read: {ex.Message}");
         }
+
+        return box.Length <= StartingSave.MaxSealedBytes ? box : throw new ActionException(SaveTooLarge);
     }
 
     /// <summary>
@@ -548,8 +561,8 @@ private static void AppendFiles(StringBuilder text, IReadOnlyDictionary<string, 
     public bool UnlockWithCode(string code) => Start("unlock", () =>
     {
         var given = WorldCode.Parse(code) ?? throw new ActionException("The world code is damaged.");
-        var world = Client().Lock(Relays.WorldRoomOf(given.Token));
-        return new ActionResult(new WorldCode(given.Token, Relays.Current, world.Seats).ToText(), world.Name, world.Start, world.Choose);
+        var world = Client(given.Relay).Lock(Relays.WorldRoomOf(given.Token));
+        return new ActionResult(new WorldCode(given.Token, given.Relay, world.Seats).ToText(), world.Name, world.Start, world.Choose);
     });
 
     /// <summary>
@@ -686,7 +699,7 @@ private static void AppendFiles(StringBuilder text, IReadOnlyDictionary<string, 
             _actionError = null;
         }
 
-        StartThread($"MultiplayerDirectory{kind}", () =>
+        Threads.Start($"MultiplayerDirectory{kind}", () =>
         {
             ActionResult? result = null;
             string? error = null;
@@ -716,17 +729,18 @@ private static void AppendFiles(StringBuilder text, IReadOnlyDictionary<string, 
     }
 
     /// <summary>
-    /// Makes a client for the relay this version keeps its worlds at.
+    /// Makes a client for a relay's directory.
     /// </summary>
+    /// <param name="relay">The relay's id, the one this version keeps its worlds at unless a world code names another.</param>
     /// <returns>The client.</returns>
-    private DirectoryClient Client() =>
-        new(RelayAddress(Relays.Current) ?? throw new ActionException($"Relay {Relays.Current} is unknown."));
+    private DirectoryClient Client(string relay = Relays.Current) =>
+        new(RelayAddress(relay) ?? throw new ActionException(UnknownRelay));
 
     /// <summary>
     /// Reads who plays, which every action that changes the directory needs.
     /// </summary>
     /// <returns>The player's key and name.</returns>
-    private (string Key, string Name) Me() => Playing() ?? throw new ActionException(NoPlayer);
+    private (string Key, string Name) Me() => Playing() ?? throw new ActionException(Player.NotSet);
 
     /// <summary>
     /// Tells the player why a request failed.
@@ -738,9 +752,11 @@ private static void AppendFiles(StringBuilder text, IReadOnlyDictionary<string, 
         ActionException action => action.Message,
         DirectoryException { Status: null } => Unreachable,
         DirectoryException { Status: HttpStatusCode.NotFound } => "The world no longer exists.",
+        DirectoryException { Status: HttpStatusCode.Forbidden, Code: "removed" } => "The world's creator removed you from it.",
+        DirectoryException { Status: HttpStatusCode.Forbidden, Code: "members" } => "The world has as many players as it may.",
         DirectoryException { Status: HttpStatusCode.Forbidden } => "Only the world's creator may do this.",
+        DirectoryException { Status: HttpStatusCode.TooManyRequests, Code: "rate" } => "Too many requests from your connection. Try again in a few minutes.",
         DirectoryException { Status: HttpStatusCode.TooManyRequests } => "You have created as many worlds as you may. Delete one first.",
-        DirectoryException { Status: HttpStatusCode.RequestEntityTooLarge } => "The save is too large to share.",
         DirectoryException directory => $"The relay refused: {directory.Message}",
         _ => $"Something went wrong: {ex.GetBaseException().Message}",
     };
@@ -780,14 +796,6 @@ private static void AppendFiles(StringBuilder text, IReadOnlyDictionary<string, 
     /// <param name="name">The name.</param>
     /// <returns>The name without tabs and line breaks.</returns>
     private static string OnOneField(string name) => name.Replace('\t', ' ').Replace('\r', ' ').Replace('\n', ' ');
-
-    /// <summary>
-    /// Runs work on a background thread, which ends with the game.
-    /// </summary>
-    /// <param name="name">The thread's name.</param>
-    /// <param name="work">The work, which must catch everything itself.</param>
-    private static void StartThread(string name, Action work) =>
-        new Thread(() => work()) { IsBackground = true, Name = name }.Start();
 
     /// <summary>
     /// The world an action made or opened.
