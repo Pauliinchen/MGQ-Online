@@ -13,10 +13,17 @@ core/directory.js      the world directory's rules, over a store the platform pa
 core/directory.test.js tests of the directory
 core/trades.js         the referee of trades between two players of a world
 core/trades.test.js    tests of the trades
+core/mods.js           the mod catalog's rules, over a store the platform passes in
+core/mods.test.js      tests of the mod catalog
+core/http.js           the answers every router gives alike, and how each reads a JSON body
+core/ids.js            how ids, hashes and texts are read everywhere
+core/test_zip.js       the zips the tests feed the mod catalog
 cloudflare/worker.js   the relay on Cloudflare Workers, one Durable Object per room and per world room, one for the directory
 cloudflare/wrangler.toml
 node/server.js         the relay as a plain Node server, for a rented machine
 node/server.test.js    tests of the Node server over real WebSockets
+node/sqlite_store.js   the directory's, the catalog's and the trades' stores over one SQLite database, for the Node server
+node/sqlite_store.test.js tests of the SQLite stores
 ```
 
 Both servers follow the same rules from `core/`, so the games cannot tell them apart.
@@ -34,7 +41,7 @@ A **room** pairs two games for a PvP battle. A **world room** seats up to 32 gam
 
 ### World directory
 
-Plain HTTP with JSON bodies of up to 32 KB. A world's id is 32 lowercase hexadecimal characters, the start of a hash of its token. A request names its player by the key in the header `X-MGQ-Player`, which wins over the `player` of its body or address, which released games send; a key in an address ends up in logs. A refusal's body holds `error` and, where the games tell reasons apart, `code`: `removed`, `members` (the world has as many players as it may, 200), `pending`, `rate` or `storage`.
+Plain HTTP with JSON bodies of up to 32 KB (413 beyond, on every route of the relay). A world's id is 32 lowercase hexadecimal characters, the start of a hash of its token. A request names its player by the key in the header `X-MGQ-Player`, which wins over the `player` of its body or address, and a world's auth key by the header `X-MGQ-Auth`, which wins over the `auth` of its address; released games send both in the address, which is kept for them, and a key in an address ends up in logs. A refusal's body holds `error` and, where the games tell reasons apart, `code`: `removed`, `members` (the world has as many players as it may, 200), `pending`, `rate` or `storage`. A route that does not exist is answered with 404.
 
 | Request | What it does |
 |---|---|
@@ -43,9 +50,9 @@ Plain HTTP with JSON bodies of up to 32 KB. A world's id is 32 lowercase hexadec
 | `GET /v1/worlds/<id>/lock` | Hands out the world's `lock` (`salt`, `iterations`, `box`), which only the password opens, with its `name`, `seats`, `start` and `choose`, so a hidden world is entered by its id. |
 | `POST /v1/worlds/<id>/edit` | Changes whichever of `seats`, `description`, `mods` and `settings` (400 past 2000 characters) the body names, if `player` is the creator's or an admin's key, and replaces `data`, the creator's game data, and `modHashes`, if it is the creator's. Everything else of a world stays as it was made. |
 | `POST /v1/worlds/<id>/delete` | Deletes the world, if `player` is the creator's or an admin's key, and closes its world room. |
-| `POST /v1/worlds/<id>/ban` | Removes the player whose id is `target` and keeps them out, if `player` is the creator's key. |
+| `POST /v1/worlds/<id>/ban` | Removes the player whose id is `target` and keeps them out, if `player` is the creator's key. A world keeps at most 500 removed players (429 beyond). |
 | `POST /v1/worlds/<id>/start?player=<key>` | Keeps the world's starting save, the body as bytes (at most 8 MB), if `player` is the creator's key and the world was made with `start: true`. Only once: 409 afterwards. 413 past 8 MB, 507 with `code` `storage` once all starting saves together would pass 1 GB, and 429 with `code` `rate` past 5 uploads at once and 10 an hour from one address. |
-| `GET /v1/worlds/<id>/start?player=<key>&auth=<auth key>` | Hands out the starting save as bytes, to a game the world room would let in. 404 when the world has none. |
+| `GET /v1/worlds/<id>/start` | Hands out the starting save as bytes, to a game the world room would let in, with the player's key in `X-MGQ-Player` and the auth key in `X-MGQ-Auth` (released games send `?player=<key>&auth=<auth key>` instead). 404 when the world has none. |
 
 A world's fields, as `POST /v1/worlds` takes them and `GET /v1/worlds` lists them:
 
@@ -85,7 +92,7 @@ The mods a world may require and games may download. Only admins add them: a sin
 | `GET /v1/mods?player=<key>` | Lists the mods: `mods`, each with `key` (the name in lower case without `.rb`, spaces, underscores and hyphens), `name`, `kind` (`link` or `upload`), `version`, `files` (each file's hash by its name, for an upload by its path inside `Patch`), `versions` (up to 20 earlier `version` and `files`, newest first) and `fileUrl` (a link mod's release file), `archive` (true when that file is a zip, whose files go to their paths inside `Patch`), `options` (the Mod Config options an admin's game sent, see below) and `optionsVersion` (the version they came from, empty before any arrived); for an admin also `link`, `size`, `checked` and `error` (why the last check failed, the last good version kept); and `admin`. A link never read successfully (no version, no files) is listed for admins only. In every `<key>` below the key is percent-encoded, and a JSON body longer than its route takes (8 KB, the options 64 KB) is answered with 413. |
 | `POST /v1/mods` | Adds a link mod or changes its link: `player` (an admin's key), `name`, `link`. Checks it at once and answers the `mod`. |
 | `POST /v1/mods/check` | Checks every link mod now, if `player` is an admin's key, and answers the list. |
-| `POST /v1/mods/<key>/upload?player=<key>&name=<name>&version=<version>` | Keeps a mod of several files, if `player` is an admin's key. The body: one `path<TAB>hash` line per file (paths inside `Patch`, at most 100), an empty line, then the zip; at most 16 MB. |
+| `POST /v1/mods/<key>/upload?player=<key>&name=<name>&version=<version>` | Keeps a mod of several files, if `player` is an admin's key. The body: one `path<TAB>hash` line per file (paths inside `Patch`, at most 100), an empty line, then the zip; at most 16 MB. The relay hashes the zip's files itself and keeps those hashes; a file list that names other files or hashes is refused with 400. |
 | `POST /v1/mods/<key>/options` | Keeps the mod's Mod Config options, if `player` is an admin's key and `version` is the mod's current version (409 otherwise): `options`, at most 100, each with `key` (the option's symbol), `name`, `type` (`i`, `f`, `b`, `y` or `s`, as in a world's `settings`), `default` and `choices` (at most 64, each `value` and `name`). Only a running game can read them, since mods build their options when they load; the World Admin tool lists them. The body may be up to 64 KB. |
 | `GET /v1/mods/<key>/file` | Hands out an uploaded mod's zip as bytes. |
 | `POST /v1/mods/<key>/delete` | Removes a mod, if `player` is an admin's key. |
@@ -106,7 +113,7 @@ Committed trades nobody finished are dropped after 30 days, cancelled ones after
 
 ### World rooms
 
-- **Connect:** `wss://<relay>/v1/world/<world id>?name=<name>&auth=<auth key>`, with the player's key in the header `X-MGQ-Player` (released games send it as `player=<key>` in the address instead). The relay lets the game in only if the world is in the directory, the SHA-256 of the auth key is the world's `authHash`, and the creator has not removed the player: otherwise HTTP 404, 401 or 403 before the WebSocket opens, and HTTP 409 while the creator is still uploading the starting save. A 403 or 409 names why in the response header `X-MGQ-Refusal`, with the codes of the directory. Entering rooms and world rooms is limited per address, 30 at once and one more every 2 seconds (HTTP 429). When a player enters a world room again, the relay closes the player's earlier connection with 4009 and the reason `replaced`. The world's seats come from the directory; once every one is taken, the next game gets HTTP 409. After every change the room tells the directory who is in it.
+- **Connect:** `wss://<relay>/v1/world/<world id>?name=<name>`, with the player's key in the header `X-MGQ-Player` and the auth key in the header `X-MGQ-Auth` (released games send them as `player=<key>&auth=<auth key>` in the address instead, which is kept for them). The relay lets the game in only if the world is in the directory, the SHA-256 of the auth key is the world's `authHash`, and the creator has not removed the player: otherwise HTTP 404, 401 or 403 before the WebSocket opens, and HTTP 409 while the creator is still uploading the starting save. A 403 or 409 names why in the response header `X-MGQ-Refusal`, with the codes of the directory. Entering rooms and world rooms is limited per address, 30 at once and one more every 2 seconds (HTTP 429). When a player enters a world room again, the relay closes the player's earlier connection with 4009 and the reason `replaced`. The world's seats come from the directory; once every one is taken, the next game gets HTTP 409. After every change the room tells the directory who is in it.
 - **Seats:** a game takes the lowest free seat, from 0. It is told `seat <own> <others…>`, the seats already taken in ascending order, such as `seat 2 0 1`. The others are told `in <seat>`, and `out <seat>` once it leaves.
 - **Messages:** a game sends a binary message as its target seat, or 255 for everyone, followed by the payload. The relay passes it on with the sender's seat in place of the target, so the receiver knows who sent it. A message for a free seat is dropped.
 - **Limits:** each connection lasts at most 2 hours on its own; the game then connects again.
@@ -119,7 +126,7 @@ Committed trades nobody finished are dropped after 30 days, cancelled ones after
 
 ## Tests
 
-You need Node.js 22 or later.
+You need Node.js 24 or later, since the SQLite stores and their tests use `node:sqlite`.
 
 ```powershell
 cd Relay
@@ -137,9 +144,15 @@ The relay runs on the free Workers plan at `relay.mgqmp.workers.dev`. Past the f
 
 ## Moving to a rented server
 
-1. On the server, install Node.js 22 or later and [Caddy](https://caddyserver.com), and point a domain at the server.
-2. Copy `core/`, `node/`, `package.json` and `package-lock.json`, then run `npm install --omit=dev` and start `node node/server.js`, for example as a systemd service. It listens on `127.0.0.1:8080` (`HOST` and `PORT` change that).
-3. Have Caddy fetch the certificate and pass WebSockets on, with a `Caddyfile` like the one below. The relay counts its rate limits by the address Caddy appends to `X-Forwarded-For` last, for requests from this machine only.
+1. On the server, install Node.js 24 or later (the SQLite database needs `node:sqlite`) and [Caddy](https://caddyserver.com), and point a domain at the server.
+2. Copy `core/`, `node/`, `package.json` and `package-lock.json`, then run `npm install --omit=dev`.
+3. Start `node node/server.js` as a systemd service, with these environment variables:
+   - `MGQ_RELAY_DB=/var/lib/mgq-relay/relay.sqlite`: the SQLite database the worlds, their starting saves, the mod catalog, its uploaded zips and the trades are kept in, made on the first start (with its `-wal` and `-shm` files beside it). Without it everything stays in memory and is gone with the process. Back the file up with `sqlite3 relay.sqlite ".backup copy.sqlite"`, never by copying it while the relay runs.
+   - `ADMINS`: the admins' player ids, as above.
+   - `HOST` and `PORT`: where it listens, `127.0.0.1:8080` unless set.
+4. The relay writes one line per request to stdout (`<time> <method> <path> <status> <ms> <address>`, the path without its query, so no key ever appears) and every error it catches to stderr, with its stack. Under systemd both go to the journal (`journalctl -u <service>`); the service file's `StandardOutput=append:/var/log/mgq-relay/relay.log` keeps them in a file instead. The rooms and the WebSockets live in memory, so a restart ends every connection; the games connect again on their own.
+5. On its own the relay closes rooms and connections whose time is up every minute, checks the mod catalog's links every half hour, and every ten minutes sweeps out worlds whose starting save never came and trades kept long enough, so the database does not grow with what nobody asks for again.
+6. Have Caddy fetch the certificate and pass WebSockets on, with a `Caddyfile` like the one below. The relay counts its rate limits by the address Caddy appends to `X-Forwarded-For` last, for requests from this machine only.
 
    ```
    relay.example.org {
@@ -147,4 +160,5 @@ The relay runs on the free Workers plan at `relay.mgqmp.workers.dev`. Past the f
    }
    ```
 
-4. Add the new relay under a new id (`r2`) to the relay list in the Multiplayer DLL and release that version. Keep `r1` running until most players have updated, since the host's join code names the relay both games use.
+7. Run one process. The rate limits per address are counted in memory, so several processes behind one proxy would each let an address have the full allowance, and the rooms are in memory too, so two games of one room must reach the same process. One Node process carries the relay's load with room to spare.
+8. Add the new relay under a new id (`r2`) to the relay list in the Multiplayer DLL and release that version. Keep `r1` running until most players have updated, since the host's join code names the relay both games use.

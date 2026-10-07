@@ -2,6 +2,8 @@
 //  server.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-07: Tested the auth key header, the request and error log lines, every mod catalog route, editing a world, the address behind a proxy, the sweep and a text body over the cap
+//                            - Expected 400 for a path that is no route and 426 for a room path without an upgrade
 //      Paulinchen  2026-10-06: Tested a guest waiting alone, counted keep-alives, a room ended by the relay, a replaced world connection, the player key header, named refusals, the rate limits and a body over the limit
 //                            - Tested a trade between two players of a world over HTTP
 //      Paulinchen  2026-10-04: Expected the lock without the mods, the game data and the rule for it again
@@ -20,8 +22,11 @@ import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import WebSocketClient from "ws";
 import { DIRECTORY_LIMITS, Directory, playerIdOf, sha256Hex } from "../core/directory.js";
-import { CLOSE, EVERYONE, LIMITS, PAIRED, PING, PLAYER_HEADER, PONG, REFUSAL_HEADER, REPLACED } from "../core/relay.js";
-import { createRelay, memoryStore } from "./server.js";
+import { ModCatalog, zipHashes } from "../core/mods.js";
+import { AUTH_HEADER, CLOSE, EVERYONE, LIMITS, PAIRED, PING, PLAYER_HEADER, PONG, REFUSAL_HEADER, REPLACED } from "../core/relay.js";
+import { TRADE_LIMITS } from "../core/trades.js";
+import { makeUpload, makeZip } from "../core/test_zip.js";
+import { addressOf, createRelay, errorLine, memoryModStore, memoryStore, requestLine } from "./server.js";
 
 /**
  * The auth key the tests' games make from their worlds' tokens.
@@ -47,6 +52,16 @@ const TEST_RATES = Object.fromEntries(["joins", "creates", "starts"].map((kind) 
  * The directory limits the tests use: small starting saves, so a body over the limit is quick to send.
  */
 const TEST_DIRECTORY_LIMITS = { ...DIRECTORY_LIMITS, maxStartBytes: 400_000 };
+
+/**
+ * What the relay under test logged: request lines and error lines.
+ */
+const logged = { info: [], error: [] };
+
+/**
+ * The log the relays under test write to, so the tests can read it and the output stays clean.
+ */
+const LOG = { info: (line) => logged.info.push(line), error: (line) => logged.error.push(line) };
 
 /**
  * The time the relay under test sees, which tests move forward.
@@ -75,7 +90,7 @@ let directoryBase;
 
 before(async () => {
   const directory = new Directory(memoryStore(), { clock: () => now, limits: TEST_DIRECTORY_LIMITS, rates: TEST_RATES });
-  relay = createRelay({ limits: TEST_LIMITS, clock: () => now, checkEveryMs: 3_600_000, directory });
+  relay = createRelay({ limits: TEST_LIMITS, clock: () => now, checkEveryMs: 3_600_000, sweepEveryMs: 3_600_000, directory, log: LOG });
   await new Promise((resolve) => relay.server.listen(0, "127.0.0.1", resolve));
   base = `ws://127.0.0.1:${relay.server.address().port}/v1/room/`;
   worldBase = `ws://127.0.0.1:${relay.server.address().port}/v1/world/`;
@@ -391,7 +406,9 @@ test("the directory hands out a world's lock and refuses what is no directory ro
 
   assert.deepEqual(await (await fetch(`${directoryBase}/${roomId(108)}/lock`)).json(), { salt: "12".repeat(16), iterations: 200_000, box: "ab".repeat(40), name: `World ${roomId(108).slice(-3)}`, seats: 2, start: "none", choose: false });
   assert.equal((await fetch(`${directoryBase}/${roomId(109)}/lock`)).status, 404);
-  assert.equal((await fetch(directoryBase.replace("/v1/worlds", "/elsewhere"))).status, 426);
+  assert.equal((await fetch(`${directoryBase}/${roomId(108)}/elsewhere`)).status, 404);
+  assert.equal((await fetch(directoryBase.replace("/v1/worlds", "/elsewhere"))).status, 400);
+  assert.equal((await fetch(`${base.replace("ws:", "http:")}${roomId(108)}?role=host`)).status, 426, "a room's address needs its WebSocket");
 });
 
 
@@ -571,7 +588,7 @@ test("a starting save over the limit is refused with its status, not a cut conne
 test("entering rooms and making worlds are limited per address", async () => {
   const once = { burst: 1, refillMs: 3_600_000 };
   const directory = new Directory(memoryStore(), { clock: () => now, rates: { joins: once, creates: once, starts: once } });
-  const limited = createRelay({ limits: TEST_LIMITS, clock: () => now, checkEveryMs: 3_600_000, directory });
+  const limited = createRelay({ limits: TEST_LIMITS, clock: () => now, checkEveryMs: 3_600_000, directory, log: LOG });
   await new Promise((resolve) => limited.server.listen(0, "127.0.0.1", resolve));
   const port = limited.server.address().port;
 
@@ -585,4 +602,192 @@ test("entering rooms and making worlds are limited per address", async () => {
 
   host.socket.close();
   await limited.stop();
+});
+
+test("the auth key may come in the X-MGQ-Auth header, for the world rooms and the starting save", async () => {
+  const room = roomId(118);
+  const created = await fetch(directoryBase, {
+    method: "POST",
+    body: JSON.stringify({ id: room, name: "Auth World", seats: 2, player: CREATOR, playerName: "Creator", authHash: await sha256Hex(AUTH), lock: { salt: "12".repeat(16), iterations: 200_000, box: "ab".repeat(40) }, start: true }),
+  });
+  assert.equal(created.status, 201);
+  assert.equal((await fetch(`${directoryBase}/${room}/start`, { method: "POST", headers: { [PLAYER_HEADER]: CREATOR }, body: Uint8Array.of(4, 2) })).status, 200);
+
+  const headers = { [PLAYER_HEADER]: playerKey(61), [AUTH_HEADER]: AUTH };
+  const fetched = await fetch(`${directoryBase}/${room}/start`, { headers });
+  assert.equal(fetched.status, 200);
+  assert.deepEqual(new Uint8Array(await fetched.arrayBuffer()), Uint8Array.of(4, 2));
+  assert.equal((await fetch(`${directoryBase}/${room}/start?auth=${AUTH}`, { headers: { [PLAYER_HEADER]: playerKey(61), [AUTH_HEADER]: "cd".repeat(32) } })).status, 401, "the header wins over the address");
+  assert.equal((await fetch(`${directoryBase}/${room}/start?player=${playerKey(61)}&auth=${AUTH}`)).status, 200, "released games send both in the address");
+
+  const game = await openWithHeaders(`${worldBase}${room}?name=Player%2061`, headers);
+  assert.equal(await game.first, "seat 0");
+  assert.deepEqual(await openWithHeaders(`${worldBase}${room}?name=Player%2062&auth=${AUTH}`, { [PLAYER_HEADER]: playerKey(62), [AUTH_HEADER]: "cd".repeat(32) }), { status: 401, refusal: undefined });
+  game.socket.close();
+});
+
+test("every request is logged as one line without its query, and a caught error with its stack", async () => {
+  const before = logged.info.length;
+  await fetch(`${directoryBase}?player=${CREATOR}`);
+  await fetch(`${directoryBase}/${roomId(119)}/lock`);
+  const lines = logged.info.slice(before);
+
+  assert.equal(lines.length, 2);
+  assert.match(lines[0], /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z GET \/v1\/worlds 200 \d+ms 127\.0\.0\.1$/);
+  assert.match(lines[1], /^\S+ GET \/v1\/worlds\/[0-9a-f]{32}\/lock 404 \d+ms 127\.0\.0\.1$/);
+  assert.ok(!lines.some((line) => line.includes(CREATOR)), "a key in the address stays out of the log");
+  assert.ok(logged.info.some((line) => / GET \/v1\/room\/[0-9a-f]{32} 101 /.test(line)), "an opened WebSocket is logged as 101");
+  assert.ok(logged.info.some((line) => / GET \/v1\/world\/[0-9a-f]{32} 403 /.test(line)), "a refused WebSocket is logged with its status");
+
+  assert.equal(requestLine(new Date(0), "POST", "/v1/mods", 413, 2.6, null), "1970-01-01T00:00:00.000Z POST /v1/mods 413 3ms -");
+  const line = errorLine(new Date(0), "sweep", new Error("the store failed"));
+  assert.match(line, /^1970-01-01T00:00:00\.000Z error sweep: Error: the store failed\n\s+at /);
+  assert.equal(errorLine(new Date(0), "sweep", "plain"), "1970-01-01T00:00:00.000Z error sweep: plain");
+});
+
+test("an error while answering is logged with its stack and answered with 500", async () => {
+  const broken = new Directory({ ...memoryStore(), all: async () => { throw new Error("the disk is gone"); } }, { clock: () => now });
+  const relayOfBroken = createRelay({ clock: () => now, checkEveryMs: 3_600_000, directory: broken, log: LOG });
+  await new Promise((resolve) => relayOfBroken.server.listen(0, "127.0.0.1", resolve));
+  const port = relayOfBroken.server.address().port;
+
+  const answer = await fetch(`http://127.0.0.1:${port}/v1/worlds`);
+  assert.equal(answer.status, 500);
+  assert.deepEqual(await answer.json(), { error: "the directory failed" });
+  assert.match(logged.error.at(-1), /^\S+ error GET \/v1\/worlds: Error: the disk is gone\n\s+at /);
+  assert.match(logged.info.at(-1), / GET \/v1\/worlds 500 /);
+  await relayOfBroken.stop();
+});
+
+test("the sweep deletes worlds whose starting save never came and trades kept long enough", async () => {
+  const room = roomId(120);
+  const trade = "8".repeat(32);
+  const tradesBase = directoryBase.replace("/v1/worlds", "/v1/trades");
+  await makeWorld(room, 4);
+  const game = await sit(room, 71);
+  await until(async () => (await listed(room)).online === 1);
+  const commit = await fetch(`${tradesBase}/${trade}/commit`, {
+    method: "POST",
+    body: JSON.stringify({ player: playerKey(71), world: room, partner: await playerIdOf(CREATOR), hash: "ab".repeat(32), sealed: "Qg==" }),
+  });
+  assert.deepEqual(await commit.json(), { state: "pending" });
+
+  const pending = roomId(121);
+  const created = await fetch(directoryBase, {
+    method: "POST",
+    body: JSON.stringify({ id: pending, name: "Never Started", seats: 2, player: CREATOR, playerName: "Creator", authHash: await sha256Hex(AUTH), lock: { salt: "12".repeat(16), iterations: 200_000, box: "ab".repeat(40) }, start: true }),
+  });
+  assert.equal(created.status, 201);
+
+  now += DIRECTORY_LIMITS.pendingMs;
+  await relay.sweep();
+  assert.equal(await relay.directory.store.get(pending), undefined);
+  assert.equal((await relay.trades.store.getTrade(trade)).state, "cancelled");
+
+  now += TRADE_LIMITS.keepCancelledMs;
+  await relay.sweep();
+  assert.equal(await relay.trades.store.getTrade(trade), undefined);
+  game.socket.close();
+});
+
+test("the creator or an admin edits a world over HTTP", async () => {
+  const room = roomId(122);
+  await makeWorld(room, 4);
+  const edit = (headers, body) => fetch(`${directoryBase}/${room}/edit`, { method: "POST", headers, body: JSON.stringify(body) });
+
+  assert.equal((await edit({ [PLAYER_HEADER]: playerKey(81) }, { seats: 8 })).status, 403);
+  assert.equal((await edit({ [PLAYER_HEADER]: CREATOR }, { seats: 99 })).status, 400);
+  assert.equal((await edit({ [PLAYER_HEADER]: CREATOR }, { seats: 8, description: "  A world\nof two lines  ", mods: "!Level Cap" })).status, 200);
+  assert.equal((await edit({}, { player: CREATOR, data: "1:abc" })).status, 200, "released games send the key in the body");
+
+  const world = await listed(room);
+  assert.deepEqual([world.seats, world.description, world.mods, world.data], [8, "A worldof two lines", "!Level Cap", "1:abc"]);
+  assert.equal((await fetch(`${directoryBase}/${room}/edit`, { method: "POST", headers: { [PLAYER_HEADER]: CREATOR }, body: "x".repeat(300_000) })).status, 413, "a text body over the cap is too large");
+});
+
+/**
+ * An admin's player key.
+ */
+const ADMIN = "ad".repeat(16);
+
+/**
+ * The link an admin sets, which leads to a release's script on a fake GitHub.
+ */
+const LINK = "https://github.com/Pauliinchen/MGQ-Paradox-Mod-Collection/releases/latest/download/Level_Cap.rb";
+
+/**
+ * A fake GitHub: the latest link leads to the release's script, which GitHub's file host serves.
+ *
+ * @param {string} url The address fetched.
+ * @returns {Promise<Response>} The answer.
+ */
+async function fakeGitHub(url) {
+  const file = "https://github.com/Pauliinchen/MGQ-Paradox-Mod-Collection/releases/download/v1.4.0/Level_Cap.rb";
+
+  if (url === LINK) {
+    return new Response(null, { status: 302, headers: { Location: file } });
+  }
+
+  if (url === file) {
+    return new Response(null, { status: 302, headers: { Location: "https://release-assets.githubusercontent.com/file" } });
+  }
+
+  return url === "https://release-assets.githubusercontent.com/file" ? new Response("# cap", { status: 200 }) : new Response("not found", { status: 404 });
+}
+
+test("every mod catalog route answers over HTTP", async () => {
+  const mods = new ModCatalog(memoryModStore(), { clock: () => now, admins: [await playerIdOf(ADMIN)], fetch: fakeGitHub });
+  const catalogRelay = createRelay({ clock: () => now, checkEveryMs: 3_600_000, mods, log: LOG });
+  await new Promise((resolve) => catalogRelay.server.listen(0, "127.0.0.1", resolve));
+  const modsBase = `http://127.0.0.1:${catalogRelay.server.address().port}/v1/mods`;
+  const admin = { [PLAYER_HEADER]: ADMIN };
+  const post = (path, body, headers = admin) => fetch(`${modsBase}${path}`, { method: "POST", headers, body: typeof body === "string" || body instanceof Uint8Array ? body : JSON.stringify(body) });
+
+  assert.deepEqual(await (await fetch(modsBase)).json(), { mods: [], admin: false });
+  assert.equal((await post("", { name: "Level Cap", link: LINK }, {})).status, 403);
+  const added = await post("", { name: "Level Cap", link: LINK });
+  assert.equal(added.status, 200);
+  assert.equal((await added.json()).mod.version, "1.4.0");
+  assert.equal((await (await fetch(modsBase, { headers: admin })).json()).mods[0].link, LINK);
+
+  const checked = await post("/check", {});
+  assert.equal(checked.status, 200);
+  assert.equal((await checked.json()).mods.length, 1);
+
+  const zip = await makeZip([["Pack.rb", "# pack", true], ["Pack/a.luka", "A"]]);
+  const files = await zipHashes(zip);
+  assert.equal((await post(`/${encodeURIComponent("pack!")}/upload?name=Pack!&version=2.0`, makeUpload(files, zip))).status, 200);
+  assert.equal((await post("/pack!/upload?name=Pack!&version=2.1", makeUpload({ ...files, "Pack.rb": "00".repeat(32) }, zip))).status, 400);
+  const listedMods = (await (await fetch(modsBase)).json()).mods;
+  assert.deepEqual(listedMods.map((mod) => [mod.key, mod.version]), [["levelcap", "1.4.0"], ["pack!", "2.0"]]);
+  assert.deepEqual(listedMods[1].files, files);
+
+  const options = [{ key: "mod_pack", name: "Pack", type: "b", default: "1", choices: [] }];
+  assert.equal((await post("/pack%21/options", { version: "1.0", options })).status, 409);
+  assert.equal((await post("/pack%21/options", { version: "2.0", options })).status, 200);
+  assert.deepEqual((await (await fetch(modsBase)).json()).mods[1].options, options);
+
+  const file = await fetch(`${modsBase}/pack%21/file`);
+  assert.equal(file.headers.get("content-type"), "application/octet-stream");
+  assert.deepEqual(new Uint8Array(await file.arrayBuffer()), zip);
+  assert.equal((await fetch(`${modsBase}/levelcap/file`)).status, 404);
+
+  assert.equal((await post("/pack%21/delete", {}, {})).status, 403);
+  assert.equal((await post("/pack%21/delete", {})).status, 200);
+  assert.equal((await fetch(`${modsBase}/pack%21/file`)).status, 404);
+  assert.equal((await post("", "x".repeat(9000))).status, 413);
+  assert.equal((await fetch(`${modsBase}/levelcap/elsewhere`)).status, 404);
+  await catalogRelay.stop();
+});
+
+test("addressOf trusts X-Forwarded-For from this machine only, and takes the address the proxy appended last", () => {
+  const request = (remoteAddress, forwarded) => ({ socket: { remoteAddress }, headers: forwarded === undefined ? {} : { "x-forwarded-for": forwarded } });
+
+  assert.equal(addressOf(request("127.0.0.1", "203.0.113.5, 198.51.100.7")), "198.51.100.7");
+  assert.equal(addressOf(request("::ffff:127.0.0.1", "198.51.100.7")), "198.51.100.7");
+  assert.equal(addressOf(request("::1", " 198.51.100.7 ")), "198.51.100.7");
+  assert.equal(addressOf(request("127.0.0.1", "")), "127.0.0.1");
+  assert.equal(addressOf(request("127.0.0.1")), "127.0.0.1");
+  assert.equal(addressOf(request("203.0.113.5", "198.51.100.7")), "203.0.113.5", "a client cannot name another address");
+  assert.equal(addressOf(request(undefined)), null);
 });
