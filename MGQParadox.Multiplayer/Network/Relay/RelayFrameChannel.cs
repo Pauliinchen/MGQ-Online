@@ -2,6 +2,8 @@
 //  RelayFrameChannel.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-06: Told when the relay ended a host's lone wait
+//                            - Took the failures of the reads a timeout leaves behind
 //      Paulinchen  2026-09-29: Read whole messages through WebSocketMessages, which the world channel shares
 //                            - Measured messages against the frame channel's longest frame
 //                            - Created
@@ -37,6 +39,11 @@ internal sealed class RelayFrameChannel : IFrameChannel
     /// What keeps an idle connection open while the host waits.
     /// </summary>
     private const string Ping = "ping";
+
+    /// <summary>
+    /// The close code the relay ends a host's connection with once it waited alone too long.
+    /// </summary>
+    private const WebSocketCloseStatus WaitedTooLongStatus = (WebSocketCloseStatus)4004;
 
     /// <summary>
     /// How often a waiting host sends <see cref="Ping"/>.
@@ -116,6 +123,7 @@ internal sealed class RelayFrameChannel : IFrameChannel
             {
                 if (DateTime.UtcNow >= deadline)
                 {
+                    Observe(reading);
                     return false;
                 }
 
@@ -137,6 +145,11 @@ internal sealed class RelayFrameChannel : IFrameChannel
         }
     }
 
+    /// <summary>
+    /// Whether the relay closed the connection because the host waited alone in the room too long.
+    /// </summary>
+    public bool WaitedTooLong => _socket.CloseStatus == WaitedTooLongStatus;
+
     /// <inheritdoc />
     public void SetTimeout(TimeSpan timeout) => _timeout = timeout;
 
@@ -157,6 +170,7 @@ internal sealed class RelayFrameChannel : IFrameChannel
             if (!reading.Wait(_timeout))
             {
                 // A silent relay counts as a broken connection, which ends the read that still waits.
+                Observe(reading);
                 _socket.Abort();
                 throw new IOException("the relay connection went silent");
             }
@@ -217,6 +231,13 @@ internal sealed class RelayFrameChannel : IFrameChannel
         using var cancel = new CancellationTokenSource(KeepAliveInterval);
         _socket.SendAsync(Encoding.UTF8.GetBytes(text), WebSocketMessageType.Text, true, cancel.Token).GetAwaiter().GetResult();
     }
+
+    /// <summary>
+    /// Takes the failure of a read nobody waits for any more, which the connection's end brings.
+    /// </summary>
+    /// <param name="reading">The read.</param>
+    private static void Observe(Task reading) =>
+        reading.ContinueWith(static task => _ = task.Exception, TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously);
 
     /// <summary>
     /// Tells how long to wait next: until the deadline, but at most a step.

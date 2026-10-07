@@ -123,7 +123,8 @@ internal static unsafe partial class Exports
     }
 
     /// <summary>
-    /// Stops hosting or joining, closes the link, forgets what arrived and turns down a waiting invite.
+    /// Stops hosting or joining, closes the link, forgets what arrived, and turns down a waiting
+    /// invite unless a team had arrived.
     /// </summary>
     /// <returns>1 when done, 0 when it failed.</returns>
     [UnmanagedCallersOnly(EntryPoint = "mp_cancel", CallConvs = [typeof(CallConvStdcall)])]

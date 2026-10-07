@@ -2,6 +2,7 @@
 //  Link.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-06: Started its threads through Threads, shared with the other connections
 //      Paulinchen  2026-09-29: Measured messages against the frame channel's longest frame
 //                            - Carried encrypted frames over any frame channel instead of a TCP connection
 //      Paulinchen  2026-09-28: Created
@@ -93,8 +94,8 @@ internal sealed class Link
         _pingInterval = pingInterval;
         channel.SetTimeout(dropTimeout);
 
-        StartThread("MultiplayerLinkRead", ReadAll);
-        StartThread("MultiplayerLinkWrite", WriteAll);
+        Threads.Start("MultiplayerLinkRead", ReadAll);
+        Threads.Start("MultiplayerLinkWrite", WriteAll);
     }
 
     /// <summary>
@@ -267,12 +268,4 @@ internal sealed class Link
     /// <returns>The text.</returns>
     private static string Encode(string kind, string text = "") =>
         new Message(new KeyValuePair<string, string?>[] { new(Message.Kind, kind) }, text).Encode();
-
-    /// <summary>
-    /// Runs work on a background thread, which ends with the game.
-    /// </summary>
-    /// <param name="name">The thread's name.</param>
-    /// <param name="work">The work, which must catch everything itself.</param>
-    private static void StartThread(string name, Action work) =>
-        new Thread(() => work()) { IsBackground = true, Name = name }.Start();
 }

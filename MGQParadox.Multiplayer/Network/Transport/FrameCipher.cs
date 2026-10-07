@@ -2,6 +2,7 @@
 //  FrameCipher.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-06: Derived the key from a salt of each side, so a guest's replayed first frames fail the check
 //      Paulinchen  2026-09-29: Derived a key of its own for every connection, from the token and a salt the guest picks
 //                            - Created
 //
@@ -31,7 +32,7 @@ internal sealed class FrameCipher
     public const int Overhead = CounterSize + TagSize;
 
     /// <summary>
-    /// Size of the salt that makes each connection's key its own.
+    /// Size of the salt each side picks, which makes each connection's key its own.
     /// </summary>
     public const int SaltSize = 16;
 
@@ -101,18 +102,23 @@ internal sealed class FrameCipher
     private ulong _received;
 
     /// <summary>
-    /// Derives the connection's key from a join code's token and the connection's salt.
+    /// Derives the connection's key from a join code's token and the salts both sides picked.
     /// </summary>
     /// <remarks>
-    /// The counters start at zero on every connection, so a key used on two connections, as when a
-    /// guest tries the same join code again, would repeat nonces; the salt keeps each key to one.
+    /// The counters start at zero on every connection, so a key used on two connections would repeat
+    /// nonces and accept the earlier connection's frames again; a fresh salt from each side keeps
+    /// each key to one, whoever replays the other's.
     /// </remarks>
     /// <param name="token">The join code's token.</param>
-    /// <param name="salt">The connection's salt, see <see cref="NewSalt"/>.</param>
+    /// <param name="guestSalt">The guest's salt, see <see cref="NewSalt"/>.</param>
+    /// <param name="hostSalt">The host's salt, see <see cref="NewSalt"/>.</param>
     /// <param name="host">Whether this game hosts, which decides the direction of its frames.</param>
-    public FrameCipher(string token, ReadOnlySpan<byte> salt, bool host)
+    public FrameCipher(string token, ReadOnlySpan<byte> guestSalt, ReadOnlySpan<byte> hostSalt, bool host)
     {
         var key = new byte[KeySize];
+        var salt = new byte[guestSalt.Length + hostSalt.Length];
+        guestSalt.CopyTo(salt);
+        hostSalt.CopyTo(salt.AsSpan(guestSalt.Length));
         HKDF.DeriveKey(HashAlgorithmName.SHA256, Encoding.UTF8.GetBytes(token), key, salt, KeyInfo);
 
         _aes = new AesGcm(key, TagSize);
@@ -121,7 +127,7 @@ internal sealed class FrameCipher
     }
 
     /// <summary>
-    /// Makes a salt for a new connection, which the guest picks and sends ahead of its first frame.
+    /// Makes a salt for a new connection, which each side picks and sends ahead of its first frame.
     /// </summary>
     /// <returns><see cref="SaltSize"/> random bytes.</returns>
     public static byte[] NewSalt() => RandomNumberGenerator.GetBytes(SaltSize);

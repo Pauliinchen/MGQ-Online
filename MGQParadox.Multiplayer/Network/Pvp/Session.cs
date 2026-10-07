@@ -2,6 +2,13 @@
 //  Session.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-06: Started its threads through Threads, shared with the other connections, and wrote the room in lowercase hexadecimal at once
+//                            - Kept an invite accepted during a PvP battle when its link ends, only the player's own stop turning it down
+//                            - Had the host send a salt of its own after the guest's, so a replayed guest is turned away
+//                            - Stopped hosting with a message once nobody joined for 30 minutes or the relay ended the lone wait
+//                            - Told a guest who finds no host that it may only be reconnecting
+//                            - Showed the innermost error when the connection broke off
+//                            - Refused a team too large for a frame before hosting or joining
 //      Paulinchen  2026-09-29: Told a world code from a join code of another version
 //                            - Tried the relay room again after 10 s the first time, since the relay may still hold the host's last connection
 //                            - Began every connection with the guest's salt, so each connection encrypts with a key of its own
@@ -102,7 +109,27 @@ internal sealed class Session
     /// <summary>
     /// Why joining failed when the relay was reached but no host waited in the room.
     /// </summary>
-    private const string NotHosting = "Your friend's game is not hosting with this join code any more.";
+    private const string NotHosting = "Your friend's game is not hosting with this join code right now. If it still hosts, try again in a minute.";
+
+    /// <summary>
+    /// Why joining failed when the host did not answer in the room.
+    /// </summary>
+    private const string NoAnswer = "Your friend's game did not answer. Is the join code still the one it hosts with?";
+
+    /// <summary>
+    /// Why hosting stopped when nobody joined in time.
+    /// </summary>
+    private const string NobodyJoined = "Nobody joined in time, so hosting stopped. Host again to wait for your friend.";
+
+    /// <summary>
+    /// Why hosting or joining failed when the team does not fit in a frame.
+    /// </summary>
+    private const string TeamTooLarge = "Your team is too large to send.";
+
+    /// <summary>
+    /// Bytes a frame of the exchange keeps for the headers next to the team and the game's fingerprint.
+    /// </summary>
+    private const int ExchangeHeaderBytes = 256;
 
     /// <summary>
     /// Why hosting or joining failed when the relay could not be reached.
@@ -256,6 +283,12 @@ internal sealed class Session
     public TimeSpan RelayRetry { get; init; } = TimeSpan.FromSeconds(30);
 
     /// <summary>
+    /// How long a host waits for a guest after offering the join code before hosting stops, as long
+    /// as the relay lets a host wait alone.
+    /// </summary>
+    public TimeSpan HostWaitLimit { get; init; } = TimeSpan.FromMinutes(30);
+
+    /// <summary>
     /// Takes the player's name, which the Discord mod knows, sent along with every later team.
     /// </summary>
     /// <param name="name">The name, <see langword="null"/> while unknown.</param>
@@ -275,9 +308,15 @@ internal sealed class Session
         lock (_gate)
         {
             generation = Restart(SessionState.Hosting);
+
+            if (!FitsInFrame(game, team))
+            {
+                FailLocked(TeamTooLarge);
+                return;
+            }
         }
 
-        StartThread("MultiplayerHost", () => Serve(generation, game, team));
+        Threads.Start("MultiplayerHost", () => Serve(generation, game, team));
     }
 
     /// <summary>
@@ -325,19 +364,35 @@ internal sealed class Session
                 return;
             }
 
-            StartThread("MultiplayerJoin", () => Visit(generation, code, game, team));
+            if (!FitsInFrame(game, team))
+            {
+                FailLocked(TeamTooLarge);
+                return;
+            }
+
+            Threads.Start("MultiplayerJoin", () => Visit(generation, code, game, team));
         }
     }
 
     /// <summary>
-    /// Stops hosting or joining, forgets a team that arrived and turns down a waiting invite.
+    /// Stops hosting or joining, forgets a team that arrived and closes its link, and turns down a
+    /// waiting invite unless a team had arrived.
     /// </summary>
+    /// <remarks>
+    /// Once a team arrived, cancelling only ends the battle's link, so an invite the player accepted
+    /// during the battle waits to be joined afterwards.
+    /// </remarks>
     public void Cancel()
     {
         lock (_gate)
         {
+            var linkEnds = _state == SessionState.Received;
             Restart(SessionState.Idle);
-            _invite = null;
+
+            if (!linkEnds)
+            {
+                _invite = null;
+            }
         }
     }
 
@@ -457,7 +512,9 @@ internal sealed class Session
 
     /// <summary>
     /// Waits in the relay room until a guest there swaps teams or hosting ends, and comes back when
-    /// the relay closes a room nobody joined. Offers the join code once the room is first reached.
+    /// the relay lost the connection or a guest dropped out. Offers the join code once the room is
+    /// first reached, and stops hosting once nobody joined for <see cref="HostWaitLimit"/> or the
+    /// relay ended the lone wait.
     /// </summary>
     /// <remarks>
     /// Catches everything, since an exception escaping this thread would end the whole game.
@@ -472,9 +529,16 @@ internal sealed class Session
         var room = Relays.RoomOf(token);
         var advertised = false;
         var reportedUnreachable = false;
+        var givesUpAt = DateTime.MaxValue;
 
         while (IsHosting(generation))
         {
+            if (DateTime.UtcNow >= givesUpAt)
+            {
+                GiveUpHosting(generation, "nobody joined in time");
+                return;
+            }
+
             RelayFrameChannel? channel = null;
             var linked = false;
 
@@ -495,12 +559,13 @@ internal sealed class Session
                     }
 
                     advertised = true;
+                    givesUpAt = DateTime.UtcNow + HostWaitLimit;
                     Log.Write($"hosting at relay {Relays.Current}, clipboard {(CopyJoinCode() ? "holds the code" : "unavailable")}");
                 }
 
                 reportedUnreachable = false;
 
-                if (channel.WaitForPartner(Timeout.InfiniteTimeSpan))
+                if (channel.WaitForPartner(Until(givesUpAt)))
                 {
                     // Taken out of the wait first, or the swap's end would cut it as it ends the other waits.
                     LeaveRelayWait(channel);
@@ -510,6 +575,11 @@ internal sealed class Session
                     {
                         return;
                     }
+                }
+                else if (channel.WaitedTooLong)
+                {
+                    GiveUpHosting(generation, "the relay ended the lone wait");
+                    return;
                 }
             }
             catch (Exception ex)
@@ -570,13 +640,15 @@ internal sealed class Session
 
         try
         {
-            if (channel.Receive() is not { Length: FrameCipher.SaltSize } salt)
+            if (channel.Receive() is not { Length: FrameCipher.SaltSize } guestSalt)
             {
                 Log.Write("turned a guest away, it sent no salt");
                 return false;
             }
 
-            var cipher = new FrameCipher(token, salt, host: true);
+            var hostSalt = FrameCipher.NewSalt();
+            channel.Send(hostSalt);
+            var cipher = new FrameCipher(token, guestSalt, hostSalt, host: true);
 
             // A guest whose first frame does not decrypt holds another join code, so it is turned away unanswered.
             if (ReceiveMessage(channel, cipher) is not { } guest)
@@ -598,7 +670,7 @@ internal sealed class Session
         }
         catch (Exception ex)
         {
-            Log.Write($"a guest dropped out: {ex.Message}");
+            Log.Write($"a guest dropped out: {ex.GetBaseException().Message}");
             return false;
         }
     }
@@ -629,9 +701,16 @@ internal sealed class Session
             }
 
             channel.SetTimeout(ExchangeTimeout);
-            var salt = FrameCipher.NewSalt();
-            channel.Send(salt);
-            var cipher = new FrameCipher(code.Token, salt, host: false);
+            var guestSalt = FrameCipher.NewSalt();
+            channel.Send(guestSalt);
+
+            if (channel.Receive() is not { Length: FrameCipher.SaltSize } hostSalt)
+            {
+                Fail(generation, NoAnswer);
+                return;
+            }
+
+            var cipher = new FrameCipher(code.Token, guestSalt, hostSalt, host: false);
             var headers = new KeyValuePair<string, string?>[]
             {
                 new(Message.Game, game),
@@ -642,7 +721,7 @@ internal sealed class Session
 
             if (ReceiveMessage(channel, cipher) is not { } host)
             {
-                Fail(generation, "Your friend's game did not answer. Is the join code still the one it hosts with?");
+                Fail(generation, NoAnswer);
                 return;
             }
 
@@ -656,7 +735,7 @@ internal sealed class Session
         }
         catch (Exception ex)
         {
-            Fail(generation, $"The connection broke off: {ex.Message}");
+            Fail(generation, $"The connection broke off: {ex.GetBaseException().Message}");
         }
         finally
         {
@@ -858,6 +937,40 @@ internal sealed class Session
     }
 
     /// <summary>
+    /// Stops hosting that nobody joined, unless hosting ended meanwhile.
+    /// </summary>
+    /// <param name="generation">The hosting generation.</param>
+    /// <param name="why">Why, for the log.</param>
+    private void GiveUpHosting(int generation, string why)
+    {
+        if (IsHosting(generation))
+        {
+            Log.Write($"stopped hosting, {why}");
+            Fail(generation, NobodyJoined);
+        }
+    }
+
+    /// <summary>
+    /// Tells how long is left until a moment.
+    /// </summary>
+    /// <param name="end">The moment.</param>
+    /// <returns>The time left, never below zero.</returns>
+    private static TimeSpan Until(DateTime end)
+    {
+        var left = end - DateTime.UtcNow;
+        return left < TimeSpan.Zero ? TimeSpan.Zero : left;
+    }
+
+    /// <summary>
+    /// Reports whether a team fits in a frame of the exchange, with its headers.
+    /// </summary>
+    /// <param name="game">What tells this game version's data from another's, which the guest sends along.</param>
+    /// <param name="team">The team.</param>
+    /// <returns><see langword="true"/> when it fits.</returns>
+    private static bool FitsInFrame(string game, string team) =>
+        Encoding.UTF8.GetByteCount(game) + Encoding.UTF8.GetByteCount(team) <= IFrameChannel.MaxFrameBytes - FrameCipher.Overhead - ExchangeHeaderBytes;
+
+    /// <summary>
     /// Breaks the exchange off, unless the session moved on meanwhile.
     /// </summary>
     /// <param name="generation">The session that failed.</param>
@@ -924,14 +1037,6 @@ internal sealed class Session
     }
 
     /// <summary>
-    /// Runs work on a background thread, which ends with the game.
-    /// </summary>
-    /// <param name="name">The thread's name.</param>
-    /// <param name="work">The work, which must catch everything itself.</param>
-    private static void StartThread(string name, Action work) =>
-        new Thread(() => work()) { IsBackground = true, Name = name }.Start();
-
-    /// <summary>
     /// Names the party on Discord after the join code's token, the same for host and guest.
     /// </summary>
     /// <remarks>
@@ -940,7 +1045,7 @@ internal sealed class Session
     /// <param name="token">The token.</param>
     /// <returns>The party's id.</returns>
     private static string PartyIdOf(string token) =>
-        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token))).Substring(0, 32).ToLowerInvariant();
+        Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(token)))[..32];
 
     /// <summary>
     /// Keeps a name short and on one line.

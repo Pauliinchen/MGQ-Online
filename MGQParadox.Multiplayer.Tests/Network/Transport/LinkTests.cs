@@ -2,6 +2,7 @@
 //  LinkTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-06: Encrypted the links with a salt of each side
 //      Paulinchen  2026-10-04: Let the other side stay silent for two seconds, since a busy build machine delays a ping past 400 ms
 //      Paulinchen  2026-09-29: Encrypted the links with a connection's salt as well as the token
 //                            - Linked the games through the test relay, since the direct connection is gone
@@ -29,9 +30,14 @@ public sealed class LinkTests : IDisposable
     private const string Token = "abcdefghjk";
 
     /// <summary>
-    /// The connection's salt both sides of a test link share.
+    /// The guest's salt both sides of a test link share.
     /// </summary>
-    private static readonly byte[] Salt = FrameCipher.NewSalt();
+    private static readonly byte[] GuestSalt = FrameCipher.NewSalt();
+
+    /// <summary>
+    /// The host's salt both sides of a test link share.
+    /// </summary>
+    private static readonly byte[] HostSalt = FrameCipher.NewSalt();
 
     /// <summary>
     /// How long the links in these tests stay quiet before they ping.
@@ -181,7 +187,7 @@ public sealed class LinkTests : IDisposable
     /// <param name="host">Whether this side hosts.</param>
     /// <returns>The link.</returns>
     private static Link NewLink(IFrameChannel channel, string token, bool host) =>
-        new(channel, new FrameCipher(token, Salt, host), PingInterval, DropTimeout);
+        new(channel, new FrameCipher(token, GuestSalt, HostSalt, host), PingInterval, DropTimeout);
 
     /// <summary>
     /// Waits until a message arrived.

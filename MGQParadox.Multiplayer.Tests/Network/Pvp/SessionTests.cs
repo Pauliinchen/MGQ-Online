@@ -2,6 +2,7 @@
 //  SessionTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-06: Covered an invite kept past the link's end, hosting that stops when nobody joins, and a team too large to send
 //      Paulinchen  2026-09-29: Covered joining with a world code
 //                            - Met at the test relay in every test, and covered an unreachable or unknown relay and codes of other versions
 //                            - Covered joining through the relay, the direct way winning, and failing at the relay
@@ -37,6 +38,11 @@ public sealed class SessionTests
     /// A join code of the first version of the mod.
     /// </summary>
     private const string FirstVersionCode = "mgqmp1;abcdefghjk;47625;203.0.113.7";
+
+    /// <summary>
+    /// The close code the relay ends a host's lone wait with.
+    /// </summary>
+    private const int WaitedTooLong = 4004;
 
     /// <summary>
     /// How long a test waits for the other side.
@@ -171,6 +177,7 @@ public sealed class SessionTests
         var guestSide = AwaitSettled(guest);
         Assert.Equal("failed", guestSide["state"]);
         Assert.Contains("not hosting", guestSide["error"]);
+        Assert.Contains("try again", guestSide["error"]);
     }
 
     /// <summary>
@@ -385,12 +392,92 @@ public sealed class SessionTests
     }
 
     /// <summary>
+    /// Asserts that ending the link after the swap keeps an invite accepted meanwhile, so the game
+    /// joins it after the battle, while the player's own stop turns a waiting invite down.
+    /// </summary>
+    [Fact]
+    public void Cancel_AfterTheSwap_KeepsTheInvite()
+    {
+        using var relay = new TestRelay();
+        var host = NewSession("Host", relay.Address);
+        var guest = NewSession("Guest", relay.Address);
+
+        host.Host("3.06", "host team");
+        guest.Join(AwaitCode(host), "3.06", "guest team");
+        AwaitSettled(guest);
+        guest.ReceiveInvite(CodeWithoutHost);
+        guest.Cancel();
+
+        var afterBattle = Message.Decode(guest.Describe());
+        Assert.Equal("idle", afterBattle["state"]);
+        Assert.Equal("1", afterBattle["invite"]);
+
+        guest.Cancel();
+        Assert.Equal(string.Empty, Message.Decode(guest.Describe())["invite"]);
+    }
+
+    /// <summary>
+    /// Asserts that hosting stops with a message once nobody joined in time, instead of waiting at the relay forever.
+    /// </summary>
+    [Fact]
+    public void NobodyJoining_StopsHosting()
+    {
+        using var relay = new TestRelay();
+        var host = NewSession("Host", relay.Address, TimeSpan.FromSeconds(1));
+
+        host.Host("3.06", "host team");
+        AwaitCode(host);
+
+        var state = AwaitSettled(host);
+        Assert.Equal("failed", state["state"]);
+        Assert.Contains("Nobody joined", state["error"]);
+        AwaitRoom(relay, 0);
+    }
+
+    /// <summary>
+    /// Asserts that hosting stops with a message once the relay ends the host's lone wait, instead of entering the room again.
+    /// </summary>
+    [Fact]
+    public void RelayEndingTheLoneWait_StopsHosting()
+    {
+        using var relay = new TestRelay();
+        var host = NewSession("Host", relay.Address);
+
+        host.Host("3.06", "host team");
+        AwaitCode(host);
+        AwaitRoom(relay, 1);
+        relay.CloseRooms(WaitedTooLong);
+
+        var state = AwaitSettled(host);
+        Assert.Equal("failed", state["state"]);
+        Assert.Contains("Nobody joined", state["error"]);
+    }
+
+    /// <summary>
+    /// Asserts that a team too large for a frame fails hosting and joining at once and says why.
+    /// </summary>
+    [Fact]
+    public void TooLargeTeam_FailsAtOnce()
+    {
+        var team = new string('a', IFrameChannel.MaxFrameBytes);
+        var host = NewSession("Host", relay: null);
+        var guest = NewSession("Guest", relay: null);
+
+        host.Host("3.06", team);
+        guest.Join(CodeWithoutHost, "3.06", team);
+
+        Assert.Contains("too large", Message.Decode(host.Describe())["error"]);
+        Assert.Contains("too large", Message.Decode(guest.Describe())["error"]);
+    }
+
+    /// <summary>
     /// Creates a session that leaves the clipboard alone and never reaches the real relay.
     /// </summary>
     /// <param name="player">The player's name.</param>
     /// <param name="relay">The relay every id leads to, or <see langword="null"/> for none.</param>
+    /// <param name="hostWaitLimit">How long hosting waits for a guest, the session's own when left out.</param>
     /// <returns>The session.</returns>
-    private static Session NewSession(string player, Uri? relay)
+    private static Session NewSession(string player, Uri? relay, TimeSpan? hostWaitLimit = null)
     {
         var session = new Session
         {
@@ -398,6 +485,7 @@ public sealed class SessionTests
             ReadClipboard = () => null,
             RelayAddress = _ => relay,
             RelayPairTimeout = TimeSpan.FromSeconds(2),
+            HostWaitLimit = hostWaitLimit ?? TimeSpan.FromMinutes(30),
         };
 
         session.SetPlayerName(player);
