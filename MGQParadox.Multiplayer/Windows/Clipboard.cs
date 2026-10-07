@@ -2,6 +2,7 @@
 //  Clipboard.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-06: Read the clipboard's text no further than its memory goes
 //      Paulinchen  2026-09-28: Created
 //
 //----------------------------------------------------------------
@@ -106,7 +107,16 @@ internal static unsafe partial class Clipboard
 
             try
             {
-                return source == null ? null : new string(source);
+                if (source == null)
+                {
+                    return null;
+                }
+
+                // Another application's text may lack its terminating null, so the read stays inside
+                // the memory.
+                var text = new ReadOnlySpan<char>(source, (int)Math.Min((ulong)GlobalSize(memory) / sizeof(char), int.MaxValue));
+                var end = text.IndexOf('\0');
+                return new string(end >= 0 ? text[..end] : text);
             }
             finally
             {
@@ -177,6 +187,14 @@ internal static unsafe partial class Clipboard
     /// <returns>0 when it was freed.</returns>
     [LibraryImport("kernel32.dll")]
     private static partial nint GlobalFree(nint memory);
+
+    /// <summary>
+    /// Reads the size of memory.
+    /// </summary>
+    /// <param name="memory">The memory.</param>
+    /// <returns>Its size in bytes, 0 when it failed.</returns>
+    [LibraryImport("kernel32.dll")]
+    private static partial nuint GlobalSize(nint memory);
 
     /// <summary>
     /// Makes memory addressable.

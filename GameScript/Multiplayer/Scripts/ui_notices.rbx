@@ -2,6 +2,7 @@
 #  ui_notices.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-06: Showed messages outside a world too, such as a Discord invite taken during a game, dropping only those shown in a world once it closes
 #      Paulinchen  2026-10-04: Renamed from mp_notices.rbx
 #      Paulinchen  2026-10-03: Listed the invites the scripts offer through MGQ_MpActions
 #                            - Called the scripts that load before this one without asking whether they loaded
@@ -10,11 +11,12 @@
 #
 #----------------------------------------------------------------
 
-# The notification box at the top left of the screen in a world, on the map and in menus. It holds
-# two kinds: invites, the party invites and duel challenges that reach the player from wherever they
-# were sent, which stay as long as they stand; and messages, which other scripts show for a moment,
-# such as a party member meeting enemies. The invites come first, and the box's keys (Y and N unless
-# the player binds others, see core_hotkeys.rbx) accept or decline the first one; messages take no key.
+# The notification box at the top left of the screen, on the map and in menus. It holds two kinds:
+# invites, the party invites and duel challenges that reach the player in a world from wherever
+# they were sent, which stay as long as they stand; and messages, which other scripts show for a
+# moment, such as a party member meeting enemies, or a Discord invite taken outside a world. The
+# invites come first, and the box's keys (Y and N unless the player binds others, see
+# core_hotkeys.rbx) accept or decline the first one; messages take no key.
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpNotices
@@ -39,14 +41,15 @@ module MGQ_MpNotices
   # What starts this script's lines in Multiplayer InGame.log.
   LOG_TAG = "notices"
 
-  # Shows a message for a moment, in place of one with the same key.
+  # Shows a message for a moment, in place of one with the same key. One shown in a world goes when
+  # the world closes.
   #
   # @param key [Object] What it is about.
   # @param text [String] What it says.
   # @param frames [Integer] How long it shows.
   def self.message(key, text, frames = MESSAGE_FRAMES)
     drop(key)
-    @messages << { :key => key, :text => text, :frames => frames }
+    @messages << { :key => key, :text => text, :frames => frames, :world => MGQ_MpOverworldSync.in_world? }
   end
 
   # Takes a message away before its time.
@@ -59,9 +62,10 @@ module MGQ_MpNotices
   # Lists what the box shows: the invites that stand, by their sender's name, then the messages,
   # newest first, as many as fit.
   #
+  # @param in_world [Boolean] Whether a world is open, without which no invite stands.
   # @return [Array<MGQ_MpActions::Notice>] The notifications, at most MAX_ROWS.
-  def self.notices
-    peers = MGQ_MpOverworldSync::Peers.all.sort_by { |peer| peer.state["name"].to_s.downcase }
+  def self.notices(in_world = true)
+    peers = in_world ? MGQ_MpOverworldSync::Peers.all.sort_by { |peer| peer.state["name"].to_s.downcase } : []
     invites = peers.map { |peer| MGQ_MpActions.offers.map { |offers| offers.notice_of(peer) } }.flatten.compact
     # An invite the player declined stays away while it stands; a new one shows again.
     @declined.delete_if { |key, mark| invites.none? { |invite| invite.key == key && invite.mark == mark } }
@@ -79,11 +83,11 @@ module MGQ_MpNotices
     accept = MGQ_MpHotkeys.pressed?(:accept)
     decline = MGQ_MpHotkeys.pressed?(:decline)
     @messages.each { |entry| entry[:frames] -= 1 }
-    @messages.reject! { |entry| entry[:frames] <= 0 || !in_world }
+    @messages.reject! { |entry| entry[:frames] <= 0 || (entry[:world] && !in_world) }
     @declined.clear unless in_world
-    list = in_world && shown? ? notices : []
+    list = shown? ? notices(in_world) : []
     answer = accept ? :take : decline ? :decline : nil
-    list = notices if answer && !$mgq_text_input && !MGQ_Multiplayer::Capture.on? && answer_first(list, answer)
+    list = notices(in_world) if answer && !$mgq_text_input && !MGQ_Multiplayer::Capture.on? && answer_first(list, answer)
     show(list)
   rescue => e
     log_once(:tick, "tick failed: #{e.class}: #{e.message}")

@@ -2,6 +2,7 @@
 //  Exports.Input.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-06: Kept what was typed when the game script's buffer was too small, for the call with a larger one
 //      Paulinchen  2026-09-30: Created
 //
 //----------------------------------------------------------------
@@ -63,14 +64,22 @@ internal static unsafe partial class Exports
     /// </summary>
     /// <param name="buffer">Receives <c>keys=</c> the number of keys that went down, then the typed characters, UTF-8 and null-terminated.</param>
     /// <param name="size">The size of the buffer in bytes.</param>
-    /// <returns>The text's length, or its length negated when the buffer is too small, 0 when it failed.</returns>
+    /// <returns>The text's length, or its length negated when the buffer is too small, which keeps the text for the next call; 0 when it failed.</returns>
     [UnmanagedCallersOnly(EntryPoint = "mp_take_typed", CallConvs = [typeof(CallConvStdcall)])]
     public static int TakeTyped(byte* buffer, int size)
     {
         try
         {
             var (text, keys) = Keyboard.Take();
-            return Copy(new Message([new("keys", keys.ToString(System.Globalization.CultureInfo.InvariantCulture))], text).Encode(), buffer, size);
+            var length = Copy(new Message([new("keys", keys.ToString(System.Globalization.CultureInfo.InvariantCulture))], text).Encode(), buffer, size);
+
+            // The game script asks again with a larger buffer, which must find the same take.
+            if (length < 0)
+            {
+                Keyboard.GiveBack(text, keys);
+            }
+
+            return length;
         }
         catch (Exception ex)
         {

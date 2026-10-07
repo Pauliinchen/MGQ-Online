@@ -2,6 +2,8 @@
 #  core_async.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-06: Wrapped the screens, the screen's freeze and transition and the menus' backgrounds through core_hooks.rbx instead of wraps of its own
+#                            - Read the command an interpreter runs through MGQ_MpGame
 #      Paulinchen  2026-10-04: Renamed from mp_async.rbx
 #      Paulinchen  2026-10-03: Read and wrote the game's private fields and called its private methods through MGQ_MpGame
 #                            - Logged through MGQ_MpLog
@@ -32,16 +34,6 @@ module MGQ_MpAsync
   LEAVING_SCENES = [:Scene_Title, :Scene_Gameover]
 
   @ticking = false
-
-  # Reports whether the hooks can be installed.
-  #
-  # A second copy of this script would wrap the same methods under the same names, and each hook
-  # would then call itself until the stack overflows.
-  #
-  # @return [Boolean] false when the hooks are in place already.
-  def self.hookable?
-    !Scene_Base.method_defined?(:mgq_mp_async_update_basic)
-  end
 
   extend MGQ_MpLog
 
@@ -157,6 +149,48 @@ module MGQ_MpAsync
     @unfrozen = false
     skipped
   end
+
+  # Makes the live map a menu shows in place of its picture of the map, for menus whose background
+  # is that picture while the world runs; menus with a background of their own keep it.
+  #
+  # @param scene [Scene_MenuBase] The menu.
+  # @param background [Sprite, nil] The menu's background.
+  # @return [Spriteset_MpLiveMap, nil] The live map, nil where the menu keeps its background.
+  def self.live_map_for(scene, background)
+    return nil unless background && background.bitmap.equal?(SceneManager.background_bitmap)
+    return nil unless behind?(scene)
+
+    live_map = Spriteset_MpLiveMap.new
+    background.visible = false
+    live_map
+  rescue => e
+    log("live map failed: #{e.class}: #{e.message}")
+    nil
+  end
+
+  # Updates the live map behind a menu, showing the menu's picture again when it fails.
+  #
+  # @param live_map [Spriteset_MpLiveMap] The live map.
+  # @param background [Sprite, nil] The menu's background.
+  # @return [Spriteset_MpLiveMap, nil] The live map, nil once it failed and was freed.
+  def self.update_live_map(live_map, background)
+    live_map.update
+    live_map
+  rescue => e
+    log("live map update failed: #{e.class}: #{e.message}")
+    dispose_live_map(live_map)
+    background.visible = true if background
+    nil
+  end
+
+  # Frees the live map behind a menu.
+  #
+  # @param live_map [Spriteset_MpLiveMap, nil] The live map.
+  def self.dispose_live_map(live_map)
+    live_map.dispose if live_map
+  rescue => e
+    log("live map dispose failed: #{e.class}: #{e.message}")
+  end
 end
 
 # The live map behind a menu: the map's sprites, below everything the menu draws and dimmed as the
@@ -193,112 +227,51 @@ class Spriteset_MpLiveMap < Spriteset_Map
   end
 end
 
-# Game hooks.
-#
-# Each wraps a game method: the original runs first unless said otherwise, and the mod's part never
-# raises.
+# Game hooks shared with other scripts, through core_hooks.rbx.
 
-if MGQ_MpAsync.hookable?
-  begin
-    class Scene_Base
-      alias mgq_mp_async_update_basic update_basic
-
-      # Updates the screen's basics, then runs the world behind it and the live map behind a menu.
-      def update_basic
-        mgq_mp_async_update_basic
-        MGQ_MpAsync.tick(self)
-        mgq_mp_async_update_live_map
-      end
-
-      alias mgq_mp_async_terminate terminate
-
-      # Leaves the screen, without freezing it when the next one comes in at once.
-      def terminate
-        MGQ_MpAsync.leave(self) { mgq_mp_async_terminate }
-      end
-
-      # Updates the live map behind a menu, if the menu shows one.
-      def mgq_mp_async_update_live_map
-        @mgq_mp_live_map.update if @mgq_mp_live_map
-      rescue => e
-        MGQ_MpAsync.log("live map update failed: #{e.class}: #{e.message}")
-        @mgq_mp_live_map.dispose rescue nil
-        @mgq_mp_live_map = nil
-        @background_sprite.visible = true if @background_sprite
-      end
-    end
-  rescue => e
-    MGQ_MpAsync.log("scene hook FAILED: #{e.class}: #{e.message}")
+begin
+  # After a screen's basics, the world behind it and the live map behind a menu.
+  MGQ_MpHooks.after(Scene_Base, :update_basic, "core_async") do
+    MGQ_MpAsync.tick(self)
+    @mgq_mp_live_map = MGQ_MpAsync.update_live_map(@mgq_mp_live_map, @background_sprite) if @mgq_mp_live_map
   end
 
-  begin
-    class << Graphics
-      alias mgq_mp_async_freeze freeze
-      alias mgq_mp_async_transition transition
-
-      # Freezes the screen, unless the screen being left switches to the next at once.
-      def freeze
-        MGQ_MpAsync.skip_freeze? ? nil : mgq_mp_async_freeze
-      end
-
-      # Carries out the transition from the frozen screen, unless the freeze was skipped.
-      #
-      # @param args [Array] The original's arguments.
-      def transition(*args)
-        MGQ_MpAsync.skip_transition? ? nil : mgq_mp_async_transition(*args)
-      end
-    end
-  rescue => e
-    MGQ_MpAsync.log("screen hooks FAILED: #{e.class}: #{e.message}")
-  end
-
-  begin
-    class Scene_MenuBase
-      alias mgq_mp_async_create_background create_background
-      alias mgq_mp_async_dispose_background dispose_background
-
-      # Creates the menu's picture of the map, then shows the live map in its place while the world
-      # runs.
-      def create_background
-        mgq_mp_async_create_background
-        mgq_mp_async_show_live_map
-      end
-
-      # Shows the live map in place of the picture, for menus whose background is that picture;
-      # menus with a background of their own keep it.
-      def mgq_mp_async_show_live_map
-        return unless @background_sprite && @background_sprite.bitmap.equal?(SceneManager.background_bitmap)
-        return unless MGQ_MpAsync.behind?(self)
-
-        @mgq_mp_live_map = Spriteset_MpLiveMap.new
-        @background_sprite.visible = false
-      rescue => e
-        MGQ_MpAsync.log("live map failed: #{e.class}: #{e.message}")
-        @mgq_mp_live_map = nil
-      end
-
-      # Frees the live map, then the menu's picture of the map.
-      def dispose_background
-        if @mgq_mp_live_map
-          @mgq_mp_live_map.dispose rescue nil
-          @mgq_mp_live_map = nil
-        end
-        mgq_mp_async_dispose_background
-      end
-    end
-  rescue => e
-    MGQ_MpAsync.log("menu hooks FAILED: #{e.class}: #{e.message}")
-  end
+  # Leaving a screen, without freezing it when the next one comes in at once.
+  MGQ_MpHooks.around(Scene_Base, :terminate) { |scene, _args, original| MGQ_MpAsync.leave(scene) { original.call } }
+rescue => e
+  MGQ_MpAsync.log("scene hook FAILED: #{e.class}: #{e.message}")
 end
 
-# Game hooks shared with other scripts, through core_hooks.rbx.
+begin
+  # Freezing the screen, unless the screen being left switches to the next at once, and the
+  # transition from the frozen screen, unless the freeze was skipped.
+  MGQ_MpHooks.around(Graphics.singleton_class, :freeze) { |_graphics, _args, original| MGQ_MpAsync.skip_freeze? ? nil : original.call }
+  MGQ_MpHooks.around(Graphics.singleton_class, :transition) { |_graphics, _args, original| MGQ_MpAsync.skip_transition? ? nil : original.call }
+rescue => e
+  MGQ_MpAsync.log("screen hooks FAILED: #{e.class}: #{e.message}")
+end
+
+begin
+  # After a menu's picture of the map, the live map in its place while the world runs.
+  MGQ_MpHooks.after(Scene_MenuBase, :create_background, "core_async") do
+    @mgq_mp_live_map = MGQ_MpAsync.live_map_for(self, @background_sprite)
+  end
+
+  # Before the menu's picture of the map is freed, the live map.
+  MGQ_MpHooks.before(Scene_MenuBase, :dispose_background, "core_async") do
+    MGQ_MpAsync.dispose_live_map(@mgq_mp_live_map)
+    @mgq_mp_live_map = nil
+  end
+rescue => e
+  MGQ_MpAsync.log("menu hooks FAILED: #{e.class}: #{e.message}")
+end
 
 begin
   # Before an event command runs, its interpreter waits until the player is back on the map when
   # the command needs them and the map runs behind another screen.
   MGQ_MpHooks.before(Game_Interpreter, :execute_command, "core_async") do
     begin
-      Fiber.yield while MGQ_MpAsync.hold?(@list[@index])
+      Fiber.yield while MGQ_MpAsync.hold?(MGQ_MpGame.get(self, :list)[MGQ_MpGame.get(self, :index)])
     rescue FiberError
       # An interpreter run outside a fiber cannot wait, so its command runs at once.
     end

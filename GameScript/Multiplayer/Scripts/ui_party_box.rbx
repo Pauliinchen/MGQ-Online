@@ -2,6 +2,7 @@
 #  ui_party_box.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-06: Logged a box that fails to draw under the party box's own tag
 #      Paulinchen  2026-10-04: Made the box small with its key, only names and pings, and kept the choice in Player.ini
 #                            - Created
 #
@@ -114,7 +115,7 @@ class Sprite_MpPartyBox < Sprite
     @shown = drawn
     small ? draw_small(rows) : draw(rows)
   rescue => e
-    MGQ_MpWorldOverview.log_once(:party_box, "drawing the party box failed: #{e.class}: #{e.message}")
+    MGQ_MpPartyBox.log_once(:draw, "drawing the party box failed: #{e.class}: #{e.message}")
   end
 
   # Draws the box, as tall as the party needs, in the top right corner.

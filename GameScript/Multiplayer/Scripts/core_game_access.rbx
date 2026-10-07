@@ -2,7 +2,10 @@
 #  core_game_access.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-06: Found the database's items, weapons and armors by the letter of their kind, for every script that writes items as text
+#      Paulinchen  2026-10-06: Left scene_changing? out of the private methods, since the game makes it public
+#                            - Named a battler's counters, which hold its barriers, and whether a battle starts with a first strike or a surprise
+#                            - Named whether the map's menu was asked for, and the entries of the game's switches and variables
+#                            - Found the database's items, weapons and armors by the letter of their kind, for every script that writes items as text
 #                            - Named the party's own companions, past a story's temporary party
 #                            - Named the title screen's commands, which show whether the player backed out of a world's new game
 #      Paulinchen  2026-10-04: Named a character's levels, which the level sync reads
@@ -51,6 +54,9 @@ module MGQ_MpGame
     :actions => :@actions,
     :result => :@result,
 
+    # Game_Battler: its battle counters, which hold its barriers.
+    :counters => :@cnt,
+
     # An enchanted item, and an enemy's extra data.
     :plus_num => :@plus_num,
     :socket_num => :@socket_num,
@@ -86,6 +92,8 @@ module MGQ_MpGame
 
     # BattleManager, SceneManager and DataManager.
     :retry_data => :@retry_data,
+    :preemptive => :@preemptive,
+    :surprise => :@surprise,
     :stack => :@stack,
     :system_save_count => :@system_save_count,
 
@@ -94,8 +102,15 @@ module MGQ_MpGame
     :index => :@index,
     :depth => :@depth,
 
+    # Scene_Map: whether the game's menu was asked for.
+    :menu_calling => :@menu_calling,
+
     # $data_mapinfos: the map lists, the main one and one per further map folder.
     :map_lists => :@data,
+
+    # $game_switches, $game_variables and $game_self_switches: their entries, written past the game's
+    # setters, which refresh the map and act on some switches by themselves.
+    :data => :@data,
   }
 
   # The fields the game sets only once it needs them, so one that is missing is no reason to log:
@@ -105,7 +120,7 @@ module MGQ_MpGame
   # The game's private methods the mod calls.
   METHODS = [
     :auto_state_with_switch, :make_unique_names, :refresh_status, :update_for_wait, :wait_for_message,
-    :scene_changing?, :battle_show_skip?,
+    :battle_show_skip?,
   ]
 
   # Reads a private field of one of the game's objects, logging once when the game has no such

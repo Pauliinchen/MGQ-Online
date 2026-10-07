@@ -2,6 +2,7 @@
 #  core_hooks.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-06: Kept the map's menu shut through MGQ_MpGame
 #      Paulinchen  2026-10-04: Renamed from mp_hooks.rbx
 #      Paulinchen  2026-10-03: Added around, a wrap that decides when the original runs, and hold_player, which keeps the player standing and the menu shut for every script
 #                            - Logged through MGQ_MpLog
@@ -143,7 +144,7 @@ module MGQ_MpHooks
     @holding = true
     around(Game_Player, :movable?) { |_player, _args, original| original.call && !MGQ_MpHooks.player_held? }
     around(Scene_Map, :update_call_menu) do |scene, _args, original|
-      MGQ_MpHooks.player_held? ? scene.instance_variable_set(:@menu_calling, false) : original.call
+      MGQ_MpHooks.player_held? ? MGQ_MpGame.set(scene, :menu_calling, false) : original.call
     end
   rescue => e
     log("#{script} could not hold the player: #{e.class}: #{e.message}")

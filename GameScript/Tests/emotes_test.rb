@@ -2,7 +2,9 @@
 #  emotes_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-06: Pointed at emotes with the arrows held, diagonals and none included, and kept the last one once they are let go, a diagonal also when its arrows are let go one after the other
+#      Paulinchen  2026-10-06: Checked that the World overview keeps the wheel shut, and that a loaded save with fewer frames ends the cooldown
+#                            - Left loading ui_wheel.rbx to world_support.rb, which loads it already
+#                            - Pointed at emotes with the arrows held, diagonals and none included, and kept the last one once they are let go, a diagonal also when its arrows are let go one after the other
 #      Paulinchen  2026-10-04: Created
 #
 #----------------------------------------------------------------
@@ -23,7 +25,6 @@ end
 module Graphics; def self.frame_count; $frame_count; end; end
 $frame_count = 0
 
-load_script "ui_wheel"
 load_script "ui_emotes"
 
 emotes = MGQ_MpEmotes
@@ -89,6 +90,13 @@ $buttons << :C
 emotes.on_map
 $held = []
 check("the jump plays once a moment passed", [$game_player.jumps, $sent.size], [1, 1])
+$frame_count = 5
+emotes.open
+$held = [:UP]
+$buttons << :C
+emotes.on_map
+$held = []
+check("a save loaded with fewer frames played ends the moment too", [$game_player.jumps, $sent.size], [2, 2])
 $pressed = MGQ_MpHotkeys.code(:emotes)
 emotes.on_map
 $pressed = MGQ_MpHotkeys.code(:emotes)
@@ -117,3 +125,18 @@ $pressed = MGQ_MpHotkeys.code(:emotes)
 emotes.on_map
 check("the chat box keeps the wheel shut", emotes.open?, false)
 MGQ_MpChat.stop_typing
+
+# Not while the World overview is open, whose hold on the buttons stays.
+module MGQ_MpWorldOverview; def self.open?; $overview_open; end; end
+$overview_open = true
+MGQ_Multiplayer::Capture.start(:overview)
+$pressed = MGQ_MpHotkeys.code(:emotes)
+emotes.on_map
+check("the World overview keeps the wheel shut", [emotes.open?, MGQ_Multiplayer::Capture.on?], [false, true])
+$overview_open = false
+emotes.on_map
+$pressed = MGQ_MpHotkeys.code(:emotes)
+emotes.on_map
+emotes.close
+check("a wheel that opened and closed under another screen leaves its hold", MGQ_Multiplayer::Capture.on?, true)
+MGQ_Multiplayer::Capture.stop(:overview)

@@ -2,6 +2,7 @@
 #  notices_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-06: Checked that a message shown outside a world shows there and goes after a moment
 #      Paulinchen  2026-10-04: Followed the scripts to their new names, without mp_
 #      Paulinchen  2026-10-03: Offered the challenges through MGQ_MpActions, as the duel script does
 #                            - Created
@@ -145,3 +146,12 @@ notices.message(:left, "Gone with the world")
 notices.tick(false)
 notices.tick(true)
 check("outside a world nothing shows, and the messages are gone", notices.notices.map(&:text).include?("Gone with the world"), false)
+
+# A message shown outside a world, such as a Discord invite taken during a game.
+$open = false
+notices.message(:world_invite, "Discord invite taken")
+notices.tick(false)
+check("shows outside a world too, without the world's invites", shown.call, ["Discord invite taken"])
+MGQ_MpNotices::MESSAGE_FRAMES.times { notices.tick(false) }
+check("and goes after a moment", shown.call, [])
+$open = true

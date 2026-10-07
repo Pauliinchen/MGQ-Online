@@ -2,7 +2,9 @@
 #  loader_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-06: Checked that the in-game log counts a repeated line, while it repeats and when the game closes, and moves a log grown too large aside
+#      Paulinchen  2026-10-07: Checked that clearing the chosen name brings the name on Discord back instead of A friend
+#      Paulinchen  2026-10-06: Checked that a screen closing leaves the buttons with another that holds them, and that the guard passes Input on only while the game is in front
+#                            - Checked that the in-game log counts a repeated line, while it repeats and when the game closes, and moves a log grown too large aside
 #                            - Checked that ui_wheel.rbx loads before both wheels
 #      Paulinchen  2026-10-04: Checked that coop_gather.rbx loads after coop_events.rbx and coop_castle.rbx after coop_story.rbx
 #                            - Followed the scripts to their new names, without mp_
@@ -95,3 +97,63 @@ Dir.mktmpdir do |game|
     check("the log of earlier sessions, grown past its limit, is kept as the old log", File.size(File.join("Logs", "Multiplayer InGame.old.log")), MGQ_Multiplayer::Log::MAX_BYTES + 1)
   end
 end
+
+# The buttons: every screen of the mod that holds them keeps them until it gives them back, and
+# Input answers nothing past the guard but what a screen asks past the capture.
+MGQ_Multiplayer.module_eval(source[/  module Capture\n.*?\n  end\n/m])
+MGQ_Multiplayer.module_eval(source[/  module Background\n.*?\n  end\n/m])
+module MGQ_Multiplayer; module Windows; def self.game_in_front?; $front; end; end; end
+module Input
+  def self.update; $input_updates = ($input_updates || 0) + 1; end
+  def self.press?(button); button == :C; end
+  def self.trigger?(button); button == :C; end
+  def self.repeat?(button); button == :C; end
+  def self.dir4; 2; end
+  def self.dir8; 2; end
+end
+load File.join(SCRIPTS_DIR, "core_log.rbx")
+load File.join(SCRIPTS_DIR, "core_hooks.rbx")
+capture = MGQ_Multiplayer::Capture
+background = MGQ_Multiplayer::Background
+$front = true
+background.guard_input
+background.guard_input
+Input.update
+check("the guard leaves Input as it is while the game is in front", [Input.press?(:C), Input.trigger?(:C), Input.dir4, $input_updates], [true, true, 2, 1])
+capture.start(:overview)
+capture.start(:emotes)
+capture.stop(:emotes)
+check("a screen closing leaves the buttons with another that holds them", [capture.on?, Input.trigger?(:C), Input.dir8], [true, false, 0])
+check("which still reads them past the capture", [capture.trigger?(:C), capture.press?(:C), capture.repeat?(:C), Input.trigger?(:C)], [true, true, true, false])
+capture.stop(:overview)
+check("the last one gives them back to the game", [capture.on?, Input.trigger?(:C)], [false, true])
+$front = false
+Input.update
+check("another window in front takes every button away", [Input.press?(:C), capture.trigger?(:C)], [false, false])
+$front = true
+Input.update
+
+# The player's name: a chosen one replaces the name on Discord, and clearing it brings that back.
+MGQ_Multiplayer.const_set(:MAX_NAME_LENGTH, 32) unless defined?(MGQ_Multiplayer::MAX_NAME_LENGTH)
+MGQ_Multiplayer.module_eval(source[/  def self\.clean\(name.*?\n  end\n/m])
+module MGQ_Multiplayer
+  def self.path(name); name; end
+  module Ini
+    def self.read(_path); {}; end
+    def self.write(_path, values); $player_ini_written = values.dup; true; end
+  end
+  module Discord; def self.player_name; $discord_name; end; end
+  module Link
+    def self.new_id; "key"; end
+    def self.set_player(_key, name); $shared_name = name; true; end
+  end
+end
+MGQ_Multiplayer.module_eval(source[/  module Player\n.*?\n  end\n/m])
+player = MGQ_Multiplayer::Player
+$discord_name = "Discord Me"
+check("a name someone else chose that is empty still reads A friend", MGQ_Multiplayer.clean("  "), "A friend")
+player.name = "Chosen"
+check("a chosen name replaces the name on Discord", [player.name, $player_ini_written["name"]], ["Chosen", "Chosen"])
+player.name = "   "
+check("clearing it keeps no name in Player.ini and brings the name on Discord back",
+      [player.name, $player_ini_written.key?("name"), $shared_name], ["Discord Me", false, "Discord Me"])

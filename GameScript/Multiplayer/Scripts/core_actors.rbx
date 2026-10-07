@@ -2,7 +2,10 @@
 #  core_actors.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-06: Found a database item through MGQ_MpGame.item
+#      Paulinchen  2026-10-06: Left the player's affection alone when the game raises a rebuilt character's after a won battle
+#                            - Checked enchanted equipment past the switch's setter, which took the enchanted items off the player's whole party at every check
+#                            - Told the weapons' and armors' databases apart in the fingerprint too, since builds carry their ids
+#                            - Found a database item through MGQ_MpGame.item
 #      Paulinchen  2026-10-04: Sent the hero Luka Replacer plays in Luka's place, for a replaced Luka only, and rebuilt Luka as that hero
 #                            - Sent and compared a character's magic reflection and counter rate too
 #                            - Renamed from mp_actors.rbx
@@ -76,7 +79,7 @@ module MGQ_MpActors
     #
     # @return [String] The fingerprint.
     def self.game
-      sizes = [$data_actors, $data_classes, $data_skills, $data_items, $data_enemies, $data_states].map(&:size)
+      sizes = [$data_actors, $data_classes, $data_skills, $data_items, $data_weapons, $data_armors, $data_enemies, $data_states].map(&:size)
       "#{FORMAT}:#{sizes.join(',')}"
     end
 
@@ -507,17 +510,21 @@ class Game_MpActor < Game_Actor
   # Allows enchanted equipment, which the game takes off while the player's save has enchanting
   # off (NWConst::Sw::ENCHANT_OFF). The owner's game let the character wear it.
   #
+  # The switch is turned off for the check in the switches' own entries, since the game's setter
+  # takes every enchanted item off the player's party and refreshes it when the switch turns on.
+  #
   # @param item [RPG::BaseItem] The item.
   # @return [Boolean] Whether the character may wear it.
   def equippable?(item)
     switch_id = defined?(NWConst::Sw::ENCHANT_OFF) && NWConst::Sw::ENCHANT_OFF
     return super unless switch_id && $game_switches[switch_id] && item.is_a?(RPG::EquipItem) && item.enchant_item?
 
+    switches = MGQ_MpGame.get($game_switches, :data)
     begin
-      $game_switches[switch_id] = false
+      switches[switch_id] = false
       super
     ensure
-      $game_switches[switch_id] = true
+      switches[switch_id] = true
     end
   end
 
@@ -541,6 +548,14 @@ class Game_MpActor < Game_Actor
   # @return [Integer] Its affection in the owner's save, which skill formulas and damage boosts read.
   def love
     @member ? @member.counters[MGQ_MpActors::Builds::COUNTERS.index(:love)] : super
+  end
+
+  # Leaves the affection alone, which belongs to the owner's save: the game keeps it in a variable
+  # per character of the player's save, and raises it after a won battle for every battle member.
+  #
+  # @param value [Integer] The affection the game would set.
+  def love=(value)
+    super unless @member
   end
 
   # Multiplies damage by the counters of the owner's save, where the game reads the player's.

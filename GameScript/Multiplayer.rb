@@ -2,7 +2,10 @@
 #  Multiplayer.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-06: Kept up to 3000 lines of the in-game log per session instead of 60, which ended it within minutes, counted a repeated line instead of writing it again, saying so while it repeats and when the game closes, and moved a log grown past 1 MB aside as the old log when a session starts
+#      Paulinchen  2026-10-07: Forgot the chosen name when the player clears it, so the name on Discord stands again instead of A friend
+#      Paulinchen  2026-10-06: Kept the buttons held while any screen of the mod holds them, so one closing never hands them to the game under another
+#                            - Guarded Input through core_hooks.rbx, asking Windows every frame whether the game is in front, also where the game pauses in the background
+#                            - Kept up to 3000 lines of the in-game log per session instead of 60, which ended it within minutes, counted a repeated line instead of writing it again, saying so while it repeats and when the game closes, and moved a log grown past 1 MB aside as the old log when a session starts
 #                            - Loaded coop_story_rewards.rbx before coop_story.rbx
 #                            - Handed a Discord invite into a world to world.rbx instead of the PvP connection
 #                            - Kept the last name Discord told, which stands in while Discord has not told one yet, as right after a restart
@@ -179,12 +182,13 @@ module MGQ_Multiplayer
   # Keeps a name someone else chose short, on one line and free of message codes.
   #
   # @param name [String, nil] The name.
-  # @return [String] The name, "A friend" when nothing is left of it.
-  def self.clean(name)
+  # @param fallback [String] What stands in when nothing is left of it.
+  # @return [String] The name, the fallback when nothing is left of it.
+  def self.clean(name, fallback = "A friend")
     cleaned = name.to_s.gsub(/[\x00-\x1f\\]/, "").strip[0, MAX_NAME_LENGTH]
-    cleaned.empty? ? "A friend" : cleaned
+    cleaned.empty? ? fallback : cleaned
   rescue
-    "A friend"
+    fallback
   end
 
   # Logs/Multiplayer InGame.log, which only appears when something went wrong inside the game.
@@ -336,11 +340,13 @@ module MGQ_Multiplayer
       discord.empty? ? nil : MGQ_Multiplayer.clean(discord)
     end
 
-    # Keeps the name the player chose, which replaces their name on Discord.
+    # Keeps the name the player chose, which replaces their name on Discord; an empty one forgets
+    # the chosen name, so the name on Discord stands again.
     #
     # @param name [String] The name.
     def self.name=(name)
-      store("name", MGQ_Multiplayer.clean(name))
+      chosen = MGQ_Multiplayer.clean(name, "")
+      chosen.empty? ? forget("name") : store("name", chosen)
       share
     end
 
@@ -360,6 +366,16 @@ module MGQ_Multiplayer
     def self.store(key, value)
       values = load
       values[key] = value.to_s
+      Ini.write(MGQ_Multiplayer.path(FILE), values)
+    end
+
+    # Removes a setting from Player.ini.
+    #
+    # @param key [String] The setting.
+    # @return [Boolean] Whether Player.ini was written.
+    def self.forget(key)
+      values = load
+      values.delete(key)
       Ini.write(MGQ_Multiplayer.path(FILE), values)
     end
 
@@ -494,7 +510,8 @@ module MGQ_Multiplayer
       [state[:payload], state["keys"].to_i]
     end
 
-    # Stops hosting or joining, closes the link, forgets what arrived and turns down a waiting invite.
+    # Stops hosting or joining, closes the link, forgets what arrived, and turns down a waiting invite
+    # unless a team had arrived.
     def self.cancel
       function('mp_cancel', 'v').call
     end
@@ -646,44 +663,28 @@ module MGQ_Multiplayer
       @running == true
     end
 
-    # Has Input report no buttons while another window is in front, once the game keeps running, or
-    # while a screen of the mod reads them (Capture).
+    # Has Input report no buttons while another window is in front or while a screen of the mod
+    # holds them (Capture), through core_hooks.rbx.
     #
     # The keyboard only reaches the window in front, but gamepads reach every game, so a pad played
     # in another game would play this one too.
     def self.guard_input
       return if @input_guarded
-      @input_guarded = true
 
       input = Input.singleton_class
-      if @running
-        input.send(:alias_method, :mgq_multiplayer_update, :update)
-        input.send(:define_method, :update) do
-          MGQ_Multiplayer::Background.refresh
-          mgq_multiplayer_update
-        end
-      end
-
+      MGQ_MpHooks.before(input, :update, "Multiplayer") { MGQ_Multiplayer::Background.refresh }
       IDLE_INPUT.each do |method, idle|
-        original = Background.original(method)
-        input.send(:alias_method, original, method)
-        input.send(:define_method, method) { |*args| MGQ_Multiplayer::Background.in_front? && !MGQ_Multiplayer::Capture.on? ? send(original, *args) : idle }
+        MGQ_MpHooks.around(input, method) { |_input, _args, original| MGQ_Multiplayer::Background.passes? ? original.call : idle }
       end
+      @input_guarded = true
     end
 
-    # Names the unguarded Input method that guard_input keeps.
+    # Reports whether Input answers as the game's own would: while the game is in front, and no
+    # screen of the mod holds the buttons unless it asks past the capture.
     #
-    # @param method [Symbol] A key of IDLE_INPUT.
-    # @return [Symbol] The name.
-    def self.original(method)
-      :"mgq_multiplayer_#{method.to_s.sub('?', '_query')}"
-    end
-
-    # Reports whether guard_input wrapped Input.
-    #
-    # @return [Boolean] Whether it did.
-    def self.input_guarded?
-      @input_guarded == true
+    # @return [Boolean] Whether it does.
+    def self.passes?
+      in_front? && (!Capture.on? || Capture.reading?)
     end
 
     # Asks Windows whether the window in front belongs to this game, once per frame.
@@ -697,7 +698,7 @@ module MGQ_Multiplayer
 
     # Reports whether the window in front belongs to this game, as Windows said at the last Input.update.
     #
-    # @return [Boolean] true while the input is not guarded or Windows cannot tell.
+    # @return [Boolean] true before the input is guarded or while Windows cannot tell.
     def self.in_front?
       @in_front != false
     end
@@ -706,27 +707,36 @@ module MGQ_Multiplayer
   # Takes the buttons away from the game while a screen of the mod reads them, such as a menu drawn
   # over the map, under which the player would walk or open the game's menu otherwise.
   module Capture
-    @owner = nil
+    # The screens that hold the buttons, each until it gives them back, so one screen closing never
+    # hands the buttons to the game under another.
+    @owners = []
 
     # Takes the buttons for a screen.
     #
     # @param owner [Symbol] The screen, such as :wheel.
     def self.start(owner)
-      @owner = owner
+      @owners.push(owner) unless @owners.include?(owner)
     end
 
-    # Gives the buttons back, if the screen still holds them.
+    # Gives the buttons back for a screen. The game gets them once no other screen holds them.
     #
     # @param owner [Symbol] The screen.
     def self.stop(owner)
-      @owner = nil if @owner == owner
+      @owners.delete(owner)
     end
 
     # Reports whether a screen holds the buttons.
     #
     # @return [Boolean] Whether one does.
     def self.on?
-      !@owner.nil?
+      !@owners.empty?
+    end
+
+    # Reports whether a screen of the mod asks Input past the capture right now.
+    #
+    # @return [Boolean] Whether one does.
+    def self.reading?
+      @reading == true
     end
 
     # Reports whether a button went down, past the capture, while the game window is in front.
@@ -762,7 +772,10 @@ module MGQ_Multiplayer
     def self.read(method, button)
       return false unless Background.in_front?
 
-      Background.input_guarded? ? Input.send(Background.original(method), button) : Input.send(method, button)
+      @reading = true
+      Input.send(method, button)
+    ensure
+      @reading = false
     end
   end
 

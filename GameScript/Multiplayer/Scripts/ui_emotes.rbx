@@ -2,7 +2,9 @@
 #  ui_emotes.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-06: Kept the emote pointed at last once the arrows are let go, instead of pointing at none, and the diagonal while its arrows are let go one after the other
+#      Paulinchen  2026-10-06: Kept the wheel shut while the World overview is open, which left the player walking under the overview once the wheel closed
+#                            - Ended the cooldown between two emotes when a loaded save or a new game set the frame count back
+#                            - Kept the emote pointed at last once the arrows are let go, instead of pointing at none, and the diagonal while its arrows are let go one after the other
 #                            - Placed the emotes on the directions MGQ_MpWheel spreads them over, as the action wheel places its choices
 #                            - Pointed at an emote with the arrows held, like a joystick, two for a diagonal, and at none while no arrow is held
 #      Paulinchen  2026-10-04: Played an emote's balloon or jump in plain branches
@@ -82,7 +84,7 @@ module MGQ_MpEmotes
   # @return [Boolean] Whether they may.
   def self.free?
     MGQ_MpOverworldSync.in_world? && MGQ_MpOverworldSync.map_quiet? && !MGQ_MpHooks.player_held? &&
-      !MGQ_MpActions::Wheel.open? && !MGQ_MpChat.typing?
+      !MGQ_MpActions::Wheel.open? && !MGQ_MpChat.typing? && !(defined?(MGQ_MpWorldOverview) && MGQ_MpWorldOverview.open?)
   end
 
   # Opens, steers or closes the wheel. Called by the map every frame, so a press of the key is seen
@@ -134,9 +136,9 @@ module MGQ_MpEmotes
   #
   # @param index [Integer] The emote's place in EMOTES.
   def self.play_own(index)
-    if @last && Graphics.frame_count - @last < COOLDOWN_FRAMES
-      return Sound.play_buzzer
-    end
+    # A loaded save or a new game sets the frame count back, which ends the cooldown too.
+    elapsed = @last && Graphics.frame_count - @last
+    return Sound.play_buzzer if elapsed && elapsed >= 0 && elapsed < COOLDOWN_FRAMES
 
     @last = Graphics.frame_count
     play(EMOTES[index], $game_player)

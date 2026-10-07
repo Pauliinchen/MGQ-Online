@@ -2,7 +2,8 @@
 #  ui.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-06: Let a list box say a hint of its own at the bottom, and named how high it lies
+#      Paulinchen  2026-10-06: Dropped the wrapped lines the top window kept but never read
+#                            - Let a list box say a hint of its own at the bottom, and named how high it lies
 #                            - Drew an item being typed into as a text box with its cursor, and the picked item opaque
 #                            - Drew buttons at the right end of an item, each a mark outlined in its color or filled with it, the column titles at the heading above, and the one the cursor is on
 #      Paulinchen  2026-10-04: Added the message box, a box in the middle of the screen drawn like the list box
@@ -55,7 +56,6 @@ class Window_MpInfo < Window_Base
   def initialize(rows = LINES)
     super(0, 0, Graphics.width, fitting_height(rows))
     @rows = rows
-    @lines = []
   end
 
   # Draws the lines, if they changed, wrapping long ones.
@@ -66,7 +66,6 @@ class Window_MpInfo < Window_Base
 
     @given = lines.dup
     wrapped = lines.compact.map { |line| MGQ_MpUi.wrap(self, line, contents_width) }.flatten
-    @lines = wrapped
     contents.clear
     wrapped.first(@rows).each_with_index do |line, index|
       draw_text(0, index * line_height, contents_width, line_height, line)

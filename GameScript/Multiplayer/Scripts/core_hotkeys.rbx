@@ -12,10 +12,10 @@
 #
 #----------------------------------------------------------------
 
-# The keys the player binds: what opens the action wheel, the chat and the World overview, and what
-# accepts and declines the first invite of the notification box. Each is
-# a key binding in Mod Config Remake when it is installed, and keeps its key in
-# Patch/Multiplayer/Player.ini, so it holds in every save and every world.
+# The hotkeys the player binds: what opens the action wheel, the emote wheel, the chat and the World
+# overview, what accepts and declines the first invite of the notification box, and what makes the
+# party box small. Each is a key binding in Mod Config Remake when it is installed, and keeps its
+# key in Patch/Multiplayer/Player.ini, so it holds in every save and every world.
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpHotkeys

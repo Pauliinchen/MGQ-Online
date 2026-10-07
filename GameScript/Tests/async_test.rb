@@ -2,6 +2,7 @@
 #  async_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-06: Checked that a live map that fails is freed and the menu's picture shows again
 #      Paulinchen  2026-10-04: Followed the scripts to their new names, without mp_
 #      Paulinchen  2026-09-30: Created
 #
@@ -194,6 +195,12 @@ menu.update_basic
 check("the live map moves every frame", live.updates, 1)
 menu.dispose_background
 check("closing frees the live map and the picture", [live.disposed?, menu.background_sprite.disposed?, menu.instance_variable_get(:@mgq_mp_live_map)], [true, true, nil])
+menu.create_background
+broken = menu.instance_variable_get(:@mgq_mp_live_map)
+def broken.update; raise "broken"; end
+menu.update_basic
+check("a live map that fails is freed, and the picture shows again", [broken.disposed?, menu.instance_variable_get(:@mgq_mp_live_map), menu.background_sprite.visible], [true, nil, true])
+menu.dispose_background
 poker = Scene_Poker.new
 poker.create_background
 check("a menu with its own background keeps it", [poker.instance_variable_get(:@mgq_mp_live_map), poker.background_sprite.visible], [nil, true])
