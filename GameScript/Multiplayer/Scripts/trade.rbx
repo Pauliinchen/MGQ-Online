@@ -2,7 +2,8 @@
 #  trade.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-07: Kept the trades a save holds through MGQ_MpGame
+#      Paulinchen  2026-10-07: Logged where opening the screen failed and the pictures in memory
+#                            - Kept the trades a save holds through MGQ_MpGame
 #                            - Forgot a new game's trade save slot through a before block
 #                            - Named players in the log through MGQ_MpOverworldSync.who
 #                            - Named the DLL's exports alone, their signatures living in Multiplayer.rb
@@ -837,7 +838,7 @@ module MGQ_MpTrade
     @open_screen = false
     SceneManager.call(Scene_MpTrade)
   rescue => e
-    log("opening the trade screen failed: #{e.class}: #{e.message}")
+    log("opening the trade screen failed: #{MGQ_MpLog.failure(e)} at #{Array(e.backtrace).first}")
   end
 
   # The items of a trade: which may be traded, how they are written as text and read back, and

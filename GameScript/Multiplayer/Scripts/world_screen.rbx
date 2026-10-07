@@ -2,7 +2,8 @@
 #  world_screen.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-07: Cut texts through MGQ_MpUi.cut, which ends them in three dots, and took the choice window's depth from MGQ_MpUi
+#      Paulinchen  2026-10-07: Left typing alone without a form, which failed the screen, and logged where the screen failed and the pictures in memory
+#                            - Cut texts through MGQ_MpUi.cut, which ends them in three dots, and took the choice window's depth from MGQ_MpUi
 #                            - Logged the screen's actions with their outcome and reason, the start chosen, the mod and data checks and the forms sent, never passwords or codes
 #                            - Filled the name's form with the name the player chose, empty while the name on Discord stands, so it never turns into a chosen one unasked
 #      Paulinchen  2026-10-06: Typed a world's password in place in a form, on the text screen only for a gamepad or without the keyboard
@@ -245,7 +246,7 @@ class Scene_MpWorlds < Scene_MenuBase
     timed(:list) { look_at_list } if @look_frames >= LOOK_FRAMES
     log_slow_frame(Time.now - started)
   rescue => e
-    MGQ_MpWorld.log("world screen failed: #{e.class}: #{e.message}")
+    MGQ_MpWorld.log("world screen failed: #{MGQ_MpLog.failure(e)} at #{Array(e.backtrace).first}")
     return_scene
   end
 
@@ -965,6 +966,7 @@ class Scene_MpWorlds < Scene_MenuBase
   # @param field [MGQ_MpWorld::Form::Field] The text box.
   def start_typing(field)
     return ask_field(field, false) unless MGQ_Multiplayer::Background.running?
+    return unless form
 
     form.editing = field.key
     form.edit = MGQ_MpUi::TextEdit.new(form[field.key], :max_chars => field.max_chars, :allowed => field.allowed)
@@ -1051,6 +1053,8 @@ class Scene_MpWorlds < Scene_MenuBase
   # Stops typing into the text box and hands the cursor back to the form.
   def stop_typing
     MGQ_Multiplayer::Link.typing(false)
+    return unless form
+
     form.editing = nil
     form.edit = nil
     @form_window.refresh

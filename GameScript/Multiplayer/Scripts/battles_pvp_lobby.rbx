@@ -2,7 +2,8 @@
 #  battles_pvp_lobby.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-07: Logged the player's choices on the PvP battle screen and the exchange's stages
+#      Paulinchen  2026-10-07: Logged where the screen failed and the pictures in memory
+#                            - Logged the player's choices on the PvP battle screen and the exchange's stages
 #      Paulinchen  2026-10-04: Renamed from mp_battles_pvp_lobby.rbx
 #      Paulinchen  2026-10-03: Spoke of the friend's team, which may have its Backline
 #                            - Created
@@ -117,7 +118,7 @@ class Scene_PvpLobby < Scene_MenuBase
     MGQ_MpBattlesPvp.log("the friend's team arrived: back to the map, which starts the battle")
     return_scene
   rescue => e
-    MGQ_MpBattlesPvp.log("screen failed: #{e.class}: #{e.message}")
+    MGQ_MpBattlesPvp.log("screen failed: #{MGQ_MpLog.failure(e)} at #{Array(e.backtrace).first}")
     return_scene
   end
 

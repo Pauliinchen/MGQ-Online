@@ -2,7 +2,8 @@
 #  ui_trade.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-07: Cut names through MGQ_MpUi.cut and took the window's depth from MGQ_MpUi
+#      Paulinchen  2026-10-07: Logged where the screen failed and the pictures in memory, since a picture could not be made in the field
+#                            - Cut names through MGQ_MpUi.cut and took the window's depth from MGQ_MpUi
 #                            - Logged the trade screen opening and closing, and the gold typed
 #                            - Showed the messages about the trade in the status line for a few seconds
 #                            - Drew an offer's head smaller, as You or the other player's name cut to fit, left of whether its player confirmed
@@ -499,7 +500,7 @@ class Scene_MpTrade < Scene_MenuBase
     session = MGQ_MpTrade.session
     MGQ_MpTrade.log("trade screen opened#{session ? " for trade #{MGQ_MpTrade.short(session.id)} with #{session.name}" : ', but there is no trade'}")
   rescue => e
-    MGQ_MpTrade.log("opening the trade screen failed: #{e.class}: #{e.message}")
+    MGQ_MpTrade.log("opening the trade screen failed: #{MGQ_MpLog.failure(e)} at #{Array(e.backtrace).first}")
     MGQ_MpTrade.cancel
     return_scene
   end
@@ -520,7 +521,7 @@ class Scene_MpTrade < Scene_MenuBase
     @status = status
     @help_window.set_text("Trading with #{session.name}\n#{status}")
   rescue => e
-    MGQ_MpTrade.log("trade screen failed: #{e.class}: #{e.message}")
+    MGQ_MpTrade.log("trade screen failed: #{MGQ_MpLog.failure(e)} at #{Array(e.backtrace).first}")
     MGQ_MpTrade.cancel
     return_scene
   end

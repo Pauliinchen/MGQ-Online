@@ -2,7 +2,8 @@
 #  core_log.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-07: Added short and named, which cut a text and name a database entry with its id for a line of the log
+#      Paulinchen  2026-10-07: Added failure, which describes an error with the pictures in memory when one could not be made
+#                            - Added short and named, which cut a text and name a database entry with its id for a line of the log
 #      Paulinchen  2026-10-04: Renamed from mp_log.rbx
 #      Paulinchen  2026-10-03: Created
 #
@@ -50,6 +51,28 @@ module MGQ_MpLog
     name.empty? ? id.to_s : "#{id} #{name}"
   rescue
     id.to_s
+  end
+
+  # Describes an error for a line of the log, with the pictures in memory after a picture could not
+  # be made, which tells a leak of pictures from one too large.
+  #
+  # @param error [Exception] The error.
+  # @return [String] Its class and message.
+  def self.failure(error)
+    text = "#{error.class}: #{error.message}"
+    text << " (#{bitmaps_alive} pictures in memory)" if defined?(RGSSError) && error.is_a?(RGSSError)
+    text
+  rescue
+    "?"
+  end
+
+  # Counts the pictures the game holds in memory.
+  #
+  # @return [Integer, String] How many are not disposed, "?" where they cannot be counted.
+  def self.bitmaps_alive
+    ObjectSpace.each_object(Bitmap).count { |bitmap| !bitmap.disposed? }
+  rescue
+    "?"
   end
 
   # Writes a line to Multiplayer InGame.log, after the script's LOG_TAG.
