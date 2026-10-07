@@ -2,7 +2,8 @@
 #  trade_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-06: Created
+#      Paulinchen  2026-10-06: Gave the world a folder id apart from its directory id, which the relay knows
+#                            - Created
 #
 #----------------------------------------------------------------
 
@@ -92,7 +93,7 @@ module MGQ_Multiplayer
     end
   end
 end
-module MGQ_MpWorld; World = Struct.new(:id); def self.world; World.new("w1"); end; end
+module MGQ_MpWorld; World = Struct.new(:id, :directory_id); def self.world; World.new("f1", "w1"); end; end
 class Scene_MpTrade; end
 module SceneManager; def self.call(scene); $called << scene; end; end
 

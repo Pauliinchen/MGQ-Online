@@ -2,7 +2,8 @@
 #  trade.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-06: Found a plain item through MGQ_MpGame.item
+#      Paulinchen  2026-10-06: Named the world by its directory id to the relay, which refused every trade named by the folder id
+#                            - Found a plain item through MGQ_MpGame.item
 #                            - Created
 #
 #----------------------------------------------------------------
@@ -530,11 +531,12 @@ module MGQ_MpTrade
     log(text)
   end
 
-  # The open world's id.
+  # The open world's id in the directory, by which the relay knows the world's players. The world's
+  # folder id is another, which the relay never sees.
   #
-  # @return [String] The id, "" while none is open.
+  # @return [String] The id, "" while none is open or for a world made before the directory.
   def self.world_id
-    MGQ_MpOverworldSync.in_world? ? MGQ_MpWorld.world.id.to_s : ""
+    MGQ_MpOverworldSync.in_world? ? MGQ_MpWorld.world.directory_id.to_s : ""
   end
 
   # Writes both offers as the relay compares them: each player's id and offer, ordered by id, so
