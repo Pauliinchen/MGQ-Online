@@ -2,7 +2,9 @@
 #  world_mods.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-07: Followed a new game through an after block, since the hook only applies the world's mods
+#      Paulinchen  2026-10-07: Sent the Mod Config options of every installed catalog mod, whatever its version, until the relay holds the current version's
+#                            - Logged a catalog unknown at the first read too
+#                            - Followed a new game through an after block, since the hook only applies the world's mods
 #                            - Named the DLL's exports alone, their signatures living in Multiplayer.rb
 #                            - Logged each required mod's check, the catalog read, the downloads, the restart and rejoin, and the settings taken, applied or left out
 #      Paulinchen  2026-10-06: Said a world needs mods that are missing or in another version, since some may not be installed at all
@@ -112,6 +114,8 @@ module MGQ_MpWorldMods
 
   @hashes = {}
   @reported = {}
+  # Not nil, so an unknown catalog is logged at the first read too.
+  @logged_catalog = false
 
   # Reads the relay's mod catalog as fetched with the world list, at most once a second, since the
   # world screen asks every frame.
@@ -506,24 +510,40 @@ module MGQ_MpWorldMods
     end
   end
 
-  # Sends the Mod Config options of each catalog mod this game has in the catalog's version, whose
-  # options the relay lacks for that version, once a session. Only an admin's game sends them; the
-  # World Admin tool lists them. Called by the world screen whenever it reads the list.
+  # Sends the Mod Config options of each catalog mod this game has installed, whatever its version,
+  # unless the relay holds the current version's options or those of the version this copy is;
+  # once a session per mod. Only an admin's game sends them; the World Admin tool lists them.
+  # Called by the world screen whenever it reads the list.
   #
   # @param admin [Boolean] Whether the player is one of the relay's admins.
   def self.report_options(admin)
     mods = admin && defined?(NWConst::Config::MOD_CONTENTS) ? catalog : nil
 
     (mods || []).each do |mod|
-      next if mod.options_version == mod.version || @reported[mod.key] == mod.version || !row_for(mod.name, mod, {}).nil?
+      version = installed_version(mod)
+      next if version.nil? || mod.options_version == mod.version || @reported[mod.key] == mod.version
+      next if !version.empty? && mod.options_version == version
 
       @reported[mod.key] = mod.version
       lines = world_entries([mod.key]).map { |entry| option_line(entry) }.compact
-      MGQ_Multiplayer::Link.function('mp_mods_options').call(mod.key + "\0", mod.version + "\0", lines.join("\n") + "\0")
-      log("sending #{lines.size} Mod Config option(s) of #{mod.name} #{mod.version}")
+      MGQ_Multiplayer::Link.function('mp_mods_options').call(mod.key + "\0", version + "\0", lines.join("\n") + "\0")
+      log("sending #{lines.size} Mod Config option(s) of #{mod.name} #{version.empty? ? 'of no known version' : version}")
     end
   rescue => e
     log_once(:report_options, "sending the Mod Config options failed: #{e.class}: #{e.message}")
+  end
+
+  # Names the version of this game's copy of a catalog mod.
+  #
+  # @param mod [Mod] The catalog's mod.
+  # @return [String, nil] The version; "" for a copy that matches no version the relay knows; nil
+  #   when the mod is not installed.
+  def self.installed_version(mod)
+    row = row_for(mod.name, mod, {})
+    return mod.version if row.nil?
+    return nil if row.yours == "not installed"
+
+    row.yours == "unknown" ? "" : row.yours
   end
 
   # Writes one Mod Config option for the catalog: its key, name, type, default and choices.

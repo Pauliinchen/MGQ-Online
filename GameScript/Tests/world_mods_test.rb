@@ -2,7 +2,8 @@
 #  world_mods_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-07: Looked each DLL call's signature up in the export table of Multiplayer.rb
+#      Paulinchen  2026-10-07: Covered the options sent from a copy of an older or of no known version while the relay lacks the current version's
+#                            - Looked each DLL call's signature up in the export table of Multiplayer.rb
 #      Paulinchen  2026-10-06: Expected the summary to name mods that are missing or in another version
 #                            - Told whether a small window of the world screen takes input, which an entry after a restart waits for
 #                            - Covered the catalog kept while the list loads, links the relay could not read yet, options with :values,
@@ -436,6 +437,19 @@ Dir.mktmpdir do |folder|
     mods.forget_installed
     mods.report_options(true)
     check("also when the world screen opens again", $calls.map(&:first).grep(/options/), [])
+    catalog("mod\tlevelcap\tLevel Cap\tlink\t1.4.1\tLevel_Cap.rb\tcc", "old\tlevelcap\t1.4.0\tLevel_Cap.rb\tbb", "opts\tlevelcap\t1.4.1",
+            "mod\tpartysheet\tParty Sheet\tlink\t1.3.6\tParty_Sheet.rb\tqq", "old\tpartysheet\t1.3.5\tParty_Sheet.rb\tps", "opts\tpartysheet\t1.3.5")
+    mods.report_options(true)
+    check("a copy of an older version sends nothing while the relay has the current version's options or that older version's", $calls.map(&:first).grep(/options/), [])
+    catalog("mod\tlevelcap\tLevel Cap\tlink\t1.4.1\tLevel_Cap.rb\tcc", "old\tlevelcap\t1.4.0\tLevel_Cap.rb\tbb",
+            "mod\tpartysheet\tParty Sheet\tlink\t1.3.6\tParty_Sheet.rb\tqq", "opts\tpartysheet\t1.3.5", "mod\tpack\tPack\tupload\t2\tPack/a.luka\tp1")
+    $file_hashes["Patch/Party_Sheet.rb"] = "zz"
+    mods.forget_installed
+    mods.report_options(true)
+    sent = $calls.select { |call| call[0] == "mp_mods_options" }.map { |call| call[2][0, 2] }
+    check("while the relay lacks the current version's options, a copy of an older version sends them with its version, one of no known version with none, and a mod not installed sends nothing",
+          sent, [["levelcap\0", "1.4.0\0"], ["partysheet\0", "\0"]])
+    $calls.clear
     check("an option's values come from its :values too, as Mod Config Remake reads them", mods.option_line(NWConst::Config::MOD_CONTENTS.find { |entry| entry[:key] == :mod_party_sheet_size }),
           "mod_party_sheet_size\tSize\ti\t2\t2\t2\t4\t4")
   end
