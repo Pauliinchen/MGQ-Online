@@ -2,6 +2,8 @@
 #  core_async.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-07: Read an interpreter's event and map through MGQ_MpGame
+#                            - Logged when the world starts and stops running behind a screen, each event command held and let run, the map refreshes that wait, the instant switches and the live map shown
 #      Paulinchen  2026-10-06: Wrapped the screens, the screen's freeze and transition and the menus' backgrounds through core_hooks.rbx instead of wraps of its own
 #                            - Read the command an interpreter runs through MGQ_MpGame
 #      Paulinchen  2026-10-04: Renamed from mp_async.rbx
@@ -68,12 +70,15 @@ module MGQ_MpAsync
   #
   # @param scene [Scene_Base] The screen in front.
   def self.tick(scene)
-    return unless behind?(scene)
+    behind = behind?(scene)
+    note_behind(behind ? scene.class.name : nil)
+    return unless behind
 
     map = $game_map
     # The game's map refresh plays the field's music when a switch changed it, which would cut
     # into a battle's, so that refresh waits for the map.
     deferred = map.need_refresh && field_music_pending?(map)
+    log_once([:deferred, map.map_id], "map #{map.map_id}'s refresh waits for the player, since it would play the field's music over #{scene.class.name}") if deferred
     map.need_refresh = false if deferred
     @ticking = true
     map.update(false)
@@ -84,6 +89,37 @@ module MGQ_MpAsync
   ensure
     @ticking = false
     map.need_refresh = true if deferred
+  end
+
+  # Logs when the world starts or stops running behind a screen, and behind which.
+  #
+  # @param scene [String, nil] The screen's class the world runs behind, nil while it does not.
+  def self.note_behind(scene)
+    return if scene == @behind
+
+    if scene
+      log("the world runs on behind #{scene} (map #{$game_map.map_id})")
+    else
+      log("the world stopped running behind #{@behind}")
+    end
+    @behind = scene
+  rescue
+  end
+
+  # Logs an event command that waits for the player to be back on the map, and lets it wait.
+  #
+  # @param interpreter [Game_Interpreter] The interpreter that runs it.
+  # @param command [RPG::EventCommand] The command.
+  # @yield The wait, until the player is back.
+  def self.hold(interpreter, command)
+    event = MGQ_MpGame.get(interpreter, :event_id)
+    map = MGQ_MpGame.get(interpreter, :map_id)
+    log("held command #{command.code} of event #{event} on map #{map} until the player is back on the map")
+    yield
+    log("let command #{command.code} of event #{event} on map #{map} run, the player is back")
+  rescue FiberError
+    # An interpreter run outside a fiber cannot wait, so its command runs at once.
+    log("could not hold command #{command.code} of event #{event} on map #{map}: its interpreter runs outside a fiber, so it runs at once")
   end
 
   # Reports whether the map's next refresh would play the field's music.
@@ -127,6 +163,7 @@ module MGQ_MpAsync
   # @yield The screen's own leaving, which freezes the screen.
   def self.leave(from)
     @skip_freeze = instant_switch?(from, SceneManager.scene)
+    log("switching from #{from.class.name} to #{SceneManager.scene.class.name} at once, without freezing the screen") if @skip_freeze
     yield
   ensure
     @skip_freeze = false
@@ -162,6 +199,7 @@ module MGQ_MpAsync
 
     live_map = Spriteset_MpLiveMap.new
     background.visible = false
+    log("showed the live map behind #{scene.class.name} in place of its picture of the map")
     live_map
   rescue => e
     log("live map failed: #{e.class}: #{e.message}")
@@ -237,7 +275,7 @@ begin
   end
 
   # Leaving a screen, without freezing it when the next one comes in at once.
-  MGQ_MpHooks.around(Scene_Base, :terminate) { |scene, _args, original| MGQ_MpAsync.leave(scene) { original.call } }
+  MGQ_MpHooks.around(Scene_Base, :terminate, "core_async") { |scene, _args, original| MGQ_MpAsync.leave(scene) { original.call } }
 rescue => e
   MGQ_MpAsync.log("scene hook FAILED: #{e.class}: #{e.message}")
 end
@@ -245,8 +283,8 @@ end
 begin
   # Freezing the screen, unless the screen being left switches to the next at once, and the
   # transition from the frozen screen, unless the freeze was skipped.
-  MGQ_MpHooks.around(Graphics.singleton_class, :freeze) { |_graphics, _args, original| MGQ_MpAsync.skip_freeze? ? nil : original.call }
-  MGQ_MpHooks.around(Graphics.singleton_class, :transition) { |_graphics, _args, original| MGQ_MpAsync.skip_transition? ? nil : original.call }
+  MGQ_MpHooks.around(Graphics.singleton_class, :freeze, "core_async") { |_graphics, _args, original| MGQ_MpAsync.skip_freeze? ? nil : original.call }
+  MGQ_MpHooks.around(Graphics.singleton_class, :transition, "core_async") { |_graphics, _args, original| MGQ_MpAsync.skip_transition? ? nil : original.call }
 rescue => e
   MGQ_MpAsync.log("screen hooks FAILED: #{e.class}: #{e.message}")
 end
@@ -270,10 +308,9 @@ begin
   # Before an event command runs, its interpreter waits until the player is back on the map when
   # the command needs them and the map runs behind another screen.
   MGQ_MpHooks.before(Game_Interpreter, :execute_command, "core_async") do
-    begin
-      Fiber.yield while MGQ_MpAsync.hold?(MGQ_MpGame.get(self, :list)[MGQ_MpGame.get(self, :index)])
-    rescue FiberError
-      # An interpreter run outside a fiber cannot wait, so its command runs at once.
+    command = MGQ_MpGame.get(self, :list)[MGQ_MpGame.get(self, :index)]
+    if MGQ_MpAsync.hold?(command)
+      MGQ_MpAsync.hold(self, command) { Fiber.yield while MGQ_MpAsync.hold?(MGQ_MpGame.get(self, :list)[MGQ_MpGame.get(self, :index)]) }
     end
   end
 rescue => e

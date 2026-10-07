@@ -2,6 +2,7 @@
 #  support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-07: Read each DLL export's signature from the table in Multiplayer.rb, as Link does, so a stand-in refuses an export the table lacks
 #      Paulinchen  2026-10-06: Refused a DLL call whose arguments differ from its signature, as RGSS does
 #                            - Loaded Zlib, which RGSS has built in
 #      Paulinchen  2026-10-04: Followed the scripts to their new names, without mp_
@@ -58,13 +59,31 @@ def check(label, actual, expected)
   Checks.check(label, actual, expected)
 end
 
+# The DLL's exports and their Win32API signatures, as Multiplayer.rb's Link names them.
+DLL_EXPORTS = begin
+  source = File.read(File.expand_path("../Multiplayer.rb", __dir__), :encoding => "UTF-8")
+  eval(source[/    READ_ARGUMENTS = '.*?'\n/] + source[/    EXPORTS = \{.*?\n    \}\n/m])
+end
+
+# Finds a DLL export's signature in the table of Multiplayer.rb, failing the test for an export
+# the table lacks, as Link.function would.
+#
+# @param name [String] The export.
+# @return [String] Its arguments in Win32API notation, "v" for none.
+def dll_signature(name)
+  DLL_EXPORTS.fetch(name) do
+    check("#{name} is an export the table in Multiplayer.rb names", DLL_EXPORTS.key?(name), true)
+    raise KeyError, "key not found: #{name}"
+  end
+end
+
 # Refuses a call to a DLL function whose arguments differ in number from its Win32API signature,
 # as RGSS does, so a stand-in for Win32API fails the test where the game would fail.
 #
 # @param name [String] The function.
-# @param signature [String] Its arguments in Win32API notation, "v" for none.
 # @param args [Array] The arguments of the call.
-def check_dll_call(name, signature, args)
+def check_dll_call(name, args)
+  signature = dll_signature(name)
   expected = signature == "v" ? 0 : signature.size
   return if args.size == expected
 

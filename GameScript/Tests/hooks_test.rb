@@ -2,6 +2,7 @@
 #  hooks_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-07: Checked that who holds the player is logged when it changes
 #      Paulinchen  2026-10-04: Followed the scripts to their new names, without mp_
 #      Paulinchen  2026-10-03: Checked around and holding the player
 #      Paulinchen  2026-10-02: Created
@@ -79,11 +80,14 @@ class Scene_Around
   def hidden; :hidden; end
   private :hidden
 end
-MGQ_MpHooks.around(Scene_Around, :double) { |_scene, args, original| args[0] > 5 ? :refused : original.call + 1 }
-MGQ_MpHooks.around(Scene_Around, :double) { |_scene, _args, original| [original.call] }
-MGQ_MpHooks.around(Scene_Around, :hidden) { |_scene, _args, original| original.call }
+MGQ_MpHooks.around(Scene_Around, :double, "one") { |_scene, args, original| args[0] > 5 ? :refused : original.call + 1 }
+MGQ_MpHooks.around(Scene_Around, :double, "two") { |_scene, _args, original| [original.call] }
+MGQ_MpHooks.around(Scene_Around, :hidden, "one") { |_scene, _args, original| original.call }
 check("around decides what the method returns, and wraps stack", [Scene_Around.new.double(2), Scene_Around.new.double(9)], [[5], [:refused]])
 check("a private method stays private around too", Scene_Around.private_method_defined?(:hidden), true)
+MGQ_MpHooks.around(Scene_Around, :double, "two") { |_scene, _args, original| [original.call, :again] }
+check("a script registering again replaces its wrap instead of wrapping once more", Scene_Around.new.double(2), [5, :again])
+check("and the replacement is logged", $log.grep(/two wrapped Scene_Around#double again/).size, 1)
 
 # Holding the player: no moving, no menu, while any script says so.
 class Game_Player; def movable?; true; end; end
@@ -98,3 +102,7 @@ $held = true
 map.update_call_menu
 check("a held player stands still and opens no menu", [Game_Player.new.movable?, map.menu_calling], [false, false])
 check("a failing hold is logged once and holds nobody", $log.grep(/two failed holding the player: RuntimeError: boom/).size, 1)
+check("who holds the player is logged once when it changes", $log.grep(/player held by one/).size, 1)
+$held = false
+Game_Player.new.movable?
+check("and the release too", $log.grep(/player free again, released by one/).size, 1)

@@ -2,6 +2,8 @@
 #  core_actors.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-07: Logged once when a hero, a counter or the switches of a character cannot be read, which stood in silently before
+#                            - Logged the builds written, what of a build this game's data lacks, each character rebuilt and what the owner's save decides for it
 #      Paulinchen  2026-10-06: Left the player's affection alone when the game raises a rebuilt character's after a won battle
 #                            - Checked enchanted equipment past the switch's setter, which took the enchanted items off the player's whole party at every check
 #                            - Told the weapons' and armors' databases apart in the fingerprint too, since builds carry their ids
@@ -26,6 +28,16 @@ module MGQ_MpActors
 
   # What starts this script's lines in Multiplayer InGame.log.
   LOG_TAG = "actors"
+
+  # Describes characters for the log.
+  #
+  # @param actors [Array<Game_Actor>] The characters.
+  # @return [String] Each character's id, name and personal level.
+  def self.actors_text(actors)
+    actors.map { |actor| "#{MGQ_MpLog.named($data_actors, actor.id)} Lv#{actor.base_level rescue '?'}" }.join(", ")
+  rescue
+    "?"
+  end
 
   # Characters' builds as plain numbers, which another game turns back into the characters from its
   # own data. Nothing of the save format leaves the game, since loading someone else's save data can
@@ -80,7 +92,9 @@ module MGQ_MpActors
     # @return [String] The fingerprint.
     def self.game
       sizes = [$data_actors, $data_classes, $data_skills, $data_items, $data_weapons, $data_armors, $data_enemies, $data_states].map(&:size)
-      "#{FORMAT}:#{sizes.join(',')}"
+      fingerprint = "#{FORMAT}:#{sizes.join(',')}"
+      MGQ_MpActors.log_once([:game, fingerprint], "this game's data fingerprint (build format, then actors, classes, skills, items, weapons, armors, enemies, states): #{fingerprint}")
+      fingerprint
     end
 
     # Writes characters' builds.
@@ -88,7 +102,9 @@ module MGQ_MpActors
     # @param actors [Array<Game_Actor>] The characters.
     # @return [String] A member line per character.
     def self.write(actors)
-      actors.map { |actor| line_of(actor) }.join("\n")
+      text = actors.map { |actor| line_of(actor) }.join("\n")
+      MGQ_MpActors.log("wrote the builds of #{actors.size} characters (#{text.bytesize} bytes): #{MGQ_MpActors.actors_text(actors)}")
+      text
     end
 
     # Writes a member as PREFIX and its fields, split by ";": 0 actor id, 1 personal level, 2 job,
@@ -130,7 +146,8 @@ module MGQ_MpActors
     # @return [String] The HERO, empty without Luka Replacer or for any character but Luka.
     def self.hero_of(actor)
       defined?(MGQ_LukaReplacer) ? MGQ_LukaReplacer.hero_key(actor).to_s : ""
-    rescue
+    rescue => e
+      MGQ_MpActors.log_once(:hero_of, "could not read a character's hero, writing none: #{e.class}: #{e.message}")
       ""
     end
 
@@ -145,7 +162,8 @@ module MGQ_MpActors
       when :love then actor.love.to_i
       else $game_library.respond_to?(counter) ? $game_library.send(counter, actor.id).to_i : 0
       end
-    rescue
+    rescue => e
+      MGQ_MpActors.log_once([:counter_of, counter], "could not read the #{counter} counter, writing 0: #{e.class}: #{e.message}")
       0
     end
 
@@ -155,7 +173,8 @@ module MGQ_MpActors
     # @return [Array<Integer>] The switches its battle start states wait for that are on in this save.
     def self.switches_on(actor)
       MGQ_MpGame.call(actor, :auto_state_with_switch).keys.select { |switch_id| $game_switches[switch_id] }
-    rescue
+    rescue => e
+      MGQ_MpActors.log_once(:switches_on, "could not read the switches a character's battle start states wait for, writing none: #{e.class}: #{e.message}")
       []
     end
 
@@ -200,7 +219,7 @@ module MGQ_MpActors
       actor_id = number(fields[0])
       return nil unless [FIELD_COUNT, FIELD_COUNT + 1].include?(fields.size) && actor_id && actor_id > 0 && $data_actors[actor_id]
 
-      Member.new(
+      member = Member.new(
         actor_id,
         [[number(fields[1]) || 1, 1].max, max_base_level].min,
         known_class(number(fields[2])),
@@ -216,6 +235,28 @@ module MGQ_MpActors
         (numbers(fields[12]) + [0] * COUNTERS.size).first(COUNTERS.size).map { |value| [value, 0].max },
         numbers(fields[13]).select { |id| id > 0 },
         fields[14].to_s =~ HERO ? fields[14].to_s : "")
+      log_left_out(member, fields)
+      member
+    end
+
+    # Logs, once per character and what was left out, what of a build this game's data lacks.
+    #
+    # @param member [Member] The character as read.
+    # @param fields [Array<String>] Its fields as sent.
+    def self.log_left_out(member, fields)
+      left_out = []
+      left_out << "job #{fields[2]}" if number(fields[2]) && member.class_id.nil?
+      left_out << "race #{fields[3]}" if number(fields[3]) && member.tribe_id.nil?
+      skills = numbers(fields[6]).uniq.size - member.skill_ids.size
+      left_out << "#{skills} skills" if skills > 0
+      equips = fields[9].split(",", -1).first(MAX_SLOTS).count { |text| !text.empty? } - member.equips.compact.size
+      left_out << "#{equips} pieces of equipment" if equips > 0
+      left_out << "hero #{fields[14]}" if !fields[14].to_s.empty? && member.hero.empty?
+      return if left_out.empty?
+
+      name = MGQ_MpLog.named($data_actors, member.actor_id)
+      MGQ_MpActors.log_once([:left_out, member.actor_id, left_out], "left out of #{name}'s build what this game lacks: #{left_out.join(', ')}")
+    rescue
     end
 
     # Reads the highest personal level of this game.
@@ -358,13 +399,16 @@ module MGQ_MpActors
     # @param text [String] The item as text, see write.
     # @return [RPG::EquipItem, nil] The item, nil for an empty slot or one this game's data lacks.
     def self.read(text)
-      if (match = PLAIN.match(text))
-        base(match[1], match[2].to_i)
-      elsif (match = SOCKET.match(text))
-        socket_item(base(match[1], match[2].to_i), match[3])
-      elsif (match = ENCHANTED.match(text))
-        enchanted_item(base(match[1], match[2].to_i), match)
-      end
+      item =
+        if (match = PLAIN.match(text))
+          base(match[1], match[2].to_i)
+        elsif (match = SOCKET.match(text))
+          socket_item(base(match[1], match[2].to_i), match[3])
+        elsif (match = ENCHANTED.match(text))
+          enchanted_item(base(match[1], match[2].to_i), match)
+        end
+      MGQ_MpActors.log_once([:equipment, text], "left out equipment #{text[0, 40]}: #{match ? "this game's data has no such item" : 'unreadable'}") if item.nil? && !text.empty?
+      item
     rescue => e
       MGQ_MpActors.log("left out equipment #{text[0, 40]}: #{e.class}: #{e.message}")
       nil
@@ -483,6 +527,23 @@ class Game_MpActor < Game_Actor
     @player = player
     MGQ_LukaReplacer.dress(self, member.hero) if defined?(MGQ_LukaReplacer)
     rebuild
+    log_rebuild
+  end
+
+  # Names the character with its id and its owner, for the log.
+  #
+  # @return [String] The character's id, name and owner, like "2 Alice (<player>)".
+  def log_name
+    "#{MGQ_MpLog.named($data_actors, @actor_id)} (#{@player})"
+  end
+
+  # Logs what the rebuild made of the character.
+  def log_rebuild
+    hero = @member.hero.empty? ? "" : ", hero #{@member.hero}#{defined?(MGQ_LukaReplacer) ? '' : ' (no Luka Replacer here, plays as Luka)'}"
+    MGQ_MpActors.log("rebuilt #{@player}'s #{MGQ_MpLog.named($data_actors, @member.actor_id)}: Lv#{@member.base_level}, " \
+                     "job #{MGQ_MpLog.named($data_classes, @class_id)} Lv#{@level_list[@class_id]}, race #{MGQ_MpLog.named($data_classes, @tribe_id)} Lv#{@level_list[@tribe_id]}, " \
+                     "#{@skills.size} skills, #{@equips.count { |slot| slot.object }} of #{@equips.size} slots equipped#{hero}, #{mhp} HP")
+  rescue
   end
 
   # Names the character with its owner.
@@ -519,6 +580,7 @@ class Game_MpActor < Game_Actor
     switch_id = defined?(NWConst::Sw::ENCHANT_OFF) && NWConst::Sw::ENCHANT_OFF
     return super unless switch_id && $game_switches[switch_id] && item.is_a?(RPG::EquipItem) && item.enchant_item?
 
+    MGQ_MpActors.log_once([:enchanted, @actor_id], "#{log_name} may wear enchanted equipment, which this save has turned off")
     switches = MGQ_MpGame.get($game_switches, :data)
     begin
       switches[switch_id] = false
@@ -555,7 +617,9 @@ class Game_MpActor < Game_Actor
   #
   # @param value [Integer] The affection the game would set.
   def love=(value)
-    super unless @member
+    return super unless @member
+
+    MGQ_MpActors.log("left #{log_name}'s affection at #{love}, the game would set #{value}: the owner's save keeps it") if value != love
   end
 
   # Multiplies damage by the counters of the owner's save, where the game reads the player's.
@@ -581,6 +645,8 @@ class Game_MpActor < Game_Actor
       next if on_there == ($game_switches[switch_id] ? true : false)
 
       state_ids.each { |state_id| on_there ? add_state(state_id) : remove_state(state_id) }
+      MGQ_MpActors.log("#{log_name} starts the battle as the owner's save says (switch #{switch_id} #{on_there ? 'on' : 'off'} there): " \
+                       "#{on_there ? 'added' : 'removed'} #{state_ids.map { |state_id| MGQ_MpLog.named($data_states, state_id) }.join(', ')}")
     end
   end
 

@@ -2,6 +2,7 @@
 #  actors_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-07: Checked that a hero that cannot be read is logged once
 #      Paulinchen  2026-10-06: Checked the fingerprint's databases, a rebuilt character's enchanted equipment past the switch's setter, and that its affection stays the owner's
 #      Paulinchen  2026-10-05: Created
 #
@@ -36,6 +37,10 @@ check("a line with a field too many is unreadable", builds.parse(OLD + ";kazuya;
 # The hero a character shows, as Luka Replacer names it.
 module MGQ_LukaReplacer; def self.hero_key(actor); actor == :luka ? "kazuya" : ""; end; end
 check("Luka Replacer names the replaced Luka's hero", [builds.hero_of(:luka), builds.hero_of(:alice)], ["kazuya", ""])
+$log.clear
+MGQ_LukaReplacer.define_singleton_method(:hero_key) { |_actor| raise "broken" }
+check("a hero that cannot be read is written as none, logged once", [builds.hero_of(:luka), builds.hero_of(:luka), $log],
+      ["", "", ["actors: could not read a character's hero, writing none: RuntimeError: broken"]])
 
 # The fingerprint tells the weapons' and armors' databases apart too, since builds carry their ids.
 $data_weapons = [nil, Named.new("Sword")]

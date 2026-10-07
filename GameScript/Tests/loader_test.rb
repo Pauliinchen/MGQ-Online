@@ -2,7 +2,9 @@
 #  loader_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-07: Checked that clearing the chosen name brings the name on Discord back instead of A friend
+#      Paulinchen  2026-10-07: Checked that the DLL's export table names each export once, every export the scripts call and every one the DLL has
+#                            - Checked that the in-game log writes a file per session, named after the game's start, without a line limit, and counts the scripts loaded
+#                            - Checked that clearing the chosen name brings the name on Discord back instead of A friend
 #      Paulinchen  2026-10-06: Checked that a screen closing leaves the buttons with another that holds them, and that the guard passes Input on only while the game is in front
 #                            - Checked that the in-game log counts a repeated line, while it repeats and when the game closes, and moves a log grown too large aside
 #                            - Checked that ui_wheel.rbx loads before both wheels
@@ -45,6 +47,20 @@ check("the party's gathering loads after the events that hand it its messages, t
 check("the battle scripts keep the order their late hooks rely on",
       %w[battles battles_coop battles_sync].map { |name| scripts.index(name) }.each_cons(2).all? { |a, b| a < b }, true)
 
+# The DLL's export table: each export once, and every call of the scripts names one of them.
+table_names = source[/    EXPORTS = \{.*?\n    \}\n/m].scan(/^      '(mp_[a-z_]+)' =>/).flatten
+check("every export is in the table once", table_names.select { |name| table_names.count(name) > 1 }.uniq, [])
+calls = (Dir[File.join(SCRIPTS_DIR, "*.rbx")] + [File.expand_path("../Multiplayer.rb", __dir__)]).flat_map do |file|
+  File.read(file, encoding: "UTF-8").scan(/(function|read)\('(mp_[a-z_]+)'/)
+end.uniq
+check("every export the scripts call is in the table", calls.map { |_way, name| name }.uniq - table_names, [])
+check("every export read into a buffer takes the buffer and its size",
+      calls.select { |way, name| way == "read" && DLL_EXPORTS[name] != "pl" }.map { |_way, name| name }, [])
+exported = Dir[File.expand_path("../../MGQParadox.Multiplayer/Exports/*.cs", __dir__)].flat_map do |file|
+  File.read(file, encoding: "UTF-8").scan(/EntryPoint = "(mp_[a-z_]+)"/).flatten
+end
+check("the table names every export of the DLL and no other", [(table_names - exported), (exported - table_names)], [[], []]) unless exported.empty?
+
 # The parts of Multiplayer.rb that load, taken out of it, so they run without the game.
 harness = Module.new
 %w[MOD_DIR SCRIPTS_DIR SCRIPT_EXTENSION].each do |name|
@@ -74,29 +90,56 @@ check("a script loads at the top level, past a byte order mark",
 check("the scripts after one that fails or is missing still load", defined?(LoaderTestAfter) ? true : false, true)
 check("a script that does not parse is logged by name", log.any? { |line| line.start_with?("broken.rbx did not load: SyntaxError") }, true)
 check("a missing script is logged by name", log.any? { |line| line.start_with?("missing.rbx did not load: Errno::ENOENT") }, true)
+check("the log counts the scripts loaded and names those that did not", log.last, "loaded 2 of 4 scripts, not broken, missing")
 
-# The in-game log: a line repeated is counted, and a log grown too large is moved aside once a
-# session starts.
+# The in-game log: a file per session, named after the game's start, without a line limit, and a
+# line repeated is counted.
 module MGQ_Multiplayer; end
 MGQ_Multiplayer.const_set(:LOG_DIR, "Logs")
 MGQ_Multiplayer.module_eval(source[/  def self\.log_path\(name\)\n.*?\n  end\n/m])
 MGQ_Multiplayer.module_eval(source[/  module Log\n.*?\n  end\n/m])
 Dir.mktmpdir do |game|
   Dir.chdir(game) do
-    Dir.mkdir("Logs")
-    File.write(File.join("Logs", "Multiplayer InGame.log"), "x" * (MGQ_Multiplayer::Log::MAX_BYTES + 1))
     3.times { MGQ_Multiplayer::Log.write("same") }
     MGQ_Multiplayer::Log.write("other")
-    lines = File.read(File.join("Logs", "Multiplayer InGame.log")).lines.map { |line| line.split("  ", 2)[1].to_s.chomp }
+    files = Dir[File.join("Logs", "*")].map { |file| File.basename(file) }
+    check("the session's log is named after its start, the load standing in while Windows cannot tell it",
+          files, ["Multiplayer InGame #{MGQ_Multiplayer::Log.instance_variable_get(:@loaded).strftime('%Y-%m-%d %H-%M-%S')}.log"])
+    path = File.join("Logs", files.first.to_s)
+    lines = File.read(path).lines.map { |line| line.split("  ", 2)[1].to_s.chomp }
     check("a line repeated is written once, with how often it repeated before the next one", lines, ["same", "(the line above repeated 2 times in all)", "other"])
     12.times { MGQ_Multiplayer::Log.write("flood") }
     MGQ_Multiplayer::Log.flush
-    lines = File.read(File.join("Logs", "Multiplayer InGame.log")).lines.map { |line| line.split("  ", 2)[1].to_s.chomp }
+    lines = File.read(path).lines.map { |line| line.split("  ", 2)[1].to_s.chomp }
     check("a line that keeps repeating says so while it goes on, and in all when the game closes", lines.last(3),
           ["flood", "(the line above repeated 10 times so far)", "(the line above repeated 11 times in all)"])
-    check("the log of earlier sessions, grown past its limit, is kept as the old log", File.size(File.join("Logs", "Multiplayer InGame.old.log")), MGQ_Multiplayer::Log::MAX_BYTES + 1)
+    3100.times { |index| MGQ_Multiplayer::Log.write("line #{index}") }
+    check("the log has no line limit", File.read(path).lines.last.split("  ", 2)[1].chomp, "line 3099")
   end
 end
+
+# The session's start as Windows tells it: the process's creation time, made local.
+module MGQ_Multiplayer
+  module Windows
+    # A stand-in for a kernel32 function, filling its output buffers as Windows would.
+    Function = Struct.new(:name) do
+      def call(*args)
+        case name
+        when "GetCurrentProcess" then -1
+        when "GetProcessTimes" then args[1].replace([1, 2].pack("L2"))
+        when "FileTimeToLocalFileTime" then args[1].replace(args[0])
+        when "FileTimeToSystemTime" then args[1].replace([2026, 10, 3, 7, 18, 30, 5, 0].pack("S8"))
+        end
+        1
+      end
+    end
+
+    def self.api(_library, name, _arguments, _result); Function.new(name); end
+  end
+end
+check("the session's start comes from the game's process", MGQ_Multiplayer::Log.session_stamp, "2026-10-07 18-30-05")
+# The rest of this file writes no log.
+MGQ_Multiplayer::Log.define_singleton_method(:write) { |_message| }
 
 # The buttons: every screen of the mod that holds them keeps them until it gives them back, and
 # Input answers nothing past the guard but what a screen asks past the capture.

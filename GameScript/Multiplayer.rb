@@ -2,7 +2,12 @@
 #  Multiplayer.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-07: Forgot the chosen name when the player clears it, so the name on Discord stands again instead of A friend
+#      Paulinchen  2026-10-07: Gave the background wrap its script, as every around now names who registers
+#                            - Named every export of the DLL with its signature once in Link, so a call names the export alone
+#                            - Loaded coop_choices.rbx, the story's choices a member makes for themselves, after the world screen whose form it draws with
+#                            - Wrote the in-game log without a line or size limit into a file per game session, named after the time the game started
+#                            - Logged the start, the scripts loaded, the Discord mod found, the update gate, the buttons taken and given back, the player's name and the PvP link's steps
+#                            - Forgot the chosen name when the player clears it, so the name on Discord stands again instead of A friend
 #      Paulinchen  2026-10-06: Kept the buttons held while any screen of the mod holds them, so one closing never hands them to the game under another
 #                            - Guarded Input through core_hooks.rbx, asking Windows every frame whether the game is in front, also where the game pauses in the background
 #                            - Kept up to 3000 lines of the in-game log per session instead of 60, which ended it within minutes, counted a repeated line instead of writing it again, saying so while it repeats and when the game closes, and moved a log grown past 1 MB aside as the old log when a session starts
@@ -84,7 +89,7 @@ module MGQ_Multiplayer
   SCRIPTS = %w[
     core_log core_hooks core_game_access core_hotkeys ui ui_text_box core_actors core_async overworld_sync ui_wheel ui_actions ui_chat ui_emotes overworld
     coop coop_squad coop_events coop_gather coop_scene coop_npcs coop_story_rewards coop_story coop_castle
-    world world_mods world_save_distribution world_text world_screen world_save_export
+    world world_mods world_save_distribution world_text world_screen world_save_export coop_choices
     battles battles_coop battles_coop_level_sync
     battles_sync battles_sync_wire battles_sync_recorder battles_sync_playback battles_sync_live
     battles_balance_pvp battles_pvp battles_pvp_backline battles_pvp_mirror battles_pvp_lobby battles_duel battles_team
@@ -118,9 +123,14 @@ module MGQ_Multiplayer
   def self.start
     return if @started
     @started = true
-    return unless available?
+    Log.write("Monster Girl Quest! Online starting on Ruby #{RUBY_VERSION}, session log #{Log.file_name}")
+    unless available?
+      Log.write(ENABLED ? "not started: #{path(DLL)} is missing" : "not started: the mod is turned off")
+      return
+    end
 
     Link.start
+    Log.write("started #{path(DLL)}")
     Background.start
     UpdateCheck.start
   rescue => e
@@ -168,15 +178,18 @@ module MGQ_Multiplayer
   # Loads the mod's other scripts in the order of SCRIPTS. One that is missing or fails is logged,
   # and the others load all the same.
   def self.load_scripts
+    failed = []
     SCRIPTS.each do |name|
       file = path("#{SCRIPTS_DIR}\\#{name}#{SCRIPT_EXTENSION}")
       begin
         eval(File.read(file, encoding: "BOM|UTF-8"), TOPLEVEL_BINDING, file)
       # A script that does not parse raises a SyntaxError, which is no StandardError.
       rescue Exception => e
+        failed << name
         Log.write("#{name}#{SCRIPT_EXTENSION} did not load: #{e.class}: #{e.message} (#{e.backtrace.to_a.first})")
       end
     end
+    Log.write("loaded #{SCRIPTS.size - failed.size} of #{SCRIPTS.size} scripts#{failed.empty? ? '' : ", not #{failed.join(', ')}"}")
   end
 
   # Keeps a name someone else chose short, on one line and free of message codes.
@@ -191,27 +204,22 @@ module MGQ_Multiplayer
     fallback
   end
 
-  # Logs/Multiplayer InGame.log, which only appears when something went wrong inside the game.
+  # The scripts' log in the game folder's Logs folder, one file per game session, such as
+  # Logs/Multiplayer InGame 2026-10-07 18-30-05.log, named after the time the game started, as the
+  # DLL names its Multiplayer.log of the same session.
   module Log
-    # Lines written per session at most, an error repeating every frame would flood the file. A
-    # session of a few hours' play writes some hundred.
-    MAX_LINES = 3000
+    # The start of the log's file name, which the session's start and ".log" follow.
+    NAME = "Multiplayer InGame"
 
-    # Size from which a session moves the log aside as BACKUP_NAME, 1 MB. The backup then holds
-    # every session before, up to the one that crossed it.
-    MAX_BYTES = 1024 * 1024
-
-    # The log's file name.
-    NAME = "Multiplayer InGame.log"
-
-    # The file name of the log's last copy.
-    BACKUP_NAME = "Multiplayer InGame.old.log"
+    # How the session's start shows in the file name.
+    STAMP = "%Y-%m-%d %H-%M-%S"
 
     # How often a line repeats before the log says so while it still repeats, so a flood shows even
-    # when the game closes or the log ends first.
+    # when the game closes first.
     REPEAT_REPORTS = [10, 100, 1000, 10_000]
 
-    @lines = 0
+    # When this script loaded, which stands in for the game's start when Windows cannot tell it.
+    @loaded = Time.now
     @last = nil
     @streak = 0
     @reported = 0
@@ -221,8 +229,6 @@ module MGQ_Multiplayer
     #
     # @param message [String] The line to append.
     def self.write(message)
-      return if @lines >= MAX_LINES
-
       if message == @last
         @streak += 1
         append("(the line above repeated #{@streak} times so far)") if REPEAT_REPORTS.include?(@streak)
@@ -230,7 +236,6 @@ module MGQ_Multiplayer
         return
       end
 
-      start_session if @lines == 0
       flush
       @last = message
       append(message)
@@ -250,20 +255,40 @@ module MGQ_Multiplayer
     #
     # @param text [String] The line.
     def self.append(text)
-      @lines += 1
-      File.open(MGQ_Multiplayer.log_path(NAME), "ab") { |file| file.write("#{Time.now}  #{text}\n") }
+      File.open(MGQ_Multiplayer.log_path(file_name), "ab") { |file| file.write("#{Time.now}  #{text}\n") }
     end
 
-    # Moves a log grown past MAX_BYTES aside as BACKUP_NAME, so the file stops growing across
-    # sessions while the sessions before stay readable.
-    def self.start_session
-      path = MGQ_Multiplayer.log_path(NAME)
-      return unless File.exist?(path) && File.size(path) > MAX_BYTES
+    # Names this session's log after the game's start, read once.
+    #
+    # @return [String] The file name, such as "Multiplayer InGame 2026-10-07 18-30-05.log".
+    def self.file_name
+      @file_name ||= "#{NAME} #{session_stamp}.log"
+    end
 
-      backup = MGQ_Multiplayer.log_path(BACKUP_NAME)
-      File.delete(backup) if File.exist?(backup)
-      File.rename(path, backup)
+    # Writes when the game started, in local time, as the log's name shows it.
+    #
+    # @return [String] The time, such as "2026-10-07 18-30-05".
+    def self.session_stamp
+      (process_start || @loaded).strftime(STAMP)
+    end
+
+    # Asks Windows when the game's process started.
+    #
+    # @return [Time, nil] The start in local time, to the second; nil when Windows cannot tell.
+    def self.process_start
+      times = Array.new(4) { [0, 0].pack("L2") }
+      process = Windows.api("kernel32", "GetCurrentProcess", "v", "l").call
+      return nil if Windows.api("kernel32", "GetProcessTimes", "lpppp", "i").call(process, *times) == 0
+
+      local = [0, 0].pack("L2")
+      system = ([0] * 8).pack("S8")
+      return nil if Windows.api("kernel32", "FileTimeToLocalFileTime", "pp", "i").call(times[0], local) == 0
+      return nil if Windows.api("kernel32", "FileTimeToSystemTime", "pp", "i").call(local, system) == 0
+
+      year, month, _weekday, day, hour, minute, second = system.unpack("S8")
+      Time.local(year, month, day, hour, minute, second)
     rescue
+      nil
     end
   end
 
@@ -319,6 +344,7 @@ module MGQ_Multiplayer
       if values["id"].to_s.empty?
         values["id"] = Link.new_id
         Ini.write(MGQ_Multiplayer.path(FILE), values) unless values["id"].empty?
+        Log.write(values["id"].empty? ? "could not make a player key: the DLL gave none" : "made a new player key and kept it in #{FILE}")
       end
       values["id"].to_s
     end
@@ -336,6 +362,7 @@ module MGQ_Multiplayer
         discord = load[DISCORD_NAME].to_s
       elsif load[DISCORD_NAME] != discord
         store(DISCORD_NAME, discord)
+        Log.write("kept the name Discord told: #{discord}")
       end
       discord.empty? ? nil : MGQ_Multiplayer.clean(discord)
     end
@@ -347,6 +374,7 @@ module MGQ_Multiplayer
     def self.name=(name)
       chosen = MGQ_Multiplayer.clean(name, "")
       chosen.empty? ? forget("name") : store("name", chosen)
+      Log.write(chosen.empty? ? "cleared the chosen name, the name on Discord stands: #{self.name.inspect}" : "chose the name #{chosen}")
       share
     end
 
@@ -385,7 +413,13 @@ module MGQ_Multiplayer
     def self.share
       name = self.name
       key = id
-      name && !key.empty? ? Link.set_player(key, name) : false
+      shared = name && !key.empty? ? Link.set_player(key, name) : false
+      told = [name, shared]
+      if told != @told
+        @told = told
+        Log.write(shared ? "told the DLL who plays: #{name}" : "could not tell the DLL who plays: #{name.nil? ? 'no name yet' : key.empty? ? 'no player key' : 'it refused'}")
+      end
+      shared
     rescue => e
       Log.write("could not tell the DLL who plays: #{e.class}: #{e.message}")
       false
@@ -412,16 +446,91 @@ module MGQ_Multiplayer
     # Bytes the DLL may write a message into at first. A larger message asks for a larger buffer.
     MESSAGE_SIZE = 4_096
 
+    # The arguments of an export that writes a text into a buffer, see read: the buffer and its size.
+    READ_ARGUMENTS = 'pl'
+
+    # Every export of the DLL with its arguments in Win32API notation, 'v' for none; each returns a
+    # long. A call names the export alone, so a changed signature is followed here once.
+    EXPORTS = {
+      # The DLL itself, the player and the update check.
+      'mp_start' => 'v',
+      'mp_keep_running' => 'v',
+      'mp_check_for_update' => 'v',
+      'mp_newer_version' => READ_ARGUMENTS,
+      'mp_new_id' => READ_ARGUMENTS,
+      'mp_set_player' => 'pp',
+      'mp_set_player_name' => 'p',
+      'mp_player_id' => READ_ARGUMENTS,
+      'mp_restart_game' => 'v',
+
+      # The keyboard and the clipboard.
+      'mp_typing' => 'l',
+      'mp_take_typed' => READ_ARGUMENTS,
+      'mp_copy_code' => 'v',
+      'mp_copy_text' => 'p',
+
+      # The PvP connection.
+      'mp_host' => 'pp',
+      'mp_join_invite' => 'pp',
+      'mp_join_clipboard' => 'pp',
+      'mp_receive_invite' => 'p',
+      'mp_cancel' => 'v',
+      'mp_send' => 'p',
+      'mp_receive' => READ_ARGUMENTS,
+      'mp_state' => READ_ARGUMENTS,
+      'mp_status' => READ_ARGUMENTS,
+
+      # The world directory.
+      'mp_dir_watch' => 'p',
+      'mp_dir_refresh' => 'v',
+      'mp_dir_find' => 'p',
+      'mp_dir_list' => READ_ARGUMENTS,
+      'mp_dir_create' => 'pplllpppplpp',
+      'mp_dir_unlock' => 'pp',
+      'mp_dir_unlock_code' => 'p',
+      'mp_dir_edit' => 'plpppl',
+      'mp_dir_set_settings' => 'pp',
+      'mp_dir_set_data' => 'pp',
+      'mp_dir_delete' => 'p',
+      'mp_dir_ban' => 'pp',
+      'mp_dir_action' => READ_ARGUMENTS,
+      'mp_dir_clear' => 'v',
+      'mp_dir_fetch_start' => 'pp',
+
+      # The world's room.
+      'mp_world_id' => 'ppl',
+      'mp_world_directory_id' => 'ppl',
+      'mp_world_open' => 'p',
+      'mp_world_close' => 'v',
+      'mp_world_send' => 'lp',
+      'mp_world_receive' => READ_ARGUMENTS,
+      'mp_world_status' => READ_ARGUMENTS,
+
+      # The mod catalog.
+      'mp_mods_list' => READ_ARGUMENTS,
+      'mp_mod_hash' => 'ppl',
+      'mp_mods_install' => 'p',
+      'mp_mods_options' => 'ppp',
+
+      # Trades.
+      'mp_trade_commit' => 'pppp',
+      'mp_trade_cancel' => 'pp',
+      'mp_trade_state' => READ_ARGUMENTS,
+      'mp_trade_done' => 'pp',
+      'mp_trade_pending' => 'p',
+      'mp_trade_pending_list' => READ_ARGUMENTS,
+    }
+
     # Finds the mod folder and starts the DLL's log.
     def self.start
-      function('mp_start', 'v').call
+      function('mp_start').call
     end
 
     # Keeps the game running while another application is active.
     #
     # @return [Boolean] Whether the game keeps running.
     def self.keep_running
-      function('mp_keep_running', 'v').call == 1
+      function('mp_keep_running').call == 1
     end
 
     # Starts hosting.
@@ -430,7 +539,8 @@ module MGQ_Multiplayer
     # @param payload [String] What the friend gets, such as the player's team.
     def self.host(game, payload)
       Discord.share_player_name
-      function('mp_host', 'pp').call(game + "\0", payload + "\0")
+      Log.write("PvP: hosting, handing over #{payload.bytesize} bytes")
+      function('mp_host').call(game + "\0", payload + "\0")
     end
 
     # Joins the host of the invite that is waiting.
@@ -439,7 +549,8 @@ module MGQ_Multiplayer
     # @param payload [String] What the friend gets, such as the player's team.
     def self.join_invite(game, payload)
       Discord.share_player_name
-      function('mp_join_invite', 'pp').call(game + "\0", payload + "\0")
+      Log.write("PvP: joining the host of the waiting invite, handing over #{payload.bytesize} bytes")
+      function('mp_join_invite').call(game + "\0", payload + "\0")
     end
 
     # Joins the host whose join code is on the clipboard.
@@ -448,21 +559,22 @@ module MGQ_Multiplayer
     # @param payload [String] What the friend gets, such as the player's team.
     def self.join_clipboard(game, payload)
       Discord.share_player_name
-      function('mp_join_clipboard', 'pp').call(game + "\0", payload + "\0")
+      Log.write("PvP: joining the host whose join code is on the clipboard, handing over #{payload.bytesize} bytes")
+      function('mp_join_clipboard').call(game + "\0", payload + "\0")
     end
 
     # Keeps the join code of an invite the player accepted in Discord, until they join with it.
     #
     # @param join_code [String] The join code.
     def self.receive_invite(join_code)
-      function('mp_receive_invite', 'p').call(join_code + "\0")
+      function('mp_receive_invite').call(join_code + "\0")
     end
 
     # Tells the DLL the player's name, which the friend sees.
     #
     # @param name [String] The name.
     def self.set_player_name(name)
-      function('mp_set_player_name', 'p').call(name + "\0")
+      function('mp_set_player_name').call(name + "\0")
     end
 
     # Makes an id nobody else has.
@@ -478,7 +590,7 @@ module MGQ_Multiplayer
     # @param name [String] The player's name.
     # @return [Boolean] Whether the DLL took them.
     def self.set_player(key, name)
-      function('mp_set_player', 'pp').call(key + "\0", name + "\0") == 1
+      function('mp_set_player').call(key + "\0", name + "\0") == 1
     end
 
     # Reads the id everyone sees for the player, as the world directory lists it.
@@ -494,8 +606,9 @@ module MGQ_Multiplayer
     #
     # @param on [Boolean] Whether to take it.
     def self.typing(on)
+      Log.write(on ? "keyboard typing on" : "keyboard typing off") if on != $mgq_text_input
       $mgq_text_input = on
-      function('mp_typing', 'l').call(on ? 1 : 0)
+      function('mp_typing').call(on ? 1 : 0)
     end
 
     # Takes what the player typed since the last call.
@@ -513,14 +626,15 @@ module MGQ_Multiplayer
     # Stops hosting or joining, closes the link, forgets what arrived, and turns down a waiting invite
     # unless a team had arrived.
     def self.cancel
-      function('mp_cancel', 'v').call
+      Log.write("PvP: cancelled hosting or joining, the link closes")
+      function('mp_cancel').call
     end
 
     # Puts the join code on the clipboard again.
     #
     # @return [Boolean] Whether the clipboard holds the join code again.
     def self.copy_code
-      function('mp_copy_code', 'v').call == 1
+      function('mp_copy_code').call == 1
     end
 
     # Sends a message to the friend.
@@ -528,7 +642,7 @@ module MGQ_Multiplayer
     # @param text [String] The message.
     # @return [Boolean] false without an open link, or when the message is too long.
     def self.post(text)
-      function('mp_send', 'p').call(text + "\0") == 1
+      function('mp_send').call(text + "\0") == 1
     end
 
     # Takes the oldest message from the friend.
@@ -576,30 +690,29 @@ module MGQ_Multiplayer
 
     # Calls an export that writes a text into a buffer, again with a larger buffer when asked for one.
     #
-    # @param name [String] The export.
+    # @param name [String] The export, one that takes READ_ARGUMENTS.
     # @param size [Integer] The buffer's size at first.
     # @return [String] The text as bytes, "" when there is none.
     def self.read(name, size)
       buffer = "\0" * size
-      length = function(name, 'pl').call(buffer, buffer.size)
+      length = function(name).call(buffer, buffer.size)
 
       if length < 0
         buffer = "\0" * (1 - length)
-        length = function(name, 'pl').call(buffer, buffer.size)
+        length = function(name).call(buffer, buffer.size)
       end
 
       # The DLL wrote bytes past Ruby's back, so only a binary string counts them right.
       length > 0 ? buffer.force_encoding("ASCII-8BIT")[0, length] : ""
     end
 
-    # Loads an export of the DLL.
+    # Loads an export of the DLL, with the arguments EXPORTS names for it.
     #
-    # @param name [String] The exported function.
-    # @param arguments [String] Its arguments, in Win32API notation.
+    # @param name [String] The exported function, a key of EXPORTS.
     # @return [Win32API] The function, loaded once.
-    def self.function(name, arguments)
+    def self.function(name)
       @functions ||= {}
-      @functions[name] ||= Win32API.new(MGQ_Multiplayer.path(DLL), name, arguments, 'l')
+      @functions[name] ||= Win32API.new(MGQ_Multiplayer.path(DLL), name, EXPORTS.fetch(name), 'l')
     end
   end
 
@@ -615,7 +728,8 @@ module MGQ_Multiplayer
       @started = true
       return unless MGQ_Multiplayer.available?
 
-      Link.function('mp_check_for_update', 'v').call
+      Link.function('mp_check_for_update').call
+      Log.write("asked the DLL to look for a newer release; Multiplayer.log tells its answer")
     end
 
     # Polls the DLL for a newer release. Called every frame, acts every CHECK_FRAMES, and stops
@@ -628,7 +742,10 @@ module MGQ_Multiplayer
 
       @frames = 0
       text = Link.read('mp_newer_version', 64)
-      @version = text unless text.empty?
+      return if text.empty?
+
+      @version = text
+      Log.write("update gate closed: release #{text} is out, so worlds and PvP battles stay shut until the update")
     rescue => e
       Log.write("update check failed: #{e.class}: #{e.message}")
     end
@@ -650,7 +767,7 @@ module MGQ_Multiplayer
     # Has the DLL keep the game running.
     def self.start
       @running = Link.keep_running
-      Log.write("could not keep the game running in the background") unless @running
+      Log.write(@running ? "hooked the game's window: it keeps running in the background and the keyboard types" : "could not keep the game running in the background")
     rescue => e
       Log.write("background start failed: #{e.class}: #{e.message}")
     end
@@ -674,9 +791,10 @@ module MGQ_Multiplayer
       input = Input.singleton_class
       MGQ_MpHooks.before(input, :update, "Multiplayer") { MGQ_Multiplayer::Background.refresh }
       IDLE_INPUT.each do |method, idle|
-        MGQ_MpHooks.around(input, method) { |_input, _args, original| MGQ_Multiplayer::Background.passes? ? original.call : idle }
+        MGQ_MpHooks.around(input, method, "background") { |_input, _args, original| MGQ_Multiplayer::Background.passes? ? original.call : idle }
       end
       @input_guarded = true
+      Log.write("guarded the game's Input")
     end
 
     # Reports whether Input answers as the game's own would: while the game is in front, and no
@@ -691,9 +809,13 @@ module MGQ_Multiplayer
     #
     # Input.update calls it, since the game's Graphics.frame_count raises until the game first sets it.
     def self.refresh
-      @in_front = Windows.game_in_front?
-    rescue
-      @in_front = true
+      in_front = begin
+        Windows.game_in_front?
+      rescue
+        true
+      end
+      Log.write(in_front ? "the game's window came to the front" : "another window came to the front, the buttons wait") if !@in_front.nil? && in_front != @in_front
+      @in_front = in_front
     end
 
     # Reports whether the window in front belongs to this game, as Windows said at the last Input.update.
@@ -715,14 +837,19 @@ module MGQ_Multiplayer
     #
     # @param owner [Symbol] The screen, such as :wheel.
     def self.start(owner)
-      @owners.push(owner) unless @owners.include?(owner)
+      return if @owners.include?(owner)
+
+      @owners.push(owner)
+      Log.write("buttons taken by #{owner}, held by #{@owners.join(', ')}")
     end
 
     # Gives the buttons back for a screen. The game gets them once no other screen holds them.
     #
     # @param owner [Symbol] The screen.
     def self.stop(owner)
-      @owners.delete(owner)
+      return unless @owners.delete(owner)
+
+      Log.write("buttons given back by #{owner}, #{@owners.empty? ? 'the game has them again' : "still held by #{@owners.join(', ')}"}")
     end
 
     # Reports whether a screen holds the buttons.
@@ -884,13 +1011,44 @@ module MGQ_Multiplayer
       return if @frames < DISCORD_FRAMES
 
       @frames = 0
-      return unless MGQ_Multiplayer.available? && available?
+      return unless MGQ_Multiplayer.available? && bridge_found?
 
       invite = MGQ_Discord::Bridge.take_invite
-      Link.receive_invite(invite) if invite && !(defined?(MGQ_MpWorld) && MGQ_MpWorld::Invite.receive(invite))
+      if invite
+        world = defined?(MGQ_MpWorld) && MGQ_MpWorld::Invite.receive(invite)
+        Link.receive_invite(invite) unless world
+        Log.write(world ? "took a Discord invite into a world" : "took a Discord invite to a PvP battle")
+      end
       report(Link.status)
     rescue => e
       Log.write("discord hand-over failed: #{e.class}: #{e.message}")
+    end
+
+    # Tells whether the Discord mod can take the connection, logging when that changes.
+    #
+    # @return [Boolean] Whether it can, see available?.
+    def self.bridge_found?
+      found = available?
+      status = bridge_status(found)
+      Log.write(status) if status != @bridge_status
+      @bridge_status = status
+      found
+    end
+
+    # Describes how the Discord mod stands, for the log.
+    #
+    # @param found [Boolean] Whether it can take the connection.
+    # @return [String] The description.
+    def self.bridge_status(found)
+      return "Discord mod found, bridge version #{BRIDGE_VERSION}" if found
+      return "Discord mod not installed, the join code on the clipboard still works" unless defined?(MGQ_Discord::Bridge)
+
+      version = MGQ_Discord::Bridge::VERSION rescue nil
+      return "Discord mod speaks bridge version #{version.inspect}, this mod #{BRIDGE_VERSION}: not used" if version != BRIDGE_VERSION
+
+      "Discord mod installed but not connected to Discord yet"
+    rescue
+      "Discord mod could not be asked"
     end
 
     # Tells the DLL the player's name, which the friend sees: the one on Discord, or the one the
@@ -928,6 +1086,7 @@ module MGQ_Multiplayer
 
       @reported = current
       kind, party, detail = current
+      Log.write(kind == :idle ? "told Discord: idle" : "told Discord: #{kind}, party #{party.to_s[0, 8]}#{kind == :connected ? " with #{detail}" : ''}")
       case kind
       when :hosting then MGQ_Discord::Bridge.hosting(party, detail)
       when :connected then MGQ_Discord::Bridge.connected(party, detail)

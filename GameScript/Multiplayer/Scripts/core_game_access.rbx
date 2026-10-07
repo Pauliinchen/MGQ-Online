@@ -2,6 +2,7 @@
 #  core_game_access.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-07: Named an interpreter's event and map, the trades a save keeps and the title screen's command closing
 #      Paulinchen  2026-10-06: Left scene_changing? out of the private methods, since the game makes it public
 #                            - Named a battler's counters, which hold its barriers, and whether a battle starts with a first strike or a surprise
 #                            - Named whether the map's menu was asked for, and the entries of the game's switches and variables
@@ -97,10 +98,15 @@ module MGQ_MpGame
     :stack => :@stack,
     :system_save_count => :@system_save_count,
 
-    # Window_Command, and Game_Interpreter with the command it runs.
+    # Window_Command, and Game_Interpreter with the command it runs, the event and the map it runs for.
     :list => :@list,
     :index => :@index,
     :depth => :@depth,
+    :event_id => :@event_id,
+    :map_id => :@map_id,
+
+    # $game_system: the trades applied in this save, a field of the mod's own that its saves keep.
+    :trades => :@mgq_mp_trades,
 
     # Scene_Map: whether the game's menu was asked for.
     :menu_calling => :@menu_calling,
@@ -115,12 +121,12 @@ module MGQ_MpGame
 
   # The fields the game sets only once it needs them, so one that is missing is no reason to log:
   # a battle has no acting battler before its first action, which a guest's playback reads first.
-  LAZY = [:stones, :enchants, :retry_data, :system_save_count, :subject]
+  LAZY = [:stones, :enchants, :retry_data, :system_save_count, :subject, :trades]
 
   # The game's private methods the mod calls.
   METHODS = [
     :auto_state_with_switch, :make_unique_names, :refresh_status, :update_for_wait, :wait_for_message,
-    :battle_show_skip?,
+    :battle_show_skip?, :close_command_window,
   ]
 
   # Reads a private field of one of the game's objects, logging once when the game has no such
