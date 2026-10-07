@@ -2,6 +2,8 @@
 #  coop_npcs.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-06: Left out the party members whose connection is down, who no longer move the map's events
+#                            - Took the tiles an event walks to catch up from overworld.rbx
 #      Paulinchen  2026-10-04: Made the party's leader the Map Owner of the Pocket Castle, and told coop_castle.rbx the Map Owner's events and pages
 #                            - Let a story's forced routes, and every event while the leader's story plays, walk through party members
 #                            - Renamed from mp_coop_npcs.rbx
@@ -31,9 +33,6 @@
 module MGQ_MpCoopNpcs
   # Frames between two messages of the Map Owner, a quarter of a second at 60 frames per second.
   SEND_FRAMES = 15
-
-  # Tiles an event walks to catch up; farther away, it moves there at once.
-  CATCH_UP_TILES = 3
 
   # Frames an event may fail to walk to its place before it moves there at once.
   STUCK_FRAMES = 60
@@ -71,14 +70,16 @@ module MGQ_MpCoopNpcs
     @role == :follower
   end
 
-  # Lists the other party members on the player's map.
+  # Lists the other party members on the player's map whose connection stands.
+  #
+  # A Map Owner whose connection is down would hold every NPC still until they are forgotten.
   #
   # @return [Array<MGQ_MpOverworldSync::Peers::Peer>] The members.
   def self.party_here
     return [] unless MGQ_MpOverworldSync.in_world?
     return [] unless MGQ_MpCoop::Party.id
 
-    MGQ_MpOverworldSync::Peers.all.select { |peer| peer.member && peer.state["map"].to_i == $game_map.map_id }
+    MGQ_MpOverworldSync::Peers.all.select { |peer| peer.member && peer.away.nil? && peer.state["map"].to_i == $game_map.map_id }
   end
 
   # Finds the Map Owner among the party members on the map: the one who entered it first, the lower
@@ -222,7 +223,7 @@ module MGQ_MpCoopNpcs
     if dx == 0 && dy == 0
       @stuck.delete(id)
       event.mgq_mp_npc_face(direction)
-    elsif dx.abs + dy.abs > CATCH_UP_TILES || (@stuck[id] = @stuck[id].to_i + 1) > STUCK_FRAMES
+    elsif dx.abs + dy.abs > MGQ_MpOverworld::CATCH_UP_TILES || (@stuck[id] = @stuck[id].to_i + 1) > STUCK_FRAMES
       @stuck.delete(id)
       place(event, state)
     else

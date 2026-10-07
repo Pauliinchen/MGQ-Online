@@ -2,6 +2,8 @@
 #  coop_gather.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-06: Forgot the calls, the question where the leader stands and the hold once the world closes or a save is loaded, and counted a moment before a loaded save's frame count as long past
+#                            - Took the party's leader from coop.rbx and whether a PvP battle runs from coop_events.rbx
 #      Paulinchen  2026-10-04: Told coop_castle.rbx where a member brought into the Pocket Castle came from
 #                            - Kept a story's call out of a PvP battle, dropped one a duel's end puts the game back over, and moved a member only on a settled map
 #                            - Took the members near the leader along wherever the story moves the leader, and logged gathering, calls and arrivals
@@ -54,18 +56,25 @@ module MGQ_MpCoopGather
   # What starts this script's lines in Multiplayer InGame.log.
   LOG_TAG = "co-op gather"
 
-  # Finds the leader of the player's party, through coop_events.rbx.
+  # Reports whether a moment lies less than some frames back.
   #
-  # @return [MGQ_MpOverworldSync::Peers::Peer, Symbol, nil] The leader, :me for the player, nil outside a party.
-  def self.leader
-    MGQ_MpCoopEvents.leader
+  # Loading a save sets the frame count back to the save's, so a moment noted before the load counts
+  # as long past.
+  #
+  # @param since [Integer] The moment's Graphics.frame_count.
+  # @param frames [Integer] The frames.
+  # @return [Boolean] Whether it does.
+  def self.within?(since, frames)
+    elapsed = Graphics.frame_count - since
+    elapsed >= 0 && elapsed < frames
   end
 
-  # Reports whether the player leads a party with other members in it.
-  #
-  # @return [Boolean] Whether they do.
-  def self.leading?
-    MGQ_MpCoopEvents.leading?
+  # Forgets the leader's story scene the player holds, the leader's call and the player's question
+  # where the leader stands, as when the world closes or a save is loaded.
+  def self.forget
+    @hold = nil
+    @gather = nil
+    @asked = nil
   end
 
   # Sends the party a message about gathering.
@@ -84,7 +93,7 @@ module MGQ_MpCoopGather
   # @param message [Hash] The message's fields.
   def self.take(peer, message)
     return answer_where(peer) if message["pevent"] == "where"
-    return unless leader.equal?(peer)
+    return unless MGQ_MpCoop.party_leader.equal?(peer)
 
     place = [message["map"].to_i, message["x"].to_i, message["y"].to_i, message["d"].to_i]
     case message["pevent"]
@@ -133,20 +142,21 @@ module MGQ_MpCoopGather
   def self.holding?(interpreter)
     return false unless @hold && @hold[:interpreter].equal?(interpreter)
 
-    if !leading? || gathered?
+    leading = MGQ_MpCoop.party_leading?
+    if !leading || gathered?
       @hold = nil
-      MGQ_MpOverworldSync.notice("The party is here.") if leading?
+      MGQ_MpOverworldSync.notice("The party is here.") if leading
       return false
     end
 
-    if Graphics.frame_count - @hold[:since] >= HOLD_FRAMES
+    unless within?(@hold[:since], HOLD_FRAMES)
       @hold = nil
       MGQ_MpOverworldSync.notice("The story starts without #{missing.join(', ')}.")
       log("the story starts without #{missing.join(', ')}")
       return false
     end
 
-    if Graphics.frame_count - @hold[:called] >= CALL_FRAMES
+    unless within?(@hold[:called], CALL_FRAMES)
       @hold[:called] = Graphics.frame_count
       gather
     end
@@ -189,7 +199,7 @@ module MGQ_MpCoopGather
   # @param warp_ban [Boolean] Whether warping is banned where the leader stands.
   def self.called(peer, place, warp_ban = false)
     return @gather = nil if near_place?(own_place, place)
-    return log_once([:duel_call, Graphics.frame_count / HOLD_FRAMES], "a call came during a PvP battle, which keeps it out") if pvp_running?
+    return log_once([:duel_call, Graphics.frame_count / HOLD_FRAMES], "a call came during a PvP battle, which keeps it out") if MGQ_MpCoopEvents.pvp_running?
 
     unless @gather
       MGQ_MpOverworldSync.notice("#{peer.state['name']}'s story is starting. You join them in #{GATHER_FRAMES / 60} seconds.")
@@ -213,7 +223,7 @@ module MGQ_MpCoopGather
   #
   # @param player [Game_Player] The player.
   def self.before_transfer(player)
-    @transfer_from = player.transfer? && MGQ_MpCoopEvents.telling? && leading? ? [$game_map.map_id, player.x, player.y] : nil
+    @transfer_from = player.transfer? && MGQ_MpCoopEvents.telling? && MGQ_MpCoop.party_leading? ? [$game_map.map_id, player.x, player.y] : nil
   end
 
   # As leader, takes along the members who stood near when the story moved the player elsewhere,
@@ -222,7 +232,7 @@ module MGQ_MpCoopGather
   def self.after_transfer
     from = @transfer_from
     @transfer_from = nil
-    return unless from && leading?
+    return unless from && MGQ_MpCoop.party_leading?
 
     along = MGQ_MpCoop::Party.members.select { |peer| near_place?(peer.state, from) }
     return if along.empty?
@@ -255,7 +265,7 @@ module MGQ_MpCoopGather
 
   # As member, asks the leader where they stand, to come over as soon as the player is free.
   def self.join_leader
-    lead = leader
+    lead = MGQ_MpCoop.party_leader
     return unless lead.is_a?(MGQ_MpOverworldSync::Peers::Peer)
 
     name = lead.state["name"].to_s
@@ -274,7 +284,7 @@ module MGQ_MpCoopGather
   #
   # @param peer [MGQ_MpOverworldSync::Peers::Peer] The member.
   def self.answer_where(peer)
-    tell(peer.seat, "come", place_fields) if leader == :me && MGQ_MpCoop::Party.member?(peer.state)
+    tell(peer.seat, "come", place_fields) if MGQ_MpCoop.party_leader == :me && MGQ_MpCoop::Party.member?(peer.state)
   end
 
   # Takes the leader's answer to join_leader: the player comes over at once, unless they never
@@ -286,7 +296,7 @@ module MGQ_MpCoopGather
   def self.answered(peer, place, warp_ban)
     asked = @asked
     @asked = nil
-    return unless asked && Graphics.frame_count - asked < CALL_LAPSE_FRAMES
+    return unless asked && within?(asked, CALL_LAPSE_FRAMES)
     return if near_place?(own_place, place)
 
     @gather = { :since => Graphics.frame_count - GATHER_FRAMES, :name => peer.state["name"].to_s, :place => place,
@@ -298,7 +308,7 @@ module MGQ_MpCoopGather
   #
   # @return [Boolean] Whether it is.
   def self.coming?
-    !@gather.nil? && Graphics.frame_count - @gather[:called] < CALL_LAPSE_FRAMES
+    !@gather.nil? && within?(@gather[:called], CALL_LAPSE_FRAMES)
   end
 
   # Tells where the player comes to for the leader's story scene, once its five seconds passed and
@@ -307,7 +317,7 @@ module MGQ_MpCoopGather
   # @return [Array<Integer>, nil] The leader's map, x, y and direction, nil while none or not yet.
   def self.come?
     gather = pending_call
-    gather && Graphics.frame_count - gather[:since] >= GATHER_FRAMES && settled? ? gather[:place] : nil
+    gather && !within?(gather[:since], GATHER_FRAMES) && settled? ? gather[:place] : nil
   end
 
   # Reports whether the map settled enough to take the player elsewhere: no PvP battle runs or puts
@@ -318,14 +328,7 @@ module MGQ_MpCoopGather
   #
   # @return [Boolean] Whether it did.
   def self.settled?
-    !pvp_running? && !($game_temp && $game_temp.in_memory_battle) && Graphics.brightness == 255
-  end
-
-  # Reports whether a PvP battle, such as a duel, runs.
-  #
-  # @return [Boolean] Whether one does.
-  def self.pvp_running?
-    defined?(MGQ_MpBattlesPvp) && MGQ_MpBattlesPvp::Battle.running? ? true : false
+    !MGQ_MpCoopEvents.pvp_running? && !($game_temp && $game_temp.in_memory_battle) && Graphics.brightness == 255
   end
 
   # Forgets the leader's call, as when a duel puts the game back as it was before it, so the player
@@ -344,7 +347,7 @@ module MGQ_MpCoopGather
   # @return [Hash, nil] The call: :since, :name, :place, :warp_ban and :called; nil for none.
   def self.pending_call
     return nil unless @gather
-    return @gather if Graphics.frame_count - @gather[:called] < CALL_LAPSE_FRAMES
+    return @gather if within?(@gather[:called], CALL_LAPSE_FRAMES)
 
     MGQ_MpOverworldSync.notice(lapse_notice(@gather))
     log("#{@gather[:name]}'s call lapsed")
@@ -367,7 +370,7 @@ module MGQ_MpCoopGather
   #
   # @return [String, nil] The line.
   def self.own_line
-    return "Gathering the party . . ." if @hold && leading?
+    return "Gathering the party . . ." if @hold && MGQ_MpCoop.party_leading?
 
     gather = pending_call
     return nil unless gather
@@ -381,7 +384,7 @@ module MGQ_MpCoopGather
   #
   # @return [Boolean] Whether they do.
   def self.blocked?
-    lead = leader
+    lead = MGQ_MpCoop.party_leader
     lead.is_a?(MGQ_MpOverworldSync::Peers::Peer) && lead.state["telling"] == "1" && lead.state["map"].to_i == $game_map.map_id
   end
 
@@ -390,7 +393,7 @@ module MGQ_MpCoopGather
   #
   # @return [Boolean] Whether they do.
   def self.waiting?
-    (holding_story? && leading?) || coming? || blocked? || MGQ_MpCoopEvents.mirroring?
+    (holding_story? && MGQ_MpCoop.party_leading?) || coming? || blocked? || MGQ_MpCoopEvents.mirroring?
   rescue
     false
   end
@@ -455,6 +458,14 @@ rescue => e
   MGQ_MpCoopGather.log("actions FAILED: #{e.class}: #{e.message}")
 end
 
+# The calls and the hold go once the world closes, through overworld_sync.rbx.
+
+begin
+  MGQ_MpOverworldSync.on_tick { |in_world| MGQ_MpCoopGather.forget unless in_world }
+rescue => e
+  MGQ_MpCoopGather.log("overworld sync FAILED: #{e.class}: #{e.message}")
+end
+
 # Game hooks shared with other scripts, through core_hooks.rbx.
 
 begin
@@ -477,6 +488,9 @@ begin
   # Around the player's transfer, the leader takes along the members the story moves with them.
   MGQ_MpHooks.before(Game_Player, :perform_transfer, "coop_gather") { MGQ_MpCoopGather.before_transfer(self) }
   MGQ_MpHooks.after(Game_Player, :perform_transfer, "coop_gather") { MGQ_MpCoopGather.after_transfer }
+
+  # A loaded save starts the frame count anew, so the calls and the hold of before it go.
+  MGQ_MpHooks.after(DataManager.singleton_class, :extract_save_contents, "coop_gather") { |_contents| MGQ_MpCoopGather.forget }
 rescue => e
   MGQ_MpCoopGather.log("hooks FAILED: #{e.class}: #{e.message}")
 end

@@ -2,6 +2,7 @@
 #  coop_npcs_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-06: Checked that a party member whose connection is down is left out of the map's party
 #      Paulinchen  2026-10-04: Created
 #
 #----------------------------------------------------------------
@@ -42,3 +43,18 @@ check("as does any event while the leader's story plays", event.collide_with_cha
 $telling = false
 event.priority = 0
 check("an event below the characters never collides", event.collide_with_characters?(3, 4), false)
+
+# A party member whose connection is down no longer counts on the map, so they hold no events still.
+module MGQ_MpOverworldSync
+  def self.in_world?; true; end
+  module Peers
+    Peer = Struct.new(:seat, :state, :ghost, :member, :away)
+    def self.all; $peers; end
+  end
+end
+module MGQ_MpCoop; module Party; def self.id; "p1"; end; end; end
+$game_map = Struct.new(:map_id).new(5)
+connected = MGQ_MpOverworldSync::Peers::Peer.new(2, { "map" => "5" }, nil, true, nil)
+dropped = MGQ_MpOverworldSync::Peers::Peer.new(3, { "map" => "5" }, nil, true, 600)
+$peers = [connected, dropped]
+check("a party member whose connection is down is left out of the map's party", MGQ_MpCoopNpcs.party_here, [connected])

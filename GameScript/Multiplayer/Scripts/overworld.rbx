@@ -2,6 +2,7 @@
 #  overworld.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-07: Broke a notice longer than the status line into rows instead of cutting it off
 #      Paulinchen  2026-10-04: Stacked the labels of characters on one tile upwards, above the player's own ping
 #                            - Drew a notice's icon before its text
 #                            - Renamed from mp_overworld.rbx
@@ -437,22 +438,37 @@ class Sprite_MpWorldStatus < Sprite
     @shown = []
   end
 
-  # Draws what the line shows now, if it changed: each notice with its icon first, if it has one.
+  # Draws what the line shows now, if it changed: each notice broken into rows that fit, with its
+  # icon before its first row, the newest rows at the bottom.
   def update
     super
-    lines = MGQ_MpOverworldSync.in_world? ? MGQ_MpOverworldSync::Status.shown.last(ROWS) : []
-    return if lines == @shown
+    notices = MGQ_MpOverworldSync.in_world? ? MGQ_MpOverworldSync::Status.shown.last(ROWS) : []
+    return if notices == @shown
 
-    @shown = lines
+    @shown = notices
     bitmap.clear
     bitmap.font.size = 18
     bitmap.font.outline = true
-    lines.each_with_index do |(line, icon), row|
-      y = (ROWS - lines.size + row) * ROW
-      left = icon ? ROW + 2 : 0
+    rows = rows_of(notices)
+    rows.each_with_index do |(text, icon, left), row|
+      y = (ROWS - rows.size + row) * ROW
       bitmap.stretch_blt(Rect.new(0, y, ROW, ROW), Cache.system("Iconset"), Rect.new(icon % 16 * 24, icon / 16 * 24, 24, 24)) if icon
-      bitmap.draw_text(left, y, WIDTH - left, ROW, line)
+      bitmap.draw_text(left, y, WIDTH - left, ROW, text)
     end
+  end
+
+  # Breaks notices into the rows the line shows, measured in the font set.
+  #
+  # @param notices [Array<Array>] Each notice's text and icon, the icon nil for none.
+  # @return [Array<Array>] The last ROWS rows: each one's text, the icon before it (on a notice's
+  #   first row only) and its left edge.
+  def rows_of(notices)
+    rows = []
+    notices.each do |text, icon|
+      left = icon ? ROW + 2 : 0
+      MGQ_MpUi.wrap(bitmap, text.to_s, WIDTH - left).each_with_index { |part, index| rows << [part, index == 0 ? icon : nil, left] }
+    end
+    rows.last(ROWS)
   end
 
   # Frees the line's picture.

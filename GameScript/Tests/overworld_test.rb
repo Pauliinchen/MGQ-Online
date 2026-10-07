@@ -2,7 +2,9 @@
 #  overworld_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-06: Checked that the chat box opens while a message shows, and stays shut while an event runs without one
+#      Paulinchen  2026-10-07: Checked that the status line breaks a long notice into rows, its icon before the first
+#      Paulinchen  2026-10-06: Checked that a player who just joined counts for the leader only once admitted, and that a player on a new seat while the old one stands is moved there
+#                            - Checked that the chat box opens while a message shows, and stays shut while an event runs without one
 #                            - Checked that Discord hears of the world code, which its invites carry
 #                            - Checked that the wheel keeps its pick once the arrows are let go
 #                            - Found the wheel's choices by their place on the ring, and checked how the ring spreads and lays out its choices
@@ -710,6 +712,39 @@ MGQ_MpCoop::Party.reset
 MGQ_MpCoop::Party.join(MGQ_MpOverworldSync::Peers.at(10))
 check("a full party cannot be joined", [MGQ_MpCoop::Party.id, MGQ_MpOverworldSync::Status.lines.last], [nil, "M10's party is full."])
 
+# A player who joins counts for the party's leader only once admitted, so being turned away reaches
+# them even when their id is the lowest and the party's maker is gone.
+MGQ_MpCoop::Party.reset
+lead = MGQ_MpOverworldSync::Peers.at(11)
+lead.state.merge!("party" => "gone-p1", "invite" => "1", "party_members" => "zz-m11,zz-m12")
+MGQ_MpOverworldSync::Peers.at(12).state["party"] = "gone-p1"
+MGQ_MpCoop::Party.join(lead)
+check("a player who just joined does not lead, though their id is the lowest", MGQ_MpCoop::Party.leader.equal?(lead), true)
+$inbox << entry("message", 11, "kick=late\nparty=gone-p1\n\n")
+MGQ_MpOverworldSync.tick
+check("so the leader turning them away makes them leave", [MGQ_MpCoop::Party.id, MGQ_MpOverworldSync::Status.lines.last], [nil, "M11's invite is over."])
+MGQ_MpCoop::Party.join(lead)
+$inbox << entry("message", 11, told(lead.state.merge("party_members" => "zz-m11,zz-m12,me")))
+MGQ_MpOverworldSync.tick
+check("once admitted, the lowest id leads", MGQ_MpCoop::Party.leader, :me)
+MGQ_MpCoop::Party.reset
+
+# A player who tells from a new seat while the relay still holds their old one is moved there, and
+# the old seat's end tells nobody they left.
+MGQ_MpOverworldSync::Peers.clear
+$left = []
+MGQ_MpOverworldSync.on_leave { |peer| $left << peer.seat }
+$inbox << entry("message", 2, told(friend))
+MGQ_MpOverworldSync.tick
+$inbox << entry("message", 7, told(friend))
+MGQ_MpOverworldSync.tick
+check("a player telling from a new seat while the old one stands moves there",
+      [MGQ_MpOverworldSync::Peers.at(2), MGQ_MpOverworldSync::Peers.at(7).state["id"], MGQ_MpOverworldSync::Peers.all.size,
+       MGQ_MpOverworldSync::Status.lines.grep(/joined the world/).size], [nil, "friend", 1, 1])
+$inbox << entry("out", 2)
+(MGQ_MpOverworldSync::REJOIN_FRAMES + 1).times { MGQ_MpOverworldSync.tick }
+check("and the old seat's end tells nobody they left", [$left, MGQ_MpOverworldSync::Peers.all.size], [[], 1])
+
 # Discord hears of the open world: its name, its players, its seats and the code its invites carry.
 valley = Struct.new(:name, :id, :seats, :code, :directory_id).new("Valley", "w1", 8, "mgqmp2;abcdefghjkmnpqrs;r1;8", "d1")
 MGQ_MpWorld.define_singleton_method(:world) { valley }
@@ -733,3 +768,15 @@ stacked.instance_variable_set(:@shown, ["Lone", "map", "20", false, MGQ_MpOverwo
 taken = stacked.show(CharacterSprite.new(100, 200, 48, true, 255), lone, Sprite_MpOwnPing::HEIGHT)
 check("a label on the player's tile goes above the player's ping, and tells the room it takes",
       [stacked.y, taken], [200 - 48 - Sprite_MpGhostLabel::LINE * 2 + 4 - Sprite_MpOwnPing::HEIGHT, Sprite_MpGhostLabel::LINE])
+
+# The status line breaks a long notice into rows, the newest at the bottom.
+status = Sprite_MpWorldStatus.allocate
+measure = Object.new
+measure.define_singleton_method(:text_size) { |text| Struct.new(:width).new(text.size * 9) }
+status.define_singleton_method(:bitmap) { measure }
+long = "You follow Tester A's story while in the party. You are as far along, so you keep what you play together."
+rows = status.rows_of([["Short.", 4], [long, nil]])
+check("a long notice takes as many rows as it needs, each fitting the line", [rows.size, rows.all? { |text, _, left| text.size * 9 <= Sprite_MpWorldStatus::WIDTH - left }, rows.map { |text, _, _| text }.drop(1).join(" ")],
+      [4, true, long])
+check("a notice's icon stands before its first row only", rows.map { |_, icon, _| icon }, [4, nil, nil, nil])
+check("the line keeps its newest rows", [status.rows_of([[long, nil], [long, nil]]).size, status.rows_of([[long, nil], [long, nil]]).last[0]], [4, "what you play together."])

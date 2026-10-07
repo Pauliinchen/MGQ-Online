@@ -2,6 +2,7 @@
 #  coop_castle.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-06: Took the party's leader from coop.rbx, and the ghosts' opacity and catch-up tiles from overworld.rbx
 #      Paulinchen  2026-10-04: Showed the leader's residents in the castle, those the member's game does not show as ghosts
 #                            - Noted where the castle's way out returns a member the party brings into the castle
 #                            - Created
@@ -27,9 +28,6 @@ module MGQ_MpCoopCastle
 
   # Scripts of the Pocket Castle's coin shop, which lists its goods itself.
   SHOP_SCRIPTS = /\A\s*@goods\b/
-
-  # Opacity of a resident only the leader's game shows, as see-through as players outside the party.
-  GHOST_OPACITY = 150
 
   @ghosts = {}
 
@@ -99,7 +97,7 @@ module MGQ_MpCoopCastle
   def self.owner(members)
     return nil unless $game_map && castle_map?($game_map.map_id)
 
-    leader = MGQ_MpCoop::Party.leader
+    leader = MGQ_MpCoop.party_leader
     leader == :me ? :me : members.find { |peer| peer.equal?(leader) }
   end
 
@@ -164,7 +162,7 @@ class Game_MpResident < Game_Character
   def initialize(state)
     super()
     @through = true
-    @opacity = MGQ_MpCoopCastle::GHOST_OPACITY
+    @opacity = MGQ_MpOverworld::STRANGER_OPACITY
     moveto(state[0], state[1])
   end
 
@@ -183,7 +181,7 @@ class Game_MpResident < Game_Character
     dy = y - @y
     if dx == 0 && dy == 0
       set_direction(direction) if direction > 0
-    elsif dx.abs + dy.abs > MGQ_MpCoopNpcs::CATCH_UP_TILES
+    elsif dx.abs + dy.abs > MGQ_MpOverworld::CATCH_UP_TILES
       moveto(x, y)
     else
       move_straight(dx.abs >= dy.abs ? (dx > 0 ? 6 : 4) : (dy > 0 ? 2 : 8))

@@ -2,6 +2,7 @@
 #  coop_scene_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-06: Covered the first change after the party gathered, the member's own tint coming back, the grace before the leader's state and picture names with dots
 #      Paulinchen  2026-10-04: Created
 #
 #----------------------------------------------------------------
@@ -46,11 +47,11 @@ class Game_Pictures
 end
 # A screen that notes its effects.
 class Game_Screen
-  attr_reader :pictures, :done, :brightness
-  def initialize; @pictures = Game_Pictures.new; @done = []; @brightness = 255; end
+  attr_reader :pictures, :done, :brightness, :tone
+  def initialize; @pictures = Game_Pictures.new; @done = []; @brightness = 255; @tone = Tone.new(0, 0, 0, 0); end
   def start_fadeout(duration); @brightness = 0; @done << [:fadeout, duration]; end
   def start_fadein(duration); @brightness = 255; @done << [:fadein, duration]; end
-  def start_tone_change(tone, duration); @done << [:tone, tone.to_a, duration]; end
+  def start_tone_change(tone, duration); @tone = tone; @done << [:tone, tone.to_a, duration]; end
   def start_flash(color, duration); @done << [:flash, color.to_a, duration]; end
   def start_shake(power, speed, duration); @done << [:shake, power, speed, duration]; end
   def clear_flash; @done << [:clear_flash]; end
@@ -58,8 +59,8 @@ class Game_Screen
 end
 class Game_Interpreter
   def initialize(depth = 0); @depth = depth; @list = []; @index = 0; end
-  def execute_command; end
-  attr_accessor :list, :index
+  def update; @work.call if @work; end
+  attr_accessor :list, :index, :work
 end
 class Game_Player; attr_accessor :transparent; end
 class Game_Map
@@ -75,12 +76,11 @@ module MGQ_MpOverworldSync; module Peers; Peer = Struct.new(:seat, :state); end;
 module MGQ_MpCoop
   def self.route(field, &handler); ($routes ||= {})[field] = handler; end
   def self.tell(seat, field, value, fields = {}); ($sent ||= []) << [seat, { field => value }.merge(fields)]; true; end
+  def self.party_leader; $leader; end
+  def self.party_leading?; $leader == :me; end
 end
-module MGQ_MpCoopEvents
-  def self.story_playing?; $playing; end
-  def self.leading?; $leader == :me; end
-  def self.leader; $leader; end
-end
+module MGQ_MpCoopEvents; def self.story_playing?; $playing; end; end
+module Graphics; def self.frame_count; $frame_count; end; end
 
 module MGQ_MpCoopGather; def self.story_map?(map_id); map_id == $game_map.map_id || map_id == $following; end; end
 load_script "battles_sync_wire"
@@ -89,35 +89,43 @@ load_script "coop_scene"
 $game_map = Game_Map.new
 $game_player = Game_Player.new
 SceneManager.scene = Scene_Map.new
-scene = MGQ_MpCoopScene
+$frame_count = 1000
 main = $game_map.interpreter
+pictures = $game_map.screen.pictures
+run = lambda { |interpreter, work| interpreter.work = work; interpreter.update; interpreter.work = nil }
 
 # The leader's game tells the story's changes.
 $leader = :me
 $playing = true
 $sent = []
-main.execute_command
-$game_map.screen.pictures[3].show("story_cg", 0, 0, 0, 100, 100, 255, 0)
-$game_map.screen.start_tone_change(Tone.new(-68, -68, 0, 0), 30)
-$game_player.transparent = true
+run.call(main, lambda do
+  pictures[3].show("story_cg", 0, 0, 0, 100, 100, 255, 0)
+  $game_map.screen.start_tone_change(Tone.new(-68, -68, 0, 0), 30)
+  $game_player.transparent = true
+end)
 check("the story's picture, tint and hidden leader go to the party",
       $sent.map { |seat, fields| [seat, fields["pscene"], fields["map"]] },
       [[-1, "picture.show", 7], [-1, "screen.start_tone_change", 7], [-1, "player.transparent", 7]])
 $sent.clear
 parallel = Game_Interpreter.new
-parallel.execute_command
-$game_map.screen.pictures[20].show("hud", 0, 0, 0, 100, 100, 255, 0)
+run.call(parallel, lambda { pictures[20].show("hud", 0, 0, 0, 100, 100, 255, 0) })
 check("a parallel event's picture, such as the map's display, stays the leader's own", $sent, [])
-main.list = [RPG::EventCommand.new(117, 0, [5])]
-main.index = 0
-Game_Interpreter.new(1).execute_command
-$game_map.screen.pictures[4].erase
-$game_map.screen.pictures[4].show("cg2", 0, 0, 0, 100, 100, 255, 0)
+run.call(main, lambda do
+  Game_Interpreter.new(1)
+  pictures[4].erase
+  pictures[4].show("cg2", 0, 0, 0, 100, 100, 255, 0)
+end)
 check("but a common event the story calls is the story's", $sent.map { |_, fields| fields["pscene"] }, ["picture.show"])
 $sent.clear
-main.execute_command
+run.call(parallel, lambda {})
+run.call(main, lambda { $game_map.screen.start_fadeout(30) })
+check("the story's first change after parallel events ran meanwhile, as while the party gathers, goes out",
+      $sent.map { |_, fields| fields["pscene"] }, ["screen.start_fadeout"])
+$sent.clear
+pictures[8].show("menu", 0, 0, 0, 100, 100, 255, 0)
+check("a change outside every interpreter is the leader's own", $sent, [])
 $playing = false
-$game_map.screen.pictures[3].erase
+run.call(main, lambda { pictures[3].erase })
 check("nothing goes out once the story ended", $sent, [])
 $playing = true
 $sent.clear
@@ -128,6 +136,8 @@ $leader = leader
 $game_map = Game_Map.new
 $game_player = Game_Player.new
 $game_player.transparent = false
+$game_map.screen.start_tone_change(Tone.new(-34, -34, -34, 0), 0)
+$game_map.screen.done.clear
 wire = MGQ_MpBattlesSync::Wire
 take = lambda { |kind, args, map = 7| $routes["pscene"].call(leader, { "pscene" => kind, "map" => map.to_s, "args" => wire.line(args) }) }
 take.call("picture.show", [3, "story_cg", 0, 0, 0, 100, 100, 255, 0])
@@ -138,10 +148,14 @@ check("a member on the leader's map sees the picture", $game_map.screen.pictures
 check("and the screen's fade and flash", $game_map.screen.done, [[:fadeout, 30], [:flash, [255, 255, 255, 170], 20]])
 check("and hides their own character as the leader's is", $game_player.transparent, true)
 take.call("picture.show", [5, "../../evil", 0, 0, 0, 100, 100, 255, 0])
+take.call("picture.show", [9, "a..b", 0, 0, 0, 100, 100, 255, 0])
 take.call("picture.show", [101, "story_cg", 0, 0, 0, 100, 100, 255, 0])
 take.call("screen.exit", [])
 check("a path, a number past the pictures or an unknown method is left out",
-      [$game_map.screen.pictures[5].done, $game_map.screen.pictures[101].done, $game_map.screen.done.size], [[], [], 2])
+      [$game_map.screen.pictures[5].done, $game_map.screen.pictures[9].done, $game_map.screen.pictures[101].done, $game_map.screen.done.size],
+      [[], [], [], 2])
+take.call("picture.show", [10, "ev_aguni._hb1", 0, 0, 0, 100, 100, 255, 0])
+check("a picture whose name holds a dot shows", $game_map.screen.pictures[10].done.size, 1)
 take.call("picture.show", [6, "elsewhere", 0, 0, 0, 100, 100, 255, 0], 8)
 check("a change on another map is left out", $game_map.screen.pictures[6].done, [])
 $following = 8
@@ -155,10 +169,22 @@ check("while the story plays, nothing is put back", $game_map.screen.pictures[3]
 # Once the story ended, the member's screen comes back.
 leader.state["telling"] = "0"
 $game_map.update
+check("right after a change, the leader's state may still follow, so nothing is put back yet", $game_map.screen.pictures[3].done.size, 1)
+$frame_count += MGQ_MpCoopScene::STATE_GRACE_FRAMES
+$game_map.update
 check("then the story's pictures are erased", $game_map.screen.pictures[3].done.last, [:erase])
-check("the screen comes back", $game_map.screen.done.last(4),
-      [[:clear_flash], [:clear_shake], [:tone, [0, 0, 0, 0], MGQ_MpCoopScene::RESTORE_FRAMES], [:fadein, MGQ_MpCoopScene::RESTORE_FRAMES]])
+check("the screen comes back with the member's own tint", $game_map.screen.done.last(4),
+      [[:clear_flash], [:clear_shake], [:tone, [-34, -34, -34, 0], MGQ_MpCoopScene::RESTORE_FRAMES], [:fadein, MGQ_MpCoopScene::RESTORE_FRAMES]])
 check("and the member's own character shows again", $game_player.transparent, false)
 done = $game_map.screen.done.size
 $game_map.update
 check("only once", $game_map.screen.done.size, done)
+
+# A member the story brought to another map keeps the story's last tint.
+leader.state["telling"] = "1"
+take.call("screen.start_tone_change", [Tone.new(-68, -68, 0, 0), 30])
+$game_map.map_id = 8
+leader.state["telling"] = "0"
+$frame_count += MGQ_MpCoopScene::STATE_GRACE_FRAMES
+$game_map.update
+check("on another map the story's tint stays", $game_map.screen.done.last(3), [[:tone, [-68, -68, 0, 0], 30], [:clear_flash], [:clear_shake]])

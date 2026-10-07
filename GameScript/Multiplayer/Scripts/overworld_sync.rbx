@@ -2,7 +2,9 @@
 #  overworld_sync.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-06: Handed the Discord mod the world code, which its invites into the world carry
+#      Paulinchen  2026-10-06: Moved a player who tells from a new seat while their old one still stands, without telling anyone they left
+#                            - Dropped Status.lines, which only the tests read
+#                            - Handed the Discord mod the world code, which its invites into the world carry
 #      Paulinchen  2026-10-04: Took an icon with a notice
 #                            - Renamed from mp_overworld_sync.rbx
 #      Paulinchen  2026-10-03: Added map_quiet? and map_free?, which the scripts check before they act on the map
@@ -383,7 +385,7 @@ module MGQ_MpOverworldSync
 
     @peers = {}
 
-    # Takes what a game told. A player who is away and comes back, on any seat, is the same player
+    # Takes what a game told. A player who tells from another seat, away or not, is the same player
     # as before.
     #
     # @param seat [Integer] The game's seat.
@@ -392,7 +394,7 @@ module MGQ_MpOverworldSync
       peer = @peers[seat]
       # Another player took the seat of one who is away.
       remove(seat) if peer && peer.away && peer.state["id"] != state["id"]
-      peer = @peers[seat] || returning(seat, state)
+      peer = @peers[seat] || moved(seat, state)
 
       if peer
         peer.state = state
@@ -405,13 +407,17 @@ module MGQ_MpOverworldSync
       MGQ_MpOverworldSync.ask(:observe, peer)
     end
 
-    # Finds the player who is away and now tells from another seat, and moves them there.
+    # Finds the player who now tells from another seat, and moves them there, forgetting the old seat
+    # without telling anyone they left.
+    #
+    # The game connects again as soon as it thinks its connection broke, which the relay may notice
+    # only later, so the old seat may still stand.
     #
     # @param seat [Integer] The seat they tell from.
     # @param state [Hash] What they told.
-    # @return [Peer, nil] The player, nil when nobody away has their id.
-    def self.returning(seat, state)
-      peer = @peers.values.find { |other| other.away && !state["id"].to_s.empty? && other.state["id"] == state["id"] }
+    # @return [Peer, nil] The player, nil when nobody else has their id.
+    def self.moved(seat, state)
+      peer = @peers.values.find { |other| !state["id"].to_s.empty? && other.state["id"] == state["id"] }
       return nil unless peer
 
       @peers.delete(peer.seat)
@@ -557,13 +563,6 @@ module MGQ_MpOverworldSync
         when "connecting" then state["error"] || "Connecting . . ."
         when "failed" then "Not connected: #{state['error']}"
         end
-    end
-
-    # Tells what the line shows now.
-    #
-    # @return [Array<String>] The lines, the connection's problem first.
-    def self.lines
-      shown.map(&:first)
     end
 
     # Tells what the line shows now, with each notice's icon.

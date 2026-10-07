@@ -2,7 +2,9 @@
 #  coop.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-06: Added the party's choices to the action wheel's ring by order instead of to fixed sides
+#      Paulinchen  2026-10-06: Counted the player as a candidate for the party's leader only once the leader admitted them, so a player turned away as they join leaves the party
+#                            - Added party_leader and party_leading?, which every party script asks
+#                            - Added the party's choices to the action wheel's ring by order instead of to fixed sides
 #      Paulinchen  2026-10-04: Handed the party chat's lines to ui_chat.rbx through the party's gate
 #                            - Teleported to the leader through coop_gather.rbx
 #                            - Renamed from mp_coop.rbx
@@ -30,8 +32,9 @@
 #----------------------------------------------------------------
 
 # Everything players of a world do as a party: who is in the player's party, and the party's
-# messages. The party scripts after it (coop_events.rbx, coop_npcs.rbx, coop_story.rbx
-# and battles_coop.rbx) register here for their fields; this script takes those messages from
+# messages. The party scripts after it (coop_events.rbx, coop_scene.rbx, coop_npcs.rbx,
+# coop_story.rbx, battles_coop.rbx and battles_duel.rbx) register here for their fields, as does
+# the party chat of ui_chat.rbx; this script takes those messages from
 # overworld_sync.rbx, drops those of another party, and hands on the rest.
 #
 # It must never interrupt the game, so every entry point rescues.
@@ -117,6 +120,20 @@ module MGQ_MpCoop
     MGQ_MpOverworldSync.in_world? && !Party.id.nil? && !Party.members.empty?
   end
 
+  # Finds the leader of the player's party of an open world with someone else in it.
+  #
+  # @return [MGQ_MpOverworldSync::Peers::Peer, Symbol, nil] The leader, :me for the player, nil outside such a party.
+  def self.party_leader
+    in_party? ? Party.leader : nil
+  end
+
+  # Reports whether the player leads a party with other members in it.
+  #
+  # @return [Boolean] Whether they do.
+  def self.party_leading?
+    party_leader == :me && !Party.members.empty?
+  end
+
   # Counts the players of a party, the player included when it is theirs.
   #
   # @param id [String, nil] The party's id.
@@ -139,13 +156,16 @@ module MGQ_MpCoop
   # Finds the leader of a party: the player who made it, whose id starts the party's id, or the
   # player of it with the lowest id while they are gone, so every game finds the same one.
   #
+  # The player counts only once the leader admitted them, as the leader's game counts them, or a
+  # player turned away as they join would lead in their own game and ignore being turned away.
+  #
   # @param id [String, nil] The party's id.
   # @return [MGQ_MpOverworldSync::Peers::Peer, Symbol, nil] The leader, :me for the player, nil for no party.
   def self.leader_of(id)
     return nil if id.to_s.empty?
 
     candidates = players_of(id).map { |peer| [peer.state["id"].to_s, peer] }
-    candidates.unshift([MGQ_MpOverworldSync::Me.id, :me]) if id == Party.id
+    candidates.unshift([MGQ_MpOverworldSync::Me.id, :me]) if id == Party.id && Party.admitted_me?
     return nil if candidates.empty?
 
     maker = candidates.find { |player_id, _| Party.maker?(player_id, id) }
@@ -280,6 +300,7 @@ module MGQ_MpCoop
     @turned_away = {}
     @late_frames = 0
     @late_targets = []
+    @joining = false
 
     # The party's id, nil while the player is in none.
     #
@@ -310,6 +331,14 @@ module MGQ_MpCoop
     # @return [Boolean] Whether they did.
     def self.maker?(player_id, id = @id)
       !player_id.empty? && player_id[0, 8] == id[0, 8]
+    end
+
+    # Reports whether the player belongs to their party as its leader counts it: they made it, or
+    # the leader admitted them since they joined.
+    #
+    # @return [Boolean] Whether they do.
+    def self.admitted_me?
+      !@id.nil? && !@joining
     end
 
     # Reports whether another player is in the player's party: one who names it, and who made it or
@@ -377,6 +406,7 @@ module MGQ_MpCoop
       @turned_away = {}
       @late_frames = 0
       @late_targets = []
+      @joining = false
     end
 
     # Lets an invite run out, and forgets a party nobody joined. Called every frame.
@@ -428,6 +458,7 @@ module MGQ_MpCoop
       forget
       @id = inviter.state["party"]
       @admitted = told_by(inviter)
+      @joining = !@admitted.include?(MGQ_MpOverworldSync::Me.id)
       @invite.stop
       MGQ_MpOverworldSync.notice("#{left ? 'You left your party and joined' : 'You joined'} #{inviter.state['name']}'s party.")
       MGQ_MpOverworldSync::Peers.all.each { |peer| peer.member = member?(peer.state) }
@@ -517,6 +548,7 @@ module MGQ_MpCoop
       return unless member?(peer.state) && leader.equal?(peer)
 
       told = told_by(peer)
+      @joining = false if told.include?(MGQ_MpOverworldSync::Me.id)
       return if told.sort == @admitted.sort
 
       @admitted = told
@@ -615,8 +647,8 @@ module MGQ_MpCoop
     #
     # @return [MGQ_MpActions::Option, nil] The choice, nil for the leader and outside a party.
     def self.teleport_option
-      lead = MGQ_MpCoop.in_party? ? Party.leader : nil
-      return nil unless lead.is_a?(MGQ_MpOverworldSync::Peers::Peer) && defined?(MGQ_MpCoopEvents)
+      lead = MGQ_MpCoop.party_leader
+      return nil unless lead.is_a?(MGQ_MpOverworldSync::Peers::Peer) && defined?(MGQ_MpCoopGather)
 
       MGQ_MpActions::Option.new("Teleport to #{lead.state['name']}", lambda { MGQ_MpCoopGather.join_leader }, nil, nil, true)
     end

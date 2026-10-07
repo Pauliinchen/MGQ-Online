@@ -2,6 +2,7 @@
 #  coop_squad.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-06: Took the party's leader from coop.rbx's party_leader
 #      Paulinchen  2026-10-04: Renamed from mp_coop_squad.rbx
 #      Paulinchen  2026-10-03: Sent messages, showed notices and read the world, the own id and the own seat through MGQ_MpOverworldSync
 #                            - Logged through MGQ_MpLog
@@ -93,7 +94,7 @@ module MGQ_MpCoopSquad
     return nil unless MGQ_MpCoop.in_party?
 
     party = MGQ_MpCoop::Party
-    leader = party.leader
+    leader = MGQ_MpCoop.party_leader
     own_id = MGQ_MpOverworldSync::Me.id
     players = [[own_id, leader == :me]] + party.members.map { |peer| [peer.state["id"].to_s, peer.equal?(leader)] }
     order = ranked(players)
@@ -135,7 +136,7 @@ module MGQ_MpCoopSquad
   #
   # @return [Integer] ACTIVE_FRONTLINE or LEADERS_ONLY.
   def self.mode
-    leader = MGQ_MpCoop.in_party? ? MGQ_MpCoop::Party.leader : :me
+    leader = MGQ_MpCoop.in_party? ? MGQ_MpCoop.party_leader : :me
     value = leader == :me || leader.nil? ? own_mode : leader.state["follow"]
     value.to_s == LEADERS_ONLY.to_s ? LEADERS_ONLY : ACTIVE_FRONTLINE
   end
@@ -248,7 +249,7 @@ module MGQ_MpCoopSquad
     menu = config.const_defined?(:MOD_CONTENTS) ? config::MOD_CONTENTS : config::CONTENTS
     menu.insert(-2, :key => FOLLOWERS, :name => "[Monster Girl Quest! Online] Party Followers", :sub => true,
                     :help => "Who walks behind the players of a party. The party's leader decides for everyone.\r\n←/→ Toggle",
-                    :enable => lambda { !MGQ_MpCoop.in_party? || MGQ_MpCoop::Party.leader == :me })
+                    :enable => lambda { !MGQ_MpCoop.in_party? || MGQ_MpCoop.party_leader == :me })
     config::DATA[FOLLOWERS] = FOLLOWER_VALUES.keys
     config::DATA_TEXT[FOLLOWERS] = {}
     FOLLOWER_VALUES.each { |value, (label, text)| config::DATA_TEXT[FOLLOWERS][value] = { :name => label, :help => text } }
