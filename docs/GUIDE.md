@@ -204,10 +204,13 @@ Everyone plays the leader's story. Its events, doors and conversations are as fa
 - Conversations, shops (the Casino's coin sellers too) and the job change menu stay your own, and so do the companions, merchants, inn and maids of the Pocket Castle.
 - A trader whose talk would move a side quest on stops there for a member; the leader's talk moves it on for the party.
 
-**What stays yours:** your party, companions and affection, and your saves keep your own story. When you leave the party, you're back in your own story.
+**What stays yours:** your party, companions and affection, the side you chose (Alice or Ilias), and your saves keep your own story. When you leave the party, you're back in your own story.
 
-- If your story was exactly as far along as the leader's when you joined, you keep what you played together: the story's progress, its items and gold, and the companions who joined or left in it.
-- Otherwise you borrow the leader's key items you lack, such as the one that opens a locked door, while you're in the party. They go back when you leave it and stay out of your saves, and you borrow them again after a crash, a load or a duel.
+- If your story was as far along as the leader's or behind it when you joined, you keep what you play together: the story's progress, its items and gold, and the companions who join or leave in it.
+- If you were behind, you catch up with the leader's story at once: you get the story's skills, companions and items the leader has, and keep the leader's progress when you leave. Side quests you played that the leader never touched stay yours, and so do chests: one only the leader looted is still there for you to open.
+- Where Alice's and Ilias's side get different skills or companions, such as Luka's training at the camps or the companions who join at the Strategy Conference, you get those of your own side once the leader's story gets past that point, even where only your side gets someone. If you have not chosen a side yet, you choose once the leader has, and your companion joins you.
+- After the Great Decision you follow the leader's route and get its companions.
+- If you were ahead of the leader, you borrow the leader's key items you lack, such as the one that opens a locked door, while you're in the party. They go back when you leave it and stay out of your saves, and you borrow them again after a crash, a load or a duel.
 - When the party brings you into the Pocket Castle, its way out takes you back to where you came from.
 
 ### Travelling and story scenes
@@ -304,7 +307,9 @@ Your games meet at the mod's **relay**, a small server that passes their data on
 | Message or problem | What to do |
 |---|---|
 | *Multiplayer* is greyed out on the title screen | A new release is out. Update with `Patch\Multiplayer\Update.bat`. |
-| "Your friend's game is not hosting with this join code any more" | Your friend stopped hosting, or hosted again, which makes a new join code. Ask for the new one. |
+| "Your friend's game is not hosting with this join code right now" | Your friend stopped hosting, or hosted again, which makes a new join code: ask for the new one. Or their game is reconnecting to the relay: try again in a minute. |
+| "Nobody joined in time, so hosting stopped" | Hosting waits 30 minutes for a friend. Host again for a new join code. |
+| "Your team is too large to send" | Your party has more characters, skills or equipment than one PvP exchange carries. Leave a few characters out of the party and try again. |
 | "The relay could not be reached" | Your internet connection is down, or something such as a firewall blocks the game from going online. `Logs\Multiplayer.log` in the game folder says what the relay answered. |
 | "This join code comes from another version of the mod" | One of you has an older version; both need the same one. |
 | "Your friend's game uses a relay this version does not know" | Your friend has a newer version of the mod; update yours. |
