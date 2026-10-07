@@ -2,7 +2,8 @@
 #  trade.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-07: Let a world's latest autosave load again: its name is no slot a trade saves into, which raised inside the game's load
+#      Paulinchen  2026-10-07: Told the player when a trade they accepted could not open, such as from the menu
+#                            - Let a world's latest autosave load again: its name is no slot a trade saves into, which raised inside the game's load
 #                            - Logged where opening the screen failed and the pictures in memory
 #                            - Kept the trades a save holds through MGQ_MpGame
 #                            - Forgot a new game's trade save slot through a before block
@@ -492,7 +493,11 @@ module MGQ_MpTrade
 
     @accepted = nil
     busy = id =~ /\A[0-9a-f]{24}\z/ ? busy_reason : "the trade id is not valid"
-    return decline(peer, "busy", id, busy) if busy
+    if busy
+      # The player accepted it, so they wait for the screen, such as one who opened the menu meanwhile.
+      MGQ_MpOverworldSync.notice("The trade with #{peer.state['name']} could not open: finish what you are doing first.")
+      return decline(peer, "busy", id, busy)
+    end
 
     begin_session(id, peer)
   end

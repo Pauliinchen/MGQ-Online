@@ -2,7 +2,8 @@
 #  trade_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-07: Checked that an autosave loaded forgets the slot a trade saves into
+#      Paulinchen  2026-10-07: Checked that a trade the player accepted but cannot open is turned down with a notice
+#                            - Checked that an autosave loaded forgets the slot a trade saves into
 #                            - Looked each DLL call's signature up in the export table of Multiplayer.rb
 #                            - Tested the messages kept for the trade screen
 #      Paulinchen  2026-10-06: Tested confirming again after a cancelled commit, and cancels and a failed commit while the relay decides
@@ -257,6 +258,15 @@ tid = trade_sent.last[1]["tid"]
 $inbox << entry("message", 2, "trade=cancel\ntid=#{tid}\nreason=off\n\n")
 MGQ_MpOverworldSync.tick
 check("the other player cancels", [trade.session, MGQ_MpOverworldSync::Status.lines.last], [nil, "Friend cancelled the trade."])
+trade.accept(peer)
+SceneManager.scene = Scene_Item.new
+$sent.clear
+$inbox << entry("message", 2, "trade=open\ntid=#{'b' * 24}\n\n")
+MGQ_MpOverworldSync.tick
+check("a trade the player accepted but cannot open now, here in the menu, is turned down with a notice",
+      [trade.session, trade_sent.map { |_, f| [f["trade"], f["reason"]] }, MGQ_MpOverworldSync::Status.lines.last],
+      [nil, [["decline", "busy"]], "The trade with Friend could not open: finish what you are doing first."])
+SceneManager.scene = Scene_Map.new
 trade.invite
 $sent.clear
 $inbox << entry("message", 2, "trade=accept\n\n")
