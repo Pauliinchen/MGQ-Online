@@ -2,6 +2,8 @@
 #  ui_party_box.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-07: Took the icon rect, white and the depth from MGQ_MpUi, and measured places with the box's picture
+#                            - Logged the box's size changes, a size key that does nothing and why, and who the box lists whenever that changes
 #      Paulinchen  2026-10-06: Logged a box that fails to draw under the party box's own tag
 #      Paulinchen  2026-10-04: Made the box small with its key, only names and pings, and kept the choice in Player.ini
 #                            - Created
@@ -15,6 +17,8 @@
 module MGQ_MpPartyBox
   # The setting in Player.ini that keeps the box small.
   SMALL_SETTING = "party_box_small"
+
+  @names = []
 
   extend MGQ_MpLog
 
@@ -33,6 +37,7 @@ module MGQ_MpPartyBox
   def self.toggle
     @small = !small?
     MGQ_Multiplayer::Player.store(SMALL_SETTING, @small ? 1 : 0)
+    log("party box made #{@small ? 'small: names and pings only' : 'full'}")
     Sound.play_cursor
   end
 
@@ -40,12 +45,39 @@ module MGQ_MpPartyBox
   # Called by the map every frame, so a press of the key is seen once.
   def self.on_map
     pressed = MGQ_MpHotkeys.pressed?(:party_box)
-    return unless pressed && MGQ_MpOverworldSync.in_world? && MGQ_MpCoop.in_party?
-    return if MGQ_MpChat.typing? || MGQ_MpActions::Wheel.open? || MGQ_MpEmotes.open? || MGQ_MpWorldOverview.open?
+    return unless pressed
+
+    reason = busy_reason
+    return log("party box size key ignored: #{reason}") if reason
 
     toggle
   rescue => e
     log("changing the box's size failed: #{e.class}: #{e.message}")
+  end
+
+  # Tells why the box's key does nothing now.
+  #
+  # @return [String, nil] The first reason that holds, nil when the key may change the box.
+  def self.busy_reason
+    return "no world is open" unless MGQ_MpOverworldSync.in_world?
+    return "the player is in no party" unless MGQ_MpCoop.in_party?
+    return "the chat box is open" if MGQ_MpChat.typing?
+    return "the action wheel is open" if MGQ_MpActions::Wheel.open?
+    return "the emote wheel is open" if MGQ_MpEmotes.open?
+
+    MGQ_MpWorldOverview.open? ? "the World overview is open" : nil
+  end
+
+  # Logs who the box lists whenever that changes: the names in their order, the leader marked.
+  #
+  # @param rows [Array<MGQ_MpWorldOverview::Row>] The party, none while the box is hidden.
+  def self.note_rows(rows)
+    names = rows.map { |row| "#{row.name}#{row.badge && row.badge[1] ? ' (leader)' : ''}" }
+    return if names == @names
+
+    log(names.empty? ? "party box hidden" : "party box lists #{names.join(', ')}")
+    @names = names
+  rescue
   end
 end
 
@@ -87,7 +119,7 @@ class Sprite_MpPartyBox < Sprite
     super(viewport)
     self.bitmap = Bitmap.new(WIDTH, ROW + PLAYER_ROW * MGQ_MpCoop::MAX_PLAYERS + 4)
     self.x = Graphics.width - WIDTH - MARGIN
-    self.z = 250
+    self.z = MGQ_MpUi::Z[:labels]
     self.visible = false
     @shown = nil
     @frames = 0
@@ -105,6 +137,7 @@ class Sprite_MpPartyBox < Sprite
     @frames = READ_FRAMES
     @overview = overview
     rows = overview ? [] : MGQ_MpWorldOverview.party_rows
+    MGQ_MpPartyBox.note_rows(rows) unless overview
     self.visible = !rows.empty?
     return unless visible
 
@@ -162,7 +195,7 @@ class Sprite_MpPartyBox < Sprite
   # @param y [Integer] The row's top.
   def draw_crown(y)
     icon = MGQ_MpOverworld::CROWN_ICON
-    bitmap.stretch_blt(Rect.new(COLUMNS[:crown], y + 1, ROW - 2, ROW - 2), Cache.system("Iconset"), Rect.new(icon % 16 * 24, icon / 16 * 24, 24, 24))
+    bitmap.stretch_blt(Rect.new(COLUMNS[:crown], y + 1, ROW - 2, ROW - 2), Cache.system("Iconset"), MGQ_MpUi.icon_rect(icon))
   end
 
   # Draws one player of the party, with where they are below.
@@ -173,7 +206,7 @@ class Sprite_MpPartyBox < Sprite
     draw_crown(y) if row.badge && row.badge[1]
     bitmap.font.color = Sprite_MpWorldOverview::MEMBER_COLOR
     bitmap.draw_text(COLUMNS[:name], y, COLUMNS[:level] - COLUMNS[:name] - 4, ROW, row.name)
-    bitmap.font.color = Color.new(255, 255, 255)
+    bitmap.font.color = MGQ_MpUi::WHITE
     bitmap.draw_text(COLUMNS[:level], y, 44, ROW, row.level)
     if row.ping
       bitmap.font.color = row.ping[1]
@@ -190,7 +223,7 @@ class Sprite_MpPartyBox < Sprite
     width = WIDTH - COLUMNS[:name] - 6
     bitmap.font.size = 14
     bitmap.font.color = Sprite_MpWorldOverview::PLACE_COLOR
-    text = MGQ_MpWorldOverview.fit_place(place, width) { |part| bitmap.text_size(part).width }
+    text = MGQ_MpWorldOverview.fit_place(place, width, bitmap)
     bitmap.draw_text(COLUMNS[:name], y, width, PLACE_ROW, text)
     bitmap.font.size = 16
   end

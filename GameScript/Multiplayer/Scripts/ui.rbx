@@ -2,6 +2,8 @@
 #  ui.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-07: Added the iconset rect, the cut with one ellipsis, white and the depths of the mod's sprites and windows, which the screens share
+#                            - Logged every message box shown, with its title and text
 #      Paulinchen  2026-10-06: Dropped the wrapped lines the top window kept but never read
 #                            - Let a list box say a hint of its own at the bottom, and named how high it lies
 #                            - Drew an item being typed into as a text box with its cursor, and the picked item opaque
@@ -19,6 +21,52 @@
 # across the top of a screen, the list box and the message box. The text boxes are in
 # ui_text_box.rbx.
 module MGQ_MpUi
+  extend MGQ_MpLog
+
+  # What starts this script's lines in Multiplayer InGame.log.
+  LOG_TAG = "ui"
+
+  # Side of an icon of the game's iconset, in pixels.
+  ICON_SIZE = 24
+
+  # Icons in a row of the game's iconset.
+  ICONS_PER_ROW = 16
+
+  # What ends a text cut to fit.
+  ELLIPSIS = "..."
+
+  # White, the color most texts of the mod are drawn in.
+  WHITE = Color.new(255, 255, 255)
+
+  # The depths of the mod's sprites and windows above the game's, by layer: the lines at the
+  # screen's edges, the labels on the map, the bubbles and notices over them, the wheels and what
+  # lies above a screen's windows, the World overview, and the boxes above everything.
+  Z = { :lines => 200, :labels => 250, :bubbles => 260, :wheels => 300, :overview => 400, :boxes => 1000 }
+
+  # Finds an icon in the game's iconset.
+  #
+  # @param icon [Integer] The icon's index.
+  # @return [Rect] Where the icon lies in the iconset.
+  def self.icon_rect(icon)
+    Rect.new(icon % ICONS_PER_ROW * ICON_SIZE, icon / ICONS_PER_ROW * ICON_SIZE, ICON_SIZE, ICON_SIZE)
+  end
+
+  # Cuts a text at its end until it fits a width with ELLIPSIS and what follows it.
+  #
+  # @param measure [Bitmap, Window_Base] What measures a text with the font it is drawn in.
+  # @param text [String] The text.
+  # @param width [Integer] The width in pixels.
+  # @param tail [String] What follows the text and stays whole, such as a count or a floor.
+  # @return [String] The text with the tail when they fit, else the text's start, ELLIPSIS and the tail.
+  def self.cut(measure, text, width, tail = "")
+    text = text.to_s
+    return "#{text}#{tail}" if measure.text_size("#{text}#{tail}").width <= width
+
+    head = text
+    head = head[0...-1].rstrip while !head.empty? && measure.text_size("#{head}#{ELLIPSIS}#{tail}").width > width
+    "#{head}#{ELLIPSIS}#{tail}"
+  end
+
   # Breaks a text into lines that fit a width, at its spaces, and inside a word longer than the
   # width.
   #
@@ -81,7 +129,7 @@ class Sprite_MpListBox < Sprite
   BOX = Rect.new(40, 32, 560, 404)
 
   # How far above the screen's windows the box lies.
-  Z = 1000
+  Z = MGQ_MpUi::Z[:boxes]
 
   # Height of one line of the list.
   ROW = 24
@@ -283,7 +331,7 @@ class Sprite_MpListBox < Sprite
     bitmap.fill_rect(bitmap.rect, BACK)
     bitmap.font.outline = true
     bitmap.font.size = 20
-    bitmap.font.color = Color.new(255, 255, 255)
+    bitmap.font.color = MGQ_MpUi::WHITE
     bitmap.draw_text(10, 2, BOX.width - 20, TITLE - 4, view.title)
     bitmap.font.color = GOOD_COLOR
     bitmap.draw_text(10, 2, BOX.width - 20, TITLE - 4, view.note, 2) if view.note
@@ -311,7 +359,7 @@ class Sprite_MpListBox < Sprite
     end
 
     bitmap.fill_rect(4, y, BOX.width - 8, ROW, PICKED_BACK) if picked
-    bitmap.font.color = { :good => GOOD_COLOR, :gold => GOLD_COLOR, :bad => BAD_COLOR, :grey => GREY }[color] || Color.new(255, 255, 255)
+    bitmap.font.color = { :good => GOOD_COLOR, :gold => GOLD_COLOR, :bad => BAD_COLOR, :grey => GREY }[color] || MGQ_MpUi::WHITE
     return draw_typing(text, typing[0], y) if typing
 
     buttons_width = buttons ? buttons.size * BUTTON_COLUMN + BUTTON_MARGIN : 0
@@ -337,7 +385,7 @@ class Sprite_MpListBox < Sprite
     bitmap.draw_text(ITEM_LEFT, y, TYPING_LABEL, ROW, label)
     box = Rect.new(ITEM_LEFT + TYPING_LABEL, y + 2, BOX.width - ITEM_LEFT - TYPING_LABEL - 16, ROW - 4)
     bitmap.fill_rect(box, TEXT_BOX_BACK)
-    bitmap.font.color = Color.new(255, 255, 255)
+    bitmap.font.color = MGQ_MpUi::WHITE
     MGQ_MpUi::TextBox.draw_line(bitmap, Rect.new(box.x + 4, y, box.width - 8, ROW), editor)
   end
 
@@ -367,7 +415,7 @@ class Sprite_MpListBox < Sprite
   # @param y [Integer] Its top edge.
   # @param focused [Boolean] Whether the cursor is on it.
   def draw_button(glyph, color, on, x, y, focused)
-    draw_frame(x - 3, y - 3, BUTTON_SIZE + 6, Color.new(255, 255, 255)) if focused
+    draw_frame(x - 3, y - 3, BUTTON_SIZE + 6, MGQ_MpUi::WHITE) if focused
 
     if on
       bitmap.fill_rect(x, y, BUTTON_SIZE, BUTTON_SIZE, color)
@@ -377,7 +425,7 @@ class Sprite_MpListBox < Sprite
     end
 
     bitmap.font.size = 16
-    bitmap.font.color = on ? Color.new(255, 255, 255) : color
+    bitmap.font.color = on ? MGQ_MpUi::WHITE : color
     bitmap.draw_text(x, y, BUTTON_SIZE, BUTTON_SIZE, glyph, 1)
   end
 
@@ -415,7 +463,7 @@ class Sprite_MpMessageBox < Sprite
   # Creates the box, hidden, above every window.
   def initialize
     super(nil)
-    self.z = 1000
+    self.z = MGQ_MpUi::Z[:boxes]
     self.visible = false
   end
 
@@ -437,6 +485,7 @@ class Sprite_MpMessageBox < Sprite
     self.y = (Graphics.height - height) / 2
     draw(title, lines, hint)
     self.visible = true
+    MGQ_MpUi.log("message box: #{title}: #{MGQ_MpLog.short(text, 160)}")
   end
 
   # Draws the whole box.
@@ -449,7 +498,7 @@ class Sprite_MpMessageBox < Sprite
     bitmap.fill_rect(bitmap.rect, Sprite_MpListBox::BACK)
     bitmap.font.outline = true
     bitmap.font.size = 20
-    bitmap.font.color = Color.new(255, 255, 255)
+    bitmap.font.color = MGQ_MpUi::WHITE
     bitmap.draw_text(PADDING, 2, text_width, Sprite_MpListBox::TITLE - 4, title)
     bitmap.font.size = Sprite_MpListBox::ITEM_SIZE
     lines.each_with_index { |line, index| bitmap.draw_text(PADDING, Sprite_MpListBox::TITLE + index * ROW, text_width, ROW, line) }

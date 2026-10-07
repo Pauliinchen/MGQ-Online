@@ -2,7 +2,9 @@
 #  overworld.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-07: Broke a notice longer than the status line into rows instead of cutting it off
+#      Paulinchen  2026-10-07: Took icons, white and the depths from MGQ_MpUi
+#                            - Logged each ghost shown and hidden, with the map and why
+#                            - Broke a notice longer than the status line into rows instead of cutting it off
 #      Paulinchen  2026-10-04: Stacked the labels of characters on one tile upwards, above the player's own ping
 #                            - Drew a notice's icon before its text
 #                            - Renamed from mp_overworld.rbx
@@ -101,10 +103,14 @@ module MGQ_MpOverworld
       here = peer.away.nil? && peer.state["map"].to_i == map
 
       if here
-        peer.ghost ||= Game_MpGhost.new(peer.state)
+        unless peer.ghost
+          peer.ghost = Game_MpGhost.new(peer.state)
+          log("showing the ghost of #{MGQ_MpOverworldSync.who(peer)} on map #{map} at #{peer.state['x']},#{peer.state['y']}#{peer.member ? ', a party member' : ''}")
+        end
         peer.ghost.follow(peer.state, peer.member)
-      else
+      elsif peer.ghost
         peer.ghost = nil
+        log("hid the ghost of #{MGQ_MpOverworldSync.who(peer)}: #{peer.away ? 'their connection is down' : "they are on map #{peer.state['map']}, the player on #{map}"}")
       end
     end
   rescue => e
@@ -270,7 +276,7 @@ class Sprite_MpGhostLabel < Sprite
     super(viewport)
     self.bitmap = Bitmap.new(WIDTH, LINE * 2)
     self.ox = WIDTH / 2
-    self.z = 250
+    self.z = MGQ_MpUi::Z[:labels]
     @shown = nil
   end
 
@@ -299,7 +305,7 @@ class Sprite_MpGhostLabel < Sprite
     line(0, above[0], above[1]) if above
     icons = [MGQ_MpOverworld::STATE_ICONS[state["scene"]], badge && badge[1] ? MGQ_MpOverworld::CROWN_ICON : nil].compact
     extras = [badge && [badge[0], peer.member ? MEMBER_COLOR : SIZE_COLOR], MGQ_MpOverworld.ping_label(state["ping"])].compact
-    draw_name(state["name"].to_s, icons, peer.member ? MEMBER_COLOR : Color.new(255, 255, 255), extras)
+    draw_name(state["name"].to_s, icons, peer.member ? MEMBER_COLOR : MGQ_MpUi::WHITE, extras)
     taken
   end
 
@@ -330,7 +336,7 @@ class Sprite_MpGhostLabel < Sprite
 
     iconset = Cache.system("Iconset") unless icons.empty?
     icons.each do |icon|
-      bitmap.blt(left, LINE, iconset, Rect.new(icon % 16 * 24, icon / 16 * 24, 24, 24))
+      bitmap.blt(left, LINE, iconset, MGQ_MpUi.icon_rect(icon))
       left += 26
     end
 
@@ -369,7 +375,7 @@ class Sprite_MpOwnPing < Sprite
     super(viewport)
     self.bitmap = Bitmap.new(WIDTH, HEIGHT)
     self.ox = WIDTH / 2
-    self.z = 250
+    self.z = MGQ_MpUi::Z[:labels]
     @shown = nil
   end
 
@@ -398,7 +404,7 @@ class Sprite_MpOwnPing < Sprite
     left = (WIDTH - crown - widths.inject(0) { |sum, width| sum + width } - Sprite_MpGhostLabel::PING_GAP * (parts.size - 1)) / 2
     if crown > 0
       icon = MGQ_MpOverworld::CROWN_ICON
-      bitmap.stretch_blt(Rect.new(left, 0, HEIGHT, HEIGHT), Cache.system("Iconset"), Rect.new(icon % 16 * 24, icon / 16 * 24, 24, 24))
+      bitmap.stretch_blt(Rect.new(left, 0, HEIGHT, HEIGHT), Cache.system("Iconset"), MGQ_MpUi.icon_rect(icon))
       left += crown
     end
     parts.each_with_index do |(text, color), index|
@@ -434,7 +440,7 @@ class Sprite_MpWorldStatus < Sprite
     self.bitmap = Bitmap.new(WIDTH, ROW * ROWS)
     self.x = 8
     self.y = Graphics.height - ROW * ROWS - 8
-    self.z = 200
+    self.z = MGQ_MpUi::Z[:lines]
     @shown = []
   end
 
@@ -452,7 +458,7 @@ class Sprite_MpWorldStatus < Sprite
     rows = rows_of(notices)
     rows.each_with_index do |(text, icon, left), row|
       y = (ROWS - rows.size + row) * ROW
-      bitmap.stretch_blt(Rect.new(0, y, ROW, ROW), Cache.system("Iconset"), Rect.new(icon % 16 * 24, icon / 16 * 24, 24, 24)) if icon
+      bitmap.stretch_blt(Rect.new(0, y, ROW, ROW), Cache.system("Iconset"), MGQ_MpUi.icon_rect(icon)) if icon
       bitmap.draw_text(left, y, WIDTH - left, ROW, text)
     end
   end

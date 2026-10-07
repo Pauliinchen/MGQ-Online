@@ -2,6 +2,9 @@
 #  ui_chat.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-07: Registered the map's, the battle's and its sprites' hooks through core_hooks.rbx instead of wraps of this script
+#                            - Named senders through MGQ_MpOverworldSync.who and took white and the depths from MGQ_MpUi
+#                            - Logged the chat box opening and closing with why, each line sent, refused or received with a count, cut to 80 characters, the game's own lines and the chat forgotten
 #      Paulinchen  2026-10-06: Opened the chat box while the map shows a message, such as the story's dialogue
 #                            - Added the chat's choice to the action wheel's ring by order instead of to its left
 #      Paulinchen  2026-10-05: Took the typing of an open chat box while the map shows a message, which left both stuck
@@ -84,6 +87,8 @@ module MGQ_MpChat
   @log = []
   @bubbles = {}
   @edit = nil
+  @sent = 0
+  @received = 0
 
   # Reports whether the keyboard reaches the game, which only happens once its window is hooked.
   #
@@ -143,6 +148,7 @@ module MGQ_MpChat
     @echo = key ? { :key => key, :frames => KEY_ECHO_FRAMES } : nil
     MGQ_Multiplayer::Link.typing(true)
     MGQ_Multiplayer::Capture.start(:chat)
+    log("chat box opened #{key ? 'with its key' : 'from the action wheel'} in #{SceneManager.scene.class.name}")
   end
 
   # Leaves out the character of the key that opened the chat box.
@@ -162,12 +168,15 @@ module MGQ_MpChat
   end
 
   # Closes the chat box, if it is open, and gives the buttons back.
-  def self.stop_typing
+  #
+  # @param reason [String, nil] Why, for the log.
+  def self.stop_typing(reason = nil)
     return unless typing?
 
     @edit = nil
     MGQ_Multiplayer::Link.typing(false)
     MGQ_Multiplayer::Capture.stop(:chat)
+    log("chat box closed#{reason ? ": #{reason}" : ''}")
   end
 
   # Types what came from the keyboard since the last frame, then lets the editor follow the keys
@@ -189,7 +198,7 @@ module MGQ_MpChat
     when :enter
       send_typed
     when :escape
-      stop_typing
+      stop_typing("Escape")
       Sound.play_cancel
     when :refused
       Sound.play_buzzer
@@ -200,7 +209,7 @@ module MGQ_MpChat
   # PARTY_PREFIX goes to the player's party only.
   def self.send_typed
     text = @edit.text.strip
-    stop_typing
+    stop_typing("Enter")
     party = text =~ PARTY_PREFIX ? true : false
     text = text.sub(PARTY_PREFIX, "").strip if party
     return if text.empty?
@@ -210,6 +219,8 @@ module MGQ_MpChat
     sent = party ? MGQ_MpCoop.tell(-1, "pchat", text, "name" => name) : MGQ_MpChat.tell("chat" => text, "name" => name)
     return refuse("The message could not be sent.") unless sent
 
+    @sent += 1
+    log("sent #{party ? 'to the party' : 'to everyone'} (line #{@sent} sent): #{MGQ_MpLog.short(text)}")
     add(:me, name, text, party)
   end
 
@@ -217,6 +228,7 @@ module MGQ_MpChat
   #
   # @param text [String] Why, as a notice.
   def self.refuse(text)
+    log("did not send the line: #{text}")
     Sound.play_buzzer
     MGQ_MpOverworldSync.notice(text)
   end
@@ -245,8 +257,11 @@ module MGQ_MpChat
   # @param party [Boolean] Whether it is a line of the party chat.
   def self.take_line(peer, text, name, party)
     text = text.to_s.gsub(/[[:cntrl:]]/, "").strip[0, MAX_LENGTH]
-    return if text.empty?
+    sender = peer ? MGQ_MpOverworldSync.who(peer) : "#{name} (no state yet, no bubble)"
+    return log("dropped an empty #{party ? 'party ' : ''}chat line from #{sender}") if text.empty?
 
+    @received += 1
+    log("#{party ? 'party line' : 'line'} from #{sender} (line #{@received} received): #{MGQ_MpLog.short(text)}")
     add(peer ? peer.seat : nil, peer ? peer.state["name"] : name, text, party, peer && member?(peer))
   end
 
@@ -276,6 +291,7 @@ module MGQ_MpChat
   #
   # @param text [String] The line.
   def self.system(text)
+    log("game line: #{MGQ_MpLog.short(text)}")
     push(Line.new(nil, text, :system, false))
   end
 
@@ -297,9 +313,12 @@ module MGQ_MpChat
 
   # Forgets the log and the bubbles and closes the box, as when the world closes.
   def self.reset
-    stop_typing
+    stop_typing("no world is open")
+    log("forgot #{@log.size} chat lines as the world closed (#{@sent} sent, #{@received} received)") unless @log.empty?
     @log.clear
     @bubbles.clear
+    @sent = 0
+    @received = 0
   end
 
   # Lists the log's lines to show: all kept while the chat box is open, else the recent ones.
@@ -331,16 +350,6 @@ module MGQ_MpChat
     @bubbles.keys
   end
 
-  # Reports whether the hooks can be installed.
-  #
-  # A second copy of this script would wrap the same methods under the same names, and each hook
-  # would then call itself until the stack overflows.
-  #
-  # @return [Boolean] false when the hooks are in place already.
-  def self.hookable?
-    !Scene_Battle.method_defined?(:mgq_mp_chat_update_basic)
-  end
-
   extend MGQ_MpLog
 
   # What starts this script's lines in Multiplayer InGame.log.
@@ -362,7 +371,7 @@ module MGQ_MpChat
   # @param in_world [Boolean] Whether a world is open.
   def self.tick(in_world)
     scene = SceneManager.scene
-    stop_typing unless in_world && (scene.is_a?(Scene_Map) || scene.is_a?(Scene_Battle))
+    stop_typing("#{scene.class.name} shows, neither the map nor a battle") unless in_world && (scene.is_a?(Scene_Map) || scene.is_a?(Scene_Battle))
     in_world ? count_down : reset
   end
 
@@ -388,7 +397,7 @@ module MGQ_MpChat
   def self.on_map
     @map_ran = true
     chat_key = MGQ_MpHotkeys.pressed?(:chat)
-    return stop_typing unless MGQ_MpOverworldSync.in_world?
+    return stop_typing("no world is open") unless MGQ_MpOverworldSync.in_world?
 
     # A box already open stays, so a story that starts meanwhile never throws the line away; the
     # box holds the buttons, so the story's messages wait for it, and on_message takes the typing.
@@ -397,10 +406,12 @@ module MGQ_MpChat
     elsif chat_key && available? && !MGQ_MpActions::Wheel.open? && map_open?
       Sound.play_ok
       start_typing(MGQ_MpHotkeys.code(:chat))
+    elsif chat_key
+      log("chat box stays shut: #{!available? ? 'the keyboard cannot reach the game' : MGQ_MpActions::Wheel.open? ? 'the action wheel is open' : 'an event runs on the map'}")
     end
   rescue => e
     log("chat failed: #{e.class}: #{e.message}")
-    stop_typing
+    stop_typing("it failed")
   end
 
   # Notes that the map's update starts, in which on_map has not run yet. Called by the map every
@@ -419,24 +430,26 @@ module MGQ_MpChat
     on_map unless @map_ran || scene.scene_change_ok?
   rescue => e
     log("chat failed: #{e.class}: #{e.message}")
-    stop_typing
+    stop_typing("it failed")
   end
 
   # Opens the chat box with its key in a battle of a world, and types into it while it is open.
   # Called by the battle every frame, its waits included, so the player chats while the battle plays on.
   def self.on_battle
     chat_key = MGQ_MpHotkeys.pressed?(:chat)
-    return stop_typing unless MGQ_MpOverworldSync.in_world?
+    return stop_typing("no world is open") unless MGQ_MpOverworldSync.in_world?
 
     if typing?
       update_typing
     elsif chat_key && available?
       Sound.play_ok
       start_typing(MGQ_MpHotkeys.code(:chat))
+    elsif chat_key
+      log("chat box stays shut: the keyboard cannot reach the game")
     end
   rescue => e
     log("battle chat failed: #{e.class}: #{e.message}")
-    stop_typing
+    stop_typing("it failed")
   end
 end
 
@@ -480,7 +493,7 @@ class Sprite_MpChatBubble < Sprite
     self.bitmap = Bitmap.new(WIDTH, LINE * MAX_LINES + PAD * 2 + TAIL)
     self.ox = WIDTH / 2
     self.oy = bitmap.height
-    self.z = 260
+    self.z = MGQ_MpUi::Z[:bubbles]
     self.visible = false
     @shown = nil
   end
@@ -553,7 +566,7 @@ class Sprite_MpChatLog < Sprite
   BACK = Color.new(0, 0, 0, 120)
 
   # Color of the lines' text.
-  TEXT_COLOR = Color.new(255, 255, 255)
+  TEXT_COLOR = MGQ_MpUi::WHITE
 
   # Colors of the senders' names: the player's own yellow, the party's members green as their
   # labels on the map, everyone else's white, and the game's own lines grey.
@@ -584,7 +597,7 @@ class Sprite_MpChatLog < Sprite
     self.bitmap = Bitmap.new(WIDTH, ROW * (ROWS + 1))
     self.x = 8
     self.y = Graphics.height - bottom_room - bitmap.height
-    self.z = 200
+    self.z = MGQ_MpUi::Z[:lines]
     @shown = nil
   end
 
@@ -648,7 +661,7 @@ class Sprite_MpChatLog < Sprite
     if editor.text.empty?
       bitmap.font.color = HINT
       bitmap.draw_text(TEXT_LEFT + MGQ_MpUi::TextBox::CURSOR_WIDTH + 2, y, WIDTH - TEXT_LEFT * 2, ROW, BOX_HINT)
-      bitmap.font.color = Color.new(255, 255, 255)
+      bitmap.font.color = MGQ_MpUi::WHITE
     end
 
     MGQ_MpUi::TextBox.draw_line(bitmap, Rect.new(TEXT_LEFT, y, WIDTH - TEXT_LEFT * 2, ROW), editor)
@@ -717,75 +730,35 @@ begin
     (@mgq_mp_bubbles || {}).each_value { |sprite| sprite.dispose }
     @mgq_mp_chat_log = @mgq_mp_bubbles = nil
   end
+
+  # Around the map's update, the chat box while a message stops the map's own update.
+  MGQ_MpHooks.before(Scene_Map, :update, "ui_chat") { MGQ_MpChat.map_updating }
+  MGQ_MpHooks.after(Scene_Map, :update, "ui_chat") { MGQ_MpChat.on_message(self) }
 rescue => e
   MGQ_MpChat.log("hooks FAILED: #{e.class}: #{e.message}")
 end
 
-# Game hooks of this script alone.
-#
-# Each wraps a game method: the original runs first, and the mod's part never raises.
+begin
+  # After the battle's basics, the chat box. update_basic runs in the battle's waits too, so the
+  # chat box takes typing while the battle plays on.
+  MGQ_MpHooks.after(Scene_Battle, :update_basic, "ui_chat") { MGQ_MpChat.on_battle }
 
-if MGQ_MpChat.hookable?
-  begin
-    class Scene_Map
-      alias mgq_mp_chat_update update
-
-      # Updates the map, then the chat box while a message stops the map's own update.
-      def update
-        MGQ_MpChat.map_updating
-        mgq_mp_chat_update
-        MGQ_MpChat.on_message(self)
-      end
+  # After the battle's sprites, the chat log above the battle's windows while a world is open.
+  MGQ_MpHooks.after(Spriteset_Battle, :update, "ui_chat") do
+    if @mgq_mp_chat_log || MGQ_MpOverworldSync.in_world?
+      # The battle's windows lie above every viewport of the spriteset, so the log gets its own.
+      @mgq_mp_chat_viewport ||= Viewport.new.tap { |viewport| viewport.z = MGQ_MpUi::Z[:wheels] }
+      @mgq_mp_chat_log ||= Sprite_MpChatLog.new(@mgq_mp_chat_viewport, Sprite_MpChatLog::BATTLE_ROOM)
+      @mgq_mp_chat_log.update
     end
-  rescue => e
-    MGQ_MpChat.log("map hook FAILED: #{e.class}: #{e.message}")
   end
 
-  begin
-    class Scene_Battle
-      alias mgq_mp_chat_update_basic update_basic
-
-      # Updates the battle, then the chat box.
-      #
-      # update_basic runs in the battle's waits too, so the chat box takes typing while the battle
-      # plays on.
-      def update_basic
-        mgq_mp_chat_update_basic
-        MGQ_MpChat.on_battle
-      end
-    end
-
-    class Spriteset_Battle
-      alias mgq_mp_chat_update update
-      alias mgq_mp_chat_dispose dispose
-
-      # Updates the battle's sprites, then the chat log.
-      def update
-        mgq_mp_chat_update
-        mgq_mp_chat_update_log
-      end
-
-      # Keeps the chat log above the battle's windows while a world is open.
-      def mgq_mp_chat_update_log
-        return unless @mgq_mp_chat_log || MGQ_MpOverworldSync.in_world?
-
-        # The battle's windows lie above every viewport of the spriteset, so the log gets its own.
-        @mgq_mp_chat_viewport ||= Viewport.new.tap { |viewport| viewport.z = 300 }
-        @mgq_mp_chat_log ||= Sprite_MpChatLog.new(@mgq_mp_chat_viewport, Sprite_MpChatLog::BATTLE_ROOM)
-        @mgq_mp_chat_log.update
-      rescue => e
-        MGQ_MpChat.log_once(:battle_log, "battle chat log failed: #{e.class}: #{e.message}")
-      end
-
-      # Frees the chat log, then the battle's sprites.
-      def dispose
-        @mgq_mp_chat_log.dispose if @mgq_mp_chat_log
-        @mgq_mp_chat_viewport.dispose if @mgq_mp_chat_viewport
-        @mgq_mp_chat_log = @mgq_mp_chat_viewport = nil
-        mgq_mp_chat_dispose
-      end
-    end
-  rescue => e
-    MGQ_MpChat.log("battle hooks FAILED: #{e.class}: #{e.message}")
+  # Before the battle's sprites are freed, the chat log.
+  MGQ_MpHooks.before(Spriteset_Battle, :dispose, "ui_chat") do
+    @mgq_mp_chat_log.dispose if @mgq_mp_chat_log
+    @mgq_mp_chat_viewport.dispose if @mgq_mp_chat_viewport
+    @mgq_mp_chat_log = @mgq_mp_chat_viewport = nil
   end
+rescue => e
+  MGQ_MpChat.log("battle hooks FAILED: #{e.class}: #{e.message}")
 end

@@ -2,6 +2,8 @@
 #  ui_notices.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-07: Took the box's depth from MGQ_MpUi
+#                            - Logged each message posted, dropped or run out, what the box shows whenever it changes, and each invite answered or key ignored with why
 #      Paulinchen  2026-10-06: Showed messages outside a world too, such as a Discord invite taken during a game, dropping only those shown in a world once it closes
 #      Paulinchen  2026-10-04: Renamed from mp_notices.rbx
 #      Paulinchen  2026-10-03: Listed the invites the scripts offer through MGQ_MpActions
@@ -35,6 +37,7 @@ module MGQ_MpNotices
 
   @messages = []
   @declined = {}
+  @logged = []
 
   extend MGQ_MpLog
 
@@ -48,15 +51,20 @@ module MGQ_MpNotices
   # @param text [String] What it says.
   # @param frames [Integer] How long it shows.
   def self.message(key, text, frames = MESSAGE_FRAMES)
-    drop(key)
-    @messages << { :key => key, :text => text, :frames => frames, :world => MGQ_MpOverworldSync.in_world? }
+    drop(key, "a newer one replaces it")
+    world = MGQ_MpOverworldSync.in_world?
+    @messages << { :key => key, :text => text, :frames => frames, :world => world }
+    log("message posted for #{frames} frames#{world ? ' while in a world' : ''} (#{key.inspect}): #{MGQ_MpLog.short(text)}")
   end
 
   # Takes a message away before its time.
   #
   # @param key [Object] What it is about.
-  def self.drop(key)
-    @messages.reject! { |entry| entry[:key] == key }
+  # @param reason [String] Why, for the log.
+  def self.drop(key, reason = "taken away")
+    dropped = @messages.select { |entry| entry[:key] == key }
+    @messages -= dropped
+    dropped.each { |entry| log("message dropped, #{reason}: #{MGQ_MpLog.short(entry[:text])}") }
   end
 
   # Lists what the box shows: the invites that stand, by their sender's name, then the messages,
@@ -83,11 +91,13 @@ module MGQ_MpNotices
     accept = MGQ_MpHotkeys.pressed?(:accept)
     decline = MGQ_MpHotkeys.pressed?(:decline)
     @messages.each { |entry| entry[:frames] -= 1 }
-    @messages.reject! { |entry| entry[:frames] <= 0 || (entry[:world] && !in_world) }
+    gone = @messages.select { |entry| entry[:frames] <= 0 || (entry[:world] && !in_world) }
+    gone.each { |entry| log("message #{entry[:frames] <= 0 ? 'ran out' : 'dropped, the world closed'}: #{MGQ_MpLog.short(entry[:text])}") }
+    @messages -= gone
     @declined.clear unless in_world
     list = shown? ? notices(in_world) : []
     answer = accept ? :take : decline ? :decline : nil
-    list = notices(in_world) if answer && !$mgq_text_input && !MGQ_Multiplayer::Capture.on? && answer_first(list, answer)
+    list = notices(in_world) if answer && answerable?(list, answer) && answer_first(list, answer)
     show(list)
   rescue => e
     log_once(:tick, "tick failed: #{e.class}: #{e.message}")
@@ -112,18 +122,40 @@ module MGQ_MpNotices
   # @return [Boolean] Whether the invite was answered.
   def self.answer_first(list, answer)
     invite = list.first
-    return false unless invite && invite.decline && invite[answer]
+    unless invite && invite.decline && invite[answer]
+      log("#{answer == :take ? 'accept' : 'decline'} key ignored: #{invite.nil? ? 'the box is empty' : invite.decline.nil? ? 'the first line is a message' : 'the first invite cannot be accepted here'}")
+      return false
+    end
 
     answer == :take ? Sound.play_ok : Sound.play_cancel
     @declined[invite.key] = invite.mark if answer == :decline
+    log("#{answer == :take ? 'accepted' : 'declined'} the first invite (#{invite.key.inspect}): #{MGQ_MpLog.short(invite.text)}")
     invite[answer].call
     true
+  end
+
+  # Reports whether the box's keys may answer now: not while the player types or a screen of the
+  # mod holds the buttons, which the log then says.
+  #
+  # @param list [Array<MGQ_MpActions::Notice>] The notifications shown.
+  # @param answer [Symbol] :take or :decline.
+  # @return [Boolean] Whether they may.
+  def self.answerable?(list, answer)
+    return true unless $mgq_text_input || MGQ_Multiplayer::Capture.on?
+
+    log("#{answer == :take ? 'accept' : 'decline'} key ignored: #{$mgq_text_input ? 'the player types' : 'a screen of the mod holds the buttons'}") unless list.empty?
+    false
   end
 
   # Draws the box, making it the first time it shows anything.
   #
   # @param list [Array<MGQ_MpActions::Notice>] The notifications.
   def self.show(list)
+    texts = list.map { |notice| notice.text }
+    if texts != @logged
+      log(texts.empty? ? "box hidden or empty" : "box shows: #{texts.map { |text| MGQ_MpLog.short(text, 60) }.join(' | ')}")
+      @logged = texts
+    end
     @box = nil if @box && @box.disposed?
     if list.empty?
       @box.visible = false if @box
@@ -161,7 +193,7 @@ class Sprite_MpNoticeBox < Sprite
     self.bitmap = Bitmap.new(WIDTH, ROW * MGQ_MpNotices::MAX_ROWS + 4)
     self.x = MARGIN
     self.y = MARGIN
-    self.z = 260
+    self.z = MGQ_MpUi::Z[:bubbles]
     self.visible = false
     @shown = nil
   end

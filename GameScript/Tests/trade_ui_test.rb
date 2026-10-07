@@ -2,7 +2,8 @@
 #  trade_ui_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-07: Created
+#      Paulinchen  2026-10-07: Cut names through MGQ_MpUi.cut, loading ui.rbx first
+#                            - Created
 #
 #----------------------------------------------------------------
 
@@ -40,7 +41,9 @@ module MGQ_MpTrade
   def self.confirm_refusal; nil; end
 end
 
-load File.join(SCRIPTS_DIR, "ui_trade.rbx")
+class Sprite; def initialize(*); end; end
+load_script "ui"
+load_script "ui_trade"
 
 # Draws an offer's first row in a window as wide as one half of the trade screen.
 #
@@ -69,7 +72,10 @@ check("the longest name is cut to fit beside the status, which stays whole",
 drawn = head_of(true, "Tester A")
 check("the own offer's head fits as well", [drawn[1][1], fits.call(drawn)], ["You (1)", true])
 check("and the rows after the head draw in the game's font again", $head_window.contents.font.size, 24)
-check("a name cut to nothing still ends in dots", MGQ_MpTradeUi.fit_name("Tester", 0) { |shown| shown.size }, "...")
+narrow = Object.new
+narrow.define_singleton_method(:text_size) { |text| Rect.new(0, 0, text.size, 24) }
+check("a name cut to nothing still ends in dots", MGQ_MpUi.cut(narrow, "Tester", 0), "...")
+check("a name cut keeps what follows it whole", MGQ_MpUi.cut(narrow, "Tester", 8, " (1)"), "T... (1)")
 
 session = MGQ_MpTrade::Session.new("Tester A", false, :open, nil, nil)
 MGQ_MpTrade.note = "You cannot carry more High-Quality Herb."

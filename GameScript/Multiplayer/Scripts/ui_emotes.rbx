@@ -2,6 +2,8 @@
 #  ui_emotes.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-07: Named players through MGQ_MpOverworldSync.who and took the wheel's depth from MGQ_MpUi
+#                            - Logged the emote wheel opening and closing with why, each emote played, sent or refused, and each emote of another player played or ignored with why
 #      Paulinchen  2026-10-06: Kept the wheel shut while the World overview is open, which left the player walking under the overview once the wheel closed
 #                            - Ended the cooldown between two emotes when a loaded save or a new game set the frame count back
 #                            - Kept the emote pointed at last once the arrows are let go, instead of pointing at none, and the diagonal while its arrows are let go one after the other
@@ -67,15 +69,19 @@ module MGQ_MpEmotes
     @selected = nil
     MGQ_MpWheel.reset
     MGQ_Multiplayer::Capture.start(:emotes)
+    log("emote wheel opened")
     Sound.play_cursor
   end
 
   # Closes the wheel, if it is open, and gives the buttons back.
-  def self.close
+  #
+  # @param reason [String, nil] Why, for the log.
+  def self.close(reason = nil)
     return unless @open
 
     @open = false
     MGQ_Multiplayer::Capture.stop(:emotes)
+    log("emote wheel closed#{reason ? ": #{reason}" : ''}")
   end
 
   # Reports whether the player may play an emote: on a quiet map, not held by the party or a
@@ -91,7 +97,10 @@ module MGQ_MpEmotes
   # once.
   def self.on_map
     key = MGQ_MpHotkeys.pressed?(:emotes)
-    return close unless free?
+    unless free?
+      log("emote wheel stays shut: #{busy_reason}") if key
+      return close(busy_reason)
+    end
 
     if @open
       update(key)
@@ -100,7 +109,22 @@ module MGQ_MpEmotes
     end
   rescue => e
     log("emote wheel failed: #{e.class}: #{e.message}")
-    close
+    close("it failed")
+  end
+
+  # Tells why the player may not play an emote now, for the log.
+  #
+  # @return [String] The first reason that holds.
+  def self.busy_reason
+    return "no world is open" unless MGQ_MpOverworldSync.in_world?
+    return "an event runs or a message shows" unless MGQ_MpOverworldSync.map_quiet?
+    return "the player is held" if MGQ_MpHooks.player_held?
+    return "the action wheel is open" if MGQ_MpActions::Wheel.open?
+    return "the chat box is open" if MGQ_MpChat.typing?
+
+    "the World overview is open"
+  rescue
+    "?"
   end
 
   # Points at the emote the arrows held point to, keeping the last one while no arrow is held, plays
@@ -111,7 +135,7 @@ module MGQ_MpEmotes
   def self.update(key)
     capture = MGQ_Multiplayer::Capture
     if key || capture.trigger?(:B)
-      close
+      close(key ? "its key" : "cancel")
       return Sound.play_cancel
     end
 
@@ -120,7 +144,7 @@ module MGQ_MpEmotes
     @selected = pointed
     return unless capture.trigger?(:C)
 
-    close
+    close(@selected ? "chose #{EMOTES[@selected].name}" : "confirmed with no emote pointed at")
     @selected ? play_own(@selected) : Sound.play_cancel
   end
 
@@ -138,11 +162,15 @@ module MGQ_MpEmotes
   def self.play_own(index)
     # A loaded save or a new game sets the frame count back, which ends the cooldown too.
     elapsed = @last && Graphics.frame_count - @last
-    return Sound.play_buzzer if elapsed && elapsed >= 0 && elapsed < COOLDOWN_FRAMES
+    if elapsed && elapsed >= 0 && elapsed < COOLDOWN_FRAMES
+      log("refused #{EMOTES[index].name}: only #{elapsed} of #{COOLDOWN_FRAMES} frames since the last emote")
+      return Sound.play_buzzer
+    end
 
     @last = Graphics.frame_count
     play(EMOTES[index], $game_player)
-    MGQ_MpOverworldSync.tell(-1, "emote" => index, "map" => $game_map.map_id)
+    sent = MGQ_MpOverworldSync.tell(-1, "emote" => index, "map" => $game_map.map_id)
+    log("played #{EMOTES[index].name} on map #{$game_map.map_id}, #{sent ? 'told everyone' : 'could not tell the others'}")
   end
 
   # Takes another player's emote: their ghost plays it, while they are on the player's map.
@@ -151,10 +179,13 @@ module MGQ_MpEmotes
   # @param message [Hash] The message, the emote's place under "emote".
   def self.take(peer, message)
     emote = EMOTES[message["emote"].to_i]
-    return unless emote && message["emote"].to_s =~ /\A\d+\z/ && peer && peer.ghost
-    return unless message["map"].to_i == $game_map.map_id
+    who = peer ? MGQ_MpOverworldSync.who(peer) : "a game without a state yet"
+    return log("ignored emote #{message['emote'].inspect} from #{who}: no such emote") unless emote && message["emote"].to_s =~ /\A\d+\z/
+    return log("ignored #{emote.name} from #{who}: no ghost of theirs on this map") unless peer && peer.ghost
+    return log("ignored #{emote.name} from #{who}: played on map #{message['map']}, the player is on #{$game_map.map_id}") unless message["map"].to_i == $game_map.map_id
 
     play(emote, peer.ghost)
+    log("#{who} played #{emote.name}")
   rescue => e
     log_once(:take, "playing an emote failed: #{e.class}: #{e.message}")
   end
@@ -216,7 +247,7 @@ class Sprite_MpEmoteWheel < Sprite
     self.bitmap = Bitmap.new(SIZE, SIZE + NAME_HEIGHT)
     self.ox = SIZE / 2
     self.oy = SIZE / 2 + PLAYER_MIDDLE
-    self.z = 300
+    self.z = MGQ_MpUi::Z[:wheels]
     self.visible = false
     @shown = nil
     @drawn = false
@@ -275,7 +306,7 @@ end
 
 begin
   MGQ_MpOverworldSync.route("emote") { |peer, message| MGQ_MpEmotes.take(peer, message) }
-  MGQ_MpOverworldSync.on_tick { |in_world| MGQ_MpEmotes.close unless in_world && SceneManager.scene.is_a?(Scene_Map) }
+  MGQ_MpOverworldSync.on_tick { |in_world| MGQ_MpEmotes.close(in_world ? "the map was left" : "no world is open") unless in_world && SceneManager.scene.is_a?(Scene_Map) }
 rescue => e
   MGQ_MpEmotes.log("overworld sync FAILED: #{e.class}: #{e.message}")
 end

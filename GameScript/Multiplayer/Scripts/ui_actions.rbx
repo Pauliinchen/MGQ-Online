@@ -2,6 +2,8 @@
 #  ui_actions.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-07: Took the icon rect, white and the depths from MGQ_MpUi
+#                            - Logged the action wheel opening with its choices and closing with why, each choice taken or refused, a wheel key that went elsewhere, and the line above the player's head
 #      Paulinchen  2026-10-06: Kept the choice pointed at last once the arrows are let go, instead of going back to the middle, and the diagonal while its arrows are let go one after the other
 #                            - Built the wheel's ring from the choices the scripts register by order, spread over the arrows' eight directions, instead of four fixed sides
 #                            - Pointed at a choice with the arrows held, like a joystick, and at the middle while no arrow or a diagonal is held
@@ -95,14 +97,29 @@ module MGQ_MpActions
     return unless option
 
     unless option.run
+      log("refused #{option_name(option)}: #{option.refusal || 'it cannot be chosen now'}")
       Sound.play_buzzer
       MGQ_MpOverworldSync.notice(option.refusal) if option.refusal
       return
     end
 
+    log("chose #{option_name(option)}")
     Sound.play_ok
     yield if block_given?
     option.run.call
+  end
+
+  # Names a choice for the log.
+  #
+  # @param option [Option] The choice.
+  # @return [String] Its text, or its icon for a choice the wheel shows as one.
+  def self.option_name(option)
+    text = option.text.to_s
+    return "\"#{text}\"" unless text.empty?
+
+    option.icon ? "the choice with icon #{option.icon}" : "nothing"
+  rescue
+    "a choice"
   end
 
   # Closes the wheel once the map is left. Called by overworld_sync.rbx every frame in every
@@ -110,7 +127,7 @@ module MGQ_MpActions
   #
   # @param in_world [Boolean] Whether a world is open.
   def self.tick(in_world)
-    Wheel.close unless in_world && SceneManager.scene.is_a?(Scene_Map)
+    Wheel.close(in_world ? "the map was left" : "no world is open") unless in_world && SceneManager.scene.is_a?(Scene_Map)
   end
 
   # Adds what a script offers between two players, such as party invites or duels, to the World
@@ -191,10 +208,15 @@ module MGQ_MpActions
     return nil unless MGQ_MpOverworldSync.in_world? && !Wheel.open?
 
     line = @lines.map(&:call).compact.first
-    return line if line
-
-    doing = @doings.map(&:call).compact
-    doing.empty? ? nil : "#{doing.join(', ')} . . ."
+    unless line
+      doing = @doings.map(&:call).compact
+      line = doing.empty? ? nil : "#{doing.join(', ')} . . ."
+    end
+    if line != @own_line
+      log(line ? "the line above the player's head says: #{line}" : "the line above the player's head is gone")
+      @own_line = line
+    end
+    line
   end
 
   # The action wheel's choices, by the direction that picks them.
@@ -212,10 +234,14 @@ module MGQ_MpActions
   def self.on_map
     wheel_key = MGQ_MpHotkeys.pressed?(:wheel)
     unless MGQ_MpOverworldSync.in_world? && MGQ_MpOverworldSync.map_quiet?
-      Wheel.close
+      log("action wheel stays shut: #{MGQ_MpOverworldSync.in_world? ? 'an event runs or a message shows' : 'no world is open'}") if wheel_key
+      Wheel.close("an event started or a message shows")
       return
     end
-    return if @covers.any? { |open| open.call(wheel_key) }
+    if @covers.any? { |open| open.call(wheel_key) }
+      log("the wheel key went to the screen over the map") if wheel_key
+      return
+    end
 
     if Wheel.open?
       Wheel.update(wheel_key)
@@ -224,7 +250,7 @@ module MGQ_MpActions
     end
   rescue => e
     log("action wheel failed: #{e.class}: #{e.message}")
-    Wheel.close
+    Wheel.close("it failed")
   end
 
   # The action wheel: a ring of choices around the player and one over them, taken with the game's
@@ -258,15 +284,30 @@ module MGQ_MpActions
       @open = true
       MGQ_MpWheel.reset
       MGQ_Multiplayer::Capture.start(:wheel)
+      MGQ_MpActions.log("action wheel opened: #{choices_text}")
       Sound.play_cursor
     end
 
+    # Lists the wheel's choices for the log, those that cannot be taken marked.
+    #
+    # @return [String] Each choice by its direction.
+    def self.choices_text
+      MGQ_MpActions.wheel_options.map do |direction, option|
+        "#{direction} #{MGQ_MpActions.option_name(option)}#{option.run ? '' : ' (refused)'}"
+      end.join(", ")
+    rescue => e
+      "unreadable (#{e.class})"
+    end
+
     # Closes the wheel, if it is open, and gives the buttons back.
-    def self.close
+    #
+    # @param reason [String, nil] Why, for the log.
+    def self.close(reason = nil)
       return unless @open
 
       @open = false
       MGQ_Multiplayer::Capture.stop(:wheel)
+      MGQ_MpActions.log("action wheel closed#{reason ? ": #{reason}" : ''}")
     end
 
     # Picks the choice the arrows held point to, the middle for a direction without one, keeps the
@@ -276,7 +317,7 @@ module MGQ_MpActions
     # @param pressed [Boolean] Whether the wheel key went down this frame.
     def self.update(pressed)
       if pressed || MGQ_Multiplayer::Capture.trigger?(:B)
-        close
+        close(pressed ? "its key" : "cancel")
         Sound.play_cancel
         return
       end
@@ -286,7 +327,7 @@ module MGQ_MpActions
       Sound.play_cursor if pointed != @selected
       @selected = pointed
 
-      MGQ_MpActions.choose(MGQ_MpActions.wheel_options[@selected]) { close } if MGQ_Multiplayer::Capture.trigger?(:C)
+      MGQ_MpActions.choose(MGQ_MpActions.wheel_options[@selected]) { close("took the #{@selected} choice") } if MGQ_Multiplayer::Capture.trigger?(:C)
     end
   end
 end
@@ -307,7 +348,7 @@ class Sprite_MpOwnLine < Sprite
     super(viewport)
     self.bitmap = Bitmap.new(WIDTH, HEIGHT)
     self.ox = WIDTH / 2
-    self.z = 250
+    self.z = MGQ_MpUi::Z[:labels]
     @shown = nil
   end
 
@@ -353,7 +394,7 @@ class Sprite_MpActionWheel < Sprite
   CENTER_WIDTH = BOX_HEIGHT
 
   # Size of an icon in the game's icon set.
-  ICON_SIZE = 24
+  ICON_SIZE = MGQ_MpUi::ICON_SIZE
 
   # Opacity of an icon whose choice cannot be taken.
   GREY_OPACITY = 110
@@ -382,7 +423,7 @@ class Sprite_MpActionWheel < Sprite
   PICKED_BACK = Color.new(48, 96, 176, 220)
 
   # Color of a choice that can be taken.
-  TEXT = Color.new(255, 255, 255)
+  TEXT = MGQ_MpUi::WHITE
 
   # Color of a choice that cannot be taken.
   GREY = Color.new(150, 150, 150)
@@ -415,7 +456,7 @@ class Sprite_MpActionWheel < Sprite
   # @param viewport [Viewport] The map's topmost viewport.
   def initialize(viewport)
     super(viewport)
-    self.z = 300
+    self.z = MGQ_MpUi::Z[:wheels]
     self.visible = false
     @shown = nil
     @places = nil
@@ -488,7 +529,7 @@ class Sprite_MpActionWheel < Sprite
   # @param x [Integer] The icon's left edge.
   # @param y [Integer] The icon's top edge.
   def draw_icon(option, x, y)
-    source = Rect.new(option.icon % 16 * ICON_SIZE, option.icon / 16 * ICON_SIZE, ICON_SIZE, ICON_SIZE)
+    source = MGQ_MpUi.icon_rect(option.icon)
     bitmap.blt(x, y, Cache.system("Iconset"), source, option.run ? 255 : GREY_OPACITY)
   end
 

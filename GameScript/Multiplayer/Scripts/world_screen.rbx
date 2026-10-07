@@ -2,7 +2,9 @@
 #  world_screen.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-07: Filled the name's form with the name the player chose, empty while the name on Discord stands, so it never turns into a chosen one unasked
+#      Paulinchen  2026-10-07: Cut texts through MGQ_MpUi.cut, which ends them in three dots, and took the choice window's depth from MGQ_MpUi
+#                            - Logged the screen's actions with their outcome and reason, the start chosen, the mod and data checks and the forms sent, never passwords or codes
+#                            - Filled the name's form with the name the player chose, empty while the name on Discord stands, so it never turns into a chosen one unasked
 #      Paulinchen  2026-10-06: Typed a world's password in place in a form, on the text screen only for a gamepad or without the keyboard
 #                            - Kept a name typed in place without closing the screen, kept a name from the text screen at once, and closed the screen when the first one was left without a name
 #                            - Fell back to the text screen for a mod's name without the keyboard or with a gamepad
@@ -155,20 +157,21 @@ class Scene_MpWorlds < Scene_MenuBase
     @list_window.set_handler(:cancel, method(:return_scene))
     @actions_window = Window_MpChoice.new
     [:enter, :favourite, :copy_id, :forget, :edit_world, :ban, :delete_world, :export_save, :delete_saves].each { |symbol| @actions_window.set_handler(symbol, method(:"on_#{symbol}")) }
-    @actions_window.set_handler(:cancel, method(:back_to_list))
+    @actions_window.set_handler(:cancel, method(:on_back))
     @members_window = Window_MpChoice.new
     @members_window.set_handler(:member, method(:on_member))
-    @members_window.set_handler(:cancel, method(:back_to_list))
+    @members_window.set_handler(:cancel, method(:on_back))
     @confirm_window = Window_MpChoice.new
     @confirm_window.set_handler(:yes, method(:on_confirmed))
     @confirm_window.set_handler(:show_mods, method(:on_show_mods))
-    @confirm_window.set_handler(:cancel, method(:back_to_list))
+    @confirm_window.set_handler(:cancel, method(:on_back))
     @start_window = Window_MpChoice.new
     [:from_creator, :from_beginning, :from_own].each { |symbol| @start_window.set_handler(symbol, method(:"on_#{symbol}")) }
-    @start_window.set_handler(:cancel, method(:back_to_list))
+    @start_window.set_handler(:cancel, method(:on_back))
     @list_box = Sprite_MpListBox.new
     @box = nil
     @focus = nil
+    returning = @forms ? true : false
     # The text and save screens return to the same object, which read the installed mods already.
     MGQ_MpWorldMods.forget_installed unless @forms
     @forms ||= { :new_world => MGQ_MpWorld::Form.create, :join_hidden => MGQ_MpWorld::Form.join }
@@ -186,6 +189,8 @@ class Scene_MpWorlds < Scene_MenuBase
     return_to_form if @form_symbol
     show_panel
     show_info
+    name = MGQ_Multiplayer::Player.name
+    log_screen(returning ? "back from the text or save screen" : "opened, #{name ? "playing as #{name} (#{MGQ_MpWorld.short(@me)})" : 'no name yet'}")
   rescue => e
     MGQ_MpWorld.log("world screen could not start: #{e.class}: #{e.message}")
     return_scene
@@ -272,7 +277,22 @@ class Scene_MpWorlds < Scene_MenuBase
   def terminate
     MGQ_Multiplayer::Link.typing(false) if (form && form.editing) || @mod_edit
     @list_box.dispose if @list_box
+    log_screen("closed")
     super
+  end
+
+  # Writes a line of the world screen to the log.
+  #
+  # @param message [String] The line.
+  def log_screen(message)
+    MGQ_MpWorld.log("world screen: #{message}")
+  end
+
+  # Names the chosen world for the log.
+  #
+  # @return [String] Its name and its id's start.
+  def entry_text
+    @entry ? "#{@entry.name} (#{MGQ_MpWorld.short(@entry.id)})" : "no world"
   end
 
   # Shows the list the DLL holds, if it changed.
@@ -301,6 +321,7 @@ class Scene_MpWorlds < Scene_MenuBase
     @invited = id
     @invite_retried = false
     MGQ_MpWorld::Added.add(id)
+    log_screen("took the invite into world #{MGQ_MpWorld.short(id)}, entered once the list holds it")
   end
 
   # Enters the world a Discord invite named, once the list holds it, as if the player chose it.
@@ -315,12 +336,18 @@ class Scene_MpWorlds < Scene_MenuBase
     # A list fetched before the world was added misses a hidden one, so it is fetched once more.
     if !@entry && state == "ready" && !@invite_retried
       @invite_retried = true
+      log_screen("the invited world #{MGQ_MpWorld.short(@invited)} is not in the list yet, fetching it once more")
       return MGQ_MpWorld::Directory.refresh
     end
 
+    invited = @invited
     @invited = nil
-    return say("The world of your Discord invite is not in the list right now.") unless @entry && state == "ready"
+    unless @entry && state == "ready"
+      log_screen("dropped the invite into world #{MGQ_MpWorld.short(invited)}: not in the list (list #{state})")
+      return say("The world of your Discord invite is not in the list right now.")
+    end
 
+    log_screen("entering #{entry_text} for the Discord invite")
     @data_accepted = false
     on_enter
   end
@@ -335,8 +362,12 @@ class Scene_MpWorlds < Scene_MenuBase
 
     MGQ_MpWorldMods.rejoined
     @entry = entries.find { |entry| entry.id == id }
-    return say("The world you restarted for is not in the list right now.") unless @entry && state == "ready"
+    unless @entry && state == "ready"
+      log_screen("not entering world #{MGQ_MpWorld.short(id)} again after the restart: not in the list (list #{state})")
+      return say("The world you restarted for is not in the list right now.")
+    end
 
+    log_screen("entering #{entry_text} again after the restart for its mods")
     @data_accepted = false
     on_enter
   end
@@ -365,9 +396,11 @@ class Scene_MpWorlds < Scene_MenuBase
 
     case kind
     when :mod_name
+      log_screen(text ? "the text screen gave a mod's name: #{text}" : "the text screen was left without a mod's name")
       @mod_pick_hold = true
       add_mod(text) if text && @mod_pick
     when Array
+      log_screen(text ? "the text screen filled in #{kind[1]} (#{text.size} characters)" : "the text screen was left without filling in #{kind[1]}")
       take_field_text(kind[1], text) if form
     end
 
@@ -383,6 +416,7 @@ class Scene_MpWorlds < Scene_MenuBase
     if text
       send_form if fill_field(key, text) && SEND_ON_ENTER.include?(@form_symbol)
     elsif @form_symbol == :rename && MGQ_Multiplayer::Player.name.nil?
+      log_screen("closing: the first name prompt was left without a name")
       return_scene
     end
   end
@@ -404,6 +438,9 @@ class Scene_MpWorlds < Scene_MenuBase
     commands.push(["Copy my latest save to my game", :export_save]) if @entry.local && @entry.local.latest_save
     commands.push(["Delete my saves of it", :delete_saves]) if @entry.local
     commands.push(["Back", :cancel])
+    log_screen("picked #{entry_text}: #{listed ? "#{listed.online}/#{listed.seats} online, start #{listed.start}" : 'not listed'}, " \
+               "#{@entry.local ? "folder #{@entry.local.id}" : 'never entered'}#{creator ? ', own world' : ''}#{@admin ? ', as an admin' : ''}; " \
+               "offers #{commands.map { |command| command[1] }.join(', ')}")
     @actions_window.start(commands)
   end
 
@@ -412,6 +449,7 @@ class Scene_MpWorlds < Scene_MenuBase
   # first, and every game while the world is full.
   def on_enter
     listed = @entry.listed
+    log_screen("enter #{entry_text}")
     return if listed && !mods_allow?(listed)
 
     MGQ_MpWorldMods.use(listed && listed.settings)
@@ -419,25 +457,31 @@ class Scene_MpWorlds < Scene_MenuBase
     return if listed && !data_allows?(@entry.name, listed.data, listed.strict, listed.mods, listed.creator_id == @me) { on_enter }
 
     if @entry.listed && @entry.listed.start == "pending"
+      log_screen("not entering #{entry_text}: its creator still sets up its starting save")
       Sound.play_buzzer
       say("#{@entry.name} is still being set up by its creator. Try again in a moment.")
       back_to_list
     elsif @entry.local && @entry.listed.nil? && (@entry.local.latest_save.nil? || !@entry.gone)
+      log_screen("not entering #{entry_text}: #{@entry.gone ? 'no longer in the list' : 'the list has not arrived'}")
       # Without the list, a first entry cannot know where the world's players start, and no entry
       # which mods and game data the world asks for.
       refuse(@entry.gone ? "#{@entry.name} is no longer in the list: it was deleted, or you were removed." : "#{@entry.name} is not in the list right now. Try again once the list has loaded.")
       back_to_list
     elsif @entry.listed && full?(@entry.listed)
+      log_screen("not entering #{entry_text}: full (#{@entry.listed.online}/#{@entry.listed.seats} online)")
       Sound.play_buzzer
       say("#{@entry.name} is full right now.")
       back_to_list
     elsif @entry.local
       listed = @entry.listed
+      log_screen("entering #{entry_text} from its folder #{@entry.local.id}#{listed ? '' : ' (deleted from the list, saves kept)'}")
       @entry.local.describe(listed.name, listed.id, listed.seats) if listed
       enter(@entry.local, listed && listed.start, listed && listed.choose)
     elsif @entry.open?
+      log_screen("opening #{entry_text}, which has no password")
       start_action("unlock") { MGQ_MpWorld::Directory.unlock(@entry.id, "") }
     elsif @invite_codes && (code = @invite_codes[@entry.id])
+      log_screen("opening #{entry_text} with the Discord invite instead of its password")
       start_action("unlock") { MGQ_MpWorld::Directory.unlock_code(code) }
     else
       ask_password
@@ -458,6 +502,7 @@ class Scene_MpWorlds < Scene_MenuBase
 
   # Opens the form that asks for the chosen world's password, and starts typing into it.
   def ask_password
+    log_screen("asking for the password of #{entry_text}")
     close_popups
     @forms[:password] = MGQ_MpWorld::Form.password(@entry.name)
     @form_symbol = :password
@@ -483,19 +528,23 @@ class Scene_MpWorlds < Scene_MenuBase
   # @return [Boolean] Whether entering goes on now.
   def mods_allow?(listed)
     rows = MGQ_MpWorldMods.differing(listed)
+    MGQ_MpWorldMods.log_check(@entry.name, listed, rows)
     return true if rows.empty?
 
     @mod_rows = rows
     unavailable = rows.reject { |row| row.downloadable? }
 
     if unavailable.size == rows.size && rows.all? { |row| row.yours == "not installed" }
+      log_screen("kept out of #{entry_text}: required mods missing, none in the catalog")
       refuse("#{@entry.name} needs #{rows.map(&:name).join(', ')}: no such script in your Patch folder.")
       back_to_list
     elsif unavailable.empty?
+      log_screen("offered to download #{rows.map(&:name).join(', ')} for #{entry_text} and restart")
       @confirming = :mods
       say(MGQ_MpWorldMods.summary(@entry.name, rows))
       @confirm_window.start([["Download and restart", :yes], ["See the mods", :show_mods], ["Back", :cancel]])
     else
+      log_screen("kept out of #{entry_text}: #{unavailable.map(&:name).join(', ')} only from the author, no download offered")
       @confirming = :mods
       Sound.play_buzzer
       say(MGQ_MpWorldMods.summary(@entry.name, rows))
@@ -524,7 +573,13 @@ class Scene_MpWorlds < Scene_MenuBase
     differing = MGQ_MpWorld::GameData.differing(data)
     accepted = @data_accepted
     @data_accepted = false
-    return true if differing.nil? || differing.empty? || (accepted && !strict)
+    if differing.nil? || differing.empty?
+      log_screen("data check of #{name}: #{differing.nil? ? 'cannot compare (unknown or other format), let in' : 'matches'}")
+      return true
+    end
+
+    log_screen("data check of #{name}: differs in #{differing.join(', ')}; #{strict ? 'strict, kept out' : (accepted ? 'player entered anyway' : 'asking the player')}")
+    return true if accepted && !strict
 
     needed = MGQ_MpWorld.mods_of(mods)
     needs = needed.empty? ? "" : " It needs: #{needed.join(', ')}."
@@ -549,7 +604,9 @@ class Scene_MpWorlds < Scene_MenuBase
 
   # Puts the chosen hidden world's id on the clipboard, for its creator to hand out.
   def on_copy_id
-    if MGQ_MpWorld::Link.copy(@entry.id)
+    copied = MGQ_MpWorld::Link.copy(@entry.id)
+    log_screen(copied ? "copied the id of #{entry_text} to the clipboard" : "the id of #{entry_text} could not be put on the clipboard")
+    if copied
       say("Copied the id of #{@entry.name}. Share it#{@entry.open? ? '' : ' with the password'}.")
     else
       Sound.play_buzzer
@@ -563,6 +620,7 @@ class Scene_MpWorlds < Scene_MenuBase
   # @param kind [Symbol] :players, :mods or :description.
   def open_box(kind)
     listed = @entry.listed
+    log_screen("showing the #{kind} of #{entry_text}")
     close_popups
     @list_window.deactivate
     lines = case kind
@@ -693,6 +751,7 @@ class Scene_MpWorlds < Scene_MenuBase
     return open_box(target) unless target == :data
 
     @list_window.deactivate
+    log_screen("the creator asks to update the data of #{entry_text}")
     ask_data_update
   end
 
@@ -700,6 +759,7 @@ class Scene_MpWorlds < Scene_MenuBase
   # button does.
   def update_data
     if MGQ_MpWorld::GameData.fingerprint.empty?
+      log_screen("not updating the data of #{entry_text}: this game's data could not be read")
       refuse("Your game data could not be read.")
       return back_to_list
     end
@@ -711,6 +771,7 @@ class Scene_MpWorlds < Scene_MenuBase
   # details, where a click reaches it.
   def ask_data_update
     if MGQ_MpWorld::GameData.fingerprint.empty?
+      log_screen("not asking to update the data of #{entry_text}: this game's data could not be read")
       refuse("Your game data could not be read.")
       return back_to_list
     end
@@ -746,6 +807,7 @@ class Scene_MpWorlds < Scene_MenuBase
   # Opens the list of the chosen world's players to remove one.
   def on_ban
     others = @entry.listed.members.reject { |member| member.id == @me }
+    log_screen("choosing a player to remove from #{entry_text}: #{others.map { |member| "#{member.name} (#{MGQ_MpWorld.short(member.id)})" }.join(', ')}")
     @members_window.start(others.map { |member| [member.name, :member, true, member] } + [["Back", :cancel]])
   end
 
@@ -762,6 +824,7 @@ class Scene_MpWorlds < Scene_MenuBase
 
   # Copies the chosen world's latest save into the player's own game, see MGQ_MpSaveExport.
   def on_export_save
+    log_screen("copying the latest save of #{entry_text} into the player's own game")
     say(MGQ_MpSaveExport.export(@entry.local))
     back_to_list
   end
@@ -775,6 +838,7 @@ class Scene_MpWorlds < Scene_MenuBase
 
   # Does what the player confirmed.
   def on_confirmed
+    log_screen("confirmed #{@confirming} for #{entry_text}#{@confirming == :ban && @target ? ": #{@target.name} (#{MGQ_MpWorld.short(@target.id)})" : ''}")
     case @confirming
     when :ban
       start_action("ban") { MGQ_MpWorld::Directory.ban(@entry.id, @target.id) }
@@ -798,6 +862,7 @@ class Scene_MpWorlds < Scene_MenuBase
   # Opens the form of the player's name and starts typing into it, as when the screen opens and
   # the player has no name.
   def ask_name
+    log_screen("asking for the player's name, which they have none of yet")
     @name_asked = true
     @list_window.select_symbol(:rename)
     @list_window.deactivate
@@ -811,12 +876,21 @@ class Scene_MpWorlds < Scene_MenuBase
 
   # Keeps the name the form holds, which the others see from now on.
   def rename_player
+    before = MGQ_Multiplayer::Player.name
     MGQ_Multiplayer::Player.name = form[:name]
     @me = MGQ_MpWorld::Directory.my_id
     @forms[:rename] = MGQ_MpWorld::Form.rename(MGQ_Multiplayer::Player.setting("name").to_s)
     leave_form
     @resume_form = false
+    log_screen("name: #{before.inspect} -> #{MGQ_Multiplayer::Player.name.inspect}#{form_name_empty_text}, id #{MGQ_MpWorld.short(@me)}")
     say("The others see you as #{MGQ_Multiplayer::Player.name}.")
+  end
+
+  # Tells the log that the name chosen is the one on Discord, when the player left it empty.
+  #
+  # @return [String] The note with a space in front, "" for a typed name.
+  def form_name_empty_text
+    MGQ_Multiplayer::Player.setting("name").to_s.empty? ? " (Discord's)" : ""
   end
 
   # The form the player fills in, nil while the list has the cursor.
@@ -829,6 +903,7 @@ class Scene_MpWorlds < Scene_MenuBase
   # Moves from the list into the form it points at.
   def enter_form
     @form_symbol = @list_window.current_symbol
+    log_screen("opened the form #{@form_symbol}")
     @form_window.select(0)
     @form_window.activate
   end
@@ -836,8 +911,12 @@ class Scene_MpWorlds < Scene_MenuBase
   # Moves from the form back to the list, keeping what was filled in, unless it changed a world.
   def leave_form
     # Without a name the player cannot be in a world, so the screen closes.
-    return return_scene if @form_symbol == :rename && MGQ_Multiplayer::Player.name.nil?
+    if @form_symbol == :rename && MGQ_Multiplayer::Player.name.nil?
+      log_screen("closing: the name form was left without a name")
+      return return_scene
+    end
 
+    log_screen("left the form #{@form_symbol}") if @form_symbol
     WORLD_FORMS.each { |symbol| @forms.delete(symbol) }
     @form_symbol = nil
     @hinted = nil
@@ -865,9 +944,11 @@ class Scene_MpWorlds < Scene_MenuBase
     case field.kind
     when :check
       form[field.key] = !form[field.key]
+      log_screen("#{form[field.key] ? 'ticked' : 'unticked'} #{field.label} in the form #{@form_symbol}")
       @form_window.refresh
       @form_window.activate
     when :save
+      log_screen("opening the save screen for the new world's starting save")
       MGQ_MpSaveDistribution.choose(:world)
     when :button
       field.key == :data ? update_data : send_form
@@ -945,7 +1026,10 @@ class Scene_MpWorlds < Scene_MenuBase
     case form.edit.type(char)
     when :enter
       text, error = form.check(field, form.edit.text)
-      return refuse(error) if error
+      if error
+        log_screen("#{field.label} refused: #{error}")
+        return refuse(error)
+      end
 
       form[field.key] = text
       Sound.play_ok
@@ -992,6 +1076,7 @@ class Scene_MpWorlds < Scene_MenuBase
     checked, error = form.check(field, text)
 
     if error
+      log_screen("#{field.label} from the text screen refused: #{error}")
       say(error)
       # Keeps the reason on screen instead of the field's hint.
       @hinted = @field_index
@@ -1007,6 +1092,7 @@ class Scene_MpWorlds < Scene_MenuBase
   # names them.
   def open_mod_pick
     @mod_pick = MGQ_MpWorld::ModPick.new(form[:mods], MGQ_MpWorld.installed_mod_names)
+    log_screen("opened the mod picker on \"#{form[:mods]}\": #{@mod_pick.entries.size} mod(s)")
     @mod_view = Sprite_MpListBox::View.of("Mods of the world", nil, [], MOD_PICK_HINT)
     @form_window.deactivate
     @mod_pick_hold = true
@@ -1036,8 +1122,11 @@ class Scene_MpWorlds < Scene_MenuBase
 
   # Takes the mod added by name that is picked out of the picker and the form.
   def remove_added_mod
+    index = @mod_targets[@mod_view.selected] if @mod_targets && @mod_view.selected
+    name = index.is_a?(Integer) && @mod_pick.entries[index] ? @mod_pick.entries[index].name : nil
     return unless added_mod_picked? && @mod_pick.remove(@mod_targets[@mod_view.selected])
 
+    log_screen("mod picker: removed #{name}, added by name")
     Sound.play_cancel
     form[:mods] = @mod_pick.text
     show_mod_pick
@@ -1138,6 +1227,8 @@ class Scene_MpWorlds < Scene_MenuBase
       return start_mod_typing
     end
 
+    entry = target.is_a?(Integer) ? @mod_pick.entries[target] : nil
+    before = entry && entry.state
     error = if target == :all
               @mod_pick.all_listed? ? @mod_pick.unlist_all : @mod_pick.list_all
             elsif column == 0
@@ -1145,6 +1236,8 @@ class Scene_MpWorlds < Scene_MenuBase
             else
               @mod_pick.mark(target, column == 1 ? :required : :essential)
             end
+    change = entry ? "#{entry.name} #{before} -> #{entry.state}" : "every installed mod #{@mod_pick.all_listed? ? 'listed' : 'unlisted'}"
+    log_screen("mod picker: #{change}#{error ? ", refused: #{error}" : ''}")
     form[:mods] = @mod_pick.text
     show_mod_pick
     error ? refuse_in_pick(error) : Sound.play_ok
@@ -1220,6 +1313,7 @@ class Scene_MpWorlds < Scene_MenuBase
     return unless @mod_pick
 
     error = @mod_pick.add(name)
+    log_screen(error ? "mod picker: #{name} not added: #{error}" : "mod picker: added #{name} by name")
     form[:mods] = @mod_pick.text
     show_mod_pick
     return refuse_in_pick(error) if error
@@ -1239,6 +1333,7 @@ class Scene_MpWorlds < Scene_MenuBase
 
   # Closes the mod picker, back to the form, which shows the mods picked.
   def close_mod_pick
+    log_screen("closed the mod picker: \"#{form && form[:mods]}\"")
     Sound.play_cancel
     @mod_view = nil
     @mod_pick = nil
@@ -1269,6 +1364,7 @@ class Scene_MpWorlds < Scene_MenuBase
     index, error = form.problem
 
     if error
+      log_screen("the form #{@form_symbol} was not sent: #{error} (#{form.fields[index].label})")
       refuse(error)
       @form_window.select(index)
       @hinted = index
@@ -1276,6 +1372,7 @@ class Scene_MpWorlds < Scene_MenuBase
     end
 
     tidy_form
+    log_screen("sending the form #{@form_symbol}")
     case @form_symbol
     when :new_world then create_world
     when :edit_world then edit_world
@@ -1303,6 +1400,7 @@ class Scene_MpWorlds < Scene_MenuBase
 
   # Opens the form that changes the chosen world, filled in as the world is.
   def on_edit_world
+    log_screen("editing #{entry_text}#{@entry.listed.creator_id == @me ? ' as its creator' : ' as an admin'}")
     close_popups
     @forms[:edit_world] = MGQ_MpWorld::Form.edit(@entry.listed, @entry.listed.creator_id == @me)
     @form_symbol = :edit_world
@@ -1330,11 +1428,14 @@ class Scene_MpWorlds < Scene_MenuBase
     return unless purpose
 
     if purpose == :world
+      log_screen(index ? "picked #{MGQ_MpWorld.save_name(index)} as the new world's starting save" : "left the save screen without a starting save")
       @forms[:new_world][:save] = index if index
     elsif index
+      log_screen("picked own #{MGQ_MpWorld.save_name(index)} to start #{@starting.name} from")
       @own_start = index
       @list_window.deactivate
     else
+      log_screen("left the save screen without a save, asking where to start again")
       ask_start(@starting, @starting_from)
     end
   end
@@ -1345,6 +1446,7 @@ class Scene_MpWorlds < Scene_MenuBase
     values = @forms[:new_world]
 
     if !values[:mismatch] && MGQ_MpWorld::GameData.fingerprint.empty?
+      log_screen("not creating #{values[:name]}: it keeps differing games out, and this game's data could not be read")
       refuse("Your game data could not be read. Tick Allow data mismatch.")
       return @resume_form = true
     end
@@ -1370,6 +1472,7 @@ class Scene_MpWorlds < Scene_MenuBase
     close_popups
 
     unless yield
+      log_screen("the #{kind} request could not be started")
       Sound.play_buzzer
       say("The request could not be started. Try again in a moment.")
       return back_to_list
@@ -1393,8 +1496,12 @@ class Scene_MpWorlds < Scene_MenuBase
     MGQ_MpWorld::Directory.clear
 
     if action["state"] == "failed"
+      subject = { "create" => @creating, "find" => "world #{MGQ_MpWorld.short(@adding)}" }[kind] || entry_text
+      log_screen("#{kind} of #{subject} failed: #{action['error']}")
       # An invite's code that failed once is no better than none, so the password is asked next.
-      @invite_codes.delete(@entry.id) if kind == "unlock" && @invite_codes && @entry
+      if kind == "unlock" && @invite_codes && @entry && @invite_codes.delete(@entry.id)
+        log_screen("dropped the invite of #{entry_text}: its password is asked next")
+      end
       Sound.play_buzzer
       say(action["error"])
       return back_to_list
@@ -1404,6 +1511,7 @@ class Scene_MpWorlds < Scene_MenuBase
     when "create"
       world = MGQ_MpWorld::World.found(action["code"], @creating, action["world"])
 
+      log_screen("created #{@creating} (#{MGQ_MpWorld.short(action['world'])})")
       if world && (@start_files.empty? || MGQ_MpSaveDistribution.place(world, @start_files))
         MGQ_MpWorld::Favourites.add(action["world"])
         # A fresh form keeps the next world from starting as a copy of this one.
@@ -1411,27 +1519,36 @@ class Scene_MpWorlds < Scene_MenuBase
         leave_form
         say("#{@creating} was created. Enter it from the list.")
       else
+        log_screen(world ? "the starting save could not be copied into #{@creating}" : "the folder of #{@creating} could not be made")
         say(world ? "Your save could not be copied into #{@creating}." : "The world's folder could not be created.")
       end
     when "unlock"
+      log_screen("opened the lock of #{entry_text}: start #{action['start']}, #{action['choose'] == '1' ? "player's choice" : 'no choice'}")
       leave_form if @form_symbol == :password
       return if enter_opened(action)
     when "start"
+      log_screen("fetched the starting save of #{@fetched.name} (#{@fetched.id})")
       return start_world(@fetched, true)
     when "mods"
+      log_screen("installed the mods #{(@mod_rows || []).map(&:name).join(', ')} for #{entry_text}")
       return restart_for_mods
     when "delete"
+      log_screen("deleted #{entry_text} for everyone")
       say("#{@entry.name} was deleted for everyone.")
     when "ban"
+      log_screen("removed #{@target.name} (#{MGQ_MpWorld.short(@target.id)}) from #{entry_text}")
       say("#{@target.name} was removed from #{@entry.name}.")
     when "find"
+      log_screen("found the hidden world #{action['name']} (#{MGQ_MpWorld.short(@adding)})")
       MGQ_MpWorld::Added.add(@adding)
       @forms[:join_hidden] = MGQ_MpWorld::Form.join
       leave_form
       say("#{action['name']} was added to your list.")
     when "data"
+      log_screen("the data of #{entry_text} is this game's now")
       say("The data scan of #{@entry.name} was updated to your game.")
     when "edit"
+      log_screen("changed #{entry_text}")
       leave_form
       say("#{@entry.name} was changed.")
     end
@@ -1444,8 +1561,12 @@ class Scene_MpWorlds < Scene_MenuBase
   # once it is back; says what to do when the game cannot start itself again.
   def restart_for_mods
     MGQ_MpWorldMods.forget_installed
-    return SceneManager.exit if MGQ_MpWorldMods.restart(@entry.id)
+    if MGQ_MpWorldMods.restart(@entry.id)
+      log_screen("closing the game to start it again for the mods of #{entry_text}")
+      return SceneManager.exit
+    end
 
+    log_screen("the game could not start itself again, the player restarts it for #{entry_text}")
     say("The mods were installed. Close the game and start it again to enter #{@entry.name}.")
     back_to_list
   end
@@ -1456,6 +1577,7 @@ class Scene_MpWorlds < Scene_MenuBase
   # @return [Boolean] Whether it went on to enter the world.
   def enter_opened(action)
     if action["start"] == "pending"
+      log_screen("not entering #{entry_text}: its creator still sets up its starting save")
       Sound.play_buzzer
       say("#{@entry.name} is still being set up by its creator. Try again in a moment.")
       return false
@@ -1480,8 +1602,13 @@ class Scene_MpWorlds < Scene_MenuBase
   # @param choose [Boolean, nil] Whether each new player chooses where to start, nil when the list does not tell.
   def enter(world, start, choose)
     return ask_start(world, start) if MGQ_MpSaveDistribution.ask_start?(world, choose)
-    return fetch_start(world) if MGQ_MpSaveDistribution.fetch?(world, start)
 
+    if MGQ_MpSaveDistribution.fetch?(world, start)
+      log_screen("first entry into #{world.name} (#{world.id}): fetching the creator's starting save")
+      return fetch_start(world)
+    end
+
+    log_screen(MGQ_MpSaveDistribution.new_player?(world) ? "first entry into #{world.name} (#{world.id}): starting at the beginning (start #{start.inspect})" : "entering #{world.name} (#{world.id}) from its latest save here")
     start_world(world)
   end
 
@@ -1500,23 +1627,27 @@ class Scene_MpWorlds < Scene_MenuBase
     choices.push(["At the beginning", :from_beginning])
     choices.push(["From one of my saves", :from_own])
     choices.push(["Back", :cancel])
+    log_screen("first entry into #{world.name} (#{world.id}): asking where to start, offering #{choices.map { |choice| choice[1] }.join(', ')}")
     say("Where do you start in #{world.name}? A save cannot be undone.")
     @start_window.start(choices)
   end
 
   # Starts the world from its creator's save, fetching it first.
   def on_from_creator
+    log_screen("start chosen: the creator's save")
     fetch_start(@starting)
   end
 
   # Starts the world at the beginning.
   def on_from_beginning
+    log_screen("start chosen: the beginning")
     @start_window.finish
     start_world(@starting)
   end
 
   # Opens the save screen to pick the save the player starts the world from.
   def on_from_own
+    log_screen("start chosen: one of the player's own saves, opening the save screen")
     MGQ_MpSaveDistribution.choose(:own)
   end
 
@@ -1528,6 +1659,7 @@ class Scene_MpWorlds < Scene_MenuBase
 
     return start_world(@starting, true) if MGQ_MpSaveDistribution.place(@starting, MGQ_MpSaveDistribution.files_of(index))
 
+    log_screen("own #{MGQ_MpWorld.save_name(index)} could not be copied into #{@starting.name}")
     # A copy that failed halfway would otherwise be the world's first save.
     MGQ_MpSaveDistribution.discard(@starting)
     refuse("Your save could not be copied into #{@starting.name}.")
@@ -1551,6 +1683,7 @@ class Scene_MpWorlds < Scene_MenuBase
     error = (placed && MGQ_MpSaveDistribution.check(world)) || MGQ_MpWorld.start(world, self)
     return unless error
 
+    log_screen("could not enter #{world.name} (#{world.id}): #{error}")
     MGQ_MpSaveDistribution.discard(world) if placed
     refuse(error)
     back_to_list
@@ -1562,6 +1695,7 @@ class Scene_MpWorlds < Scene_MenuBase
   # @param question [String] The question.
   # @param yes [String] The command that does it.
   def confirm(what, question, yes)
+    log_screen("asking to confirm #{what} for #{entry_text}")
     @confirming = what
     say(question)
     @confirm_window.start([[yes, :yes], ["Back", :cancel]])
@@ -1576,6 +1710,14 @@ class Scene_MpWorlds < Scene_MenuBase
   def ask_text(kind, caption, default, options)
     SceneManager.call(Scene_MpText)
     SceneManager.scene.prepare(kind, caption, default, options)
+  end
+
+  # Backs out of a small window, which leaves a question unanswered.
+  def on_back
+    what = { @actions_window => "the world's choices", @members_window => "the players to remove", @confirm_window => "confirming #{@confirming}", @start_window => "choosing where to start" }
+    window = what.keys.find { |candidate| candidate.open? }
+    log_screen("backed out of #{window ? what[window] : 'a small window'} for #{entry_text}")
+    back_to_list
   end
 
   # Closes the small windows and goes back to the list, or to the form the player was filling in.
@@ -2076,12 +2218,9 @@ module MGQ_MpWorldPanels
   #
   # @param text [String] The text.
   # @param width [Integer] The width it may take.
-  # @return [String] The text, or its start before two dots.
+  # @return [String] The text, or its start before MGQ_MpUi::ELLIPSIS.
   def cut(text, width)
-    return text if text_size(text).width <= width
-
-    text = text[0...-1] while text.size > 1 && text_size("#{text}..").width > width
-    "#{text.rstrip}.."
+    MGQ_MpUi.cut(self, text, width)
   end
 end
 
@@ -2493,7 +2632,7 @@ class Window_MpChoice < Window_Command
   def initialize
     @choices = []
     super(0, 0)
-    self.z = 200
+    self.z = MGQ_MpUi::Z[:lines]
     self.openness = 0
     deactivate
   end

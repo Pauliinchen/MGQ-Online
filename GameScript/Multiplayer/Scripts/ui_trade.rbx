@@ -2,7 +2,9 @@
 #  ui_trade.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-07: Showed the messages about the trade in the status line for a few seconds
+#      Paulinchen  2026-10-07: Cut names through MGQ_MpUi.cut and took the window's depth from MGQ_MpUi
+#                            - Logged the trade screen opening and closing, and the gold typed
+#                            - Showed the messages about the trade in the status line for a few seconds
 #                            - Drew an offer's head smaller, as You or the other player's name cut to fit, left of whether its player confirmed
 #      Paulinchen  2026-10-06: Kept the cursor in the offer it switched to, which the same press switched back before
 #                            - Said in the status line while a cancel waits for the relay
@@ -45,21 +47,6 @@ module MGQ_MpTradeUi
     when :stone then MGQ_MpTrade::Items.stone?(item)
     else false
     end
-  end
-
-  # Cuts a name with "..." until what it is shown in fits a width.
-  #
-  # @param name [String] The name.
-  # @param width [Integer] The room.
-  # @yieldparam shown [String] The name as it would be shown.
-  # @yieldreturn [Integer] The width of what it is shown in.
-  # @return [String] The name as it fits, "..." when nothing of it does.
-  def self.fit_name(name, width)
-    head = name.to_s
-    return head if yield(head) <= width
-
-    head = head[0...-1].rstrip while !head.empty? && yield("#{head}...") > width
-    "#{head}..."
   end
 
   # Says how the trade stands, for the screen's second line: a message about the trade while it
@@ -172,8 +159,7 @@ class Window_MpTradeOffer < Window_Selectable
     suffix = count > 0 ? " (#{count})" : ""
     return "You#{suffix}" if @own
 
-    name = MGQ_MpTradeUi.fit_name(@session.name, room) { |shown| text_size(shown + suffix).width }
-    name + suffix
+    MGQ_MpUi.cut(self, @session.name, room, suffix)
   end
 
   # Draws an item and its amount.
@@ -409,7 +395,7 @@ class Window_MpTradeGold < Window_Base
   def initialize
     width = DIGITS * DIGIT_WIDTH + standard_padding * 2 + 64
     super((Graphics.width - width) / 2, (Graphics.height - fitting_height(2)) / 2, width, fitting_height(2))
-    self.z = 250
+    self.z = MGQ_MpUi::Z[:labels]
     self.visible = false
     @digits = [0] * DIGITS
     @place = DIGITS - 1
@@ -510,6 +496,8 @@ class Scene_MpTrade < Scene_MenuBase
     @command_window.set_handler(:cancel, method(:on_cancel_trade))
     @bag_window.set_handler(:cancel, method(:on_bag_cancel))
     @status = nil
+    session = MGQ_MpTrade.session
+    MGQ_MpTrade.log("trade screen opened#{session ? " for trade #{MGQ_MpTrade.short(session.id)} with #{session.name}" : ', but there is no trade'}")
   rescue => e
     MGQ_MpTrade.log("opening the trade screen failed: #{e.class}: #{e.message}")
     MGQ_MpTrade.cancel
@@ -520,7 +508,10 @@ class Scene_MpTrade < Scene_MenuBase
   def update
     super
     session = MGQ_MpTrade.session
-    return return_scene unless session
+    unless session
+      MGQ_MpTrade.log("trade screen closed, the trade ended")
+      return return_scene
+    end
 
     leave_bag if session.stage != :open && @bag_window.active
     status = MGQ_MpTradeUi.status_line(session)
@@ -594,6 +585,7 @@ class Scene_MpTrade < Scene_MenuBase
   #
   # @param gold [Integer] The gold.
   def on_gold_ok(gold)
+    MGQ_MpTrade.log("typed #{gold} gold to offer")
     MGQ_MpTrade.set_gold(gold)
     @command_window.activate
   end
