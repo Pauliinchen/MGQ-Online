@@ -2,7 +2,12 @@
 #  ui_trade.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-06: Created
+#      Paulinchen  2026-10-07: Showed the messages about the trade in the status line for a few seconds
+#                            - Drew an offer's head smaller, as You or the other player's name cut to fit, left of whether its player confirmed
+#      Paulinchen  2026-10-06: Kept the cursor in the offer it switched to, which the same press switched back before
+#                            - Said in the status line while a cancel waits for the relay
+#                            - Read the other player's confirmation through MGQ_MpTrade::Session#their_confirmed?
+#                            - Created
 #
 #----------------------------------------------------------------
 
@@ -17,6 +22,12 @@ module MGQ_MpTradeUi
 
   # Color of a mark that waits.
   WAITING_COLOR = Color.new(200, 200, 200)
+
+  # Pixels between whose offer it is and whether its player confirmed, in an offer's first row.
+  HEAD_GAP = 8
+
+  # Font size of an offer's first row, smaller than the game's, so a name fits beside the status.
+  HEAD_FONT_SIZE = 20
 
   # The bag's categories, by the command that shows them.
   CATEGORIES = [[:item, "Items"], [:weapon, "Weapons"], [:armor, "Armor"], [:stone, "Stones"]]
@@ -36,11 +47,30 @@ module MGQ_MpTradeUi
     end
   end
 
-  # Says how the trade stands, for the screen's second line.
+  # Cuts a name with "..." until what it is shown in fits a width.
+  #
+  # @param name [String] The name.
+  # @param width [Integer] The room.
+  # @yieldparam shown [String] The name as it would be shown.
+  # @yieldreturn [Integer] The width of what it is shown in.
+  # @return [String] The name as it fits, "..." when nothing of it does.
+  def self.fit_name(name, width)
+    head = name.to_s
+    return head if yield(head) <= width
+
+    head = head[0...-1].rstrip while !head.empty? && yield("#{head}...") > width
+    "#{head}..."
+  end
+
+  # Says how the trade stands, for the screen's second line: a message about the trade while it
+  # lasts, such as a refused confirmation.
   #
   # @param session [MGQ_MpTrade::Session] The trade.
   # @return [String] The line.
   def self.status_line(session)
+    note = MGQ_MpTrade.note
+    return note if note
+    return "Cancelling, waiting for the relay . . ." if session.leaving
     return "Waiting for the relay . . ." if session.stage == :committing
     return "Confirm once both offers are right. Any change takes both confirmations back." unless session.confirmed
 
@@ -101,7 +131,7 @@ class Window_MpTradeOffer < Window_Selectable
   # @param session [MGQ_MpTrade::Session] The trade.
   # @return [Boolean] Whether they did.
   def confirmed?(session)
-    @own ? session.confirmed : session.their_confirm == [session.their_rev, session.my_rev]
+    @own ? session.confirmed : session.their_confirmed?
   end
 
   # Draws one row.
@@ -117,16 +147,33 @@ class Window_MpTradeOffer < Window_Selectable
     end
   end
 
-  # Draws whose offer it is, how many items it holds, and whether its player confirmed.
+  # Draws whether its player confirmed at the right, and whose offer it is and how many items it
+  # holds in the room left of that.
   #
   # @param rect [Rect] The row.
   def draw_head(rect)
-    count = @rows.size - 2
-    change_color(system_color)
-    draw_text(rect, "#{@own ? 'Your offer' : "#{@session.name}'s offer"}#{" (#{count})" if count > 0}")
+    contents.font.size = MGQ_MpTradeUi::HEAD_FONT_SIZE
     confirmed = confirmed?(@session)
+    status = confirmed ? "Confirmed" : "Not confirmed"
     change_color(confirmed ? MGQ_MpTradeUi::CONFIRMED_COLOR : MGQ_MpTradeUi::WAITING_COLOR)
-    draw_text(rect, confirmed ? "Confirmed" : "Not confirmed", 2)
+    draw_text(rect, status, 2)
+    room = rect.width - text_size(status).width - MGQ_MpTradeUi::HEAD_GAP
+    change_color(system_color)
+    draw_text(rect.x, rect.y, room, rect.height, head_text(room))
+    reset_font_settings
+  end
+
+  # Says whose offer it is and how many items it holds, the other player's name cut to fit a width.
+  #
+  # @param room [Integer] The width.
+  # @return [String] The text.
+  def head_text(room)
+    count = @rows.size - 2
+    suffix = count > 0 ? " (#{count})" : ""
+    return "You#{suffix}" if @own
+
+    name = MGQ_MpTradeUi.fit_name(@session.name, room) { |shown| text_size(shown + suffix).width }
+    name + suffix
   end
 
   # Draws an item and its amount.
@@ -142,6 +189,24 @@ class Window_MpTradeOffer < Window_Selectable
     end
     change_color(normal_color)
     draw_text(rect, "x#{entry.amount}", 2)
+  end
+
+  # Takes the input, and notes that the arrows must not move the cursor before the next frame.
+  #
+  # The other side's window may be updated later in the frame of the press that switched to it,
+  # and would switch straight back.
+  #
+  # @return [Window_MpTradeOffer] The window.
+  def activate
+    @just_activated = true
+    super
+  end
+
+  # Moves the cursor with the arrows, except in the frame the window took the input.
+  def process_cursor_move
+    return @just_activated = false if @just_activated
+
+    super
   end
 
   # Switches to the other side.

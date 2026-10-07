@@ -2,7 +2,9 @@
 //  WorldTrades.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-06: Created
+//      Paulinchen  2026-10-06: Started its threads through Threads and read who plays through Player.Current, both shared with the world's other parts
+//                            - Cancelled a trade from its commit once the commit arrived, so a cancel that overtakes the commit still ends it
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -90,6 +92,11 @@ internal sealed class WorldTrades
     private CommitState? _commit;
 
     /// <summary>
+    /// The trade of the running commit that the game script asked to cancel, <see langword="null"/> while it did not.
+    /// </summary>
+    private string? _cancelWanted;
+
+    /// <summary>
     /// Whether the committed trades not yet done are being fetched.
     /// </summary>
     private bool _fetching;
@@ -117,7 +124,7 @@ internal sealed class WorldTrades
     /// <summary>
     /// Tells who plays: the game script's <see cref="Player"/>, or another for tests that run several players at once.
     /// </summary>
-    public Func<(string Key, string Name)?> Playing { get; init; } = () => Player.Key is { } key && Player.Name is { } name ? (key, name) : null;
+    public Func<(string Key, string Name)?> Playing { get; init; } = Player.Current;
 
     /// <summary>
     /// Finds the world the game is in by its id, whose token seals the offers; tests hand out their own.
@@ -168,10 +175,11 @@ internal sealed class WorldTrades
         {
             generation = ++_commitGeneration;
             _commit = new CommitState(trade, "sending");
+            _cancelWanted = null;
         }
 
         var client = new DirectoryClient(relay);
-        StartThread("MultiplayerTradeCommit", () => RunCommit(generation, client, new TradeCommit(world, trade, partner, offers, player.Key, code.Token)));
+        Threads.Start("MultiplayerTradeCommit", () => RunCommit(generation, client, new TradeCommit(world, trade, partner, offers, player.Key, code.Token)));
         return true;
     }
 
@@ -179,6 +187,9 @@ internal sealed class WorldTrades
     /// Cancels a trade while the relay still holds it pending; how it went is only logged, and the
     /// commit learns the outcome from the relay.
     /// </summary>
+    /// <remarks>
+    /// The running commit of the trade cancels it again once its commit arrived, since this cancel may reach the relay first and find no trade.
+    /// </remarks>
     /// <param name="world">The world both players are in.</param>
     /// <param name="trade">The trade's id.</param>
     /// <returns><see langword="false"/> without a player or a relay.</returns>
@@ -189,7 +200,15 @@ internal sealed class WorldTrades
             return false;
         }
 
-        StartThread("MultiplayerTradeCancel", () => Retry($"cancelling trade {trade}", () =>
+        lock (_gate)
+        {
+            if (_commit?.Trade == trade)
+            {
+                _cancelWanted = trade;
+            }
+        }
+
+        Threads.Start("MultiplayerTradeCancel", () => Retry($"cancelling trade {trade}", () =>
         {
             var answer = client.CancelTrade(trade, player.Key);
             Log.Write($"cancelled trade {trade}: {answer.State}");
@@ -210,7 +229,7 @@ internal sealed class WorldTrades
             return false;
         }
 
-        StartThread("MultiplayerTradeDone", () => Retry($"marking trade {trade} done", () =>
+        Threads.Start("MultiplayerTradeDone", () => Retry($"marking trade {trade} done", () =>
         {
             try
             {
@@ -249,7 +268,7 @@ internal sealed class WorldTrades
         }
 
         var client = new DirectoryClient(relay);
-        StartThread("MultiplayerTradePending", () =>
+        Threads.Start("MultiplayerTradePending", () =>
         {
             List<(string Id, string Offers)>? trades = null;
             string? error = null;
@@ -358,6 +377,7 @@ internal sealed class WorldTrades
             var deadline = DateTime.UtcNow + GiveUpAfter;
             var arrived = false;
             var reached = false;
+            var cancelSent = false;
 
             while (IsCurrent(generation))
             {
@@ -372,6 +392,13 @@ internal sealed class WorldTrades
 
                     arrived = true;
                     reached = true;
+
+                    if (answer.State == Pending && !cancelSent && IsCancelWanted(commit.Trade))
+                    {
+                        answer = client.CancelTrade(commit.Trade, commit.PlayerKey);
+                        cancelSent = true;
+                        Log.Write($"cancelled trade {commit.Trade} once its commit arrived: {answer.State}");
+                    }
 
                     if (answer.State is Committed or Cancelled)
                     {
@@ -439,6 +466,19 @@ internal sealed class WorldTrades
         lock (_gate)
         {
             return generation == _commitGeneration;
+        }
+    }
+
+    /// <summary>
+    /// Reports whether the game script asked to cancel a trade while its commit ran.
+    /// </summary>
+    /// <param name="trade">The trade's id.</param>
+    /// <returns><see langword="true"/> when it did.</returns>
+    private bool IsCancelWanted(string trade)
+    {
+        lock (_gate)
+        {
+            return _cancelWanted == trade;
         }
     }
 
@@ -534,14 +574,6 @@ internal sealed class WorldTrades
         InvalidDataException data => data.Message,
         _ => $"Something went wrong: {ex.GetBaseException().Message}",
     };
-
-    /// <summary>
-    /// Runs work on a background thread, which ends with the game.
-    /// </summary>
-    /// <param name="name">The thread's name.</param>
-    /// <param name="work">The work, which must catch everything itself.</param>
-    private static void StartThread(string name, Action work) =>
-        new Thread(() => work()) { IsBackground = true, Name = name }.Start();
 
     /// <summary>
     /// How a commit stands, as the game script reads it.

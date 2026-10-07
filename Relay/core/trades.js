@@ -2,7 +2,8 @@
 //  trades.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-06: Created
+//      Paulinchen  2026-10-06: Took the player's key from the X-MGQ-Player header too
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -452,21 +453,23 @@ function answerOf(record) {
  * @param {string} method The HTTP method.
  * @param {URL} url The request's address.
  * @param {() => Promise<string | null>} readBody Reads the request's body as text, null when it is too large to read.
+ * @param {string | null} [player] The X-MGQ-Player header of the request, which wins over the key in its body or address, which released games send.
  * @returns {Promise<{status: number, body: object}>} The answer.
  */
-export async function handleTradeRequest(trades, method, url, readBody) {
+export async function handleTradeRequest(trades, method, url, readBody, player = null) {
   const parts = url.pathname.split("/").filter((part) => part.length > 0);
+  const fromQuery = () => player || url.searchParams.get("player");
 
   if (parts[0] !== "v1" || parts[1] !== "trades") {
     return notFound();
   }
 
   if (parts.length === 2 && method === "GET") {
-    return trades.pending(url.searchParams.get("player"), url.searchParams.get("world"));
+    return trades.pending(fromQuery(), url.searchParams.get("world"));
   }
 
   if (parts.length === 3 && method === "GET") {
-    return trades.state(parts[2], url.searchParams.get("player"));
+    return trades.state(parts[2], fromQuery());
   }
 
   if (parts.length === 4 && method === "POST" && ["commit", "cancel", "done"].includes(parts[3])) {
@@ -476,7 +479,8 @@ export async function handleTradeRequest(trades, method, url, readBody) {
       return { status: 413, body: { error: "the request is too large" } };
     }
 
-    const body = parseJson(text);
+    const parsed = parseJson(text);
+    const body = player && parsed && typeof parsed === "object" ? { ...parsed, player } : parsed;
 
     if (parts[3] === "commit") {
       return trades.commit(parts[2], body);

@@ -69,7 +69,7 @@ module MGQ_MpActions
   # @!attribute mark [Object] What the invite is, which tells a new one from the one the player declined.
   Notice = Struct.new(:key, :text, :color, :action, :take, :decline, :mark)
 
-  # The wheel's choice in a direction no script fills.
+  # The wheel's middle choice while no script fills it.
   NO_OPTION = Option.new("", nil, nil)
 
   # Color of the line above the player's own head, which invites share.
@@ -291,7 +291,8 @@ module MGQ_MpActions
   end
 end
 
-# The line above the player's own head while they invite to a party.
+# The line above the player's own head: what the scripts say there, such as an invite to a party,
+# a trade offer or the wait for the party's story, see MGQ_MpActions.own_line.
 class Sprite_MpOwnLine < Sprite
   # Width of the line.
   WIDTH = 320

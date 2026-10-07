@@ -2,7 +2,8 @@
 //  WorldTradesTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-06: Created
+//      Paulinchen  2026-10-06: Tested a cancel sent right after the commit
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -100,6 +101,22 @@ public sealed class WorldTradesTests
 
         creator.Commit(world.Id, Trade, WorldKeys.PlayerIdOf(OtherKey), Offers);
         AwaitCommit(creator, "waiting");
+        Assert.True(creator.Cancel(world.Id, Trade));
+
+        Assert.Equal("cancelled", AwaitCommit(creator, "cancelled")["reason"]);
+    }
+
+    /// <summary>
+    /// Asserts that a cancel sent right with the commit, which may reach the relay first, still ends the commit as cancelled.
+    /// </summary>
+    [Fact]
+    public void Cancel_RightAfterCommitting_CancelsTheCommit()
+    {
+        using var relay = new TestRelay();
+        using var world = TestWorld.Make(relay);
+        var creator = NewTrades(relay, CreatorKey, world.Code);
+
+        creator.Commit(world.Id, Trade, WorldKeys.PlayerIdOf(OtherKey), Offers);
         Assert.True(creator.Cancel(world.Id, Trade));
 
         Assert.Equal("cancelled", AwaitCommit(creator, "cancelled")["reason"]);
