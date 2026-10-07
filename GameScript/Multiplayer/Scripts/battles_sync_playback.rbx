@@ -2,7 +2,8 @@
 #  battles_sync_playback.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-07: Checked the arguments of the host's audio calls as a picture's are checked, and left out a call that fails, logged once
+#      Paulinchen  2026-10-07: Gave the states the host adds the counters the game keeps per state, without which a turn's end on the map ended the game
+#                            - Checked the arguments of the host's audio calls as a picture's are checked, and left out a call that fails, logged once
 #                            - Took the number of pictures the screen holds from coop_scene.rbx
 #                            - Logged each turn's playback with its waits and catching up, how the battle began, the items used up and the host's values this game cannot take
 #                            - Gave a battler the host's HP, MP, SP and states after the game read its features anew, which held HP below this game's own maximum
@@ -584,6 +585,7 @@ module MGQ_MpBattlesSync
       state_turns = MGQ_MpGame.get(battler, :state_turns) || MGQ_MpGame.set(battler, :state_turns, {})
       known.each { |id, count| state_turns[id] = count.to_i }
       before = [MGQ_MpGame.get(battler, :states), MGQ_MpGame.get(battler, :buffs)].map { |list| Array(list).dup }
+      seed_state_counts(battler, ids - before[0])
       MGQ_MpGame.set(battler, :states, ids)
       MGQ_MpGame.set(battler, :buffs, Array(buffs).map(&:to_i)) if Array(buffs).size == 8
       features_changed(battler) if before != [ids, Array(MGQ_MpGame.get(battler, :buffs))]
@@ -595,6 +597,25 @@ module MGQ_MpBattlesSync
       MGQ_MpGame.set(battler, :tp, tp.to_i)
       over_maximum(battler, hp.to_i, mp.to_i)
       set_walls(battler, walls)
+    end
+
+    # Gives the states the host added the counters the game keeps per state as it adds one itself:
+    # the turns the state was held and the steps left on the map.
+    #
+    # The game's turn end, on the map as well, counts every state's turns held, and a state without
+    # the counter ends the game.
+    #
+    # @param battler [Game_Battler] The guest's battler.
+    # @param ids [Array<Integer>] The ids of the states new to it.
+    def self.seed_state_counts(battler, ids)
+      return if ids.empty?
+
+      counts = MGQ_MpGame.get(battler, :state_turn_counts) || MGQ_MpGame.set(battler, :state_turn_counts, {})
+      steps = MGQ_MpGame.get(battler, :state_steps) || MGQ_MpGame.set(battler, :state_steps, {})
+      ids.each do |id|
+        counts[id] ||= 0
+        steps[id] ||= $data_states[id].respond_to?(:steps_to_remove) ? $data_states[id].steps_to_remove.to_i : 0
+      end
     end
 
     # Logs once per character that the host's HP or MP of it lies above this game's maximum, which

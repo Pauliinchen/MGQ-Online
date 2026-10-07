@@ -2,7 +2,8 @@
 #  battles_sync_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-07: Checked a whole turn's way from the host's recorder over the wire to the guest's playback
+#      Paulinchen  2026-10-07: Checked the counters a state new to the guest gets
+#                            - Checked a whole turn's way from the host's recorder over the wire to the guest's playback
 #      Paulinchen  2026-10-06: Created
 #
 #----------------------------------------------------------------
@@ -151,6 +152,7 @@ target = Game_Actor.new(6)
 target.instance_variable_set(:@cnt, { :defense_wall => [] })
 playback.values(target, 50, 5, 0, [4], [3], [0] * 8, 2)
 check("the guest takes them", [target.hp, MGQ_MpGame.get(target, :states), MGQ_MpGame.get(target, :state_turns)], [50, [4], { 4 => 3 }])
+check("with the counters the game keeps per state, which a turn's end on the map reads", [target.instance_variable_get(:@state_turn_counts), target.instance_variable_get(:@state_steps)], [{ 4 => 0 }, { 4 => 0 }])
 check("with the barriers", target.instance_variable_get(:@cnt)[:defense_wall], [true, true])
 
 # The battle's end stays on file.

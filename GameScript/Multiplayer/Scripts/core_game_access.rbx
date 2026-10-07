@@ -2,7 +2,8 @@
 #  core_game_access.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-07: Named an interpreter's event and map, the trades a save keeps and the title screen's command closing
+#      Paulinchen  2026-10-07: Named the counters the game keeps per state, the turns held and the steps left
+#                            - Named an interpreter's event and map, the trades a save keeps and the title screen's command closing
 #      Paulinchen  2026-10-06: Left scene_changing? out of the private methods, since the game makes it public
 #                            - Named a battler's counters, which hold its barriers, and whether a battle starts with a first strike or a surprise
 #                            - Named whether the map's menu was asked for, and the entries of the game's switches and variables
@@ -51,6 +52,8 @@ module MGQ_MpGame
     :tp => :@tp,
     :states => :@states,
     :state_turns => :@state_turns,
+    :state_turn_counts => :@state_turn_counts,
+    :state_steps => :@state_steps,
     :buffs => :@buffs,
     :actions => :@actions,
     :result => :@result,
