@@ -2,7 +2,9 @@
 //  directory.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-06: Expected up to 300 characters of mods
+//      Paulinchen  2026-10-06: Covered the deleting of worlds whose starting save did not come in time, the budget for starting saves and the rate limits per address
+//                            - Covered refused mod settings over the limit, mod names of up to 100 characters, the codes of refusals and the player key header
+//                            - Expected up to 300 characters of mods
 //                            - Covered admins replacing a world's mod settings
 //                            - Covered a world's mod hashes and mod settings, which only its creator sets
 //      Paulinchen  2026-10-04: Expected the lock without the mods, the game data and the rule for it
@@ -421,4 +423,116 @@ test("handleDirectoryRequest routes the public requests and names the world an e
   assert.equal(deleted.status, 200);
   assert.equal(deleted.id, WORLD);
   assert.equal(deleted.close, true);
+});
+
+test("a world whose starting save did not come in time is deleted, and no longer counts for its creator", async () => {
+  const { directory, time } = newDirectory({ ...DIRECTORY_LIMITS, maxWorldsPerCreator: 1 });
+  await directory.create(await newWorld({ start: true }));
+
+  time.now += DIRECTORY_LIMITS.pendingMs - 1;
+  assert.equal((await directory.lock(WORLD)).status, 200);
+
+  time.now += 1;
+  assert.deepEqual((await directory.list(CREATOR)).body.worlds, []);
+  assert.equal((await directory.lock(WORLD)).status, 404);
+  assert.equal((await directory.create(await newWorld({ id: "1".repeat(32) }))).status, 201);
+});
+
+test("a ready starting save keeps its world, however long ago it was made", async () => {
+  const { directory, time } = newDirectory();
+  await directory.create(await newWorld({ start: true }));
+  await directory.putStart(WORLD, CREATOR, Uint8Array.of(1));
+
+  time.now += DIRECTORY_LIMITS.pendingMs * 10;
+  assert.equal((await directory.lock(WORLD)).status, 200);
+});
+
+test("starting saves are kept within a budget for all of them together", async () => {
+  const { directory } = newDirectory({ ...DIRECTORY_LIMITS, maxStartBytesTotal: 5 });
+  await directory.create(await newWorld({ start: true }));
+  await directory.create(await newWorld({ id: "1".repeat(32), start: true }));
+
+  assert.equal((await directory.putStart(WORLD, CREATOR, Uint8Array.of(1, 2, 3))).status, 200);
+  assert.deepEqual(await directory.putStart("1".repeat(32), CREATOR, Uint8Array.of(1, 2, 3)), { status: 507, body: { error: "the relay has no room for more starting saves", code: "storage" } });
+  assert.equal((await directory.putStart("1".repeat(32), CREATOR, Uint8Array.of(1, 2))).status, 200);
+});
+
+test("mod settings over the limit are refused rather than cut, and mod names of up to 100 characters come with their hashes", async () => {
+  const { directory } = newDirectory();
+  const settings = `a=s:${"x".repeat(DIRECTORY_LIMITS.maxSettingsLength - 4)}`;
+
+  assert.equal((await directory.create(await newWorld({ settings: `${settings}y` }))).status, 400);
+  assert.equal((await directory.create(await newWorld({ settings: `${settings} ` }))).status, 400);
+  assert.equal((await directory.create(await newWorld({ modHashes: `${"n".repeat(101)}=${"a1".repeat(32)}` }))).status, 400);
+  assert.equal((await directory.create(await newWorld({ settings: "a=s:ends in a space ", modHashes: `${"n".repeat(100)}=${"a1".repeat(32)}` }))).status, 201);
+  assert.equal((await directory.list()).body.worlds[0].settings, "a=s:ends in a space ");
+
+  assert.equal((await directory.edit(WORLD, CREATOR, { settings: `${settings}y` })).status, 400);
+  assert.equal((await directory.edit(WORLD, CREATOR, { settings })).status, 200);
+  assert.equal((await directory.list()).body.worlds[0].settings, settings);
+});
+
+test("making worlds, uploading starting saves and entering world rooms are limited per address", async () => {
+  const entries = new Map();
+  const store = {
+    get: async (id) => structuredClone(entries.get(id)),
+    put: async (entry) => void entries.set(entry.id, structuredClone(entry)),
+    remove: async (id) => void entries.delete(id),
+    all: async () => [...entries.values()].map((entry) => structuredClone(entry)),
+    putStart: async () => {},
+    getStart: async () => undefined,
+  };
+  const time = { now: 1_000_000 };
+  const once = { burst: 1, refillMs: 60_000 };
+  const directory = new Directory(store, { clock: () => time.now, rates: { creates: once, starts: once, joins: once } });
+
+  assert.equal((await directory.create(await newWorld({ start: true }), "1.2.3.4")).status, 201);
+  assert.deepEqual(await directory.create(await newWorld({ id: "1".repeat(32) }), "1.2.3.4"), { status: 429, body: { error: "too many requests from this address, try again later", code: "rate" } });
+  assert.equal((await directory.create(await newWorld({ id: "1".repeat(32) }), "5.6.7.8")).status, 201);
+  assert.equal((await directory.create(await newWorld({ id: "2".repeat(32) }))).status, 201, "without an address nothing is limited");
+
+  assert.equal((await directory.putStart(WORLD, CREATOR, Uint8Array.of(1), "1.2.3.4")).status, 200);
+  assert.equal((await directory.admit("1".repeat(32), OTHER, AUTH, "1.2.3.4")).status, 200);
+  assert.equal((await directory.admit("1".repeat(32), OTHER, AUTH, "1.2.3.4")).status, 429);
+
+  time.now += 60_000;
+  assert.equal((await directory.admit("1".repeat(32), OTHER, AUTH, "1.2.3.4")).status, 200);
+});
+
+test("a refusal to enter names why in a code", async () => {
+  const { directory } = newDirectory({ ...DIRECTORY_LIMITS, maxMembers: 1 });
+  await directory.create(await newWorld({ start: true }));
+
+  assert.equal((await directory.admit(WORLD, CREATOR, AUTH)).body.code, "pending");
+  await directory.putStart(WORLD, CREATOR, Uint8Array.of(1));
+  assert.equal((await directory.admit(WORLD, OTHER, AUTH)).body.code, "members");
+
+  await directory.ban(WORLD, CREATOR, await playerIdOf(OTHER));
+  assert.equal((await directory.admit(WORLD, OTHER, AUTH)).body.code, "removed");
+  assert.equal((await directory.getStart(WORLD, OTHER, AUTH)).body.code, "removed");
+});
+
+test("presence lists a player in the room twice only once", async () => {
+  const { directory } = newDirectory();
+  await directory.create(await newWorld());
+  const other = await playerIdOf(OTHER);
+
+  await directory.presence(WORLD, [{ player: other, name: "Guest" }, { player: other, name: "Guest" }]);
+  assert.equal((await directory.list()).body.worlds[0].online, 1);
+});
+
+test("handleDirectoryRequest takes the player key of the header before the body's or the address's, and JSON of up to 32 KB", async () => {
+  const { directory } = newDirectory();
+  const body = (value) => async () => JSON.stringify(value);
+  const url = (path) => new URL(`https://relay.test${path}`);
+  const long = await newWorld({ start: true, hidden: true, description: "x".repeat(20_000), player: undefined });
+
+  assert.equal((await handleDirectoryRequest(directory, "POST", url("/v1/worlds"), body(long), undefined, { player: CREATOR })).status, 201);
+  assert.equal((await handleDirectoryRequest(directory, "GET", url(`/v1/worlds?player=${OTHER}`), body(null), undefined, { player: CREATOR })).body.worlds.length, 1);
+  assert.equal((await handleDirectoryRequest(directory, "POST", url(`/v1/worlds/${WORLD}/start?player=${OTHER}`), body(null), async () => Uint8Array.of(1), { player: CREATOR })).status, 200);
+  assert.equal((await handleDirectoryRequest(directory, "GET", url(`/v1/worlds/${WORLD}/start?auth=${AUTH}`), body(null), undefined, { player: OTHER })).status, 200);
+  assert.equal((await handleDirectoryRequest(directory, "POST", url(`/v1/worlds/${WORLD}/edit`), body({ player: OTHER, seats: 8 }), undefined, { player: CREATOR })).status, 200);
+
+  const tooLong = async () => JSON.stringify(await newWorld({ id: "1".repeat(32), description: "x".repeat(DIRECTORY_LIMITS.maxJsonLength) }));
+  assert.equal((await handleDirectoryRequest(directory, "POST", url("/v1/worlds"), tooLong)).status, 400);
 });

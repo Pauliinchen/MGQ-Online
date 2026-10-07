@@ -2,7 +2,13 @@
 //  worker.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-06: Kept the trades between two players of a world in the directory object
+//      Paulinchen  2026-10-06: Passed the X-MGQ-Player header on to the trade and mod catalog routes too
+//                            - Told the directory who is in a world room after its alarm closed connections too
+//                            - Closed a player's earlier connection to a world room once the same player enters it again
+//                            - Took a peer the relay closes out of its room at once, and closed a peer that waited alone too long whatever its role
+//                            - Passed the player key of the X-MGQ-Player header and each request's address on, limited entering rooms per address, and named why a world room turned a game away
+//                            - Read bodies the directory takes as text up to a limit
+//                            - Kept the trades between two players of a world in the directory object
 //                            - Kept the mod catalog in the directory object, checked its links every half hour
 //                            - Stored starting saves and uploaded mods in pieces through the same helpers
 //      Paulinchen  2026-09-30: Read the relay's admins from the ADMINS secret
@@ -25,14 +31,32 @@ import { Directory as WorldDirectory, handleDirectoryRequest, parseAdmins } from
 import { ModCatalog, handleModRequest } from "../core/mods.js";
 import { TradeBook, handleTradeRequest } from "../core/trades.js";
 import {
-  CLOSE, IN, OUT, PAIRED, PING, PONG, admit, newPeer, newWorldPeer, nextDeadline, nextWorldDeadline, overdue, parseRoute, presenceOf,
-  routeWorldMessage, seatChangeText, seatText, takeMessage, takeSeat, worldOverdue,
+  CLOSE, IN, OUT, PAIRED, PING, PLAYER_HEADER, PONG, RATE_LIMITS, REFUSAL_HEADER, RateLimiter, admit, newPeer, newWorldPeer, nextDeadline,
+  nextWorldDeadline, overdue, parseRoute, presenceOf, replacedBy, routeWorldMessage, seatChangeText, seatText, takeMessage, takeSeat,
+  worldOverdue,
 } from "../core/relay.js";
 
 /**
  * The name of the one directory object.
  */
 const DIRECTORY_NAME = "directory";
+
+/**
+ * The header Cloudflare names the address a request came from in.
+ */
+const ADDRESS_HEADER = "CF-Connecting-IP";
+
+/**
+ * Longest body the directory, the mod catalog and the trades read as text, in bytes.
+ */
+const MAX_TEXT_BYTES = 256 * 1024;
+
+/**
+ * Counts how often each address enters a room. Each Worker instance keeps its own count, so it
+ * only slows down an address that keeps reaching the same instance; world rooms are counted by
+ * the directory instead.
+ */
+const roomJoins = new RateLimiter(RATE_LIMITS.joins);
 
 /**
  * Sends a WebSocket request to its room or world room, a directory request to the directory, and
@@ -53,7 +77,7 @@ export default {
       return directoryOf(env).fetch(request);
     }
 
-    const route = parseRoute(url);
+    const route = parseRoute(url, request.headers.get(PLAYER_HEADER));
 
     if ("error" in route) {
       return new Response(route.error, { status: 400 });
@@ -61,6 +85,10 @@ export default {
 
     if (request.headers.get("Upgrade")?.toLowerCase() !== "websocket") {
       return new Response("the relay only takes WebSockets", { status: 426 });
+    }
+
+    if (route.kind === "room" && !roomJoins.take(request.headers.get(ADDRESS_HEADER))) {
+      return new Response("too many requests from this address, try again later", { status: 429 });
     }
 
     const rooms = route.kind === "world" ? env.WORLDS : env.ROOMS;
@@ -231,6 +259,28 @@ async function readBytes(request, limit) {
 }
 
 /**
+ * Reads a request's body as text, unless it is longer than MAX_TEXT_BYTES.
+ *
+ * @param {Request} request The request.
+ * @returns {Promise<string | null>} The body, or null when it is too long.
+ */
+async function readText(request) {
+  const bytes = await readBytes(request, MAX_TEXT_BYTES);
+  return bytes ? new TextDecoder().decode(bytes) : null;
+}
+
+/**
+ * Reads a request's body as text for a reader that takes no null, empty when it is too long, which
+ * the reader then refuses as no JSON.
+ *
+ * @param {Request} request The request.
+ * @returns {Promise<string>} The body, or "".
+ */
+async function readTextOrEmpty(request) {
+  return (await readText(request)) ?? "";
+}
+
+/**
  * The world directory: every world with its players, bans and locked token, one entry per world
  * in the object's storage, and each world's starting save in pieces beside it. It also keeps the
  * mod catalog, one entry per mod and each uploaded mod's zip in pieces, and the trades, one entry
@@ -296,16 +346,16 @@ export class Directory extends DurableObject {
     }
 
     if (url.pathname === "/v1/mods" || url.pathname.startsWith("/v1/mods/")) {
-      return respond(await handleModRequest(this.mods, request.method, url, () => request.text(), (limit) => readBytes(request, limit)));
+      return respond(await handleModRequest(this.mods, request.method, url, () => readTextOrEmpty(request), (limit) => readBytes(request, limit), request.headers.get(PLAYER_HEADER)));
     }
 
     if (url.pathname === "/v1/trades" || url.pathname.startsWith("/v1/trades/")) {
-      return respond(await handleTradeRequest(this.trades, request.method, url, () => request.text()));
+      return respond(await handleTradeRequest(this.trades, request.method, url, () => readText(request), request.headers.get(PLAYER_HEADER)));
     }
 
     if (url.pathname === "/internal/admit") {
-      const { id, player, auth } = await request.json();
-      return json(200, await this.directory.admit(id, player, auth));
+      const { id, player, auth, address } = await request.json();
+      return json(200, await this.directory.admit(id, player, auth, address ?? null));
     }
 
     if (url.pathname === "/internal/presence") {
@@ -313,7 +363,8 @@ export class Directory extends DurableObject {
       return json(200, await this.directory.presence(id, online));
     }
 
-    const answer = await handleDirectoryRequest(this.directory, request.method, url, () => request.text(), (limit) => readBytes(request, limit));
+    const client = { player: request.headers.get(PLAYER_HEADER), address: request.headers.get(ADDRESS_HEADER) };
+    const answer = await handleDirectoryRequest(this.directory, request.method, url, () => readTextOrEmpty(request), (limit) => readBytes(request, limit), client);
 
     if (answer.close) {
       await internal(worldOf(this.env, answer.id), "close");
@@ -342,6 +393,28 @@ function respond(answer) {
 }
 
 /**
+ * Marks a peer left and closes its socket, so the room stops counting it at once, not only once
+ * Cloudflare reports the socket closed.
+ *
+ * @param {WebSocket} socket The peer's socket.
+ * @param {number} code The close code.
+ * @param {string} reason The close reason.
+ */
+function closeSocket(socket, code, reason) {
+  try {
+    const record = socket.deserializeAttachment();
+
+    if (record) {
+      socket.serializeAttachment({ ...record, left: true });
+    }
+
+    socket.close(code, reason);
+  } catch {
+    // The socket is closed already, which is all this wants.
+  }
+}
+
+/**
  * One room: a host and a guest, whose binary messages it passes on to each other.
  *
  * It uses Cloudflare's WebSocket hibernation, so a host waiting alone costs no run time; Cloudflare
@@ -356,7 +429,8 @@ export class Room extends DurableObject {
    */
   constructor(ctx, env) {
     super(ctx, env);
-    // Answered without waking the room, so a host's keep-alives while it waits cost nothing.
+    // Answered without waking the room, so a peer's keep-alives while it waits alone cost nothing;
+    // they never reach the message allowance, which only a woken room can count.
     ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair(PING, PONG));
   }
 
@@ -400,7 +474,7 @@ export class Room extends DurableObject {
   async webSocketMessage(socket, message) {
     if (typeof message === "string") {
       // Keep-alives are answered by Cloudflare before they get here, so any other text is wrong.
-      socket.close(CLOSE.badRequest, "only binary messages are passed on");
+      this.leave(socket, CLOSE.badRequest, "only binary messages are passed on");
       return;
     }
 
@@ -408,7 +482,7 @@ export class Room extends DurableObject {
     socket.serializeAttachment(peer);
 
     if (refusal) {
-      socket.close(refusal.code, refusal.reason);
+      this.leave(socket, refusal.code, refusal.reason);
       return;
     }
 
@@ -441,40 +515,42 @@ export class Room extends DurableObject {
     const closed = overdue(peers.map((peer) => peer.record), Date.now());
 
     for (const { index, code, reason } of closed) {
-      peers[index].socket.close(code, reason);
+      closeSocket(peers[index].socket, code, reason);
     }
 
-    await this.schedule(peers.filter((_, index) => !closed.some((entry) => entry.index === index)));
+    await this.schedule(this.peers());
   }
 
   /**
-   * Closes a leaving peer's socket and every other peer's.
+   * Closes a leaving peer's socket and every other peer's, which ends the room, once.
    *
    * @param {WebSocket} socket The leaving peer's socket.
+   * @param {number} [code] The leaving peer's close code.
+   * @param {string} [reason] The leaving peer's close reason.
    */
-  leave(socket) {
-    try {
-      socket.close(CLOSE.normal, "closed");
-    } catch {
-      // The socket is closed already, which is all this wants.
+  leave(socket, code = CLOSE.normal, reason = "closed") {
+    // A peer the relay closed already ended the room then, and a newer peer may sit in it since.
+    if (socket.deserializeAttachment()?.left) {
+      return;
     }
 
-    for (const other of this.peers()) {
-      if (other.socket !== socket) {
-        other.socket.close(CLOSE.peerLeft, "the other side left");
-      }
+    const others = this.peers().filter((other) => other.socket !== socket);
+    closeSocket(socket, code, reason);
+
+    for (const other of others) {
+      closeSocket(other.socket, CLOSE.peerLeft, "the other side left");
     }
   }
 
   /**
-   * Lists the peers in the room, with their records.
+   * Lists the peers in the room, with their records, leaving out those the relay closed.
    *
    * @returns {{socket: WebSocket, record: object}[]} The peers.
    */
   peers() {
     return this.ctx.getWebSockets()
       .map((socket) => ({ socket, record: socket.deserializeAttachment() }))
-      .filter((peer) => peer.record);
+      .filter((peer) => peer.record && !peer.record.left);
   }
 
   /**
@@ -533,16 +609,23 @@ export class World extends DurableObject {
       return json(200, {});
     }
 
-    const route = parseRoute(url);
-    const answer = await internal(directoryOf(this.env), "admit", { id: route.roomId, player: route.player, auth: route.auth });
+    const route = parseRoute(url, request.headers.get(PLAYER_HEADER));
+    const address = request.headers.get(ADDRESS_HEADER);
+    const answer = await internal(directoryOf(this.env), "admit", { id: route.roomId, player: route.player, auth: route.auth, address });
 
     if (answer.status !== 200) {
-      return new Response(answer.body.error, { status: answer.status });
+      return new Response(answer.body.error, { status: answer.status, headers: answer.body.code ? { [REFUSAL_HEADER]: answer.body.code } : {} });
     }
 
     if (!this.world) {
       this.world = route.roomId;
       await this.ctx.storage.put("world", route.roomId);
+    }
+
+    const earlier = this.peers();
+
+    for (const { index, code, reason } of replacedBy(earlier.map((peer) => peer.record), answer.player)) {
+      await this.leave(earlier[index].socket, code, reason, false);
     }
 
     // Seats are counted after the directory answered, since other games may have come meanwhile.
@@ -616,7 +699,8 @@ export class World extends DurableObject {
   }
 
   /**
-   * Closes the games whose connection lasted too long, and looks again at the next deadline.
+   * Closes the games whose connection lasted too long, looks again at the next deadline, and tells
+   * the directory who is left.
    */
   async alarm() {
     const peers = this.peers();
@@ -626,6 +710,7 @@ export class World extends DurableObject {
     }
 
     await this.schedule();
+    await this.report();
   }
 
   /**

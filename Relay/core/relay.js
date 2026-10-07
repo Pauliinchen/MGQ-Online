@@ -2,6 +2,9 @@
 //  relay.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-06: Closed a peer that waited alone too long whatever its role, not only a host
+//                            - Took a world room's player key from the X-MGQ-Player header too
+//                            - Added the rate limits per address, and the replacing of a player's earlier connection to a world room
 //      Paulinchen  2026-09-29: Took a world room's seats from the directory, and a game's player key, name and auth key from its request
 //                            - Added world rooms, which seat up to 32 games and pass each message to one or all of the others
 //                            - Created
@@ -75,8 +78,8 @@ export const LIMITS = Object.freeze({
   // Messages a peer may send per second over time, and at once after a quiet spell.
   messagesPerSecond: 60,
   burst: 240,
-  // How long a host may wait alone, and how long a room may last at all.
-  hostWaitMs: 30 * 60 * 1000,
+  // How long a peer may wait alone, and how long a room may last at all.
+  aloneWaitMs: 30 * 60 * 1000,
   roomLifetimeMs: 2 * 60 * 60 * 1000,
   // How long one connection to a world room may last. Games come and go there, so each connection
   // ends on its own, and the game connects again.
@@ -100,6 +103,85 @@ export const CLOSE = Object.freeze({
   removed: 4009,
   worldDeleted: 4010,
 });
+
+/**
+ * The close reason of a world room connection the same player opened anew from elsewhere, sent
+ * with CLOSE.removed, so released games stop instead of taking the seat back.
+ */
+export const REPLACED = "replaced";
+
+/**
+ * The request header that carries a player's key, so it stays out of addresses, which logs keep.
+ */
+export const PLAYER_HEADER = "X-MGQ-Player";
+
+/**
+ * The response header that names why the relay turned a game away from a world room, since a
+ * refused WebSocket hands its client the status and headers only.
+ */
+export const REFUSAL_HEADER = "X-MGQ-Refusal";
+
+/**
+ * How often one address may do something: `burst` at once, then one more every `refillMs`.
+ */
+export const RATE_LIMITS = Object.freeze({
+  // Entering rooms and world rooms; games connect again after every break.
+  joins: Object.freeze({ burst: 30, refillMs: 2 * 1000 }),
+  // Making worlds, ten an hour.
+  creates: Object.freeze({ burst: 5, refillMs: 6 * 60 * 1000 }),
+  // Uploading starting saves, ten an hour.
+  starts: Object.freeze({ burst: 5, refillMs: 6 * 60 * 1000 }),
+});
+
+/**
+ * Counts what each address does against a rate limit, in memory.
+ */
+export class RateLimiter {
+  /**
+   * Creates the limiter.
+   *
+   * @param {{burst: number, refillMs: number}} limit The rate limit.
+   * @param {() => number} [clock] The clock, which tests change.
+   * @param {number} [maxAddresses] Most addresses remembered; the least recent ones are forgotten first.
+   */
+  constructor(limit, clock = Date.now, maxAddresses = 10_000) {
+    this.limit = limit;
+    this.clock = clock;
+    this.maxAddresses = maxAddresses;
+    this.buckets = new Map();
+  }
+
+  /**
+   * Takes one turn for an address, if it has one left.
+   *
+   * @param {string | null | undefined} address The address; without one nothing is limited.
+   * @returns {boolean} Whether the address may go on.
+   */
+  take(address) {
+    if (!address) {
+      return true;
+    }
+
+    const now = this.clock();
+    const bucket = this.buckets.get(address);
+    const turns = bucket ? Math.min(this.limit.burst, bucket.turns + (now - bucket.at) / this.limit.refillMs) : this.limit.burst;
+    const allowed = turns >= 1;
+
+    // Taken out and put back, so the map keeps the least recent addresses in front.
+    this.buckets.delete(address);
+    this.buckets.set(address, { turns: allowed ? turns - 1 : turns, at: now });
+
+    for (const oldest of this.buckets.keys()) {
+      if (this.buckets.size <= this.maxAddresses) {
+        break;
+      }
+
+      this.buckets.delete(oldest);
+    }
+
+    return allowed;
+  }
+}
 
 /**
  * A room id, 32 lowercase hexadecimal characters: the start of a hash the client made from its
@@ -126,10 +208,11 @@ const MAX_PLAYER_NAME = 32;
  * Reads the room a request asks for: a room with its role, or a world room with the player's key,
  * name and auth key.
  *
- * @param {URL} url The request's address, such as /v1/room/<room id>?role=host or /v1/world/<world id>?player=…&name=…&auth=….
+ * @param {URL} url The request's address, such as /v1/room/<room id>?role=host or /v1/world/<world id>?name=…&auth=….
+ * @param {string | null} [playerHeader] The PLAYER_HEADER of the request, which wins over the address's `player`, which released games send.
  * @returns {{kind: "room", roomId: string, role: string} | {kind: "world", roomId: string, player: string, name: string, auth: string} | {error: string}} The room, or why the request is refused.
  */
-export function parseRoute(url) {
+export function parseRoute(url, playerHeader = null) {
   const parts = url.pathname.split("/").filter((part) => part.length > 0);
 
   if (parts.length !== 3 || parts[0] !== VERSION || (parts[1] !== "room" && parts[1] !== "world")) {
@@ -141,7 +224,7 @@ export function parseRoute(url) {
   }
 
   if (parts[1] === "world") {
-    const player = url.searchParams.get("player") ?? "";
+    const player = playerHeader || (url.searchParams.get("player") ?? "");
     const auth = url.searchParams.get("auth") ?? "";
     const name = (url.searchParams.get("name") ?? "").replace(/[\u0000-\u001f\u007f]/g, "").trim();
 
@@ -212,8 +295,8 @@ export function takeMessage(peer, bytes, now, limits = LIMITS) {
 }
 
 /**
- * Finds the peers whose time is up: a host that waited alone too long, or everyone in a room that
- * lasted too long.
+ * Finds the peers whose time is up: a host or guest that waited alone too long, or everyone in a
+ * room that lasted too long.
  *
  * @param {{role: string, joinedAt: number}[]} peers The records of the peers in the room.
  * @param {number} now The current time in milliseconds.
@@ -231,7 +314,7 @@ export function overdue(peers, now, limits = LIMITS) {
     return peers.map((_, index) => ({ index, code: CLOSE.roomExpired, reason: "the room lasted too long" }));
   }
 
-  if (peers.length === 1 && peers[0].role === "host" && now - peers[0].joinedAt >= limits.hostWaitMs) {
+  if (peers.length === 1 && now - peers[0].joinedAt >= limits.aloneWaitMs) {
     return [{ index: 0, code: CLOSE.waitedTooLong, reason: "nobody joined in time" }];
   }
 
@@ -252,7 +335,21 @@ export function nextDeadline(peers, limits = LIMITS) {
 
   const roomEnds = Math.min(...peers.map((peer) => peer.joinedAt)) + limits.roomLifetimeMs;
 
-  return peers.length === 1 && peers[0].role === "host" ? Math.min(roomEnds, peers[0].joinedAt + limits.hostWaitMs) : roomEnds;
+  return peers.length === 1 ? Math.min(roomEnds, peers[0].joinedAt + limits.aloneWaitMs) : roomEnds;
+}
+
+/**
+ * Finds the earlier connections of a player who enters a world room again, which the new one replaces.
+ *
+ * @param {{player: string}[]} peers The records of the games in the room.
+ * @param {string} player The entering player's id.
+ * @returns {{index: number, code: number, reason: string}[]} The games to close, by their place in peers.
+ */
+export function replacedBy(peers, player) {
+  return peers
+    .map((peer, index) => ({ index, same: peer.player === player }))
+    .filter((entry) => entry.same)
+    .map(({ index }) => ({ index, code: CLOSE.removed, reason: REPLACED }));
 }
 
 /**

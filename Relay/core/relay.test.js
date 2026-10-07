@@ -2,6 +2,7 @@
 //  relay.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-06: Covered a guest waiting alone, the player key header, the rate limiter and replaced connections
 //      Paulinchen  2026-09-29: Read a world room's player key, name and auth key instead of its seats
 //                            - Tested world rooms: seats, routing and each connection's lifetime
 //      Paulinchen  2026-09-29: Created
@@ -11,8 +12,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  CLOSE, EVERYONE, IN, LIMITS, admit, newPeer, newWorldPeer, nextDeadline, nextWorldDeadline, overdue, parseRoute, presenceOf,
-  routeWorldMessage, seatChangeText, seatText, takeMessage, takeSeat, worldOverdue,
+  CLOSE, EVERYONE, IN, LIMITS, REPLACED, RateLimiter, admit, newPeer, newWorldPeer, nextDeadline, nextWorldDeadline, overdue, parseRoute, presenceOf,
+  replacedBy, routeWorldMessage, seatChangeText, seatText, takeMessage, takeSeat, worldOverdue,
 } from "./relay.js";
 
 /**
@@ -101,7 +102,7 @@ test("takeMessage allows a burst, then refuses until the allowance refills", () 
 
 test("overdue closes a host that waited alone too long, but not one with a guest", () => {
   const host = newPeer("host", T0);
-  const later = T0 + LIMITS.hostWaitMs;
+  const later = T0 + LIMITS.aloneWaitMs;
 
   assert.deepEqual(overdue([host], later - 1), []);
   assert.equal(overdue([host], later)[0].code, CLOSE.waitedTooLong);
@@ -117,7 +118,7 @@ test("overdue closes everyone once the room lasted too long", () => {
 
 test("nextDeadline names the host's wait while alone, the room's end once paired", () => {
   assert.equal(nextDeadline([]), null);
-  assert.equal(nextDeadline([newPeer("host", T0)]), T0 + LIMITS.hostWaitMs);
+  assert.equal(nextDeadline([newPeer("host", T0)]), T0 + LIMITS.aloneWaitMs);
   assert.equal(nextDeadline([newPeer("host", T0), newPeer("guest", T0 + 1000)]), T0 + LIMITS.roomLifetimeMs);
 });
 
@@ -168,4 +169,43 @@ test("worldOverdue closes each connection on its own once it lasted too long", (
 test("nextWorldDeadline names the oldest connection's end", () => {
   assert.equal(nextWorldDeadline([]), null);
   assert.equal(nextWorldDeadline([newWorldPeer(1, WHO, T0 + 5000), newWorldPeer(0, WHO, T0)]), T0 + LIMITS.worldConnectionMs);
+});
+
+test("overdue closes a guest that waited alone too long too", () => {
+  const guest = newPeer("guest", T0);
+
+  assert.equal(overdue([guest], T0 + LIMITS.aloneWaitMs)[0].code, CLOSE.waitedTooLong);
+  assert.equal(nextDeadline([guest]), T0 + LIMITS.aloneWaitMs);
+});
+
+test("parseRoute takes a world room's player key from the header before the address", () => {
+  const route = parseRoute(new URL(`https://relay.test/v1/world/${ROOM}?name=Luka&auth=${AUTH}`), KEY);
+  assert.equal(route.player, KEY);
+
+  const other = "0f".repeat(16);
+  assert.equal(parseRoute(new URL(`https://relay.test/v1/world/${ROOM}?player=${other}&name=Luka&auth=${AUTH}`), KEY).player, KEY);
+  assert.equal(parseRoute(new URL(`https://relay.test/v1/world/${ROOM}?player=${other}&name=Luka&auth=${AUTH}`)).player, other);
+  assert.ok("error" in parseRoute(new URL(`https://relay.test/v1/world/${ROOM}?name=Luka&auth=${AUTH}`), "nope"));
+});
+
+test("RateLimiter lets each address go on a burst, then once per refill, and forgets the least recent addresses", () => {
+  let now = T0;
+  const limiter = new RateLimiter({ burst: 2, refillMs: 1000 }, () => now, 2);
+
+  assert.deepEqual([limiter.take("a"), limiter.take("a"), limiter.take("a")], [true, true, false]);
+  assert.equal(limiter.take("b"), true);
+  assert.equal(limiter.take(null), true);
+
+  now += 1000;
+  assert.deepEqual([limiter.take("a"), limiter.take("a")], [true, false]);
+
+  limiter.take("c");
+  assert.deepEqual([...limiter.buckets.keys()], ["a", "c"]);
+});
+
+test("replacedBy names a player's earlier connections to a world room", () => {
+  const peers = [newWorldPeer(0, WHO, T0), newWorldPeer(1, { player: "22".repeat(16), name: "Other" }, T0)];
+
+  assert.deepEqual(replacedBy(peers, WHO.player), [{ index: 0, code: CLOSE.removed, reason: REPLACED }]);
+  assert.deepEqual(replacedBy(peers, "33".repeat(16)), []);
 });

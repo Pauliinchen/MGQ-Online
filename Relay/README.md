@@ -30,21 +30,21 @@ A **room** pairs two games for a PvP battle. A **world room** seats up to 32 gam
 - **Connect:** `wss://<relay>/v1/room/<room id>?role=host` or `?role=guest`. The room id is 32 lowercase hexadecimal characters, the start of a hash of the join code's token.
 - **Pairing:** one host and one guest per room. Another peer of a taken role is refused with HTTP 409 before its WebSocket opens.
 - **Messages:** binary messages go to the other peer unchanged. Once both are in, the relay sends each the text `paired`.
-- **Limits:** a host waits alone at most 30 minutes, a room lasts at most 2 hours.
+- **Limits:** a peer waits alone at most 30 minutes, a room lasts at most 2 hours. A peer the relay closes leaves the room at once, which ends it for the other peer too.
 
 ### World directory
 
-Plain HTTP with JSON bodies. A world's id is 32 lowercase hexadecimal characters, the start of a hash of its token.
+Plain HTTP with JSON bodies of up to 32 KB. A world's id is 32 lowercase hexadecimal characters, the start of a hash of its token. A request names its player by the key in the header `X-MGQ-Player`, which wins over the `player` of its body or address, which released games send; a key in an address ends up in logs. A refusal's body holds `error` and, where the games tell reasons apart, `code`: `removed`, `members` (the world has as many players as it may, 200), `pending`, `rate` or `storage`.
 
 | Request | What it does |
 |---|---|
 | `GET /v1/worlds?player=<key>&ids=<id>,<id>` | Lists every public world, and the hidden ones the player of `player` joined or `ids` names (up to 50 ids, which the worlds' creators hand out; without `player` and `ids`, public ones only), or every world for an admin. Answers `worlds`, each with the listed fields below, and `admin`, true for an admin. |
-| `POST /v1/worlds` | Makes a world from the fields sent on create below. 201, or 409 when the id is taken, 429 past 20 worlds per creator, a limit admins do not have, or past 2000 worlds in all. |
+| `POST /v1/worlds` | Makes a world from the fields sent on create below. 201, or 409 when the id is taken, 429 past 20 worlds per creator, a limit admins do not have, 503 past 2000 worlds in all, and 429 with `code` `rate` past 5 worlds at once and 10 an hour from one address. A world whose starting save has not come 10 minutes after it was made is deleted. |
 | `GET /v1/worlds/<id>/lock` | Hands out the world's `lock` (`salt`, `iterations`, `box`), which only the password opens, with its `name`, `seats`, `start` and `choose`, so a hidden world is entered by its id. |
-| `POST /v1/worlds/<id>/edit` | Changes whichever of `seats`, `description`, `mods` and `settings` the body names, if `player` is the creator's or an admin's key, and replaces `data`, the creator's game data, and `modHashes`, if it is the creator's. Everything else of a world stays as it was made. |
+| `POST /v1/worlds/<id>/edit` | Changes whichever of `seats`, `description`, `mods` and `settings` (400 past 2000 characters) the body names, if `player` is the creator's or an admin's key, and replaces `data`, the creator's game data, and `modHashes`, if it is the creator's. Everything else of a world stays as it was made. |
 | `POST /v1/worlds/<id>/delete` | Deletes the world, if `player` is the creator's or an admin's key, and closes its world room. |
 | `POST /v1/worlds/<id>/ban` | Removes the player whose id is `target` and keeps them out, if `player` is the creator's key. |
-| `POST /v1/worlds/<id>/start?player=<key>` | Keeps the world's starting save, the body as bytes (at most 8 MB), if `player` is the creator's key and the world was made with `start: true`. Only once: 409 afterwards. |
+| `POST /v1/worlds/<id>/start?player=<key>` | Keeps the world's starting save, the body as bytes (at most 8 MB), if `player` is the creator's key and the world was made with `start: true`. Only once: 409 afterwards. 413 past 8 MB, 507 with `code` `storage` once all starting saves together would pass 1 GB, and 429 with `code` `rate` past 5 uploads at once and 10 an hour from one address. |
 | `GET /v1/worlds/<id>/start?player=<key>&auth=<auth key>` | Hands out the starting save as bytes, to a game the world room would let in. 404 when the world has none. |
 
 A world's fields, as `POST /v1/worlds` takes them and `GET /v1/worlds` lists them:
@@ -67,8 +67,8 @@ A world's fields, as `POST /v1/worlds` takes them and `GET /v1/worlds` lists the
 | `mods` | optional | yes | The mods it needs, up to 300 characters. |
 | `data` | optional | yes | What tells the creator's game data from another's; the relay only keeps it. |
 | `strict` | optional | yes | Only games with the same data may enter, which the games check themselves. |
-| `modHashes` | optional | yes | The creator's hashes of required mods outside the mod catalog: `name=hash` pairs separated by semicolons, up to 2000 characters. |
-| `settings` | optional | yes | The creator's settings of the mods it names: `key=type:value` pairs separated by semicolons, up to 2000 characters. |
+| `modHashes` | optional | yes | The creator's hashes of required mods outside the mod catalog: `name=hash` pairs separated by semicolons, names of up to 100 characters, up to 2000 characters in all. |
+| `settings` | optional | yes | The creator's settings of the mods it names: `key=type:value` pairs separated by semicolons, up to 2000 characters; longer ones are refused, never cut. |
 | `online`, `created`, `active` | | yes | How many players are in the world now, when it was made, when someone was last in it. |
 | `members` | | yes | Every player who joined: `id`, `name`, `online`, `seen` (when last in the world). |
 
@@ -82,7 +82,7 @@ The mods a world may require and games may download. Only admins add them: a sin
 
 | Request | What it does |
 |---|---|
-| `GET /v1/mods?player=<key>` | Lists the mods: `mods`, each with `key` (the name in lower case without `.rb`, spaces, underscores and hyphens), `name`, `kind` (`link` or `upload`), `version`, `files` (each file's hash by its name, for an upload by its path inside `Patch`), `versions` (up to 20 earlier `version` and `files`, newest first) and `fileUrl` (a link mod's release file), `archive` (true when that file is a zip, whose files go to their paths inside `Patch`), `options` (the Mod Config options an admin's game sent, see below) and `optionsVersion` (the version they came from, empty before any arrived); for an admin also `link`, `size`, `checked` and `error` (why the last check failed, the last good version kept); and `admin`. |
+| `GET /v1/mods?player=<key>` | Lists the mods: `mods`, each with `key` (the name in lower case without `.rb`, spaces, underscores and hyphens), `name`, `kind` (`link` or `upload`), `version`, `files` (each file's hash by its name, for an upload by its path inside `Patch`), `versions` (up to 20 earlier `version` and `files`, newest first) and `fileUrl` (a link mod's release file), `archive` (true when that file is a zip, whose files go to their paths inside `Patch`), `options` (the Mod Config options an admin's game sent, see below) and `optionsVersion` (the version they came from, empty before any arrived); for an admin also `link`, `size`, `checked` and `error` (why the last check failed, the last good version kept); and `admin`. A link never read successfully (no version, no files) is listed for admins only. In every `<key>` below the key is percent-encoded, and a JSON body longer than its route takes (8 KB, the options 64 KB) is answered with 413. |
 | `POST /v1/mods` | Adds a link mod or changes its link: `player` (an admin's key), `name`, `link`. Checks it at once and answers the `mod`. |
 | `POST /v1/mods/check` | Checks every link mod now, if `player` is an admin's key, and answers the list. |
 | `POST /v1/mods/<key>/upload?player=<key>&name=<name>&version=<version>` | Keeps a mod of several files, if `player` is an admin's key. The body: one `path<TAB>hash` line per file (paths inside `Patch`, at most 100), an empty line, then the zip; at most 16 MB. |
@@ -106,16 +106,16 @@ Committed trades nobody finished are dropped after 30 days, cancelled ones after
 
 ### World rooms
 
-- **Connect:** `wss://<relay>/v1/world/<world id>?player=<key>&name=<name>&auth=<auth key>`. The relay lets the game in only if the world is in the directory, the SHA-256 of the auth key is the world's `authHash`, and the creator has not removed the player: otherwise HTTP 404, 401 or 403 before the WebSocket opens, and HTTP 409 while the creator is still uploading the starting save. The world's seats come from the directory; once every one is taken, the next game gets HTTP 409. After every change the room tells the directory who is in it.
+- **Connect:** `wss://<relay>/v1/world/<world id>?name=<name>&auth=<auth key>`, with the player's key in the header `X-MGQ-Player` (released games send it as `player=<key>` in the address instead). The relay lets the game in only if the world is in the directory, the SHA-256 of the auth key is the world's `authHash`, and the creator has not removed the player: otherwise HTTP 404, 401 or 403 before the WebSocket opens, and HTTP 409 while the creator is still uploading the starting save. A 403 or 409 names why in the response header `X-MGQ-Refusal`, with the codes of the directory. Entering rooms and world rooms is limited per address, 30 at once and one more every 2 seconds (HTTP 429). When a player enters a world room again, the relay closes the player's earlier connection with 4009 and the reason `replaced`. The world's seats come from the directory; once every one is taken, the next game gets HTTP 409. After every change the room tells the directory who is in it.
 - **Seats:** a game takes the lowest free seat, from 0. It is told `seat <own> <others…>`, the seats already taken in ascending order, such as `seat 2 0 1`. The others are told `in <seat>`, and `out <seat>` once it leaves.
 - **Messages:** a game sends a binary message as its target seat, or 255 for everyone, followed by the payload. The relay passes it on with the sender's seat in place of the target, so the receiver knows who sent it. A message for a free seat is dropped.
 - **Limits:** each connection lasts at most 2 hours on its own; the game then connects again.
 
 ### Both
 
-- The text `ping` is answered with `pong`, for keeping an idle connection open; any other text closes the connection.
+- The text `ping` is answered with `pong`, for keeping an idle connection open; any other text closes the connection. On Node a `ping` counts against the message limits; Cloudflare answers it without waking the room, so there it does not.
 - At most 512 KB per message and 60 messages per second over time (bursts of 240), per connection.
-- **Close codes:** 4000 bad request, 4001 role taken, 4002 message too large, 4003 too many messages, 4004 nobody joined in time, 4005 the room lasted too long, 4006 the other side left, 4007 the world is full, 4008 the connection lasted too long, 4009 the creator removed the player, 4010 the world was deleted.
+- **Close codes:** 4000 bad request, 4001 role taken, 4002 message too large, 4003 too many messages, 4004 nobody joined in time, 4005 the room lasted too long, 4006 the other side left, 4007 the world is full, 4008 the connection lasted too long, 4009 the creator removed the player, or the player entered from elsewhere (reason `replaced`), 4010 the world was deleted.
 
 ## Tests
 
@@ -139,7 +139,7 @@ The relay runs on the free Workers plan at `relay.mgqmp.workers.dev`. Past the f
 
 1. On the server, install Node.js 22 or later and [Caddy](https://caddyserver.com), and point a domain at the server.
 2. Copy `core/`, `node/`, `package.json` and `package-lock.json`, then run `npm install --omit=dev` and start `node node/server.js`, for example as a systemd service. It listens on `127.0.0.1:8080` (`HOST` and `PORT` change that).
-3. Have Caddy fetch the certificate and pass WebSockets on, with a `Caddyfile` like:
+3. Have Caddy fetch the certificate and pass WebSockets on, with a `Caddyfile` like the one below. The relay counts its rate limits by the address Caddy appends to `X-Forwarded-For` last, for requests from this machine only.
 
    ```
    relay.example.org {

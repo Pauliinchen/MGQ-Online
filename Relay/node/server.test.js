@@ -2,7 +2,8 @@
 //  server.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-06: Tested a trade between two players of a world over HTTP
+//      Paulinchen  2026-10-06: Tested a guest waiting alone, counted keep-alives, a room ended by the relay, a replaced world connection, the player key header, named refusals, the rate limits and a body over the limit
+//                            - Tested a trade between two players of a world over HTTP
 //      Paulinchen  2026-10-04: Expected the lock without the mods, the game data and the rule for it again
 //                            - Expected the lock to name the mods a world needs, its creator's game data and whether only games with the same data may enter
 //      Paulinchen  2026-10-02: Expected the lock to say whether new players choose where to start
@@ -17,9 +18,10 @@
 
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
-import { playerIdOf, sha256Hex } from "../core/directory.js";
-import { CLOSE, EVERYONE, LIMITS, PAIRED, PONG } from "../core/relay.js";
-import { createRelay } from "./server.js";
+import WebSocketClient from "ws";
+import { DIRECTORY_LIMITS, Directory, playerIdOf, sha256Hex } from "../core/directory.js";
+import { CLOSE, EVERYONE, LIMITS, PAIRED, PING, PLAYER_HEADER, PONG, REFUSAL_HEADER, REPLACED } from "../core/relay.js";
+import { createRelay, memoryStore } from "./server.js";
 
 /**
  * The auth key the tests' games make from their worlds' tokens.
@@ -35,6 +37,16 @@ const CREATOR = "c0".repeat(16);
  * The limits the tests use: small messages, so the size check is quick to reach.
  */
 const TEST_LIMITS = { ...LIMITS, maxMessageBytes: 1024 };
+
+/**
+ * The rate limits the tests use: high enough for every test from the same address.
+ */
+const TEST_RATES = Object.fromEntries(["joins", "creates", "starts"].map((kind) => [kind, { burst: 10_000, refillMs: 1 }]));
+
+/**
+ * The directory limits the tests use: small starting saves, so a body over the limit is quick to send.
+ */
+const TEST_DIRECTORY_LIMITS = { ...DIRECTORY_LIMITS, maxStartBytes: 400_000 };
 
 /**
  * The time the relay under test sees, which tests move forward.
@@ -62,7 +74,8 @@ let worldBase;
 let directoryBase;
 
 before(async () => {
-  relay = createRelay({ limits: TEST_LIMITS, clock: () => now, checkEveryMs: 3_600_000 });
+  const directory = new Directory(memoryStore(), { clock: () => now, limits: TEST_DIRECTORY_LIMITS, rates: TEST_RATES });
+  relay = createRelay({ limits: TEST_LIMITS, clock: () => now, checkEveryMs: 3_600_000, directory });
   await new Promise((resolve) => relay.server.listen(0, "127.0.0.1", resolve));
   base = `ws://127.0.0.1:${relay.server.address().port}/v1/room/`;
   worldBase = `ws://127.0.0.1:${relay.server.address().port}/v1/world/`;
@@ -170,7 +183,7 @@ async function until(condition) {
  * Opens a WebSocket and collects what it receives.
  *
  * @param {string} address The address.
- * @returns {Promise<{socket: WebSocket, next: () => Promise<any>, closed: Promise<{code: number}>}>} The socket, its next message and its close.
+ * @returns {Promise<{socket: WebSocket, next: () => Promise<any>, closed: Promise<{code: number, reason: string}>}>} The socket, its next message and its close.
  */
 async function open(address) {
   const socket = new WebSocket(address);
@@ -179,7 +192,7 @@ async function open(address) {
   const waiting = [];
 
   socket.addEventListener("message", (event) => (waiting.length > 0 ? waiting.shift()(event.data) : inbox.push(event.data)));
-  const closed = new Promise((resolve) => socket.addEventListener("close", (event) => resolve({ code: event.code })));
+  const closed = new Promise((resolve) => socket.addEventListener("close", (event) => resolve({ code: event.code, reason: event.reason })));
 
   await new Promise((resolve, reject) => {
     socket.addEventListener("open", resolve, { once: true });
@@ -246,7 +259,7 @@ test("a message over the size limit closes its sender", async () => {
 test("a host that waited alone too long is closed", async () => {
   const host = await connect(roomId(6), "host");
 
-  now += TEST_LIMITS.hostWaitMs;
+  now += TEST_LIMITS.aloneWaitMs;
   relay.check();
   assert.equal((await host.closed).code, CLOSE.waitedTooLong);
 });
@@ -436,4 +449,140 @@ test("two players of a world commit a trade over HTTP, which each finds again un
 
   first.socket.close();
   second.socket.close();
+});
+
+/**
+ * Opens a WebSocket with the ws client, which sends headers, and tells how the relay answered.
+ *
+ * @param {string} address The address.
+ * @param {object} headers The request's headers.
+ * @returns {Promise<{socket?: WebSocketClient, first?: Promise<string>, status?: number, refusal?: string}>} The open socket with its first message, or the refusal's status and REFUSAL_HEADER.
+ */
+function openWithHeaders(address, headers) {
+  return new Promise((resolve) => {
+    const socket = new WebSocketClient(address, { headers });
+    const first = new Promise((received) => socket.once("message", (data) => received(data.toString())));
+
+    socket.on("open", () => resolve({ socket, first }));
+    socket.on("unexpected-response", (request, response) => {
+      resolve({ status: response.statusCode, refusal: response.headers[REFUSAL_HEADER.toLowerCase()] });
+      request.destroy();
+    });
+    socket.on("error", () => {});
+  });
+}
+
+test("a guest that waited alone too long is closed too", async () => {
+  const guest = await connect(roomId(7), "guest");
+
+  now += TEST_LIMITS.aloneWaitMs;
+  relay.check();
+  assert.equal((await guest.closed).code, CLOSE.waitedTooLong);
+});
+
+test("keep-alives count against the message allowance", async () => {
+  const host = await connect(roomId(8), "host");
+
+  for (let sent = 0; sent <= TEST_LIMITS.burst; sent++) {
+    host.socket.send(PING);
+  }
+
+  assert.equal((await host.closed).code, CLOSE.tooFast);
+});
+
+test("a room the relay ended takes new peers at once, whom the closed ones leave alone", async () => {
+  const host = await connect(roomId(9), "host");
+  const guest = await connect(roomId(9), "guest");
+  await host.next();
+  await guest.next();
+
+  host.socket.send(new Uint8Array(TEST_LIMITS.maxMessageBytes + 1));
+  const newHost = await connect(roomId(9), "host");
+  const newGuest = await connect(roomId(9), "guest");
+
+  assert.equal((await host.closed).code, CLOSE.tooLarge);
+  assert.equal((await guest.closed).code, CLOSE.peerLeft);
+  assert.equal(await newHost.next(), PAIRED);
+  newGuest.socket.send(new Uint8Array([3]));
+  await newGuest.next();
+  assert.deepEqual([...new Uint8Array(await newHost.next())], [3]);
+
+  newHost.socket.close();
+  newGuest.socket.close();
+});
+
+test("a player who enters a world room again replaces the earlier connection, which gives up its seat", async () => {
+  await makeWorld(roomId(112), 2);
+  const first = await sit(roomId(112), 31);
+  const other = await sit(roomId(112), 32);
+  assert.equal(await first.next(), "seat 0");
+  assert.equal(await other.next(), "seat 1 0");
+
+  const again = await sit(roomId(112), 31);
+  assert.deepEqual(await first.closed, { code: CLOSE.removed, reason: REPLACED });
+  assert.equal(await again.next(), "seat 0 1");
+  assert.equal(await other.next(), "out 0");
+  assert.equal(await other.next(), "in 0");
+  await until(async () => (await listed(roomId(112))).online === 2);
+
+  again.socket.close();
+  other.socket.close();
+});
+
+test("the player key may come in the X-MGQ-Player header, for the directory and the world rooms", async () => {
+  const room = roomId(113);
+  const created = await fetch(directoryBase, {
+    method: "POST",
+    headers: { [PLAYER_HEADER]: CREATOR },
+    body: JSON.stringify({ id: room, name: "Header World", seats: 2, playerName: "Creator", authHash: await sha256Hex(AUTH), lock: { salt: "12".repeat(16), iterations: 600_000, box: "ab".repeat(40) }, hidden: true }),
+  });
+  assert.equal(created.status, 201);
+
+  const hidden = async (headers) => (await (await fetch(directoryBase, { headers })).json()).worlds.some((world) => world.id === room);
+  assert.equal(await hidden({}), false);
+  assert.equal(await hidden({ [PLAYER_HEADER]: CREATOR }), true);
+
+  const game = await openWithHeaders(`${worldBase}${room}?name=Player%2042&auth=${AUTH}`, { [PLAYER_HEADER]: playerKey(42) });
+  assert.equal(await game.first, "seat 0");
+  await until(async () => (await (await fetch(directoryBase, { headers: { [PLAYER_HEADER]: CREATOR } })).json()).worlds.find((world) => world.id === room).online === 1);
+  game.socket.close();
+});
+
+test("a world room names why it turned a game away", async () => {
+  const room = roomId(114);
+  await makeWorld(room, 4);
+  await fetch(`${directoryBase}/${room}/ban`, { method: "POST", body: JSON.stringify({ player: CREATOR, target: await playerIdOf(playerKey(51)) }) });
+
+  assert.deepEqual(await openWithHeaders(`${worldBase}${room}?player=${playerKey(51)}&name=Banned&auth=${AUTH}`, {}), { status: 403, refusal: "removed" });
+});
+
+test("a starting save over the limit is refused with its status, not a cut connection", async () => {
+  const room = roomId(115);
+  const created = await fetch(directoryBase, {
+    method: "POST",
+    body: JSON.stringify({ id: room, name: "Big Save", seats: 2, player: CREATOR, playerName: "Creator", authHash: await sha256Hex(AUTH), lock: { salt: "12".repeat(16), iterations: 200_000, box: "ab".repeat(40) }, start: true }),
+  });
+  assert.equal(created.status, 201);
+
+  const uploaded = await fetch(`${directoryBase}/${room}/start`, { method: "POST", headers: { [PLAYER_HEADER]: CREATOR }, body: new Uint8Array(TEST_DIRECTORY_LIMITS.maxStartBytes + 100_000) });
+  assert.equal(uploaded.status, 413);
+});
+
+test("entering rooms and making worlds are limited per address", async () => {
+  const once = { burst: 1, refillMs: 3_600_000 };
+  const directory = new Directory(memoryStore(), { clock: () => now, rates: { joins: once, creates: once, starts: once } });
+  const limited = createRelay({ limits: TEST_LIMITS, clock: () => now, checkEveryMs: 3_600_000, directory });
+  await new Promise((resolve) => limited.server.listen(0, "127.0.0.1", resolve));
+  const port = limited.server.address().port;
+
+  const host = await open(`ws://127.0.0.1:${port}/v1/room/${roomId(10)}?role=host`);
+  assert.equal((await openWithHeaders(`ws://127.0.0.1:${port}/v1/room/${roomId(11)}?role=host`, {})).status, 429);
+
+  const world = (id) => JSON.stringify({ id, name: "Limited", seats: 2, player: CREATOR, playerName: "Creator", authHash: "ab".repeat(32), lock: { salt: "12".repeat(16), iterations: 200_000, box: "ab".repeat(40) } });
+  assert.equal((await fetch(`http://127.0.0.1:${port}/v1/worlds`, { method: "POST", body: world(roomId(116)) })).status, 201);
+  const refused = await fetch(`http://127.0.0.1:${port}/v1/worlds`, { method: "POST", body: world(roomId(117)) });
+  assert.deepEqual([refused.status, (await refused.json()).code], [429, "rate"]);
+
+  host.socket.close();
+  await limited.stop();
 });
