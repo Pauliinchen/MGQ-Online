@@ -2,7 +2,8 @@
 #  ui_notices.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-07: Took the box's depth from MGQ_MpUi
+#      Paulinchen  2026-10-07: Kept an accepted invite away while it stands, as a declined one, so a second press no longer accepts it again
+#                            - Took the box's depth from MGQ_MpUi
 #                            - Logged each message posted, dropped or run out, what the box shows whenever it changes, and each invite answered or key ignored with why
 #      Paulinchen  2026-10-06: Showed messages outside a world too, such as a Discord invite taken during a game, dropping only those shown in a world once it closes
 #      Paulinchen  2026-10-04: Renamed from mp_notices.rbx
@@ -36,7 +37,7 @@ module MGQ_MpNotices
   MESSAGE_COLOR = Color.new(220, 220, 220)
 
   @messages = []
-  @declined = {}
+  @answered = {}
   @logged = []
 
   extend MGQ_MpLog
@@ -75,9 +76,9 @@ module MGQ_MpNotices
   def self.notices(in_world = true)
     peers = in_world ? MGQ_MpOverworldSync::Peers.all.sort_by { |peer| peer.state["name"].to_s.downcase } : []
     invites = peers.map { |peer| MGQ_MpActions.offers.map { |offers| offers.notice_of(peer) } }.flatten.compact
-    # An invite the player declined stays away while it stands; a new one shows again.
-    @declined.delete_if { |key, mark| invites.none? { |invite| invite.key == key && invite.mark == mark } }
-    invites.reject! { |invite| @declined[invite.key] == invite.mark }
+    # An invite the player answered stays away while it stands; a new one shows again.
+    @answered.delete_if { |key, mark| invites.none? { |invite| invite.key == key && invite.mark == mark } }
+    invites.reject! { |invite| @answered[invite.key] == invite.mark }
     messages = @messages.reverse.map { |entry| MGQ_MpActions::Notice.new(entry[:key], entry[:text], MESSAGE_COLOR) }
     (invites + messages).first(MAX_ROWS)
   end
@@ -94,7 +95,7 @@ module MGQ_MpNotices
     gone = @messages.select { |entry| entry[:frames] <= 0 || (entry[:world] && !in_world) }
     gone.each { |entry| log("message #{entry[:frames] <= 0 ? 'ran out' : 'dropped, the world closed'}: #{MGQ_MpLog.short(entry[:text])}") }
     @messages -= gone
-    @declined.clear unless in_world
+    @answered.clear unless in_world
     list = shown? ? notices(in_world) : []
     answer = accept ? :take : decline ? :decline : nil
     list = notices(in_world) if answer && answerable?(list, answer) && answer_first(list, answer)
@@ -114,8 +115,9 @@ module MGQ_MpNotices
     !(scene.is_a?(Scene_Map) && MGQ_MpWorldOverview.open?)
   end
 
-  # Accepts or declines the first invite, which the box names with the keys. A declined one stays
-  # away while it stands.
+  # Accepts or declines the first invite, which the box names with the keys. Either way it stays
+  # away while it stands: the inviter's game shows it until it opens what was accepted, in which
+  # time a second accept turned the trade down as busy.
   #
   # @param list [Array<MGQ_MpActions::Notice>] The notifications shown.
   # @param answer [Symbol] :take to accept, :decline to decline.
@@ -128,7 +130,7 @@ module MGQ_MpNotices
     end
 
     answer == :take ? Sound.play_ok : Sound.play_cancel
-    @declined[invite.key] = invite.mark if answer == :decline
+    @answered[invite.key] = invite.mark
     log("#{answer == :take ? 'accepted' : 'declined'} the first invite (#{invite.key.inspect}): #{MGQ_MpLog.short(invite.text)}")
     invite[answer].call
     true
