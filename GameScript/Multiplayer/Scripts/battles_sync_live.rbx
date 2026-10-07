@@ -2,7 +2,8 @@
 #  battles_sync_live.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-07: Let a battle message outside a fiber move on at once instead of failing, as the other waits do
+#      Paulinchen  2026-10-07: Left a command phase an earlier battle ended in out of the log as the next battle begins
+#                            - Let a battle message outside a fiber move on at once instead of failing, as the other waits do
 #                            - Logged the live battle's start, its command phases, the commands sent, escapes, leaving and its end, with the reasons
 #                            - Left out the commands a guest sent before leaving the battle
 #      Paulinchen  2026-10-06: Asked a scene directly whether it changes, since the game makes that public
@@ -372,7 +373,7 @@ module MGQ_MpBattlesSync
     # @param scene [Scene_Battle] The battle.
     # @return [Boolean] Whether the battle starts, false when it ended early.
     def self.host_start(scene)
-      close_phase
+      close_phase(true)
       formed = MGQ_MpBattlesSync.mode.host_start(scene)
       if formed == :own
         MGQ_MpBattlesSync.log("nobody joined: the battle is the host's own, not live")
@@ -591,8 +592,11 @@ module MGQ_MpBattlesSync
     end
 
     # As host, closes the command phase, as the turn starts or the battle begins.
-    def self.close_phase
-      if @phase_open
+    #
+    # @param quietly [Boolean] Whether the log leaves it out, as for a phase an earlier battle left
+    #   open when it ended during it.
+    def self.close_phase(quietly = false)
+      if @phase_open && !quietly
         MGQ_MpBattlesSync.log("command phase closed, turn #{MGQ_MpBattlesSync.turn + 1} starts" +
                               (MGQ_MpBattlesSync.solo? ? ", the computer playing for those who left" : ""))
       end
