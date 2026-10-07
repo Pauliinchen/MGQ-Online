@@ -2,6 +2,7 @@
 //  Exports.World.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-07: Added mp_world_say, which mirrors a chat line to the relay for the world's admins
 //      Paulinchen  2026-10-06: Wrote hexadecimal in lowercase at once
 //                            - Took the inbox entry mp_world_receive handed out, not whichever is oldest by then
 //                            - Added mp_world_directory_id, which tells the directory's id of a world by its code
@@ -209,9 +210,29 @@ internal static unsafe partial class Exports
     }
 
     /// <summary>
+    /// Mirrors a line of the world's chat to the relay, which keeps it for the world's admins and
+    /// passes it to no other game. Returns at once.
+    /// </summary>
+    /// <param name="text">The line, UTF-8 and null-terminated.</param>
+    /// <returns>1 when it goes out, 0 without a seat or for an empty line.</returns>
+    [UnmanagedCallersOnly(EntryPoint = "mp_world_say", CallConvs = [typeof(CallConvStdcall)])]
+    public static int WorldSay(byte* text)
+    {
+        try
+        {
+            return WorldSession.Current.Say(Text(text)) ? 1 : 0;
+        }
+        catch (Exception ex)
+        {
+            Log.Write($"mp_world_say failed: {ex}");
+            return 0;
+        }
+    }
+
+    /// <summary>
     /// Hands out the oldest entry of the world's inbox and takes it, unless the buffer is too small for it.
     /// </summary>
-    /// <param name="buffer">Receives the entry, UTF-8 and null-terminated: <c>kind</c> (seat, in, out, message) and <c>seat</c> headers, <c>others</c> for a seat entry, then a message's text.</param>
+    /// <param name="buffer">Receives the entry, UTF-8 and null-terminated: <c>kind</c> (seat, in, out, message, chat) and <c>seat</c> headers, <c>others</c> for a seat entry, <c>name</c> for a chat entry, then a message's or the chat line's text.</param>
     /// <param name="size">The size of the buffer in bytes.</param>
     /// <returns>The entry's length, or its length negated when the buffer is too small, 0 while none waits.</returns>
     [UnmanagedCallersOnly(EntryPoint = "mp_world_receive", CallConvs = [typeof(CallConvStdcall)])]

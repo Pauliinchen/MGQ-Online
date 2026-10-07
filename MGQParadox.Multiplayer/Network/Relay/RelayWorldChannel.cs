@@ -2,7 +2,8 @@
 //  RelayWorldChannel.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-07: Sent the world's auth key in the X-MGQ-Auth header instead of the address, and closed the WebSocket through the shared helper
+//      Paulinchen  2026-10-07: Sent any text frame, such as a chat line the relay keeps, not only the ping
+//                            - Sent the world's auth key in the X-MGQ-Auth header instead of the address, and closed the WebSocket through the shared helper
 //      Paulinchen  2026-10-06: Sent the player's key in the X-MGQ-Player header instead of the address, and read the code a refusal names why with and the reason of a close
 //      Paulinchen  2026-09-29: Named the relay's answer to a ping, which times the round trip
 //                            - Entered with the player's key and name and the world's auth key, and told how the relay refused or closed
@@ -178,10 +179,17 @@ internal sealed class RelayWorldChannel : IDisposable
     /// Sends a ping, which the relay answers with <see cref="Pong"/>.
     /// </summary>
     /// <param name="timeout">How long sending may take.</param>
-    public void SendPing(TimeSpan timeout)
+    public void SendPing(TimeSpan timeout) => SendText(Ping, timeout);
+
+    /// <summary>
+    /// Sends a text frame, which the relay reads itself and passes to no other game.
+    /// </summary>
+    /// <param name="text">The text, such as a chat line for the world's chat at the relay.</param>
+    /// <param name="timeout">How long sending may take.</param>
+    public void SendText(string text, TimeSpan timeout)
     {
         using var cancel = new CancellationTokenSource(timeout);
-        _socket.SendAsync(Encoding.UTF8.GetBytes(Ping), WebSocketMessageType.Text, true, cancel.Token).GetAwaiter().GetResult();
+        _socket.SendAsync(Encoding.UTF8.GetBytes(text), WebSocketMessageType.Text, true, cancel.Token).GetAwaiter().GetResult();
     }
 
     /// <summary>

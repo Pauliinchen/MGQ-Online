@@ -2,7 +2,8 @@
 //  WorldSession.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-07: Logged entering and leaving, each connect with its refusal or close code and reason, the waits before each new try, the seats coming and going, each message sent or received, and the entries a full inbox dropped
+//      Paulinchen  2026-10-07: Mirrored the chat lines the game script says to the relay as text frames, and handed the lines the relay says for an admin to the game script as chat entries
+//                            - Logged entering and leaving, each connect with its refusal or close code and reason, the waits before each new try, the seats coming and going, each message sent or received, and the entries a full inbox dropped
 //                            - Left why every thread catches everything to Threads
 //      Paulinchen  2026-10-06: Started its threads through Threads and read who plays through Player.Current, both shared with the world's other parts
 //                            - Told a world with as many players as it may, a starting save still on its way, too many tries and an entry from another game apart from a removal or a full world
@@ -54,6 +55,17 @@ internal sealed class WorldSession
     /// The kind of an inbox entry that tells a game left its seat.
     /// </summary>
     public const string OutKind = "out";
+
+    /// <summary>
+    /// The kind of an inbox entry that carries a chat line the relay said for an admin, and the word
+    /// that starts the chat text frames both ways, as Relay/README.md names it.
+    /// </summary>
+    public const string ChatKind = "chat";
+
+    /// <summary>
+    /// Who said the line of a <see cref="ChatKind"/> entry.
+    /// </summary>
+    public const string NameHeader = "name";
 
     /// <summary>
     /// The kind of an inbox entry that carries another game's message.
@@ -375,6 +387,32 @@ internal sealed class WorldSession
     }
 
     /// <summary>
+    /// Mirrors a line of the world's chat to the relay, which keeps it for the world's admins and
+    /// passes it to no other game; the game script sends the line itself to the others.
+    /// </summary>
+    /// <param name="line">The line, on one line.</param>
+    /// <returns><see langword="false"/> without a seat or for an empty line.</returns>
+    public bool Say(string line)
+    {
+        var text = line.ReplaceLineEndings(" ").Trim();
+
+        if (text.Length == 0)
+        {
+            return false;
+        }
+
+        bool queued;
+
+        lock (_gate)
+        {
+            queued = _state == WorldState.Open && _connection != null && _connection.QueueText($"{ChatKind} {text}");
+        }
+
+        Log.Write(queued ? $"chat line mirrored to the relay, {text.Length} characters" : "chat line not mirrored: the world is not open");
+        return queued;
+    }
+
+    /// <summary>
     /// Looks at the oldest inbox entry, without taking it.
     /// </summary>
     /// <returns>The entry: <c>kind</c> and <c>seat</c> headers, <c>others</c> for a seat entry, and a message's text; or <see langword="null"/> while none waits.</returns>
@@ -586,16 +624,22 @@ internal sealed class WorldSession
     }
 
     /// <summary>
-    /// Follows what the relay says about the seats.
+    /// Follows what the relay says about the seats, and takes a chat line it says for an admin.
     /// </summary>
     /// <param name="generation">The open this belongs to.</param>
     /// <param name="connection">The connection.</param>
-    /// <param name="text">The text, such as <c>seat 2 0 1</c>, <c>in 3</c>, <c>out 0</c> or <c>pong</c>.</param>
+    /// <param name="text">The text, such as <c>seat 2 0 1</c>, <c>in 3</c>, <c>out 0</c>, <c>pong</c> or <c>chat Global</c>, a tab and the line.</param>
     private void TakeText(int generation, Connection connection, string text)
     {
         if (text == RelayWorldChannel.Pong)
         {
             connection.TakePong();
+            return;
+        }
+
+        if (text.StartsWith($"{ChatKind} ", StringComparison.Ordinal))
+        {
+            TakeChat(generation, connection, text[(ChatKind.Length + 1)..]);
             return;
         }
 
@@ -646,6 +690,37 @@ internal sealed class WorldSession
                     break;
             }
         }
+    }
+
+    /// <summary>
+    /// Hands a chat line the relay said for an admin to the game script.
+    /// </summary>
+    /// <param name="generation">The open this belongs to.</param>
+    /// <param name="connection">The connection.</param>
+    /// <param name="said">The sender's name, a tab and the line.</param>
+    private void TakeChat(int generation, Connection connection, string said)
+    {
+        var tab = said.IndexOf('\t', StringComparison.Ordinal);
+        var name = tab < 0 ? string.Empty : said[..tab].Trim();
+        var line = (tab < 0 ? said : said[(tab + 1)..]).Trim();
+
+        if (name.Length == 0 || line.Length == 0)
+        {
+            Log.Write("world room chat line ignored, it names nobody or says nothing");
+            return;
+        }
+
+        lock (_gate)
+        {
+            if (generation != _generation || connection != _connection)
+            {
+                return;
+            }
+
+            Enqueue(new Message([new(Message.Kind, ChatKind), new(NameHeader, name)], line).Encode());
+        }
+
+        Log.Write($"world room chat line from {name}, {line.Length} characters");
     }
 
     /// <summary>
@@ -844,15 +919,24 @@ internal sealed class WorldSession
     }
 
     /// <summary>
+    /// Something the writer sends: a frame for a seat, or a text frame for the relay itself.
+    /// </summary>
+    /// <param name="Target">The frame's target seat, or <see cref="RelayWorldChannel.Everyone"/>.</param>
+    /// <param name="Plain">The frame's text, not yet encrypted; <see langword="null"/> for a text frame.</param>
+    /// <param name="Text">The text frame; <see langword="null"/> for a frame.</param>
+    private sealed record Outgoing(int Target, byte[]? Plain, string? Text);
+
+    /// <summary>
     /// One connection to the world room: its channel, its cipher and the writer that sends the game
     /// script's messages and keeps the connection alive.
     /// </summary>
     private sealed class Connection
     {
         /// <summary>
-        /// The frames waiting for the writer, not yet encrypted, with their target seats.
+        /// What waits for the writer: frames, not yet encrypted, with their target seats, and text
+        /// frames for the relay itself.
         /// </summary>
-        private readonly BlockingCollection<(int Target, byte[] Plain)> _outbox = new();
+        private readonly BlockingCollection<Outgoing> _outbox = new();
 
         /// <summary>
         /// How often the writer pings the relay.
@@ -931,11 +1015,25 @@ internal sealed class WorldSession
         /// <param name="target">The target seat, or <see cref="RelayWorldChannel.Everyone"/>.</param>
         /// <param name="plain">The frame's text.</param>
         /// <returns><see langword="false"/> once the connection stopped.</returns>
-        public bool Queue(int target, byte[] plain)
+        public bool Queue(int target, byte[] plain) => Queue(new Outgoing(target, plain, null));
+
+        /// <summary>
+        /// Queues a text frame for the writer, which the relay reads itself.
+        /// </summary>
+        /// <param name="text">The text.</param>
+        /// <returns><see langword="false"/> once the connection stopped.</returns>
+        public bool QueueText(string text) => Queue(new Outgoing(0, null, text));
+
+        /// <summary>
+        /// Queues something for the writer.
+        /// </summary>
+        /// <param name="outgoing">The frame or text.</param>
+        /// <returns><see langword="false"/> once the connection stopped.</returns>
+        private bool Queue(Outgoing outgoing)
         {
             try
             {
-                return _outbox.TryAdd((target, plain));
+                return _outbox.TryAdd(outgoing);
             }
             catch (InvalidOperationException)
             {
@@ -977,9 +1075,16 @@ internal sealed class WorldSession
 
                     if (wait > TimeSpan.Zero)
                     {
-                        if (_outbox.TryTake(out var frame, wait))
+                        if (_outbox.TryTake(out var outgoing, wait))
                         {
-                            Channel.Send(frame.Target, Cipher.Seal(Seat, frame.Target, frame.Plain), SendTimeout);
+                            if (outgoing.Text != null)
+                            {
+                                Channel.SendText(outgoing.Text, SendTimeout);
+                            }
+                            else
+                            {
+                                Channel.Send(outgoing.Target, Cipher.Seal(Seat, outgoing.Target, outgoing.Plain!), SendTimeout);
+                            }
                         }
 
                         continue;

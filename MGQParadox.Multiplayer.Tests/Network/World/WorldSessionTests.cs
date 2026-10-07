@@ -2,6 +2,7 @@
 //  WorldSessionTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-07: Covered a chat line mirrored to the relay and an admin's line handed to the game script
 //      Paulinchen  2026-10-06: Covered a player entering the same world from another game, and took the entry the inbox handed out
 //      Paulinchen  2026-10-02: Made the test world with every player starting alike
 //      Paulinchen  2026-09-30: Made the test world without a starting save, public
@@ -317,6 +318,40 @@ public sealed class WorldSessionTests
 
         Assert.False(session.Open(NewCode(4)));
         Assert.Contains("who plays", Message.Decode(session.Describe())["error"]);
+    }
+
+    /// <summary>
+    /// Asserts that a chat line the game script says reaches the relay as text, on one line, and
+    /// that a line the relay says for an admin reaches the game script as a chat entry.
+    /// </summary>
+    [Fact]
+    public void Chat_IsMirroredToTheRelayAndAnAdminsLineReachesTheGame()
+    {
+        using var relay = new TestRelay();
+        var code = MakeWorld(relay, 4);
+        var session = NewSession(relay.Address);
+
+        session.Open(code);
+        AwaitState(session, "open");
+        Drain(session);
+
+        Assert.False(session.Say(" \n "));
+        Assert.True(session.Say(" hello\neveryone "));
+        var deadline = DateTime.UtcNow + Patience;
+
+        while (DateTime.UtcNow < deadline && relay.ChatLines.Count == 0)
+        {
+            Thread.Sleep(20);
+        }
+
+        Assert.Equal("hello everyone", Assert.Single(relay.ChatLines).Text);
+
+        relay.Say(Relays.WorldRoomOf(WorldCode.Parse(code)!.Token), "Global", "welcome");
+        var said = NextEntry(session, kind: "chat");
+        Assert.Equal(("Global", "welcome"), (said[WorldSession.NameHeader], said.Team));
+
+        session.Close();
+        Assert.False(session.Say("gone"));
     }
 
     /// <summary>

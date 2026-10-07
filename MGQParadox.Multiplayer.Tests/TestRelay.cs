@@ -2,7 +2,8 @@
 //  TestRelay.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-07: Took the world's auth key from the X-MGQ-Auth header too, for the starting save as well
+//      Paulinchen  2026-10-07: Kept the chat lines games mirror as text frames, and said an admin's line to every game of a world room
+//                            - Took the world's auth key from the X-MGQ-Auth header too, for the starting save as well
 //      Paulinchen  2026-10-06: Took the player's key from the X-MGQ-Player header too, for the trades as well, and closed a player's earlier world room connection with 4009 "replaced" once the same player entered again
 //                            - Closed every room's peers with a close code on request
 //                            - Refereed trades between two players of a world, committed once both sent the same hash
@@ -180,6 +181,32 @@ internal sealed class TestRelay : IDisposable
             {
                 return _worlds.Values.Sum(seats => seats.Values.Count(peer => peer != null));
             }
+        }
+    }
+
+    /// <summary>
+    /// The chat lines games mirrored as text frames, each with the sender's player id.
+    /// </summary>
+    public List<(string Player, string Text)> ChatLines { get; } = [];
+
+    /// <summary>
+    /// Says a chat line to every game of a world room, as the relay does for an admin.
+    /// </summary>
+    /// <param name="roomId">The world.</param>
+    /// <param name="name">The admin's name.</param>
+    /// <param name="text">The line.</param>
+    public void Say(string roomId, string name, string text)
+    {
+        Peer[] peers;
+
+        lock (_gate)
+        {
+            peers = _worlds.TryGetValue(roomId, out var seats) ? seats.Values.OfType<Peer>().ToArray() : [];
+        }
+
+        foreach (var peer in peers)
+        {
+            peer.SendAsync(Encoding.UTF8.GetBytes($"chat {name}\t{text}"), WebSocketMessageType.Text).GetAwaiter().GetResult();
         }
     }
 
@@ -945,6 +972,18 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
             {
                 if (message.Type == WebSocketMessageType.Text)
                 {
+                    var text = Encoding.UTF8.GetString(message.Data);
+
+                    if (text.StartsWith("chat ", StringComparison.Ordinal))
+                    {
+                        lock (_gate)
+                        {
+                            ChatLines.Add((playerId, text[5..]));
+                        }
+
+                        continue;
+                    }
+
                     await peer.SendAsync("pong"u8.ToArray(), WebSocketMessageType.Text);
                     continue;
                 }
