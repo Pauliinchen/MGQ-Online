@@ -2,7 +2,8 @@
 #  Multiplayer.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-07: Kept the press that closes a screen of the mod from reaching the game in the same frame, which left a PvP battle when Escape closed the chat box
+#      Paulinchen  2026-10-07: Logged how the game closes and each F12 reset, so a log that just stops tells a crash
+#                            - Kept the press that closes a screen of the mod from reaching the game in the same frame, which left a PvP battle when Escape closed the chat box
 #                            - Gave the background wrap its script, as every around now names who registers
 #                            - Named every export of the DLL with its signature once in Link, so a call names the export alone
 #                            - Loaded coop_choices.rbx, the story's choices a member makes for themselves, after the world screen whose form it draws with
@@ -144,6 +145,24 @@ module MGQ_Multiplayer
   # @return [Boolean] Whether one was found.
   def self.outdated?
     !UpdateCheck.version.nil?
+  end
+
+  # Tells how the game closes, for the log's last line, without which a log that just stops cannot
+  # tell a game closed from one that crashed.
+  #
+  # @param error [Exception, nil] What ends the game, $! as it closes; nil when it ends without one.
+  # @return [String] The line.
+  def self.closing_text(error)
+    return "the game closes" if error.nil?
+    return "the game closes: it was quit (exit status #{error.status})" if error.is_a?(SystemExit)
+
+    "the game closes after an error: #{error.class}: #{error.message.to_s[0, 200]} at #{Array(error.backtrace).first}"
+  end
+
+  # Notes that the game's scenes start running, which only F12 makes happen a second time.
+  def self.note_run
+    @runs = @runs.to_i + 1
+    Log.write("F12 reset the game: its scenes start again from the title (run #{@runs}), the mod keeps its hooks and state") if @runs > 1
   end
 
   # The newer release's version, once the check found one.
@@ -1121,8 +1140,11 @@ end
 
 MGQ_Multiplayer.start
 MGQ_Multiplayer.load_scripts
-# When the game closes, the log writes how often its last line repeated.
-at_exit { MGQ_Multiplayer::Log.flush }
+# When the game closes, the log writes how often its last line repeated, then how the game closes.
+at_exit do
+  MGQ_Multiplayer::Log.flush
+  MGQ_Multiplayer::Log.write(MGQ_Multiplayer.closing_text($!))
+end
 
 # Game hooks, through core_hooks.rbx.
 
@@ -1136,7 +1158,10 @@ begin
 
   # Guards the input as the game starts running. The game's plugins load after the Patch folder,
   # the gamepad one wrapping Input, so the guard wraps Input once every plugin is in.
-  MGQ_MpHooks.before(SceneManager.singleton_class, :run, "Multiplayer") { MGQ_Multiplayer::Background.guard_input }
+  MGQ_MpHooks.before(SceneManager.singleton_class, :run, "Multiplayer") do
+    MGQ_Multiplayer.note_run
+    MGQ_Multiplayer::Background.guard_input
+  end
 rescue => e
   MGQ_Multiplayer::Log.write("hooks FAILED: #{e.class}: #{e.message}")
 end

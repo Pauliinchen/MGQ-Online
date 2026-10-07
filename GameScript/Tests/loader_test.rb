@@ -2,7 +2,8 @@
 #  loader_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-07: Checked that the press closing the last screen reaches the game from the next frame only
+#      Paulinchen  2026-10-07: Checked how the log's last line tells the game closing
+#                            - Checked that the press closing the last screen reaches the game from the next frame only
 #                            - Checked that the DLL's export table names each export once, every export the scripts call and every one the DLL has
 #                            - Checked that the in-game log writes a file per session, named after the game's start, without a line limit, and counts the scripts loaded
 #                            - Checked that clearing the chosen name brings the name on Discord back instead of A friend
@@ -178,6 +179,17 @@ Input.update
 check("another window in front takes every button away", [Input.press?(:C), capture.trigger?(:C)], [false, false])
 $front = true
 Input.update
+
+# The log's last line: how the game closes.
+MGQ_Multiplayer.module_eval(source[/  def self\.closing_text\(error.*?\n  end\n/m])
+error = begin
+  raise ArgumentError, "bad"
+rescue => e
+  e
+end
+check("the log's last line tells a game that ended from one quit and one an error ended",
+      [MGQ_Multiplayer.closing_text(nil), MGQ_Multiplayer.closing_text(SystemExit.new(0)), MGQ_Multiplayer.closing_text(error)[/\A.*bad at /]],
+      ["the game closes", "the game closes: it was quit (exit status 0)", "the game closes after an error: ArgumentError: bad at "])
 
 # The player's name: a chosen one replaces the name on Discord, and clearing it brings that back.
 MGQ_Multiplayer.const_set(:MAX_NAME_LENGTH, 32) unless defined?(MGQ_Multiplayer::MAX_NAME_LENGTH)
