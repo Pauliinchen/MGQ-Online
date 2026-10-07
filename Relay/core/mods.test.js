@@ -2,7 +2,8 @@
 //  mods.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-07: Uploaded real zips, whose hashes the relay makes itself, and covered a file list that says otherwise and a header that lies about a file's size
+//      Paulinchen  2026-10-07: Covered the options of any version kept until the current version's arrive
+//                            - Uploaded real zips, whose hashes the relay makes itself, and covered a file list that says otherwise and a header that lies about a file's size
 //                            - Expected 404 for an unknown sub-route, and made the test zips through test_zip.js
 //      Paulinchen  2026-10-06: Covered escaped keys, too large bodies, unchecked links listed for admins only and zips holding a file twice
 //                            - Covered the options of a mod's current version, which only admins send
@@ -15,7 +16,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { playerIdOf } from "./directory.js";
-import { MOD_LIMITS, ModCatalog, handleModRequest, hashModFile, modKey, splitUpload, zipHashes } from "./mods.js";
+import { MOD_LIMITS, ModCatalog, OTHER_VERSION, handleModRequest, hashModFile, modKey, splitUpload, zipHashes } from "./mods.js";
 import { makeUpload, makeZip } from "./test_zip.js";
 
 /**
@@ -121,15 +122,24 @@ test("an admin's game keeps the options of a mod's current version, which everyo
   await catalog.setLink(ADMIN, "Level Cap", LATEST);
   const options = [{ key: "mod_level_cap", name: "Level Cap", type: "i", default: "1", choices: [{ value: "1", name: "On" }, { value: "0", name: "Off" }] }];
 
+  const older = [{ key: "mod_level_cap", name: "Level Cap", type: "i", default: "1", choices: [] }];
+  const listed = async () => (await catalog.list()).body.mods[0];
+
   assert.equal((await catalog.setOptions(OTHER, "levelcap", "1.4.0", options)).status, 403);
   assert.equal((await catalog.setOptions(ADMIN, "nomod", "1.4.0", options)).status, 404);
-  assert.equal((await catalog.setOptions(ADMIN, "levelcap", "1.3.5", options)).status, 409, "only the current version's options are kept");
   assert.equal((await catalog.setOptions(ADMIN, "levelcap", "1.4.0", [{ key: "1bad", type: "i" }])).status, 400);
   assert.equal((await catalog.setOptions(ADMIN, "levelcap", "1.4.0", [{ key: "mod_x", type: "q" }])).status, 400);
-  assert.equal((await catalog.setOptions(ADMIN, "levelcap", "1.4.0", options)).status, 200);
 
-  const [mod] = (await catalog.list()).body.mods;
-  assert.deepEqual([mod.options, mod.optionsVersion], [options, "1.4.0"]);
+  assert.equal((await catalog.setOptions(ADMIN, "levelcap", "", older)).body.kept, true, "a copy of no known version is better than nothing");
+  assert.deepEqual([(await listed()).options, (await listed()).optionsVersion], [older, OTHER_VERSION]);
+  assert.equal((await catalog.setOptions(ADMIN, "levelcap", "1.3.5", older)).body.kept, true, "an older version's options replace those of no known version");
+  assert.equal((await listed()).optionsVersion, "1.3.5");
+
+  assert.equal((await catalog.setOptions(ADMIN, "levelcap", "1.4.0", options)).body.kept, true);
+  assert.deepEqual([(await listed()).options, (await listed()).optionsVersion], [options, "1.4.0"]);
+  assert.equal((await catalog.setOptions(ADMIN, "levelcap", "1.3.5", older)).body.kept, false, "the current version's options stay");
+  assert.equal((await catalog.setOptions(ADMIN, "levelcap", "", older)).body.kept, false);
+  assert.deepEqual([(await listed()).options, (await listed()).optionsVersion], [options, "1.4.0"]);
 });
 
 test("the options route reads a body larger than the other routes take", async () => {

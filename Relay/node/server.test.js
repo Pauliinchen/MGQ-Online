@@ -791,7 +791,8 @@ test("every mod catalog route answers over HTTP", async () => {
   assert.deepEqual(listedMods[1].files, files);
 
   const options = [{ key: "mod_pack", name: "Pack", type: "b", default: "1", choices: [] }];
-  assert.equal((await post("/pack%21/options", { version: "1.0", options })).status, 409);
+  assert.equal((await post("/pack%21/options", { version: "1.0", options })).status, 200, "an older version's options are kept until the current version's arrive");
+  assert.equal((await (await fetch(modsBase)).json()).mods[1].optionsVersion, "1.0");
   assert.equal((await post("/pack%21/options", { version: "2.0", options })).status, 200);
   assert.deepEqual((await (await fetch(modsBase)).json()).mods[1].options, options);
 

@@ -2,7 +2,8 @@
 //  mods.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-07: Hashed an uploaded zip's files itself and refused an upload whose file list says otherwise
+//      Paulinchen  2026-10-07: Kept the Mod Config options an admin's game sends from any version of a mod, until the current version's arrive
+//                            - Hashed an uploaded zip's files itself and refused an upload whose file list says otherwise
 //                            - Stopped inflating a zip entry past the size the zip says, so a lying header cannot fill the memory
 //                            - Answered an unknown sub-route with 404, and read ids, hashes, texts and bodies through ids.js and http.js
 //      Paulinchen  2026-10-06: Took the player's key from the X-MGQ-Player header too
@@ -57,6 +58,12 @@ export const MOD_LIMITS = Object.freeze({
  * The only place a link may point to: the admins' GitHub.
  */
 export const LINK_START = "https://github.com/Pauliinchen/";
+
+/**
+ * What a mod's `optionsVersion` says when its options came from a copy that matches no version the
+ * catalog knows, such as an admin's own build.
+ */
+export const OTHER_VERSION = "?";
 
 /**
  * A release file on the admins' GitHub, a script or a zip, with the release's tag and the file's name.
@@ -253,13 +260,14 @@ export class ModCatalog {
   }
 
   /**
-   * Keeps the Mod Config options of a mod's current version, as an admin's game read them.
+   * Keeps the Mod Config options of a mod, as an admin's game read them from the copy it has: the
+   * current version's for good, any other version's until the current version's arrive.
    *
    * @param {unknown} key The asking player's key.
    * @param {string} modKeyOf The mod's key.
-   * @param {unknown} version The version the game has, which must be the current one.
+   * @param {unknown} version The version the game's copy is; empty for a copy that matches no version the catalog knows.
    * @param {unknown} options The options: each with key, name, type, default and choices (value, name).
-   * @returns {Promise<{status: number, body: object}>} The answer.
+   * @returns {Promise<{status: number, body: object}>} The answer: the mod, and `kept`, false when the current version's options stay.
    */
   async setOptions(key, modKeyOf, version, options) {
     if (!(await this.isAdmin(key))) {
@@ -272,8 +280,10 @@ export class ModCatalog {
       return noMod();
     }
 
-    if (version !== entry.version) {
-      return { status: 409, body: { error: `the catalog's version is ${entry.version}` } };
+    const reported = cleanText(version, this.limits.maxVersionLength);
+
+    if (entry.optionsVersion === entry.version && reported !== entry.version) {
+      return { status: 200, body: { mod: adminView(entry), kept: false } };
     }
 
     const cleaned = cleanOptions(options, this.limits);
@@ -283,9 +293,9 @@ export class ModCatalog {
     }
 
     entry.options = cleaned;
-    entry.optionsVersion = version;
+    entry.optionsVersion = reported.length > 0 ? reported : OTHER_VERSION;
     await this.store.putMod(entry);
-    return { status: 200, body: { mod: adminView(entry) } };
+    return { status: 200, body: { mod: adminView(entry), kept: true } };
   }
 
   /**
