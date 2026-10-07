@@ -2,13 +2,14 @@
 //  sqlite_store.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-07: Created
+//      Paulinchen  2026-10-07: Kept each world's chat, which goes with the world
+//                            - Created
 //
 //----------------------------------------------------------------
 
 // The world directory's, the mod catalog's and the trades' stores over one SQLite database, for
-// the Node relay on a rented machine, so worlds, mods and trades outlast a restart. Entries and
-// records are kept as JSON, starting saves and uploaded mods' zips as blobs.
+// the Node relay on a rented machine, so worlds, mods and trades outlast a restart. Entries,
+// records and chats are kept as JSON, starting saves and uploaded mods' zips as blobs.
 
 import { DatabaseSync } from "node:sqlite";
 
@@ -24,6 +25,7 @@ export function openSqliteStores(path) {
   db.exec("PRAGMA journal_mode = WAL");
   const worlds = jsonTable(db, "worlds");
   const starts = blobTable(db, "starts");
+  const chats = jsonTable(db, "chats");
   const mods = jsonTable(db, "mods");
   const modFiles = blobTable(db, "mod_files");
   const trades = jsonTable(db, "trades");
@@ -36,10 +38,13 @@ export function openSqliteStores(path) {
       remove: async (id) => {
         worlds.remove(id);
         starts.remove(id);
+        chats.remove(id);
       },
       all: async () => worlds.all(),
       putStart: async (id, bytes) => starts.put(id, bytes),
       getStart: async (id) => starts.get(id),
+      putChat: async (id, lines) => chats.put(id, lines),
+      getChat: async (id) => chats.get(id),
     },
     mods: {
       getMod: async (key) => mods.get(key),

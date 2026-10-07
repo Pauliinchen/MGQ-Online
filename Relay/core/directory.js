@@ -2,7 +2,8 @@
 //  directory.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-07: Took the auth key for a starting save from the X-MGQ-Auth header too
+//      Paulinchen  2026-10-07: Kept each world's chat, the lines its games mirror and the lines admins say, which admins read and write
+//                            - Took the auth key for a starting save from the X-MGQ-Auth header too
 //                            - Answered a JSON body longer than a route takes with 413, and an unknown sub-route with 404
 //                            - Counted a world or a starting save against its address only once it passed every check
 //                            - Kept at most 500 removed players per world
@@ -40,11 +41,16 @@
 // save reaches it encrypted with a key from the token, so the relay only keeps its bytes.
 //
 // It keeps its worlds through a store the platform layer passes in, and hands back what the layer
-// must do beyond answering, such as closing a removed player's connection.
+// must do beyond answering, such as closing a removed player's connection or telling a world room
+// what an admin said.
+//
+// It also keeps each world's chat as far as the relay sees it: the games mirror every line of the
+// world's chat as a text frame, which the world room hands in here, and an admin's line, said over
+// HTTP, goes into the log and out to every game in the room.
 
 import { badRequest, notFound, withJson } from "./http.js";
 import { CONTROL_CHARACTERS, ID, cleanText, hexOf, isHash, isId } from "./ids.js";
-import { RATE_LIMITS, RateLimiter, VERSION, WORLD_SEATS } from "./relay.js";
+import { MAX_CHAT_LENGTH, RATE_LIMITS, RateLimiter, VERSION, WORLD_SEATS } from "./relay.js";
 
 /**
  * The limits the directory keeps.
@@ -70,7 +76,15 @@ export const DIRECTORY_LIMITS = Object.freeze({
   // How long a world waits for its starting save before it is deleted.
   pendingMs: 10 * 60 * 1000,
   maxJsonLength: 32 * 1024,
+  // Lines of a world's chat kept, the oldest forgotten first, and the longest line.
+  maxChatLines: 200,
+  maxChatLength: MAX_CHAT_LENGTH,
 });
+
+/**
+ * The name an admin's line of a world's chat carries when the request names none.
+ */
+export const ADMIN_NAME = "Admin";
 
 /**
  * The codes a refusal names why with, which games tell their players apart.
@@ -150,10 +164,12 @@ export function cleanName(name, limits = DIRECTORY_LIMITS) {
  * @typedef {object} DirectoryStore Where the directory keeps its worlds, one entry each, and their starting saves.
  * @property {(id: string) => Promise<object | undefined>} get Reads a world's entry.
  * @property {(entry: object) => Promise<void>} put Writes a world's entry.
- * @property {(id: string) => Promise<void>} remove Deletes a world's entry and its starting save.
+ * @property {(id: string) => Promise<void>} remove Deletes a world's entry, its starting save and its chat.
  * @property {() => Promise<object[]>} all Reads every world's entry.
  * @property {(id: string, bytes: Uint8Array) => Promise<void>} putStart Writes a world's starting save.
  * @property {(id: string) => Promise<Uint8Array | undefined>} getStart Reads a world's starting save.
+ * @property {(id: string, lines: object[]) => Promise<void>} putChat Writes a world's chat, every line kept.
+ * @property {(id: string) => Promise<object[] | undefined>} getChat Reads a world's chat, undefined before its first line.
  */
 
 /**
@@ -515,6 +531,79 @@ export class Directory {
   }
 
   /**
+   * Keeps a line of a world's chat: one a game in the world room mirrored, or one an admin said.
+   *
+   * @param {string} id The world.
+   * @param {{player: string, name: string}} who The sender's player id and name.
+   * @param {unknown} text The line.
+   * @param {boolean} [admin] Whether an admin said it from outside the game.
+   * @returns {Promise<object | null>} The line as kept, with its number; null for a world the directory lacks or an empty line.
+   */
+  async say(id, who, text, admin = false) {
+    const entry = await this.load(id);
+    const line = cleanText(text, this.limits.maxChatLength);
+
+    if (!entry || line.length === 0) {
+      return null;
+    }
+
+    const lines = (await this.store.getChat(entry.id)) ?? [];
+    const kept = { n: (lines.at(-1)?.n ?? 0) + 1, at: this.clock(), player: who.player, name: cleanName(who.name, this.limits) ?? "?", text: line, admin };
+
+    lines.push(kept);
+    await this.store.putChat(entry.id, lines.slice(-this.limits.maxChatLines));
+    return kept;
+  }
+
+  /**
+   * Hands out a world's chat as the relay saw it, to its creator or an admin.
+   *
+   * @param {string} id The world.
+   * @param {unknown} key The asking player's key.
+   * @param {unknown} [after] The number of the last line the asker has; only later ones are handed out.
+   * @returns {Promise<{status: number, body: object}>} The lines, oldest first, each with `n`, `at`, `player`, `name`, `text` and `admin`.
+   */
+  async chat(id, key, after) {
+    const { entry, refusal } = await this.asCreatorOrAdmin(id, key);
+
+    if (refusal) {
+      return refusal;
+    }
+
+    const known = Number.isInteger(Number(after)) ? Number(after) : 0;
+    const lines = ((await this.store.getChat(entry.id)) ?? []).filter((line) => line.n > known);
+    return { status: 200, body: { lines } };
+  }
+
+  /**
+   * Says a line in a world's chat as an admin, which every game in the world room is told.
+   *
+   * @param {string} id The world.
+   * @param {unknown} key The asking player's key.
+   * @param {unknown} text The line.
+   * @param {unknown} [name] The name the line carries, ADMIN_NAME when left out.
+   * @returns {Promise<{status: number, body: object, say?: {name: string, text: string}}>} The line as kept, and what the world room must tell every game.
+   */
+  async sayAsAdmin(id, key, text, name) {
+    const { entry, player, refusal } = await this.worldAndPlayer(id, key);
+
+    if (refusal) {
+      return refusal;
+    }
+
+    if (!this.admins.has(player)) {
+      return { status: 403, body: { error: "only an admin says something in a world's chat from outside the game" } };
+    }
+
+    if (typeof text !== "string" || cleanText(text, this.limits.maxChatLength).length === 0) {
+      return badRequest(`the line must be a text of 1 to ${this.limits.maxChatLength} characters`);
+    }
+
+    const line = await this.say(entry.id, { player, name: cleanName(name, this.limits) ?? ADMIN_NAME }, text, true);
+    return { status: 200, body: { line }, say: { name: line.name, text: line.text } };
+  }
+
+  /**
    * Reads a world's entry, deleting a world whose starting save did not come in time.
    *
    * @param {unknown} id The world.
@@ -776,6 +865,14 @@ export async function handleDirectoryRequest(directory, method, url, readBody, r
 
   if (parts.length === 4 && parts[3] === "start" && method === "GET") {
     return directory.getStart(parts[2], fromQuery(), authOf());
+  }
+
+  if (parts.length === 4 && parts[3] === "chat" && method === "GET") {
+    return directory.chat(parts[2], fromQuery(), url.searchParams.get("after"));
+  }
+
+  if (parts.length === 4 && parts[3] === "chat" && method === "POST") {
+    return json(async (body) => ({ ...(await directory.sayAsAdmin(parts[2], fromBody(body), body?.text, body?.name)), id: parts[2] }));
   }
 
   return notFound("route");

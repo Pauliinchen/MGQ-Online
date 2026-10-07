@@ -2,7 +2,8 @@
 //  server.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-07: Logged every request as one line and every caught error with its stack, never a key
+//      Paulinchen  2026-10-07: Kept the chat lines the games mirror as text frames, and told every game of a world what an admin said
+//                            - Logged every request as one line and every caught error with its stack, never a key
 //                            - Kept the worlds, mods and trades in a SQLite database when MGQ_RELAY_DB names one
 //                            - Swept stale worlds and finished trades on a timer, not only when a request read them
 //                            - Took the auth key of the X-MGQ-Auth header for world rooms and starting saves
@@ -35,8 +36,8 @@ import { routeIs } from "../core/http.js";
 import { ModCatalog, handleModRequest } from "../core/mods.js";
 import { TradeBook, handleTradeRequest } from "../core/trades.js";
 import {
-  AUTH_HEADER, CLOSE, IN, LIMITS, OUT, PAIRED, PING, PLAYER_HEADER, PONG, REFUSAL_HEADER, admit, newPeer, newWorldPeer, overdue, parseRoute,
-  presenceOf, replacedBy, routeWorldMessage, seatChangeText, seatText, takeMessage, takeSeat, worldOverdue,
+  AUTH_HEADER, CLOSE, IN, LIMITS, OUT, PAIRED, PING, PLAYER_HEADER, PONG, REFUSAL_HEADER, admit, chatLineOf, chatText, newPeer, newWorldPeer, overdue,
+  parseRoute, presenceOf, replacedBy, routeWorldMessage, seatChangeText, seatText, takeMessage, takeSeat, worldOverdue,
 } from "../core/relay.js";
 
 /**
@@ -116,6 +117,7 @@ export function errorLine(time, where, error) {
 export function memoryStore() {
   const entries = new Map();
   const starts = new Map();
+  const chats = new Map();
 
   return {
     get: async (id) => (entries.has(id) ? structuredClone(entries.get(id)) : undefined),
@@ -123,10 +125,13 @@ export function memoryStore() {
     remove: async (id) => {
       entries.delete(id);
       starts.delete(id);
+      chats.delete(id);
     },
     all: async () => [...entries.values()].map((entry) => structuredClone(entry)),
     putStart: async (id, bytes) => void starts.set(id, Uint8Array.from(bytes)),
     getStart: async (id) => starts.get(id),
+    putChat: async (id, lines) => void chats.set(id, structuredClone(lines)),
+    getChat: async (id) => (chats.has(id) ? structuredClone(chats.get(id)) : undefined),
   };
 }
 
@@ -386,6 +391,10 @@ export function createRelay({
       closeWorld(answer.id, CLOSE.removed, "the creator removed this player from the world", answer.kick);
     }
 
+    if (answer.say) {
+      tellWorld(answer.id, chatText(answer.say.name, answer.say.text));
+    }
+
     if (answer.bytes) {
       response.writeHead(answer.status, { "Content-Type": "application/octet-stream" });
       response.end(answer.bytes);
@@ -394,6 +403,18 @@ export function createRelay({
 
     response.writeHead(answer.status, { "Content-Type": "application/json" });
     response.end(JSON.stringify(answer.body));
+  }
+
+  /**
+   * Sends a text frame to every game in a world room, such as what an admin said.
+   *
+   * @param {string} roomId The world.
+   * @param {string} text The frame.
+   */
+  function tellWorld(roomId, text) {
+    for (const peer of worlds.get(roomId) ?? []) {
+      peer.socket.send(text);
+    }
   }
 
   /**
@@ -492,8 +513,13 @@ export function createRelay({
       }
 
       if (!isBinary) {
-        if (data.toString() === PING) {
+        const text = data.toString();
+        const line = chatLineOf(text);
+
+        if (text === PING) {
           socket.send(PONG);
+        } else if (line !== null) {
+          directory.say(route.roomId, { player: admission.player, name: route.name }, line).catch((error) => log.error(errorLine(new Date(), `chat of world ${route.roomId}`, error)));
         } else {
           unseat(route.roomId, peer, CLOSE.badRequest, "only binary messages are passed on");
         }

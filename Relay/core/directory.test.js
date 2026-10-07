@@ -2,7 +2,8 @@
 //  directory.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-07: Covered the auth key header, the cap on removed players, and rate turns taken only after every check
+//      Paulinchen  2026-10-07: Covered a world's chat: the lines games mirror, the lines admins say, who reads them, the cap and the chat going with the world
+//                            - Covered the auth key header, the cap on removed players, and rate turns taken only after every check
 //                            - Expected 413 for a JSON body over the limit and 404 for an unknown sub-route
 //      Paulinchen  2026-10-06: Covered the deleting of worlds whose starting save did not come in time, the budget for starting saves and the rate limits per address
 //                            - Covered refused mod settings over the limit, mod names of up to 100 characters, the codes of refusals and the player key header
@@ -64,6 +65,7 @@ const WORLD = "0123456789abcdef0123456789abcdef";
 function newDirectory(limits = DIRECTORY_LIMITS, admins = []) {
   const entries = new Map();
   const starts = new Map();
+  const chats = new Map();
   const time = { now: 1_000_000 };
   const store = {
     get: async (id) => (entries.has(id) ? structuredClone(entries.get(id)) : undefined),
@@ -71,13 +73,16 @@ function newDirectory(limits = DIRECTORY_LIMITS, admins = []) {
     remove: async (id) => {
       entries.delete(id);
       starts.delete(id);
+      chats.delete(id);
     },
     all: async () => [...entries.values()].map((entry) => structuredClone(entry)),
     putStart: async (id, bytes) => void starts.set(id, Uint8Array.from(bytes)),
     getStart: async (id) => starts.get(id),
+    putChat: async (id, lines) => void chats.set(id, structuredClone(lines)),
+    getChat: async (id) => (chats.has(id) ? structuredClone(chats.get(id)) : undefined),
   };
 
-  return { directory: new Directory(store, { clock: () => time.now, limits, admins }), time, starts };
+  return { directory: new Directory(store, { clock: () => time.now, limits, admins }), time, starts, chats };
 }
 
 /**
@@ -406,6 +411,40 @@ test("a world without a starting save takes none", async () => {
   assert.equal((await directory.getStart(WORLD, CREATOR, AUTH)).status, 404);
 });
 
+test("a world's chat keeps the lines its games mirror and the lines admins say, which its creator and the admins read", async () => {
+  const { directory, time, chats } = newDirectory({ ...DIRECTORY_LIMITS, maxChatLines: 3 }, [await playerIdOf(ADMIN)]);
+  await directory.create(await newWorld());
+  const other = await playerIdOf(OTHER);
+
+  assert.equal(await directory.say("f".repeat(32), { player: other, name: "Guest" }, "hello"), null, "no world, no line");
+  assert.equal(await directory.say(WORLD, { player: other, name: "Guest" }, " \u0001 "), null, "an empty line is not kept");
+  assert.deepEqual(await directory.say(WORLD, { player: other, name: "Guest" }, "  hello\tall "), { n: 1, at: time.now, player: other, name: "Guest", text: "helloall", admin: false });
+
+  time.now += 1000;
+  const said = await directory.sayAsAdmin(WORLD, ADMIN, "welcome", "Global");
+  assert.equal(said.status, 200);
+  assert.deepEqual(said.say, { name: "Global", text: "welcome" }, "the world room is told what to pass on");
+  assert.deepEqual(said.body.line, { n: 2, at: time.now, player: await playerIdOf(ADMIN), name: "Global", text: "welcome", admin: true });
+  assert.equal((await directory.sayAsAdmin(WORLD, ADMIN, "nameless")).body.line.name, "Admin", "an admin without a name is called Admin");
+  assert.equal((await directory.sayAsAdmin(WORLD, CREATOR, "hi")).status, 403, "the creator talks through the game");
+  assert.equal((await directory.sayAsAdmin(WORLD, ADMIN, "")).status, 400);
+  assert.equal((await directory.sayAsAdmin(WORLD, ADMIN, 7)).status, 400);
+  assert.equal((await directory.sayAsAdmin("f".repeat(32), ADMIN, "hi")).status, 404);
+
+  assert.equal((await directory.chat(WORLD, OTHER)).status, 403, "a player reads the chat in the game");
+  assert.deepEqual((await directory.chat(WORLD, CREATOR)).body.lines.map((line) => line.n), [1, 2, 3]);
+  assert.deepEqual((await directory.chat(WORLD, ADMIN, "2")).body.lines.map((line) => line.text), ["nameless"], "only the lines after the one the asker has");
+  assert.deepEqual((await directory.chat(WORLD, ADMIN, "junk")).body.lines.length, 3);
+
+  await directory.say(WORLD, { player: other, name: "Guest" }, "x".repeat(500));
+  const lines = (await directory.chat(WORLD, ADMIN)).body.lines;
+  assert.deepEqual(lines.map((line) => line.n), [2, 3, 4], "the oldest line goes once the chat is full");
+  assert.equal(lines.at(-1).text.length, DIRECTORY_LIMITS.maxChatLength, "a long line is cut");
+
+  await directory.remove(WORLD, CREATOR);
+  assert.equal(chats.has(WORLD), false, "the chat goes with the world");
+});
+
 test("handleDirectoryRequest routes the public requests and names the world an effect is for", async () => {
   const { directory } = newDirectory();
   const body = (value) => async () => JSON.stringify(value);
@@ -423,10 +462,24 @@ test("handleDirectoryRequest routes the public requests and names the world an e
   assert.equal((await handleDirectoryRequest(directory, "POST", url(`/v1/worlds/${WORLD}/start?player=${CREATOR}`), body(null), bytes(Uint8Array.of(9, 8)))).status, 200);
   assert.deepEqual((await handleDirectoryRequest(directory, "GET", url(`/v1/worlds/${WORLD}/start?player=${OTHER}&auth=${AUTH}`), body(null))).bytes, Uint8Array.of(9, 8));
 
+  assert.equal((await handleDirectoryRequest(directory, "GET", url(`/v1/worlds/${WORLD}/chat?player=${CREATOR}`), body(null))).body.lines.length, 0);
+  assert.equal((await handleDirectoryRequest(directory, "POST", url(`/v1/worlds/${WORLD}/chat`), body({ player: CREATOR, text: "hi" }))).status, 403);
+
   const deleted = await handleDirectoryRequest(directory, "POST", url(`/v1/worlds/${WORLD}/delete`), body({ player: CREATOR }));
   assert.equal(deleted.status, 200);
   assert.equal(deleted.id, WORLD);
   assert.equal(deleted.close, true);
+});
+
+test("handleDirectoryRequest routes an admin's chat line and names the world it is for", async () => {
+  const { directory } = newDirectory(DIRECTORY_LIMITS, [await playerIdOf(ADMIN)]);
+  const url = (path) => new URL(`https://relay.test${path}`);
+  await directory.create(await newWorld());
+
+  const said = await handleDirectoryRequest(directory, "POST", url(`/v1/worlds/${WORLD}/chat`), async () => JSON.stringify({ text: "hi all", name: "Global" }), null, { player: ADMIN });
+  assert.equal(said.status, 200);
+  assert.deepEqual([said.id, said.say], [WORLD, { name: "Global", text: "hi all" }]);
+  assert.deepEqual((await handleDirectoryRequest(directory, "GET", url(`/v1/worlds/${WORLD}/chat?after=0`), async () => null, null, { player: ADMIN })).body.lines.map((line) => line.text), ["hi all"]);
 });
 
 test("a world whose starting save did not come in time is deleted, and no longer counts for its creator", async () => {

@@ -2,7 +2,8 @@
 //  worker.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-07: Passed the X-MGQ-Auth header on to the world rooms and the directory
+//      Paulinchen  2026-10-07: Handed the chat lines the games mirror to the directory, and told every game of a world what an admin said
+//                            - Passed the X-MGQ-Auth header on to the world rooms and the directory
 //                            - Answered a text body over 256 KB with 413 instead of taking it for no JSON, and named the routes by the core's version
 //      Paulinchen  2026-10-06: Passed the X-MGQ-Player header on to the trade and mod catalog routes too
 //                            - Told the directory who is in a world room after its alarm closed connections too
@@ -34,9 +35,9 @@ import { routeIs } from "../core/http.js";
 import { ModCatalog, handleModRequest } from "../core/mods.js";
 import { TradeBook, handleTradeRequest } from "../core/trades.js";
 import {
-  AUTH_HEADER, CLOSE, IN, OUT, PAIRED, PING, PLAYER_HEADER, PONG, RATE_LIMITS, REFUSAL_HEADER, RateLimiter, admit, newPeer, newWorldPeer,
-  nextDeadline, nextWorldDeadline, overdue, parseRoute, presenceOf, replacedBy, routeWorldMessage, seatChangeText, seatText, takeMessage,
-  takeSeat, worldOverdue,
+  AUTH_HEADER, CLOSE, IN, OUT, PAIRED, PING, PLAYER_HEADER, PONG, RATE_LIMITS, REFUSAL_HEADER, RateLimiter, admit, chatLineOf, chatText, newPeer,
+  newWorldPeer, nextDeadline, nextWorldDeadline, overdue, parseRoute, presenceOf, replacedBy, routeWorldMessage, seatChangeText, seatText,
+  takeMessage, takeSeat, worldOverdue,
 } from "../core/relay.js";
 
 /**
@@ -172,6 +173,16 @@ function startPrefix(id) {
 }
 
 /**
+ * Names the storage key of a world's chat.
+ *
+ * @param {string} id The world.
+ * @returns {string} The key.
+ */
+function chatKey(id) {
+  return `chat:${id}`;
+}
+
+/**
  * Names the storage keys of an uploaded mod's zip.
  *
  * @param {string} key The mod.
@@ -296,12 +307,14 @@ export class Directory extends DurableObject {
       get: (id) => storage.get(`world:${id}`),
       put: (entry) => storage.put(`world:${entry.id}`, entry),
       remove: async (id) => {
-        await storage.delete(`world:${id}`);
+        await storage.delete([`world:${id}`, chatKey(id)]);
         await deletePieces(storage, startPrefix(id));
       },
       all: async () => [...(await storage.list({ prefix: "world:" })).values()],
       putStart: (id, bytes) => putPieces(storage, startPrefix(id), bytes),
       getStart: (id) => getPieces(storage, startPrefix(id)),
+      putChat: (id, lines) => storage.put(chatKey(id), lines),
+      getChat: (id) => storage.get(chatKey(id)),
     }, { admins });
 
     this.mods = new ModCatalog({
@@ -356,6 +369,11 @@ export class Directory extends DurableObject {
       return json(200, await this.directory.presence(id, online));
     }
 
+    if (url.pathname === "/internal/say") {
+      const { id, player, name, text } = await request.json();
+      return json(200, { line: await this.directory.say(id, { player, name }, text) });
+    }
+
     const client = { player: request.headers.get(PLAYER_HEADER), auth: request.headers.get(AUTH_HEADER), address: request.headers.get(ADDRESS_HEADER) };
     const answer = await handleDirectoryRequest(this.directory, request.method, url, () => readText(request), (limit) => readBytes(request, limit), client);
 
@@ -365,6 +383,10 @@ export class Directory extends DurableObject {
 
     if (answer.kick) {
       await internal(worldOf(this.env, answer.id), "kick", { player: answer.kick });
+    }
+
+    if (answer.say) {
+      await internal(worldOf(this.env, answer.id), "say", answer.say);
     }
 
     return respond(answer);
@@ -602,6 +624,12 @@ export class World extends DurableObject {
       return json(200, {});
     }
 
+    if (url.pathname === "/internal/say") {
+      const { name, text } = await request.json();
+      this.tell(chatText(name, text));
+      return json(200, {});
+    }
+
     const route = parseRoute(url, request.headers.get(PLAYER_HEADER), request.headers.get(AUTH_HEADER));
     const address = request.headers.get(ADDRESS_HEADER);
     const answer = await internal(directoryOf(this.env), "admit", { id: route.roomId, player: route.player, auth: route.auth, address });
@@ -645,19 +673,29 @@ export class World extends DurableObject {
   }
 
   /**
-   * Passes a game's binary message on to the seat it names, or to every other game.
+   * Passes a game's binary message on to the seat it names, or to every other game, and hands a
+   * chat line the game mirrors as text to the directory.
    *
    * @param {WebSocket} socket The game's socket.
    * @param {ArrayBuffer | string} message The message.
    */
   async webSocketMessage(socket, message) {
+    const size = typeof message === "string" ? message.length : message.byteLength;
+    const { peer, refusal } = takeMessage(socket.deserializeAttachment(), size, Date.now());
+    socket.serializeAttachment(peer);
+
     if (typeof message === "string") {
-      await this.leave(socket, CLOSE.badRequest, "only binary messages are passed on");
+      const line = refusal ? null : chatLineOf(message);
+
+      if (line === null) {
+        await this.leave(socket, refusal?.code ?? CLOSE.badRequest, refusal?.reason ?? "only binary messages are passed on");
+        return;
+      }
+
+      this.world ??= await this.ctx.storage.get("world");
+      await internal(directoryOf(this.env), "say", { id: this.world, player: peer.player, name: peer.name, text: line });
       return;
     }
-
-    const { peer, refusal } = takeMessage(socket.deserializeAttachment(), message.byteLength, Date.now());
-    socket.serializeAttachment(peer);
 
     const delivery = refusal ? { refusal } : routeWorldMessage(peer.seat, new Uint8Array(message));
 
@@ -740,6 +778,21 @@ export class World extends DurableObject {
     if (reschedule) {
       await this.schedule();
       await this.report();
+    }
+  }
+
+  /**
+   * Sends a text frame to every game in the room, such as what an admin said.
+   *
+   * @param {string} text The frame.
+   */
+  tell(text) {
+    for (const peer of this.peers()) {
+      try {
+        peer.socket.send(text);
+      } catch {
+        // A game whose socket closed meanwhile hears it no more.
+      }
     }
   }
 

@@ -2,7 +2,8 @@
 //  relay.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-07: Took a world room's auth key from the X-MGQ-Auth header too
+//      Paulinchen  2026-10-07: Added the chat text frames: a line a game mirrors for the world's log, and a line an admin says to every game
+//                            - Took a world room's auth key from the X-MGQ-Auth header too
 //                            - Read ids, keys and names by the rules of ids.js
 //      Paulinchen  2026-10-06: Closed a peer that waited alone too long whatever its role, not only a host
 //                            - Took a world room's player key from the X-MGQ-Player header too
@@ -21,7 +22,7 @@
 // play in the same world; each gets a seat number, which the relay puts in front of every message
 // it passes on, since it cannot read who sent what.
 
-import { CONTROL_CHARACTERS, isHash, isId } from "./ids.js";
+import { CONTROL_CHARACTERS, cleanText, isHash, isId } from "./ids.js";
 
 /**
  * The protocol version the relay speaks, the first part of every room's path.
@@ -67,6 +68,18 @@ export const OUT = "out";
  * The target seat of a world message meant for every other game in the room.
  */
 export const EVERYONE = 255;
+
+/**
+ * What starts the two text frames of a world room's chat: a game sends `chat <line>` after every
+ * line of the world's chat, which the relay keeps for the admins and passes to nobody, and the
+ * relay sends `chat <name>\t<line>` to every game once an admin says something.
+ */
+export const CHAT = "chat";
+
+/**
+ * Longest line of a world's chat the relay keeps, longer than the games let players type.
+ */
+export const MAX_CHAT_LENGTH = 200;
 
 /**
  * How many games a world room may seat, as its world in the directory says.
@@ -428,6 +441,32 @@ export function routeWorldMessage(sender, message) {
   const forwarded = Uint8Array.from(message);
   forwarded[0] = sender;
   return { target: message[0] === EVERYONE ? null : message[0], forwarded, refusal: null };
+}
+
+/**
+ * Reads the line of a chat text frame a game sent.
+ *
+ * @param {string} text The text frame.
+ * @returns {string | null} The line, tidied; null for a frame that is no chat frame or carries no line.
+ */
+export function chatLineOf(text) {
+  if (!text.startsWith(`${CHAT} `)) {
+    return null;
+  }
+
+  const line = cleanText(text.slice(CHAT.length + 1), MAX_CHAT_LENGTH);
+  return line.length > 0 ? line : null;
+}
+
+/**
+ * Writes the text frame that tells every game what an admin said.
+ *
+ * @param {string} name The admin's name.
+ * @param {string} line The line.
+ * @returns {string} The frame, such as "chat Global\thello".
+ */
+export function chatText(name, line) {
+  return `${CHAT} ${name}\t${line}`;
 }
 
 /**

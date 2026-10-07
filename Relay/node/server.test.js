@@ -2,7 +2,8 @@
 //  server.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-07: Tested the auth key header, the request and error log lines, every mod catalog route, editing a world, the address behind a proxy, the sweep and a text body over the cap
+//      Paulinchen  2026-10-07: Tested a world's chat: a game's mirrored line kept, an admin's line reaching every game, and other text still closing the connection
+//                            - Tested the auth key header, the request and error log lines, every mod catalog route, editing a world, the address behind a proxy, the sweep and a text body over the cap
 //                            - Expected 400 for a path that is no route and 426 for a room path without an upgrade
 //      Paulinchen  2026-10-06: Tested a guest waiting alone, counted keep-alives, a room ended by the relay, a replaced world connection, the player key header, named refusals, the rate limits and a body over the limit
 //                            - Tested a trade between two players of a world over HTTP
@@ -37,6 +38,11 @@ const AUTH = "ab".repeat(32);
  * The player key of the tests' world creator.
  */
 const CREATOR = "c0".repeat(16);
+
+/**
+ * An admin's player key, of the directory and of the mod catalog.
+ */
+const ADMIN = "ad".repeat(16);
 
 /**
  * The limits the tests use: small messages, so the size check is quick to reach.
@@ -89,7 +95,7 @@ let worldBase;
 let directoryBase;
 
 before(async () => {
-  const directory = new Directory(memoryStore(), { clock: () => now, limits: TEST_DIRECTORY_LIMITS, rates: TEST_RATES });
+  const directory = new Directory(memoryStore(), { clock: () => now, limits: TEST_DIRECTORY_LIMITS, rates: TEST_RATES, admins: [await playerIdOf(ADMIN)] });
   relay = createRelay({ limits: TEST_LIMITS, clock: () => now, checkEveryMs: 3_600_000, sweepEveryMs: 3_600_000, directory, log: LOG });
   await new Promise((resolve) => relay.server.listen(0, "127.0.0.1", resolve));
   base = `ws://127.0.0.1:${relay.server.address().port}/v1/room/`;
@@ -401,6 +407,33 @@ test("a player the creator removes is closed and kept out, and deleting the worl
   assert.equal(await listed(roomId(107)), undefined);
 });
 
+test("a chat line a game sends as text is kept for the admins, an admin's line reaches every game, and other text still closes", async () => {
+  await makeWorld(roomId(130), 4);
+  const first = await sit(roomId(130), 7);
+  const second = await sit(roomId(130), 8);
+  await first.next();
+  await second.next();
+  await first.next();
+
+  first.socket.send("chat  hello there ");
+  const chat = (headers) => fetch(`${directoryBase}/${roomId(130)}/chat`, { headers });
+  await until(async () => (await (await chat({ [PLAYER_HEADER]: CREATOR })).json()).lines.length === 1);
+  const [mirrored] = (await (await chat({ [PLAYER_HEADER]: CREATOR })).json()).lines;
+  assert.deepEqual([mirrored.n, mirrored.player, mirrored.name, mirrored.text, mirrored.admin], [1, await playerIdOf(playerKey(7)), "Player 7", "hello there", false]);
+  assert.equal((await chat({ [PLAYER_HEADER]: playerKey(8) })).status, 403, "players read the chat in the game");
+
+  const say = (headers, body) => fetch(`${directoryBase}/${roomId(130)}/chat`, { method: "POST", headers, body: JSON.stringify(body) });
+  assert.equal((await say({ [PLAYER_HEADER]: CREATOR }, { text: "hi" })).status, 403);
+  assert.equal((await say({ [PLAYER_HEADER]: ADMIN }, { text: "welcome, all", name: "Global" })).status, 200);
+  assert.equal(await first.next(), "chat Global\twelcome, all");
+  assert.equal(await second.next(), "chat Global\twelcome, all");
+  assert.deepEqual((await (await chat({ [PLAYER_HEADER]: ADMIN, })).json()).lines.map((line) => [line.text, line.admin]), [["hello there", false], ["welcome, all", true]]);
+
+  second.socket.send("something else");
+  assert.equal((await second.closed).code, CLOSE.badRequest);
+  first.socket.close();
+});
+
 test("the directory hands out a world's lock and refuses what is no directory route", async () => {
   await makeWorld(roomId(108), 2);
 
@@ -704,11 +737,6 @@ test("the creator or an admin edits a world over HTTP", async () => {
   assert.deepEqual([world.seats, world.description, world.mods, world.data], [8, "A worldof two lines", "!Level Cap", "1:abc"]);
   assert.equal((await fetch(`${directoryBase}/${room}/edit`, { method: "POST", headers: { [PLAYER_HEADER]: CREATOR }, body: "x".repeat(300_000) })).status, 413, "a text body over the cap is too large");
 });
-
-/**
- * An admin's player key.
- */
-const ADMIN = "ad".repeat(16);
 
 /**
  * The link an admin sets, which leads to a release's script on a fake GitHub.

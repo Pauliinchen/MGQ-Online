@@ -2,7 +2,8 @@
 //  sqlite_store.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-07: Created
+//      Paulinchen  2026-10-07: Covered a world's chat kept and removed with the world
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -83,11 +84,13 @@ test("worlds, starting saves, mods, their zips and trades outlast closing the da
   assert.equal((await first.mods.upload(OTHER, "Pack", "1.0", makeUpload(files, zip))).status, 200);
   await first.directory.presence(WORLD, [{ player: await playerIdOf(OTHER), name: "Other" }]);
   assert.deepEqual((await first.trades.commit(trade, { player: OTHER, world: WORLD, partner: await playerIdOf(CREATOR), hash: "ab".repeat(32), sealed: "Qg==" })).body, { state: "pending" });
+  assert.equal((await first.directory.say(WORLD, { player: await playerIdOf(OTHER), name: "Other" }, "kept line")).n, 1);
   first.stores.close();
 
   const second = openAll(admins);
   const [world] = (await second.directory.list(CREATOR)).body.worlds;
   assert.deepEqual([world.id, world.name, world.hidden, world.start, world.members.length], [WORLD, "Kept World", true, "ready", 2]);
+  assert.deepEqual((await second.directory.chat(WORLD, CREATOR)).body.lines.map((line) => line.text), ["kept line"]);
   const fetched = await second.directory.getStart(WORLD, OTHER, AUTH);
   assert.equal(fetched.status, 200);
   assert.ok(fetched.bytes instanceof Uint8Array);
@@ -116,6 +119,7 @@ test("removing a world or a mod removes its bytes too, and a done trade goes", a
   assert.equal((await directory.remove(WORLD, CREATOR)).status, 200);
   assert.equal(await stores.directory.get(WORLD), undefined);
   assert.equal(await stores.directory.getStart(WORLD), undefined);
+  assert.equal(await stores.directory.getChat(WORLD), undefined);
   assert.deepEqual(await stores.directory.all(), []);
   stores.close();
 });
