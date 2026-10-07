@@ -2,7 +2,8 @@
 #  overworld_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-07: Checked the stand-in for a sprite this game lacks
+#      Paulinchen  2026-10-07: Checked that the numpad's 0 closes the chat box
+#                            - Checked the stand-in for a sprite this game lacks
 #                            - Checked the player's seat kept from the inbox and the status until the world closes
 #                            - Checked that the status line breaks a long notice into rows, its icon before the first
 #      Paulinchen  2026-10-06: Checked that a player who just joined counts for the leader only once admitted, and that a player on a new seat while the old one stands is moved there
@@ -600,6 +601,13 @@ parts.clear
 log_sprite.draw_row("on my way", nil, 0)
 check("a row that goes on a line is all text", parts.map { |_, text, color| [text, colors[color]] }, [["on my way", :text]])
 
+# The numpad's 0 closes the chat box, its 0 left out.
+chat.start_typing
+$sounds.clear
+$typed = "0"
+$pressed = MGQ_MpChat::NUMPAD_0_KEY
+map_frame
+check("the numpad's 0 closes the chat box as it closes the game's windows, typing nothing", [chat.typing?, MGQ_Multiplayer::Capture.on?, $sounds], [false, false, ["cancel"]])
 
 
 # The wheel's middle, which it opens on, and the pick it keeps once the arrows are let go.

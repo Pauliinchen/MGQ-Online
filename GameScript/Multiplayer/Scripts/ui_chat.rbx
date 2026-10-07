@@ -2,7 +2,8 @@
 #  ui_chat.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-07: Registered the map's, the battle's and its sprites' hooks through core_hooks.rbx instead of wraps of this script
+#      Paulinchen  2026-10-07: Closed the chat box with the numpad's 0, as the game's windows close
+#                            - Registered the map's, the battle's and its sprites' hooks through core_hooks.rbx instead of wraps of this script
 #                            - Named senders through MGQ_MpOverworldSync.who and took white and the depths from MGQ_MpUi
 #                            - Logged the chat box opening and closing with why, each line sent, refused or received with a count, cut to 80 characters, the game's own lines and the chat forgotten
 #      Paulinchen  2026-10-06: Opened the chat box while the map shows a message, such as the story's dialogue
@@ -51,6 +52,9 @@ module MGQ_MpChat
 
   # Frames after the chat key opened the box in which the key's own character may still arrive.
   KEY_ECHO_FRAMES = 10
+
+  # Windows' code of the numpad's 0, which closes the chat box as it closes the game's windows.
+  NUMPAD_0_KEY = 0x60
 
   # What starts a line of the party chat, which only the player's party hears.
   PARTY_PREFIX = /\A\/p(\s|\z)/i
@@ -180,9 +184,17 @@ module MGQ_MpChat
   end
 
   # Types what came from the keyboard since the last frame, then lets the editor follow the keys
-  # that type nothing.
+  # that type nothing. The numpad's 0 closes the box instead.
   def self.update_typing
     text, _keys = MGQ_Multiplayer::Link.take_typed
+    if MGQ_Multiplayer::Key.pressed?(NUMPAD_0_KEY)
+      # Its 0 arrives as the number row's, so what came with it is dropped; a 0 coming later finds
+      # the typing off, which forgets it.
+      stop_typing("Numpad 0")
+      Sound.play_cancel
+      return
+    end
+
     without_echo(text.to_s).each_char do |char|
       type(char)
       return unless typing?

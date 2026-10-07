@@ -135,7 +135,7 @@ Press **B** on the map. Its choices sit in a ring around your character. The whe
 
 ### Chat
 
-Press **T**, or pick *Chat* in the wheel. **Enter** sends, **Esc** closes; the arrow keys, **Home** and **End** move the cursor, and **Delete** removes the character after it.
+Press **T**, or pick *Chat* in the wheel. **Enter** sends, **Esc** or **0** on the numpad closes; the arrow keys, **Home** and **End** move the cursor, and **Delete** removes the character after it.
 
 - Your line shows in a speech bubble above your head for the players on your map, and in the chat log at the bottom left for everyone in the world.
 - Start a line with **/p** to send it to your party only; it shows as "[Party]" in the log.
