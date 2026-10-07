@@ -2,6 +2,8 @@
 //  Link.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-07: Logged each message of the game script sent, refused or received, and a link this game closed
+//                            - Dropped the oldest message once the inbox is full, logged once, and took only the message the game script read
 //      Paulinchen  2026-10-06: Started its threads through Threads, shared with the other connections
 //      Paulinchen  2026-09-29: Measured messages against the frame channel's longest frame
 //                            - Carried encrypted frames over any frame channel instead of a TCP connection
@@ -48,6 +50,11 @@ internal sealed class Link
     private const int HeaderBytes = 16;
 
     /// <summary>
+    /// Most messages the inbox holds while the game script reads none; past it the oldest is dropped.
+    /// </summary>
+    private const int MaxInbox = 10_000;
+
+    /// <summary>
     /// The connection, which the link owns.
     /// </summary>
     private readonly IFrameChannel _channel;
@@ -63,9 +70,19 @@ internal sealed class Link
     private readonly TimeSpan _pingInterval;
 
     /// <summary>
-    /// The game script's messages that arrived and wait to be taken.
+    /// The game script's messages that arrived and wait to be taken, guarded by <see cref="_inboxGate"/>.
     /// </summary>
-    private readonly ConcurrentQueue<string> _inbox = new();
+    private readonly Queue<string> _inbox = new();
+
+    /// <summary>
+    /// Guards <see cref="_inbox"/> and <see cref="_dropped"/>.
+    /// </summary>
+    private readonly object _inboxGate = new();
+
+    /// <summary>
+    /// How many messages the full inbox dropped since it last had room, logged once it has room again.
+    /// </summary>
+    private int _dropped;
 
     /// <summary>
     /// The frames waiting for the writer, not yet encrypted.
@@ -110,18 +127,23 @@ internal sealed class Link
     /// <returns><see langword="false"/> when the link has ended or the message is too long for a frame.</returns>
     public bool Send(string text)
     {
-        if (State != LinkState.Open || Encoding.UTF8.GetByteCount(text) > IFrameChannel.MaxFrameBytes - HeaderBytes - FrameCipher.Overhead)
+        var bytes = Encoding.UTF8.GetByteCount(text);
+
+        if (State != LinkState.Open || bytes > IFrameChannel.MaxFrameBytes - HeaderBytes - FrameCipher.Overhead)
         {
+            Log.Write($"link message not sent: {(State != LinkState.Open ? $"the link is {State.ToString().ToLowerInvariant()}" : "too long")}, {Message.FirstFieldOf(text)}, {bytes} bytes");
             return false;
         }
 
         try
         {
             _outbox.Add(Encode(GameKind, text));
+            Log.Write($"link message out: {Message.FirstFieldOf(text)}, {bytes} bytes");
             return true;
         }
         catch (InvalidOperationException)
         {
+            Log.Write($"link message not sent: the link ended meanwhile, {Message.FirstFieldOf(text)}, {bytes} bytes");
             return false;
         }
     }
@@ -130,12 +152,34 @@ internal sealed class Link
     /// Looks at the oldest message that arrived, without taking it. Messages stay readable after the link ended.
     /// </summary>
     /// <returns>The message, or <see langword="null"/> while none waits.</returns>
-    public string? Peek() => _inbox.TryPeek(out var text) ? text : null;
+    public string? Peek()
+    {
+        lock (_inboxGate)
+        {
+            return _inbox.TryPeek(out var text) ? text : null;
+        }
+    }
 
     /// <summary>
-    /// Takes the oldest message that arrived.
+    /// Takes the oldest message that arrived, if it is the one the game script read, since a full inbox may have dropped it meanwhile.
     /// </summary>
-    public void Take() => _inbox.TryDequeue(out _);
+    /// <param name="message">The message <see cref="Peek"/> handed out.</param>
+    public void Take(string message)
+    {
+        lock (_inboxGate)
+        {
+            if (_inbox.TryPeek(out var oldest) && ReferenceEquals(oldest, message))
+            {
+                _inbox.Dequeue();
+
+                if (_dropped > 0)
+                {
+                    Log.Write($"link inbox has room again after dropping its {_dropped} oldest messages");
+                    _dropped = 0;
+                }
+            }
+        }
+    }
 
     /// <summary>
     /// Says goodbye to the other game and closes the connection once that is sent. Calling it again does nothing.
@@ -146,6 +190,8 @@ internal sealed class Link
         {
             return;
         }
+
+        Log.Write("link closed by this game, saying goodbye");
 
         try
         {
@@ -160,9 +206,6 @@ internal sealed class Link
     /// <summary>
     /// Reads frames until the link ends.
     /// </summary>
-    /// <remarks>
-    /// Catches everything, since an exception escaping this thread would end the whole game.
-    /// </remarks>
     private void ReadAll()
     {
         try
@@ -186,7 +229,8 @@ internal sealed class Link
                 switch (message[Message.Kind])
                 {
                     case GameKind:
-                        _inbox.Enqueue(message.Team);
+                        Enqueue(message.Team);
+                        Log.Write($"link message in: {Message.FirstFieldOf(message.Team)}, {Encoding.UTF8.GetByteCount(message.Team)} bytes");
                         break;
 
                     case ByeKind:
@@ -202,11 +246,30 @@ internal sealed class Link
     }
 
     /// <summary>
+    /// Adds a message to the inbox, dropping the oldest once it is full.
+    /// </summary>
+    /// <param name="message">The message.</param>
+    private void Enqueue(string message)
+    {
+        lock (_inboxGate)
+        {
+            if (_inbox.Count >= MaxInbox)
+            {
+                _inbox.Dequeue();
+
+                if (_dropped++ == 0)
+                {
+                    Log.Write($"link inbox full at {MaxInbox} messages, the game script reads none: dropping the oldest");
+                }
+            }
+
+            _inbox.Enqueue(message);
+        }
+    }
+
+    /// <summary>
     /// Writes the waiting frames, and a ping whenever none came for a while, until the link ends.
     /// </summary>
-    /// <remarks>
-    /// Catches everything, since an exception escaping this thread would end the whole game.
-    /// </remarks>
     private void WriteAll()
     {
         try

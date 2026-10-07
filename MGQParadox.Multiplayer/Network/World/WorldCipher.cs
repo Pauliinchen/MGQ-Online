@@ -2,6 +2,7 @@
 //  WorldCipher.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-07: Kept only the newest 64 retired salts
 //      Paulinchen  2026-10-06: Authenticated each frame's target seat, which receivers check is theirs or everyone's
 //                            - Picked a new salt for each connection while keeping what the others sent, so frames seen before a reconnect are refused again
 //      Paulinchen  2026-09-29: Created
@@ -70,6 +71,12 @@ internal sealed class WorldCipher
     private const int NonceSize = 12;
 
     /// <summary>
+    /// How many retired salts are kept, the newest: two per seat of the largest world, since a salt
+    /// only matters until its game's seat has been taken and given up again.
+    /// </summary>
+    private const int MaxRetired = 64;
+
+    /// <summary>
     /// Separates the world keys from anything else ever derived from the same token.
     /// </summary>
     private static readonly byte[] KeyInfo = "mgqmp world key v1"u8.ToArray();
@@ -85,9 +92,14 @@ internal sealed class WorldCipher
     private readonly Dictionary<int, Sender> _senders = new();
 
     /// <summary>
-    /// Salts of senders that left their seat, whose frames are refused from then on.
+    /// Salts of senders that left their seat, whose frames are refused from then on, the newest <see cref="MaxRetired"/>.
     /// </summary>
     private readonly HashSet<string> _retired = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// The retired salts in the order they retired, oldest first, so the oldest makes room.
+    /// </summary>
+    private readonly Queue<string> _retiredOrder = new();
 
     /// <summary>
     /// Guards the salt, the counters and the senders.
@@ -219,7 +231,7 @@ internal sealed class WorldCipher
             // The seat's earlier game is gone, since a game keeps its salt for as long as it is connected.
             if (known != null && known != sender)
             {
-                _retired.Add(known.Salt);
+                Retire(known.Salt);
             }
         }
 
@@ -236,8 +248,27 @@ internal sealed class WorldCipher
         {
             if (_senders.Remove(seat, out var sender))
             {
-                _retired.Add(sender.Salt);
+                Retire(sender.Salt);
             }
+        }
+    }
+
+    /// <summary>
+    /// Refuses a salt from now on, forgetting the oldest retired one once there are more than <see cref="MaxRetired"/>. Called with the gate held.
+    /// </summary>
+    /// <param name="salt">The salt, as hexadecimal.</param>
+    private void Retire(string salt)
+    {
+        if (!_retired.Add(salt))
+        {
+            return;
+        }
+
+        _retiredOrder.Enqueue(salt);
+
+        if (_retiredOrder.Count > MaxRetired)
+        {
+            _retired.Remove(_retiredOrder.Dequeue());
         }
     }
 

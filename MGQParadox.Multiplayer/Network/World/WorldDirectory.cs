@@ -2,6 +2,7 @@
 //  WorldDirectory.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-07: Logged the list and the catalog when they change, every action with its result or why it was refused, and each mod's download
 //      Paulinchen  2026-10-06: Started its threads through Threads and read who plays through Player.Current, both shared with the world's other parts
 //                            - Told a player removed from a world, a world with as many players as it may and too many requests from one address apart from a creator-only refusal
 //                            - Refused a starting save too large to share before making the world, and opened a world code at the relay it names
@@ -150,6 +151,16 @@ internal sealed class WorldDirectory
     private string? _catalogError;
 
     /// <summary>
+    /// The list's summary last logged, so a list fetched again is logged only once it changed.
+    /// </summary>
+    private string? _listLogged;
+
+    /// <summary>
+    /// The mod catalog's summary last logged, so a catalog fetched again is logged only once it changed.
+    /// </summary>
+    private string? _catalogLogged;
+
+    /// <summary>
     /// Counts the actions, so a thread of an earlier one changes nothing.
     /// </summary>
     private int _actionGeneration;
@@ -195,9 +206,18 @@ internal sealed class WorldDirectory
     /// <param name="ids">The worlds' ids.</param>
     public void Watch(IEnumerable<string> ids)
     {
+        var watched = ids.Distinct().ToArray();
+        bool changed;
+
         lock (_gate)
         {
-            _watched = ids.Distinct().ToArray();
+            changed = !_watched.SequenceEqual(watched);
+            _watched = watched;
+        }
+
+        if (changed)
+        {
+            Log.Write($"the list asks for {watched.Length} hidden world(s) too: {string.Join(", ", watched.Select(Log.Short))}");
         }
     }
 
@@ -233,7 +253,6 @@ internal sealed class WorldDirectory
             catch (Exception ex)
             {
                 error = ReasonFor(ex);
-                Log.Write($"world list failed: {ex.GetBaseException().Message}");
             }
 
             try
@@ -244,11 +263,19 @@ internal sealed class WorldDirectory
             {
                 // The worlds are listed all the same; the game script then checks only whether required mods are installed.
                 catalogError = ReasonFor(ex);
-                Log.Write($"mod catalog failed: {ex.GetBaseException().Message}");
             }
+
+            var listSummary = listing != null ? ListSummary(listing) : $"world list failed: {error}";
+            var catalogSummary = catalog != null ? CatalogSummary(catalog) : $"mod catalog failed: {catalogError}";
+            bool listChanged;
+            bool catalogChanged;
 
             lock (_gate)
             {
+                listChanged = listSummary != _listLogged;
+                catalogChanged = catalogSummary != _catalogLogged;
+                _listLogged = listSummary;
+                _catalogLogged = catalogSummary;
                 _listing = false;
                 _listError = error;
                 _admin = listing?.Admin == true;
@@ -264,8 +291,36 @@ internal sealed class WorldDirectory
                     _catalog = catalog;
                 }
             }
+
+            if (listChanged)
+            {
+                Log.Write(listSummary);
+            }
+
+            if (catalogChanged)
+            {
+                Log.Write(catalogSummary);
+            }
         });
     }
+
+    /// <summary>
+    /// Sums a fetched list up for the log.
+    /// </summary>
+    /// <param name="listing">The list.</param>
+    /// <returns>How many worlds it holds, which of them are hidden, and whether it was made for an admin, then each world's short id, name and players online.</returns>
+    private static string ListSummary(WorldListing listing) =>
+        $"world list: {listing.Worlds.Count} world(s), {listing.Worlds.Count(world => world.Hidden)} hidden{(listing.Admin ? ", made for an admin" : string.Empty)}"
+        + (listing.Worlds.Count > 0 ? ": " + string.Join(", ", listing.Worlds.Select(world => $"{Log.Short(world.Id)} {OnOneField(world.Name)} ({world.Online.ToString(CultureInfo.InvariantCulture)}/{world.Seats.ToString(CultureInfo.InvariantCulture)} online)")) : string.Empty);
+
+    /// <summary>
+    /// Sums a fetched mod catalog up for the log.
+    /// </summary>
+    /// <param name="catalog">The catalog.</param>
+    /// <returns>How many mods it holds, then each mod's key, version, kind and file count.</returns>
+    private static string CatalogSummary(IReadOnlyList<CatalogMod> catalog) =>
+        $"mod catalog: {catalog.Count} mod(s)"
+        + (catalog.Count > 0 ? ": " + string.Join(", ", catalog.Select(mod => $"{mod.Key} {OnOneField(mod.Version)} ({mod.ScriptKind}, {mod.Files.Count.ToString(CultureInfo.InvariantCulture)} file(s))")) : string.Empty);
 
     /// <summary>
     /// Describes the list for the game script.
@@ -328,6 +383,7 @@ internal sealed class WorldDirectory
         }
 
         var chosen = mods.Select(mod => (catalog.FirstOrDefault(entry => entry.Key == mod.Key) ?? throw new ActionException($"The relay has no mod {mod.Key}."), mod.Target)).ToList();
+        Log.Write($"installing {string.Join(", ", chosen.Select(mod => $"{mod.Item1.Key} {mod.Item1.Version} ({mod.Item1.ScriptKind}{(mod.Target.Length > 0 && !mod.Item1.IsZip ? $" to {mod.Target}" : string.Empty)})"))}");
         var client = Client();
 
         try
@@ -337,10 +393,12 @@ internal sealed class WorldDirectory
         }
         catch (Exception ex) when (ex is InvalidDataException or InvalidOperationException)
         {
+            Log.Write($"installing the mods failed, nothing changed: {ex.Message}");
             throw new ActionException(ex.Message);
         }
         catch (IOException ex)
         {
+            Log.Write($"writing the mods failed, the files written were put back: {ex.Message}");
             throw new ActionException($"The mods could not be written: {ex.Message}");
         }
 
@@ -359,6 +417,7 @@ internal sealed class WorldDirectory
     {
         if (Playing() is not { } player)
         {
+            Log.Write($"Mod Config options of {key} not sent: {Player.NotSet}");
             return false;
         }
 
@@ -384,12 +443,17 @@ internal sealed class WorldDirectory
     public Func<string> GameFolder { get; init; } = () => ModFolder.GamePathOf(".");
 
     /// <summary>
-    /// Downloads a mod: an upload's zip from the relay, a link mod's script from GitHub.
+    /// Downloads a mod, an upload's zip from the relay, a link mod's script from GitHub, and logs its size.
     /// </summary>
     /// <param name="client">The relay's client.</param>
     /// <param name="mod">The mod.</param>
     /// <returns>The zip or the script.</returns>
-    private byte[] Download(DirectoryClient client, CatalogMod mod) => mod.IsUpload ? client.ModFile(mod.Key) : DownloadRelease(mod.FileUrl);
+    private byte[] Download(DirectoryClient client, CatalogMod mod)
+    {
+        var bytes = mod.IsUpload ? client.ModFile(mod.Key) : DownloadRelease(mod.FileUrl);
+        Log.Write($"downloaded {mod.Key} {mod.Version} from {(mod.IsUpload ? "the relay" : "GitHub")}: {bytes.Length.ToString(CultureInfo.InvariantCulture)} bytes");
+        return bytes;
+    }
 
     /// <summary>
     /// Downloads a link mod's script; tests replace it, since they cannot reach GitHub.
@@ -434,8 +498,9 @@ internal sealed class WorldDirectory
         var client = Client();
 
         var open = password.Length == 0;
+        Log.Write($"making world {Log.Short(id)} {OnOneField(name)}: {seats.ToString(CultureInfo.InvariantCulture)} seats, {(box != null ? $"starting save of {start.Count.ToString(CultureInfo.InvariantCulture)} file(s), {box.Length.ToString(CultureInfo.InvariantCulture)} bytes" : "no starting save")}, mods '{OnOneField(about?.Mods ?? string.Empty)}', settings '{OnOneField(about?.Settings ?? string.Empty)}'");
         client.Create(id, name, seats, key, playerName, WorldKeys.AuthHashOf(WorldKeys.AuthKeyOf(token)), worldLock, box != null, hidden, choose, open, about ?? WorldAbout.None);
-        Log.Write($"made world {id}{(hidden ? ", hidden" : string.Empty)}{(choose ? ", players choose where to start" : string.Empty)}{(open ? ", without a password" : string.Empty)}{(about?.Strict == true ? ", for games with the same data only" : string.Empty)}");
+        Log.Write($"made world {Log.Short(id)}{(hidden ? ", hidden" : string.Empty)}{(choose ? ", players choose where to start" : string.Empty)}{(open ? ", without a password" : string.Empty)}{(about?.Strict == true ? ", for games with the same data only" : string.Empty)}");
 
         if (box != null)
         {
@@ -456,11 +521,12 @@ internal sealed class WorldDirectory
         var world = WorldCode.Parse(code) ?? throw new ActionException("The world code is damaged.");
         var id = Relays.WorldRoomOf(world.Token);
         var box = Client().GetStart(id, Me().Key, WorldKeys.AuthKeyOf(world.Token));
+        Log.Write($"downloaded the starting save of world {Log.Short(id)}, {box.Length.ToString(CultureInfo.InvariantCulture)} bytes, into {folder}");
 
         try
         {
             var names = StartingSave.Open(world.Token, box, ModFolder.GamePathOf(folder));
-            Log.Write($"fetched the starting save of world {id}: {string.Join(", ", names)}");
+            Log.Write($"fetched the starting save of world {Log.Short(id)}: {string.Join(", ", names)}");
         }
         catch (InvalidDataException ex)
         {
@@ -509,17 +575,18 @@ internal sealed class WorldDirectory
         try
         {
             client.PutStart(id, key, box);
-            Log.Write($"uploaded the starting save of world {id}, {box.Length} bytes");
+            Log.Write($"uploaded the starting save of world {Log.Short(id)}, {box.Length} bytes");
         }
         catch (DirectoryException ex)
         {
             try
             {
                 client.Delete(id, key);
+                Log.Write($"deleted world {Log.Short(id)} again, since its starting save could not be uploaded");
             }
             catch (DirectoryException deleteFailed)
             {
-                Log.Write($"could not delete world {id} after its starting save failed: {deleteFailed.Message}");
+                Log.Write($"could not delete world {Log.Short(id)} after its starting save failed: {deleteFailed.Message}");
             }
 
             throw new ActionException(ex.Status == null ? Unreachable : $"The starting save could not be uploaded: {ex.Message}");
@@ -549,6 +616,7 @@ internal sealed class WorldDirectory
             throw new ActionException("The world's lock is damaged.");
         }
 
+        Log.Write($"opened the lock of world {Log.Short(id)} {OnOneField(world.Name)} with its password: {world.Seats.ToString(CultureInfo.InvariantCulture)} seats, starting save {world.Start}{(world.Choose ? ", players choose where to start" : string.Empty)}");
         return new ActionResult(new WorldCode(token, Relays.Current, world.Seats).ToText(), world.Name, world.Start, world.Choose);
     });
 
@@ -561,7 +629,9 @@ internal sealed class WorldDirectory
     public bool UnlockWithCode(string code) => Start("unlock", () =>
     {
         var given = WorldCode.Parse(code) ?? throw new ActionException("The world code is damaged.");
-        var world = Client(given.Relay).Lock(Relays.WorldRoomOf(given.Token));
+        var id = Relays.WorldRoomOf(given.Token);
+        var world = Client(given.Relay).Lock(id);
+        Log.Write($"looked up world {Log.Short(id)} {OnOneField(world.Name)} of a world code at relay {given.Relay}: {world.Seats.ToString(CultureInfo.InvariantCulture)} seats, starting save {world.Start}{(world.Choose ? ", players choose where to start" : string.Empty)}");
         return new ActionResult(new WorldCode(given.Token, given.Relay, world.Seats).ToText(), world.Name, world.Start, world.Choose);
     });
 
@@ -570,7 +640,12 @@ internal sealed class WorldDirectory
     /// </summary>
     /// <param name="id">The world.</param>
     /// <returns><see langword="false"/> while another action runs.</returns>
-    public bool Find(string id) => Start("find", () => new ActionResult(string.Empty, Client().Lock(id).Name));
+    public bool Find(string id) => Start("find", () =>
+    {
+        var name = Client().Lock(id).Name;
+        Log.Write($"found world {Log.Short(id)} {OnOneField(name)}");
+        return new ActionResult(string.Empty, name);
+    });
 
     /// <summary>
     /// Changes a world's seats, description and mods, which only its creator or one of the relay's
@@ -585,6 +660,7 @@ internal sealed class WorldDirectory
     public bool Edit(string id, int seats, string description, string mods, string? modHashes = null) => Start("edit", () =>
     {
         Client().Edit(id, Me().Key, seats, description, mods, modHashes);
+        Log.Write($"changed world {Log.Short(id)}: {seats.ToString(CultureInfo.InvariantCulture)} seats, description of {description.Length.ToString(CultureInfo.InvariantCulture)} characters, mods '{OnOneField(mods)}', {(modHashes != null ? $"mod hashes '{OnOneField(modHashes)}'" : "mod hashes left as they are")}");
         return null;
     });
 
@@ -597,6 +673,7 @@ internal sealed class WorldDirectory
     public bool SetSettings(string id, string settings) => Start("settings", () =>
     {
         Client().SetSettings(id, Me().Key, settings);
+        Log.Write($"set the mod settings of world {Log.Short(id)}: '{OnOneField(settings)}'");
         return null;
     });
 
@@ -609,6 +686,7 @@ internal sealed class WorldDirectory
     public bool SetData(string id, string data) => Start("data", () =>
     {
         Client().SetData(id, Me().Key, data);
+        Log.Write($"replaced the game data of world {Log.Short(id)}, {data.Length.ToString(CultureInfo.InvariantCulture)} characters");
         return null;
     });
 
@@ -620,6 +698,7 @@ internal sealed class WorldDirectory
     public bool Delete(string id) => Start("delete", () =>
     {
         Client().Delete(id, Me().Key);
+        Log.Write($"deleted world {Log.Short(id)}");
         return null;
     });
 
@@ -632,6 +711,7 @@ internal sealed class WorldDirectory
     public bool Ban(string id, string target) => Start("ban", () =>
     {
         Client().Ban(id, Me().Key, target);
+        Log.Write($"removed player {Log.Short(target)} from world {Log.Short(id)} and kept them out");
         return null;
     });
 
@@ -690,6 +770,7 @@ internal sealed class WorldDirectory
         {
             if (_action?.State == "busy")
             {
+                Log.Write($"world {kind} not started: the {_action.Value.Kind} still runs");
                 return false;
             }
 
@@ -711,7 +792,7 @@ internal sealed class WorldDirectory
             catch (Exception ex)
             {
                 error = ReasonFor(ex);
-                Log.Write($"world {kind} failed: {ex.GetBaseException().Message}");
+                Log.Write($"world {kind} failed: {ex.GetBaseException().Message}{(ex is DirectoryException directory ? $" (status {(directory.Status is { } status ? ((int)status).ToString(CultureInfo.InvariantCulture) : "none")}{(directory.Code != null ? $", code {directory.Code}" : string.Empty)})" : string.Empty)}, the player reads: {error}");
             }
 
             lock (_gate)

@@ -2,6 +2,7 @@
 //  TradeSeal.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-07: Sealed the offers through SealedBox, shared with the world's lock and the starting save
 //      Paulinchen  2026-10-06: Created
 //
 //----------------------------------------------------------------
@@ -25,21 +26,6 @@ internal static class TradeSeal
     public const int MaxOffersBytes = 32 * 1024;
 
     /// <summary>
-    /// Size of the key.
-    /// </summary>
-    private const int KeyBytes = 32;
-
-    /// <summary>
-    /// Size of the AES-GCM nonce.
-    /// </summary>
-    private const int NonceBytes = 12;
-
-    /// <summary>
-    /// Size of the AES-GCM tag.
-    /// </summary>
-    private const int TagBytes = 16;
-
-    /// <summary>
     /// Separates the trades' key from anything else ever derived from the same token.
     /// </summary>
     private static readonly byte[] KeyInfo = "mgqmp world trade v1"u8.ToArray();
@@ -58,16 +44,8 @@ internal static class TradeSeal
     /// <param name="trade">The trade's id, which a sealed text only opens under.</param>
     /// <param name="offers">The offers.</param>
     /// <returns>The nonce, the encrypted offers and the tag, in base64.</returns>
-    public static string Seal(string token, string trade, string offers)
-    {
-        var plain = Encoding.UTF8.GetBytes(offers);
-        var box = new byte[NonceBytes + plain.Length + TagBytes];
-        RandomNumberGenerator.Fill(box.AsSpan(0, NonceBytes));
-
-        using var aes = new AesGcm(KeyOf(token), TagBytes);
-        aes.Encrypt(box.AsSpan(0, NonceBytes), plain, box.AsSpan(NonceBytes, plain.Length), box.AsSpan(NonceBytes + plain.Length), Encoding.UTF8.GetBytes(trade));
-        return Convert.ToBase64String(box);
-    }
+    public static string Seal(string token, string trade, string offers) =>
+        Convert.ToBase64String(SealedBox.Seal(KeyOf(token), Encoding.UTF8.GetBytes(offers), Encoding.UTF8.GetBytes(trade)));
 
     /// <summary>
     /// Decrypts the offers of a trade.
@@ -90,22 +68,13 @@ internal static class TradeSeal
             throw new InvalidDataException("The sealed offers are no base64.");
         }
 
-        if (box.Length < NonceBytes + TagBytes)
+        if (box.Length < SealedBox.Overhead)
         {
             throw new InvalidDataException("The sealed offers are too short.");
         }
 
-        var plain = new byte[box.Length - NonceBytes - TagBytes];
-
-        try
-        {
-            using var aes = new AesGcm(KeyOf(token), TagBytes);
-            aes.Decrypt(box.AsSpan(0, NonceBytes), box.AsSpan(NonceBytes, plain.Length), box.AsSpan(box.Length - TagBytes), plain, Encoding.UTF8.GetBytes(trade));
-        }
-        catch (AuthenticationTagMismatchException)
-        {
-            throw new InvalidDataException("The sealed offers are damaged, or belong to another world or trade.");
-        }
+        var plain = SealedBox.Open(KeyOf(token), box, Encoding.UTF8.GetBytes(trade))
+            ?? throw new InvalidDataException("The sealed offers are damaged, or belong to another world or trade.");
 
         return Encoding.UTF8.GetString(plain);
     }
@@ -115,6 +84,5 @@ internal static class TradeSeal
     /// </summary>
     /// <param name="token">The world's token.</param>
     /// <returns>The key.</returns>
-    private static byte[] KeyOf(string token) =>
-        HKDF.DeriveKey(HashAlgorithmName.SHA256, Encoding.UTF8.GetBytes(token), KeyBytes, info: KeyInfo);
+    private static byte[] KeyOf(string token) => SealedBox.KeyOf(token, KeyInfo);
 }

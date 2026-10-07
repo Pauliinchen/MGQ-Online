@@ -2,6 +2,8 @@
 //  WorldTrades.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-07: Logged each commit as it starts and when a newer one replaced it, why a cancel, a done or a fetch did not start, a lost relay only once per commit, and each trade fetched
+//                            - Woke a commit's wait at once when a newer commit replaces it, and waited on the gate before each new try too
 //      Paulinchen  2026-10-06: Started its threads through Threads and read who plays through Player.Current, both shared with the world's other parts
 //                            - Cancelled a trade from its commit once the commit arrived, so a cancel that overtakes the commit still ends it
 //                            - Created
@@ -159,24 +161,34 @@ internal sealed class WorldTrades
     {
         if (!IsOneField(offers) || offers.Length == 0 || Encoding.UTF8.GetByteCount(offers) > TradeSeal.MaxOffersBytes)
         {
-            Log.Write($"trade {trade} not committed: the offers are empty, too long or not on one line");
+            Log.Write($"trade {Log.Short(trade)} not committed: the offers are empty, too long or not on one line");
             return false;
         }
 
         if (Playing() is not { } player || WorldOf(world) is not { } code || RelayAddress(code.Relay) is not { } relay)
         {
-            Log.Write($"trade {trade} not committed: no player, or not in world {world}");
+            Log.Write($"trade {Log.Short(trade)} not committed: no player, or not in world {Log.Short(world)}");
             return false;
         }
 
         int generation;
+        CommitState? replaced;
 
         lock (_gate)
         {
+            replaced = _commit;
             generation = ++_commitGeneration;
             _commit = new CommitState(trade, "sending");
             _cancelWanted = null;
+            Monitor.PulseAll(_gate);
         }
+
+        if (replaced is { State: "sending" or "waiting" })
+        {
+            Log.Write($"trade {Log.Short(replaced.Trade)} is no longer followed, trade {Log.Short(trade)} replaces its commit");
+        }
+
+        Log.Write($"committing trade {Log.Short(trade)} with {Log.Short(partner)} in world {Log.Short(world)}, {Encoding.UTF8.GetByteCount(offers)} bytes of offers");
 
         var client = new DirectoryClient(relay);
         Threads.Start("MultiplayerTradeCommit", () => RunCommit(generation, client, new TradeCommit(world, trade, partner, offers, player.Key, code.Token)));
@@ -197,21 +209,28 @@ internal sealed class WorldTrades
     {
         if (Playing() is not { } player || ClientFor(world) is not { } client)
         {
+            Log.Write($"trade {Log.Short(trade)} not cancelled: no player, or a relay this version does not know");
             return false;
         }
 
+        bool following;
+
         lock (_gate)
         {
-            if (_commit?.Trade == trade)
+            following = _commit?.Trade == trade;
+
+            if (following)
             {
                 _cancelWanted = trade;
             }
         }
 
-        Threads.Start("MultiplayerTradeCancel", () => Retry($"cancelling trade {trade}", () =>
+        Log.Write($"cancelling trade {Log.Short(trade)}{(following ? ", its running commit cancels it too once it arrived" : string.Empty)}");
+
+        Threads.Start("MultiplayerTradeCancel", () => Retry($"cancelling trade {Log.Short(trade)}", () =>
         {
             var answer = client.CancelTrade(trade, player.Key);
-            Log.Write($"cancelled trade {trade}: {answer.State}");
+            Log.Write($"cancelled trade {Log.Short(trade)}: {answer.State}");
         }));
         return true;
     }
@@ -226,20 +245,21 @@ internal sealed class WorldTrades
     {
         if (Playing() is not { } player || ClientFor(world) is not { } client)
         {
+            Log.Write($"trade {Log.Short(trade)} not marked done: no player, or a relay this version does not know");
             return false;
         }
 
-        Threads.Start("MultiplayerTradeDone", () => Retry($"marking trade {trade} done", () =>
+        Threads.Start("MultiplayerTradeDone", () => Retry($"marking trade {Log.Short(trade)} done", () =>
         {
             try
             {
                 client.TradeDone(trade, player.Key);
-                Log.Write($"marked trade {trade} done");
+                Log.Write($"marked trade {Log.Short(trade)} done");
             }
             catch (DirectoryException ex) when (ex.Status == HttpStatusCode.NotFound)
             {
                 // The relay deletes a trade once both games marked it done, so a repeated done finds none.
-                Log.Write($"trade {trade} is gone from the relay, done already");
+                Log.Write($"trade {Log.Short(trade)} is gone from the relay, done already");
             }
         }));
         return true;
@@ -254,6 +274,7 @@ internal sealed class WorldTrades
     {
         if (Playing() is not { } player || WorldOf(world) is not { } code || RelayAddress(code.Relay) is not { } relay)
         {
+            Log.Write($"trades not yet done not fetched: no player, or not in world {Log.Short(world)}");
             return false;
         }
 
@@ -261,6 +282,7 @@ internal sealed class WorldTrades
         {
             if (_fetching)
             {
+                Log.Write("trades not yet done not fetched: a fetch still runs");
                 return false;
             }
 
@@ -276,7 +298,7 @@ internal sealed class WorldTrades
             try
             {
                 trades = Unseal(client.PendingTrades(player.Key, world), code.Token);
-                Log.Write($"fetched {trades.Count} committed trade(s) not yet done in world {world}");
+                Log.Write($"fetched {trades.Count} committed trade(s) not yet done in world {Log.Short(world)}");
             }
             catch (Exception ex)
             {
@@ -362,8 +384,7 @@ internal sealed class WorldTrades
     /// or cancelled it, a newer commit replaced this one, or the time is up.
     /// </summary>
     /// <remarks>
-    /// Catches everything, since an exception escaping this thread would end the whole game. The
-    /// commit is sent again until one arrives, which the relay takes as the same commit.
+    /// The commit is sent again until one arrives, which the relay takes as the same commit.
     /// </remarks>
     /// <param name="generation">The commit this thread belongs to.</param>
     /// <param name="client">The relay's client.</param>
@@ -378,6 +399,7 @@ internal sealed class WorldTrades
             var arrived = false;
             var reached = false;
             var cancelSent = false;
+            var lost = false;
 
             while (IsCurrent(generation))
             {
@@ -387,8 +409,14 @@ internal sealed class WorldTrades
 
                     if (!arrived)
                     {
-                        Log.Write($"committed trade {commit.Trade} with {commit.Partner}: {answer.State}");
+                        Log.Write($"committed trade {Log.Short(commit.Trade)} with {Log.Short(commit.Partner)}: {answer.State}");
                     }
+                    else if (lost)
+                    {
+                        Log.Write($"trade {Log.Short(commit.Trade)} reached the relay again: {answer.State}");
+                    }
+
+                    lost = false;
 
                     arrived = true;
                     reached = true;
@@ -397,12 +425,12 @@ internal sealed class WorldTrades
                     {
                         answer = client.CancelTrade(commit.Trade, commit.PlayerKey);
                         cancelSent = true;
-                        Log.Write($"cancelled trade {commit.Trade} once its commit arrived: {answer.State}");
+                        Log.Write($"cancelled trade {Log.Short(commit.Trade)} once its commit arrived: {answer.State}");
                     }
 
                     if (answer.State is Committed or Cancelled)
                     {
-                        Log.Write($"trade {commit.Trade} {answer.State}{(answer.Reason.Length > 0 ? $" ({answer.Reason})" : string.Empty)}");
+                        Log.Write($"trade {Log.Short(commit.Trade)} {answer.State}{(answer.Reason.Length > 0 ? $" ({answer.Reason})" : string.Empty)}");
                         Settle(generation, commit.Trade, answer.State, answer.Reason, null);
                         return;
                     }
@@ -417,22 +445,28 @@ internal sealed class WorldTrades
                 catch (DirectoryException ex) when (ex.Status == null)
                 {
                     // Lost on the way, so the game tries again until the time is up.
-                    Log.Write($"trade {commit.Trade}: {ex.Message}");
+                    if (!lost)
+                    {
+                        Log.Write($"trade {Log.Short(commit.Trade)} lost the relay, trying again every {PollInterval.TotalSeconds.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture)} s: {ex.Message}");
+                        lost = true;
+                    }
                 }
 
                 if (DateTime.UtcNow >= deadline)
                 {
-                    Log.Write($"trade {commit.Trade} failed: the relay never settled it");
+                    Log.Write($"trade {Log.Short(commit.Trade)} failed: the relay never settled it");
                     Settle(generation, commit.Trade, "failed", null, reached ? NoAnswer : Unreachable);
                     return;
                 }
 
-                Thread.Sleep(PollInterval);
+                Pause(PollInterval, () => generation == _commitGeneration);
             }
+
+            Log.Write($"stopped following trade {Log.Short(commit.Trade)}, a newer commit replaced it");
         }
         catch (Exception ex)
         {
-            Log.Write($"trade {commit.Trade} failed: {ex.GetBaseException().Message}");
+            Log.Write($"trade {Log.Short(commit.Trade)} failed: {ex.GetBaseException().Message}");
             Settle(generation, commit.Trade, "failed", null, ReasonFor(ex));
         }
     }
@@ -504,10 +538,11 @@ internal sealed class WorldTrades
                 }
 
                 opened.Add((trade.Id, offers));
+                Log.Write($"trade {Log.Short(trade.Id)} is committed and not yet done here, {Encoding.UTF8.GetByteCount(offers)} bytes of offers");
             }
             catch (InvalidDataException ex)
             {
-                Log.Write($"left out trade {trade.Id}: {ex.Message}");
+                Log.Write($"left out trade {Log.Short(trade.Id)}: {ex.Message}");
             }
         }
 
@@ -517,9 +552,6 @@ internal sealed class WorldTrades
     /// <summary>
     /// Runs a request, again after each of the retry delays while the relay cannot be reached; how it went is only logged.
     /// </summary>
-    /// <remarks>
-    /// Catches everything, since an exception escaping this thread would end the whole game.
-    /// </remarks>
     /// <param name="what">What the request does, for the log.</param>
     /// <param name="request">The request.</param>
     private void Retry(string what, Action request)
@@ -534,12 +566,30 @@ internal sealed class WorldTrades
             catch (DirectoryException ex) when (ex.Status == null && attempt < RetryDelays.Length)
             {
                 Log.Write($"{what} failed, trying again: {ex.Message}");
-                Thread.Sleep(RetryDelays[attempt]);
+                Pause(RetryDelays[attempt], static () => true);
             }
             catch (Exception ex)
             {
                 Log.Write($"{what} failed: {ex.GetBaseException().Message}");
                 return;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Waits on the gate for a while, or until a pulse finds the wait no longer wanted.
+    /// </summary>
+    /// <param name="delay">How long at most.</param>
+    /// <param name="stillWanted">Tells whether to go on waiting, called with the gate held.</param>
+    private void Pause(TimeSpan delay, Func<bool> stillWanted)
+    {
+        var until = DateTime.UtcNow + delay;
+
+        lock (_gate)
+        {
+            while (stillWanted() && until - DateTime.UtcNow is { Ticks: > 0 } left)
+            {
+                Monitor.Wait(_gate, left);
             }
         }
     }

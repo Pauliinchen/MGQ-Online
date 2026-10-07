@@ -2,6 +2,8 @@
 //  Session.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-07: Logged hosting, joining and cancelling with where the session stood, each step of the team swap, the player's name once it changes, and failures marked as PvP
+//                            - Woke the host's waits at once when hosting ends, read the role and the player's name under the gate, took only the message the game script read, and cleaned names through PlayerName
 //      Paulinchen  2026-10-06: Started its threads through Threads, shared with the other connections, and wrote the room in lowercase hexadecimal at once
 //                            - Kept an invite accepted during a PvP battle when its link ends, only the player's own stop turning it down
 //                            - Had the host send a salt of its own after the guest's, so a replayed guest is turned away
@@ -29,7 +31,6 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
-using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
@@ -289,11 +290,25 @@ internal sealed class Session
     public TimeSpan HostWaitLimit { get; init; } = TimeSpan.FromMinutes(30);
 
     /// <summary>
-    /// Takes the player's name, which the Discord mod knows, sent along with every later team.
+    /// Takes the player's name, which the Discord mod knows, sent along with every later team, and logs it once it changes.
     /// </summary>
     /// <param name="name">The name, <see langword="null"/> while unknown.</param>
-    public void SetPlayerName(string? name) =>
-        Volatile.Write(ref _playerName, Cleaned(name) is { Length: > 0 } cleaned ? cleaned : DefaultPlayerName);
+    public void SetPlayerName(string? name)
+    {
+        var cleaned = NameOrDefault(name);
+
+        lock (_gate)
+        {
+            if (_playerName == cleaned)
+            {
+                return;
+            }
+
+            _playerName = cleaned;
+        }
+
+        Log.Write($"pvp player name is {cleaned}");
+    }
 
     /// <summary>
     /// Starts hosting: waits in a room of the relay, puts the join code on the clipboard and on
@@ -308,6 +323,7 @@ internal sealed class Session
         lock (_gate)
         {
             generation = Restart(SessionState.Hosting);
+            Log.Write($"pvp hosting as {_playerName}, team of {Encoding.UTF8.GetByteCount(team)} bytes");
 
             if (!FitsInFrame(game, team))
             {
@@ -334,6 +350,7 @@ internal sealed class Session
             _invite = null;
         }
 
+        Log.Write(invite != null ? "pvp joining the host of the waiting invite" : "pvp joining an invite, but none waits");
         Join(invite, game, team);
     }
 
@@ -342,7 +359,11 @@ internal sealed class Session
     /// </summary>
     /// <param name="game">What tells this game version's data from another's.</param>
     /// <param name="team">The player's team.</param>
-    public void JoinClipboard(string game, string team) => Join(ReadClipboard(), game, team);
+    public void JoinClipboard(string game, string team)
+    {
+        Log.Write("pvp joining the host whose join code is on the clipboard");
+        Join(ReadClipboard(), game, team);
+    }
 
     /// <summary>
     /// Joins the host of a join code.
@@ -370,6 +391,7 @@ internal sealed class Session
                 return;
             }
 
+            Log.Write($"pvp joining a host at relay {code.Relay} as {_playerName}, team of {Encoding.UTF8.GetByteCount(team)} bytes");
             Threads.Start("MultiplayerJoin", () => Visit(generation, code, game, team));
         }
     }
@@ -386,12 +408,19 @@ internal sealed class Session
     {
         lock (_gate)
         {
-            var linkEnds = _state == SessionState.Received;
+            var was = _state;
+            var linkEnds = was == SessionState.Received;
+            var inviteWaited = _invite != null;
             Restart(SessionState.Idle);
 
             if (!linkEnds)
             {
                 _invite = null;
+            }
+
+            if (was != SessionState.Idle || inviteWaited)
+            {
+                Log.Write($"pvp cancelled while {was.ToString().ToLowerInvariant()}{(inviteWaited ? linkEnds ? ", the waiting invite stays" : ", the waiting invite is turned down" : string.Empty)}");
             }
         }
     }
@@ -474,13 +503,14 @@ internal sealed class Session
     }
 
     /// <summary>
-    /// Takes the oldest message from the friend.
+    /// Takes the oldest message from the friend, if it is the one the game script read.
     /// </summary>
-    public void TakeMessage()
+    /// <param name="message">The message <see cref="PeekMessage"/> handed out.</param>
+    public void TakeMessage(string message)
     {
         lock (_gate)
         {
-            _link?.Take();
+            _link?.Take(message);
         }
     }
 
@@ -516,9 +546,6 @@ internal sealed class Session
     /// first reached, and stops hosting once nobody joined for <see cref="HostWaitLimit"/> or the
     /// relay ended the lone wait.
     /// </summary>
-    /// <remarks>
-    /// Catches everything, since an exception escaping this thread would end the whole game.
-    /// </remarks>
     /// <param name="generation">The session this thread belongs to.</param>
     /// <param name="game">What tells this game version's data from another's.</param>
     /// <param name="team">The player's team.</param>
@@ -551,6 +578,11 @@ internal sealed class Session
                     return;
                 }
 
+                if (reportedUnreachable)
+                {
+                    Log.Write($"pvp host is back in its room at relay {Relays.Current}");
+                }
+
                 if (!advertised)
                 {
                     if (!Advertise(generation, new JoinCode(token, Relays.Current).ToText(), token))
@@ -580,6 +612,10 @@ internal sealed class Session
                 {
                     GiveUpHosting(generation, "the relay ended the lone wait");
                     return;
+                }
+                else if (IsHosting(generation) && DateTime.UtcNow < givesUpAt)
+                {
+                    Log.Write("pvp host's wait in the relay room ended without a guest, entering the room again");
                 }
             }
             catch (Exception ex)
@@ -640,6 +676,8 @@ internal sealed class Session
 
         try
         {
+            Log.Write("pvp guest arrived in the relay room, swapping teams");
+
             if (channel.Receive() is not { Length: FrameCipher.SaltSize } guestSalt)
             {
                 Log.Write("turned a guest away, it sent no salt");
@@ -659,6 +697,7 @@ internal sealed class Session
 
             if (guest[Message.Game] != game)
             {
+                Log.Write($"turned guest {guest[Message.Player]} away, their game data or mod version differs");
                 SendMessage(channel, cipher, Refusal(DifferentGame));
                 Fail(generation, DifferentGame);
                 return true;
@@ -678,9 +717,6 @@ internal sealed class Session
     /// <summary>
     /// Joins a host and swaps teams with it.
     /// </summary>
-    /// <remarks>
-    /// Catches everything, since an exception escaping this thread would end the whole game.
-    /// </remarks>
     /// <param name="generation">The session this thread belongs to.</param>
     /// <param name="code">The host's join code.</param>
     /// <param name="game">What tells this game version's data from another's.</param>
@@ -700,12 +736,14 @@ internal sealed class Session
                 return;
             }
 
+            Log.Write("pvp host found in the relay room, swapping teams");
             channel.SetTimeout(ExchangeTimeout);
             var guestSalt = FrameCipher.NewSalt();
             channel.Send(guestSalt);
 
             if (channel.Receive() is not { Length: FrameCipher.SaltSize } hostSalt)
             {
+                Log.Write("pvp host sent no salt of its own");
                 Fail(generation, NoAnswer);
                 return;
             }
@@ -714,19 +752,21 @@ internal sealed class Session
             var headers = new KeyValuePair<string, string?>[]
             {
                 new(Message.Game, game),
-                new(Message.Player, Volatile.Read(ref _playerName)),
+                new(Message.Player, PlayerNameNow),
             };
 
             SendMessage(channel, cipher, new Message(headers, team).Encode());
 
             if (ReceiveMessage(channel, cipher) is not { } host)
             {
+                Log.Write("pvp host sent no team that opens with this join code");
                 Fail(generation, NoAnswer);
                 return;
             }
 
             if (host[Message.Refused].Length > 0)
             {
+                Log.Write($"pvp host {host[Message.Player]} turned this game away");
                 Fail(generation, host[Message.Refused]);
                 return;
             }
@@ -773,6 +813,7 @@ internal sealed class Session
             }
 
             channel.Dispose();
+            Log.Write($"pvp no host came into the relay room within {RelayPairTimeout.TotalSeconds.ToString("0", CultureInfo.InvariantCulture)} s");
             failure = NotHosting;
             return null;
         }
@@ -809,7 +850,21 @@ internal sealed class Session
     /// <param name="team">The team.</param>
     /// <returns>The message's text.</returns>
     private string TeamMessage(string team) =>
-        new Message(new KeyValuePair<string, string?>[] { new(Message.Player, Volatile.Read(ref _playerName)) }, team).Encode();
+        new Message(new KeyValuePair<string, string?>[] { new(Message.Player, PlayerNameNow) }, team).Encode();
+
+    /// <summary>
+    /// The player's name as it stands, read under the gate.
+    /// </summary>
+    private string PlayerNameNow
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _playerName;
+            }
+        }
+    }
 
     /// <summary>
     /// Writes the message that turns a guest away.
@@ -853,23 +908,29 @@ internal sealed class Session
     /// <returns><see langword="true"/> when the link took the connection over.</returns>
     private bool Receive(int generation, string player, string team, IFrameChannel channel, FrameCipher cipher, string token)
     {
+        var opponent = NameOrDefault(player);
+        string role;
+
         lock (_gate)
         {
             if (generation != _generation || _state is not (SessionState.Hosting or SessionState.Joining))
             {
+                Log.Write("pvp team arrived after the session moved on, dropped");
                 return false;
             }
 
             _state = SessionState.Received;
-            _opponent = Cleaned(player) is { Length: > 0 } cleaned ? cleaned : DefaultPlayerName;
+            _opponent = opponent;
             _opponentTeam = team;
             _joinCode = null;
             _link = new Link(channel, cipher, PingInterval, DropTimeout);
             _partyId = PartyIdOf(token);
+            role = _role ?? "?";
             StopWaiting();
+            Monitor.PulseAll(_gate);
         }
 
-        Log.Write("teams swapped");
+        Log.Write($"teams swapped as {role} with {opponent}, their team {Encoding.UTF8.GetByteCount(team)} bytes, the link is open");
         return true;
     }
 
@@ -922,7 +983,7 @@ internal sealed class Session
     }
 
     /// <summary>
-    /// Waits for a while, or until hosting ends.
+    /// Waits for a while, or until hosting ends, which wakes it at once.
     /// </summary>
     /// <param name="generation">The hosting generation.</param>
     /// <param name="time">How long to wait at most.</param>
@@ -930,9 +991,12 @@ internal sealed class Session
     {
         var until = DateTime.UtcNow + time;
 
-        while (DateTime.UtcNow < until && IsHosting(generation))
+        lock (_gate)
         {
-            Thread.Sleep(200);
+            while (generation == _generation && _state == SessionState.Hosting && until - DateTime.UtcNow is { Ticks: > 0 } left)
+            {
+                Monitor.Wait(_gate, left);
+            }
         }
     }
 
@@ -996,7 +1060,8 @@ internal sealed class Session
         _error = error;
         _joinCode = null;
         StopWaiting();
-        Log.Write($"{error}");
+        Monitor.PulseAll(_gate);
+        Log.Write($"pvp failed: {error}");
     }
 
     /// <summary>
@@ -1024,6 +1089,7 @@ internal sealed class Session
         _error = null;
         _opponent = null;
         _opponentTeam = null;
+        Monitor.PulseAll(_gate);
         return ++_generation;
     }
 
@@ -1048,14 +1114,10 @@ internal sealed class Session
         Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(token)))[..32];
 
     /// <summary>
-    /// Keeps a name short and on one line.
+    /// Keeps a name short and on one line, or names a player who gave none.
     /// </summary>
-    /// <param name="name">The name.</param>
-    /// <returns>The name without control characters, cut to <see cref="MaxPlayerNameLength"/>.</returns>
-    private static string Cleaned(string? name)
-    {
-        var cleaned = new string((name ?? string.Empty).Where(character => !char.IsControl(character)).ToArray()).Trim();
-
-        return cleaned.Length <= MaxPlayerNameLength ? cleaned : cleaned.Substring(0, MaxPlayerNameLength);
-    }
+    /// <param name="name">The name, <see langword="null"/> for none.</param>
+    /// <returns>The name cleaned and cut to <see cref="MaxPlayerNameLength"/>, or <see cref="DefaultPlayerName"/> when nothing is left of it.</returns>
+    private static string NameOrDefault(string? name) =>
+        PlayerName.Cleaned(name, MaxPlayerNameLength) is { Length: > 0 } cleaned ? cleaned : DefaultPlayerName;
 }

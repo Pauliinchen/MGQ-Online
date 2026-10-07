@@ -2,6 +2,7 @@
 //  StartingSave.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-07: Sealed the zip through SealedBox, shared with the world's lock and the trades
 //      Paulinchen  2026-10-06: Named the most bytes the relay keeps of a starting save
 //      Paulinchen  2026-09-30: Created
 //
@@ -11,7 +12,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
-using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -37,21 +37,6 @@ internal static partial class StartingSave
     /// Most bytes the relay keeps of a sealed starting save.
     /// </summary>
     public const int MaxSealedBytes = 8 * 1024 * 1024;
-
-    /// <summary>
-    /// Size of the key.
-    /// </summary>
-    private const int KeyBytes = 32;
-
-    /// <summary>
-    /// Size of the AES-GCM nonce.
-    /// </summary>
-    private const int NonceBytes = 12;
-
-    /// <summary>
-    /// Size of the AES-GCM tag.
-    /// </summary>
-    private const int TagBytes = 16;
 
     /// <summary>
     /// Separates the starting save's key from anything else ever derived from the same token.
@@ -90,13 +75,7 @@ internal static partial class StartingSave
             }
         }
 
-        var plain = zipped.ToArray();
-        var box = new byte[NonceBytes + plain.Length + TagBytes];
-        RandomNumberGenerator.Fill(box.AsSpan(0, NonceBytes));
-
-        using var aes = new AesGcm(KeyOf(token), TagBytes);
-        aes.Encrypt(box.AsSpan(0, NonceBytes), plain, box.AsSpan(NonceBytes, plain.Length), box.AsSpan(NonceBytes + plain.Length));
-        return box;
+        return SealedBox.Seal(KeyOf(token), zipped.ToArray());
     }
 
     /// <summary>
@@ -109,22 +88,13 @@ internal static partial class StartingSave
     /// <exception cref="InvalidDataException">The starting save is damaged, not the world's, or unpacks into more than it may.</exception>
     public static IReadOnlyList<string> Open(string token, byte[] box, string folder)
     {
-        if (box.Length < NonceBytes + TagBytes)
+        if (box.Length < SealedBox.Overhead)
         {
             throw new InvalidDataException("The starting save is too short.");
         }
 
-        var plain = new byte[box.Length - NonceBytes - TagBytes];
-
-        try
-        {
-            using var aes = new AesGcm(KeyOf(token), TagBytes);
-            aes.Decrypt(box.AsSpan(0, NonceBytes), box.AsSpan(NonceBytes, plain.Length), box.AsSpan(box.Length - TagBytes), plain);
-        }
-        catch (AuthenticationTagMismatchException)
-        {
-            throw new InvalidDataException("The starting save is damaged, or belongs to another world.");
-        }
+        var plain = SealedBox.Open(KeyOf(token), box)
+            ?? throw new InvalidDataException("The starting save is damaged, or belongs to another world.");
 
         using var zip = new ZipArchive(new MemoryStream(plain), ZipArchiveMode.Read);
 
@@ -174,8 +144,7 @@ internal static partial class StartingSave
     /// </summary>
     /// <param name="token">The world's token.</param>
     /// <returns>The key.</returns>
-    private static byte[] KeyOf(string token) =>
-        HKDF.DeriveKey(HashAlgorithmName.SHA256, Encoding.UTF8.GetBytes(token), KeyBytes, info: KeyInfo);
+    private static byte[] KeyOf(string token) => SealedBox.KeyOf(token, KeyInfo);
 
     /// <summary>
     /// Letters, digits, dots, dashes and underscores, at most 64.

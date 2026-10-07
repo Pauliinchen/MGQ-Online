@@ -2,6 +2,7 @@
 //  SessionTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-07: Took the message the session handed out
 //      Paulinchen  2026-10-06: Covered an invite kept past the link's end, hosting that stops when nobody joins, and a team too large to send
 //      Paulinchen  2026-09-29: Covered joining with a world code
 //                            - Met at the test relay in every test, and covered an unreachable or unknown relay and codes of other versions
@@ -103,8 +104,9 @@ public sealed class SessionTests
         Assert.Equal(advertisedParty, hostSide["party"]);
         Assert.Equal(advertisedParty, guestSide["party"]);
         Assert.True(guest.Send("ready"));
-        Assert.Equal("ready", AwaitMessage(host));
-        host.TakeMessage();
+        var ready = AwaitMessage(host);
+        Assert.Equal("ready", ready);
+        host.TakeMessage(ready);
         Assert.Null(host.PeekMessage());
         Assert.True(host.Send("turn\n1"));
         Assert.Equal("turn\n1", AwaitMessage(guest));

@@ -2,6 +2,8 @@
 //  ReleaseDownload.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-07: Logged each request to GitHub with its outcome, and why a download was refused
+//                            - Took the client to download with, so the tests hand in one of their own
 //      Paulinchen  2026-10-06: Took a zip of a release too, up to the size an upload may have
 //                            - Created
 //
@@ -30,6 +32,11 @@ internal static partial class ReleaseDownload
     /// The largest zip taken, as on the relay.
     /// </summary>
     public const int MaxZipBytes = 16 * 1024 * 1024;
+
+    /// <summary>
+    /// How many redirects a download follows at most.
+    /// </summary>
+    public const int MaxRedirects = 3;
 
     /// <summary>
     /// The hosts GitHub serves release files from.
@@ -61,7 +68,16 @@ internal static partial class ReleaseDownload
     /// <param name="url">The release file's address, as the catalog names it.</param>
     /// <returns>The file.</returns>
     /// <exception cref="InvalidOperationException">The address or a redirect breaks the rules, or the download failed.</exception>
-    public static byte[] Get(string url)
+    public static byte[] Get(string url) => Get(url, Http);
+
+    /// <summary>
+    /// Downloads a release file with a client of the caller's, following at most <see cref="MaxRedirects"/> redirects to GitHub's file hosts.
+    /// </summary>
+    /// <param name="url">The release file's address, as the catalog names it.</param>
+    /// <param name="http">The client, which follows no redirect by itself.</param>
+    /// <returns>The file.</returns>
+    /// <exception cref="InvalidOperationException">The address or a redirect breaks the rules, or the download failed.</exception>
+    internal static byte[] Get(string url, HttpClient http)
     {
         if (!IsReleaseFile(url))
         {
@@ -70,10 +86,12 @@ internal static partial class ReleaseDownload
 
         var maxBytes = url.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) ? MaxZipBytes : MaxScriptBytes;
         var address = new Uri(url);
+        Log.Write($"downloading {url}");
 
-        for (var hop = 0; hop <= 3; hop++)
+        for (var hop = 0; hop <= MaxRedirects; hop++)
         {
-            using var response = Http.Send(new HttpRequestMessage(HttpMethod.Get, address));
+            using var response = http.Send(new HttpRequestMessage(HttpMethod.Get, address));
+            Log.Write($"GitHub GET {address.Host}{address.AbsolutePath}: {(int)response.StatusCode}");
 
             if ((int)response.StatusCode is >= 300 and < 400)
             {

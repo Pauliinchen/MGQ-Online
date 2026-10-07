@@ -2,6 +2,7 @@
 //  WorldLock.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-07: Sealed the token through SealedBox, shared with the trades and the starting save
 //      Paulinchen  2026-10-06: Hashed new locks' passwords 600 000 times instead of 200 000
 //      Paulinchen  2026-09-29: Created
 //
@@ -37,21 +38,6 @@ internal sealed record WorldLock(string Salt, int Iterations, string Box)
     private const int SaltBytes = 16;
 
     /// <summary>
-    /// Size of the password's key.
-    /// </summary>
-    private const int KeyBytes = 32;
-
-    /// <summary>
-    /// Size of the AES-GCM nonce.
-    /// </summary>
-    private const int NonceBytes = 12;
-
-    /// <summary>
-    /// Size of the AES-GCM tag.
-    /// </summary>
-    private const int TagBytes = 16;
-
-    /// <summary>
     /// Locks a token with a password.
     /// </summary>
     /// <param name="token">The world's token.</param>
@@ -61,13 +47,7 @@ internal sealed record WorldLock(string Salt, int Iterations, string Box)
     public static WorldLock Close(string token, string password, int iterations = DefaultIterations)
     {
         var salt = RandomNumberGenerator.GetBytes(SaltBytes);
-        var nonce = RandomNumberGenerator.GetBytes(NonceBytes);
-        var plain = Encoding.UTF8.GetBytes(token);
-        var box = new byte[NonceBytes + plain.Length + TagBytes];
-
-        nonce.CopyTo(box, 0);
-        using var aes = new AesGcm(KeyOf(password, salt, iterations), TagBytes);
-        aes.Encrypt(nonce, plain, box.AsSpan(NonceBytes, plain.Length), box.AsSpan(NonceBytes + plain.Length));
+        var box = SealedBox.Seal(KeyOf(password, salt, iterations), Encoding.UTF8.GetBytes(token));
         return new WorldLock(WorldKeys.Hex(salt), iterations, WorldKeys.Hex(box));
     }
 
@@ -82,18 +62,9 @@ internal sealed record WorldLock(string Salt, int Iterations, string Box)
         {
             var salt = Convert.FromHexString(Salt);
             var box = Convert.FromHexString(Box);
-
-            if (box.Length < NonceBytes + TagBytes)
-            {
-                return null;
-            }
-
-            var plain = new byte[box.Length - NonceBytes - TagBytes];
-            using var aes = new AesGcm(KeyOf(password, salt, Iterations), TagBytes);
-            aes.Decrypt(box.AsSpan(0, NonceBytes), box.AsSpan(NonceBytes, plain.Length), box.AsSpan(box.Length - TagBytes), plain);
-            return Encoding.UTF8.GetString(plain);
+            return SealedBox.Open(KeyOf(password, salt, Iterations), box) is { } plain ? Encoding.UTF8.GetString(plain) : null;
         }
-        catch (Exception ex) when (ex is AuthenticationTagMismatchException or FormatException or ArgumentException)
+        catch (Exception ex) when (ex is FormatException or ArgumentException)
         {
             return null;
         }
@@ -107,5 +78,5 @@ internal sealed record WorldLock(string Salt, int Iterations, string Box)
     /// <param name="iterations">How often PBKDF2 hashes the password.</param>
     /// <returns>The key.</returns>
     private static byte[] KeyOf(string password, byte[] salt, int iterations) =>
-        Rfc2898DeriveBytes.Pbkdf2(Encoding.UTF8.GetBytes(password), salt, iterations, HashAlgorithmName.SHA256, KeyBytes);
+        Rfc2898DeriveBytes.Pbkdf2(Encoding.UTF8.GetBytes(password), salt, iterations, HashAlgorithmName.SHA256, SealedBox.KeyBytes);
 }

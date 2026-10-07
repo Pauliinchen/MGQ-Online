@@ -2,6 +2,7 @@
 //  Exports.Pvp.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-07: Took the message mp_receive handed out, not whichever is oldest by then
 //      Paulinchen  2026-09-30: Created
 //
 //----------------------------------------------------------------
@@ -242,7 +243,7 @@ internal static unsafe partial class Exports
             // would block every message behind it.
             if (length >= 0)
             {
-                Session.Current.TakeMessage();
+                Session.Current.TakeMessage(message);
             }
 
             return length;

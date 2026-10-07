@@ -2,6 +2,7 @@
 //  LinkTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-07: Took the message the link handed out
 //      Paulinchen  2026-10-06: Encrypted the links with a salt of each side
 //      Paulinchen  2026-10-04: Let the other side stay silent for two seconds, since a busy build machine delays a ping past 400 ms
 //      Paulinchen  2026-09-29: Encrypted the links with a connection's salt as well as the token
@@ -76,8 +77,9 @@ public sealed class LinkTests : IDisposable
         Assert.True(guest.Send("ready"));
         Assert.True(host.Send("turn\n1"));
 
-        Assert.Equal("commands\na0 skill:1 0", AwaitMessage(host));
-        host.Take();
+        var first = AwaitMessage(host);
+        Assert.Equal("commands\na0 skill:1 0", first);
+        host.Take(first);
         Assert.Equal("ready", AwaitMessage(host));
         Assert.Equal("turn\n1", AwaitMessage(guest));
     }

@@ -2,6 +2,8 @@
 //  Player.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-07: Logged who plays once it changes, and why a player was not taken
+//                            - Cleaned the name through PlayerName, shared with the PvP session
 //      Paulinchen  2026-10-06: Read the key and name at once, and said what the DLL says while they are not set
 //      Paulinchen  2026-09-29: Created
 //
@@ -62,14 +64,21 @@ internal static class Player
     /// <returns><see langword="false"/> when the key or the name is not as it must be.</returns>
     public static bool Set(string key, string name)
     {
-        var cleaned = new string(name.Where(character => !char.IsControl(character)).ToArray()).Trim();
+        var cleaned = PlayerName.Cleaned(name, MaxNameLength);
 
         if (key.Length != KeyLength || !key.All(character => character is (>= '0' and <= '9') or (>= 'a' and <= 'f')) || cleaned.Length == 0)
         {
+            Log.Write($"player not taken: {(cleaned.Length == 0 ? "the name is empty" : "the key is malformed")}");
             return false;
         }
 
-        Volatile.Write(ref current, new Identity(key, cleaned.Length > MaxNameLength ? cleaned[..MaxNameLength] : cleaned));
+        var identity = new Identity(key, cleaned);
+
+        if (Interlocked.Exchange(ref current, identity) != identity)
+        {
+            Log.Write($"player is {identity.Name}, id {Log.Short(WorldKeys.PlayerIdOf(key))}");
+        }
+
         return true;
     }
 

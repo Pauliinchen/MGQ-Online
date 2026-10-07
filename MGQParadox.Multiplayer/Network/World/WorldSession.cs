@@ -2,6 +2,8 @@
 //  WorldSession.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-07: Logged entering and leaving, each connect with its refusal or close code and reason, the waits before each new try, the seats coming and going, each message sent or received, and the entries a full inbox dropped
+//                            - Left why every thread catches everything to Threads
 //      Paulinchen  2026-10-06: Started its threads through Threads and read who plays through Player.Current, both shared with the world's other parts
 //                            - Told a world with as many players as it may, a starting save still on its way, too many tries and an entry from another game apart from a removal or a full world
 //                            - Kept one cipher for every connection to the world, so the others' frames seen before a break are refused after it
@@ -224,6 +226,11 @@ internal sealed class WorldSession
     private WorldCode? _world;
 
     /// <summary>
+    /// How many entries the full inbox dropped since it last had room, logged once it has room again.
+    /// </summary>
+    private int _dropped;
+
+    /// <summary>
     /// The game's world connection, which the game script uses.
     /// </summary>
     public static WorldSession Current { get; } = new();
@@ -278,16 +285,19 @@ internal sealed class WorldSession
                 _state = WorldState.Failed;
                 _error = NoWorldCode;
                 opened = false;
+                Log.Write($"world not entered: {NoWorldCode}");
             }
             else if (Playing() is not { } player)
             {
                 _state = WorldState.Failed;
                 _error = Player.NotSet;
                 opened = false;
+                Log.Write($"world not entered: {Player.NotSet}");
             }
             else
             {
                 _world = world;
+                Log.Write($"entering world {Log.Short(Relays.WorldRoomOf(world.Token))} at relay {world.Relay} as {player.Name}, {world.Seats} seats");
                 Threads.Start("MultiplayerWorld", () => Run(generation, world, player.Key, player.Name));
                 opened = true;
             }
@@ -303,10 +313,17 @@ internal sealed class WorldSession
     public void Close()
     {
         Connection? previous;
+        WorldCode? left;
 
         lock (_gate)
         {
+            left = _world;
             previous = Restart(WorldState.Idle);
+        }
+
+        if (left != null)
+        {
+            Log.Write($"left world {Log.Short(Relays.WorldRoomOf(left.Token))}");
         }
 
         previous?.Stop();
@@ -334,16 +351,27 @@ internal sealed class WorldSession
     public bool Send(int target, string text)
     {
         var plain = Encoding.UTF8.GetBytes(text);
+        var to = target < 0 ? "everyone" : $"seat {target}";
 
         if (target >= RelayWorldChannel.Everyone || plain.Length > RelayWorldChannel.MaxMessageBytes - 1 - WorldCipher.Overhead)
         {
+            Log.Write($"world message to {to} not sent: {(target >= RelayWorldChannel.Everyone ? "no such seat" : "too long")}, {Message.FirstFieldOf(text)}, {plain.Length} bytes");
             return false;
         }
 
+        bool queued;
+        WorldState state;
+
         lock (_gate)
         {
-            return _state == WorldState.Open && _connection != null && _connection.Queue(target < 0 ? RelayWorldChannel.Everyone : target, plain);
+            state = _state;
+            queued = _state == WorldState.Open && _connection != null && _connection.Queue(target < 0 ? RelayWorldChannel.Everyone : target, plain);
         }
+
+        Log.Write(queued
+            ? $"world message out to {to}: {Message.FirstFieldOf(text)}, {plain.Length} bytes"
+            : $"world message to {to} not sent: the world is {state.ToString().ToLowerInvariant()}, {Message.FirstFieldOf(text)}, {plain.Length} bytes");
+        return queued;
     }
 
     /// <summary>
@@ -369,6 +397,12 @@ internal sealed class WorldSession
             if (_inbox.TryPeek(out var oldest) && ReferenceEquals(oldest, entry))
             {
                 _inbox.TryDequeue(out _);
+
+                if (_dropped > 0)
+                {
+                    Log.Write($"world inbox has room again after dropping its {_dropped} oldest entries");
+                    _dropped = 0;
+                }
             }
         }
     }
@@ -398,9 +432,6 @@ internal sealed class WorldSession
     /// <summary>
     /// Takes seats in the world room, again whenever the connection breaks, until the generation ends.
     /// </summary>
-    /// <remarks>
-    /// Catches everything, since an exception escaping this thread would end the whole game.
-    /// </remarks>
     /// <param name="generation">The open this thread belongs to.</param>
     /// <param name="world">The world.</param>
     /// <param name="playerKey">The player's key.</param>
@@ -417,6 +448,7 @@ internal sealed class WorldSession
         var authKey = WorldKeys.AuthKeyOf(world.Token);
         var cipher = new WorldCipher(world.Token);
         var retries = 0;
+        var tries = 0;
 
         while (IsCurrent(generation))
         {
@@ -425,20 +457,29 @@ internal sealed class WorldSession
 
             try
             {
+                tries++;
+                var started = Stopwatch.GetTimestamp();
                 channel = RelayWorldChannel.Connect(relay, room, playerKey, playerName, authKey, ConnectTimeout, out var refusal, out var refusalCode);
+                var took = Stopwatch.GetElapsedTime(started).TotalMilliseconds.ToString("0", CultureInfo.InvariantCulture);
 
                 if (channel == null)
                 {
+                    var refused = $"world room {Log.Short(room)} refused try {tries}: {(refusal is { } status ? (int)status : 0)}{(refusalCode != null ? $" {refusalCode}" : string.Empty)} after {took} ms";
+
                     if (FinalReasonFor(refusal, refusalCode) is { } reason)
                     {
+                        Log.Write($"{refused}, for good");
                         Fail(generation, reason);
                         return;
                     }
 
-                    Wait(generation, WaitReasonFor(refusal, refusalCode));
+                    var waitReason = WaitReasonFor(refusal, refusalCode);
+                    Log.Write($"{refused}, waiting: {waitReason}");
+                    Wait(generation, waitReason);
                 }
                 else
                 {
+                    Log.Write($"connected to world room {Log.Short(room)} on try {tries} in {took} ms");
                     connectedAt = DateTime.UtcNow;
                     cipher.Renew();
                     var connection = new Connection(channel, cipher, PingInterval);
@@ -450,6 +491,8 @@ internal sealed class WorldSession
 
                     Serve(generation, connection);
 
+                    Log.Write($"world connection ended after {(DateTime.UtcNow - connectedAt).TotalSeconds.ToString("0", CultureInfo.InvariantCulture)} s, close code {channel.CloseCode?.ToString(CultureInfo.InvariantCulture) ?? "none"}, reason '{channel.CloseReason ?? string.Empty}'");
+
                     if (channel.CloseCode is RemovedClose or DeletedClose)
                     {
                         Fail(generation, channel.CloseCode == DeletedClose ? Deleted : channel.CloseReason == ReplacedReason ? Replaced : Removed);
@@ -459,7 +502,9 @@ internal sealed class WorldSession
             }
             catch (Exception ex)
             {
-                Log.Write($"world connection broke: {ex.GetBaseException().Message}");
+                Log.Write(!IsCurrent(generation) ? $"world connection to room {Log.Short(room)} cut, the world was left"
+                    : channel == null ? $"world room {Log.Short(room)} unreachable on try {tries}: {ex.GetBaseException().Message}"
+                    : $"world connection broke: {ex.GetBaseException().Message}");
                 Wait(generation, channel == null ? RelayUnreachable : null);
             }
             finally
@@ -472,7 +517,14 @@ internal sealed class WorldSession
                 retries = 0;
             }
 
-            Pause(generation, RetryDelays[Math.Min(retries++, RetryDelays.Length - 1)]);
+            var delay = RetryDelays[Math.Min(retries++, RetryDelays.Length - 1)];
+
+            if (IsCurrent(generation))
+            {
+                Log.Write($"connecting to world room {Log.Short(room)} again in {delay.TotalSeconds.ToString("0", CultureInfo.InvariantCulture)} s");
+            }
+
+            Pause(generation, delay);
         }
     }
 
@@ -530,7 +582,6 @@ internal sealed class WorldSession
             }
         }
 
-        Log.Write("world room closed the connection");
         Wait(generation, null);
     }
 
@@ -553,6 +604,7 @@ internal sealed class WorldSession
 
         if (seats.Length == 0 || seats.Any(seat => seat is < 0 or >= RelayWorldChannel.Everyone))
         {
+            Log.Write($"world room text '{words[0]}' ignored, its seats are missing or out of range");
             return;
         }
 
@@ -579,12 +631,18 @@ internal sealed class WorldSession
                 case InKind:
                     _others.Add(seats[0]);
                     Enqueue(Entry(InKind, seats[0]));
+                    Log.Write($"world seat {seats[0]} came in, {_others.Count} other game(s) in the room");
                     break;
 
                 case OutKind:
                     _others.Remove(seats[0]);
                     connection.Cipher.Forget(seats[0]);
                     Enqueue(Entry(OutKind, seats[0]));
+                    Log.Write($"world seat {seats[0]} left, {_others.Count} other game(s) in the room");
+                    break;
+
+                default:
+                    Log.Write($"world room text '{words[0]}' ignored, this version does not know it");
                     break;
             }
         }
@@ -600,15 +658,18 @@ internal sealed class WorldSession
     {
         if (data.Length < 1 || connection.Cipher.Open(data[0], connection.Seat, data.AsSpan(1)) is not { } plain)
         {
-            Log.Write("world frame failed its check, dropped");
+            Log.Write($"world frame{(data.Length > 0 ? $" from seat {data[0]}" : string.Empty)} failed its check, dropped, {data.Length} bytes");
             return;
         }
+
+        var text = Encoding.UTF8.GetString(plain);
 
         lock (_gate)
         {
             if (generation == _generation && connection == _connection)
             {
-                Enqueue(Entry(MessageKind, data[0], text: Encoding.UTF8.GetString(plain)));
+                Enqueue(Entry(MessageKind, data[0], text: text));
+                Log.Write($"world message in from seat {data[0]}: {Message.FirstFieldOf(text)}, {plain.Length} bytes");
             }
         }
     }
@@ -727,6 +788,7 @@ internal sealed class WorldSession
         _seat = -1;
         _others.Clear();
         _inbox.Clear();
+        _dropped = 0;
         _connection = null;
         _world = null;
         Monitor.PulseAll(_gate);
@@ -742,6 +804,11 @@ internal sealed class WorldSession
         if (_inbox.Count >= MaxInbox)
         {
             _inbox.TryDequeue(out _);
+
+            if (_dropped++ == 0)
+            {
+                Log.Write($"world inbox full at {MaxInbox} entries, the game script reads none: dropping the oldest");
+            }
         }
 
         _inbox.Enqueue(entry);
@@ -896,8 +963,7 @@ internal sealed class WorldSession
         /// Sends the queued frames, and a ping at once and then every ping interval, until the connection stops.
         /// </summary>
         /// <remarks>
-        /// Catches everything, since an exception escaping this thread would end the whole game. Only
-        /// this thread seals, so the frames go out in the order of their counters.
+        /// Only this thread seals, so the frames go out in the order of their counters.
         /// </remarks>
         private void WriteAll()
         {
