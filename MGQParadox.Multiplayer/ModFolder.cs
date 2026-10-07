@@ -2,6 +2,7 @@
 //  ModFolder.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-06: Removed PathOf, which nothing called
 //      Paulinchen  2026-10-01: Built the game's paths from the folder two above the mod folder, now that it is Patch\Multiplayer
 //      Paulinchen  2026-09-30: Built paths the game script names relative to the game's folder
 //      Paulinchen  2026-09-28: Created
@@ -28,13 +29,6 @@ internal static class ModFolder
     /// </summary>
     /// <param name="root">Full path of the folder.</param>
     public static void SetRoot(string root) => Root = WithoutTrailingSeparator(root);
-
-    /// <summary>
-    /// Builds the path of a file inside the folder.
-    /// </summary>
-    /// <param name="fileName">The name of the file.</param>
-    /// <returns>The full path of the file.</returns>
-    public static string PathOf(string fileName) => Path.Combine(Root, fileName);
 
     /// <summary>
     /// Builds the path of a file the game script names relative to the game's folder.

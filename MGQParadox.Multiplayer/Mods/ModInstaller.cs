@@ -2,7 +2,10 @@
 //  ModInstaller.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-06: Read a zip whose files sit in a Patch folder, to extract into the game folder
+//      Paulinchen  2026-10-06: Put every replaced file back when one cannot be written, so a failed install leaves the old version whole
+//                            - Deleted the files an older version of a zip mod shipped that the installed one no longer has
+//                            - Refused a zip that holds a file twice, as the relay does
+//                            - Read a zip whose files sit in a Patch folder, to extract into the game folder
 //                            - Installed a link to a zip of a release like an upload, and read zips written with backslashes
 //                            - Created
 //
@@ -19,7 +22,8 @@ namespace MGQParadox.Multiplayer.Mods;
 /// <summary>
 /// Installs a world's mods into the game's Patch folder: every file is checked against the
 /// catalog's hash and kept in a folder of its own first, and only once every mod checked out are
-/// they moved into place, so a download that differs changes nothing.
+/// they moved into place, so a download that differs changes nothing; a file that cannot be
+/// written puts back the ones written before it.
 /// </summary>
 internal static class ModInstaller
 {
@@ -56,10 +60,12 @@ internal static class ModInstaller
                 }
             }
 
-            foreach (var (file, target) in staged)
+            MoveIntoPlace(staged, stage);
+            var written = new HashSet<string>(staged.Select(file => file.Target), StringComparer.OrdinalIgnoreCase);
+
+            foreach (var (mod, _) in mods.Where(mod => mod.Mod.IsZip))
             {
-                Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-                File.Copy(file, target, overwrite: true);
+                RemoveOldFiles(mod, patch, written);
             }
 
             return staged.Select(file => Path.GetRelativePath(gameFolder, file.Target)).ToList();
@@ -70,9 +76,111 @@ internal static class ModInstaller
             {
                 Directory.Delete(stage, recursive: true);
             }
-            catch (IOException)
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
                 // A staging folder left behind costs only disk space in the temporary folder.
+            }
+        }
+    }
+
+    /// <summary>
+    /// Copies the checked files into place, keeping a copy of each file it replaces first.
+    /// </summary>
+    /// <param name="staged">Each checked file in the staging folder and its full target path.</param>
+    /// <param name="stage">The staging folder, which also keeps the replaced files.</param>
+    /// <exception cref="IOException">A file could not be written; every file written before it is put back.</exception>
+    /// <exception cref="UnauthorizedAccessException">A file may not be written; every file written before it is put back.</exception>
+    private static void MoveIntoPlace(IReadOnlyList<(string Staged, string Target)> staged, string stage)
+    {
+        var done = new List<(string Target, string? Backup)>();
+
+        try
+        {
+            foreach (var (file, target) in staged)
+            {
+                string? backup = null;
+
+                if (File.Exists(target))
+                {
+                    backup = Path.Combine(stage, $"backup-{done.Count.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
+                    File.Copy(target, backup, overwrite: true);
+                }
+
+                done.Add((target, backup));
+                Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+                File.Copy(file, target, overwrite: true);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            PutBack(done);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Puts back the files an install wrote before one failed, the last written first.
+    /// </summary>
+    /// <param name="done">Each file written and the copy of the file it replaced, <see langword="null"/> for a new one.</param>
+    private static void PutBack(List<(string Target, string? Backup)> done)
+    {
+        for (var index = done.Count - 1; index >= 0; index--)
+        {
+            var (target, backup) = done[index];
+
+            try
+            {
+                if (backup != null)
+                {
+                    File.Copy(backup, target, overwrite: true);
+                }
+                else if (File.Exists(target))
+                {
+                    File.Delete(target);
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                Log.Write($"could not put {target} back: {ex.Message}");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Deletes the files an older version of a zip mod shipped that the installed version no longer
+    /// has, each only while it is exactly that version's file.
+    /// </summary>
+    /// <remarks>
+    /// The mod loader loads every script in Patch, so a script a newer version dropped would still run.
+    /// </remarks>
+    /// <param name="mod">The mod just installed.</param>
+    /// <param name="patch">The full path of the Patch folder.</param>
+    /// <param name="written">The full paths just written, which stay whatever an older version named them.</param>
+    private static void RemoveOldFiles(CatalogMod mod, string patch, IReadOnlySet<string> written)
+    {
+        foreach (var version in mod.Versions)
+        {
+            foreach (var (name, hash) in version.Files)
+            {
+                var path = Path.GetFullPath(Path.Combine(patch, name));
+
+                if (mod.Files.ContainsKey(name) || written.Contains(path) || !path.StartsWith(patch + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    if (File.Exists(path) && ModHash.OfFile(path) == hash)
+                    {
+                        File.Delete(path);
+                        Log.Write($"removed {Path.GetRelativePath(patch, path)}, which {mod.Name} {version.Version} shipped and {mod.Version} no longer does");
+                    }
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    Log.Write($"could not remove {path} of an older {mod.Name}: {ex.Message}");
+                }
             }
         }
     }
@@ -116,7 +224,12 @@ internal static class ModInstaller
         foreach (var entry in archive.Entries)
         {
             var name = entry.FullName.Replace('\\', '/');
-            entries.TryAdd(name.StartsWith(PatchFolder, StringComparison.OrdinalIgnoreCase) ? name[PatchFolder.Length..] : name, entry);
+            var path = name.StartsWith(PatchFolder, StringComparison.OrdinalIgnoreCase) ? name[PatchFolder.Length..] : name;
+
+            if (!entries.TryAdd(path, entry) && path.Length > 0 && !path.EndsWith('/'))
+            {
+                throw new InvalidDataException($"{mod.Name} holds {path} twice.");
+            }
         }
 
         var files = new List<(byte[] Bytes, string Path)>();

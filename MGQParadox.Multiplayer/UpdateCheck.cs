@@ -3,7 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-09-30: Asked the repository under its new name, MGQ-Online
-//      Paulinchen  2026-09-30: Created
+//                            - Created
 //
 //----------------------------------------------------------------
 

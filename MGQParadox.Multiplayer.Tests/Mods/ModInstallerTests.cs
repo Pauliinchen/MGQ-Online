@@ -2,7 +2,8 @@
 //  ModInstallerTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-06: Covered zips whose files sit in a Patch folder
+//      Paulinchen  2026-10-06: Covered putting files back after a failed write, removing files an older version shipped, and a zip holding a file twice
+//                            - Covered zips whose files sit in a Patch folder
 //                            - Covered links to a zip of a release and zips written with backslashes
 //                            - Created
 //
@@ -139,6 +140,58 @@ public sealed class ModInstallerTests
         Assert.Equal(Script, File.ReadAllBytes(Path.Combine(game.Path, "Patch", "Luka_Replacer.rb")));
         Assert.Equal(pack, File.ReadAllBytes(Path.Combine(game.Path, "Patch", "Luka_Replacer", "Heroes", "cecil.luka")));
         Assert.False(Directory.Exists(Path.Combine(game.Path, "Patch", "Patch")));
+    }
+
+    /// <summary>
+    /// Asserts that a file that cannot be written puts back the files written before it.
+    /// </summary>
+    [Fact]
+    public void Install_FileThatCannotBeWritten_PutsBackTheOldVersion()
+    {
+        using var game = new TempFolder();
+        Directory.CreateDirectory(Path.Combine(game.Path, "Patch", "Blocked.rb"));
+        File.WriteAllText(Path.Combine(game.Path, "Patch", "Level_Cap.rb"), "old");
+        var good = LinkMod(ModHash.Of("Level_Cap.rb", Script));
+        var blocked = good with { Key = "blocked", Name = "Blocked" };
+
+        Assert.ThrowsAny<System.Exception>(() => ModInstaller.Install([(good, "Patch/Level_Cap.rb"), (blocked, "Patch/Blocked.rb")], _ => Script, game.Path));
+
+        Assert.Equal("old", File.ReadAllText(Path.Combine(game.Path, "Patch", "Level_Cap.rb")));
+    }
+
+    /// <summary>
+    /// Asserts that a newer zip mod removes the files only an older version shipped, as long as they are that version's.
+    /// </summary>
+    [Fact]
+    public void Install_NewerZip_RemovesFilesAnOlderVersionShipped()
+    {
+        using var game = new TempFolder();
+        var core = Encoding.UTF8.GetBytes("# core\n");
+        var notes = Encoding.UTF8.GetBytes("notes");
+        Directory.CreateDirectory(Path.Combine(game.Path, "Patch", "Foo"));
+        File.WriteAllBytes(Path.Combine(game.Path, "Patch", "Foo_Core.rb"), core);
+        File.WriteAllText(Path.Combine(game.Path, "Patch", "Foo", "notes.txt"), "the player's own");
+        var current = new Dictionary<string, string> { ["Foo.rb"] = ModHash.Of("Foo.rb", Script) };
+        var older = new Dictionary<string, string> { ["Foo.rb"] = "aa", ["Foo_Core.rb"] = ModHash.Of("Foo_Core.rb", core), ["Foo/notes.txt"] = ModHash.Of("notes.txt", notes) };
+        var mod = new CatalogMod("foo", "Foo", "upload", "2", current, [new ModVersion("2", current), new ModVersion("1", older)], string.Empty);
+
+        ModInstaller.Install([(mod, string.Empty)], _ => Zip(("Foo.rb", Script)), game.Path);
+
+        Assert.True(File.Exists(Path.Combine(game.Path, "Patch", "Foo.rb")));
+        Assert.False(File.Exists(Path.Combine(game.Path, "Patch", "Foo_Core.rb")));
+        Assert.True(File.Exists(Path.Combine(game.Path, "Patch", "Foo", "notes.txt")));
+    }
+
+    /// <summary>
+    /// Asserts that a zip holding a file twice, once inside a Patch folder, is refused.
+    /// </summary>
+    [Fact]
+    public void Install_ZipHoldingAFileTwice_IsRefused()
+    {
+        using var game = new TempFolder();
+        var mod = UploadMod(new() { ["Luka_Replacer.rb"] = ModHash.Of("x.rb", Script) });
+
+        Assert.Throws<InvalidDataException>(() => ModInstaller.Install([(mod, string.Empty)], _ => Zip(("Patch/Luka_Replacer.rb", Script), ("Luka_Replacer.rb", Script)), game.Path));
     }
 
     /// <summary>

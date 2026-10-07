@@ -2,7 +2,12 @@
 //  mods.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-06: Kept the Mod Config options of a mod's current version, which an admin's game reads and sends
+//      Paulinchen  2026-10-06: Took the player's key from the X-MGQ-Player header too
+//                            - Read a mod's key in a request's address percent-decoded, as the games escape it
+//                            - Listed only checked mods for players, so a link the relay could not read yet keeps no game out
+//                            - Answered a request body that is too large with 413 instead of taking it for no admin's
+//                            - Refused a zip that holds a file twice
+//                            - Kept the Mod Config options of a mod's current version, which an admin's game reads and sends
 //                            - Read a zip whose files sit in a Patch folder, to extract into the game folder
 //                            - Took a zip of a release too, laid out as in Patch, hashing each file inside
 //                            - Created
@@ -146,7 +151,10 @@ export class ModCatalog {
    */
   async list(key) {
     const admin = await this.isAdmin(key);
-    const mods = (await this.store.allMods()).sort((a, b) => a.name.localeCompare(b.name)).map((entry) => (admin ? adminView(entry) : publicView(entry)));
+    const mods = (await this.store.allMods())
+      .filter((entry) => admin || isChecked(entry))
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((entry) => (admin ? adminView(entry) : publicView(entry)));
     return { status: 200, body: { mods, admin } };
   }
 
@@ -531,6 +539,10 @@ export async function zipHashes(bytes, limits = MOD_LIMITS) {
       throw new Error(`the zip holds ${name.slice(0, 80)}, which is no path inside Patch`);
     }
 
+    if (Object.hasOwn(files, name)) {
+      throw new Error(`the zip holds ${name.slice(0, 80)} twice`);
+    }
+
     unpacked += size;
 
     if (Object.keys(files).length >= limits.maxFiles || unpacked > limits.maxUnpackedBytes) {
@@ -683,6 +695,17 @@ function remember(entry, version, files, now, limits) {
 }
 
 /**
+ * Tells whether the relay has read a mod's files at least once, which a link whose first check
+ * failed has not.
+ *
+ * @param {object} entry The mod.
+ * @returns {boolean} Whether it has a version and files.
+ */
+function isChecked(entry) {
+  return Boolean(entry.version) && Object.keys(entry.files ?? {}).length > 0;
+}
+
+/**
  * Makes a mod's entry before its first check.
  *
  * @param {string} key The mod's key.
@@ -787,42 +810,54 @@ export function cleanOptions(options, limits = MOD_LIMITS) {
  * @param {URL} url The request's address.
  * @param {() => Promise<string>} readBody Reads the request's body as text.
  * @param {(limit: number) => Promise<Uint8Array | null>} readBytes Reads the request's body as bytes, null when it is longer than the limit.
+ * @param {string | null} [player] The X-MGQ-Player header of the request, which wins over the key in its body or address, which released games send.
  * @returns {Promise<{status: number, body: object, bytes?: Uint8Array}>} The answer, sent as the bytes when there are any.
  */
-export async function handleModRequest(catalog, method, url, readBody, readBytes) {
+export async function handleModRequest(catalog, method, url, readBody, readBytes, player = null) {
   const parts = url.pathname.split("/").filter((part) => part.length > 0);
+  const fromQuery = () => player || url.searchParams.get("player");
+  const fromBody = (body) => player || body?.player;
 
   if (parts[0] !== "v1" || parts[1] !== "mods") {
     return notFound();
   }
 
+  // The games escape a key's characters past letters and digits, such as "!" or Japanese ones.
+  if (parts.length > 2) {
+    try {
+      parts[2] = decodeURIComponent(parts[2]);
+    } catch {
+      return notFound();
+    }
+  }
+
   if (parts.length === 2 && method === "GET") {
-    return catalog.list(url.searchParams.get("player"));
+    return catalog.list(fromQuery());
   }
 
   if (parts.length === 2 && method === "POST") {
     const body = await readJson(readBody);
-    return catalog.setLink(body?.player, body?.name, body?.link);
+    return body === TOO_LARGE ? tooLarge() : catalog.setLink(fromBody(body), body?.name, body?.link);
   }
 
   if (parts.length === 3 && parts[2] === "check" && method === "POST") {
     const body = await readJson(readBody);
-    return catalog.check(body?.player);
+    return body === TOO_LARGE ? tooLarge() : catalog.check(fromBody(body));
   }
 
   if (parts.length === 4 && parts[3] === "delete" && method === "POST") {
     const body = await readJson(readBody);
-    return catalog.remove(body?.player, parts[2]);
+    return body === TOO_LARGE ? tooLarge() : catalog.remove(fromBody(body), parts[2]);
   }
 
   if (parts.length === 4 && parts[3] === "upload" && method === "POST") {
     const params = url.searchParams;
-    return catalog.upload(params.get("player"), params.get("name"), params.get("version"), await readBytes(catalog.limits.maxUploadBytes));
+    return catalog.upload(fromQuery(), params.get("name"), params.get("version"), await readBytes(catalog.limits.maxUploadBytes));
   }
 
   if (parts.length === 4 && parts[3] === "options" && method === "POST") {
     const body = await readJson(readBody, catalog.limits.maxOptionsBytes);
-    return catalog.setOptions(body?.player, parts[2], body?.version, body?.options);
+    return body === TOO_LARGE ? tooLarge(catalog.limits.maxOptionsBytes) : catalog.setOptions(fromBody(body), parts[2], body?.version, body?.options);
   }
 
   if (parts.length === 4 && parts[3] === "file" && method === "GET") {
@@ -833,19 +868,39 @@ export async function handleModRequest(catalog, method, url, readBody, readBytes
 }
 
 /**
+ * The most characters a JSON body of the catalog's routes may have, unless a route says otherwise.
+ */
+const MAX_JSON_LENGTH = 8192;
+
+/**
+ * What readJson hands back for a body longer than it takes.
+ */
+const TOO_LARGE = Symbol("too large");
+
+/**
  * Reads a JSON body, small ones only.
  *
  * @param {() => Promise<string>} readBody Reads the request's body.
  * @param {number} [maxLength] The most characters it may have.
- * @returns {Promise<any>} The parsed body, or null when it is no JSON or too large.
+ * @returns {Promise<any>} The parsed body, TOO_LARGE when it is longer than maxLength, or null when it is no JSON.
  */
-async function readJson(readBody, maxLength = 8192) {
+async function readJson(readBody, maxLength = MAX_JSON_LENGTH) {
   try {
     const text = await readBody();
-    return text.length <= maxLength ? JSON.parse(text) : null;
+    return text.length <= maxLength ? JSON.parse(text) : TOO_LARGE;
   } catch {
     return null;
   }
+}
+
+/**
+ * The answer for a body longer than a route takes.
+ *
+ * @param {number} [maxLength] The most characters the route takes.
+ * @returns {{status: number, body: object}} The answer.
+ */
+function tooLarge(maxLength = MAX_JSON_LENGTH) {
+  return { status: 413, body: { error: `the request may be at most ${maxLength} characters` } };
 }
 
 /**

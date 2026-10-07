@@ -2,7 +2,8 @@
 //  ModHashTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-06: Covered zips of a release
+//      Paulinchen  2026-10-06: Removed the check of CatalogMod.VersionOf, which is gone
+//                            - Covered zips of a release
 //                            - Created
 //
 //----------------------------------------------------------------
@@ -61,24 +62,4 @@ public sealed class ModHashTests
         Assert.False(ReleaseDownload.IsFileHost(new Uri("https://example.com/x")));
         Assert.Throws<InvalidOperationException>(() => ReleaseDownload.Get("https://example.com/Mod.rb"));
     }
-
-    /// <summary>
-    /// Asserts that a catalog mod names the version a copy's hashes belong to.
-    /// </summary>
-    [Fact]
-    public void CatalogMod_NamesTheVersionOfACopy()
-    {
-        var mod = new CatalogMod("levelcap", "Level Cap", "link", "1.4.0", Files("b"), [new ModVersion("1.4.0", Files("b")), new ModVersion("1.3.5", Files("a"))], string.Empty);
-
-        Assert.Equal("1.3.5", mod.VersionOf(Files("a")));
-        Assert.Equal("1.4.0", mod.VersionOf(Files("b")));
-        Assert.Null(mod.VersionOf(Files("c")));
-    }
-
-    /// <summary>
-    /// Makes the files of a single script with a given hash.
-    /// </summary>
-    /// <param name="hash">The hash.</param>
-    /// <returns>The files.</returns>
-    private static System.Collections.Generic.Dictionary<string, string> Files(string hash) => new() { ["Level_Cap.rb"] = hash };
 }

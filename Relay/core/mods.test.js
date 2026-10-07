@@ -2,7 +2,8 @@
 //  mods.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-06: Covered the options of a mod's current version, which only admins send
+//      Paulinchen  2026-10-06: Covered escaped keys, too large bodies, unchecked links listed for admins only and zips holding a file twice
+//                            - Covered the options of a mod's current version, which only admins send
 //                            - Covered zips whose files sit in a Patch folder
 //                            - Covered zips of a release, hashed file by file
 //                            - Created
@@ -209,6 +210,8 @@ test("a release file larger than the limit is refused", async () => {
   const answer = await catalog.setLink(ADMIN, "Level Cap", LATEST);
   assert.equal(answer.body.mod.version, "");
   assert.match(answer.body.mod.error, /bytes/);
+  assert.equal((await catalog.list(ADMIN)).body.mods.length, 1, "an admin sees the link to fix it");
+  assert.deepEqual((await catalog.list(OTHER)).body.mods, [], "a link never read keeps no game out of a world");
 });
 
 test("splitUpload reads the file list and refuses paths outside Patch", () => {
@@ -396,4 +399,29 @@ test("a link to a zip of a release keeps a hash per file and is marked as an arc
   mod = (await catalog.list(ADMIN)).body.mods[0];
   assert.equal(mod.version, "1.1.0");
   assert.match(mod.error, /no path inside Patch/);
+});
+
+test("a mod's key in a request's address is read percent-decoded, as the games escape it", async () => {
+  const { catalog } = await newCatalog({ tag: "v1", script: "" });
+  await catalog.upload(ADMIN, "Pack!", "1.0", upload([["Pack.rb", "cd".repeat(32)]], "PK"));
+  const url = (path) => new URL(`https://relay.test${path}`);
+  const none = async () => null;
+
+  assert.equal((await handleModRequest(catalog, "GET", url(`/v1/mods/${encodeURIComponent("pack!")}/file`), async () => "", none)).status, 200);
+  assert.equal((await handleModRequest(catalog, "GET", url("/v1/mods/%E0%A4%A/file"), async () => "", none)).status, 404);
+});
+
+test("a body larger than a route takes is answered with 413", async () => {
+  const { catalog } = await newCatalog({ tag: "v1", script: "" });
+  const url = (path) => new URL(`https://relay.test${path}`);
+  const huge = async () => JSON.stringify({ player: ADMIN, padding: "x".repeat(MOD_LIMITS.maxOptionsBytes) });
+  const none = async () => null;
+
+  assert.equal((await handleModRequest(catalog, "POST", url("/v1/mods"), huge, none)).status, 413);
+  assert.equal((await handleModRequest(catalog, "POST", url("/v1/mods/levelcap/options"), huge, none)).status, 413);
+  assert.equal((await handleModRequest(catalog, "POST", url("/v1/mods/check"), async () => "no json", none)).status, 403);
+});
+
+test("zipHashes refuses a zip that holds a file twice", async () => {
+  await assert.rejects(zipHashes(await makeZip([["Patch/a.rb", "x"], ["a.rb", "x"]])), /twice/);
 });

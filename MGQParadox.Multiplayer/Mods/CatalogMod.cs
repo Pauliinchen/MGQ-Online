@@ -2,14 +2,14 @@
 //  CatalogMod.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-06: Knew the version whose Mod Config options the relay keeps
+//      Paulinchen  2026-10-06: Removed VersionOf, which only the game script needs
+//                            - Knew the version whose Mod Config options the relay keeps
 //                            - Told a link to a zip of a release from a link to a script
 //                            - Created
 //
 //----------------------------------------------------------------
 
 using System.Collections.Generic;
-using System.Linq;
 
 namespace MGQParadox.Multiplayer.Mods;
 
@@ -41,14 +41,6 @@ internal sealed record CatalogMod(string Key, string Name, string Kind, string V
     /// The kind as the game script tells mods apart: "zip" for a link to a zip, else <see cref="Kind"/>.
     /// </summary>
     public string ScriptKind => !IsUpload && Archive ? "zip" : Kind;
-
-    /// <summary>
-    /// Names the version whose files a copy's hashes are.
-    /// </summary>
-    /// <param name="hashes">The copy's hashes, by the same names as <see cref="Files"/>.</param>
-    /// <returns>The version, <see langword="null"/> when the copy is none the relay saw.</returns>
-    public string? VersionOf(IReadOnlyDictionary<string, string> hashes) =>
-        Versions.FirstOrDefault(version => version.Files.Count == hashes.Count && version.Files.All(file => hashes.TryGetValue(file.Key, out var hash) && hash == file.Value))?.Version;
 }
 
 /// <summary>
