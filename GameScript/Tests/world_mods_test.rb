@@ -2,7 +2,12 @@
 #  world_mods_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-06: Covered the Mod Config options an admin's game sends for the catalog
+#      Paulinchen  2026-10-06: Expected the summary to name mods that are missing or in another version
+#                            - Told whether a small window of the world screen takes input, which an entry after a restart waits for
+#                            - Covered the catalog kept while the list loads, links the relay could not read yet, options with :values,
+#                              the 2000 characters of the settings, long names among the creator's hashes and options sent once a session
+#                            - Refused a DLL call whose arguments differ from its signature
+#                            - Covered the Mod Config options an admin's game sends for the catalog
 #                            - Covered the creator's button in Mod Config and the creator's unlocked options
 #                            - Covered a load_game that a translation plugin replaced
 #                            - Covered a link to a zip of a release
@@ -62,6 +67,7 @@ module NWConst
       { :key => :mod_party_sheet_hotkey, :name => "[Party Sheet] Hotkey", :sub => true, :keybind => true },
       { :key => :mod_party_sheet_theme, :name => "[Party Sheet] Theme", :sub => true },
       { :key => :mod_party_sheet_write, :name => "     -> Write Party Sheet", :sub => false },
+      { :key => :mod_party_sheet_size, :name => "     -> Size", :sub => true, :values => lambda { [2, 4] } },
       { :key => :global_thing, :name => "Global Thing", :sub => true },
       { :key => :return, :name => "Return", :sub => false },
     ]
@@ -102,6 +108,7 @@ module MGQ_Multiplayer
   module Link
     Function = Struct.new(:name, :signature) do
       def call(*args)
+        check_dll_call(name, signature, args)
         $calls << [name, signature, args]
         case name
         when "mp_mod_hash"
@@ -143,6 +150,7 @@ class FakeChoice
   def finish; @choices = nil; end
   def activate; end
   def deactivate; end
+  def active; !@choices.nil?; end
   def index; -1; end
 end
 
@@ -191,6 +199,16 @@ check("a mod is found by its name as a world writes it", [mods.mod_named("Level_
 $dll["mp_mods_list"] = "state=failed\nerror=down\n\n"
 mods.forget_installed
 check("a catalog that could not be fetched is unknown", mods.catalog, nil)
+catalog("mod\tbroken\tBroken\tlink\t", "old\tbroken\t")
+check("a link the relay could not read yet is left out, so a world checks it as a mod outside the catalog", mods.catalog, [])
+catalog("mod\tlevelcap\tLevel Cap\tlink\t1.4.0\tLevel_Cap.rb\tbb")
+mods.catalog
+$dll["mp_mods_list"] = "state=loading\n\nmod\tlevelcap\tLevel Cap\tlink\t1.4.0\tLevel_Cap.rb\tbb\n"
+mods.forget_installed
+check("while the list is fetched again, the catalog the DLL still hands out counts", mods.catalog.map(&:key), ["levelcap"])
+$dll["mp_mods_list"] = "state=loading\n\n"
+mods.forget_installed
+check("and without one, the catalog read before stays", mods.catalog.map(&:key), ["levelcap"])
 
 Dir.mktmpdir do |folder|
   FileUtils.mkdir_p(File.join(folder, "Patch", "Mods"))
@@ -253,6 +271,12 @@ Dir.mktmpdir do |folder|
 
     # The creator's hashes.
     check("the creator's game hashes only required mods outside the catalog that it has", mods.creator_hashes("!Level Cap; !Other Mod; Free Mod; !Missing Mod"), "Other Mod=#{'f' * 64}")
+    long = "M" * (MGQ_MpWorldMods::MAX_HASH_NAME_CHARS + 1)
+    File.write(File.join(folder, "Patch", "#{long}.rb"), "")
+    $file_hashes = { "Patch/Other_Mod.rb" => "f" * 64, "Patch/#{long}.rb" => "f" * 64 }
+    mods.forget_installed
+    check("a name longer than the relay takes is left out of the creator's hashes", mods.creator_hashes("!Other Mod; !#{long}"), "Other Mod=#{'f' * 64}")
+    File.delete(File.join(folder, "Patch", "#{long}.rb"))
 
     # The world screen: the offer.
     $file_hashes = { "Patch/Mods/Level Cap.rb" => "aa" }
@@ -263,7 +287,7 @@ Dir.mktmpdir do |folder|
     scene.instance_variable_set(:@entry, MGQ_MpWorld::Entry.new("w1", "Modded", listed, nil, false, false))
     scene.on_enter
     check("entering with an older version offers to download it, to see the mods, or to go back", [said(scene), scene.instance_variable_get(:@confirm_window).choices.map { |choice| choice[1] }],
-          ["Modded uses other versions of these mods: Level Cap. Download them and restart?", [:yes, :show_mods, :cancel]])
+          ["Modded needs mods that are missing or in another version here: Level Cap. Download them and restart?", [:yes, :show_mods, :cancel]])
     $calls.clear
     scene.on_confirmed
     install = $calls.find { |call| call[0] == "mp_mods_install" }
@@ -291,7 +315,7 @@ Dir.mktmpdir do |folder|
     $sounds.clear
     scene.on_enter
     check("a mod the relay cannot give is named, with no download", [said(scene), scene.instance_variable_get(:@confirm_window).choices.map { |choice| choice[1] }, $sounds],
-          ["Modded uses other versions of these mods: Other Mod (get it from its author).", [:show_mods, :cancel], ["buzzer"]])
+          ["Modded needs mods that are missing or in another version here: Other Mod (get it from its author).", [:show_mods, :cancel], ["buzzer"]])
     check("the mods box shows the difference", scene.mod_lines(listed.mods, nil, mods.differing(listed)), [[:head, "Mods (1)"], [:item, "Other Mod", :gold, "required, yours differs from the world creator's copy"]])
   end
 end
@@ -312,9 +336,11 @@ check("then enters the world, once", [entered, mods.rejoining], [["w1"], nil])
 
 # The creator's settings.
 $game_system.conf = { :mod_level_cap => 0, :mod_party_sheet_theme => :dark, :mod_party_sheet_hotkey => 0x51, :global_thing => 5 }
-check("the creator's settings are those of the named mods' options, required or listed, no key bindings, buttons or personal ones", mods.settings_of("!Level_Cap; Party Sheet; Free"),
+check("the creator's settings are those of the named mods' options, required or listed, no key bindings, buttons or personal ones", mods.settings_of("!Level_Cap; Party Sheet; Free")[0],
       "mod_level_cap=i:0;mod_level_cap_limits=i:1;mod_party_sheet_theme=y:dark")
-check("a mod the world does not name keeps its options out", mods.settings_of("!Level_Cap"), "mod_level_cap=i:0;mod_level_cap_limits=i:1")
+check("a mod the world does not name keeps its options out", mods.settings_of("!Level_Cap")[0], "mod_level_cap=i:0;mod_level_cap_limits=i:1")
+check("settings join as long as they fit into the relay's 2000 characters", mods.fit_settings([[:a, "a=s:#{'x' * 1990}"], [:b, "b=s:#{'y' * 20}"], [:c, "c=i:1"]]),
+      ["a=s:#{'x' * 1990};c=i:1", [:b]])
 check("values keep their type, and semicolons and equal signs survive", ["i:-3", "f:1.5", "b:true", "b:false", "y:dark", mods.encode("a;b=c%")].map { |text| mods.decode(text) },
       [[true, -3], [true, 1.5], [true, true], [true, false], [true, :dark], [true, "a;b=c%"]])
 check("a large decimal as Ruby writes it survives", mods.decode(mods.encode(1.0e20)), [true, 1.0e20])
@@ -373,6 +399,14 @@ check("its answer is taken in any scene and logged", [$calls.map(&:first), $log.
 $game_system.conf = {}
 DataManager.load_game(1)
 check("the creator's next load takes the settings sent", $game_system.conf[:mod_level_cap], 1)
+$game_system.conf[:mod_level_cap] = "x" * MGQ_MpWorldMods::MAX_SETTINGS_CHARS
+too_long = " 1 option(s) did not fit into the world's 2000 characters and were left out."
+window.call_handler(MGQ_MpWorldMods::SHARE_BUTTON)
+check("an option past the relay's 2000 characters is left out, and the creator told so",
+      [$calls.select { |call| call[0] == "mp_dir_set_settings" }.last[2][1], window.help_window.text], ["mod_level_cap_limits=i:1\0", "Saving your settings for the world . . .#{too_long}"])
+$dll["mp_dir_action"] = "state=done\nkind=settings\n\n"
+mods.follow_share
+check("also once they were saved", $log.last, "world mods: The world's mod settings were saved. Players get them the next time they load.#{too_long}")
 Scene_Title.new.start
 check("the title screen forgets whose world it was", button[:enable].call, false)
 $world_open = false
@@ -398,6 +432,11 @@ Dir.mktmpdir do |folder|
     $calls.clear
     mods.report_options(true)
     check("once a session", $calls.map(&:first).grep(/options/), [])
+    mods.forget_installed
+    mods.report_options(true)
+    check("also when the world screen opens again", $calls.map(&:first).grep(/options/), [])
+    check("an option's values come from its :values too, as Mod Config Remake reads them", mods.option_line(NWConst::Config::MOD_CONTENTS.find { |entry| entry[:key] == :mod_party_sheet_size }),
+          "mod_party_sheet_size\tSize\ti\t2\t2\t2\t4\t4")
   end
 end
 check("nothing failed", ($log || []).grep(/FAILED|failed/), [])

@@ -2,7 +2,9 @@
 #  start_choice_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-06: Expected the longer calls of mp_dir_create and mp_dir_edit
+#      Paulinchen  2026-10-07: Checked that every text of the save screen fits its line of help
+#      Paulinchen  2026-10-06: Refused a DLL call whose arguments differ from its signature
+#                            - Expected the longer calls of mp_dir_create and mp_dir_edit
 #                            - Loaded world_mods.rbx, which the world screen calls
 #      Paulinchen  2026-10-04: Followed the scripts to their new names, without mp_
 #                            - Expected the button below the new rows of the form, and the longer call of mp_dir_create
@@ -58,7 +60,7 @@ module MGQ_Multiplayer
   def self.path(name); name; end
   module Link
     Function = Struct.new(:name, :signature) do
-      def call(*args); $calls << [name, signature, args]; 1; end
+      def call(*args); check_dll_call(name, signature, args); $calls << [name, signature, args]; 1; end
     end
     def self.function(name, signature); Function.new(name, signature); end
     def self.read(name, _size); $dll[name].to_s; end
@@ -251,6 +253,7 @@ Dir.mktmpdir do |root|
     scene.on_from_own
     check("From one of my saves opens the save screen", $called, Scene_MpStartSave)
     check("which says what the save is for", Scene_MpStartSave.allocate.help_window_text, MGQ_MpSaveDistribution::HELP_TEXTS[:own])
+    check("every text of the save screen fits its line of help, 48 characters at most", MGQ_MpSaveDistribution::HELP_TEXTS.values.select { |text| text.size > 48 }, [])
     scene.take_start_save
     check("leaving it without a save enters nothing", [scene.instance_variable_get(:@own_start), $started.size], [nil, 2])
     check("and asks again", start_choices(scene), [:from_beginning, :from_own, :cancel])

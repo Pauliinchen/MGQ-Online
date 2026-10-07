@@ -2,7 +2,23 @@
 #  world_screen.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-06: Entered the world of a Discord invite once the list holds it, opened with the invite instead of the password
+#      Paulinchen  2026-10-07: Filled the name's form with the name the player chose, empty while the name on Discord stands, so it never turns into a chosen one unasked
+#      Paulinchen  2026-10-06: Typed a world's password in place in a form, on the text screen only for a gamepad or without the keyboard
+#                            - Kept a name typed in place without closing the screen, kept a name from the text screen at once, and closed the screen when the first one was left without a name
+#                            - Fell back to the text screen for a mod's name without the keyboard or with a gamepad
+#                            - Kept the typing hint while a mod's name is typed, and acted on the mod clicked instead of the one picked before
+#                            - Waited with a Discord invite or an entry after a restart until no window, box or form is open
+#                            - Asked for the password again once a Discord invite's code failed
+#                            - Kept a full world closed to players with saves of it too
+#                            - Put the cursor back on the chosen world after the text or save screen
+#                            - Sent a form's tidied values
+#                            - Typed a 0 with the numpad's 0 in Max Players and World id
+#                            - Said that a request could not be started instead of that another one runs
+#                            - Took the colors of a world's mods in the list box and the details from one place
+#                            - Created the list box with the other windows, and closed the screen when it cannot start
+#                            - Read the installed mods anew only as the screen opens, not when the text or save screen returns
+#                            - Played the OK sound in the mod picker only for a change it took
+#                            - Entered the world of a Discord invite once the list holds it, opened with the invite instead of the password
 #                            - Asked for the player's name in a form typed in place instead of on the text screen
 #                            - Kept a mod added by name when unlisted, and removed it with Delete, which the hint names while it is picked
 #                            - Typed a mod's name in place in the picker, on the keyboard, instead of on the text screen
@@ -48,13 +64,13 @@
 #
 #----------------------------------------------------------------
 
-# The world screen, opened from the title screen, and its windows: the worlds at the left, the
-# chosen world's details or a form at the right, and the choices in the middle. It builds on
-# world.rbx, which knows the worlds, and on world_text.rbx for what the player types.
+# The world screen and its windows. It builds on world.rbx, which knows the worlds, and on
+# world_text.rbx, the text screen a gamepad types on.
 
-# The world screen, opened from the title screen: every world of the relay's directory at the left,
-# the chosen one's players at the right, and what the player can do with it. Creating a world and
-# adding a hidden one are forms that take the right side while the list points at them.
+# The world screen, opened from the title screen: every world of the relay's directory at the left
+# above the commands, the chosen world's details or a form at the right, and the choices in the
+# middle. Creating a world, adding a hidden one, the player's name, changing a world and a world's
+# password are forms that take the right side.
 class Scene_MpWorlds < Scene_MenuBase
   # What the screen says while nothing else happened.
   HINT = "Up and down pick the worlds or the commands, confirm moves into them. Right arrow on a world: its details."
@@ -62,14 +78,27 @@ class Scene_MpWorlds < Scene_MenuBase
   # What the screen says while a text box is typed into.
   TYPING_HINT = "Type on the keyboard. Arrows, Home, End move the cursor. Enter keeps it, Esc or Numpad 0 goes back."
 
+  # What the screen says while a text box of digits is typed into, where the numpad's 0 types a 0.
+  NUMBER_TYPING_HINT = "Type on the keyboard. Arrows, Home, End move the cursor. Enter keeps it, Esc goes back."
+
   # Frames between two fetches of the list, ten seconds at 60 frames per second.
   REFRESH_FRAMES = 600
 
   # Frames between two looks at the list the DLL holds.
   LOOK_FRAMES = 20
 
-  # Windows' codes of the numpad's 0, the game's cancel key, with Num Lock on and off.
+  # Windows' codes of the numpad's 0, the game's cancel key, with Num Lock on and off; the second
+  # is also the Insert key's.
   NUMPAD_CANCEL_KEYS = [0x60, 0x2D]
+
+  # The kinds of text boxes that take only digits, where the numpad's 0 types a 0.
+  NUMBER_KINDS = [:number, :id]
+
+  # The forms whose one text box sends them with Enter, since they have nothing else to fill in.
+  SEND_ON_ENTER = [:rename, :password]
+
+  # The forms of the chosen world, which no command of the list stands for.
+  WORLD_FORMS = [:edit_world, :password]
 
   # Seconds a frame of the screen may take before the log says what took them, and seconds between
   # two such lines.
@@ -95,16 +124,14 @@ class Scene_MpWorlds < Scene_MenuBase
   # What the bottom of the mod picker says while a mod added by name is picked.
   MOD_PICK_ADDED_HINT = "Enter: list or unlist    →: ! required, ? essential    Del: remove    Esc: done"
 
-  # Windows' code of the Delete key, which removes a mod added by name from the picker.
-  DELETE_KEY = 0x2E
-
   # The titles of the mod picker's button columns.
   MOD_PICK_COLUMNS = ["Required", "Essential"]
 
   # What the right end of a mod's row says, by how it is named.
   MOD_STATE_LABELS = { :unlisted => "unlisted", :listed => "listed", :required => "required", :essential => "essential" }
 
-  # The colour of a mod's row, by how it is named, as its buttons show it.
+  # The color of a mod's row, by how it is named: a required one red and an essential one gold,
+  # near the red and orange of its buttons.
   MOD_STATE_COLORS = { :unlisted => :grey, :listed => :plain, :required => :bad, :essential => :gold }
 
   # Creates the windows, fetches the list, and takes what the text or save screen handed back.
@@ -139,11 +166,16 @@ class Scene_MpWorlds < Scene_MenuBase
     @start_window = Window_MpChoice.new
     [:from_creator, :from_beginning, :from_own].each { |symbol| @start_window.set_handler(symbol, method(:"on_#{symbol}")) }
     @start_window.set_handler(:cancel, method(:back_to_list))
+    @list_box = Sprite_MpListBox.new
+    @box = nil
+    @focus = nil
+    # The text and save screens return to the same object, which read the installed mods already.
+    MGQ_MpWorldMods.forget_installed unless @forms
     @forms ||= { :new_world => MGQ_MpWorld::Form.create, :join_hidden => MGQ_MpWorld::Form.join }
-    @forms[:rename] = MGQ_MpWorld::Form.rename(MGQ_Multiplayer::Player.name.to_s)
+    @forms[:rename] = MGQ_MpWorld::Form.rename(MGQ_Multiplayer::Player.setting("name").to_s)
     @message ||= HINT
     @me = MGQ_MpWorld::Directory.my_id
-    MGQ_MpWorldMods.forget_installed
+    @list_window.restore(@entry.id) if @entry && (@form_symbol.nil? || WORLD_FORMS.include?(@form_symbol))
     take_invite
     MGQ_MpWorld::Directory.refresh
     @refresh_frames = 0
@@ -154,6 +186,9 @@ class Scene_MpWorlds < Scene_MenuBase
     return_to_form if @form_symbol
     show_panel
     show_info
+  rescue => e
+    MGQ_MpWorld.log("world screen could not start: #{e.class}: #{e.message}")
+    return_scene
   end
 
   # Asks for the player's name the first time, takes what is typed into a text box, follows a
@@ -232,10 +267,11 @@ class Scene_MpWorlds < Scene_MenuBase
     MGQ_MpWorld.log("world screen: a frame took #{(seconds * 1000).round} ms (#{parts})")
   end
 
-  # Stops taking what is typed, should the screen close while a text box is typed into.
+  # Stops taking what is typed, should the screen close while a text box is typed into, and frees
+  # the list box.
   def terminate
     MGQ_Multiplayer::Link.typing(false) if (form && form.editing) || @mod_edit
-    @list_box.dispose
+    @list_box.dispose if @list_box
     super
   end
 
@@ -272,7 +308,7 @@ class Scene_MpWorlds < Scene_MenuBase
   # @param entries [Array<MGQ_MpWorld::Entry>] The list.
   # @param state [String] How the list stands.
   def join_invited(entries, state)
-    return unless @invited && state != "loading" && !@busy && !form && MGQ_Multiplayer::Player.name
+    return unless @invited && state != "loading" && idle? && MGQ_Multiplayer::Player.name
 
     @entry = entries.find { |entry| entry.id == @invited }
 
@@ -295,7 +331,7 @@ class Scene_MpWorlds < Scene_MenuBase
   # @param state [String] How the list stands.
   def rejoin(entries, state)
     id = MGQ_MpWorldMods.rejoining
-    return unless id && state != "loading" && !@busy && !form
+    return unless id && state != "loading" && idle?
 
     MGQ_MpWorldMods.rejoined
     @entry = entries.find { |entry| entry.id == id }
@@ -303,6 +339,14 @@ class Scene_MpWorlds < Scene_MenuBase
 
     @data_accepted = false
     on_enter
+  end
+
+  # Tells whether the screen waits for the player, with no action, form, small window, list box or
+  # mod picker open and the cursor in the list, so an entry of its own may begin.
+  #
+  # @return [Boolean] Whether it does.
+  def idle?
+    !@busy && !form && !popup_open? && !@box && !@mod_view && !@focus && !@own_start
   end
 
   # Shows at the right what the list points at: a world's details, or a form.
@@ -314,22 +358,33 @@ class Scene_MpWorlds < Scene_MenuBase
     @detail_window.show(@list_window.current_ext, @me) unless shown
   end
 
-  # Acts on what the text screen handed back.
+  # Acts on what the text screen handed back, and asks for the player's name once, as the screen
+  # first opens without one.
   def take_text_result
     kind, text = MGQ_MpWorld.take_text_result
-    # The screen may close below, and terminate disposes the list box.
-    @list_box = Sprite_MpListBox.new
-    @box = nil
-    @focus = nil
 
     case kind
-    when :password
-      start_action("unlock") { MGQ_MpWorld::Directory.unlock(@entry.id, text) } if text && @entry && @entry.listed
+    when :mod_name
+      @mod_pick_hold = true
+      add_mod(text) if text && @mod_pick
     when Array
-      fill_field(kind[1], text) if text && form
+      take_field_text(kind[1], text) if form
     end
 
-    @ask_name = MGQ_Multiplayer::Player.name.nil?
+    @ask_name = MGQ_Multiplayer::Player.name.nil? && !@name_asked
+  end
+
+  # Fills in a text box of the form from the text screen, and sends a form that Enter sends; leaves
+  # the screen when the first name prompt was left without a name.
+  #
+  # @param key [Symbol] The text box's key.
+  # @param text [String, nil] The text, nil when the player left the text screen.
+  def take_field_text(key, text)
+    if text
+      send_form if fill_field(key, text) && SEND_ON_ENTER.include?(@form_symbol)
+    elsif @form_symbol == :rename && MGQ_Multiplayer::Player.name.nil?
+      return_scene
+    end
   end
 
   # Opens what can be done with the chosen world.
@@ -353,7 +408,8 @@ class Scene_MpWorlds < Scene_MenuBase
   end
 
   # Enters the chosen world, asking for its password the first time, unless it has none or a
-  # Discord invite into it came. A game whose data differs from the creator's is warned or kept out first.
+  # Discord invite into it came. A game whose data differs from the creator's is warned or kept out
+  # first, and every game while the world is full.
   def on_enter
     listed = @entry.listed
     return if listed && !mods_allow?(listed)
@@ -371,21 +427,52 @@ class Scene_MpWorlds < Scene_MenuBase
       # which mods and game data the world asks for.
       refuse(@entry.gone ? "#{@entry.name} is no longer in the list: it was deleted, or you were removed." : "#{@entry.name} is not in the list right now. Try again once the list has loaded.")
       back_to_list
+    elsif @entry.listed && full?(@entry.listed)
+      Sound.play_buzzer
+      say("#{@entry.name} is full right now.")
+      back_to_list
     elsif @entry.local
       listed = @entry.listed
       @entry.local.describe(listed.name, listed.id, listed.seats) if listed
       enter(@entry.local, listed && listed.start, listed && listed.choose)
-    elsif @entry.listed.online >= @entry.listed.seats
-      Sound.play_buzzer
-      say("#{@entry.name} is full right now.")
-      back_to_list
     elsif @entry.open?
       start_action("unlock") { MGQ_MpWorld::Directory.unlock(@entry.id, "") }
     elsif @invite_codes && (code = @invite_codes[@entry.id])
       start_action("unlock") { MGQ_MpWorld::Directory.unlock_code(code) }
     else
-      ask_text(:password, "The password of #{@entry.name}", "", :masked => true, :max_chars => MGQ_MpWorld::MAX_PASSWORD_CHARS)
+      ask_password
     end
+  end
+
+  # Tells whether a world has no seat left for the player.
+  #
+  # The relay may still count the player online for a moment after they left the world.
+  #
+  # @param listed [MGQ_MpWorld::Directory::ListedWorld] The world.
+  # @return [Boolean] Whether every seat is taken by others.
+  def full?(listed)
+    online = listed.online
+    online -= 1 if listed.members.any? { |member| member.id == @me && member.online }
+    online >= listed.seats
+  end
+
+  # Opens the form that asks for the chosen world's password, and starts typing into it.
+  def ask_password
+    close_popups
+    @forms[:password] = MGQ_MpWorld::Form.password(@entry.name)
+    @form_symbol = :password
+    @field_index = 0
+    @hinted = nil
+    @list_window.deactivate
+    @form_window.form = form
+    @form_window.select(0)
+    start_typing(form.fields.first)
+  end
+
+  # Opens the chosen world's lock with the password the form holds.
+  def unlock_world
+    password = form[:password]
+    start_action("unlock") { MGQ_MpWorld::Directory.unlock(@entry.id, password) }
   end
 
   # Decides whether the player's game may enter a world as far as its required mods go: every one
@@ -504,10 +591,8 @@ class Scene_MpWorlds < Scene_MenuBase
     lines
   end
 
-  # Writes the list box's lines for the mods a world needs: the required ones first, green while
-  # this game has their script in the world's version, gold in another version and red while it
-  # lacks it, then the essential ones, green while this game's data matches the world's and gold
-  # otherwise.
+  # Writes the list box's lines for the mods a world needs: the required ones first, then the
+  # essential ones, each marked as Window_MpWorldDetail.mod_marks says, then the listed ones.
   #
   # @param text [String, nil] The mods as the world's creator wrote them.
   # @param differing [Array<String>, nil] What of this game's data differs from the world's, see MGQ_MpWorld::Entry#differing.
@@ -515,24 +600,10 @@ class Scene_MpWorlds < Scene_MenuBase
   # @return [Array<Array>] The lines, see Sprite_MpListBox::View.
   def mod_lines(text, differing = nil, rows = nil)
     mods = MGQ_MpWorld.mods_of(text)
-    required = MGQ_MpWorld.required_mods(text)
-    essential = MGQ_MpWorld.essential_mods(text)
+    marks = Window_MpWorldDetail.mod_marks(text, differing, rows)
     lines = mods.map do |mod|
-      row = rows && rows.find { |candidate| candidate.name == mod }
-
-      if row && row.yours != "not installed"
-        [:item, mod, :gold, "required, #{row.text.sub(/\A[^:]*: /, '')}"]
-      elsif required.include?(mod)
-        MGQ_MpWorld.installed_mod?(mod) ? [:item, mod, :good, "required, installed"] : [:item, mod, :bad, "required, missing"]
-      elsif essential.include?(mod)
-        if differing.nil?
-          [:item, mod, :gold, "essential, not checked"]
-        else
-          differing.empty? ? [:item, mod, :good, "essential, data matches"] : [:item, mod, :gold, "essential, data differs"]
-        end
-      else
-        [:item, mod, :plain, nil]
-      end
+      color, note = marks[mod] || [:plain, nil]
+      [:item, mod, color, note]
     end
     [[:head, "Mods (#{mods.size})"]] + lines
   end
@@ -613,9 +684,10 @@ class Scene_MpWorlds < Scene_MenuBase
     @list_window.activate
   end
 
-  # Opens the list box for what the details point at.
+  # Opens the list box for what the details point at, or asks the creator to update the world's
+  # game data.
   #
-  # @param target [Symbol] :players or :mods.
+  # @param target [Symbol] :mods, :data, :players or :description.
   def open_target(target)
     @entry = @list_window.current_ext
     return open_box(target) unless target == :data
@@ -649,7 +721,7 @@ class Scene_MpWorlds < Scene_MenuBase
   # Finds what of the details the mouse clicked, while the list or the details take the input.
   #
   # @param targets [Array<Symbol>] What the details open.
-  # @return [Symbol, nil] :players or :mods, nil without a click on one.
+  # @return [Symbol, nil] One of Window_MpWorldDetail#targets, nil without a click on one.
   def clicked_target(targets)
     return nil unless mouse_clicked? && (@focus || @list_window.active) && !targets.empty?
 
@@ -661,14 +733,14 @@ class Scene_MpWorlds < Scene_MenuBase
   #
   # @return [Array<Integer>, nil] x and y, nil outside the window or without the mouse.
   def mouse_position
-    defined?(MGQ_Multiplayer::Mouse) ? MGQ_Multiplayer::Mouse.position : nil
+    MGQ_Multiplayer::Mouse.position
   end
 
   # Reports whether the left mouse button went down since the last call.
   #
   # @return [Boolean] Whether it went down.
   def mouse_clicked?
-    defined?(MGQ_Multiplayer::Mouse) ? MGQ_Multiplayer::Mouse.clicked? : false
+    MGQ_Multiplayer::Mouse.clicked?
   end
 
   # Opens the list of the chosen world's players to remove one.
@@ -696,8 +768,9 @@ class Scene_MpWorlds < Scene_MenuBase
 
   # Asks whether to delete the player's saves of the chosen world.
   def on_delete_saves
-    again = @entry.open? ? "You would start anew." : "You would need its password again, and start anew."
-    confirm(:delete_saves, "Delete your saves of #{@entry.name}? #{@entry.listed ? again : ''}", "Delete them")
+    question = "Delete your saves of #{@entry.name}?"
+    question += @entry.open? ? " You would start anew." : " You would need its password again, and start anew." if @entry.listed
+    confirm(:delete_saves, question, "Delete them")
   end
 
   # Does what the player confirmed.
@@ -725,6 +798,7 @@ class Scene_MpWorlds < Scene_MenuBase
   # Opens the form of the player's name and starts typing into it, as when the screen opens and
   # the player has no name.
   def ask_name
+    @name_asked = true
     @list_window.select_symbol(:rename)
     @list_window.deactivate
     @form_symbol = :rename
@@ -739,7 +813,7 @@ class Scene_MpWorlds < Scene_MenuBase
   def rename_player
     MGQ_Multiplayer::Player.name = form[:name]
     @me = MGQ_MpWorld::Directory.my_id
-    @forms[:rename] = MGQ_MpWorld::Form.rename(MGQ_Multiplayer::Player.name.to_s)
+    @forms[:rename] = MGQ_MpWorld::Form.rename(MGQ_Multiplayer::Player.setting("name").to_s)
     leave_form
     @resume_form = false
     say("The others see you as #{MGQ_Multiplayer::Player.name}.")
@@ -764,7 +838,7 @@ class Scene_MpWorlds < Scene_MenuBase
     # Without a name the player cannot be in a world, so the screen closes.
     return return_scene if @form_symbol == :rename && MGQ_Multiplayer::Player.name.nil?
 
-    @forms.delete(:edit_world)
+    WORLD_FORMS.each { |symbol| @forms.delete(symbol) }
     @form_symbol = nil
     @hinted = nil
     @form_window.unselect
@@ -775,7 +849,7 @@ class Scene_MpWorlds < Scene_MenuBase
 
   # Puts the cursor back on the form after another screen, at the field it left from.
   def return_to_form
-    @list_window.select_symbol(@form_symbol) unless @form_symbol == :edit_world
+    @list_window.select_symbol(@form_symbol) unless WORLD_FORMS.include?(@form_symbol)
     @list_window.deactivate
     @form_window.form = form
     @form_window.select(@field_index || 0)
@@ -818,7 +892,7 @@ class Scene_MpWorlds < Scene_MenuBase
     @cursor_shown = true
     MGQ_Multiplayer::Link.typing(true)
     @form_window.refresh
-    say(TYPING_HINT)
+    say(NUMBER_KINDS.include?(field.kind) ? NUMBER_TYPING_HINT : TYPING_HINT)
   end
 
   # Takes what was typed into the text box and lets its editor follow the keys that move the
@@ -835,12 +909,14 @@ class Scene_MpWorlds < Scene_MenuBase
       return ask_field(field, true)
     end
 
-    # The numpad's 0 cancels everywhere else in the game, so it leaves the box instead of typing a 0.
-    return type(field, "\e") if numpad_cancel?
+    # The numpad's 0 cancels everywhere else in the game, so it leaves the box instead of typing a
+    # 0, unless the box takes only digits.
+    return type(field, "\e") if numpad_cancel? && !NUMBER_KINDS.include?(field.kind)
 
     text.each_char do |char|
       type(field, char)
-      return unless form.editing
+      # Enter may have sent the form, which leaves it.
+      return unless form && form.editing
     end
 
     editor = form.edit
@@ -874,8 +950,7 @@ class Scene_MpWorlds < Scene_MenuBase
       form[field.key] = text
       Sound.play_ok
       stop_typing
-      # The name's form has nothing else to fill in, so Enter keeps the name at once.
-      return @form_symbol == :rename ? send_form : nil
+      return SEND_ON_ENTER.include?(@form_symbol) ? send_form : nil
     when :escape
       form[field.key] = @typed_before
       Sound.play_cancel
@@ -911,6 +986,7 @@ class Scene_MpWorlds < Scene_MenuBase
   #
   # @param key [Symbol] The text box's key.
   # @param text [String] The text.
+  # @return [Boolean] Whether it was filled in.
   def fill_field(key, text)
     field = form.fields.find { |candidate| candidate.key == key }
     checked, error = form.check(field, text)
@@ -919,9 +995,11 @@ class Scene_MpWorlds < Scene_MenuBase
       say(error)
       # Keeps the reason on screen instead of the field's hint.
       @hinted = @field_index
+      false
     else
       form[key] = checked
       @hinted = nil
+      true
     end
   end
 
@@ -1016,13 +1094,15 @@ class Scene_MpWorlds < Scene_MenuBase
     end
     move_mod_column(1) if Input.repeat?(:RIGHT)
     move_mod_column(-1) if Input.repeat?(:LEFT)
-    remove_added_mod if MGQ_Multiplayer::Key.pressed?(DELETE_KEY)
+    remove_added_mod if MGQ_Multiplayer::Key.pressed?(MGQ_MpUi::TextEdit::DELETE_KEY)
 
     position = mouse_position
     clicked = mouse_clicked?
     line = position && Sprite_MpListBox.line_at(position[0], position[1], @mod_view)
+    on_item = line && @mod_view.lines[line][0] == :item
 
-    if line && @mod_view.lines[line][0] == :item && position != @box_pointed
+    # A click acts on the row under the mouse, even when the arrows picked another since it moved.
+    if on_item && (position != @box_pointed || clicked)
       @mod_view.pick(line)
       @mod_view.column = @mod_view.lines[line][4] ? Sprite_MpListBox.button_at(position[0], 2).to_i : 0
     end
@@ -1031,8 +1111,8 @@ class Scene_MpWorlds < Scene_MenuBase
     # Closing the picker clears it, so nothing may draw it afterwards.
     return close_mod_pick if Input.trigger?(:B) || (clicked && position && !Sprite_MpListBox.inside?(position[0], position[1]))
 
-    act_on_mod(@mod_targets[@mod_view.selected], @mod_view.column.to_i) if Input.trigger?(:C) || (clicked && line && @mod_view.lines[line][0] == :item)
-    @mod_view.hint = added_mod_picked? ? MOD_PICK_ADDED_HINT : MOD_PICK_HINT
+    act_on_mod(@mod_targets[@mod_view.selected], @mod_view.column.to_i) if Input.trigger?(:C) || (clicked && on_item)
+    @mod_view.hint = added_mod_picked? ? MOD_PICK_ADDED_HINT : MOD_PICK_HINT unless @mod_edit
     @list_box.show(@mod_view)
   end
 
@@ -1053,8 +1133,10 @@ class Scene_MpWorlds < Scene_MenuBase
   # @param target [Integer, Symbol] The mod's index in the picker's entries, :all or :add.
   # @param column [Integer] 0 for the mod's name, 1 for its required button, 2 for its essential one.
   def act_on_mod(target, column)
-    Sound.play_ok
-    return start_mod_typing if target == :add
+    if target == :add
+      Sound.play_ok
+      return start_mod_typing
+    end
 
     error = if target == :all
               @mod_pick.all_listed? ? @mod_pick.unlist_all : @mod_pick.list_all
@@ -1065,21 +1147,43 @@ class Scene_MpWorlds < Scene_MenuBase
             end
     form[:mods] = @mod_pick.text
     show_mod_pick
-    refuse_in_pick(error) if error
+    error ? refuse_in_pick(error) : Sound.play_ok
   end
 
-  # Turns the last row of the picker into a text box for a mod's name, typed on the keyboard.
+  # Turns the last row of the picker into a text box for a mod's name, typed on the keyboard, or
+  # opens the text screen when the keyboard cannot reach the game.
   def start_mod_typing
+    return ask_mod_name(false) unless MGQ_Multiplayer::Background.running?
+
     @mod_edit = MGQ_MpUi::TextEdit.new("", :max_chars => MGQ_MpWorld::MAX_MODS_CHARS)
+    @mod_typing_frames = 0
     MGQ_Multiplayer::Link.typing(true)
     @mod_view.hint = TYPING_HINT
     show_mod_pick
   end
 
+  # Opens the text screen for a mod's name, which the picker adds once the world screen is back.
+  #
+  # @param letters [Boolean] Whether to show the game's letters at once, for a gamepad.
+  def ask_mod_name(letters)
+    ask_text(:mod_name, "The mod's name", "", :max_chars => MGQ_MpWorld::MAX_MODS_CHARS, :letters => letters)
+  end
+
   # Takes what was typed into the name's text box: Enter adds the mod, Escape or the numpad's 0 goes
-  # back to the picker.
+  # back to the picker, and a button that did not come from the keyboard moves the typing to the
+  # text screen, whose letters a gamepad can pick.
   def update_mod_typing
-    text, _keys = MGQ_Multiplayer::Link.take_typed
+    text, keys = MGQ_Multiplayer::Link.take_typed
+    @mod_typing_frames += 1
+
+    # The press that started the typing is still reported in its first frame.
+    if keys == 0 && text.empty? && @mod_typing_frames > 1 && MGQ_MpWorld.gamepad_pressed?
+      MGQ_Multiplayer::Link.typing(false)
+      @mod_edit = nil
+      show_mod_pick
+      return ask_mod_name(true)
+    end
+
     # The numpad's 0 cancels everywhere else in the game, so it leaves the box instead of typing a 0.
     return finish_mod_typing(nil) if numpad_cancel?
 
@@ -1171,11 +1275,21 @@ class Scene_MpWorlds < Scene_MenuBase
       return @resume_form = true
     end
 
+    tidy_form
     case @form_symbol
     when :new_world then create_world
     when :edit_world then edit_world
     when :rename then rename_player
-    else join_world
+    when :password then unlock_world
+    when :join_hidden then join_world
+    end
+  end
+
+  # Puts back into the form every text box it uses as Form#check tidies it, since a box left
+  # through the text screen keeps what was typed as it was.
+  def tidy_form
+    form.fields.each do |field|
+      form[field.key] = form.check(field, form[field.key].to_s)[0] if field.typed? && form.enabled?(field)
     end
   end
 
@@ -1257,7 +1371,7 @@ class Scene_MpWorlds < Scene_MenuBase
 
     unless yield
       Sound.play_buzzer
-      say("Another request is still running. Try again in a moment.")
+      say("The request could not be started. Try again in a moment.")
       return back_to_list
     end
 
@@ -1279,6 +1393,8 @@ class Scene_MpWorlds < Scene_MenuBase
     MGQ_MpWorld::Directory.clear
 
     if action["state"] == "failed"
+      # An invite's code that failed once is no better than none, so the password is asked next.
+      @invite_codes.delete(@entry.id) if kind == "unlock" && @invite_codes && @entry
       Sound.play_buzzer
       say(action["error"])
       return back_to_list
@@ -1298,6 +1414,7 @@ class Scene_MpWorlds < Scene_MenuBase
         say(world ? "Your save could not be copied into #{@creating}." : "The world's folder could not be created.")
       end
     when "unlock"
+      leave_form if @form_symbol == :password
       return if enter_opened(action)
     when "start"
       return start_world(@fetched, true)
@@ -1450,9 +1567,9 @@ class Scene_MpWorlds < Scene_MenuBase
     @confirm_window.start([[yes, :yes], ["Back", :cancel]])
   end
 
-  # Opens the text screen.
+  # Opens the text screen, for a gamepad or a keyboard that cannot reach the game.
   #
-  # @param kind [Symbol, Array] What the text is for, [:field, key] for a text box of the form.
+  # @param kind [Symbol, Array] What the text is for: [:field, key] for a text box of the form, :mod_name for the mod picker.
   # @param caption [String] What the screen says it is for.
   # @param default [String] The text it starts with.
   # @param options [Hash] See Scene_MpText#prepare.
@@ -1521,6 +1638,7 @@ class MpWorldListPane
     @picking = true
     @left_at = {}
     @arrived = false
+    @restore = nil
     [@worlds, @commands].each do |window|
       window.unselect
       window.deactivate
@@ -1627,8 +1745,17 @@ class MpWorldListPane
     @commands.select_symbol(symbol)
   end
 
+  # Puts the cursor on a world once the first worlds arrive, as on the world chosen before the
+  # screen gave way to the text or save screen.
+  #
+  # @param id [String] The world's directory id.
+  def restore(id)
+    @restore = id
+  end
+
   # Shows other worlds. The first worlds to arrive are picked if the pick still rests where it
-  # started, and the commands when the last world went.
+  # started, or the cursor goes onto the world to restore, and the commands are picked when the
+  # last world went.
   #
   # @param entries [Array<MGQ_MpWorld::Entry>] The worlds.
   def entries=(entries)
@@ -1636,13 +1763,32 @@ class MpWorldListPane
 
     if !@arrived && !entries.empty?
       @arrived = true
-      pick(:worlds) if !@inside && @focus == :commands
+      pick(:worlds) if !restore_world(entries) && !@inside && @focus == :commands
     elsif @focus == :worlds && entries.empty?
       was_active = active
       back_out if @inside
       pick(:commands)
       @picking = was_active
     end
+  end
+
+  # Moves the cursor onto the world to restore, if the pick still rests where it started and the
+  # list holds the world; takes the input only if the pane did.
+  #
+  # @param entries [Array<MGQ_MpWorld::Entry>] The worlds, in the list's order.
+  # @return [Boolean] Whether the cursor moved onto it.
+  def restore_world(entries)
+    id = @restore
+    @restore = nil
+    at = id && !@inside && @focus == :commands ? entries.index { |entry| entry.id == id } : nil
+    return false unless at
+
+    taking_input = @picking
+    @focus = :worlds
+    @left_at[:worlds] = at
+    enter
+    @worlds.deactivate unless taking_input
+    true
   end
 
   # Picks a window as a whole.
@@ -1973,7 +2119,8 @@ class Window_MpWorldDetail < Window_Base
   # Width of the bar at the left of the description.
   ACCENT_WIDTH = 3
 
-  # Most players the players' panel names; one more place counts the rest.
+  # Places of the players' panel: as many players as fit are named, and with more players the last
+  # place counts the rest.
   NAMED_PLAYERS = 4
 
   # Most parts of the game data a row names before it counts the rest.
@@ -2066,10 +2213,40 @@ class Window_MpWorldDetail < Window_Base
     Panel.new("Game data", note, [[Cell.new("Mods", mods.empty? ? "No mod named" : mods.join(", "), :normal, mods.empty? ? nil : :mods, mods.empty? ? nil : mods, colors)], [game]])
   end
 
-  # Tells the colors of a world's marked mods: a required one in the color of what is fine while
-  # this game has its script in the world's version, in gold in another version, and in the color
-  # of what is wrong while it lacks it; an essential one in the color of what is fine while this
-  # game's data matches the world's, and in gold otherwise.
+  # Tells how the details and the list box mark a world's marked mods: a required one in the color
+  # of what is fine while this game has its script in the world's version, in gold in another
+  # version, and in the color of what is wrong while it lacks it; an essential one in the color of
+  # what is fine while this game's data matches the world's, and in gold otherwise.
+  #
+  # @param text [String, nil] The mods as the world's creator wrote them.
+  # @param differing [Array<String>, nil] What of this game's data differs from the world's, nil when it is not compared.
+  # @param rows [Array<MGQ_MpWorldMods::Row>, nil] The required mods this game has in another version or lacks.
+  # @return [Hash] Each marked mod's color (:good, :gold or :bad) and what the list box says of it, by the mod's name.
+  def self.mod_marks(text, differing = nil, rows = nil)
+    marks = {}
+    MGQ_MpWorld.required_mods(text).each do |mod|
+      row = rows && rows.find { |candidate| candidate.name == mod }
+      marks[mod] = if row && row.yours != "not installed"
+                     [:gold, "required, #{row.text.sub(/\A[^:]*: /, '')}"]
+                   elsif MGQ_MpWorld.installed_mod?(mod)
+                     [:good, "required, installed"]
+                   else
+                     [:bad, "required, missing"]
+                   end
+    end
+    MGQ_MpWorld.essential_mods(text).each do |mod|
+      marks[mod] = if differing.nil?
+                     [:gold, "essential, not checked"]
+                   elsif differing.empty?
+                     [:good, "essential, data matches"]
+                   else
+                     [:gold, "essential, data differs"]
+                   end
+    end
+    marks
+  end
+
+  # Tells the colors of a world's marked mods, see mod_marks.
   #
   # @param text [String, nil] The mods as the world's creator wrote them.
   # @param differing [Array<String>, nil] What of this game's data differs from the world's.
@@ -2077,9 +2254,7 @@ class Window_MpWorldDetail < Window_Base
   # @return [Hash] The color by the mod's name.
   def mod_colors(text, differing = nil, rows = nil)
     colors = {}
-    MGQ_MpWorld.required_mods(text).each { |mod| colors[mod] = MGQ_MpWorld.installed_mod?(mod) ? :good : :bad }
-    (rows || []).each { |row| colors[row.name] = :gold if row.yours != "not installed" }
-    MGQ_MpWorld.essential_mods(text).each { |mod| colors[mod] = differing && differing.empty? ? :good : :gold }
+    self.class.mod_marks(text, differing, rows).each { |mod, mark| colors[mod] = mark[0] }
     colors
   end
 
@@ -2140,7 +2315,7 @@ class Window_MpWorldDetail < Window_Base
 
   # Puts the cursor on what the details open, or takes it away.
   #
-  # @param target [Symbol, nil] :mods or :players, nil for no cursor.
+  # @param target [Symbol, nil] One of targets, nil for no cursor.
   def focus(target)
     rect = target && @targets[target]
     rect ? cursor_rect.set(rect.x, rect.y, rect.width, rect.height) : cursor_rect.empty
@@ -2151,7 +2326,7 @@ class Window_MpWorldDetail < Window_Base
   #
   # @param x [Integer] The point's x.
   # @param y [Integer] The point's y.
-  # @return [Symbol, nil] :mods or :players, nil elsewhere.
+  # @return [Symbol, nil] One of targets, nil elsewhere.
   def target_at(x, y)
     inside_x = x - self.x - standard_padding
     inside_y = y - self.y - standard_padding

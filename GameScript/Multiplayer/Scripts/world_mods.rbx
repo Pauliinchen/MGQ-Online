@@ -2,7 +2,15 @@
 #  world_mods.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-06: Sent the Mod Config options of each catalog mod this admin's game has in the catalog's version, for the World Admin tool
+#      Paulinchen  2026-10-06: Said a world needs mods that are missing or in another version, since some may not be installed at all
+#                            - Asked a scene directly whether it changes, since the game makes that public
+#                            - Kept the catalog while the list is fetched again, so a mod is never let in by name only meanwhile
+#                            - Left catalog mods the relay could not read yet out of the catalog, so they no longer keep every game out
+#                            - Sent the Mod Config options once a session, not each time the world screen opens
+#                            - Read an option's values from its :values too, as Mod Config Remake does
+#                            - Kept the world's settings within the 2000 characters the relay takes, and told the creator what was left out
+#                            - Left mod names longer than the relay takes out of the creator's hashes
+#                            - Sent the Mod Config options of each catalog mod this admin's game has in the catalog's version, for the World Admin tool
 #                            - Added a button to Mod Config for the world's creator, who sets the world's mod settings from their own, and left the creator's options unlocked
 #                            - Took the world's mod settings from every mod it names, listed ones too, not only the required ones
 #                            - Read decimal settings with a plus sign in their exponent, as Ruby writes large ones
@@ -55,6 +63,12 @@ module MGQ_MpWorldMods
 
   # The kinds of mods that come as a zip whose files go to their paths inside Patch.
   ZIP_KINDS = %w(upload zip)
+
+  # Most characters of a world's settings, as many as the relay takes.
+  MAX_SETTINGS_CHARS = 2000
+
+  # Longest mod name the relay takes among the creator's hashes.
+  MAX_HASH_NAME_CHARS = 100
 
   # A mod of the catalog.
   #
@@ -109,7 +123,15 @@ module MGQ_MpWorldMods
 
     @catalog_text = text
     state = MGQ_Multiplayer::Link.parse(text)
-    @catalog = state["state"] == "ready" ? parse(state[:payload].to_s) : nil
+    payload = state[:payload].to_s
+
+    case state["state"]
+    when "ready" then @catalog = parse(payload)
+    # The DLL hands out the catalog it had while it fetches the list again.
+    when "loading" then @catalog = parse(payload) unless payload.empty?
+    else @catalog = nil
+    end
+    @catalog
   rescue => e
     log_once(:catalog, "reading the mod catalog failed: #{e.class}: #{e.message}")
     nil
@@ -118,7 +140,8 @@ module MGQ_MpWorldMods
   # Reads the catalog's lines.
   #
   # @param text [String] One line per mod and version, see WorldDirectory.DescribeMods in the DLL.
-  # @return [Array<Mod>] The mods.
+  # @return [Array<Mod>] The mods, without those the relay could not read yet, which have no
+  #   version and so count as mods outside the catalog.
   def self.parse(text)
     mods = []
 
@@ -127,7 +150,8 @@ module MGQ_MpWorldMods
 
       case fields[0]
       when "mod"
-        mods.push(Mod.new(fields[1], fields[2].to_s, fields[3].to_s, fields[4].to_s, files_of(fields[5..-1]), []))
+        mod = Mod.new(fields[1], fields[2].to_s, fields[3].to_s, fields[4].to_s, files_of(fields[5..-1]), [])
+        mods.push(mod) unless mod.version.empty? || mod.files.empty?
       when "old"
         mod = mods.find { |known| known.key == fields[1] }
         mod.versions.push([fields[2].to_s, files_of(fields[3..-1])]) if mod
@@ -179,7 +203,6 @@ module MGQ_MpWorldMods
   # after an install.
   def self.forget_installed
     @hashes = {}
-  @reported = {}
     @catalog_read = nil
     MGQ_MpWorld.forget_installed
   end
@@ -264,14 +287,15 @@ module MGQ_MpWorldMods
   end
 
   # Writes the creator's hashes of the required mods outside the catalog, for a world being made
-  # or changed. A mod the creator's game lacks is left out, so it is only checked for being installed.
+  # or changed. A mod the creator's game lacks, or whose name is longer than the relay takes, is
+  # left out, so it is only checked for being installed.
   #
   # @param mods [String] The mods as the creator wrote them.
   # @return [String] "name=hash" pairs separated by semicolons.
   def self.creator_hashes(mods)
     known = catalog
     MGQ_MpWorld.required_mods(mods).map do |name|
-      next if mod_named(name, known) || name =~ /[=;]/
+      next if mod_named(name, known) || name =~ /[=;]/ || name.size > MAX_HASH_NAME_CHARS
 
       path = MGQ_MpWorld.installed_path(name)
       hash = path && hash_of(path)
@@ -290,7 +314,7 @@ module MGQ_MpWorldMods
   def self.summary(world, rows)
     names = rows.map { |row| row.downloadable? ? row.name : "#{row.name} (get it from its author)" }
     action = rows.all? { |row| row.downloadable? } ? " Download them and restart?" : ""
-    "#{world} uses other versions of these mods: #{names.join(', ')}.#{action}"
+    "#{world} needs mods that are missing or in another version here: #{names.join(', ')}.#{action}"
   end
 
   # Installs the world's versions of mods from the catalog. The DLL checks every file first.
@@ -330,7 +354,7 @@ module MGQ_MpWorldMods
   #
   # @param scene [Scene_Title] The title screen.
   def self.on_title_update(scene)
-    return if @rejoining || MGQ_MpGame.call(scene, :scene_changing?)
+    return if @rejoining || scene.scene_changing?
 
     id = take_rejoin
     return unless id && MGQ_Multiplayer.available? && !MGQ_Multiplayer.outdated?
@@ -361,15 +385,38 @@ module MGQ_MpWorldMods
   # personal.
   #
   # @param mods [String] The mods as the creator wrote them.
-  # @return [String] "key=type:value" pairs separated by semicolons.
+  # @return [Array(String, Array<Symbol>)] "key=type:value" pairs separated by semicolons, at most
+  #   MAX_SETTINGS_CHARS of them; and the options left out since they did not fit.
   def self.settings_of(mods)
-    return "" unless defined?(NWConst::Config::MOD_CONTENTS) && $game_system
+    return ["", []] unless defined?(NWConst::Config::MOD_CONTENTS) && $game_system
 
     wanted = MGQ_MpWorld.mods_of(mods).map { |name| MGQ_MpWorld.mod_key(name) }
-    world_options(wanted).map { |key| (encoded = encode(option_value(key))) && "#{key}=#{encoded}" }.compact.join(";")
+    pairs = world_options(wanted).map { |key| (encoded = encode(option_value(key))) && [key, "#{key}=#{encoded}"] }.compact
+    text, left_out = fit_settings(pairs)
+    log("left out #{left_out.size} mod setting(s) past #{MAX_SETTINGS_CHARS} characters: #{left_out.join(', ')}") unless left_out.empty?
+    [text, left_out]
   rescue => e
     log("reading the mod settings failed: #{e.class}: #{e.message}")
-    ""
+    ["", []]
+  end
+
+  # Joins settings as long as they fit in MAX_SETTINGS_CHARS, leaving out each that does not.
+  #
+  # @param pairs [Array<Array(Symbol, String)>] Each option's key and its "key=type:value" pair.
+  # @return [Array(String, Array<Symbol>)] The pairs separated by semicolons, and the options left out.
+  def self.fit_settings(pairs)
+    text = ""
+    left_out = []
+
+    pairs.each do |key, pair|
+      joined = text.empty? ? pair : "#{text};#{pair}"
+      if joined.size > MAX_SETTINGS_CHARS
+        left_out.push(key)
+      else
+        text = joined
+      end
+    end
+    [text, left_out]
   end
 
   # Lists the options of some mods that a world may set: those with values, not key bindings,
@@ -428,7 +475,7 @@ module MGQ_MpWorldMods
   def self.option_line(entry)
     config = NWConst::Config
     key = entry[:key]
-    values = config.const_defined?(:DATA) ? Array(config::DATA[key]) : []
+    values = values_of(entry)
     texts = (config.const_defined?(:DATA_TEXT) && config::DATA_TEXT[key]) || {}
     default = config.const_defined?(:DEFAULT) ? config::DEFAULT[key] : nil
     default = values.first if default.nil?
@@ -438,6 +485,21 @@ module MGQ_MpWorldMods
     name = entry[:name].to_s.sub(/\A\s*\[[^\]]+\]\s*/, "").sub(/\A[\s\->]+/, "")
     choices = values.map { |value| type_of(value) && [value, (texts[value] && texts[value][:name]) || value] }.compact
     ([key, name, type, default] + choices.flatten).map { |field| field.to_s.gsub(/[\t\r\n]/, " ") }.join("\t")
+  end
+
+  # Reads the values an option can take as Mod Config Remake does: from its :values, an array or a
+  # proc, or else from DATA.
+  #
+  # @param entry [Hash] The option's entry in MOD_CONTENTS.
+  # @return [Array] The values in order, none when it has none or its proc fails.
+  def self.values_of(entry)
+    values = entry[:values]
+    values = values.call if values.respond_to?(:call)
+    config = NWConst::Config
+    values ||= config::DATA[entry[:key]] if config.const_defined?(:DATA)
+    values ? values.to_a : []
+  rescue
+    []
   end
 
   # Reads an option's current value.
@@ -525,7 +587,7 @@ module MGQ_MpWorldMods
     return Sound.play_buzzer unless own_world?
 
     id, mods = @own
-    text = settings_of(mods)
+    text, left_out = settings_of(mods)
 
     if @sharing || !MGQ_MpWorld::Directory.set_settings(id, text)
       Sound.play_buzzer
@@ -534,8 +596,9 @@ module MGQ_MpWorldMods
     end
 
     @sharing = true
+    @left_out = left_out.size
     @settings = settings_from(text)
-    window.help_window.set_text("Saving your settings for the world . . .") if window.help_window
+    window.help_window.set_text("Saving your settings for the world . . .#{left_out_text}") if window.help_window
     log("sending #{@settings.size} mod setting(s) as the world's")
   rescue => e
     log("sending the world's mod settings failed: #{e.class}: #{e.message}")
@@ -550,12 +613,21 @@ module MGQ_MpWorldMods
 
     @sharing = false
     MGQ_MpWorld::Directory.clear
-    text = action["state"] == "done" ? "The world's mod settings were saved. Players get them the next time they load." : "The world's mod settings could not be saved: #{action['error']}"
+    text = action["state"] == "done" ? "The world's mod settings were saved. Players get them the next time they load.#{left_out_text}" : "The world's mod settings could not be saved: #{action['error']}"
     MGQ_MpNotices.message(SHARE_ACTION, text) if defined?(MGQ_MpNotices)
     log(text)
   rescue => e
     @sharing = false
     log("following the world's mod settings failed: #{e.class}: #{e.message}")
+  end
+
+  # Tells the creator how many options did not fit into the world's settings, if any.
+  #
+  # @return [String] The sentence with a space in front, "" when every option fit.
+  def self.left_out_text
+    return "" unless @left_out && @left_out > 0
+
+    " #{@left_out} option(s) did not fit into the world's #{MAX_SETTINGS_CHARS} characters and were left out."
   end
 
   # Adds the button to Mod Config Remake, which presses it through the handler of its key.

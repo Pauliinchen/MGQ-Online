@@ -13,8 +13,8 @@
 # Save folder, so what they played in a world goes on in single player. Only the save and its
 # thumbnail come along: the player's own Library, medals and affection stay as they are.
 #
-# The world screen (world.rbx) offers it on a world the player has played, and the game's menu
-# while a world is open. It must never interrupt the game, so every entry point rescues.
+# The world screen (world_screen.rbx) offers it on a world the player has played, and the game's
+# menu while a world is open. It must never interrupt the game, so every entry point rescues.
 module MGQ_MpSaveExport
   # The menu's command while a world is open.
   MENU_COMMAND = "Copy to my game"

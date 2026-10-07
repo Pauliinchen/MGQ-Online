@@ -2,7 +2,9 @@
 #  world_support.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-06: Told the buttons held past the capture, from $held, and loaded ui_wheel.rbx
+#      Paulinchen  2026-10-06: Read the texts of the line at the bottom left here, since overworld_sync.rbx no longer offers them
+#                            - Kept the buttons held while any screen holds them, as Multiplayer.rb does
+#                            - Told the buttons held past the capture, from $held, and loaded ui_wheel.rbx
 #      Paulinchen  2026-10-05: Gave the map an update and whether a message stops its own
 #      Paulinchen  2026-10-04: Followed the scripts to their new names, without mp_
 #      Paulinchen  2026-10-03: Loaded the scripts split off the ones under test, and ui.rbx
@@ -83,9 +85,10 @@ module MGQ_Multiplayer
   module Key; def self.pressed?(code); p = $pressed == code || ($pressed == true && code == 0x42); $pressed = false if p; p; end; end
   module Log; def self.write(m); puts "  log: #{m}"; end; end
   module Capture
-    def self.start(owner); @owner = owner; end
-    def self.stop(owner); @owner = nil if @owner == owner; end
-    def self.on?; !@owner.nil?; end
+    @owners = []
+    def self.start(owner); @owners.push(owner) unless @owners.include?(owner); end
+    def self.stop(owner); @owners.delete(owner); end
+    def self.on?; !@owners.empty?; end
     def self.press?(button); ($held || []).include?(button); end
     def self.trigger?(button); $buttons.delete(button) ? true : false; end
     def self.repeat?(button); $buttons.delete(button) ? true : false; end
@@ -128,6 +131,11 @@ module MGQ_MpOverworldSync::Link
   def self.next_entry; $inbox.shift; end
   def self.send_to(target, text); $sent << [target, text]; true; end
   def self.status; { "state" => "open", "ping" => $status_ping }; end
+end
+
+# The texts the line at the bottom left of the map shows, without their icons, which the tests read.
+module MGQ_MpOverworldSync::Status
+  def self.lines; shown.map(&:first); end
 end
 
 # An entry of the world room's inbox, as the DLL hands it out.

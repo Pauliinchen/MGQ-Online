@@ -2,7 +2,12 @@
 #  world.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-06: Took Discord invites into a world, which open the world screen on the title screen
+#      Paulinchen  2026-10-06: Built the form of a world's password, which world_screen.rbx typed into in place
+#                            - Asked a scene directly whether it changes, since the game makes that public
+#                            - Called mp_dir_edit with as many arguments as its signature names
+#                            - Took an empty name in the form of the player's name while Discord knows theirs, and gave each text box its own reason when empty
+#                            - Removed missing_mods, which MGQ_MpWorldMods.differing replaced
+#                            - Took Discord invites into a world, which open the world screen on the title screen
 #                            - Opened a world's lock with its world code, and told the directory's id of a code
 #                            - Left the world once the player backed out of its new game, as when a question before New Game is cancelled
 #                            - Added the form of the player's name
@@ -187,6 +192,18 @@ module MGQ_MpWorld
     GAMEPAD_BUTTONS.any? { |button| Input.trigger?(button) }
   end
 
+  # Tells whether Discord told the player's name, now or in an earlier session, which an empty
+  # chosen name falls back to.
+  #
+  # @return [Boolean] Whether it did.
+  def self.discord_name?
+    player = MGQ_Multiplayer::Player
+    !MGQ_Multiplayer::Discord.player_name.to_s.empty? || !player.setting(player::DISCORD_NAME).to_s.empty?
+  rescue => e
+    log("reading the Discord name failed: #{e.class}: #{e.message}")
+    false
+  end
+
   # Enters a world from the world screen: its latest save when it has one, a new game otherwise,
   # which the title screen starts once the world screen closed.
   #
@@ -268,7 +285,7 @@ module MGQ_MpWorld
     log("new game in world #{@world.id}") if @world
     scene.command_new_game
     # New Game may ask something first and leave the title screen only after the answer.
-    @pending = :starting unless MGQ_MpGame.call(scene, :scene_changing?)
+    @pending = :starting unless scene.scene_changing?
   rescue => e
     @pending = nil
     leave
@@ -734,7 +751,7 @@ module MGQ_MpWorld
     # @return [Boolean] Whether the action started.
     def self.edit(id, seats, description, mods, mod_hashes = nil)
       MGQ_Multiplayer::Player.share
-      MGQ_Multiplayer::Link.function('mp_dir_edit', 'plppppl').call(id + "\0", seats, description + "\0", mods + "\0", mod_hashes.to_s + "\0", mod_hashes ? 1 : 0) == 1
+      MGQ_Multiplayer::Link.function('mp_dir_edit', 'plpppl').call(id + "\0", seats, description + "\0", mods + "\0", mod_hashes.to_s + "\0", mod_hashes ? 1 : 0) == 1
     end
 
     # Replaces a world's mod settings, which its creator or an admin may.
@@ -877,14 +894,6 @@ module MGQ_MpWorld
   def self.forget_installed
     @installed = nil
     @installed_paths = nil
-  end
-
-  # Lists the required mods of a world that this game lacks.
-  #
-  # @param text [String, nil] The mods as the world's creator wrote them.
-  # @return [Array<String>] Their names.
-  def self.missing_mods(text)
-    required_mods(text).reject { |mod| installed_mod?(mod) }
   end
 
   # Turns a mod's name or its script's file name into what the two are compared by.
@@ -1305,6 +1314,12 @@ module MGQ_MpWorld
       # What the lines at the top of the world screen say while the cursor is on the field.
       attr_reader :hint
 
+      # Tells whether a text box may stay empty right now, nil when only optional decides.
+      attr_reader :empty_ok
+
+      # Why a text box that must be filled in is refused while empty.
+      attr_reader :empty_text
+
       # Creates a field.
       #
       # @param key [Symbol] What the form keeps its value under.
@@ -1312,7 +1327,7 @@ module MGQ_MpWorld
       # @param label [String] What it is called.
       # @param row [Integer] The row it is on.
       # @param hint [String] What the lines at the top say while the cursor is on it.
-      # @param options [Hash] Whichever of :side, :max_chars, :allowed, :needs, :optional, :group and :lines apply.
+      # @param options [Hash] Whichever of :side, :max_chars, :allowed, :needs, :optional, :group, :lines, :empty_ok (a proc) and :empty_text apply.
       def initialize(key, kind, label, row, hint, options = {})
         @key = key
         @kind = kind
@@ -1326,6 +1341,15 @@ module MGQ_MpWorld
         @optional = options[:optional] == true
         @group = options[:group]
         @lines = options[:lines] || 1
+        @empty_ok = options[:empty_ok]
+        @empty_text = options[:empty_text] || "This field cannot be empty."
+      end
+
+      # Tells whether the text box may stay empty.
+      #
+      # @return [Boolean] Whether it may.
+      def may_be_empty?
+        @optional || (@empty_ok ? (@empty_ok.call ? true : false) : false)
       end
 
       # Tells whether the field is a text box, typed into.
@@ -1341,7 +1365,7 @@ module MGQ_MpWorld
     # @return [Form] The form, empty but for the default seats.
     def self.create
       fields = [
-        Field.new(:name, :text, "Name", 0, "The name everyone sees in the list.", :max_chars => MAX_NAME_CHARS, :group => "World"),
+        Field.new(:name, :text, "Name", 0, "The name everyone sees in the list.", :max_chars => MAX_NAME_CHARS, :group => "World", :empty_text => "The world needs a name."),
         Field.new(:password, :password, "Password", 1, "Typed once to enter the world. Left empty, anyone may enter.", :max_chars => MAX_PASSWORD_CHARS, :side => :left, :group => "World"),
         Field.new(:seats, :number, "Max Players", 1, "Players in the world at once, #{MIN_SEATS} to #{MAX_SEATS}.", :max_chars => MAX_SEATS.to_s.size, :allowed => /\A\d\z/, :side => :right, :group => "World"),
         Field.new(:hidden, :check, "Hidden", 2, "Only its players see it in the list. Others add it with its id.", :side => :left, :group => "World"),
@@ -1378,10 +1402,23 @@ module MGQ_MpWorld
     # @return [Form] The form, filled in with the name.
     def self.rename(name)
       fields = [
-        Field.new(:name, :text, "Your name", 0, "The name the others see. Without one, your name on Discord.", :max_chars => MAX_NAME_CHARS, :group => "Player"),
+        Field.new(:name, :text, "Your name", 0, "The name the others see. Without one, your name on Discord.", :max_chars => MAX_NAME_CHARS, :group => "Player",
+                  :empty_ok => lambda { MGQ_MpWorld.discord_name? }, :empty_text => "Type a name: Discord has not told yours yet."),
         Field.new(:confirm, :button, "Use this name", 1, "Keeps the name for every world."),
       ]
       new("Your name", fields, :name => name)
+    end
+
+    # The form of a world's password, which enters it.
+    #
+    # @param name [String] The world's name.
+    # @return [Form] The form, empty.
+    def self.password(name)
+      fields = [
+        Field.new(:password, :password, "Password", 0, "The password the world's creator gave you.", :max_chars => MAX_PASSWORD_CHARS, :group => "World"),
+        Field.new(:confirm, :button, "Enter the world", 1, "Opens the world with the password."),
+      ]
+      new("Enter #{name}", fields, :password => "")
     end
 
     # The form that adds a hidden world to the list by its id.
@@ -1462,7 +1499,7 @@ module MGQ_MpWorld
         [text, nil]
       else
         tidy = text.strip
-        tidy.empty? && !field.optional ? [text, "The #{field.label.downcase} cannot be empty."] : [tidy, nil]
+        tidy.empty? && !field.may_be_empty? ? [text, field.empty_text] : [tidy, nil]
       end
     end
 

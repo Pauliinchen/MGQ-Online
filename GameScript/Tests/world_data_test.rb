@@ -2,7 +2,12 @@
 #  world_data_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-06: Expected Allow data mismatch unticked in a new world's form
+#      Paulinchen  2026-10-06: Checked a name kept with Enter or from the text screen, the numpad's 0 in Max Players, a form's tidied values,
+#                              the cursor put back on the chosen world, the typing hint and clicks of the mod picker and a mod's name on the text screen
+#                            - Expected mp_dir_edit with as many arguments as its signature names, and refused a DLL call whose arguments differ
+#                            - Checked an empty name of the player, taken while Discord knows theirs, and each text box's own reason when empty
+#                            - Removed the check of missing_mods, which is gone
+#                            - Expected Allow data mismatch unticked in a new world's form
 #                            - Checked that an added mod stays when unlisted and goes with Delete
 #                            - Checked typing a mod's name in place in the picker
 #                            - Checked that cancel closes the mod picker without drawing it again
@@ -63,7 +68,7 @@ module MGQ_Multiplayer
   module Ini; def self.read(_path); {}; end; end
   module Link
     Function = Struct.new(:name, :signature) do
-      def call(*args); $calls << [name, signature, args]; 1; end
+      def call(*args); check_dll_call(name, signature, args); $calls << [name, signature, args]; 1; end
     end
     def self.function(name, signature); Function.new(name, signature); end
     def self.read(name, _size); $dll[name].to_s; end
@@ -237,7 +242,18 @@ check("the mods and the mismatch checkbox share the Game data panel", [:mods, :m
 check("the starting point has its own panel", form.fields.select { |field| field.group == "Starting point" }.map { |field| field.label }, ["Shared save", "Player's choice", "Save"])
 check("a description is tidied", form.check(description, "  A slow run.  "), ["A slow run.", nil])
 check("and may be empty", form.check(description, "  "), ["", nil])
-check("while a name may not", form.check(form.fields[0], " ")[1], "The name cannot be empty.")
+check("while a name may not", form.check(form.fields[0], " ")[1], "The world needs a name.")
+rename = MGQ_MpWorld::Form.rename("")
+module MGQ_Multiplayer; module Discord; def self.player_name; $discord_name; end; end; end
+module MGQ_Multiplayer::Player; DISCORD_NAME = "discord_name"; def self.setting(key); ($player_ini || {})[key]; end; end
+$discord_name = nil
+check("an empty name of the player is refused while Discord never told theirs", rename.check(rename.fields[0], " ")[1], "Type a name: Discord has not told yours yet.")
+$discord_name = "Discord Me"
+check("and taken while Discord tells it, which it then stands for", rename.check(rename.fields[0], " "), ["", nil])
+$discord_name = nil
+$player_ini = { "discord_name" => "Earlier Me" }
+check("or told it in an earlier session", rename.check(rename.fields[0], ""), ["", nil])
+$player_ini = nil
 
 # A game whose data cannot be read.
 known_maps = $data_mapinfos
@@ -438,9 +454,12 @@ check("the join form places its fields the same way", join_rects.map { |rect| re
 # The editor every text box shares.
 $held = []
 $key_down = nil
+$background = true
 module MGQ_Multiplayer
   module Capture; def self.repeat?(button); $held.include?(button); end; end
   module Key; def self.pressed?(code); $key_down == code; end; end
+  module Mouse; def self.position; $mouse; end; def self.clicked?; $click ? ($click = false; true) : false; end; end
+  module Background; def self.running?; $background; end; end
 end
 editor = MGQ_MpUi::TextEdit.new("hello", :max_chars => 8, :allowed => /\A[a-z ]\z/)
 check("the editor starts with the cursor at the end of its text", [editor.text, editor.cursor, editor.cursor_shown?], ["hello", 5, true])
@@ -592,7 +611,7 @@ scene.form[:seats] = "8"
 scene.form[:mods] = ""
 $calls.clear
 scene.send_form
-check("sending it hands the changes to the DLL", [$calls.last[0], $calls.last[1], $calls.last[2], scene.instance_variable_get(:@busy)], ["mp_dir_edit", "plppppl", ["w2\0", 8, "A slow run through part one of the story with friends.\0", "\0", "\0", 0], "edit"])
+check("sending it hands the changes to the DLL", [$calls.last[0], $calls.last[1], $calls.last[2], scene.instance_variable_get(:@busy)], ["mp_dir_edit", "plpppl", ["w2\0", 8, "A slow run through part one of the story with friends.\0", "\0", "\0", 0], "edit"])
 $dll["mp_dir_action"] = "state=done\nkind=edit\n\n"
 scene.follow_action
 check("once changed, the form closes and the screen says so", [scene.form, said(scene)], [nil, "Loose was changed."])
@@ -616,7 +635,6 @@ check("no mods give none", [MGQ_MpWorld.mods_of(""), MGQ_MpWorld.mods_of(nil)], 
 check("a mod written with an exclamation mark is required, one with a question mark essential, both named first without their mark", [MGQ_MpWorld.mods_of("Mod A; ?Mod D; !Mod B;! Mod C; !; ?"), MGQ_MpWorld.required_mods("Mod A; ?Mod D; !Mod B;! Mod C; !"), MGQ_MpWorld.essential_mods("Mod A; ?Mod D; !Mod B")], [["Mod B", "Mod C", "Mod D", "Mod A"], ["Mod B", "Mod C"], ["Mod D"]])
 MGQ_MpWorld.instance_variable_set(:@installed, ["modb", "maskofenvy"])
 check("a mod's script is found by its name, whatever its case, spaces or underscores", ["Mod B", "mod_b.rb", "Mask of Envy", "Mask-Of-Envy", "Mod C"].map { |mod| MGQ_MpWorld.installed_mod?(mod) }, [true, true, true, true, false])
-check("only required mods are looked for", MGQ_MpWorld.missing_mods("Mod A; !Mod B; !Mod C; ?Mod E"), ["Mod C"])
 essential_world = listed[1].dup
 essential_world.mods = "Mod A; ?Mod E; !Mod B; !Mod C"
 essential_entry = MGQ_MpWorld::Entry.new("w2", "Loose", essential_world, nil, false, false)
@@ -813,6 +831,12 @@ check("worlds arriving later leave the cursor where it is", pane.current_symbol,
 pane.select_symbol(:join_hidden)
 check("a command is picked by its symbol", [pane.current_symbol, pane.inside?, worlds.index], [:join_hidden, true, -1])
 check("the pane is as wide as the worlds and as high as both windows", [pane.width, pane.height], [230, 200])
+Place = Struct.new(:id)
+worlds = FakeList.new([])
+pane = MpWorldListPane.new(worlds, FakeList.new([[:new_world, nil], [:back, nil]]))
+pane.restore("w2")
+pane.entries = [Place.new("w1"), Place.new("w2")]
+check("the world chosen before the text or save screen gets the cursor back", [pane.inside?, pane.current_ext, worlds.active], [true, Place.new("w2"), true])
 
 # The creator updates a world's game data.
 detail, = new_detail(386, 336)
@@ -1014,5 +1038,110 @@ Dir.mktmpdir do |folder|
     scene.update_mod_pick
     $key_down = nil
     check("so does the numpad's 0, typing nothing", [form[:mods], $typing, scene.instance_variable_get(:@mod_edit)], ["New Mod", false, nil])
+    scene.close_mod_pick
+
+    form[:mods] = ""
+    scene.open_mod_pick
+    view = scene.instance_variable_get(:@mod_view)
+    scene.update_mod_pick
+    view.pick(view.lines.size - 1)
+    $buttons = [:C]
+    scene.update_mod_pick
+    $buttons = nil
+    check("the typing hint stays while a mod's name is typed", [view.hint, $typing], [Scene_MpWorlds::TYPING_HINT, true])
+    $typed = "\e"
+    scene.update_mod_pick
+    scene.update_mod_pick
+    $mouse = [140, 32 + 30 + 24 * 5 + 5]
+    scene.update_mod_pick
+    view.pick(2)
+    $click = true
+    scene.update_mod_pick
+    $mouse = nil
+    check("a click acts on the mod under the mouse, not on the one the arrows picked since", form[:mods], "Zeta")
+    $background = false
+    $called = nil
+    scene.act_on_mod(:add, 0)
+    check("without the keyboard a mod's name is typed on the text screen", [$called, scene.instance_variable_get(:@mod_edit)], [Scene_MpText, nil])
+    MGQ_MpWorld.text_result = [:mod_name, "Pad Mod"]
+    scene.take_text_result
+    check("which adds it once the world screen is back", form[:mods], "Zeta; Pad Mod")
+    $background = true
+    scene.close_mod_pick
   end
 end
+
+# The text boxes of the forms.
+
+# The form window of the world screen: shows a form and keeps the field the cursor is on.
+class FakeForm < FakeChoice
+  # The form shown.
+  attr_accessor :form
+
+  # The cursor's row.
+  #
+  # @return [Integer] The row picked last, the first before any.
+  def index; @selected || 0; end
+
+  # The field the cursor is on.
+  #
+  # @return [MGQ_MpWorld::Form::Field] The field.
+  def field; form.fields[index]; end
+
+  # Takes the cursor off.
+  def unselect; @selected = nil; end
+
+  # Draws nothing.
+  def redraw_current_item; end
+
+  # Breaks no text into lines.
+  #
+  # @param _text [String] The text.
+  # @return [nil] Nothing, as for a box of one line.
+  def current_area_spans(_text); nil; end
+end
+
+module MGQ_Multiplayer::Link; def self.player_id; "me"; end; end
+named = nil
+MGQ_Multiplayer::Player.define_singleton_method(:name=) { |name| named = name }
+scene = new_scene
+form_window = FakeForm.new
+scene.instance_variable_set(:@form_window, form_window)
+scene.instance_variable_get(:@forms)[:rename] = MGQ_MpWorld::Form.rename("")
+scene.instance_variable_set(:@form_symbol, :rename)
+form_window.form = scene.form
+scene.start_typing(scene.form.fields[0])
+$typed = "Bob\r"
+$returned = nil
+scene.update_typing
+check("Enter in the name's text box keeps the name and leaves the form, the screen still open", [named, scene.form, $returned, $typing], ["Bob", nil, nil, false])
+scene.instance_variable_get(:@forms)[:rename] = MGQ_MpWorld::Form.rename("")
+scene.instance_variable_set(:@form_symbol, :rename)
+MGQ_MpWorld.text_result = [[:field, :name], "Pad Name"]
+scene.take_text_result
+check("a name from the text screen is kept at once", [named, scene.form], ["Pad Name", nil])
+MGQ_Multiplayer::Player.define_singleton_method(:name) { nil }
+scene.instance_variable_set(:@form_symbol, :rename)
+scene.instance_variable_set(:@name_asked, true)
+MGQ_MpWorld.text_result = [[:field, :name], nil]
+scene.take_text_result
+check("leaving the first name prompt without a name leaves the screen, and asks no more", [$returned, scene.instance_variable_get(:@ask_name)], [true, false])
+MGQ_Multiplayer::Player.define_singleton_method(:name) { "Me" }
+
+create = scene.instance_variable_get(:@forms)[:new_world]
+scene.instance_variable_set(:@form_symbol, :new_world)
+form_window.form = create
+seats = create.fields.index { |field| field.key == :seats }
+form_window.select(seats)
+scene.start_typing(create.fields[seats])
+check("a text box of digits leaves the numpad's 0 out of its hint", said(scene), Scene_MpWorlds::NUMBER_TYPING_HINT)
+$typed = "0"
+$key_down = 0x60
+scene.update_typing
+$key_down = nil
+check("where the numpad's 0 types a 0", [create[:seats], create.editing], ["40", :seats])
+scene.stop_typing
+create[:name] = "  Spaced  "
+create[:seats] = "08"
+scene.tidy_form
+check("a form sends its tidied values", [create[:name], create[:seats]], ["Spaced", "8"])

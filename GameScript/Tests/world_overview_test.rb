@@ -2,6 +2,9 @@
 #  world_overview_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-07: Expected no place on a map the game names nowhere, headed Unnamed place in the list
+#      Paulinchen  2026-10-06: Checked that the emote wheel keeps the overview shut, and the menu of a player nothing is offered with
+#                            - Read the open menu without the reader the overview dropped
 #      Paulinchen  2026-10-04: Checked the party box's size key, its small rows and its setting
 #                            - Followed the scripts to their new names, without mp_
 #      Paulinchen  2026-10-03: Followed the choices to the scripts that offer them
@@ -68,7 +71,8 @@ check("an unknown place shows nothing", overview.story_text(""), "")
 $game_party.all_members = [Actor.new(99, true), Actor.new(40, false)]
 $game_party.stand_members = [Actor.new(55, false)]
 check("the highest companion, waiting ones too, Luka left out", overview.top_level, 55)
-check("a map without a shown name goes by its name in the editor", overview.place, "Ilias Village (editor)")
+check("a map the game names nowhere has no place, never its untranslated name in the editor", overview.place, "")
+check("which the list heads Unnamed place", overview.lines([overview.own_row("Me (you)")]).first, [:place, "Unnamed place"])
 $game_map.display_name = "Ilias Village"
 overview.tick(true)
 check("the state tells place, level and story", MGQ_MpOverworldSync::Me.current.values_at("place", "lv", "progress"), ["Ilias Village", 55, "3:destroyer"])
@@ -102,7 +106,7 @@ check("confirm opens the player's menu", overview.view[:menu].map(&:text), ["Inv
 check("duels are greyed without PvP battles", overview.view[:menu][1].run, nil)
 $buttons << :C
 overview.on_map
-check("inviting names the player, wherever they are", [MGQ_MpCoop::Party.targets, overview.menu], [["friend"], nil])
+check("inviting names the player, wherever they are", [MGQ_MpCoop::Party.targets, overview.instance_variable_get(:@menu)], [["friend"], nil])
 $buttons << :C
 overview.on_map
 check("the menu then says the invite stands", overview.view[:menu][0].text, "Invited to party")
@@ -122,6 +126,17 @@ overview.define_singleton_method(:rows, rows)
 check("an update reads the players once, and keeps the view for the picture", [reads, overview.shown_view[:menu].size], [1, 1])
 2.times { $buttons << :B; overview.on_map }
 check("cancel closes the menu, then the overview", [overview.open?, MGQ_Multiplayer::Capture.on?], [false, false])
+
+# The emote wheel and empty menus.
+MGQ_MpEmotes.define_singleton_method(:open?) { true }
+$pressed = 0x7A
+overview.on_map
+check("the overview stays shut while the emote wheel is open", overview.open?, false)
+MGQ_MpEmotes.define_singleton_method(:open?) { false }
+registered = MGQ_MpActions.offers.dup
+MGQ_MpActions.offers.clear
+check("a player nothing is offered with gets a menu that says so", overview.menu_options(friend_row).map { |option| [option.text, option.run] }, [["Nothing to do", nil]])
+MGQ_MpActions.offers.concat(registered)
 
 # An invite from afar.
 $inbox << entry("message", 2, told(friend.merge("party" => "friend-p", "invite" => 1, "invite_to" => "me")))

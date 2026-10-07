@@ -2,7 +2,13 @@
 #  world_overview.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-06: Filled the action wheel's middle through wheel_center
+#      Paulinchen  2026-10-07: Left the place of a map the game names nowhere empty instead of its untranslated editor name, and headed it Unnamed place in the list
+#      Paulinchen  2026-10-06: Kept the overview shut while the emote wheel is open
+#                            - Left out what a script offers as nothing, and said Nothing to do in an empty menu of another player
+#                            - Took the box's measures, its headings' color and its background from the list box and the action wheel
+#                            - Named trades in the hint
+#                            - Dropped the menu reader only the tests used
+#                            - Filled the action wheel's middle through wheel_center
 #      Paulinchen  2026-10-04: Moved the party box into ui_party_box.rbx
 #                            - Renamed from mp_world_overview.rbx
 #      Paulinchen  2026-10-03: Filled the wheel's middle, and built the menus and calls from what the scripts offer through MGQ_MpActions
@@ -21,11 +27,11 @@
 # another, see core_hotkeys.rbx) or the action wheel's middle, that
 # lists every player of the world online, grouped by where they are, with their highest companion
 # level, their place in the story and their ping. A player picked with the arrows and confirm, or
-# with the mouse, opens a menu of party and duel invites; a player's row shows their invite or
-# challenge that reaches the player. The map keeps running behind it.
+# with the mouse, opens a menu of what the scripts offer, such as party invites, duels and trades;
+# a player's row shows their invite, challenge or offer that reaches the player. The map keeps
+# running behind it.
 #
-# While the player is in a party, a box at the top right of the map lists its players, the leader
-# first, each with their highest companion level, ping, and where they are.
+# It also lists the player's party for the party box of ui_party_box.rbx.
 #
 # It also tells the others where the player is, their highest companion level and their place in
 # the story, in the state overworld_sync.rbx sends.
@@ -67,6 +73,9 @@ module MGQ_MpWorldOverview
     "judgment" => "Judgment route",
   }
 
+  # What the list's heading says for the maps the game names nowhere.
+  UNNAMED_PLACE = "Unnamed place"
+
   # Parts of places' names the party box writes shorter: the game's own name for the Pocket Castle.
   SHORT_PLACES = { "Pocket Monster Lord's Castle" => "Pocket Castle" }
 
@@ -85,8 +94,8 @@ module MGQ_MpWorldOverview
   # @!attribute member [Boolean] Whether they are in the player's party; for the player, whether
   #   they are in a party at all.
   # @!attribute badge [Array, nil] Their party's size and whether they lead it.
-  # @!attribute call [Array, nil] Their party invite or duel challenge that reaches the player, as
-  #   text and color, shown in place of their place in the story.
+  # @!attribute call [Array, nil] Their invite, challenge or offer that reaches the player, as text
+  #   and color, shown in place of their place in the story.
   Row = Struct.new(:player, :name, :place, :level, :story, :ping, :icon, :member, :badge, :call)
 
   @open = false
@@ -108,13 +117,6 @@ module MGQ_MpWorldOverview
   # @return [Boolean] Whether it is.
   def self.open?
     @open
-  end
-
-  # The menu of the player picked, while it is open.
-  #
-  # @return [Integer, nil] The choice picked in it, nil while it is closed.
-  def self.menu
-    @menu
   end
 
   # The action wheel's middle choice, which opens the overview.
@@ -160,12 +162,12 @@ module MGQ_MpWorldOverview
   end
 
   # Reports whether the overview may open: in a world, on the map, with no event, message, chat
-  # box or action wheel open.
+  # box, action wheel or emote wheel open.
   #
   # @return [Boolean] Whether it may.
   def self.openable?
     MGQ_MpOverworldSync.in_world? && SceneManager.scene.is_a?(Scene_Map) && MGQ_MpOverworldSync.map_quiet? &&
-      !MGQ_MpChat.typing? && !MGQ_MpActions::Wheel.open?
+      !MGQ_MpChat.typing? && !MGQ_MpActions::Wheel.open? && !MGQ_MpEmotes.open?
   end
 
   # Opens or closes the overview with its key, and steers it while open. Called by the map every frame.
@@ -216,15 +218,12 @@ module MGQ_MpWorldOverview
     { "place" => place, "lv" => @level.to_i, "progress" => @story.to_s }
   end
 
-  # Names where the player is: the map's name as the game shows it, or its name in the editor.
+  # Names where the player is: the map's name as the game shows it, empty on a map the game names
+  # nowhere, since the editor's names are internal and untranslated.
   #
   # @return [String] The name.
   def self.place
-    name = $game_map.display_name.to_s
-    return name unless name.empty?
-
-    info = $data_mapinfos && $data_mapinfos[$game_map.map_id]
-    info ? info.name.to_s : "Map #{$game_map.map_id}"
+    $game_map.display_name.to_s
   end
 
   # Shortens a place's name to fit a width: the Pocket Castle's short name first, then without the
@@ -330,7 +329,7 @@ module MGQ_MpWorldOverview
   def self.row_of(peer)
     state = peer.state
     level = state["lv"].to_i
-    Row.new(peer, state["name"].to_s, state["place"].to_s.empty? ? "Map #{state['map']}" : state["place"].to_s,
+    Row.new(peer, state["name"].to_s, state["place"].to_s,
             level > 0 ? "Lv #{level}" : "", story_text(state["progress"]), MGQ_MpOverworld.ping_label(state["ping"]),
             MGQ_MpOverworld::STATE_ICONS[state["scene"]], peer.member ? true : false, MGQ_MpOverworld.party_badge(peer), call_of(peer))
   end
@@ -364,7 +363,7 @@ module MGQ_MpWorldOverview
     own_place = rows.first.place
     groups = rows.group_by(&:place).sort_by { |name, _| [name == own_place ? 0 : 1, name.downcase] }
     groups.map do |name, players|
-      [[:place, name]] + players.sort_by { |row| [row.player == :me ? 0 : 1, row.name.downcase] }.map { |row| [:player, row] }
+      [[:place, name.empty? ? UNNAMED_PLACE : name]] + players.sort_by { |row| [row.player == :me ? 0 : 1, row.name.downcase] }.map { |row| [:player, row] }
     end.flatten(1)
   end
 
@@ -376,15 +375,20 @@ module MGQ_MpWorldOverview
     row.player == :me ? :me : row.player.seat
   end
 
-  # The menu's choices for a player: what every script offers with them, see MGQ_MpActions.offer.
+  # The menu's choices for a player: what every script offers with them, see MGQ_MpActions.offer,
+  # or a choice that says there is nothing to do.
   #
   # @param row [Row] The player.
-  # @return [Array<MGQ_MpActions::Option>] The choices.
+  # @return [Array<MGQ_MpActions::Option>] The choices, at least one.
   def self.menu_options(row)
-    return MGQ_MpActions.offers.map { |offers| offers.peer_option(row.player) } unless row.player == :me
-
-    own = MGQ_MpActions.offers.map(&:own_options).flatten
-    own.empty? ? [MGQ_MpActions::Option.new("Nothing to do", nil, "Pick another player to invite them.")] : own
+    if row.player == :me
+      options = MGQ_MpActions.offers.map(&:own_options).flatten.compact
+      refusal = "Pick another player to invite them."
+    else
+      options = MGQ_MpActions.offers.map { |offers| offers.peer_option(row.player) }.compact
+      refusal = "Nothing can be done with #{row.name} right now."
+    end
+    options.empty? ? [MGQ_MpActions::Option.new("Nothing to do", nil, refusal)] : options
   end
 
   # What the overview shows now.
@@ -536,20 +540,20 @@ end
 # The overview's box over the map: the world's name and the player's party at the top, the list of
 # players by place, and the menu of the player picked.
 class Sprite_MpWorldOverview < Sprite
-  # Where the box sits on the screen.
-  BOX = Rect.new(40, 32, 560, 404)
+  # Where the box sits on the screen, the list box's place.
+  BOX = Sprite_MpListBox::BOX
 
-  # Height of one line of the list.
-  ROW = 24
+  # Height of one line of the list, the list box's.
+  ROW = Sprite_MpListBox::ROW
 
-  # Height of the title.
-  TITLE = 30
+  # Height of the title, the list box's.
+  TITLE = Sprite_MpListBox::TITLE
 
-  # Height of the hint at the bottom.
-  HINT_HEIGHT = 22
+  # Height of the hint at the bottom, the list box's.
+  HINT_HEIGHT = Sprite_MpListBox::HINT_HEIGHT
 
-  # Lines of the list the box shows at once.
-  LIST_ROWS = (BOX.height - TITLE - HINT_HEIGHT - 8) / ROW
+  # Lines of the list the box shows at once, the list box's.
+  LIST_ROWS = Sprite_MpListBox::LIST_ROWS
 
   # Left edge of each column: icons, name, party size, level, story, and the ping's right edge.
   COLUMNS = { :icons => 8, :name => 60, :party => 232, :level => 284, :story => 340, :ping_right => BOX.width - 10 }
@@ -557,8 +561,8 @@ class Sprite_MpWorldOverview < Sprite
   # Width of the menu beside the player picked.
   MENU_WIDTH = 210
 
-  # Background of the box, the chat box's.
-  BACK = Color.new(0, 0, 0, 170)
+  # Background of the box, the action wheel's.
+  BACK = Sprite_MpActionWheel::BACK
 
   # Background of the player picked and the menu's choice picked, the action wheel's.
   PICKED_BACK = Sprite_MpActionWheel::PICKED_BACK
@@ -566,8 +570,8 @@ class Sprite_MpWorldOverview < Sprite
   # Background of the menu.
   MENU_BACK = Color.new(16, 16, 24, 235)
 
-  # Color of a place's heading.
-  PLACE_COLOR = Color.new(160, 200, 255)
+  # Color of a place's heading, the list box's headings'.
+  PLACE_COLOR = Sprite_MpListBox::HEAD_COLOR
 
   # Color of a party member's name, the ghost label's.
   MEMBER_COLOR = Sprite_MpGhostLabel::MEMBER_COLOR
@@ -594,7 +598,7 @@ class Sprite_MpWorldOverview < Sprite
   # @param y [Integer] The point's y.
   # @return [Boolean] Whether it does.
   def self.inside?(x, y)
-    x >= BOX.x && x < BOX.x + BOX.width && y >= BOX.y && y < BOX.y + BOX.height
+    Sprite_MpListBox.inside?(x, y)
   end
 
   # Finds the line of the list under a point of the screen.
@@ -674,7 +678,7 @@ class Sprite_MpWorldOverview < Sprite
     lines.each_with_index { |line, index| draw_line(line, TITLE + index * ROW, view[:scroll] + index == view[:selected]) }
     bitmap.font.size = 16
     bitmap.font.color = GREY
-    bitmap.draw_text(8, BOX.height - HINT_HEIGHT, BOX.width - 16, HINT_HEIGHT, "Enter or click: invite or duel    Esc or #{MGQ_MpHotkeys.label(:overview)}: close", 1)
+    bitmap.draw_text(8, BOX.height - HINT_HEIGHT, BOX.width - 16, HINT_HEIGHT, "Enter or click: invite, duel or trade    Esc or #{MGQ_MpHotkeys.label(:overview)}: close", 1)
     draw_menu(view) if view[:menu]
   end
 

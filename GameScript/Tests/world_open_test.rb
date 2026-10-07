@@ -2,7 +2,10 @@
 #  world_open_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-06: Checked a Discord invite into a world, which opens the world screen and enters the world without its password
+#      Paulinchen  2026-10-06: Checked a world's password typed in place, an invite's failed code giving way to the password,
+#                              a full world kept shut to players with saves of it, and an invite waiting for an open window
+#                            - Refused a DLL call whose arguments differ from its signature
+#                            - Checked a Discord invite into a world, which opens the world screen and enters the world without its password
 #                            - Checked that backing out of a world's new game, which asks something first, leaves the world
 #                            - Loaded world_mods.rbx, which the world screen calls
 #      Paulinchen  2026-10-04: Checked that an outdated game enters no world and is told so in a message box until the player closes it
@@ -66,7 +69,7 @@ module MGQ_Multiplayer
   module Mouse; def self.clicked?; false; end; end
   module Link
     Function = Struct.new(:name, :signature) do
-      def call(*args); $calls << [name, signature, args]; 1; end
+      def call(*args); check_dll_call(name, signature, args); $calls << [name, signature, args]; 1; end
     end
     def self.function(name, signature); Function.new(name, signature); end
     def self.read(name, _size); $dll[name].to_s; end
@@ -169,10 +172,90 @@ scene.on_enter
 check("a world without a password is opened at once", [$calls.last[0], $calls.last[2], $called], ["mp_dir_unlock", ["w2\0", "\0"], nil])
 check("while the screen waits for it", scene.instance_variable_get(:@busy), "unlock")
 
-scene = new_scene
+# What typing in place needs.
+module MGQ_Multiplayer
+  module Background; def self.running?; true; end; end
+  module Key; def self.pressed?(_code); false; end; end
+  module Link
+    def self.typing(on); $typing = on; end
+    def self.take_typed; typed = $typed.to_s; $typed = nil; [typed, typed.size]; end
+  end
+end
+module Input; def self.trigger?(_button); false; end; def self.press?(_button); false; end; end
+
+# The form window of the world screen: shows a form and keeps the field the cursor is on.
+class FakeForm < FakeChoice
+  # The form shown.
+  attr_accessor :form
+
+  # Picks a row.
+  #
+  # @param index [Integer] The row.
+  def select(index); @row = index; end
+
+  # The cursor's row.
+  #
+  # @return [Integer] The row picked last, the first before any.
+  def index; @row || 0; end
+
+  # The field the cursor is on.
+  #
+  # @return [MGQ_MpWorld::Form::Field] The field.
+  def field; form.fields[index]; end
+
+  # Takes the cursor off.
+  def unselect; @row = nil; end
+
+  # Draws nothing.
+  def refresh; end
+
+  # Draws nothing.
+  def redraw_current_item; end
+end
+
+# Builds the world screen with a form window and no forms yet.
+#
+# @return [Scene_MpWorlds] The screen.
+def form_scene
+  scene = new_scene
+  scene.instance_variable_set(:@form_window, FakeForm.new)
+  scene.instance_variable_set(:@forms, {})
+  scene
+end
+
+scene = form_scene
 scene.instance_variable_set(:@entry, entries[2])
+$called = nil
 scene.on_enter
-check("a world with a password asks for it", $called, Scene_MpText)
+check("a world with a password asks for it in a form typed in place", [$called, scene.form.title, scene.form.editing, $typing], [nil, "Enter Plain", :password, true])
+$calls.clear
+$typed = "secret\r"
+scene.update_typing
+check("Enter opens the world with it", [$calls.last[0], $calls.last[2], scene.instance_variable_get(:@busy), $typing], ["mp_dir_unlock", ["w1\0", "secret\0"], "unlock", false])
+
+scene = form_scene
+scene.instance_variable_set(:@entry, entries[2])
+scene.instance_variable_set(:@invite_codes, { "w1" => "mgqmp2;old;r1;4" })
+scene.on_enter
+check("an invite's code opens the world instead of its password", $calls.last[0], "mp_dir_unlock_code")
+$dll["mp_dir_action"] = "state=failed\nerror=Expired.\n\n"
+scene.follow_action
+$dll["mp_dir_action"] = nil
+scene.on_enter
+check("once it failed, the password is asked", scene.form && scene.form.editing, :password)
+
+full = entries[2].listed.dup
+full.online = full.seats
+local = MGQ_MpWorld::World.new("abcdef012345", "code" => "x", "name" => "Plain")
+scene = new_scene
+scene.instance_variable_set(:@me, "me")
+scene.instance_variable_set(:@entry, MGQ_MpWorld::Entry.new("w1", "Plain", full, local, false, false))
+$sounds.clear
+$calls.clear
+scene.on_enter
+check("a full world keeps out players with saves of it too", [$sounds.last, $calls, MGQ_MpWorld.open?], ["buzzer", [], false])
+full.members = [MGQ_MpWorld::Directory::Member.new("me", true, "Me")]
+check("unless the relay still counts the player among those online", scene.full?(full), false)
 
 # A details window that draws on nothing and keeps the texts it draws.
 #
@@ -302,6 +385,11 @@ check("the title screen opens the world screen for it", $called, Scene_MpWorlds)
 invited = new_scene
 invited.take_invite
 check("the world screen takes it once and adds the world to the list, since a hidden one needs that", [added, MGQ_MpWorld::Invite.take], [["w3"], nil])
+invited.instance_variable_get(:@actions_window).start([])
+$calls.clear
+invited.join_invited(entries, "ready")
+check("it waits while a window is open", $calls, [])
+invited.instance_variable_get(:@actions_window).finish
 $calls.clear
 invited.join_invited(entries, "loading")
 check("it waits for the list", $calls, [])

@@ -2,6 +2,7 @@
 #  world_save_distribution.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-07: Shortened the save screen's help texts to fit its one line
 #      Paulinchen  2026-10-04: Renamed from mp_save_distribution.rbx
 #      Paulinchen  2026-10-03: Logged through MGQ_MpLog
 #      Paulinchen  2026-10-02: Let a new player of a world whose players choose start from one of their own saves
@@ -20,8 +21,8 @@
 # from one of their own saves, copied into the world's folder the same way, or from the starting
 # save when it has one.
 #
-# world.rbx, which loads later, calls it from the world screen. It must never interrupt the game,
-# so every entry point rescues.
+# world_screen.rbx, which loads later, calls it. It must never interrupt the game, so every entry
+# point rescues.
 module MGQ_MpSaveDistribution
   # The starting save's name in a world's folder: the world's first save.
   SAVE_NAME = "Save01.rvdata2"
@@ -40,9 +41,11 @@ module MGQ_MpSaveDistribution
 
   # What the save screen says, by what the save is chosen for: a new world's starting save, or
   # the player's own start in a world whose players choose.
+  #
+  # The save screen's help window has one line, which cuts off what does not fit.
   HELP_TEXTS = {
-    :world => "Choose the save every new player of the world starts from.",
-    :own => "Choose the save you start from in the world. Your own saves stay as they are.",
+    :world => "Choose the save every new player starts from.",
+    :own => "Choose the save you start the world from.",
   }
 
   extend MGQ_MpLog

@@ -2,7 +2,8 @@
 #  support.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-06: Loaded Zlib, which RGSS has built in
+#      Paulinchen  2026-10-06: Refused a DLL call whose arguments differ from its signature, as RGSS does
+#                            - Loaded Zlib, which RGSS has built in
 #      Paulinchen  2026-10-04: Followed the scripts to their new names, without mp_
 #      Paulinchen  2026-10-03: Loaded core_game_access.rbx before the first script too
 #                            - Loaded core_log.rbx before the first script too
@@ -55,6 +56,20 @@ end
 # @param expected [Object] What should have.
 def check(label, actual, expected)
   Checks.check(label, actual, expected)
+end
+
+# Refuses a call to a DLL function whose arguments differ in number from its Win32API signature,
+# as RGSS does, so a stand-in for Win32API fails the test where the game would fail.
+#
+# @param name [String] The function.
+# @param signature [String] Its arguments in Win32API notation, "v" for none.
+# @param args [Array] The arguments of the call.
+def check_dll_call(name, signature, args)
+  expected = signature == "v" ? 0 : signature.size
+  return if args.size == expected
+
+  check("#{name} gets the #{expected} argument(s) its signature #{signature} names", args.size, expected)
+  raise "wrong number of parameters: expected #{expected}, got #{args.size}"
 end
 
 # Loads one of the mod's scripts as Multiplayer.rb does, from GameScript/Multiplayer/Scripts, after

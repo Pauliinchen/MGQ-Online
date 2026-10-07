@@ -7,14 +7,13 @@
 #
 #----------------------------------------------------------------
 
-# The text screen of the world screen: where the player types a name or a password, with the
-# keyboard, or with the game's letters on a gamepad. It builds on world.rbx, which takes what
-# was typed.
+# The text screen of the world screen: where the player types into a form's text box with the
+# game's letters on a gamepad, or when the keyboard cannot reach the game. It hands what was typed
+# to MGQ_MpWorld.text_result, which world_screen.rbx takes.
 
-# The text screen, for names and passwords, and for a form's text boxes once a gamepad is used: the
-# typed text in a box, with its purpose where a character's face would be. The keyboard types into
-# it; the game's own letters appear below once a gamepad is used, or from the start when the
-# keyboard cannot reach the game.
+# The text screen, for a form's text boxes once a gamepad is used: the typed text in a box, with its
+# purpose where a character's face would be. The keyboard types into it; the game's own letters
+# appear below once a gamepad is used, or from the start when the keyboard cannot reach the game.
 class Scene_MpText < Scene_MenuBase
   # Sets what the text is for and how it looks.
   #
