@@ -2,7 +2,8 @@
 #  trade_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-07: Looked each DLL call's signature up in the export table of Multiplayer.rb
+#      Paulinchen  2026-10-07: Checked that an autosave loaded forgets the slot a trade saves into
+#                            - Looked each DLL call's signature up in the export table of Multiplayer.rb
 #                            - Tested the messages kept for the trade screen
 #      Paulinchen  2026-10-06: Tested confirming again after a cancelled commit, and cancels and a failed commit while the relay decides
 #                            - Tested that the relay hears of a trade only once a save holds it, and that a trade applies once
@@ -394,3 +395,8 @@ check("and forgotten once the trade ends", trade.note, nil)
 module MGQ_MpWorld; def self.world; World.new("f1", nil); end; end
 check("a world made before the world list offers no trades",
       [trade.available?, MGQ_MpTrade::Offers.wheel_option.refusal], [false, "This world was made before the world list, so it cannot trade."])
+
+# The save after a trade goes into a slot, never into an autosave, whose index is its name.
+MGQ_MpTrade::Saving.slot = 2
+MGQ_MpTrade::Saving.slot = "01"
+check("loading an autosave forgets the slot a trade saves into instead of failing the load", MGQ_MpTrade::Saving.instance_variable_get(:@slot), nil)

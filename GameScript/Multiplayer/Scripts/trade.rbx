@@ -2,7 +2,8 @@
 #  trade.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-07: Logged where opening the screen failed and the pictures in memory
+#      Paulinchen  2026-10-07: Let a world's latest autosave load again: its name is no slot a trade saves into, which raised inside the game's load
+#                            - Logged where opening the screen failed and the pictures in memory
 #                            - Kept the trades a save holds through MGQ_MpGame
 #                            - Forgot a new game's trade save slot through a before block
 #                            - Named players in the log through MGQ_MpOverworldSync.who
@@ -1127,8 +1128,13 @@ module MGQ_MpTrade
   module Saving
     # Remembers the slot of a save loaded or written in a world.
     #
-    # @param index [Integer, nil] The slot, nil for a new game.
+    # An autosave's index is its name, such as "01", and no slot a trade saves into, so loading one
+    # forgets the slot; the first free one takes its place. Adding one to the name raised inside
+    # the game's load, which then failed the whole load of a world's latest autosave.
+    #
+    # @param index [Integer, String, nil] The slot, an autosave's name, or nil for a new game.
     def self.slot=(index)
+      index = nil unless index.is_a?(Integer)
       if index != @slot
         MGQ_MpTrade.log(index ? "a trade saves into save file #{index + 1}, the one last loaded or saved in the world" : "forgot the save file a trade saves into")
       end
