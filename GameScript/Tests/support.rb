@@ -2,6 +2,7 @@
 #  support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-06: Loaded Zlib, which RGSS has built in
 #      Paulinchen  2026-10-04: Followed the scripts to their new names, without mp_
 #      Paulinchen  2026-10-03: Loaded core_game_access.rbx before the first script too
 #                            - Loaded core_log.rbx before the first script too
@@ -13,6 +14,9 @@
 # What every test file shares: checks that count and report, and loading the mod's scripts outside
 # RGSS. Each test file runs in a Ruby process of its own (see run.rb), since each brings its own
 # stand-ins for the game.
+
+# RGSS has Zlib built in, which the scripts use as it is.
+require "zlib"
 
 # Folder of the mod's scripts in the repository.
 SCRIPTS_DIR = File.expand_path("../Multiplayer/Scripts", __dir__)

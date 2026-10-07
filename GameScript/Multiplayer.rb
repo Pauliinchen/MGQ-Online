@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-06: Kept up to 3000 lines of the in-game log per session instead of 60, which ended it within minutes, counted a repeated line instead of writing it again, saying so while it repeats and when the game closes, and moved a log grown past 1 MB aside as the old log when a session starts
+#                            - Loaded coop_story_rewards.rbx before coop_story.rbx
 #                            - Handed a Discord invite into a world to world.rbx instead of the PvP connection
 #                            - Kept the last name Discord told, which stands in while Discord has not told one yet, as right after a restart
 #                            - Wrote the in-game log as Multiplayer InGame.log into the game folder's Logs folder
@@ -79,7 +80,7 @@ module MGQ_Multiplayer
   # loaded first, so their order decides how those hooks wrap each other.
   SCRIPTS = %w[
     core_log core_hooks core_game_access core_hotkeys ui ui_text_box core_actors core_async overworld_sync ui_wheel ui_actions ui_chat ui_emotes overworld
-    coop coop_squad coop_events coop_gather coop_scene coop_npcs coop_story coop_castle
+    coop coop_squad coop_events coop_gather coop_scene coop_npcs coop_story_rewards coop_story coop_castle
     world world_mods world_save_distribution world_text world_screen world_save_export
     battles battles_coop battles_coop_level_sync
     battles_sync battles_sync_wire battles_sync_recorder battles_sync_playback battles_sync_live

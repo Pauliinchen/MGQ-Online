@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-06: Found the database's items, weapons and armors by the letter of their kind, for every script that writes items as text
+#                            - Named the party's own companions, past a story's temporary party
 #                            - Named the title screen's commands, which show whether the player backed out of a world's new game
 #      Paulinchen  2026-10-04: Named a character's levels, which the level sync reads
 #                            - Counted a battle's acting battler as set only once needed, which ends the false log line about it
@@ -78,6 +79,10 @@ module MGQ_MpGame
     :turn_count => :@turn_count,
     :in_battle => :@in_battle,
     :gain_medals => :@gain_medals,
+
+    # $game_party: the companions of the player's own party and castle, which its include_actors
+    # replaces with a story's temporary party while one plays.
+    :include_actors => :@include_actors,
 
     # BattleManager, SceneManager and DataManager.
     :retry_data => :@retry_data,
