@@ -2,7 +2,12 @@
 #  coop_events.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-07: Ended the telling of the leader's story with its event, so the result of a PvP battle no longer reaches the party
+#      Paulinchen  2026-10-07: Registered the interpreter, map, message and party hooks through core_hooks.rbx instead of wraps of its own
+#                            - Let a page of the leader's story outside a fiber move on at once instead of failing, as the other waits do
+#                            - Named players, counted a message's bytes and made up the session's tag through coop.rbx and overworld_sync.rbx instead of copies of their helpers
+#                            - Blocked, watched and mirrored the leader's story only for members synced with the leader, whose own story events run otherwise, and told the leader's pages to them alone
+#                            - Logged how each event starting is sorted and who may run it, every message, the leader's pages told, shown and dropped and why, and the chests shared
+#                            - Ended the telling of the leader's story with its event, so the result of a PvP battle no longer reaches the party
 #      Paulinchen  2026-10-06: Took sound names that hold dots, as picture names may
 #                            - Asked coop.rbx for the party's leader
 #                            - Forgot the pages of the story a former leader told, once another member leads
@@ -58,7 +63,9 @@
 # a talk (conversations, shops, the job change menu), travel (a transfer), a chest (items and its
 # own self switch), a battle without dialogue, or story (everything that moves the story on).
 # Chests are the player's own, and opening one opens it for the whole party: every member who has
-# not looted it yet gets the same items. A story scene the leader starts first gathers the party,
+# not looted it yet gets the same items, synced with the leader's story or not. Story is the
+# leader's alone for the members who follow it (see MGQ_MpCoopStory.follows_leader?); a member who
+# does not plays their own. A story scene the leader starts first gathers the members who follow it,
 # see coop_gather.rbx; the Pocket Castle's residents are sorted by coop_castle.rbx.
 #
 # It must never interrupt the game, so every entry point rescues.
@@ -121,16 +128,7 @@ module MGQ_MpCoopEvents
   @common_kinds = {}
   @chest = nil
   @granting = false
-
-  # Reports whether the hooks can be installed.
-  #
-  # A second copy of this script would wrap the same methods under the same names, and each hook
-  # would then call itself until the stack overflows.
-  #
-  # @return [Boolean] false when the hooks are in place already.
-  def self.hookable?
-    !Game_Interpreter.method_defined?(:mgq_mp_coop_events_setup)
-  end
+  @page_end = false
 
   extend MGQ_MpLog
 
@@ -417,13 +415,34 @@ module MGQ_MpCoopEvents
 
     MGQ_MpCoopGather.drop_hold
     # A page of the leader's story that a scene change cut short must not hold the player's own.
+    log("the page #{@mirrored[:page]} of the leader's story was cut short by an event starting") if @mirrored
     @mirrored = nil
     event = event_id > 0 ? $game_map.events[event_id] : nil
     sorted = event ? kind(event) : kind_of(list || [])
-    @telling = MGQ_MpCoop.party_leading? && sorted == :story
-    @may_tell = sorted == :talk && MGQ_MpCoop.in_party? && may_tell?(list || [])
-    MGQ_MpCoopGather.hold(interpreter) if @telling && scene?(list) && !MGQ_MpCoopGather.gathered?
+    @telling = leading_story? && sorted == :story
+    @may_tell = sorted == :talk && (following? || leading_story?) && may_tell?(list || [])
+    hold = @telling && scene?(list) && !MGQ_MpCoopGather.gathered?
+    MGQ_MpCoopGather.hold(interpreter) if hold
     @chest = event && sorted == :chest && MGQ_MpCoop.in_party? ? { :interpreter => interpreter, :key => chest_key(event), :gains => [] } : nil
+    log_start(event, sorted, hold) if MGQ_MpCoop.in_party?
+  end
+
+  # Logs how an event starting on the map is sorted and what the party does with it.
+  #
+  # @param event [Game_Event, nil] The event, nil for a common event.
+  # @param sorted [Symbol] How it is sorted, see kind.
+  # @param hold [Boolean] Whether the leader's game holds it for the party to gather.
+  def self.log_start(event, sorted, hold)
+    what = event ? "event #{event.id} (page #{event.mgq_mp_page + 1}) on map #{$game_map.map_id}" : "a common event on map #{$game_map.map_id}"
+    notes = []
+    notes << "the leader tells the party this story" if @telling
+    notes << "the player plays their own story, not synced with the leader or leading no member who follows it" unless following? || leading_story?
+    notes << "held until the party gathers" if hold
+    notes << "a talk that may turn into story, watched" if @may_tell
+    notes << "a chest, #{@chest[:key] ? "self switch #{@chest[:key].join('.')}" : 'without a self switch'}" if @chest
+    log("#{what} starts as #{sorted}#{notes.empty? ? '' : ": #{notes.join(', ')}"}")
+  rescue => e
+    log("logging an event's start failed: #{e.class}: #{e.message}")
   end
 
   # Watches a talk that may turn into story, before each of its commands: once it reaches a command
@@ -440,12 +459,12 @@ module MGQ_MpCoopEvents
 
     @may_tell = false
     lead = MGQ_MpCoop.party_leader
-    if lead.is_a?(MGQ_MpOverworldSync::Peers::Peer)
+    if lead.is_a?(MGQ_MpOverworldSync::Peers::Peer) && following?
       # The list ends with an empty command, which ends the event as its last.
       MGQ_MpGame.set(interpreter, :index, list.size - 1)
       MGQ_MpOverworldSync.notice("Only #{lead.state['name']} can move the story on.")
       log("ended a talk where it would move the story on (command #{list[index].code})")
-    elsif MGQ_MpCoop.party_leading?
+    elsif leading_story?
       @telling = true
       log("a talk moves the story on (command #{list[index].code}), the party hears it from here")
     end
@@ -489,7 +508,35 @@ module MGQ_MpCoopEvents
   # @param fields [Hash] Its other fields.
   # @return [Boolean] Whether it went out.
   def self.tell(seat, kind, fields = {})
-    MGQ_MpCoop.tell(seat, "pevent", kind, fields)
+    sent = MGQ_MpCoop.tell(seat, "pevent", kind, fields)
+    log("#{sent ? 'sent' : 'could not send'} #{kind} to #{seat < 0 ? 'the party' : "seat #{seat}"} (#{MGQ_MpCoop.bytes_of(fields)} bytes)")
+    sent
+  end
+
+  # As leader, sends a message about the story to the members who follow it, see
+  # MGQ_MpCoopStory.synced_members.
+  #
+  # @param kind [String] What it is about.
+  # @param fields [Hash] Its other fields.
+  def self.tell_followers(kind, fields)
+    followers = defined?(MGQ_MpCoopStory) ? MGQ_MpCoopStory.synced_members : []
+    log("told nobody #{kind}: no member follows the player's story") if followers.empty?
+    followers.each { |peer| tell(peer.seat, kind, fields) }
+  end
+
+  # Reports whether the player follows their leader's story, through coop_story.rbx: only then is
+  # their story the leader's to move on.
+  #
+  # @return [Boolean] Whether they do.
+  def self.following?
+    defined?(MGQ_MpCoopStory) && MGQ_MpCoopStory.follows_leader? ? true : false
+  end
+
+  # Reports whether the player leads members who follow their story, through coop_story.rbx.
+  #
+  # @return [Boolean] Whether they do.
+  def self.leading_story?
+    defined?(MGQ_MpCoopStory) && MGQ_MpCoopStory.leading_synced? ? true : false
   end
 
   # Reports whether the leader's story scene plays now, held no more, which keeps the members still.
@@ -511,12 +558,22 @@ module MGQ_MpCoopEvents
   # @param peer [MGQ_MpOverworldSync::Peers::Peer, nil] Who sent it.
   # @param message [Hash] The message's fields.
   def self.take_party(peer, message)
-    return MGQ_MpCoopGather.take(peer, message) if GATHER_MESSAGES.include?(message["pevent"])
-    return unless MGQ_MpCoop.party_leader.equal?(peer)
+    kind = message["pevent"]
+    return MGQ_MpCoopGather.take(peer, message) if GATHER_MESSAGES.include?(kind)
 
-    case message["pevent"]
-    when "say" then hear(peer, message) if MGQ_MpCoopGather.story_map?(message["map"].to_i)
+    lead = MGQ_MpCoop.party_leader
+    return log("ignored #{kind} from #{MGQ_MpOverworldSync.who(peer)}: not from the party's leader (#{MGQ_MpOverworldSync.who(lead)})") unless lead.equal?(peer)
+    return log("ignored #{kind} from #{MGQ_MpOverworldSync.who(peer)}: not synced with the leader, the player plays their own story") unless following?
+
+    case kind
+    when "say"
+      if MGQ_MpCoopGather.story_map?(message["map"].to_i)
+        hear(peer, message)
+      else
+        log("dropped page #{message['page']} of #{MGQ_MpOverworldSync.who(peer)}'s story: told on map #{message['map']}, not the story's map for the player (on map #{$game_map ? $game_map.map_id : '?'})")
+      end
     when "done" then heard_done(message)
+    else log("ignored #{kind} from #{MGQ_MpOverworldSync.who(peer)}: unknown kind")
     end
   rescue => e
     log("taking #{message['pevent']} failed: #{e.class}: #{e.message}")
@@ -532,7 +589,15 @@ module MGQ_MpCoopEvents
   def self.hand_over(event)
     lead = MGQ_MpCoop.party_leader
     return false unless lead.is_a?(MGQ_MpOverworldSync::Peers::Peer) && kind(event) == :story
-    return true if event.trigger == 3
+    unless following?
+      log_once([:own_story, $game_map.map_id, event.id, lead.state["id"].to_s], "story event #{event.id} on map #{$game_map.map_id} runs in the player's own game: not synced with #{MGQ_MpOverworldSync.who(lead)}, the player plays their own story")
+      return false
+    end
+    if event.trigger == 3
+      log_once([:autorun, $game_map.map_id, event.id, lead.state["id"].to_s],
+               "kept event #{event.id} on map #{$game_map.map_id} that runs by itself from starting: it is story, which #{MGQ_MpOverworldSync.who(lead)}'s game runs")
+      return true
+    end
 
     refuse_story(event, lead)
     true
@@ -552,6 +617,7 @@ module MGQ_MpCoopEvents
 
     @refused = key
     @refused_at = Graphics.frame_count
+    log("kept story event #{event.id} on map #{$game_map.map_id} from starting: only the leader #{MGQ_MpOverworldSync.who(lead)} starts story (leader on map #{lead.state['map']})")
     away = lead.state["map"].to_i == $game_map.map_id ? "" : " Bring them here to go on."
     MGQ_MpOverworldSync.notice("Only #{lead.state['name']} can move the story on.#{away}")
   end
@@ -573,7 +639,13 @@ module MGQ_MpCoopEvents
   # @param common [RPG::CommonEvent] The common event.
   # @return [Boolean] Whether it is.
   def self.leave_to_leader?(common)
-    MGQ_MpCoop.party_leader.is_a?(MGQ_MpOverworldSync::Peers::Peer) && kind_of(common.list || []) == :story
+    lead = MGQ_MpCoop.party_leader
+    left = lead.is_a?(MGQ_MpOverworldSync::Peers::Peer) && following? && kind_of(common.list || []) == :story
+    if left
+      id = common.respond_to?(:id) ? common.id : "?"
+      log_once([:common, id, lead.state["id"].to_s], "kept common event #{id} that runs by itself from starting: it is story, which #{MGQ_MpOverworldSync.who(lead)}'s game runs")
+    end
+    left
   rescue
     false
   end
@@ -596,7 +668,8 @@ module MGQ_MpCoopEvents
       "background" => message.background.to_i, "position" => message.position.to_i,
       "lines" => page[0].map { |line| [line.to_s].pack('m0') }.join(","),
       "choices" => page[1].map { |choice| [choice.to_s].pack('m0') }.join(","))
-    tell(-1, "say", fields)
+    log("telling the party page #{page_id} of the story: #{page[0].size} lines, #{page[1].size} choices, face #{message.face_name}, first line #{page[0].first.to_s[0, 60].inspect}")
+    tell_followers("say", fields)
   rescue => e
     log("telling a message failed: #{e.class}: #{e.message}")
   end
@@ -609,7 +682,8 @@ module MGQ_MpCoopEvents
     return unless @shown && interpreter.equal?($game_map.interpreter)
 
     @shown = nil
-    tell(-1, "done", MGQ_MpCoopGather.place_fields.merge("page" => page_id))
+    log("the leader moved past page #{page_id}, telling the party")
+    tell_followers("done", MGQ_MpCoopGather.place_fields.merge("page" => page_id))
   rescue => e
     log("telling a message's end failed: #{e.class}: #{e.message}")
   end
@@ -619,7 +693,7 @@ module MGQ_MpCoopEvents
   #
   # @return [String] The page's id.
   def self.page_id
-    @session ||= rand(36**6).to_s(36)
+    @session ||= MGQ_MpCoop.random_id(6)
     "#{@session}.#{@page}"
   end
 
@@ -632,11 +706,17 @@ module MGQ_MpCoopEvents
     lines = message["lines"].to_s.split(",").map { |line| decode(line) }
     choices = message["choices"].to_s.split(",").map { |choice| decode(choice) }
     lines += ["#{peer.state['name']} chooses: #{choices.join(' / ')}"] unless choices.empty?
-    return if lines.empty?
+    return log("dropped page #{message['page']} of #{MGQ_MpOverworldSync.who(peer)}'s story: no text") if lines.empty?
 
     @heard << { :page => message["page"].to_s, :face => message["face"].to_s, :index => message["index"].to_i,
                 :background => message["background"].to_i, :position => message["position"].to_i, :lines => lines }
-    @heard.shift while @heard.size > MAX_HEARD
+    dropped = 0
+    while @heard.size > MAX_HEARD
+      @heard.shift
+      dropped += 1
+    end
+    log("heard page #{message['page']} of #{MGQ_MpOverworldSync.who(peer)}'s story: #{lines.size} lines, #{choices.size} choices, " \
+        "#{@heard.size} waiting to show#{dropped > 0 ? ", dropped the #{dropped} oldest" : ''}")
   end
 
   # Notes that the leader moved past a page of their story.
@@ -646,6 +726,7 @@ module MGQ_MpCoopEvents
     forget_former_leader
     @done.push(message["page"].to_s)
     @done.shift while @done.size > MAX_DONE
+    log("the leader moved past page #{message['page']}")
   end
 
   # Reports whether the leader moved past a page of their story.
@@ -673,17 +754,59 @@ module MGQ_MpCoopEvents
   # @return [Boolean] Whether it is over.
   def self.page_done?
     return true unless @mirrored
-    return true if done?(@mirrored[:page])
+    return page_over("the leader moved past it") if done?(@mirrored[:page])
 
     lead = MGQ_MpCoop.party_leader
-    return true unless lead.is_a?(MGQ_MpOverworldSync::Peers::Peer)
+    return page_over("#{MGQ_MpOverworldSync.who(lead)} is no longer the player's leader") unless lead.is_a?(MGQ_MpOverworldSync::Peers::Peer)
 
-    lead.state["telling"] != "1" && past?(@mirrored[:since], STALE_FRAMES)
+    lead.state["telling"] != "1" && past?(@mirrored[:since], STALE_FRAMES) ? page_over("the leader stopped telling the story #{STALE_FRAMES} frames ago") : false
+  end
+
+  # Logs once why the page of the leader's story the window shows is over.
+  #
+  # @param reason [String] Why it is.
+  # @return [Boolean] true.
+  def self.page_over(reason)
+    unless @mirrored[:over]
+      @mirrored[:over] = true
+      log("the page #{@mirrored[:page]} of the leader's story is over: #{reason}")
+    end
+    true
   end
 
   # Notes that the window finished the page of the leader's story.
   def self.page_ended
     @mirrored = nil
+  end
+
+  # Notes whether the message window waits for the input that ends a page, which tells a pause at
+  # a page's end from one before the rest of a page too long for the window.
+  #
+  # @param at_end [Boolean] Whether it does.
+  def self.page_end_input(at_end)
+    @page_end = at_end
+  end
+
+  # Holds a page of the leader's story in the message window for the leader: the player can
+  # neither move it on nor close it, nor skip it with the game's skip key. A page too long for the
+  # window shows its rest after OVERFLOW_FRAMES.
+  #
+  # @param window [Window_Message] The message window.
+  def self.hold_page(window)
+    page_end = @page_end
+    window.pause = true
+    frames = 0
+    begin
+      until page_done? || (!page_end && frames >= OVERFLOW_FRAMES)
+        Fiber.yield
+        frames += 1
+      end
+    rescue FiberError
+      # A message window outside a fiber cannot wait, so the page moves on at once.
+      log_once(:page_fiber, "could not hold a page of the leader's story: the message window runs outside a fiber, so it moves on at once")
+    end
+    window.pause = false
+    page_ended if page_end
   end
 
   # Reads a line written for a message.
@@ -698,12 +821,18 @@ module MGQ_MpCoopEvents
   # pages the leader moved past meanwhile.
   def self.show_heard
     return if @heard.nil? || @heard.empty? || !MGQ_MpOverworldSync.map_free?
-    return @heard.clear unless MGQ_MpCoop.in_party?
+    unless MGQ_MpCoop.in_party?
+      log("dropped #{@heard.size} waiting pages of the leader's story: no longer in a party")
+      return @heard.clear
+    end
 
-    @heard.shift while !@heard.empty? && done?(@heard.first[:page])
+    skipped = []
+    skipped << @heard.shift[:page] while !@heard.empty? && done?(@heard.first[:page])
+    log("skipped pages #{skipped.join(', ')} of the leader's story: the leader moved past them while the player was busy") unless skipped.empty?
     return if @heard.empty?
 
     page = @heard.shift
+    log("showing page #{page[:page]} of the leader's story, #{@heard.size} more waiting")
     $game_message.face_name = page[:face]
     $game_message.face_index = page[:index]
     $game_message.background = page[:background]
@@ -719,6 +848,8 @@ module MGQ_MpCoopEvents
     id = lead.is_a?(MGQ_MpOverworldSync::Peers::Peer) ? lead.state["id"].to_s : nil
     return if id == @heard_from
 
+    waiting = (@heard || []).size
+    log("the leader whose story pages the player follows is #{id ? MGQ_MpOverworldSync.who(lead) : 'nobody'} now#{waiting > 0 ? ", forgot #{waiting} waiting pages of the former leader" : ''}")
     @heard_from = id
     @heard = []
     @done = []
@@ -738,6 +869,7 @@ module MGQ_MpCoopEvents
   # Gives what the block gives without counting it as what a chest the player opens gives, nor as
   # what the leader's story gives the party.
   #
+  # @yield The giving, such as a chest's items or a trade's.
   # @return [Object] What the block returns.
   def self.granting
     granting = @granting
@@ -826,12 +958,16 @@ module MGQ_MpCoopEvents
 
     chest = @chest
     @chest = nil
-    return unless chest[:key] && $game_self_switches[chest[:key]] && MGQ_MpCoop.in_party?
+    unless chest[:key] && $game_self_switches[chest[:key]] && MGQ_MpCoop.in_party?
+      reason = !chest[:key] ? "it sets no self switch" : (MGQ_MpCoop.in_party? ? "it stayed shut, such as a locked one" : "no longer in a party")
+      return log("the chest #{chest[:key] ? chest[:key].join('.') : ''} tells the party nothing: #{reason}")
+    end
 
     MGQ_MpCoopStory.keep_own_self_switch(chest[:key], true) if defined?(MGQ_MpCoopStory)
     gains = chest[:gains].map { |kind, id, amount| "#{kind}#{id}x#{amount}" }.join(",")
     sound = chest[:sound] || [CHEST_SOUND, 80, 100]
-    MGQ_MpCoop.tell(-1, "chest", chest[:key].join("."), "gains" => gains, "se" => sound.join(","))
+    sent = MGQ_MpCoop.tell(-1, "chest", chest[:key].join("."), "gains" => gains, "se" => sound.join(","))
+    log("#{sent ? 'told' : 'could not tell'} the party about chest #{chest[:key].join('.')}: gave #{gains.empty? ? 'nothing' : gains}, sound #{sound.join(',')}")
   rescue => e
     log("telling a chest failed: #{e.class}: #{e.message}")
   end
@@ -841,6 +977,8 @@ module MGQ_MpCoopEvents
   # @param peer [MGQ_MpOverworldSync::Peers::Peer, nil] Who sent it.
   # @param message [Hash] The message's fields.
   def self.take(peer, message)
+    what = message["chest"] ? "chest #{message['chest']} (gains #{message['gains']})" : "#{message['pevent']}#{message['page'] ? " page #{message['page']}" : ''}"
+    log("got #{what} from #{MGQ_MpOverworldSync.who(peer)} (#{MGQ_MpCoop.bytes_of(message)} bytes)")
     message["chest"] ? take_chest(peer, message) : take_party(peer, message)
   end
 
@@ -850,15 +988,20 @@ module MGQ_MpCoopEvents
   # @param peer [MGQ_MpOverworldSync::Peers::Peer, nil] Who opened it.
   # @param message [Hash] The message's fields.
   def self.take_chest(peer, message)
-    return unless MGQ_MpCoop::Party.member?(peer.state)
+    return log("ignored chest #{message['chest']} from #{MGQ_MpOverworldSync.who(peer)}: not a member of the party") unless MGQ_MpCoop::Party.member?(peer.state)
     # A PvP battle puts the game back as it was before it, which would take the items again.
-    return (@held_chests ||= []) << [peer, message] if pvp_running?
+    if pvp_running?
+      (@held_chests ||= []) << [peer, message]
+      return log("holding chest #{message['chest']} from #{MGQ_MpOverworldSync.who(peer)} until the PvP battle put the game back (#{@held_chests.size} waiting)")
+    end
 
     map_id, event_id, letter = message["chest"].to_s.split(".")
     key = [map_id.to_i, event_id.to_i, letter]
-    return if own_self_switch(key) || message["gains"].to_s.empty?
+    return log("ignored chest #{message['chest']} from #{MGQ_MpOverworldSync.who(peer)}: the player looted it already") if own_self_switch(key)
+    return log("ignored chest #{message['chest']} from #{MGQ_MpOverworldSync.who(peer)}: it gave nothing") if message["gains"].to_s.empty?
 
     names = grant(message["gains"].to_s)
+    log("took chest #{key.join('.')} #{MGQ_MpOverworldSync.who(peer)} opened for the party: #{names.empty? ? 'nothing known' : names.join(', ')}")
     MGQ_MpCoopStory.keep_own_self_switch(key, true) if defined?(MGQ_MpCoopStory)
     text = names.empty? ? "#{peer.state['name']} opened a chest for the party." : "#{peer.state['name']} opened a chest for the party: #{names.join(', ')}."
     (@chest_news ||= []) << [text, first_icon(message["gains"].to_s), message["se"].to_s]
@@ -873,6 +1016,7 @@ module MGQ_MpCoopEvents
 
     held = @held_chests
     @held_chests = nil
+    log("the PvP battle is over, taking the #{held.size} chests other members opened meanwhile")
     held.each { |peer, message| take_chest(peer, message) }
   end
 
@@ -935,7 +1079,10 @@ module MGQ_MpCoopEvents
   def self.grant(gains)
     granting do
       gains.split(",").map do |entry|
-        next unless entry =~ /\A([iwag])(\d+)x(\d+)\z/
+        unless entry =~ /\A([iwag])(\d+)x(\d+)\z/
+          log("skipped #{entry.inspect} of a chest: unreadable")
+          next
+        end
 
         kind, id, amount = Regexp.last_match(1), Regexp.last_match(2).to_i, Regexp.last_match(3).to_i
         if kind == "g"
@@ -943,7 +1090,10 @@ module MGQ_MpCoopEvents
           "#{amount} #{Vocab.currency_unit}"
         else
           item = MGQ_MpGame.item(kind, id)
-          next unless item
+          unless item
+            log("skipped #{entry} of a chest: not in the game")
+            next
+          end
 
           $game_party.gain_item(item, amount)
           amount > 1 ? "#{item.name} x#{amount}" : item.name
@@ -982,145 +1132,74 @@ rescue => e
   MGQ_MpCoopEvents.log("sound hook FAILED: #{e.class}: #{e.message}")
 end
 
-# Game hooks of this script alone.
-#
-# Each wraps a game method: the original runs first unless said otherwise, and the mod's part never
-# raises.
+# Game hooks of this script alone, through core_hooks.rbx.
 
-if MGQ_MpCoopEvents.hookable?
-  begin
-    class Game_Interpreter
-      alias mgq_mp_coop_events_setup setup
-      alias mgq_mp_coop_events_run run
+begin
+  # After a list of commands is set up, a chest the map's main event opens is noticed.
+  MGQ_MpHooks.after(Game_Interpreter, :setup, "coop_events") { |list, event_id = 0| MGQ_MpCoopEvents.started(self, list, event_id) }
 
-      # Sets up a list of commands, noticing a chest the map's main event opens.
-      #
-      # @param list [Array<RPG::EventCommand>] The commands.
-      # @param event_id [Integer] The event, 0 for none.
-      def setup(list, event_id = 0)
-        mgq_mp_coop_events_setup(list, event_id)
-        MGQ_MpCoopEvents.started(self, list, event_id) rescue nil
-      end
+  # After the commands ran, the party hears of a chest they opened.
+  MGQ_MpHooks.after(Game_Interpreter, :run, "coop_events") { MGQ_MpCoopEvents.finished(self) }
 
-      # Runs the commands, then tells the party about a chest they opened.
-      def run
-        mgq_mp_coop_events_run
-        MGQ_MpCoopEvents.finished(self) rescue nil
-      end
+  # Around an interpreter's wait for a message, the party members hear the message the leader's
+  # story shows, then that the leader moved past it. The Yanfly plugin, which loads after the Patch
+  # folder, writes its own command_101, so the message is caught here, where every message waits
+  # once its text is set.
+  MGQ_MpHooks.before(Game_Interpreter, :wait_for_message, "coop_events") { MGQ_MpCoopEvents.show(self) }
+  MGQ_MpHooks.after(Game_Interpreter, :wait_for_message, "coop_events") { MGQ_MpCoopEvents.shown(self) }
 
-      alias mgq_mp_coop_events_wait_for_message wait_for_message
+  # Before the map starts the event that is starting, every one that is story the leader's game
+  # plays is left out.
+  MGQ_MpHooks.before(Game_Map, :setup_starting_map_event, "coop_events") do
+    @events.values.each do |event|
+      next unless event.starting && MGQ_MpCoopEvents.hand_over(event)
 
-      # Tells the party members the message the leader's story shows, then waits for it.
-      #
-      # The Yanfly plugin, which loads after the Patch folder, writes its own command_101, so the
-      # message is caught here, where every message waits once its text is set.
-      def wait_for_message
-        MGQ_MpCoopEvents.show(self)
-        mgq_mp_coop_events_wait_for_message
-        MGQ_MpCoopEvents.shown(self)
-      end
+      event.clear_starting_flag
+      event.unlock
     end
-
-    class Game_Map
-      alias mgq_mp_coop_events_setup_starting_map_event setup_starting_map_event
-      alias mgq_mp_coop_events_setup_autorun_common_event setup_autorun_common_event
-
-      # Starts the event that is starting, leaving out every one that is story the leader's game
-      # plays.
-      #
-      # @return [Game_Event, nil] The event started.
-      def setup_starting_map_event
-        @events.values.each do |event|
-          next unless event.starting && MGQ_MpCoopEvents.hand_over(event)
-
-          event.clear_starting_flag
-          event.unlock
-        end
-        mgq_mp_coop_events_setup_starting_map_event
-      end
-
-      # Starts a common event that runs by itself, unless it is story the leader's game plays. The
-      # original does not run then.
-      #
-      # @return [RPG::CommonEvent, nil] The common event started.
-      def setup_autorun_common_event
-        common = $data_common_events.find { |c| c && c.autorun? && $game_switches[c.switch_id] }
-        return nil if common && MGQ_MpCoopEvents.leave_to_leader?(common)
-
-        mgq_mp_coop_events_setup_autorun_common_event
-      end
-    end
-  rescue => e
-    MGQ_MpCoopEvents.log("interpreter hooks FAILED: #{e.class}: #{e.message}")
   end
 
-  begin
-    class Window_Message
-      alias mgq_mp_coop_events_process_input process_input
-      alias mgq_mp_coop_events_input_pause input_pause
+  # A common event that runs by itself starts, unless it is story the leader's game plays.
+  MGQ_MpHooks.around(Game_Map, :setup_autorun_common_event, "coop_events") do |_map, _args, original|
+    common = $data_common_events.find { |c| c && c.autorun? && $game_switches[c.switch_id] }
+    common && MGQ_MpCoopEvents.leave_to_leader?(common) ? nil : original.call
+  end
+rescue => e
+  MGQ_MpCoopEvents.log("interpreter hooks FAILED: #{e.class}: #{e.message}")
+end
 
-      # Waits for the input that ends a page, noting that its pause is the page's end.
-      def process_input
-        @mgq_mp_coop_events_page_end = true
-        mgq_mp_coop_events_process_input
-      ensure
-        @mgq_mp_coop_events_page_end = false
-      end
+begin
+  # Around the message window's wait for the input that ends a page, its pause is the page's end.
+  MGQ_MpHooks.before(Window_Message, :process_input, "coop_events") { MGQ_MpCoopEvents.page_end_input(true) }
+  MGQ_MpHooks.after(Window_Message, :process_input, "coop_events") { MGQ_MpCoopEvents.page_end_input(false) }
 
-      # Waits for the player to move the message on, but on a page of the leader's story for the
-      # leader instead: the player can neither move it on nor close it, nor skip it with the
-      # game's skip key. A page too long for the window shows its rest after OVERFLOW_FRAMES.
-      def input_pause
-        return mgq_mp_coop_events_input_pause unless MGQ_MpCoopEvents.mirroring?
+  # The wait for the player to move the message on, but on a page of the leader's story for the
+  # leader instead.
+  MGQ_MpHooks.around(Window_Message, :input_pause, "coop_events") do |window, _args, original|
+    MGQ_MpCoopEvents.mirroring? ? MGQ_MpCoopEvents.hold_page(window) : original.call
+  end
+rescue => e
+  MGQ_MpCoopEvents.log("message hooks FAILED: #{e.class}: #{e.message}")
+end
 
-        page_end = @mgq_mp_coop_events_page_end
-        self.pause = true
-        frames = 0
-        until MGQ_MpCoopEvents.page_done? || (!page_end && frames >= MGQ_MpCoopEvents::OVERFLOW_FRAMES)
-          Fiber.yield
-          frames += 1
-        end
-        self.pause = false
-        MGQ_MpCoopEvents.page_ended if page_end
-      end
+begin
+  # Around giving an item, which is kept for the party when a chest or the leader's story gives it.
+  # The game gives an enchanted item by calling this again for each copy it makes, so only the
+  # outermost call counts; the fourth argument is the game's keep_flag, set when the item only moves
+  # to or from the item storage.
+  MGQ_MpHooks.around(Game_Party, :gain_item, "coop_events") do |_party, args, original|
+    outermost = MGQ_MpCoopEvents.enter_gain
+    begin
+      result = original.call
+    ensure
+      MGQ_MpCoopEvents.leave_gain
     end
-  rescue => e
-    MGQ_MpCoopEvents.log("message hooks FAILED: #{e.class}: #{e.message}")
+    MGQ_MpCoopEvents.gained_item(args[0], args[1], args[3] ? true : false) if outermost
+    result
   end
 
-  begin
-    class Game_Party
-      alias mgq_mp_coop_events_gain_item gain_item
-      alias mgq_mp_coop_events_gain_gold gain_gold
-
-      # Gives an item, keeping it for the party when a chest or the leader's story gives it.
-      #
-      # The game gives an enchanted item by calling this again for each copy it makes, so only the
-      # outermost call counts.
-      #
-      # @param item [RPG::BaseItem] The item.
-      # @param amount [Integer] How many.
-      # @param rest [Array] The original's other arguments: include_equip, and keep_flag, set when
-      #   the item only moves to or from the item storage.
-      def gain_item(item, amount, *rest)
-        outermost = MGQ_MpCoopEvents.enter_gain
-        begin
-          mgq_mp_coop_events_gain_item(item, amount, *rest)
-        ensure
-          MGQ_MpCoopEvents.leave_gain
-        end
-        MGQ_MpCoopEvents.gained_item(item, amount, rest[1] ? true : false) if outermost
-      end
-
-      # Gives gold, keeping it for the party when a chest or the leader's story gives it.
-      #
-      # @param amount [Integer] How much.
-      def gain_gold(amount)
-        mgq_mp_coop_events_gain_gold(amount)
-        MGQ_MpCoopEvents.gained_gold(amount)
-      end
-    end
-  rescue => e
-    MGQ_MpCoopEvents.log("party hooks FAILED: #{e.class}: #{e.message}")
-  end
+  # After gold is given, it is kept for the party when a chest or the leader's story gives it.
+  MGQ_MpHooks.after(Game_Party, :gain_gold, "coop_events") { |amount| MGQ_MpCoopEvents.gained_gold(amount) }
+rescue => e
+  MGQ_MpCoopEvents.log("party hooks FAILED: #{e.class}: #{e.message}")
 end

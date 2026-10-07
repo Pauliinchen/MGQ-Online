@@ -2,6 +2,8 @@
 #  coop_castle.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-07: Named events through coop.rbx instead of a copy of its helper
+#                            - Logged each ghost of the leader's residents shown and hidden, with the event, the pages and why
 #      Paulinchen  2026-10-06: Took the party's leader from coop.rbx, and the ghosts' opacity and catch-up tiles from overworld.rbx
 #      Paulinchen  2026-10-04: Showed the leader's residents in the castle, those the member's game does not show as ghosts
 #                            - Noted where the castle's way out returns a member the party brings into the castle
@@ -85,6 +87,7 @@ module MGQ_MpCoopCastle
 
   # Forgets the ghosts, as when the map changes.
   def self.forget
+    log("left the castle's map: #{@ghosts.size} ghost(s) of the leader's residents gone") unless @ghosts.empty?
     @ghosts = {}
   end
 
@@ -112,15 +115,40 @@ module MGQ_MpCoopCastle
   # leader's stand, and lets the others go. Called after the map's update.
   def self.update
     targets = castle_map?($game_map.map_id) && MGQ_MpCoopNpcs.following? ? MGQ_MpCoopNpcs.targets : {}
-    @ghosts.keys.each { |id| @ghosts.delete(id) unless ghost_of?($game_map.events[id], targets[id]) }
+    @ghosts.keys.each do |id|
+      next if ghost_of?($game_map.events[id], targets[id])
+
+      @ghosts.delete(id)
+      log("hid the ghost of resident #{id}#{MGQ_MpCoop.event_name(id)} on map #{$game_map.map_id}: #{gone_reason(targets[id], $game_map.events[id])}")
+    end
     targets.each do |id, state|
       next unless ghost_of?($game_map.events[id], state)
 
-      ghost = @ghosts[id] ||= Game_MpResident.new(state)
-      ghost.follow(MGQ_MpCoopNpcs.page_of($game_map.events[id], state[3]), state)
+      unless @ghosts[id]
+        @ghosts[id] = Game_MpResident.new(state)
+        log("showing resident #{id}#{MGQ_MpCoop.event_name(id)} on map #{$game_map.map_id} as a ghost: the leader's page #{state[3]} shows it, the player's page #{$game_map.events[id].mgq_mp_page} does not")
+      end
+      @ghosts[id].follow(MGQ_MpCoopNpcs.page_of($game_map.events[id], state[3]), state)
     end
   rescue => e
     log_once(:update, "showing the leader's residents failed: #{e.class}: #{e.message}")
+  end
+
+  # Tells why a resident's ghost goes, for the log.
+  #
+  # @param state [Array<Integer>, nil] The leader's: x, y, facing and page.
+  # @param event [Game_Event, nil] The player's event.
+  # @return [String] The reason.
+  def self.gone_reason(state, event)
+    return "the player's game follows no Map Owner here" unless state
+    return "the event is gone" unless event
+    return "the leader's game shows no page of it" if state[3] < 0
+    return "both games show page #{state[3]} now" if event.mgq_mp_page == state[3]
+    return "the player's game shows it itself now (page #{event.mgq_mp_page})" if event.mgq_mp_page >= 0 && (!event.character_name.to_s.empty? || event.tile_id > 0)
+
+    "the leader's page #{state[3]} shows nothing"
+  rescue
+    "?"
   end
 
   # Reports whether an event stands as a ghost: the player's own game shows nothing of it, while

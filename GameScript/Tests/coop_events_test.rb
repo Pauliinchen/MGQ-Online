@@ -2,7 +2,13 @@
 #  coop_events_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-07: Checked that the end of the map's main event ends the telling of the leader's story
+#      Paulinchen  2026-10-07: Stood in for the helpers of coop.rbx the party scripts share now, and gave the game's switches their full count, which the story bounds another game's by
+#                            - Checked the story's choices a member makes: what is asked, each outcome, the outcomes kept from the leader's story, the choices' companions left out, the prompts of synced play, the leader's offer declined, accepted and taken back, and the other route's start
+#                            - Checked when a member follows the leader's story: the rule's edges, a member too far behind, across the Great Decision, on another route, drifting apart and caught up, the leader's followers, and chests shared all the same
+#                            - Checked the generator's maps from 1000 on and set_actors, and that the table holds Puruel and Inuel
+#                            - Let every member follow the leader's story in the checks of other things
+#                            - Gave the world stand-in who, which the log names players with
+#                            - Checked that the end of the map's main event ends the telling of the leader's story
 #      Paulinchen  2026-10-06: Checked the Great Decision's companions, shops in the story, abilities, personas, held messages of another leader, a story too large to send whole, the generator's gold chests and switch recruits, old pages and frames from before a load
 #                            - Took the party's leader from a stand-in of coop.rbx, and the game's raw data from its field
 #                            - Took the castle's ghosts' opacity and catch-up tiles from a stand-in of overworld.rbx
@@ -55,6 +61,7 @@ module MGQ_MpOverworldSync
   def self.notice(text, icon = nil); Status.notice(text); ($icons ||= []) << icon; end
   def self.map_free?; SceneManager.scene.is_a?(Scene_Map) && !$game_map.interpreter.running? && !$game_message.busy? && !$game_player.transfer?; end
   def self.tell(seat, fields, body = ""); Link.send_to(seat, Me.encode(fields) + body); end
+  def self.who(peer); peer == :me ? "the player" : "#{peer && peer.state['name']}"; end
   module Peers; Peer = Struct.new(:seat, :state, :ghost, :member); end
   module Me; def self.encode(state); state.map { |k, v| "#{k}=#{v}" }.join("\n") + "\n\n"; end; end
   module Link
@@ -77,6 +84,9 @@ module MGQ_MpCoop
   def self.in_party?; !$party.nil? && !Array($members).empty?; end
   def self.party_leader; in_party? ? Party.leader : nil; end
   def self.party_leading?; party_leader == :me && !Party.members.empty?; end
+  def self.bytes_of(fields); fields.inject(0) { |sum, (key, value)| sum + key.to_s.bytesize + value.to_s.bytesize }; end
+  def self.event_name(id); ""; end
+  def self.random_id(length); rand(36**length).to_s(36); end
 end
 module RPG
   class BaseItem; attr_accessor :id, :name; def initialize(id, name); @id, @name = id, name; end; def icon_index; 100 + @id; end; end
@@ -98,7 +108,7 @@ Command = RPG::EventCommand
 # @return [RPG::EventCommand] The command.
 def c(code, *params); Command.new(code, 0, params); end
 System = Struct.new(:switches, :variables)
-$data_system = System.new(Array.new(200, ""), Array.new(4000, ""))
+$data_system = System.new(Array.new(8000, ""), Array.new(4000, ""))
 $data_system.switches[20] = "Event General-Purpose 1"
 $data_system.variables[7] = "General 0"
 $data_common_events = [nil, RPG::CommonEvent.new([c(121, 50, 50, 0)]), RPG::CommonEvent.new([c(101, "", 0, 0, 2), c(117, 3)]), RPG::CommonEvent.new([c(117, 2)])]
@@ -258,6 +268,7 @@ module MGQ_MpOverworldSync
   def self.on_observe(*); end
   def self.on_leave(*); end
   def self.label_line(*); end
+  module Me; def self.id; "me"; end; end
 end
 # A character, who learns skills.
 class Game_Actor
@@ -267,6 +278,41 @@ load_script "coop_story"
 load_script "coop_events"
 load_script "coop_gather"
 load_script "coop_castle"
+
+# Most checks play a party whose members all follow the leader's story; the checks of the rule
+# when they do turn the real decision on with $real_sync.
+class << MGQ_MpCoopStory
+  alias real_check_sync check_sync
+  alias real_follows_leader? follows_leader?
+  alias real_synced_members synced_members
+
+  # Decides whether the player follows the leader's story, see MGQ_MpCoopStory.check_sync.
+  #
+  # @param leader [MGQ_MpOverworldSync::Peers::Peer, Symbol, nil] The party's leader.
+  def check_sync(leader)
+    return real_check_sync(leader) if $real_sync
+
+    @synced = leader.is_a?(MGQ_MpOverworldSync::Peers::Peer)
+    @sync_with = @synced ? leader.state["id"].to_s : nil
+    @sync_state = @synced ? :synced : nil
+  end
+
+  # Reports whether the player follows the leader's story, see MGQ_MpCoopStory.follows_leader?.
+  #
+  # @return [Boolean] Whether they do.
+  def follows_leader?
+    $real_sync ? real_follows_leader? : MGQ_MpCoop.party_leader.is_a?(MGQ_MpOverworldSync::Peers::Peer)
+  end
+
+  # Lists the members who follow the player's story, see MGQ_MpCoopStory.synced_members.
+  #
+  # @return [Array<MGQ_MpOverworldSync::Peers::Peer>] The members.
+  def synced_members
+    return real_synced_members if $real_sync
+
+    MGQ_MpCoop.party_leader == :me ? MGQ_MpCoop::Party.members : []
+  end
+end
 
 # Sorts a list of event commands, see MGQ_MpCoopEvents.kind_of.
 #
@@ -1410,6 +1456,119 @@ $leader = nil
 $members = []
 MGQ_MpCoopStory.update
 
+# Who plays the leader's story: before the Great Decision both at most two steps apart in the main
+# story, after it both on the same route at most five steps apart.
+story = MGQ_MpCoopStory
+check("just behind or ahead within two steps is synced, three behind is not",
+      [story.sync_state([28, 0, 0, 0], [30, 0, 0, 0]), story.sync_state([32, 0, 0, 0], [30, 0, 0, 0]), story.sync_state([27, 0, 0, 0], [30, 0, 0, 0])],
+      [:synced, :synced, :apart])
+check("across the Great Decision is not, nor a player reset to it against one on a route",
+      [story.sync_state([39, 0, 0, 0], [40, 3, 0, 1]), story.sync_state([40, 0, 0, 1], [39, 0, 0, 0])], [:decision, :decision])
+check("different routes are not", story.sync_state([40, 3, 0, 1], [40, 0, 5, 1]), :route)
+check("route counters five apart are synced, six apart are not",
+      [story.sync_state([40, 3, 0, 1], [40, 8, 0, 1]), story.sync_state([40, 3, 0, 1], [40, 9, 0, 1])], [:synced, :apart])
+check("the Chaos route, which the Great Decision itself starts, counts as a route",
+      [story.sync_state([40, 0, 0, 4], [40, 0, 0, 6]), story.sync_state([40, 0, 0, 4], [40, 2, 0, 1])], [:synced, :route])
+check("at the end of the same route, as in the postgame, both are synced", story.sync_state([40, 76, 0, 1], [40, 76, 0, 1]), :synced)
+
+# The real decision in a party: the member decides from both players' progress, which each game
+# tells in its state.
+$real_sync = true
+$story_leader = leader
+leader.state["sm"] = "32,0,0,0"
+MGQ_MpCoopStory.instance_variable_set(:@sync_state, nil)
+$sent.clear
+member_game(30)
+check("a member just behind the leader follows the leader's story and asks for it",
+      [MGQ_MpCoopStory.follows_leader?, MGQ_MpCoopStory.state_fields, $sent.map { |_, f| f["story"] }], [true, { "sm" => "30,0,0,0", "ssync" => "l" }, ["ask"]])
+
+leader.state["sm"] = "33,0,0,0"
+MGQ_MpCoopStory.instance_variable_set(:@sync_state, nil)
+$sent.clear
+member_game(30)
+check("one three steps behind plays their own story and is told why",
+      [MGQ_MpCoopStory.follows_leader?, MGQ_MpCoopStory.state_fields["ssync"], $sent, $notices],
+      [false, "", [], ["You and Leader are too far apart in the story; each of you plays your own."]])
+MGQ_MpCoopStory.take(leader, behind_story.merge("v" => "1001:n33"))
+MGQ_MpCoopStory.take(leader, { "story" => "gain", "party" => "p1", "item" => "w1x1" })
+check("the leader's story, its gifts and its catch-up stay away from them, and nothing waits",
+      [MGQ_MpCoopStory.guest?, held("Sword"), MGQ_MpCoopStory.instance_variable_get(:@held), $game_variables[1001]], [false, 0, nil, 30])
+own_event = Game_Event.new(41, [story_page])
+$game_map.events = { 41 => own_event }
+check("their own story events run in their own game", [MGQ_MpCoopEvents.hand_over(own_event), MGQ_MpCoopEvents.following?], [false, false])
+$game_player = Game_Player.new
+SceneManager.scene = Scene_Map.new
+leader.state["map"] = $game_map.map_id.to_s
+leader.state["telling"] = "1"
+MGQ_MpCoopEvents.take(leader, { "pevent" => "gather", "party" => "p1", "map" => "9", "x" => "1", "y" => "1", "d" => "2" })
+MGQ_MpCoopEvents.take(leader, { "pevent" => "say", "party" => "p1", "map" => $game_map.map_id.to_s, "page" => "x.9", "lines" => ["Hi"].pack("m0") })
+check("the leader's story scene neither calls nor holds them, nor shows them its pages",
+      [MGQ_MpCoopGather.coming?, MGQ_MpCoopGather.blocked?, MGQ_MpCoopEvents.instance_variable_get(:@heard).size], [false, false, 0])
+leader.state["telling"] = "0"
+MGQ_MpCoopEvents.take(leader, { "chest" => "9.2.A", "party" => "p1", "gains" => "i2x1" })
+check("but chests the party opens are shared all the same", held("Elixir"), 1)
+
+leader.state["sm"] = "40,2,0,1"
+MGQ_MpCoopStory.instance_variable_set(:@sync_state, nil)
+member_game(39)
+check("across the Great Decision each plays their own story", $notices, ["You and Leader are on different sides of the Great Decision; each of you plays your own story."])
+leader.state["sm"] = "40,0,6,1"
+MGQ_MpCoopStory.instance_variable_set(:@sync_state, nil)
+member_game(40)
+$game_variables[1141] = 3
+$game_variables[1143] = 1
+MGQ_MpCoopStory.update
+check("on different routes too", $notices.last, "You and Leader are on different routes; each of you plays your own story.")
+
+# Drifting apart: a member ahead of the leader plays along until the leader passes them by more than
+# two steps, then gets their own story back.
+leader.state["sm"] = "30,0,0,0"
+MGQ_MpCoopStory.instance_variable_set(:@sync_state, nil)
+member_game(32)
+MGQ_MpCoopStory.take(leader, behind_story.merge("v" => "1001:n30"))
+check("a member two steps ahead plays along", [MGQ_MpCoopStory.guest?, $game_variables[1001]], [true, 30])
+leader.state["sm"] = "34,0,0,0"
+MGQ_MpCoopStory.update
+check("still while the leader is two steps past them", MGQ_MpCoopStory.guest?, true)
+leader.state["sm"] = "35,0,0,0"
+MGQ_MpCoopStory.update
+check("but once three steps past, they get their own story back and are told why",
+      [MGQ_MpCoopStory.guest?, $game_variables[1001], $notices.last(2)],
+      [false, 32, ["You are back in your own story.", "You and Leader are too far apart in the story; each of you plays your own."]])
+
+# A member behind who caught up plays as far as the leader, so the leader's progress telling more
+# than the story that came yet never ends it.
+leader.state["sm"] = "31,0,0,0"
+MGQ_MpCoopStory.instance_variable_set(:@sync_state, nil)
+member_game(30)
+MGQ_MpCoopStory.take(leader, behind_story.merge("v" => "1001:n31"))
+leader.state["sm"] = "40,1,0,1"
+MGQ_MpCoopStory.update
+check("a member who caught up stays synced while the leader's story moves on", [MGQ_MpCoopStory.guest?, MGQ_MpCoopStory.follows_leader?], [true, true])
+
+# The leader: only members who follow the story are waited for, and the leader hears who follows.
+$party = "p1"
+$leader = :me
+far = MGQ_MpOverworldSync::Peers::Peer.new(6, { "id" => "o", "name" => "Other", "party" => "p1", "sm" => "20,0,0,0", "ssync" => "", "map" => "99", "x" => "0", "y" => "0" }, nil, true)
+near = MGQ_MpOverworldSync::Peers::Peer.new(7, { "id" => "n", "name" => "Near", "party" => "p1", "sm" => "30,0,0,0", "ssync" => "me", "map" => "99", "x" => "0", "y" => "0" }, nil, true)
+$members = [far, near]
+$game_variables = Game_Variables.new
+$game_variables[1001] = 30
+MGQ_MpCoopStory.forget
+$notices.clear
+MGQ_MpCoopStory.update
+check("the leader hears who follows their story and who does not, and why",
+      $notices.sort, ["Near follows your story while in the party.", "You and Other are too far apart in the story; each of you plays your own."].sort)
+check("only a member who follows the story is waited for", [MGQ_MpCoopStory.synced_members, MGQ_MpCoopGather.missing], [[near], ["Near"]])
+near.state["ssync"] = ""
+check("with nobody following, the leader tells no story and holds none", [MGQ_MpCoopEvents.leading_story?, MGQ_MpCoopGather.missing], [false, []])
+$real_sync = false
+$party = nil
+$leader = nil
+$members = []
+leader.state.delete("sm")
+MGQ_MpCoopStory.update
+
 # The generator of coop_story_rewards.rbx leaves out of its marks exactly what is each player's own.
 generator = Module.new
 load(File.expand_path("../Tools/story_rewards.rb", __dir__), generator)
@@ -1428,3 +1587,191 @@ check("the generator counts a chest of gold alone as a chest", tool.send(:chest?
 found = []
 tool.send(:rewards, [ToolCommand.new(121, [1005, 1005, 0]), ToolCommand.new(121, [1001, 1001, 0]), ToolCommand.new(121, [1006, 1006, 1])], nil) { |*reward| found << reward }
 check("and a companion who joins by their switch as joining, never Luka nor one whose switch turns off", found, [[:actor, 5, 1, nil]])
+found = []
+tool.send(:rewards, [ToolCommand.new(355, ["set_actors(1,6,26,35)"])], nil) { |*reward| found << reward }
+check("and every companion a script sets the party with, never Luka", found.map { |reward| reward[1] }, [6, 26, 35])
+require "tmpdir"
+require "fileutils"
+Dir.mktmpdir do |data|
+  ["", "Map/Data", "Map2/Data"].each do |folder|
+    FileUtils.mkdir_p(File.join(data, folder))
+    File.write(File.join(data, folder, "MapInfos.rvdata2"), "")
+  end
+  check("the generator reads the maps from 1000 on in the folders the game keeps them in",
+        tool.send(:map_folders, data), [[data, 0], [File.join(data, "Map", "Data"), 1000], [File.join(data, "Map2", "Data"), 2000]])
+end
+
+# The table the generator wrote holds what the maps from 1000 on give, such as Puruel and Inuel at
+# the Chaos route's snow shrine.
+table = Module.new
+table.module_eval(File.read(File.join(SCRIPTS_DIR, "coop_story_rewards.rbx"), :encoding => "UTF-8"))
+rewards = table::MGQ_MpCoopStoryRewards
+check("the table holds Puruel (516) and Inuel (517), and the companions set_actors brings", [516, 517, 6, 33, 35].map { |id| rewards::ACTORS.include?(id) }, [true] * 5)
+check("the skills Luka learns on maps from 1000 on, and their chests",
+      [rewards::SKILLS.include?(9799), rewards::CHESTS.any? { |key| key[0] >= 1000 }], [true, true])
+
+# The story's choices a member makes for themselves, coop_choices.rbx: what is asked, each outcome
+# applied, the leader's offer to sync the story, and the Great Decision's other route.
+module MGQ_MpActions
+  LINE_COLOR = :line_color
+  Option = Struct.new(:text, :run, :refusal, :icon, :leaves)
+  Notice = Struct.new(:key, :text, :color, :action, :take, :decline, :mark)
+  def self.offer(offers); ($offered ||= []) << offers; end
+end
+# The world screen's form, which the screen of choices draws with, stood in by its fields alone.
+class Window_MpWorldForm; def initialize(*); end; end
+class Scene_MenuBase; end
+module SceneManager; def self.call(scene); ($scenes ||= []) << scene; end; end
+module MGQ_MpWorld
+  class Form
+    Field = Struct.new(:key, :kind, :label, :row, :hint, :options) do
+      def choices; options[:choices] || []; end
+      def note_of(form); options[:note] ? options[:note].call(form, form[key].to_i).to_s : ""; end
+    end
+    attr_reader :title, :fields
+    def initialize(title, fields, values); @title = title; @fields = fields; @values = values; end
+    def [](key); @values[key]; end
+    def []=(key, value); @values[key] = value; end
+  end
+end
+load_script "coop_choices"
+choices = MGQ_MpCoopChoices
+{ 5 => "Alice", 26 => "Ilias", 163 => "Lily", 167 => "Lucia", 287 => "Succubus", 288 => "Natasha", 540 => "Amira", 153 => "Sphinx", 241 => "Priestess",
+  245 => "Miria", 334 => "Spider Princess" }.each { |id, name| $data_actors[id] = Actor.new(name) }
+
+check("a catch-up from the start to the Great Decision asks every choice, in story order",
+      choices.passed(5, 40, [], [], []), [:side, :amira, :magistea, :plansect, :succubus, :spider, :sphinx, :decision])
+check("one from 20 to 32 asks those between, and not one the player made",
+      choices.passed(20, 32, Array.new(3000).tap { |s| s[2096] = true }, [], []), [:plansect, :succubus, :spider, :sphinx])
+check("Amira is asked of every member who never had her join, though killed or long past her",
+      [choices.passed(20, 32, Array.new(3000).tap { |s| s[2108] = true }, [], [], [:amira]).include?(:amira),
+       choices.passed(20, 32, Array.new(3000).tap { |s| s[2127] = true }, [], [], [:amira]).include?(:amira)], [true, false])
+check("the Great Decision is not asked before the leader is past it", choices.passed(30, 39, [], [], []).include?(:decision), false)
+$game_system_switches = {}
+check("the third way only with both endings cleared", choices.labels(:decision).size, 2)
+$game_system_switches = { :ed1 => true, :ed2 => true }
+check("which offers it", choices.labels(:decision).last, "Search for a third way (Chaos)")
+$game_system_switches = {}
+
+# Each outcome, laid over the player's own story with the companions it brings.
+member_game(20, 5)
+choices.apply(:magistea, 0)
+check("defeating Lily keeps Lily defeated and Lucia in the party",
+      [$game_switches[2096], $game_switches[2097], $game_switches[2138], $game_variables[1029], $game_party.include_actors.include?(167)], [true, false, true, 6, true])
+choices.apply(:magistea, 1)
+check("defeating Lucia turns it the other way and brings Lily",
+      [$game_switches[2096], $game_switches[2097], $game_switches[2137], $game_party.include_actors.include?(163)], [false, true, true, true])
+member_game(20, 5)
+choices.apply(:succubus, 0, :magistea => 1)
+check("allying with Natasha while Lily is with the player brings Natasha", [$game_switches[2210], $game_switches[2211], $game_party.include_actors.include?(288)], [true, false, true])
+member_game(20, 5)
+choices.apply(:succubus, 0, :magistea => 0)
+check("without Lily nobody joins", [$game_switches[2211], $game_switches[2210], $game_party.include_actors.include?(288)], [true, false, false])
+check("and the screen says so", choices.note(:succubus, 0, :magistea => 0), "Nobody joins: Natasha joins only while Lily is with you.")
+member_game(20, 5)
+choices.apply(:succubus, 1, :magistea => 0)
+check("allying with the mayor while Lucia is with the player brings the mayor", [$game_switches[2212], $game_party.include_actors.include?(287)], [true, true])
+member_game(20, 5)
+choices.apply(:amira, 1)
+choices.apply(:plansect, 1)
+choices.apply(:spider, 0)
+choices.apply(:sphinx, 1)
+check("Amira killed, the Queen Bee's side, the Spider Princess and the Sphinx invited",
+      [$game_switches[2108], $game_variables[1061], $game_switches[2154], $game_switches[2280], [245, 334, 153].map { |id| $game_party.include_actors.include?(id) }],
+      [true, 2, true, true, [true, true, true]])
+
+# The outcomes the member made stay theirs in the leader's story, and the leader's choices'
+# companions never come with it.
+$real_sync = false
+choices.forget("next check")
+member_game(30, 5)
+choices.apply(:magistea, 0)
+MGQ_MpCoopStory.take(leader, behind_story.merge("s" => "120,2097", "ac" => "4,163"))
+check("the leader's outcome of Magistea Village stays out of the member's story",
+      [$game_switches[2096], $game_switches[2097], MGQ_MpCoopStory.personal_switch?(2097)], [true, false, true])
+check("and the leader's choice companion with it", $game_party.include_actors.include?(163), false)
+MGQ_MpCoopStory.take(leader, { "story" => "recruit", "party" => "p1", "actor" => "163" })
+check("whether caught up or recruited in the story", $game_party.include_actors.include?(163), false)
+MGQ_MpCoopStory.take(leader, { "story" => "delta", "party" => "p1", "s" => "2096:0,2097:1", "v" => "", "ss" => "" })
+check("nor do the leader's later changes of it reach the member", [$game_switches[2096], $game_switches[2097]], [true, false])
+
+# Synced play: a choice the shared story passes, or the leader resolves, asks the member's own outcome.
+choices.forget("next check")
+member_game(15, 5)
+MGQ_MpCoopStory.take(leader, behind_story.merge("v" => "1001:n16"))
+$scenes = []
+MGQ_MpCoopStory.take(leader, { "story" => "delta", "party" => "p1", "s" => "", "v" => "1001:n17", "ss" => "" })
+SceneManager.scene = Scene_Map.new
+$game_map.interpreter.busy = false
+$game_message.busy = false
+$game_map.update
+check("the shared story passing Magistea Village asks the member's own outcome, on the screen with one row",
+      [$scenes, choices.instance_variable_get(:@screen) && choices.instance_variable_get(:@screen)[:keys]], [[Scene_MpStoryChoices], [:magistea]])
+screen = choices.take_screen
+screen[:done].call(:magistea => 1)
+check("and keeps it", [$game_switches[2097], $game_party.include_actors.include?(163), choices.instance_variable_get(:@prompts)], [true, true, []])
+MGQ_MpCoopStory.take(leader, { "story" => "delta", "party" => "p1", "s" => "2280:1", "v" => "", "ss" => "" })
+check("the leader resolving a choice the member has not made asks it too", choices.instance_variable_get(:@prompts), [:spider])
+choices.forget("test")
+
+# The leader's offer to sync the story, declined.
+$party = "p1"
+$leader = :me
+$members = [friend]
+friend.state["sm"] = "20,0,0,0"
+friend.state["ssync"] = ""
+$game_variables = Game_Variables.new
+$game_variables[1001] = 30
+choices.offer(friend)
+check("the leader offers a member behind to sync their story", choices.state_fields["ssoffer"].split(":")[0], "f")
+friend.state["sm"] = "31,0,0,0"
+check("but never to one ahead", choices.offer_refusal(friend), "Friend is not behind you in the story.")
+friend.state["sm"] = "20,0,0,0"
+$notices.clear
+choices.take(friend, { "choices" => "declined", "party" => "p1" })
+check("a member who declines is no longer offered it, and the leader hears it", [choices.state_fields["ssoffer"], $notices.last], ["", "Friend declined to sync their story."])
+
+# Accepted: the screen asks the choices, and the member is brought to the leader's point.
+member_game(20, 5)
+leader.state["sm"] = "40,3,0,1"
+leader.state["ssoffer"] = "me:1"
+check("the member sees the leader's offer", choices::Offers.notice_of(leader).text, "Leader offers to bring your story up to theirs")
+$scenes = []
+choices.accept(leader)
+screen = choices.take_screen
+check("accepting shows the choices the catch-up carries them past, Amira always",
+      [$scenes, screen[:keys], screen[:buttons]], [[Scene_MpStoryChoices], [:amira, :plansect, :succubus, :spider, :sphinx, :decision], ["Bring me there", "Cancel"]])
+leader.state["ssoffer"] = ""
+check("which closes once the leader takes the offer back", choices.valid_offer?(leader), "Leader took the offer back.")
+$leader = nil
+check("or leaves the party", choices.valid_offer?(leader), "Leader no longer leads your party.")
+$leader = leader
+leader.state["ssoffer"] = "me:1"
+
+# The other side of the Great Decision: the member starts their own route from its start.
+decision = [RPG::EventCommand.new(102, 0, [["a", "b"], 0]), RPG::EventCommand.new(122, 2, [1002, 1002, 0, 0, 112]),
+            RPG::EventCommand.new(355, 3, ["add_actor_ex_nc(26)"]), RPG::EventCommand.new(201, 2, [0, 431, 25, 19, 8, 2])]
+$data_common_events[380] = RPG::CommonEvent.new(decision)
+$real_sync = true
+$sent.clear
+choices.confirm_offer(leader, [40, 3, 0, 1], 0, :amira => 0, :plansect => 0, :succubus => 0, :spider => 1, :sphinx => 0, :decision => 1)
+check("the member's outcomes are theirs before the leader's story comes",
+      [$game_switches[2127], $game_variables[1061], $game_switches[2281], $game_party.include_actors.include?(540)], [true, 1, true, true])
+MGQ_MpCoopStory.update
+check("the member then follows the leader's story, by the offer", MGQ_MpCoopStory.follows_leader?, true)
+MGQ_MpCoopStory.take(leader, behind_story.merge("v" => "1001:n40,1141:n3", "ac" => "4,163"))
+queued = choices.instance_variable_get(:@queued)
+check("taking the other side, they keep the leader's story up to the Great Decision and play their own",
+      [MGQ_MpCoopStory.guest?, $game_variables[1001], $game_variables[1141], MGQ_MpCoopStory.follows_leader?], [false, 39, 0, false])
+check("from the Great Decision's own outcome: the Final Chapter put back, its party changes, the side and the route, and its map",
+      queued.map { |command| [command.code, command.indent, command.parameters] },
+      [[117, 0, [154]], [122, 0, [1140, 1140, 0, 0, 0]], [122, 0, [1002, 1002, 0, 0, 112]], [355, 1, ["add_actor_ex_nc(26)"]],
+       [121, 0, [4, 4, 1]], [121, 0, [5, 5, 0]], [122, 0, [1142, 1142, 0, 0, 1]], [201, 0, [0, 431, 25, 19, 8, 2]], [0, 0, []]])
+check("and the leader's choice companion stays the leader's", $game_party.include_actors.include?(163), false)
+check("the third way goes to its own start", choices.decision_commands(2).map { |command| command.code }, [117, 122, 121, 121, 121, 122, 122, 201, 0])
+$real_sync = false
+$party = nil
+$leader = nil
+$members = []
+choices.forget("test over")
+MGQ_MpCoopStory.update

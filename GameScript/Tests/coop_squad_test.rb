@@ -2,6 +2,8 @@
 #  coop_squad_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-07: Gave the world stand-in who, which the log names players with
+#                            - Checked only that no line of the log tells a failure, since the party logs what it does
 #      Paulinchen  2026-10-06: Stood in for wheel_choice instead of wheel_slot
 #      Paulinchen  2026-10-04: Followed the scripts to their new names, without mp_
 #      Paulinchen  2026-10-03: Added a stand-in for the action wheel's registries
@@ -135,6 +137,7 @@ module MGQ_MpOverworldSync
   def self.fields; @fields.map(&:call).inject({}) { |all, f| all.merge(f) }; end
   def self.tick(in_world); @ticks.each { |t| t.call(in_world) }; end
   def self.notice(text); Status.notice(text); end
+  def self.who(peer); peer == :me ? "the player" : "#{peer && peer.state['name']}"; end
   module Peers
     Peer = Struct.new(:seat, :state, :ghost, :member)
     @all = []
@@ -246,4 +249,4 @@ check("so is another party of four seen from outside", party.full?("friend-p"), 
 $open = false
 check("outside a world nothing is cut", [squad.own_share, squad.place_of(actors[7])], [nil, nil])
 check("nor told to Discord", MGQ_MpCoop.status_fields, {})
-check("nothing failed", $log, [])
+check("nothing failed", $log.grep(/fail/i), [])

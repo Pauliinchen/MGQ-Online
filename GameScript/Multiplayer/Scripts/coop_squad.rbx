@@ -2,6 +2,8 @@
 #  coop_squad.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-07: Registered the followers' option through coop.rbx, and named the faces' and icons' sizes and columns
+#                            - Logged every player's share of the Frontline and the Backline and the followers' mode once they change
 #      Paulinchen  2026-10-06: Took the party's leader from coop.rbx's party_leader
 #      Paulinchen  2026-10-04: Renamed from mp_coop_squad.rbx
 #      Paulinchen  2026-10-03: Sent messages, showed notices and read the world, the own id and the own seat through MGQ_MpOverworldSync
@@ -48,6 +50,18 @@ module MGQ_MpCoopSquad
 
   # Shares of red, green and blue in a color's brightness, which a monochrome picture keeps.
   LUMA = [0.299, 0.587, 0.114]
+
+  # Faces in a row of a face file.
+  FACE_COLUMNS = 4
+
+  # Width and height of a face in a face file, in pixels.
+  FACE_SIZE = 96
+
+  # Icons in a row of the icon set.
+  ICON_COLUMNS = 16
+
+  # Width and height of an icon in the icon set, in pixels.
+  ICON_SIZE = 24
 
   @shown = nil
   @monochrome = {}
@@ -240,20 +254,39 @@ module MGQ_MpCoopSquad
     return if shown == @shown
 
     @shown = shown
+    log("squads #{shares_line}; followers: #{FOLLOWER_VALUES[mode][0]}") if in_world
     $game_player.refresh if $game_player
   end
 
-  # Adds the followers' option to the Mod Config, or to the game's options without it.
+  # Writes every player's squad in the party, for the log, as the player's game splits the places
+  # by its own party_member_max.
+  #
+  # @return [String] Each player's Frontline and Backline share, the leader first, or that the
+  #   player keeps the full team outside a party.
+  def self.shares_line
+    return "none: the player keeps the full team outside a party" unless MGQ_MpCoop.in_party?
+
+    leader = MGQ_MpCoop.party_leader
+    names = { MGQ_MpOverworldSync::Me.id => "#{MGQ_MpOverworldSync::Me.identity[1]} (the player)" }
+    players = [[MGQ_MpOverworldSync::Me.id, leader == :me]]
+    MGQ_MpCoop::Party.members.each do |peer|
+      names[peer.state["id"].to_s] = peer.state["name"].to_s
+      players << [peer.state["id"].to_s, peer.equal?(leader)]
+    end
+    max = $game_party.party_member_max
+    order = ranked(players)
+    shares = order.each_with_index.map { |id, position| "#{names[id]} #{share(position, order.size, max).join('/')}" }
+    "(front/back of #{max} places): #{shares.join(', ')}"
+  rescue => e
+    "unknown (#{e.class})"
+  end
+
+  # Adds the followers' option to the Mod Config, or to the game's options without it, which only
+  # the party's leader may change.
   def self.register
-    config = NWConst::Config
-    menu = config.const_defined?(:MOD_CONTENTS) ? config::MOD_CONTENTS : config::CONTENTS
-    menu.insert(-2, :key => FOLLOWERS, :name => "[Monster Girl Quest! Online] Party Followers", :sub => true,
-                    :help => "Who walks behind the players of a party. The party's leader decides for everyone.\r\n←/→ Toggle",
-                    :enable => lambda { !MGQ_MpCoop.in_party? || MGQ_MpCoop.party_leader == :me })
-    config::DATA[FOLLOWERS] = FOLLOWER_VALUES.keys
-    config::DATA_TEXT[FOLLOWERS] = {}
-    FOLLOWER_VALUES.each { |value, (label, text)| config::DATA_TEXT[FOLLOWERS][value] = { :name => label, :help => text } }
-    config::DEFAULT[FOLLOWERS] = FOLLOWER_VALUES.keys.first
+    MGQ_MpCoop.register_option(FOLLOWERS, "[Monster Girl Quest! Online] Party Followers",
+                               "Who walks behind the players of a party. The party's leader decides for everyone.", FOLLOWER_VALUES,
+                               :enable => lambda { !MGQ_MpCoop.in_party? || MGQ_MpCoop.party_leader == :me })
   end
 
   # Draws the line under the squad's last character, on top of a row of the first cut character.
@@ -331,8 +364,9 @@ module MGQ_MpCoopSquad
         case @mgq_mp_coop_squad_place
         when nil then mgq_mp_coop_squad_draw_actor_face(actor, x, y, enabled)
         when :cut
-          rect = Rect.new(actor.face_index % 4 * 96, actor.face_index / 4 * 96, 96, 96)
-          contents.blt(x, y, MGQ_MpCoopSquad.monochrome("face:#{actor.face_name}", Cache.face(actor.face_name), rect), Rect.new(0, 0, 96, 96))
+          squad = MGQ_MpCoopSquad
+          rect = Rect.new(actor.face_index % squad::FACE_COLUMNS * squad::FACE_SIZE, actor.face_index / squad::FACE_COLUMNS * squad::FACE_SIZE, squad::FACE_SIZE, squad::FACE_SIZE)
+          contents.blt(x, y, squad.monochrome("face:#{actor.face_name}", Cache.face(actor.face_name), rect), Rect.new(0, 0, squad::FACE_SIZE, squad::FACE_SIZE))
         else mgq_mp_coop_squad_draw_actor_face(actor, x, y, @mgq_mp_coop_squad_place == :front)
         end
       end
@@ -355,8 +389,9 @@ module MGQ_MpCoopSquad
       def draw_icon(icon_index, x, y, enabled = true)
         return mgq_mp_coop_squad_draw_icon(icon_index, x, y, enabled) unless @mgq_mp_coop_squad_place == :cut
 
-        rect = Rect.new(icon_index % 16 * 24, icon_index / 16 * 24, 24, 24)
-        contents.blt(x, y, MGQ_MpCoopSquad.monochrome("icon", Cache.system("Iconset"), rect), Rect.new(0, 0, 24, 24))
+        squad = MGQ_MpCoopSquad
+        rect = Rect.new(icon_index % squad::ICON_COLUMNS * squad::ICON_SIZE, icon_index / squad::ICON_COLUMNS * squad::ICON_SIZE, squad::ICON_SIZE, squad::ICON_SIZE)
+        contents.blt(x, y, squad.monochrome("icon", Cache.system("Iconset"), rect), Rect.new(0, 0, squad::ICON_SIZE, squad::ICON_SIZE))
       end
     end
   rescue => e

@@ -2,6 +2,12 @@
 #  coop_story.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-07: Dropped the switches, variables and key items of another game's story beyond this game's own, logged once per kind
+#                            - Registered the companion, map and save hooks through core_hooks.rbx instead of wraps of its own
+#                            - Named players, entries of the game's data and a message's bytes through overworld_sync.rbx, core_log.rbx and coop.rbx instead of copies of their helpers
+#                            - Kept the outcomes of the story's choices the member made their own, left the choices' companions out of the catch-up, and followed the leader whose offer to sync the story the member accepted
+#                            - Let a member play the leader's story only while synced with the leader, close in the main story before the Great Decision or on the same route after it, told by each player's state, and their own story otherwise
+#                            - Logged how each member plays the leader's story and why, every message, what the catch-up gives and skips and why, sides, held messages, lent key items, chests and restores
 #      Paulinchen  2026-10-06: Read the game's switches, variables and self switches through MGQ_MpGame instead of opening their classes
 #                            - Told members nothing a shop or a menu in the leader's story changes, only what the story's own commands change
 #                            - Gave members the companions the Great Decision brings, waiting while the sides still differ
@@ -46,13 +52,15 @@
 #----------------------------------------------------------------
 
 # The story a party plays. Outside a party every player plays their own story. In a party, the
-# members borrow the leader's story, the switches, variables and self switches the game's events
+# members synced with the leader, close to the leader in the story (see sync_state), borrow the
+# leader's story, the switches, variables and self switches the game's events
 # read, and get their own back when they leave or the leader goes. What is the player's own, their
 # party, their side, their companions' awakening and their affection, stays theirs throughout, and
 # every save a member makes holds their own story. A member as far along as the leader keeps what
 # they play together: the story's changes, its items, gold and companions, and what changed in their
 # own game. A member behind the leader keeps the leader's story and catches up with the skills,
 # companions and items the story gave the leader, those of their own side where the sides differ.
+# A member not synced plays their own story throughout, while still sharing the party.
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpCoopStory
@@ -105,6 +113,15 @@ module MGQ_MpCoopStory
   # Variables of the routes after the Great Decision, where the sides no longer differ in rewards.
   ROUTE_MARKERS = [1141, 1142, 1143]
 
+  # The main story's progress the Great Decision sets, which no later event raises.
+  GREAT_DECISION = 40
+
+  # How far apart in the main story two players may be before the Great Decision to play one story.
+  SYNC_STEPS = 2
+
+  # How far apart on their route two players may be after the Great Decision to play one story.
+  ROUTE_SYNC_STEPS = 5
+
   # The character whose story skills count, Luka.
   HERO = 1
 
@@ -123,16 +140,6 @@ module MGQ_MpCoopStory
   @sent = nil
   @frames = 0
   @ask_frames = 0
-
-  # Reports whether the hooks can be installed.
-  #
-  # A second copy of this script would wrap the same methods under the same names, and each hook
-  # would then call itself until the stack overflows.
-  #
-  # @return [Boolean] false when the hooks are in place already.
-  def self.hookable?
-    !Game_Party.method_defined?(:mgq_mp_coop_story_add_stand_actor)
-  end
 
   extend MGQ_MpLog
 
@@ -159,23 +166,240 @@ module MGQ_MpCoopStory
   # story, and a player who left the party gets their own back. Called after the map's update.
   def self.update
     leader = self.leader
-    restore if guest? && !leader.is_a?(MGQ_MpOverworldSync::Peers::Peer)
+    if guest? && !leader.is_a?(MGQ_MpOverworldSync::Peers::Peer)
+      log(leader == :me ? "the player leads the party now, so they get their own story back" : "no longer in a party with a leader, so the player gets their own story back")
+      restore
+    end
+    check_sync(leader)
     take_held(leader)
     if leader == :me
       lead
+      note_followers
     else
       @sent = nil
       @sent_held = nil
-      follow(leader) if leader
+      @followers = nil
+      follow(leader) if leader && @synced
       ask_side(leader) if guest?
     end
   rescue => e
     log_once(:update, "update failed: #{e.class}: #{e.message}")
   end
 
+  # Reads how far a story is: the main story's progress and the three routes', see STORY_MARKERS.
+  #
+  # @param variables [Array] The story's variables.
+  # @return [Array<Integer>] The values.
+  def self.markers_of(variables)
+    STORY_MARKERS.map { |id| variables[id].to_i }
+  end
+
+  # How far the player's own story is: the one they play, but their own while they borrow the story
+  # of a leader they are ahead of, which they never keep.
+  #
+  # @return [Array<Integer>] The values, see markers_of.
+  def self.own_markers
+    markers_of(guest? && !@keeps ? @own[1] : data_of($game_variables))
+  end
+
+  # Reads how far another player's story is, as their state tells it.
+  #
+  # @param text [String, nil] The values, comma separated, see state_fields.
+  # @return [Array<Integer>, nil] The values, nil when their game tells none.
+  def self.read_markers(text)
+    values = text.to_s.split(",")
+    values.size == STORY_MARKERS.size ? values.map(&:to_i) : nil
+  end
+
+  # Finds the route a story plays past the Great Decision: the first route whose progress is above
+  # zero, the Chaos route's last, since the Great Decision itself starts it.
+  #
+  # @param markers [Array<Integer>] The story's values, see markers_of.
+  # @return [Integer, nil] The route's place among ROUTE_MARKERS, nil before any.
+  def self.route_of(markers)
+    markers[1..-1].index { |value| value > 0 }
+  end
+
+  # Decides whether two players play one story, the same for both of them: before the Great
+  # Decision, when both are at most SYNC_STEPS apart in the main story; past it, when both play the
+  # same route at most ROUTE_SYNC_STEPS apart.
+  #
+  # @param own [Array<Integer>] The one player's values, see markers_of.
+  # @param other [Array<Integer>] The other's.
+  # @return [Symbol] :synced, or why not: :apart (too far apart), :decision (one is past the Great
+  #   Decision, the other before it) or :route (different routes).
+  def self.sync_state(own, other)
+    past = own[0] >= GREAT_DECISION
+    return :decision unless past == (other[0] >= GREAT_DECISION)
+    return (own[0] - other[0]).abs <= SYNC_STEPS ? :synced : :apart unless past
+
+    route = route_of(own)
+    return :route unless route == route_of(other)
+    return :synced if route.nil?
+
+    (own[route + 1] - other[route + 1]).abs <= ROUTE_SYNC_STEPS ? :synced : :apart
+  end
+
+  # Reports whether two players play one story, see sync_state.
+  #
+  # @param own [Array<Integer>] The one player's values, see markers_of.
+  # @param other [Array<Integer>] The other's.
+  # @return [Boolean] Whether they do.
+  def self.synced?(own, other)
+    sync_state(own, other) == :synced
+  end
+
+  # Says for the log how far a story is, see markers_of.
+  #
+  # @param markers [Array<Integer>, nil] The values.
+  # @return [String] Such as "1001=12, routes 0/0/0".
+  def self.markers_text(markers)
+    markers ? "1001=#{markers[0]}, routes #{markers[1..-1].join('/')}" : "unknown progress"
+  end
+
+  # Tells a player why they and another play their own stories.
+  #
+  # @param state [Symbol] Why, see sync_state.
+  # @param name [String] The other player's name.
+  # @return [String] The notice.
+  def self.apart_text(state, name)
+    case state
+    when :decision then "You and #{name} are on different sides of the Great Decision; each of you plays your own story."
+    when :route then "You and #{name} are on different routes; each of you plays your own story."
+    else "You and #{name} are too far apart in the story; each of you plays your own."
+    end
+  end
+
+  # As member, decides whether the player plays the leader's story, from how far both stories are,
+  # again whenever either changes: following it starts with the leader's whole story, and stops
+  # with the player's own story back. A member who keeps the leader's story plays it as far as the
+  # leader, so it stays synced until the party or the leader changes.
+  #
+  # @param leader [MGQ_MpOverworldSync::Peers::Peer, Symbol, nil] The party's leader.
+  def self.check_sync(leader)
+    unless leader.is_a?(MGQ_MpOverworldSync::Peers::Peer)
+      log("no longer synced with a leader: the player #{leader == :me ? 'leads the party' : 'is in no party with a leader'}") if @synced
+      @synced = false
+      @sync_with = nil
+      @sync_state = nil
+      return
+    end
+
+    id = leader.state["id"].to_s
+    theirs = read_markers(leader.state["sm"])
+    own = own_markers
+    state = if guest? && @keeps && @synced && @sync_with == id then :synced
+            elsif defined?(MGQ_MpCoopChoices) && MGQ_MpCoopChoices.offer_with?(id) then :synced
+            elsif theirs then sync_state(own, theirs)
+            else :unknown
+            end
+    return if state == @sync_state && id == @sync_with
+
+    was = @synced && @sync_with == id
+    @sync_state = state
+    @sync_with = id
+    @synced = state == :synced
+    log("story sync with #{MGQ_MpOverworldSync.who(leader)}: #{sync_reason(state)}; own #{markers_text(own)}, leader #{markers_text(theirs)}")
+    return if @synced
+
+    stop_following(leader, was)
+    MGQ_MpOverworldSync.notice(apart_text(state, leader.state["name"])) unless state == :unknown
+  end
+
+  # Says for the log what a decision about playing one story means.
+  #
+  # @param state [Symbol] The decision, see sync_state, or :unknown.
+  # @return [String] Its meaning.
+  def self.sync_reason(state)
+    case state
+    when :synced then "synced, the player plays the leader's story"
+    when :apart then "not synced, too far apart in the story, each plays their own"
+    when :decision then "not synced, one is past the Great Decision and the other before it, each plays their own"
+    when :route then "not synced, on different routes, each plays their own"
+    else "not synced yet, the leader's game tells no story progress"
+    end
+  end
+
+  # Stops playing the leader's story, as the player and the leader are no longer synced: the player
+  # gets their own story back and forgets what waited from the leader's.
+  #
+  # @param leader [MGQ_MpOverworldSync::Peers::Peer] The leader.
+  # @param was [Boolean] Whether the player was synced with them until now.
+  def self.stop_following(leader, was)
+    log("stopped following #{MGQ_MpOverworldSync.who(leader)}'s story") if was || guest? || @waiting
+    restore if guest?
+    @leader_id = nil
+    @waiting = false
+    dropped = (@held || []).size
+    @held = nil
+    log("forgot #{dropped} waiting messages of the leader's story") if dropped > 0
+  end
+
+  # Reports whether the player follows their leader's story now, see check_sync.
+  #
+  # @return [Boolean] Whether they do.
+  def self.follows_leader?
+    lead = MGQ_MpCoop.party_leader
+    @synced && lead.is_a?(MGQ_MpOverworldSync::Peers::Peer) && lead.state["id"].to_s == @sync_with ? true : false
+  end
+
+  # As leader, lists the members who follow the player's story, as their state tells it.
+  #
+  # @return [Array<MGQ_MpOverworldSync::Peers::Peer>] The members.
+  def self.synced_members
+    return [] unless MGQ_MpCoop.party_leader == :me
+
+    me = MGQ_MpOverworldSync::Me.id.to_s
+    MGQ_MpCoop::Party.members.select { |peer| peer.state["ssync"].to_s == me }
+  end
+
+  # Reports whether the player leads a party with members who follow the player's story.
+  #
+  # @return [Boolean] Whether they do.
+  def self.leading_synced?
+    !synced_members.empty?
+  end
+
+  # The fields the party's story adds to the state the player's game tells the others: how far
+  # the player's own story is, and the leader whose story they follow.
+  #
+  # @return [Hash] "sm": the values of markers_of, comma separated; "ssync": the leader's id, empty
+  #   for none.
+  def self.state_fields
+    return {} unless $game_variables
+
+    { "sm" => own_markers.join(","), "ssync" => follows_leader? ? @sync_with.to_s : "" }
+  rescue => e
+    log_once(:state_fields, "telling the story's progress failed: #{e.class}: #{e.message}")
+    {}
+  end
+
+  # As leader, tells the player which members start or stop following their story, and why.
+  def self.note_followers
+    me = MGQ_MpOverworldSync::Me.id.to_s
+    own = markers_of(data_of($game_variables))
+    now = {}
+    MGQ_MpCoop::Party.members.each do |peer|
+      id = peer.state["id"].to_s
+      synced = peer.state["ssync"].to_s == me
+      now[id] = synced
+      next if (@followers ||= {})[id] == synced
+
+      theirs = read_markers(peer.state["sm"])
+      state = synced ? :synced : (theirs ? sync_state(own, theirs) : :unknown)
+      # A member's state may tell its decision a moment after its progress.
+      next if !synced && [:synced, :unknown].include?(state)
+
+      @followers[id] = synced
+      log("#{MGQ_MpOverworldSync.who(peer)} #{synced ? 'follows' : 'does not follow'} the player's story (#{state}); own #{markers_text(own)}, theirs #{markers_text(theirs)}")
+      MGQ_MpOverworldSync.notice(synced ? "#{peer.state['name']} follows your story while in the party." : apart_text(state, peer.state["name"]))
+    end
+    @followers.keep_if { |id, _| now.key?(id) } if @followers
+  end
+
   # As leader, tells the members what of the story changed since the last time.
   def self.lead
-    if MGQ_MpCoop::Party.members.empty?
+    if synced_members.empty?
       @sent = nil
       @sent_keys = nil
       @sent_held = nil
@@ -188,11 +412,20 @@ module MGQ_MpCoopStory
     @frames = 0
     now = raw_state
     changes = @sent ? delta(@sent, now) : nil
+    if changes && !changes.values.all?(&:empty?)
+      log("the story changed: #{changes.map { |key, list| "#{key} #{list.split(',').size}" }.join(', ')} (#{changes.values.join(',')[0, 200]}), now #{progress_text(now[1])}")
+    end
     @sent = now if changes.nil? || changes.values.all?(&:empty?) || tell(-1, "delta", changes)
     keys = key_items
-    @sent_keys = keys if keys != @sent_keys && tell(-1, "keys", "k" => write_keys(keys))
+    if keys != @sent_keys
+      log("the leader's key items changed: #{keys.map { |id, count| "#{item_label("i#{id}")} x#{count}" }.join(', ')}")
+      @sent_keys = keys if tell(-1, "keys", "k" => write_keys(keys))
+    end
     held = write_holdings(holdings(keys))
-    @sent_held = held if held != @sent_held && tell(-1, "hold", held)
+    if held != @sent_held
+      log("the leader's story rewards changed: skills #{held['sk']}; companions #{held['ac']}; items #{held['it']}; side #{held['side']}")
+      @sent_held = held if tell(-1, "hold", held)
+    end
   end
 
   # Lists the ids of the player's own companions, those in the party and those waiting at the
@@ -236,12 +469,14 @@ module MGQ_MpCoopStory
   def self.follow(leader)
     id = leader.state["id"].to_s
     if id != @leader_id
+      log("the party's leader is #{MGQ_MpOverworldSync.who(leader)} (id #{id[0, 12]}), #{@leader_id ? "was #{@leader_id[0, 12]}" : 'none before'}; asking for their story")
       # A new leader has another story: the member first gets their own back, with what they
       # played along.
       restore if guest?
       @leader_id = id
       @waiting = true
       @ask_frames = ASK_FRAMES
+      @asks = 0
     end
     return unless @waiting
 
@@ -249,6 +484,8 @@ module MGQ_MpCoopStory
     return if @ask_frames < ASK_FRAMES
 
     @ask_frames = 0
+    @asks = @asks.to_i + 1
+    log("asking #{MGQ_MpOverworldSync.who(leader)} for their whole story, try #{@asks}")
     tell(leader.seat, "ask", {})
   end
 
@@ -258,41 +495,93 @@ module MGQ_MpCoopStory
   # @param message [Hash] The message's fields.
   def self.take(peer, message)
     kind = message["story"]
+    log("got #{kind} from #{MGQ_MpOverworldSync.who(peer)} (#{MGQ_MpCoop.bytes_of(message)} bytes)#{message_details(kind, message)}")
+    if kind != "ask" && leader.equal?(peer) && !follows_leader?
+      return log("ignored #{kind} from #{MGQ_MpOverworldSync.who(peer)}: not synced with the leader, the player plays their own story")
+    end
     return hold_back(peer, message) if HOLDINGS.include?(kind) && leader.equal?(peer) && held_back?
+
+    reason = ignore_reason(kind, peer)
+    return log("ignored #{kind} from #{MGQ_MpOverworldSync.who(peer)}: #{reason}") if reason
 
     case kind
     when "ask"
-      if leader == :me && MGQ_MpCoop::Party.member?(peer.state)
-        keys = key_items
-        tell(peer.seat, "full", full(raw_state).merge("k" => write_keys(keys)).merge(write_holdings(holdings(keys))))
-      end
+      keys = key_items
+      held = holdings(keys)
+      log("sending #{MGQ_MpOverworldSync.who(peer)} the whole story at #{progress_text(data_of($game_variables))}, with #{holdings_text(held)}")
+      log_roster_outside_rewards
+      tell(peer.seat, "full", full(raw_state).merge("k" => write_keys(keys)).merge(write_holdings(held)))
     when "full"
-      if leader.equal?(peer)
-        first = !guest?
-        @partial = message["part"].to_s == "1"
-        held = read_holdings(message)
-        borrow(peer, decode_full(message), held)
-        lend_keys(peer, read_keys(message["k"]))
-        catch_up(peer, held, first)
-        drop_covered(first && @keeps && !@same)
-      end
-    when "delta"
-      apply(decode_delta(message)) if leader.equal?(peer) && guest? && !@waiting
-    when "keys"
-      lend_keys(peer, read_keys(message["k"])) if leader.equal?(peer) && guest? && !@waiting
-    when "hold"
-      catch_up(peer, read_holdings(message), false) if leader.equal?(peer) && guest? && !@waiting
-    when "learn"
-      learn_told(peer, message["skill"].to_i) if leader.equal?(peer) && guest? && @keeps
-    when "recruit"
-      recruit(peer, message["actor"].to_i) if leader.equal?(peer) && guest? && @keeps
-    when "depart"
-      depart(peer, message["actor"].to_i) if leader.equal?(peer) && guest? && @keeps
-    when "gain"
-      gain(peer, message["item"].to_s) if leader.equal?(peer) && guest?
+      first = !guest?
+      @partial = message["part"].to_s == "1"
+      held = read_holdings(message)
+      borrow(peer, decode_full(message), held)
+      lend_keys(peer, read_keys(message["k"]))
+      catch_up(peer, held, first)
+      drop_covered(first && @keeps && !@same)
+      choices_borrowed(peer, first)
+    when "delta" then apply(decode_delta(message))
+    when "keys" then lend_keys(peer, read_keys(message["k"]))
+    when "hold" then catch_up(peer, read_holdings(message), false)
+    when "learn" then learn_told(peer, message["skill"].to_i)
+    when "recruit" then recruit(peer, message["actor"].to_i)
+    when "depart" then depart(peer, message["actor"].to_i)
+    when "gain" then gain(peer, message["item"].to_s)
+    else log("ignored #{kind} from #{MGQ_MpOverworldSync.who(peer)}: unknown kind")
     end
   rescue => e
     log("taking #{message['story']} failed: #{e.class}: #{e.message}")
+  end
+
+  # Finds why a message about the story is not for the player now.
+  #
+  # @param kind [String] What it is about.
+  # @param peer [MGQ_MpOverworldSync::Peers::Peer, nil] Who sent it.
+  # @return [String, nil] The reason, nil when the player takes it.
+  def self.ignore_reason(kind, peer)
+    if kind == "ask"
+      return "the player does not lead the party" unless leader == :me
+      return "not a member of the party" unless peer && MGQ_MpCoop::Party.member?(peer.state)
+
+      return nil
+    end
+    return "not from the party's leader (#{MGQ_MpOverworldSync.who(leader)})" unless leader.equal?(peer)
+    return nil if kind == "full"
+    return "the player does not play the leader's story" unless guest?
+    return "still waiting for the leader's whole story" if @waiting && %w(delta keys hold).include?(kind)
+    return "the player was ahead of the leader, so they keep nothing of the story" if !@keeps && %w(learn recruit depart).include?(kind)
+
+    nil
+  end
+
+  # Sums up the fields of a message about the story that matter for the log.
+  #
+  # @param kind [String] What it is about.
+  # @param message [Hash] The message's fields.
+  # @return [String] The summary, with a colon before it; empty when nothing matters.
+  def self.message_details(kind, message)
+    case kind
+    when "full" then ": whole story#{message['part'].to_s == '1' ? ' without what it turned off' : ''}, keys #{message['k']}, skills #{message['sk']}, companions #{message['ac']}, items #{message['it']}, side #{message['side']}"
+    when "delta" then ": switches #{message['s'].to_s[0, 200]}; variables #{message['v'].to_s[0, 200]}; self switches #{message['ss'].to_s[0, 200]}"
+    when "keys" then ": #{message['k']}"
+    when "hold" then ": skills #{message['sk']}, companions #{message['ac']}, items #{message['it']}, side #{message['side']}"
+    when "learn" then ": #{skill_label(message['skill'].to_i)}"
+    when "recruit", "depart" then ": #{actor_label(message['actor'].to_i)}"
+    when "gain" then ": #{message['item']}"
+    else ""
+    end
+  rescue
+    ""
+  end
+
+  # As leader, logs the companions in the roster that are no story companion, which a member who
+  # catches up never gets, since the rewards table leaves them out.
+  def self.log_roster_outside_rewards
+    return unless defined?(MGQ_MpCoopStoryRewards)
+
+    story = MGQ_MpCoopStoryRewards::ACTORS.map { |id| main_id(id) }
+    outside = roster_ids - story - [HERO]
+    log("companions in the roster a member does not catch up with, not in the rewards table's companions: #{outside.map { |id| actor_label(id) }.join(', ')}") unless outside.empty?
   end
 
   # Sends a message about the story to one member or to the whole party.
@@ -302,7 +591,56 @@ module MGQ_MpCoopStory
   # @param fields [Hash] The message's other fields.
   # @return [Boolean] Whether it went out.
   def self.tell(seat, kind, fields)
-    MGQ_MpCoop.tell(seat, "story", kind, fields)
+    sent = MGQ_MpCoop.tell(seat, "story", kind, fields)
+    log("#{sent ? 'sent' : 'could not send'} #{kind} to #{seat < 0 ? 'the party' : "seat #{seat}"} (#{MGQ_MpCoop.bytes_of(fields)} bytes)")
+    sent
+  end
+
+  # Names a skill for the log, such as "skill 937 Demon Decapitation".
+  #
+  # @param id [Integer] The skill.
+  # @return [String] The name.
+  def self.skill_label(id)
+    "skill #{MGQ_MpLog.named($data_skills, id)}"
+  end
+
+  # Names a companion for the log, such as "companion 517 Puruel".
+  #
+  # @param id [Integer] The companion.
+  # @return [String] The name.
+  def self.actor_label(id)
+    "companion #{MGQ_MpLog.named($data_actors, id)}"
+  end
+
+  # Names an item for the log by the letter of its kind and its id.
+  #
+  # @param key [String] The item, such as "i501", or "g0" for gold.
+  # @return [String] The name.
+  def self.item_label(key)
+    return "gold" if key.to_s[0, 1] == "g"
+
+    item = item_of(key.to_s)
+    item ? "item #{key} #{item.name}" : "item #{key}"
+  rescue
+    "item #{key}"
+  end
+
+  # Says how far a story is for the log: the main story and the three routes' progress.
+  #
+  # @param variables [Array] The story's variables.
+  # @return [String] Such as "1001=12, routes 0/0/0".
+  def self.progress_text(variables)
+    "1001=#{variables[1001].to_i}, routes #{ROUTE_MARKERS.map { |id| variables[id].to_i }.join('/')}"
+  rescue
+    "unknown progress"
+  end
+
+  # Sums up what of the story's rewards a leader holds for the log.
+  #
+  # @param held [Hash] What they hold, see holdings.
+  # @return [String] The counts and the side.
+  def self.holdings_text(held)
+    "#{held[:skills].size} skills, #{held[:actors].size} companions, #{held[:items].size} items, side #{held[:side] || 'none'}"
   end
 
   # Starts playing the leader's story, keeping the player's own aside the first time.
@@ -329,12 +667,31 @@ module MGQ_MpCoopStory
     set_raw(*mix(story, raw_state))
     @borrowed = deep_copy(raw_state)
     @waiting = false
-    return unless first
+    unless first
+      log("took #{MGQ_MpOverworldSync.who(leader)}'s whole story again, at #{progress_text(story[1])}")
+      return
+    end
 
+    log("story mode with #{MGQ_MpOverworldSync.who(leader)}: #{story_mode}; own #{progress_text(@own[1])}, leader #{progress_text(story[1])}; " \
+        "own side #{@own_side || 'none'}, leader's side #{held[:side] || 'none'}#{@partial ? '; the story came without what it turned off' : ''}")
     # Events the leader's story got past before a member as far along joined are theirs to play.
     @baseline_groups = @same ? (0...groups.size).select { |index| marked?(groups[index]) } : nil
+    log("events where the sides differ the leader's story got past before the member joined, theirs to play: #{@baseline_groups.inspect}") if @same
 
     MGQ_MpOverworldSync.notice("You follow #{leader.state['name']}'s story while in the party." + follow_text)
+  end
+
+  # Says for the log how the player plays the leader's story, and why.
+  #
+  # @return [String] The mode and its reason.
+  def self.story_mode
+    return "keep, as far along as the leader, so they keep what they play together" if @same
+    return "catch up, behind the leader, so they keep the leader's story and get what it gave" if @keeps
+
+    ahead = STORY_MARKERS.select { |id| @own[1][id].to_i > data_of($game_variables)[id].to_i }
+    "borrow, ahead of the leader (#{ahead.map { |id| "#{id}: #{@own[1][id].to_i} > #{data_of($game_variables)[id].to_i}" }.join(', ')}), so they get their own story back unchanged"
+  rescue
+    "borrow"
   end
 
   # Says what the player keeps of the leader's story, for the notice when they start following it.
@@ -372,16 +729,17 @@ module MGQ_MpCoopStory
   # @param changes [Array] The changed switches, variables and self switches, each by key.
   def self.apply(changes)
     story = raw_state
+    before = story[1][1001].to_i
     # The variables come first, since a route's progress decides whether the side switches that
     # come with it are the player's own.
     changes[1].each do |id, value|
-      next if personal_variable?(id)
+      next if personal_variable?(id) || !known_id?(:variables, id)
 
       story[1][id] = @borrowed[1][id] = value
       @recorded[1][id] = value if @same
     end
     changes[0].each do |id, value|
-      next if personal_switch?(id, story[1])
+      next if personal_switch?(id, story[1]) || !known_id?(:switches, id)
 
       story[0][id] = @borrowed[0][id] = value
       @recorded[0][id] = value if @same
@@ -392,9 +750,17 @@ module MGQ_MpCoopStory
       story[2][key] = @borrowed[2][key] = value
       @recorded[2][key] = value if @same
     end
+    own = changes[1].count { |id, _| personal_variable?(id) } + changes[0].count { |id, _| personal_switch?(id, story[1]) } +
+          changes[2].count { |key, _| personal_self_switch?(key) }
+    log("took the leader's changes: #{changes[0].size} switches, #{changes[1].size} variables, #{changes[2].size} self switches, " \
+        "#{own} of them left as the player's own; now #{progress_text(story[1])}#{@same ? ', kept for their own story' : ''}")
     set_raw(*story)
     follow_route_side
     take_route_rewards if @keeps
+    return unless @keeps && defined?(MGQ_MpCoopChoices)
+
+    changed = changes[0].map { |id, _| id } + changes[1].map { |id, _| id }
+    MGQ_MpCoopChoices.story_passed(before, story[1][1001].to_i, changed)
   end
 
   # Takes the side of the leader's route once the story played is past the Great Decision, which
@@ -409,6 +775,7 @@ module MGQ_MpCoopStory
     data[ALICE_CHOSEN] = side == :alice
     data[ILIAS_CHOSEN] = side == :ilias
     $game_map.need_refresh = true if $game_map
+    log("past the Great Decision, the player plays the side of the leader's route: #{side_name(side)}")
   end
 
   # The player's own story, with what they played along when they were as far as the leader: the
@@ -470,7 +837,12 @@ module MGQ_MpCoopStory
   #
   # @param actor_id [Integer] The companion.
   def self.joined(actor_id)
-    tell(-1, "recruit", "actor" => actor_id) if telling_party?
+    if telling_party?
+      log("#{actor_label(actor_id)} joined in the story, telling the party")
+      tell(-1, "recruit", "actor" => actor_id)
+    elsif leading_synced?
+      log("#{actor_label(actor_id)} joined outside the story (#{untold_reason}), so they stay the leader's")
+    end
   rescue => e
     log("telling a companion failed: #{e.class}: #{e.message}")
   end
@@ -480,7 +852,12 @@ module MGQ_MpCoopStory
   #
   # @param actor_id [Integer] The companion.
   def self.left(actor_id)
-    tell(-1, "depart", "actor" => actor_id) if telling_party?
+    if telling_party?
+      log("#{actor_label(actor_id)} left in the story, telling the party")
+      tell(-1, "depart", "actor" => actor_id)
+    elsif leading_synced?
+      log("#{actor_label(actor_id)} left outside the story (#{untold_reason}), the party is not told")
+    end
   rescue => e
     log("telling a departure failed: #{e.class}: #{e.message}")
   end
@@ -492,18 +869,37 @@ module MGQ_MpCoopStory
   # @param id [Integer] The item, 0 for gold.
   # @param amount [Integer] How many, below zero for a loss.
   def self.gave(kind, id, amount)
-    tell(-1, "gain", "item" => "#{kind}#{id}x#{amount}") if amount != 0 && telling_party?
+    return if amount == 0
+
+    if telling_party?
+      log("the story #{amount > 0 ? 'gave' : 'took'} #{item_label("#{kind}#{id}")} x#{amount.abs}, telling the party")
+      tell(-1, "gain", "item" => "#{kind}#{id}x#{amount}")
+    elsif leading_synced?
+      log("#{amount > 0 ? 'got' : 'lost'} #{item_label("#{kind}#{id}")} x#{amount.abs} outside the story (#{untold_reason}), the party is not told")
+    end
   rescue => e
     log("telling an item failed: #{e.class}: #{e.message}")
   end
 
-  # Reports whether the player leads a party through its story now, on the map, whose rewards each
-  # player gets in their own game; never in a battle, nor in a shop or a menu the story opens,
+  # Says for the log why the leader's game tells the party nothing now, see telling_party?.
+  #
+  # @return [String] The reason.
+  def self.untold_reason
+    return "in a battle" if $game_party && $game_party.in_battle
+    return "not on the map but in #{SceneManager.scene.class}" unless SceneManager.scene.is_a?(Scene_Map)
+
+    "no story event plays"
+  rescue
+    "unknown"
+  end
+
+  # Reports whether the player leads a party through its story now, with members who follow it, on
+  # the map, whose rewards each player who follows it gets in their own game; never in a battle, nor in a shop or a menu the story opens,
   # where the player buys, sells or changes their party of their own accord.
   #
   # @return [Boolean] Whether they do.
   def self.telling_party?
-    return false unless leader == :me && !MGQ_MpCoop::Party.members.empty?
+    return false unless leading_synced?
     return false if $game_party && $game_party.in_battle
     return false unless SceneManager.scene.is_a?(Scene_Map)
 
@@ -517,7 +913,8 @@ module MGQ_MpCoopStory
   # @param leader [MGQ_MpOverworldSync::Peers::Peer, nil] The leader.
   # @param actor_id [Integer] The companion.
   def self.recruit(leader, actor_id)
-    return if actor_id <= 0
+    return log("skipped companion #{actor_id}: no companion") if actor_id <= 0
+    return if skipped?(:actors, actor_id, actor_label(actor_id))
     return wait_for_route(:actors, actor_id) if sided?(:actors, actor_id)
 
     name = @departed.delete(actor_id) ? bring(actor_id) : join(actor_id)
@@ -530,10 +927,12 @@ module MGQ_MpCoopStory
   # @param kind [Symbol] :skills or :actors.
   # @param id [Integer] The reward.
   def self.wait_for_route(kind, id)
-    return unless route_reward?(kind, id)
+    label = kind == :skills ? skill_label(id) : actor_label(id)
+    return log("skipped #{label}: sided, only the events where the sides differ give it, which come with those events") unless route_reward?(kind, id)
 
     @route_waiting ||= []
     @route_waiting << [kind, id] unless @route_waiting.include?([kind, id])
+    log("#{label} waits for the story to get past the Great Decision, since the sides still differ (route waiting)")
   end
 
   # Reports whether the Final Chapter gives a reward too, see MGQ_MpCoopStoryRewards::ROUTE.
@@ -554,8 +953,12 @@ module MGQ_MpCoopStory
 
     waiting = @route_waiting
     @route_waiting = []
+    log("the story is past the Great Decision, taking the #{waiting.size} rewards that waited for it")
     waiting.each do |kind, id|
-      next unless @leader_held[kind].include?(id)
+      unless @leader_held[kind].include?(id)
+        log("dropped #{kind == :skills ? skill_label(id) : actor_label(id)}: not held by the leader, it went with the route they took")
+        next
+      end
 
       kind == :skills ? learn_told(nil, id) : recruit(nil, id)
     end
@@ -566,10 +969,14 @@ module MGQ_MpCoopStory
   # @param leader [MGQ_MpOverworldSync::Peers::Peer] The leader.
   # @param actor_id [Integer] The companion.
   def self.depart(leader, actor_id)
-    return unless actor_id > 0 && $data_actors[actor_id] && in_roster?(actor_id)
+    unless actor_id > 0 && $data_actors[actor_id] && in_roster?(actor_id)
+      return log("skipped the departure of #{actor_label(actor_id)}: not in the player's roster")
+    end
 
-    @departed << actor_id if $game_party.exist_party_actor_id?(actor_id)
+    in_party = $game_party.exist_party_actor_id?(actor_id)
+    @departed << actor_id if in_party
     $game_party.remove_actor(actor_id)
+    log("#{actor_label(actor_id)} left the player too#{in_party ? ', from the party, back if the story brings them again' : ', from the castle'}")
     MGQ_MpOverworldSync.notice("#{$data_actors[actor_id].name} left you too.")
   end
 
@@ -579,20 +986,24 @@ module MGQ_MpCoopStory
   # @param leader [MGQ_MpOverworldSync::Peers::Peer] The leader.
   # @param text [String] The item as written: kind, id, "x" and amount, below zero for a loss.
   def self.gain(leader, text)
-    return unless text =~ /\A([iwag])(\d+)x(-?\d+)\z/
+    return log("skipped the story's gift #{text}: unreadable") unless text =~ /\A([iwag])(\d+)x(-?\d+)\z/
 
     kind, id, amount = Regexp.last_match(1), Regexp.last_match(2).to_i, Regexp.last_match(3).to_i
-    return unless @keeps
+    return log("skipped the story's gift #{item_label("#{kind}#{id}")} x#{amount}: the player was ahead of the leader, so they keep nothing of the story") unless @keeps
 
     if kind == "g"
+      before = $game_party.gold
       MGQ_MpCoopEvents.granting { $game_party.gain_gold(amount) }
       name = "#{amount.abs} #{Vocab.currency_unit}"
+      log("the story #{amount > 0 ? 'gave' : 'took'} #{amount.abs} gold, #{before} -> #{$game_party.gold}")
     else
       item = MGQ_MpGame.item(kind, id)
-      return unless item
+      return log("skipped the story's gift #{kind}#{id} x#{amount}: not in the game") unless item
 
+      before = $game_party.item_number(item)
       MGQ_MpCoopEvents.granting { $game_party.gain_item(item, amount) }
       name = amount.abs > 1 ? "#{item.name} x#{amount.abs}" : item.name
+      log("the story #{amount > 0 ? 'gave' : 'took'} #{item_label("#{kind}#{id}")} x#{amount.abs}, #{before} -> #{$game_party.item_number(item)}")
     end
     MGQ_MpOverworldSync.notice(amount > 0 ? "#{leader.state['name']}'s story gave you #{name} too." : "#{leader.state['name']}'s story took #{name} from you too.")
   end
@@ -608,19 +1019,24 @@ module MGQ_MpCoopStory
   # @param leader [MGQ_MpOverworldSync::Peers::Peer] The leader.
   # @param keys [Hash{Integer => Integer}] How many of each key item the leader holds.
   def self.lend_keys(leader, keys)
-    return if @keeps || !guest?
+    return log("lending no key items: the player keeps the story, so the catch-up gives them") if @keeps
+    return log("lending no key items: the player does not play the leader's story") unless guest?
 
     lent_now = []
     returned = []
     (keys.keys | @lent.keys).each do |id|
       item = $data_items[id]
-      next unless item && item.key_item?
+      unless item && item.key_item?
+        log("lending no #{item_label("i#{id}")}: no key item")
+        next
+      end
 
       lent = @lent[id].to_i
       own = $game_party.item_number(item) - lent
       wanted = [keys[id].to_i - own, 0].max
       next if wanted == lent
 
+      log("#{wanted > lent ? 'lent' : 'gave back'} #{item_label("i#{id}")}: the leader holds #{keys[id].to_i}, the player #{own} of their own, lent #{lent} -> #{wanted}")
       MGQ_MpCoopEvents.granting { $game_party.gain_item(item, wanted - lent) }
       wanted > 0 ? @lent[id] = wanted : @lent.delete(id)
       (wanted > lent ? lent_now : returned) << item.name
@@ -662,7 +1078,7 @@ module MGQ_MpCoopStory
   # @return [Hash{Integer => Integer}] How many of each, by the item's id; none for a count below one.
   def self.read_keys(text)
     keys = {}
-    entries(text).each { |id, count| keys[id.to_i] = count.to_i if id.to_i > 0 && count.to_i > 0 }
+    entries(text).each { |id, count| keys[id.to_i] = count.to_i if known_id?(:items, id.to_i) && count.to_i > 0 }
     keys
   end
 
@@ -761,13 +1177,23 @@ module MGQ_MpCoopStory
   # @param first [Boolean] Whether the member just started following the story.
   def self.catch_up(leader, held, first)
     @leader_held = held
-    return unless @keeps && guest?
+    unless guest?
+      return log("no catch-up with #{MGQ_MpOverworldSync.who(leader)}'s #{holdings_text(held)}: the player does not play the leader's story")
+    end
+    unless @keeps
+      return log("no catch-up with #{MGQ_MpOverworldSync.who(leader)}'s #{holdings_text(held)}: the player was ahead of the leader, so they keep nothing of the story")
+    end
 
     follow_route_side
     take_route_rewards
     past = first && !@same
-    skills = past ? held[:skills].reject { |id| sided?(:skills, id) } : []
-    actors = past ? held[:actors].reject { |id| sided?(:actors, id) } : []
+    if past
+      log("catching up with #{MGQ_MpOverworldSync.who(leader)}'s story, the player was behind: the leader holds #{holdings_text(held)}")
+    else
+      log("checking #{MGQ_MpOverworldSync.who(leader)}'s #{holdings_text(held)} for events where the sides differ#{first ? ', the player is as far along, so only what the leader gets from now on counts' : ''}")
+    end
+    skills = past ? held[:skills].reject { |id| (sided?(:skills, id) && log_sided(skill_label(id))) || skipped?(:skills, id, skill_label(id)) } : []
+    actors = past ? held[:actors].reject { |id| (sided?(:actors, id) && log_sided(actor_label(id))) || skipped?(:actors, id, actor_label(id)) } : []
     due_groups(held).each do |rewards|
       skills |= rewards[:skills]
       actors |= rewards[:actors]
@@ -775,10 +1201,45 @@ module MGQ_MpCoopStory
     learned = skills.map { |id| learn(id) }.compact
     joined = actors.map { |id| join(id) }.compact
     items = past ? fill_items(held[:items]) : []
+    log("caught up: learned #{learned.size} skills, #{joined.size} companions joined, got #{items.size} items")
     name = leader.state["name"]
     MGQ_MpOverworldSync.notice("#{$game_actors[HERO].name} learned #{key_list(learned, 'skills')} to catch up with #{name}'s story.") unless learned.empty?
     MGQ_MpOverworldSync.notice("#{key_list(joined, 'companions')} joined you to catch up with #{name}'s story.") unless joined.empty?
     MGQ_MpOverworldSync.notice("You got #{key_list(items, 'items')} to catch up with #{name}'s story.") unless items.empty?
+  end
+
+  # Reports whether the catch-up leaves out a reward for the story's choices, through
+  # coop_choices.rbx, and logs why.
+  #
+  # @param kind [Symbol] :skills, :actors or :items.
+  # @param id [Integer, String] The reward.
+  # @param label [String] The reward, as skill_label or actor_label names it.
+  # @return [Boolean] Whether it does.
+  def self.skipped?(kind, id, label)
+    reason = defined?(MGQ_MpCoopChoices) ? MGQ_MpCoopChoices.skip_reason(kind, id) : nil
+    log("skipped #{label}: #{reason}") if reason
+    reason ? true : false
+  end
+
+  # As member, tells coop_choices.rbx the leader's whole story came, and which story's choices
+  # catching up with it carried the player past, to ask their own outcome.
+  #
+  # @param leader [MGQ_MpOverworldSync::Peers::Peer] The leader.
+  # @param first [Boolean] Whether the player just started following the story.
+  def self.choices_borrowed(leader, first)
+    return unless defined?(MGQ_MpCoopChoices)
+
+    MGQ_MpCoopChoices.story_passed(@own[1][1001].to_i, data_of($game_variables)[1001].to_i) if first && @keeps
+    MGQ_MpCoopChoices.borrowed(leader)
+  end
+
+  # Logs a reward the catch-up leaves out because only the events where the sides differ give it.
+  #
+  # @param label [String] The reward, as skill_label or actor_label names it.
+  # @return [Boolean] true, so the reward is left out.
+  def self.log_sided(label)
+    log("skipped #{label}: sided, only the events where the sides differ give it, the player's own side's come with those events")
+    true
   end
 
   # As leader, tells the party about a story skill Luka learned while the story plays, so members
@@ -788,8 +1249,11 @@ module MGQ_MpCoopStory
   # @param skill_id [Integer] The skill.
   def self.learned(actor, skill_id)
     return unless defined?(MGQ_MpCoopStoryRewards) && MGQ_MpCoopStoryRewards::SKILLS.include?(skill_id)
-    return unless actor.equal?($game_actors[HERO]) && telling_party?
+    return unless actor.equal?($game_actors[HERO])
+    return log("Luka learned #{skill_label(skill_id)} outside the story (#{untold_reason}), the party is not told") if leading_synced? && !telling_party?
+    return unless telling_party?
 
+    log("Luka learned #{skill_label(skill_id)} in the story, telling the party")
     tell(-1, "learn", "skill" => skill_id)
   rescue => e
     log("telling a skill failed: #{e.class}: #{e.message}")
@@ -825,9 +1289,11 @@ module MGQ_MpCoopStory
   def self.learn(id)
     skill = $data_skills[id]
     hero = $game_actors[HERO]
-    return nil if skill.nil? || knows?(hero, id)
+    return log("skipped #{skill_label(id)}: not in the game") if skill.nil?
+    return log("skipped #{skill_label(id)}: Luka knows it already") if knows?(hero, id)
 
     hero.learn_skill(id)
+    log("Luka learned #{skill_label(id)}")
     skill.name
   end
 
@@ -850,9 +1316,11 @@ module MGQ_MpCoopStory
   # @param id [Integer] The companion.
   # @return [String, nil] Their name, nil when they were there or the game lacks them.
   def self.join(id)
-    return nil if !$data_actors[id] || in_roster?(id)
+    return log("skipped #{actor_label(id)}: not in the game") unless $data_actors[id]
+    return log("skipped #{actor_label(id)}: in the player's roster already") if in_roster?(id)
 
     $game_party.add_stand_actor(id)
+    log("#{actor_label(id)} joined the player's roster, waiting at the castle")
     $data_actors[id].name
   end
 
@@ -862,10 +1330,12 @@ module MGQ_MpCoopStory
   # @param id [Integer] The companion.
   # @return [String, nil] Their name, nil when they were there or the game lacks them.
   def self.bring(id)
-    return nil if !$data_actors[id] || in_roster?(id)
+    return log("skipped #{actor_label(id)}: not in the game") unless $data_actors[id]
+    return log("skipped #{actor_label(id)}: in the player's roster already") if in_roster?(id)
 
     stand = $game_party.party_member_full? || ($game_party.respond_to?(:temp_actors_use?) && $game_party.temp_actors_use?)
     stand ? $game_party.add_stand_actor(id) : $game_party.add_actor(id)
+    log("#{actor_label(id)} joined the player's #{stand ? 'roster, waiting at the castle, as the party is full or a story party plays' : 'party'}")
     $data_actors[id].name
   end
 
@@ -877,14 +1347,24 @@ module MGQ_MpCoopStory
   def self.fill_items(items)
     items.map do |key, count|
       item = item_of(key)
-      next unless item
+      unless item
+        log("skipped #{item_label(key)}: not in the game")
+        next
+      end
+
+      next if skipped?(:items, key, item_label(key))
 
       most = MGQ_MpCoopStoryRewards::ITEMS[key] if defined?(MGQ_MpCoopStoryRewards)
       most ||= item.is_a?(RPG::Item) && item.key_item? ? count : 0
-      missing = [count, most].min - story_count(item)
-      next unless missing > 0
+      have = story_count(item)
+      missing = [count, most].min - have
+      unless missing > 0
+        log("skipped #{item_label(key)}: #{most == 0 ? 'no story item' : "the player holds #{have}, the leader #{count}, the story gives at most #{most}"}")
+        next
+      end
 
       MGQ_MpCoopEvents.granting { $game_party.gain_item(item, missing) }
+      log("gave #{item_label(key)} x#{missing}: the player held #{have}, the leader holds #{count}, the story gives at most #{most}")
       missing > 1 ? "#{item.name} x#{missing}" : item.name
     end.compact
   end
@@ -957,7 +1437,10 @@ module MGQ_MpCoopStory
   # @return [Array<Hash>] The side's :skills and :actors of each such event.
   def self.due_groups(held)
     side = story_side
-    return [] unless side
+    unless side
+      log_once([:no_side, @leader_id], "no rewards of the events where the sides differ yet: the player has no side before the Great Decision")
+      return []
+    end
 
     known = (@granted_groups ||= []) + (@baseline_groups || [])
     due = []
@@ -967,6 +1450,9 @@ module MGQ_MpCoopStory
 
       @granted_groups << index
       due << group[side]
+      reason = group[:choice] ? "where the player chooses a side, which they never did themselves" : (marked?(group) ? "its marks hold in the story" : "the leader holds a reward only it gives")
+      log("event #{index} where the sides differ is due (#{reason}): #{side_name(side)}'s side gets skills #{group[side][:skills].map { |id| skill_label(id) }.join(', ')}; " \
+          "companions #{group[side][:actors].map { |id| actor_label(id) }.join(', ')}")
     end
     due
   end
@@ -1030,6 +1516,7 @@ module MGQ_MpCoopStory
     return unless MGQ_MpOverworldSync.map_free? && !MGQ_MpCoopEvents.mirroring?
 
     @asking = true
+    log("asking the player whom they take along, as #{MGQ_MpOverworldSync.who(leader)} took #{side_name(@leader_held[:side])} and the player has no side")
     $game_message.add("#{leader.state['name']} took #{side_name(@leader_held[:side])} along. Whom do you take along on your own journey?")
     $game_message.choices.push(side_name(:alice), side_name(:ilias))
     $game_message.choice_cancel_type = 0
@@ -1050,6 +1537,7 @@ module MGQ_MpCoopStory
   # @param side [Symbol] :alice or :ilias.
   def self.choose_side(side)
     @asking = false
+    log("the player took #{side_name(side)} along, as their own side#{guest? ? ', kept for their own story too' : ''}")
     SIDE_SWITCHES.each do |id|
       $game_switches[id] = id == (side == :alice ? ALICE_CHOSEN : ILIAS_CHOSEN)
       @own[0][id] = $game_switches[id] if guest?
@@ -1085,7 +1573,13 @@ module MGQ_MpCoopStory
   # @param message [Hash] The message.
   def self.hold_back(peer, message)
     (@held ||= []) << [peer.state["id"].to_s, message]
-    @held.shift while @held.size > MAX_HELD
+    dropped = 0
+    while @held.size > MAX_HELD
+      @held.shift
+      dropped += 1
+    end
+    reason = MGQ_MpCoopEvents.pvp_running? ? "a PvP battle runs" : (guest? ? "waiting for the leader's whole story" : "the player does not play the leader's story yet")
+    log("held back #{message['story']} from #{MGQ_MpOverworldSync.who(peer)}: #{reason} (#{@held.size} waiting#{dropped > 0 ? ", dropped the #{dropped} oldest" : ''})")
   end
 
   # Forgets the messages kept back that the leader's whole story just covered: older holdings,
@@ -1095,7 +1589,10 @@ module MGQ_MpCoopStory
   # @param caught_up [Boolean] Whether the member just caught up with what the leader holds.
   def self.drop_covered(caught_up)
     covered = caught_up ? %w(hold gain recruit learn) : %w(hold)
+    before = (@held || []).size
     (@held || []).reject! { |_, message| covered.include?(message["story"]) }
+    dropped = before - (@held || []).size
+    log("forgot #{dropped} waiting messages the whole story covered (#{covered.join(', ')}#{caught_up ? ', the player just caught up' : ''})") if dropped > 0
   end
 
   # Takes the messages kept back, once the member plays the leader's story again outside a PvP
@@ -1105,12 +1602,17 @@ module MGQ_MpCoopStory
   # @param leader [MGQ_MpOverworldSync::Peers::Peer, Symbol, nil] The leader.
   def self.take_held(leader)
     return if @held.nil? || @held.empty?
-    return @held = nil unless leader.is_a?(MGQ_MpOverworldSync::Peers::Peer)
+    unless leader.is_a?(MGQ_MpOverworldSync::Peers::Peer)
+      log("forgot #{@held.size} waiting messages: the party with a leader is over")
+      return @held = nil
+    end
     return if held_back?
 
     held = @held
     @held = nil
     id = leader.state["id"].to_s
+    others = held.count { |from, _| from != id }
+    log("taking #{held.size - others} waiting messages from #{MGQ_MpOverworldSync.who(leader)}#{others > 0 ? ", dropping #{others} from a former leader" : ''}")
     held.each { |from, message| take(leader, message) if from == id }
   end
 
@@ -1121,7 +1623,9 @@ module MGQ_MpCoopStory
       item = $data_items[id]
       next unless item
 
-      MGQ_MpCoopEvents.granting { $game_party.gain_item(item, -[amount, $game_party.item_number(item)].min) }
+      back = [amount, $game_party.item_number(item)].min
+      MGQ_MpCoopEvents.granting { $game_party.gain_item(item, -back) }
+      log("gave back #{item_label("i#{id}")} x#{back} of #{amount} lent")
       names << item.name
     end
     @lent = {}
@@ -1145,6 +1649,7 @@ module MGQ_MpCoopStory
     @own[2][key] = value if guest?
     data_of($game_self_switches)[key] = value
     $game_map.need_refresh = true if $game_map
+    log("kept self switch #{key.join('.')} #{value ? 'on' : 'off'} as the player's own#{guest? ? ', in their own story too' : ''}")
   end
 
   # Shows the player's own chests on a map they enter while playing the leader's story. Called
@@ -1153,8 +1658,10 @@ module MGQ_MpCoopStory
     return unless guest?
 
     data = data_of($game_self_switches)
-    chest_keys.each { |key| data[key] = @own[2][key] }
+    keys = chest_keys
+    keys.each { |key| data[key] = @own[2][key] }
     $game_map.need_refresh = true
+    log("showing the player's own chests on map #{$game_map.map_id}: #{keys.size} chests, #{keys.count { |key| @own[2][key] }} of them opened") unless keys.empty?
   rescue => e
     log("showing own chests failed: #{e.class}: #{e.message}")
   end
@@ -1178,8 +1685,12 @@ module MGQ_MpCoopStory
   # Gives the player their own story back, keeping what of their own changed meanwhile.
   def self.restore
     kept = @keeps
+    before = progress_text(data_of($game_variables))
     return_lent
-    set_raw(*own_with_values)
+    story = own_with_values
+    set_raw(*story)
+    log("back in the player's own story (#{@same ? 'kept what they played together, as far along' : (kept ? "kept the leader's story they caught up with" : 'unchanged, they were ahead')}): " \
+        "played #{before}, now #{progress_text(story[1])}#{@partial ? ', without own values in the gaps of a story too large to send whole' : ''}")
     forget
     MGQ_MpOverworldSync.notice(kept ? "You are back in your own story, with what you played together." : "You are back in your own story.")
   end
@@ -1218,6 +1729,8 @@ module MGQ_MpCoopStory
     contents[:variables] = with_data(contents[:variables], variables)
     contents[:self_switches] = with_data(contents[:self_switches], self_switches)
     contents[:party] = without_lent(contents[:party]) if contents[:party]
+    log("the save holds the player's own story at #{progress_text(variables)} instead of the leader's at #{progress_text(data_of($game_variables))}" \
+        "#{(@lent || {}).empty? ? '' : ", without #{@lent.size} lent key items"}")
     contents
   end
 
@@ -1301,7 +1814,53 @@ module MGQ_MpCoopStory
   def self.personal_switch?(id, variables = nil)
     return sides_differ?(variables) if SIDE_SWITCHES.include?(id)
 
-    PERSONAL_SWITCHES.any? { |range| range === id } || id.between?(AWAKENING_SWITCHES, AWAKENING_LAST)
+    PERSONAL_SWITCHES.any? { |range| range === id } || id.between?(AWAKENING_SWITCHES, AWAKENING_LAST) || choice_key?(:s, id)
+  end
+
+  # Reports whether a switch or a variable is the outcome of a story's choice the member made,
+  # through coop_choices.rbx.
+  #
+  # @param kind [Symbol] :s for a switch, :v for a variable.
+  # @param id [Integer] The switch or variable.
+  # @return [Boolean] Whether it is.
+  def self.choice_key?(kind, id)
+    defined?(MGQ_MpCoopChoices) && MGQ_MpCoopChoices.personal?(kind, id) ? true : false
+  end
+
+  # The player's own story: the one kept aside while they play the leader's, else the one played.
+  #
+  # @return [Array, nil] The switches and the variables, nil before the game made them.
+  def self.own_story_data
+    return [@own[0], @own[1]] if guest?
+
+    $game_switches && $game_variables ? [data_of($game_switches), data_of($game_variables)] : nil
+  end
+
+  # The player's own story kept aside while they play the leader's.
+  #
+  # @return [Array, nil] The switches, variables and self switches, nil while they play their own.
+  def self.own_story_aside
+    @own
+  end
+
+  # As member, follows the story of a leader whose offer to sync the story the player accepted,
+  # whatever the rule of check_sync says, until their whole story came.
+  #
+  # @param leader [MGQ_MpOverworldSync::Peers::Peer] The leader.
+  def self.start_offer(leader)
+    @sync_state = nil
+    log("following #{MGQ_MpOverworldSync.who(leader)}'s story by their offer")
+  end
+
+  # Gets the player their own story back, keeping the leader's story they caught up with, and plays
+  # on their own: as a member who starts another route of the Final Chapter than the leader's.
+  #
+  # @param reason [String] Why, for the log.
+  def self.keep_and_leave(reason)
+    log("leaving the leader's story, keeping it as the player's own: #{reason}")
+    restore if guest?
+    @synced = false
+    @sync_state = nil
   end
 
   # Reports whether a variable is the player's own.
@@ -1309,7 +1868,7 @@ module MGQ_MpCoopStory
   # @param id [Integer] The variable.
   # @return [Boolean] Whether it is.
   def self.personal_variable?(id)
-    PERSONAL_VARIABLES.any? { |range| range === id } || (id >= AFFECTION_VARIABLES && id < AFFECTION_VARIABLES + companions)
+    PERSONAL_VARIABLES.any? { |range| range === id } || (id >= AFFECTION_VARIABLES && id < AFFECTION_VARIABLES + companions) || choice_key?(:v, id)
   end
 
   # Counts the game's companions, one affection variable each.
@@ -1399,10 +1958,10 @@ module MGQ_MpCoopStory
   def self.decode_full(message)
     lists = message["z"] ? unpack(message["z"].to_s) : message
     switches = []
-    lists["s"].to_s.split(",").each { |id| switches[id.to_i] = true }
-    lists["sf"].to_s.split(",").each { |id| switches[id.to_i] = false }
+    lists["s"].to_s.split(",").each { |id| switches[id.to_i] = true if known_id?(:switches, id.to_i) }
+    lists["sf"].to_s.split(",").each { |id| switches[id.to_i] = false if known_id?(:switches, id.to_i) }
     variables = []
-    entries(lists["v"]).each { |id, value| variables[id.to_i] = decode_value(value) }
+    entries(lists["v"]).each { |id, value| variables[id.to_i] = decode_value(value) if known_id?(:variables, id.to_i) }
     self_switches = {}
     lists["ss"].to_s.split(",").each { |key| self_switches[decode_key(key)] = true }
     lists["ssf"].to_s.split(",").each { |key| self_switches[decode_key(key)] = false }
@@ -1415,10 +1974,24 @@ module MGQ_MpCoopStory
   # @return [Array<Array>] The changed switches, variables and self switches, each by key.
   def self.decode_delta(message)
     [
-      entries(message["s"]).map { |id, value| [id.to_i, value == "1"] },
-      entries(message["v"]).map { |id, value| [id.to_i, decode_value(value)] },
+      entries(message["s"]).map { |id, value| [id.to_i, value == "1"] }.select { |id, _| known_id?(:switches, id) },
+      entries(message["v"]).map { |id, value| [id.to_i, decode_value(value)] }.select { |id, _| known_id?(:variables, id) },
       entries(message["ss"]).map { |key, value| [decode_key(key), value == "1"] },
     ]
+  end
+
+  # Reports whether an id another game sent names one of this game's switches, variables or items,
+  # logging once per kind one beyond them, which is dropped.
+  #
+  # @param kind [Symbol] :switches, :variables or :items.
+  # @param id [Integer] The id.
+  # @return [Boolean] Whether it does.
+  def self.known_id?(kind, id)
+    size = { :switches => $data_system.switches, :variables => $data_system.variables, :items => $data_items }[kind].size
+    return true if id > 0 && id < size
+
+    log_once([:unknown_id, kind], "dropped #{kind} #{id} of another game's story: this game has #{size}")
+    false
   end
 
   # Splits a list of key:value entries.
@@ -1492,6 +2065,7 @@ end
 
 begin
   MGQ_MpCoop.route("story") { |peer, message| MGQ_MpCoopStory.take(peer, message) }
+  MGQ_MpOverworldSync.state_fields { MGQ_MpCoopStory.state_fields }
 rescue => e
   MGQ_MpCoopStory.log("co-op FAILED: #{e.class}: #{e.message}")
 end
@@ -1512,88 +2086,50 @@ rescue => e
   MGQ_MpCoopStory.log("skill hook FAILED: #{e.class}: #{e.message}")
 end
 
-# Game hooks of this script alone.
-#
-# Each wraps a game method: the original runs first unless said otherwise, and the mod's part never
-# raises.
+# Game hooks of this script alone, through core_hooks.rbx.
 
-if MGQ_MpCoopStory.hookable?
-  begin
-    class Game_Party
-      alias mgq_mp_coop_story_add_stand_actor add_stand_actor
-      alias mgq_mp_coop_story_remove_actor remove_actor
+begin
+  # After a companion joins the party's roster, as leader the party hears of them, also of one the
+  # roster holds already, whom a member may lack.
+  MGQ_MpHooks.after(Game_Party, :add_stand_actor, "coop_story") { |actor_id| MGQ_MpCoopStory.joined(actor_id) }
 
-      # Takes a companion into the party's roster, then as leader tells the party, also of one the
-      # roster holds already, whom a member may lack.
-      #
-      # @param actor_id [Integer] The companion.
-      def add_stand_actor(actor_id)
-        mgq_mp_coop_story_add_stand_actor(actor_id)
-        MGQ_MpCoopStory.joined(actor_id)
-      end
+  # After a companion leaves the party's roster, as leader the party hears of it.
+  MGQ_MpHooks.after(Game_Party, :remove_actor, "coop_story") { |actor_id| MGQ_MpCoopStory.left(actor_id) }
+rescue => e
+  MGQ_MpCoopStory.log("companion hooks FAILED: #{e.class}: #{e.message}")
+end
 
-      # Takes a companion out of the party's roster, then as leader tells the party.
-      #
-      # @param actor_id [Integer] The companion.
-      def remove_actor(actor_id)
-        mgq_mp_coop_story_remove_actor(actor_id)
-        MGQ_MpCoopStory.left(actor_id)
-      end
+begin
+  # After a map is set up, the player's own chests show on it.
+  MGQ_MpHooks.after(Game_Map, :setup, "coop_story") { |_map_id| MGQ_MpCoopStory.map_entered }
+rescue => e
+  MGQ_MpCoopStory.log("map setup hook FAILED: #{e.class}: #{e.message}")
+end
+
+begin
+  # What the game saves, with a member's own story in place of the leader's.
+  MGQ_MpHooks.around(DataManager.singleton_class, :make_save_contents, "coop_story") do |_manager, _args, original|
+    contents = original.call
+    begin
+      MGQ_MpCoopStory.save_contents(contents)
+    rescue => e
+      MGQ_MpCoopStory.log("save guard failed: #{e.class}: #{e.message}")
+      contents
     end
-  rescue => e
-    MGQ_MpCoopStory.log("companion hook FAILED: #{e.class}: #{e.message}")
   end
 
-  begin
-    class Game_Map
-      alias mgq_mp_coop_story_setup setup
-
-      # Sets up a map, then shows the player's own chests on it.
-      #
-      # @param map_id [Integer] The map.
-      def setup(map_id)
-        mgq_mp_coop_story_setup(map_id)
-        MGQ_MpCoopStory.map_entered
-      end
-    end
-  rescue => e
-    MGQ_MpCoopStory.log("map setup hook FAILED: #{e.class}: #{e.message}")
+  # After a loaded save, which brings its own story, the player follows the leader's anew.
+  MGQ_MpHooks.after(DataManager.singleton_class, :extract_save_contents, "coop_story") do |_contents|
+    MGQ_MpCoopStory.log("a loaded save brings its own story, so the player follows the leader's anew") if MGQ_MpCoopStory.guest?
+    MGQ_MpCoopStory.forget
   end
 
-  begin
-    class << DataManager
-      alias mgq_mp_coop_story_make_save_contents make_save_contents
-      alias mgq_mp_coop_story_extract_save_contents extract_save_contents
-      alias mgq_mp_coop_story_create_game_objects create_game_objects
-
-      # Gathers what the game saves, with a member's own story in place of the leader's.
-      #
-      # @return [Hash] What the game saves.
-      def make_save_contents
-        contents = mgq_mp_coop_story_make_save_contents
-        begin
-          MGQ_MpCoopStory.save_contents(contents)
-        rescue => e
-          MGQ_MpCoopStory.log("save guard failed: #{e.class}: #{e.message}")
-          contents
-        end
-      end
-
-      # Takes a loaded save, which brings its own story.
-      #
-      # @param contents [Hash] The save's contents.
-      def extract_save_contents(contents)
-        mgq_mp_coop_story_extract_save_contents(contents)
-        MGQ_MpCoopStory.forget
-      end
-
-      # Makes the game's objects anew, as for a new game, which brings its own story.
-      def create_game_objects
-        mgq_mp_coop_story_create_game_objects
-        MGQ_MpCoopStory.forget
-      end
-    end
-  rescue => e
-    MGQ_MpCoopStory.log("save hooks FAILED: #{e.class}: #{e.message}")
+  # After the game's objects are made anew, as for a new game, which brings its own story, the
+  # player follows the leader's anew.
+  MGQ_MpHooks.after(DataManager.singleton_class, :create_game_objects, "coop_story") do
+    MGQ_MpCoopStory.log("a new game brings its own story, so the player follows the leader's anew") if MGQ_MpCoopStory.guest?
+    MGQ_MpCoopStory.forget
   end
+rescue => e
+  MGQ_MpCoopStory.log("save hooks FAILED: #{e.class}: #{e.message}")
 end

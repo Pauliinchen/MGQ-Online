@@ -2,6 +2,8 @@
 #  coop_npcs.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-07: Registered the event hooks through core_hooks.rbx instead of wraps of its own, and named events through coop.rbx
+#                            - Logged the Map Owner of each map and why, the whole maps sent and taken, events turning pages, events left alone and why, stuck events, and the NPC messages ignored
 #      Paulinchen  2026-10-06: Left out the party members whose connection is down, who no longer move the map's events
 #                            - Took the tiles an event walks to catch up from overworld.rbx
 #      Paulinchen  2026-10-04: Made the party's leader the Map Owner of the Pocket Castle, and told coop_castle.rbx the Map Owner's events and pages
@@ -48,16 +50,6 @@ module MGQ_MpCoopNpcs
   @stuck = {}
   @blockers = []
 
-  # Reports whether the hooks can be installed.
-  #
-  # A second copy of this script would wrap the same methods under the same names, and each hook
-  # would then call itself until the stack overflows.
-  #
-  # @return [Boolean] false when the hooks are in place already.
-  def self.hookable?
-    !Game_Event.method_defined?(:mgq_mp_coop_npcs_update_self_movement)
-  end
-
   extend MGQ_MpLog
 
   # What starts this script's lines in Multiplayer InGame.log.
@@ -101,7 +93,9 @@ module MGQ_MpCoopNpcs
   # after the map's own update, behind other screens too.
   def self.update
     members = party_here
-    role = members.empty? ? nil : (owner(members) == :me ? :owner : :follower)
+    map_owner = members.empty? ? nil : owner(members)
+    role = map_owner.nil? ? nil : (map_owner == :me ? :owner : :follower)
+    note_owner(map_owner, members)
     change_role(role) if role != @role
     @blockers = members.map(&:ghost).compact
 
@@ -117,6 +111,8 @@ module MGQ_MpCoopNpcs
   #
   # @param role [Symbol, nil] The new part.
   def self.change_role(role)
+    log("#{@role == :owner ? 'sent' : 'took'} #{@updates} NPC update(s) as #{@role == :owner ? 'the Map Owner' : 'a follower'}, now #{role || 'no part'}") if @updates.to_i > 0
+    @updates = 0
     @role = role
     @sent = {}
     @present = []
@@ -125,12 +121,37 @@ module MGQ_MpCoopNpcs
     @frames = SEND_FRAMES
   end
 
+  # Logs the Map Owner of the player's map once it, or the map, changed, with why it is them.
+  #
+  # @param owner [MGQ_MpOverworldSync::Peers::Peer, Symbol, nil] The Map Owner, :me for the player,
+  #   nil while no other party member is on the map.
+  # @param members [Array<MGQ_MpOverworldSync::Peers::Peer>] The other party members on the map.
+  def self.note_owner(owner, members)
+    key = [$game_map.map_id, owner == :me ? :me : (owner && owner.state["id"])]
+    return if key == @logged_owner
+
+    had_owner = @logged_owner && @logged_owner[1]
+    @logged_owner = key
+    unless owner
+      return had_owner ? log("map #{$game_map.map_id}: each game moves its own NPCs, no other party member is here") : nil
+    end
+
+    castle = defined?(MGQ_MpCoopCastle) && MGQ_MpCoopCastle.owner(members) ? "the party's leader in the Pocket Castle" : "entered the map first"
+    log("map #{$game_map.map_id}: the Map Owner is #{MGQ_MpOverworldSync.who(owner)} (#{castle}), so the player's game #{owner == :me ? 'moves the NPCs and tells' : 'follows the NPCs of'} #{members.map { |peer| peer.state['name'] }.join(', ')}")
+  rescue => e
+    log_once(:note_owner, "naming the Map Owner failed: #{e.class}: #{e.message}")
+  end
+
   # As Map Owner, sends newcomers the whole picture and everyone what changed.
   #
   # @param members [Array<MGQ_MpOverworldSync::Peers::Peer>] The other party members on the map.
   def self.lead(members)
     seats = members.map(&:seat)
-    (seats - @present).each { |seat| tell(seat, snapshot, true) }
+    (seats - @present).each do |seat|
+      states = snapshot
+      sent = tell(seat, states, true)
+      log("sent seat #{seat} all #{states.size} event(s) of map #{$game_map.map_id}#{sent ? '' : ', which failed'}")
+    end
     @present = seats
 
     @frames += 1
@@ -141,7 +162,24 @@ module MGQ_MpCoopNpcs
     changed = now.reject { |id, state| @sent[id] == state }
     return if changed.empty?
 
-    @sent = now if tell(-1, changed, false)
+    note_pages(changed)
+    return unless tell(-1, changed, false)
+
+    @sent = now
+    @updates = @updates.to_i + 1
+  end
+
+  # Logs the events whose page changed in the Map Owner's update, which means the story moved on.
+  #
+  # @param changed [Hash{Integer => Array<Integer>}] The events that changed, by their id.
+  def self.note_pages(changed)
+    changed.each do |id, state|
+      before = @sent[id]
+      next unless before && before[3] != state[3]
+
+      log("event #{id}#{MGQ_MpCoop.event_name(id)} on map #{$game_map.map_id} turned to page #{state[3]} from #{before[3]}, told the party")
+    end
+  rescue
   end
 
   # Reads every event of the map.
@@ -170,8 +208,10 @@ module MGQ_MpCoopNpcs
   # @param peer [MGQ_MpOverworldSync::Peers::Peer, nil] Who sent them.
   # @param message [Hash] The message's fields.
   def self.take(peer, message)
-    return unless following? && peer && message["npcs"].to_i == $game_map.map_id
-    return unless owner(party_here).equal?(peer)
+    map = message["npcs"].to_i
+    return log_once([:not_following, map, peer.state["id"]], "ignored NPCs of map #{map} from #{MGQ_MpOverworldSync.who(peer)}: the player's game moves its own (#{@role || 'no part'})") unless following?
+    return log_once([:other_map, map, $game_map.map_id], "ignored NPCs of map #{map}: the player is on map #{$game_map.map_id}") unless map == $game_map.map_id
+    return log_once([:not_owner, map, peer.state["id"]], "ignored NPCs of map #{map} from #{MGQ_MpOverworldSync.who(peer)}: not the Map Owner") unless owner(party_here).equal?(peer)
 
     full = message["full"] == "1"
     @targets = {} if full
@@ -179,7 +219,11 @@ module MGQ_MpCoopNpcs
       id, state = entry.split(":", 2)
       @targets[id.to_i] = state.to_s.split(",").map(&:to_i)
     end
-    @targets.each { |id, state| place($game_map.events[id], state) } if full
+    @updates = @updates.to_i + 1
+    return unless full
+
+    log("took all #{@targets.size} event(s) of map #{map} from #{MGQ_MpOverworldSync.who(peer)}, placing them")
+    @targets.each { |id, state| place($game_map.events[id], state) }
   rescue => e
     log_once(:take, "taking events failed: #{e.class}: #{e.message}")
   end
@@ -214,7 +258,11 @@ module MGQ_MpCoopNpcs
   # @param id [Integer] Its id.
   # @param state [Array<Integer>] Its place: x, y, facing and page.
   def self.walk(event, id, state)
-    return unless event && event.mgq_mp_npc_free? && event.mgq_mp_page == state[3]
+    return unless event && event.mgq_mp_npc_free?
+    unless event.mgq_mp_page == state[3]
+      return log_once([:page, $game_map.map_id, id, event.mgq_mp_page, state[3]],
+                      "event #{id}#{MGQ_MpCoop.event_name(id)} on map #{$game_map.map_id} stays the player's own: page #{event.mgq_mp_page} here, #{state[3]} at the Map Owner's")
+    end
     return if event.moving?
 
     x, y, direction = state
@@ -224,6 +272,7 @@ module MGQ_MpCoopNpcs
       @stuck.delete(id)
       event.mgq_mp_npc_face(direction)
     elsif dx.abs + dy.abs > MGQ_MpOverworld::CATCH_UP_TILES || (@stuck[id] = @stuck[id].to_i + 1) > STUCK_FRAMES
+      log_once([:stuck, $game_map.map_id, id], "event #{id}#{MGQ_MpCoop.event_name(id)} on map #{$game_map.map_id} was stuck for #{STUCK_FRAMES} frames, moved it at once") if @stuck[id].to_i > STUCK_FRAMES
       @stuck.delete(id)
       place(event, state)
     else
@@ -281,84 +330,62 @@ rescue => e
   MGQ_MpCoopNpcs.log("co-op FAILED: #{e.class}: #{e.message}")
 end
 
-# Game hooks.
-#
-# Each wraps a game method: the original runs first unless said otherwise, and the mod's part never
-# raises.
+# What the party's NPCs ask of an event.
 
-if MGQ_MpCoopNpcs.hookable?
-  begin
-    class Game_Event
-      alias mgq_mp_coop_npcs_update_self_movement update_self_movement
-      alias mgq_mp_coop_npcs_collide_with_characters? collide_with_characters?
-      alias mgq_mp_coop_npcs_near_the_player? near_the_player?
+class Game_Event
+  # Tells where the event stands, which way it faces and which page it shows.
+  #
+  # @return [Array<Integer>] x, y, facing and the page's index, -1 for none, as when erased.
+  def mgq_mp_npc_state
+    [@x, @y, @direction, mgq_mp_page]
+  end
 
-      # Moves the event on its own, unless another party member's game moves it. The original does
-      # not run then.
-      def update_self_movement
-        mgq_mp_coop_npcs_update_self_movement unless MGQ_MpCoopNpcs.following?
-      end
+  # Reports whether the Map Owner may move the event here: not while it talks to the player or
+  # one of the player's own events moves it.
+  #
+  # @return [Boolean] Whether it may.
+  def mgq_mp_npc_free?
+    !@locked && !@move_route_forcing
+  end
 
-      # Reports whether the event collides with a character on a tile, a party member included
-      # while the event walks on its own.
-      #
-      # A story moves its events on routes it waits for, which a member standing in the way would
-      # hold up for good, so members never block a forced route or an event while the leader's
-      # story plays.
-      #
-      # @param x [Integer] The tile's x.
-      # @param y [Integer] The tile's y.
-      # @return [Boolean] Whether it does.
-      def collide_with_characters?(x, y)
-        return true if mgq_mp_coop_npcs_collide_with_characters?(x, y)
-        return false if @move_route_forcing || !normal_priority? || (MGQ_MpCoopEvents.telling? rescue false)
-
-        MGQ_MpCoopNpcs.member_at?(x, y)
-      end
-
-      # Reports whether the player, or on the Map Owner's map a party member, is near enough for an
-      # approaching event to go for them.
-      #
-      # @return [Boolean] Whether one is.
-      def near_the_player?
-        mgq_mp_coop_npcs_near_the_player? || MGQ_MpCoopNpcs.member_near?(self)
-      end
-
-      # Walks toward the nearest party member, the player unless another member is nearer. The
-      # original does not run for another member.
-      def move_toward_player
-        member = MGQ_MpCoopNpcs.nearest_member(self)
-        member ? move_toward_character(member) : super
-      end
-
-      # Tells where the event stands, which way it faces and which page it shows.
-      #
-      # @return [Array<Integer>] x, y, facing and the page's index, -1 for none, as when erased.
-      def mgq_mp_npc_state
-        [@x, @y, @direction, mgq_mp_page]
-      end
-
-      # Reports whether the Map Owner may move the event here: not while it talks to the player or
-      # one of the player's own events moves it.
-      #
-      # @return [Boolean] Whether it may.
-      def mgq_mp_npc_free?
-        !@locked && !@move_route_forcing
-      end
-
-      # Turns the event to a facing, as far as the event lets itself be turned.
-      #
-      # @param direction [Integer] The facing.
-      def mgq_mp_npc_face(direction)
-        set_direction(direction) if direction > 0 && direction != @direction
-      end
-    end
-  rescue => e
-    MGQ_MpCoopNpcs.log("event hooks FAILED: #{e.class}: #{e.message}")
+  # Turns the event to a facing, as far as the event lets itself be turned.
+  #
+  # @param direction [Integer] The facing.
+  def mgq_mp_npc_face(direction)
+    set_direction(direction) if direction > 0 && direction != @direction
   end
 end
 
-# Game hooks shared with other scripts, through core_hooks.rbx.
+# Game hooks, through core_hooks.rbx.
+
+begin
+  # An event moves on its own, unless another party member's game moves it.
+  MGQ_MpHooks.around(Game_Event, :update_self_movement, "coop_npcs") { |_event, _args, original| original.call unless MGQ_MpCoopNpcs.following? }
+
+  # Whether an event collides with a character on a tile, a party member included while the event
+  # walks on its own. A story moves its events on routes it waits for, which a member standing in
+  # the way would hold up for good, so members never block a forced route or an event while the
+  # leader's story plays.
+  MGQ_MpHooks.around(Game_Event, :collide_with_characters?, "coop_npcs") do |event, args, original|
+    next true if original.call
+    next false if event.move_route_forcing || !event.normal_priority? || (MGQ_MpCoopEvents.telling? rescue false)
+
+    MGQ_MpCoopNpcs.member_at?(args[0], args[1])
+  end
+
+  # Whether the player, or on the Map Owner's map a party member, is near enough for an
+  # approaching event to go for them.
+  MGQ_MpHooks.around(Game_Event, :near_the_player?, "coop_npcs") { |event, _args, original| original.call || MGQ_MpCoopNpcs.member_near?(event) }
+
+  # An approaching event walks toward the nearest party member, the player unless another member
+  # is nearer.
+  MGQ_MpHooks.around(Game_Event, :move_toward_player, "coop_npcs") do |event, _args, original|
+    member = MGQ_MpCoopNpcs.nearest_member(event)
+    member ? event.move_toward_character(member) : original.call
+  end
+rescue => e
+  MGQ_MpCoopNpcs.log("event hooks FAILED: #{e.class}: #{e.message}")
+end
 
 begin
   # After the map's update, its events for the party.

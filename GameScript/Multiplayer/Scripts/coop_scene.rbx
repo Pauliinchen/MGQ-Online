@@ -2,6 +2,9 @@
 #  coop_scene.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-07: Registered the save hook through core_hooks.rbx instead of a wrap of its own, and named the number of pictures the screen holds
+#                            - Told the leader's story scene only to the members synced with the leader, who follow it, and showed it to them alone
+#                            - Logged each change of the scene told and applied, with the picture's name and the tone, the changes ignored and why, and what was put back and why
 #      Paulinchen  2026-10-06: Told the story's changes by the interpreter whose update runs, so the first change after the party gathered goes out too
 #                            - Put the member's own tint back instead of none, and only on the map they watched from
 #                            - Kept the leader's changes for two seconds before the leader's state says the story plays
@@ -28,6 +31,9 @@ module MGQ_MpCoopScene
   # A picture's file name, which may hold dots, such as "ev_aguni._hb1", but is never a path.
   PICTURE_NAME = /\A[\w\- ]+(\.[\w\- ]+)*\z/
 
+  # The highest number of a picture the game's screens hold, which another game may name.
+  MAX_PICTURE = 100
+
   # Frames the member's screen takes to come back once the story ended.
   RESTORE_FRAMES = 30
 
@@ -39,16 +45,6 @@ module MGQ_MpCoopScene
   @screen = nil
   @transparent = nil
   @updating = []
-
-  # Reports whether the hooks can be installed.
-  #
-  # A second copy of this script would wrap the same methods under the same names, and each hook
-  # would then call itself until the stack overflows.
-  #
-  # @return [Boolean] false when the hooks are in place already.
-  def self.hookable?
-    !DataManager.respond_to?(:mgq_mp_coop_scene_extract_save_contents)
-  end
 
   extend MGQ_MpLog
 
@@ -78,7 +74,7 @@ module MGQ_MpCoopScene
   #
   # @return [Boolean] Whether it does.
   def self.story_change?
-    return false unless MGQ_MpCoopEvents.story_playing? && MGQ_MpCoop.party_leading? && SceneManager.scene.is_a?(Scene_Map)
+    return false unless MGQ_MpCoopEvents.story_playing? && MGQ_MpCoopEvents.leading_story? && SceneManager.scene.is_a?(Scene_Map)
 
     @updating.last.equal?($game_map.interpreter)
   end
@@ -125,9 +121,27 @@ module MGQ_MpCoopScene
   # @param kind [String] What changes, such as "picture.show".
   # @param args [Array] Its arguments.
   def self.send_change(kind, args)
-    return unless MGQ_MpBattlesSync::Wire.encodable?(args)
+    return log_once([:unsendable, kind], "did not tell the party #{kind}: its arguments do not go over the wire (#{describe(args)})") unless MGQ_MpBattlesSync::Wire.encodable?(args)
 
-    MGQ_MpCoop.tell(-1, "pscene", kind, "map" => $game_map.map_id, "args" => MGQ_MpBattlesSync::Wire.line(args))
+    followers = MGQ_MpCoopStory.synced_members
+    sent = followers.map { |peer| MGQ_MpCoop.tell(peer.seat, "pscene", kind, "map" => $game_map.map_id, "args" => MGQ_MpBattlesSync::Wire.line(args)) }
+    log("told #{followers.map { |peer| peer.state['name'] }.join(', ')} #{kind} #{describe(args)} on map #{$game_map.map_id}#{sent.all? ? '' : ', which failed for some'}")
+  end
+
+  # Writes a change's arguments for the log: tones and colors by their values, long texts cut.
+  #
+  # @param args [Array] The arguments.
+  # @return [String] The arguments, never raising.
+  def self.describe(args)
+    Array(args).map do |arg|
+      if arg.respond_to?(:gray) then "tone(#{arg.red.to_i},#{arg.green.to_i},#{arg.blue.to_i},#{arg.gray.to_i})"
+      elsif arg.respond_to?(:alpha) then "color(#{arg.red.to_i},#{arg.green.to_i},#{arg.blue.to_i},#{arg.alpha.to_i})"
+      elsif arg.is_a?(String) then "'#{arg[0, 40]}'"
+      else arg.to_s[0, 40]
+      end
+    end.join(" ")
+  rescue
+    "?"
   end
 
   # Takes a change of the leader's story scene: the player sees it while on the leader's map or on
@@ -137,10 +151,21 @@ module MGQ_MpCoopScene
   # @param peer [MGQ_MpOverworldSync::Peers::Peer] Who sent it.
   # @param message [Hash] The message, the change under "pscene".
   def self.take(peer, message)
-    return unless MGQ_MpCoop.party_leader.equal?(peer) && MGQ_MpCoopGather.story_map?(message["map"].to_i)
+    kind = message["pscene"].to_s
+    unless MGQ_MpCoop.party_leader.equal?(peer)
+      return log_once([:not_leader, kind, peer.state["id"]], "ignored #{kind} from #{MGQ_MpOverworldSync.who(peer)}: not the party's leader")
+    end
+    unless MGQ_MpCoopEvents.following?
+      return log_once([:not_following, kind, peer.state["id"]], "ignored #{kind} from #{MGQ_MpOverworldSync.who(peer)}: not synced with the leader, the player plays their own story")
+    end
+    unless MGQ_MpCoopGather.story_map?(message["map"].to_i)
+      return log("ignored #{kind} on map #{message['map']}: the player is on map #{$game_map.map_id}")
+    end
 
     args = MGQ_MpBattlesSync::Wire.parse(message["args"].to_s) { nil }
-    apply(message["pscene"].to_s, Array(args)) if args
+    return log("ignored #{kind}: its arguments did not read (#{message['args'].to_s.size} characters)") unless args
+
+    apply(kind, Array(args))
   rescue => e
     log_once(:take, "showing the leader's scene failed: #{e.class}: #{e.message}")
   end
@@ -160,15 +185,22 @@ module MGQ_MpCoopScene
       apply_picture(method, args)
     when "screen"
       name = SCREEN_METHODS.find { |known| known.to_s == method }
-      return unless name && $game_map.screen.respond_to?(name)
+      return log_once([:unknown, kind], "ignored #{kind}: this game's screen has no such change") unless name && $game_map.screen.respond_to?(name)
 
-      @screen ||= { :map => $game_map.map_id, :tone => copy_tone($game_map.screen.tone) }
+      unless @screen
+        @screen = { :map => $game_map.map_id, :tone => copy_tone($game_map.screen.tone) }
+        log("noted the screen's tone #{describe([@screen[:tone]])} on map #{@screen[:map]} to put back after the story")
+      end
       $game_map.screen.send(name, *args)
+      log("applied the leader's #{kind} #{describe(args)}")
     when "player"
-      return unless method == "transparent"
+      return log_once([:unknown, kind], "ignored #{kind}: no such change") unless method == "transparent"
 
       @transparent = $game_player.transparent if @transparent.nil?
       $game_player.transparent = args[0] ? true : false
+      log("applied the leader's #{kind}: the player's character is #{args[0] ? 'hidden' : 'shown'}")
+    else
+      log_once([:unknown, kind], "ignored #{kind}: no such change")
     end
   end
 
@@ -179,11 +211,12 @@ module MGQ_MpCoopScene
   def self.apply_picture(method, args)
     name = PICTURE_METHODS.find { |known| known.to_s == method }
     number = args[0].to_i
-    return unless name && number > 0 && number <= 100
-    return if name == :show && args[1].to_s !~ PICTURE_NAME
+    return log("ignored picture.#{method} of picture #{number}: no such change or picture") unless name && number > 0 && number <= MAX_PICTURE
+    return log("ignored showing picture #{number}: '#{args[1].to_s[0, 40]}' is no picture's file name") if name == :show && args[1].to_s !~ PICTURE_NAME
 
     @pictures |= [number]
     $game_map.screen.pictures[number].send(name, *args[1..-1])
+    log("applied the leader's picture.#{method} #{describe(args)}")
   end
 
   # Reports whether the player sees the leader's story scene now: in a party whose leader tells
@@ -192,18 +225,19 @@ module MGQ_MpCoopScene
   # @return [Boolean] Whether they do.
   def self.watching?
     lead = MGQ_MpCoop.party_leader
-    lead.is_a?(MGQ_MpOverworldSync::Peers::Peer) && lead.state["telling"] == "1" && MGQ_MpCoopGather.story_map?(lead.state["map"].to_i)
+    lead.is_a?(MGQ_MpOverworldSync::Peers::Peer) && lead.state["telling"] == "1" && MGQ_MpCoopGather.story_map?(lead.state["map"].to_i) &&
+      MGQ_MpCoopEvents.following?
   end
 
   # Puts the player's screen back once they no longer see the leader's story scene. Called after
   # the map's update.
   def self.update
-    return if (@pictures.empty? && @screen.nil? && @transparent.nil?) || watching? || just_changed?
+    return if !pending? || watching? || just_changed?
 
-    restore
+    restore(why_not_watching)
   rescue => e
     log_once(:restore, "putting the screen back failed: #{e.class}: #{e.message}")
-    forget
+    forget("putting it back failed")
   end
 
   # Reports whether a change of the leader's scene came only a moment ago, which the leader's state
@@ -223,25 +257,62 @@ module MGQ_MpCoopScene
     Tone.new(tone.red, tone.green, tone.blue, tone.gray)
   end
 
+  # Tells why the player no longer sees the leader's story scene, for the log.
+  #
+  # @return [String] The reason.
+  def self.why_not_watching
+    lead = MGQ_MpCoop.party_leader
+    return "the player is no longer a party's member" unless lead.is_a?(MGQ_MpOverworldSync::Peers::Peer)
+    return "#{lead.state['name']}'s story ended" unless lead.state["telling"] == "1"
+
+    "#{lead.state['name']} tells it on map #{lead.state['map']}, the player is on map #{$game_map.map_id}"
+  rescue
+    "?"
+  end
+
   # Erases the pictures the leader's story showed, brings the screen back and the player's own
   # character as it was: the tint the player's map had, or the story's last on a map the story
   # brought them to.
-  def self.restore
+  #
+  # @param reason [String] Why, for the log.
+  def self.restore(reason = "the story ended")
     screen = $game_map.screen
     @pictures.each { |number| screen.pictures[number].erase }
+    done = ["erased picture(s) #{@pictures.empty? ? 'none' : @pictures.sort.join(', ')}"]
     if @screen
       screen.clear_flash if screen.respond_to?(:clear_flash)
       screen.clear_shake if screen.respond_to?(:clear_shake)
-      screen.start_tone_change(@screen[:tone], RESTORE_FRAMES) if @screen[:map] == $game_map.map_id
-      screen.start_fadein(RESTORE_FRAMES) if screen.brightness < 255
+      if @screen[:map] == $game_map.map_id
+        screen.start_tone_change(@screen[:tone], RESTORE_FRAMES)
+        done << "tone back to #{describe([@screen[:tone]])}"
+      else
+        done << "kept the story's tone, on map #{$game_map.map_id} instead of #{@screen[:map]}"
+      end
+      if screen.brightness < 255
+        screen.start_fadein(RESTORE_FRAMES)
+        done << "faded in"
+      end
     end
-    $game_player.transparent = @transparent unless @transparent.nil?
-    log("put the screen back after the leader's story (#{@pictures.size} picture(s))")
+    unless @transparent.nil?
+      $game_player.transparent = @transparent
+      done << "character #{@transparent ? 'hidden' : 'shown'} again"
+    end
+    log("put the screen back, since #{reason}: #{done.join(', ')}")
     forget
   end
 
+  # Reports whether anything of the leader's scene waits to be put back.
+  #
+  # @return [Boolean] Whether it does.
+  def self.pending?
+    !(@pictures.empty? && @screen.nil? && @transparent.nil?)
+  end
+
   # Forgets what to put back, as when a save is loaded, which brings its own screen.
-  def self.forget
+  #
+  # @param reason [String, nil] Why it is not put back, for the log; nil once it was.
+  def self.forget(reason = nil)
+    log("forgot the leader's scene without putting it back: #{reason}") if reason && pending?
     @pictures = []
     @screen = nil
     @transparent = nil
@@ -274,28 +345,9 @@ begin
 
   # After the map's update, the member's screen comes back once the leader's story ended.
   MGQ_MpHooks.after(Game_Map, :update, "coop_scene") { MGQ_MpCoopScene.update }
+
+  # After a loaded save, which brings its own screen, the leader's scene is forgotten.
+  MGQ_MpHooks.after(DataManager.singleton_class, :extract_save_contents, "coop_scene") { |_contents| MGQ_MpCoopScene.forget("a save was loaded") }
 rescue => e
   MGQ_MpCoopScene.log("hooks FAILED: #{e.class}: #{e.message}")
-end
-
-# Game hooks of this script alone.
-#
-# Each wraps a game method: the original runs first, and the mod's part never raises.
-
-if MGQ_MpCoopScene.hookable?
-  begin
-    class << DataManager
-      alias mgq_mp_coop_scene_extract_save_contents extract_save_contents
-
-      # Takes a loaded save, which brings its own screen.
-      #
-      # @param contents [Hash] The save's contents.
-      def extract_save_contents(contents)
-        mgq_mp_coop_scene_extract_save_contents(contents)
-        MGQ_MpCoopScene.forget
-      end
-    end
-  rescue => e
-    MGQ_MpCoopScene.log("save hook FAILED: #{e.class}: #{e.message}")
-  end
 end
