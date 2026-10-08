@@ -2,6 +2,7 @@
 //  mods.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-08: Covered an older copy's options that do not replace a newer version's
 //      Paulinchen  2026-10-07: Covered the options of any version kept until the current version's arrive
 //                            - Uploaded real zips, whose hashes the relay makes itself, and covered a file list that says otherwise and a header that lies about a file's size
 //                            - Expected 404 for an unknown sub-route, and made the test zips through test_zip.js
@@ -140,6 +141,27 @@ test("an admin's game keeps the options of a mod's current version, which everyo
   assert.equal((await catalog.setOptions(ADMIN, "levelcap", "1.3.5", older)).body.kept, false, "the current version's options stay");
   assert.equal((await catalog.setOptions(ADMIN, "levelcap", "", older)).body.kept, false);
   assert.deepEqual([(await listed()).options, (await listed()).optionsVersion], [options, "1.4.0"]);
+});
+
+test("an older copy's options never replace those of a newer version that is not the current one", async () => {
+  const state = { tag: "v1.3.5", script: "# cap 1" };
+  const { catalog } = await newCatalog(state);
+  await catalog.setLink(ADMIN, "Level Cap", LATEST);
+  state.tag = "v1.4.0";
+  state.script = "# cap 2";
+  await catalog.checkAll();
+  state.tag = "v1.5.0";
+  state.script = "# cap 3";
+  await catalog.checkAll();
+  const newer = [{ key: "mod_level_cap", name: "Level Cap", type: "i", default: "1", choices: [] }];
+  const older = [{ key: "mod_level_cap", name: "Level Cap", type: "i", default: "0", choices: [] }];
+  const listed = async () => (await catalog.list()).body.mods[0];
+
+  assert.equal((await catalog.setOptions(ADMIN, "levelcap", "1.4.0", newer)).body.kept, true);
+  assert.equal((await catalog.setOptions(ADMIN, "levelcap", "1.3.5", older)).body.kept, false, "an older version's options do not replace a newer one's");
+  assert.equal((await catalog.setOptions(ADMIN, "levelcap", "", older)).body.kept, false, "a copy of no known version does not replace a known version's");
+  assert.deepEqual([(await listed()).options, (await listed()).optionsVersion], [newer, "1.4.0"]);
+  assert.equal((await catalog.setOptions(ADMIN, "levelcap", "1.4.0", older)).body.kept, true, "the same version's options are taken anew");
 });
 
 test("the options route reads a body larger than the other routes take", async () => {

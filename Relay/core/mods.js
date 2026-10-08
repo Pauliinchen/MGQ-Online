@@ -2,6 +2,7 @@
 //  mods.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-08: Kept the Mod Config options of the newest version an admin's game sent, so an older copy no longer replaces a newer one's
 //      Paulinchen  2026-10-07: Kept the Mod Config options an admin's game sends from any version of a mod, until the current version's arrive
 //                            - Hashed an uploaded zip's files itself and refused an upload whose file list says otherwise
 //                            - Stopped inflating a zip entry past the size the zip says, so a lying header cannot fill the memory
@@ -260,14 +261,15 @@ export class ModCatalog {
   }
 
   /**
-   * Keeps the Mod Config options of a mod, as an admin's game read them from the copy it has: the
-   * current version's for good, any other version's until the current version's arrive.
+   * Keeps the Mod Config options of a mod, as an admin's game read them from the copy it has: those
+   * of the newest version any game sent, the current version's for good, and a copy of no known
+   * version's only until a known version's arrive.
    *
    * @param {unknown} key The asking player's key.
    * @param {string} modKeyOf The mod's key.
    * @param {unknown} version The version the game's copy is; empty for a copy that matches no version the catalog knows.
    * @param {unknown} options The options: each with key, name, type, default and choices (value, name).
-   * @returns {Promise<{status: number, body: object}>} The answer: the mod, and `kept`, false when the current version's options stay.
+   * @returns {Promise<{status: number, body: object}>} The answer: the mod, and `kept`, false when the options of a newer version stay.
    */
   async setOptions(key, modKeyOf, version, options) {
     if (!(await this.isAdmin(key))) {
@@ -282,7 +284,7 @@ export class ModCatalog {
 
     const reported = cleanText(version, this.limits.maxVersionLength);
 
-    if (entry.optionsVersion === entry.version && reported !== entry.version) {
+    if (entry.options && versionAge(entry, reported) > versionAge(entry, entry.optionsVersion)) {
       return { status: 200, body: { mod: adminView(entry), kept: false } };
     }
 
@@ -763,6 +765,29 @@ function remember(entry, version, files, now, limits) {
   if (!same) {
     entry.versions = [{ version, files, seen: now }, ...(entry.versions ?? []).filter((old) => JSON.stringify(old.files) !== JSON.stringify(files))].slice(0, limits.maxVersions);
   }
+}
+
+/**
+ * Tells how old a version of a mod is, by where the catalog's list of its versions has it, newest
+ * first, since admins name uploaded versions freely.
+ *
+ * @param {object} entry The mod.
+ * @param {string | undefined} version The version; empty or OTHER_VERSION for a copy of no known version.
+ * @returns {number} 0 for the current version, higher for older ones: a version the list no longer has comes after every listed one, and a copy of no known version last.
+ */
+function versionAge(entry, version) {
+  const versions = entry.versions ?? [];
+
+  if (version === entry.version) {
+    return 0;
+  }
+
+  if (!version || version === OTHER_VERSION) {
+    return versions.length + 1;
+  }
+
+  const index = versions.findIndex((known) => known.version === version);
+  return index < 0 ? versions.length : index;
 }
 
 /**
