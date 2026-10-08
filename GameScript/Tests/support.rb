@@ -2,6 +2,7 @@
 #  support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-08: Stood in for watching keys, which ui.rbx does for the numpad's 0 as it loads
 #      Paulinchen  2026-10-07: Read each DLL export's signature from the table in Multiplayer.rb, as Link does, so a stand-in refuses an export the table lacks
 #      Paulinchen  2026-10-06: Refused a DLL call whose arguments differ from its signature, as RGSS does
 #                            - Loaded Zlib, which RGSS has built in
@@ -24,6 +25,10 @@ require "zlib"
 SCRIPTS_DIR = File.expand_path("../Multiplayer/Scripts", __dir__)
 
 # Counts a test file's checks and reports them once the file ends.
+# The keys Multiplayer.rb reads from Windows, which ui.rbx watches as it loads; a test that reads keys
+# stands in for the rest.
+module MGQ_Multiplayer; module Key; def self.watch(*_codes); end; end; end
+
 module Checks
   @count = 0
   @failures = 0

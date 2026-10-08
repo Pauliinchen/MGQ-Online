@@ -3,6 +3,8 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-08: Sent Shared Mod Settings with a new world, and from the creator's edit form once the other changes were saved
+#                            - Closed the list boxes, the details, the mod picker and the start's choice with the numpad's 0 through MGQ_MpUi, also with Num Lock off, and left the text boxes with it through MGQ_MpUi.numpad_cancel?
+#                            - Backed out of the worlds or the commands with the numpad's 0 also with Num Lock off
 #                            - Said in a world's details whether it shares its creator's mod settings
 #                            - Noted the world entered with its creator and settings in one call
 #                            - Told whether the list was fetched since the screen opened as a world is entered
@@ -94,10 +96,6 @@ class Scene_MpWorlds < Scene_MenuBase
 
   # Frames between two looks at the list the DLL holds.
   LOOK_FRAMES = 20
-
-  # Windows' codes of the numpad's 0, the game's cancel key, with Num Lock on and off; the second
-  # is also the Insert key's.
-  NUMPAD_CANCEL_KEYS = [0x60, 0x2D]
 
   # The kinds of text boxes that take only digits, where the numpad's 0 types a 0.
   NUMBER_KINDS = [:number, :id]
@@ -697,7 +695,7 @@ class Scene_MpWorlds < Scene_MenuBase
     end
 
     outside = clicked && position && !Sprite_MpListBox.inside?(position[0], position[1])
-    return close_box if Input.trigger?(:B) || outside
+    return close_box if MGQ_MpUi.cancel? || outside
 
     @list_box.show(@box)
   end
@@ -722,7 +720,7 @@ class Scene_MpWorlds < Scene_MenuBase
 
       @focus = targets.first unless targets.include?(@focus)
 
-      if Input.trigger?(:B) || Input.trigger?(:LEFT)
+      if MGQ_MpUi.cancel? || Input.trigger?(:LEFT)
         Sound.play_cancel
         return leave_focus
       elsif Input.trigger?(:C)
@@ -999,7 +997,7 @@ class Scene_MpWorlds < Scene_MenuBase
 
     # The numpad's 0 cancels everywhere else in the game, so it leaves the box instead of typing a
     # 0, unless the box takes only digits.
-    return type(field, "\e") if numpad_cancel? && !NUMBER_KINDS.include?(field.kind)
+    return type(field, "\e") if !NUMBER_KINDS.include?(field.kind) && MGQ_MpUi.numpad_cancel?
 
     text.each_char do |char|
       type(field, char)
@@ -1015,13 +1013,6 @@ class Scene_MpWorlds < Scene_MenuBase
 
     @cursor_shown = editor.cursor_shown?
     @form_window.redraw_current_item
-  end
-
-  # Reports whether the numpad's 0 went down, with Num Lock on or off.
-  #
-  # @return [Boolean] Whether it did.
-  def numpad_cancel?
-    NUMPAD_CANCEL_KEYS.map { |code| MGQ_Multiplayer::Key.pressed?(code) }.any?
   end
 
   # Types one character into the text box at its cursor: Enter keeps the text if it is valid,
@@ -1207,7 +1198,7 @@ class Scene_MpWorlds < Scene_MenuBase
     @box_pointed = position if position
 
     # Closing the picker clears it, so nothing may draw it afterwards.
-    return close_mod_pick if Input.trigger?(:B) || (clicked && position && !Sprite_MpListBox.inside?(position[0], position[1]))
+    return close_mod_pick if MGQ_MpUi.cancel? || (clicked && position && !Sprite_MpListBox.inside?(position[0], position[1]))
 
     act_on_mod(@mod_targets[@mod_view.selected], @mod_view.column.to_i) if Input.trigger?(:C) || (clicked && on_item)
     @mod_view.hint = added_mod_picked? ? MOD_PICK_ADDED_HINT : MOD_PICK_HINT unless @mod_edit
@@ -1287,7 +1278,7 @@ class Scene_MpWorlds < Scene_MenuBase
     end
 
     # The numpad's 0 cancels everywhere else in the game, so it leaves the box instead of typing a 0.
-    return finish_mod_typing(nil) if numpad_cancel?
+    return finish_mod_typing(nil) if MGQ_MpUi.numpad_cancel?
 
     text.each_char do |char|
       case @mod_edit.type(char)
@@ -2014,18 +2005,28 @@ class MpWorldListPane
   end
 
   # Follows the keys while a window is picked: up and down pick the other one, confirm moves
-  # into it, cancel leaves the screen. Called by the screen after its windows updated.
+  # into it, cancel leaves the screen. Inside a window the numpad's 0 backs out, which the window
+  # takes as its cancel only with Num Lock on. Called by the screen after its windows updated.
   def update
-    return if @inside || !@picking || @settling
+    return back_out_with_numpad if @inside
+    return if !@picking || @settling
 
     if Input.trigger?(:C)
       enter ? Sound.play_ok : Sound.play_buzzer
-    elsif Input.trigger?(:B)
+    elsif MGQ_MpUi.cancel?
       Sound.play_cancel
       @leave.call if @leave
     elsif Input.trigger?(:DOWN) || Input.trigger?(:UP)
       Sound.play_cursor if pick(@focus == :worlds ? :commands : :worlds)
     end
+  end
+
+  # Backs out of the window with the cursor when the numpad's 0 went down while it takes the input.
+  def back_out_with_numpad
+    return unless focused.active && MGQ_MpUi.numpad_cancel?
+
+    Sound.play_cancel
+    back_out
   end
 
   # Draws the cursor around the picked window, or around none while the cursor is inside one.

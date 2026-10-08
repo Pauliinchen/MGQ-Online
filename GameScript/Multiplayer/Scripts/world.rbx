@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-08: Added Shared Mod Settings to the forms of a new world and of the creator's own world
+#                            - Closed with the numpad's 0 through MGQ_MpUi.cancel?, also with Num Lock off
 #                            - Told whether the world stays open on the title screen for its new game
 #                            - Logged the mod settings a new world starts with
 #      Paulinchen  2026-10-07: Registered the title screen's commands, its end and a world's new game through core_hooks.rbx, keeping only the path wraps as wraps of this script
@@ -390,7 +391,7 @@ module MGQ_MpWorld
     TEXT = "Close the game and run Patch\\Multiplayer\\Update.bat to update. Until then, Multiplayer and PvP battles stay off."
 
     # The hint at the bottom of the box.
-    HINT = "Enter, Esc or a click: close"
+    HINT = "Enter, Esc, Numpad 0 or a click: close"
 
     # Shows the box once a newer release is out, and closes it on confirm, cancel or a click. Called
     # every update of the title screen.
@@ -438,7 +439,7 @@ module MGQ_MpWorld
       capture = MGQ_Multiplayer::Capture
       # The mouse is asked every frame, so a click in a frame a key closed the box never counts later.
       clicked = MGQ_Multiplayer::Mouse.clicked?
-      capture.trigger?(:C) || capture.trigger?(:B) || clicked
+      capture.trigger?(:C) || MGQ_MpUi.cancel? || clicked
     end
 
     # Hides the box for the rest of this title screen and gives the buttons back.

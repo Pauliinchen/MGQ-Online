@@ -135,7 +135,7 @@ Press **B** on the map. Its choices sit in a ring around your character. The whe
 
 ### Chat
 
-Press **T**, or pick *Chat* in the wheel. **Enter** sends, **Esc** or **0** on the numpad closes; **Left**, **Right**, **Home** and **End** move the cursor, and **Delete** removes the character after it. **Up** and **Down** scroll through the earlier lines, **Page Up** and **Page Down** a page at a time; small arrows at the right show that there's more above or below.
+Press **T**, or pick *Chat* in the wheel. **Enter** sends, **Esc** or **0** on the numpad closes (with Num Lock on or off); **Left**, **Right**, **Home** and **End** move the cursor, and **Delete** removes the character after it. **Up** and **Down** scroll through the earlier lines, **Page Up** and **Page Down** a page at a time; small arrows at the right show that there's more above or below.
 
 - The chat has five tabs: **All** (every line you can see), **Global** (everyone in the world, "[Global]" in orange), **Party** (your party only, "[Party]"), **Say** (the players on your map, where you start) and **Whisper** (one player, in pale pink). Start a line with **/g**, **/p** or **/s** to switch, or **/w** and a name to whisper: after the first letter of the name a list of players shows above the box; **Up** and **Down** pick one, **Enter** or **Tab** takes it. Type **/help** for a help tab at the far right; the chat stays until you switch again. The box shows the chat your line goes to.
 - While the box is open, tabs above the log show all lines or one chat's: click one, or press the left **Alt** with **Left** or **Right**. A chat's tab also switches to that chat.

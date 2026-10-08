@@ -2,7 +2,8 @@
 #  ui_actions.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-08: Listed the choices of another player's menu and of the player's own here, which the World overview and the chat share
+#      Paulinchen  2026-10-08: Closed with the numpad's 0 through MGQ_MpUi.cancel?, also with Num Lock off
+#                            - Listed the choices of another player's menu and of the player's own here, which the World overview and the chat share
 #      Paulinchen  2026-10-07: Took the icon rect, white and the depths from MGQ_MpUi
 #                            - Logged the action wheel opening with its choices and closing with why, each choice taken or refused, a wheel key that went elsewhere, and the line above the player's head
 #      Paulinchen  2026-10-06: Kept the choice pointed at last once the arrows are let go, instead of going back to the middle, and the diagonal while its arrows are let go one after the other
@@ -333,7 +334,7 @@ module MGQ_MpActions
     #
     # @param pressed [Boolean] Whether the wheel key went down this frame.
     def self.update(pressed)
-      if pressed || MGQ_Multiplayer::Capture.trigger?(:B)
+      if pressed || MGQ_MpUi.cancel?
         close(pressed ? "its key" : "cancel")
         Sound.play_cancel
         return

@@ -3,6 +3,9 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-08: Told whether a key or the left mouse button is held, for the chat log's tabs and its size
+#                            - Took a key nobody asked about in the frame before as let go, so the numpad's 0 that closed a screen closes the next one too
+#                            - Told a watched key's press frame by frame, ended by the Input.update of a game window's cancel
+#                            - Counted the frames for Key.pressed? at Graphics.update, since a game window's cancel calls Input.update twice in a frame, which made a held key read as a new press
 #      Paulinchen  2026-10-07: Named mp_world_say, which mirrors a chat line to the relay for the world's admins
 #                            - Kept the logs of the last five game sessions, deleting older ones as a session starts
 #                            - Logged the hooks as one line per script with its count, once the scripts loaded and once a frame
@@ -840,6 +843,7 @@ module MGQ_Multiplayer
       MGQ_MpHooks.before(input, :update, "Multiplayer") do
         MGQ_Multiplayer::Background.refresh
         MGQ_Multiplayer::Capture.next_frame
+        MGQ_Multiplayer::Key.read_watched
       end
       IDLE_INPUT.each do |method, idle|
         MGQ_MpHooks.around(input, method, "background") { |_input, _args, original| MGQ_Multiplayer::Background.passes? ? original.call : idle }
@@ -981,6 +985,46 @@ module MGQ_Multiplayer
     # Set in a key state while the key is down.
     DOWN = 0x8000
 
+    @frame = 0
+
+    # The keys told frame by frame, see triggered?: each code with whether it was down at the last
+    # Input.update and whether it went down then.
+    @watched = {}
+
+    # Counts a frame for pressed?. Called after every Graphics.update, which runs once a frame,
+    # unlike Input.update.
+    def self.next_frame
+      @frame += 1
+    end
+
+    # Reads the watched keys. Called before every Input.update.
+    def self.read_watched
+      @watched.each do |code, state|
+        down = raw_down?(code)
+        state[:went_down] = down && !state[:down]
+        state[:down] = down
+      end
+    end
+
+    # Reads keys at every Input.update from now on, so triggered? can tell their presses.
+    #
+    # @param codes [Array<Integer>] Windows' codes of the keys.
+    def self.watch(*codes)
+      codes.each { |code| @watched[code] ||= { :down => false, :went_down => false } }
+    end
+
+    # Reports whether a key went down at the last Input.update, while the game window is in front,
+    # as Input.trigger? tells the game's buttons: the same answer however often it is asked in that
+    # frame. The game's windows call Input.update again as they cancel, which ends the press, so a
+    # key that is also a button of the game never cancels twice.
+    #
+    # @param code [Integer] Windows' code of the key, watched from its first ask on.
+    # @return [Boolean] Whether the key went down.
+    def self.triggered?(code)
+      watch(code)
+      @watched[code][:went_down] && Background.in_front?
+    end
+
     # Reports whether a key went down since the last call for it, while the game window is in front.
     #
     # Windows reports the key whichever window has the focus, so a press in another window is
@@ -990,9 +1034,12 @@ module MGQ_Multiplayer
     # @return [Boolean] Whether the key went down.
     def self.pressed?(code)
       @down ||= {}
-      down = (Windows.api('user32', 'GetAsyncKeyState', 'i', 'i').call(code) & DOWN) != 0
-      pressed = down && !@down[code]
+      @asked ||= {}
+      down = raw_down?(code)
+      # A key asked about only while a screen is open may have been let go while none was.
+      pressed = down && !(@down[code] && @asked[code] >= @frame - 1)
       @down[code] = down
+      @asked[code] = @frame
       pressed && Background.in_front?
     end
 
@@ -1202,10 +1249,11 @@ end
 # Game hooks, through core_hooks.rbx.
 
 begin
-  # After every frame, tells the Discord mod how the connection stands, polls for an update and
+  # After every frame, counts it for the keys, tells the Discord mod how the connection stands, polls for an update and
   # logs the hooks registered since the last frame. Graphics.update runs every frame in every
   # scene, so all happen wherever the player is.
   MGQ_MpHooks.after(Graphics.singleton_class, :update, "Multiplayer") do
+    MGQ_Multiplayer::Key.next_frame
     MGQ_Multiplayer::Discord.tick
     MGQ_Multiplayer::UpdateCheck.tick
     MGQ_MpHooks.report

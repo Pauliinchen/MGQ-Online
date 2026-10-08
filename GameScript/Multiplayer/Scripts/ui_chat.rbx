@@ -7,6 +7,7 @@
 #                            - Resized the chat log with Alt and the mouse dragged, keeping its size in Player.ini
 #                            - Wrote the chat log smaller
 #                            - Brought the chat log above everything while the player types
+#                            - Closed the chat box with the numpad's 0 through MGQ_MpUi.numpad_cancel?, also with Num Lock off
 #                            - Mirrored only the global chat to the relay for the world's admins
 #                            - Added whispers to one player with /w or /whisper and their name, offering the names that fit in a list above the box, and a Whisper tab in pale pink
 #                            - Added a Help tab at the far right that /help opens, which only reads and closes once left, and named it and the resizing in the empty box
@@ -72,9 +73,6 @@ module MGQ_MpChat
 
   # Frames after the chat key opened the box in which the key's own character may still arrive.
   KEY_ECHO_FRAMES = 10
-
-  # Windows' code of the numpad's 0, which closes the chat box as it closes the game's windows.
-  NUMPAD_0_KEY = 0x60
 
   # Windows' codes of Page Up and Page Down, which scroll the chat log a page.
   PAGE_UP_KEY = 0x21
@@ -550,7 +548,7 @@ module MGQ_MpChat
     text, _keys = MGQ_Multiplayer::Link.take_typed
     return close_menu("its player left the world") if @menu && !menu_peer
 
-    if MGQ_Multiplayer::Key.pressed?(NUMPAD_0_KEY)
+    if MGQ_MpUi.numpad_cancel?
       return (Sound.play_cancel; close_menu("Numpad 0")) if @menu
 
       # Its 0 arrives as the number row's, so what came with it is dropped; a 0 coming later finds

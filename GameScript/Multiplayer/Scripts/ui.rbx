@@ -3,6 +3,9 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-08: Added the depth of the chat while the player types, above everything
+#                            - Added the cancel of the mod's screens, which takes the numpad's 0 with Num Lock on and off
+#                            - Took the numpad's 0 frame by frame, so a press a game window cancelled with never cancels again in the next frame
+#                            - Watched the numpad's 0 from the start, so its first press of a session counts
 #      Paulinchen  2026-10-07: Added the iconset rect, the cut with one ellipsis, white and the depths of the mod's sprites and windows, which the screens share
 #                            - Logged every message box shown, with its title and text
 #      Paulinchen  2026-10-06: Dropped the wrapped lines the top window kept but never read
@@ -44,6 +47,30 @@ module MGQ_MpUi
   # lies above a screen's windows, the World overview, the boxes, and the chat while the player types
   # above everything.
   Z = { :lines => 200, :labels => 250, :bubbles => 260, :wheels => 300, :overview => 400, :boxes => 1000, :typing => 1100 }
+
+  # Windows' codes of the numpad's 0, the game's cancel key, with Num Lock on and off; the second
+  # is also the Insert key's.
+  NUMPAD_CANCEL_KEYS = [0x60, 0x2D]
+  MGQ_Multiplayer::Key.watch(*NUMPAD_CANCEL_KEYS)
+
+  # Reports whether the numpad's 0 went down in this frame, with Num Lock on or off. A text box asks
+  # it instead of cancel?, since the game's cancel button is X too, a letter.
+  #
+  # With Num Lock on it is the game's cancel button as well, so a press a game window took must not
+  # count again in the next frame, after the window's cancel opened another screen.
+  #
+  # @return [Boolean] Whether it did.
+  def self.numpad_cancel?
+    NUMPAD_CANCEL_KEYS.map { |code| MGQ_Multiplayer::Key.triggered?(code) }.any?
+  end
+
+  # Reports whether cancel went down on a screen of the mod: the game's cancel button, past the
+  # capture, or the numpad's 0, which the game takes only with Num Lock on.
+  #
+  # @return [Boolean] Whether it did.
+  def self.cancel?
+    MGQ_Multiplayer::Capture.trigger?(:B) | numpad_cancel?
+  end
 
   # Finds an icon in the game's iconset.
   #

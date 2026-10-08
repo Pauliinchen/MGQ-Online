@@ -87,6 +87,7 @@ module MGQ_Multiplayer
   module Key
     def self.pressed?(code); p = $pressed == code || ($pressed == true && code == 0x42); $pressed = false if p; p; end
     def self.down?(code); ($down || []).include?(code); end
+    def self.triggered?(code); pressed?(code); end
   end
   module Mouse; def self.held?; $mouse_held == true; end; def self.position; $mouse; end; end
   module Log; def self.write(m); puts "  log: #{m}"; end; end

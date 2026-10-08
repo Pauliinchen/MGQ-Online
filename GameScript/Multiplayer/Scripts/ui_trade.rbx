@@ -2,6 +2,7 @@
 #  ui_trade.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-08: Closed with the numpad's 0 through MGQ_MpUi.cancel?, also with Num Lock off
 #      Paulinchen  2026-10-07: Logged where the screen failed and the pictures in memory, since a picture could not be made in the field
 #                            - Cut names through MGQ_MpUi.cut and took the window's depth from MGQ_MpUi
 #                            - Logged the trade screen opening and closing, and the gold typed
@@ -445,7 +446,7 @@ class Window_MpTradeGold < Window_Base
       Sound.play_ok
       self.visible = false
       @handlers[:ok].call(amount) if @handlers[:ok]
-    elsif Input.trigger?(:B)
+    elsif MGQ_MpUi.cancel?
       Sound.play_cancel
       self.visible = false
       @handlers[:cancel].call if @handlers[:cancel]

@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-08: Checked the global, say and party chats, the commands that choose them, the log's tabs, its size and its depth while typing
+#                            - Checked that the numpad's Insert closes the chat box with Num Lock off
 #                            - Checked the menu a click on a sender's name opens
 #                            - Checked whispers and their list of names, the help tab, the bubbles' chats and that what Alt types with the numpad is dropped
 #                            - Checked that a log made with the mouse button held and the box open draws without failing, and that a player's message cannot pose as an admin's line
@@ -652,9 +653,13 @@ check("a line of the global chat is orange, its tag and its text", parts.map { |
 chat.start_typing
 $sounds.clear
 $typed = "0"
-$pressed = MGQ_MpChat::NUMPAD_0_KEY
+$pressed = MGQ_MpUi::NUMPAD_CANCEL_KEYS[0]
 map_frame
 check("the numpad's 0 closes the chat box as it closes the game's windows, typing nothing", [chat.typing?, MGQ_Multiplayer::Capture.on?, $sounds], [false, false, ["cancel"]])
+chat.start_typing
+$pressed = MGQ_MpUi::NUMPAD_CANCEL_KEYS[1]
+map_frame
+check("as does its Insert with Num Lock off", chat.typing?, false)
 
 # Scrolling the chat log while the box is open.
 class Sprite; def update; end; end
@@ -796,7 +801,7 @@ $mouse_held = true
 log_sprite.update
 $mouse_held = false
 log_sprite.update
-$pressed = MGQ_MpChat::NUMPAD_0_KEY
+$pressed = MGQ_MpUi::NUMPAD_CANCEL_KEYS[0]
 map_frame
 check("as does the numpad's 0", [chat.menu, chat.typing?], [nil, true])
 chat.select_tab(:all, "in the test")

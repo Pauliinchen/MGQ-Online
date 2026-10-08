@@ -214,7 +214,7 @@ check("while the screen waits for it", scene.instance_variable_get(:@busy), "unl
 # What typing in place needs.
 module MGQ_Multiplayer
   module Background; def self.running?; true; end; end
-  module Key; def self.pressed?(_code); false; end; end
+  module Key; def self.pressed?(_code); false; end; def self.triggered?(code); pressed?(code); end; end
   module Link
     def self.typing(on); $typing = on; end
     def self.take_typed; typed = $typed.to_s; $typed = nil; [typed, typed.size]; end

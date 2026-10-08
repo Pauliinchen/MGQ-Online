@@ -4,6 +4,7 @@
 #  Changelog:
 #      Paulinchen  2026-10-08: Covered Shared Mod Settings in the forms of a new world and of the creator's own world, and in a world's details
 #                            - Expected the details to name the mods of a world's options, and the edit form to say when its mod settings apply
+#                            - Read cancel past the capture, as the screens now ask it through MGQ_MpUi
 #      Paulinchen  2026-10-07: Expected cut texts to end in three dots
 #                            - Looked each DLL call's signature up in the export table of Multiplayer.rb
 #      Paulinchen  2026-10-06: Checked a name kept with Enter or from the text screen, the numpad's 0 in Max Players, a form's tidied values,
@@ -479,8 +480,8 @@ $held = []
 $key_down = nil
 $background = true
 module MGQ_Multiplayer
-  module Capture; def self.repeat?(button); $held.include?(button); end; end
-  module Key; def self.pressed?(code); $key_down == code; end; end
+  module Capture; def self.repeat?(button); $held.include?(button); end; def self.trigger?(button); Input.trigger?(button); end; end
+  module Key; def self.pressed?(code); $key_down == code; end; def self.triggered?(code); pressed?(code); end; end
   module Mouse; def self.position; $mouse; end; def self.clicked?; $click ? ($click = false; true) : false; end; end
   module Background; def self.running?; $background; end; end
 end
@@ -819,6 +820,15 @@ check("the press that moved out does not also leave the screen", left, 0)
 pane.settle
 pane.update
 check("the next one does", left, 1)
+$buttons = []
+pane.enter
+$key_down = 0x2D
+pane.update
+$key_down = nil
+check("inside a window the numpad's 0 backs out, also with Num Lock off, which the window does not take as cancel", [pane.inside?, worlds.index, left, $sounds.last], [false, -1, 1, "cancel"])
+pane.settle
+pane.update
+check("and leaves the screen only with a press of its own", left, 1)
 pane.pick(:commands)
 pane.enter
 commands.select(2)

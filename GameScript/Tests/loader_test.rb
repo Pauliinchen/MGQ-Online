@@ -2,6 +2,8 @@
 #  loader_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-08: Checked that a watched key goes down once per frame, ended by a game window's own Input.update
+#                            - Checked that a held key reads as one press however often Input.update runs in a frame
 #      Paulinchen  2026-10-07: Checked that starting a session deletes the logs of all but the last five sessions and leaves other files
 #                            - Checked how the log's last line tells the game closing
 #                            - Checked that the press closing the last screen reaches the game from the next frame only
@@ -188,6 +190,55 @@ Input.update
 check("another window in front takes every button away", [Input.press?(:C), capture.trigger?(:C)], [false, false])
 $front = true
 Input.update
+
+# A watched key, told frame by frame as Input.trigger? tells the game's buttons, such as the
+# numpad's 0, which is the game's cancel button too with Num Lock on.
+MGQ_Multiplayer.module_eval(source[/  module Key\n.*?\n  end\n/m])
+module MGQ_Multiplayer
+  module Windows
+    KeyState = Struct.new(:name) { def call(code); $keys_down.include?(code) ? -32_768 : 0; end }
+    def self.api(_library, name, _arguments, _result); KeyState.new(name); end
+  end
+end
+key = MGQ_Multiplayer::Key
+$keys_down = []
+key.watch(0x60)
+Input.update
+$keys_down = [0x60]
+Input.update
+check("a watched key that went down reads as pressed however often the frame asks", [key.triggered?(0x60), key.triggered?(0x60)], [true, true])
+Input.update
+check("the Input.update of a game window's cancel ends the press", key.triggered?(0x60), false)
+Input.update
+check("so the key held into the next frame cancels no second screen", key.triggered?(0x60), false)
+$keys_down = []
+Input.update
+$keys_down = [0x60]
+Input.update
+check("letting it go and pressing it again counts", key.triggered?(0x60), true)
+$front = false
+Input.update
+$keys_down = []
+Input.update
+$keys_down = [0x60]
+Input.update
+check("but not while another window is in front", key.triggered?(0x60), false)
+$front = true
+$keys_down = []
+Input.update
+check("a key asked for the first time reads as not pressed until the next frame", [key.triggered?(0x2D), key.instance_variable_get(:@watched).key?(0x2D)], [false, true])
+$keys_down = [0x41]
+first = key.pressed?(0x41)
+Input.update
+Input.update
+key.next_frame
+check("a held key reads as one press, though a game window's cancel runs Input.update twice in a frame", [first, key.pressed?(0x41)], [true, false])
+$keys_down = []
+key.next_frame
+key.next_frame
+key.next_frame
+$keys_down = [0x41]
+check("a key nobody asked about for frames reads as pressed again", key.pressed?(0x41), true)
 
 # The log's last line: how the game closes.
 MGQ_Multiplayer.module_eval(source[/  def self\.closing_text\(error.*?\n  end\n/m])

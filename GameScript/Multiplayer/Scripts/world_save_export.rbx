@@ -2,6 +2,7 @@
 #  world_save_export.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-08: Closed with the numpad's 0 through MGQ_MpUi.cancel?, also with Num Lock off
 #      Paulinchen  2026-10-07: Registered the menu's hooks through core_hooks.rbx instead of wraps of this script
 #                            - Took the notice's depth from MGQ_MpUi
 #                            - Logged why a save is not copied and the thumbnail copied with it
@@ -139,7 +140,7 @@ class Window_MpSaveExportNotice < Window_MpInfo
   # @return [Boolean] Whether OK or Cancel was pressed after the first frame.
   def closed?
     @frames += 1
-    @frames > 1 && (Input.trigger?(:C) || Input.trigger?(:B))
+    @frames > 1 && (Input.trigger?(:C) || MGQ_MpUi.cancel?)
   end
 end
 

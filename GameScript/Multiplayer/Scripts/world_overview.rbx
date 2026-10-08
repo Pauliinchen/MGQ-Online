@@ -2,7 +2,8 @@
 #  world_overview.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-08: Took the choices of a player's menu from MGQ_MpActions, which the chat shares
+#      Paulinchen  2026-10-08: Closed with the numpad's 0 through MGQ_MpUi.cancel?, also with Num Lock off
+#                            - Took the choices of a player's menu from MGQ_MpActions, which the chat shares
 #      Paulinchen  2026-10-07: Logged once when the game has no variable or switch of a name, reading 0 or off
 #                            - Named players through MGQ_MpOverworldSync.who, cut places through MGQ_MpUi.cut with what measures them, and took icons, white and the depth from MGQ_MpUi
 #                            - Logged the overview opening and closing with why, each menu with its choices, the choice taken or refused, and the level and story told to the others
@@ -461,7 +462,7 @@ module MGQ_MpWorldOverview
   # @param players [Array<Integer>] The lines that are players.
   def self.update_list(view, players)
     capture = MGQ_Multiplayer::Capture
-    return (Sound.play_cancel; close("cancel")) if capture.trigger?(:B)
+    return (Sound.play_cancel; close("cancel")) if MGQ_MpUi.cancel?
     return open_menu(view[:lines][view[:selected]][1]) if capture.trigger?(:C)
 
     step = capture.repeat?(:DOWN) ? 1 : capture.repeat?(:UP) ? -1 : 0
@@ -478,7 +479,7 @@ module MGQ_MpWorldOverview
   # @param view [Hash] What the overview shows, see view.
   def self.update_menu(view)
     capture = MGQ_Multiplayer::Capture
-    return (Sound.play_cancel; log("menu closed with cancel"); @menu = nil) if capture.trigger?(:B)
+    return (Sound.play_cancel; log("menu closed with cancel"); @menu = nil) if MGQ_MpUi.cancel?
     return choose(view[:menu][@menu], view[:lines][view[:selected]][1]) if capture.trigger?(:C)
 
     step = capture.repeat?(:DOWN) ? 1 : capture.repeat?(:UP) ? -1 : 0

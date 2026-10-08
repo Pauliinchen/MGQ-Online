@@ -2,6 +2,7 @@
 #  ui_emotes.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-08: Closed with the numpad's 0 through MGQ_MpUi.cancel?, also with Num Lock off
 #      Paulinchen  2026-10-07: Named players through MGQ_MpOverworldSync.who and took the wheel's depth from MGQ_MpUi
 #                            - Logged the emote wheel opening and closing with why, each emote played, sent or refused, and each emote of another player played or ignored with why
 #      Paulinchen  2026-10-06: Kept the wheel shut while the World overview is open, which left the player walking under the overview once the wheel closed
@@ -134,7 +135,7 @@ module MGQ_MpEmotes
   # @param key [Boolean] Whether the wheel's key went down this frame.
   def self.update(key)
     capture = MGQ_Multiplayer::Capture
-    if key || capture.trigger?(:B)
+    if key || MGQ_MpUi.cancel?
       close(key ? "its key" : "cancel")
       return Sound.play_cancel
     end
