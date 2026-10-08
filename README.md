@@ -7,11 +7,13 @@
 Play Monster Girl Quest! Paradox RPG together with friends over the internet, with nothing to set up in your router.
 
 <p align="center">
-  <img src="docs/images/action-wheel.png" alt="Two players in a world, with the action wheel open" width="49%">
-  <img src="docs/images/world-list.png" alt="The world screen, with the list of worlds and a world's details" width="49%">
+  <img src="docs/images/action-wheel.png" alt="Two players in a world, with the action wheel open" width="32%">
+  <img src="docs/images/chat.png" alt="The open chat, with its tabs and an unread Party tab glowing" width="32%">
+  <img src="docs/images/world-list.png" alt="The world screen, with the list of worlds and a world's details" width="32%">
 </p>
 
-- **Worlds:** up to 32 players on the same maps, with chat, emotes and an overview of everyone online.
+- **Worlds:** up to 32 players on the same maps, with emotes and an overview of everyone online.
+- **Chat:** global, party, say and whisper chats in tabs, a glow on tabs with unread lines, and speech bubbles over the players on your map.
 - **Parties:** up to four players play the leader's story together and share one team's worth of companions.
 - **Co-op battles:** party members on the same map join each other's battles, each commanding their own characters.
 - **Duels and PvP battles:** your team against a friend's, live, inside a world or outside one.

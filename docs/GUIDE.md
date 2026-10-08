@@ -123,7 +123,7 @@ The details show each mod in a box of its own, as many as fit the row, and count
 
 ![The action wheel, with a chat bubble and the party box](images/action-wheel.png)
 
-- **Other players** on your map walk around with their name above them and an icon for what they're doing: fighting, talking or watching an event, typing, in a menu, the inventory or their equipment, shopping, at the casino, in the Library, sailing, flying, or away. They walk through everything and trigger nothing.
+- **Other players** on your map walk around with their name above them and an icon for what they're doing: fighting, talking or watching an event, typing, in a menu, the inventory or their equipment, shopping, at the casino, in the Library, sailing, flying, or away. They walk through everything and trigger nothing. A companion following them whose picture your game lacks, such as one from a hero pack you don't have, shows as an outline: green for your party's members, white for anyone else.
 - **Ping** shows after each player's name, and yours above your head: green up to 100 ms, yellow up to 200 ms, red beyond.
 - **The bottom left** tells who joined and left, and when the connection is being restored. A player whose connection drops stays in the world and in their party for 15 seconds, so a short break changes nothing.
 - **The world never pauses.** While you're in a menu, a shop, a battle or a story scene, the map goes on behind it: the others walk on, NPCs move, and background events and timers run. Menus show the live map instead of a still picture. Anything that needs you, such as a message, a battle, a move to another map or an NPC walking into you, waits until you're back on the map.
@@ -135,15 +135,44 @@ Press **B** on the map. Its choices sit in a ring around your character. The whe
 
 ### Chat
 
-Press **T**, or pick *Chat* in the wheel. **Enter** sends, **Esc** or **0** on the numpad closes (with Num Lock on or off); **Left**, **Right**, **Home** and **End** move the cursor, and **Delete** removes the character after it. **Up** and **Down** scroll through the earlier lines, **Page Up** and **Page Down** a page at a time; small arrows at the right show that there's more above or below.
+![The open chat: the tabs above the log, the Party tab glowing for unread lines, and the hint in the empty box](images/chat.png)
 
-- The chat has five tabs: **All** (every line you can see), **Global** (everyone in the world, "[Global]" in orange), **Party** (your party only, "[Party]"), **Say** (the players on your map, where you start) and **Whisper** (one player, in pale pink). Start a line with **/g**, **/p** or **/s** to switch, or **/w** and a name to whisper: after the first letter of the name a list of players shows above the box; **Up** and **Down** pick one, **Enter** or **Tab** takes it. Type **/help** for a help tab at the far right; the chat stays until you switch again. The box shows the chat your line goes to.
-- While the box is open, tabs above the log show all lines or one chat's: click one, or press the left **Alt** with **Left** or **Right**. A chat's tab also switches to that chat.
-- Click another player's name in the open chat to invite them to your party, challenge them to a duel, offer a trade or whisper to them, as in the World overview. **Esc** closes that menu.
-- Hold **Alt** and drag the log with the mouse to make it larger or smaller (experimental); the size is kept.
-- Your line shows in a speech bubble in its chat's color above your head for the players on your map, and in the chat log at the bottom left.
-- Names in the log are yellow for you, green for your party's members and white for everyone else.
-- The chat works in battles too, where its log sits above the battle's windows, and while your party gathers for a story scene.
+Press **T**, or pick *Chat* in the wheel. The chat works on the map, in battles (above the battle's windows) and while your party gathers for a story scene.
+
+| Key | What it does |
+|---|---|
+| **Enter** | Send the line |
+| **Esc** or numpad **0** | Close the chat (Num Lock on or off) |
+| **Up** / **Down** | Scroll the log; **Page Up** / **Page Down** a page at a time |
+| **Alt** + **Left** / **Right** | Switch tabs (left Alt) |
+| **Alt** + drag | Resize the log with the mouse; the size is kept (experimental) |
+| **Left**, **Right**, **Home**, **End**, **Delete** | Move the cursor and delete in the line |
+
+The empty box names the controls, and shows the **Alt** ones while you hold it.
+
+#### Chats and tabs
+
+| Tab | Who reads it | Command |
+|---|---|---|
+| **All** | Every line you can see | |
+| **Global** | Everyone in the world, "[Global]" in orange | **/g** |
+| **Party** | Your party only, "[Party]" | **/p** |
+| **Say** | The players on your map; where you start | **/s** |
+| **Whisper** | One player, in pale pink | **/w** and a name |
+
+- A command, or a click on a chat's tab, picks the chat your next lines go to; the box shows which. It stays until you pick another.
+- For **/w**, a list of matching players shows above the box after the first letter of the name: **Up** and **Down** pick one, **Enter** or **Tab** takes it.
+- **/help** opens a help tab at the far right.
+- **Unread lines:** the **Global**, **Party** and **Say** tabs glow yellow at their top right corner until you pick them or **All**.
+- **Closed chat:** the log at the bottom left shows the tab you picked last, plus whispers.
+- **Too fast:** Global lines are limited to two a second after a burst of ten; a faster one is turned down with "You are sending too fast".
+
+#### Players in the chat
+
+- Your line shows in a speech bubble in its chat's color just above your name, for the players on your map.
+- Names are yellow for you, green for your party's members and white for everyone else.
+- When several players share a name, the later ones show as "Name (2)", "Name (3)" in the log, above their head and in the whisper list.
+- Click a player's name in the open chat to invite them to your party, challenge them to a duel, offer a trade or whisper to them. In a battle only the whisper is offered. **Esc** closes the menu.
 
 ### Emotes
 
@@ -205,6 +234,7 @@ Members close to the leader in the story play the leader's story. Its events, do
 - **Who plays the leader's story:** before the Great Decision, a member at most two story steps ahead of or behind the leader; after it, a member on the same route as the leader, at most five steps apart on it. You read "You follow \<leader>'s story while in the party." when it starts.
 - Everyone else plays their own story while in the party: their own story events, scenes and progress, untouched by the leader's. They read why, such as "You and \<leader> are too far apart in the story; each of you plays your own.", or that you're on different sides of the Great Decision or on different routes. The map, battles, chat, trading, duels, the Pocket Castle and the chests you open stay shared all the same.
 - This is checked again whenever your or the leader's story moves on, so two players who drift apart each go on with their own, and two who come close play together.
+- Scenes replayed from the Library stay your own: the leader's replay never pulls the party in.
 
 - Every member on the map who plays the leader's story sees the dialogue in their own message window, which moves on when the leader moves on; only the leader can continue or close it.
 - The story's pictures, such as its CGs, and its fades, tints and flashes show for them too.
@@ -320,7 +350,7 @@ Your games meet at the mod's **relay**, a small server that passes their data on
 
 | Message or problem | What to do |
 |---|---|
-| *Multiplayer* says a new version is out | Press Enter for *update and install*: the game closes, updates the mod and starts again in the Multiplayer menu. Or close the game and run `Patch\Multiplayer\Update.bat`. |
+| *Multiplayer* says a new version is out | Press Enter for *update and install*: the game closes, updates the mod and starts again in the Multiplayer menu. Or close the game and run `Patch\Multiplayer\Update.bat`. A Discord invite, or the return to a world after a mod download, shows the same offer while the mod is outdated; after updating, enter the world again yourself. Under Wine or Proton the updater can't run: close the game and update by hand. |
 | "Your friend's game is not hosting with this join code right now" | Your friend stopped hosting, or hosted again, which makes a new join code: ask for the new one. Or their game is reconnecting to the relay: try again in a minute. |
 | "Nobody joined in time, so hosting stopped" | Hosting waits 30 minutes for a friend. Host again for a new join code. |
 | "Your team is too large to send" | Your party has more characters, skills or equipment than one PvP exchange carries. Leave a few characters out of the party and try again. |

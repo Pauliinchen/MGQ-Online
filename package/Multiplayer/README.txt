@@ -102,6 +102,7 @@ HOTKEYS
 -------
    B        action wheel: invite, duel, trade, chat, teleport to the leader
    T        chat: /g everyone, /p your party, /s your map, /w one player, /help
+            (Alt + Left/Right switches tabs, Alt + drag resizes the chat)
    E        emote wheel
    F11      World overview, or the PvP battle screen outside a world
    Y / N    accept / decline the first invite at the top left
@@ -123,6 +124,9 @@ you played, named after when the game started, such as
 what the mod did inside the game; the Multiplayer log tells what the
 connection did. Please attach both of the session that went wrong to a
 bug report.
+
+The folder keeps the logs of your last five game starts and deletes
+older ones, so send them soon after something went wrong.
 
 
 CREDITS
