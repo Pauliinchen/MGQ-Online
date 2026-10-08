@@ -9,6 +9,7 @@
 #                              cannot be sent or get no answer, notices within three lines, the stay named anew right after a load, the details'
 #                              mods, the edit form's texts and an options dump into a folder outside ASCII
 #                            - Removed the checks of the creator's button, which is gone
+#                            - Covered the restart under Wine
 #      Paulinchen  2026-10-07: Covered the options sent from a copy of an older or of no known version while the relay lacks the current version's
 #                            - Looked each DLL call's signature up in the export table of Multiplayer.rb
 #      Paulinchen  2026-10-06: Expected the summary to name mods that are missing or in another version
@@ -351,6 +352,14 @@ Dir.mktmpdir do |folder|
     scene.instance_variable_set(:@busy, "mods")
     scene.follow_action
     check("when it cannot start again, it says what to do and stays", [$ini["rejoin"], $exited, said(scene)], ["", false, "The mods were installed. Close the game and start it again to enter Modded."])
+    $restart = 1
+
+    $restart = 2
+    scene.instance_variable_set(:@busy, "mods")
+    scene.follow_action
+    check("under Wine or Proton it stays, keeps the world to enter once the player started the game again, and says so", [$ini["rejoin"], $exited, said(scene)],
+          ["w1", false, "The mods were installed. Restart the game by hand: it enters Modded once it is back."])
+    $ini["rejoin"] = ""
     $restart = 1
 
     # A mod only its author has.

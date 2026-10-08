@@ -107,7 +107,7 @@ The details show each mod in a box of its own, as many as fit the row, and count
 
 **Same version for everyone.** The relay keeps a catalog of mods its admins added, with each one's current version.
 
-- When you enter a world, each required mod is compared with the catalog. If one is missing or another version, the world screen says which and offers *Download and restart*: it fetches the world's version, checks every file, puts it into your `Patch` folder, restarts the game and enters the world. *See the mods* lists your version and the world's.
+- When you enter a world, each required mod is compared with the catalog. If one is missing or another version, the world screen says which and offers *Download and restart*: it fetches the world's version, checks every file, puts it into your `Patch` folder, restarts the game and enters the world. Under Wine or Proton the game cannot restart itself: close it and start it again, and it enters the world. *See the mods* lists your version and the world's.
 - A required mod the catalog doesn't know is compared with the creator's copy. If yours differs, get the creator's version from the mod's author; nothing downloads it for you.
 - A new version only reaches players the next time they enter.
 

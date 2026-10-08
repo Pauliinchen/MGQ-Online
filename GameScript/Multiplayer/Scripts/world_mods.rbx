@@ -13,6 +13,7 @@
 #                            - Said when settings could not be sent or got no answer, and kept every notice within three lines that fit the box
 #                            - Named the stay's settings anew instead of a change when they arrive right after the load, and kept what did not fit in it
 #                            - Counted and named only the options this game's Mod Config has, and said when a world shares none yet
+#                            - Kept the world to enter when the game cannot start itself again under Wine or Proton, for the start the player makes by hand
 #      Paulinchen  2026-10-07: Sent the Mod Config options of every installed catalog mod, whatever its version, until the relay holds the current version's
 #                            - Logged a catalog unknown at the first read too
 #                            - Followed a new game through an after block, since the hook only applies the world's mods
@@ -469,18 +470,26 @@ module MGQ_MpWorldMods
 
   # Starts the game again so the installed mods load, and enters the world once it is back.
   #
+  # Under Wine or Proton the game cannot start itself again, so the world stays noted for the
+  # start the player makes by hand.
+  #
   # @param world_id [String] The world to enter again.
-  # @return [Boolean] Whether the game closes now to start again; false when it could not, and stays open.
+  # @return [Symbol] :restarting when the game closes now to start again, :by_hand under Wine or
+  #   Proton, where the player starts it again, :failed when it could not and stays open.
   def self.restart(world_id)
     MGQ_Multiplayer::Player.store(REJOIN_SETTING, world_id)
-    if MGQ_Multiplayer::Link.function('mp_restart_game').call == 1
+    case MGQ_Multiplayer::Link.function('mp_restart_game').call
+    when 1
       log("starting the game again, to enter world #{MGQ_MpWorld.short(world_id)} once it is back")
-      return true
+      :restarting
+    when 2
+      log("the game cannot start itself again under Wine, so the player does; world #{MGQ_MpWorld.short(world_id)} is entered once it is back")
+      :by_hand
+    else
+      MGQ_Multiplayer::Player.store(REJOIN_SETTING, "")
+      log("the game could not start itself again, so world #{MGQ_MpWorld.short(world_id)} is not entered on its own")
+      :failed
     end
-
-    MGQ_Multiplayer::Player.store(REJOIN_SETTING, "")
-    log("the game could not start itself again, so world #{MGQ_MpWorld.short(world_id)} is not entered on its own")
-    false
   end
 
   # Takes the world the game should enter again after a restart, once.

@@ -9,6 +9,7 @@
 #                            - Noted the world entered with its creator and settings in one call
 #                            - Told whether the list was fetched since the screen opened as a world is entered
 #                            - Said when the edit form's Shared Mod Settings apply, and that the other changes were saved when the mod settings were not
+#                            - Told the player to restart the game by hand under Wine or Proton after installing a world's mods, keeping the world to enter
 #      Paulinchen  2026-10-07: Left typing alone without a form, which failed the screen, and logged where the screen failed and the pictures in memory
 #                            - Cut texts through MGQ_MpUi.cut, which ends them in three dots, and took the choice window's depth from MGQ_MpUi
 #                            - Logged the screen's actions with their outcome and reason, the start chosen, the mod and data checks and the forms sent, never passwords or codes
@@ -1593,13 +1594,17 @@ class Scene_MpWorlds < Scene_MenuBase
   # once it is back; says what to do when the game cannot start itself again.
   def restart_for_mods
     MGQ_MpWorldMods.forget_installed
-    if MGQ_MpWorldMods.restart(@entry.id)
+    case MGQ_MpWorldMods.restart(@entry.id)
+    when :restarting
       log_screen("closing the game to start it again for the mods of #{entry_text}")
       return SceneManager.exit
+    when :by_hand
+      log_screen("the game cannot start itself again under Wine, the player restarts it and enters #{entry_text} on its own")
+      say("The mods were installed. Restart the game by hand: it enters #{@entry.name} once it is back.")
+    else
+      log_screen("the game could not start itself again, the player restarts it for #{entry_text}")
+      say("The mods were installed. Close the game and start it again to enter #{@entry.name}.")
     end
-
-    log_screen("the game could not start itself again, the player restarts it for #{entry_text}")
-    say("The mods were installed. Close the game and start it again to enter #{@entry.name}.")
     back_to_list
   end
 
