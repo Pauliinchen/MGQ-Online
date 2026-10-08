@@ -20,6 +20,7 @@
 #                            - Rested the map's chat log just under the topmost viewport, which it covered with the wheels and the World overview
 #                            - Sized the log before following the mouse, which a held button crashed on a log made that frame
 #                            - Found players through MGQ_MpOverworldSync::Peers and moved the three lists by one arrow step
+#                            - Stopped following the keys and the mouse once a menu's choice closed the chat box, which failed on the closed box
 #                            - Mirrored a global line to the relay before sending it, turning it down when it comes too fast
 #      Paulinchen  2026-10-07: Mirrored every line sent to everyone to the relay for the world's admins, and showed an admin's line from the relay as [Admin] in gold
 #                            - Closed the chat box with the numpad's 0, as the game's windows close
@@ -385,7 +386,8 @@ module MGQ_MpChat
   end
 
   # Takes a choice of the open menu, closing it, or tells why it cannot be taken. A choice that
-  # leaves, such as accepting a duel, closes the chat box too.
+  # leaves, such as accepting a duel, closes the chat box too, after which the callers stop
+  # following the keys and the mouse for the frame.
   #
   # @param index [Integer] Its place among menu_options.
   def self.take_menu(index)
@@ -569,12 +571,14 @@ module MGQ_MpChat
     typed = without_alt_code(without_echo(text.to_s))
     typed.each_char do |char|
       next tab_key = true if char == "\t"
-      next menu_key(char) if @menu && (char == "\r" || char == "\e")
 
-      type(char)
+      if @menu && (char == "\r" || char == "\e")
+        menu_key(char)
+      else
+        type(char)
+        take_typed_command if typing?
+      end
       return unless typing?
-
-      take_typed_command
     end
     take_suggestion if tab_key
     return if switch_tabs
@@ -1256,11 +1260,12 @@ class Sprite_MpChatLog < Sprite
   def update
     super
     chat = MGQ_MpChat
+    fit(chat)
+    chat.typing? ? follow_mouse(chat) : finish_drag(chat)
+    # Read after the mouse, whose click on a menu's choice may close the chat box.
     typing = chat.typing?
     depth = typing ? MGQ_MpUi::Z[:typing] : @resting_z
     viewport.z = depth unless viewport.z == depth
-    fit(chat)
-    typing ? follow_mouse(chat) : finish_drag(chat)
     draw_menu(chat)
 
     entries = MGQ_MpOverworldSync.in_world? ? chat.log_entries : []

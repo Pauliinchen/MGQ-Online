@@ -8,6 +8,7 @@
 #                            - Checked the menu a click on a sender's name opens
 #                            - Checked whispers and their list of names, the help tab, the bubbles' chats and that what Alt types with the numpad is dropped
 #                            - Checked that a log made with the mouse button held and the box open draws without failing, and that a player's message cannot pose as an admin's line
+#                            - Checked that a menu's choice that leaves closes the chat box without failing, by click and by Enter
 #                            - Checked a global line too fast for the relay
 #      Paulinchen  2026-10-07: Checked the lines mirrored to the relay, the party chat kept from it, and an admin's line from the relay
 #                            - Checked scrolling the chat log
@@ -886,6 +887,45 @@ $typed = "/help "
 map_frame
 chat.stop_typing
 check("closing the box leaves the help tab for the tab before it", chat.tab, :all)
+
+# A menu's choice that leaves the chat box, the menu in a battle, and its hint.
+chat_log = []
+MGQ_MpChat.singleton_class.send(:alias_method, :harness_log, :log)
+MGQ_MpChat.define_singleton_method(:log) { |text| chat_log << text; harness_log(text) }
+went = []
+leaving = Module.new
+leaving.define_singleton_method(:peer_option) { |_peer| MGQ_MpActions::Option.new("Go along", lambda { went << :went }, nil, nil, true) }
+leaving.define_singleton_method(:own_options) { nil }
+leaving.define_singleton_method(:call_of) { |_peer| nil }
+leaving.define_singleton_method(:notice_of) { |_peer| nil }
+MGQ_MpActions.offer(leaving)
+friend_line = MGQ_MpChat::Line.new("Friend", "hello", :other, :global, 0, nil, friend_id)
+chat.start_typing
+chat.open_menu(friend_line, [100, 300])
+log_sprite.update
+go = chat.menu_options.map(&:text).index("Go along")
+$mouse = [menu_sprite.x + 1, menu_sprite.y + Sprite_MpChatLog::ROW * (go + 1) + 1]
+$mouse_held = true
+failure = begin
+  log_sprite.update
+  nil
+rescue => e
+  e.class
+end
+check("a click on a choice that leaves closes the chat box, and the log draws without failing", [failure, went, chat.typing?], [nil, [:went], false])
+$mouse_held = false
+log_sprite.update
+chat.start_typing
+chat.open_menu(friend_line, [100, 300])
+chat.point_menu(go)
+chat_log.clear
+$typed = "\rabc"
+map_frame
+check("Enter on a choice that leaves closes the chat box, which the frame's other keys find closed",
+      [went, chat.typing?, chat_log.grep(/failed/)], [[:went, :went], false, []])
+MGQ_MpActions.offers.delete(leaving)
+chat.stop_typing
+MGQ_MpChat.singleton_class.send(:alias_method, :log, :harness_log)
 
 # A global line too fast for the relay.
 $say_result = MGQ_MpChat::TOO_FAST
