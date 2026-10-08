@@ -4,6 +4,7 @@
 #  Changelog:
 #      Paulinchen  2026-10-08: Closed with the numpad's 0 through MGQ_MpUi.cancel?, also with Num Lock off
 #                            - Took the choices of a player's menu from MGQ_MpActions, which the chat shares
+#                            - Named the numpad's 0 in the hint of how to close
 #      Paulinchen  2026-10-07: Logged once when the game has no variable or switch of a name, reading 0 or off
 #                            - Named players through MGQ_MpOverworldSync.who, cut places through MGQ_MpUi.cut with what measures them, and took icons, white and the depth from MGQ_MpUi
 #                            - Logged the overview opening and closing with why, each menu with its choices, the choice taken or refused, and the level and story told to the others
@@ -709,7 +710,7 @@ class Sprite_MpWorldOverview < Sprite
     lines.each_with_index { |line, index| draw_line(line, TITLE + index * ROW, view[:scroll] + index == view[:selected]) }
     bitmap.font.size = 16
     bitmap.font.color = GREY
-    bitmap.draw_text(8, BOX.height - HINT_HEIGHT, BOX.width - 16, HINT_HEIGHT, "Enter or click: invite, duel or trade    Esc or #{MGQ_MpHotkeys.label(:overview)}: close", 1)
+    bitmap.draw_text(8, BOX.height - HINT_HEIGHT, BOX.width - 16, HINT_HEIGHT, "Enter or click: invite, duel or trade    Esc, Numpad 0 or #{MGQ_MpHotkeys.label(:overview)}: close", 1)
     draw_menu(view) if view[:menu]
   end
 
