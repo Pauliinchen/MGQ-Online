@@ -2,6 +2,7 @@
 #  Update.ps1
 #
 #  Changelog:
+#      Paulinchen  2026-10-08: Took the game's process from the game that starts the update, waited for it to close and started the game again afterwards, in the Multiplayer menu once updated
 #      Paulinchen  2026-10-04: Showed the release notes last and counted the removed files in one line, so they no longer push the notes out of sight
 #      Paulinchen  2026-09-30: Found the game folder two levels up, since the mod lives in Patch\Multiplayer
 #                            - Fetched MGQ-Online-<version>.zip from the repository under its new name, MGQ-Online
@@ -12,7 +13,13 @@
 # Updates the mod in the game folder two levels above this one (this script lives in
 # Patch\Multiplayer) to the latest release on GitHub, removing files an earlier version left behind
 # that the new one no longer ships, such as a script a later refactor renamed or merged into
-# another. Update.bat runs it.
+# another. Update.bat runs it, started by the player or by the game.
+
+param(
+    # The game's process when the game started the update: the update waits for it to close and
+    # starts the game again afterwards.
+    [int]$GameProcess = 0
+)
 
 $ErrorActionPreference = 'Stop'
 
@@ -28,6 +35,9 @@ $GameDir  = Split-Path (Split-Path $ModDir -Parent) -Parent
 $GameExe  = Join-Path $GameDir 'Game.exe'
 $Dll      = Join-Path $ModDir 'Multiplayer.dll'
 $Manifest = Join-Path $ModDir 'Manifest.txt'
+
+# Tells the game started again to open the Multiplayer menu, see world.rbx.
+$OpenWorldsVariable = 'MGQMP_OPEN_WORLDS'
 
 # Reads the version of the installed DLL.
 #
@@ -107,7 +117,38 @@ function Show-ReleaseNotes($Release) {
     Write-Host ''
 }
 
-try {
+# Waits until the game in this folder is closed, which unlocks the DLL: first for the game that
+# started the update, then for any other copy the player has to close.
+function Wait-GameClosed {
+    if ($GameProcess -gt 0) {
+        Write-Host 'Waiting for the game to close . . .'
+        Wait-Process -Id $GameProcess -ErrorAction SilentlyContinue
+    }
+
+    while (Test-GameRunning) {
+        Read-Host 'The game is running. Close it, then press Enter' | Out-Null
+    }
+}
+
+# Starts the game again after an update the game started.
+#
+# $OpenMultiplayer: whether the game opens the Multiplayer menu, once the mod is up to date.
+function Start-GameAgain([bool]$OpenMultiplayer) {
+    Wait-GameClosed
+
+    if ($OpenMultiplayer) {
+        # The game inherits this process's environment.
+        Set-Item "env:$OpenWorldsVariable" '1'
+    }
+
+    Write-Host 'Starting the game again . . .'
+    Start-Process -FilePath $GameExe -WorkingDirectory $GameDir
+}
+
+# Installs the latest release over the game folder, unless the mod is up to date.
+#
+# Returns $true once the mod is up to date.
+function Install-LatestRelease {
     if (-not (Test-Path $GameExe)) {
         throw "Game.exe is not in $GameDir. Keep this script in Patch\Multiplayer inside the game folder."
     }
@@ -122,7 +163,7 @@ try {
 
     if ($installed -and $installed -ge $latest) {
         Write-Host "The mod is up to date ($installed)."
-        return
+        return $true
     }
 
     $zip = $release.assets | Where-Object { $_.name -like $ReleaseZip } | Select-Object -First 1
@@ -133,9 +174,7 @@ try {
     $from = if ($installed) { $installed } else { 'an unknown version' }
     Write-Host "Updating from $from to $latest."
 
-    while (Test-GameRunning) {
-        Read-Host 'The game is running. Close it, then press Enter' | Out-Null
-    }
+    Wait-GameClosed
 
     $oldFiles = Get-ShippedFiles
 
@@ -154,8 +193,30 @@ try {
     Write-Host "Updated to $latest. Your player name and worlds are kept."
     # Last, so nothing the update prints scrolls the notes out of sight.
     Show-ReleaseNotes $release
+    return $true
+}
+
+$updated = $false
+try {
+    $updated = Install-LatestRelease
 }
 catch {
     Write-Host "The update failed: $($_.Exception.Message)" -ForegroundColor Red
+}
+
+if ($GameProcess -gt 0) {
+    if (-not $updated) {
+        Read-Host 'Press Enter to start the game again' | Out-Null
+    }
+
+    try {
+        Start-GameAgain -OpenMultiplayer $updated
+    }
+    catch {
+        Write-Host "The game could not start again: $($_.Exception.Message)" -ForegroundColor Red
+    }
+}
+
+if (-not $updated) {
     exit 1
 }

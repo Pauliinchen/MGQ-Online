@@ -320,7 +320,7 @@ Your games meet at the mod's **relay**, a small server that passes their data on
 
 | Message or problem | What to do |
 |---|---|
-| *Multiplayer* is greyed out on the title screen | A new release is out. Update with `Patch\Multiplayer\Update.bat`. |
+| *Multiplayer* says a new version is out | Press Enter for *update and install*: the game closes, updates the mod and starts again in the Multiplayer menu. Or close the game and run `Patch\Multiplayer\Update.bat`. |
 | "Your friend's game is not hosting with this join code right now" | Your friend stopped hosting, or hosted again, which makes a new join code: ask for the new one. Or their game is reconnecting to the relay: try again in a minute. |
 | "Nobody joined in time, so hosting stopped" | Hosting waits 30 minutes for a friend. Host again for a new join code. |
 | "Your team is too large to send" | Your party has more characters, skills or equipment than one PvP exchange carries. Leave a few characters out of the party and try again. |

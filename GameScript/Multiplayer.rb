@@ -4,6 +4,7 @@
 #  Changelog:
 #      Paulinchen  2026-10-08: Told whether a key or the left mouse button is held, for the chat log's tabs and its size
 #                            - Took a key nobody asked about in the frame before as let go, so the numpad's 0 that closed a screen closes the next one too
+#                            - Named mp_update_game, which starts the mod's updater, and told the player to pick Multiplayer to update
 #                            - Told a watched key's press frame by frame, ended by the Input.update of a game window's cancel
 #                            - Counted the frames for Key.pressed? at Graphics.update, since a game window's cancel calls Input.update twice in a frame, which made a held key read as a new press
 #      Paulinchen  2026-10-07: Named mp_world_say, which mirrors a chat line to the relay for the world's admins
@@ -119,7 +120,7 @@ module MGQ_Multiplayer
   MAX_NAME_LENGTH = 32
 
   # What the game says wherever the player tries to use the mod once a newer release is out.
-  UPDATE_MESSAGE = "A Monster Girl Quest! Online update is out. Close the game and run Patch\\Multiplayer\\Update.bat to update."
+  UPDATE_MESSAGE = "A Monster Girl Quest! Online update is out. Pick Multiplayer on the title screen to update."
 
   # Tells whether the mod can run.
   #
@@ -512,6 +513,7 @@ module MGQ_Multiplayer
       'mp_set_player_name' => 'p',
       'mp_player_id' => READ_ARGUMENTS,
       'mp_restart_game' => 'v',
+      'mp_update_game' => 'v',
 
       # The keyboard and the clipboard.
       'mp_typing' => 'l',

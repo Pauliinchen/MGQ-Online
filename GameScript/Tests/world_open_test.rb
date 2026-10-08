@@ -2,6 +2,8 @@
 #  world_open_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-08: Checked the update offer in place of the update notice, and the world screen opening after the update
+#                            - Checked that the update offer keeps the game open under Wine
 #      Paulinchen  2026-10-07: Checked that the worlds on this PC and the favourites are read once until one changes
 #                            - Looked each DLL call's signature up in the export table of Multiplayer.rb
 #                            - Checked that a form's switch turns round between its outcomes
@@ -23,8 +25,8 @@
 
 # Checks worlds without a password and featured worlds (world.rbx): the forms taking an empty
 # password, the directory's flags for both, entering a world without a password without being
-# asked, the featured worlds' place in the list, what the details say, and an outdated game kept out
-# and told so.
+# asked, the featured worlds' place in the list, what the details say, an outdated game kept out
+# and offered the update, and the world screen opening after it.
 
 require_relative "support"
 require "tmpdir"
@@ -41,7 +43,7 @@ class Window_NameInput < Window_Selectable; end
 class Color; def initialize(*); end; end
 class Sprite; def initialize(*); end; end
 Rect = Struct.new(:x, :y, :width, :height)
-class Scene_Title; def start; end; def create_command_window; end; def update; end; def terminate; end; end
+class Scene_Title; def start; end; def create_command_window; end; def close_command_window; end; def update; end; def terminate; end; end
 class Window_TitleCommand; def make_command_list; end; end
 module Sound; %w[cursor ok cancel buzzer].each { |s| define_singleton_method("play_#{s}") { $sounds << s } }; end
 module SceneManager
@@ -351,9 +353,9 @@ check("an outdated game enters no world", [MGQ_MpWorld.start(MGQ_MpWorld::World.
 title = Window_TitleCommand.new
 title.instance_variable_set(:@list, [{ :symbol => :continue }])
 MGQ_MpWorld.add_title_command(title)
-check("and finds the title command greyed out", title.instance_variable_get(:@list)[1].values_at(:symbol, :enabled), [:mgq_mp_world, false])
+check("and finds the title command enabled", title.instance_variable_get(:@list)[1].values_at(:symbol, :enabled), [:mgq_mp_world, true])
 
-# The update notice, a message box that draws on nothing.
+# The update offer, a message box that draws on nothing, over the title's commands.
 class Sprite_MpMessageBox
   attr_accessor :visible
   attr_reader :shown
@@ -361,20 +363,65 @@ class Sprite_MpMessageBox
   def show(*args); @shown = args; @visible = true; end
   def dispose; end
 end
+class TitleMenu
+  attr_reader :active
+  def disposed?; false; end
+  def activate; @active = true; end
+end
+module SceneManager; def self.exit; $exited = true; end; end
 title_scene = Scene_Title.new
-SceneManager.define_singleton_method(:scene) { title_scene }
-notice = MGQ_MpWorld::UpdateNotice
-check("the update notice shows on the title screen and holds the buttons", [notice.refresh, notice.instance_variable_get(:@box).shown[0], $capture], [true, "Monster Girl Quest! Online 9.9.9 is out", :update_notice])
-check("and stays while nothing is pressed", [notice.refresh, notice.instance_variable_get(:@box).visible], [false, true])
-$pressed = :C
-notice.refresh
+title_scene.instance_variable_set(:@command_window, TitleMenu.new)
+offer = MGQ_MpWorld::UpdateOffer
+$called = nil
+$calls.clear
+MGQ_MpWorld.open_world_screen(title_scene)
+check("picking Multiplayer offers the update in place of the world screen and holds the buttons",
+      [$called, offer.shown?, offer.instance_variable_get(:@box).shown[0], $capture], [nil, true, "Monster Girl Quest! Online 9.9.9 is out", :update_offer])
+offer.update
+check("and stays while nothing is pressed", [offer.shown?, $calls], [true, []])
+$pressed = :B
+offer.update
 $pressed = nil
-check("confirm closes it and gives the buttons back", [notice.instance_variable_get(:@box).visible, $capture], [false, nil])
-check("it stays closed on this title screen", notice.refresh, false)
-notice.hide
-check("and shows again on the next one", notice.refresh, true)
-notice.hide
+check("cancel closes it and gives the buttons back to the title's commands", [offer.shown?, $capture, title_scene.instance_variable_get(:@command_window).active], [false, nil, true])
+MGQ_MpWorld.open_world_screen(title_scene)
+MGQ_Multiplayer::Key.define_singleton_method(:pressed?) { |code| code == 0x2D }
+offer.update
+MGQ_Multiplayer::Key.define_singleton_method(:pressed?) { |_code| false }
+check("the numpad's 0 closes it too, also with Num Lock off", [offer.shown?, $capture], [false, nil])
+MGQ_MpWorld.open_world_screen(title_scene)
+$pressed = :C
+offer.update
+$pressed = nil
+check("confirm starts the updater and closes the game", [$calls.map(&:first), $exited], [["mp_update_game"], true])
+$exited = nil
+offer.hide
+module MGQ_Multiplayer; module Link; class << self; alias working_function function; end; end; end
+MGQ_Multiplayer::Link.define_singleton_method(:function) { |name| Struct.new(:name) { def call(*); 0; end }.new(name) }
+MGQ_MpWorld.open_world_screen(title_scene)
+$pressed = :C
+offer.update
+check("an updater that cannot start keeps the game open and tells how to update by hand",
+      [$exited, offer.shown?, offer.instance_variable_get(:@box).shown[1]], [nil, true, "The updater could not start. Close the game and run Patch\\Multiplayer\\Update.bat to update."])
+offer.update
+$pressed = nil
+check("confirm then closes the box", offer.shown?, false)
+MGQ_Multiplayer::Link.define_singleton_method(:function) { |name| Struct.new(:name) { def call(*); 2; end }.new(name) }
+MGQ_MpWorld.open_world_screen(title_scene)
+$pressed = :C
+offer.update
+$pressed = nil
+check("under Wine the game stays open and the box tells to update by hand", [$exited, offer.instance_variable_get(:@box).shown[1]], [nil, MGQ_MpWorld::UpdateOffer::WINE_TEXT])
+offer.hide
+MGQ_Multiplayer::Link.define_singleton_method(:function) { |name| working_function(name) }
+offer.hide
 $outdated = false
+
+# The game started again by the updater opens the world screen once.
+ENV[MGQ_MpWorld::OPEN_AFTER_UPDATE] = "1"
+$called = nil
+check("after the update the title screen opens the world screen", [MGQ_MpWorld.open_after_update(title_scene), $called], [true, Scene_MpWorlds])
+$called = nil
+check("but only once", [MGQ_MpWorld.open_after_update(title_scene), $called, ENV[MGQ_MpWorld::OPEN_AFTER_UPDATE]], [false, nil, nil])
 
 # A world's new game that asks something first, such as a hero, and the player backing out of it.
 class TitleCommands

@@ -3,6 +3,8 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-08: Logged the Wine version the game runs under, if any
+//                            - Added mp_update_game, which starts the mod's updater
+//                            - Answered mp_update_game with 2 under Wine, whose missing PowerShell leaves the updater unable to run
 //      Paulinchen  2026-10-07: Kept every log, which no longer starts over, and logged the version started and whether the game keeps running in the background
 //                            - Answered a null buffer with the length needed, and opened Copy and Text to the tests
 //      Paulinchen  2026-09-30: Split the exports into files per area: Pvp, World, Directory and Input
@@ -25,6 +27,7 @@ using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
+using MGQParadox.Multiplayer.Mods;
 using MGQParadox.Multiplayer.Windows;
 
 namespace MGQParadox.Multiplayer;
@@ -124,6 +127,32 @@ internal static unsafe partial class Exports
         catch (Exception ex)
         {
             Log.Write($"mp_newer_version failed: {ex}");
+            return 0;
+        }
+    }
+
+    /// <summary>
+    /// Has the mod's updater update the mod once the game closed and start the game again. The game
+    /// script closes the game right after.
+    /// </summary>
+    /// <returns>1 when the updater waits for the game to close, 0 when it failed, 2 under Wine, where it cannot run.</returns>
+    [UnmanagedCallersOnly(EntryPoint = "mp_update_game", CallConvs = [typeof(CallConvStdcall)])]
+    public static int UpdateGame()
+    {
+        try
+        {
+            // Wine starts the batch file, but its cmd has no PowerShell, so the game would close for nothing.
+            if (NativeMethods.WineVersion() is { } wine)
+            {
+                Log.Write($"update not started: the updater needs Windows, and the game runs under Wine {wine}");
+                return 2;
+            }
+
+            return GameRestart.UpdateAfterExit(ModFolder.Root) ? 1 : 0;
+        }
+        catch (Exception ex)
+        {
+            Log.Write($"mp_update_game failed: {ex}");
             return 0;
         }
     }
