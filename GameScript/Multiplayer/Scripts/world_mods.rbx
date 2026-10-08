@@ -15,6 +15,7 @@
 #                            - Counted and named only the options this game's Mod Config has, and said when a world shares none yet
 #                            - Applied only settings of options a world may set in a mod's group of this game's Mod Config, never the game's own options
 #                            - Kept the world to enter when the game cannot start itself again under Wine or Proton, for the start the player makes by hand
+#                            - Offered the update on the title screen to an outdated game started again to enter a world
 #                            - Took only the directory's answer to its own settings, sending them again when another request took its place, and forgot them with the world
 #      Paulinchen  2026-10-07: Sent the Mod Config options of every installed catalog mod, whatever its version, until the relay holds the current version's
 #                            - Logged a catalog unknown at the first read too
@@ -506,8 +507,8 @@ module MGQ_MpWorldMods
   end
 
   # Writes the options dump when the World Admin tool asked for it, forgets a world the player backed
-  # out of before its new game, and opens the world screen to enter a world again after a restart.
-  # Called by the title screen every frame.
+  # out of before its new game, and opens the world screen to enter a world again after a restart,
+  # or offers the update once a newer release is out. Called by the title screen every frame.
   #
   # @param scene [Scene_Title] The title screen.
   def self.on_title_update(scene)
@@ -518,9 +519,11 @@ module MGQ_MpWorldMods
 
     id = take_rejoin
     return unless id
+    return log("not entering world #{MGQ_MpWorld.short(id)} again after the restart: the DLL is missing") unless MGQ_Multiplayer.available?
 
-    unless MGQ_Multiplayer.available? && !MGQ_Multiplayer.outdated?
-      return log("not entering world #{MGQ_MpWorld.short(id)} again after the restart: the DLL is missing or the mod is outdated")
+    if MGQ_Multiplayer.outdated?
+      log("not entering world #{MGQ_MpWorld.short(id)} again after the restart: the mod is outdated")
+      return MGQ_MpWorld.offer_update(scene)
     end
 
     @rejoining = id

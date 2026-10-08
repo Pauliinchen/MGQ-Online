@@ -4,6 +4,7 @@
 #  Changelog:
 #      Paulinchen  2026-10-08: Checked the update offer in place of the update notice, and the world screen opening after the update
 #                            - Checked that the update offer keeps the game open under Wine
+#                            - Checked that an outdated game offers the update for a Discord invite and for the entry after a restart for mods
 #      Paulinchen  2026-10-07: Checked that the worlds on this PC and the favourites are read once until one changes
 #                            - Looked each DLL call's signature up in the export table of Multiplayer.rb
 #                            - Checked that a form's switch turns round between its outcomes
@@ -487,3 +488,30 @@ check("then the world is opened with the invite instead of its password", [$call
 $calls.clear
 invited.join_invited(entries, "ready")
 check("once", $calls, [])
+
+# An outdated game offers the update on the title screen where it would open the world screen on
+# its own: for a Discord invite, and to enter a world again after a restart for its mods.
+class TitleMenu; def deactivate; @active = false; end; end
+$outdated = true
+offering = Scene_Title.new
+offering.instance_variable_set(:@command_window, TitleMenu.new)
+offer.hide
+MGQ_MpWorld::Invite.receive("mgqmp2;token;r1;4")
+$called = nil
+MGQ_MpWorld.on_title_update(offering)
+check("an outdated game offers the update for a Discord invite instead of opening the world screen, and drops the invite",
+      [$called, offer.shown?, offer.instance_variable_get(:@box).shown[0], offering.instance_variable_get(:@command_window).active, MGQ_MpWorld::Invite.take],
+      [nil, true, "Monster Girl Quest! Online 9.9.9 is out", false, nil])
+$pressed = :B
+offer.update
+$pressed = nil
+check("closing it gives the title's commands back", [offer.shown?, offering.instance_variable_get(:@command_window).active], [false, true])
+$player_ini = { "rejoin" => "w1" }
+MGQ_Multiplayer::Player.define_singleton_method(:setting) { |key| $player_ini[key] }
+MGQ_Multiplayer::Player.define_singleton_method(:store) { |key, value| $player_ini[key] = value.to_s }
+class Scene_Title; def scene_changing?; false; end; end
+MGQ_MpWorldMods.on_title_update(offering)
+check("so does an outdated game started again to enter a world, which it then no longer enters on its own",
+      [$called, offer.shown?, MGQ_MpWorldMods.rejoining, $player_ini["rejoin"]], [nil, true, nil, ""])
+offer.hide
+$outdated = false

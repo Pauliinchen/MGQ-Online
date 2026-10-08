@@ -9,6 +9,7 @@
 #                            - Left Multiplayer on the title screen enabled once a newer release is out, offering to update and install it in a message box in place of the notice on every title screen
 #                            - Opened the world screen when the game started again after the update
 #                            - Kept the game open under Wine or Proton, where the updater cannot run, telling how to update by hand
+#                            - Offered the update on the title screen to an outdated game for a Discord invite into a world, instead of waiting without a word
 #                            - Let the world screen and the world's mod settings each claim the directory action they start and take only its answer
 #      Paulinchen  2026-10-07: Registered the title screen's commands, its end and a world's new game through core_hooks.rbx, keeping only the path wraps as wraps of this script
 #                            - Kept the worlds on this PC and the favourites read until one changes, since the world screen asks every few frames
@@ -330,7 +331,7 @@ module MGQ_MpWorld
   def self.on_title_update(scene)
     return watch_new_game(scene) if @pending == :starting
     return if UpdateOffer.shown? || open_after_update(scene)
-    return Invite.on_title_update unless @pending == :new_game
+    return Invite.on_title_update(scene) unless @pending == :new_game
 
     @pending = nil
     log("new game in world #{@world.id}") if @world
@@ -390,6 +391,20 @@ module MGQ_MpWorld
 
     MGQ_MpGame.call(scene, :close_command_window)
     SceneManager.call(Scene_MpWorlds)
+  end
+
+  # Offers the update on the title screen once a newer release is out, as picking Multiplayer
+  # does, for what would otherwise open the world screen on its own: a Discord invite, or the
+  # entry again after a restart for a world's mods.
+  #
+  # @param scene [Scene_Title] The title screen.
+  def self.offer_update(scene)
+    return if UpdateOffer.shown?
+
+    commands = MGQ_MpGame.get(scene, :command_window)
+    # Picking Multiplayer deactivates the title's commands; the box gives them back as it closes.
+    commands.deactivate if commands && !commands.disposed?
+    UpdateOffer.show(scene)
   end
 
   # Opens the world screen once, when Update.ps1 started the game again after an update the title
@@ -639,10 +654,19 @@ module MGQ_MpWorld
       true
     end
 
-    # Opens the world screen for the invite taken last. Called by the title screen every frame
-    # while nothing else runs.
-    def self.on_title_update
-      return unless @pending && MGQ_MpWorld.available?
+    # Opens the world screen for the invite taken last, or offers the update in its place once a
+    # newer release is out. Called by the title screen every frame while nothing else runs.
+    #
+    # @param scene [Scene_Title] The title screen.
+    def self.on_title_update(scene)
+      return unless @pending
+
+      if MGQ_MpWorld::ENABLED && MGQ_Multiplayer.available? && MGQ_Multiplayer.outdated?
+        MGQ_MpWorld.log("not opening the world screen for the invite into world #{MGQ_MpWorld.short(@pending[0])}: the mod is outdated")
+        @pending = nil
+        return MGQ_MpWorld.offer_update(scene)
+      end
+      return unless MGQ_MpWorld.available?
 
       MGQ_MpWorld.log("opening the world screen for the invite into world #{MGQ_MpWorld.short(@pending[0])}")
       SceneManager.call(Scene_MpWorlds)
