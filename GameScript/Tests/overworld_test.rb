@@ -9,7 +9,7 @@
 #                            - Checked whispers and their list of names, the help tab, the bubbles' chats and that what Alt types with the numpad is dropped
 #                            - Checked that a log made with the mouse button held and the box open draws without failing, and that a player's message cannot pose as an admin's line
 #                            - Checked that a menu's choice that leaves closes the chat box without failing, by click and by Enter, that a battle's menu offers only the whisper
-#                            - Checked the closed log's whispers
+#                            - Checked the closed log's whispers and the separators a line loses
 #                            - Checked a global line too fast for the relay
 #      Paulinchen  2026-10-07: Checked the lines mirrored to the relay, the party chat kept from it, and an admin's line from the relay
 #                            - Checked scrolling the chat log
@@ -943,6 +943,9 @@ $inbox << entry("message", friend_seat, "chat=on the map\nch=say\nmap=5\nname=Fr
 MGQ_MpOverworldSync.tick
 check("the closed log shows whispers whatever its tab, another chat's lines only on their tab",
       [chat.log_lines.include?("[Whisper] Friend: only you"), chat.log_lines.include?("Friend: on the map")], [true, false])
+$inbox << entry("message", friend_seat, "chat=one two three\nname=Friend\n\n")
+MGQ_MpOverworldSync.tick
+check("a line loses its line and paragraph separators", chat.log_lines.last, "[Global] Friend: onetwothree")
 chat.select_tab(:all, "in the test")
 
 # A global line too fast for the relay.

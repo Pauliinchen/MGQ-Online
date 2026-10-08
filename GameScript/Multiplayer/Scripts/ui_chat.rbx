@@ -24,6 +24,7 @@
 #                            - Offered only the whisper in a player's menu during a battle
 #                            - Showed whispers in the closed chat log whatever the tab
 #                            - Mirrored a global line to the relay before sending it, turning it down when it comes too fast
+#                            - Left out the line and paragraph separators of players' and admins' lines
 #      Paulinchen  2026-10-07: Mirrored every line sent to everyone to the relay for the world's admins, and showed an admin's line from the relay as [Admin] in gold
 #                            - Closed the chat box with the numpad's 0, as the game's windows close
 #                            - Scrolled the chat log while the box is open with up, down, Page Up and Page Down, keeping the rows in place as lines come in
@@ -83,6 +84,10 @@ module MGQ_MpChat
 
   # What mp_world_say answers for a line of the global chat the relay got.
   SAID = 1
+
+  # What a player's or an admin's line loses: control characters and the line and paragraph
+  # separators, which would break the line in the log.
+  LINE_BREAKERS = /[[:cntrl:]  ]/
 
   # Windows' codes of Page Up and Page Down, which scroll the chat log a page.
   PAGE_UP_KEY = 0x21
@@ -834,7 +839,7 @@ module MGQ_MpChat
     take_line(peer, message["whisper"], message["name"], :whisper)
   end
 
-  # Adds another player's line, without control characters and cut to MAX_LENGTH.
+  # Adds another player's line, without LINE_BREAKERS and cut to MAX_LENGTH.
   #
   # @param peer [MGQ_MpOverworldSync::Peers::Peer, nil] Who sent it.
   # @param text [String, nil] The line.
@@ -842,7 +847,7 @@ module MGQ_MpChat
   # @param channel [Symbol] Its chat, one of CHANNELS.
   # @param admin [Boolean] Whether an admin said it through the relay, from outside the game.
   def self.take_line(peer, text, name, channel, admin = false)
-    text = text.to_s.gsub(/[[:cntrl:]]/, "").strip[0, MAX_LENGTH]
+    text = text.to_s.gsub(LINE_BREAKERS, "").strip[0, MAX_LENGTH]
     sender = peer ? MGQ_MpOverworldSync.who(peer) : admin ? "the admin #{name} through the relay" : "#{name} (no state yet, no bubble)"
     return log("dropped an empty #{TAB_NAMES[channel]} line from #{sender}") if text.empty?
 
