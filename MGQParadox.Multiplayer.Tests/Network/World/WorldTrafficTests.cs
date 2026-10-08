@@ -2,6 +2,7 @@
 //  WorldTrafficTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-08: Covered the cap on the kinds a line names
 //      Paulinchen  2026-10-07: Created
 //
 //----------------------------------------------------------------
@@ -72,5 +73,29 @@ public sealed class WorldTrafficTests
     {
         Assert.Equal("duel", WorldTraffic.KindOf("duel=start\nbid=x\n\nbody"));
         Assert.Equal("no keys", WorldTraffic.KindOf("plain text"));
+    }
+
+    /// <summary>
+    /// Asserts that the kinds past the cap are counted as "other", while the kinds named already go on counting.
+    /// </summary>
+    [Fact]
+    public void Received_CountsKindsPastTheCapAsOther()
+    {
+        var lines = new List<string>();
+        var traffic = new WorldTraffic(() => Start, lines.Add);
+
+        for (var kind = 0; kind < WorldTraffic.MaxKinds + 5; kind++)
+        {
+            traffic.Received(1, $"k{kind:D2}=1\n\n", 10);
+        }
+
+        traffic.Received(1, "k00=1\n\n", 10);
+        traffic.Flush();
+
+        var line = Assert.Single(lines);
+        Assert.Contains("k00 2, ", line);
+        Assert.Contains($"k{WorldTraffic.MaxKinds - 1:D2} 1", line);
+        Assert.DoesNotContain($"k{WorldTraffic.MaxKinds:D2}", line);
+        Assert.Contains($"{WorldTraffic.OtherKind} 5", line);
     }
 }

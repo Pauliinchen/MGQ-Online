@@ -2,6 +2,7 @@
 //  WorldTraffic.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-08: Counted at most 32 kinds of messages per direction and line, the rest as "other", since other games name the kinds
 //      Paulinchen  2026-10-07: Created
 //
 //----------------------------------------------------------------
@@ -27,6 +28,17 @@ internal sealed class WorldTraffic
     /// How long the traffic is counted before its line is written.
     /// </summary>
     public static readonly TimeSpan Interval = TimeSpan.FromMinutes(1);
+
+    /// <summary>
+    /// How many kinds of messages one direction's tally names, since the other games name the kinds
+    /// of the messages received.
+    /// </summary>
+    internal const int MaxKinds = 32;
+
+    /// <summary>
+    /// What the messages of every kind past <see cref="MaxKinds"/> are counted as.
+    /// </summary>
+    internal const string OtherKind = "other";
 
     /// <summary>
     /// Guards every field below. Held only for a moment.
@@ -145,7 +157,8 @@ internal sealed class WorldTraffic
     }
 
     /// <summary>
-    /// Counts a message into one direction's tally, starting the counting with the first.
+    /// Counts a message into one direction's tally, starting the counting with the first, and as
+    /// <see cref="OtherKind"/> once the tally names <see cref="MaxKinds"/> kinds.
     /// </summary>
     /// <param name="tally">The direction's counts by kind.</param>
     /// <param name="text">The message.</param>
@@ -154,6 +167,12 @@ internal sealed class WorldTraffic
     {
         _since ??= _now();
         var kind = KindOf(text);
+
+        if (tally.Count >= MaxKinds && !tally.ContainsKey(kind))
+        {
+            kind = OtherKind;
+        }
+
         tally.TryGetValue(kind, out var counted);
         tally[kind] = (counted.Count + 1, counted.Bytes + bytes);
     }
