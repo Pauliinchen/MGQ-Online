@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-08: Checked that a follower whose sprite this game lacks shows the outline of Luka's, how the outline is drawn, and that the graphics checked stay few
+#                            - Checked which tabs a line marks unread and that the All tab takes them as seen
 #                            - Checked that a ghost's name tag numbers a name two players share as the chat does, and is drawn anew once one of them left
 #                            - Started the status's count of frames anew before checking a new connection's seat, which a status look in the same frame replaced depending on how many frames the checks before took
 #                            - Checked the global, say and party chats, the commands that choose them, the log's tabs, its size and its depth while typing
@@ -1014,7 +1015,10 @@ check("the closed log shows whispers whatever its tab, another chat's lines only
 $inbox << entry("message", friend_seat, "chat=one two three\nname=Friend\n\n")
 MGQ_MpOverworldSync.tick
 check("a line loses its line and paragraph separators", chat.log_lines.last, "[Global] Friend: onetwothree")
+check("a say line that came on the Global tab marks the Say tab unread, the whisper and the global line none", chat.unread_tabs, [:say])
 chat.select_tab(:all, "in the test")
+MGQ_MpOverworldSync.tick
+check("the All tab takes every line as seen", chat.unread_tabs, [])
 
 # Two players of the same name, and the map a say line was said on.
 peers = MGQ_MpOverworldSync::Peers

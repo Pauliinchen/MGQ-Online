@@ -14,6 +14,7 @@
 #                            - Drew the bubbles in their chat's color, slightly see-through
 #                            - Lowered the bubbles to just over the name, going one line higher while a line such as an invite shows above it
 #                            - Shortened the empty chat box's hint to scrolling, Alt and /help, and showed the tab and resize controls in its place while Alt is held
+#                            - Let the Global, Party and Say tabs glow yellow at their top right corner while they hold lines the player has not seen, opaque at the corner
 #                            - Picked the tabs and resized with the left Alt alone, dropping what it typed as an Alt code with the numpad, which showed a symbol the font lacks
 #                            - Outlined the tabs and the open chat thinly, the chat in white while Alt is held to resize it, the picked tab open into the chat
 #                            - Filled the picked tab with its chat's color under dark text, which white tabs lacked the contrast for
@@ -128,6 +129,9 @@ module MGQ_MpChat
   # right while it is open.
   TABS = [:all] + CHANNELS
 
+  # The chats whose tab marks lines the player has not seen yet.
+  UNREAD_CHATS = [:global, :party, :say]
+
   # What the tabs say.
   TAB_NAMES = { :all => "All", :global => "Global", :party => "Party", :say => "Say", :whisper => "Whisper", :help => "Help" }
 
@@ -230,6 +234,7 @@ module MGQ_MpChat
   @scroll = 0
   @channel = :say
   @tab = :all
+  @unread = {}
   @whisper_to = nil
   @whisper_id = nil
   @pick = 0
@@ -266,6 +271,19 @@ module MGQ_MpChat
   # @return [Array<Symbol>] The tabs, in their order.
   def self.tabs
     @tab == :help ? TABS + [:help] : TABS
+  end
+
+  # Lists the tabs with lines the player has not seen yet: lines of a chat in UNREAD_CHATS that
+  # came while neither its tab nor All was picked.
+  #
+  # @return [Array<Symbol>] The tabs, in TABS order.
+  def self.unread_tabs
+    UNREAD_CHATS.select { |chat| @unread[chat] }
+  end
+
+  # Takes the picked tab's lines as seen, all of them on the All tab.
+  def self.see_tab
+    @tab == :all ? @unread.clear : @unread.delete(@tab)
   end
 
   # Picks a tab of the log. A chat's tab also chooses that chat for the lines after it; leaving the
@@ -945,6 +963,7 @@ module MGQ_MpChat
     who = sender == :me ? :me : admin ? :admin : (member ? :member : :other)
     push(Line.new(name.to_s, text, who, channel, 0, to, id))
     @bubbles[sender] = [text, BUBBLE_FRAMES, channel] unless sender.nil?
+    @unread[channel] = true if sender != :me && UNREAD_CHATS.include?(channel) && @tab != channel && @tab != :all
   end
 
   # Adds a line of the game's own to the log, such as a player leaving a battle, which shows in
@@ -978,6 +997,7 @@ module MGQ_MpChat
     log("forgot #{@log.size} chat lines as the world closed (#{@sent} sent, #{@received} received)") unless @log.empty?
     @log.clear
     @bubbles.clear
+    @unread.clear
     @whisper_to = nil
     @whisper_id = nil
     @sent = 0
@@ -1048,6 +1068,7 @@ module MGQ_MpChat
     @frame += 1
     scene = SceneManager.scene
     stop_typing("#{scene.class.name} shows, neither the map nor a battle") unless in_world && (scene.is_a?(Scene_Map) || scene.is_a?(Scene_Battle))
+    see_tab
     in_world ? count_down : reset
   end
 
@@ -1280,8 +1301,19 @@ class Sprite_MpChatLog < Sprite
   LIST_BACK = Color.new(20, 20, 20, 230)
   LIST_PICKED = Color.new(255, 255, 255, 80)
 
+  # How opaque a tab's background is.
+  TAB_ALPHA = 120
+
   # Background of a tab. The picked one is filled with its chat's color instead, under TAB_INK.
-  TAB_BACK = Color.new(0, 0, 0, 120)
+  TAB_BACK = Color.new(0, 0, 0, TAB_ALPHA)
+
+  # The yellow a tab with unread lines glows in at its top right corner, red, green and blue, over
+  # TAB_BACK's black. It grows from the tab's opacity to fully opaque toward the corner, since at the
+  # tab's own it barely stood out.
+  UNREAD_GLOW = [255, 220, 60]
+
+  # How far from the top right corner the glow reaches, in pixels.
+  UNREAD_REACH = 28
 
   # Color of the picked tab's name, dark on its chat's color.
   TAB_INK = Color.new(20, 20, 20)
@@ -1365,7 +1397,7 @@ class Sprite_MpChatLog < Sprite
     older = lines.size < entries.size || rows.size - scroll > @rows
     alt = typing && MGQ_Multiplayer::Key.down?(MGQ_MpChat::ALT_KEY)
     drawn = [shown.map { |row, line, first| [row, line.who, line.channel, first] }, older, scroll, chat.typed, chat.cursor,
-             typing && chat.cursor_shown?, chat.tab, chat.channel, chat.whisper_to, chat.suggestions, chat.pick, alt, @size]
+             typing && chat.cursor_shown?, chat.tab, chat.channel, chat.whisper_to, chat.suggestions, chat.pick, alt, @size, chat.unread_tabs]
     return if drawn == @shown
 
     @shown = drawn
@@ -1582,6 +1614,7 @@ class Sprite_MpChatLog < Sprite
       color = CHANNEL_COLORS.fetch(tab, TEXT_COLOR)
       picked = tab == chat.tab
       bitmap.fill_rect(at, 0, width, TAB_ROW, picked ? color : TAB_BACK)
+      draw_unread_glow(at + width) if !picked && chat.unread_tabs.include?(tab)
       # The outline would smear dark text on a light tab.
       bitmap.font.outline = !picked
       draw_part(at + TAB_PAD, 0, name, picked ? TAB_INK : color, TAB_ROW)
@@ -1590,6 +1623,25 @@ class Sprite_MpChatLog < Sprite
       @picked_gap = [at + 1, at + width - 1] if picked
       @tab_spots.push([tab, at, width])
       left += width + 2
+    end
+  end
+
+  # Lets a tab glow yellow at its top right corner, fading toward its middle, for lines the player
+  # has not seen yet.
+  #
+  # @param right [Integer] The tab's right edge.
+  def draw_unread_glow(right)
+    UNREAD_REACH.times do |down|
+      break if down >= TAB_ROW
+
+      UNREAD_REACH.times do |left|
+        strength = 1.0 - Math.sqrt(down * down + left * left) / UNREAD_REACH
+        next if strength <= 0
+
+        red, green, blue = UNREAD_GLOW.map { |part| (part * strength).round }
+        alpha = (TAB_ALPHA + (255 - TAB_ALPHA) * strength).round
+        bitmap.fill_rect(right - 1 - left, down, 1, 1, Color.new(red, green, blue, alpha))
+      end
     end
   end
 
