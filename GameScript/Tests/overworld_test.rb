@@ -12,7 +12,7 @@
 #                            - Checked that a menu's choice that leaves closes the chat box without failing, by click and by Enter, that a battle's menu offers only the whisper
 #                            - Checked the closed log's whispers, the separators a line loses, numbered names of players sharing one, and the say chat by the map its line was said on
 #                            - Checked that a line of a player whose name another shares shows their numbered name
-#                            - Checked the 0 after Numpad 0 closed a menu and a global line too fast for the relay
+#                            - Checked the 0 after Numpad 0 closed a menu, a global line too fast for the relay and the size kept in a battle
 #      Paulinchen  2026-10-07: Checked the lines mirrored to the relay, the party chat kept from it, and an admin's line from the relay
 #                            - Checked scrolling the chat log
 #                            - Checked that the numpad's 0 closes the chat box
@@ -1011,6 +1011,16 @@ map_frame
 check("a global line coming too fast is turned down and goes to nobody",
       [$sent, MGQ_MpOverworldSync::Status.lines.last, chat.log_lines.include?("[Global] Me: spam")], [[], "You are sending too fast. Wait a moment, then send the line again.", false])
 $say_result = nil
+
+# The log in a battle's smaller room, and a line broken right after the name.
+kept_size = chat.size.dup
+chat.resize(400, 14)
+log_sprite.instance_variable_set(:@bottom_room, Sprite_MpChatLog::BATTLE_ROOM)
+log_sprite.fit(chat)
+check("a battle's smaller room draws fewer rows but keeps the chat's size", [log_sprite.instance_variable_get(:@rows) < 14, chat.size], [true, [400, 14]])
+log_sprite.instance_variable_set(:@bottom_room, Sprite_MpChatLog::STATUS_ROOM)
+chat.resize(*kept_size)
+log_sprite.fit(chat)
 
 # The wheel's middle, which it opens on, and the pick it keeps once the arrows are let go.
 MGQ_MpActions::Wheel.open

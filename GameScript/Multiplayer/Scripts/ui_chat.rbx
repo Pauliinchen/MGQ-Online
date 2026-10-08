@@ -28,6 +28,7 @@
 #                            - Sent a line of the say chat once to everyone with the sender's map, on which alone it shows
 #                            - Mirrored a global line to the relay before sending it, turning it down when it comes too fast
 #                            - Left out the 0 that the numpad's 0 types after it closed a player's menu
+#                            - Kept the chat's size while a battle draws the log smaller, and kept a drag within the screen
 #                            - Left out the line and paragraph separators of players' and admins' lines
 #      Paulinchen  2026-10-07: Mirrored every line sent to everyone to the relay for the world's admins, and showed an admin's line from the relay as [Admin] in gold
 #                            - Closed the chat box with the numpad's 0, as the game's windows close
@@ -1341,15 +1342,13 @@ class Sprite_MpChatLog < Sprite
     draw_names(chat) if typing
   end
 
-  # Makes the log as large as the chat says, within the screen: as wide as MIN_WIDTH up to the
-  # screen's right edge, and as many rows as MIN_ROWS up to as many as fit above the room kept below it.
+  # Makes the log as large as the chat says, within the screen, see within_screen.
+  #
+  # The chat keeps its own size, so a battle's smaller room never shrinks the map's log.
   #
   # @param chat [Module] MGQ_MpChat.
   def fit(chat)
-    most_rows = (Graphics.height - @bottom_room - TAB_ROW) / ROW - 1
-    width = [[chat.size[0], MIN_WIDTH].max, Graphics.width - x - 8].min
-    rows = [[chat.size[1], MIN_ROWS].max, most_rows].min
-    chat.resize(width, rows) unless [width, rows] == chat.size
+    width, rows = within_screen(chat.size)
     return if [width, rows] == @size
 
     @size = [width, rows]
@@ -1361,6 +1360,16 @@ class Sprite_MpChatLog < Sprite
     self.y = Graphics.height - @bottom_room - bitmap.height
     @shown = nil
     @wrapped.clear
+  end
+
+  # Keeps a size of the log within the screen: as wide as MIN_WIDTH up to the screen's right edge,
+  # and as many rows as MIN_ROWS up to as many as fit above the room kept below it.
+  #
+  # @param size [Array<Integer>] The width and the rows of lines.
+  # @return [Array<Integer>] The width and the rows that fit.
+  def within_screen(size)
+    most_rows = (Graphics.height - @bottom_room - TAB_ROW) / ROW - 1
+    [[[size[0], MIN_WIDTH].max, Graphics.width - x - 8].min, [[size[1], MIN_ROWS].max, most_rows].min]
   end
 
   # Follows the mouse while the chat box is open: a click on a tab picks it, and Alt held while the
@@ -1377,7 +1386,7 @@ class Sprite_MpChatLog < Sprite
     position = mouse.position
     return follow_menu(chat, position, went_down) if chat.menu
     return unless went_down && position && inside?(position)
-    return @drag = [position, chat.size] if MGQ_Multiplayer::Key.down?(MGQ_MpChat::ALT_KEY)
+    return @drag = [position, @size] if MGQ_Multiplayer::Key.down?(MGQ_MpChat::ALT_KEY)
 
     name = @name_spots.find { |_, left, right, top| position[0] >= x + left && position[0] < x + right && position[1] >= y + top && position[1] < y + top + ROW }
     return chat.open_menu(name[0], [x + name[1], y + name[3]]) if name
@@ -1455,14 +1464,15 @@ class Sprite_MpChatLog < Sprite
     @menu_sprite.y = [menu[:at][1] - picture.height, 0].max
   end
 
-  # Resizes the log by how far the mouse moved since the drag started, rows by whole rows.
+  # Resizes the log by how far the mouse moved since the drag started, rows by whole rows, within
+  # the screen.
   #
   # @param chat [Module] MGQ_MpChat.
   # @param position [Array<Integer>, nil] Where the mouse points, nil outside the window.
   # @param held [Boolean] Whether the left button is still held, else the drag ends.
   def drag(chat, position, held)
     start, size = @drag
-    chat.resize(size[0] + position[0] - start[0], size[1] + ((start[1] - position[1]) / ROW.to_f).round) if position
+    chat.resize(*within_screen([size[0] + position[0] - start[0], size[1] + ((start[1] - position[1]) / ROW.to_f).round])) if position
     fit(chat)
     finish_drag(chat) unless held
   end
