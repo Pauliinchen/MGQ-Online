@@ -2,9 +2,9 @@
 #  hooks_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-08: Checked that a wrap of a method not defined yet is made at the next try
-#      Paulinchen  2026-10-07: Checked that the hooks are logged as one line per script, once
-#                            - Checked that who holds the player is logged when it changes
+#      Paulinchen  2026-10-08: Checked that the hook report counts each method once and names it, and that a wrap of a method not defined yet is made at the next try
+#                            - Checked that the hooks are logged as one line per script, once
+#      Paulinchen  2026-10-07: Checked that who holds the player is logged when it changes
 #      Paulinchen  2026-10-04: Followed the scripts to their new names, without mp_
 #      Paulinchen  2026-10-03: Checked around and holding the player
 #      Paulinchen  2026-10-02: Created
@@ -93,7 +93,10 @@ check("and the replacement is logged", $log.grep(/two wrapped Scene_Around#doubl
 $log.clear
 MGQ_MpHooks.report
 check("the hooks are logged as one line per script with how many methods it follows and wraps, not one per method",
-      $log.grep(/: follows \d+, wraps \d+ game method\(s\)\z/).size == $log.size && $log.grep(/hooks: one: follows 0, wraps 2 game method/).size, 1)
+      $log.grep(/: follows \d+, wraps \d+ game method\(s\): /).size == $log.size && $log.grep(/hooks: one: follows 0, wraps 2 game method/).size, 1)
+check("a method followed before and after counts once, and the line names it",
+      $log.grep(/hooks: first: follows 1, wraps 0 game method\(s\): follows Scene_Test#update\z/).size, 1)
+check("the line names the methods a script wraps", $log.grep(/hooks: one: .*: wraps Scene_Around#double, Scene_Around#hidden\z/).size, 1)
 $log.clear
 MGQ_MpHooks.report
 check("and once only", $log, [])
@@ -109,6 +112,9 @@ end
 class Scene_Late; def value; 1; end; end
 MGQ_MpHooks.around(Scene_Late, :value, "late") { |_scene, _args, original| original.call + 1 }
 check("a wrap of a method not defined yet fails, and the next try wraps it", [failed, Scene_Late.new.value], [true, 2])
+$log.clear
+MGQ_MpHooks.report
+check("and counts it once", $log.grep(/hooks: late: follows 0, wraps 1 game method\(s\): wraps Scene_Late#value\z/).size, 1)
 
 # Holding the player: no moving, no menu, while any script says so.
 class Game_Player; def movable?; true; end; end

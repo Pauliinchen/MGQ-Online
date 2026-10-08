@@ -2,9 +2,10 @@
 #  core_hooks.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-08: Kept a wrap of around only once the method was wrapped, so a script registering again wraps a method that was not defined at its first try
-#      Paulinchen  2026-10-07: Counted the methods each script follows and wraps and logged them as one line per script through report, instead of a line per method
-#                            - Gave around the script that registers, so a script loaded again replaces its wrap instead of wrapping the method a second time
+#      Paulinchen  2026-10-08: Counted the distinct methods each script follows and wraps, and named them in its line of report
+#                            - Kept a wrap of around only once the method was wrapped, so a script registering again wraps a method that was not defined at its first try
+#                            - Counted the methods each script follows and wraps and logged them as one line per script through report, instead of a line per method
+#      Paulinchen  2026-10-07: Gave around the script that registers, so a script loaded again replaces its wrap instead of wrapping the method a second time
 #                            - Logged each hook a script registers, each wrap, and who holds the player whenever that changes
 #      Paulinchen  2026-10-06: Kept the map's menu shut through MGQ_MpGame
 #      Paulinchen  2026-10-04: Renamed from mp_hooks.rbx
@@ -43,7 +44,8 @@ module MGQ_MpHooks
   # What holds the player, by the script that registered it.
   @holds ||= {}
 
-  # The methods each script followed and wrapped since report last wrote them, by the script.
+  # The methods each script followed and wrapped since report last wrote them, by the script: two
+  # hashes whose keys name each method once, such as "Scene_Map#update".
   @installed ||= {}
 
   extend MGQ_MpLog
@@ -90,7 +92,7 @@ module MGQ_MpHooks
     blocks[moment][script] = block
     ready[:before].replace(blocks[:before].to_a.reverse)
     ready[:after].replace(blocks[:after].to_a)
-    again ? log("#{script} follows #{owner}##{name} (#{moment}, registered again)") : count(script, 0)
+    again ? log("#{script} follows #{owner}##{name} (#{moment}, registered again)") : count(script, 0, owner, name)
   rescue => e
     log("#{script} could not follow #{owner}##{name}: #{e.class}: #{e.message}")
   end
@@ -155,24 +157,31 @@ module MGQ_MpHooks
     end
     owner.send(:private, name) if was_private
     @bodies[key] = cell
-    count(script, 1)
+    count(script, 1, owner, name)
   end
 
-  # Counts a method a script followed or wrapped, for report.
+  # Notes a method a script followed or wrapped, for report.
   #
   # @param script [String] Who registered.
   # @param kind [Integer] 0 for a method followed, 1 for one wrapped.
-  def self.count(script, kind)
-    (@installed[script] ||= [0, 0])[kind] += 1
+  # @param owner [Module] The class that has the method.
+  # @param name [Symbol] The method.
+  def self.count(script, kind, owner, name)
+    (@installed[script] ||= [{}, {}])[kind]["#{owner}##{name}"] = true
   end
 
-  # Writes how many methods each script followed and wrapped since the last report, one line per
-  # script, instead of a line per method, which made up some 170 lines of every session's log.
-  # Called once the scripts loaded, and every frame for the hooks scripts register as the game runs.
+  # Writes how many methods each script followed and wrapped since the last report, and which, one
+  # line per script, instead of a line per method, which made up some 170 lines of every session's
+  # log. Called once the scripts loaded, and every frame for the hooks scripts register as the game
+  # runs.
   def self.report
     return if @installed.empty?
 
-    @installed.each { |script, (followed, wrapped)| log("#{script}: follows #{followed}, wraps #{wrapped} game method(s)") }
+    @installed.each do |script, (followed, wrapped)|
+      named = [["follows", followed], ["wraps", wrapped]].reject { |_, methods| methods.empty? }
+      log("#{script}: follows #{followed.size}, wraps #{wrapped.size} game method(s): " +
+          named.map { |verb, methods| "#{verb} #{methods.keys.join(', ')}" }.join("; "))
+    end
     @installed.clear
   rescue => e
     log("hook report failed: #{e.class}: #{e.message}")
