@@ -88,8 +88,10 @@ module MGQ_MpWorldMods
   # The row's name, in Monster Girl Quest! Online's group.
   ROW_NAME = "[Monster Girl Quest! Online] Shared Mod Settings"
 
-  # What the row's values say.
+  # What the row says while On.
   ROW_ON_HELP = "Every player here plays with the creator's mod options."
+
+  # What the row says while Off.
   ROW_OFF_HELP = "Each player here sets their own mod options."
 
   # Monster Girl Quest! Online's own group in Mod Config, which the options dump leaves out.
@@ -128,40 +130,81 @@ module MGQ_MpWorldMods
   # The options dump's first line, its format.
   DUMP_HEADER = "mgqmp-options\t1"
 
-  # An option's name that opens its mod's group, and one that joins the group above, as Mod
-  # Config Remake reads them.
+  # An option's name that opens its mod's group, "[Mod Name] Option", as Mod Config Remake reads it.
   MOD_NAME = /\A\s*\[([^\]]+)\]\s*/
+
+  # An option's name that joins the group above: indented, or behind an arrow.
   INDENTED = /\A(\s|->)/
 
-  # What the notification box says, its key, how long, and how many lines of how many characters,
-  # which leaves room for two invites in its five rows.
+  # The key of this script's lines in the notification box.
   NOTICE_KEY = :world_mod_settings
+
+  # Frames a notice shows, ten seconds.
   NOTICE_FRAMES = 600
+
+  # Most lines a notice takes, which leaves room for two invites in the box's five rows.
   NOTICE_LINES = 3
+
+  # Most characters of a notice's line.
+  #
   # The box draws 378 pixels wide at size 16, where the game's VL Gothic has Latin letters 8 pixels
   # wide; a longer line is squeezed.
   NOTICE_LINE_CHARS = 46
 
-  # Most mods and changed options a notice names before it counts the rest.
+  # Most mods a notice names before it counts the rest.
   NAMED_MODS = 2
+
+  # Most changed options a notice names before it counts the rest.
   NAMED_CHANGES = 2
 
-  # What the player is told, the creator's name, the options or the changes filled in.
+  # What another player is told as they play in a world that shares settings, the creator's name
+  # and the options set filled in.
   STAY_TEXT = "%s shares mod settings here: %s set for you. Your own saves keep yours."
+
+  # What another player is told instead when none of the settings are for their mods.
   STAY_EMPTY_TEXT = "%s shares mod settings here, but none are set for your mods yet."
+
+  # What the creator is told as they play in their world that shares settings, the mods filled in.
   STAY_CREATOR_TEXT = "You share your options of %s with every player here."
+
+  # What the creator is told instead when the world's mods have no options to share.
   STAY_CREATOR_NONE_TEXT = "You share your mod settings here, but this world's mods have no options to share."
+
+  # What another player is told once the world starts sharing settings, the creator's name and the
+  # options set filled in.
   NOW_SHARED_TEXT = "%s now shares mod settings: %s set for you. Your own saves keep yours."
+
+  # What another player is told instead when none of the settings are for their mods.
   NOW_SHARED_EMPTY_TEXT = "%s now shares mod settings, but none are set for your mods yet."
+
+  # What another player is told of a change, the creator's name and the changes filled in.
   CHANGED_TEXT = "%s changed the shared mod settings: %s."
+
+  # What another player is told once the world stops sharing settings, the creator's name filled in.
   NO_LONGER_TEXT = "%s stopped sharing mod settings: you can set your own options again. Your save here keeps the values so far."
+
+  # What the creator is told once sharing is on, the mods filled in.
   CREATOR_ON_TEXT = "Shared Mod Settings on: players here get your options of %s."
+
+  # What the creator is told instead when the world's mods have no options to share.
   CREATOR_ON_NONE_TEXT = "Shared Mod Settings on, but this world's mods have no options to share."
+
+  # What the creator is told once sharing is off.
   CREATOR_OFF_TEXT = "Shared Mod Settings off: every player here sets their own mod options again."
+
+  # What the creator is told of a change every player got, the changes filled in.
   CREATOR_CHANGE_TEXT = "Shared with every player: %s."
+
+  # What the creator is told when the relay refused the settings, why filled in.
   FAILED_TEXT = "The world's mod settings could not be saved: %s"
+
+  # Why, when the relay never answered.
   NO_ANSWER_TEXT = "the relay did not answer."
+
+  # What the creator is told, once, while settings cannot be sent.
   NOT_SENT_TEXT = "The world's mod settings could not be sent yet. Trying again in a moment."
+
+  # What the creator is told first when options did not fit, how many filled in.
   LEFT_OUT_TEXT = "%d option(s) did not fit and were left out."
 
   # What the creator is told once the relay holds settings someone else set, such as an admin, the
