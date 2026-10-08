@@ -2,11 +2,14 @@
 //  WorldLockTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-08: Opened a lock made with .NET's PBKDF2, as earlier versions made them
 //      Paulinchen  2026-09-29: Created
 //
 //----------------------------------------------------------------
 
 using System.Linq;
+using System.Security.Cryptography;
+using System.Text;
 using MGQParadox.Multiplayer.Network.Pvp;
 using MGQParadox.Multiplayer.Network.Relay;
 using MGQParadox.Multiplayer.Network.World;
@@ -39,7 +42,7 @@ public sealed class WorldLockTests
 
         Assert.Matches("^[0-9a-f]{32}$", worldLock.Salt);
         Assert.Equal(FewIterations, worldLock.Iterations);
-        Assert.DoesNotContain(WorldKeys.Hex(System.Text.Encoding.UTF8.GetBytes(Token)), worldLock.Box);
+        Assert.DoesNotContain(WorldKeys.Hex(Encoding.UTF8.GetBytes(Token)), worldLock.Box);
         Assert.Equal(Token, worldLock.Open("Ilias ♥ 2"));
     }
 
@@ -56,6 +59,23 @@ public sealed class WorldLockTests
         Assert.Null((worldLock with { Box = worldLock.Box[..^2] + (worldLock.Box[^2..] == "00" ? "01" : "00") }).Open("secret"));
         Assert.Null((worldLock with { Box = "zz" }).Open("secret"));
         Assert.Null((worldLock with { Salt = "00" }).Open("secret"));
+    }
+
+    /// <summary>
+    /// Asserts that a lock made with .NET's PBKDF2, as earlier versions made every lock, still opens
+    /// with its password, an empty one included, which a world without a password is locked with.
+    /// </summary>
+    /// <param name="password">The password.</param>
+    [Theory]
+    [InlineData("")]
+    [InlineData("Ilias ♥ 2")]
+    public void LockOfEarlierVersions_StillOpens(string password)
+    {
+        var salt = RandomNumberGenerator.GetBytes(16);
+        var key = Rfc2898DeriveBytes.Pbkdf2(Encoding.UTF8.GetBytes(password), salt, FewIterations, HashAlgorithmName.SHA256, SealedBox.KeyBytes);
+        var worldLock = new WorldLock(WorldKeys.Hex(salt), FewIterations, WorldKeys.Hex(SealedBox.Seal(key, Encoding.UTF8.GetBytes(Token))));
+
+        Assert.Equal(Token, worldLock.Open(password));
     }
 
     /// <summary>

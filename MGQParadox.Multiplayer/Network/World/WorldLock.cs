@@ -2,6 +2,7 @@
 //  WorldLock.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-08: Derived the password's key with a PBKDF2 of its own, which runs under Proton too
 //      Paulinchen  2026-10-07: Sealed the token through SealedBox, shared with the trades and the starting save
 //      Paulinchen  2026-10-06: Hashed new locks' passwords 600 000 times instead of 200 000
 //      Paulinchen  2026-09-29: Created
@@ -78,5 +79,5 @@ internal sealed record WorldLock(string Salt, int Iterations, string Box)
     /// <param name="iterations">How often PBKDF2 hashes the password.</param>
     /// <returns>The key.</returns>
     private static byte[] KeyOf(string password, byte[] salt, int iterations) =>
-        Rfc2898DeriveBytes.Pbkdf2(Encoding.UTF8.GetBytes(password), salt, iterations, HashAlgorithmName.SHA256, SealedBox.KeyBytes);
+        Pbkdf2Sha256.DeriveKey(Encoding.UTF8.GetBytes(password), salt, iterations, SealedBox.KeyBytes);
 }
