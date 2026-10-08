@@ -2,6 +2,8 @@
 #  trade_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-08: Checked that a trade id that is not valid is turned down with its own notice
+#                            - Checked the invalid reason the player who offered the trade sees, and a reason of another build
 #      Paulinchen  2026-10-07: Checked that a trade the player accepted but cannot open is turned down with a notice
 #                            - Checked that an autosave loaded forgets the slot a trade saves into
 #                            - Looked each DLL call's signature up in the export table of Multiplayer.rb
@@ -267,6 +269,24 @@ check("a trade the player accepted but cannot open now, here in the menu, is tur
       [trade.session, trade_sent.map { |_, f| [f["trade"], f["reason"]] }, MGQ_MpOverworldSync::Status.lines.last],
       [nil, [["decline", "busy"]], "The trade with Friend could not open: finish what you are doing first."])
 SceneManager.scene = Scene_Map.new
+trade.accept(peer)
+$sent.clear
+$inbox << entry("message", 2, "trade=open\ntid=not-an-id\n\n")
+MGQ_MpOverworldSync.tick
+check("a trade id that is not valid is turned down as invalid, telling the player only that it could not open",
+      [trade.session, trade_sent.map { |_, f| [f["trade"], f["reason"]] }, MGQ_MpOverworldSync::Status.lines.last],
+      [nil, [["decline", "invalid"]], "The trade with Friend could not open."])
+trade.invite
+$inbox << entry("message", 2, "trade=accept\n\n")
+MGQ_MpOverworldSync.tick
+tid = trade_sent.last[1]["tid"]
+$inbox << entry("message", 2, "trade=decline\ntid=#{tid}\nreason=invalid\n\n")
+MGQ_MpOverworldSync.tick
+check("the player who offered it sees that the trade could not open, not that the other is busy",
+      [trade.session, MGQ_MpOverworldSync::Status.lines.last], [nil, "The trade could not open."])
+$inbox << entry("message", 2, "trade=decline\nreason=newer\n\n")
+MGQ_MpOverworldSync.tick
+check("a reason of another build says the other player cannot trade now", MGQ_MpOverworldSync::Status.lines.last, "Friend cannot trade now.")
 trade.invite
 $sent.clear
 $inbox << entry("message", 2, "trade=accept\n\n")

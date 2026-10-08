@@ -2,7 +2,9 @@
 #  trade.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-08: Showed an accepted trade offer again in the notification box once its player turned the accept down
+#      Paulinchen  2026-10-08: Told the player only that a trade with an id that is not valid could not open, instead of to finish what they are doing
+#                            - Showed an accepted trade offer again in the notification box once its player turned the accept down
+#                            - Declined a trade with an id that is not valid with the reason invalid, for which the other player sees that the trade could not open
 #      Paulinchen  2026-10-07: Told the player when a trade they accepted could not open, such as from the menu
 #                            - Let a world's latest autosave load again: its name is no slot a trade saves into, which raised inside the game's load
 #                            - Logged where opening the screen failed and the pictures in memory
@@ -76,7 +78,12 @@ module MGQ_MpTrade
     "no" => "declined your trade",
     "off" => "cancelled the trade",
     "relay" => "could not reach the relay",
+    "invalid" => "found the trade's id not valid",
   }
+
+  # What the player sees when the other player's game found the trade's id not valid, which names
+  # no fault of either player.
+  INVALID_TEXT = "The trade could not open."
 
   # What the relay answered, by its reason, for a trade it did not commit.
   RELAY_REASONS = {
@@ -493,7 +500,12 @@ module MGQ_MpTrade
     end
 
     @accepted = nil
-    busy = id =~ /\A[0-9a-f]{24}\z/ ? busy_reason : "the trade id is not valid"
+    unless id =~ /\A[0-9a-f]{24}\z/
+      MGQ_MpOverworldSync.notice("The trade with #{peer.state['name']} could not open.")
+      return decline(peer, "invalid", id, "the trade id #{MGQ_MpLog.short(id, 30)} is not valid")
+    end
+
+    busy = busy_reason
     if busy
       # The player accepted it, so they wait for the screen, such as one who opened the menu meanwhile.
       MGQ_MpOverworldSync.notice("The trade with #{peer.state['name']} could not open: finish what you are doing first.")
@@ -527,11 +539,22 @@ module MGQ_MpTrade
     end
     @invite.drop(peer.state["id"]) if reason == "no"
     log("#{peer.state['name']} #{REASONS.fetch(reason, 'cannot trade now')} (#{reason}#{id ? ", trade #{short(id)}" : ''})")
+    text = decline_text(peer.state["name"], reason)
     if @session && id && @session.id == id && @session.stage == :open
-      close("#{peer.state['name']} #{REASONS.fetch(reason, 'cannot trade now')}.")
+      close(text)
     else
-      MGQ_MpOverworldSync.notice("#{peer.state['name']} #{REASONS.fetch(reason, 'cannot trade now')}.")
+      MGQ_MpOverworldSync.notice(text)
     end
+  end
+
+  # Writes what the player sees when the other player could not trade.
+  #
+  # @param name [String] The other player's name.
+  # @param reason [String] Why, a key of REASONS; another build's unknown reason says they cannot
+  #   trade now.
+  # @return [String] The notice.
+  def self.decline_text(name, reason)
+    reason == "invalid" ? INVALID_TEXT : "#{name} #{REASONS.fetch(reason, 'cannot trade now')}."
   end
 
   # Takes the other player's offer as it stands now, which takes back both confirmations.
