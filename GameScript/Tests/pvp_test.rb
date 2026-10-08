@@ -2,6 +2,7 @@
 #  pvp_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-08: Checked that a message shows as the game shows it outside a multiplayer battle
 #      Paulinchen  2026-10-07: Checked that a hit whose message names a target leaves the message out once none is left
 #                            - Created
 #
@@ -109,6 +110,7 @@ end
 module MGQ_MpBattles
   def self.begin(kind, backline = kind != :pvp); $rules << [kind, backline]; end
   def self.finish; $rules << :finished; end
+  def self.running?; !$rules.empty? && $rules.last != :finished; end
 end
 module MGQ_MpBalancePvp
   def self.begin(battlers); $balanced = battlers.size; end
@@ -210,6 +212,15 @@ scene.display_use_item(Struct.new(:target_index).new(0), named)
 scene.display_use_item(Struct.new(:target_index).new(0), Skill.new(1, "Plain", " attacks!", ""))
 check("a hit whose message names a target leaves the message out once none is left, as when the Frontline fell before it",
       $shown_messages, ["Sword of Heaven's Army", "Plain"])
+$targets = [nil]
+$rules << :finished
+scene.display_use_item(Struct.new(:target_index).new(0), named)
+$rules << [:coop, true]
+scene.display_use_item(Struct.new(:target_index).new(0), named)
+check("outside a multiplayer battle the message shows as the game shows it, in a co-op battle it is left out too",
+      $shown_messages, ["Sword of Heaven's Army", "Plain", "Sword of Heaven's Army"])
+$targets = [:foe]
+$rules << [:pvp, false]
 
 # The map puts the game back and drops the game's Retry.
 BattleManager.instance_variable_set(:@retry_data, :retry)

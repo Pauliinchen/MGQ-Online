@@ -2,6 +2,7 @@
 #  battles_pvp.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-08: Left out the message of a skill hit that names its target once none is left in co-op and live battles too, not in PvP battles alone
 #      Paulinchen  2026-10-07: Left out the message of a skill hit that names its target once none is left, which ended the host game when a hit came after the whole Frontline fell
 #                            - Drew the friend's Luka with the rebuilt character's face, not this game's database's, which Luka Replacer fills with this game's hero
 #                            - Registered the map, troop, sprite, save and automatic skill hooks through core_hooks.rbx instead of wraps of its own, and the action and turn hooks once the game runs, where plugins define them anew
@@ -285,12 +286,12 @@ module MGQ_MpBattlesPvp
     install_turns
   end
 
-  # Leaves out the message of a skill's next hit that finds no target any more, such as one after
-  # its last hits struck the whole Frontline down while the Backline keeps the battle going: the
-  # game names the first target in it and ended on finding none.
+  # Leaves out the message of a skill's next hit that finds no target any more in every battle the
+  # mod runs, such as one after its last hits struck the whole Frontline down while the Backline
+  # keeps the battle going: the game names the first target in it and ended on finding none.
   def self.install_untargeted_messages
     MGQ_MpHooks.around(Scene_Battle, :display_use_item, "battles_pvp") do |scene, args, original|
-      next original.call unless Battle.running? && Battle.message_without_target?(MGQ_MpGame.get(scene, :subject), *args)
+      next original.call unless MGQ_MpBattles.running? && Battle.message_without_target?(MGQ_MpGame.get(scene, :subject), *args)
 
       log("left out the message of #{args[1].name} in turn #{$game_troop.turn_count}: it names a target and none is left") rescue nil
       nil
