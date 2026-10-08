@@ -21,6 +21,7 @@
 #                            - Sized the log before following the mouse, which a held button crashed on a log made that frame
 #                            - Found players through MGQ_MpOverworldSync::Peers and moved the three lists by one arrow step
 #                            - Stopped following the keys and the mouse once a menu's choice closed the chat box, which failed on the closed box
+#                            - Offered only the whisper in a player's menu during a battle
 #                            - Mirrored a global line to the relay before sending it, turning it down when it comes too fast
 #      Paulinchen  2026-10-07: Mirrored every line sent to everyone to the relay for the world's admins, and showed an admin's line from the relay as [Admin] in gold
 #                            - Closed the chat box with the numpad's 0, as the game's windows close
@@ -367,7 +368,8 @@ module MGQ_MpChat
   end
 
   # Lists the choices of the open menu: what every script offers with the player, see
-  # MGQ_MpActions.peer_options, and a whisper.
+  # MGQ_MpActions.peer_options, and a whisper; in a battle the whisper alone, since the others
+  # start what a battle cannot take part in, such as a party, a duel or a trade.
   #
   # @return [Array<MGQ_MpActions::Option>] The choices, none without a menu or once the player left.
   def self.menu_options
@@ -375,7 +377,8 @@ module MGQ_MpChat
     return [] unless peer
 
     name = peer.state["name"].to_s
-    MGQ_MpActions.peer_options(peer) + [MGQ_MpActions::Option.new("Whisper", lambda { whisper(name) }, nil)]
+    option = MGQ_MpActions::Option.new("Whisper", lambda { whisper(name) }, nil)
+    SceneManager.scene.is_a?(Scene_Battle) ? [option] : MGQ_MpActions.peer_options(peer) + [option]
   end
 
   # Points at a choice of the open menu.

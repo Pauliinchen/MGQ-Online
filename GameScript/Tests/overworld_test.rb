@@ -8,7 +8,7 @@
 #                            - Checked the menu a click on a sender's name opens
 #                            - Checked whispers and their list of names, the help tab, the bubbles' chats and that what Alt types with the numpad is dropped
 #                            - Checked that a log made with the mouse button held and the box open draws without failing, and that a player's message cannot pose as an admin's line
-#                            - Checked that a menu's choice that leaves closes the chat box without failing, by click and by Enter
+#                            - Checked that a menu's choice that leaves closes the chat box without failing, by click and by Enter, that a battle's menu offers only the whisper
 #                            - Checked a global line too fast for the relay
 #      Paulinchen  2026-10-07: Checked the lines mirrored to the relay, the party chat kept from it, and an admin's line from the relay
 #                            - Checked scrolling the chat log
@@ -923,6 +923,12 @@ $typed = "\rabc"
 map_frame
 check("Enter on a choice that leaves closes the chat box, which the frame's other keys find closed",
       [went, chat.typing?, chat_log.grep(/failed/)], [[:went, :went], false, []])
+chat.start_typing
+SceneManager.scene = Scene_Battle.new
+chat.open_menu(friend_line, [100, 300])
+check("in a battle the menu offers only the whisper", chat.menu_options.map(&:text), ["Whisper"])
+SceneManager.scene = Scene_Map.new
+chat.close_menu("in the test")
 MGQ_MpActions.offers.delete(leaving)
 chat.stop_typing
 MGQ_MpChat.singleton_class.send(:alias_method, :log, :harness_log)
