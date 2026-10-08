@@ -24,11 +24,11 @@ require "zlib"
 # Folder of the mod's scripts in the repository.
 SCRIPTS_DIR = File.expand_path("../Multiplayer/Scripts", __dir__)
 
-# Counts a test file's checks and reports them once the file ends.
 # The keys Multiplayer.rb reads from Windows, which ui.rbx watches as it loads; a test that reads keys
 # stands in for the rest.
 module MGQ_Multiplayer; module Key; def self.watch(*_codes); end; end; end
 
+# Counts a test file's checks and reports them once the file ends.
 module Checks
   @count = 0
   @failures = 0
