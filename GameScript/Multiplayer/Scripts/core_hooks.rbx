@@ -2,6 +2,7 @@
 #  core_hooks.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-08: Kept a wrap of around only once the method was wrapped, so a script registering again wraps a method that was not defined at its first try
 #      Paulinchen  2026-10-07: Counted the methods each script follows and wraps and logged them as one line per script through report, instead of a line per method
 #                            - Gave around the script that registers, so a script loaded again replaces its wrap instead of wrapping the method a second time
 #                            - Logged each hook a script registers, each wrap, and who holds the player whenever that changes
@@ -127,7 +128,7 @@ module MGQ_MpHooks
   # Every wrap keeps the method it wraps under a name of its own, since a method can be wrapped
   # more than once. The block's errors reach the game, as the method's own would. A script that
   # registers again, as a script loaded again does, replaces its block instead of wrapping the
-  # method a second time.
+  # method a second time. A method not defined yet raises and keeps nothing, so a later try wraps it.
   #
   # @param owner [Module] The class that has the method, the singleton class for a module's method.
   # @param name [Symbol] The method.
@@ -144,15 +145,16 @@ module MGQ_MpHooks
       return
     end
 
-    cell = @bodies[key] = [body]
-    @arounds += 1
-    original = :"mgq_mp_hooks_around_#{@arounds}_#{name.to_s.gsub(/[?!=]/, '_')}"
+    original = :"mgq_mp_hooks_around_#{@arounds + 1}_#{name.to_s.gsub(/[?!=]/, '_')}"
     was_private = owner.private_method_defined?(name)
     owner.send(:alias_method, original, name)
+    @arounds += 1
+    cell = [body]
     owner.send(:define_method, name) do |*args, &block|
       cell[0].call(self, args, lambda { send(original, *args, &block) })
     end
     owner.send(:private, name) if was_private
+    @bodies[key] = cell
     count(script, 1)
   end
 

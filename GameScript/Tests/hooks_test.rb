@@ -2,6 +2,7 @@
 #  hooks_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-08: Checked that a wrap of a method not defined yet is made at the next try
 #      Paulinchen  2026-10-07: Checked that the hooks are logged as one line per script, once
 #                            - Checked that who holds the player is logged when it changes
 #      Paulinchen  2026-10-04: Followed the scripts to their new names, without mp_
@@ -96,6 +97,18 @@ check("the hooks are logged as one line per script with how many methods it foll
 $log.clear
 MGQ_MpHooks.report
 check("and once only", $log, [])
+
+# A method the game defines only later, as a plugin does: the first try fails and keeps nothing.
+class Scene_Late; end
+failed = begin
+  MGQ_MpHooks.around(Scene_Late, :value, "late") { |_scene, _args, original| original.call + 1 }
+  false
+rescue NameError
+  true
+end
+class Scene_Late; def value; 1; end; end
+MGQ_MpHooks.around(Scene_Late, :value, "late") { |_scene, _args, original| original.call + 1 }
+check("a wrap of a method not defined yet fails, and the next try wraps it", [failed, Scene_Late.new.value], [true, 2])
 
 # Holding the player: no moving, no menu, while any script says so.
 class Game_Player; def movable?; true; end; end
