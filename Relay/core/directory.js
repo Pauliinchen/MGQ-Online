@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-08: Kept the lines of a world's chat one after another, so lines said at once no longer overwrite each other
+//                            - Answered an admin's line for a world deleted meanwhile with 404
 //      Paulinchen  2026-10-07: Kept each world's chat, the lines its games mirror and the lines admins say, which admins read and write
 //                            - Took the auth key for a starting save from the X-MGQ-Auth header too
 //                            - Answered a JSON body longer than a route takes with 413, and an unknown sub-route with 404
@@ -618,6 +619,12 @@ export class Directory {
     }
 
     const line = await this.say(entry.id, { player, name: cleanName(name, this.limits) ?? ADMIN_NAME }, text, true);
+
+    // The world may have been deleted while the line waited for the ones before it.
+    if (!line) {
+      return noWorld();
+    }
+
     return { status: 200, body: { line }, say: { name: line.name, text: line.text } };
   }
 

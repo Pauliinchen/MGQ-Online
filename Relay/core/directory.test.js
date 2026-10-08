@@ -2,7 +2,7 @@
 //  directory.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-08: Covered lines said at once, all kept in order
+//      Paulinchen  2026-10-08: Covered lines said at once, all kept in order, and an admin's line for a world deleted meanwhile
 //      Paulinchen  2026-10-07: Covered a world's chat: the lines games mirror, the lines admins say, who reads them, the cap and the chat going with the world
 //                            - Covered the auth key header, the cap on removed players, and rate turns taken only after every check
 //                            - Expected 413 for a JSON body over the limit and 404 for an unknown sub-route
@@ -455,6 +455,14 @@ test("lines of a world's chat said at once are all kept, one after another", asy
 
   assert.deepEqual(said.map((line) => line.n), [1, 2, 3, 4, 5]);
   assert.deepEqual((await directory.chat(WORLD, CREATOR)).body.lines.map((line) => line.text), ["line 0", "line 1", "line 2", "line 3", "line 4"]);
+});
+
+test("an admin's line for a world deleted while it waited is answered with 404", async () => {
+  const { directory } = newDirectory(DIRECTORY_LIMITS, [await playerIdOf(ADMIN)]);
+  await directory.create(await newWorld());
+  directory.say = async () => null;
+
+  assert.equal((await directory.sayAsAdmin(WORLD, ADMIN, "hi")).status, 404);
 });
 
 test("handleDirectoryRequest routes the public requests and names the world an effect is for", async () => {
