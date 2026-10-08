@@ -2,6 +2,7 @@
 //  server.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-08: Ignored a chat frame without a line instead of closing the connection
 //      Paulinchen  2026-10-07: Kept the chat lines the games mirror as text frames, and told every game of a world what an admin said
 //                            - Logged every request as one line and every caught error with its stack, never a key
 //                            - Kept the worlds, mods and trades in a SQLite database when MGQ_RELAY_DB names one
@@ -518,10 +519,10 @@ export function createRelay({
 
         if (text === PING) {
           socket.send(PONG);
-        } else if (line !== null) {
-          directory.say(route.roomId, { player: admission.player, name: route.name }, line).catch((error) => log.error(errorLine(new Date(), `chat of world ${route.roomId}`, error)));
-        } else {
+        } else if (line === null) {
           unseat(route.roomId, peer, CLOSE.badRequest, "only binary messages are passed on");
+        } else if (line.length > 0) {
+          directory.say(route.roomId, { player: admission.player, name: route.name }, line).catch((error) => log.error(errorLine(new Date(), `chat of world ${route.roomId}`, error)));
         }
         return;
       }

@@ -2,6 +2,7 @@
 //  relay.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-08: Covered chat frames without a line
 //      Paulinchen  2026-10-07: Covered the auth key header
 //      Paulinchen  2026-10-06: Covered a guest waiting alone, the player key header, the rate limiter and replaced connections
 //      Paulinchen  2026-09-29: Read a world room's player key, name and auth key instead of its seats
@@ -13,7 +14,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  CLOSE, EVERYONE, IN, LIMITS, REPLACED, RateLimiter, admit, newPeer, newWorldPeer, nextDeadline, nextWorldDeadline, overdue, parseRoute, presenceOf,
+  CLOSE, EVERYONE, IN, LIMITS, REPLACED, RateLimiter, admit, chatLineOf, newPeer, newWorldPeer, nextDeadline, nextWorldDeadline, overdue, parseRoute, presenceOf,
   replacedBy, routeWorldMessage, seatChangeText, seatText, takeMessage, takeSeat, worldOverdue,
 } from "./relay.js";
 
@@ -219,4 +220,11 @@ test("replacedBy names a player's earlier connections to a world room", () => {
 
   assert.deepEqual(replacedBy(peers, WHO.player), [{ index: 0, code: CLOSE.removed, reason: REPLACED }]);
   assert.deepEqual(replacedBy(peers, "33".repeat(16)), []);
+});
+
+test("chatLineOf tells a chat frame without a line apart from a frame that is no chat frame", () => {
+  assert.equal(chatLineOf("chat  hello\u0001 "), "hello");
+  assert.equal(chatLineOf("chat    "), "");
+  assert.equal(chatLineOf("chatter"), null);
+  assert.equal(chatLineOf("hello"), null);
 });

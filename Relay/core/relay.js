@@ -2,6 +2,7 @@
 //  relay.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-08: Told a chat frame whose line is empty apart from a frame that is no chat frame
 //      Paulinchen  2026-10-07: Added the chat text frames: a line a game mirrors for the world's log, and a line an admin says to every game
 //                            - Took a world room's auth key from the X-MGQ-Auth header too
 //                            - Read ids, keys and names by the rules of ids.js
@@ -447,15 +448,10 @@ export function routeWorldMessage(sender, message) {
  * Reads the line of a chat text frame a game sent.
  *
  * @param {string} text The text frame.
- * @returns {string | null} The line, tidied; null for a frame that is no chat frame or carries no line.
+ * @returns {string | null} The line, tidied, empty for a chat frame that carries none; null for a frame that is no chat frame.
  */
 export function chatLineOf(text) {
-  if (!text.startsWith(`${CHAT} `)) {
-    return null;
-  }
-
-  const line = cleanText(text.slice(CHAT.length + 1), MAX_CHAT_LENGTH);
-  return line.length > 0 ? line : null;
+  return text.startsWith(`${CHAT} `) ? cleanText(text.slice(CHAT.length + 1), MAX_CHAT_LENGTH) : null;
 }
 
 /**

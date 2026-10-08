@@ -2,6 +2,7 @@
 //  worker.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-08: Ignored a chat frame without a line instead of closing the connection
 //      Paulinchen  2026-10-07: Handed the chat lines the games mirror to the directory, and told every game of a world what an admin said
 //                            - Passed the X-MGQ-Auth header on to the world rooms and the directory
 //                            - Answered a text body over 256 KB with 413 instead of taking it for no JSON, and named the routes by the core's version
@@ -689,11 +690,11 @@ export class World extends DurableObject {
 
       if (line === null) {
         await this.leave(socket, refusal?.code ?? CLOSE.badRequest, refusal?.reason ?? "only binary messages are passed on");
-        return;
+      } else if (line.length > 0) {
+        this.world ??= await this.ctx.storage.get("world");
+        await internal(directoryOf(this.env), "say", { id: this.world, player: peer.player, name: peer.name, text: line });
       }
 
-      this.world ??= await this.ctx.storage.get("world");
-      await internal(directoryOf(this.env), "say", { id: this.world, player: peer.player, name: peer.name, text: line });
       return;
     }
 
