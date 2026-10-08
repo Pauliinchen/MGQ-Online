@@ -27,6 +27,7 @@
 #                            - Named the sender of a line by the same numbered name, in the log and in their menu
 #                            - Sent a line of the say chat once to everyone with the sender's map, on which alone it shows
 #                            - Mirrored a global line to the relay before sending it, turning it down when it comes too fast
+#                            - Left out the 0 that the numpad's 0 types after it closed a player's menu
 #                            - Left out the line and paragraph separators of players' and admins' lines
 #      Paulinchen  2026-10-07: Mirrored every line sent to everyone to the relay for the world's admins, and showed an admin's line from the relay as [Admin] in gold
 #                            - Closed the chat box with the numpad's 0, as the game's windows close
@@ -81,6 +82,9 @@ module MGQ_MpChat
 
   # Frames after the chat key opened the box in which the key's own character may still arrive.
   KEY_ECHO_FRAMES = 10
+
+  # Windows' code of the number row's 0, as which the numpad's 0 types with Num Lock on.
+  ZERO_KEY = 0x30
 
   # What mp_world_say answers for a line of the global chat the DLL dropped for coming too fast.
   TOO_FAST = 2
@@ -571,19 +575,24 @@ module MGQ_MpChat
   end
 
   # Types what came from the keyboard since the last frame, then lets the editor follow the keys
-  # that type nothing, and scrolls the chat log. The numpad's 0 closes the box instead.
+  # that type nothing, and scrolls the chat log. The numpad's 0 closes the open menu, else the box.
   def self.update_typing
     text, _keys = MGQ_Multiplayer::Link.take_typed
     return close_menu("its player left the world") if @menu && !menu_peer
 
     if MGQ_MpUi.numpad_cancel?
-      return (Sound.play_cancel; close_menu("Numpad 0")) if @menu
+      unless @menu
+        # Its 0 arrives as the number row's, so what came with it is dropped; a 0 coming later
+        # finds the typing off, which forgets it.
+        stop_typing("Numpad 0")
+        Sound.play_cancel
+        return
+      end
 
-      # Its 0 arrives as the number row's, so what came with it is dropped; a 0 coming later finds
-      # the typing off, which forgets it.
-      stop_typing("Numpad 0")
       Sound.play_cancel
-      return
+      close_menu("Numpad 0")
+      # Its 0 arrives as the number row's, in this frame or a later one, and the box stays open.
+      @echo = { :key => ZERO_KEY, :frames => KEY_ECHO_FRAMES }
     end
 
     tab_key = MGQ_Multiplayer::Key.pressed?(TAB_KEY)

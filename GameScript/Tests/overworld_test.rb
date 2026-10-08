@@ -12,7 +12,7 @@
 #                            - Checked that a menu's choice that leaves closes the chat box without failing, by click and by Enter, that a battle's menu offers only the whisper
 #                            - Checked the closed log's whispers, the separators a line loses, numbered names of players sharing one, and the say chat by the map its line was said on
 #                            - Checked that a line of a player whose name another shares shows their numbered name
-#                            - Checked a global line too fast for the relay
+#                            - Checked the 0 after Numpad 0 closed a menu and a global line too fast for the relay
 #      Paulinchen  2026-10-07: Checked the lines mirrored to the relay, the party chat kept from it, and an admin's line from the relay
 #                            - Checked scrolling the chat log
 #                            - Checked that the numpad's 0 closes the chat box
@@ -956,6 +956,12 @@ check("in a battle the menu offers only the whisper", chat.menu_options.map(&:te
 SceneManager.scene = Scene_Map.new
 chat.close_menu("in the test")
 MGQ_MpActions.offers.delete(leaving)
+chat.open_menu(friend_line, [100, 300])
+$pressed = MGQ_MpUi::NUMPAD_CANCEL_KEYS[0]
+map_frame
+$typed = "0"
+map_frame
+check("the 0 that the numpad's 0 types after it closed a menu is left out", [chat.menu, chat.typing?, chat.typed], [nil, true, ""])
 chat.stop_typing
 MGQ_MpChat.singleton_class.send(:alias_method, :log, :harness_log)
 
