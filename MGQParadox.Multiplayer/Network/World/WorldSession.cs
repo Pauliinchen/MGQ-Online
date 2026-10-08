@@ -2,7 +2,8 @@
 //  WorldSession.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-08: Dropped the chat lines past 2 a second after a burst of 10, as the relay does, and logged the relay dropping one
+//      Paulinchen  2026-10-08: Logged the traffic counted so far as another world is entered, and as the process exits or a thread throws out
+//                            - Dropped the chat lines past 2 a second after a burst of 10, as the relay does, and logged the relay dropping one
 //      Paulinchen  2026-10-07: Logged the messages sent and received as one line about every minute, through WorldTraffic, instead of a line per message
 //                            - Mirrored the chat lines the game script says to the relay as text frames, and handed the lines the relay says for an admin to the game script as chat entries
 //                            - Logged entering and leaving, each connect with its refusal or close code and reason, the waits before each new try, the seats coming and going, each message sent or received, and the entries a full inbox dropped
@@ -298,7 +299,7 @@ internal sealed class WorldSession
     /// <summary>
     /// The game's world connection, which the game script uses.
     /// </summary>
-    public static WorldSession Current { get; } = new();
+    public static WorldSession Current { get; } = FlushedOnExit(new());
 
     /// <summary>
     /// Looks up a relay's address by the id a world code names it with.
@@ -349,6 +350,7 @@ internal sealed class WorldSession
         {
             previous = Restart(WorldState.Connecting);
             var generation = _generation;
+            _traffic.Flush();
 
             if (WorldCode.Parse(code) is not { } world)
             {
@@ -944,6 +946,34 @@ internal sealed class WorldSession
         _chatAllowance = allowed ? refilled - 1 : refilled;
         _chatRefilledAt = now;
         return allowed;
+    }
+
+    /// <summary>
+    /// Has a session log the traffic it counted as the process exits, or as a thread throws out and ends it.
+    /// </summary>
+    /// <param name="session">The session.</param>
+    /// <returns>The session.</returns>
+    private static WorldSession FlushedOnExit(WorldSession session)
+    {
+        AppDomain.CurrentDomain.ProcessExit += (_, _) => session.FlushTraffic();
+        AppDomain.CurrentDomain.UnhandledException += (_, _) => session.FlushTraffic();
+        return session;
+    }
+
+    /// <summary>
+    /// Logs the traffic counted so far and writes the log at once, since the process is about to end.
+    /// </summary>
+    private void FlushTraffic()
+    {
+        try
+        {
+            _traffic.Flush();
+            Log.Flush();
+        }
+        catch
+        {
+            // The process ends anyway, and the log must not make it end worse.
+        }
     }
 
     /// <summary>
