@@ -2,6 +2,7 @@
 #  battles_sync.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-08: Closed a command phase the live battle ended in as it finishes, such as after a reset
 #      Paulinchen  2026-10-07: Named a player by their name and seat as the other scripts do, the player themselves too, and listed characters with their ids for every battle script
 #                            - Logged the live battle's players, the messages sent and received, the commands given per character and what happens once a player leaves
 #                            - Told the battle's mode on the host when a guest leaves, which stops a co-op guest's characters at once
@@ -349,6 +350,7 @@ module MGQ_MpBattlesSync
   # Called by the mode when it puts the game back, and after a reset.
   def self.finish
     Recorder.stop
+    Live.end_phase
     @record_next = false
     restore_settings
     return unless @role

@@ -2,6 +2,7 @@
 #  battles_sync_live.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-08: Closed a command phase the battle ended in, and forgot the guests who answered in it, as the battle ends instead of as the next one begins
 #      Paulinchen  2026-10-07: Left a command phase an earlier battle ended in out of the log as the next battle begins
 #                            - Let a battle message outside a fiber move on at once instead of failing, as the other waits do
 #                            - Logged the live battle's start, its command phases, the commands sent, escapes, leaving and its end, with the reasons
@@ -234,6 +235,7 @@ module MGQ_MpBattlesSync
 
       MGQ_MpHooks.around(BattleManager.singleton_class, :battle_end, "battles_sync_live course") do |_manager, args, original|
         Recorder.finish(args[0])
+        Live.end_phase
         original.call
       end
     end
@@ -373,7 +375,6 @@ module MGQ_MpBattlesSync
     # @param scene [Scene_Battle] The battle.
     # @return [Boolean] Whether the battle starts, false when it ended early.
     def self.host_start(scene)
-      close_phase(true)
       formed = MGQ_MpBattlesSync.mode.host_start(scene)
       if formed == :own
         MGQ_MpBattlesSync.log("nobody joined: the battle is the host's own, not live")
@@ -591,15 +592,21 @@ module MGQ_MpBattlesSync
       MGQ_MpBattlesSync.mode.settle(scene)
     end
 
-    # As host, closes the command phase, as the turn starts or the battle begins.
-    #
-    # @param quietly [Boolean] Whether the log leaves it out, as for a phase an earlier battle left
-    #   open when it ended during it.
-    def self.close_phase(quietly = false)
-      if @phase_open && !quietly
+    # As host, closes the command phase as the turn starts.
+    def self.close_phase
+      if @phase_open
         MGQ_MpBattlesSync.log("command phase closed, turn #{MGQ_MpBattlesSync.turn + 1} starts" +
                               (MGQ_MpBattlesSync.solo? ? ", the computer playing for those who left" : ""))
       end
+      @phase_open = false
+      @answered = []
+    end
+
+    # As host, closes a command phase the battle ended in, such as by a forfeit or an escape while
+    # the players chose, so the next battle's first phase opens anew. Called as the battle ends and
+    # as the live battle finishes, which a reset ends it with.
+    def self.end_phase
+      MGQ_MpBattlesSync.log("command phase of turn #{MGQ_MpBattlesSync.turn + 1} closed: the battle ended in it") if @phase_open
       @phase_open = false
       @answered = []
     end

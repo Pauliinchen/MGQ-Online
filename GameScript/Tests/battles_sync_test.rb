@@ -2,6 +2,7 @@
 #  battles_sync_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-08: Checked that a command phase the battle ended in closes as the live battle finishes
 #      Paulinchen  2026-10-07: Checked the counters a state new to the guest gets
 #                            - Checked a whole turn's way from the host's recorder over the wire to the guest's playback
 #      Paulinchen  2026-10-06: Created
@@ -98,7 +99,11 @@ sync.instance_variable_set(:@solo, true)
 $turns_started = 0
 scene.turn_start
 check("a host left alone plays its turn and closes the phase, so the next one settles who fights on", [$turns_started, sync::Live.instance_variable_get(:@phase_open)], [1, false])
+sync::Live.instance_variable_set(:@phase_open, true)
+sync::Live.instance_variable_set(:@answered, [2])
 sync.finish
+check("a command phase the battle ended in closes as the battle finishes, its answers forgotten",
+      [sync::Live.instance_variable_get(:@phase_open), sync::Live.instance_variable_get(:@answered), $log.grep(/command phase of turn \d+ closed: the battle ended in it/).size], [false, [], 1])
 
 # A defeat's sprite effect.
 monster = $game_troop.members[0]
