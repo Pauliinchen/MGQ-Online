@@ -13,6 +13,7 @@
 #                            - Added a Help tab at the far right that /help opens, which only reads and closes once left, and named it and the resizing in the empty box
 #                            - Drew the bubbles in their chat's color, slightly see-through
 #                            - Lowered the bubbles to just over the name, going one line higher while a line such as an invite shows above it
+#                            - Shortened the empty chat box's hint to scrolling, Alt and /help, and showed the tab and resize controls in its place while Alt is held
 #                            - Picked the tabs and resized with the left Alt alone, dropping what it typed as an Alt code with the numpad, which showed a symbol the font lacks
 #                            - Outlined the tabs and the open chat thinly, the chat in white while Alt is held to resize it, the picked tab open into the chat
 #                            - Filled the picked tab with its chat's color under dark text, which white tabs lacked the contrast for
@@ -1299,7 +1300,10 @@ class Sprite_MpChatLog < Sprite
   TEXT_LEFT = 4
 
   # What the chat box says while it is empty.
-  BOX_HINT = "/help: more, Alt+drag: resize, Esc or Numpad 0: close"
+  BOX_HINT = "↑↓: scroll   Alt: tabs, size   /help: more"
+
+  # What the empty chat box says while Alt is held.
+  ALT_HINT = "←→: change tab   Drag: resize"
 
   # What the chat box says on the help tab, where nobody types.
   HELP_HINT = "Pick another tab to chat. Esc or Numpad 0: close"
@@ -1374,7 +1378,7 @@ class Sprite_MpChatLog < Sprite
     shown.each_with_index { |(row, line, first), index| draw_row(row, line, first, TAB_ROW + (@rows - shown.size + index) * ROW) }
     draw_arrow(TAB_ROW, true) if typing && older
     draw_arrow(TAB_ROW + (@rows - 1) * ROW, false) if typing && scroll > 0
-    draw_box(chat) if typing
+    draw_box(chat, alt) if typing
     draw_frame(0, TAB_ROW, @width, bitmap.height - TAB_ROW, alt ? RESIZE_OUTLINE : OUTLINE, @picked_gap) if typing
     draw_names(chat) if typing
   end
@@ -1660,10 +1664,12 @@ class Sprite_MpChatLog < Sprite
 
   # Draws the chat box on the bottom row: the chosen chat's name, or whom the player whispers to,
   # then the text around the cursor and the cursor, with a hint behind them while the text is
-  # empty. The help tab shows only its name and its hint, since nobody types there.
+  # empty, the Alt controls while Alt is held. The help tab shows only its name and its hint, since
+  # nobody types there.
   #
   # @param chat [Module] MGQ_MpChat.
-  def draw_box(chat)
+  # @param alt [Boolean] Whether Alt is held.
+  def draw_box(chat, alt)
     y = TAB_ROW + @rows * ROW
     bitmap.fill_rect(0, y, @width, ROW, BOX_BACK)
     help = chat.tab == :help
@@ -1674,7 +1680,7 @@ class Sprite_MpChatLog < Sprite
 
     if editor.text.empty?
       bitmap.font.color = HINT
-      bitmap.draw_text(@box_left + MGQ_MpUi::TextBox::CURSOR_WIDTH + 2, y, @width - @box_left - TEXT_LEFT, ROW, help ? HELP_HINT : BOX_HINT)
+      bitmap.draw_text(@box_left + MGQ_MpUi::TextBox::CURSOR_WIDTH + 2, y, @width - @box_left - TEXT_LEFT, ROW, help ? HELP_HINT : alt ? ALT_HINT : BOX_HINT)
       bitmap.font.color = TEXT_COLOR
     end
 
