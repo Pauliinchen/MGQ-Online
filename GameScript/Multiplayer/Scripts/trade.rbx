@@ -2,6 +2,7 @@
 #  trade.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-08: Showed an accepted trade offer again in the notification box once its player turned the accept down
 #      Paulinchen  2026-10-07: Told the player when a trade they accepted could not open, such as from the menu
 #                            - Let a world's latest autosave load again: its name is no slot a trade saves into, which raised inside the game's load
 #                            - Logged where opening the screen failed and the pictures in memory
@@ -519,7 +520,11 @@ module MGQ_MpTrade
   # @param reason [String] A key of REASONS.
   # @param id [String, nil] The trade's id, for a trade that was opened.
   def self.take_decline(peer, reason, id)
-    @accepted = nil if @accepted && @accepted[:id] == peer.state["id"].to_s
+    if @accepted && @accepted[:id] == peer.state["id"].to_s
+      @accepted = nil
+      # ui_notices.rbx loads after this script.
+      MGQ_MpNotices.release([:trade, peer.seat]) if defined?(MGQ_MpNotices)
+    end
     @invite.drop(peer.state["id"]) if reason == "no"
     log("#{peer.state['name']} #{REASONS.fetch(reason, 'cannot trade now')} (#{reason}#{id ? ", trade #{short(id)}" : ''})")
     if @session && id && @session.id == id && @session.stage == :open

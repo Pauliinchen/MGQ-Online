@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-08: Kept an accepted invite away only for a moment, so one whose accept did nothing, such as in a menu, shows again
+#                            - Kept an accepted invite away until the inviter drops it or turns the accept down, ten seconds at most, which a slow inviter let a second press accept again
 #      Paulinchen  2026-10-07: Kept an accepted invite away while it stands, as a declined one, so a second press no longer accepts it again
 #                            - Took the box's depth from MGQ_MpUi
 #                            - Logged each message posted, dropped or run out, what the box shows whenever it changes, and each invite answered or key ignored with why
@@ -37,9 +38,13 @@ module MGQ_MpNotices
   # Color of a message.
   MESSAGE_COLOR = Color.new(220, 220, 220)
 
-  # Frames an accepted invite stays away, two seconds: long enough that a second press accepts
-  # nothing, after which it shows again if it still stands, since the accept then did nothing.
-  ACCEPT_HOLD_FRAMES = 120
+  # Frames an accepted invite stays away at most, ten seconds, unless the inviter's game drops it or
+  # turns the accept down before; after them it shows again if it still stands, since the accept
+  # then did nothing.
+  #
+  # A slow inviter still shows the invite a while after the accept, so a shorter hold let a second
+  # press accept it again.
+  ACCEPT_HOLD_FRAMES = 600
 
   @messages = []
   @answered = {}
@@ -71,6 +76,18 @@ module MGQ_MpNotices
     dropped = @messages.select { |entry| entry[:key] == key }
     @messages -= dropped
     dropped.each { |entry| log("message dropped, #{reason}: #{MGQ_MpLog.short(entry[:text])}") }
+  end
+
+  # Shows an accepted invite again at once, as when the inviter's game turned the accept down, so
+  # the player may accept it again while it stands.
+  #
+  # @param key [Object] The invite's key, see MGQ_MpActions::Notice.
+  def self.release(key)
+    answer = @answered[key]
+    return unless answer && answer[:frames]
+
+    @answered.delete(key)
+    log("accepted invite #{key.inspect} shows again: the inviter turned the accept down")
   end
 
   # Lists what the box shows: the invites that stand, by their sender's name, then the messages,
@@ -124,9 +141,9 @@ module MGQ_MpNotices
     !(scene.is_a?(Scene_Map) && MGQ_MpWorldOverview.open?)
   end
 
-  # Accepts or declines the first invite, which the box names with the keys. Either way it stays
-  # away while it stands: the inviter's game shows it until it opens what was accepted, in which
-  # time a second accept turned the trade down as busy.
+  # Accepts or declines the first invite, which the box names with the keys. A declined one stays
+  # away while it stands, an accepted one for ACCEPT_HOLD_FRAMES at most: the inviter's game shows
+  # it until it opens what was accepted, in which time a second accept turned the trade down as busy.
   #
   # @param list [Array<MGQ_MpActions::Notice>] The notifications shown.
   # @param answer [Symbol] :take to accept, :decline to decline.

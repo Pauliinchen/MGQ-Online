@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-08: Checked that an accepted invite shows again after a moment while it still stands, and a declined one stays away
+#                            - Checked that an accepted invite stays away for the whole hold, and shows again at once when the inviter turns the accept down
 #      Paulinchen  2026-10-07: Checked that an accepted invite stays away while it stands
 #      Paulinchen  2026-10-06: Checked that a message shown outside a world shows there and goes after a moment
 #      Paulinchen  2026-10-04: Followed the scripts to their new names, without mp_
@@ -145,8 +146,16 @@ check("otherwise the accept key accepts the challenge on the map", $duel_answer,
 $duel_answer = nil
 accept.call
 check("which then stays away for a moment, so another press accepts nothing", [shown.call.include?("Cid challenges you to a duel"), $duel_answer], [false, nil])
-MGQ_MpNotices::ACCEPT_HOLD_FRAMES.times { notices.tick(true) }
+# The hold started with the accept a tick before the second press.
+(MGQ_MpNotices::ACCEPT_HOLD_FRAMES - 2).times { notices.tick(true) }
+check("for as long as a slow inviter may still show it", shown.call.include?("Cid challenges you to a duel"), false)
+notices.tick(true)
 check("and shows again while it still stands, since the accept did nothing", shown.call.include?("Cid challenges you to a duel"), true)
+$duel_answer = nil
+accept.call
+notices.release([:duel, 3])
+notices.tick(true)
+check("or at once when the inviter turns the accept down", [shown.call.include?("Cid challenges you to a duel"), $duel_answer], [true, [:accept, "Cid"]])
 $pressed = 0x4E
 notices.tick(true)
 MGQ_MpNotices::ACCEPT_HOLD_FRAMES.times { notices.tick(true) }
