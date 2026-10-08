@@ -2,6 +2,7 @@
 //  DirectoryClient.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-08: Read whether the relay kept the Mod Config options sent, and the version whose options it keeps
 //      Paulinchen  2026-10-07: Logged every request with its method, route and outcome, and its time when it failed or was slow, a repeated request only once its outcome changed
 //                            - Sent the world's auth key in the X-MGQ-Auth header instead of the address, and kept the outcomes last logged to a bounded number
 //      Paulinchen  2026-10-06: Sent the player's key in the X-MGQ-Player header, and no longer in the addresses of the directory and the trades
@@ -403,14 +404,15 @@ internal sealed class DirectoryClient
     }
 
     /// <summary>
-    /// Sends the Mod Config options of a catalog mod's current version, which only an admin may.
+    /// Sends the Mod Config options of a catalog mod, as the game's copy offers them, which only an admin may.
     /// </summary>
     /// <param name="key">The mod's key.</param>
     /// <param name="playerKey">An admin's key.</param>
-    /// <param name="version">The version the options came from, which must be the mod's current one.</param>
+    /// <param name="version">The version the game's copy is; empty for a copy of no version the catalog knows.</param>
     /// <param name="options">The options.</param>
+    /// <returns>Whether the relay kept them, which it does not while it keeps a newer version's, and the version whose options it keeps, empty when it does not say.</returns>
     /// <exception cref="DirectoryException">The relay could not be reached or refused.</exception>
-    public void SetModOptions(string key, string playerKey, string version, IReadOnlyList<ModOption> options)
+    public (bool Kept, string KeptVersion) SetModOptions(string key, string playerKey, string version, IReadOnlyList<ModOption> options)
     {
         var body = Json(writer =>
         {
@@ -442,7 +444,11 @@ internal sealed class DirectoryClient
             writer.WriteEndArray();
         });
 
-        using var _ = Send(HttpMethod.Post, new Uri($"{_mods}/{Uri.EscapeDataString(key)}/options"), $"mod options {key} {version}, {options.Count} option(s)", body, playerKey);
+        using var document = Send(HttpMethod.Post, new Uri($"{_mods}/{Uri.EscapeDataString(key)}/options"), $"mod options {key} {version}, {options.Count} option(s)", body, playerKey);
+        var root = document.RootElement;
+        // Relays before kept took every version's options, and answered without saying so.
+        var kept = !root.TryGetProperty("kept", out var answer) || answer.ValueKind != JsonValueKind.False;
+        return (kept, root.TryGetProperty("mod", out var mod) && mod.ValueKind == JsonValueKind.Object ? Text(mod, "optionsVersion") : string.Empty);
     }
 
     /// <summary>

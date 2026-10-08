@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-08: Handed out the mirrored chat lines as a copy taken under the lock, and told any text to every game of a world room
+//                            - Answered the Mod Config options games send with whether it kept them, as the relay does
 //      Paulinchen  2026-10-07: Kept the chat lines games mirror as text frames, and said an admin's line to every game of a world room
 //                            - Took the world's auth key from the X-MGQ-Auth header too, for the starting save as well
 //      Paulinchen  2026-10-06: Took the player's key from the X-MGQ-Player header too, for the trades as well, and closed a player's earlier world room connection with 4009 "replaced" once the same player entered again
@@ -142,6 +143,11 @@ internal sealed class TestRelay : IDisposable
     /// The Mod Config options games sent, each with the mod's key, in the order they arrived.
     /// </summary>
     public List<(string Key, JsonNode Body)> SentModOptions { get; } = [];
+
+    /// <summary>
+    /// The version whose Mod Config options the relay keeps instead of those sent; <see langword="null"/> to keep those sent.
+    /// </summary>
+    public string? KeptModOptionsVersion { get; set; }
 
     /// <summary>
     /// How many peers the relay holds in all its rooms.
@@ -441,9 +447,11 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
     {
         if (parts is ["v1", "mods", var optionsOf, "options"] && sent != null)
         {
-            SentModOptions.Add((optionsOf, JsonNode.Parse(sent)!));
+            var body = JsonNode.Parse(sent)!;
+            SentModOptions.Add((optionsOf, body));
             context.Response.StatusCode = 200;
-            bytes = Encoding.UTF8.GetBytes("{}");
+            var keptVersion = KeptModOptionsVersion ?? body["version"]?.GetValue<string>() ?? string.Empty;
+            bytes = Encoding.UTF8.GetBytes(new JsonObject { ["mod"] = new JsonObject { ["optionsVersion"] = keptVersion }, ["kept"] = KeptModOptionsVersion == null }.ToJsonString());
         }
         else if (parts is ["v1", "mods"])
         {

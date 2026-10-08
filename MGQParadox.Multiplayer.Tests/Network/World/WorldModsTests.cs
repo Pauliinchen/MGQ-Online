@@ -2,6 +2,7 @@
 //  WorldModsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-08: Covered reading whether the relay kept the Mod Config options sent
 //      Paulinchen  2026-10-06: Covered the Mod Config options sent for a catalog mod, and the version the relay keeps them of
 //                            - Covered a world's mod settings set on their own by its creator or an admin
 //                            - Covered telling a link to a zip of a release apart
@@ -110,6 +111,22 @@ public sealed class WorldModsTests
         Assert.Equal(
             """[{"key":"mod_level_cap","name":"Level Cap","type":"i","default":"1","choices":[{"value":"1","name":"On"},{"value":"0","name":"Off"}]}]""",
             body["options"]!.ToJsonString());
+    }
+
+    /// <summary>
+    /// Asserts that the client reads whether the relay kept the options, and the version whose options it keeps.
+    /// </summary>
+    [Fact]
+    public void SetModOptions_ReadsWhatTheRelayKept()
+    {
+        using var relay = new TestRelay();
+        var client = new DirectoryClient(relay.Address);
+        var options = ModOption.Parse("mod_level_cap\tLevel Cap\ti\t1\t1\tOn\t0\tOff\n");
+
+        Assert.Equal((true, "1.4.0"), client.SetModOptions("levelcap", CreatorKey, "1.4.0", options));
+
+        relay.KeptModOptionsVersion = "1.5.0";
+        Assert.Equal((false, "1.5.0"), client.SetModOptions("levelcap", CreatorKey, "1.3.5", options));
     }
 
     /// <summary>

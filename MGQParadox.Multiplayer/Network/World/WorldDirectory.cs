@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-08: Logged the type, code and stack of an action's unexpected failure
+//                            - Logged whether the relay kept the Mod Config options sent, or the version whose options it keeps instead
 //      Paulinchen  2026-10-07: Logged the list and the catalog when they change, every action with its result or why it was refused, and each mod's download
 //      Paulinchen  2026-10-06: Started its threads through Threads and read who plays through Player.Current, both shared with the world's other parts
 //                            - Told a player removed from a world, a world with as many players as it may and too many requests from one address apart from a creator-only refusal
@@ -407,11 +408,11 @@ internal sealed class WorldDirectory
     });
 
     /// <summary>
-    /// Sends the Mod Config options of a catalog mod's current version on a thread of its own, outside
-    /// the actions, so the world screen stays free; how it went is only logged.
+    /// Sends the Mod Config options of a catalog mod, as the game's copy offers them, on a thread of
+    /// its own, outside the actions, so the world screen stays free; how it went is only logged.
     /// </summary>
     /// <param name="key">The mod's key.</param>
-    /// <param name="version">The version the options came from.</param>
+    /// <param name="version">The version the game's copy is; empty for a copy of no version the catalog knows.</param>
     /// <param name="options">The options.</param>
     /// <returns><see langword="false"/> without a player.</returns>
     public bool SendModOptions(string key, string version, IReadOnlyList<ModOption> options)
@@ -427,8 +428,10 @@ internal sealed class WorldDirectory
         {
             try
             {
-                client.SetModOptions(key, player.Key, version, options);
-                Log.Write($"sent {options.Count} Mod Config option(s) of {key} {version}");
+                var (kept, keptVersion) = client.SetModOptions(key, player.Key, version, options);
+                Log.Write(kept
+                    ? $"sent {options.Count} Mod Config option(s) of {key} {version}, which the relay keeps"
+                    : $"sent {options.Count} Mod Config option(s) of {key} {version}, which the relay did not keep: it keeps those of {(keptVersion.Length > 0 ? keptVersion : "a newer version")}");
             }
             catch (Exception ex)
             {
