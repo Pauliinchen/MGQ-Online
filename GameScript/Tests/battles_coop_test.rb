@@ -2,6 +2,7 @@
 #  battles_coop_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-08: Checked that a face this game lacks is left out of a message the host shows
 #      Paulinchen  2026-10-07: Read a rebuilt character's log line as the live battle names characters, its id after its name
 #                            - Checked that the log names the leader's answer, who joined, the roster, each rebuild and why an invite was turned down
 #                            - Checked that a guest who leaves takes their characters' actions along, and that the host's computer chooses none while it waits
@@ -644,6 +645,8 @@ $game_message_texts = []
 playback.instance_variable_set(:@message_complete, true)
 playback.message(scene, speaker, "face", 1, 0, 2, "Alone")
 check("with nothing waiting it starts at once", [$message_waits, $game_message_texts], [1, ["Alone"]])
+playback.message(scene, speaker, "MissingFace", 1, 0, 2, "Faceless")
+check("a face this game lacks is left out of the message", [$game_message.face_name, $game_message_texts.last], ["", "Faceless"])
 MGQ_MpBattlesSync.finish
 
 # Another player's fallen character comes fallen; one without HP sent comes as rebuilt.

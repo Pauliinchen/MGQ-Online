@@ -2,7 +2,7 @@
 #  pvp_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-08: Checked that a message shows as the game shows it outside a multiplayer battle and when checking it fails
+#      Paulinchen  2026-10-08: Checked that a message shows as the game shows it outside a multiplayer battle and when checking it fails, and that a character without a picture is not tried again
 #                            - Checked that a hit whose message names a target leaves the message out once none is left
 #      Paulinchen  2026-10-07: Created
 #
@@ -170,6 +170,14 @@ check("in a troop of its own, in the game's battle replay mode with the PvP rule
 check("the player's Frontline recovered and balanced with the other side", [$recovered, $balanced], [[1, 2], 5])
 check("and nothing failed", $log.grep(/could not start/), [])
 check("while it runs, the troop's totals are nothing, which other mods read", [$game_troop.exp_total, $game_troop.gold_total, $game_troop.make_drop_items], [0, 0, []])
+
+# A friend's character whose face this game lacks gets no picture, and is not tried again.
+module MGQ_MpOverworld; def self.graphic(folder, name); ($graphics_asked ||= []) << [folder, name]; nil; end; end
+faceless = $game_troop.members[0]
+faceless.define_singleton_method(:face_name) { "MissingFace" }
+2.times { pvp::Pictures.stand_in_for(faceless) }
+check("a character whose face this game lacks shows the game's own sprite, its face asked for once",
+      [pvp::Pictures.stand_in_for(faceless), $graphics_asked], [nil, [[:face, "MissingFace"]]])
 
 # Every save written meanwhile gets the game as it was before the battle.
 $game_variables[1] = 99

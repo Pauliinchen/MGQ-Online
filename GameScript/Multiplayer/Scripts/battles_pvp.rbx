@@ -4,6 +4,7 @@
 #  Changelog:
 #      Paulinchen  2026-10-08: Left out the message of a skill hit that names its target once none is left in co-op and live battles too, not in PvP battles alone
 #                            - Showed a message as the game does whenever checking it for a target fails, such as with a plugin's display_use_item of other arguments
+#                            - Loaded the face of a friend's character through MGQ_MpOverworld.graphic and kept a character without a picture as such, which tried and logged it every frame
 #                            - Left out the message of a skill hit that names its target once none is left, which ended the host game when a hit came after the whole Frontline fell
 #      Paulinchen  2026-10-07: Drew the friend's Luka with the rebuilt character's face, not this game's database's, which Luka Replacer fills with this game's hero
 #                            - Registered the map, troop, sprite, save and automatic skill hooks through core_hooks.rbx instead of wraps of its own, and the action and turn hooks once the game runs, where plugins define them anew
@@ -787,11 +788,14 @@ module MGQ_MpBattlesPvp
 
       @pictures ||= {}
       picture = @pictures[battler.id]
+      return nil if picture == false
       return picture if picture && !picture.disposed?
 
-      @pictures[battler.id] = library_picture(battler.id) || face(battler)
+      @pictures[battler.id] = library_picture(battler.id) || face(battler) || false
+      @pictures[battler.id] || nil
     rescue => e
       MGQ_MpBattlesPvp.log("no picture for actor #{battler.id rescue '?'}: #{e.class}: #{e.message}")
+      @pictures[battler.id] = false rescue nil
       nil
     end
 
@@ -843,11 +847,13 @@ module MGQ_MpBattlesPvp
     # holds this game's hero in Luka's place, while the friend's Luka was rebuilt as their own.
     #
     # @param battler [Game_Actor] The friend's character.
-    # @return [Bitmap, nil] The face, nil without a face file.
+    # @return [Bitmap, nil] The face, nil without a face file this game has.
     def self.face(battler)
       return nil if battler.face_name.to_s.empty?
 
-      sheet = Cache.face(battler.face_name)
+      sheet = MGQ_MpOverworld.graphic(:face, battler.face_name)
+      return nil unless sheet
+
       width = sheet.width / FACE_COLUMNS
       height = sheet.height / FACE_ROWS
       source = Rect.new(battler.face_index % FACE_COLUMNS * width, battler.face_index / FACE_COLUMNS * height, width, height)
@@ -856,7 +862,7 @@ module MGQ_MpBattlesPvp
       bitmap
     end
 
-    # Disposes the pictures drawn for the battle.
+    # Disposes the pictures drawn for the battle, and forgets the characters that had none.
     def self.clear
       (@pictures || {}).each_value { |bitmap| bitmap.dispose if bitmap && !bitmap.disposed? }
       @pictures = {}

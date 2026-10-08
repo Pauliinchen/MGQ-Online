@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-08: Kept the Library's replays of scenes and the game's transfer process to the player's own game, never the party's story, so a leader's replay no longer brings the members over
+#                            - Showed a page of the leader's story without its face while this game lacks the face file
 #      Paulinchen  2026-10-07: Took a common event's setup, which passes the list alone, instead of failing on it
 #                            - Registered the interpreter, map, message and party hooks through core_hooks.rbx instead of wraps of its own
 #                            - Let a page of the leader's story outside a fiber move on at once instead of failing, as the other waits do
@@ -869,7 +870,7 @@ module MGQ_MpCoopEvents
 
     page = @heard.shift
     log("showing page #{page[:page]} of the leader's story, #{@heard.size} more waiting")
-    $game_message.face_name = page[:face]
+    $game_message.face_name = MGQ_MpOverworld.graphic?(:face, page[:face].to_s) ? page[:face] : ""
     $game_message.face_index = page[:index]
     $game_message.background = page[:background]
     $game_message.position = page[:position]

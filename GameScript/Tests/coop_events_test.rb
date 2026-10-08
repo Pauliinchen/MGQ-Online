@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-08: Checked that the game's transfer process and the Library's replays gather nobody, and that the transfer process runs in a member's own game
+#                            - Stood in for the faces this game has, of overworld.rbx
 #      Paulinchen  2026-10-07: Checked that a common event set up with its list alone is sorted
 #                            - Took variable 151 as the story's sample, since 150 is each player's own now
 #                            - Stood in for the helpers of coop.rbx the party scripts share now, and gave the game's switches their full count, which the story bounds another game's by
@@ -121,6 +122,8 @@ $data_items[3].key = true
 $data_weapons = [nil, RPG::Weapon.new(1, "Sword")]
 $data_armors = [nil]
 module Vocab; def self.currency_unit; "G"; end; end
+# The graphics this game has, of which it lacks only one face.
+module MGQ_MpOverworld; def self.graphic?(_folder, name); name != "MissingFace"; end; end
 
 class Game_Switches; def initialize; @data = []; end; def [](id); @data[id] || false; end; def []=(id, value); @data[id] = value; end; end
 class Game_Variables; def initialize; @data = []; end; def [](id); @data[id] || 0; end; def []=(id, value); @data[id] = value; end; end

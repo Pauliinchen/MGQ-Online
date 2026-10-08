@@ -2,6 +2,7 @@
 #  battle_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-08: Stood in for the faces this game has, of overworld.rbx
 #      Paulinchen  2026-10-07: Stood in for the helpers of coop.rbx, overworld_sync.rbx and coop_scene.rbx the battle scripts share now: who, random_id and the pictures' count
 #                            - Let the characters clear their actions, and named the party after its first character
 #      Paulinchen  2026-10-06: Gave the party the targets of a skill that reaches the Backline too, and added the Library's counts of the battle's end and of a defeat
@@ -35,6 +36,8 @@ module MGQ_Multiplayer
   module Player; def self.name; "Me"; end; end
   module Link; def self.cancel; $cancelled = true; end; end
 end
+# The graphics this game has, of which it lacks only one face.
+module MGQ_MpOverworld; def self.graphic?(_folder, name); name != "MissingFace"; end; end
 module MGQ_MpOverworldSync
   def self.in_world?; true; end
   def self.notice(text); Status.notice(text); end

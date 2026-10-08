@@ -2,6 +2,7 @@
 #  battles_sync_playback.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-08: Showed a message of the host without its face while this game lacks the face file
 #      Paulinchen  2026-10-07: Gave the states the host adds the counters the game keeps per state, without which a turn's end on the map ended the game
 #                            - Checked the arguments of the host's audio calls as a picture's are checked, and left out a call that fails, logged once
 #                            - Took the number of pictures the screen holds from coop_scene.rbx
@@ -452,7 +453,7 @@ module MGQ_MpBattlesSync
       MGQ_MpGame.call(scene, :wait_for_message) if @message_complete && $game_message.has_text? && !behind?
       @message_complete = false
       $game_message.speaker = speaker
-      $game_message.face_name = face_name.to_s
+      $game_message.face_name = MGQ_MpOverworld.graphic?(:face, face_name.to_s) ? face_name.to_s : ""
       $game_message.face_index = face_index.to_i
       $game_message.background = background.to_i
       $game_message.position = position.to_i
