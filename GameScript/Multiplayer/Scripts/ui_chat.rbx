@@ -66,10 +66,10 @@
 #----------------------------------------------------------------
 
 # The chat: a line typed on the keyboard goes to every player of the world, to the party, to the
-# players on the same map or to one player, by the chat chosen, shows in a bubble above the sender while they are on
-# the same map, and in the chat log at the bottom left. Its key
-# (T unless the player binds another, see core_hotkeys.rbx) or the action wheel of ui_actions.rbx opens
-# the chat box. It builds on overworld_sync.rbx, which knows the other players and their messages.
+# players on the same map or to one player, by the chat chosen, shows in a bubble above the sender
+# while they are on the same map, and in the chat log at the bottom left. Its hotkey (T unless the
+# player binds another, see core_hotkeys.rbx) or the action wheel of ui_actions.rbx opens the chat
+# box. It builds on overworld_sync.rbx, which knows the other players and their messages.
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpChat
@@ -330,7 +330,8 @@ module MGQ_MpChat
   # Lists the names that fit what follows the whisper command in the chat box, before a name was
   # taken, once per frame and text.
   #
-  # @return [Array<String>] Up to SUGGESTIONS names, by the alphabet; none without the command and a character after it.
+  # @return [Array<String>] Up to SUGGESTIONS names, by the alphabet; none without the command and
+  #   a character after it.
   def self.suggestions
     key = [@frame, @edit && @edit.text.dup, @tab]
     @suggested = [key, fitting_names] unless @suggested && @suggested[0] == key
