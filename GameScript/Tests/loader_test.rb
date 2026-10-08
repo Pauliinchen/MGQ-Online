@@ -2,7 +2,8 @@
 #  loader_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-07: Checked how the log's last line tells the game closing
+#      Paulinchen  2026-10-07: Checked that starting a session deletes the logs of all but the last five sessions and leaves other files
+#                            - Checked how the log's last line tells the game closing
 #                            - Checked that the press closing the last screen reaches the game from the next frame only
 #                            - Checked that the DLL's export table names each export once, every export the scripts call and every one the DLL has
 #                            - Checked that the in-game log writes a file per session, named after the game's start, without a line limit, and counts the scripts loaded
@@ -117,6 +118,14 @@ Dir.mktmpdir do |game|
           ["flood", "(the line above repeated 10 times so far)", "(the line above repeated 11 times in all)"])
     3100.times { |index| MGQ_Multiplayer::Log.write("line #{index}") }
     check("the log has no line limit", File.read(path).lines.last.split("  ", 2)[1].chomp, "line 3099")
+    older = (1..6).map { |day| "2026-01-0#{day} 10-00-00" }
+    older.each { |stamp| ["Multiplayer", "Multiplayer InGame"].each { |name| File.write(File.join("Logs", "#{name} #{stamp}.log"), "x") } }
+    ["Multiplayer.log", "DiscordPresence 2026-01-01 10-00-00.log"].each { |name| File.write(File.join("Logs", name), "x") }
+    MGQ_Multiplayer::Log.prune
+    left = Dir[File.join("Logs", "*")].map { |file| File.basename(file) }.sort
+    check("starting a session deletes both logs of every session but the last five, this one among them, and leaves other files",
+          left, (["DiscordPresence 2026-01-01 10-00-00.log", "Multiplayer.log", files.first] +
+                 older.last(4).map { |stamp| ["Multiplayer #{stamp}.log", "Multiplayer InGame #{stamp}.log"] }.flatten).sort)
   end
 end
 

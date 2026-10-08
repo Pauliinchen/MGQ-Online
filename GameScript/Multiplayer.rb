@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-07: Named mp_world_say, which mirrors a chat line to the relay for the world's admins
+#                            - Kept the logs of the last five game sessions, deleting older ones as a session starts
 #                            - Logged how the game closes and each F12 reset, so a log that just stops tells a crash
 #                            - Kept the press that closes a screen of the mod from reaching the game in the same frame, which left a PvP battle when Escape closed the chat box
 #                            - Gave the background wrap its script, as every around now names who registers
@@ -127,6 +128,7 @@ module MGQ_Multiplayer
     return if @started
     @started = true
     Log.write("Monster Girl Quest! Online starting on Ruby #{RUBY_VERSION}, session log #{Log.file_name}")
+    Log.prune
     unless available?
       Log.write(ENABLED ? "not started: #{path(DLL)} is missing" : "not started: the mod is turned off")
       return
@@ -239,6 +241,13 @@ module MGQ_Multiplayer
     # when the game closes first.
     REPEAT_REPORTS = [10, 100, 1000, 10_000]
 
+    # Game sessions whose logs the Logs folder keeps, this one among them; the older ones go as a
+    # session starts.
+    KEPT_SESSIONS = 5
+
+    # A session's log of this mod, the scripts' or the DLL's, and the session's start in its name.
+    SESSION_LOG = /\AMultiplayer(?: InGame)? (\d{4}-\d{2}-\d{2} \d{2}-\d{2}-\d{2})\.log\z/
+
     # When this script loaded, which stands in for the game's start when Windows cannot tell it.
     @loaded = Time.now
     @last = nil
@@ -277,6 +286,20 @@ module MGQ_Multiplayer
     # @param text [String] The line.
     def self.append(text)
       File.open(MGQ_Multiplayer.log_path(file_name), "ab") { |file| file.write("#{Time.now}  #{text}\n") }
+    end
+
+    # Deletes the logs of every session but the newest KEPT_SESSIONS, both the scripts' and the
+    # DLL's, since each game start writes a pair and nothing else ever removes them.
+    def self.prune
+      return unless File.directory?(LOG_DIR)
+
+      logs = Dir.entries(LOG_DIR).select { |name| name =~ SESSION_LOG }
+      kept = (logs.map { |name| name[SESSION_LOG, 1] } | [session_stamp]).sort.reverse.first(KEPT_SESSIONS) | [session_stamp]
+      gone = logs.reject { |name| kept.include?(name[SESSION_LOG, 1]) }
+      gone.each { |name| File.delete("#{LOG_DIR}\\#{name}") rescue nil }
+      write("deleted #{gone.size} log(s) of sessions older than the last #{KEPT_SESSIONS}") unless gone.empty?
+    rescue => e
+      write("deleting old logs failed: #{e.class}: #{e.message}")
     end
 
     # Names this session's log after the game's start, read once.
