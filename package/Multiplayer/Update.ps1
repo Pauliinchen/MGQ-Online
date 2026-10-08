@@ -4,6 +4,8 @@
 #  Changelog:
 #      Paulinchen  2026-10-08: Took the game's process from the game that starts the update, waited for it to close and started the game again afterwards, in the Multiplayer menu once updated
 #                            - Held the game's process from the start and waited on it, so a later wait never hangs on another program Windows gave its id
+#                            - Took every path literally, so a game folder with brackets in its name updates and starts again
+#                            - Extracted the release and downloaded it through .NET, which take paths as they are
 #      Paulinchen  2026-10-04: Showed the release notes last and counted the removed files in one line, so they no longer push the notes out of sight
 #      Paulinchen  2026-09-30: Found the game folder two levels up, since the mod lives in Patch\Multiplayer
 #                            - Fetched MGQ-Online-<version>.zip from the repository under its new name, MGQ-Online
@@ -31,11 +33,13 @@ $LatestReleaseUrl = 'https://api.github.com/repos/Pauliinchen/MGQ-Online/release
 $UserAgent        = 'MGQ-Online'
 $ReleaseZip       = 'MGQ-Online-*.zip'
 
+# Every path below goes to cmdlets through -LiteralPath or to .NET, since PowerShell takes [ and ]
+# in -Path as wildcards, and a game folder such as 'MGQ Paradox [EN]' would match nothing.
 $ModDir   = $PSScriptRoot
-$GameDir  = Split-Path (Split-Path $ModDir -Parent) -Parent
-$GameExe  = Join-Path $GameDir 'Game.exe'
-$Dll      = Join-Path $ModDir 'Multiplayer.dll'
-$Manifest = Join-Path $ModDir 'Manifest.txt'
+$GameDir  = [IO.Path]::GetDirectoryName([IO.Path]::GetDirectoryName($ModDir))
+$GameExe  = [IO.Path]::Combine($GameDir, 'Game.exe')
+$Dll      = [IO.Path]::Combine($ModDir, 'Multiplayer.dll')
+$Manifest = [IO.Path]::Combine($ModDir, 'Manifest.txt')
 
 # Tells the game started again to open the Multiplayer menu, see world.rbx.
 $OpenWorldsVariable = 'MGQMP_OPEN_WORLDS'
@@ -73,11 +77,11 @@ $StartingGame = Get-StartingGame
 #
 # Returns the version, or $null when there is no DLL or it is a development build like 0.0.0-dev.
 function Get-InstalledVersion {
-    if (-not (Test-Path $Dll)) {
+    if (-not (Test-Path -LiteralPath $Dll)) {
         return $null
     }
 
-    $version = (Get-Item $Dll).VersionInfo.ProductVersion.Split('+')[0]
+    $version = (Get-Item -LiteralPath $Dll).VersionInfo.ProductVersion.Split('+')[0]
     if ($version.Contains('-')) {
         return $null
     }
@@ -96,11 +100,11 @@ function Test-GameRunning {
 # Returns the paths, empty when there is none: an install from before this mod shipped a manifest,
 # or a fresh extract that never ran this updater.
 function Get-ShippedFiles {
-    if (-not (Test-Path $Manifest)) {
+    if (-not (Test-Path -LiteralPath $Manifest)) {
         return @()
     }
 
-    return @(Get-Content $Manifest | Where-Object { $_.Trim() -ne '' })
+    return @(Get-Content -LiteralPath $Manifest | Where-Object { $_.Trim() -ne '' })
 }
 
 # Deletes files the old release shipped that the new one does not.
@@ -118,9 +122,9 @@ function Remove-StaleFiles([string[]]$Old, [string[]]$New) {
     $removed = 0
 
     foreach ($relative in $stale) {
-        $full = Join-Path $GameDir $relative
-        if (Test-Path $full) {
-            Remove-Item $full -Force
+        $full = [IO.Path]::Combine($GameDir, $relative)
+        if (Test-Path -LiteralPath $full) {
+            Remove-Item -LiteralPath $full -Force
             $removed++
         }
     }
@@ -168,18 +172,55 @@ function Start-GameAgain([bool]$OpenMultiplayer) {
 
     if ($OpenMultiplayer) {
         # The game inherits this process's environment.
-        Set-Item "env:$OpenWorldsVariable" '1'
+        [Environment]::SetEnvironmentVariable($OpenWorldsVariable, '1')
     }
 
     Write-Host 'Starting the game again . . .'
-    Start-Process -FilePath $GameExe -WorkingDirectory $GameDir
+    $start = New-Object System.Diagnostics.ProcessStartInfo $GameExe
+    $start.WorkingDirectory = $GameDir
+    $start.UseShellExecute = $false
+    $null = [Diagnostics.Process]::Start($start)
+}
+
+# Extracts a release's zip over the game folder, replacing the files it holds.
+#
+# Expand-Archive takes the destination as a wildcard path in Windows PowerShell 5.1, so .NET does
+# the work.
+#
+# $Zip: the zip.
+function Expand-Release([string]$Zip) {
+    Add-Type -AssemblyName System.IO.Compression
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $root = [IO.Path]::GetFullPath($GameDir).TrimEnd('\') + '\'
+    $archive = [IO.Compression.ZipFile]::OpenRead($Zip)
+
+    try {
+        foreach ($entry in $archive.Entries) {
+            $target = [IO.Path]::GetFullPath([IO.Path]::Combine($root, $entry.FullName))
+            if (-not $target.StartsWith($root, [StringComparison]::OrdinalIgnoreCase)) {
+                throw "The download holds a file outside the game folder: $($entry.FullName)"
+            }
+
+            # A folder's entry has no name, only a path that ends in a slash.
+            if ($entry.Name -eq '') {
+                $null = [IO.Directory]::CreateDirectory($target)
+                continue
+            }
+
+            $null = [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($target))
+            [IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $target, $true)
+        }
+    }
+    finally {
+        $archive.Dispose()
+    }
 }
 
 # Installs the latest release over the game folder, unless the mod is up to date.
 #
 # Returns $true once the mod is up to date.
 function Install-LatestRelease {
-    if (-not (Test-Path $GameExe)) {
+    if (-not (Test-Path -LiteralPath $GameExe)) {
         throw "Game.exe is not in $GameDir. Keep this script in Patch\Multiplayer inside the game folder."
     }
 
@@ -208,12 +249,20 @@ function Install-LatestRelease {
 
     $oldFiles = Get-ShippedFiles
 
-    $download = Join-Path $env:TEMP $zip.name
+    $download = [IO.Path]::Combine([IO.Path]::GetTempPath(), $zip.name)
     Write-Host "Downloading $($zip.name) . . ."
-    Invoke-WebRequest -Uri $zip.browser_download_url -OutFile $download -UserAgent $UserAgent -UseBasicParsing
+    # WebClient writes to the path as it is, which -OutFile would not promise for one with brackets.
+    $client = New-Object System.Net.WebClient
+    try {
+        $client.Headers.Add('User-Agent', $UserAgent)
+        $client.DownloadFile($zip.browser_download_url, $download)
+    }
+    finally {
+        $client.Dispose()
+    }
 
-    Expand-Archive -Path $download -DestinationPath $GameDir -Force
-    Remove-Item $download
+    Expand-Release $download
+    Remove-Item -LiteralPath $download
 
     $removed = Remove-StaleFiles -Old $oldFiles -New (Get-ShippedFiles)
     if ($removed -gt 0) {
