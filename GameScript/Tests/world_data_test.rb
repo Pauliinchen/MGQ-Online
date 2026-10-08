@@ -2,6 +2,8 @@
 #  world_data_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-08: Covered Shared Mod Settings in the forms of a new world and of the creator's own world, and in a world's details
+#                            - Expected the details to name the mods of a world's options, and the edit form to say when its mod settings apply
 #      Paulinchen  2026-10-07: Expected cut texts to end in three dots
 #                            - Looked each DLL call's signature up in the export table of Multiplayer.rb
 #      Paulinchen  2026-10-06: Checked a name kept with Enter or from the text screen, the numpad's 0 in Max Players, a form's tidied values,
@@ -280,6 +282,14 @@ strict_form[:name] = "W"
 strict_form[:mismatch] = false
 scene.create_world
 check("with the data read, an unticked Allow data mismatch makes a world for the same data only", [$calls.last[2][8], $calls.last[2][9]], ["#{modded}\0", 1])
+check("an unticked Shared Mod Settings leaves every player their own", $calls.last[2][11], "\0")
+shared_field = strict_form.fields.find { |field| field.key == :shared }
+check("Shared Mod Settings sits beside Allow data mismatch, unticked, and says what it does to players",
+      [shared_field.kind, shared_field.label, shared_field.group, shared_field.side, strict_form.fields.find { |field| field.key == :mismatch }.side, MGQ_MpWorld::Form.create[:shared], shared_field.hint],
+      [:check, "Shared Mod Settings", "Game data", :right, :left, false, "Ticked: every player plays with your mod options here. Unticked: each keeps their own."])
+strict_form[:shared] = true
+scene.create_world
+check("ticked, the new world shares the creator's mod settings, which their game reads once they play in it", $calls.last[2][11], "@shared=o:1\0")
 
 # The directory.
 MGQ_MpWorld::Directory.create("W", "p", 4, false, false, "", :description => "A slow run.", :mods => "Some Mod", :data => modded, :strict => true)
@@ -419,6 +429,17 @@ check("a game that matches is told so, and the world's rule", [cell_of(panels, "
 check("a world that names no mod says so", cell_of(panels, "Mods").text, "No mod named")
 panels = detail.panels(entries[3], "me")
 check("a world that does not tell is not compared", [cell_of(panels, "Your game").text, panels[1].note], ["Not compared: the world does not tell", nil])
+check("a world without shared mod settings says each player keeps their own", [panels[1].rows[1][0].label, panels[1].rows[1][0].text, panels[1].rows[1][0].color], [nil, "Mod settings: each player's own", :normal])
+sharing = MGQ_MpWorld::Entry.new("w2", "Loose", listed[1].dup, nil, false, false)
+sharing.listed.settings = "@shared=o:1;mod_level_cap=i:0"
+sharing.listed.mods = "Some Mod; !Other Mod; Level Cap"
+# This game's Mod Config, whose groups name the mods of a world's options.
+module NWConst; module Config; MOD_CONTENTS = [{ :key => :mod_level_cap, :name => "[Level Cap] Level Cap", :sub => true }]; end; end
+check("one that shares them names whose and the mods of its options, in gold", [detail.panels(sharing, "me")[1].rows[1][0].text, detail.panels(sharing, "me")[1].rows[1][0].color],
+      ["Mod settings: shared by C (Level Cap)", :gold])
+check("to its creator, as theirs", detail.panels(sharing, "c")[1].rows[1][0].text, "Mod settings: shared by you (Level Cap)")
+sharing.listed.settings = "mod_level_cap=i:0"
+check("settings from before the marker count as shared", detail.panels(sharing, "me")[1].rows[1][0].text, "Mod settings: shared by C (Level Cap)")
 
 # The players.
 member = MGQ_MpWorld::Directory::Member
@@ -867,7 +888,8 @@ check("the creator of a world for the same data whose game differs is told where
 
 # The edit form of a world's creator.
 own_edit = MGQ_MpWorld::Form.edit(listed[1], true)
-check("the creator's edit form has a button that updates the data scan", [own_edit.fields.map { |field| field.key }, own_edit.fields[2].kind, own_edit.fields[2].label, own_edit.fields[2].group], [[:seats, :mods, :data, :description, :confirm], :button, "Update current data scan", "Game data"])
+check("the creator's edit form has a button that updates the data scan", [own_edit.fields.map { |field| field.key }, own_edit.fields[2].kind, own_edit.fields[2].label, own_edit.fields[2].group], [[:seats, :mods, :data, :shared, :description, :confirm], :button, "Update current data scan", "Game data"])
+check("and Shared Mod Settings, unticked while the world leaves every player their own", [own_edit.fields[3].kind, own_edit.fields[3].label, own_edit.fields[3].group, own_edit[:shared]], [:check, "Shared Mod Settings", "Game data", false])
 check("another editor's form does not", MGQ_MpWorld::Form.edit(listed[1]).fields.map { |field| field.key }, [:seats, :mods, :description, :confirm])
 scene = new_scene
 scene.instance_variable_set(:@me, "c")
@@ -884,10 +906,39 @@ check("the button hands this game's data to the DLL at once, without asking", [$
 $dll["mp_dir_action"] = "state=done\nkind=data\n\n"
 scene.follow_action
 check("and leaves the form open", [scene.form.title, said(scene)], ["Edit Loose", "The data scan of Loose was updated to your game."])
-form_window.select(4)
+form_window.select(5)
 $calls.clear
 scene.on_field
 check("the form's own button still saves the other changes", $calls.last[0], "mp_dir_edit")
+form_window.define_singleton_method(:unselect) { @index = -1 }
+$dll["mp_dir_action"] = "state=done\nkind=edit\n\n"
+$calls.clear
+scene.follow_action
+check("with Shared Mod Settings as it was, no mod settings are sent", [$calls.map(&:first).include?("mp_dir_set_settings"), said(scene)], [false, "Loose was changed."])
+scene.on_edit_world
+scene.form[:shared] = true
+form_window.select(5)
+scene.on_field
+$calls.clear
+scene.follow_action
+check("ticked, the creator's game sends the marker once the other changes are saved", [$calls.find { |call| call[0] == "mp_dir_set_settings" }[2], scene.instance_variable_get(:@busy)], [["w2\0", "@shared=o:1\0"], "settings"])
+$dll["mp_dir_action"] = "state=done\nkind=settings\n\n"
+scene.follow_action
+check("and says when the players get them", said(scene), "Loose was changed. Its players get your mod options once you play in it.")
+entries[1].listed.settings = "@shared=o:1;mod_level_cap=i:0"
+scene.on_edit_world
+check("a world that shares them has it ticked", scene.form[:shared], true)
+scene.form[:shared] = false
+form_window.select(5)
+scene.on_field
+$dll["mp_dir_action"] = "state=done\nkind=edit\n\n"
+$calls.clear
+scene.follow_action
+check("unticked, the world's settings go, so every player keeps their own", $calls.find { |call| call[0] == "mp_dir_set_settings" }[2], ["w2\0", "\0"])
+$dll["mp_dir_action"] = "state=done\nkind=settings\n\n"
+scene.follow_action
+check("and the creator is told from when", said(scene), "Loose was changed. Its players set their own mod options from their next visit.")
+entries[1].listed.settings = ""
 
 # What the screen draws again.
 again = MGQ_MpWorld::Entry.new(entries[1].id, entries[1].name, entries[1].listed.dup, nil, false, false)

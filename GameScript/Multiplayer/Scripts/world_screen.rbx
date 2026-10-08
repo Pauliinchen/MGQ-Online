@@ -2,6 +2,11 @@
 #  world_screen.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-08: Sent Shared Mod Settings with a new world, and from the creator's edit form once the other changes were saved
+#                            - Said in a world's details whether it shares its creator's mod settings
+#                            - Noted the world entered with its creator and settings in one call
+#                            - Told whether the list was fetched since the screen opened as a world is entered
+#                            - Said when the edit form's Shared Mod Settings apply, and that the other changes were saved when the mod settings were not
 #      Paulinchen  2026-10-07: Left typing alone without a form, which failed the screen, and logged where the screen failed and the pictures in memory
 #                            - Cut texts through MGQ_MpUi.cut, which ends them in three dots, and took the choice window's depth from MGQ_MpUi
 #                            - Logged the screen's actions with their outcome and reason, the start chosen, the mod and data checks and the forms sent, never passwords or codes
@@ -119,6 +124,7 @@ class Scene_MpWorlds < Scene_MenuBase
     "data" => "Updating the game data . . .",
     "start" => "Fetching the starting save . . .",
     "mods" => "Downloading the mods . . .",
+    "settings" => "Saving the mod settings . . .",
   }
 
   # What the bottom of the mod picker says.
@@ -453,8 +459,7 @@ class Scene_MpWorlds < Scene_MenuBase
     log_screen("enter #{entry_text}")
     return if listed && !mods_allow?(listed)
 
-    MGQ_MpWorldMods.use(listed && listed.settings)
-    MGQ_MpWorldMods.own_world(listed && listed.creator_id == @me ? [@entry.id, listed.mods] : nil)
+    MGQ_MpWorldMods.enter_world(listed, @me, @list_state == "ready")
     return if listed && !data_allows?(@entry.name, listed.data, listed.strict, listed.mods, listed.creator_id == @me) { on_enter }
 
     if @entry.listed && @entry.listed.start == "pending"
@@ -1417,11 +1422,31 @@ class Scene_MpWorlds < Scene_MenuBase
   end
 
   # Changes the chosen world as the form says; its creator's game sends the hashes of its required
-  # mods outside the catalog too.
+  # mods outside the catalog too, and then its mod settings when Shared Mod Settings changed.
   def edit_world
     values = form
-    hashes = @entry.listed.creator_id == @me ? MGQ_MpWorldMods.creator_hashes(values[:mods]) : nil
+    own = @entry.listed.creator_id == @me
+    hashes = own ? MGQ_MpWorldMods.creator_hashes(values[:mods]) : nil
+    settings = @entry.listed.settings
+    @edited_settings = own && values[:shared] != MGQ_MpWorldMods.shared?(settings) ? (values[:shared] ? MGQ_MpWorldMods.with_marker(settings) : "") : nil
     start_action("edit") { MGQ_MpWorld::Directory.edit(@entry.id, values[:seats].to_i, values[:description], values[:mods], hashes) }
+  end
+
+  # Tells the creator when their world's players get what it now does with its mod settings, since
+  # the form changes nothing for those in the world right now.
+  #
+  # @param settings [String] The world's settings.
+  # @return [String] The sentence.
+  def shared_text(settings)
+    MGQ_MpWorldMods.shared?(settings) ? "Its players get your mod options once you play in it." : "Its players set their own mod options from their next visit."
+  end
+
+  # Tells the creator that their world's other changes were saved but its mod settings were not.
+  #
+  # @param why [String] Why not.
+  # @return [String] The message.
+  def settings_failed_text(why)
+    "#{@entry.name} was changed, but its mod settings could not be saved: #{why}"
   end
 
   # Takes the save picked on the save screen: as the new world's starting save, or as where the
@@ -1459,7 +1484,7 @@ class Scene_MpWorlds < Scene_MenuBase
     @creating = values[:name]
     @start_files = files
     about = { :description => values[:description], :mods => values[:mods], :data => MGQ_MpWorld::GameData.fingerprint, :strict => !values[:mismatch],
-              :mod_hashes => MGQ_MpWorldMods.creator_hashes(values[:mods]), :settings => "" }
+              :mod_hashes => MGQ_MpWorldMods.creator_hashes(values[:mods]), :settings => values[:shared] ? MGQ_MpWorldMods::MARKER : "" }
     start_action("create") { MGQ_MpWorld::Directory.create(values[:name], values[:password], values[:seats].to_i, values[:hidden], values[:choose], MGQ_MpSaveDistribution.text_of(files), about) }
   end
 
@@ -1478,7 +1503,9 @@ class Scene_MpWorlds < Scene_MenuBase
     unless yield
       log_screen("the #{kind} request could not be started")
       Sound.play_buzzer
-      say("The request could not be started. Try again in a moment.")
+      say(kind == "settings" ? settings_failed_text("the request could not be started. Try again in a moment.") : "The request could not be started. Try again in a moment.")
+      # The world's other changes were saved, which the list should show.
+      MGQ_MpWorld::Directory.refresh if kind == "settings"
       return back_to_list
     end
 
@@ -1507,7 +1534,8 @@ class Scene_MpWorlds < Scene_MenuBase
         log_screen("dropped the invite of #{entry_text}: its password is asked next")
       end
       Sound.play_buzzer
-      say(action["error"])
+      say(kind == "settings" ? settings_failed_text(action["error"]) : action["error"])
+      MGQ_MpWorld::Directory.refresh if kind == "settings"
       return back_to_list
     end
 
@@ -1553,8 +1581,17 @@ class Scene_MpWorlds < Scene_MenuBase
       say("The data scan of #{@entry.name} was updated to your game.")
     when "edit"
       log_screen("changed #{entry_text}")
+      @shared_settings = @edited_settings
+      @edited_settings = nil
+      return start_action("settings") { MGQ_MpWorld::Directory.set_settings(@entry.id, @shared_settings) } if @shared_settings
+
       leave_form
       say("#{@entry.name} was changed.")
+    when "settings"
+      log_screen("changed #{entry_text} and its mod settings: #{MGQ_MpWorldMods.shared?(@shared_settings) ? 'shared' : "each player's own"}")
+      MGQ_MpWorldMods.confirmed(@entry.id, @shared_settings)
+      leave_form
+      say("#{@entry.name} was changed. #{shared_text(@shared_settings)}")
     end
 
     MGQ_MpWorld::Directory.refresh
@@ -2353,7 +2390,8 @@ class Window_MpWorldDetail < Window_Base
              "differing games are warned"
            end
     colors = mod_colors(listed.mods, differing, MGQ_MpWorldMods.differing(listed))
-    Panel.new("Game data", note, [[Cell.new("Mods", mods.empty? ? "No mod named" : mods.join(", "), :normal, mods.empty? ? nil : :mods, mods.empty? ? nil : mods, colors)], [game]])
+    settings = Cell.new(nil, MGQ_MpWorldMods.details_text(listed, me), MGQ_MpWorldMods.shared?(listed.settings) ? :gold : :normal)
+    Panel.new("Game data", note, [[Cell.new("Mods", mods.empty? ? "No mod named" : mods.join(", "), :normal, mods.empty? ? nil : :mods, mods.empty? ? nil : mods, colors)], [settings], [game]])
   end
 
   # Tells how the details and the list box mark a world's marked mods: a required one in the color

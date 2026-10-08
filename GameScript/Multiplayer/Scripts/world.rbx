@@ -2,6 +2,9 @@
 #  world.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-08: Added Shared Mod Settings to the forms of a new world and of the creator's own world
+#                            - Told whether the world stays open on the title screen for its new game
+#                            - Logged the mod settings a new world starts with
 #      Paulinchen  2026-10-07: Registered the title screen's commands, its end and a world's new game through core_hooks.rbx, keeping only the path wraps as wraps of this script
 #                            - Kept the worlds on this PC and the favourites read until one changes, since the world screen asks every few frames
 #                            - Named the DLL's exports alone, their signatures living in Multiplayer.rb
@@ -299,6 +302,13 @@ module MGQ_MpWorld
     else
       leave("the game went back to the title screen")
     end
+  end
+
+  # Tells whether the world stays open on the title screen, where its new game starts.
+  #
+  # @return [Boolean] Whether it does.
+  def self.new_game_pending?
+    !@pending.nil?
   end
 
   # Starts a new game in the world the world screen opened, or opens the world screen for a
@@ -800,7 +810,8 @@ module MGQ_MpWorld
       files = start.empty? ? "no starting save" : "a starting save of #{start.split("\n").size} file(s)"
       started(sent, "create #{name}: #{seats} seats, #{password.empty? ? 'no password' : 'a password'}, #{hidden ? 'hidden' : 'public'}, " \
                     "#{choose ? "player's choice" : 'no choice'}, #{files}, mods \"#{about[:mods]}\", #{about[:strict] ? 'strict' : 'mismatch allowed'}, " \
-                    "data #{about[:data].to_s.empty? ? 'unknown' : about[:data]}, description of #{about[:description].to_s.size} chars, creator hashes \"#{about[:mod_hashes]}\"")
+                    "data #{about[:data].to_s.empty? ? 'unknown' : about[:data]}, description of #{about[:description].to_s.size} chars, creator hashes \"#{about[:mod_hashes]}\", " \
+                    "#{about[:settings].to_s.empty? ? "each player's own mod settings" : "mod settings \"#{about[:settings]}\""}")
     end
 
     # Opens a world's lock with its password; the action tells the world's name, its starting save,
@@ -1403,6 +1414,9 @@ module MGQ_MpWorld
 
   # A form of the world screen: its fields, laid out in rows, and what is filled in.
   class Form
+    # What the lines at the top say on Shared Mod Settings.
+    SHARED_HINT = "Ticked: every player plays with your mod options here. Unticked: each keeps their own."
+
     # A field of a form: a text box (:text, :password, :number or :id), a box of several lines (:area), a checkbox (:check), a save
     # to choose (:save), the mods picked in the mod picker (:mods), a switch between several outcomes (:switch) or a button
     # (:button).
@@ -1522,27 +1536,33 @@ module MGQ_MpWorld
         Field.new(:choose, :check, "Player's choice", 3, "New players pick their start: the opening or a save. Fixed once created.", :side => :right, :group => "Starting point"),
         Field.new(:save, :save, "Save", 4, "The save every new player starts from.", :needs => :from_save, :group => "Starting point"),
         Field.new(:mods, :mods, "Mods", 5, "The mods of the world: listed, required to enter or essential. Enter picks them.", :group => "Game data"),
-        Field.new(:mismatch, :check, "Allow data mismatch", 6, "Ticked: games with other data are warned. Unticked: kept out. Fixed once created.", :group => "Game data"),
+        Field.new(:mismatch, :check, "Allow data mismatch", 6, "Ticked: games with other data are warned. Unticked: kept out. Fixed once created.", :side => :left, :group => "Game data"),
+        Field.new(:shared, :check, "Shared Mod Settings", 6, SHARED_HINT, :side => :right, :group => "Game data"),
         Field.new(:description, :area, "What the world is about", 7, "Shown in the world's details. Optional.", :max_chars => MAX_DESCRIPTION_CHARS, :optional => true, :lines => DESCRIPTION_LINES, :group => "Description"),
         Field.new(:confirm, :button, "Create the world", 8, "Creates the world. You enter it from the list."),
       ]
-      new("Create a new world", fields, :name => "", :password => "", :seats => DEFAULT_SEATS.to_s, :hidden => false, :from_save => false, :save => nil, :choose => false, :description => "", :mods => "", :mismatch => false)
+      new("Create a new world", fields, :name => "", :password => "", :seats => DEFAULT_SEATS.to_s, :hidden => false, :from_save => false, :save => nil, :choose => false, :description => "", :mods => "", :mismatch => false,
+                                        :shared => false)
     end
 
     # The form that changes a world, for its creator or an admin: what may change after it was made.
     #
     # @param listed [Directory::ListedWorld] The world in the directory.
-    # @param own [Boolean] Whether the player made the world, and so may replace its game data.
+    # @param own [Boolean] Whether the player made the world, and so may replace its game data and
+    #   choose whether it shares their mod settings.
     # @return [Form] The form, filled in as the world is.
     def self.edit(listed, own = false)
       fields = [
         Field.new(:seats, :number, "Max Players", 0, "Players in the world at once, #{MIN_SEATS} to #{MAX_SEATS}.", :max_chars => MAX_SEATS.to_s.size, :allowed => /\A\d\z/, :group => "World"),
         Field.new(:mods, :mods, "Mods", 1, "The mods of the world: listed, required to enter or essential. Enter picks them.", :group => "Game data"),
-        Field.new(:description, :area, "What the world is about", 3, "Shown in the world's details. Optional.", :max_chars => MAX_DESCRIPTION_CHARS, :optional => true, :lines => DESCRIPTION_LINES, :group => "Description"),
-        Field.new(:confirm, :button, "Save the changes", 4, "Changes the world for everyone."),
+        Field.new(:description, :area, "What the world is about", 4, "Shown in the world's details. Optional.", :max_chars => MAX_DESCRIPTION_CHARS, :optional => true, :lines => DESCRIPTION_LINES, :group => "Description"),
+        Field.new(:confirm, :button, "Save the changes", 5, "Changes the world for everyone."),
       ]
-      fields.insert(2, Field.new(:data, :button, "Update current data scan", 2, "Scans your game's data as it is now and makes it the world's, such as after a mod update.", :group => "Game data")) if own
-      new("Edit #{listed.name}", fields, :seats => listed.seats.to_s, :mods => listed.mods.to_s, :description => listed.description.to_s)
+      if own
+        fields.insert(2, Field.new(:data, :button, "Update current data scan", 2, "Scans your game's data as it is now and makes it the world's, such as after a mod update.", :group => "Game data"),
+                         Field.new(:shared, :check, "Shared Mod Settings", 3, SHARED_HINT, :group => "Game data"))
+      end
+      new("Edit #{listed.name}", fields, :seats => listed.seats.to_s, :mods => listed.mods.to_s, :description => listed.description.to_s, :shared => MGQ_MpWorldMods.shared?(listed.settings))
     end
 
     # The form of the name the others see.
