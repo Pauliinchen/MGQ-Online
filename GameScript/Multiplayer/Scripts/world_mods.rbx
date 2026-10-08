@@ -13,6 +13,7 @@
 #                            - Said when settings could not be sent or got no answer, and kept every notice within three lines that fit the box
 #                            - Named the stay's settings anew instead of a change when they arrive right after the load, and kept what did not fit in it
 #                            - Counted and named only the options this game's Mod Config has, and said when a world shares none yet
+#                            - Applied only settings of options a world may set in a mod's group of this game's Mod Config, never the game's own options
 #                            - Kept the world to enter when the game cannot start itself again under Wine or Proton, for the start the player makes by hand
 #      Paulinchen  2026-10-07: Sent the Mod Config options of every installed catalog mod, whatever its version, until the relay holds the current version's
 #                            - Logged a catalog unknown at the first read too
@@ -1083,18 +1084,27 @@ module MGQ_MpWorldMods
     applied
   end
 
-  # Writes settings into the game's options, but a value this game's copy of an option does not
-  # offer. An option of a mod this game lacks is written all the same, which nothing reads.
+  # Writes settings into the game's options: only those of options a world may set in a mod's
+  # group of this game's Mod Config, and of those only values this game's copy of an option offers.
+  #
+  # A world's settings come from another game, so a key of the game's own options, of a key binding
+  # or of an option marked personal must never reach the player's options.
   #
   # @param settings [Hash] The values by the options' keys.
   # @return [Array<Symbol>] The options written.
   def self.apply_values(settings)
     entries = {}
-    (defined?(NWConst::Config::MOD_CONTENTS) ? NWConst::Config::MOD_CONTENTS : []).each { |entry| entries[entry[:key]] ||= entry if entry[:key] }
+    menu_groups.each { |_, group| group.each { |entry| entries[entry[:key]] ||= entry if world_option?(entry) } }
+    unknown = []
     skipped = []
 
     applied = settings.keys.select do |key|
-      values = entries[key] ? values_of(entries[key]) : []
+      unless entries[key]
+        unknown << key
+        next false
+      end
+
+      values = values_of(entries[key])
       offered = values.empty? || values.any? { |value| same_value?(value, settings[key]) }
       if offered
         $game_system.conf[key] = settings[key]
@@ -1103,6 +1113,7 @@ module MGQ_MpWorldMods
       end
       offered
     end
+    log("left out #{unknown.size} setting(s) of options no mod of this game lets a world set: #{unknown.join(', ')}") unless unknown.empty?
     log("left out #{skipped.size} value(s) this game's copies do not offer: #{skipped.join('; ')}") unless skipped.empty?
     applied
   end

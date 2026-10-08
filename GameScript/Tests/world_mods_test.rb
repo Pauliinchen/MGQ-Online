@@ -9,7 +9,7 @@
 #                              cannot be sent or get no answer, notices within three lines, the stay named anew right after a load, the details'
 #                              mods, the edit form's texts and an options dump into a folder outside ASCII
 #                            - Removed the checks of the creator's button, which is gone
-#                            - Covered the restart under Wine
+#                            - Covered settings applied only for options a world may set and the restart under Wine
 #      Paulinchen  2026-10-07: Covered the options sent from a copy of an older or of no known version while the relay lacks the current version's
 #                            - Looked each DLL call's signature up in the export table of Multiplayer.rb
 #      Paulinchen  2026-10-06: Expected the summary to name mods that are missing or in another version
@@ -433,8 +433,11 @@ check("another player sees it greyed out, chosen by the world's creator", [row.c
 $game_system.conf = { :mod_level_cap => 1 }
 $notices.clear
 DataManager.load_game(1)
-check("a save loaded in the world takes its settings, those of a mod the player lacks too, and Mod Config Remake shows them as set by the world",
-      [$game_system.conf, ModConfigRemake.world_keys], [{ :mod_level_cap => 0, :mod_party_sheet_theme => :dark, :mod_missing => 7, row_key => 1 }, [:mod_level_cap, :mod_party_sheet_theme, :mod_missing]])
+check("a save loaded in the world takes its settings, and Mod Config Remake shows them as set by the world",
+      [$game_system.conf.values_at(:mod_level_cap, :mod_party_sheet_theme, row_key), ModConfigRemake.world_keys], [[0, :dark, 1], [:mod_level_cap, :mod_party_sheet_theme]])
+check("but none of a mod the player lacks, of the game's own options, of a key binding or of an option marked personal",
+      [$game_system.conf.key?(:mod_missing), mods.apply_values(:global_thing => 9, :mod_party_sheet_hotkey => 1, :mod_level_cap_look => 2, :mod_level_cap => 0),
+       $game_system.conf.keys & [:global_thing, :mod_party_sheet_hotkey, :mod_level_cap_look]], [false, [:mod_level_cap], []])
 check("the player is told whose settings they play with, counting only the options their game has, and that their own saves keep theirs", shown,
       "Creator shares mod settings here: 2 options of Level Cap and Party Sheet are set for you. Your own saves keep yours.")
 check("in lines that fit the notification box", fits, [true, true])
@@ -514,8 +517,8 @@ $calls.clear
 DataManager.load_game(1)
 sent = lambda { $calls.select { |call| call[0] == "mp_dir_set_settings" }.map { |call| call[2][1].chomp("\0") } }
 check("loading in their own world tells the creator whose options they share, naming only mods with options to share", shown, "You share your options of Level Cap with every player here.")
-check("and makes their options the world's, keeping those their game does not know, unlocked for them",
-      [sent.call, $game_system.conf[:mod_other], ModConfigRemake.world_keys], [["@shared=o:1;mod_level_cap=i:0;mod_level_cap_limits=i:1;mod_other=i:3"], 3, []])
+check("and makes their options the world's, keeping in them those their game does not know, unlocked for them",
+      [sent.call, $game_system.conf[:mod_other], ModConfigRemake.world_keys], [["@shared=o:1;mod_level_cap=i:0;mod_level_cap_limits=i:1;mod_other=i:3"], nil, []])
 $dll["mp_dir_action"] = "state=busy\nkind=settings\n\n"
 $calls.clear
 Scene_Base.new.update
