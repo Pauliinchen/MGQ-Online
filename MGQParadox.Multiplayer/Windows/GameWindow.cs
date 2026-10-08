@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-08: Kept Alt from opening the window's menu while a text screen wants the keyboard, which stopped the game
+//                            - Kept the window's menu closed for an Alt press that began while a text screen wanted the keyboard, too
 //      Paulinchen  2026-10-07: Logged why the game cannot keep running in the background
 //                            - Caught what the window procedure's own work throws, logged once, and handed the message on all the same
 //                            - Let the clipboard find the game's window
@@ -67,6 +68,11 @@ internal static unsafe partial class GameWindow
     /// The window procedure that was in place before, which gets every message on.
     /// </summary>
     private static nint previousProcedure;
+
+    /// <summary>
+    /// Keeps Alt from opening the window's menu while the player types, and as Alt is released after.
+    /// </summary>
+    private static readonly AltMenuGuard altMenu = new();
 
     /// <summary>
     /// 1 once the procedure's own work failed and was logged, so a failure on every message is logged once.
@@ -149,11 +155,27 @@ internal static unsafe partial class GameWindow
     {
         try
         {
+            var typing = Keyboard.Active;
+
+            if (message == SystemKeyDown)
+            {
+                altMenu.SystemKeyDown(typing, (uint)wParam, lParam);
+            }
+
             if (message == ActivateApp)
             {
                 wParam = 1;
             }
-            else if (Keyboard.Active)
+            else if (message == SystemCommand && (wParam & 0xFFF0) == KeyMenu)
+            {
+                // The chat picks its tabs and resizes with Alt held, whose release would open the
+                // window's menu, in which the game waits.
+                if (altMenu.SwallowsKeyMenu(typing))
+                {
+                    return 0;
+                }
+            }
+            else if (typing)
             {
                 if (message == Character)
                 {
@@ -162,12 +184,6 @@ internal static unsafe partial class GameWindow
                 else if (message is KeyDown or SystemKeyDown)
                 {
                     Keyboard.TakeKey((uint)wParam, (uint)(lParam >> 16) & 0xFF);
-                }
-                else if (message == SystemCommand && (wParam & 0xFFF0) == KeyMenu)
-                {
-                    // The chat picks its tabs and resizes with Alt held, whose release would open the
-                    // window's menu, in which the game waits.
-                    return 0;
                 }
             }
         }
