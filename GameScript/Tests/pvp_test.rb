@@ -2,7 +2,8 @@
 #  pvp_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-07: Created
+#      Paulinchen  2026-10-07: Checked that a hit whose message names a target leaves the message out once none is left
+#                            - Created
 #
 #----------------------------------------------------------------
 
@@ -31,7 +32,16 @@ class Scene_Title; def start; end; def update; end; end
 class Scene_Battle
   attr_accessor :subject, :log_window
   def use_item; $used = true; :used; end
+  def display_use_item(_action, item); ($shown_messages ||= []) << item.name; end
 end
+# An action the game works the targets of a message out with, finding those $targets lists.
+class Game_Action
+  attr_accessor :target_index
+  def initialize(subject); @subject = subject; end
+  def set_skill(id); @skill_id = id; end
+  def make_targets; $targets; end
+end
+Skill = Struct.new(:id, :name, :message1, :message2) { def is_skill?; true; end }
 # The battle log, which notes the action it says finds no target.
 class BattleLog; attr_reader :empty; def display_target_empty(subject); (@empty ||= []) << subject; end; end
 # The game's data: the troops the battle adds its own to.
@@ -192,6 +202,14 @@ $used = false
 check("an action that finds no target is left out, the battle log saying so", [scene.use_item, $used, scene.log_window.empty], [true, false, [scene.subject]])
 scene.subject = Targetless.new(nil)
 check("an action without a skill runs as the game runs it", [scene.use_item, $used], [:used, true])
+named = Skill.new(9022, "Sword of Heaven's Army", '\u strikes \e!', "")
+$targets = [nil]
+scene.display_use_item(Struct.new(:target_index).new(0), named)
+$targets = [:foe]
+scene.display_use_item(Struct.new(:target_index).new(0), named)
+scene.display_use_item(Struct.new(:target_index).new(0), Skill.new(1, "Plain", " attacks!", ""))
+check("a hit whose message names a target leaves the message out once none is left, as when the Frontline fell before it",
+      $shown_messages, ["Sword of Heaven's Army", "Plain"])
 
 # The map puts the game back and drops the game's Retry.
 BattleManager.instance_variable_set(:@retry_data, :retry)

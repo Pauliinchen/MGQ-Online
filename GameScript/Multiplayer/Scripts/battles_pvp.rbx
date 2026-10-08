@@ -2,7 +2,8 @@
 #  battles_pvp.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-07: Drew the friend's Luka with the rebuilt character's face, not this game's database's, which Luka Replacer fills with this game's hero
+#      Paulinchen  2026-10-07: Left out the message of a skill hit that names its target once none is left, which ended the host game when a hit came after the whole Frontline fell
+#                            - Drew the friend's Luka with the rebuilt character's face, not this game's database's, which Luka Replacer fills with this game's hero
 #                            - Registered the map, troop, sprite, save and automatic skill hooks through core_hooks.rbx instead of wraps of its own, and the action and turn hooks once the game runs, where plugins define them anew
 #                            - Named characters through battles_sync.rbx, and took the faces' columns from coop_squad.rbx
 #                            - Logged the exchange's stages, the teams swapped, the Backline rule, the result and the game put back
@@ -280,7 +281,22 @@ module MGQ_MpBattlesPvp
 
     @installed = true
     install_targetless
+    install_untargeted_messages
     install_turns
+  end
+
+  # Leaves out the message of a skill's next hit that finds no target any more, such as one after
+  # its last hits struck the whole Frontline down while the Backline keeps the battle going: the
+  # game names the first target in it and ended on finding none.
+  def self.install_untargeted_messages
+    MGQ_MpHooks.around(Scene_Battle, :display_use_item, "battles_pvp") do |scene, args, original|
+      next original.call unless Battle.running? && Battle.message_without_target?(MGQ_MpGame.get(scene, :subject), *args)
+
+      log("left out the message of #{args[1].name} in turn #{$game_troop.turn_count}: it names a target and none is left") rescue nil
+      nil
+    end
+  rescue => e
+    log("display_use_item hook FAILED: #{e.class}: #{e.message}")
   end
 
   # Leaves out an action without a target the way the game leaves out one without a skill.
@@ -965,6 +981,25 @@ module MGQ_MpBattlesPvp
       action.make_targets.compact.empty?
     rescue => e
       MGQ_MpBattlesPvp.log("target check failed: #{e.class}: #{e.message}")
+      false
+    end
+
+    # Reports whether a skill's message names its target while the skill finds none, worked out as
+    # the game's Scene_Battle#display_use_item does.
+    #
+    # @param subject [Game_Battler] The battler acting.
+    # @param action [Game_Action] The action, whose target it aims at.
+    # @param item [RPG::UsableItem] The skill or item whose message shows.
+    # @return [Boolean] Whether the message would name a target that is not there.
+    def self.message_without_target?(subject, action, item)
+      return false unless subject && item && item.is_skill? && "#{item.message1}#{item.message2}" =~ /\\e/i
+
+      probe = Game_Action.new(subject)
+      probe.set_skill(item.id)
+      probe.target_index = action.target_index
+      probe.make_targets.compact.empty?
+    rescue => e
+      MGQ_MpBattlesPvp.log("message target check failed: #{e.class}: #{e.message}")
       false
     end
 
