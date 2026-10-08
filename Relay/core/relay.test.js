@@ -2,7 +2,7 @@
 //  relay.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-08: Covered chat frames without a line
+//      Paulinchen  2026-10-08: Covered the chat's rate limit and chat frames without a line
 //      Paulinchen  2026-10-07: Covered the auth key header
 //      Paulinchen  2026-10-06: Covered a guest waiting alone, the player key header, the rate limiter and replaced connections
 //      Paulinchen  2026-09-29: Read a world room's player key, name and auth key instead of its seats
@@ -14,8 +14,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  CLOSE, EVERYONE, IN, LIMITS, REPLACED, RateLimiter, admit, chatLineOf, newPeer, newWorldPeer, nextDeadline, nextWorldDeadline, overdue, parseRoute, presenceOf,
-  replacedBy, routeWorldMessage, seatChangeText, seatText, takeMessage, takeSeat, worldOverdue,
+  CHAT_LIMITS, CLOSE, EVERYONE, IN, LIMITS, REPLACED, RateLimiter, admit, chatLineOf, newPeer, newWorldPeer, nextDeadline, nextWorldDeadline, overdue,
+  parseRoute, presenceOf, replacedBy, routeWorldMessage, seatChangeText, seatText, takeChatLine, takeMessage, takeSeat, worldOverdue,
 } from "./relay.js";
 
 /**
@@ -227,4 +227,18 @@ test("chatLineOf tells a chat frame without a line apart from a frame that is no
   assert.equal(chatLineOf("chat    "), "");
   assert.equal(chatLineOf("chatter"), null);
   assert.equal(chatLineOf("hello"), null);
+});
+
+test("takeChatLine lets a burst of lines through, then two a second", () => {
+  let peer = newWorldPeer(0, WHO, T0);
+
+  for (let index = 0; index < CHAT_LIMITS.burst; index++) {
+    ({ peer } = takeChatLine(peer, T0));
+  }
+
+  assert.equal(takeChatLine(peer, T0).allowed, false, "the line past the burst");
+  assert.equal(takeChatLine(peer, T0 + 400).allowed, false, "less than half a second later");
+  ({ peer } = takeChatLine(peer, T0 + 500));
+  assert.equal(takeChatLine(peer, T0 + 500).allowed, false, "the refilled line is used up");
+  assert.equal(takeChatLine({ ...newWorldPeer(0, WHO, T0), chatAllowance: undefined, chatRefilledAt: undefined }, T0).allowed, true, "a record from before the chat's limit starts full");
 });

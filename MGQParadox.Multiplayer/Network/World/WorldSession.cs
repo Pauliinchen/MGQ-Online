@@ -2,6 +2,7 @@
 //  WorldSession.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-08: Dropped the chat lines past 2 a second after a burst of 10, as the relay does, and logged the relay dropping one
 //      Paulinchen  2026-10-07: Logged the messages sent and received as one line about every minute, through WorldTraffic, instead of a line per message
 //                            - Mirrored the chat lines the game script says to the relay as text frames, and handed the lines the relay says for an admin to the game script as chat entries
 //                            - Logged entering and leaving, each connect with its refusal or close code and reason, the waits before each new try, the seats coming and going, each message sent or received, and the entries a full inbox dropped
@@ -62,6 +63,21 @@ internal sealed class WorldSession
     /// that starts the chat text frames both ways, as Relay/README.md names it.
     /// </summary>
     public const string ChatKind = "chat";
+
+    /// <summary>
+    /// What the relay answers a chat line it dropped for coming too fast.
+    /// </summary>
+    public const string ChatSlow = "slow chat";
+
+    /// <summary>
+    /// How many chat lines a second the relay keeps over time, as Relay/core/relay.js says.
+    /// </summary>
+    public const double ChatLinesPerSecond = 2;
+
+    /// <summary>
+    /// How many chat lines the relay keeps at once after a quiet spell, as Relay/core/relay.js says.
+    /// </summary>
+    public const double ChatBurst = 10;
 
     /// <summary>
     /// Who said the line of a <see cref="ChatKind"/> entry.
@@ -249,6 +265,37 @@ internal sealed class WorldSession
     private int _dropped;
 
     /// <summary>
+    /// How many chat lines may be mirrored now, refilled over time up to <see cref="ChatBurst"/>.
+    /// </summary>
+    private double _chatAllowance = ChatBurst;
+
+    /// <summary>
+    /// When <see cref="_chatAllowance"/> was refilled last.
+    /// </summary>
+    private DateTime _chatRefilledAt = DateTime.MinValue;
+
+    /// <summary>
+    /// How mirroring a chat line went, numbered as mp_world_say answers the game script.
+    /// </summary>
+    public enum Mirror
+    {
+        /// <summary>
+        /// The line did not go out: the world is not open, or the line is empty.
+        /// </summary>
+        NotMirrored = 0,
+
+        /// <summary>
+        /// The line goes out.
+        /// </summary>
+        Mirrored = 1,
+
+        /// <summary>
+        /// The line came faster than the relay keeps lines, so it was dropped.
+        /// </summary>
+        TooFast = 2,
+    }
+
+    /// <summary>
     /// The game's world connection, which the game script uses.
     /// </summary>
     public static WorldSession Current { get; } = new();
@@ -282,6 +329,11 @@ internal sealed class WorldSession
     /// How long a connection must last before the next break starts the delays over.
     /// </summary>
     public TimeSpan SteadyConnection { get; init; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// Tells the time the chat's allowance refills by; tests set their own.
+    /// </summary>
+    public Func<DateTime> Now { get; init; } = () => DateTime.UtcNow;
 
     /// <summary>
     /// Enters a world: takes a seat in its room and keeps taking one until the world is closed.
@@ -403,26 +455,38 @@ internal sealed class WorldSession
     /// Mirrors a line of the world's chat to the relay, which keeps it for the world's admins and
     /// passes it to no other game; the game script sends the line itself to the others.
     /// </summary>
+    /// <remarks>
+    /// The relay drops lines past its rate limit, so the same limit here lets the game script refuse
+    /// such a line before it sends it to the others.
+    /// </remarks>
     /// <param name="line">The line, on one line.</param>
-    /// <returns><see langword="false"/> without a seat or for an empty line.</returns>
-    public bool Say(string line)
+    /// <returns>Whether the line goes out, or why not.</returns>
+    public Mirror Say(string line)
     {
         var text = line.ReplaceLineEndings(" ").Trim();
 
         if (text.Length == 0)
         {
-            return false;
+            return Mirror.NotMirrored;
         }
 
-        bool queued;
+        Mirror result;
 
         lock (_gate)
         {
-            queued = _state == WorldState.Open && _connection != null && _connection.QueueText($"{ChatKind} {text}");
+            result = _state != WorldState.Open || _connection == null ? Mirror.NotMirrored
+                : !TakeChatLine() ? Mirror.TooFast
+                : _connection.QueueText($"{ChatKind} {text}") ? Mirror.Mirrored
+                : Mirror.NotMirrored;
         }
 
-        Log.Write(queued ? $"chat line mirrored to the relay, {text.Length} characters" : "chat line not mirrored: the world is not open");
-        return queued;
+        Log.Write(result switch
+        {
+            Mirror.Mirrored => $"chat line mirrored to the relay, {text.Length} characters",
+            Mirror.TooFast => "chat line not mirrored: it came too fast",
+            _ => "chat line not mirrored: the world is not open",
+        });
+        return result;
     }
 
     /// <summary>
@@ -641,12 +705,18 @@ internal sealed class WorldSession
     /// </summary>
     /// <param name="generation">The open this belongs to.</param>
     /// <param name="connection">The connection.</param>
-    /// <param name="text">The text, such as <c>seat 2 0 1</c>, <c>in 3</c>, <c>out 0</c>, <c>pong</c> or <c>chat Global</c>, a tab and the line.</param>
+    /// <param name="text">The text, such as <c>seat 2 0 1</c>, <c>in 3</c>, <c>out 0</c>, <c>pong</c>, <c>slow chat</c> or <c>chat Global</c>, a tab and the line.</param>
     private void TakeText(int generation, Connection connection, string text)
     {
         if (text == RelayWorldChannel.Pong)
         {
             connection.TakePong();
+            return;
+        }
+
+        if (text == ChatSlow)
+        {
+            Log.Write("the relay dropped a chat line: it came too fast");
             return;
         }
 
@@ -862,6 +932,21 @@ internal sealed class WorldSession
     }
 
     /// <summary>
+    /// Takes one chat line from the allowance, which refills over time. Called with the gate held.
+    /// </summary>
+    /// <returns><see langword="false"/> when the line comes too fast.</returns>
+    private bool TakeChatLine()
+    {
+        var now = Now();
+        var refilled = Math.Min(ChatBurst, _chatAllowance + Math.Max(0, (now - _chatRefilledAt).TotalSeconds) * ChatLinesPerSecond);
+        var allowed = refilled >= 1;
+
+        _chatAllowance = allowed ? refilled - 1 : refilled;
+        _chatRefilledAt = now;
+        return allowed;
+    }
+
+    /// <summary>
     /// Starts a new generation in a state, forgetting everything of the last one. Called with the gate held.
     /// </summary>
     /// <param name="state">The new state.</param>
@@ -877,6 +962,8 @@ internal sealed class WorldSession
         _others.Clear();
         _inbox.Clear();
         _dropped = 0;
+        _chatAllowance = ChatBurst;
+        _chatRefilledAt = DateTime.MinValue;
         _connection = null;
         _world = null;
         Monitor.PulseAll(_gate);

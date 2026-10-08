@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-08: Told the keys held from $down, and the mouse from $mouse
+#                            - Answered a mirrored chat line as the DLL does, 1 for taken unless $say_result tells otherwise
 #      Paulinchen  2026-10-07: Stood in for the chat lines mirrored to the relay
 #      Paulinchen  2026-10-06: Read the texts of the line at the bottom left here, since overworld_sync.rbx no longer offers them
 #                            - Kept the buttons held while any screen holds them, as Multiplayer.rb does
@@ -138,7 +139,7 @@ $said = []
 module MGQ_MpOverworldSync::Link
   def self.next_entry; $inbox.shift; end
   def self.send_to(target, text); $sent << [target, text]; true; end
-  def self.say(text); $said << text; true; end
+  def self.say(text); $said << text; $say_result || 1; end
   def self.status; { "state" => "open", "ping" => $status_ping }; end
 end
 

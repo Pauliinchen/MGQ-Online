@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-08: Marked an admin's line from the relay with a key no player's message can carry, which let any player post as an admin
+#                            - Passed on whether the relay got a chat line or the DLL dropped it for coming too fast, instead of whether it went out
 #                            - Listed the players whose connection stands, found them by name and id and told whether one is on the player's map, which the chat and the map share
 #      Paulinchen  2026-10-07: Mirrored a chat line to the relay through say, and handed an admin's line from the relay to the chat's route
 #                            - Kept the player's seat as the inbox and the status tell it, asking the DLL only while none was told
@@ -151,7 +152,8 @@ module MGQ_MpOverworldSync
   # its admins and passes it to nobody; the line itself goes to the others through tell.
   #
   # @param text [String] The line.
-  # @return [Boolean] Whether it went out.
+  # @return [Integer] 1 when the relay got it, 0 when it did not, 2 when the DLL dropped it for
+  #   coming too fast.
   def self.say(text)
     Link.say(text)
   end
@@ -310,9 +312,10 @@ module MGQ_MpOverworldSync
     # Mirrors a line of the world's chat to the relay, which keeps it for the world's admins.
     #
     # @param text [String] The line.
-    # @return [Boolean] Whether it went out.
+    # @return [Integer] 1 when the relay got it, 0 when it did not, 2 when the DLL dropped it for
+    #   coming too fast.
     def self.say(text)
-      MGQ_Multiplayer::Link.function('mp_world_say').call(text + "\0") == 1
+      MGQ_Multiplayer::Link.function('mp_world_say').call(text + "\0")
     end
 
     # Reads how the connection stands.

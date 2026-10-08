@@ -2,7 +2,7 @@
 //  WorldSessionTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-08: Read the relay's chat lines under its lock
+//      Paulinchen  2026-10-08: Read the relay's chat lines under its lock, and covered chat lines that come too fast and the relay saying so
 //      Paulinchen  2026-10-07: Covered a chat line mirrored to the relay and an admin's line handed to the game script
 //      Paulinchen  2026-10-06: Covered a player entering the same world from another game, and took the entry the inbox handed out
 //      Paulinchen  2026-10-02: Made the test world with every player starting alike
@@ -336,8 +336,8 @@ public sealed class WorldSessionTests
         AwaitState(session, "open");
         Drain(session);
 
-        Assert.False(session.Say(" \n "));
-        Assert.True(session.Say(" hello\neveryone "));
+        Assert.Equal(WorldSession.Mirror.NotMirrored, session.Say(" \n "));
+        Assert.Equal(WorldSession.Mirror.Mirrored, session.Say(" hello\neveryone "));
         var deadline = DateTime.UtcNow + Patience;
 
         while (DateTime.UtcNow < deadline && relay.ChatLines.Length == 0)
@@ -352,7 +352,42 @@ public sealed class WorldSessionTests
         Assert.Equal(("Global", "welcome"), (said[WorldSession.NameHeader], said.Team));
 
         session.Close();
-        Assert.False(session.Say("gone"));
+        Assert.Equal(WorldSession.Mirror.NotMirrored, session.Say("gone"));
+    }
+
+    /// <summary>
+    /// Asserts that chat lines past the relay's burst are dropped until the allowance refills, and
+    /// that the relay saying it dropped one leaves the connection and the inbox as they are.
+    /// </summary>
+    [Fact]
+    public void Chat_LinesThatComeTooFastAreDropped()
+    {
+        using var relay = new TestRelay();
+        var code = MakeWorld(relay, 4);
+        var now = new DateTime(2026, 10, 8, 20, 0, 0, DateTimeKind.Utc);
+        var session = NewSession(relay.Address, now: () => now);
+
+        session.Open(code);
+        AwaitState(session, "open");
+        Drain(session);
+
+        for (var line = 0; line < WorldSession.ChatBurst; line++)
+        {
+            Assert.Equal(WorldSession.Mirror.Mirrored, session.Say($"line {line}"));
+        }
+
+        Assert.Equal(WorldSession.Mirror.TooFast, session.Say("one too many"));
+        now = now.AddSeconds(1 / WorldSession.ChatLinesPerSecond);
+        Assert.Equal(WorldSession.Mirror.Mirrored, session.Say("later"));
+        Assert.Equal(WorldSession.Mirror.TooFast, session.Say("too soon again"));
+
+        relay.Tell(Relays.WorldRoomOf(WorldCode.Parse(code)!.Token), WorldSession.ChatSlow);
+        relay.Say(Relays.WorldRoomOf(WorldCode.Parse(code)!.Token), "Global", "still here");
+        var next = NextEntry(session);
+        Assert.Equal(("chat", "still here"), (next[Message.Kind], next.Team));
+        Assert.Equal("open", Message.Decode(session.Describe())["state"]);
+
+        session.Close();
     }
 
     /// <summary>
@@ -365,8 +400,9 @@ public sealed class WorldSessionTests
     /// </summary>
     /// <param name="relay">The relay every id leads to, or <see langword="null"/> for none.</param>
     /// <param name="key">The player's key, a new player's unless given.</param>
+    /// <param name="now">The clock the chat's allowance refills by, the real one unless given.</param>
     /// <returns>The session.</returns>
-    private static WorldSession NewSession(Uri? relay, string? key = null)
+    private static WorldSession NewSession(Uri? relay, string? key = null, Func<DateTime>? now = null)
     {
         var player = key ?? WorldDirectoryTests.PlayerKey(100 + Interlocked.Increment(ref players));
 
@@ -377,6 +413,7 @@ public sealed class WorldSessionTests
             RetryDelays = [TimeSpan.FromMilliseconds(100)],
             PingInterval = TimeSpan.FromSeconds(1),
             SilenceTimeout = TimeSpan.FromSeconds(5),
+            Now = now ?? (() => DateTime.UtcNow),
         };
     }
 

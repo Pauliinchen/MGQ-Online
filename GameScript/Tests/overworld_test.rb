@@ -8,6 +8,7 @@
 #                            - Checked the menu a click on a sender's name opens
 #                            - Checked whispers and their list of names, the help tab, the bubbles' chats and that what Alt types with the numpad is dropped
 #                            - Checked that a log made with the mouse button held and the box open draws without failing, and that a player's message cannot pose as an admin's line
+#                            - Checked a global line too fast for the relay
 #      Paulinchen  2026-10-07: Checked the lines mirrored to the relay, the party chat kept from it, and an admin's line from the relay
 #                            - Checked scrolling the chat log
 #                            - Checked that the numpad's 0 closes the chat box
@@ -885,6 +886,16 @@ $typed = "/help "
 map_frame
 chat.stop_typing
 check("closing the box leaves the help tab for the tab before it", chat.tab, :all)
+
+# A global line too fast for the relay.
+$say_result = MGQ_MpChat::TOO_FAST
+$sent.clear
+chat.start_typing
+$typed = "/g spam\r"
+map_frame
+check("a global line coming too fast is turned down and goes to nobody",
+      [$sent, MGQ_MpOverworldSync::Status.lines.last, chat.log_lines.include?("[Global] Me: spam")], [[], "You are sending too fast. Wait a moment, then send the line again.", false])
+$say_result = nil
 
 # The wheel's middle, which it opens on, and the pick it keeps once the arrows are let go.
 MGQ_MpActions::Wheel.open

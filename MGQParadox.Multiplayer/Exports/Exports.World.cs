@@ -2,6 +2,7 @@
 //  Exports.World.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-08: Answered mp_world_say with 2 for a chat line that comes faster than the relay keeps lines
 //      Paulinchen  2026-10-07: Added mp_world_say, which mirrors a chat line to the relay for the world's admins
 //      Paulinchen  2026-10-06: Wrote hexadecimal in lowercase at once
 //                            - Took the inbox entry mp_world_receive handed out, not whichever is oldest by then
@@ -214,13 +215,13 @@ internal static unsafe partial class Exports
     /// passes it to no other game. Returns at once.
     /// </summary>
     /// <param name="text">The line, UTF-8 and null-terminated.</param>
-    /// <returns>1 when it goes out, 0 without a seat or for an empty line.</returns>
+    /// <returns>1 when it goes out, 0 without a seat or for an empty line, 2 when it came faster than the relay keeps lines and was dropped.</returns>
     [UnmanagedCallersOnly(EntryPoint = "mp_world_say", CallConvs = [typeof(CallConvStdcall)])]
     public static int WorldSay(byte* text)
     {
         try
         {
-            return WorldSession.Current.Say(Text(text)) ? 1 : 0;
+            return (int)WorldSession.Current.Say(Text(text));
         }
         catch (Exception ex)
         {

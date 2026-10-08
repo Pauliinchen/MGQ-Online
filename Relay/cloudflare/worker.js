@@ -2,7 +2,7 @@
 //  worker.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-08: Ignored a chat frame without a line instead of closing the connection
+//      Paulinchen  2026-10-08: Dropped a game's chat lines past the chat's rate limit, answering each with "slow chat", and ignored a chat frame without a line instead of closing the connection
 //      Paulinchen  2026-10-07: Handed the chat lines the games mirror to the directory, and told every game of a world what an admin said
 //                            - Passed the X-MGQ-Auth header on to the world rooms and the directory
 //                            - Answered a text body over 256 KB with 413 instead of taking it for no JSON, and named the routes by the core's version
@@ -36,9 +36,9 @@ import { routeIs } from "../core/http.js";
 import { ModCatalog, handleModRequest } from "../core/mods.js";
 import { TradeBook, handleTradeRequest } from "../core/trades.js";
 import {
-  AUTH_HEADER, CLOSE, IN, OUT, PAIRED, PING, PLAYER_HEADER, PONG, RATE_LIMITS, REFUSAL_HEADER, RateLimiter, admit, chatLineOf, chatText, newPeer,
-  newWorldPeer, nextDeadline, nextWorldDeadline, overdue, parseRoute, presenceOf, replacedBy, routeWorldMessage, seatChangeText, seatText,
-  takeMessage, takeSeat, worldOverdue,
+  AUTH_HEADER, CHAT_SLOW, CLOSE, IN, OUT, PAIRED, PING, PLAYER_HEADER, PONG, RATE_LIMITS, REFUSAL_HEADER, RateLimiter, admit, chatLineOf, chatText,
+  newPeer, newWorldPeer, nextDeadline, nextWorldDeadline, overdue, parseRoute, presenceOf, replacedBy, routeWorldMessage, seatChangeText, seatText,
+  takeChatLine, takeMessage, takeSeat, worldOverdue,
 } from "../core/relay.js";
 
 /**
@@ -691,8 +691,7 @@ export class World extends DurableObject {
       if (line === null) {
         await this.leave(socket, refusal?.code ?? CLOSE.badRequest, refusal?.reason ?? "only binary messages are passed on");
       } else if (line.length > 0) {
-        this.world ??= await this.ctx.storage.get("world");
-        await internal(directoryOf(this.env), "say", { id: this.world, player: peer.player, name: peer.name, text: line });
+        await this.keepChatLine(socket, peer, line);
       }
 
       return;
@@ -710,6 +709,30 @@ export class World extends DurableObject {
         other.socket.send(delivery.forwarded);
       }
     }
+  }
+
+  /**
+   * Hands a game's chat line to the directory, or drops it and tells the game when it comes too fast.
+   *
+   * @param {WebSocket} socket The game's socket.
+   * @param {object} peer The game's record, as its message left it.
+   * @param {string} line The line.
+   */
+  async keepChatLine(socket, peer, line) {
+    const { peer: counted, allowed } = takeChatLine(peer, Date.now());
+    socket.serializeAttachment(counted);
+
+    if (!allowed) {
+      try {
+        socket.send(CHAT_SLOW);
+      } catch {
+        // A game whose socket closed meanwhile hears it no more.
+      }
+      return;
+    }
+
+    this.world ??= await this.ctx.storage.get("world");
+    await internal(directoryOf(this.env), "say", { id: this.world, player: peer.player, name: peer.name, text: line });
   }
 
   /**

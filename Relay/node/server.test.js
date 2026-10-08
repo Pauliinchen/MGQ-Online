@@ -2,6 +2,7 @@
 //  server.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-08: Tested the chat's rate limit and a chat frame without a line, which keeps the connection
 //      Paulinchen  2026-10-07: Tested a world's chat: a game's mirrored line kept, an admin's line reaching every game, and other text still closing the connection
 //                            - Tested the auth key header, the request and error log lines, every mod catalog route, editing a world, the address behind a proxy, the sweep and a text body over the cap
 //                            - Expected 400 for a path that is no route and 426 for a room path without an upgrade
@@ -24,7 +25,7 @@ import assert from "node:assert/strict";
 import WebSocketClient from "ws";
 import { DIRECTORY_LIMITS, Directory, playerIdOf, sha256Hex } from "../core/directory.js";
 import { ModCatalog, zipHashes } from "../core/mods.js";
-import { AUTH_HEADER, CLOSE, EVERYONE, LIMITS, PAIRED, PING, PLAYER_HEADER, PONG, REFUSAL_HEADER, REPLACED } from "../core/relay.js";
+import { AUTH_HEADER, CHAT_LIMITS, CHAT_SLOW, CLOSE, EVERYONE, LIMITS, PAIRED, PING, PLAYER_HEADER, PONG, REFUSAL_HEADER, REPLACED } from "../core/relay.js";
 import { TRADE_LIMITS } from "../core/trades.js";
 import { makeUpload, makeZip } from "../core/test_zip.js";
 import { addressOf, createRelay, errorLine, memoryModStore, memoryStore, requestLine } from "./server.js";
@@ -432,6 +433,30 @@ test("a chat line a game sends as text is kept for the admins, an admin's line r
   second.socket.send("something else");
   assert.equal((await second.closed).code, CLOSE.badRequest);
   first.socket.close();
+});
+
+test("a game's chat lines past the chat's rate limit are dropped and answered, and an empty one is ignored", async () => {
+  await makeWorld(roomId(131), 4);
+  const game = await sit(roomId(131), 9);
+  await game.next();
+
+  game.socket.send("chat    ");
+
+  for (let index = 0; index <= CHAT_LIMITS.burst; index++) {
+    game.socket.send(`chat line ${index}`);
+  }
+
+  assert.equal(await game.next(), CHAT_SLOW, "the line past the burst is answered");
+  const chat = async () => (await (await fetch(`${directoryBase}/${roomId(131)}/chat`, { headers: { [PLAYER_HEADER]: CREATOR } })).json()).lines;
+  await until(async () => (await chat()).length === CHAT_LIMITS.burst);
+  assert.deepEqual((await chat()).map((line) => line.text), Array.from({ length: CHAT_LIMITS.burst }, (_, index) => `line ${index}`), "the lines are kept in order, without the empty one");
+
+  now += 1000;
+  game.socket.send("chat later");
+  await until(async () => (await chat()).length === CHAT_LIMITS.burst + 1);
+  game.socket.send(PING);
+  assert.equal(await game.next(), PONG, "the connection stays open");
+  game.socket.close();
 });
 
 test("the directory hands out a world's lock and refuses what is no directory route", async () => {

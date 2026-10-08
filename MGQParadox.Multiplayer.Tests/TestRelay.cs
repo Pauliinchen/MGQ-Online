@@ -2,7 +2,7 @@
 //  TestRelay.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-08: Handed out the mirrored chat lines as a copy taken under the lock
+//      Paulinchen  2026-10-08: Handed out the mirrored chat lines as a copy taken under the lock, and told any text to every game of a world room
 //      Paulinchen  2026-10-07: Kept the chat lines games mirror as text frames, and said an admin's line to every game of a world room
 //                            - Took the world's auth key from the X-MGQ-Auth header too, for the starting save as well
 //      Paulinchen  2026-10-06: Took the player's key from the X-MGQ-Player header too, for the trades as well, and closed a player's earlier world room connection with 4009 "replaced" once the same player entered again
@@ -210,7 +210,14 @@ internal sealed class TestRelay : IDisposable
     /// <param name="roomId">The world.</param>
     /// <param name="name">The admin's name.</param>
     /// <param name="text">The line.</param>
-    public void Say(string roomId, string name, string text)
+    public void Say(string roomId, string name, string text) => Tell(roomId, $"chat {name}\t{text}");
+
+    /// <summary>
+    /// Sends a text frame to every game of a world room.
+    /// </summary>
+    /// <param name="roomId">The world.</param>
+    /// <param name="text">The text.</param>
+    public void Tell(string roomId, string text)
     {
         Peer[] peers;
 
@@ -221,7 +228,7 @@ internal sealed class TestRelay : IDisposable
 
         foreach (var peer in peers)
         {
-            peer.SendAsync(Encoding.UTF8.GetBytes($"chat {name}\t{text}"), WebSocketMessageType.Text).GetAwaiter().GetResult();
+            peer.SendAsync(Encoding.UTF8.GetBytes(text), WebSocketMessageType.Text).GetAwaiter().GetResult();
         }
     }
 

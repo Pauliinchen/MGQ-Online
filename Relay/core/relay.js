@@ -2,7 +2,8 @@
 //  relay.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-08: Told a chat frame whose line is empty apart from a frame that is no chat frame
+//      Paulinchen  2026-10-08: Limited each world room connection to 2 chat lines a second after a burst of 10, answering a dropped line with "slow chat"
+//                            - Told a chat frame whose line is empty apart from a frame that is no chat frame
 //      Paulinchen  2026-10-07: Added the chat text frames: a line a game mirrors for the world's log, and a line an admin says to every game
 //                            - Took a world room's auth key from the X-MGQ-Auth header too
 //                            - Read ids, keys and names by the rules of ids.js
@@ -76,6 +77,17 @@ export const EVERYONE = 255;
  * relay sends `chat <name>\t<line>` to every game once an admin says something.
  */
 export const CHAT = "chat";
+
+/**
+ * What a world room answers a game whose chat line it dropped for coming too fast; released games
+ * ignore it as a seat text without seats.
+ */
+export const CHAT_SLOW = "slow chat";
+
+/**
+ * How many chat lines one world room connection may send: `burst` at once, then `perSecond` over time.
+ */
+export const CHAT_LIMITS = Object.freeze({ perSecond: 2, burst: 10 });
 
 /**
  * Longest line of a world's chat the relay keeps, longer than the games let players type.
@@ -388,10 +400,26 @@ export function takeSeat(peers, capacity) {
  * @param {{player: string, name: string}} who The player's id, as the directory made it, and name.
  * @param {number} now The current time in milliseconds.
  * @param {typeof LIMITS} [limits] The limits.
- * @returns {{seat: number, player: string, name: string, joinedAt: number, allowance: number, refilledAt: number}} The record, with a full message allowance.
+ * @param {typeof CHAT_LIMITS} [chatLimits] The chat's limits.
+ * @returns {{seat: number, player: string, name: string, joinedAt: number, allowance: number, refilledAt: number, chatAllowance: number, chatRefilledAt: number}} The record, with full message and chat allowances.
  */
-export function newWorldPeer(seat, who, now, limits = LIMITS) {
-  return { seat, player: who.player, name: who.name, joinedAt: now, allowance: limits.burst, refilledAt: now };
+export function newWorldPeer(seat, who, now, limits = LIMITS, chatLimits = CHAT_LIMITS) {
+  return { seat, player: who.player, name: who.name, joinedAt: now, allowance: limits.burst, refilledAt: now, chatAllowance: chatLimits.burst, chatRefilledAt: now };
+}
+
+/**
+ * Checks a chat line a game sent against its chat allowance, which refills over time.
+ *
+ * @param {{chatAllowance?: number, chatRefilledAt?: number}} peer The game's record; one made before the chat had an allowance starts with a full one.
+ * @param {number} now The current time in milliseconds.
+ * @param {typeof CHAT_LIMITS} [chatLimits] The chat's limits.
+ * @returns {{peer: object, allowed: boolean}} The game's new record, and whether the line may be kept.
+ */
+export function takeChatLine(peer, now, chatLimits = CHAT_LIMITS) {
+  const allowance = peer.chatAllowance ?? chatLimits.burst;
+  const refilled = Math.min(chatLimits.burst, allowance + ((now - (peer.chatRefilledAt ?? now)) / 1000) * chatLimits.perSecond);
+  const allowed = refilled >= 1;
+  return { peer: { ...peer, chatAllowance: allowed ? refilled - 1 : refilled, chatRefilledAt: now }, allowed };
 }
 
 /**

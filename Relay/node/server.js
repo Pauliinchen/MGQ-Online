@@ -2,7 +2,7 @@
 //  server.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-08: Ignored a chat frame without a line instead of closing the connection
+//      Paulinchen  2026-10-08: Dropped a game's chat lines past the chat's rate limit, answering each with "slow chat", and ignored a chat frame without a line instead of closing the connection
 //      Paulinchen  2026-10-07: Kept the chat lines the games mirror as text frames, and told every game of a world what an admin said
 //                            - Logged every request as one line and every caught error with its stack, never a key
 //                            - Kept the worlds, mods and trades in a SQLite database when MGQ_RELAY_DB names one
@@ -37,8 +37,8 @@ import { routeIs } from "../core/http.js";
 import { ModCatalog, handleModRequest } from "../core/mods.js";
 import { TradeBook, handleTradeRequest } from "../core/trades.js";
 import {
-  AUTH_HEADER, CLOSE, IN, LIMITS, OUT, PAIRED, PING, PLAYER_HEADER, PONG, REFUSAL_HEADER, admit, chatLineOf, chatText, newPeer, newWorldPeer, overdue,
-  parseRoute, presenceOf, replacedBy, routeWorldMessage, seatChangeText, seatText, takeMessage, takeSeat, worldOverdue,
+  AUTH_HEADER, CHAT_SLOW, CLOSE, IN, LIMITS, OUT, PAIRED, PING, PLAYER_HEADER, PONG, REFUSAL_HEADER, admit, chatLineOf, chatText, newPeer, newWorldPeer,
+  overdue, parseRoute, presenceOf, replacedBy, routeWorldMessage, seatChangeText, seatText, takeChatLine, takeMessage, takeSeat, worldOverdue,
 } from "../core/relay.js";
 
 /**
@@ -522,7 +522,7 @@ export function createRelay({
         } else if (line === null) {
           unseat(route.roomId, peer, CLOSE.badRequest, "only binary messages are passed on");
         } else if (line.length > 0) {
-          directory.say(route.roomId, { player: admission.player, name: route.name }, line).catch((error) => log.error(errorLine(new Date(), `chat of world ${route.roomId}`, error)));
+          keepChatLine(route.roomId, peer, admission.player, route.name, line);
         }
         return;
       }
@@ -543,6 +543,27 @@ export function createRelay({
 
     socket.on("close", () => unseat(route.roomId, peer, CLOSE.normal, "closed"));
     socket.on("error", () => socket.terminate());
+  }
+
+  /**
+   * Hands a game's chat line to the directory, or drops it and tells the game when it comes too fast.
+   *
+   * @param {string} roomId The world.
+   * @param {{socket: import("ws").WebSocket, record: object}} peer The game.
+   * @param {string} player The player's id.
+   * @param {string} name The player's name.
+   * @param {string} line The line.
+   */
+  function keepChatLine(roomId, peer, player, name, line) {
+    const { peer: record, allowed } = takeChatLine(peer.record, clock());
+    peer.record = record;
+
+    if (!allowed) {
+      peer.socket.send(CHAT_SLOW);
+      return;
+    }
+
+    directory.say(roomId, { player, name }, line).catch((error) => log.error(errorLine(new Date(), `chat of world ${roomId}`, error)));
   }
 
   /**

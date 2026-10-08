@@ -20,6 +20,7 @@
 #                            - Rested the map's chat log just under the topmost viewport, which it covered with the wheels and the World overview
 #                            - Sized the log before following the mouse, which a held button crashed on a log made that frame
 #                            - Found players through MGQ_MpOverworldSync::Peers and moved the three lists by one arrow step
+#                            - Mirrored a global line to the relay before sending it, turning it down when it comes too fast
 #      Paulinchen  2026-10-07: Mirrored every line sent to everyone to the relay for the world's admins, and showed an admin's line from the relay as [Admin] in gold
 #                            - Closed the chat box with the numpad's 0, as the game's windows close
 #                            - Scrolled the chat log while the box is open with up, down, Page Up and Page Down, keeping the rows in place as lines come in
@@ -73,6 +74,12 @@ module MGQ_MpChat
 
   # Frames after the chat key opened the box in which the key's own character may still arrive.
   KEY_ECHO_FRAMES = 10
+
+  # What mp_world_say answers for a line of the global chat the DLL dropped for coming too fast.
+  TOO_FAST = 2
+
+  # What mp_world_say answers for a line of the global chat the relay got.
+  SAID = 1
 
   # Windows' codes of Page Up and Page Down, which scroll the chat log a page.
   PAGE_UP_KEY = 0x21
@@ -720,6 +727,9 @@ module MGQ_MpChat
     return refuse("You are in no party, so nobody hears the party chat.") if channel == :party && !(defined?(MGQ_MpCoop) && MGQ_MpCoop.in_party?)
     return refuse("Type /w and a name to choose whom to whisper to.") if channel == :whisper && !@whisper_to
 
+    # Only the global chat's lines reach the relay, whose limit drops those that come too fast.
+    return if channel == :global && !mirror(text)
+
     name = MGQ_Multiplayer::Player.name.to_s
     sent = case channel
            when :party then MGQ_MpCoop.tell(-1, "pchat", text, "name" => name)
@@ -731,8 +741,23 @@ module MGQ_MpChat
 
     @sent += 1
     log("sent to the #{TAB_NAMES[channel]} chat#{channel == :whisper ? " of #{@whisper_to}" : ''} (line #{@sent} sent): #{shown_in_log(text, channel)}")
-    log("the relay did not take the line for the world's chat") if channel == :global && !MGQ_MpOverworldSync.say(text)
     add(:me, name, text, channel, false, false, channel == :whisper ? @whisper_to : nil)
+  end
+
+  # Mirrors a line of the global chat to the relay for the world's admins, before it goes to the
+  # others, and turns it down when it comes too fast.
+  #
+  # @param text [String] The line.
+  # @return [Boolean] Whether the line may go to the others, false when it came too fast.
+  def self.mirror(text)
+    said = MGQ_MpOverworldSync.say(text)
+    if said == TOO_FAST
+      refuse("You are sending too fast. Wait a moment, then send the line again.")
+      return false
+    end
+
+    log("the relay did not take the line for the world's chat") unless said == SAID
+    true
   end
 
   # Writes a line for Multiplayer InGame.log, leaving a whisper's text out.
