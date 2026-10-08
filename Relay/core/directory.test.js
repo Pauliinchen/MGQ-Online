@@ -2,7 +2,15 @@
 //  directory.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-08: Covered lines said at once, all kept in order, and an admin's line for a world deleted meanwhile
+//      Paulinchen  2026-10-10: Covered an edit that sends a Raid World's difficulty unchanged telling the world room nothing, and the first difficulty of a world made without one
+//      Paulinchen  2026-10-09: Covered telling a world room whether a key is an admin's
+//                            - Covered a Raid World's difficulty: kept, listed, changed by its creator or an admin only, refused for a Classic world and out of range
+//                            - Covered a Raid World refused with a starting save or a player's choice, and its starting save upload refused
+//                            - Covered member's refusal during an upload with a Classic world, since a Raid World takes no starting save
+//                            - Covered a world room's member question refused while the starting save is uploaded
+//      Paulinchen  2026-10-08: Covered telling a world room who plays its world
+//                            - Covered a world's type and companion sharing, fixed once made, and Raid Worlds kept from games that do not name them
+//                            - Covered lines said at once, all kept in order, and an admin's line for a world deleted meanwhile
 //      Paulinchen  2026-10-07: Covered a world's chat: the lines games mirror, the lines admins say, who reads them, the cap and the chat going with the world
 //                            - Covered the auth key header, the cap on removed players, and rate turns taken only after every check
 //                            - Expected 413 for a JSON body over the limit and 404 for an unknown sub-route
@@ -29,7 +37,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { DIRECTORY_LIMITS, Directory, cleanName, handleDirectoryRequest, parseAdmins, playerIdOf, sha256Hex } from "./directory.js";
-import { RateLimiter } from "./relay.js";
+import { FEATURE, RateLimiter, parseFeatures } from "./relay.js";
 
 /**
  * The creator's player key, as games make them.
@@ -128,6 +136,8 @@ test("a made world is listed without its hashes or lock, with the creator as its
   assert.equal(body.worlds[0].choose, false);
   assert.equal(body.worlds[0].open, false);
   assert.equal(body.worlds[0].featured, false);
+  assert.equal(body.worlds[0].type, "classic");
+  assert.equal(body.worlds[0].share, "off");
   assert.equal(JSON.stringify(body).includes("authHash"), false);
   assert.equal(JSON.stringify(body).includes("box"), false);
   assert.notEqual(creator, CREATOR);
@@ -140,7 +150,7 @@ test("a world is refused twice, with bad fields, or beyond a creator's limit", a
   assert.equal((await directory.create(await newWorld())).status, 409);
   assert.equal((await directory.create(await newWorld({ id: "1".repeat(32) }))).status, 429);
 
-  for (const bad of [{ start: "yes" }, { hidden: 1 }, { choose: "no" }, { open: "yes" }, { featured: 1 }, { description: 5 }, { mods: [] }, { data: "A B" }, { data: "x".repeat(161) }, { strict: "yes" }, { seats: 1 }, { seats: 33 }, { name: " " }, { id: "xyz" }, { player: "short" }, { authHash: "00" }, { lock: { salt: "12", iterations: 200_000, box: "ab" } }, { lock: { salt: "12".repeat(16), iterations: 10, box: "ab" } }]) {
+  for (const bad of [{ start: "yes" }, { hidden: 1 }, { choose: "no" }, { open: "yes" }, { featured: 1 }, { description: 5 }, { mods: [] }, { data: "A B" }, { data: "x".repeat(161) }, { strict: "yes" }, { type: "duel" }, { type: true }, { share: "some" }, { share: 1 }, { seats: 1 }, { seats: 33 }, { name: " " }, { id: "xyz" }, { player: "short" }, { authHash: "00" }, { lock: { salt: "12", iterations: 200_000, box: "ab" } }, { lock: { salt: "12".repeat(16), iterations: 10, box: "ab" } }]) {
     assert.equal((await directory.create(await newWorld({ id: "2".repeat(32), player: OTHER, ...bad }))).status, 400, JSON.stringify(bad));
   }
 });
@@ -655,4 +665,133 @@ test("a request the directory refuses anyway costs its address no rate turn", as
   assert.equal((await directory.putStart(WORLD, OTHER, Uint8Array.of(1), "1.2.3.4")).status, 403);
   assert.equal((await directory.putStart(WORLD, CREATOR, new Uint8Array(0), "1.2.3.4")).status, 413);
   assert.equal((await directory.putStart(WORLD, CREATOR, Uint8Array.of(1), "1.2.3.4")).status, 200);
+});
+
+test("a Raid World keeps how it shares companions, a Classic one shares none, and both stay as made", async () => {
+  const { directory } = newDirectory();
+  await directory.create(await newWorld({ type: "raid", share: "story" }));
+  await directory.create(await newWorld({ id: "1".repeat(32), type: "classic", share: "all" }));
+  await directory.create(await newWorld({ id: "2".repeat(32), type: "raid" }));
+
+  const typeOf = async () => Object.fromEntries((await directory.list()).body.worlds.map((world) => [world.id, [world.type, world.share]]));
+  assert.deepEqual(await typeOf(), { [WORLD]: ["raid", "story"], ["1".repeat(32)]: ["classic", "off"], ["2".repeat(32)]: ["raid", "off"] });
+
+  assert.equal((await directory.edit(WORLD, CREATOR, { type: "classic", share: "all", seats: 6 })).status, 200);
+  assert.deepEqual((await typeOf())[WORLD], ["raid", "story"]);
+});
+
+test("a Raid World keeps its difficulty, which its creator or an admin changes and a Classic world never has", async () => {
+  const { directory } = newDirectory(DIRECTORY_LIMITS, [await playerIdOf(ADMIN)]);
+  await directory.create(await newWorld({ type: "raid", difficulty: 2 }));
+  await directory.create(await newWorld({ id: "1".repeat(32), type: "classic", difficulty: 2 }));
+  await directory.create(await newWorld({ id: "2".repeat(32), type: "raid" }));
+
+  const difficultyOf = async () => Object.fromEntries((await directory.list()).body.worlds.map((world) => [world.id, world.difficulty]));
+  assert.deepEqual(await difficultyOf(), { [WORLD]: 2, ["1".repeat(32)]: undefined, ["2".repeat(32)]: undefined }, "a Raid World made without one leaves each player their own");
+
+  const edited = await directory.edit(WORLD, CREATOR, { difficulty: -2 });
+  assert.deepEqual([edited.status, edited.difficulty], [200, -2], "the answer names the difficulty the world room tells");
+  assert.equal((await directory.edit(WORLD, ADMIN, { difficulty: 4 })).difficulty, 4);
+  assert.equal((await directory.edit(WORLD, OTHER, { difficulty: 0 })).status, 403);
+  assert.equal((await difficultyOf())[WORLD], 4);
+  const same = await directory.edit(WORLD, CREATOR, { difficulty: 4, seats: 6 });
+  assert.deepEqual([same.status, same.difficulty], [200, undefined], "the difficulty the world has already tells nothing");
+  assert.equal((await directory.edit("2".repeat(32), CREATOR, { difficulty: 0 })).difficulty, 0, "the first difficulty of a world made without one is told");
+
+  for (const bad of [5, -3, 1.5, "1", null]) {
+    assert.equal((await directory.edit(WORLD, CREATOR, { difficulty: bad })).status, 400, `difficulty ${bad}`);
+  }
+
+  assert.equal((await directory.edit("1".repeat(32), CREATOR, { difficulty: 1 })).status, 400, "only a Raid World sets a difficulty");
+  assert.equal((await directory.edit("1".repeat(32), CREATOR, { seats: 6 })).difficulty, undefined, "an edit without one tells none");
+
+  for (const bad of [5, -3, 0.5, "0"]) {
+    assert.equal((await directory.create(await newWorld({ id: "3".repeat(32), type: "raid", difficulty: bad }))).status, 400, `new world with difficulty ${bad}`);
+  }
+});
+
+test("a Raid World starts from the beginning: no starting save and no player's choice", async () => {
+  const { directory } = newDirectory();
+
+  for (const changes of [{ start: true }, { choose: true }]) {
+    const refused = await directory.create(await newWorld({ type: "raid", ...changes }));
+    assert.deepEqual([refused.status, refused.body.code], [400, "raid_start"]);
+  }
+
+  assert.equal((await directory.create(await newWorld({ type: "raid", start: false, choose: false }))).status, 201);
+  const upload = await directory.putStart(WORLD, CREATOR, Uint8Array.of(1));
+  assert.deepEqual([upload.status, upload.body.code], [400, "raid_start"]);
+
+  assert.equal((await directory.create(await newWorld({ id: "1".repeat(32), start: true, choose: true }))).status, 201, "a Classic world keeps both as before");
+});
+
+test("a world kept from before types is Classic", async () => {
+  const { directory } = newDirectory();
+  await directory.create(await newWorld());
+  const entry = await directory.store.get(WORLD);
+  delete entry.type;
+  delete entry.share;
+  await directory.store.put(entry);
+
+  const world = (await directory.list()).body.worlds[0];
+  assert.deepEqual([world.type, world.share], ["classic", "off"]);
+  assert.equal((await directory.admit(WORLD, OTHER, AUTH)).status, 200);
+});
+
+test("a Raid World lets in only games that name Raid Worlds among their features", async () => {
+  const { directory } = newDirectory();
+  await directory.create(await newWorld({ type: "raid", share: "all" }));
+
+  assert.deepEqual((await directory.admit(WORLD, OTHER, AUTH)).body, { error: "the world is a Raid World, which this game cannot play", code: "raid_unsupported" });
+  assert.equal((await directory.admit(WORLD, OTHER, AUTH, null, ["trades"])).status, 400);
+  assert.equal((await directory.admit(WORLD, OTHER, AUTH, null, [FEATURE.raid])).status, 200);
+  assert.equal((await directory.admit(WORLD, OTHER, "cd".repeat(32), null, [])).status, 401, "a wrong token is told before the type");
+
+  await directory.create(await newWorld({ id: "1".repeat(32) }));
+  assert.equal((await directory.admit("1".repeat(32), OTHER, AUTH)).status, 200, "a Classic world takes released games as before");
+});
+
+test("member tells a world room who plays its world, with the world's type and auth hash", async () => {
+  const { directory } = newDirectory();
+  await directory.create(await newWorld({ type: "raid" }));
+
+  const answer = await directory.member(WORLD, OTHER, AUTH);
+  assert.equal(answer.status, 200);
+  assert.deepEqual([answer.player, answer.type, answer.authHash], [await playerIdOf(OTHER), "raid", await sha256Hex(AUTH)]);
+
+  assert.equal((await directory.member(WORLD, OTHER, "cd".repeat(32))).status, 401);
+  assert.equal((await directory.member("9".repeat(32), OTHER, AUTH)).status, 404);
+  await directory.ban(WORLD, CREATOR, await playerIdOf(OTHER));
+  assert.equal((await directory.member(WORLD, OTHER, AUTH)).status, 403);
+});
+
+test("member refuses a world whose starting save is still being uploaded", async () => {
+  const { directory } = newDirectory();
+  await directory.create(await newWorld({ start: true }));
+
+  const pending = await directory.member(WORLD, CREATOR, AUTH);
+  assert.equal(pending.status, 409);
+  assert.equal(pending.body.code, "pending");
+
+  await directory.putStart(WORLD, CREATOR, Uint8Array.of(7));
+  assert.equal((await directory.member(WORLD, CREATOR, AUTH)).status, 200);
+});
+
+test("raidAdmin tells a world room whether a key is an admin's, with the world's type", async () => {
+  const { directory } = newDirectory(DIRECTORY_LIMITS, [await playerIdOf(ADMIN)]);
+  await directory.create(await newWorld({ type: "raid" }));
+
+  const answer = await directory.raidAdmin(WORLD, ADMIN);
+  assert.deepEqual([answer.status, answer.type], [200, "raid"]);
+  assert.equal((await directory.raidAdmin(WORLD, CREATOR)).status, 403, "the creator is no admin");
+  assert.equal((await directory.raidAdmin(WORLD, "zz")).status, 403);
+  assert.equal((await directory.raidAdmin("9".repeat(32), ADMIN)).status, 404);
+});
+
+test("parseFeatures reads the features a game names, separated by commas or white space, in lower case", () => {
+  assert.deepEqual(parseFeatures("raid"), ["raid"]);
+  assert.deepEqual(parseFeatures(" Raid, trades  boss "), ["raid", "trades", "boss"]);
+  assert.deepEqual(parseFeatures(""), []);
+  assert.deepEqual(parseFeatures(null), []);
+  assert.deepEqual(parseFeatures(undefined), []);
 });

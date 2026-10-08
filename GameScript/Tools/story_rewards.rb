@@ -2,6 +2,9 @@
 #  story_rewards.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-11: Listed the flags the game toggles around its fights (22, 73, 97) and the event variant (129) among each player's own, as story_state.rbx does
+#      Paulinchen  2026-10-10: Left the Library Flag switches out of the marks, so every translation of the game gives the same marks
+#      Paulinchen  2026-10-09: Let a caller name the pattern of scratch names it reads
 #      Paulinchen  2026-10-07: Listed the variables the game sets per area and battle among each player's own, as coop_story.rbx does
 #                            - Read the maps from 1000 on where the game keeps them, as the Final Chapter's, and the companions set_actors brings
 #                            - Wrote the skills, companions and items only the Final Chapter gives
@@ -59,10 +62,16 @@ PROGRESS_VARIABLES = [1001, 1141, 1142, 1143]
 # Names of switches and variables the game uses as scratch while an event runs.
 TEMPORARY_NAMES = /general|temp|system only|汎用|一時/i
 
+# Names of the switches that record visits for the in-game library (201-420 and 5201-5600), the
+# last ones untranslated. They tell nothing of the story, and translations differ in setting them:
+# the 3.06 community translation never turns on 5352 on the way into the Black Mansion, so a mark
+# on one would never hold for its players.
+LIBRARY_NAMES = /\A(Library Flag\b|図鑑フラグ)/
+
 # Switches that are each player's own in coop_story.rbx (SIDE_SWITCHES, PERSONAL_SWITCHES with the
 # warp ban 100, AWAKENING_SWITCHES to AWAKENING_LAST), which tell nothing of how far the story is.
 # A test checks that both lists agree.
-PERSONAL_SWITCHES = [4, 5, 95, 100, 445..447, 502, 1001..2000, 6000..6999]
+PERSONAL_SWITCHES = [4, 5, 22, 73, 95, 97, 100, 445..447, 502, 1001..2000, 6000..6999]
 
 # First variable that holds a companion's affection, one per actor of the database.
 AFFECTION_VARIABLES = 3000
@@ -73,7 +82,7 @@ AFFECTION_VARIABLES = 3000
 # @param actors [Integer] How many actors the database holds.
 # @return [Array<Range, Integer>] The variables.
 def personal_variables(actors)
-  [9, 21..23, 46..48, 56, 57, 150, 200..201, 1002, 2000...(AFFECTION_VARIABLES + actors)]
+  [9, 21..23, 46..48, 56, 57, 129, 150, 200..201, 1002, 2000...(AFFECTION_VARIABLES + actors)]
 end
 
 # The file written when the command line names none.
@@ -207,15 +216,16 @@ def rewards(list, side)
   end
 end
 
-# Reports whether a switch or variable is scratch or the player's own, which tells nothing of how
-# far the story is.
+# Reports whether a switch or variable is scratch, the player's own or a library visit, which tells
+# nothing of how far the story is.
 #
 # @param kind [Symbol] :s for a switch, :v for a variable.
 # @param id [Integer] Its id.
 # @param names [Array<String>] The names of the switches or variables.
+# @param scratch [Regexp] The names of scratch switches and variables.
 # @return [Boolean] Whether it is.
-def unmarked?(kind, id, names)
-  return true if names[id].to_s =~ TEMPORARY_NAMES
+def unmarked?(kind, id, names, scratch = TEMPORARY_NAMES)
+  return true if names[id].to_s =~ scratch || (kind == :s && names[id].to_s =~ LIBRARY_NAMES)
 
   ranges = kind == :s ? PERSONAL_SWITCHES : $personal_variables
   ranges.any? { |range| range === id }

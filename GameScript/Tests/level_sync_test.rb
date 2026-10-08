@@ -2,6 +2,7 @@
 #  level_sync_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-08: Checked that a Raid World's battles have no level
 #      Paulinchen  2026-10-07: Checked that the log tells each character's level and stats before and after the sync
 #      Paulinchen  2026-10-06: Checked that the end syncs nothing more by a character's stats instead of the sync's level
 #      Paulinchen  2026-10-04: Created
@@ -21,6 +22,7 @@ module SceneManager; def self.run; end; end
 class Scene_Title; def start; end; end
 module MGQ_MpChat; def self.system(text); $chat << text; end; end
 module MGQ_MpBattles; def self.kind; $kind; end; end
+module MGQ_MpCoop; module Scope; def self.raid?; $raid; end; end; end
 module BattleManager; def self.process_victory; $victory_mhp = $victor.mhp; end; end
 
 # The co-op battle, as far as the level sync asks it.
@@ -78,6 +80,10 @@ member = MGQ_MpBattlesCoop::Player.new(2, "90,95", [[0], [1]])
 check("the battle's level is the highest of the leader's characters in it", sync.level_for([member, leader]), 50)
 $leader_seat = 5
 check("without the leader in the battle there is none", sync.level_for([member, leader]), nil)
+$leader_seat = 0
+$raid = true
+check("a Raid World's battles have none", sync.level_for([member, leader]), nil)
+$raid = false
 
 # Syncing.
 $kind = :coop

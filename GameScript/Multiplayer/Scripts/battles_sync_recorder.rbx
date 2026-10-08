@@ -2,6 +2,7 @@
 #  battles_sync_recorder.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-09: Let the battle's mode act right before each send of the stream goes out, so a co-op host tells its guests the enemies added mid-battle first
 #      Paulinchen  2026-10-07: Logged the recording's start and end and what each turn streamed
 #      Paulinchen  2026-10-06: Recorded the turns each state has left and the barriers with the battlers' values, without the maximum HP and MP no guest read
 #                            - Kept the battle's end to the recording on file, which no guest plays
@@ -272,7 +273,8 @@ module MGQ_MpBattlesSync
       troop ? "e#{troop}" : (MGQ_MpBattlesSync.mode.reserve_ref(battler) || "?")
     end
 
-    # Sends or writes the kept events.
+    # Sends or writes the kept events. A send first lets the battle's mode tell the guests what
+    # its events may name, see MGQ_MpBattles::Mode#before_send.
     def self.flush
       return if @events.empty?
 
@@ -280,6 +282,7 @@ module MGQ_MpBattlesSync
       (@totals ||= [0, 0])[0] += @events.size
       @totals[1] += 1
       if @sink == :link
+        MGQ_MpBattlesSync.mode.before_send
         Channel.post("events", @events.join("\n"))
       else
         File.open(MGQ_Multiplayer.log_path(RECORDING_FILE), @file_mode) { |file| file.write(@events.join("\n") + "\n") }

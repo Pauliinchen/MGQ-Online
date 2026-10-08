@@ -2,7 +2,11 @@
 //  TestRelay.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-08: Handed out the mirrored chat lines as a copy taken under the lock, and told any text to every game of a world room
+//      Paulinchen  2026-10-09: Kept a Raid World's boss pools as the relay does: reports counted once per battle, the pool that fills up again and the boss an emptying report defeats, telling every game of each change
+//                            - Kept a Raid World's difficulty, set when it is made and changed with an edit, and listed it
+//      Paulinchen  2026-10-08: Kept a Raid World's story as the relay does: writes on the last sealed story that are not behind it, checkpoints, the route lock and shared companions, telling every game of each change
+//                            - Kept a world's type and how a Raid World shares companions, and kept games that do not name Raid Worlds in X-MGQ-Features out of them
+//                            - Handed out the mirrored chat lines as a copy taken under the lock, and told any text to every game of a world room
 //                            - Answered the Mod Config options games send with whether it kept them, as the relay does
 //      Paulinchen  2026-10-07: Kept the chat lines games mirror as text frames, and said an admin's line to every game of a world room
 //                            - Took the world's auth key from the X-MGQ-Auth header too, for the starting save as well
@@ -33,6 +37,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -148,6 +153,11 @@ internal sealed class TestRelay : IDisposable
     /// The version whose Mod Config options the relay keeps instead of those sent; <see langword="null"/> to keep those sent.
     /// </summary>
     public string? KeptModOptionsVersion { get; set; }
+
+    /// <summary>
+    /// What the last request named in the features header, <see langword="null"/> before one named any.
+    /// </summary>
+    public string? LastFeatures { get; private set; }
 
     /// <summary>
     /// How many peers the relay holds in all its rooms.
@@ -340,6 +350,19 @@ internal sealed class TestRelay : IDisposable
     private async Task ServeAsync(HttpListenerContext context)
     {
         var parts = context.Request.Url!.AbsolutePath.Trim('/').Split('/');
+        LastFeatures = context.Request.Headers[DirectoryClient.FeaturesHeader] ?? LastFeatures;
+
+        if (!context.Request.IsWebSocketRequest && parts is ["v1", "worlds", _, "story", ..])
+        {
+            await ServeStoryAsync(context, parts);
+            return;
+        }
+
+        if (!context.Request.IsWebSocketRequest && parts is ["v1", "worlds", _, "bosses", ..])
+        {
+            await ServeBossesAsync(context, parts);
+            return;
+        }
 
         if (!context.Request.IsWebSocketRequest && parts is ["v1", "worlds", ..])
         {
@@ -475,6 +498,152 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
     await context.Response.OutputStream.WriteAsync(bytes);
     context.Response.Close();
 }
+
+    /// <summary>
+    /// How many story writes the relay took in all Raid Worlds.
+    /// </summary>
+    public int StoryWrites { get; private set; }
+
+    /// <summary>
+    /// Answers a Raid World's story requests, for its players only: the story, a write, a checkpoint,
+    /// the route lock and the shared companions; then tells every game of the world of a change.
+    /// </summary>
+    /// <param name="context">The request.</param>
+    /// <param name="parts">The path's parts, "v1", "worlds", the world and "story" first.</param>
+    /// <returns>Completes once answered.</returns>
+    private async Task ServeStoryAsync(HttpListenerContext context, string[] parts)
+    {
+        var method = context.Request.HttpMethod;
+        using var reader = new StreamReader(context.Request.InputStream, Encoding.UTF8);
+        var body = method == "POST" ? JsonNode.Parse(await reader.ReadToEndAsync()) : null;
+        var id = parts[2];
+        var key = PlayerKeyOf(context);
+        (int Status, JsonNode Body) answer;
+        long? push = null;
+
+        lock (_gate)
+        {
+            if (!_directory.TryGetValue(id, out var world))
+            {
+                answer = (404, Error("there is no such world"));
+            }
+            else if (key == null || Hash(AuthKeyOf(context) ?? string.Empty) != world.AuthHash)
+            {
+                answer = (401, Error("the world's token does not match"));
+            }
+            else if (world.Bans.Contains(PlayerIdOf(key)))
+            {
+                answer = (403, Error("the creator removed this player from the world"));
+            }
+            else if (world.Type != WorldType.Raid)
+            {
+                answer = (404, new JsonObject { ["error"] = "the world is no Raid World", ["code"] = "classic" });
+            }
+            else
+            {
+                var story = world.Story;
+                var before = story.Rev;
+                answer = parts[4..] switch
+                {
+                    [] when method == "GET" => (200, story.State(true)),
+                    [] when method == "POST" => story.Write(body!),
+                    ["checkpoint", var part] when method == "GET" => story.Checkpoint(part),
+                    ["route"] when method == "POST" => story.Lock(body!["route"]!.GetValue<string>()),
+                    ["companions"] when method == "POST" => story.Add(body!["ids"]!.AsArray().Select(node => node!.GetValue<int>())),
+                    _ => (404, Error("there is no such route")),
+                };
+
+                if (story.Rev != before)
+                {
+                    push = story.Rev;
+                    StoryWrites += story.WRev == story.Rev ? 1 : 0;
+                }
+            }
+        }
+
+        var bytes = Encoding.UTF8.GetBytes(answer.Body.ToJsonString());
+        context.Response.StatusCode = answer.Status;
+        context.Response.ContentType = "application/json";
+        await context.Response.OutputStream.WriteAsync(bytes);
+        context.Response.Close();
+
+        if (push is { } rev)
+        {
+            Tell(id, $"story {rev}");
+        }
+    }
+
+    /// <summary>
+    /// How many boss reports the relay counted in all Raid Worlds.
+    /// </summary>
+    public int BossReports { get; private set; }
+
+    /// <summary>
+    /// Tells the time the boss pools fill up by; a fixed time keeps them from filling up while a test runs.
+    /// </summary>
+    public Func<DateTime> BossClock { get; set; } = () => DateTime.UtcNow;
+
+    /// <summary>
+    /// Answers a Raid World's boss requests, for its players only: every pool, one pool and a report;
+    /// then tells every game of the world of a change.
+    /// </summary>
+    /// <param name="context">The request.</param>
+    /// <param name="parts">The path's parts, "v1", "worlds", the world and "bosses" first.</param>
+    /// <returns>Completes once answered.</returns>
+    private async Task ServeBossesAsync(HttpListenerContext context, string[] parts)
+    {
+        var method = context.Request.HttpMethod;
+        using var reader = new StreamReader(context.Request.InputStream, Encoding.UTF8);
+        var body = method == "POST" ? JsonNode.Parse(await reader.ReadToEndAsync()) : null;
+        var id = parts[2];
+        var key = PlayerKeyOf(context);
+        (int Status, JsonNode Body) answer;
+        string? push = null;
+
+        lock (_gate)
+        {
+            if (!_directory.TryGetValue(id, out var world))
+            {
+                answer = (404, Error("there is no such world"));
+            }
+            else if (key == null || Hash(AuthKeyOf(context) ?? string.Empty) != world.AuthHash)
+            {
+                answer = (401, Error("the world's token does not match"));
+            }
+            else if (world.Type != WorldType.Raid)
+            {
+                answer = (404, new JsonObject { ["error"] = "the world is no Raid World", ["code"] = "classic" });
+            }
+            else
+            {
+                var changed = false;
+                answer = parts[4..] switch
+                {
+                    [] when method == "GET" => (200, world.Bosses.List(BossClock())),
+                    [var boss] when method == "GET" => (200, world.Bosses.View(Uri.UnescapeDataString(boss), BossClock())),
+                    [var boss, "report"] when method == "POST" => world.Bosses.Report(Uri.UnescapeDataString(boss), body!["battle"]!.GetValue<string>(), body["dealt"]!.GetValue<double>(), BossClock(), out changed),
+                    _ => (404, Error("there is no such route")),
+                };
+
+                if (changed)
+                {
+                    BossReports++;
+                    push = $"boss {answer.Body["hp"]!.GetValue<double>().ToString("0.###", CultureInfo.InvariantCulture)} {answer.Body["key"]!.GetValue<string>()}";
+                }
+            }
+        }
+
+        var bytes = Encoding.UTF8.GetBytes(answer.Body.ToJsonString());
+        context.Response.StatusCode = answer.Status;
+        context.Response.ContentType = "application/json";
+        await context.Response.OutputStream.WriteAsync(bytes);
+        context.Response.Close();
+
+        if (push != null)
+        {
+            Tell(id, push);
+        }
+    }
 
     /// <summary>
     /// Answers the trades' requests: commit, cancel, state, done, and the committed trades a player has not marked done.
@@ -791,13 +960,16 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
             Strict = body["strict"]?.GetValue<bool>() == true,
             ModHashes = body["modHashes"]?.GetValue<string>() ?? string.Empty,
             Settings = body["settings"]?.GetValue<string>() ?? string.Empty,
+            Type = body["type"]?.GetValue<string>() ?? WorldType.Classic,
+            Share = body["share"]?.GetValue<string>() ?? CompanionSharing.Off,
+            Difficulty = body["type"]?.GetValue<string>() == WorldType.Raid ? body["difficulty"]?.GetValue<int>() : null,
         };
 
         return (201, new JsonObject { ["id"] = id });
     }
 
     /// <summary>
-    /// Changes a world's seats, description and mods. Called with the gate held.
+    /// Changes a world's seats, description, mods and a Raid World's difficulty. Called with the gate held.
     /// </summary>
     /// <param name="world">The world's entry.</param>
     /// <param name="body">The changes.</param>
@@ -816,6 +988,17 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
         world.Seats = body["seats"]?.GetValue<int>() ?? world.Seats;
         world.Description = body["description"]?.GetValue<string>() ?? world.Description;
         world.Mods = body["mods"]?.GetValue<string>() ?? world.Mods;
+
+        if (body["difficulty"] != null)
+        {
+            if (world.Type != WorldType.Raid)
+            {
+                return (400, Error("only a Raid World sets a difficulty"));
+            }
+
+            world.Difficulty = body["difficulty"]!.GetValue<int>();
+        }
+
         return (200, new JsonObject { ["edited"] = true });
     }
 
@@ -913,6 +1096,9 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
             ["strict"] = world.Strict,
             ["modHashes"] = world.ModHashes,
             ["settings"] = world.Settings,
+            ["type"] = world.Type,
+            ["share"] = world.Share,
+            ["difficulty"] = world.Difficulty,
             ["online"] = online.Count,
             ["created"] = 0,
             ["active"] = 0,
@@ -951,6 +1137,13 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
             if (world.Bans.Contains(playerId))
             {
                 Refuse(context, 403);
+                return;
+            }
+
+            if (world.Type == WorldType.Raid && context.Request.Headers[DirectoryClient.FeaturesHeader]?.Split(',').Contains(WorldType.Raid) != true)
+            {
+                context.Response.Headers["X-MGQ-Refusal"] = "raid_unsupported";
+                Refuse(context, 400);
                 return;
             }
 
@@ -1347,6 +1540,21 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
         public string Settings { get; set; } = string.Empty;
 
         /// <summary>
+        /// Its type, see <see cref="WorldType"/>.
+        /// </summary>
+        public string Type { get; init; } = WorldType.Classic;
+
+        /// <summary>
+        /// How a Raid World shares companions, see <see cref="CompanionSharing"/>.
+        /// </summary>
+        public string Share { get; init; } = CompanionSharing.Off;
+
+        /// <summary>
+        /// The difficulty a Raid World sets for every player, <see langword="null"/> for none.
+        /// </summary>
+        public int? Difficulty { get; set; }
+
+        /// <summary>
         /// Whether only games with the same data may enter.
         /// </summary>
         public bool Strict { get; init; }
@@ -1365,6 +1573,406 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
         /// Its starting save, <see langword="null"/> before its creator uploaded one.
         /// </summary>
         public byte[]? StartBytes { get; set; }
+
+        /// <summary>
+        /// Its story, which only a Raid World keeps.
+        /// </summary>
+        public TestStory Story { get; } = new();
+
+        /// <summary>
+        /// Its boss pools, which only a Raid World keeps.
+        /// </summary>
+        public TestBosses Bosses { get; } = new();
+    }
+
+    /// <summary>
+    /// A Raid World's boss pools as the relay keeps them, see Relay/core/bosses.js.
+    /// </summary>
+    private sealed class TestBosses
+    {
+        /// <summary>
+        /// A full pool, in kills.
+        /// </summary>
+        private const double Max = 5;
+
+        /// <summary>
+        /// The kills a pool fills up by per hour.
+        /// </summary>
+        private const double Regen = 5;
+
+        /// <summary>
+        /// The pools a report touched, by key.
+        /// </summary>
+        private readonly SortedDictionary<string, Pool> _pools = new(StringComparer.Ordinal);
+
+        /// <summary>
+        /// Writes every pool a report touched.
+        /// </summary>
+        /// <param name="now">The time now.</param>
+        /// <returns>The pools, with a full pool's kills and the rate.</returns>
+        public JsonObject List(DateTime now) => new()
+        {
+            ["bosses"] = new JsonArray(_pools.Keys.Select(key => (JsonNode)View(key, now)).ToArray()),
+            ["max"] = Max,
+            ["regen"] = Regen,
+        };
+
+        /// <summary>
+        /// Writes one pool as it stands now; one never reported is full.
+        /// </summary>
+        /// <param name="key">The boss.</param>
+        /// <param name="now">The time now.</param>
+        /// <returns>The pool.</returns>
+        public JsonObject View(string key, DateTime now)
+        {
+            var pool = _pools.GetValueOrDefault(key);
+            return new JsonObject { ["key"] = key, ["hp"] = Math.Round(HpOf(pool, now), 3), ["max"] = Max, ["regen"] = Regen, ["defeated"] = pool?.Defeated ?? false };
+        }
+
+        /// <summary>
+        /// Counts a battle against a pool, once per battle.
+        /// </summary>
+        /// <param name="key">The boss.</param>
+        /// <param name="battle">The battle's id.</param>
+        /// <param name="dealt">The share of the boss's max HP dealt.</param>
+        /// <param name="now">The time now.</param>
+        /// <param name="changed">Whether the report changed the pool.</param>
+        /// <returns>The answer.</returns>
+        public (int, JsonNode) Report(string key, string battle, double dealt, DateTime now, out bool changed)
+        {
+            _pools.TryGetValue(key, out var pool);
+            var repeat = pool != null && pool.Battles.Contains(battle);
+            var counted = 0.0;
+            changed = !repeat && pool?.Defeated != true;
+
+            if (changed)
+            {
+                pool ??= _pools[key] = new Pool { Hp = Max, At = now };
+                counted = Math.Min(1, dealt);
+                var left = HpOf(pool, now) - counted;
+                pool.Defeated = left < 0.0005;
+                pool.Hp = pool.Defeated ? 0 : left;
+                pool.At = now;
+                pool.EmptiedBy = pool.Defeated ? battle : null;
+                pool.Battles.Add(battle);
+            }
+
+            var view = View(key, now);
+            view["dealt"] = counted;
+            view["emptied"] = pool?.EmptiedBy == battle;
+            view["repeat"] = repeat;
+            return (200, view);
+        }
+
+        /// <summary>
+        /// Reads a pool's hit points now, filled up since the last report, at most full.
+        /// </summary>
+        /// <param name="pool">The pool, <see langword="null"/> for one never reported.</param>
+        /// <param name="now">The time now.</param>
+        /// <returns>The hit points in kills.</returns>
+        private static double HpOf(Pool? pool, DateTime now) =>
+            pool == null ? Max : pool.Defeated ? 0 : Math.Min(Max, pool.Hp + ((now - pool.At).TotalHours * Regen));
+
+        /// <summary>
+        /// One boss's pool.
+        /// </summary>
+        private sealed class Pool
+        {
+            /// <summary>
+            /// The hit points at the last report.
+            /// </summary>
+            public double Hp { get; set; }
+
+            /// <summary>
+            /// When it was last reported.
+            /// </summary>
+            public DateTime At { get; set; }
+
+            /// <summary>
+            /// Whether a report emptied it.
+            /// </summary>
+            public bool Defeated { get; set; }
+
+            /// <summary>
+            /// The battle whose report emptied it.
+            /// </summary>
+            public string? EmptiedBy { get; set; }
+
+            /// <summary>
+            /// The battles counted.
+            /// </summary>
+            public HashSet<string> Battles { get; } = [];
+        }
+    }
+
+    /// <summary>
+    /// A Raid World's story as the relay keeps it, see Relay/core/story.js.
+    /// </summary>
+    private sealed class TestStory
+    {
+        /// <summary>
+        /// The routes in their order, with the counter of each.
+        /// </summary>
+        private static readonly (string Route, string Counter)[] Routes = [("ad", "r1141"), ("mr", "r1142"), ("chaos", "r1143")];
+
+        /// <summary>
+        /// The counters of the last write.
+        /// </summary>
+        private JsonObject _counters = new() { ["p"] = 0, ["r1141"] = 0, ["r1142"] = 0, ["r1143"] = 0, ["clear"] = new JsonArray() };
+
+        /// <summary>
+        /// The routes the world finished.
+        /// </summary>
+        private readonly List<string> _done = [];
+
+        /// <summary>
+        /// The shared companions.
+        /// </summary>
+        private readonly SortedSet<int> _comps = [];
+
+        /// <summary>
+        /// Each part's checkpoint, its state with the sealed story.
+        /// </summary>
+        private readonly Dictionary<string, JsonObject> _checkpoints = [];
+
+        /// <summary>
+        /// The route locked.
+        /// </summary>
+        private string _route = "none";
+
+        /// <summary>
+        /// Where the last story teleport went.
+        /// </summary>
+        private JsonNode? _end;
+
+        /// <summary>
+        /// The sealed story.
+        /// </summary>
+        private string _blob = string.Empty;
+
+        /// <summary>
+        /// The revision, which every change counts up.
+        /// </summary>
+        public long Rev { get; private set; }
+
+        /// <summary>
+        /// The revision of the last write.
+        /// </summary>
+        public long WRev { get; private set; }
+
+        /// <summary>
+        /// Writes the state a game reads.
+        /// </summary>
+        /// <param name="withBlob">Whether to add the sealed story.</param>
+        /// <returns>The state.</returns>
+        public JsonObject State(bool withBlob)
+        {
+            var state = new JsonObject
+            {
+                ["rev"] = Rev,
+                ["wrev"] = WRev,
+                ["p"] = _counters["p"]!.GetValue<int>(),
+                ["r1141"] = _counters["r1141"]!.GetValue<int>(),
+                ["r1142"] = _counters["r1142"]!.GetValue<int>(),
+                ["r1143"] = _counters["r1143"]!.GetValue<int>(),
+                ["clear"] = _counters["clear"]!.DeepClone(),
+                ["part"] = PartOf(_counters),
+                ["route"] = _route,
+                ["done"] = new JsonArray(_done.Select(route => (JsonNode)route).ToArray()),
+                ["end"] = _end?.DeepClone(),
+                ["comps"] = new JsonArray(_comps.Select(id => (JsonNode)id).ToArray()),
+                ["checkpoints"] = new JsonArray(_checkpoints.Keys.Select(part => (JsonNode)part).ToArray()),
+            };
+
+            if (withBlob)
+            {
+                state["blob"] = _blob;
+            }
+
+            return state;
+        }
+
+        /// <summary>
+        /// Takes a write built on the last sealed story whose counters are not behind it.
+        /// </summary>
+        /// <param name="body">The write.</param>
+        /// <returns>The answer.</returns>
+        public (int, JsonNode) Write(JsonNode body)
+        {
+            var baseRev = body["base"]!.GetValue<long>();
+            var counters = body["counters"]!.AsObject();
+
+            if (baseRev < WRev || baseRev > Rev)
+            {
+                return Refuse("the story moved on", "rev");
+            }
+
+            if (Compare(KeyOf(counters), KeyOf(_counters)) < 0)
+            {
+                return Refuse("the write is behind the world's story", "behind");
+            }
+
+            var route = RouteOf(counters);
+            var clear = counters["clear"]?.AsArray().Select(node => node!.GetValue<string>()).ToList() ?? [];
+            var onLocked = route == _route || (route == "none" && clear.Contains(_route));
+
+            if (_route != "none" && !_done.Contains(_route) && (!onLocked || clear.Any(cleared => cleared != _route && !_done.Contains(cleared))))
+            {
+                return Refuse("another route was chosen first", "route");
+            }
+
+            if (_blob.Length > 0 && PartOf(counters) != PartOf(_counters))
+            {
+                var checkpoint = State(true);
+                checkpoint["rev"] = WRev;
+                _checkpoints[PartOf(_counters)] = checkpoint;
+            }
+
+            foreach (var cleared in counters["clear"]?.AsArray().Select(node => node!.GetValue<string>()) ?? [])
+            {
+                if (!_done.Contains(cleared))
+                {
+                    _done.Add(cleared);
+                }
+            }
+
+            _route = route != "none" ? route : _done.Contains(_route) ? "none" : _route;
+
+            if (counters.ContainsKey("end"))
+            {
+                _end = counters["end"]?.DeepClone();
+            }
+
+            _counters = new JsonObject { ["p"] = counters["p"]!.GetValue<int>(), ["r1141"] = counters["r1141"]!.GetValue<int>(), ["r1142"] = counters["r1142"]!.GetValue<int>(), ["r1143"] = counters["r1143"]!.GetValue<int>(), ["clear"] = (counters["clear"] ?? new JsonArray()).DeepClone() };
+            _blob = body["blob"]!.GetValue<string>();
+            WRev = ++Rev;
+            var answer = State(false);
+            answer["accepted"] = true;
+            return (200, answer);
+        }
+
+        /// <summary>
+        /// Hands out a part's checkpoint.
+        /// </summary>
+        /// <param name="part">The part.</param>
+        /// <returns>The answer, 404 with code none for a part without one.</returns>
+        public (int, JsonNode) Checkpoint(string part)
+        {
+            if (!_checkpoints.TryGetValue(part, out var checkpoint))
+            {
+                return (404, new JsonObject { ["error"] = "the world has no checkpoint of this part", ["code"] = "none" });
+            }
+
+            var answer = checkpoint.DeepClone().AsObject();
+            answer["part"] = part;
+            return (200, answer);
+        }
+
+        /// <summary>
+        /// Locks a route, the first one chosen winning.
+        /// </summary>
+        /// <param name="route">The route.</param>
+        /// <returns>The answer.</returns>
+        public (int, JsonNode) Lock(string route)
+        {
+            if (_route == route)
+            {
+                return (200, State(true));
+            }
+
+            if (_route != "none")
+            {
+                return Refuse("another route was chosen first", "route");
+            }
+
+            if (_done.Contains(route))
+            {
+                return Refuse("the world finished this route", "finished");
+            }
+
+            if (route == "chaos" && !(_done.Contains("ad") && _done.Contains("mr")))
+            {
+                return Refuse("the third way opens once both other routes are finished", "closed");
+            }
+
+            _route = route;
+            Rev++;
+            return (200, State(true));
+        }
+
+        /// <summary>
+        /// Adds shared companions.
+        /// </summary>
+        /// <param name="ids">The companions' actor ids.</param>
+        /// <returns>The answer.</returns>
+        public (int, JsonNode) Add(IEnumerable<int> ids)
+        {
+            var before = _comps.Count;
+            _comps.UnionWith(ids);
+
+            if (_comps.Count != before)
+            {
+                Rev++;
+            }
+
+            return (200, State(true));
+        }
+
+        /// <summary>
+        /// Refuses with the state as it stands.
+        /// </summary>
+        /// <param name="error">Why.</param>
+        /// <param name="code">The code that names why.</param>
+        /// <returns>The answer.</returns>
+        private (int, JsonNode) Refuse(string error, string code)
+        {
+            var answer = State(true);
+            answer["error"] = error;
+            answer["code"] = code;
+            return (409, answer);
+        }
+
+        /// <summary>
+        /// Finds the route whose counter is above 0.
+        /// </summary>
+        /// <param name="counters">The counters.</param>
+        /// <returns>The route, "none" for none.</returns>
+        private static string RouteOf(JsonObject counters) =>
+            Routes.FirstOrDefault(route => counters[route.Counter]!.GetValue<int>() > 0).Route ?? "none";
+
+        /// <summary>
+        /// Tells the part counters are in.
+        /// </summary>
+        /// <param name="counters">The counters.</param>
+        /// <returns>The part.</returns>
+        private static string PartOf(JsonObject counters)
+        {
+            var route = RouteOf(counters);
+            var p = counters["p"]!.GetValue<int>();
+            return route != "none" ? route : p < 19 ? "1" : p < 34 ? "2" : "3";
+        }
+
+        /// <summary>
+        /// Places counters in the story's order.
+        /// </summary>
+        /// <param name="counters">The counters.</param>
+        /// <returns>The routes returned from, 1001, the route's counter, and the routes finished.</returns>
+        private static int[] KeyOf(JsonObject counters)
+        {
+            var route = RouteOf(counters);
+            var clear = counters["clear"]?.AsArray().Select(node => node!.GetValue<string>()).ToList() ?? [];
+            var step = route == "none" ? 0 : counters[Routes.First(entry => entry.Route == route).Counter]!.GetValue<int>();
+            return [clear.Count(cleared => cleared != route), counters["p"]!.GetValue<int>(), step, clear.Count];
+        }
+
+        /// <summary>
+        /// Compares two places in the story's order.
+        /// </summary>
+        /// <param name="a">One place.</param>
+        /// <param name="b">The other.</param>
+        /// <returns>Below 0 when a comes first, 0 when both are the same, above 0 when b does.</returns>
+        private static int Compare(int[] a, int[] b) =>
+            a.Zip(b, (x, y) => x.CompareTo(y)).FirstOrDefault(order => order != 0);
     }
 
     /// <summary>

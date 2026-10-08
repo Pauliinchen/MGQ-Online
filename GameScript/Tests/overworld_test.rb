@@ -2,7 +2,11 @@
 #  overworld_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-09: Checked that the relay's push of a Raid World's boss pool goes to its route with the key and kills, marked as the relay's
+#                            - Checked that the relay's push of a Raid World's difficulty goes to its route with the value, marked as the relay's
+#                            - Checked that a stranger's ghost is solid in a Raid World and see-through in a Classic world
 #      Paulinchen  2026-10-08: Checked that a follower whose sprite this game lacks shows the outline of Luka's, how the outline is drawn, and that the graphics checked stay few
+#                            - Checked that the relay's push of a Raid World's story goes to its route, marked as the relay's
 #                            - Checked which tabs a line marks unread and that the All tab takes them as seen
 #                            - Checked that a ghost's name tag numbers a name two players share as the chat does, and is drawn anew once one of them left
 #                            - Started the status's count of frames anew before checking a new connection's seat, which a status look in the same frame replaced depending on how many frames the checks before took
@@ -260,6 +264,13 @@ check("cancel closes too", MGQ_MpActions::Wheel.open?, false)
 MGQ_MpOverworld.update_ghosts
 ghost = MGQ_MpOverworld.ghosts.first.ghost
 check("a stranger is see-through", ghost.opacity, MGQ_MpOverworld::STRANGER_OPACITY)
+MGQ_MpWorld.define_singleton_method(:raid?) { $raid_world }
+$raid_world = true
+MGQ_MpOverworld.update_ghosts
+check("but solid in a Raid World, where everyone on the map shares it", ghost.opacity, MGQ_MpOverworld::SOLID_OPACITY)
+$raid_world = false
+MGQ_MpOverworld.update_ghosts
+check("and see-through again in a Classic world", ghost.opacity, MGQ_MpOverworld::STRANGER_OPACITY)
 
 $inbox << entry("message", 2, told(friend.merge("map" => 5, "x" => 21, "y" => 22)))
 MGQ_MpOverworldSync.tick
@@ -438,6 +449,19 @@ $inbox << { "kind" => "chat", "seat" => "0", "name" => "Global", :payload => "we
 MGQ_MpOverworldSync.tick
 check("an admin's line from the relay shows tagged as the admin's, without a bubble",
       [chat.log_lines.last, chat.log_entries.last.who, chat.senders.include?(nil)], ["[Admin] Global: welcome all", :admin, false])
+$pushes = []
+MGQ_MpOverworldSync.route(MGQ_MpOverworldSync::STORY_FIELD) { |peer, message| $pushes << [peer, message[MGQ_MpOverworldSync::STORY_FIELD], message[:relay]] }
+$inbox << { "kind" => "story", "rev" => "7" }
+MGQ_MpOverworldSync.tick
+check("the relay's push of a Raid World's story goes to its route without a sender, marked as the relay's", $pushes, [[nil, "7", true]])
+MGQ_MpOverworldSync.route(MGQ_MpOverworldSync::BOSS_FIELD) { |peer, message| $pushes << [peer, message[MGQ_MpOverworldSync::BOSS_FIELD], message["hp"], message[:relay]] }
+$inbox << { "kind" => "boss", "key" => "Alma Elma, then Granberia", "hp" => "3.5" }
+MGQ_MpOverworldSync.tick
+check("the relay's push of a boss pool goes to its route with its key and kills, marked as the relay's", $pushes.last, [nil, "Alma Elma, then Granberia", "3.5", true])
+MGQ_MpOverworldSync.route(MGQ_MpOverworldSync::DIFFICULTY_FIELD) { |peer, message| $pushes << [peer, message[MGQ_MpOverworldSync::DIFFICULTY_FIELD], message[:relay]] }
+$inbox << { "kind" => "difficulty", "value" => "-2" }
+MGQ_MpOverworldSync.tick
+check("the relay's push of a Raid World's difficulty goes to its route with the value, marked as the relay's", $pushes.last, [nil, "-2", true])
 
 wheel(CHAT, :C)
 check("the wheel opens the chat box", [chat.typing?, MGQ_MpActions::Wheel.open?, MGQ_Multiplayer::Capture.on?], [true, false, true])

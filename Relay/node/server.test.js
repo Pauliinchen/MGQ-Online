@@ -2,7 +2,12 @@
 //  server.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-08: Tested the chat's rate limit and a chat frame without a line, which keeps the connection
+//      Paulinchen  2026-10-09: Tested a Raid World's boss pools over HTTP: reports, the frame every game hears, the admin routes and a deleted world, and that a Classic world keeps none
+//                            - Tested that every game of a Raid World hears its new difficulty once its creator changes it over HTTP
+//                            - Tested that a story write whose body comes after the world was deleted leaves no story behind
+//      Paulinchen  2026-10-08: Tested a Raid World's story over HTTP: writes, conflicts, checkpoints, the route lock, companions, the frame every game hears, removed players and a deleted world, and that a Classic world keeps none
+//                            - Tested that a world room lets into a Raid World only the games that name it in X-MGQ-Features
+//                            - Tested the chat's rate limit and a chat frame without a line, which keeps the connection
 //      Paulinchen  2026-10-07: Tested a world's chat: a game's mirrored line kept, an admin's line reaching every game, and other text still closing the connection
 //                            - Tested the auth key header, the request and error log lines, every mod catalog route, editing a world, the address behind a proxy, the sweep and a text body over the cap
 //                            - Expected 400 for a path that is no route and 426 for a room path without an upgrade
@@ -22,10 +27,13 @@
 
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
+import http from "node:http";
 import WebSocketClient from "ws";
+import { BOSS_LIMITS } from "../core/bosses.js";
 import { DIRECTORY_LIMITS, Directory, playerIdOf, sha256Hex } from "../core/directory.js";
 import { ModCatalog, zipHashes } from "../core/mods.js";
-import { AUTH_HEADER, CHAT_LIMITS, CHAT_SLOW, CLOSE, EVERYONE, LIMITS, PAIRED, PING, PLAYER_HEADER, PONG, REFUSAL_HEADER, REPLACED } from "../core/relay.js";
+import { AUTH_HEADER, CHAT_LIMITS, CHAT_SLOW, CLOSE, EVERYONE, FEATURES_HEADER, LIMITS, PAIRED, PING, PLAYER_HEADER, PONG, REFUSAL_HEADER, REPLACED } from "../core/relay.js";
+import { STORY_LIMITS } from "../core/story.js";
 import { TRADE_LIMITS } from "../core/trades.js";
 import { makeUpload, makeZip } from "../core/test_zip.js";
 import { addressOf, createRelay, errorLine, memoryModStore, memoryStore, requestLine } from "./server.js";
@@ -631,6 +639,167 @@ test("a world room names why it turned a game away", async () => {
   assert.deepEqual(await openWithHeaders(`${worldBase}${room}?player=${playerKey(51)}&name=Banned&auth=${AUTH}`, {}), { status: 403, refusal: "removed" });
 });
 
+test("a world room lets into a Raid World only the games that name it in X-MGQ-Features", async () => {
+  const room = roomId(123);
+  const created = await fetch(directoryBase, {
+    method: "POST",
+    headers: { [PLAYER_HEADER]: CREATOR },
+    body: JSON.stringify({ id: room, name: "Raid World", seats: 4, playerName: "Creator", authHash: await sha256Hex(AUTH), lock: { salt: "12".repeat(16), iterations: 200_000, box: "ab".repeat(40) }, type: "raid", share: "story" }),
+  });
+  assert.equal(created.status, 201);
+  assert.deepEqual([(await listed(room)).type, (await listed(room)).share], ["raid", "story"]);
+
+  const address = `${worldBase}${room}?name=Player%2052&auth=${AUTH}`;
+  assert.deepEqual(await openWithHeaders(address, { [PLAYER_HEADER]: playerKey(52) }), { status: 400, refusal: "raid_unsupported" });
+
+  const game = await openWithHeaders(address, { [PLAYER_HEADER]: playerKey(52), [FEATURES_HEADER]: "raid" });
+  assert.equal(await game.first, "seat 0");
+  game.socket.close();
+});
+
+test("a Raid World's players write its story over HTTP, every game in the room hears of each change, and deleting the world forgets it", async () => {
+  const room = roomId(124);
+  const created = await fetch(directoryBase, {
+    method: "POST",
+    headers: { [PLAYER_HEADER]: CREATOR },
+    body: JSON.stringify({ id: room, name: "Raid Story", seats: 4, playerName: "Creator", authHash: await sha256Hex(AUTH), lock: { salt: "12".repeat(16), iterations: 200_000, box: "ab".repeat(40) }, type: "raid" }),
+  });
+  assert.equal(created.status, 201);
+  const watcher = await openWithHeaders(`${worldBase}${room}?name=Watcher&auth=${AUTH}`, { [PLAYER_HEADER]: playerKey(54), [FEATURES_HEADER]: "raid" });
+  assert.equal(await watcher.first, "seat 0");
+  const heard = [];
+  watcher.socket.on("message", (data) => heard.push(data.toString()));
+
+  const story = (path, init = {}, key = playerKey(53), auth = AUTH) => fetch(`${directoryBase}/${room}/story${path}`, { ...init, headers: { [PLAYER_HEADER]: key, [AUTH_HEADER]: auth } });
+  const write = (body) => story("", { method: "POST", body: JSON.stringify(body) });
+  const counters = (p) => ({ p, r1141: 0, r1142: 0, r1143: 0, clear: [] });
+
+  assert.equal((await story("")).status, 200);
+  assert.equal((await story("", {}, playerKey(53), "cd".repeat(32))).status, 401);
+  assert.equal((await story("", {}, "zz")).status, 400);
+
+  const first = await write({ base: 0, counters: counters(18), blob: "QUJD" });
+  assert.equal(first.status, 200);
+  assert.equal((await first.json()).rev, 1);
+  await until(async () => heard.includes("story 1"));
+
+  const second = await write({ base: 1, counters: { ...counters(19), end: { map: 2, x: 148, y: 243 } }, blob: "REVG" });
+  assert.deepEqual(await second.json().then((body) => [body.rev, body.part, body.checkpoints, body.end]), [2, "2", ["1"], { map: 2, x: 148, y: 243 }]);
+
+  const conflict = await write({ base: 1, counters: counters(20), blob: "R0hJ" });
+  assert.equal(conflict.status, 409);
+  assert.deepEqual(await conflict.json().then((body) => [body.code, body.rev, body.blob]), ["rev", 2, "REVG"]);
+
+  const checkpoint = await (await story("/checkpoint/1")).json();
+  assert.deepEqual([checkpoint.part, checkpoint.p, checkpoint.blob], ["1", 18, "QUJD"]);
+  assert.equal((await story("/route", { method: "POST", body: JSON.stringify({ route: "mr" }) })).status, 200);
+  assert.deepEqual((await (await story("/companions", { method: "POST", body: JSON.stringify({ ids: [382] }) })).json()).comps, [382]);
+  await until(async () => heard.includes("story 4"));
+  assert.equal((await write({ base: 2, counters: { ...counters(40), r1142: 1 }, blob: "R0hJ" })).status, 200, "a write on the last sealed story is taken after a lock and a companion");
+  assert.equal((await story("", { method: "POST", body: "x".repeat(STORY_LIMITS.maxBodyLength + 10) })).status, 413);
+
+  await fetch(`${directoryBase}/${room}/ban`, { method: "POST", body: JSON.stringify({ player: CREATOR, target: await playerIdOf(playerKey(55)) }) });
+  assert.equal((await story("", {}, playerKey(55))).status, 403);
+
+  assert.equal((await fetch(`${directoryBase}/${room}/delete`, { method: "POST", body: JSON.stringify({ player: CREATOR }) })).status, 200);
+  assert.equal((await story("")).status, 404);
+  assert.equal((await relay.storyOf(room).get()).body.rev, 0, "the deleted world's story is gone");
+});
+
+test("a story write whose body comes after the world was deleted leaves no story behind", async () => {
+  const room = roomId(132);
+  const created = await fetch(directoryBase, {
+    method: "POST",
+    headers: { [PLAYER_HEADER]: CREATOR },
+    body: JSON.stringify({ id: room, name: "Raid Gone", seats: 4, playerName: "Creator", authHash: await sha256Hex(AUTH), lock: { salt: "12".repeat(16), iterations: 200_000, box: "ab".repeat(40) }, type: "raid" }),
+  });
+  assert.equal(created.status, 201);
+
+  const body = JSON.stringify({ base: 0, counters: { p: 18, r1141: 0, r1142: 0, r1143: 0, clear: [] }, blob: "QUJD" });
+  const answered = new Promise((resolve, reject) => {
+    const request = http.request(`${directoryBase}/${room}/story`, { method: "POST", headers: { [PLAYER_HEADER]: playerKey(60), [AUTH_HEADER]: AUTH, "Content-Length": Buffer.byteLength(body) } }, (response) => {
+      response.resume();
+      response.on("end", () => resolve(response.statusCode));
+    });
+    request.on("error", reject);
+    request.write(body.slice(0, 10));
+    // The member check passes while the body is still on its way; the world goes before the rest.
+    setTimeout(async () => {
+      const deleted = await fetch(`${directoryBase}/${room}/delete`, { method: "POST", body: JSON.stringify({ player: CREATOR }) });
+      assert.equal(deleted.status, 200);
+      request.end(body.slice(10));
+    }, 50);
+  });
+
+  assert.equal(await answered, 200);
+  assert.equal((await relay.storyOf(room).get()).body.rev, 0, "the late write is removed again");
+});
+
+test("a Classic world keeps no story", async () => {
+  await makeWorld(roomId(125), 4);
+  const answer = await fetch(`${directoryBase}/${roomId(125)}/story`, { headers: { [PLAYER_HEADER]: playerKey(56), [AUTH_HEADER]: AUTH } });
+  assert.equal(answer.status, 404);
+  assert.equal((await answer.json()).code, "classic");
+});
+
+test("a Raid World's players wear its boss pools down over HTTP, every game hears each change, admins set them right, and deleting the world forgets them", async () => {
+  const room = roomId(126);
+  const created = await fetch(directoryBase, {
+    method: "POST",
+    headers: { [PLAYER_HEADER]: CREATOR },
+    body: JSON.stringify({ id: room, name: "Raid Bosses", seats: 4, playerName: "Creator", authHash: await sha256Hex(AUTH), lock: { salt: "12".repeat(16), iterations: 200_000, box: "ab".repeat(40) }, type: "raid" }),
+  });
+  assert.equal(created.status, 201);
+  const watcher = await openWithHeaders(`${worldBase}${room}?name=Watcher&auth=${AUTH}`, { [PLAYER_HEADER]: playerKey(57), [FEATURES_HEADER]: "raid" });
+  assert.equal(await watcher.first, "seat 0");
+  const heard = [];
+  watcher.socket.on("message", (data) => heard.push(data.toString()));
+
+  const bosses = (path, init = {}, key = playerKey(58), auth = AUTH) => fetch(`${directoryBase}/${room}/bosses${path}`, { ...init, headers: { [PLAYER_HEADER]: key, [AUTH_HEADER]: auth } });
+  const report = (key, body) => bosses(`/${encodeURIComponent(key)}/report`, { method: "POST", body: JSON.stringify(body) });
+
+  assert.deepEqual(await (await bosses("")).json(), { bosses: [], max: 5, regen: 5 });
+  assert.equal((await bosses("", {}, playerKey(58), "cd".repeat(32))).status, 401);
+
+  const first = await report("Queen Harpy", { battle: "b1", dealt: 0.75 });
+  assert.deepEqual(await first.json(), { key: "Queen Harpy", hp: 4.25, max: 5, regen: 5, defeated: false, dealt: 0.75, emptied: false, repeat: false });
+  await until(async () => heard.includes("boss 4.25 Queen Harpy"));
+  assert.equal((await (await bosses("/Queen%20Harpy")).json()).hp, 4.25);
+  assert.equal((await report("Queen Harpy", { battle: "b1", dealt: 0.75 }).then((answer) => answer.json())).repeat, true);
+  assert.equal((await bosses("/Queen%20Harpy/report", { method: "POST", body: "x".repeat(BOSS_LIMITS.maxBodyLength + 10) })).status, 413);
+
+  const admin = (path, init = {}) => fetch(`${directoryBase}/${room}/raid${path}`, init);
+  assert.equal((await admin(`?player=${CREATOR}`)).status, 403, "the creator is no admin");
+  const view = await (await admin(`?player=${ADMIN}`)).json();
+  assert.deepEqual([view.story.rev, view.bosses.map((pool) => [pool.key, pool.hp, pool.reports]), view.max], [0, [["Queen Harpy", 4.25, 1]], 5]);
+
+  const reset = await admin("/bosses/Queen%20Harpy/reset", { method: "POST", body: JSON.stringify({ player: ADMIN }) });
+  assert.equal((await reset.json()).hp, 5);
+  await until(async () => heard.includes("boss 5 Queen Harpy"));
+
+  const story = (path, init = {}) => fetch(`${directoryBase}/${room}/story${path}`, { ...init, headers: { [PLAYER_HEADER]: playerKey(58), [AUTH_HEADER]: AUTH } });
+  assert.equal((await story("/route", { method: "POST", body: JSON.stringify({ route: "ad" }) })).status, 200);
+  const cleared = await admin("/route/clear", { method: "POST", headers: { [PLAYER_HEADER]: ADMIN }, body: "{}" });
+  assert.deepEqual(await cleared.json().then((body) => [body.cleared, body.route, body.rev]), [true, "none", 2]);
+  await until(async () => heard.includes("story 2"));
+
+  await report("Morrigan", { battle: "b2", dealt: 0.5 });
+  assert.equal((await fetch(`${directoryBase}/${room}/delete`, { method: "POST", body: JSON.stringify({ player: CREATOR }) })).status, 200);
+  assert.equal((await bosses("")).status, 404);
+  assert.deepEqual((await relay.bossesOf(room).list()).body.bosses, [], "the deleted world's pools are gone");
+});
+
+test("a Classic world keeps no boss pools and has no admin routes", async () => {
+  await makeWorld(roomId(127), 4);
+  const answer = await fetch(`${directoryBase}/${roomId(127)}/bosses`, { headers: { [PLAYER_HEADER]: playerKey(59), [AUTH_HEADER]: AUTH } });
+  assert.deepEqual([answer.status, (await answer.json()).code], [404, "classic"]);
+  const admin = await fetch(`${directoryBase}/${roomId(127)}/raid?player=${ADMIN}`);
+  assert.deepEqual([admin.status, (await admin.json()).code], [404, "classic"]);
+  assert.equal((await fetch(`${directoryBase}/${roomId(128)}/raid?player=${ADMIN}`)).status, 404);
+  // Deleted, so the creator stays below the worlds a creator may have for the tests after this one.
+  assert.equal((await fetch(`${directoryBase}/${roomId(127)}/delete`, { method: "POST", body: JSON.stringify({ player: CREATOR }) })).status, 200);
+});
+
 test("a starting save over the limit is refused with its status, not a cut connection", async () => {
   const room = roomId(115);
   const created = await fetch(directoryBase, {
@@ -746,6 +915,31 @@ test("the sweep deletes worlds whose starting save never came and trades kept lo
   await relay.sweep();
   assert.equal(await relay.trades.store.getTrade(trade), undefined);
   game.socket.close();
+});
+
+test("every game of a Raid World hears its new difficulty once its creator changes it over HTTP", async () => {
+  const room = roomId(133);
+  const created = await fetch(directoryBase, {
+    method: "POST",
+    headers: { [PLAYER_HEADER]: CREATOR },
+    body: JSON.stringify({ id: room, name: "Raid Difficulty", seats: 4, playerName: "Creator", authHash: await sha256Hex(AUTH), lock: { salt: "12".repeat(16), iterations: 200_000, box: "ab".repeat(40) }, type: "raid", difficulty: 1 }),
+  });
+  assert.equal(created.status, 201);
+  assert.equal((await listed(room)).difficulty, 1);
+  const watcher = await openWithHeaders(`${worldBase}${room}?name=Watcher&auth=${AUTH}`, { [PLAYER_HEADER]: playerKey(72), [FEATURES_HEADER]: "raid" });
+  assert.equal(await watcher.first, "seat 0");
+  const heard = [];
+  watcher.socket.on("message", (data) => heard.push(data.toString()));
+
+  const edit = await fetch(`${directoryBase}/${room}/edit`, { method: "POST", headers: { [PLAYER_HEADER]: CREATOR }, body: JSON.stringify({ seats: 4, difficulty: 3 }) });
+  assert.equal(edit.status, 200);
+  assert.deepEqual(await edit.json(), { edited: room }, "the answer names no difficulty");
+  await until(async () => heard.includes("difficulty 3"));
+  assert.equal((await listed(room)).difficulty, 3);
+
+  await fetch(`${directoryBase}/${room}/edit`, { method: "POST", headers: { [PLAYER_HEADER]: CREATOR }, body: JSON.stringify({ seats: 6 }) });
+  assert.deepEqual(heard.filter((text) => text.startsWith("difficulty")), ["difficulty 3"], "an edit without a difficulty tells none");
+  watcher.socket.close();
 });
 
 test("the creator or an admin edits a world over HTTP", async () => {

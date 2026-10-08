@@ -753,7 +753,7 @@ module MGQ_MpCoopStoryRewards
     # map:437:11
     { :alice => { :skills => [], :actors => [26, 34, 36, 383, 538] },
       :ilias => { :skills => [], :actors => [5, 45] },
-      :choice => false, :marks => [[[:s, 5091], [:s, 5249], [:s, 7089]]] },
+      :choice => false, :marks => [[[:s, 5091], [:s, 7089]]] },
     # map:515:29
     { :alice => { :skills => [], :actors => [] },
       :ilias => { :skills => [], :actors => [538] },

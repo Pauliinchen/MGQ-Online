@@ -2,6 +2,7 @@
 #  hotkeys_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-09: Checked the hotkey that joins a battle nearby
 #      Paulinchen  2026-10-04: Checked the party box size key and the name of Tab
 #                            - Checked the emote wheel's key
 #                            - Followed the scripts to their new names, without mp_
@@ -35,9 +36,10 @@ load_script "core_hotkeys"
 keys = MGQ_MpHotkeys
 
 # The defaults.
-check("the defaults: B, T, F11, Y, N, E and Tab",
-      [keys.code(:wheel), keys.code(:chat), keys.code(:overview), keys.code(:accept), keys.code(:decline), keys.code(:emotes), keys.code(:party_box)],
-      [0x42, 0x54, 0x7A, 0x59, 0x4E, 0x45, 0x09])
+check("the defaults: B, T, F11, Y, N, E, Tab and J",
+      [keys.code(:wheel), keys.code(:chat), keys.code(:overview), keys.code(:accept), keys.code(:decline), keys.code(:emotes), keys.code(:party_box),
+       keys.code(:join_battle)],
+      [0x42, 0x54, 0x7A, 0x59, 0x4E, 0x45, 0x09, 0x4A])
 check("a key is read by its code", [($down = [0x54]) && keys.pressed?(:chat), keys.pressed?(:wheel)], [true, false])
 
 # Binding.
@@ -54,9 +56,10 @@ rows = NWConst::Config::MOD_CONTENTS[0..-2]
 check("one key binding per key, before Return", rows.map { |row| [row[:name], row[:keybind]] },
       [["[Monster Girl Quest! Online] Action Wheel", true], ["[Monster Girl Quest! Online] Chat", true], ["[Monster Girl Quest! Online] World Overview", true],
        ["[Monster Girl Quest! Online] Accept Notification", true], ["[Monster Girl Quest! Online] Decline Notification", true],
-       ["[Monster Girl Quest! Online] Emote Wheel", true], ["[Monster Girl Quest! Online] Party Box Size", true]])
+       ["[Monster Girl Quest! Online] Emote Wheel", true], ["[Monster Girl Quest! Online] Party Box Size", true],
+       ["[Monster Girl Quest! Online] Join Battle", true]])
 check("Return stays last", NWConst::Config::MOD_CONTENTS.last[:key], :return)
-check("each reads its key from Player.ini", rows.map { |row| row[:value].call }, [0x4B, 0x54, 0x7A, 0x59, 0x4E, 0x45, 0x09])
+check("each reads its key from Player.ini", rows.map { |row| row[:value].call }, [0x4B, 0x54, 0x7A, 0x59, 0x4E, 0x45, 0x09, 0x4A])
 rows[2][:on_change].call(0x4C)
 check("and keeps a new key there", [$player_ini["key_overview"], keys.code(:overview)], ["76", 0x4C])
 

@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-08: Left out the message of a skill hit that names its target once none is left in co-op and live battles too, not in PvP battles alone
+#                            - Fought a duel in a Raid World with each player's squad, one character on the Frontline and two on the Backline, never the fourth
 #                            - Showed a message as the game does whenever checking it for a target fails, such as with a plugin's display_use_item of other arguments
 #                            - Loaded the face of a friend's character through MGQ_MpOverworld.graphic and kept a character without a picture as such, which tried and logged it every frame
 #                            - Left out the message of a skill hit that names its target once none is left, which ended the host game when a hit came after the whole Frontline fell
@@ -358,13 +359,14 @@ module MGQ_MpBattlesPvp
       MGQ_MpActors::Builds.game
     end
 
-    # Writes the player's team, the Frontline first, and notes the rule it carries, which holds
-    # when the player hosts the battle.
+    # Writes the player's team, the Frontline first, their squad in a Raid World, and notes the rule
+    # it carries, which holds when the player hosts the battle.
     #
     # @return [String] The rule's line, then a member line per party member.
     def self.build
       @sent_backline = Backline.wanted?
-      party = $game_party.battle_members.first(MGQ_MpCoopSquad::FRONTLINE) + $game_party.bench_members
+      squad = MGQ_MpCoopSquad
+      party = squad.raid? ? squad.raid_team : $game_party.battle_members.first(squad::FRONTLINE) + $game_party.bench_members
       sent = party.first(MOST_MEMBERS)
       MGQ_MpBattlesPvp.log("built the team to send: #{MGQ_MpBattlesSync.named_list(sent)}; " \
                            "#{@sent_backline ? 'with' : 'without'} the Backline")
@@ -933,7 +935,8 @@ module MGQ_MpBattlesPvp
       # A team duel rebuilds the other side itself, and never has the Backline.
       team_duel = block_given?
       backline = false if team_duel
-      members = Array(members).first(MGQ_MpCoopSquad::FRONTLINE) unless backline
+      front = MGQ_MpCoopSquad.pvp_front
+      members = Array(members).first(front) unless backline
       @snapshot = Marshal.dump(DataManager.make_save_contents)
       @globals = Marshal.dump(globals)
       @medals = Array(MGQ_MpGame.get($game_temp, :gain_medals)).dup
@@ -944,14 +947,14 @@ module MGQ_MpBattlesPvp
       @logged_actions = 0
 
       troop_id = Opponents.add_troop
-      own = $game_party.battle_members + (backline ? $game_party.bench_members : [])
+      own = MGQ_MpCoopSquad.raid? ? MGQ_MpCoopSquad.raid_team(backline || team_duel) : $game_party.battle_members + (backline ? $game_party.bench_members : [])
       own.each { |actor| actor.recover_all }
       MGQ_MpBattles.begin(:pvp, backline)
       $game_temp.in_memory_battle = true
       BattleManager.setup(troop_id, true, true)
 
       everyone = team_duel ? yield : Opponents.build(members, opponent)
-      opponents = Opponents.stand(backline ? everyone.first(MGQ_MpCoopSquad::FRONTLINE) : everyone)
+      opponents = Opponents.stand(backline ? everyone.first(front) : everyone)
       raise "nobody of #{opponent}'s team could be rebuilt" if opponents.empty?
 
       MGQ_MpGame.set($game_troop, :enemies, opponents)

@@ -2,6 +2,7 @@
 #  battles_coop_level_sync.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-08: Synced no level in a Raid World
 #      Paulinchen  2026-10-07: Logged the battle's level and why, and each character's level and stats before and after the sync
 #      Paulinchen  2026-10-06: Dropped level, which only the tests read
 #      Paulinchen  2026-10-04: Created
@@ -42,12 +43,17 @@ module MGQ_MpCoopLevelSync
   @noted = {}
 
   # Works out the level of a co-op battle: the highest of the party leader's characters in it, on
-  # its Frontline and Backline.
+  # its Frontline and Backline. A Raid World's battles have none.
   #
   # @param players [Array<MGQ_MpBattlesCoop::Player>] The battle's players, as
   #   MGQ_MpBattlesCoop.arrange gives them.
-  # @return [Integer, nil] The level, nil when the leader is not among the players.
+  # @return [Integer, nil] The level, nil in a Raid World or when the leader is not among the players.
   def self.level_for(players)
+    if MGQ_MpCoop::Scope.raid?
+      log("no level: a Raid World's battles sync none")
+      return nil
+    end
+
     leader = players.find { |player| MGQ_MpBattlesCoop.leads?(player.seat) }
     unless leader
       log("no level: the party leader is not among the battle's players (seats #{players.map(&:seat).join(', ')})")

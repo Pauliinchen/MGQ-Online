@@ -2,6 +2,7 @@
 #  core_hotkeys.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-09: Added the hotkey that joins the battle of a player nearby in a Raid World, J unless bound
 #      Paulinchen  2026-10-07: Logged the hotkeys bound as the game starts, each hotkey pressed and what it is for, and a setting that is no key
 #      Paulinchen  2026-10-04: Added the party box size key, Tab unless bound, and named Tab
 #                            - Added the emote wheel's key, E unless bound
@@ -14,9 +15,10 @@
 #----------------------------------------------------------------
 
 # The hotkeys the player binds: what opens the action wheel, the emote wheel, the chat and the World
-# overview, what accepts and declines the first invite of the notification box, and what makes the
-# party box small. Each is a key binding in Mod Config Remake when it is installed, and keeps its
-# key in Patch/Multiplayer/Player.ini, so it holds in every save and every world.
+# overview, what accepts and declines the first invite of the notification box, what makes the
+# party box small, and what joins the battle of a player nearby in a Raid World. Each is a key
+# binding in Mod Config Remake when it is installed, and keeps its key in
+# Patch/Multiplayer/Player.ini, so it holds in every save and every world.
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpHotkeys
@@ -46,6 +48,8 @@ module MGQ_MpHotkeys
                            "The key that opens and closes the emote wheel on the map of a world: jump, or show a balloon above your character."),
     :party_box => Binding.new("key_party_box", 0x09, :mp_key_party_box, "Party Box Size",
                               "The key that makes the party box at the top right small, with only names and pings, and full again."),
+    :join_battle => Binding.new("key_join_battle", 0x4A, :mp_key_join_battle, "Join Battle",
+                                "The hotkey that joins the battle of a player near you in a Raid World, while the prompt below your character shows."),
   }
 
   # Highest Windows key code.

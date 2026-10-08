@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-08: Checked that a message shows as the game shows it outside a multiplayer battle and when checking it fails, and that a character without a picture is not tried again
+#                            - Checked that a duel in a Raid World takes the squad, only its Frontline without the Backline
 #                            - Checked that a hit whose message names a target leaves the message out once none is left
 #      Paulinchen  2026-10-07: Created
 #
@@ -69,7 +70,14 @@ module MGQ_MpActors
     def self.parse(text, count); text.to_s.split(",").first(count).map { |id| Member.new(id.to_i) }; end
   end
 end
-module MGQ_MpCoopSquad; FRONTLINE = 4; FACE_COLUMNS = 4; end
+# The squads, in a Raid World while $raid is set: one character on the Frontline, three in the squad.
+module MGQ_MpCoopSquad
+  FRONTLINE = 4
+  FACE_COLUMNS = 4
+  def self.raid?; $raid; end
+  def self.pvp_front; $raid ? 1 : FRONTLINE; end
+  def self.raid_team(backline = true); $game_party.battle_members.first(backline ? 3 : 1); end
+end
 class Game_Party
   attr_accessor :battle_members, :bench_members
   def initialize; @battle_members = [Game_Actor.new(1), Game_Actor.new(2)]; @bench_members = [Game_Actor.new(3)]; end
@@ -264,4 +272,13 @@ check("the first turn adds to the report once, since the hook is in once the gam
 $game_library = "library changed"
 Scene_Title.new.start
 check("a reset drops the battle, the shared data put back", [battle.running?, $game_library, $game_temp.in_memory_battle], [false, "library before", false])
+
+# In a Raid World a duel takes the player's squad, and only its Frontline without the Backline.
+$raid = true
+$recovered = []
+$game_party.battle_members = (1..4).map { |id| Game_Actor.new(id) }
+pvp.begin_mirror
+check("a duel in a Raid World without the Backline fights the squad's Frontline alone", [$game_troop.members.map(&:name), $recovered], [["Actor1 (Mirror)"], [1]])
+Scene_Title.new.start
+$raid = false
 check("nothing failed", $log.grep(/FAILED|could not/).size, 0)

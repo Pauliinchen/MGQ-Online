@@ -2,6 +2,8 @@
 #  coop_castle.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-09: Read which variables are the player's own from story_state.rbx instead of coop_story.rbx
+#      Paulinchen  2026-10-08: Left the castle's Map Owner to the map's sync host in a Raid World, where parties lead nothing
 #      Paulinchen  2026-10-07: Named events through coop.rbx instead of a copy of its helper
 #                            - Logged each ghost of the leader's residents shown and hidden, with the event, the pages and why
 #      Paulinchen  2026-10-06: Took the party's leader from coop.rbx, and the ghosts' opacity and catch-up tiles from overworld.rbx
@@ -40,7 +42,7 @@ module MGQ_MpCoopCastle
   FRONT_GATE = 126
 
   # Variables of where the castle's way out returns the player: the map, x and y where they used
-  # the castle's item, each player's own (see MGQ_MpCoopStory::PERSONAL_VARIABLES).
+  # the castle's item, each player's own (see MGQ_MpStoryState::PERSONAL_VARIABLES).
   EXIT_VARIABLES = [21, 22, 23]
 
   extend MGQ_MpLog
@@ -91,14 +93,15 @@ module MGQ_MpCoopCastle
     @ghosts = {}
   end
 
-  # Finds the Map Owner of a castle map: the party's leader while they are on it, so the castle
-  # shows the leader's residents.
+  # Finds the Map Owner of a castle map in a Classic world: the party's leader while they are on
+  # it, so the castle shows the leader's residents. In a Raid World the map's sync host is.
   #
   # @param members [Array<MGQ_MpOverworldSync::Peers::Peer>] The other party members on the map.
   # @return [MGQ_MpOverworldSync::Peers::Peer, Symbol, nil] The leader, :me for the player, nil off
-  #   the castle or while the leader is elsewhere.
+  #   the castle, while the leader is elsewhere or in a Raid World.
   def self.owner(members)
     return nil unless $game_map && castle_map?($game_map.map_id)
+    return nil if MGQ_MpCoop::Scope.raid?
 
     leader = MGQ_MpCoop.party_leader
     leader == :me ? :me : members.find { |peer| peer.equal?(leader) }
@@ -175,7 +178,7 @@ module MGQ_MpCoopCastle
     return false unless first
 
     first.parameters[0].to_s.scan(SHOWN_VARIABLE).any? do |(id)|
-      id.to_i >= MGQ_MpCoopStory::AFFECTION_VARIABLES && MGQ_MpCoopStory.personal_variable?(id.to_i)
+      id.to_i >= MGQ_MpStoryState::AFFECTION_VARIABLES && MGQ_MpStoryState.personal_variable?(id.to_i)
     end
   end
 end

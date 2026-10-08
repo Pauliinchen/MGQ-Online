@@ -2,8 +2,19 @@
 #  coop_events.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-08: Kept the Library's replays of scenes and the game's transfer process to the player's own game, never the party's story, so a leader's replay no longer brings the members over
+#      Paulinchen  2026-10-10: Held a Raid World's story event a second instead of half a second for a tie, so a later teller stops before its first command more often
+#      Paulinchen  2026-10-09: Asked story_state.rbx which switches and variables are the player's own instead of coop_story.rbx
+#                            - Kept story events from starting while the player's story is behind a Raid World's, telling the level that moves them on, and held those that run by themselves, so a teleport onto their map cannot loop
+#                            - Kept a Raid World's telling, how far its story was, where it started and whom it took along, through the story's next event that starts in the frame its last ended, so its viewers see the rest of the story
+#                            - Held a Raid World's story event at its start for TIE_HOLD_FRAMES while someone on the map entered it first, so a tie stops it before it changed anything
+#                            - Told the story's pages to a Raid World's viewers in one message instead of one per viewer
+#      Paulinchen  2026-10-08: Took the teller, the viewers and the gate of the story's messages from MGQ_MpCoop::Scope: the party's leader and synced members in a Classic world, the player telling the story on the map and those whose story matches in a Raid World
+#                            - Stopped a story event in a Raid World once a player who entered the map first started telling the story there at the same moment, within TIE_FRAMES of its start and on its map alone
+#                            - Told the story's progress and whether warping is banned at the start of the telling in a Raid World, which tells who sees the scene and what a teleport to the story takes
+#                            - Kept chests personal in a Raid World, whose parties share no loot
+#                            - Kept the Library's replays of scenes and the game's transfer process to the player's own game, never the party's story, so a leader's replay no longer brings the members over
 #                            - Showed a page of the leader's story without its face while this game lacks the face file
+#                            - Kept a story event in a Raid World from starting until the world's story of a telling the player watched on the map arrived, so they no longer play the scene again
 #      Paulinchen  2026-10-07: Took a common event's setup, which passes the list alone, instead of failing on it
 #                            - Registered the interpreter, map, message and party hooks through core_hooks.rbx instead of wraps of its own
 #                            - Let a page of the leader's story outside a fiber move on at once instead of failing, as the other waits do
@@ -69,7 +80,9 @@
 # not looted it yet gets the same items, synced with the leader's story or not. Story is the
 # leader's alone for the members who follow it (see MGQ_MpCoopStory.follows_leader?); a member who
 # does not plays their own. A story scene the leader starts first gathers the members who follow it,
-# see coop_gather.rbx; the Pocket Castle's residents are sorted by coop_castle.rbx.
+# see coop_gather.rbx; the Pocket Castle's residents are sorted by coop_castle.rbx. In a Raid World
+# the story is told by whoever tells it on the map, to everyone there whose story matches, see
+# MGQ_MpCoop::Scope.
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpCoopEvents
@@ -103,6 +116,15 @@ module MGQ_MpCoopEvents
   # Frames in which a member hears only once that a story event they started is the leader's,
   # three seconds.
   REFUSE_FRAMES = 180
+
+  # Frames after a Raid World's telling starts in which another player who started telling on the
+  # same map at the same moment, and entered it first, stops it, three seconds of the state's lag.
+  TIE_FRAMES = 180
+
+  # Frames a Raid World's story event waits at its start while someone on the map entered it before
+  # the player, one second, so their state can tell that they started telling at the same moment
+  # before the event changed anything.
+  TIE_HOLD_FRAMES = 60
 
   # Frames a page of the leader's story stays after the leader stopped telling the story, two
   # seconds, before a member's game ends it anyway.
@@ -364,7 +386,7 @@ module MGQ_MpCoopEvents
   def self.temporary_switch?(id)
     return false if id.between?(1001, 2000)
 
-    $data_system.switches[id].to_s =~ TEMPORARY_NAMES || (defined?(MGQ_MpCoopStory) && MGQ_MpCoopStory.personal_switch?(id)) ? true : false
+    $data_system.switches[id].to_s =~ TEMPORARY_NAMES || (defined?(MGQ_MpStoryState) && MGQ_MpStoryState.personal_switch?(id)) ? true : false
   end
 
   # Reports whether a variable is only scratch, or the player's own, such as affection or where the
@@ -373,7 +395,7 @@ module MGQ_MpCoopEvents
   # @param id [Integer] The variable.
   # @return [Boolean] Whether it is.
   def self.temporary_variable?(id)
-    $data_system.variables[id].to_s =~ TEMPORARY_NAMES || (defined?(MGQ_MpCoopStory) && MGQ_MpCoopStory.personal_variable?(id)) ? true : false
+    $data_system.variables[id].to_s =~ TEMPORARY_NAMES || (defined?(MGQ_MpStoryState) && MGQ_MpStoryState.personal_variable?(id)) ? true : false
   end
 
   # Lists the self switches of the chests on the map.
@@ -424,17 +446,92 @@ module MGQ_MpCoopEvents
     return unless $game_map && interpreter.equal?($game_map.interpreter)
 
     MGQ_MpCoopGather.drop_hold
+    @tie_hold = nil
     # A page of the leader's story that a scene change cut short must not hold the player's own.
     log("the page #{@mirrored[:page]} of the leader's story was cut short by an event starting") if @mirrored
     @mirrored = nil
     event = event_id > 0 ? $game_map.events[event_id] : nil
     sorted = own?(event ? nil : list) ? :own : (event ? kind(event) : kind_of(list || []))
     @telling = leading_story? && sorted == :story
+    if @telling && @told_last_frame
+      log("the story's next event goes on with the telling that started on map #{@telling_map}")
+    elsif @telling
+      note_telling_start
+      hold_for_tie(interpreter)
+    end
     @may_tell = sorted == :talk && (following? || leading_story?) && may_tell?(list || [])
     hold = @telling && scene?(list) && !MGQ_MpCoopGather.gathered?
     MGQ_MpCoopGather.hold(interpreter) if hold
-    @chest = event && sorted == :chest && MGQ_MpCoop.in_party? ? { :interpreter => interpreter, :key => chest_key(event), :gains => [] } : nil
-    log_start(event, sorted, hold) if MGQ_MpCoop.in_party?
+    @chest = event && sorted == :chest && shares_chests? ? { :interpreter => interpreter, :key => chest_key(event), :gains => [] } : nil
+    log_start(event, sorted, hold) if MGQ_MpCoop::Scope.sharing?
+  end
+
+  # Notes when and where the player's telling starts, and in a Raid World how far their story is,
+  # which tells who sees the story: those whose story is there too, see
+  # MGQ_MpCoop::Scope::Raid.viewers. Those an earlier telling took along no longer see it.
+  #
+  # Only a telling that starts after a frame without one is new: the story's next event starts in
+  # the frame its last one ended, before the world's story of its changes went out, and would
+  # otherwise lose the viewers whose story is still where the telling started.
+  def self.note_telling_start
+    @telling_at = Graphics.frame_count
+    @telling_map = $game_map ? $game_map.map_id : nil
+    @told_markers = MGQ_MpCoop::Scope.raid? && defined?(MGQ_MpCoopStory) ? MGQ_MpCoopStory.own_markers : nil
+    MGQ_MpCoopGather.forget_taken_along if defined?(MGQ_MpCoopGather)
+  rescue => e
+    @told_markers = nil
+    log("noting the story's progress failed: #{e.class}: #{e.message}")
+  end
+
+  # How far the player's story was as their telling started, in a Raid World.
+  #
+  # @return [Array<Integer>, nil] The values, see MGQ_MpCoopStory.markers_of; nil outside a telling
+  #   and in a Classic world.
+  def self.told_markers
+    @telling ? @told_markers : nil
+  end
+
+  # Notes whether the player tells the story as the map's update ends, which tells a story's next
+  # event from a new telling, see note_telling_start. Called after the map's update.
+  def self.note_told_frame
+    @told_last_frame = telling?
+  end
+
+  # Holds a Raid World's story event at its first command while someone on the map entered it
+  # before the player, who would win a tie of two tellings started at the same moment, see
+  # tie_holding?.
+  #
+  # @param interpreter [Game_Interpreter] The map's interpreter.
+  def self.hold_for_tie(interpreter)
+    return unless MGQ_MpCoop::Scope.raid?
+
+    mine = MGQ_MpCoop::Scope.key_of(:me)
+    earlier = MGQ_MpCoop::Scope.peers_here.select { |peer| (MGQ_MpCoop::Scope.key_of(peer) <=> mine) < 0 }
+    return if earlier.empty?
+
+    @tie_hold = interpreter
+    log("holding the story event #{TIE_HOLD_FRAMES} frames: #{earlier.map { |peer| MGQ_MpOverworldSync.who(peer) }.join(', ')} entered the map first and may have started telling at the same moment")
+  rescue => e
+    @tie_hold = nil
+    log("holding a story event for a tie failed: #{e.class}: #{e.message}")
+  end
+
+  # Reports whether the player's story event still waits at its start, see hold_for_tie: for
+  # TIE_HOLD_FRAMES, unless another player turned out to tell the story here first, which
+  # yield_story then stops before its first command. Asked before each of the interpreter's commands.
+  #
+  # @param interpreter [Game_Interpreter] The interpreter about to run a command.
+  # @return [Boolean] Whether it waits.
+  def self.tie_holding?(interpreter)
+    return false unless @tie_hold && @tie_hold.equal?(interpreter)
+    return true if @telling && !past?(@telling_at, TIE_HOLD_FRAMES) && !MGQ_MpCoop::Scope::Raid.first_teller_here.is_a?(MGQ_MpOverworldSync::Peers::Peer)
+
+    @tie_hold = nil
+    false
+  rescue => e
+    @tie_hold = nil
+    log("holding a story event for a tie failed: #{e.class}: #{e.message}")
+    false
   end
 
   # Logs how an event starting on the map is sorted and what the party does with it.
@@ -469,19 +566,61 @@ module MGQ_MpCoopEvents
     return unless list && list[index] && story_command?(list, index)
 
     @may_tell = false
-    lead = MGQ_MpCoop.party_leader
-    if lead.is_a?(MGQ_MpOverworldSync::Peers::Peer) && following?
+    lead = MGQ_MpCoop::Scope.teller
+    if behind?
       # The list ends with an empty command, which ends the event as its last.
       MGQ_MpGame.set(interpreter, :index, list.size - 1)
-      MGQ_MpOverworldSync.notice("Only #{lead.state['name']} can move the story on.")
+      MGQ_MpOverworldSync.notice(MGQ_MpWorldCatchup.refusal_text)
+      log("ended a talk where it would move the story on (command #{list[index].code}): the player's story is behind the world's")
+    elsif lead.is_a?(MGQ_MpOverworldSync::Peers::Peer) && following?
+      # The list ends with an empty command, which ends the event as its last.
+      MGQ_MpGame.set(interpreter, :index, list.size - 1)
+      MGQ_MpOverworldSync.notice(refusal_text(lead))
       log("ended a talk where it would move the story on (command #{list[index].code})")
     elsif leading_story?
       @telling = true
+      note_telling_start
       log("a talk moves the story on (command #{list[index].code}), the party hears it from here")
     end
   rescue => e
     @may_tell = false
     log("watching a talk failed: #{e.class}: #{e.message}")
+  end
+
+  # Stops the player's story event in a Raid World once another player turns out to tell the story
+  # on the map too, having started it at the same moment: the one who entered the map first tells
+  # it (MGQ_MpCoop::Scope::Raid.first_teller_here), and the other's event ends at its next command.
+  # Called before each of an interpreter's commands.
+  #
+  # Only within TIE_FRAMES of the start and on the map it started on, since the map's order starts
+  # anew with every transfer, so a story moving its teller onto a map where another player tells
+  # one would end halfway.
+  #
+  # @param interpreter [Game_Interpreter] The interpreter about to run a command.
+  def self.yield_story(interpreter)
+    return unless @telling && $game_map && interpreter.equal?($game_map.interpreter) && MGQ_MpCoop::Scope.raid?
+    return if @telling_map != $game_map.map_id || past?(@telling_at, TIE_FRAMES)
+
+    lead = MGQ_MpCoop::Scope::Raid.first_teller_here
+    return unless lead.is_a?(MGQ_MpOverworldSync::Peers::Peer)
+
+    list = MGQ_MpGame.get(interpreter, :list)
+    # The list ends with an empty command, which ends the event as its last.
+    MGQ_MpGame.set(interpreter, :index, list.size - 1) if list
+    @telling = false
+    log("stopped the player's story event: #{MGQ_MpOverworldSync.who(lead)} started telling the story on map #{lead.state['map']} at the same moment, having entered it first")
+    MGQ_MpOverworldSync.notice(refusal_text(lead))
+  rescue => e
+    log("stopping a story event told twice failed: #{e.class}: #{e.message}")
+  end
+
+  # Tells the player that another player's story keeps theirs from moving on.
+  #
+  # @param lead [MGQ_MpOverworldSync::Peers::Peer] Who tells the story: the party's leader, or the
+  #   player telling it on the map in a Raid World.
+  # @return [String] The notice.
+  def self.refusal_text(lead)
+    MGQ_MpCoop::Scope.raid? ? "#{lead.state['name']} is telling the story here." : "Only #{lead.state['name']} can move the story on."
   end
 
   # Reports whether an event command moves the story on, as story_marks? sorts it.
@@ -512,42 +651,57 @@ module MGQ_MpCoopEvents
     @telling && $game_map && $game_map.interpreter.running? ? true : false
   end
 
-  # Sends the party a message about events.
+  # Sends the party, or the map in a Raid World, a message about events, see MGQ_MpCoop::Scope.tell.
   #
-  # @param seat [Integer] A member's seat, -1 for everyone, who ignore it outside the party.
+  # @param seat [Integer] A player's seat, -1 for everyone, who ignore it outside the scope.
   # @param kind [String] What it is about.
   # @param fields [Hash] Its other fields.
   # @return [Boolean] Whether it went out.
   def self.tell(seat, kind, fields = {})
-    sent = MGQ_MpCoop.tell(seat, "pevent", kind, fields)
+    sent = MGQ_MpCoop::Scope.tell(seat, "pevent", kind, fields)
     log("#{sent ? 'sent' : 'could not send'} #{kind} to #{seat < 0 ? 'the party' : "seat #{seat}"} (#{MGQ_MpCoop.bytes_of(fields)} bytes)")
     sent
   end
 
-  # As leader, sends a message about the story to the members who follow it, see
-  # MGQ_MpCoopStory.synced_members.
+  # Sends several players of the party, or of the map in a Raid World, one message about events,
+  # see MGQ_MpCoop::Scope.tell_each.
+  #
+  # @param peers [Array<MGQ_MpOverworldSync::Peers::Peer>] The players.
+  # @param kind [String] What it is about.
+  # @param fields [Hash] Its other fields.
+  # @return [Boolean] Whether it went out to every one.
+  def self.tell_each(peers, kind, fields = {})
+    sent = MGQ_MpCoop::Scope.tell_each(peers, "pevent", kind, fields)
+    log("#{sent ? 'sent' : 'could not send'} #{kind} to #{peers.map { |peer| MGQ_MpOverworldSync.who(peer) }.join(', ')} (#{MGQ_MpCoop.bytes_of(fields)} bytes)")
+    sent
+  end
+
+  # As teller, sends a message about the story to those who see it, see MGQ_MpCoop::Scope.viewers.
   #
   # @param kind [String] What it is about.
   # @param fields [Hash] Its other fields.
   def self.tell_followers(kind, fields)
-    followers = defined?(MGQ_MpCoopStory) ? MGQ_MpCoopStory.synced_members : []
-    log("told nobody #{kind}: no member follows the player's story") if followers.empty?
-    followers.each { |peer| tell(peer.seat, kind, fields) }
+    followers = MGQ_MpCoop::Scope.viewers
+    return log("told nobody #{kind}: nobody follows the player's story") if followers.empty?
+    return followers.each { |peer| tell(peer.seat, kind, fields) } unless MGQ_MpCoop::Scope.raid?
+
+    tell_each(followers, kind, fields)
   end
 
-  # Reports whether the player follows their leader's story, through coop_story.rbx: only then is
-  # their story the leader's to move on.
+  # Reports whether the player's story is another player's to move on: their leader's they follow,
+  # or in a Raid World the one telling it on the map, see MGQ_MpCoop::Scope.follows_teller?.
   #
-  # @return [Boolean] Whether they do.
+  # @return [Boolean] Whether it is.
   def self.following?
-    defined?(MGQ_MpCoopStory) && MGQ_MpCoopStory.follows_leader? ? true : false
+    MGQ_MpCoop::Scope.follows_teller?
   end
 
-  # Reports whether the player leads members who follow their story, through coop_story.rbx.
+  # Reports whether the player tells their story to others: as a leader with members who follow
+  # it, or in a Raid World while nobody else tells it on the map, see MGQ_MpCoop::Scope.leads_story?.
   #
   # @return [Boolean] Whether they do.
   def self.leading_story?
-    defined?(MGQ_MpCoopStory) && MGQ_MpCoopStory.leading_synced? ? true : false
+    MGQ_MpCoop::Scope.leads_story?
   end
 
   # Reports whether the leader's story scene plays now, held no more, which keeps the members still.
@@ -559,9 +713,26 @@ module MGQ_MpCoopEvents
 
   # The fields the party's events add to the state the player's game tells the others.
   #
-  # @return [Hash] "telling": 1 while the player's story scene plays for the party.
+  # @return [Hash] "telling": 1 while the player's story scene plays for the party; in a Raid World
+  #   "tsm" and "twb" too while it plays, how far the player's story was as it started, see
+  #   told_markers, and whether warping is banned where the player stands, see
+  #   MGQ_MpCoopGather.warp_ban?.
   def self.state_fields
-    { "telling" => story_playing? ? 1 : 0 }
+    playing = story_playing?
+    fields = { "telling" => playing ? 1 : 0 }
+    return fields unless playing && told_markers
+
+    fields["tsm"] = @told_markers.join(",")
+    fields["twb"] = MGQ_MpCoopGather.warp_ban? ? 1 : 0 if defined?(MGQ_MpCoopGather)
+    fields
+  end
+
+  # Reports whether the player shares the chests they open: with their party in a Classic world.
+  # A Raid World's parties share no loot.
+  #
+  # @return [Boolean] Whether they do.
+  def self.shares_chests?
+    MGQ_MpCoop.in_party? && !MGQ_MpCoop::Scope.raid?
   end
 
   # Takes a message about the party's events from another member.
@@ -572,9 +743,13 @@ module MGQ_MpCoopEvents
     kind = message["pevent"]
     return MGQ_MpCoopGather.take(peer, message) if GATHER_MESSAGES.include?(kind)
 
-    lead = MGQ_MpCoop.party_leader
-    return log("ignored #{kind} from #{MGQ_MpOverworldSync.who(peer)}: not from the party's leader (#{MGQ_MpOverworldSync.who(lead)})") unless lead.equal?(peer)
-    return log("ignored #{kind} from #{MGQ_MpOverworldSync.who(peer)}: not synced with the leader, the player plays their own story") unless following?
+    scope = MGQ_MpCoop::Scope
+    unless scope.story_from?(peer)
+      return log("ignored #{kind} from #{MGQ_MpOverworldSync.who(peer)}: not from #{scope.raid? ? 'the player telling the story here' : "the party's leader"} (#{MGQ_MpOverworldSync.who(scope.teller)})")
+    end
+    unless scope.watches?(peer)
+      return log("ignored #{kind} from #{MGQ_MpOverworldSync.who(peer)}: #{scope.raid? ? "the player's story is not where theirs is" : 'not synced with the leader, the player plays their own story'}")
+    end
 
     case kind
     when "say"
@@ -583,7 +758,7 @@ module MGQ_MpCoopEvents
       else
         log("dropped page #{message['page']} of #{MGQ_MpOverworldSync.who(peer)}'s story: told on map #{message['map']}, not the story's map for the player (on map #{$game_map ? $game_map.map_id : '?'})")
       end
-    when "done" then heard_done(message)
+    when "done" then heard_done(message, peer)
     else log("ignored #{kind} from #{MGQ_MpOverworldSync.who(peer)}: unknown kind")
     end
   rescue => e
@@ -591,15 +766,19 @@ module MGQ_MpCoopEvents
   end
 
   # Keeps a member's story event from starting: only the leader starts story, in their own game.
-  # Called when the map's main event would start it.
+  # In a Raid World only while another player tells the story on the map, or while the player's
+  # story is behind the world's (held_behind). Called when the map's main event would start it.
   #
-  # An event that runs by itself is left to the leader's own game, which runs it on its map.
+  # An event that runs by itself is left to the teller's own game, which runs it on its map.
   #
   # @param event [Game_Event] The event.
-  # @return [Boolean] Whether it is the leader's, so it must not run here.
+  # @return [Boolean] Whether it is the teller's, so it must not run here.
   def self.hand_over(event)
-    lead = MGQ_MpCoop.party_leader
-    return false unless lead.is_a?(MGQ_MpOverworldSync::Peers::Peer) && !own? && kind(event) == :story
+    return held_behind(event) if behind? && !own? && kind(event) == :story
+
+    lead = MGQ_MpCoop::Scope.teller
+    return awaits_told_story?(event) unless lead.is_a?(MGQ_MpOverworldSync::Peers::Peer)
+    return false unless !own? && kind(event) == :story
     unless following?
       log_once([:own_story, $game_map.map_id, event.id, lead.state["id"].to_s], "story event #{event.id} on map #{$game_map.map_id} runs in the player's own game: not synced with #{MGQ_MpOverworldSync.who(lead)}, the player plays their own story")
       return false
@@ -617,20 +796,62 @@ module MGQ_MpCoopEvents
     false
   end
 
-  # Tells the member that only the leader moves the story on, once per event in REFUSE_FRAMES,
+  # Reports whether the player's story is behind a Raid World's, which keeps their story events from
+  # starting, see MGQ_MpWorldCatchup.holds_story?.
+  #
+  # @return [Boolean] Whether it is.
+  def self.behind?
+    defined?(MGQ_MpWorldCatchup) && MGQ_MpWorldCatchup.holds_story? ? true : false
+  end
+
+  # Keeps a story event from starting while the player's story is behind the world's: one they
+  # start tells the level that moves them on, once per event in REFUSE_FRAMES, and one that runs by
+  # itself waits silently, so a teleport onto its map cannot loop.
+  #
+  # @param event [Game_Event] The story event.
+  # @return [Boolean] Always true: it must not run.
+  def self.held_behind(event)
+    if event.trigger == 3
+      log_once([:behind_autorun, $game_map.map_id, event.id], "kept event #{event.id} on map #{$game_map.map_id} that runs by itself from starting: it is story, and the player's story is behind the world's")
+      return true
+    end
+
+    key = [$game_map.map_id, event.id]
+    return true if @refused == key && !past?(@refused_at, REFUSE_FRAMES)
+
+    @refused = key
+    @refused_at = Graphics.frame_count
+    log("kept story event #{event.id} on map #{$game_map.map_id} from starting: the player's story is behind the world's")
+    MGQ_MpOverworldSync.notice(MGQ_MpWorldCatchup.refusal_text)
+    true
+  end
+
+  # Keeps a story event from starting in a Raid World while the world's story of a telling the
+  # player watched on the map has not arrived yet, see MGQ_MpWorldStory.awaits_teller?.
+  #
+  # @param event [Game_Event] The event.
+  # @return [Boolean] Whether it must not run yet.
+  def self.awaits_told_story?(event)
+    return false unless defined?(MGQ_MpWorldStory) && MGQ_MpWorldStory.awaits_teller? && !own? && kind(event) == :story
+
+    log_once([:await_told, $game_map.map_id, event.id], "kept story event #{event.id} on map #{$game_map.map_id} from starting: the world's story of the telling the player watched has not arrived yet")
+    true
+  end
+
+  # Tells the member that only the teller moves the story on, once per event in REFUSE_FRAMES,
   # since an event the player stands on starts again with every step.
   #
   # @param event [Game_Event] The story event.
-  # @param lead [MGQ_MpOverworldSync::Peers::Peer] The leader.
+  # @param lead [MGQ_MpOverworldSync::Peers::Peer] The teller.
   def self.refuse_story(event, lead)
     key = [$game_map.map_id, event.id]
     return if @refused == key && !past?(@refused_at, REFUSE_FRAMES)
 
     @refused = key
     @refused_at = Graphics.frame_count
-    log("kept story event #{event.id} on map #{$game_map.map_id} from starting: only the leader #{MGQ_MpOverworldSync.who(lead)} starts story (leader on map #{lead.state['map']})")
-    away = lead.state["map"].to_i == $game_map.map_id ? "" : " Bring them here to go on."
-    MGQ_MpOverworldSync.notice("Only #{lead.state['name']} can move the story on.#{away}")
+    log("kept story event #{event.id} on map #{$game_map.map_id} from starting: only #{MGQ_MpOverworldSync.who(lead)} starts story (on map #{lead.state['map']})")
+    away = lead.state["map"].to_i == $game_map.map_id || MGQ_MpCoop::Scope.raid? ? "" : " Bring them here to go on."
+    MGQ_MpOverworldSync.notice("#{refusal_text(lead)}#{away}")
   end
 
   # Reports whether some frames have passed since a frame.
@@ -671,12 +892,18 @@ module MGQ_MpCoopEvents
     $game_switches[switch] ? true : false
   end
 
-  # Reports whether a common event that runs by itself is left to the leader's game.
+  # Reports whether a common event that runs by itself is left to the teller's game, or held while
+  # the player's story is behind a Raid World's.
   #
   # @param common [RPG::CommonEvent] The common event.
   # @return [Boolean] Whether it is.
   def self.leave_to_leader?(common)
-    lead = MGQ_MpCoop.party_leader
+    if behind? && !own?(common.list) && kind_of(common.list || []) == :story
+      log_once([:behind_common, common.respond_to?(:id) ? common.id : "?"], "kept common event #{common.respond_to?(:id) ? common.id : '?'} that runs by itself from starting: it is story, and the player's story is behind the world's")
+      return true
+    end
+
+    lead = MGQ_MpCoop::Scope.teller
     left = lead.is_a?(MGQ_MpOverworldSync::Peers::Peer) && following? && !own?(common.list) && kind_of(common.list || []) == :story
     if left
       id = common.respond_to?(:id) ? common.id : "?"
@@ -739,7 +966,7 @@ module MGQ_MpCoopEvents
   # @param peer [MGQ_MpOverworldSync::Peers::Peer] The leader.
   # @param message [Hash] The message's fields.
   def self.hear(peer, message)
-    forget_former_leader
+    forget_former_leader(peer)
     lines = message["lines"].to_s.split(",").map { |line| decode(line) }
     choices = message["choices"].to_s.split(",").map { |choice| decode(choice) }
     lines += ["#{peer.state['name']} chooses: #{choices.join(' / ')}"] unless choices.empty?
@@ -756,11 +983,12 @@ module MGQ_MpCoopEvents
         "#{@heard.size} waiting to show#{dropped > 0 ? ", dropped the #{dropped} oldest" : ''}")
   end
 
-  # Notes that the leader moved past a page of their story.
+  # Notes that the teller moved past a page of their story.
   #
   # @param message [Hash] The message's fields, the page's id under "page".
-  def self.heard_done(message)
-    forget_former_leader
+  # @param peer [MGQ_MpOverworldSync::Peers::Peer, nil] The teller, nil when unknown.
+  def self.heard_done(message, peer = nil)
+    forget_former_leader(peer)
     @done.push(message["page"].to_s)
     @done.shift while @done.size > MAX_DONE
     log("the leader moved past page #{message['page']}")
@@ -782,10 +1010,10 @@ module MGQ_MpCoopEvents
     !@mirrored.nil?
   end
 
-  # Reports whether the page of the leader's story the window shows is over: the leader moved past
-  # it, is no longer the player's leader, or stopped telling the story a while ago.
+  # Reports whether the page of the teller's story the window shows is over: the teller moved past
+  # it, is no longer the player's leader or gone, or stopped telling the story a while ago.
   #
-  # The leader's state and their pages travel apart, so a page may arrive before the state that
+  # The teller's state and their pages travel apart, so a page may arrive before the state that
   # says the story plays.
   #
   # @return [Boolean] Whether it is over.
@@ -793,10 +1021,27 @@ module MGQ_MpCoopEvents
     return true unless @mirrored
     return page_over("the leader moved past it") if done?(@mirrored[:page])
 
-    lead = MGQ_MpCoop.party_leader
+    lead = page_teller
     return page_over("#{MGQ_MpOverworldSync.who(lead)} is no longer the player's leader") unless lead.is_a?(MGQ_MpOverworldSync::Peers::Peer)
 
     lead.state["telling"] != "1" && past?(@mirrored[:since], STALE_FRAMES) ? page_over("the leader stopped telling the story #{STALE_FRAMES} frames ago") : false
+  end
+
+  # Finds who told the pages the player follows: the party's leader, or in a Raid World the player
+  # they came from, whose state says whether the story still plays.
+  #
+  # @return [MGQ_MpOverworldSync::Peers::Peer, Symbol, nil] The teller, :me for the player, nil for none.
+  def self.page_teller
+    return MGQ_MpCoop::Scope.teller unless MGQ_MpCoop::Scope.raid?
+
+    MGQ_MpOverworldSync::Peers.all.find { |peer| peer.state["id"].to_s == @heard_from.to_s }
+  end
+
+  # Names the teller whose story pages the player follows, see forget_former_leader.
+  #
+  # @return [String, nil] Their id, nil for nobody or the player.
+  def self.heard_from
+    @heard_from
   end
 
   # Logs once why the page of the leader's story the window shows is over.
@@ -858,7 +1103,7 @@ module MGQ_MpCoopEvents
   # pages the leader moved past meanwhile.
   def self.show_heard
     return if @heard.nil? || @heard.empty? || !MGQ_MpOverworldSync.map_free?
-    unless MGQ_MpCoop.in_party?
+    unless MGQ_MpCoop::Scope.sharing?
       log("dropped #{@heard.size} waiting pages of the leader's story: no longer in a party")
       return @heard.clear
     end
@@ -878,23 +1123,42 @@ module MGQ_MpCoopEvents
     @mirrored = { :page => page[:page], :since => Graphics.frame_count }
   end
 
-  # Forgets the pages of the story a former leader told and moved past, once another member leads
-  # or the party is over, so they never show after the story they belong to.
-  def self.forget_former_leader
-    lead = MGQ_MpCoop.party_leader
-    id = lead.is_a?(MGQ_MpOverworldSync::Peers::Peer) ? lead.state["id"].to_s : nil
+  # Forgets the pages of the story a former teller told and moved past, once the teller changed,
+  # so they never show after the story they belong to: another member leads or the party is over,
+  # or in a Raid World another player tells the story, or the player does.
+  #
+  # @param peer [MGQ_MpOverworldSync::Peers::Peer, nil] Who just told a page, nil for none.
+  def self.forget_former_leader(peer = nil)
+    id = page_source_id(peer)
     return if id == @heard_from
 
     waiting = (@heard || []).size
-    log("the leader whose story pages the player follows is #{id ? MGQ_MpOverworldSync.who(lead) : 'nobody'} now#{waiting > 0 ? ", forgot #{waiting} waiting pages of the former leader" : ''}")
+    log("the teller whose story pages the player follows is #{id ? MGQ_MpOverworldSync.who(peer || MGQ_MpCoop::Scope.teller) : 'nobody'} now#{waiting > 0 ? ", forgot #{waiting} waiting pages of the former teller" : ''}")
     @heard_from = id
     @heard = []
     @done = []
   end
 
+  # Finds the id of the teller whose pages the player follows now: the party's leader; in a Raid
+  # World the player who just told a page, else the teller on the map, or still the last one while
+  # nobody's state says they tell, since a teller's state and their pages travel apart.
+  #
+  # @param peer [MGQ_MpOverworldSync::Peers::Peer, nil] Who just told a page, nil for none.
+  # @return [String, nil] The id, nil for nobody or the player.
+  def self.page_source_id(peer)
+    raid = MGQ_MpCoop::Scope.raid?
+    return peer.state["id"].to_s if raid && peer
+
+    lead = MGQ_MpCoop::Scope.teller
+    return lead.state["id"].to_s if lead.is_a?(MGQ_MpOverworldSync::Peers::Peer)
+
+    raid && lead.nil? ? @heard_from : nil
+  end
+
   # Shows the leader's messages once the player is free, and chests other members opened. Called
   # after the map's update.
   def self.update
+    note_told_frame
     forget_former_leader
     show_heard
     take_held_chests
@@ -995,8 +1259,8 @@ module MGQ_MpCoopEvents
 
     chest = @chest
     @chest = nil
-    unless chest[:key] && $game_self_switches[chest[:key]] && MGQ_MpCoop.in_party?
-      reason = !chest[:key] ? "it sets no self switch" : (MGQ_MpCoop.in_party? ? "it stayed shut, such as a locked one" : "no longer in a party")
+    unless chest[:key] && $game_self_switches[chest[:key]] && shares_chests?
+      reason = !chest[:key] ? "it sets no self switch" : (shares_chests? ? "it stayed shut, such as a locked one" : "no longer in a party of a Classic world")
       return log("the chest #{chest[:key] ? chest[:key].join('.') : ''} tells the party nothing: #{reason}")
     end
 
@@ -1020,11 +1284,13 @@ module MGQ_MpCoopEvents
   end
 
   # Takes a chest another member opened: gives its items, unless the player looted it already or it
-  # gave nothing, as a locked chest an earlier build tells about.
+  # gave nothing, as a locked chest an earlier build tells about; never in a Raid World, whose
+  # chests are personal.
   #
   # @param peer [MGQ_MpOverworldSync::Peers::Peer, nil] Who opened it.
   # @param message [Hash] The message's fields.
   def self.take_chest(peer, message)
+    return log("ignored chest #{message['chest']} from #{MGQ_MpOverworldSync.who(peer)}: a Raid World's chests are personal") if MGQ_MpCoop::Scope.raid?
     return log("ignored chest #{message['chest']} from #{MGQ_MpOverworldSync.who(peer)}: not a member of the party") unless MGQ_MpCoop::Party.member?(peer.state)
     # A PvP battle puts the game back as it was before it, which would take the items again.
     if pvp_running?
@@ -1145,6 +1411,7 @@ end
 begin
   MGQ_MpCoop.route("chest") { |peer, message| MGQ_MpCoopEvents.take(peer, message) }
   MGQ_MpCoop.route("pevent") { |peer, message| MGQ_MpCoopEvents.take(peer, message) }
+  MGQ_MpCoop.route_map("pevent") { |peer, message| MGQ_MpCoopEvents.take(peer, message) }
   MGQ_MpOverworldSync.state_fields { MGQ_MpCoopEvents.state_fields }
 rescue => e
   MGQ_MpCoopEvents.log("co-op FAILED: #{e.class}: #{e.message}")
@@ -1156,8 +1423,17 @@ begin
   # After the map's update, the leader's story pages show once the player is free.
   MGQ_MpHooks.after(Game_Map, :update, "coop_events") { MGQ_MpCoopEvents.update }
 
-  # Before an event command runs, a talk that may turn into story is watched.
-  MGQ_MpHooks.before(Game_Interpreter, :execute_command, "coop_events") { MGQ_MpCoopEvents.guard(self) }
+  # Before an event command runs, a story event waits a moment at its start for a tie, a story told
+  # twice at once ends for the later teller, and a talk that may turn into story is watched.
+  MGQ_MpHooks.before(Game_Interpreter, :execute_command, "coop_events") do
+    begin
+      Fiber.yield while MGQ_MpCoopEvents.tie_holding?(self)
+    rescue FiberError
+      # An interpreter run outside a fiber cannot wait, so its command runs at once.
+    end
+    MGQ_MpCoopEvents.yield_story(self)
+    MGQ_MpCoopEvents.guard(self)
+  end
 rescue => e
   MGQ_MpCoopEvents.log("hooks FAILED: #{e.class}: #{e.message}")
 end

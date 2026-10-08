@@ -2,7 +2,11 @@
 //  DirectoryClient.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-08: Read whether the relay kept the Mod Config options sent, and the version whose options it keeps
+//      Paulinchen  2026-10-09: Made and changed a Raid World with its difficulty, and read it from the list
+//      Paulinchen  2026-10-08: Read the answer of a status a route expects besides success, such as the 409 that hands back a Raid World's story
+//                            - Named the Raid Worlds this game plays in the X-MGQ-Features header of every request
+//                            - Made worlds of a type, Classic or Raid, with how a Raid World shares companions, and read both from the list
+//                            - Read whether the relay kept the Mod Config options sent, and the version whose options it keeps
 //      Paulinchen  2026-10-07: Logged every request with its method, route and outcome, and its time when it failed or was slow, a repeated request only once its outcome changed
 //                            - Sent the world's auth key in the X-MGQ-Auth header instead of the address, and kept the outcomes last logged to a bounded number
 //      Paulinchen  2026-10-06: Sent the player's key in the X-MGQ-Player header, and no longer in the addresses of the directory and the trades
@@ -51,7 +55,7 @@ namespace MGQParadox.Multiplayer.Network.World;
 /// <remarks>
 /// It reads and writes JSON by hand, since NativeAOT leaves out what serializing by reflection needs.
 /// </remarks>
-internal sealed class DirectoryClient
+internal sealed partial class DirectoryClient
 {
     /// <summary>
     /// The request header that carries the player's key, which an address would leave in logs.
@@ -62,6 +66,16 @@ internal sealed class DirectoryClient
     /// The request header that carries the world's auth key, which an address would leave in logs.
     /// </summary>
     public const string AuthHeader = "X-MGQ-Auth";
+
+    /// <summary>
+    /// The request header that names what this game plays, which the relay keeps games without it out of Raid Worlds by.
+    /// </summary>
+    public const string FeaturesHeader = "X-MGQ-Features";
+
+    /// <summary>
+    /// What this game names in <see cref="FeaturesHeader"/>, separated by commas.
+    /// </summary>
+    public const string Features = WorldType.Raid;
 
     /// <summary>
     /// How many outcomes last logged are kept; once full they are forgotten, which only has a repeated request log once more.
@@ -170,7 +184,10 @@ internal sealed class DirectoryClient
                 Flag(world, "open"),
                 Flag(world, "featured"),
                 new WorldAbout(Text(world, "description"), Text(world, "mods"), Text(world, "data"), Flag(world, "strict"), Text(world, "modHashes"), Text(world, "settings")),
-                members));
+                members,
+                Text(world, "type") is { Length: > 0 } type ? type : WorldType.Classic,
+                Text(world, "share") is { Length: > 0 } share ? share : CompanionSharing.Off,
+                world.TryGetProperty("difficulty", out var difficulty) && difficulty.ValueKind == JsonValueKind.Number && difficulty.TryGetInt32(out var level) && WorldDifficulty.IsValid(level) ? level : null));
         }
 
         return new WorldListing(worlds, Flag(document.RootElement, "admin"));
@@ -205,8 +222,11 @@ internal sealed class DirectoryClient
     /// <param name="choose">Whether each new player chooses where to start.</param>
     /// <param name="open">Whether its password is empty, so the games enter without asking for it.</param>
     /// <param name="about">What its creator tells about it.</param>
+    /// <param name="type">Its type, see <see cref="WorldType"/>.</param>
+    /// <param name="share">How a Raid World shares companions, see <see cref="CompanionSharing"/>.</param>
+    /// <param name="difficulty">The difficulty a Raid World sets for every player, see <see cref="WorldDifficulty"/>; <see langword="null"/> for none.</param>
     /// <exception cref="DirectoryException">The directory could not be reached or refused the world.</exception>
-    public void Create(string id, string name, int seats, string playerKey, string playerName, string authHash, WorldLock worldLock, bool start, bool hidden, bool choose, bool open, WorldAbout about)
+    public void Create(string id, string name, int seats, string playerKey, string playerName, string authHash, WorldLock worldLock, bool start, bool hidden, bool choose, bool open, WorldAbout about, string type = WorldType.Classic, string share = CompanionSharing.Off, int? difficulty = null)
     {
         var body = Json(writer =>
         {
@@ -236,6 +256,13 @@ internal sealed class DirectoryClient
             writer.WriteBoolean("strict", about.Strict);
             writer.WriteString("modHashes", about.ModHashes);
             writer.WriteString("settings", about.Settings);
+            writer.WriteString("type", type);
+            writer.WriteString("share", share);
+
+            if (difficulty is { } level)
+            {
+                writer.WriteNumber("difficulty", level);
+            }
         });
 
         using var _ = Send(HttpMethod.Post, _worlds, $"world create {Log.Short(id)}", body, playerKey);
@@ -285,7 +312,7 @@ internal sealed class DirectoryClient
     }
 
     /// <summary>
-    /// Changes a world's seats, description and mods, and for its creator the hashes of its required mods outside the catalog.
+    /// Changes a world's seats, description, mods and a Raid World's difficulty, and for its creator the hashes of its required mods outside the catalog.
     /// </summary>
     /// <param name="id">The world.</param>
     /// <param name="playerKey">The creator's or an admin's key.</param>
@@ -293,8 +320,9 @@ internal sealed class DirectoryClient
     /// <param name="description">What the world is about.</param>
     /// <param name="mods">The mods it needs.</param>
     /// <param name="modHashes">The creator's mod hashes, <see langword="null"/> to leave them, as an admin must.</param>
+    /// <param name="difficulty">A Raid World's new difficulty, see <see cref="WorldDifficulty"/>; <see langword="null"/> to leave it.</param>
     /// <exception cref="DirectoryException">The directory could not be reached or refused.</exception>
-    public void Edit(string id, string playerKey, int seats, string description, string mods, string? modHashes = null)
+    public void Edit(string id, string playerKey, int seats, string description, string mods, string? modHashes = null, int? difficulty = null)
     {
         var body = Json(writer =>
         {
@@ -306,6 +334,11 @@ internal sealed class DirectoryClient
             if (modHashes != null)
             {
                 writer.WriteString("modHashes", modHashes);
+            }
+
+            if (difficulty is { } level)
+            {
+                writer.WriteNumber("difficulty", level);
             }
         });
 
@@ -660,11 +693,13 @@ internal sealed class DirectoryClient
     /// <param name="http">The client to send it with.</param>
     /// <param name="route">What the request does, for the log, such as "world lock 1a2b3c4d5e6f"; never a key.</param>
     /// <param name="repeatKey">Names a request the game repeats, which is logged only when its outcome changes or it was slow; <see langword="null"/> to log it every time.</param>
-    /// <returns>The successful answer, which the caller disposes.</returns>
+    /// <param name="expected">A status the route answers with besides success, which the caller reads instead of an exception; <see langword="null"/> for none.</param>
+    /// <returns>The successful or expected answer, which the caller disposes.</returns>
     /// <exception cref="DirectoryException">The directory could not be reached, or answered with an error.</exception>
-    private static HttpResponseMessage Exchange(HttpRequestMessage request, HttpClient http, string route, string? repeatKey = null)
+    private static HttpResponseMessage Exchange(HttpRequestMessage request, HttpClient http, string route, string? repeatKey = null, HttpStatusCode? expected = null)
     {
         var started = Stopwatch.GetTimestamp();
+        request.Headers.Add(FeaturesHeader, Features);
 
         try
         {
@@ -681,7 +716,10 @@ internal sealed class DirectoryClient
 
             try
             {
-                ThrowUnlessSuccess(response);
+                if (response.StatusCode != expected)
+                {
+                    ThrowUnlessSuccess(response);
+                }
             }
             catch
             {
@@ -838,7 +876,71 @@ internal sealed record WorldListing(IReadOnlyList<ListedWorld> Worlds, bool Admi
 /// <param name="Featured">Whether it is one of the relay's own worlds, which an admin made.</param>
 /// <param name="About">What its creator tells about it.</param>
 /// <param name="Members">Everyone who ever joined it.</param>
-internal sealed record ListedWorld(string Id, string Name, int Seats, string CreatorId, string CreatorName, int Online, long Active, string Start, bool Hidden, bool Choose, bool Open, bool Featured, WorldAbout About, IReadOnlyList<ListedMember> Members);
+/// <param name="Type">Its type, see <see cref="WorldType"/>; Classic for a world the relay names none of.</param>
+/// <param name="Share">How a Raid World shares companions, see <see cref="CompanionSharing"/>; off for one the relay names none of.</param>
+/// <param name="Difficulty">The difficulty a Raid World sets for every player, see <see cref="WorldDifficulty"/>; <see langword="null"/> for a world that sets none.</param>
+internal sealed record ListedWorld(string Id, string Name, int Seats, string CreatorId, string CreatorName, int Online, long Active, string Start, bool Hidden, bool Choose, bool Open, bool Featured, WorldAbout About, IReadOnlyList<ListedMember> Members, string Type, string Share, int? Difficulty = null);
+
+/// <summary>
+/// A world's types, as the relay names them, fixed once the world is made.
+/// </summary>
+internal static class WorldType
+{
+    /// <summary>
+    /// A world where each party plays its own story, as every world before Raid Worlds.
+    /// </summary>
+    public const string Classic = "classic";
+
+    /// <summary>
+    /// A world whose players all play one story together.
+    /// </summary>
+    public const string Raid = "raid";
+}
+
+/// <summary>
+/// The difficulties a Raid World may set for every player, the game's own values of its difficulty
+/// variable, as the relay takes them.
+/// </summary>
+internal static class WorldDifficulty
+{
+    /// <summary>
+    /// The easiest, VERY EASY.
+    /// </summary>
+    public const int Min = -2;
+
+    /// <summary>
+    /// The hardest, PARADOX.
+    /// </summary>
+    public const int Max = 4;
+
+    /// <summary>
+    /// Tells whether a value is one of the game's difficulties.
+    /// </summary>
+    /// <param name="value">The value.</param>
+    /// <returns>Whether it is.</returns>
+    public static bool IsValid(int value) => value is >= Min and <= Max;
+}
+
+/// <summary>
+/// How a Raid World shares companions, as the relay names it, fixed once the world is made.
+/// </summary>
+internal static class CompanionSharing
+{
+    /// <summary>
+    /// No companion is shared, and every Classic world.
+    /// </summary>
+    public const string Off = "off";
+
+    /// <summary>
+    /// The story's companions are shared.
+    /// </summary>
+    public const string Story = "story";
+
+    /// <summary>
+    /// The story's companions and those recruited in battle are shared.
+    /// </summary>
+    public const string All = "all";
+}
 
 /// <summary>
 /// A world's locked token, with what a player who knows only the world's id needs to enter it.

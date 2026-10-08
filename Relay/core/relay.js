@@ -2,7 +2,8 @@
 //  relay.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-08: Limited each world room connection to 2 chat lines a second after a burst of 10, answering a dropped line with "slow chat"
+//      Paulinchen  2026-10-08: Added the X-MGQ-Features header, in which a game names what it can play, such as Raid Worlds
+//                            - Limited each world room connection to 2 chat lines a second after a burst of 10, answering a dropped line with "slow chat"
 //                            - Told a chat frame whose line is empty apart from a frame that is no chat frame
 //      Paulinchen  2026-10-07: Added the chat text frames: a line a game mirrors for the world's log, and a line an admin says to every game
 //                            - Took a world room's auth key from the X-MGQ-Auth header too
@@ -152,6 +153,17 @@ export const PLAYER_HEADER = "X-MGQ-Player";
 export const AUTH_HEADER = "X-MGQ-Auth";
 
 /**
+ * The request header in which a game names what it can play, such as FEATURE.raid, separated by
+ * commas; released games send none.
+ */
+export const FEATURES_HEADER = "X-MGQ-Features";
+
+/**
+ * What a game names in FEATURES_HEADER.
+ */
+export const FEATURE = Object.freeze({ raid: "raid" });
+
+/**
  * The response header that names why the relay turned a game away from a world room, since a
  * refused WebSocket hands its client the status and headers only.
  */
@@ -217,6 +229,16 @@ export class RateLimiter {
 
     return allowed;
   }
+}
+
+/**
+ * Reads what a game names in FEATURES_HEADER.
+ *
+ * @param {string | null | undefined} header The header, null or undefined when the game sent none.
+ * @returns {string[]} The features in lower case, empty for none.
+ */
+export function parseFeatures(header) {
+  return typeof header === "string" ? header.toLowerCase().split(/[\s,]+/).filter((feature) => feature.length > 0) : [];
 }
 
 /**

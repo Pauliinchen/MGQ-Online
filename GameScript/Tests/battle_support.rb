@@ -2,7 +2,13 @@
 #  battle_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-09: Let an enemy appear and transform, as the game's Enemy Appear and Enemy Transform do, and be eaten, which counts it among the defeated as the game does
+#                            - Stood in for the game's variables, which hold the enemy rates a guest takes from the host
+#                            - Lettered only the living enemies that have no letter yet, and counted an enemy with the death state as fallen, as the game does
 #      Paulinchen  2026-10-08: Stood in for the faces this game has, of overworld.rbx
+#                            - Loaded coop_scope.rbx, which tells coop_squad.rbx whether a Raid World is open, and counted the party's Frontline from max_battle_members
+#                            - Stood in for the players whose connection stands, when the player entered the map, the player's tile, the party's leader and the troop's setup
+#                            - Loaded battles_raid_bosses.rbx and battles_coop_hotjoin.rbx, and let enemies fall
 #      Paulinchen  2026-10-07: Stood in for the helpers of coop.rbx, overworld_sync.rbx and coop_scene.rbx the battle scripts share now: who, random_id and the pictures' count
 #                            - Let the characters clear their actions, and named the party after its first character
 #      Paulinchen  2026-10-06: Gave the party the targets of a skill that reaches the Backline too, and added the Library's counts of the battle's end and of a defeat
@@ -48,12 +54,15 @@ module MGQ_MpOverworldSync
     @all = []
     def self.all; @all; end
     def self.at(seat); @all.find { |p| p.seat == seat }; end
+    def self.present; @all; end
+    def self.on_this_map?(peer); peer.state["map"].to_i == $game_map.map_id; end
   end
   module Me
     def self.encode(state); state.map { |k, v| "#{k}=#{v}" }.join("\n") + "\n\n"; end
     def self.identity; ["id-me", "Me"]; end
     def self.id; identity[0]; end
     def self.seat; $my_seat.to_i; end
+    def self.map_since; $my_since.to_i; end
   end
   module Status; def self.notice(text); ($notices ||= []) << text; end; end
   module Link
@@ -80,6 +89,7 @@ module MGQ_MpCoop
   end
   def self.leads?(player); player == :me ? $leader == :me : ($leader.equal?(player) || Array($leaders).any? { |l| l.equal?(player) }); end
   def self.random_id(length); rand(36**length).to_s(36); end
+  def self.party_leader; Party.members.empty? ? nil : $leader; end
 end
 module RPG
   class Item
@@ -132,7 +142,16 @@ class Game_Enemy < Game_Battler
   def initialize(index, enemy_id); @index = index; @enemy_id = enemy_id; @screen_x = @screen_y = 0; @letter = ""; end
   def name; "Enemy#{@enemy_id}#{@letter}"; end
   def hide; @hidden = true; end
+  def appear; @hidden = false; end
+  def transform(enemy_id); @enemy_id = enemy_id; @letter = ""; end
+  def exist?; !hidden?; end
+  # Eaten by a predation skill, which the game marks only on the game that ran the skill.
+  def predationed?; @predationed ? true : false; end
   def hidden?; @hidden ? true : false; end
+  attr_writer :dead
+  # Fallen, as the game tells by the death state (1) a live battle's values give it.
+  def dead?; exist? && death_state?; end
+  def death_state?; @dead || Array(@states).include?(1) ? true : false; end
 end
 module MGQ_MpActors
   module Builds
@@ -142,11 +161,12 @@ module MGQ_MpActors
   end
 end
 class Game_Party
-  attr_accessor :own, :party_member_max
+  attr_accessor :own, :party_member_max, :in_battle
   def initialize; @party_member_max = 8; end
   def all_members; @own; end
-  def battle_members; @own.first(4); end
-  def bench_members; @own[4..-1] || []; end
+  def max_battle_members; 4; end
+  def battle_members; @own.first(max_battle_members); end
+  def bench_members; @own[max_battle_members..-1] || []; end
   def swap_order(a, b); @own[a], @own[b] = @own[b], @own[a]; end
   def item_target_members(item); item.include_bench? ? all_members : battle_members; end
   def name; "#{battle_members.first.name}'s party"; end
@@ -161,10 +181,14 @@ class Game_Troop
   def members; @enemies; end
   def members=(enemies); @enemies = enemies; end
   def make_actions; $troop_actions = ($troop_actions || 0) + 1; end
+  def setup(troop_id); @troop_id = troop_id; @enemies = [Game_Enemy.new(0, troop_id)]; end
+  attr_reader :troop_id
+  # The enemies whose EXP, gold and drops a victory pays out, as the game counts them.
+  def defeated_members; members.select { |m| m.predationed? || m.exist? }.select(&:death_state?); end
   def make_unique_names
     @names_count ||= {}
     @enemies.each do |enemy|
-      next if enemy.hidden?
+      next if enemy.hidden? || enemy.dead? || !enemy.letter.empty?
       count = @names_count[enemy.enemy_id] || 0
       enemy.letter = " #{(65 + count).chr}"
       @names_count[enemy.enemy_id] = count + 1
@@ -183,6 +207,9 @@ class Interpreter; attr_accessor :busy; def running?; @busy; end; end
 class Game_Map; attr_accessor :map_id, :interpreter; end
 class Game_Player
   attr_accessor :moving, :leader_shown
+  attr_writer :x, :y
+  def x; @x.to_i; end
+  def y; @y.to_i; end
   def transfer?; false; end
   def moving?; @moving; end
   def refresh; @leader_shown = $game_party.battle_members.first; end
@@ -192,6 +219,7 @@ class Game_Player
 end
 class Scene_Title; def start; end; end
 class Game_Switches; def initialize; @d = {}; end; def [](i); @d[i] || false; end; def []=(i, v); @d[i] = v; end; end
+class Game_Variables; def initialize; @d = {}; end; def [](i); @d[i] || 0; end; def []=(i, v); @d[i] = v; end; end
 System = Struct.new(:switches)
 $data_system = System.new(Array.new(100, ""))
 module NWConst; module Sw; FORBID_BATTLE_SHIFT_CHANGE = 27; end; end
@@ -256,9 +284,12 @@ module MGQ_MpOverworldSync
   def self.on_leave(*); end
   def self.label_line(*); end
 end
+load_script "coop_scope"
 load_script "coop_squad"
 load_script "battles"
+load_script "battles_raid_bosses"
 load_script "battles_coop"
+load_script "battles_coop_hotjoin"
 %w[battles_sync battles_sync_wire battles_sync_recorder battles_sync_playback battles_sync_live].each { |name| load_script name }
 module MGQ_MpBattlesSync::Waiting
   def self.open(text); :window; end
@@ -281,6 +312,7 @@ def fields_of(text)
 end
 
 $game_switches = Game_Switches.new
+$game_variables = Game_Variables.new
 $game_temp = Game_Temp.new
 $game_message = Game_Message.new
 $game_map = Game_Map.new

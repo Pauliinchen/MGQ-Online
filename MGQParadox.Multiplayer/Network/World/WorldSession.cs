@@ -2,7 +2,11 @@
 //  WorldSession.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-08: Logged the traffic counted so far as another world is entered, and as the process exits or a thread throws out
+//      Paulinchen  2026-10-09: Handed the relay's word that a Raid World's boss pool changed to the game script as a boss entry with its key and hit points
+//                            - Handed the relay's word that a Raid World's difficulty changed to the game script as a difficulty entry with its value
+//      Paulinchen  2026-10-08: Handed the relay's word that a Raid World's story changed to the game script as a story entry with its revision
+//                            - Stopped for good once the relay keeps the game out of a Raid World, which it cannot play, telling to update the mod
+//                            - Logged the traffic counted so far as another world is entered, and as the process exits or a thread throws out
 //                            - Dropped the chat lines past 2 a second after a burst of 10, as the relay does, and logged the relay dropping one
 //      Paulinchen  2026-10-07: Logged the messages sent and received as one line about every minute, through WorldTraffic, instead of a line per message
 //                            - Mirrored the chat lines the game script says to the relay as text frames, and handed the lines the relay says for an admin to the game script as chat entries
@@ -86,6 +90,44 @@ internal sealed class WorldSession
     public const string NameHeader = "name";
 
     /// <summary>
+    /// The kind of an inbox entry that tells a Raid World's story changed at the relay, and the word
+    /// that starts the relay's text frame saying so, as Relay/README.md names it.
+    /// </summary>
+    public const string StoryKind = "story";
+
+    /// <summary>
+    /// The story's revision now, in a <see cref="StoryKind"/> entry.
+    /// </summary>
+    public const string RevHeader = "rev";
+
+    /// <summary>
+    /// The kind of an inbox entry that tells a Raid World's boss pool changed at the relay, and the
+    /// word that starts the relay's text frame saying so, as Relay/README.md names it.
+    /// </summary>
+    public const string BossKind = "boss";
+
+    /// <summary>
+    /// The boss's key, in a <see cref="BossKind"/> entry.
+    /// </summary>
+    public const string KeyHeader = "key";
+
+    /// <summary>
+    /// The pool's hit points in kills, in a <see cref="BossKind"/> entry.
+    /// </summary>
+    public const string HpHeader = "hp";
+
+    /// <summary>
+    /// The kind of an inbox entry that tells a Raid World's creator or an admin changed its
+    /// difficulty, and the word that starts the relay's text frame saying so, as Relay/README.md names it.
+    /// </summary>
+    public const string DifficultyKind = "difficulty";
+
+    /// <summary>
+    /// The difficulty now, in a <see cref="DifficultyKind"/> entry.
+    /// </summary>
+    public const string ValueHeader = "value";
+
+    /// <summary>
     /// The kind of an inbox entry that carries another game's message.
     /// </summary>
     public const string MessageKind = "message";
@@ -156,6 +198,11 @@ internal sealed class WorldSession
     private const string MembersFull = "The world has as many players as it may.";
 
     /// <summary>
+    /// Why a Raid World cannot be entered by a game the relay finds without the features it needs.
+    /// </summary>
+    private const string RaidUnsupported = "This world is a Raid World, which this version of the mod cannot play. Update the mod.";
+
+    /// <summary>
     /// Why the game waits while the world's creator still uploads its starting save.
     /// </summary>
     private const string StartPending = "The world's starting save is still on its way. The game tries again until it arrived.";
@@ -184,6 +231,11 @@ internal sealed class WorldSession
     /// The refusal code of a world whose starting save is still on its way.
     /// </summary>
     private const string PendingCode = "pending";
+
+    /// <summary>
+    /// The refusal code of a Raid World entered without naming it in the features header.
+    /// </summary>
+    private const string RaidCode = "raid_unsupported";
 
     /// <summary>
     /// The close code of a connection whose player the creator removed.
@@ -657,6 +709,7 @@ internal sealed class WorldSession
         HttpStatusCode.Forbidden when code == MembersCode => MembersFull,
         HttpStatusCode.Forbidden => Removed,
         HttpStatusCode.Unauthorized => TokenMismatch,
+        HttpStatusCode.BadRequest when code == RaidCode => RaidUnsupported,
         HttpStatusCode.BadRequest => "The relay turned the request down. Update the mod.",
         _ => null,
     };
@@ -707,7 +760,7 @@ internal sealed class WorldSession
     /// </summary>
     /// <param name="generation">The open this belongs to.</param>
     /// <param name="connection">The connection.</param>
-    /// <param name="text">The text, such as <c>seat 2 0 1</c>, <c>in 3</c>, <c>out 0</c>, <c>pong</c>, <c>slow chat</c> or <c>chat Global</c>, a tab and the line.</param>
+    /// <param name="text">The text, such as <c>seat 2 0 1</c>, <c>in 3</c>, <c>out 0</c>, <c>pong</c>, <c>slow chat</c>, <c>story 12</c>, <c>boss 4.25 Queen Harpy</c>, <c>difficulty 2</c> or <c>chat Global</c>, a tab and the line.</param>
     private void TakeText(int generation, Connection connection, string text)
     {
         if (text == RelayWorldChannel.Pong)
@@ -725,6 +778,24 @@ internal sealed class WorldSession
         if (text.StartsWith($"{ChatKind} ", StringComparison.Ordinal))
         {
             TakeChat(generation, connection, text[(ChatKind.Length + 1)..]);
+            return;
+        }
+
+        if (text.StartsWith($"{StoryKind} ", StringComparison.Ordinal))
+        {
+            TakeStory(generation, connection, text[(StoryKind.Length + 1)..]);
+            return;
+        }
+
+        if (text.StartsWith($"{BossKind} ", StringComparison.Ordinal))
+        {
+            TakeBoss(generation, connection, text[(BossKind.Length + 1)..]);
+            return;
+        }
+
+        if (text.StartsWith($"{DifficultyKind} ", StringComparison.Ordinal))
+        {
+            TakeDifficulty(generation, connection, text[(DifficultyKind.Length + 1)..]);
             return;
         }
 
@@ -775,6 +846,89 @@ internal sealed class WorldSession
                     break;
             }
         }
+    }
+
+    /// <summary>
+    /// Hands the relay's word that the world's story changed to the game script.
+    /// </summary>
+    /// <param name="generation">The open this belongs to.</param>
+    /// <param name="connection">The connection.</param>
+    /// <param name="rev">The story's revision now, as the relay wrote it.</param>
+    private void TakeStory(int generation, Connection connection, string rev)
+    {
+        if (!long.TryParse(rev, NumberStyles.None, CultureInfo.InvariantCulture, out var number))
+        {
+            Log.Write("world room story text ignored, its revision is no number");
+            return;
+        }
+
+        lock (_gate)
+        {
+            if (generation != _generation || connection != _connection)
+            {
+                return;
+            }
+
+            Enqueue(new Message([new(Message.Kind, StoryKind), new(RevHeader, number.ToString(CultureInfo.InvariantCulture))]).Encode());
+        }
+
+        Log.Write($"world story changed at the relay, rev {number}");
+    }
+
+    /// <summary>
+    /// Hands the relay's word that a Raid World's boss pool changed to the game script.
+    /// </summary>
+    /// <param name="generation">The open this belongs to.</param>
+    /// <param name="connection">The connection.</param>
+    /// <param name="pool">The pool's hit points in kills, a space and the boss's key.</param>
+    private void TakeBoss(int generation, Connection connection, string pool)
+    {
+        var space = pool.IndexOf(' ', StringComparison.Ordinal);
+
+        if (space <= 0 || space == pool.Length - 1 || !double.TryParse(pool[..space], NumberStyles.Float, CultureInfo.InvariantCulture, out var hp) || !double.IsFinite(hp))
+        {
+            Log.Write("world room boss text ignored, its hit points or key are missing");
+            return;
+        }
+
+        lock (_gate)
+        {
+            if (generation != _generation || connection != _connection)
+            {
+                return;
+            }
+
+            Enqueue(new Message([new(Message.Kind, BossKind), new(KeyHeader, pool[(space + 1)..]), new(HpHeader, hp.ToString("0.###", CultureInfo.InvariantCulture))]).Encode());
+        }
+
+        Log.Write($"world boss pool changed at the relay, {hp.ToString("0.###", CultureInfo.InvariantCulture)} left");
+    }
+
+    /// <summary>
+    /// Hands the relay's word that a Raid World's difficulty changed to the game script.
+    /// </summary>
+    /// <param name="generation">The open this belongs to.</param>
+    /// <param name="connection">The connection.</param>
+    /// <param name="value">The difficulty now, as the relay wrote it.</param>
+    private void TakeDifficulty(int generation, Connection connection, string value)
+    {
+        if (!int.TryParse(value, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var difficulty) || !WorldDifficulty.IsValid(difficulty))
+        {
+            Log.Write("world room difficulty text ignored, its value is no difficulty");
+            return;
+        }
+
+        lock (_gate)
+        {
+            if (generation != _generation || connection != _connection)
+            {
+                return;
+            }
+
+            Enqueue(new Message([new(Message.Kind, DifficultyKind), new(ValueHeader, difficulty.ToString(CultureInfo.InvariantCulture))]).Encode());
+        }
+
+        Log.Write($"world difficulty changed at the relay, now {difficulty.ToString(CultureInfo.InvariantCulture)}");
     }
 
     /// <summary>

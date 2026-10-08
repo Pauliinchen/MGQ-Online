@@ -2,7 +2,9 @@
 //  WorldSessionTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-08: Read the relay's chat lines under its lock, and covered chat lines that come too fast and the relay saying so
+//      Paulinchen  2026-10-09: Covered the relay's word of a Raid World's new difficulty handed to the game script, and a value that is no difficulty ignored
+//      Paulinchen  2026-10-08: Covered entering a Raid World, which the relay lets in only games that name it in the features header
+//                            - Read the relay's chat lines under its lock, and covered chat lines that come too fast and the relay saying so
 //      Paulinchen  2026-10-07: Covered a chat line mirrored to the relay and an admin's line handed to the game script
 //      Paulinchen  2026-10-06: Covered a player entering the same world from another game, and took the entry the inbox handed out
 //      Paulinchen  2026-10-02: Made the test world with every player starting alike
@@ -254,6 +256,21 @@ public sealed class WorldSessionTests
     }
 
     /// <summary>
+    /// Asserts that a game enters a Raid World, since it names Raid Worlds in the features header the relay checks.
+    /// </summary>
+    [Fact]
+    public void RaidWorld_LetsThisGameIn()
+    {
+        using var relay = new TestRelay();
+        var made = WorldDirectoryTests.Act(Creator(relay), directory => directory.Create("Raid World", "secret", 4, false, false, [], null, WorldType.Raid, CompanionSharing.All));
+        var session = NewSession(relay.Address);
+
+        session.Open(made["code"]);
+        AwaitState(session, "open");
+        session.Close();
+    }
+
+    /// <summary>
     /// Asserts that a player the creator removes is closed for good, with a reason, while the others stay.
     /// </summary>
     [Fact]
@@ -353,6 +370,30 @@ public sealed class WorldSessionTests
 
         session.Close();
         Assert.Equal(WorldSession.Mirror.NotMirrored, session.Say("gone"));
+    }
+
+    /// <summary>
+    /// Asserts that the relay's word of a world's new difficulty reaches the game script as a
+    /// difficulty entry, and that a value that is no difficulty is ignored.
+    /// </summary>
+    [Fact]
+    public void Difficulty_ReachesTheGame()
+    {
+        using var relay = new TestRelay();
+        var code = MakeWorld(relay, 4);
+        var session = NewSession(relay.Address);
+
+        session.Open(code);
+        AwaitState(session, "open");
+        Drain(session);
+
+        var room = Relays.WorldRoomOf(WorldCode.Parse(code)!.Token);
+        relay.Tell(room, $"{WorldSession.DifficultyKind} 9");
+        relay.Tell(room, $"{WorldSession.DifficultyKind} -2");
+        var told = NextEntry(session);
+        Assert.Equal((WorldSession.DifficultyKind, "-2"), (told[Message.Kind], told[WorldSession.ValueHeader]));
+
+        session.Close();
     }
 
     /// <summary>

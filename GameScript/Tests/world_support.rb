@@ -2,7 +2,8 @@
 #  world_support.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-08: Told the keys held from $down, and the mouse from $mouse
+#      Paulinchen  2026-10-08: Loaded coop_scope.rbx after coop.rbx, which the party's choices ask whether a Raid World is open
+#                            - Told the keys held from $down, and the mouse from $mouse
 #                            - Answered a mirrored chat line as the DLL does, 1 for taken unless $say_result tells otherwise
 #                            - Stood in for the game's character sprite, which the sprite of a ghost's follower builds on
 #      Paulinchen  2026-10-07: Stood in for the chat lines mirrored to the relay
@@ -132,6 +133,7 @@ load_script "ui_actions"
 load_script "ui_chat"
 load_script "overworld"
 load_script "coop"
+load_script "coop_scope"
 load_script "coop_squad"
 
 # One frame on the map: the wheel's keys, then the chat's, as the hooks run them.
