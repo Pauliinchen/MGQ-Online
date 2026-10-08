@@ -9,7 +9,8 @@
 #                              cannot be sent or get no answer, notices within three lines, the stay named anew right after a load, the details'
 #                              mods, the edit form's texts and an options dump into a folder outside ASCII
 #                            - Removed the checks of the creator's button, which is gone
-#                            - Covered settings applied only for options a world may set and the restart under Wine
+#                            - Covered settings applied only for options a world may set, the restart under Wine, settings someone else set on the relay,
+#                              the creator's changes joined to them and the directory's one answer for the world screen and the settings
 #                            - Let the DLL's stand-in hold a started action as busy and forget it once cleared
 #      Paulinchen  2026-10-07: Covered the options sent from a copy of an older or of no known version while the relay lacks the current version's
 #                            - Looked each DLL call's signature up in the export table of Multiplayer.rb
@@ -658,6 +659,85 @@ scene.start_action("settings") { false }
 check("also when they cannot be sent", said(scene), "Modded was changed, but its mod settings could not be saved: the request could not be started. Try again in a moment.")
 $world_open = false
 $dll["mp_dir_action"] = ""
+
+# Settings someone else, such as an admin, gave the world on the relay.
+$world_open = true
+$scene = nil
+listing = lambda { |settings| $dll["mp_dir_list"] = "state=ready\n\nworld\tw1\t4\t1\tme\t0\tMe\tModded\tnone\t0\t0\t1\t0\t0\t\t!Level Cap; Party Sheet\t\t\t#{settings}\n" }
+let_time_pass = lambda { (MGQ_MpWorldMods::CHECK_FRAMES + 1).times { mods.tick } }
+listing.call("@shared=o:1;mod_level_cap=i:0;mod_level_cap_limits=i:1")
+mods.enter_world(world.call("me", "@shared=o:1;mod_level_cap=i:0;mod_level_cap_limits=i:1"), "me")
+$game_system.conf = { :mod_level_cap => 0, :mod_level_cap_limits => 1 }
+$calls.clear
+DataManager.load_game(1)
+check("loading in their own world asks the relay for the world's settings first, and sends nothing while they are as wanted",
+      [$calls.map(&:first).include?("mp_dir_refresh"), sent.call], [true, []])
+let_time_pass.call
+listing.call("@shared=o:1;mod_level_cap=i:1;mod_level_cap_limits=i:1")
+$told.clear
+$notices.clear
+mods.on_observe(MGQ_MpOverworldSync::Peers::Peer.new(4, { "id" => "p4", "name" => "Late", "mod_settings" => mods.crc_of("@shared=o:1;mod_level_cap=i:1;mod_level_cap_limits=i:1") }))
+check("a player whose game holds other settings has the relay asked first, whose newer settings the creator's game takes, applies and tells every player",
+      [mods.latest_text, $game_system.conf[:mod_level_cap], $told, shown],
+      ["@shared=o:1;mod_level_cap=i:1;mod_level_cap_limits=i:1", 1,
+       [[-1, { "world_mods" => mods.crc_of("@shared=o:1;mod_level_cap=i:1;mod_level_cap_limits=i:1") }, "@shared=o:1;mod_level_cap=i:1;mod_level_cap_limits=i:1"]],
+       "The shared mod settings were changed on the relay: Level Cap: Off -> On."])
+let_time_pass.call
+listing.call("@shared=o:1;mod_level_cap=i:1;mod_level_cap_limits=i:2")
+$scene = Scene_Config.new
+Scene_Base.new.update
+$game_system.conf[:mod_level_cap] = 0
+$scene = nil
+Scene_Base.new.update
+check("options the creator changes join what changed on the relay meanwhile, which their options then show too",
+      [sent.call.last, $game_system.conf[:mod_level_cap_limits]], ["@shared=o:1;mod_level_cap_limits=i:2;mod_level_cap=i:0", 2])
+$dll["mp_dir_action"] = "state=done\nkind=settings\n\n"
+Scene_Base.new.update
+listing.call("")
+let_time_pass.call
+$calls.clear
+$told.clear
+$notices.clear
+$scene = Scene_Config.new
+Scene_Base.new.update
+$game_system.conf[:mod_level_cap] = 1
+$scene = nil
+Scene_Base.new.update
+check("sharing turned off on the relay stays off, whatever options the creator changes", [sent.call, mods.latest_text, $told.map(&:last), shown],
+      [[], "", [""], MGQ_MpWorldMods::RELAY_OFF_TEXT])
+
+# One answer of the directory at a time, for the world screen and the world's settings alike.
+listing.call("@shared=o:1;mod_level_cap=i:1;mod_level_cap_limits=i:2")
+mods.enter_world(world.call("me", "@shared=o:1;mod_level_cap=i:1;mod_level_cap_limits=i:2"), "me")
+DataManager.load_game(1)
+$scene = Scene_Config.new
+Scene_Base.new.update
+$game_system.conf[:mod_level_cap] = 0
+$scene = nil
+$calls.clear
+$dll["mp_dir_list"] = "state=loading\n\n"
+Scene_Base.new.update
+check("while the list is being fetched already, whose answer may be older, the relay is not asked and nothing goes out", $calls.map(&:first) & ["mp_dir_refresh", "mp_dir_set_settings"], [])
+listing.call("@shared=o:1;mod_level_cap=i:1;mod_level_cap_limits=i:2")
+Scene_Base.new.update
+check("once it arrived, the relay is asked and the creator's changed options go out", [$calls.map(&:first).include?("mp_dir_refresh"), sent.call], [true, ["@shared=o:1;mod_level_cap=i:0;mod_level_cap_limits=i:2"]])
+MGQ_MpWorld::Directory.claim
+$dll["mp_dir_action"] = "state=done\nkind=settings\n\n"
+$calls.clear
+Scene_Base.new.update
+check("an answer another directory request took the place of is left to that one, and the settings wait to go out again",
+      [$calls.map(&:first).include?("mp_dir_clear"), sent.call], [false, []])
+$dll["mp_dir_action"] = ""
+(MGQ_MpWorldMods::RETRY_FRAMES + 1).times { mods.tick }
+check("once it took its answer, the settings go out again", sent.call, ["@shared=o:1;mod_level_cap=i:0;mod_level_cap_limits=i:2"])
+Scene_Title.new.start
+check("the title screen forgets the settings on their way, though their request still runs", [mods.instance_variable_get(:@sending), MGQ_MpWorld::Directory.free?], [nil, false])
+$dll["mp_dir_action"] = "state=done\nkind=settings\n\n"
+check("and the next request drops their answer", [MGQ_MpWorld::Directory.free?, $dll["mp_dir_action"]], [true, ""])
+
+$world_open = false
+$dll["mp_dir_action"] = ""
+$dll["mp_dir_list"] = ""
 
 # The options dump the World Admin tool reads.
 Dir.mktmpdir do |folder|

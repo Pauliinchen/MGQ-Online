@@ -11,6 +11,7 @@
 #                            - Kept the game open under Wine or Proton, where the updater cannot run, telling how to update by hand
 #                            - Offered the update on the title screen to an outdated game for a Discord invite into a world, instead of waiting without a word
 #                            - Let the world screen and the world's mod settings each claim the directory action they start and take only its answer
+#                            - Read how the world list stands without its worlds
 #      Paulinchen  2026-10-07: Registered the title screen's commands, its end and a world's new game through core_hooks.rbx, keeping only the path wraps as wraps of this script
 #                            - Kept the worlds on this PC and the favourites read until one changes, since the world screen asks every few frames
 #                            - Named the DLL's exports alone, their signatures living in Multiplayer.rb
@@ -1021,6 +1022,13 @@ module MGQ_MpWorld
 
       clear
       true
+    end
+
+    # Reads how the list stands, without its worlds.
+    #
+    # @return [String] "idle", "loading", "ready" or "failed".
+    def self.list_state
+      MGQ_Multiplayer::Link.parse(MGQ_Multiplayer::Link.read('mp_dir_list', LIST_SIZE))["state"] || "idle"
     end
 
     # Reads the id everyone sees for the player.

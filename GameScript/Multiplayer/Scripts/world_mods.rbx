@@ -17,6 +17,9 @@
 #                            - Kept the world to enter when the game cannot start itself again under Wine or Proton, for the start the player makes by hand
 #                            - Offered the update on the title screen to an outdated game started again to enter a world
 #                            - Took only the directory's answer to its own settings, sending them again when another request took its place, and forgot them with the world
+#                            - Read the world's settings on the relay before sending the creator's and before telling a player whose game holds others, taking settings
+#                              someone else set there as the world's and joining the creator's changes to them
+#                            - Told the creator when the relay holds settings someone else set
 #      Paulinchen  2026-10-07: Sent the Mod Config options of every installed catalog mod, whatever its version, until the relay holds the current version's
 #                            - Logged a catalog unknown at the first read too
 #                            - Followed a new game through an after block, since the hook only applies the world's mods
@@ -110,8 +113,13 @@ module MGQ_MpWorldMods
   # Frames before settings that could not be sent are tried again, two seconds.
   RETRY_FRAMES = 120
 
-  # Frames the relay may take to answer settings sent, thirty seconds.
+  # Frames the relay may take to answer settings sent, or the list asked for the world's settings,
+  # thirty seconds.
   SEND_FRAMES = 1800
+
+  # Frames a reading of the world's settings on the relay counts as recent, ten seconds; a player
+  # whose game holds other settings meanwhile is told the creator's without asking the relay again.
+  CHECK_FRAMES = 600
 
   # The environment variable that names the file the World Admin tool reads the options from.
   DUMP_SETTING = "MGQMP_OPTIONS_DUMP"
@@ -154,6 +162,16 @@ module MGQ_MpWorldMods
   NO_ANSWER_TEXT = "the relay did not answer."
   NOT_SENT_TEXT = "The world's mod settings could not be sent yet. Trying again in a moment."
   LEFT_OUT_TEXT = "%d option(s) did not fit and were left out."
+
+  # What the creator is told once the relay holds settings someone else set, such as an admin, the
+  # changes filled in.
+  RELAY_CHANGED_TEXT = "The shared mod settings were changed on the relay: %s."
+
+  # What the creator is told once sharing was turned on on the relay, the mods filled in.
+  RELAY_ON_TEXT = "Shared Mod Settings were turned on on the relay: players here get the options of %s."
+
+  # What the creator is told once sharing was turned off on the relay.
+  RELAY_OFF_TEXT = "Shared Mod Settings were turned off on the relay: every player here sets their own mod options again."
 
   # The kinds of mods that come as a zip whose files go to their paths inside Patch.
   ZIP_KINDS = %w(upload zip)
@@ -1045,9 +1063,11 @@ module MGQ_MpWorldMods
     @stay_at = nil
     @told_peers = {}
     @wanted = nil
+    @wanted_base = nil
     @sending = nil
     @not_sent_told = false
     @in_options = false
+    forget_check
   end
 
   # Tells whether the player plays in a world they created.
@@ -1223,21 +1243,28 @@ module MGQ_MpWorldMods
     @wanted || (@sending && @sending[:id] == (@world && @world[:id]) ? @sending[:text] : nil) || (@world ? @world[:text] : "")
   end
 
-  # Asks the relay to take settings as the world's, once the request on its way arrived.
+  # Asks the relay to take settings as the world's, once the request on its way arrived and the
+  # relay told the world's settings as they stand, which someone else may have changed since.
   #
   # @param text [String] The settings.
   # @param reason [Symbol] :switch, :load or :options.
   def self.request(text, reason)
+    # What the creator's options started from, which tells what they changed.
+    @wanted_base = latest_text unless @wanted
     @wanted = text
     @wanted_reason = reason
     @retry_at = nil
+    @need_check = true
     pump
   end
 
   # Sends the settings wanted last, unless a request is on its way or the world has them already.
+  # First reads the world's settings on the relay and takes in what changed there.
   def self.pump
     return if @sending || @wanted.nil? || @world.nil?
+    return check_relay if @need_check || @check
 
+    merge_relay if @relay_text && @relay_text != @world[:text]
     if @wanted == @world[:text]
       log("the world's mod settings are as wanted already, nothing sent")
       @wanted = nil
@@ -1258,6 +1285,7 @@ module MGQ_MpWorldMods
     @sending = { :id => @world[:id], :text => @wanted, :before => @world[:text], :reason => @wanted_reason, :left_out => @left_out.to_i, :since => @frames.to_i,
                  :ticket => MGQ_MpWorld::Directory.claim }
     @wanted = nil
+    @wanted_base = nil
   end
 
   # Takes the relay's answer to the settings on their way: the world has them, which every player
@@ -1287,6 +1315,8 @@ module MGQ_MpWorldMods
       confirmed(sent[:id], sent[:text])
       if @world && @world[:id] == sent[:id]
         @world[:text] = sent[:text]
+        @relay_text = sent[:text]
+        @checked_at = @frames.to_i
         broadcast(sent[:text])
         tell_creator(sent)
       else
@@ -1309,6 +1339,156 @@ module MGQ_MpWorldMods
       @wanted_reason = sent[:reason]
       @left_out = sent[:left_out]
     end
+    @wanted_base = sent[:before]
+    @need_check = true
+  end
+
+  # Takes in settings someone else, such as an admin, gave the world on the relay since this game
+  # read them: they become the world's, and the settings wanted keep only what the creator changed,
+  # which the creator's options then show.
+  def self.merge_relay
+    theirs = @relay_text
+    adopt(theirs)
+    merged = merged_text(@wanted_base.to_s, @wanted, theirs, @wanted_reason)
+    log("kept what the creator changed over the relay's settings: #{merged.empty? ? 'none' : merged}")
+    @wanted = merged
+    @wanted_base = theirs
+    if @loaded && $game_system
+      shared?(merged) ? apply_text(merged) : lock([])
+    end
+    broadcast(theirs) if merged == theirs
+    show_row_value
+    refresh_menu
+  end
+
+  # Joins what the creator changed to the settings the relay holds.
+  #
+  # @param base [String] The settings the creator's change started from.
+  # @param mine [String] The settings the creator's game wants.
+  # @param theirs [String] The settings the relay holds.
+  # @param reason [Symbol] :switch, :load or :options.
+  # @return [String] The relay's settings with every option the creator changed as the creator has
+  #   it; only the creator's own switch turns sharing on or off.
+  def self.merged_text(base, mine, theirs, reason)
+    return reason == :switch ? mine : theirs unless shared?(mine) && shared?(theirs)
+
+    before = {}
+    pairs_of(base).each { |key, pair| before[key] = pair }
+    changed = pairs_of(mine).reject { |key, pair| key == MARKER_KEY || before[key] == pair }
+    kept = pairs_of(theirs).reject { |key, _| key == MARKER_KEY || changed.assoc(key) }
+    fit_settings([[MARKER_KEY, MARKER]] + kept + changed)[0]
+  end
+
+  # Takes settings the relay holds that this game did not know of as the world's, and tells the
+  # creator what changed.
+  #
+  # @param text [String] The relay's settings.
+  def self.adopt(text)
+    before = @world[:text]
+    @world[:text] = text
+    confirmed(@world[:id], text)
+    log("the relay holds other mod settings of the world than this game knew, which count: #{text.empty? ? 'none' : text}")
+    message = relay_change_text(before, text)
+    notify(message) if message
+  end
+
+  # Tells the creator what someone else changed on the relay.
+  #
+  # @param before [String] The settings this game knew.
+  # @param after [String] The relay's settings.
+  # @return [String, nil] The notice, nil when no option this game knows changed.
+  def self.relay_change_text(before, after)
+    return RELAY_OFF_TEXT unless shared?(after)
+    return format(RELAY_ON_TEXT, mods_text(known_keys(settings_from(after).keys))) unless shared?(before)
+
+    changes = changes_text(settings_from(before), settings_from(after))
+    changes && format(RELAY_CHANGED_TEXT, changes)
+  end
+
+  # Reading the world's settings on the relay.
+
+  # Asks the relay for the world's settings as they stand, through the world list, once no request
+  # of this script is on its way and the list is not being fetched already, since either may make
+  # the answer older than the relay's settings.
+  def self.check_relay
+    @check_wanted = true
+    return if @check || @sending
+
+    unless own_world?
+      @check_wanted = false
+      @need_check = false
+      return
+    end
+    return if MGQ_MpWorld::Directory.list_state == "loading"
+
+    @check_wanted = false
+    MGQ_MpWorld::Directory.refresh
+    @check = { :since => @frames.to_i }
+    log("asking the relay for the world's mod settings as they stand")
+    follow_check
+  end
+
+  # Takes the world's settings from the list asked for once it arrived, or gives up on one that
+  # never arrives.
+  def self.follow_check
+    if MGQ_MpWorld::Directory.list_state == "loading"
+      return unless @frames.to_i - @check[:since] > SEND_FRAMES
+
+      log("the list never arrived, so the world's mod settings on the relay are unknown")
+      return complete_check(nil)
+    end
+
+    state, _error, worlds = MGQ_MpWorld::Directory.list
+    listed = state == "ready" ? worlds.find { |world| world.id == @world[:id] } : nil
+    log("the list #{state == 'ready' ? 'lacks the world' : "did not arrive (#{state})"}, so its mod settings on the relay are unknown") unless listed
+    complete_check(listed && listed.settings.to_s)
+  end
+
+  # Notes the world's settings on the relay, takes them as the world's when someone else changed
+  # them while nothing waits to be sent, tells the players waiting for them, and sends what waits.
+  #
+  # @param text [String, nil] The relay's settings, nil when unknown.
+  def self.complete_check(text)
+    @check = nil
+    @need_check = false
+    @checked_at = @frames.to_i
+    @relay_text = text
+    take_relay(text) if text && text != @world[:text] && @wanted.nil?
+    waiting = @waiting || {}
+    @waiting = {}
+    waiting.each_value { |peer| on_observe(peer) }
+    pump
+  end
+
+  # Takes settings someone else gave the world on the relay as the world's: the creator's options
+  # and every player in it get them.
+  #
+  # @param text [String] The relay's settings.
+  def self.take_relay(text)
+    adopt(text)
+    if @loaded && $game_system
+      shared?(text) ? apply_text(text) : lock([])
+    end
+    broadcast(text)
+    show_row_value
+    refresh_menu
+  end
+
+  # Tells whether the world's settings on the relay were read a moment ago.
+  #
+  # @return [Boolean] Whether they were, less than CHECK_FRAMES ago.
+  def self.relay_known?
+    @check.nil? && @checked_at && @frames.to_i - @checked_at < CHECK_FRAMES ? true : false
+  end
+
+  # Forgets the reading of the world's settings on the relay and the players waiting for it.
+  def self.forget_check
+    @check = nil
+    @check_wanted = false
+    @need_check = false
+    @checked_at = nil
+    @relay_text = nil
+    @waiting = {}
   end
 
   # Tells the creator what the players got from the settings the relay took.
@@ -1352,7 +1532,9 @@ module MGQ_MpWorldMods
   end
 
   # Tells another player the world's settings when their game holds others, as when they entered
-  # with a list from before the last change. Called whenever another player tells their state.
+  # with a list from before the last change; first asks the relay, unless it did a moment ago,
+  # since the other game may hold settings the relay got after this one read them, such as an
+  # admin's. Called whenever another player tells their state.
   #
   # @param peer [MGQ_MpOverworldSync::Peers::Peer] The player.
   def self.on_observe(peer)
@@ -1361,6 +1543,11 @@ module MGQ_MpWorldMods
     theirs = peer.state[STATE_FIELD].to_s
     mine = crc_of(@world[:text])
     return if theirs.empty? || theirs == mine || @told_peers[peer.seat] == [theirs, mine]
+
+    unless relay_known?
+      (@waiting ||= {})[peer.seat] = peer
+      return check_relay
+    end
     return unless MGQ_MpOverworldSync.tell(peer.seat, { LIVE_FIELD => mine }, @world[:text])
 
     @told_peers[peer.seat] = [theirs, mine]
@@ -1375,6 +1562,7 @@ module MGQ_MpWorldMods
   # @param peer [MGQ_MpOverworldSync::Peers::Peer] The player.
   def self.on_leave(peer)
     @told_peers.delete(peer.seat)
+    @waiting.delete(peer.seat) if @waiting
   rescue => e
     log_once(:leave, "forgetting a player who left failed: #{e.class}: #{e.message}")
   end
@@ -1614,10 +1802,13 @@ module MGQ_MpWorldMods
     "Mod settings: shared by #{who} (#{what})"
   end
 
-  # Follows the settings on their way and the options screen. Called every frame of every scene.
+  # Follows the settings on their way, the reading of the relay's and the options screen. Called
+  # every frame of every scene.
   def self.tick
     @frames = @frames.to_i + 1
     follow_send if @sending
+    follow_check if @check
+    check_relay if @check_wanted && !@check && !@sending
     pump if @wanted && !@sending
     watch_options
   rescue => e

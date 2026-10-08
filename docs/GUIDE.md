@@ -111,7 +111,7 @@ The details show each mod in a box of its own, as many as fit the row, and count
 - A required mod the catalog doesn't know is compared with the creator's copy. If yours differs, get the creator's version from the mod's author; nothing downloads it for you.
 - A new version only reaches players the next time they enter.
 
-**The creator's settings.** While the creator plays in their world, they set the options of its mods, required or listed, in the Mod Config Remake menu as they like, then press **Use My Settings for This World** in the menu's *Monster Girl Quest! Online* section. Every player gets those settings the next time they load a save in the world, and the menu shows them greyed out as set by the world. Hotkeys and other personal options stay yours, and your own saves keep your own settings. The relay's admins can see and change a world's settings too.
+**The creator's settings.** While the creator plays in their world, they set the options of its mods, required or listed, in the Mod Config Remake menu as they like, then press **Use My Settings for This World** in the menu's *Monster Girl Quest! Online* section. Every player gets those settings the next time they load a save in the world, and the menu shows them greyed out as set by the world. Hotkeys and other personal options stay yours, and your own saves keep your own settings. The relay's admins can see and change a world's settings too; the creator's game then takes the admin's settings and tells the creator what changed.
 
 ### Game data
 
