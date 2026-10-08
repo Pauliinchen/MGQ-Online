@@ -10,7 +10,8 @@
 #                              mods, the edit form's texts and an options dump into a folder outside ASCII
 #                            - Removed the checks of the creator's button, which is gone
 #                            - Covered settings applied only for options a world may set, the restart under Wine, settings someone else set on the relay,
-#                              the creator's changes joined to them and the directory's one answer for the world screen and the settings
+#                              the creator's changes joined to them, the directory's one answer for the world screen and the settings and a refused entry
+#                              leaving no settings behind
 #                            - Let the DLL's stand-in hold a started action as busy and forget it once cleared
 #      Paulinchen  2026-10-07: Covered the options sent from a copy of an older or of no known version while the relay lacks the current version's
 #                            - Looked each DLL call's signature up in the export table of Multiplayer.rb
@@ -734,6 +735,26 @@ Scene_Title.new.start
 check("the title screen forgets the settings on their way, though their request still runs", [mods.instance_variable_get(:@sending), MGQ_MpWorld::Directory.free?], [nil, false])
 $dll["mp_dir_action"] = "state=done\nkind=settings\n\n"
 check("and the next request drops their answer", [MGQ_MpWorld::Directory.free?, $dll["mp_dir_action"]], [true, ""])
+
+# A world's settings are noted only once its entry goes on.
+strict = MGQ_MpWorld::Directory::ListedWorld.new("w2", 4, 0, "creator", 0, "Creator", "Strict", "none", [], false, false, true, false, true, "1:x", "", "", "", "@shared=o:1;mod_level_cap=i:0")
+differing = MGQ_MpWorld::GameData.method(:differing)
+MGQ_MpWorld::GameData.define_singleton_method(:differing) { |_data| ["maps"] }
+scene = new_scene
+scene.instance_variable_set(:@entry, MGQ_MpWorld::Entry.new("w2", "Strict", strict, nil, false, false))
+scene.on_enter
+check("an entry refused for its game data notes no world and adds no row to Mod Config", [mods.instance_variable_get(:@world), row.call], [nil, nil])
+MGQ_MpWorld::GameData.define_singleton_method(:differing, differing)
+opening = MGQ_MpWorld.method(:start)
+MGQ_MpWorld.define_singleton_method(:start) { |_world, _scene| "It broke." }
+scene.instance_variable_set(:@entering, [strict, true])
+scene.start_world(Struct.new(:name, :id).new("Strict", "f2"))
+check("a world that fails to open forgets its settings", [mods.instance_variable_get(:@world), row.call], [nil, nil])
+MGQ_MpWorld.define_singleton_method(:start) { |_world, _scene| $noted = mods.instance_variable_get(:@world)[:id]; nil }
+scene.start_world(Struct.new(:name, :id).new("Strict", "f2"))
+check("one that opens has them noted before its save loads", $noted, "w2")
+MGQ_MpWorld.define_singleton_method(:start, opening)
+Scene_Title.new.start
 
 $world_open = false
 $dll["mp_dir_action"] = ""

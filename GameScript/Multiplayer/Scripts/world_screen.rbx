@@ -9,6 +9,7 @@
 #                            - Noted the world entered with its creator and settings in one call
 #                            - Told whether the list was fetched since the screen opened as a world is entered
 #                            - Said when the edit form's Shared Mod Settings apply, and that the other changes were saved when the mod settings were not
+#                            - Noted the world's mod settings only as the world opens, so a refused entry leaves none behind, and forgot them when it fails to open
 #                            - Claimed each directory action it starts, and gave up its answer as the screen closes during one
 #                            - Told the player to restart the game by hand under Wine or Proton after installing a world's mods, keeping the world to enter
 #      Paulinchen  2026-10-07: Left typing alone without a form, which failed the screen, and logged where the screen failed and the pictures in memory
@@ -460,7 +461,8 @@ class Scene_MpWorlds < Scene_MenuBase
     log_screen("enter #{entry_text}")
     return if listed && !mods_allow?(listed)
 
-    MGQ_MpWorldMods.enter_world(listed, @me, @list_state == "ready")
+    # Its mod settings are noted only as the world opens, so a refused entry leaves nothing behind.
+    @entering = [listed, @list_state == "ready"]
     return if listed && !data_allows?(@entry.name, listed.data, listed.strict, listed.mods, listed.creator_id == @me) { on_enter }
 
     if @entry.listed && @entry.listed.start == "pending"
@@ -1720,7 +1722,14 @@ class Scene_MpWorlds < Scene_MenuBase
   # @param placed [Boolean] Whether its save was just placed there, which is checked first and
   #   thrown away when it cannot be loaded, so the next entry starts anew instead of failing again.
   def start_world(world, placed = false)
-    error = (placed && MGQ_MpSaveDistribution.check(world)) || MGQ_MpWorld.start(world, self)
+    error = placed && MGQ_MpSaveDistribution.check(world)
+    unless error
+      # Before the world opens, since loading its save applies its mod settings.
+      listed, fresh = @entering
+      MGQ_MpWorldMods.enter_world(listed, @me, fresh ? true : false)
+      error = MGQ_MpWorld.start(world, self)
+      MGQ_MpWorldMods.forget_world if error
+    end
     return unless error
 
     log_screen("could not enter #{world.name} (#{world.id}): #{error}")
