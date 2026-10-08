@@ -2,7 +2,8 @@
 //  WorldSession.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-07: Mirrored the chat lines the game script says to the relay as text frames, and handed the lines the relay says for an admin to the game script as chat entries
+//      Paulinchen  2026-10-07: Logged the messages sent and received as one line about every minute, through WorldTraffic, instead of a line per message
+//                            - Mirrored the chat lines the game script says to the relay as text frames, and handed the lines the relay says for an admin to the game script as chat entries
 //                            - Logged entering and leaving, each connect with its refusal or close code and reason, the waits before each new try, the seats coming and going, each message sent or received, and the entries a full inbox dropped
 //                            - Left why every thread catches everything to Threads
 //      Paulinchen  2026-10-06: Started its threads through Threads and read who plays through Player.Current, both shared with the world's other parts
@@ -208,6 +209,11 @@ internal sealed class WorldSession
     private readonly SortedSet<int> _others = new();
 
     /// <summary>
+    /// Counts the messages sent and received, which the log shows as a line about every minute.
+    /// </summary>
+    private readonly WorldTraffic _traffic = new();
+
+    /// <summary>
     /// Counts the opens, so threads of an earlier one can tell they are out of date.
     /// </summary>
     private int _generation;
@@ -333,6 +339,8 @@ internal sealed class WorldSession
             previous = Restart(WorldState.Idle);
         }
 
+        _traffic.Flush();
+
         if (left != null)
         {
             Log.Write($"left world {Log.Short(Relays.WorldRoomOf(left.Token))}");
@@ -380,9 +388,14 @@ internal sealed class WorldSession
             queued = _state == WorldState.Open && _connection != null && _connection.Queue(target < 0 ? RelayWorldChannel.Everyone : target, plain);
         }
 
-        Log.Write(queued
-            ? $"world message out to {to}: {Message.FirstFieldOf(text)}, {plain.Length} bytes"
-            : $"world message to {to} not sent: the world is {state.ToString().ToLowerInvariant()}, {Message.FirstFieldOf(text)}, {plain.Length} bytes");
+        if (queued)
+        {
+            _traffic.Sent(text, plain.Length);
+        }
+        else
+        {
+            Log.Write($"world message to {to} not sent: the world is {state.ToString().ToLowerInvariant()}, {Message.FirstFieldOf(text)}, {plain.Length} bytes");
+        }
         return queued;
     }
 
@@ -744,7 +757,7 @@ internal sealed class WorldSession
             if (generation == _generation && connection == _connection)
             {
                 Enqueue(Entry(MessageKind, data[0], text: text));
-                Log.Write($"world message in from seat {data[0]}: {Message.FirstFieldOf(text)}, {plain.Length} bytes");
+                _traffic.Received(data[0], text, plain.Length);
             }
         }
     }
