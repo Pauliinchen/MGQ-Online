@@ -2,9 +2,9 @@
 #  pvp_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-08: Checked that a message shows as the game shows it outside a multiplayer battle
-#      Paulinchen  2026-10-07: Checked that a hit whose message names a target leaves the message out once none is left
-#                            - Created
+#      Paulinchen  2026-10-08: Checked that a message shows as the game shows it outside a multiplayer battle and when checking it fails
+#                            - Checked that a hit whose message names a target leaves the message out once none is left
+#      Paulinchen  2026-10-07: Created
 #
 #----------------------------------------------------------------
 
@@ -219,6 +219,12 @@ $rules << [:coop, true]
 scene.display_use_item(Struct.new(:target_index).new(0), named)
 check("outside a multiplayer battle the message shows as the game shows it, in a co-op battle it is left out too",
       $shown_messages, ["Sword of Heaven's Army", "Plain", "Sword of Heaven's Army"])
+battle_module = MGQ_MpBattlesPvp::Battle
+battle_module.singleton_class.send(:alias_method, :checked_message_without_target?, :message_without_target?)
+battle_module.define_singleton_method(:message_without_target?) { |*_| raise ArgumentError, "other arguments" }
+scene.display_use_item(Struct.new(:target_index).new(0), named)
+check("a failing check shows the message as the game does", [$shown_messages.size, $log.grep(/message target check failed, the message shows: ArgumentError/).size], [4, 1])
+battle_module.singleton_class.send(:alias_method, :message_without_target?, :checked_message_without_target?)
 $targets = [:foe]
 $rules << [:pvp, false]
 

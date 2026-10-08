@@ -3,8 +3,9 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-08: Left out the message of a skill hit that names its target once none is left in co-op and live battles too, not in PvP battles alone
-#      Paulinchen  2026-10-07: Left out the message of a skill hit that names its target once none is left, which ended the host game when a hit came after the whole Frontline fell
-#                            - Drew the friend's Luka with the rebuilt character's face, not this game's database's, which Luka Replacer fills with this game's hero
+#                            - Showed a message as the game does whenever checking it for a target fails, such as with a plugin's display_use_item of other arguments
+#                            - Left out the message of a skill hit that names its target once none is left, which ended the host game when a hit came after the whole Frontline fell
+#      Paulinchen  2026-10-07: Drew the friend's Luka with the rebuilt character's face, not this game's database's, which Luka Replacer fills with this game's hero
 #                            - Registered the map, troop, sprite, save and automatic skill hooks through core_hooks.rbx instead of wraps of its own, and the action and turn hooks once the game runs, where plugins define them anew
 #                            - Named characters through battles_sync.rbx, and took the faces' columns from coop_squad.rbx
 #                            - Logged the exchange's stages, the teams swapped, the Backline rule, the result and the game put back
@@ -291,13 +292,29 @@ module MGQ_MpBattlesPvp
   # keeps the battle going: the game names the first target in it and ended on finding none.
   def self.install_untargeted_messages
     MGQ_MpHooks.around(Scene_Battle, :display_use_item, "battles_pvp") do |scene, args, original|
-      next original.call unless MGQ_MpBattles.running? && Battle.message_without_target?(MGQ_MpGame.get(scene, :subject), *args)
-
-      log("left out the message of #{args[1].name} in turn #{$game_troop.turn_count}: it names a target and none is left") rescue nil
-      nil
+      MGQ_MpBattlesPvp.leave_out_message?(scene, args) ? nil : original.call
     end
   rescue => e
     log("display_use_item hook FAILED: #{e.class}: #{e.message}")
+  end
+
+  # Reports whether the battle leaves out a skill's message, see install_untargeted_messages.
+  #
+  # A plugin may define display_use_item anew with other arguments, so any failure shows the
+  # message as the game does.
+  #
+  # @param scene [Scene_Battle] The battle.
+  # @param args [Array] The arguments of the game's Scene_Battle#display_use_item: the action and the item.
+  # @return [Boolean] Whether the message names a target that is not there.
+  def self.leave_out_message?(scene, args)
+    return false unless MGQ_MpBattles.running? && args.size == 2
+    return false unless Battle.message_without_target?(MGQ_MpGame.get(scene, :subject), args[0], args[1])
+
+    log("left out the message of #{args[1].name} in turn #{$game_troop.turn_count}: it names a target and none is left") rescue nil
+    true
+  rescue => e
+    log_once(:untargeted_message, "message target check failed, the message shows: #{e.class}: #{e.message}")
+    false
   end
 
   # Leaves out an action without a target the way the game leaves out one without a skill.
