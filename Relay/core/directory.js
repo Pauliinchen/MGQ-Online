@@ -2,6 +2,7 @@
 //  directory.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-08: Kept the lines of a world's chat one after another, so lines said at once no longer overwrite each other
 //      Paulinchen  2026-10-07: Kept each world's chat, the lines its games mirror and the lines admins say, which admins read and write
 //                            - Took the auth key for a starting save from the X-MGQ-Auth header too
 //                            - Answered a JSON body longer than a route takes with 413, and an unknown sub-route with 404
@@ -192,6 +193,7 @@ export class Directory {
       starts: new RateLimiter(rates.starts, clock),
       joins: new RateLimiter(rates.joins, clock),
     };
+    this.saying = Promise.resolve();
   }
 
   /**
@@ -539,7 +541,23 @@ export class Directory {
    * @param {boolean} [admin] Whether an admin said it from outside the game.
    * @returns {Promise<object | null>} The line as kept, with its number; null for a world the directory lacks or an empty line.
    */
-  async say(id, who, text, admin = false) {
+  say(id, who, text, admin = false) {
+    // Each line reads and rewrites the whole chat, so lines said at once wait for each other.
+    const kept = this.saying.then(() => this.keepLine(id, who, text, admin));
+    this.saying = kept.catch(() => {});
+    return kept;
+  }
+
+  /**
+   * Keeps a line of a world's chat, once the lines said before it are kept.
+   *
+   * @param {string} id The world.
+   * @param {{player: string, name: string}} who The sender's player id and name.
+   * @param {unknown} text The line.
+   * @param {boolean} admin Whether an admin said it from outside the game.
+   * @returns {Promise<object | null>} The line as kept, with its number; null for a world the directory lacks or an empty line.
+   */
+  async keepLine(id, who, text, admin) {
     const entry = await this.load(id);
     const line = cleanText(text, this.limits.maxChatLength);
 
