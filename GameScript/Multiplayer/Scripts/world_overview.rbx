@@ -2,7 +2,9 @@
 #  world_overview.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-08: Closed with the numpad's 0 through MGQ_MpUi.cancel?, also with Num Lock off
+#      Paulinchen  2026-10-08: Listed everyone on the player's map for the map box of a Raid World, the party first, and told the others the Frontline's highest level there
+#                            - Forgot the level and story told the others when the world closes, so the next world tells its own at once
+#                            - Closed with the numpad's 0 through MGQ_MpUi.cancel?, also with Num Lock off
 #                            - Took the choices of a player's menu from MGQ_MpActions, which the chat shares
 #                            - Named the numpad's 0 in the hint of how to close
 #      Paulinchen  2026-10-07: Logged once when the game has no variable or switch of a name, reading 0 or off
@@ -37,10 +39,12 @@
 # a player's row shows their invite, challenge or offer that reaches the player. The map keeps
 # running behind it.
 #
-# It also lists the player's party for the party box of ui_party_box.rbx.
+# It also lists the player's party for the party box of ui_party_box.rbx, and in a Raid World
+# everyone on the player's map for the map box that replaces it.
 #
 # It also tells the others where the player is, their highest companion level and their place in
-# the story, in the state overworld_sync.rbx sends.
+# the story, in the state overworld_sync.rbx sends, and in a Raid World their Frontline's highest
+# level, which the map box shows.
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpWorldOverview
@@ -93,7 +97,8 @@ module MGQ_MpWorldOverview
   # @!attribute player [MGQ_MpOverworldSync::Peers::Peer, Symbol] The player, :me for the player.
   # @!attribute name [String] Their name.
   # @!attribute place [String] Where they are.
-  # @!attribute level [String] Their highest companion level, empty while unknown.
+  # @!attribute level [String] Their highest companion level, in the map box their Frontline's, empty
+  #   while unknown.
   # @!attribute story [String] Their place in the story.
   # @!attribute ping [Array, nil] Their ping's text and color.
   # @!attribute icon [Integer, nil] The icon of what they do.
@@ -214,7 +219,7 @@ module MGQ_MpWorldOverview
   # @param in_world [Boolean] Whether a world is open.
   def self.tick(in_world)
     close(in_world ? "the map was left" : "the world closed") unless in_world && SceneManager.scene.is_a?(Scene_Map)
-    return unless in_world
+    return forget unless in_world
 
     @frames -= 1
     return if @frames > 0
@@ -222,16 +227,30 @@ module MGQ_MpWorldOverview
     @frames = READ_FRAMES
     level = top_level
     story = story_code
-    log("told the others: level #{@level.inspect} -> #{level}, story #{@story.inspect} -> #{story.inspect}") if [level, story] != [@level, @story]
+    front = MGQ_MpCoop::Scope.raid? ? front_level : nil
+    if [level, story, front] != [@level, @story, @front]
+      log("told the others: level #{@level.inspect} -> #{level}, story #{@story.inspect} -> #{story.inspect}#{front ? ", Frontline level #{@front.inspect} -> #{front}" : ''}")
+    end
     @level = level
     @story = story
+    @front = front
+  end
+
+  # Forgets what the player told the others, so the next world reads it afresh at once instead of
+  # telling the last world's.
+  def self.forget
+    @level = @story = @front = nil
+    @frames = 0
   end
 
   # The fields the overview adds to the state the player's game tells the others.
   #
-  # @return [Hash] Where the player is, their highest companion level and their place in the story.
+  # @return [Hash] Where the player is, their highest companion level and their place in the story,
+  #   and in a Raid World their Frontline's highest level.
   def self.state_fields
-    { "place" => place, "lv" => @level.to_i, "progress" => @story.to_s }
+    fields = { "place" => place, "lv" => @level.to_i, "progress" => @story.to_s }
+    fields["flv"] = @front.to_i if MGQ_MpCoop::Scope.raid?
+    fields
   end
 
   # Names where the player is: the map's name as the game shows it, empty on a map the game names
@@ -267,11 +286,37 @@ module MGQ_MpWorldOverview
     companions = $game_party.all_members.dup
     companions.concat($game_party.stand_members) if $game_party.respond_to?(:stand_members)
     companions = companions.compact.reject { |actor| actor.respond_to?(:luca?) && actor.luca? }
-    # The game keeps a character's levels as a Hash of base, class and race level.
-    companions.map { |actor| actor.respond_to?(:base_level) ? actor.base_level : actor.level }.max.to_i
+    companions.map { |actor| base_level_of(actor) }.max.to_i
   rescue => e
     log("reading the level failed: #{e.class}: #{e.message}")
     0
+  end
+
+  # Reads the highest base level of the player's share of the Frontline, Luka included: the squad's
+  # share through coop_squad.rbx, else the first character.
+  #
+  # During a co-op battle it keeps the last level read, since the battle's party and its level sync
+  # stand in for the player's own characters then.
+  #
+  # @return [Integer] The level, 0 without characters.
+  def self.front_level
+    return @front.to_i if defined?(MGQ_MpBattlesCoop) && MGQ_MpBattlesCoop.active?
+
+    share = MGQ_MpCoopSquad.own_share
+    front = MGQ_MpCoopSquad.own_order.first(share ? share[0] : 1)
+    front.map { |actor| base_level_of(actor) }.max.to_i
+  rescue => e
+    log("reading the Frontline's level failed: #{e.class}: #{e.message}")
+    0
+  end
+
+  # Reads a character's base level.
+  #
+  # @param actor [Game_Actor] The character.
+  # @return [Integer] The level.
+  def self.base_level_of(actor)
+    # The game keeps a character's levels as a Hash of base, class and race level.
+    actor.respond_to?(:base_level) ? actor.base_level : actor.level
   end
 
   # Reads the player's place in the story: the part, and the side chosen or the route played.
@@ -358,6 +403,36 @@ module MGQ_MpWorldOverview
 
     party = [own_row(MGQ_Multiplayer::Player.name.to_s)] + MGQ_MpCoop::Party.members.map { |peer| row_of(peer) }
     party.sort_by { |row| [row.badge && row.badge[1] ? 0 : 1, row.name.downcase] }
+  end
+
+  # Lists everyone on the player's map for the map box of a Raid World: the party's members first,
+  # its leader before the others by name, then the other players by name, each with their
+  # Frontline's highest level. Only the party's leader keeps a crown.
+  #
+  # @return [Array<Row>] The players, the player included; none while nobody else is on the map.
+  def self.map_rows
+    return [] unless MGQ_MpOverworldSync.in_world?
+
+    peers = MGQ_MpCoop::Scope.peers_here.select { |peer| peer.state["name"] }
+    return [] if peers.empty?
+
+    own = own_row(MGQ_Multiplayer::Player.name.to_s)
+    own.level = level_text(@front)
+    rows = [own] + peers.map do |peer|
+      row = row_of(peer)
+      row.level = level_text(peer.state["flv"])
+      row
+    end
+    rows.each { |row| row.badge = nil unless row.member }
+    rows.sort_by { |row| [row.member ? 0 : 1, row.badge && row.badge[1] ? 0 : 1, row.name.downcase] }
+  end
+
+  # Writes a level the way the lists show it.
+  #
+  # @param level [Integer, String, nil] The level.
+  # @return [String] Such as "Lv 30", empty while unknown.
+  def self.level_text(level)
+    level.to_i > 0 ? "Lv #{level.to_i}" : ""
   end
 
   # Tells what another player calls the player to, such as their party invite or their duel

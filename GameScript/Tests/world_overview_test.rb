@@ -2,6 +2,7 @@
 #  world_overview_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-08: Checked the map box of a Raid World: its players and order, the Frontline level, its colors, its cap and its key
 #      Paulinchen  2026-10-07: Measured places with an object that measures texts, and checked the log of a name the game lacks
 #                            - Expected no place on a map the game names nowhere, headed Unnamed place in the list
 #      Paulinchen  2026-10-06: Checked that the emote wheel keeps the overview shut, and the menu of a player nothing is offered with
@@ -18,7 +19,8 @@
 
 # Covers the World overview, world_overview.rbx: what the player tells the others (place,
 # highest companion level, place in the story), the list by place, opening with F11 and the
-# wheel, the arrows, the menu of a player, the mouse, and the places the party box shortens.
+# wheel, the arrows, the menu of a player, the mouse, the places the party box shortens, and the
+# map box that replaces the party box in a Raid World.
 
 require_relative "world_support"
 
@@ -240,3 +242,84 @@ MGQ_MpCoop::Party.invite("zz-bea")
 $inbox << entry("message", 3, told(other.merge("party" => MGQ_MpCoop::Party.id, "id" => "zz-bea")))
 MGQ_MpOverworldSync.tick
 check("the leader may remove a member", MGQ_MpCoop::Offers.peer_option(bea).text, "Remove from party")
+
+# The map box of a Raid World.
+module MGQ_MpWorld; def self.raid?; $raid; end; end
+own_order = MGQ_MpCoopSquad.method(:own_order)
+MGQ_MpCoopSquad.define_singleton_method(:own_order) { $front }
+$front = [Actor.new(40, true), Actor.new(70, false), Actor.new(90, false)]
+overview.instance_variable_set(:@frames, 0)
+overview.tick(true)
+check("a Classic world tells no Frontline level", [MGQ_MpOverworldSync::Me.current.key?("flv"), MGQ_MpPartyBox.map_box?], [false, false])
+$raid = true
+check("in a party the Frontline level is the squad's share, Luka included", overview.front_level, 70)
+own_share = MGQ_MpCoopSquad.method(:own_share)
+MGQ_MpCoopSquad.define_singleton_method(:own_share) { nil }
+check("without a share it is the first character's", overview.front_level, 40)
+MGQ_MpCoopSquad.define_singleton_method(:own_share, own_share)
+overview.instance_variable_set(:@frames, 0)
+overview.tick(true)
+check("a Raid World tells it as flv beside lv", MGQ_MpOverworldSync::Me.current.values_at("lv", "flv"), [55, 70])
+module MGQ_MpBattlesCoop; def self.active?; $coop_battle; end; end
+$coop_battle = true
+$front = [Actor.new(5, true)]
+check("during a co-op battle it keeps the level read before", overview.front_level, 70)
+$coop_battle = false
+$front = [Actor.new(40, true), Actor.new(70, false), Actor.new(90, false)]
+
+cleo = { "id" => "cleo", "name" => "Cleo", "map" => 5, "x" => 2, "y" => 2, "d" => 2, "scene" => "map", "place" => "Ilias Village", "lv" => 80, "flv" => 20, "progress" => "1", "ping" => 80 }
+$inbox << entry("in", 4) << entry("message", 4, told(cleo)) << entry("in", 5) << entry("message", 5, told(cleo.merge("id" => "anna", "name" => "anna", "flv" => 0, "party" => "anna-p", "invite" => 0)))
+$inbox << entry("message", 3, told(other.merge("party" => MGQ_MpCoop::Party.id, "id" => "zz-bea", "flv" => 33)))
+MGQ_MpOverworldSync.tick
+map_rows = overview.map_rows
+check("the map box lists everyone on the map, the party first with its leader, then the others by name",
+      map_rows.map { |row| [row.name, row.member, row.level] }, [["Me", true, "Lv 70"], ["bea", true, "Lv 33"], ["anna", false, ""], ["Cleo", false, "Lv 20"]])
+check("only the party's leader keeps a crown, and every other player shows their ping", [map_rows.map { |row| row.badge && row.badge[1] }, map_rows[1..-1].map { |row| row.ping && row.ping[0] }],
+      [[true, false, nil, nil], ["40 ms", "80 ms", "80 ms"]])
+check("the box follows the world's type", MGQ_MpPartyBox.map_box?, true)
+
+drawn = []
+font = Struct.new(:color, :size, :outline).new
+canvas = Object.new
+canvas.define_singleton_method(:font) { font }
+canvas.define_singleton_method(:clear) { drawn.clear }
+canvas.define_singleton_method(:fill_rect) { |*args| drawn << [:fill, args[2], args[3]] }
+canvas.define_singleton_method(:stretch_blt) { |*_| drawn << [:crown] }
+canvas.define_singleton_method(:draw_text) { |_x, _y, _w, _h, text, *_| drawn << [:text, text, font.color] }
+map_box = Sprite_MpPartyBox.allocate
+class << map_box; attr_accessor :x, :y; end
+map_box.define_singleton_method(:bitmap) { canvas }
+texts = lambda { drawn.select { |kind, _| kind == :text }.map { |_, text, _| text }.reject { |text| text.end_with?("ms") } }
+green = lambda { |name| drawn.find { |kind, text, _| kind == :text && text == name }[2].equal?(Sprite_MpWorldOverview::MEMBER_COLOR) }
+row_height = Sprite_MpPartyBox::ROW
+map_box.draw_map(map_rows)
+check("it is titled with how many are on the map, a line each and no place", [texts.call, drawn.first],
+      [["Map 4", "Me", "Lv 70", "bea", "Lv 33", "anna", "", "Cleo", "Lv 20"], [:fill, Sprite_MpPartyBox::WIDTH, row_height * 5 + 4]])
+check("party members are green, the others not", %w[Me bea anna Cleo].map { |name| green.call(name) }, [true, true, false, false])
+crowd = map_rows * 3
+map_box.draw_map(crowd)
+check("past ten lines it lists nine and says how many more", [texts.call.first, texts.call.size, texts.call.last, drawn.first[2]],
+      ["Map 12", 1 + 9 * 2 + 1, "+3 more", row_height * 11 + 4])
+map_box.draw_small(crowd, true)
+crowd = map_rows[1..-1] * 4 + map_rows.first(1)
+shown, more = MGQ_MpPartyBox.capped(crowd)
+check("cut short, it keeps the player's own line in place of the last listed", [shown.size, shown.last.player, shown.count { |row| row.player == :me }, more],
+      [9, :me, 1, 4])
+crowd = map_rows * 3
+check("small, it keeps to ten lines too, the others white", [texts.call.size, texts.call.last, green.call("anna"), drawn.first[1..2]],
+      [10, "+3 more", false, [Sprite_MpPartyBox::SMALL_WIDTH, row_height * 10 + 4]])
+
+MGQ_MpChat.stop_typing
+$pressed = MGQ_MpHotkeys.code(:party_box)
+MGQ_MpPartyBox.on_map
+check("its key makes it small", MGQ_MpPartyBox.small?, true)
+peers_here = MGQ_MpCoop::Scope.method(:peers_here)
+MGQ_MpCoop::Scope.define_singleton_method(:peers_here) { [] }
+check("alone on the map there is no box, and its key says why", [overview.map_rows, MGQ_MpPartyBox.busy_reason], [[], "nobody else is on the map"])
+MGQ_MpCoop::Scope.define_singleton_method(:peers_here, peers_here)
+$raid = false
+check("back in a Classic world the party box lists the party alone", overview.party_rows.map(&:name), ["Me", "bea"])
+MGQ_MpCoopSquad.define_singleton_method(:own_order, own_order)
+overview.tick(false)
+check("a closed world forgets what the player told, so the next one reads it at once",
+      [overview.instance_variable_get(:@front), overview.instance_variable_get(:@level), overview.instance_variable_get(:@frames)], [nil, nil, 0])
