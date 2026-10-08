@@ -2,6 +2,7 @@
 //  GameWindow.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-08: Kept Alt from opening the window's menu while a text screen wants the keyboard, which stopped the game
 //      Paulinchen  2026-10-07: Logged why the game cannot keep running in the background
 //                            - Caught what the window procedure's own work throws, logged once, and handed the message on all the same
 //                            - Let the clipboard find the game's window
@@ -51,6 +52,16 @@ internal static unsafe partial class GameWindow
     /// WM_SYSKEYDOWN, a key going down while Alt is held, as with AltGr.
     /// </summary>
     private const uint SystemKeyDown = 0x0104;
+
+    /// <summary>
+    /// WM_SYSCOMMAND, a command of the window's menu.
+    /// </summary>
+    private const uint SystemCommand = 0x0112;
+
+    /// <summary>
+    /// SC_KEYMENU, the command Alt sends to open the window's menu by keyboard.
+    /// </summary>
+    private const nint KeyMenu = 0xF100;
 
     /// <summary>
     /// The window procedure that was in place before, which gets every message on.
@@ -151,6 +162,12 @@ internal static unsafe partial class GameWindow
                 else if (message is KeyDown or SystemKeyDown)
                 {
                     Keyboard.TakeKey((uint)wParam, (uint)(lParam >> 16) & 0xFF);
+                }
+                else if (message == SystemCommand && (wParam & 0xFFF0) == KeyMenu)
+                {
+                    // The chat picks its tabs and resizes with Alt held, whose release would open the
+                    // window's menu, in which the game waits.
+                    return 0;
                 }
             }
         }
