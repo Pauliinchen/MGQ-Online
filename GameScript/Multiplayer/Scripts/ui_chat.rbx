@@ -32,6 +32,7 @@
 #                            - Kept the typing of a frame in which the menu's player left, without its Enter or Escape
 #                            - Colored the sender's name and kept its click spot when the line breaks right after it
 #                            - Left out the line and paragraph separators of players' and admins' lines
+#                            - Built a menu's choices and the fitting names once per frame
 #      Paulinchen  2026-10-07: Mirrored every line sent to everyone to the relay for the world's admins, and showed an admin's line from the relay as [Admin] in gold
 #                            - Closed the chat box with the numpad's 0, as the game's windows close
 #                            - Scrolled the chat log while the box is open with up, down, Page Up and Page Down, keeping the rows in place as lines come in
@@ -231,6 +232,7 @@ module MGQ_MpChat
   @pick = 0
   @alt_frames = 0
   @menu = nil
+  @frame = 0
 
   # The help tab's lines, which no other tab shows.
   HELP_LINES = HELP.map { |text| Line.new(nil, text, :help, :help, 0) }
@@ -324,10 +326,20 @@ module MGQ_MpChat
     MGQ_MpOverworldSync::Peers.labeled.map(&:first)
   end
 
-  # Lists the names that fit what follows the whisper command in the chat box, before a name was taken.
+  # Lists the names that fit what follows the whisper command in the chat box, before a name was
+  # taken, once per frame and text.
   #
   # @return [Array<String>] Up to SUGGESTIONS names, by the alphabet; none without the command and a character after it.
   def self.suggestions
+    key = [@frame, @edit && @edit.text.dup, @tab]
+    @suggested = [key, fitting_names] unless @suggested && @suggested[0] == key
+    @suggested[1]
+  end
+
+  # Finds the names that fit what follows the whisper command in the chat box, see suggestions.
+  #
+  # @return [Array<String>] The names.
+  def self.fitting_names
     match = @edit && @tab != :help && @edit.text.match(WHISPER_TYPED)
     return [] unless match
 
@@ -390,12 +402,21 @@ module MGQ_MpChat
     @menu && MGQ_MpOverworldSync::Peers.with_id(@menu[:id])
   end
 
-  # Lists the choices of the open menu: what every script offers with the player, see
+  # Lists the choices of the open menu, built once per frame and menu, see build_menu_options.
+  #
+  # @return [Array<MGQ_MpActions::Option>] The choices, none without a menu or once the player left.
+  def self.menu_options
+    key = [@frame, @menu && @menu.object_id]
+    @menu_options = [key, build_menu_options] unless @menu_options && @menu_options[0] == key
+    @menu_options[1]
+  end
+
+  # Builds the choices of the open menu: what every script offers with the player, see
   # MGQ_MpActions.peer_options, and a whisper; in a battle the whisper alone, since the others
   # start what a battle cannot take part in, such as a party, a duel or a trade.
   #
   # @return [Array<MGQ_MpActions::Option>] The choices, none without a menu or once the player left.
-  def self.menu_options
+  def self.build_menu_options
     peer = menu_peer
     return [] unless peer
 
@@ -1014,12 +1035,13 @@ module MGQ_MpChat
     MGQ_MpOverworldSync.tell(-1, fields)
   end
 
-  # Lets bubbles and chat lines run out, closes the chat box once neither the map nor a battle
-  # shows, and forgets the chat once no world is open. Called by overworld_sync.rbx every frame
-  # in every scene.
+  # Counts the frame, which ends what suggestions and menu_options keep, lets bubbles and chat lines
+  # run out, closes the chat box once neither the map nor a battle shows, and forgets the chat once
+  # no world is open. Called by overworld_sync.rbx every frame in every scene.
   #
   # @param in_world [Boolean] Whether a world is open.
   def self.tick(in_world)
+    @frame += 1
     scene = SceneManager.scene
     stop_typing("#{scene.class.name} shows, neither the map nor a battle") unless in_world && (scene.is_a?(Scene_Map) || scene.is_a?(Scene_Battle))
     in_world ? count_down : reset

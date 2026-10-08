@@ -930,6 +930,7 @@ chat.start_typing
 chat.open_menu(friend_line, [100, 300])
 log_sprite.update
 go = chat.menu_options.map(&:text).index("Go along")
+check("and builds its choices once per frame", chat.menu_options.equal?(chat.menu_options), true)
 $mouse = [menu_sprite.x + 1, menu_sprite.y + Sprite_MpChatLog::ROW * (go + 1) + 1]
 $mouse_held = true
 failure = begin
