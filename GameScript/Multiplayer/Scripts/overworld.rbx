@@ -4,6 +4,7 @@
 #  Changelog:
 #      Paulinchen  2026-10-08: Found the players on this map through MGQ_MpOverworldSync::Peers.on_this_map?, which the chat shares
 #                            - Loaded the graphics other players' games name through graphic, which remembers the files this game lacks for the last 64 names only
+#                            - Read Luka's sprite of the game's data once as the script loads instead of mid-frame
 #                            - Named a ghost above its head as the chat names its player, such as "Name (2)" for the second of two players sharing a name, drawn anew as players come and go
 #      Paulinchen  2026-10-07: Showed Luka's sprite of the game's data for a ghost whose sprite this game lacks, which kept the map's sprites from drawing
 #                            - Took icons, white and the depths from MGQ_MpUi
@@ -174,18 +175,23 @@ module MGQ_MpOverworld
     graphic?(:character, name) ? [name, index] : stand_in
   end
 
-  # Tells Luka's sprite as the game's data has it, read from the file itself, since a mod may have
-  # changed the actor in the database meanwhile.
+  # Tells Luka's sprite as the game's data has it, see read_stand_in.
   #
   # @return [Array] The file and the index.
   def self.stand_in
-    @stand_in ||= begin
-      luka = load_data("Data/Actors.rvdata2")[1]
-      [luka.character_name.to_s, luka.character_index.to_i]
-    rescue => e
-      log("reading Luka's sprite failed: #{e.class}: #{e.message}")
-      ["", 0]
-    end
+    @stand_in || ["", 0]
+  end
+
+  # Reads Luka's sprite from the game's data file, once as the script loads: a mod may change the
+  # actor in the database later, and the file is too large to read mid-frame.
+  #
+  # @return [Array] The file and the index.
+  def self.read_stand_in
+    luka = load_data("Data/Actors.rvdata2")[1]
+    @stand_in = [luka.character_name.to_s, luka.character_index.to_i]
+  rescue => e
+    log("reading Luka's sprite failed: #{e.class}: #{e.message}")
+    @stand_in = ["", 0]
   end
 
   # Tells the name above a ghost's head: the one the chat tells its player apart by, such as
@@ -203,6 +209,8 @@ module MGQ_MpOverworld
   def self.ghosts
     MGQ_MpOverworldSync.in_world? ? MGQ_MpOverworldSync::Peers.all.select { |peer| peer.ghost } : []
   end
+
+  read_stand_in
 end
 
 # Another player of the world on this map: it walks where they walk, looks like their party

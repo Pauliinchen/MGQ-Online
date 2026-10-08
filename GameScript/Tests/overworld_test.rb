@@ -67,6 +67,8 @@ end
 def load_data(path)
   path == "Data/Actors.rvdata2" ? [nil, Struct.new(:character_name, :character_index).new("Luka", 0)] : Object.new
 end
+# The script read Luka's sprite as it loaded, before the data file above stood in.
+MGQ_MpOverworld.read_stand_in
 
 # A new seat tells everyone everything.
 $inbox << entry("seat", 0)
