@@ -1027,18 +1027,27 @@ module MGQ_MpWorldMods
     return log("entering a world the list lacks: no mod settings apply") unless listed
 
     own = !me.to_s.empty? && listed.creator_id == me
-    text = listed.settings.to_s
-    if fresh
-      @confirmed.delete(listed.id)
-    elsif @confirmed.key?(listed.id) && @confirmed[listed.id] != text
-      log("the list of world #{MGQ_MpWorld.short(listed.id)} may be older than the mod settings the relay took from this game last, which count")
-      text = @confirmed[listed.id]
-    end
+    text = settings_of(listed, fresh)
+    @confirmed.delete(listed.id) if fresh
     @world = { :id => listed.id, :name => listed.name.to_s, :creator_id => listed.creator_id.to_s, :creator_name => MGQ_Multiplayer.clean(listed.creator_name),
                :mods => listed.mods.to_s, :text => text, :own => own }
     add_row
     log("entering #{own ? "the player's own world" : 'a world'} #{MGQ_MpWorld.short(listed.id)}: " \
         "#{shared?(@world[:text]) ? "it shares #{settings_from(@world[:text]).size} mod setting(s): #{settings_text(settings_from(@world[:text]))}" : "each player keeps their own mod settings"}")
+  end
+
+  # Reads a world's settings as they stand: the list's, or those the relay took from this game
+  # last when the list may be older than them.
+  #
+  # @param listed [MGQ_MpWorld::Directory::ListedWorld] The world.
+  # @param fresh [Boolean] Whether the list was fetched since the world screen opened.
+  # @return [String] The settings.
+  def self.settings_of(listed, fresh)
+    text = listed.settings.to_s
+    return text if fresh || !@confirmed.key?(listed.id) || @confirmed[listed.id] == text
+
+    log("the list of world #{MGQ_MpWorld.short(listed.id)} may be older than the mod settings the relay took from this game last, which count")
+    @confirmed[listed.id]
   end
 
   # Notes the settings the relay took from this game for a world, which count over a list from

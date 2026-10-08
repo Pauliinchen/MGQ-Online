@@ -10,8 +10,8 @@
 #                              mods, the edit form's texts and an options dump into a folder outside ASCII
 #                            - Removed the checks of the creator's button, which is gone
 #                            - Covered settings applied only for options a world may set, the restart under Wine, settings someone else set on the relay,
-#                              the creator's changes joined to them, the directory's one answer for the world screen and the settings and a refused entry
-#                              leaving no settings behind
+#                              the creator's changes joined to them, the directory's one answer for the world screen and the settings, a Mod Config
+#                              without entries, a refused entry leaving no settings behind and the edit form after the settings the relay took last
 #                            - Let the DLL's stand-in hold a started action as busy and forget it once cleared
 #      Paulinchen  2026-10-07: Covered the options sent from a copy of an older or of no known version while the relay lacks the current version's
 #                            - Looked each DLL call's signature up in the export table of Multiplayer.rb
@@ -756,6 +756,17 @@ check("one that opens has them noted before its save loads", $noted, "w2")
 MGQ_MpWorld.define_singleton_method(:start, opening)
 Scene_Title.new.start
 
+# The edit form of a list older than the settings the relay took from this game last.
+mods.confirmed("w3", "@shared=o:1;mod_level_cap=i:1")
+stale = MGQ_MpWorld::Directory::ListedWorld.new("w3", 4, 0, "me", 0, "Me", "Mine", "none", [], false, false, true, false, false, "", "", "", "", "")
+scene = new_scene
+scene.instance_variable_set(:@me, "me")
+scene.instance_variable_set(:@entry, MGQ_MpWorld::Entry.new("w3", "Mine", stale, nil, false, false))
+scene.instance_variable_set(:@list_state, "loading")
+scene.instance_variable_get(:@forms)[:edit_world] = MGQ_MpWorld::Form.edit(stale, true)
+scene.instance_variable_set(:@form_symbol, :edit_world)
+scene.edit_world
+check("the edit form changes the settings the relay took last, not the older list's", scene.instance_variable_get(:@edited_settings), "")
 $world_open = false
 $dll["mp_dir_action"] = ""
 $dll["mp_dir_list"] = ""

@@ -10,6 +10,7 @@
 #                            - Told whether the list was fetched since the screen opened as a world is entered
 #                            - Said when the edit form's Shared Mod Settings apply, and that the other changes were saved when the mod settings were not
 #                            - Noted the world's mod settings only as the world opens, so a refused entry leaves none behind, and forgot them when it fails to open
+#                            - Started the edit form's Shared Mod Settings from the settings the relay took from this game last while the list may be older
 #                            - Claimed each directory action it starts, and gave up its answer as the screen closes during one
 #                            - Told the player to restart the game by hand under Wine or Proton after installing a world's mods, keeping the world to enter
 #      Paulinchen  2026-10-07: Left typing alone without a form, which failed the screen, and logged where the screen failed and the pictures in memory
@@ -1423,7 +1424,7 @@ class Scene_MpWorlds < Scene_MenuBase
     values = form
     own = @entry.listed.creator_id == @me
     hashes = own ? MGQ_MpWorldMods.creator_hashes(values[:mods]) : nil
-    settings = @entry.listed.settings
+    settings = MGQ_MpWorldMods.settings_of(@entry.listed, @list_state == "ready")
     @edited_settings = own && values[:shared] != MGQ_MpWorldMods.shared?(settings) ? (values[:shared] ? MGQ_MpWorldMods.with_marker(settings) : "") : nil
     start_action("edit") { MGQ_MpWorld::Directory.edit(@entry.id, values[:seats].to_i, values[:description], values[:mods], hashes) }
   end
