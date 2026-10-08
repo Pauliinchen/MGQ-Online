@@ -5,6 +5,7 @@
 #      Paulinchen  2026-10-08: Found the players on this map through MGQ_MpOverworldSync::Peers.on_this_map?, which the chat shares
 #                            - Loaded the graphics other players' games name through graphic, which remembers the files this game lacks for the last 64 names only
 #                            - Read Luka's sprite of the game's data once as the script loads instead of mid-frame
+#                            - Compared a ghost's and a follower's sprite with the one last sent without building a pair every frame
 #                            - Named a ghost above its head as the chat names its player, such as "Name (2)" for the second of two players sharing a name, drawn anew as players come and go
 #      Paulinchen  2026-10-07: Showed Luka's sprite of the game's data for a ghost whose sprite this game lacks, which kept the map's sprites from drawing
 #                            - Took icons, white and the depths from MGQ_MpUi
@@ -278,9 +279,13 @@ class Game_MpGhost < Game_Character
   #
   # @param state [Hash] What the player last told.
   def look_like(state)
-    look = [state["sprite"].to_s, state["index"].to_i]
-    set_graphic(*MGQ_MpOverworld.sprite(*look)) if look != @sent_look
-    @sent_look = look
+    name = state["sprite"].to_s
+    index = state["index"].to_i
+    unless name == @sent_name && index == @sent_index
+      set_graphic(*MGQ_MpOverworld.sprite(name, index))
+      @sent_name = name
+      @sent_index = index
+    end
     @move_speed = [[state["speed"].to_i, 1].max, 6].min
     @transparent = state["hidden"].to_i == 1
   end
@@ -308,8 +313,11 @@ class Game_MpGhostFollower < Game_Character
   # @param index [Integer] The sprite's index in the file.
   # @param ghost [Game_MpGhost] The ghost it follows.
   def look_like(name, index, ghost)
-    set_graphic(*MGQ_MpOverworld.sprite(name, index)) if [name, index] != @sent_look
-    @sent_look = [name, index]
+    unless name == @sent_name && index == @sent_index
+      set_graphic(*MGQ_MpOverworld.sprite(name, index))
+      @sent_name = name
+      @sent_index = index
+    end
     @move_speed = ghost.move_speed
     @opacity = ghost.opacity
     @transparent = ghost.transparent
