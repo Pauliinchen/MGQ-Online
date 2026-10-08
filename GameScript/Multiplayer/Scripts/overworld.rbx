@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-08: Found the players on this map through MGQ_MpOverworldSync::Peers.on_this_map?, which the chat shares
+#                            - Named a ghost above its head as the chat names its player, such as "Name (2)" for the second of two players sharing a name, drawn anew as players come and go
 #      Paulinchen  2026-10-07: Showed Luka's sprite of the game's data for a ghost whose sprite this game lacks, which kept the map's sprites from drawing
 #                            - Took icons, white and the depths from MGQ_MpUi
 #                            - Logged each ghost shown and hidden, with the map and why
@@ -153,6 +154,15 @@ module MGQ_MpOverworld
       log("reading Luka's sprite failed: #{e.class}: #{e.message}")
       ["", 0]
     end
+  end
+
+  # Tells the name above a ghost's head: the one the chat tells its player apart by, such as
+  # "Name (2)" for the second of two players who share a name, else the name they told.
+  #
+  # @param peer [MGQ_MpOverworldSync::Peers::Peer] The ghost's player.
+  # @return [String] The name.
+  def self.name_tag(peer)
+    MGQ_MpOverworldSync::Peers.label_of(peer) || peer.state["name"].to_s
   end
 
   # Lists the players whose ghosts are on this map.
@@ -336,7 +346,8 @@ class Sprite_MpGhostLabel < Sprite
     above = MGQ_MpOverworldSync.label_line_of(peer)
     taken = visible ? LINE * (above ? 2 : 1) : 0
     badge = MGQ_MpOverworld.party_badge(peer)
-    drawn = [state["name"], state["scene"], state["ping"], peer.member, above, badge]
+    name = MGQ_MpOverworld.name_tag(peer)
+    drawn = [name, state["scene"], state["ping"], peer.member, above, badge]
     return taken if drawn == @shown
 
     @shown = drawn
@@ -346,7 +357,7 @@ class Sprite_MpGhostLabel < Sprite
     line(0, above[0], above[1]) if above
     icons = [MGQ_MpOverworld::STATE_ICONS[state["scene"]], badge && badge[1] ? MGQ_MpOverworld::CROWN_ICON : nil].compact
     extras = [badge && [badge[0], peer.member ? MEMBER_COLOR : SIZE_COLOR], MGQ_MpOverworld.ping_label(state["ping"])].compact
-    draw_name(state["name"].to_s, icons, peer.member ? MEMBER_COLOR : MGQ_MpUi::WHITE, extras)
+    draw_name(name, icons, peer.member ? MEMBER_COLOR : MGQ_MpUi::WHITE, extras)
     taken
   end
 

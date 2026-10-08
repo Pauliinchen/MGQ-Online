@@ -2,7 +2,8 @@
 #  overworld_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-08: Started the status's count of frames anew before checking a new connection's seat, which a status look in the same frame replaced depending on how many frames the checks before took
+#      Paulinchen  2026-10-08: Checked that a ghost's name tag numbers a name two players share as the chat does, and is drawn anew once one of them left
+#                            - Started the status's count of frames anew before checking a new connection's seat, which a status look in the same frame replaced depending on how many frames the checks before took
 #                            - Checked the global, say and party chats, the commands that choose them, the log's tabs, its size and its depth while typing
 #                            - Checked that the numpad's Insert closes the chat box with Num Lock off
 #                            - Checked the menu a click on a sender's name opens
@@ -105,6 +106,29 @@ $inbox << entry("message", 2, told(friend))
 MGQ_MpOverworldSync.tick
 MGQ_MpOverworld.update_ghosts
 check("and the friend's own again once they show one this game has", [ghost.character_name, ghost.character_index], ["Actor2", 3])
+
+# A name two players share is numbered above the second one's head as in the chat, and the tag is
+# drawn anew once the other left.
+$inbox << entry("message", 9, told(friend.merge("id" => "aa-other")))
+MGQ_MpOverworldSync.tick
+other = MGQ_MpOverworldSync::Peers.at(9)
+written = []
+font = Struct.new(:size, :outline, :color).new
+canvas = Object.new
+canvas.define_singleton_method(:font) { font }
+canvas.define_singleton_method(:clear) { written.clear }
+canvas.define_singleton_method(:text_size) { |text| Struct.new(:width).new(text.size * 8) }
+canvas.define_singleton_method(:draw_text) { |*args| written << args[4] }
+tag = Sprite_MpGhostLabel.allocate
+tag.define_singleton_method(:bitmap) { canvas }
+tag.define_singleton_method(:visible) { true }
+%w[x= y= visible=].each { |setter| tag.define_singleton_method(setter) { |_| } }
+shown = Struct.new(:x, :y, :height, :visible, :opacity).new(0, 0, 32, true, 255)
+tag.show(shown, peer)
+check("a name two players share is numbered for the second by id, as in the chat", [MGQ_MpOverworld.name_tag(other), written], ["Friend", ["Friend (2)"]])
+MGQ_MpOverworldSync::Peers.remove(9)
+tag.show(shown, peer)
+check("and the tag is drawn anew with the plain name once the other left", written, ["Friend"])
 
 # One tile away: the ghost walks; far away: it jumps.
 $inbox << entry("message", 2, told(friend.merge("x" => 11)))
