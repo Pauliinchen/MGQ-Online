@@ -22,6 +22,7 @@
 #                            - Found players through MGQ_MpOverworldSync::Peers and moved the three lists by one arrow step
 #                            - Stopped following the keys and the mouse once a menu's choice closed the chat box, which failed on the closed box
 #                            - Offered only the whisper in a player's menu during a battle
+#                            - Showed whispers in the closed chat log whatever the tab
 #                            - Mirrored a global line to the relay before sending it, turning it down when it comes too fast
 #      Paulinchen  2026-10-07: Mirrored every line sent to everyone to the relay for the world's admins, and showed an admin's line from the relay as [Admin] in gold
 #                            - Closed the chat box with the numpad's 0, as the game's windows close
@@ -910,14 +911,15 @@ module MGQ_MpChat
     @received = 0
   end
 
-  # Lists the log's lines its tab shows: all kept while the chat box is open, else the recent ones;
-  # the help tab's own.
+  # Lists the log's lines its tab shows: all kept while the chat box is open, else the recent ones
+  # and the recent whispers, which the closed log shows whatever the tab; the help tab's own.
   #
   # @return [Array<Line>] The lines, oldest first.
   def self.log_entries
     return HELP_LINES if @tab == :help
+    return @log.select { |line| line.shown_in?(@tab) } if typing?
 
-    @log.select { |line| line.shown_in?(@tab) && (typing? || line.left > 0) }
+    @log.select { |line| line.left > 0 && (line.shown_in?(@tab) || line.channel == :whisper) }
   end
 
   # Writes the log's lines to show as text.

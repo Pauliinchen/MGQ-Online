@@ -9,6 +9,7 @@
 #                            - Checked whispers and their list of names, the help tab, the bubbles' chats and that what Alt types with the numpad is dropped
 #                            - Checked that a log made with the mouse button held and the box open draws without failing, and that a player's message cannot pose as an admin's line
 #                            - Checked that a menu's choice that leaves closes the chat box without failing, by click and by Enter, that a battle's menu offers only the whisper
+#                            - Checked the closed log's whispers
 #                            - Checked a global line too fast for the relay
 #      Paulinchen  2026-10-07: Checked the lines mirrored to the relay, the party chat kept from it, and an admin's line from the relay
 #                            - Checked scrolling the chat log
@@ -932,6 +933,17 @@ chat.close_menu("in the test")
 MGQ_MpActions.offers.delete(leaving)
 chat.stop_typing
 MGQ_MpChat.singleton_class.send(:alias_method, :log, :harness_log)
+
+# The closed log's whispers, and what a line loses.
+chat.start_typing
+chat.select_tab(:global, "in the test")
+chat.stop_typing
+$inbox << entry("message", friend_seat, "whisper=only you\nname=Friend\n\n")
+$inbox << entry("message", friend_seat, "chat=on the map\nch=say\nmap=5\nname=Friend\n\n")
+MGQ_MpOverworldSync.tick
+check("the closed log shows whispers whatever its tab, another chat's lines only on their tab",
+      [chat.log_lines.include?("[Whisper] Friend: only you"), chat.log_lines.include?("Friend: on the map")], [true, false])
+chat.select_tab(:all, "in the test")
 
 # A global line too fast for the relay.
 $say_result = MGQ_MpChat::TOO_FAST
