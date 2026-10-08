@@ -2,7 +2,8 @@
 #  world_open_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-08: Checked the update offer in place of the update notice, and the world screen opening after the update
+#      Paulinchen  2026-10-08: Checked Raid Worlds: their type and companion sharing in the list, details and world.ini, their place and red, raid? and companion_sharing, the form's switches and their arrows
+#                            - Checked the update offer in place of the update notice, and the world screen opening after the update
 #                            - Checked that the update offer keeps the game open under Wine
 #                            - Checked that an outdated game offers the update for a Discord invite and for the entry after a restart for mods
 #      Paulinchen  2026-10-07: Checked that the worlds on this PC and the favourites are read once until one changes
@@ -24,10 +25,11 @@
 #
 #----------------------------------------------------------------
 
-# Checks worlds without a password and featured worlds (world.rbx): the forms taking an empty
-# password, the directory's flags for both, entering a world without a password without being
-# asked, the featured worlds' place in the list, what the details say, an outdated game kept out
-# and offered the update, and the world screen opening after it.
+# Checks worlds without a password, featured worlds and Raid Worlds (world.rbx): the forms taking an
+# empty password, the directory's flags for them, entering a world without a password without being
+# asked, the featured worlds' and Raid Worlds' place and colour in the list, what the details say,
+# what world.ini keeps of a Raid World and what the scripts ask of it, the form's switches, an
+# outdated game kept out and offered the update, and the world screen opening after it.
 
 require_relative "support"
 require "tmpdir"
@@ -346,6 +348,165 @@ check("a world without a description says so at the bottom", texts.last, "No des
 # The seats, which the world code tells.
 check("a world's code tells its seats", MGQ_MpWorld::World.new("abcdef012345", "code" => "mgqmp2;abcdefghjkmnpqrs;r1;8").seats, 8)
 check("a code without them tells none", MGQ_MpWorld::World.new("abcdef012345", {}).seats, 0)
+
+# Raid Worlds: the type and companion sharing the list reads, their place and colour, the details,
+# world.ini, what every script asks of the open world, and the new world's form.
+$dll["mp_dir_list"] = "state=ready\n\n" \
+  "world\tr1\t4\t0\tc\t0\tC\tRaid Night\tnone\t0\t0\t0\t0\t0\t\t\t\t\t\traid\tstory\n" \
+  "world\tr2\t4\t0\tc\t0\tGlobal\tRaid Gold\tnone\t0\t0\t1\t1\t0\t\t\t\t\t\traid\tall\n" \
+  "world\tw1\t4\t0\tc\t0\tC\tPlain\tnone\t0\t0\t0\t0\t0\t\t\t\t\t\tclassic\toff\n" \
+  "world\tw3\t4\t0\tc\t0\tC\tOld\tnone\t0\t0\n"
+_, _, typed, = MGQ_MpWorld::Directory.list
+check("the list reads each world's type and companion sharing, Classic sharing none without them",
+      typed.map { |world| [world.type, world.share, world.raid?] }, [["raid", "story", true], ["raid", "all", true], ["classic", "off", false], ["classic", "off", false]])
+raid_entries = MGQ_MpWorld.entries(typed, true)
+check("Raid Worlds come above every other world, favourites and featured ones too", raid_entries.map { |entry| entry.name }, ["Raid Gold", "Raid Night", "Old", "Plain"])
+raid_local = MGQ_MpWorld::World.new("abcdef012345", "code" => "x", "name" => "Kept", "type" => "raid", "share" => "story")
+check("a Raid World the directory no longer lists stays one by its world.ini", [MGQ_MpWorld::Entry.new("r9", "Kept", nil, raid_local, false, true).raid?, gone.raid?], [true, false])
+
+# The colour of a row in the list and of the details' title.
+list_window = Window_MpWorldList.allocate
+colors = []
+list_window.define_singleton_method(:item_rect_for_text) { |_index| Rect.new(0, 0, 200, 24) }
+list_window.define_singleton_method(:change_color) { |color, _enabled = true| colors << color }
+list_window.define_singleton_method(:draw_text) { |*| }
+%w[normal_color crisis_color].each { |name| list_window.define_singleton_method(name) { name } }
+list_window.instance_variable_set(:@list, raid_entries.map { |entry| { :ext => entry } })
+(0...raid_entries.size).each { |index| list_window.draw_item(index) }
+check("a Raid World's row is red, which wins over a featured one's gold and a favourite's colour",
+      colors.map { |color| color.equal?(MGQ_MpWorld::RAID_COLOR) ? :red : color }, [:red, :red, "crisis_color", "normal_color"])
+detail, = new_detail(386, 336)
+title_colors = []
+detail.define_singleton_method(:change_color) { |color, _enabled = true| title_colors << color }
+detail.draw_title(raid_entries[0])
+check("and so is a Raid World's name above its details", title_colors.last.equal?(MGQ_MpWorld::RAID_COLOR), true)
+check("whose cells may ask for the red too", detail.color_of(:raid).equal?(MGQ_MpWorld::RAID_COLOR), true)
+
+# The details.
+raid_panels = detail.panels(raid_entries[1], "me")
+check("the details tell a Raid World and how it shares companions", [cell_of(raid_panels, "Type").text, cell_of(raid_panels, "Type").color, cell_of(raid_panels, "Sharing").text],
+      ["Raid", :raid, "Story"])
+check("or that it shares story companions and battle recruits", cell_of(detail.panels(raid_entries[0], "me"), "Sharing").text, "Story, recruits")
+plain_panels = detail.panels(raid_entries[3], "me")
+check("but a Classic world's World panel keeps its three rows, with no type row", [plain_panels[0].rows.size, cell_of(plain_panels, "Type"), raid_panels[0].rows.size], [3, nil, 4])
+
+# world.ini keeps the type and the sharing for a world entered while the directory listed it.
+MGQ_MpWorld::Link.define_singleton_method(:id_of) { |code| code[/\A[0-9a-f]{12}/] }
+Dir.mktmpdir do |root|
+  Dir.chdir(root) do
+    FileUtils.mkdir_p(File.join("Patch", "Multiplayer"))
+    MGQ_MpWorld::World.found("0123456789ab;token;relay;4", "Raid Night", "r1", "raid", "story")
+    kept = ini["Patch/Multiplayer/Worlds/0123456789ab/world.ini"]
+    check("world.ini keeps a Raid World's type and companion sharing", [kept["type"], kept["share"]], ["raid", "story"])
+    read_back = MGQ_MpWorld::World.read("0123456789ab")
+    check("which read back tell a Raid World", [read_back.raid?, read_back.companion_sharing], [true, :story])
+    MGQ_MpWorld::World.found("0123456789ab;token;relay;4", "Raid Night", "r1")
+    check("and stay when the world is found again without them", MGQ_MpWorld::World.read("0123456789ab").raid?, true)
+    MGQ_MpWorld::World.found("fedcba987654;token;relay;4", "Plain", "w1", "classic", "off")
+    check("a Classic world is kept as one", [MGQ_MpWorld::World.read("fedcba987654").raid?, MGQ_MpWorld::World.read("fedcba987654").companion_sharing], [false, :off])
+  end
+end
+MGQ_MpWorld::Link.define_singleton_method(:id_of, dll_id_of)
+MGQ_MpWorld::World.forget
+check("a world.ini from before types is Classic", [MGQ_MpWorld::World.new("abcdef012345", "code" => "x").raid?, MGQ_MpWorld::World.new("abcdef012345", "code" => "x").type], [false, nil])
+
+# What every script asks of the open world.
+check("outside a world there is no Raid World and no sharing", [MGQ_MpWorld.raid?, MGQ_MpWorld.companion_sharing], [false, :off])
+MGQ_MpWorld.instance_variable_set(:@world, MGQ_MpWorld::World.new("abcdef012345", "code" => "x", "type" => "raid", "share" => "all"))
+check("in a Raid World both tell it", [MGQ_MpWorld.raid?, MGQ_MpWorld.companion_sharing], [true, :all])
+MGQ_MpWorld.instance_variable_set(:@world, MGQ_MpWorld::World.new("abcdef012345", "code" => "x", "type" => "raid", "share" => "lots"))
+check("a sharing this game does not know shares nothing", MGQ_MpWorld.companion_sharing, :off)
+MGQ_MpWorld.instance_variable_set(:@world, MGQ_MpWorld::World.new("abcdef012345", "code" => "x", "type" => "classic", "share" => "all"))
+check("a Classic world is no Raid World and shares nothing", [MGQ_MpWorld.raid?, MGQ_MpWorld.companion_sharing], [false, :off])
+MGQ_MpWorld.instance_variable_set(:@world, nil)
+
+# The new world's form.
+raid_form = MGQ_MpWorld::Form.create
+type_field = raid_form.fields.find { |field| field.key == :type }
+share_field = raid_form.fields.find { |field| field.key == :share }
+check("the form has a World type switch beside Hidden, Classic at first", [type_field.kind, type_field.row, type_field.side, type_field.choices, raid_form.type], [:switch, 2, :right, ["Classic", "Raid"], "classic"])
+check("and Sharing companions below it, greyed out for a Classic world", [share_field.kind, share_field.row, share_field.choices.size, raid_form.enabled?(share_field), raid_form.share], [:switch, 3, 3, false, "off"])
+raid_form[:type] = 1
+raid_form[:share] = 1
+check("a Raid World brings it back", [raid_form.enabled?(share_field), raid_form.type, raid_form.share], [true, "raid", "story"])
+check("whose hints fit the lines at the top", [type_field.hint.size <= 100, share_field.hint.size <= 100], [true, true])
+MGQ_MpWorld::Directory.create("Raid Night", "", 4, false, false, "", :type => "raid", :share => "story")
+check("create hands the type and the sharing to the DLL", [$calls.last[1], $calls.last[2][12..13]], ["pplllpppplpppp", ["raid\0", "story\0"]])
+MGQ_MpWorld::Directory.create("Plain", "", 4, false, false, "", :share => "all")
+check("a Classic world shares nothing", $calls.last[2][12..13], ["classic\0", "off\0"])
+
+# Turning the form's switches on the world screen.
+scene = form_scene
+scene.instance_variable_set(:@forms, { :new_world => MGQ_MpWorld::Form.create })
+scene.instance_variable_set(:@form_symbol, :new_world)
+form_window = scene.instance_variable_get(:@form_window)
+form_window.form = scene.form
+form_window.select(scene.form.fields.index { |field| field.key == :type })
+$sounds.clear
+scene.on_field
+check("confirm turns a switch", [scene.form.type, $sounds.last], ["raid", "cursor"])
+form_window.select(scene.form.fields.index { |field| field.key == :share })
+scene.turn_switch(-1)
+check("and an arrow back turns it round", scene.form.share, "all")
+
+# The form window's arrows and switches.
+window = Window_MpWorldForm.allocate
+window.instance_variable_set(:@form, MGQ_MpWorld::Form.create)
+picked = [nil]
+window.define_singleton_method(:field) { picked[0] }
+turned = []
+moved = []
+window.on_turn = lambda { |step| turned << step }
+window.define_singleton_method(:move_side) { |side| moved << side }
+picked[0] = type_field
+window.cursor_right
+window.cursor_left
+check("an arrow away from a switch's neighbour turns it, one toward it moves there", [turned, moved], [[1], [:left]])
+picked[0] = share_field
+$sounds.clear
+window.cursor_right
+check("a greyed-out switch buzzes", [turned, $sounds], [[1], ["buzzer"]])
+window.form[:type] = 1
+window.cursor_left
+check("a switch across its row turns both ways", turned, [1, -1])
+picked[0] = window.form.fields.find { |field| field.key == :password }
+window.cursor_right
+check("other fields move as before", moved, [:left, :right])
+
+# A switch's label takes the field's width, else the window's, which a window of its own may widen.
+class WideForm < Window_MpWorldForm
+  # Width of the switches' names.
+  LABEL_WIDTH = 150
+end
+# Builds a form window that draws on nothing and keeps the label widths it draws.
+#
+# @param kind [Class] Window_MpWorldForm or a window of its own.
+# @param form [MGQ_MpWorld::Form] The form.
+# @return [Array] The window and the texts drawn with their widths.
+def drawing_form(kind, form)
+  window = kind.allocate
+  window.instance_variable_set(:@form, form)
+  drawn = []
+  font = Struct.new(:size).new(24)
+  canvas = Struct.new(:font).new(font)
+  canvas.define_singleton_method(:fill_rect) { |*| }
+  window.define_singleton_method(:contents) { canvas }
+  window.define_singleton_method(:change_color) { |*| }
+  window.define_singleton_method(:cut) { |text, _width| text }
+  window.define_singleton_method(:draw_text) { |*args| drawn << [args[2], args[4]] }
+  %w[system_color normal_color].each { |name| window.define_singleton_method(name) { name } }
+  [window, drawn]
+end
+plain_window, plain_drawn = drawing_form(Window_MpWorldForm, raid_form)
+plain_window.draw_switch(Rect.new(0, 0, 188, 21), type_field, true)
+plain_window.draw_switch(Rect.new(0, 0, 380, 21), share_field, true)
+check("the world type's label is narrower, Sharing companions takes the window's", [plain_drawn[0], plain_drawn[2]], [[70, "World type"], [84, "Sharing companions"]])
+check("each shows its outcome between arrows", [plain_drawn[1][1], plain_drawn[3][1]], ["< Raid >", "< Story companions >"])
+noted = MGQ_MpWorld::Form::Field.new(:way, :switch, "Way", 0, "Which way.", :choices => %w(Left Right), :note => lambda { |_, index| "Picked #{index}" })
+wide_window, wide_drawn = drawing_form(WideForm, MGQ_MpWorld::Form.new("Ways", [noted], :way => 1))
+wide_window.draw_switch(Rect.new(0, 0, 380, 37), noted, true)
+check("a window of its own draws its names wider, and a switch's line below it", wide_drawn, [[150, "Way"], [380 - 150 - 8, "< Right >"], [376, "Picked 1"]])
+check("which makes its row higher than a switch without one", [wide_window.height_of(noted), wide_window.height_of(type_field)], [21 + 16, 21])
 
 # An outdated game.
 $outdated = true

@@ -2,6 +2,7 @@
 //  RelayWorldChannel.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-08: Named the Raid Worlds this game plays in the X-MGQ-Features header
 //      Paulinchen  2026-10-07: Sent any text frame, such as a chat line the relay keeps, not only the ping
 //                            - Sent the world's auth key in the X-MGQ-Auth header instead of the address, and closed the WebSocket through the shared helper
 //      Paulinchen  2026-10-06: Sent the player's key in the X-MGQ-Player header instead of the address, and read the code a refusal names why with and the reason of a close
@@ -98,7 +99,7 @@ internal sealed class RelayWorldChannel : IDisposable
     /// <param name="authKey">The key that proves the game holds the world's token, see <see cref="WorldKeys.AuthKeyOf"/>.</param>
     /// <param name="timeout">How long connecting may take.</param>
     /// <param name="refusal">The HTTP status the relay refused the game with, such as 409 when every seat is taken.</param>
-    /// <param name="refusalCode">The code the relay named why with, such as "members" or "pending", <see langword="null"/> for none.</param>
+    /// <param name="refusalCode">The code the relay named why with, such as "members", "pending" or "raid_unsupported", <see langword="null"/> for none.</param>
     /// <returns>The channel, or <see langword="null"/> when the relay refused the game.</returns>
     /// <exception cref="WebSocketException">The relay could not be reached.</exception>
     public static RelayWorldChannel? Connect(Uri relay, string room, string playerKey, string playerName, string authKey, TimeSpan timeout, out HttpStatusCode? refusal, out string? refusalCode)
@@ -107,6 +108,7 @@ internal sealed class RelayWorldChannel : IDisposable
         socket.Options.CollectHttpResponseDetails = true;
         socket.Options.SetRequestHeader(DirectoryClient.PlayerHeader, playerKey);
         socket.Options.SetRequestHeader(DirectoryClient.AuthHeader, authKey);
+        socket.Options.SetRequestHeader(DirectoryClient.FeaturesHeader, DirectoryClient.Features);
         var address = new Uri(relay, $"/v1/world/{room}?name={Uri.EscapeDataString(playerName)}");
         refusal = null;
         refusalCode = null;

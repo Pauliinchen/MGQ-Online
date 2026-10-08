@@ -2,7 +2,10 @@
 #  world_screen.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-08: Sent Shared Mod Settings with a new world, and from the creator's edit form once the other changes were saved
+#      Paulinchen  2026-10-08: Showed Raid Worlds in red in the list and the details' title, and their type and companion sharing in the details
+#                            - Sent the new world's type and companion sharing, and kept both in world.ini as a world is created or entered
+#                            - Drew and turned the forms' switches in Window_MpWorldForm, which the story's choices share, and turned them in the world screen's forms with confirm and the arrows
+#                            - Sent Shared Mod Settings with a new world, and from the creator's edit form once the other changes were saved
 #                            - Closed the list boxes, the details, the mod picker and the start's choice with the numpad's 0 through MGQ_MpUi, also with Num Lock off, and left the text boxes with it through MGQ_MpUi.numpad_cancel?
 #                            - Backed out of the worlds or the commands with the numpad's 0 also with Num Lock off
 #                            - Said in a world's details whether it shares its creator's mod settings
@@ -159,6 +162,7 @@ class Scene_MpWorlds < Scene_MenuBase
     @form_window = Window_MpWorldForm.new(@detail_window.x, @detail_window.y, @detail_window.width, @detail_window.height)
     @form_window.set_handler(:ok, method(:on_field))
     @form_window.set_handler(:cancel, method(:leave_form))
+    @form_window.on_turn = method(:turn_switch)
     @list_window.set_handler(:world, method(:on_world))
     @list_window.set_handler(:new_world, method(:enter_form))
     @list_window.set_handler(:join_hidden, method(:enter_form))
@@ -485,7 +489,7 @@ class Scene_MpWorlds < Scene_MenuBase
     elsif @entry.local
       listed = @entry.listed
       log_screen("entering #{entry_text} from its folder #{@entry.local.id}#{listed ? '' : ' (deleted from the list, saves kept)'}")
-      @entry.local.describe(listed.name, listed.id, listed.seats) if listed
+      @entry.local.describe(listed.name, listed.id, listed.seats, listed.type, listed.share) if listed
       enter(@entry.local, listed && listed.start, listed && listed.choose)
     elsif @entry.open?
       log_screen("opening #{entry_text}, which has no password")
@@ -945,8 +949,8 @@ class Scene_MpWorlds < Scene_MenuBase
     @resume_form = true unless @busy
   end
 
-  # Acts on the chosen field: ticks a checkbox, opens the save screen, sends the form, or starts
-  # typing into a text box.
+  # Acts on the chosen field: ticks a checkbox, turns a switch, opens the save screen, sends the
+  # form, or starts typing into a text box.
   def on_field
     field = @form_window.field
     @field_index = @form_window.index
@@ -956,6 +960,9 @@ class Scene_MpWorlds < Scene_MenuBase
       form[field.key] = !form[field.key]
       log_screen("#{form[field.key] ? 'ticked' : 'unticked'} #{field.label} in the form #{@form_symbol}")
       @form_window.refresh
+      @form_window.activate
+    when :switch
+      turn_switch(1)
       @form_window.activate
     when :save
       log_screen("opening the save screen for the new world's starting save")
@@ -967,6 +974,18 @@ class Scene_MpWorlds < Scene_MenuBase
     else
       start_typing(field)
     end
+  end
+
+  # Turns the switch the cursor is on, and draws the form again, whose other fields may follow it.
+  #
+  # @param step [Integer] 1 for the next outcome, -1 for the previous.
+  def turn_switch(step)
+    field = @form_window.field
+    before = field.choices[form[field.key].to_i]
+    form.turn(field, step)
+    Sound.play_cursor
+    log_screen("#{field.label}: \"#{before}\" -> \"#{field.choices[form[field.key].to_i]}\" in the form #{@form_symbol}")
+    @form_window.refresh
   end
 
   # Starts typing into a text box in place, or on the text screen when the keyboard cannot reach
@@ -1479,9 +1498,11 @@ class Scene_MpWorlds < Scene_MenuBase
 
     files = values[:from_save] ? MGQ_MpSaveDistribution.files_of(values[:save]) : []
     @creating = values[:name]
+    @creating_kind = [values.type, values.share]
     @start_files = files
     about = { :description => values[:description], :mods => values[:mods], :data => MGQ_MpWorld::GameData.fingerprint, :strict => !values[:mismatch],
-              :mod_hashes => MGQ_MpWorldMods.creator_hashes(values[:mods]), :settings => values[:shared] ? MGQ_MpWorldMods::MARKER : "" }
+              :mod_hashes => MGQ_MpWorldMods.creator_hashes(values[:mods]), :settings => values[:shared] ? MGQ_MpWorldMods::MARKER : "",
+              :type => values.type, :share => values.share }
     start_action("create") { MGQ_MpWorld::Directory.create(values[:name], values[:password], values[:seats].to_i, values[:hidden], values[:choose], MGQ_MpSaveDistribution.text_of(files), about) }
   end
 
@@ -1539,7 +1560,7 @@ class Scene_MpWorlds < Scene_MenuBase
 
     case kind
     when "create"
-      world = MGQ_MpWorld::World.found(action["code"], @creating, action["world"])
+      world = MGQ_MpWorld::World.found(action["code"], @creating, action["world"], *@creating_kind)
 
       log_screen("created #{@creating} (#{MGQ_MpWorld.short(action['world'])})")
       if world && (@start_files.empty? || MGQ_MpSaveDistribution.place(world, @start_files))
@@ -1626,7 +1647,7 @@ class Scene_MpWorlds < Scene_MenuBase
       return false
     end
 
-    world = MGQ_MpWorld::World.found(action["code"], @entry.name, action["world"])
+    world = MGQ_MpWorld::World.found(action["code"], @entry.name, action["world"], @entry.listed.type, @entry.listed.share)
 
     unless world
       say("The world's folder could not be created.")
@@ -2152,15 +2173,15 @@ class Window_MpWorldList < Window_Command
     (@entries || []).each { |entry| add_command(entry.name, :world, true, entry) }
   end
 
-  # Draws a world with its players online and seats, a featured one in gold, a favourite with a
-  # mark, and one its creator deleted pale.
+  # Draws a world with its players online and seats, a Raid World in red, a featured one in gold, a
+  # favourite with a mark, and one its creator deleted pale.
   #
   # @param index [Integer] The row.
   def draw_item(index)
     entry = @list[index][:ext]
     rect = item_rect_for_text(index)
     rect.width -= BAR_WIDTH + 2
-    change_color(entry.featured? ? MGQ_MpWorld::FEATURED_COLOR : entry.favourite ? crisis_color : normal_color, !entry.gone)
+    change_color(entry.raid? ? MGQ_MpWorld::RAID_COLOR : entry.featured? ? MGQ_MpWorld::FEATURED_COLOR : entry.favourite ? crisis_color : normal_color, !entry.gone)
     draw_text(rect, "#{entry.listed.online}/#{entry.listed.seats}", 2) if entry.listed
     rect.width -= COUNT_WIDTH if entry.listed
     draw_text(rect, entry.favourite ? "* #{entry.name}" : entry.name)
@@ -2318,6 +2339,9 @@ class Window_MpWorldDetail < Window_Base
   # Width of the bar at the left of the description.
   ACCENT_WIDTH = 3
 
+  # What the details call each way a Raid World shares companions, short enough for half a row.
+  SHARING_TEXTS = { "off" => "None", "story" => "Story", "all" => "Story, recruits" }
+
   # Places of the players' panel: as many players as fit are named, and with more players the last
   # place counts the rest.
   NAMED_PLAYERS = 4
@@ -2367,7 +2391,10 @@ class Window_MpWorldDetail < Window_Base
     [world_panel(listed, me), data_panel(entry, me), players_panel(listed, me)]
   end
 
-  # Tells who made a world, how full it is, how it is entered and where its new players start.
+  # Tells who made a world, how full it is, how it is entered, where its new players start, and for a
+  # Raid World its type and how it shares companions.
+  #
+  # A Classic world gets no type row, since every row takes a line from the description below.
   #
   # @param listed [MGQ_MpWorld::Directory::ListedWorld] The world in the directory.
   # @param me [String] The player's id.
@@ -2376,8 +2403,9 @@ class Window_MpWorldDetail < Window_Base
     rows = [
       [Cell.new("Creator", listed.creator_id == me ? "You" : listed.creator_name, :normal), Cell.new("Players", "#{listed.online} / #{listed.seats} online", :normal)],
       [Cell.new("Password", listed.open ? "None" : "Needed", :normal), Cell.new("Listed", listed.hidden ? "Hidden" : "Public", :normal)],
-      [Cell.new("Start", start_text(listed), :normal)],
     ]
+    rows << type_row(listed) if listed.raid?
+    rows << [Cell.new("Start", start_text(listed), :normal)]
     Panel.new("World", listed.featured ? "featured: one of the relay's own" : nil, rows)
   end
 
@@ -2536,6 +2564,14 @@ class Window_MpWorldDetail < Window_Base
     end
   end
 
+  # Tells that a world is a Raid World and how it shares companions.
+  #
+  # @param listed [MGQ_MpWorld::Directory::ListedWorld] The Raid World in the directory.
+  # @return [Array<Cell>] The row's two cells.
+  def type_row(listed)
+    [Cell.new("Type", "Raid", :raid), Cell.new("Sharing", SHARING_TEXTS[listed.share] || SHARING_TEXTS["off"], :normal)]
+  end
+
   # Tells where a world's new players start.
   #
   # @param listed [MGQ_MpWorld::Directory::ListedWorld] The world in the directory.
@@ -2559,7 +2595,8 @@ class Window_MpWorldDetail < Window_Base
     world.played_at ? "last played #{world.played_at.strftime('%Y-%m-%d')}" : "entered, not played yet"
   end
 
-  # Draws the world's name, a featured one in gold, and at its right when the player last played it.
+  # Draws the world's name, a Raid World in red, a featured one in gold, and at its right when the
+  # player last played it.
   #
   # @param entry [MGQ_MpWorld::Entry] The world.
   # @return [Integer] The bottom edge.
@@ -2570,7 +2607,7 @@ class Window_MpWorldDetail < Window_Base
     change_color(normal_color, false)
     draw_text(contents_width - played_width, 0, played_width, TITLE_HEIGHT, played, 2)
     reset_font_settings
-    change_color(entry.featured? ? MGQ_MpWorld::FEATURED_COLOR : system_color)
+    change_color(entry.raid? ? MGQ_MpWorld::RAID_COLOR : entry.featured? ? MGQ_MpWorld::FEATURED_COLOR : system_color)
     draw_text(0, 0, contents_width - played_width - PAD, TITLE_HEIGHT, entry.name)
     TITLE_HEIGHT
   end
@@ -2669,13 +2706,14 @@ class Window_MpWorldDetail < Window_Base
 
   # Finds the color a cell asks for.
   #
-  # @param name [Symbol] :normal, :good, :warn, :gold or :bad.
+  # @param name [Symbol] :normal, :good, :warn, :gold, :raid or :bad.
   # @return [Color] The color.
   def color_of(name)
     case name
     when :good then power_up_color
     when :warn then crisis_color
     when :gold then MGQ_MpWorld::FEATURED_COLOR
+    when :raid then MGQ_MpWorld::RAID_COLOR
     when :bad then knockout_color
     else normal_color
     end
@@ -2742,9 +2780,9 @@ class Window_MpChoice < Window_Command
 end
 
 # A form at the right of the world screen, in place of a world's details and laid out like them:
-# its title, then its fields in panels, text boxes, checkboxes, a save to choose and a box of
-# several lines, and below them the button that sends it. Up and down move between rows, left and
-# right between two fields on one row.
+# its title, then its fields in panels, text boxes, checkboxes, switches, a save to choose and a box
+# of several lines, and below them the button that sends it. Up and down move between rows, left and
+# right between two fields on one row, and turn a switch.
 class Window_MpWorldForm < Window_Selectable
   include MGQ_MpWorldPanels
 
@@ -2762,6 +2800,10 @@ class Window_MpWorldForm < Window_Selectable
 
   # The form shown, nil for none.
   attr_reader :form
+
+  # The block that turns the switch the cursor is on, called with the step: 1 for the next outcome,
+  # -1 for the previous; nil to leave the arrows to moving.
+  attr_accessor :on_turn
 
   # Creates the window, hidden and without a form.
   #
@@ -2878,7 +2920,7 @@ class Window_MpWorldForm < Window_Selectable
     Rect.new(field.side == :right ? inset + half + PAD : inset, y, half, height)
   end
 
-  # Tells how high a field's row is.
+  # Tells how high a field's row is: a switch with a line below its outcome has that line too.
   #
   # @param field [MGQ_MpWorld::Form::Field] The field.
   # @return [Integer] The height.
@@ -2886,6 +2928,7 @@ class Window_MpWorldForm < Window_Selectable
     case field.kind
     when :area then field.lines * DESCRIPTION_LINE_HEIGHT + 2
     when :button then BUTTON_HEIGHT
+    when :switch then field.note ? ROW_HEIGHT + DESCRIPTION_LINE_HEIGHT : ROW_HEIGHT
     else ROW_HEIGHT
     end
   end
@@ -2909,7 +2952,7 @@ class Window_MpWorldForm < Window_Selectable
     contents.fill_rect(rect, PANEL_COLOR) if @form.fields[index].group
   end
 
-  # Draws a field: a text box, a checkbox, a save, a box of several lines or the button.
+  # Draws a field: a text box, a checkbox, a switch, a save, a box of several lines or the button.
   #
   # @param index [Integer] The field's index.
   def draw_item(index)
@@ -2918,6 +2961,7 @@ class Window_MpWorldForm < Window_Selectable
 
     case field.kind
     when :check then draw_check(rect, field)
+    when :switch then draw_switch(rect, field, @form.enabled?(field))
     when :button then draw_button(rect, field)
     when :area then draw_area(rect, field)
     else draw_box(rect, field, @form.enabled?(field))
@@ -3001,6 +3045,31 @@ class Window_MpWorldForm < Window_Selectable
     draw_text(rect, field.label, 1)
   end
 
+  # Draws a switch: its name, its outcome between arrows on a darker box, and the line below it when
+  # it has one. Its name takes the field's label width, else the window's LABEL_WIDTH, which a
+  # window of its own may set wider.
+  #
+  # @param rect [Rect] Where.
+  # @param field [MGQ_MpWorld::Form::Field] The switch.
+  # @param enabled [Boolean] Whether it can be used.
+  def draw_switch(rect, field, enabled)
+    label_width = field.label_width || self.class::LABEL_WIDTH
+    contents.font.size = LABEL_SIZE
+    change_color(system_color, enabled)
+    draw_text(rect.x, rect.y, label_width, ROW_HEIGHT, field.label)
+    box = Rect.new(rect.x + label_width, rect.y + 1, rect.width - label_width, ROW_HEIGHT - 2)
+    contents.fill_rect(box, TEXT_BOX_COLOR)
+    contents.font.size = VALUE_SIZE
+    change_color(normal_color, enabled)
+    outcome = field.choices[@form[field.key].to_i].to_s
+    draw_text(box.x + TEXT_INSET, rect.y, box.width - TEXT_INSET * 2, ROW_HEIGHT, cut("< #{outcome} >", box.width - TEXT_INSET * 2), 1)
+    return unless field.note
+
+    contents.font.size = DESCRIPTION_SIZE
+    change_color(normal_color, enabled)
+    draw_text(rect.x + TEXT_INSET, rect.y + ROW_HEIGHT, rect.width - TEXT_INSET, DESCRIPTION_LINE_HEIGHT, cut(field.note_of(@form), rect.width - TEXT_INSET))
+  end
+
   # Draws a checkbox and its label, the box filled while ticked.
   #
   # @param rect [Rect] Where.
@@ -3052,18 +3121,38 @@ class Window_MpWorldForm < Window_Selectable
     move_row(-1, wrap)
   end
 
-  # Moves to the field at the right on a row of two.
+  # Turns a switch to its next outcome, else moves to the field at the right on a row of two.
   #
   # @param _wrap [Boolean] Unused.
   def cursor_right(_wrap = false)
-    move_side(:right)
+    turn_or_move(1, :right)
   end
 
-  # Moves to the field at the left on a row of two.
+  # Turns a switch to its previous outcome, else moves to the field at the left on a row of two.
   #
   # @param _wrap [Boolean] Unused.
   def cursor_left(_wrap = false)
-    move_side(:left)
+    turn_or_move(-1, :left)
+  end
+
+  # Turns the switch the cursor is on, unless the arrow points at the other field of its row, where
+  # it moves as on any row of two; a switch that cannot be used buzzes.
+  #
+  # @param step [Integer] 1 for the next outcome, -1 for the previous.
+  # @param side [Symbol] :right or :left, where the arrow points.
+  def turn_or_move(step, side)
+    return move_side(side) unless field && field.kind == :switch && @on_turn && field.side != opposite(side)
+    return Sound.play_buzzer unless @form.enabled?(field)
+
+    @on_turn.call(step)
+  end
+
+  # Names the other side of a row of two.
+  #
+  # @param side [Symbol] :left or :right.
+  # @return [Symbol] :right or :left.
+  def opposite(side)
+    side == :left ? :right : :left
   end
 
   # Keeps the cursor still, since the form fits on one page.

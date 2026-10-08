@@ -2,7 +2,8 @@
 //  WorldDirectory.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-08: Logged the type, code and stack of an action's unexpected failure
+//      Paulinchen  2026-10-08: Made worlds of a type, Classic or Raid, with how a Raid World shares companions, and told the game script both at the end of each world's line
+//                            - Logged the type, code and stack of an action's unexpected failure
 //                            - Logged whether the relay kept the Mod Config options sent, or the version whose options it keeps instead
 //      Paulinchen  2026-10-07: Logged the list and the catalog when they change, every action with its result or why it was refused, and each mod's download
 //      Paulinchen  2026-10-06: Started its threads through Threads and read who plays through Player.Current, both shared with the world's other parts
@@ -327,7 +328,7 @@ internal sealed class WorldDirectory
     /// <summary>
     /// Describes the list for the game script.
     /// </summary>
-    /// <returns><c>state</c> ("loading", "ready" or "failed"), <c>error</c> and <c>admin</c> (1 for an admin), then one line per world and player: <c>world</c>, id, seats, players online, creator's id, when last active, creator's name, name, starting save ("none", "pending" or "ready"), 1 when hidden, 1 when new players choose where to start, 1 without a password, 1 when featured, 1 when only games with the same data may enter, the creator's game data, the mods it needs, its description, the creator's hashes of required mods outside the catalog, its mod settings; <c>member</c>, id, 1 when online, name; each separated by tabs.</returns>
+    /// <returns><c>state</c> ("loading", "ready" or "failed"), <c>error</c> and <c>admin</c> (1 for an admin), then one line per world and player: <c>world</c>, id, seats, players online, creator's id, when last active, creator's name, name, starting save ("none", "pending" or "ready"), 1 when hidden, 1 when new players choose where to start, 1 without a password, 1 when featured, 1 when only games with the same data may enter, the creator's game data, the mods it needs, its description, the creator's hashes of required mods outside the catalog, its mod settings, its type ("classic" or "raid"), how a Raid World shares companions ("off", "story" or "all"); <c>member</c>, id, 1 when online, name; each separated by tabs.</returns>
     public string DescribeList()
     {
         lock (_gate)
@@ -490,8 +491,10 @@ internal sealed class WorldDirectory
     /// <param name="choose">Whether each new player chooses where to start.</param>
     /// <param name="start">The starting save's files, each named as new players get it and where it is read from; empty for none.</param>
     /// <param name="about">What the creator tells about it, <see langword="null"/> for nothing.</param>
+    /// <param name="type">Its type, see <see cref="WorldType"/>.</param>
+    /// <param name="share">How a Raid World shares companions, see <see cref="CompanionSharing"/>.</param>
     /// <returns><see langword="false"/> while another action runs.</returns>
-    public bool Create(string name, string password, int seats, bool hidden, bool choose, IReadOnlyList<(string Name, string Path)> start, WorldAbout? about = null) => Start("create", () =>
+    public bool Create(string name, string password, int seats, bool hidden, bool choose, IReadOnlyList<(string Name, string Path)> start, WorldAbout? about = null, string type = WorldType.Classic, string share = CompanionSharing.Off) => Start("create", () =>
     {
         var (key, playerName) = Me();
         var token = JoinCode.NewToken();
@@ -503,8 +506,8 @@ internal sealed class WorldDirectory
 
         var open = password.Length == 0;
         Log.Write($"making world {Log.Short(id)} {OnOneField(name)}: {seats.ToString(CultureInfo.InvariantCulture)} seats, {(box != null ? $"starting save of {start.Count.ToString(CultureInfo.InvariantCulture)} file(s), {box.Length.ToString(CultureInfo.InvariantCulture)} bytes" : "no starting save")}, mods '{OnOneField(about?.Mods ?? string.Empty)}', settings '{OnOneField(about?.Settings ?? string.Empty)}'");
-        client.Create(id, name, seats, key, playerName, WorldKeys.AuthHashOf(WorldKeys.AuthKeyOf(token)), worldLock, box != null, hidden, choose, open, about ?? WorldAbout.None);
-        Log.Write($"made world {Log.Short(id)}{(hidden ? ", hidden" : string.Empty)}{(choose ? ", players choose where to start" : string.Empty)}{(open ? ", without a password" : string.Empty)}{(about?.Strict == true ? ", for games with the same data only" : string.Empty)}");
+        client.Create(id, name, seats, key, playerName, WorldKeys.AuthHashOf(WorldKeys.AuthKeyOf(token)), worldLock, box != null, hidden, choose, open, about ?? WorldAbout.None, type, share);
+        Log.Write($"made world {Log.Short(id)}, {type}{(type == WorldType.Raid ? $" sharing {share}" : string.Empty)}{(hidden ? ", hidden" : string.Empty)}{(choose ? ", players choose where to start" : string.Empty)}{(open ? ", without a password" : string.Empty)}{(about?.Strict == true ? ", for games with the same data only" : string.Empty)}");
 
         if (box != null)
         {
@@ -864,7 +867,7 @@ internal sealed class WorldDirectory
                 .Append('\t').Append(world.Choose ? '1' : '0').Append('\t').Append(world.Open ? '1' : '0').Append('\t').Append(world.Featured ? '1' : '0')
                 .Append('\t').Append(world.About.Strict ? '1' : '0').Append('\t').Append(OnOneField(world.About.Data)).Append('\t').Append(OnOneField(world.About.Mods))
                 .Append('\t').Append(OnOneField(world.About.Description)).Append('\t').Append(OnOneField(world.About.ModHashes))
-                .Append('\t').Append(OnOneField(world.About.Settings)).Append('\n');
+                .Append('\t').Append(OnOneField(world.About.Settings)).Append('\t').Append(OnOneField(world.Type)).Append('\t').Append(OnOneField(world.Share)).Append('\n');
 
             foreach (var member in world.Members.OrderByDescending(member => member.Online).ThenBy(member => member.Name, StringComparer.OrdinalIgnoreCase))
             {

@@ -2,7 +2,9 @@
 //  DirectoryClient.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-08: Read whether the relay kept the Mod Config options sent, and the version whose options it keeps
+//      Paulinchen  2026-10-08: Named the Raid Worlds this game plays in the X-MGQ-Features header of every request
+//                            - Made worlds of a type, Classic or Raid, with how a Raid World shares companions, and read both from the list
+//                            - Read whether the relay kept the Mod Config options sent, and the version whose options it keeps
 //      Paulinchen  2026-10-07: Logged every request with its method, route and outcome, and its time when it failed or was slow, a repeated request only once its outcome changed
 //                            - Sent the world's auth key in the X-MGQ-Auth header instead of the address, and kept the outcomes last logged to a bounded number
 //      Paulinchen  2026-10-06: Sent the player's key in the X-MGQ-Player header, and no longer in the addresses of the directory and the trades
@@ -62,6 +64,16 @@ internal sealed class DirectoryClient
     /// The request header that carries the world's auth key, which an address would leave in logs.
     /// </summary>
     public const string AuthHeader = "X-MGQ-Auth";
+
+    /// <summary>
+    /// The request header that names what this game plays, which the relay keeps games without it out of Raid Worlds by.
+    /// </summary>
+    public const string FeaturesHeader = "X-MGQ-Features";
+
+    /// <summary>
+    /// What this game names in <see cref="FeaturesHeader"/>, separated by commas.
+    /// </summary>
+    public const string Features = WorldType.Raid;
 
     /// <summary>
     /// How many outcomes last logged are kept; once full they are forgotten, which only has a repeated request log once more.
@@ -170,7 +182,9 @@ internal sealed class DirectoryClient
                 Flag(world, "open"),
                 Flag(world, "featured"),
                 new WorldAbout(Text(world, "description"), Text(world, "mods"), Text(world, "data"), Flag(world, "strict"), Text(world, "modHashes"), Text(world, "settings")),
-                members));
+                members,
+                Text(world, "type") is { Length: > 0 } type ? type : WorldType.Classic,
+                Text(world, "share") is { Length: > 0 } share ? share : CompanionSharing.Off));
         }
 
         return new WorldListing(worlds, Flag(document.RootElement, "admin"));
@@ -205,8 +219,10 @@ internal sealed class DirectoryClient
     /// <param name="choose">Whether each new player chooses where to start.</param>
     /// <param name="open">Whether its password is empty, so the games enter without asking for it.</param>
     /// <param name="about">What its creator tells about it.</param>
+    /// <param name="type">Its type, see <see cref="WorldType"/>.</param>
+    /// <param name="share">How a Raid World shares companions, see <see cref="CompanionSharing"/>.</param>
     /// <exception cref="DirectoryException">The directory could not be reached or refused the world.</exception>
-    public void Create(string id, string name, int seats, string playerKey, string playerName, string authHash, WorldLock worldLock, bool start, bool hidden, bool choose, bool open, WorldAbout about)
+    public void Create(string id, string name, int seats, string playerKey, string playerName, string authHash, WorldLock worldLock, bool start, bool hidden, bool choose, bool open, WorldAbout about, string type = WorldType.Classic, string share = CompanionSharing.Off)
     {
         var body = Json(writer =>
         {
@@ -236,6 +252,8 @@ internal sealed class DirectoryClient
             writer.WriteBoolean("strict", about.Strict);
             writer.WriteString("modHashes", about.ModHashes);
             writer.WriteString("settings", about.Settings);
+            writer.WriteString("type", type);
+            writer.WriteString("share", share);
         });
 
         using var _ = Send(HttpMethod.Post, _worlds, $"world create {Log.Short(id)}", body, playerKey);
@@ -665,6 +683,7 @@ internal sealed class DirectoryClient
     private static HttpResponseMessage Exchange(HttpRequestMessage request, HttpClient http, string route, string? repeatKey = null)
     {
         var started = Stopwatch.GetTimestamp();
+        request.Headers.Add(FeaturesHeader, Features);
 
         try
         {
@@ -838,7 +857,46 @@ internal sealed record WorldListing(IReadOnlyList<ListedWorld> Worlds, bool Admi
 /// <param name="Featured">Whether it is one of the relay's own worlds, which an admin made.</param>
 /// <param name="About">What its creator tells about it.</param>
 /// <param name="Members">Everyone who ever joined it.</param>
-internal sealed record ListedWorld(string Id, string Name, int Seats, string CreatorId, string CreatorName, int Online, long Active, string Start, bool Hidden, bool Choose, bool Open, bool Featured, WorldAbout About, IReadOnlyList<ListedMember> Members);
+/// <param name="Type">Its type, see <see cref="WorldType"/>; Classic for a world the relay names none of.</param>
+/// <param name="Share">How a Raid World shares companions, see <see cref="CompanionSharing"/>; off for one the relay names none of.</param>
+internal sealed record ListedWorld(string Id, string Name, int Seats, string CreatorId, string CreatorName, int Online, long Active, string Start, bool Hidden, bool Choose, bool Open, bool Featured, WorldAbout About, IReadOnlyList<ListedMember> Members, string Type, string Share);
+
+/// <summary>
+/// A world's types, as the relay names them, fixed once the world is made.
+/// </summary>
+internal static class WorldType
+{
+    /// <summary>
+    /// A world where each party plays its own story, as every world before Raid Worlds.
+    /// </summary>
+    public const string Classic = "classic";
+
+    /// <summary>
+    /// A world whose players all play one story together.
+    /// </summary>
+    public const string Raid = "raid";
+}
+
+/// <summary>
+/// How a Raid World shares companions, as the relay names it, fixed once the world is made.
+/// </summary>
+internal static class CompanionSharing
+{
+    /// <summary>
+    /// No companion is shared, and every Classic world.
+    /// </summary>
+    public const string Off = "off";
+
+    /// <summary>
+    /// The story's companions are shared.
+    /// </summary>
+    public const string Story = "story";
+
+    /// <summary>
+    /// The story's companions and those recruited in battle are shared.
+    /// </summary>
+    public const string All = "all";
+}
 
 /// <summary>
 /// A world's locked token, with what a player who knows only the world's id needs to enter it.

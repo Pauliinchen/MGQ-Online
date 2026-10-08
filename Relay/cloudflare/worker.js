@@ -2,7 +2,8 @@
 //  worker.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-08: Dropped a game's chat lines past the chat's rate limit, answering each with "slow chat", and ignored a chat frame without a line instead of closing the connection
+//      Paulinchen  2026-10-08: Passed what a game names in the X-MGQ-Features header on to the directory as it enters a world room
+//                            - Dropped a game's chat lines past the chat's rate limit, answering each with "slow chat", and ignored a chat frame without a line instead of closing the connection
 //                            - Logged a chat line the directory could not keep instead of letting the error escape the world room
 //      Paulinchen  2026-10-07: Handed the chat lines the games mirror to the directory, and told every game of a world what an admin said
 //                            - Passed the X-MGQ-Auth header on to the world rooms and the directory
@@ -37,8 +38,8 @@ import { routeIs } from "../core/http.js";
 import { ModCatalog, handleModRequest } from "../core/mods.js";
 import { TradeBook, handleTradeRequest } from "../core/trades.js";
 import {
-  AUTH_HEADER, CHAT_SLOW, CLOSE, IN, OUT, PAIRED, PING, PLAYER_HEADER, PONG, RATE_LIMITS, REFUSAL_HEADER, RateLimiter, admit, chatLineOf, chatText,
-  newPeer, newWorldPeer, nextDeadline, nextWorldDeadline, overdue, parseRoute, presenceOf, replacedBy, routeWorldMessage, seatChangeText, seatText,
+  AUTH_HEADER, CHAT_SLOW, CLOSE, FEATURES_HEADER, IN, OUT, PAIRED, PING, PLAYER_HEADER, PONG, RATE_LIMITS, REFUSAL_HEADER, RateLimiter, admit, chatLineOf, chatText,
+  newPeer, newWorldPeer, nextDeadline, nextWorldDeadline, overdue, parseFeatures, parseRoute, presenceOf, replacedBy, routeWorldMessage, seatChangeText, seatText,
   takeChatLine, takeMessage, takeSeat, worldOverdue,
 } from "../core/relay.js";
 
@@ -362,8 +363,8 @@ export class Directory extends DurableObject {
     }
 
     if (url.pathname === "/internal/admit") {
-      const { id, player, auth, address } = await request.json();
-      return json(200, await this.directory.admit(id, player, auth, address ?? null));
+      const { id, player, auth, address, features } = await request.json();
+      return json(200, await this.directory.admit(id, player, auth, address ?? null, Array.isArray(features) ? features : []));
     }
 
     if (url.pathname === "/internal/presence") {
@@ -634,7 +635,8 @@ export class World extends DurableObject {
 
     const route = parseRoute(url, request.headers.get(PLAYER_HEADER), request.headers.get(AUTH_HEADER));
     const address = request.headers.get(ADDRESS_HEADER);
-    const answer = await internal(directoryOf(this.env), "admit", { id: route.roomId, player: route.player, auth: route.auth, address });
+    const features = parseFeatures(request.headers.get(FEATURES_HEADER));
+    const answer = await internal(directoryOf(this.env), "admit", { id: route.roomId, player: route.player, auth: route.auth, address, features });
 
     if (answer.status !== 200) {
       return new Response(answer.body.error, { status: answer.status, headers: answer.body.code ? { [REFUSAL_HEADER]: answer.body.code } : {} });

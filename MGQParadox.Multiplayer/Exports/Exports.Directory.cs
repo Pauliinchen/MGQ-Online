@@ -2,6 +2,7 @@
 //  Exports.Directory.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-08: Took the world's type and how a Raid World shares companions in mp_dir_create
 //      Paulinchen  2026-10-06: Added mp_dir_unlock_code, which opens a world with its world code
 //                            - Added mp_dir_set_settings, which replaces a world's mod settings, and left them out of mp_dir_edit
 //                            - Took the creator's hashes of required mods outside the catalog and its mod settings in mp_dir_create and mp_dir_edit
@@ -122,14 +123,18 @@ internal static unsafe partial class Exports
     /// <param name="strict">1 when only games with the same data may enter, 0 when every game may.</param>
     /// <param name="modHashes">The creator's hashes of required mods outside the mod catalog, <c>name=hash</c> pairs separated by semicolons, UTF-8 and null-terminated; empty for none.</param>
     /// <param name="settings">The creator's settings of the mods the world names, <c>key=type:value</c> pairs separated by semicolons, UTF-8 and null-terminated; empty for none.</param>
+    /// <param name="type">The world's type, "classic" or "raid", UTF-8 and null-terminated; empty for Classic.</param>
+    /// <param name="share">How a Raid World shares companions, "off", "story" or "all", UTF-8 and null-terminated; empty for off.</param>
     /// <returns>1 when started, 0 while another action runs, for seats out of range or when it failed.</returns>
     [UnmanagedCallersOnly(EntryPoint = "mp_dir_create", CallConvs = [typeof(CallConvStdcall)])]
-    public static int DirectoryCreate(byte* name, byte* password, int seats, int hidden, int choose, byte* start, byte* description, byte* mods, byte* data, int strict, byte* modHashes, byte* settings)
+    public static int DirectoryCreate(byte* name, byte* password, int seats, int hidden, int choose, byte* start, byte* description, byte* mods, byte* data, int strict, byte* modHashes, byte* settings, byte* type, byte* share)
     {
         try
         {
             var about = new WorldAbout(Text(description), Text(mods), Text(data), strict == 1, Text(modHashes), Text(settings));
-            return seats is >= WorldCode.MinSeats and <= WorldCode.MaxSeats && WorldDirectory.Current.Create(Text(name), Text(password), seats, hidden == 1, choose == 1, StartFiles(Text(start)), about) ? 1 : 0;
+            var worldType = Text(type) is { Length: > 0 } named ? named : WorldType.Classic;
+            var sharing = Text(share) is { Length: > 0 } shared ? shared : CompanionSharing.Off;
+            return seats is >= WorldCode.MinSeats and <= WorldCode.MaxSeats && WorldDirectory.Current.Create(Text(name), Text(password), seats, hidden == 1, choose == 1, StartFiles(Text(start)), about, worldType, sharing) ? 1 : 0;
         }
         catch (Exception ex)
         {

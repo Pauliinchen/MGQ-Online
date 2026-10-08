@@ -2,6 +2,7 @@
 #  coop_choices.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-08: Left drawing and turning the switches to Window_MpWorldForm, which the world screen's forms share
 #      Paulinchen  2026-10-07: Created
 #
 #----------------------------------------------------------------
@@ -771,57 +772,10 @@ module MGQ_MpCoopChoices
 end
 
 # The screen of the story's choices: a switch per choice, the line of what the picked outcome
-# brings below each, and the buttons, drawn as the world screen's forms.
+# brings below each, and the buttons, drawn and turned as the world screen's forms.
 class Window_MpStoryChoices < Window_MpWorldForm
-  # Width of the choices' names.
+  # Width of the choices' names, which Window_MpWorldForm#draw_switch reads.
   LABEL_WIDTH = 150
-
-  # The block that turns a switch, called with the step.
-  attr_accessor :on_turn
-
-  # Tells how high a field's row is: a switch has its line below.
-  #
-  # @param field [MGQ_MpWorld::Form::Field] The field.
-  # @return [Integer] The height.
-  def height_of(field)
-    field.kind == :switch ? ROW_HEIGHT + DESCRIPTION_LINE_HEIGHT : super
-  end
-
-  # Draws a field, a switch as its name, its outcome between arrows and the line below.
-  #
-  # @param index [Integer] The field's index.
-  def draw_item(index)
-    field = @form.fields[index]
-    return super unless field.kind == :switch
-
-    rect = item_rect(index)
-    contents.font.size = LABEL_SIZE
-    change_color(system_color)
-    draw_text(rect.x, rect.y, LABEL_WIDTH, ROW_HEIGHT, field.label)
-    box = Rect.new(rect.x + LABEL_WIDTH, rect.y + 1, rect.width - LABEL_WIDTH, ROW_HEIGHT - 2)
-    contents.fill_rect(box, TEXT_BOX_COLOR)
-    contents.font.size = VALUE_SIZE
-    change_color(normal_color)
-    outcome = field.choices[@form[field.key].to_i].to_s
-    draw_text(box.x + TEXT_INSET, rect.y, box.width - TEXT_INSET * 2, ROW_HEIGHT, cut("< #{outcome} >", box.width - TEXT_INSET * 2), 1)
-    contents.font.size = DESCRIPTION_SIZE
-    change_color(normal_color)
-    draw_text(rect.x + TEXT_INSET, rect.y + ROW_HEIGHT, rect.width - TEXT_INSET, DESCRIPTION_LINE_HEIGHT, cut(field.note_of(@form), rect.width - TEXT_INSET))
-  end
-
-  # Turns a switch to its next outcome, else moves to the field at the right.
-  #
-  # @param wrap [Boolean] Unused.
-  def cursor_right(wrap = false)
-    field && field.kind == :switch && @on_turn ? @on_turn.call(1) : super
-  end
-
-  # Turns a switch to its previous outcome, else moves to the field at the left.
-  #
-  # @param wrap [Boolean] Unused.
-  def cursor_left(wrap = false)
-    field && field.kind == :switch && @on_turn ? @on_turn.call(-1) : super
-  end
 end
 
 # The screen of the story's choices, opened over the map.

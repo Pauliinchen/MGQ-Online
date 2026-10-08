@@ -2,7 +2,8 @@
 //  WorldSession.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-08: Logged the traffic counted so far as another world is entered, and as the process exits or a thread throws out
+//      Paulinchen  2026-10-08: Stopped for good once the relay keeps the game out of a Raid World, which it cannot play, telling to update the mod
+//                            - Logged the traffic counted so far as another world is entered, and as the process exits or a thread throws out
 //                            - Dropped the chat lines past 2 a second after a burst of 10, as the relay does, and logged the relay dropping one
 //      Paulinchen  2026-10-07: Logged the messages sent and received as one line about every minute, through WorldTraffic, instead of a line per message
 //                            - Mirrored the chat lines the game script says to the relay as text frames, and handed the lines the relay says for an admin to the game script as chat entries
@@ -156,6 +157,11 @@ internal sealed class WorldSession
     private const string MembersFull = "The world has as many players as it may.";
 
     /// <summary>
+    /// Why a Raid World cannot be entered by a game the relay finds without the features it needs.
+    /// </summary>
+    private const string RaidUnsupported = "This world is a Raid World, which this version of the mod cannot play. Update the mod.";
+
+    /// <summary>
     /// Why the game waits while the world's creator still uploads its starting save.
     /// </summary>
     private const string StartPending = "The world's starting save is still on its way. The game tries again until it arrived.";
@@ -184,6 +190,11 @@ internal sealed class WorldSession
     /// The refusal code of a world whose starting save is still on its way.
     /// </summary>
     private const string PendingCode = "pending";
+
+    /// <summary>
+    /// The refusal code of a Raid World entered without naming it in the features header.
+    /// </summary>
+    private const string RaidCode = "raid_unsupported";
 
     /// <summary>
     /// The close code of a connection whose player the creator removed.
@@ -657,6 +668,7 @@ internal sealed class WorldSession
         HttpStatusCode.Forbidden when code == MembersCode => MembersFull,
         HttpStatusCode.Forbidden => Removed,
         HttpStatusCode.Unauthorized => TokenMismatch,
+        HttpStatusCode.BadRequest when code == RaidCode => RaidUnsupported,
         HttpStatusCode.BadRequest => "The relay turned the request down. Update the mod.",
         _ => null,
     };

@@ -2,7 +2,9 @@
 #  world_data_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-08: Covered Shared Mod Settings in the forms of a new world and of the creator's own world, and in a world's details
+#      Paulinchen  2026-10-08: Expected the starting point in the World panel of the new world's form, which keeps the form on one page with the world type, and the longer call of mp_dir_create
+#                            - Checked that a new world goes to the DLL as Classic, or as a Raid World with how it shares companions
+#                            - Covered Shared Mod Settings in the forms of a new world and of the creator's own world, and in a world's details
 #                            - Expected the details to name the mods of a world's options, and the edit form to say when its mod settings apply
 #                            - Read cancel past the capture, as the screens now ask it through MGQ_MpUi
 #      Paulinchen  2026-10-07: Expected cut texts to end in three dots
@@ -244,7 +246,8 @@ check("a new world needs no description, no mods, and keeps differing games out 
 description = form.fields.find { |field| field.key == :description }
 check("the description is a box of several lines in a panel of its own", [description.kind, description.lines, description.group, description.max_chars], [:area, 4, "Description", MGQ_MpWorld::MAX_DESCRIPTION_CHARS])
 check("the mods and the mismatch checkbox share the Game data panel", [:mods, :mismatch].map { |key| field = form.fields.find { |candidate| candidate.key == key }; [field.kind, field.label, field.group] }, [[:mods, "Mods", "Game data"], [:check, "Allow data mismatch", "Game data"]])
-check("the starting point has its own panel", form.fields.select { |field| field.group == "Starting point" }.map { |field| field.label }, ["Shared save", "Player's choice", "Save"])
+check("the world type and the starting point share the World panel", form.fields.select { |field| field.group == "World" }.map { |field| field.label },
+      ["Name", "Password", "Max Players", "Hidden", "World type", "Sharing companions", "Shared save", "Player's choice", "Save"])
 check("a description is tidied", form.check(description, "  A slow run.  "), ["A slow run.", nil])
 check("and may be empty", form.check(description, "  "), ["", nil])
 check("while a name may not", form.check(form.fields[0], " ")[1], "The world needs a name.")
@@ -291,10 +294,20 @@ check("Shared Mod Settings sits beside Allow data mismatch, unticked, and says w
 strict_form[:shared] = true
 scene.create_world
 check("ticked, the new world shares the creator's mod settings, which their game reads once they play in it", $calls.last[2][11], "@shared=o:1\0")
+check("a new world is Classic, sharing no companions, unless the form says otherwise", $calls.last[2][12..13], ["classic\0", "off\0"])
+strict_form[:share] = 2
+scene.create_world
+check("a Classic world shares no companions whatever the greyed-out switch shows", $calls.last[2][12..13], ["classic\0", "off\0"])
+strict_form[:type] = 1
+scene.create_world
+check("a Raid World goes with how it shares companions", $calls.last[2][12..13], ["raid\0", "all\0"])
+check("which the screen keeps for the world's folder", scene.instance_variable_get(:@creating_kind), ["raid", "all"])
+strict_form[:type] = 0
+strict_form[:share] = 0
 
 # The directory.
 MGQ_MpWorld::Directory.create("W", "p", 4, false, false, "", :description => "A slow run.", :mods => "Some Mod", :data => modded, :strict => true)
-check("create hands the description, the mods, the game data and the rule to the DLL", [$calls.last[1], $calls.last[2][6..9]], ["pplllpppplpp", ["A slow run.\0", "Some Mod\0", "#{modded}\0", 1]])
+check("create hands the description, the mods, the game data and the rule to the DLL", [$calls.last[1], $calls.last[2][6..9]], ["pplllpppplpppp", ["A slow run.\0", "Some Mod\0", "#{modded}\0", 1]])
 MGQ_MpWorld::Directory.create("W", "p", 4, false, false, "")
 check("or nothing", $calls.last[2][6..9], ["\0", "\0", "\0", 0])
 $dll["mp_dir_list"] = "state=ready\n\n" \
@@ -467,7 +480,7 @@ groups = []
 rects = window.places(form.fields) { |group, y, height| groups << [group, y, height] }
 key = lambda { |name| rects[form.fields.index { |field| field.key == name }] }
 check("every field has a place, and the form fits its window", [rects.compact.size, rects.map { |rect| rect.y + rect.height }.max <= 360], [form.fields.size, true])
-check("the panels come in the form's order, one below the other", [groups.map { |group| group[0] }, groups.each_cons(2).all? { |upper, lower| upper[1] + upper[2] < lower[1] }], [["World", "Starting point", "Game data", "Description"], true])
+check("the panels come in the form's order, one below the other", [groups.map { |group| group[0] }, groups.each_cons(2).all? { |upper, lower| upper[1] + upper[2] < lower[1] }], [["World", "Game data", "Description"], true])
 check("two fields of a row share it without touching", [key.call(:password).y == key.call(:seats).y, key.call(:password).x + key.call(:password).width < key.call(:seats).x], [true, true])
 check("the description takes four lines across its panel", [key.call(:description).height, key.call(:description).width], [4 * 16 + 2, 380])
 check("the button comes below the last panel, across the window", [key.call(:confirm).y > groups.last[1] + groups.last[2], key.call(:confirm).width], [true, 386])

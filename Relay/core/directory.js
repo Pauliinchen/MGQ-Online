@@ -2,7 +2,9 @@
 //  directory.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-08: Kept the lines of a world's chat one after another, so lines said at once no longer overwrite each other
+//      Paulinchen  2026-10-08: Kept a world's type, Classic or Raid, and how a Raid World shares companions, both fixed once it is made
+//                            - Kept games that do not name Raid Worlds in X-MGQ-Features out of them
+//                            - Kept the lines of a world's chat one after another, so lines said at once no longer overwrite each other
 //                            - Answered an admin's line for a world deleted meanwhile with 404
 //      Paulinchen  2026-10-07: Kept each world's chat, the lines its games mirror and the lines admins say, which admins read and write
 //                            - Took the auth key for a starting save from the X-MGQ-Auth header too
@@ -52,7 +54,7 @@
 
 import { badRequest, notFound, withJson } from "./http.js";
 import { CONTROL_CHARACTERS, ID, cleanText, hexOf, isHash, isId } from "./ids.js";
-import { MAX_CHAT_LENGTH, RATE_LIMITS, RateLimiter, VERSION, WORLD_SEATS } from "./relay.js";
+import { FEATURE, MAX_CHAT_LENGTH, RATE_LIMITS, RateLimiter, VERSION, WORLD_SEATS } from "./relay.js";
 
 /**
  * The limits the directory keeps.
@@ -97,12 +99,25 @@ export const REFUSAL = Object.freeze({
   pending: "pending",
   rate: "rate",
   storage: "storage",
+  raid: "raid_unsupported",
 });
 
 /**
  * How far a world is with its starting save: it has none, its creator is still uploading it, or it is ready.
  */
 export const START = Object.freeze({ none: "none", pending: "pending", ready: "ready" });
+
+/**
+ * A world's type: a Classic one, where each party plays its own story, or a Raid World, where the
+ * whole world plays one. A world kept without a type is Classic.
+ */
+export const WORLD_TYPE = Object.freeze({ classic: "classic", raid: "raid" });
+
+/**
+ * How a Raid World shares companions: not at all, its story companions, or its story companions
+ * and battle recruits. A world kept without it, and every Classic one, shares none.
+ */
+export const SHARING = Object.freeze({ off: "off", story: "story", all: "all" });
 
 /**
  * Lowercase hexadecimal of any length.
@@ -228,7 +243,7 @@ export class Directory {
   /**
    * Makes a world.
    *
-   * @param {object} request The world: id, name, seats, the creator's player key and name, the hash of the auth key, the lock, whether a starting save follows, whether it is hidden from the list, whether each new player chooses where to start, whether it has no password, whether it is featured, its description, the mods it needs, the creator's game data, whether only games with the same data may enter, the hashes of its required mods outside the catalog and its mod settings.
+   * @param {object} request The world: id, name, seats, the creator's player key and name, the hash of the auth key, the lock, whether a starting save follows, whether it is hidden from the list, whether each new player chooses where to start, whether it has no password, whether it is featured, its description, the mods it needs, the creator's game data, whether only games with the same data may enter, the hashes of its required mods outside the catalog, its mod settings, its type and how a Raid World shares companions.
    * @param {string | null} [address] The asking game's address, whose worlds a rate limit counts; null for none.
    * @returns {Promise<{status: number, body: object}>} The world's id, or why it was refused.
    */
@@ -266,6 +281,7 @@ export class Directory {
 
     const now = this.clock();
     const creatorName = cleanName(request.playerName, this.limits);
+    const raid = request.type === WORLD_TYPE.raid;
 
     await this.store.put({
       id: request.id,
@@ -285,6 +301,8 @@ export class Directory {
       strict: request.strict === true,
       modHashes: request.modHashes ?? "",
       settings: cleanSettings(request.settings),
+      type: raid ? WORLD_TYPE.raid : WORLD_TYPE.classic,
+      share: raid ? (request.share ?? SHARING.off) : SHARING.off,
       created: now,
       active: now,
       members: { [creator]: { name: creatorName, seen: now } },
@@ -409,9 +427,10 @@ export class Directory {
    * @param {unknown} key The player's key.
    * @param {unknown} auth The auth key the player's game made from the world's token.
    * @param {string | null} [address] The game's address, whose entering a rate limit counts; null for none.
+   * @param {string[]} [features] What the game names in FEATURES_HEADER; released games name nothing.
    * @returns {Promise<{status: number, body: object, seats?: number, player?: string}>} The world's seats and the player's id, or why not.
    */
-  async admit(id, key, auth, address = null) {
+  async admit(id, key, auth, address = null, features = []) {
     if (!this.rates.joins.take(address)) {
       return tooMany();
     }
@@ -420,6 +439,12 @@ export class Directory {
 
     if (refusal) {
       return refusal;
+    }
+
+    // A game that cannot play a Raid World would play it as a Classic one and spoil its story. 400,
+    // since released games retry a 409 as a full world for as long as they run but stop at a 400.
+    if (entry.type === WORLD_TYPE.raid && !features.includes(FEATURE.raid)) {
+      return { status: 400, body: { error: "the world is a Raid World, which this game cannot play", code: REFUSAL.raid } };
     }
 
     if (entry.start === START.pending) {
@@ -801,6 +826,8 @@ export class Directory {
     if (request.strict !== undefined && typeof request.strict !== "boolean") return "strict must be true or false";
     if (request.modHashes !== undefined && !this.modHashesOk(request.modHashes)) return "the mod hashes must be name=hash pairs separated by semicolons";
     if (request.settings !== undefined && !this.settingsOk(request.settings)) return `the mod settings must be a text of at most ${this.limits.maxSettingsLength} characters`;
+    if (request.type !== undefined && !Object.values(WORLD_TYPE).includes(request.type)) return `the type must be ${Object.values(WORLD_TYPE).join(" or ")}`;
+    if (request.share !== undefined && !Object.values(SHARING).includes(request.share)) return `the companion sharing must be ${Object.values(SHARING).join(", ")}`;
     return null;
   }
 
@@ -928,6 +955,8 @@ export function publicView(entry) {
     strict: entry.strict === true,
     modHashes: entry.modHashes ?? "",
     settings: entry.settings ?? "",
+    type: entry.type ?? WORLD_TYPE.classic,
+    share: entry.type === WORLD_TYPE.raid ? (entry.share ?? SHARING.off) : SHARING.off,
     online: entry.online.length,
     created: entry.created,
     active: entry.active,

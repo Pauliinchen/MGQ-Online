@@ -2,7 +2,8 @@
 //  directory.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-08: Covered lines said at once, all kept in order, and an admin's line for a world deleted meanwhile
+//      Paulinchen  2026-10-08: Covered a world's type and companion sharing, fixed once made, and Raid Worlds kept from games that do not name them
+//                            - Covered lines said at once, all kept in order, and an admin's line for a world deleted meanwhile
 //      Paulinchen  2026-10-07: Covered a world's chat: the lines games mirror, the lines admins say, who reads them, the cap and the chat going with the world
 //                            - Covered the auth key header, the cap on removed players, and rate turns taken only after every check
 //                            - Expected 413 for a JSON body over the limit and 404 for an unknown sub-route
@@ -29,7 +30,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { DIRECTORY_LIMITS, Directory, cleanName, handleDirectoryRequest, parseAdmins, playerIdOf, sha256Hex } from "./directory.js";
-import { RateLimiter } from "./relay.js";
+import { FEATURE, RateLimiter, parseFeatures } from "./relay.js";
 
 /**
  * The creator's player key, as games make them.
@@ -128,6 +129,8 @@ test("a made world is listed without its hashes or lock, with the creator as its
   assert.equal(body.worlds[0].choose, false);
   assert.equal(body.worlds[0].open, false);
   assert.equal(body.worlds[0].featured, false);
+  assert.equal(body.worlds[0].type, "classic");
+  assert.equal(body.worlds[0].share, "off");
   assert.equal(JSON.stringify(body).includes("authHash"), false);
   assert.equal(JSON.stringify(body).includes("box"), false);
   assert.notEqual(creator, CREATOR);
@@ -140,7 +143,7 @@ test("a world is refused twice, with bad fields, or beyond a creator's limit", a
   assert.equal((await directory.create(await newWorld())).status, 409);
   assert.equal((await directory.create(await newWorld({ id: "1".repeat(32) }))).status, 429);
 
-  for (const bad of [{ start: "yes" }, { hidden: 1 }, { choose: "no" }, { open: "yes" }, { featured: 1 }, { description: 5 }, { mods: [] }, { data: "A B" }, { data: "x".repeat(161) }, { strict: "yes" }, { seats: 1 }, { seats: 33 }, { name: " " }, { id: "xyz" }, { player: "short" }, { authHash: "00" }, { lock: { salt: "12", iterations: 200_000, box: "ab" } }, { lock: { salt: "12".repeat(16), iterations: 10, box: "ab" } }]) {
+  for (const bad of [{ start: "yes" }, { hidden: 1 }, { choose: "no" }, { open: "yes" }, { featured: 1 }, { description: 5 }, { mods: [] }, { data: "A B" }, { data: "x".repeat(161) }, { strict: "yes" }, { type: "duel" }, { type: true }, { share: "some" }, { share: 1 }, { seats: 1 }, { seats: 33 }, { name: " " }, { id: "xyz" }, { player: "short" }, { authHash: "00" }, { lock: { salt: "12", iterations: 200_000, box: "ab" } }, { lock: { salt: "12".repeat(16), iterations: 10, box: "ab" } }]) {
     assert.equal((await directory.create(await newWorld({ id: "2".repeat(32), player: OTHER, ...bad }))).status, 400, JSON.stringify(bad));
   }
 });
@@ -655,4 +658,51 @@ test("a request the directory refuses anyway costs its address no rate turn", as
   assert.equal((await directory.putStart(WORLD, OTHER, Uint8Array.of(1), "1.2.3.4")).status, 403);
   assert.equal((await directory.putStart(WORLD, CREATOR, new Uint8Array(0), "1.2.3.4")).status, 413);
   assert.equal((await directory.putStart(WORLD, CREATOR, Uint8Array.of(1), "1.2.3.4")).status, 200);
+});
+
+test("a Raid World keeps how it shares companions, a Classic one shares none, and both stay as made", async () => {
+  const { directory } = newDirectory();
+  await directory.create(await newWorld({ type: "raid", share: "story" }));
+  await directory.create(await newWorld({ id: "1".repeat(32), type: "classic", share: "all" }));
+  await directory.create(await newWorld({ id: "2".repeat(32), type: "raid" }));
+
+  const typeOf = async () => Object.fromEntries((await directory.list()).body.worlds.map((world) => [world.id, [world.type, world.share]]));
+  assert.deepEqual(await typeOf(), { [WORLD]: ["raid", "story"], ["1".repeat(32)]: ["classic", "off"], ["2".repeat(32)]: ["raid", "off"] });
+
+  assert.equal((await directory.edit(WORLD, CREATOR, { type: "classic", share: "all", seats: 6 })).status, 200);
+  assert.deepEqual((await typeOf())[WORLD], ["raid", "story"]);
+});
+
+test("a world kept from before types is Classic", async () => {
+  const { directory } = newDirectory();
+  await directory.create(await newWorld());
+  const entry = await directory.store.get(WORLD);
+  delete entry.type;
+  delete entry.share;
+  await directory.store.put(entry);
+
+  const world = (await directory.list()).body.worlds[0];
+  assert.deepEqual([world.type, world.share], ["classic", "off"]);
+  assert.equal((await directory.admit(WORLD, OTHER, AUTH)).status, 200);
+});
+
+test("a Raid World lets in only games that name Raid Worlds among their features", async () => {
+  const { directory } = newDirectory();
+  await directory.create(await newWorld({ type: "raid", share: "all" }));
+
+  assert.deepEqual((await directory.admit(WORLD, OTHER, AUTH)).body, { error: "the world is a Raid World, which this game cannot play", code: "raid_unsupported" });
+  assert.equal((await directory.admit(WORLD, OTHER, AUTH, null, ["trades"])).status, 400);
+  assert.equal((await directory.admit(WORLD, OTHER, AUTH, null, [FEATURE.raid])).status, 200);
+  assert.equal((await directory.admit(WORLD, OTHER, "cd".repeat(32), null, [])).status, 401, "a wrong token is told before the type");
+
+  await directory.create(await newWorld({ id: "1".repeat(32) }));
+  assert.equal((await directory.admit("1".repeat(32), OTHER, AUTH)).status, 200, "a Classic world takes released games as before");
+});
+
+test("parseFeatures reads the features a game names, separated by commas or white space, in lower case", () => {
+  assert.deepEqual(parseFeatures("raid"), ["raid"]);
+  assert.deepEqual(parseFeatures(" Raid, trades  boss "), ["raid", "trades", "boss"]);
+  assert.deepEqual(parseFeatures(""), []);
+  assert.deepEqual(parseFeatures(null), []);
+  assert.deepEqual(parseFeatures(undefined), []);
 });

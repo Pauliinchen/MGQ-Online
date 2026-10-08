@@ -2,7 +2,8 @@
 //  WorldSessionTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-08: Read the relay's chat lines under its lock, and covered chat lines that come too fast and the relay saying so
+//      Paulinchen  2026-10-08: Covered entering a Raid World, which the relay lets in only games that name it in the features header
+//                            - Read the relay's chat lines under its lock, and covered chat lines that come too fast and the relay saying so
 //      Paulinchen  2026-10-07: Covered a chat line mirrored to the relay and an admin's line handed to the game script
 //      Paulinchen  2026-10-06: Covered a player entering the same world from another game, and took the entry the inbox handed out
 //      Paulinchen  2026-10-02: Made the test world with every player starting alike
@@ -251,6 +252,21 @@ public sealed class WorldSessionTests
         var stranger = NewSession(relay.Address);
         stranger.Open(NewCode(4));
         Assert.Contains("no longer exists", AwaitError(stranger)["error"]);
+    }
+
+    /// <summary>
+    /// Asserts that a game enters a Raid World, since it names Raid Worlds in the features header the relay checks.
+    /// </summary>
+    [Fact]
+    public void RaidWorld_LetsThisGameIn()
+    {
+        using var relay = new TestRelay();
+        var made = WorldDirectoryTests.Act(Creator(relay), directory => directory.Create("Raid World", "secret", 4, false, false, [], null, WorldType.Raid, CompanionSharing.All));
+        var session = NewSession(relay.Address);
+
+        session.Open(made["code"]);
+        AwaitState(session, "open");
+        session.Close();
     }
 
     /// <summary>

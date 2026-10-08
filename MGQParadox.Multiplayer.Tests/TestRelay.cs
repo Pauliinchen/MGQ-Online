@@ -2,7 +2,8 @@
 //  TestRelay.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-08: Handed out the mirrored chat lines as a copy taken under the lock, and told any text to every game of a world room
+//      Paulinchen  2026-10-08: Kept a world's type and how a Raid World shares companions, and kept games that do not name Raid Worlds in X-MGQ-Features out of them
+//                            - Handed out the mirrored chat lines as a copy taken under the lock, and told any text to every game of a world room
 //                            - Answered the Mod Config options games send with whether it kept them, as the relay does
 //      Paulinchen  2026-10-07: Kept the chat lines games mirror as text frames, and said an admin's line to every game of a world room
 //                            - Took the world's auth key from the X-MGQ-Auth header too, for the starting save as well
@@ -148,6 +149,11 @@ internal sealed class TestRelay : IDisposable
     /// The version whose Mod Config options the relay keeps instead of those sent; <see langword="null"/> to keep those sent.
     /// </summary>
     public string? KeptModOptionsVersion { get; set; }
+
+    /// <summary>
+    /// What the last request named in the features header, <see langword="null"/> before one named any.
+    /// </summary>
+    public string? LastFeatures { get; private set; }
 
     /// <summary>
     /// How many peers the relay holds in all its rooms.
@@ -340,6 +346,7 @@ internal sealed class TestRelay : IDisposable
     private async Task ServeAsync(HttpListenerContext context)
     {
         var parts = context.Request.Url!.AbsolutePath.Trim('/').Split('/');
+        LastFeatures = context.Request.Headers[DirectoryClient.FeaturesHeader] ?? LastFeatures;
 
         if (!context.Request.IsWebSocketRequest && parts is ["v1", "worlds", ..])
         {
@@ -791,6 +798,8 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
             Strict = body["strict"]?.GetValue<bool>() == true,
             ModHashes = body["modHashes"]?.GetValue<string>() ?? string.Empty,
             Settings = body["settings"]?.GetValue<string>() ?? string.Empty,
+            Type = body["type"]?.GetValue<string>() ?? WorldType.Classic,
+            Share = body["share"]?.GetValue<string>() ?? CompanionSharing.Off,
         };
 
         return (201, new JsonObject { ["id"] = id });
@@ -913,6 +922,8 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
             ["strict"] = world.Strict,
             ["modHashes"] = world.ModHashes,
             ["settings"] = world.Settings,
+            ["type"] = world.Type,
+            ["share"] = world.Share,
             ["online"] = online.Count,
             ["created"] = 0,
             ["active"] = 0,
@@ -951,6 +962,13 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
             if (world.Bans.Contains(playerId))
             {
                 Refuse(context, 403);
+                return;
+            }
+
+            if (world.Type == WorldType.Raid && context.Request.Headers[DirectoryClient.FeaturesHeader]?.Split(',').Contains(WorldType.Raid) != true)
+            {
+                context.Response.Headers["X-MGQ-Refusal"] = "raid_unsupported";
+                Refuse(context, 400);
                 return;
             }
 
@@ -1345,6 +1363,16 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
         /// The creator's settings of the mods the world names.
         /// </summary>
         public string Settings { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Its type, see <see cref="WorldType"/>.
+        /// </summary>
+        public string Type { get; init; } = WorldType.Classic;
+
+        /// <summary>
+        /// How a Raid World shares companions, see <see cref="CompanionSharing"/>.
+        /// </summary>
+        public string Share { get; init; } = CompanionSharing.Off;
 
         /// <summary>
         /// Whether only games with the same data may enter.

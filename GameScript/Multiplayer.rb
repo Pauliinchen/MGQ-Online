@@ -2,7 +2,8 @@
 #  Multiplayer.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-08: Told whether a key or the left mouse button is held, for the chat log's tabs and its size
+#      Paulinchen  2026-10-08: Named mp_dir_create with the world's type and how a Raid World shares companions
+#                            - Told whether a key or the left mouse button is held, for the chat log's tabs and its size
 #                            - Took a key nobody asked about in the frame before as let go, so the numpad's 0 that closed a screen closes the next one too
 #                            - Named mp_update_game, which starts the mod's updater, and told the player to pick Multiplayer to update
 #                            - Told a watched key's press frame by frame, ended by the Input.update of a game window's cancel
@@ -582,7 +583,7 @@ module MGQ_Multiplayer
       'mp_dir_refresh' => 'v',
       'mp_dir_find' => 'p',
       'mp_dir_list' => READ_ARGUMENTS,
-      'mp_dir_create' => 'pplllpppplpp',
+      'mp_dir_create' => 'pplllpppplpppp',
       'mp_dir_unlock' => 'pp',
       'mp_dir_unlock_code' => 'p',
       'mp_dir_edit' => 'plpppl',

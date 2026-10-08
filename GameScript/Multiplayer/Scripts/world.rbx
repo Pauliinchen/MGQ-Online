@@ -2,7 +2,12 @@
 #  world.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-08: Added Shared Mod Settings to the forms of a new world and of the creator's own world
+#      Paulinchen  2026-10-08: Added the world's type, Classic or Raid, with how a Raid World shares companions: chosen in the new world's form, sent with the world, read from the list and kept in world.ini
+#                            - Showed Raid Worlds in red above every other world, red winning over the gold of a featured one
+#                            - Told whether the open world is a Raid World and how it shares companions, which every script asks through raid? and companion_sharing
+#                            - Put the new world's starting point into its World panel, which keeps the form on one page with the world type
+#                            - Let a form's field depend on any other field through a block, and gave a switch a label width of its own
+#                            - Added Shared Mod Settings to the forms of a new world and of the creator's own world
 #                            - Closed with the numpad's 0 through MGQ_MpUi.cancel?, also with Num Lock off
 #                            - Told whether the world stays open on the title screen for its new game
 #                            - Logged the mod settings a new world starts with
@@ -84,7 +89,9 @@
 # beginning, from one of its creator's saves, or where each of them chooses (world_save_distribution.rbx).
 # A world's details show what its creator wrote about it and the mods it needs, and whether the
 # player's game data has the same entries as the creator's; a game that differs is warned, or kept
-# out when the creator said so.
+# out when the creator said so. A world is Classic, where each party plays its own story, or a Raid
+# World, where the whole world plays one; its creator picks the type once, and Raid Worlds show in
+# red above every other world.
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpWorld
@@ -144,6 +151,23 @@ module MGQ_MpWorld
   # Colour of the featured worlds, which the relay's admins make.
   FEATURED_COLOR = Color.new(255, 200, 64)
 
+  # Colour of the Raid Worlds, which wins over the featured worlds' gold.
+  RAID_COLOR = Color.new(255, 64, 64)
+
+  # A world's types as the directory and world.ini name them, in the order the new world's form
+  # offers them: Classic, where each party plays its own story, and Raid, where the whole world plays one.
+  CLASSIC = "classic"
+  RAID = "raid"
+  TYPES = [CLASSIC, RAID]
+
+  # How a Raid World shares companions, as the directory and world.ini name it, in the order the new
+  # world's form offers it, and as companion_sharing tells it.
+  SHARING = ["off", "story", "all"]
+  SHARING_SYMBOLS = { "off" => :off, "story" => :story, "all" => :all }
+
+  # What the new world's form and the details call each way of sharing companions.
+  SHARING_NAMES = ["Off", "Story companions", "Story + battle recruits"]
+
   # The buttons whose press, in a frame no key went down, tells a gamepad from the keyboard.
   #
   # Directions count by their first frame only, since an arrow key held down reports its
@@ -185,6 +209,21 @@ module MGQ_MpWorld
   # @return [World, nil] The world, nil while none is open.
   def self.world
     @world
+  end
+
+  # Tells whether the open world is a Raid World, the one question every script asks.
+  #
+  # @return [Boolean] Whether it is; false while no world is open.
+  def self.raid?
+    !@world.nil? && @world.raid?
+  end
+
+  # Tells how the open Raid World shares companions.
+  #
+  # @return [Symbol] :off, :story (its story companions) or :all (its story companions and battle
+  #   recruits); :off outside Raid Worlds.
+  def self.companion_sharing
+    raid? ? @world.companion_sharing : :off
   end
 
   # What the text screen handed back: what the text was for, and the text, nil when the player left it.
@@ -524,8 +563,8 @@ module MGQ_MpWorld
   end
 
   # Builds what the world screen lists: the directory's worlds, and the worlds on this PC the
-  # directory no longer has, favourites first, then the featured ones, then those played last,
-  # then by name.
+  # directory no longer has, Raid Worlds first, then favourites, then the featured ones, then those
+  # played last, then by name.
   #
   # @param listed [Array<Directory::ListedWorld>] The directory's worlds.
   # @param complete [Boolean] Whether the directory's list arrived, so a world missing from it is gone.
@@ -544,7 +583,7 @@ module MGQ_MpWorld
       entries.push(Entry.new(world.directory_id, world.name, nil, world, favourites.include?(world.directory_id), complete || !world.directory_id))
     end
 
-    entries.sort_by { |entry| [entry.favourite ? 0 : 1, entry.featured? ? 0 : 1, -(entry.local ? entry.local.played_at.to_i : 0), entry.name.downcase] }
+    entries.sort_by { |entry| [entry.raid? ? 0 : 1, entry.favourite ? 0 : 1, entry.featured? ? 0 : 1, -(entry.local ? entry.local.played_at.to_i : 0), entry.name.downcase] }
   end
 
   # A world as the world screen lists it: the directory's, this PC's folder of it, or both.
@@ -561,6 +600,14 @@ module MGQ_MpWorld
     # @return [Boolean] Whether it does.
     def featured?
       !listed.nil? && listed.featured
+    end
+
+    # Tells whether the world is a Raid World: as the directory lists it, or as world.ini keeps it
+    # once the directory no longer lists it.
+    #
+    # @return [Boolean] Whether it is.
+    def raid?
+      listed ? listed.raid? : (!local.nil? && local.raid?)
     end
 
     # Tells whether the directory lists the world as one without a password.
@@ -798,7 +845,17 @@ module MGQ_MpWorld
     # @!attribute description [String] What it is about, as its creator wrote it.
     # @!attribute mod_hashes [String] Its creator's hashes of required mods outside the mod catalog, "name=hash" pairs separated by semicolons.
     # @!attribute settings [String] Its creator's settings of the mods it names, "key=type:value" pairs separated by semicolons.
-    ListedWorld = Struct.new(:id, :seats, :online, :creator_id, :active, :creator_name, :name, :start, :members, :hidden, :choose, :open, :featured, :strict, :data, :mods, :description, :mod_hashes, :settings)
+    # @!attribute type [String] Its type, one of TYPES; CLASSIC when the list names none.
+    # @!attribute share [String] How a Raid World shares companions, one of SHARING; "off" when the list names none.
+    ListedWorld = Struct.new(:id, :seats, :online, :creator_id, :active, :creator_name, :name, :start, :members, :hidden, :choose, :open, :featured, :strict, :data, :mods, :description, :mod_hashes, :settings,
+                             :type, :share) do
+      # Tells whether the world is a Raid World.
+      #
+      # @return [Boolean] Whether it is.
+      def raid?
+        type == RAID
+      end
+    end
 
     # A player of a world.
     #
@@ -846,7 +903,8 @@ module MGQ_MpWorld
 
         case fields[0]
         when "world"
-          worlds.push(ListedWorld.new(fields[1], fields[2].to_i, fields[3].to_i, fields[4], fields[5].to_i, fields[6].to_s, fields[7].to_s, fields[8] || "none", [], fields[9] == "1", fields[10] == "1", fields[11] == "1", fields[12] == "1", fields[13] == "1", fields[14].to_s, fields[15].to_s, fields[16].to_s, fields[17].to_s, fields[18].to_s))
+          worlds.push(ListedWorld.new(fields[1], fields[2].to_i, fields[3].to_i, fields[4], fields[5].to_i, fields[6].to_s, fields[7].to_s, fields[8] || "none", [], fields[9] == "1", fields[10] == "1", fields[11] == "1", fields[12] == "1", fields[13] == "1", fields[14].to_s, fields[15].to_s, fields[16].to_s, fields[17].to_s, fields[18].to_s,
+                                     fields[19].to_s.empty? ? CLASSIC : fields[19], fields[20].to_s.empty? ? SHARING[0] : fields[20]))
         when "member"
           worlds.last.members.push(Member.new(fields[1], fields[2] == "1", fields[3].to_s)) if worlds.last
         end
@@ -882,15 +940,18 @@ module MGQ_MpWorld
     # @param hidden [Boolean] Whether the list leaves it out for everyone but its players and the relay's admins.
     # @param choose [Boolean] Whether each new player chooses where to start.
     # @param start [String] The starting save's files, see MGQ_MpSaveDistribution.text_of; empty for none.
-    # @param about [Hash] Whichever of :description, :mods, :data (the creator's game data), :strict (true when only games with the same data may enter), :mod_hashes and :settings apply.
+    # @param about [Hash] Whichever of :description, :mods, :data (the creator's game data), :strict (true when only games with the same data may enter), :mod_hashes, :settings,
+    #   :type (one of TYPES, CLASSIC when left out) and :share (one of SHARING, "off" when left out) apply.
     # @return [Boolean] Whether the action started.
     def self.create(name, password, seats, hidden, choose, start, about = {})
       MGQ_Multiplayer::Player.share
+      type = about[:type] || CLASSIC
+      share = type == RAID ? about[:share] || SHARING[0] : SHARING[0]
       sent = MGQ_Multiplayer::Link.function('mp_dir_create').call(name + "\0", password + "\0", seats, hidden ? 1 : 0, choose ? 1 : 0, start + "\0",
                                                                                   about[:description].to_s + "\0", about[:mods].to_s + "\0", about[:data].to_s + "\0", about[:strict] ? 1 : 0,
-                                                                                  about[:mod_hashes].to_s + "\0", about[:settings].to_s + "\0") == 1
+                                                                                  about[:mod_hashes].to_s + "\0", about[:settings].to_s + "\0", type + "\0", share + "\0") == 1
       files = start.empty? ? "no starting save" : "a starting save of #{start.split("\n").size} file(s)"
-      started(sent, "create #{name}: #{seats} seats, #{password.empty? ? 'no password' : 'a password'}, #{hidden ? 'hidden' : 'public'}, " \
+      started(sent, "create #{name}: #{type == RAID ? "raid, sharing #{share}" : 'classic'}, #{seats} seats, #{password.empty? ? 'no password' : 'a password'}, #{hidden ? 'hidden' : 'public'}, " \
                     "#{choose ? "player's choice" : 'no choice'}, #{files}, mods \"#{about[:mods]}\", #{about[:strict] ? 'strict' : 'mismatch allowed'}, " \
                     "data #{about[:data].to_s.empty? ? 'unknown' : about[:data]}, description of #{about[:description].to_s.size} chars, creator hashes \"#{about[:mod_hashes]}\", " \
                     "#{about[:settings].to_s.empty? ? "each player's own mod settings" : "mod settings \"#{about[:settings]}\""}")
@@ -1212,8 +1273,8 @@ module MGQ_MpWorld
   end
 
   # A world on this PC: its folder in Patch/Multiplayer/Worlds, named by a hash of its code, with
-  # world.ini (name, world code, directory id, when it was made and last played) and the world's
-  # Save folder.
+  # world.ini (name, world code, directory id, type, how a Raid World shares companions, when it was
+  # made and last played) and the world's Save folder.
   class World
     # The file inside the world's folder that describes it.
     FILE = "world.ini"
@@ -1261,8 +1322,10 @@ module MGQ_MpWorld
     # @param code [String] The world code.
     # @param name [String] The world's name.
     # @param directory_id [String] The world's id in the directory.
+    # @param type [String, nil] Its type, one of TYPES; nil to keep what world.ini says.
+    # @param share [String, nil] How a Raid World shares companions, one of SHARING; nil to keep what world.ini says.
     # @return [World, nil] The world, nil when the text is no world code or the folder could not be made.
-    def self.found(code, name, directory_id)
+    def self.found(code, name, directory_id, type = nil, share = nil)
       id = Link.id_of(code)
       unless id
         MGQ_MpWorld.log("no folder for world #{MGQ_MpWorld.short(directory_id)}: the relay's answer holds no world code")
@@ -1272,7 +1335,7 @@ module MGQ_MpWorld
       [WORLDS_DIR, folder_of(id)].each { |dir| Dir.mkdir(dir) unless File.directory?(dir) }
       known = read(id)
       world = known || new(id, "code" => code, "created" => Time.now.to_i)
-      world.describe(name, directory_id)
+      world.describe(name, directory_id, nil, type, share)
       written = world.write
       MGQ_MpWorld.log("#{known ? 'found' : 'made'} folder #{id} of world #{MGQ_MpWorld.short(directory_id)} (#{world.name})#{written ? '' : ', but world.ini could not be written'}")
       written ? world : nil
@@ -1304,6 +1367,12 @@ module MGQ_MpWorld
     # When the world was played last.
     attr_reader :played_at
 
+    # The world's type, one of TYPES, nil for a world.ini from before types, which counts as Classic.
+    attr_reader :type
+
+    # How a Raid World shares companions, one of SHARING, nil when world.ini names none.
+    attr_reader :share
+
     # Creates a world from what its world.ini says.
     #
     # @param id [String] The folder's id.
@@ -1315,16 +1384,22 @@ module MGQ_MpWorld
       @directory_id = values["world"]
       @created = values["created"].to_i
       @played_at = values["played"] ? Time.at(values["played"].to_i) : nil
+      @type = values["type"]
+      @share = values["share"]
     end
 
-    # Takes the world's name, directory id and seats, as the directory says them.
+    # Takes the world's name, directory id, seats, type and companion sharing, as the directory says them.
     #
     # @param name [String] The world's name.
     # @param directory_id [String] The world's id in the directory.
     # @param seats [Integer, nil] How many players it seats now, which its creator may change; nil to keep what the code tells.
-    def describe(name, directory_id, seats = nil)
+    # @param type [String, nil] Its type, one of TYPES; nil to keep what world.ini says.
+    # @param share [String, nil] How a Raid World shares companions, one of SHARING; nil to keep what world.ini says.
+    def describe(name, directory_id, seats = nil, type = nil, share = nil)
       @name = MGQ_Multiplayer.clean(name)
       @directory_id = directory_id
+      @type = type if type
+      @share = share if share
       parts = @code.to_s.split(";")
       @code = (parts[0...-1] + [seats.to_s]).join(";") if seats && parts.size > 3 && parts.last =~ /\A\d+\z/
     end
@@ -1334,6 +1409,20 @@ module MGQ_MpWorld
     # @return [String] The folder, relative to the game's folder.
     def folder
       World.folder_of(@id)
+    end
+
+    # Tells whether the world is a Raid World, as world.ini keeps it.
+    #
+    # @return [Boolean] Whether it is.
+    def raid?
+      @type == RAID
+    end
+
+    # Tells how the world shares companions.
+    #
+    # @return [Symbol] :off, :story or :all; :off for a Classic world and for a value world.ini does not know.
+    def companion_sharing
+      raid? ? SHARING_SYMBOLS[@share] || :off : :off
     end
 
     # How many players the world seats at once, which the last field of its code tells.
@@ -1362,6 +1451,8 @@ module MGQ_MpWorld
     def write
       values = { "name" => @name, "code" => @code, "created" => @created }
       values["world"] = @directory_id if @directory_id
+      values["type"] = @type if @type
+      values["share"] = @share if @share
       values["played"] = @played_at.to_i if @played_at
       World.forget
       MGQ_Multiplayer::Ini.write("#{folder}/#{FILE}", values)
@@ -1544,6 +1635,15 @@ module MGQ_MpWorld
     # What the lines at the top say on Shared Mod Settings.
     SHARED_HINT = "Ticked: every player plays with your mod options here. Unticked: each keeps their own."
 
+    # What the lines at the top say on the world type.
+    TYPE_HINT = "Classic: each party plays its own story. Raid: the whole world plays one. Fixed once created."
+
+    # What the lines at the top say on Sharing companions.
+    SHARING_HINT = "Raid only: companions everyone gets on reaching their level. Fixed once created."
+
+    # Width of the world type's label, narrower than a text box's, so the switch fits half a row.
+    TYPE_LABEL_WIDTH = 70
+
     # A field of a form: a text box (:text, :password, :number or :id), a box of several lines (:area), a checkbox (:check), a save
     # to choose (:save), the mods picked in the mod picker (:mods), a switch between several outcomes (:switch) or a button
     # (:button).
@@ -1569,7 +1669,8 @@ module MGQ_MpWorld
       # The characters a text box takes, nil for any.
       attr_reader :allowed
 
-      # The checkbox that must be ticked for the field to be used, nil for none.
+      # The checkbox that must be ticked for the field to be used, or a block called with the form that
+      # tells whether it may, nil for neither.
       attr_reader :needs
 
       # Whether a text box may stay empty.
@@ -1597,6 +1698,9 @@ module MGQ_MpWorld
       # the form and the outcome's index, nil for no line.
       attr_reader :note
 
+      # Width of a switch's label, nil for the width its window gives every switch.
+      attr_reader :label_width
+
       # Creates a field.
       #
       # @param key [Symbol] What the form keeps its value under.
@@ -1604,8 +1708,8 @@ module MGQ_MpWorld
       # @param label [String] What it is called.
       # @param row [Integer] The row it is on.
       # @param hint [String] What the lines at the top say while the cursor is on it.
-      # @param options [Hash] Whichever of :side, :max_chars, :allowed, :needs, :optional, :group, :lines, :empty_ok (a proc),
-      #   :empty_text, :choices and :note (a proc) apply.
+      # @param options [Hash] Whichever of :side, :max_chars, :allowed, :needs (a key or a proc), :optional, :group, :lines, :empty_ok (a proc),
+      #   :empty_text, :choices, :note (a proc) and :label_width apply.
       def initialize(key, kind, label, row, hint, options = {})
         @key = key
         @kind = kind
@@ -1623,6 +1727,7 @@ module MGQ_MpWorld
         @empty_text = options[:empty_text] || "This field cannot be empty."
         @choices = options[:choices] || []
         @note = options[:note]
+        @label_width = options[:label_width]
       end
 
       # Tells the line below a switch's outcome.
@@ -1659,17 +1764,20 @@ module MGQ_MpWorld
         Field.new(:password, :password, "Password", 1, "Typed once to enter the world. Left empty, anyone may enter.", :max_chars => MAX_PASSWORD_CHARS, :side => :left, :group => "World"),
         Field.new(:seats, :number, "Max Players", 1, "Players in the world at once, #{MIN_SEATS} to #{MAX_SEATS}.", :max_chars => MAX_SEATS.to_s.size, :allowed => /\A\d\z/, :side => :right, :group => "World"),
         Field.new(:hidden, :check, "Hidden", 2, "Only its players see it in the list. Others add it with its id.", :side => :left, :group => "World"),
-        Field.new(:from_save, :check, "Shared save", 3, "New players start from one of your saves. Fixed once created.", :side => :left, :group => "Starting point"),
-        Field.new(:choose, :check, "Player's choice", 3, "New players pick their start: the opening or a save. Fixed once created.", :side => :right, :group => "Starting point"),
-        Field.new(:save, :save, "Save", 4, "The save every new player starts from.", :needs => :from_save, :group => "Starting point"),
-        Field.new(:mods, :mods, "Mods", 5, "The mods of the world: listed, required to enter or essential. Enter picks them.", :group => "Game data"),
-        Field.new(:mismatch, :check, "Allow data mismatch", 6, "Ticked: games with other data are warned. Unticked: kept out. Fixed once created.", :side => :left, :group => "Game data"),
-        Field.new(:shared, :check, "Shared Mod Settings", 6, SHARED_HINT, :side => :right, :group => "Game data"),
-        Field.new(:description, :area, "What the world is about", 7, "Shown in the world's details. Optional.", :max_chars => MAX_DESCRIPTION_CHARS, :optional => true, :lines => DESCRIPTION_LINES, :group => "Description"),
-        Field.new(:confirm, :button, "Create the world", 8, "Creates the world. You enter it from the list."),
+        Field.new(:type, :switch, "World type", 2, TYPE_HINT, :side => :right, :group => "World", :choices => ["Classic", "Raid"], :label_width => TYPE_LABEL_WIDTH),
+        Field.new(:share, :switch, "Sharing companions", 3, SHARING_HINT, :group => "World", :choices => SHARING_NAMES,
+                  :needs => lambda { |form| TYPES[form[:type].to_i] == RAID }),
+        Field.new(:from_save, :check, "Shared save", 4, "New players start from one of your saves. Fixed once created.", :side => :left, :group => "World"),
+        Field.new(:choose, :check, "Player's choice", 4, "New players pick their start: the opening or a save. Fixed once created.", :side => :right, :group => "World"),
+        Field.new(:save, :save, "Save", 5, "The save every new player starts from.", :needs => :from_save, :group => "World"),
+        Field.new(:mods, :mods, "Mods", 6, "The mods of the world: listed, required to enter or essential. Enter picks them.", :group => "Game data"),
+        Field.new(:mismatch, :check, "Allow data mismatch", 7, "Ticked: games with other data are warned. Unticked: kept out. Fixed once created.", :side => :left, :group => "Game data"),
+        Field.new(:shared, :check, "Shared Mod Settings", 7, SHARED_HINT, :side => :right, :group => "Game data"),
+        Field.new(:description, :area, "What the world is about", 8, "Shown in the world's details. Optional.", :max_chars => MAX_DESCRIPTION_CHARS, :optional => true, :lines => DESCRIPTION_LINES, :group => "Description"),
+        Field.new(:confirm, :button, "Create the world", 9, "Creates the world. You enter it from the list."),
       ]
-      new("Create a new world", fields, :name => "", :password => "", :seats => DEFAULT_SEATS.to_s, :hidden => false, :from_save => false, :save => nil, :choose => false, :description => "", :mods => "", :mismatch => false,
-                                        :shared => false)
+      new("Create a new world", fields, :name => "", :password => "", :seats => DEFAULT_SEATS.to_s, :hidden => false, :type => 0, :share => 0, :from_save => false, :save => nil, :choose => false, :description => "", :mods => "",
+                                        :mismatch => false, :shared => false)
     end
 
     # The form that changes a world, for its creator or an admin: what may change after it was made.
@@ -1767,12 +1875,30 @@ module MGQ_MpWorld
       @values[key] = value
     end
 
-    # Tells whether a field can be used, which one whose checkbox is not ticked cannot.
+    # Tells whether a field can be used, which one whose checkbox is not ticked, or whose block says
+    # no, cannot.
     #
     # @param field [Field] The field.
     # @return [Boolean] Whether it can.
     def enabled?(field)
-      field.needs.nil? || @values[field.needs] == true
+      return true if field.needs.nil?
+      return field.needs.call(self) ? true : false if field.needs.respond_to?(:call)
+
+      @values[field.needs] == true
+    end
+
+    # Tells the world type the new world's form picks.
+    #
+    # @return [String] One of TYPES.
+    def type
+      TYPES[@values[:type].to_i] || CLASSIC
+    end
+
+    # Tells how the new world's form has a Raid World share companions.
+    #
+    # @return [String] One of SHARING; "off" for a Classic world.
+    def share
+      type == RAID ? SHARING[@values[:share].to_i] || SHARING[0] : SHARING[0]
     end
 
     # Moves a switch to its next or its previous outcome, round.

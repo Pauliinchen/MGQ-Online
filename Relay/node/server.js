@@ -2,7 +2,8 @@
 //  server.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-08: Dropped a game's chat lines past the chat's rate limit, answering each with "slow chat", and ignored a chat frame without a line instead of closing the connection
+//      Paulinchen  2026-10-08: Passed what a game names in the X-MGQ-Features header on to the directory as it enters a world room
+//                            - Dropped a game's chat lines past the chat's rate limit, answering each with "slow chat", and ignored a chat frame without a line instead of closing the connection
 //      Paulinchen  2026-10-07: Kept the chat lines the games mirror as text frames, and told every game of a world what an admin said
 //                            - Logged every request as one line and every caught error with its stack, never a key
 //                            - Kept the worlds, mods and trades in a SQLite database when MGQ_RELAY_DB names one
@@ -37,8 +38,8 @@ import { routeIs } from "../core/http.js";
 import { ModCatalog, handleModRequest } from "../core/mods.js";
 import { TradeBook, handleTradeRequest } from "../core/trades.js";
 import {
-  AUTH_HEADER, CHAT_SLOW, CLOSE, IN, LIMITS, OUT, PAIRED, PING, PLAYER_HEADER, PONG, REFUSAL_HEADER, admit, chatLineOf, chatText, newPeer, newWorldPeer,
-  overdue, parseRoute, presenceOf, replacedBy, routeWorldMessage, seatChangeText, seatText, takeChatLine, takeMessage, takeSeat, worldOverdue,
+  AUTH_HEADER, CHAT_SLOW, CLOSE, FEATURES_HEADER, IN, LIMITS, OUT, PAIRED, PING, PLAYER_HEADER, PONG, REFUSAL_HEADER, admit, chatLineOf, chatText, newPeer, newWorldPeer,
+  overdue, parseFeatures, parseRoute, presenceOf, replacedBy, routeWorldMessage, seatChangeText, seatText, takeChatLine, takeMessage, takeSeat, worldOverdue,
 } from "../core/relay.js";
 
 /**
@@ -333,7 +334,7 @@ export function createRelay({
       return;
     }
 
-    directory.admit(route.roomId, route.player, route.auth, address).then((answer) => {
+    directory.admit(route.roomId, route.player, route.auth, address, parseFeatures(headerOf(request, FEATURES_HEADER))).then((answer) => {
       if (answer.status !== 200) {
         turnAway(answer.status, answer.body.error, answer.body.code);
         return;

@@ -2,7 +2,8 @@
 //  server.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-08: Tested the chat's rate limit and a chat frame without a line, which keeps the connection
+//      Paulinchen  2026-10-08: Tested that a world room lets into a Raid World only the games that name it in X-MGQ-Features
+//                            - Tested the chat's rate limit and a chat frame without a line, which keeps the connection
 //      Paulinchen  2026-10-07: Tested a world's chat: a game's mirrored line kept, an admin's line reaching every game, and other text still closing the connection
 //                            - Tested the auth key header, the request and error log lines, every mod catalog route, editing a world, the address behind a proxy, the sweep and a text body over the cap
 //                            - Expected 400 for a path that is no route and 426 for a room path without an upgrade
@@ -25,7 +26,7 @@ import assert from "node:assert/strict";
 import WebSocketClient from "ws";
 import { DIRECTORY_LIMITS, Directory, playerIdOf, sha256Hex } from "../core/directory.js";
 import { ModCatalog, zipHashes } from "../core/mods.js";
-import { AUTH_HEADER, CHAT_LIMITS, CHAT_SLOW, CLOSE, EVERYONE, LIMITS, PAIRED, PING, PLAYER_HEADER, PONG, REFUSAL_HEADER, REPLACED } from "../core/relay.js";
+import { AUTH_HEADER, CHAT_LIMITS, CHAT_SLOW, CLOSE, EVERYONE, FEATURES_HEADER, LIMITS, PAIRED, PING, PLAYER_HEADER, PONG, REFUSAL_HEADER, REPLACED } from "../core/relay.js";
 import { TRADE_LIMITS } from "../core/trades.js";
 import { makeUpload, makeZip } from "../core/test_zip.js";
 import { addressOf, createRelay, errorLine, memoryModStore, memoryStore, requestLine } from "./server.js";
@@ -629,6 +630,24 @@ test("a world room names why it turned a game away", async () => {
   await fetch(`${directoryBase}/${room}/ban`, { method: "POST", body: JSON.stringify({ player: CREATOR, target: await playerIdOf(playerKey(51)) }) });
 
   assert.deepEqual(await openWithHeaders(`${worldBase}${room}?player=${playerKey(51)}&name=Banned&auth=${AUTH}`, {}), { status: 403, refusal: "removed" });
+});
+
+test("a world room lets into a Raid World only the games that name it in X-MGQ-Features", async () => {
+  const room = roomId(123);
+  const created = await fetch(directoryBase, {
+    method: "POST",
+    headers: { [PLAYER_HEADER]: CREATOR },
+    body: JSON.stringify({ id: room, name: "Raid World", seats: 4, playerName: "Creator", authHash: await sha256Hex(AUTH), lock: { salt: "12".repeat(16), iterations: 200_000, box: "ab".repeat(40) }, type: "raid", share: "story" }),
+  });
+  assert.equal(created.status, 201);
+  assert.deepEqual([(await listed(room)).type, (await listed(room)).share], ["raid", "story"]);
+
+  const address = `${worldBase}${room}?name=Player%2052&auth=${AUTH}`;
+  assert.deepEqual(await openWithHeaders(address, { [PLAYER_HEADER]: playerKey(52) }), { status: 400, refusal: "raid_unsupported" });
+
+  const game = await openWithHeaders(address, { [PLAYER_HEADER]: playerKey(52), [FEATURES_HEADER]: "raid" });
+  assert.equal(await game.first, "seat 0");
+  game.socket.close();
 });
 
 test("a starting save over the limit is refused with its status, not a cut connection", async () => {
