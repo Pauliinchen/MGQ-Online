@@ -30,6 +30,7 @@
 #                            - Left out the 0 that the numpad's 0 types after it closed a player's menu
 #                            - Kept the chat's size while a battle draws the log smaller, and kept a drag within the screen
 #                            - Kept the typing of a frame in which the menu's player left, without its Enter or Escape
+#                            - Colored the sender's name and kept its click spot when the line breaks right after it
 #                            - Left out the line and paragraph separators of players' and admins' lines
 #      Paulinchen  2026-10-07: Mirrored every line sent to everyone to the relay for the world's admins, and showed an admin's line from the relay as [Admin] in gold
 #                            - Closed the chat box with the numpad's 0, as the game's windows close
@@ -1594,13 +1595,15 @@ class Sprite_MpChatLog < Sprite
   # @param y [Integer] The row's top.
   def draw_row(row, line, first, y)
     x = TEXT_LEFT
-    if first && row.start_with?(line.head)
+    # A line broken right after the name loses the space after it to the break.
+    head = row.start_with?(line.head) ? line.head : line.head.rstrip
+    if first && row.start_with?(head)
       tag = line.tag
       x = draw_part(x, y, tag, line.who == :admin ? NAME_COLORS[:admin] : CHANNEL_COLORS[line.channel]) unless tag.empty?
       start = x
-      x = draw_part(x, y, line.head[tag.size..-1], NAME_COLORS.fetch(line.who, TEXT_COLOR))
+      x = draw_part(x, y, head[tag.size..-1], NAME_COLORS.fetch(line.who, TEXT_COLOR))
       @name_spots.push([line, start, x, y]) if line.id
-      row = row[line.head.size..-1]
+      row = row[head.size..-1]
     end
     draw_part(x, y, row, COLORED_TEXT.include?(line.channel) ? CHANNEL_COLORS[line.channel] : TEXT_COLOR)
   end

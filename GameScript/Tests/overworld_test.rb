@@ -12,7 +12,7 @@
 #                            - Checked that a menu's choice that leaves closes the chat box without failing, by click and by Enter, that a battle's menu offers only the whisper
 #                            - Checked the closed log's whispers, the separators a line loses, numbered names of players sharing one, and the say chat by the map its line was said on
 #                            - Checked that a line of a player whose name another shares shows their numbered name
-#                            - Checked the 0 after Numpad 0 closed a menu, the typing kept once the menu's player left, a global line too fast for the relay and the size kept in a battle
+#                            - Checked the 0 after Numpad 0 closed a menu, the typing kept once the menu's player left, a global line too fast for the relay, the size kept in a battle and a line broken after the name
 #      Paulinchen  2026-10-07: Checked the lines mirrored to the relay, the party chat kept from it, and an admin's line from the relay
 #                            - Checked scrolling the chat log
 #                            - Checked that the numpad's 0 closes the chat box
@@ -1028,6 +1028,12 @@ check("a battle's smaller room draws fewer rows but keeps the chat's size", [log
 log_sprite.instance_variable_set(:@bottom_room, Sprite_MpChatLog::STATUS_ROOM)
 chat.resize(*kept_size)
 log_sprite.fit(chat)
+parts.clear
+log_sprite.instance_variable_set(:@name_spots, [])
+log_sprite.draw_row("[Party] Friend:", MGQ_MpChat::Line.new("Friend", "on my way", :member, :party, 0, nil, friend_id), true, 0)
+check("a line broken right after the name keeps the name's color and its click spot",
+      [parts.map { |x, text, color| [x, text, colors[color]] }, log_sprite.instance_variable_get(:@name_spots).size],
+      [[[4, "[Party] ", :party], [84, "Friend:", :member], [154, "", :text]], 1])
 
 # The wheel's middle, which it opens on, and the pick it keeps once the arrows are let go.
 MGQ_MpActions::Wheel.open
