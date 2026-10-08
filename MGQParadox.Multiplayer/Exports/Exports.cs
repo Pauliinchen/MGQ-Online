@@ -2,6 +2,7 @@
 //  Exports.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-08: Logged the Wine version the game runs under, if any
 //      Paulinchen  2026-10-07: Kept every log, which no longer starts over, and logged the version started and whether the game keeps running in the background
 //                            - Answered a null buffer with the length needed, and opened Copy and Text to the tests
 //      Paulinchen  2026-09-30: Split the exports into files per area: Pvp, World, Directory and Input
@@ -52,6 +53,12 @@ internal static unsafe partial class Exports
 
             var version = typeof(Exports).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "unknown";
             Log.Write($"--- multiplayer {version} started ---");
+
+            if (NativeMethods.WineVersion() is { } wine)
+            {
+                Log.Write($"the game runs under wine {wine}");
+            }
+
             return 1;
         }
         catch (Exception ex)

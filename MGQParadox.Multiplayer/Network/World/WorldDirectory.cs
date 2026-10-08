@@ -2,6 +2,7 @@
 //  WorldDirectory.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-08: Logged the type, code and stack of an action's unexpected failure
 //      Paulinchen  2026-10-07: Logged the list and the catalog when they change, every action with its result or why it was refused, and each mod's download
 //      Paulinchen  2026-10-06: Started its threads through Threads and read who plays through Player.Current, both shared with the world's other parts
 //                            - Told a player removed from a world, a world with as many players as it may and too many requests from one address apart from a creator-only refusal
@@ -792,7 +793,7 @@ internal sealed class WorldDirectory
             catch (Exception ex)
             {
                 error = ReasonFor(ex);
-                Log.Write($"world {kind} failed: {ex.GetBaseException().Message}{(ex is DirectoryException directory ? $" (status {(directory.Status is { } status ? ((int)status).ToString(CultureInfo.InvariantCulture) : "none")}{(directory.Code != null ? $", code {directory.Code}" : string.Empty)})" : string.Empty)}, the player reads: {error}");
+                Log.Write($"world {kind} failed: {ex.GetBaseException().Message}{(ex is DirectoryException directory ? $" (status {(directory.Status is { } status ? ((int)status).ToString(CultureInfo.InvariantCulture) : "none")}{(directory.Code != null ? $", code {directory.Code}" : string.Empty)})" : string.Empty)}, the player reads: {error}{(ex is ActionException or DirectoryException ? string.Empty : $"; {ex}")}");
             }
 
             lock (_gate)
