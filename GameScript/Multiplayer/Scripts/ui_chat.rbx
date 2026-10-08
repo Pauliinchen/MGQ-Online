@@ -12,6 +12,7 @@
 #                            - Added whispers to one player with /w or /whisper and their name, offering the names that fit in a list above the box, and a Whisper tab in pale pink
 #                            - Added a Help tab at the far right that /help opens, which only reads and closes once left, and named it and the resizing in the empty box
 #                            - Drew the bubbles in their chat's color, slightly see-through
+#                            - Lowered the bubbles to just over the name, going one line higher while a line such as an invite shows above it
 #                            - Picked the tabs and resized with the left Alt alone, dropping what it typed as an Alt code with the numpad, which showed a symbol the font lacks
 #                            - Outlined the tabs and the open chat thinly, the chat in white while Alt is held to resize it, the picked tab open into the chat
 #                            - Filled the picked tab with its chat's color under dark text, which white tabs lacked the contrast for
@@ -1141,11 +1142,14 @@ class Sprite_MpChatBubble < Sprite
   # Room between the text and the bubble's edge.
   PAD = 6
 
-  # Pixels above a ghost's feet that its bubble points at: over its name and the line above it.
-  GHOST_LIFT = 92
+  # Pixels above a ghost's feet that its bubble points at: just over its name.
+  GHOST_LIFT = 68
 
-  # Pixels above the player's feet that their bubble points at: over their ping and the line above it.
-  OWN_LIFT = 88
+  # Pixels above the player's feet that their bubble points at: just over their ping.
+  OWN_LIFT = 64
+
+  # Pixels a bubble goes higher while a line, such as an invite, shows above the name or the ping.
+  LINE_LIFT = 24
 
   # Height of the tail below the bubble.
   TAIL = 5
@@ -1750,10 +1754,12 @@ begin
       bubble = @mgq_mp_bubbles[sender] ||= Sprite_MpChatBubble.new(@viewport1)
       if sender == :me
         character, lift = $game_player, Sprite_MpChatBubble::OWN_LIFT
+        lift += Sprite_MpChatBubble::LINE_LIFT if MGQ_MpActions.own_line
         character = nil if MGQ_MpActions::Wheel.open?
       else
         peer = MGQ_MpOverworldSync::Peers.at(sender)
         character, lift = peer && peer.ghost, Sprite_MpChatBubble::GHOST_LIFT
+        lift += Sprite_MpChatBubble::LINE_LIFT if peer && MGQ_MpOverworldSync.label_line_of(peer)
       end
 
       shown = character && !character.transparent
