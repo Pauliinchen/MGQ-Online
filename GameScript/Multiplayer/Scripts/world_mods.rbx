@@ -15,6 +15,7 @@
 #                            - Counted and named only the options this game's Mod Config has, and said when a world shares none yet
 #                            - Applied only settings of options a world may set in a mod's group of this game's Mod Config, never the game's own options
 #                            - Kept the world to enter when the game cannot start itself again under Wine or Proton, for the start the player makes by hand
+#                            - Took only the directory's answer to its own settings, sending them again when another request took its place, and forgot them with the world
 #      Paulinchen  2026-10-07: Sent the Mod Config options of every installed catalog mod, whatever its version, until the relay holds the current version's
 #                            - Logged a catalog unknown at the first read too
 #                            - Followed a new game through an after block, since the hook only applies the world's mods
@@ -1028,17 +1029,20 @@ module MGQ_MpWorldMods
     @confirmed[id] = text.to_s
   end
 
-  # Forgets the world, its locks and the row of Shared Mod Settings.
+  # Forgets the world, its locks, the row of Shared Mod Settings and the settings on their way,
+  # whose answer the directory then drops.
   def self.forget_world
     log("forgot the mod settings of world #{MGQ_MpWorld.short(@world[:id])}") if @world
     lock([])
     remove_row
+    MGQ_MpWorld::Directory.release(@sending[:ticket]) if @sending
     @world = nil
     @loaded = false
     @stay_noticed = false
     @stay_at = nil
     @told_peers = {}
     @wanted = nil
+    @sending = nil
     @not_sent_told = false
     @in_options = false
   end
@@ -1238,7 +1242,8 @@ module MGQ_MpWorldMods
     end
     return if @retry_at && @frames.to_i < @retry_at
 
-    unless MGQ_MpWorld::Directory.set_settings(@world[:id], @wanted)
+    # A request now would drop the answer of another one nobody took yet.
+    unless MGQ_MpWorld::Directory.free? && MGQ_MpWorld::Directory.set_settings(@world[:id], @wanted)
       @retry_at = @frames.to_i + RETRY_FRAMES
       log("the world's mod settings could not be sent, trying again in a moment")
       notify(NOT_SENT_TEXT) unless @not_sent_told
@@ -1247,18 +1252,23 @@ module MGQ_MpWorldMods
     end
 
     @not_sent_told = false
-    @sending = { :id => @world[:id], :text => @wanted, :before => @world[:text], :reason => @wanted_reason, :left_out => @left_out.to_i, :since => @frames.to_i }
+    @sending = { :id => @world[:id], :text => @wanted, :before => @world[:text], :reason => @wanted_reason, :left_out => @left_out.to_i, :since => @frames.to_i,
+                 :ticket => MGQ_MpWorld::Directory.claim }
     @wanted = nil
   end
 
   # Takes the relay's answer to the settings on their way: the world has them, which every player
-  # in it hears at once, or the creator is told why not.
+  # in it hears at once, or the creator is told why not. An answer another directory request took
+  # the place of sends the settings again.
   def self.follow_send
+    return resend unless MGQ_MpWorld::Directory.mine?(@sending[:ticket])
+
     action = MGQ_MpWorld::Directory.action
     if action["state"] == "busy" || action["kind"] != SHARE_ACTION
       return unless @frames.to_i - @sending[:since] > SEND_FRAMES
 
       log("the relay never answered the world's mod settings, giving up")
+      MGQ_MpWorld::Directory.release(@sending[:ticket])
       @sending = nil
       notify(format(FAILED_TEXT, NO_ANSWER_TEXT))
       show_row_value
@@ -1283,6 +1293,19 @@ module MGQ_MpWorldMods
     show_row_value
     refresh_menu
     pump
+  end
+
+  # Sends the settings on their way again, whose answer another directory request took the place
+  # of, unless newer ones wait.
+  def self.resend
+    sent = @sending
+    @sending = nil
+    log("the answer to the world's mod settings gave way to another directory request, sending them again")
+    unless @wanted
+      @wanted = sent[:text]
+      @wanted_reason = sent[:reason]
+      @left_out = sent[:left_out]
+    end
   end
 
   # Tells the creator what the players got from the settings the relay took.

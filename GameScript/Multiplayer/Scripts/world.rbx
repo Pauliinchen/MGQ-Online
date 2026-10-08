@@ -9,6 +9,7 @@
 #                            - Left Multiplayer on the title screen enabled once a newer release is out, offering to update and install it in a message box in place of the notice on every title screen
 #                            - Opened the world screen when the game started again after the update
 #                            - Kept the game open under Wine or Proton, where the updater cannot run, telling how to update by hand
+#                            - Let the world screen and the world's mod settings each claim the directory action they start and take only its answer
 #      Paulinchen  2026-10-07: Registered the title screen's commands, its end and a world's new game through core_hooks.rbx, keeping only the path wraps as wraps of this script
 #                            - Kept the worlds on this PC and the favourites read until one changes, since the world screen asks every few frames
 #                            - Named the DLL's exports alone, their signatures living in Multiplayer.rb
@@ -958,6 +959,44 @@ module MGQ_MpWorld
     # Forgets the last action once its result was taken.
     def self.clear
       MGQ_Multiplayer::Link.function('mp_dir_clear').call
+    end
+
+    # Notes that the action just started belongs to its caller, since the DLL keeps one action's
+    # answer at a time for the world screen and the world's mod settings alike.
+    #
+    # @return [Integer] The ticket that names the action.
+    def self.claim
+      @claimed = @claimed.to_i + 1
+      @released = false
+      @claimed
+    end
+
+    # Tells whether the action started last is the one a ticket names, whose answer is its caller's.
+    #
+    # @param ticket [Integer, nil] The ticket.
+    # @return [Boolean] Whether it is.
+    def self.mine?(ticket)
+      !ticket.nil? && ticket == @claimed
+    end
+
+    # Gives up on the answer of an action, which the next one may then drop.
+    #
+    # @param ticket [Integer, nil] The action's ticket.
+    def self.release(ticket)
+      @released = true if mine?(ticket)
+    end
+
+    # Tells whether an action may start without dropping an answer its caller still waits for: none
+    # ran, or the last one ended and was given up on, whose answer this forgets.
+    #
+    # @return [Boolean] Whether one may.
+    def self.free?
+      state = action["state"]
+      return true if state == "idle"
+      return false if state == "busy" || !@released
+
+      clear
+      true
     end
 
     # Reads the id everyone sees for the player.

@@ -10,6 +10,7 @@
 #                              mods, the edit form's texts and an options dump into a folder outside ASCII
 #                            - Removed the checks of the creator's button, which is gone
 #                            - Covered settings applied only for options a world may set and the restart under Wine
+#                            - Let the DLL's stand-in hold a started action as busy and forget it once cleared
 #      Paulinchen  2026-10-07: Covered the options sent from a copy of an older or of no known version while the relay lacks the current version's
 #                            - Looked each DLL call's signature up in the export table of Multiplayer.rb
 #      Paulinchen  2026-10-06: Expected the summary to name mods that are missing or in another version
@@ -166,7 +167,14 @@ module MGQ_Multiplayer
           args[1][0, hash.size] = hash
           hash.size
         when "mp_restart_game" then $restart
-        else ($refused || []).include?(name) ? 0 : 1
+        when "mp_dir_clear"
+          $dll["mp_dir_action"] = ""
+          1
+        else
+          refused = ($refused || []).include?(name)
+          # The DLL holds the action it started as busy until it ends.
+          $dll["mp_dir_action"] = "state=busy\nkind=settings\n\n" if name == "mp_dir_set_settings" && !refused
+          refused ? 0 : 1
         end
       end
     end
@@ -540,7 +548,6 @@ $scene = Scene_Config.new
 Scene_Base.new.update
 $game_system.conf[:mod_level_cap] = 1
 $scene = nil
-$dll["mp_dir_action"] = "state=busy\nkind=settings\n\n"
 Scene_Base.new.update
 check("leaving it with a changed option sends the creator's options", sent.call, ["@shared=o:1;mod_level_cap=i:1;mod_level_cap_limits=i:1;mod_other=i:3"])
 $scene = Scene_Config.new
@@ -554,6 +561,7 @@ $notices.clear
 Scene_Base.new.update
 check("the creator is told what every player got, and the latest options follow once the first arrived",
       [shown, sent.call], ["Shared with every player: Level Cap: Off -> On.", ["@shared=o:1;mod_level_cap=i:1;mod_level_cap_limits=i:1;mod_other=i:3", "@shared=o:1;mod_level_cap=i:1;mod_level_cap_limits=i:2;mod_other=i:3"]])
+$dll["mp_dir_action"] = "state=done\nkind=settings\n\n"
 Scene_Base.new.update
 $told.clear
 mods.on_observe(MGQ_MpOverworldSync::Peers::Peer.new(4, { "id" => "p4", "name" => "Late", "mod_settings" => "abc" }))
@@ -585,6 +593,7 @@ $game_system.conf[:mod_level_cap] = 1
 $game_system.conf[:mod_level_cap_limits] = 1
 $game_system.conf[row_key] = 1
 row.call[:on_change].call(1)
+$dll["mp_dir_action"] = "state=done\nkind=settings\n\n"
 Scene_Base.new.update
 check("turning it on sends the marker and the creator's options", [sent.call.last, shown, $game_system.conf[row_key]],
       ["@shared=o:1;mod_level_cap=i:1;mod_level_cap_limits=i:1", "Shared Mod Settings on: players here get your options of Level Cap.", 1])
@@ -594,14 +603,15 @@ $scene = Scene_Config.new
 Scene_Base.new.update
 $scene = nil
 Scene_Base.new.update
+$dll["mp_dir_action"] = "state=done\nkind=settings\n\n"
 Scene_Base.new.update
 check("an option past the relay's 2000 characters is left out, and the creator told so first", [sent.call.last, shown, fits],
       ["@shared=o:1;mod_level_cap_limits=i:1", "1 option(s) did not fit and were left out. Shared with every player: Level Cap: On -> no longer shared.", [true, true]])
 $game_system.conf[:mod_level_cap] = 1
-$dll["mp_dir_action"] = "state=failed\nkind=settings\nerror=The relay is down.\n\n"
 $notices.clear
 $game_system.conf[row_key] = 0
 row.call[:on_change].call(0)
+$dll["mp_dir_action"] = "state=failed\nkind=settings\nerror=The relay is down.\n\n"
 Scene_Base.new.update
 check("settings the relay refused are named, and the row shows the world's choice again", [shown, $game_system.conf[row_key]], ["The world's mod settings could not be saved: The relay is down.", 1])
 $refused = ["mp_dir_set_settings"]
@@ -613,7 +623,6 @@ told = shown
 check("settings that cannot be sent tell the creator once while they are tried again, and the row shows what is wanted",
       [told, shown, $game_system.conf[row_key]], [MGQ_MpWorldMods::NOT_SENT_TEXT, MGQ_MpWorldMods::NOT_SENT_TEXT, 0])
 $refused = []
-$dll["mp_dir_action"] = "state=busy\nkind=settings\n\n"
 $notices.clear
 (MGQ_MpWorldMods::RETRY_FRAMES + MGQ_MpWorldMods::SEND_FRAMES + 2).times { mods.tick }
 check("settings the relay never answers are named, and the row shows the world's choice again", [shown, $game_system.conf[row_key]],

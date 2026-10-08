@@ -9,6 +9,7 @@
 #                            - Noted the world entered with its creator and settings in one call
 #                            - Told whether the list was fetched since the screen opened as a world is entered
 #                            - Said when the edit form's Shared Mod Settings apply, and that the other changes were saved when the mod settings were not
+#                            - Claimed each directory action it starts, and gave up its answer as the screen closes during one
 #                            - Told the player to restart the game by hand under Wine or Proton after installing a world's mods, keeping the world to enter
 #      Paulinchen  2026-10-07: Left typing alone without a form, which failed the screen, and logged where the screen failed and the pictures in memory
 #                            - Cut texts through MGQ_MpUi.cut, which ends them in three dots, and took the choice window's depth from MGQ_MpUi
@@ -282,6 +283,7 @@ class Scene_MpWorlds < Scene_MenuBase
   # the list box.
   def terminate
     MGQ_Multiplayer::Link.typing(false) if (form && form.editing) || @mod_edit
+    MGQ_MpWorld::Directory.release(@busy_ticket) if @busy
     @list_box.dispose if @list_box
     log_screen("closed")
     super
@@ -1502,6 +1504,7 @@ class Scene_MpWorlds < Scene_MenuBase
     end
 
     @busy = kind
+    @busy_ticket = MGQ_MpWorld::Directory.claim
     @list_window.deactivate
     @form_window.deactivate
     # What the action ends with must not give way to the hint of the field it was sent from.
