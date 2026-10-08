@@ -9,7 +9,7 @@
 #                            - Checked the menu a click on a sender's name opens
 #                            - Checked whispers and their list of names, the help tab, the bubbles' chats and that what Alt types with the numpad is dropped
 #                            - Checked that a log made with the mouse button held and the box open draws without failing, and that a player's message cannot pose as an admin's line
-#                            - Checked that a menu's choice that leaves closes the chat box without failing, by click and by Enter, that a battle's menu offers only the whisper
+#                            - Checked that a menu's choice that leaves closes the chat box without failing, by click and by Enter, that a battle's menu offers only the whisper, and the menu's hint
 #                            - Checked the closed log's whispers, the separators a line loses, numbered names of players sharing one, and the say chat by the map its line was said on
 #                            - Checked that a line of a player whose name another shares shows their numbered name
 #                            - Checked the 0 after Numpad 0 closed a menu, the typing kept once the menu's player left, a global line too fast for the relay, the size kept in a battle and a line broken after the name
@@ -930,6 +930,10 @@ chat.start_typing
 chat.open_menu(friend_line, [100, 300])
 log_sprite.update
 go = chat.menu_options.map(&:text).index("Go along")
+log_sprite.instance_variable_set(:@menu_shown, nil)
+parts.clear
+log_sprite.draw_menu(chat)
+check("a player's menu says how to close it", parts.map { |_, text, _| text }.last, Sprite_MpChatLog::MENU_HINT)
 check("and builds its choices once per frame", chat.menu_options.equal?(chat.menu_options), true)
 $mouse = [menu_sprite.x + 1, menu_sprite.y + Sprite_MpChatLog::ROW * (go + 1) + 1]
 $mouse_held = true

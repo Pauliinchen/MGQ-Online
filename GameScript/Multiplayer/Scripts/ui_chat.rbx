@@ -33,6 +33,7 @@
 #                            - Colored the sender's name and kept its click spot when the line breaks right after it
 #                            - Left out the line and paragraph separators of players' and admins' lines
 #                            - Built a menu's choices and the fitting names once per frame
+#                            - Said how to close the chat box, the help tab and a player's menu
 #      Paulinchen  2026-10-07: Mirrored every line sent to everyone to the relay for the world's admins, and showed an admin's line from the relay as [Admin] in gold
 #                            - Closed the chat box with the numpad's 0, as the game's windows close
 #                            - Scrolled the chat log while the box is open with up, down, Page Up and Page Down, keeping the rows in place as lines come in
@@ -1293,10 +1294,13 @@ class Sprite_MpChatLog < Sprite
   TEXT_LEFT = 4
 
   # What the chat box says while it is empty.
-  BOX_HINT = "/help for more info, Alt+drag resizes"
+  BOX_HINT = "/help: more, Alt+drag: resize, Esc or Numpad 0: close"
 
   # What the chat box says on the help tab, where nobody types.
-  HELP_HINT = "Pick another tab to chat."
+  HELP_HINT = "Pick another tab to chat. Esc or Numpad 0: close"
+
+  # What a player's menu says below its choices.
+  MENU_HINT = "Esc or Numpad 0: close"
 
   # Room at the right of the rows for the arrows that show the log scrolls on.
   ARROW_ROOM = 14
@@ -1452,7 +1456,8 @@ class Sprite_MpChatLog < Sprite
   end
 
   # Draws the menu of the player whose name was clicked, if it changed: their name as its title,
-  # bold on a strip of its own, then the choices, refused ones grey, the picked one lighter. It opens above the name, kept on the screen.
+  # bold on a strip of its own, then the choices, refused ones grey, the picked one lighter, and
+  # how to close it. It opens above the name, kept on the screen.
   #
   # @param chat [Module] MGQ_MpChat.
   def draw_menu(chat)
@@ -1469,10 +1474,10 @@ class Sprite_MpChatLog < Sprite
     measure.font.bold = true
     title = measure.text_size(menu[:name]).width
     measure.font.bold = false
-    width = ([title] + options.map { |option| measure.text_size(option.text).width }).max + TAB_PAD * 2
+    width = ([title, measure.text_size(MENU_HINT).width] + options.map { |option| measure.text_size(option.text).width }).max + TAB_PAD * 2
     @menu_choices = options.size
     @menu_sprite.bitmap.dispose if @menu_sprite.bitmap
-    picture = @menu_sprite.bitmap = Bitmap.new(width, ROW * (options.size + 1))
+    picture = @menu_sprite.bitmap = Bitmap.new(width, ROW * (options.size + 2))
     picture.font.size = FONT_SIZE
     picture.font.outline = true
     picture.fill_rect(picture.rect, LIST_BACK)
@@ -1488,6 +1493,8 @@ class Sprite_MpChatLog < Sprite
       picture.font.color = option.run ? TEXT_COLOR : HINT
       picture.draw_text(TAB_PAD, top, width - TAB_PAD * 2, ROW, option.text)
     end
+    picture.font.color = HINT
+    picture.draw_text(TAB_PAD, ROW * (options.size + 1), width - TAB_PAD * 2, ROW, MENU_HINT)
     @menu_sprite.x = [[menu[:at][0], Graphics.width - width].min, 0].max
     @menu_sprite.y = [menu[:at][1] - picture.height, 0].max
   end
