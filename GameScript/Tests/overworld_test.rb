@@ -10,7 +10,8 @@
 #                            - Checked whispers and their list of names, the help tab, the bubbles' chats and that what Alt types with the numpad is dropped
 #                            - Checked that a log made with the mouse button held and the box open draws without failing, and that a player's message cannot pose as an admin's line
 #                            - Checked that a menu's choice that leaves closes the chat box without failing, by click and by Enter, that a battle's menu offers only the whisper
-#                            - Checked the closed log's whispers, the separators a line loses and numbered names of players sharing one
+#                            - Checked the closed log's whispers, the separators a line loses, numbered names of players sharing one, and the say chat by the map its line was said on
+#                            - Checked that a line of a player whose name another shares shows their numbered name
 #                            - Checked a global line too fast for the relay
 #      Paulinchen  2026-10-07: Checked the lines mirrored to the relay, the party chat kept from it, and an admin's line from the relay
 #                            - Checked scrolling the chat log
@@ -362,8 +363,8 @@ $sent.clear
 $typed = "\r"
 map_frame
 check("enter sends and closes", [chat.typing?, $typing_on, MGQ_Multiplayer::Capture.on?], [false, false, false])
-check("the line goes to the say chat, told only to the players on this map", [$sent.map(&:first), $sent.last[1].include?("chat=hi there"), $sent.last[1].include?("ch=say"), $sent.last[1].include?("map=")],
-      [[2], true, true, false])
+check("the line goes to the say chat, told once to everyone with the player's map", [$sent.map(&:first), $sent.last[1].include?("chat=hi there"), $sent.last[1].include?("ch=say"), $sent.last[1].include?("map=5")],
+      [[-1], true, true, true])
 check("own line in the log and bubble", [chat.log_lines.last, chat.bubble(:me)], ["Me: hi there", "hi there"])
 check("the say chat is not mirrored to the relay", $said, [])
 
@@ -386,15 +387,15 @@ map_frame
 $sent.clear
 $said.clear
 
-$inbox << entry("message", 2, "chat=hello\x01 you\nch=say\nname=Friend\n\n")
+$inbox << entry("message", 2, "chat=hello\x01 you\nch=say\nmap=5\nname=Friend\n\n")
 MGQ_MpOverworldSync.tick
 check("a friend's say line", [chat.log_lines.last, chat.bubble(2)], ["Friend: hello you", "hello you"])
 $inbox << entry("message", 7, "chat=who am i\nname=Stranger\n\n")
 MGQ_MpOverworldSync.tick
 check("a global line before the first state names the sender", chat.log_lines.last, "[Global] Stranger: who am i")
-$inbox << entry("message", 7, "chat=far away\nch=say\nname=Stranger\n\n")
+$inbox << entry("message", 7, "chat=far away\nch=say\nmap=9\nname=Stranger\n\n")
 MGQ_MpOverworldSync.tick
-check("a say line from nobody on this map is dropped", chat.log_lines.last, "[Global] Stranger: who am i")
+check("a say line said on another map is dropped", chat.log_lines.last, "[Global] Stranger: who am i")
 $inbox << { "kind" => "chat", "seat" => "0", "name" => "Global", :payload => "welcome\x01 all" }
 MGQ_MpOverworldSync.tick
 $inbox << entry("message", 7, "chat=I am the admin\nname=Admin\nrelay=1\n\n")
@@ -984,6 +985,16 @@ chat.start_typing
 $typed = "/w Friend (2) hi twin\r"
 map_frame
 check("/w and a numbered name whisper to that player", [$sent.map(&:first), chat.log_lines.last], [[8], "[To Friend (2)] Me: hi twin"])
+$inbox << entry("message", 8, told(friend.merge("id" => "zz-twin", "map" => 6)))
+$inbox << entry("message", 8, "chat=just arrived\nch=say\nmap=5\nname=Friend\n\n")
+MGQ_MpOverworldSync.tick
+check("a say line said on the player's map shows, under the numbered name, though the sender's last state names another", chat.log_lines.last, "Friend (2): just arrived")
+$inbox << entry("message", 8, told(friend.merge("id" => "zz-twin", "map" => 5)))
+$inbox << entry("message", 8, "chat=just left\nch=say\nmap=6\nname=Friend\n\n")
+$inbox << entry("message", friend_seat, "chat=first of us\nname=Friend\n\n")
+MGQ_MpOverworldSync.tick
+check("and one said on another map is dropped, though the last state names this one, while the first of them keeps the plain name",
+      chat.log_lines.last(2), ["Friend (2): just arrived", "[Global] Friend: first of us"])
 
 # A global line too fast for the relay.
 $say_result = MGQ_MpChat::TOO_FAST

@@ -25,6 +25,7 @@
 #                            - Showed whispers in the closed chat log whatever the tab
 #                            - Numbered a name that several players share in the whisper list and /w, and whispered to the player chosen by their id
 #                            - Named the sender of a line by the same numbered name, in the log and in their menu
+#                            - Sent a line of the say chat once to everyone with the sender's map, on which alone it shows
 #                            - Mirrored a global line to the relay before sending it, turning it down when it comes too fast
 #                            - Left out the line and paragraph separators of players' and admins' lines
 #      Paulinchen  2026-10-07: Mirrored every line sent to everyone to the relay for the world's admins, and showed an admin's line from the relay as [Admin] in gold
@@ -805,14 +806,17 @@ module MGQ_MpChat
     MGQ_MpOverworldSync.tell(peer.seat, fields)
   end
 
-  # Tells the players on the player's map something, through overworld_sync.rbx.
+  # Tells every other game a line of the say chat, with the player's map, on which the others hear
+  # it, through overworld_sync.rbx.
+  #
+  # One message to all, since one to each player on the map could fail for some of them only.
   #
   # @param fields [Hash] The message's fields.
-  # @return [Boolean] Whether it went out to all of them, true when nobody else is on the map.
+  # @return [Boolean] Whether it went out.
   def self.tell_map(fields)
-    here = MGQ_MpOverworldSync::Peers.present.select { |peer| MGQ_MpOverworldSync::Peers.on_this_map?(peer) }
-    log("#{here.size} other players on map #{$game_map.map_id} hear the say chat")
-    here.map { |peer| MGQ_MpOverworldSync.tell(peer.seat, fields) }.all?
+    here = MGQ_MpOverworldSync::Peers.all.count { |peer| MGQ_MpOverworldSync::Peers.on_this_map?(peer) }
+    log("#{here} other players on map #{$game_map.map_id} hear the say chat")
+    tell(fields.merge("map" => $game_map.map_id))
   end
 
   # Turns a line down that cannot be sent.
@@ -825,14 +829,19 @@ module MGQ_MpChat
   end
 
   # Takes another player's line of the global or the say chat, or an admin's that the relay said,
-  # marked :relay. A line of the say chat from a player on another map is dropped, since it came
-  # while they changed maps.
+  # marked :relay. A line of the say chat said on another map is dropped.
   #
-  # @param peer [MGQ_MpOverworldSync::Peers::Peer, nil] Who sent it, nil before their first state or for the relay.
-  # @param message [Hash] The message, the line under "chat", "ch" "say" for the say chat.
+  # The sender's map comes with the line, since their last state may lag behind or run ahead of it.
+  #
+  # @param peer [MGQ_MpOverworldSync::Peers::Peer, nil] Who sent it, nil before their first state
+  #   or for the relay.
+  # @param message [Hash] The message, the line under "chat", "ch" "say" for the say chat with the
+  #   sender's map under "map".
   def self.receive(peer, message)
     channel = message["ch"] == "say" ? :say : :global
-    return log("dropped a say line from #{peer ? MGQ_MpOverworldSync.who(peer) : message['name']}, who is on another map") if channel == :say && !(peer && MGQ_MpOverworldSync::Peers.on_this_map?(peer))
+    if channel == :say && !($game_map && !message["map"].to_s.empty? && message["map"].to_i == $game_map.map_id)
+      return log("dropped a say line from #{peer ? MGQ_MpOverworldSync.who(peer) : message['name']}, said on map #{message['map'] || '?'}")
+    end
 
     take_line(peer, message["chat"], message["name"], channel, message[:relay] == true)
   end

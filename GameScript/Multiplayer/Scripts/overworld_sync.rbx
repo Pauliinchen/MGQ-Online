@@ -648,7 +648,8 @@ module MGQ_MpOverworldSync
       present.find { |peer| peer.state["id"].to_s == id.to_s }
     end
 
-    # Reports whether another player's connection stands and they are on the player's map.
+    # Reports whether another player's connection stands and they are on the player's map, as their
+    # last state tells.
     #
     # @param peer [Peer] The player.
     # @return [Boolean] Whether they are.
