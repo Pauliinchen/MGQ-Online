@@ -2,7 +2,8 @@
 #  overworld_sync.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-08: Listed the players whose connection stands, found them by name and id and told whether one is on the player's map, which the chat and the map share
+#      Paulinchen  2026-10-08: Marked an admin's line from the relay with a key no player's message can carry, which let any player post as an admin
+#                            - Listed the players whose connection stands, found them by name and id and told whether one is on the player's map, which the chat and the map share
 #      Paulinchen  2026-10-07: Mirrored a chat line to the relay through say, and handed an admin's line from the relay to the chat's route
 #                            - Kept the player's seat as the inbox and the status tell it, asking the DLL only while none was told
 #                            - Logged a failing route once
@@ -662,7 +663,8 @@ module MGQ_MpOverworldSync
         # without a sender's state.
         name = entry["name"].to_s
         MGQ_MpOverworldSync.log("chat line from the relay for #{name}")
-        MGQ_MpOverworldSync.hand_over(nil, { "chat" => entry[:payload].to_s, "name" => name, "relay" => "1" })
+        # A Symbol key, which no player's message carries, since those are parsed into strings.
+        MGQ_MpOverworldSync.hand_over(nil, { "chat" => entry[:payload].to_s, "name" => name, :relay => true })
       when "message"
         message = MGQ_Multiplayer::Link.parse(entry[:payload].dup)
         # A state may carry a field named like a route, and a script's message may name a map, so

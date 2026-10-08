@@ -15,6 +15,7 @@
 #                            - Outlined the tabs and the open chat thinly, the chat in white while Alt is held to resize it, the picked tab open into the chat
 #                            - Filled the picked tab with its chat's color under dark text, which white tabs lacked the contrast for
 #                            - Opened a menu of what to do with another player, such as a party invite, a duel, a trade or a whisper, with a click on their name in the open chat box
+#                            - Trusted only the relay's own mark on an admin's line, so a player's message cannot pose as one
 #                            - Rested the map's chat log just under the topmost viewport, which it covered with the wheels and the World overview
 #                            - Sized the log before following the mouse, which a held button crashed on a log made that frame
 #                            - Found players through MGQ_MpOverworldSync::Peers and moved the three lists by one arrow step
@@ -774,7 +775,7 @@ module MGQ_MpChat
   end
 
   # Takes another player's line of the global or the say chat, or an admin's that the relay said,
-  # marked "relay". A line of the say chat from a player on another map is dropped, since it came
+  # marked :relay. A line of the say chat from a player on another map is dropped, since it came
   # while they changed maps.
   #
   # @param peer [MGQ_MpOverworldSync::Peers::Peer, nil] Who sent it, nil before their first state or for the relay.
@@ -783,7 +784,7 @@ module MGQ_MpChat
     channel = message["ch"] == "say" ? :say : :global
     return log("dropped a say line from #{peer ? MGQ_MpOverworldSync.who(peer) : message['name']}, who is on another map") if channel == :say && !(peer && MGQ_MpOverworldSync::Peers.on_this_map?(peer))
 
-    take_line(peer, message["chat"], message["name"], channel, message["relay"] == "1")
+    take_line(peer, message["chat"], message["name"], channel, message[:relay] == true)
   end
 
   # Takes a party member's line of the party chat. Called by coop.rbx, which drops another party's.

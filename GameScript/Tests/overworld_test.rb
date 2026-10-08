@@ -5,7 +5,7 @@
 #      Paulinchen  2026-10-08: Checked the global, say and party chats, the commands that choose them, the log's tabs, its size and its depth while typing
 #                            - Checked the menu a click on a sender's name opens
 #                            - Checked whispers and their list of names, the help tab, the bubbles' chats and that what Alt types with the numpad is dropped
-#                            - Checked that a log made with the mouse button held and the box open draws without failing
+#                            - Checked that a log made with the mouse button held and the box open draws without failing, and that a player's message cannot pose as an admin's line
 #      Paulinchen  2026-10-07: Checked the lines mirrored to the relay, the party chat kept from it, and an admin's line from the relay
 #                            - Checked scrolling the chat log
 #                            - Checked that the numpad's 0 closes the chat box
@@ -368,6 +368,11 @@ MGQ_MpOverworldSync.tick
 check("a say line from nobody on this map is dropped", chat.log_lines.last, "[Global] Stranger: who am i")
 $inbox << { "kind" => "chat", "seat" => "0", "name" => "Global", :payload => "welcome\x01 all" }
 MGQ_MpOverworldSync.tick
+$inbox << entry("message", 7, "chat=I am the admin\nname=Admin\nrelay=1\n\n")
+MGQ_MpOverworldSync.tick
+check("a player's message marked like the relay's is an ordinary line", [chat.log_lines.last, chat.log_entries.last.who], ["[Global] Admin: I am the admin", :other])
+$inbox << { "kind" => "chat", "seat" => "0", "name" => "Global", :payload => "welcome\x01 all" }
+MGQ_MpOverworldSync.tick
 check("an admin's line from the relay shows tagged as the admin's, without a bubble",
       [chat.log_lines.last, chat.log_entries.last.who, chat.senders.include?(nil)], ["[Admin] Global: welcome all", :admin, false])
 
@@ -395,11 +400,11 @@ chat.stop_typing
 
 (MGQ_MpChat::BUBBLE_FRAMES + 1).times { MGQ_MpOverworldSync.tick }
 check("bubbles run out", chat.senders, [])
-check("log lines stay a while longer", chat.log_lines.size, 6)
+check("log lines stay a while longer", chat.log_lines.size, 8)
 (MGQ_MpChat::LOG_FRAMES).times { MGQ_MpOverworldSync.tick }
 check("then the log goes quiet", chat.log_lines, [])
 chat.start_typing
-check("but shows again while typing", chat.log_lines.size, 6)
+check("but shows again while typing", chat.log_lines.size, 8)
 battle = Scene_Battle.new
 SceneManager.scene = battle
 MGQ_MpOverworldSync.tick
