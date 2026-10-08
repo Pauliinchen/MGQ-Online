@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-08: Found the players on this map through MGQ_MpOverworldSync::Peers.on_this_map?, which the chat shares
+#                            - Showed a follower whose sprite this game lacks as the outline of Luka's sprite alone, instead of Luka, green while its player is in the player's party and white otherwise
 #                            - Loaded the graphics other players' games name through graphic, which remembers the files this game lacks for the last 64 names only
 #                            - Read Luka's sprite of the game's data once as the script loads instead of mid-frame
 #                            - Compared a ghost's and a follower's sprite with the one last sent without building a pair every frame
@@ -75,6 +76,10 @@ module MGQ_MpOverworld
   # Graphics another player's game named that graphic keeps whether this game has at most, the
   # longest unused forgotten first, so a game naming ever new files cannot grow the list.
   MOST_GRAPHICS_KEPT = 64
+
+  # Colors of the outline that stands in for a follower whose sprite this game lacks: green while
+  # its player is in the player's party, white otherwise.
+  OUTLINE_COLORS = { :member => Color.new(0, 255, 0), :stranger => Color.new(255, 255, 255) }
 
   # Whether this game has each graphic another player's game named, by its folder and file, the
   # longest unused first.
@@ -164,16 +169,26 @@ module MGQ_MpOverworld
     false
   end
 
-  # Tells which sprite a ghost or its follower shows for one its player's game sent: that one, or
-  # Luka's of the game's data while this game lacks its file, such as a hero another mod added
-  # there. A missing file raised in the map's sprites every frame, which kept the ghosts after it
-  # and the status line from drawing.
+  # Tells which sprite a ghost shows for one its player's game sent: that one, or Luka's of the
+  # game's data while this game lacks its file. A missing file raised in the map's sprites every
+  # frame, which kept the ghosts after it and the status line from drawing.
   #
   # @param name [String] The sprite's file.
   # @param index [Integer] The sprite's index in the file.
   # @return [Array] The file and the index to show.
   def self.sprite(name, index)
     graphic?(:character, name) ? [name, index] : stand_in
+  end
+
+  # Tells which sprite a ghost's follower shows for one its player's game sent: that one, or the
+  # outline alone of Luka's of the game's data while this game lacks its file, so a party member's
+  # companions do not show as copies of Luka.
+  #
+  # @param name [String] The sprite's file.
+  # @param index [Integer] The sprite's index in the file.
+  # @return [Array] The file and the index to show, and whether only the outline shows.
+  def self.follower_sprite(name, index)
+    graphic?(:character, name) ? [name, index, false] : stand_in + [true]
   end
 
   # Tells Luka's sprite as the game's data has it, see read_stand_in.
@@ -193,6 +208,54 @@ module MGQ_MpOverworld
   rescue => e
     log("reading Luka's sprite failed: #{e.class}: #{e.message}")
     @stand_in = ["", 0]
+  end
+
+  # Draws the outline of Luka's sprite once per color: a sheet the size of Luka's, transparent but
+  # for the visible pixels on the edge of each of Luka's frames.
+  #
+  # @param kind [Symbol] The color's key of OUTLINE_COLORS, :member or :stranger.
+  # @return [Bitmap, nil] The outline, nil when it cannot be drawn.
+  def self.outline(kind)
+    @outlines ||= {}
+    known = @outlines[kind]
+    return known if known && !known.disposed?
+
+    color = OUTLINE_COLORS.fetch(kind)
+    name, index = stand_in
+    sheet = Cache.character(name)
+    single = name[/^[\!\$]./].to_s.include?("$")
+    width = sheet.width / (single ? 3 : 12)
+    height = sheet.height / (single ? 4 : 8)
+    left = index % 4 * 3 * width
+    top = index / 4 * 4 * height
+    outline = Bitmap.new(sheet.width, sheet.height)
+    12.times { |frame| outline_frame(sheet, outline, Rect.new(left + frame % 3 * width, top + frame / 3 * height, width, height), color) }
+    @outlines[kind] = outline
+  rescue => e
+    log_once([:outline, kind], "drawing the #{kind} outline of Luka's sprite failed: #{e.class}: #{e.message}")
+    nil
+  end
+
+  # Marks the visible pixels of one frame of a sprite sheet that border a transparent one or the
+  # frame's edge.
+  #
+  # @param sheet [Bitmap] The sprite sheet.
+  # @param outline [Bitmap] Where the marks go, the size of the sheet.
+  # @param frame [Rect] The frame on the sheet.
+  # @param color [Color] The marks' color.
+  def self.outline_frame(sheet, outline, frame, color)
+    visible = Array.new(frame.height) { |y| Array.new(frame.width) { |x| sheet.get_pixel(frame.x + x, frame.y + y).alpha > 0 } }
+    last_x = frame.width - 1
+    last_y = frame.height - 1
+    visible.each_with_index do |row, y|
+      row.each_with_index do |shown, x|
+        next unless shown
+        next unless x == 0 || y == 0 || x == last_x || y == last_y ||
+                    !row[x - 1] || !row[x + 1] || !visible[y - 1][x] || !visible[y + 1][x]
+
+        outline.set_pixel(frame.x + x, frame.y + y, color)
+      end
+    end
   end
 
   # Tells the name above a ghost's head: the one the chat tells its player apart by, such as
@@ -223,6 +286,11 @@ class Game_MpGhost < Game_Character
   # @return [Array<Game_MpGhostFollower>] The followers, none outside the player's party.
   attr_reader :followers
 
+  # Tells whether the ghost's player is in the player's party, as last followed.
+  #
+  # @return [Boolean] Whether they are.
+  attr_reader :member
+
   # Creates the ghost where its player stands.
   #
   # @param state [Hash] What the player last told.
@@ -243,6 +311,7 @@ class Game_MpGhost < Game_Character
   # @param state [Hash] What the player last told.
   # @param member [Boolean] Whether they are in the player's party.
   def follow(state, member)
+    @member = member ? true : false
     look_like(state)
     @opacity = member ? 255 : MGQ_MpOverworld::STRANGER_OPACITY
     update
@@ -294,6 +363,11 @@ end
 # A follower behind a party member's ghost: it steps where the one before it stood, as the game's
 # own followers do.
 class Game_MpGhostFollower < Game_Character
+  # Tells which outline the follower shows in place of its sprite, see MGQ_MpOverworld.follower_sprite.
+  #
+  # @return [Symbol, nil] The key of MGQ_MpOverworld::OUTLINE_COLORS, nil while it shows its own sprite.
+  attr_reader :outline
+
   # Creates the follower where the one before it stands.
   #
   # @param preceding [Game_Character] The ghost or the follower before it.
@@ -307,17 +381,20 @@ class Game_MpGhostFollower < Game_Character
     moveto(preceding.x, preceding.y)
   end
 
-  # Takes the follower's look and the ghost's speed, opacity and visibility.
+  # Takes the follower's look and the ghost's speed, opacity and visibility, and the outline's
+  # color by whether the ghost's player is in the player's party, which may change any time.
   #
   # @param name [String] The sprite's file.
   # @param index [Integer] The sprite's index in the file.
   # @param ghost [Game_MpGhost] The ghost it follows.
   def look_like(name, index, ghost)
     unless name == @sent_name && index == @sent_index
-      set_graphic(*MGQ_MpOverworld.sprite(name, index))
+      shown_name, shown_index, @outlined = MGQ_MpOverworld.follower_sprite(name, index)
+      set_graphic(shown_name, shown_index)
       @sent_name = name
       @sent_index = index
     end
+    @outline = @outlined ? (ghost.member ? :member : :stranger) : nil
     @move_speed = ghost.move_speed
     @opacity = ghost.opacity
     @transparent = ghost.transparent
@@ -344,6 +421,26 @@ class Game_MpGhostFollower < Game_Character
   def gather(ghost)
     moveto(ghost.x, ghost.y)
     set_direction(ghost.direction)
+  end
+end
+
+# The sprite of a ghost's follower: the game's sprite of a character, or the outline alone of
+# Luka's while this game lacks the follower's own.
+class Sprite_MpGhostFollower < Sprite_Character
+  # Tells whether the follower's look changed, its outline and the outline's color too.
+  #
+  # @return [Boolean] Whether it did.
+  def graphic_changed?
+    super || @mgq_mp_outline != @character.outline
+  end
+
+  # Takes the follower's sprite as the game does, and the outline in its place while the follower
+  # shows only that, which keeps the frames' size, since it is drawn on a sheet the size of Luka's.
+  def set_character_bitmap
+    super
+    @mgq_mp_outline = @character.outline
+    outline = @mgq_mp_outline ? MGQ_MpOverworld.outline(@mgq_mp_outline) : nil
+    self.bitmap = outline if outline
   end
 end
 
@@ -615,7 +712,7 @@ begin
 
     # Followers first, so a ghost's sprite and label draw over its followers on the same tile.
     followers.each do |follower|
-      (@mgq_mp_followers[follower] ||= Sprite_Character.new(@viewport1, follower)).update
+      (@mgq_mp_followers[follower] ||= Sprite_MpGhostFollower.new(@viewport1, follower)).update
     end
 
     # Labels on one tile stack upwards, above the player's own ping on the player's tile.

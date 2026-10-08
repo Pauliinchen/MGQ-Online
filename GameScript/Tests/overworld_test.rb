@@ -2,7 +2,7 @@
 #  overworld_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-08: Checked that the graphics checked stay few
+#      Paulinchen  2026-10-08: Checked that a follower whose sprite this game lacks shows the outline of Luka's, how the outline is drawn, and that the graphics checked stay few
 #                            - Checked that a ghost's name tag numbers a name two players share as the chat does, and is drawn anew once one of them left
 #                            - Started the status's count of frames anew before checking a new connection's seat, which a status look in the same frame replaced depending on how many frames the checks before took
 #                            - Checked the global, say and party chats, the commands that choose them, the log's tabs, its size and its depth while typing
@@ -110,6 +110,7 @@ $inbox << entry("message", 2, told(friend))
 MGQ_MpOverworldSync.tick
 MGQ_MpOverworld.update_ghosts
 check("and the friend's own again once they show one this game has", [ghost.character_name, ghost.character_index], ["Actor2", 3])
+check("and a ghost is never only an outline", ghost.respond_to?(:outline), false)
 
 # A name two players share is numbered above the second one's head as in the chat, and the tag is
 # drawn anew once the other left.
@@ -139,6 +140,20 @@ check("and the tag is drawn anew with the plain name once the other left", writt
 graphics = MGQ_MpOverworld.instance_variable_get(:@graphics)
 check("at most MOST_GRAPHICS_KEPT graphics are kept, one in use stays", [graphics.size, graphics.key?("character/$missing"), graphics.key?("character/Other0")],
       [MGQ_MpOverworld::MOST_GRAPHICS_KEPT, true, false])
+
+# The outline marks the visible pixels of a frame that border a transparent one or the frame's edge.
+Pixel = Struct.new(:alpha)
+sheet = Object.new
+sheet.define_singleton_method(:get_pixel) { |x, y| Pixel.new((1..4).include?(x) && (1..3).include?(y) ? 255 : 0) }
+marked = []
+outline = Object.new
+green = MGQ_MpOverworld::OUTLINE_COLORS[:member]
+outline.define_singleton_method(:set_pixel) { |x, y, color| marked << [x, y] if color.equal?(green) }
+MGQ_MpOverworld.outline_frame(sheet, outline, Rect.new(0, 0, 6, 5), green)
+check("the outline marks only the edge of what is visible", marked.sort, [[1, 1], [1, 2], [1, 3], [2, 1], [2, 3], [3, 1], [3, 3], [4, 1], [4, 2], [4, 3]])
+marked.clear
+MGQ_MpOverworld.outline_frame(sheet, outline, Rect.new(2, 1, 2, 3), green)
+check("and the frame's edge counts as transparent", marked.size, 6)
 
 # One tile away: the ghost walks; far away: it jumps.
 $inbox << entry("message", 2, told(friend.merge("x" => 11)))
@@ -274,6 +289,14 @@ check("followers are told only once shown", [$sent.last[1].include?("trail=\n"),
   MGQ_MpOverworld.update_ghosts
 end
 check("a member's ghost has their followers", ghost.followers.map { |f| [f.character_name, f.character_index] }, [["Actor5", 1], ["Actor6", 2]])
+$inbox << entry("message", 2, told(friend.merge("map" => 5, "x" => 24, "y" => 22, "party" => my_party, "trail" => "Actor5*1|$missing*2")))
+MGQ_MpOverworldSync.tick
+MGQ_MpOverworld.update_ghosts
+check("a follower whose sprite this game lacks shows only the outline of Luka's",
+      ghost.followers.map { |f| [f.character_name, f.character_index, f.outline] }, [["Actor5", 1, nil], ["Luka", 0, :member]])
+outlined = ghost.followers.last
+outlined.look_like("$missing", 2, Struct.new(:member, :move_speed, :opacity, :transparent).new(false, 4, 255, false))
+check("in white once its player is no longer in the party", outlined.outline, :stranger)
 check("each a step behind the one before", [ghost.x, ghost.followers.map(&:x)], [24, [23, 22]])
 $inbox << entry("message", 2, told(friend.merge("map" => 5, "x" => 24, "y" => 40, "party" => my_party, "trail" => "Actor5*1")))
 MGQ_MpOverworldSync.tick

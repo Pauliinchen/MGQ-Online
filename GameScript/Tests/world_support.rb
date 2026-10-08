@@ -4,6 +4,7 @@
 #  Changelog:
 #      Paulinchen  2026-10-08: Told the keys held from $down, and the mouse from $mouse
 #                            - Answered a mirrored chat line as the DLL does, 1 for taken unless $say_result tells otherwise
+#                            - Stood in for the game's character sprite, which the sprite of a ghost's follower builds on
 #      Paulinchen  2026-10-07: Stood in for the chat lines mirrored to the relay
 #      Paulinchen  2026-10-06: Read the texts of the line at the bottom left here, since overworld_sync.rbx no longer offers them
 #                            - Kept the buttons held while any screen holds them, as Multiplayer.rb does
@@ -26,6 +27,7 @@ require_relative "support"
 
 # Stand-ins for the game.
 class Sprite; def initialize(*); end; end
+class Sprite_Character < Sprite; end
 module Graphics; def self.update; end; end
 class Spriteset_Map; def update; end; def dispose; end; end
 Rect = Struct.new(:x, :y, :width, :height)
