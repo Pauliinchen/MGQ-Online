@@ -4,6 +4,8 @@
 #  Changelog:
 #      Paulinchen  2026-10-08: Checked that a watched key goes down once per frame, ended by a game window's own Input.update
 #                            - Checked that a held key reads as one press however often Input.update runs in a frame
+#                            - Checked that the sessions kept are counted by the scripts' logs, keeping a DLL's log named a moment early, that a game started
+#                              for the options dump deletes nothing, and that only the logs deleted are counted
 #      Paulinchen  2026-10-07: Checked that starting a session deletes the logs of all but the last five sessions and leaves other files
 #                            - Checked how the log's last line tells the game closing
 #                            - Checked that the press closing the last screen reaches the game from the next frame only
@@ -128,6 +130,35 @@ Dir.mktmpdir do |game|
     check("starting a session deletes both logs of every session but the last five, this one among them, and leaves other files",
           left, (["DiscordPresence 2026-01-01 10-00-00.log", "Multiplayer.log", files.first] +
                  older.last(4).map { |stamp| ["Multiplayer #{stamp}.log", "Multiplayer InGame #{stamp}.log"] }.flatten).sort)
+  end
+end
+
+# The sessions kept are counted by the scripts' logs: a DLL's log named a moment before its
+# session's stays with it, a game started for the options dump counts no session and deletes
+# nothing, and only the logs actually deleted are counted.
+Dir.mktmpdir do |game|
+  Dir.chdir(game) do
+    Dir.mkdir("Logs")
+    logs = lambda { Dir.entries("Logs").reject { |name| name.start_with?(".") }.sort }
+    (1..6).each { |day| File.write(File.join("Logs", "Multiplayer InGame 2026-01-0#{day} 10-00-00.log"), "x") }
+    others = ["Multiplayer 2026-01-03 09-59-40.log", "Multiplayer 2026-01-02 10-00-20.log", "Multiplayer InGame 2026-01-05 12-00-00 options dump.log",
+              "Multiplayer 2026-01-05 12-00-00.log", "Multiplayer InGame 2026-01-01 12-00-00 options dump.log"]
+    others.each { |name| File.write(File.join("Logs", name), "x") }
+    # A folder cannot be deleted as a file is.
+    Dir.mkdir(File.join("Logs", "Multiplayer InGame 2026-01-01 11-00-00.log"))
+    before = logs.call
+    ENV["MGQMP_OPTIONS_DUMP"] = "options.txt"
+    MGQ_Multiplayer::Log.prune
+    check("a game started for the options dump deletes no log", logs.call, before)
+    ENV.delete("MGQMP_OPTIONS_DUMP")
+    MGQ_Multiplayer::Log.write("pruning")
+    MGQ_Multiplayer::Log.prune
+    own = MGQ_Multiplayer::Log.file_name
+    check("the others keep the last five sessions played, a DLL's log named a moment before its session's, and the dumps' logs since",
+          logs.call, (["Multiplayer 2026-01-03 09-59-40.log", "Multiplayer InGame 2026-01-05 12-00-00 options dump.log", "Multiplayer 2026-01-05 12-00-00.log",
+                       "Multiplayer InGame 2026-01-01 11-00-00.log", own] + (3..6).map { |day| "Multiplayer InGame 2026-01-0#{day} 10-00-00.log" }).sort)
+    lines = File.read(File.join("Logs", own)).lines.map { |line| line.split("  ", 2)[1].to_s.chomp }
+    check("the log counts the logs deleted and those that could not be", lines.last(2), ["deleted 4 log(s) of sessions older than the last 5", "could not delete 1 old log(s)"])
   end
 end
 

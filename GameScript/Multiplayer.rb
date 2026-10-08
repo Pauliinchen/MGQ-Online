@@ -7,6 +7,9 @@
 #                            - Named mp_update_game, which starts the mod's updater, and told the player to pick Multiplayer to update
 #                            - Told a watched key's press frame by frame, ended by the Input.update of a game window's cancel
 #                            - Counted the frames for Key.pressed? at Graphics.update, since a game window's cancel calls Input.update twice in a frame, which made a held key read as a new press
+#                            - Counted the sessions kept by the scripts' logs alone, keeping a DLL's log named a moment before its session's
+#                            - Deleted no logs in a game started for the options dump, whose log no longer counts as a session
+#                            - Counted only the old logs actually deleted, and logged those that could not be
 #      Paulinchen  2026-10-07: Named mp_world_say, which mirrors a chat line to the relay for the world's admins
 #                            - Kept the logs of the last five game sessions, deleting older ones as a session starts
 #                            - Logged the hooks as one line per script with its count, once the scripts loaded and once a frame
@@ -252,8 +255,26 @@ module MGQ_Multiplayer
     # session starts.
     KEPT_SESSIONS = 5
 
-    # A session's log of this mod, the scripts' or the DLL's, and the session's start in its name.
-    SESSION_LOG = /\AMultiplayer(?: InGame)? (\d{4}-\d{2}-\d{2} \d{2}-\d{2}-\d{2})\.log\z/
+    # A session's log of this mod, the scripts', the DLL's or an options dump's, and the session's
+    # start in its name.
+    SESSION_LOG = /\AMultiplayer(?: InGame)? (\d{4}-\d{2}-\d{2} \d{2}-\d{2}-\d{2})(?: options dump)?\.log\z/
+
+    # The scripts' log of a game session the player played, which alone counts the sessions kept.
+    PLAYED_LOG = /\AMultiplayer InGame (\d{4}-\d{2}-\d{2} \d{2}-\d{2}-\d{2})\.log\z/
+
+    # Seconds the DLL may name its log of a session before the scripts' log of it.
+    #
+    # Each names its log after the game's start as Windows tells it, but when Windows cannot tell,
+    # as under Wine, after its own start, which differs by the moments between them.
+    SESSION_SLACK = 60
+
+    # What ends the name of the scripts' log of a game the World Admin tool started for the options
+    # dump, which quits at once and so is no session the player played.
+    DUMP_SUFFIX = " options dump"
+
+    # The environment variable through which the World Admin tool asks for the options dump, as
+    # world_mods.rbx's MGQ_MpWorldMods::DUMP_SETTING names it.
+    DUMP_SETTING = "MGQMP_OPTIONS_DUMP"
 
     # When this script loaded, which stands in for the game's start when Windows cannot tell it.
     @loaded = Time.now
@@ -295,25 +316,49 @@ module MGQ_Multiplayer
       File.open(MGQ_Multiplayer.log_path(file_name), "ab") { |file| file.write("#{Time.now}  #{text}\n") }
     end
 
-    # Deletes the logs of every session but the newest KEPT_SESSIONS, both the scripts' and the
-    # DLL's, since each game start writes a pair and nothing else ever removes them.
+    # Deletes the logs of every session older than the newest KEPT_SESSIONS the player played, the
+    # scripts', the DLL's and those of options dumps, since each game start writes a pair and nothing
+    # else ever removes them. A game started for the options dump deletes nothing.
     def self.prune
-      return unless File.directory?(LOG_DIR)
+      return if dump_run? || !File.directory?(LOG_DIR)
 
       logs = Dir.entries(LOG_DIR).select { |name| name =~ SESSION_LOG }
-      kept = (logs.map { |name| name[SESSION_LOG, 1] } | [session_stamp]).sort.reverse.first(KEPT_SESSIONS) | [session_stamp]
-      gone = logs.reject { |name| kept.include?(name[SESSION_LOG, 1]) }
-      gone.each { |name| File.delete("#{LOG_DIR}\\#{name}") rescue nil }
-      write("deleted #{gone.size} log(s) of sessions older than the last #{KEPT_SESSIONS}") unless gone.empty?
+      played = (logs.map { |name| name[PLAYED_LOG, 1] }.compact | [session_stamp]).sort.reverse
+      return if played.size <= KEPT_SESSIONS
+
+      oldest_kept = time_of(played[KEPT_SESSIONS - 1]) - SESSION_SLACK
+      gone = logs.select { |name| time_of(name[SESSION_LOG, 1]) < oldest_kept }
+      deleted = gone.count { |name| (File.delete("#{LOG_DIR}\\#{name}") rescue 0) == 1 }
+      write("deleted #{deleted} log(s) of sessions older than the last #{KEPT_SESSIONS}") if deleted > 0
+      write("could not delete #{gone.size - deleted} old log(s)") if deleted < gone.size
     rescue => e
       write("deleting old logs failed: #{e.class}: #{e.message}")
     end
 
+    # Tells whether the World Admin tool started the game for the options dump, see
+    # MGQ_MpWorldMods.dump_requested?.
+    #
+    # @return [Boolean] Whether it did.
+    def self.dump_run?
+      !ENV[DUMP_SETTING].to_s.empty?
+    rescue
+      false
+    end
+
+    # Reads the time a log's name shows.
+    #
+    # @param stamp [String] Such as "2026-10-07 18-30-05".
+    # @return [Time] The time, in local time.
+    def self.time_of(stamp)
+      Time.local(*stamp.scan(/\d+/).map { |part| part.to_i })
+    end
+
     # Names this session's log after the game's start, read once.
     #
-    # @return [String] The file name, such as "Multiplayer InGame 2026-10-07 18-30-05.log".
+    # @return [String] The file name, such as "Multiplayer InGame 2026-10-07 18-30-05.log", with
+    #   DUMP_SUFFIX before ".log" for a game started for the options dump.
     def self.file_name
-      @file_name ||= "#{NAME} #{session_stamp}.log"
+      @file_name ||= "#{NAME} #{session_stamp}#{dump_run? ? DUMP_SUFFIX : ''}.log"
     end
 
     # Writes when the game started, in local time, as the log's name shows it.
