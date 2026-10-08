@@ -2,6 +2,7 @@
 #  ui_notices.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-08: Kept an accepted invite away only for a moment, so one whose accept did nothing, such as in a menu, shows again
 #      Paulinchen  2026-10-07: Kept an accepted invite away while it stands, as a declined one, so a second press no longer accepts it again
 #                            - Took the box's depth from MGQ_MpUi
 #                            - Logged each message posted, dropped or run out, what the box shows whenever it changes, and each invite answered or key ignored with why
@@ -35,6 +36,10 @@ module MGQ_MpNotices
 
   # Color of a message.
   MESSAGE_COLOR = Color.new(220, 220, 220)
+
+  # Frames an accepted invite stays away, two seconds: long enough that a second press accepts
+  # nothing, after which it shows again if it still stands, since the accept then did nothing.
+  ACCEPT_HOLD_FRAMES = 120
 
   @messages = []
   @answered = {}
@@ -76,9 +81,12 @@ module MGQ_MpNotices
   def self.notices(in_world = true)
     peers = in_world ? MGQ_MpOverworldSync::Peers.all.sort_by { |peer| peer.state["name"].to_s.downcase } : []
     invites = peers.map { |peer| MGQ_MpActions.offers.map { |offers| offers.notice_of(peer) } }.flatten.compact
-    # An invite the player answered stays away while it stands; a new one shows again.
-    @answered.delete_if { |key, mark| invites.none? { |invite| invite.key == key && invite.mark == mark } }
-    invites.reject! { |invite| @answered[invite.key] == invite.mark }
+    # A declined invite stays away while it stands, an accepted one for ACCEPT_HOLD_FRAMES; a new
+    # one shows again.
+    @answered.delete_if do |key, answer|
+      (answer[:frames] && answer[:frames] <= 0) || invites.none? { |invite| invite.key == key && invite.mark == answer[:mark] }
+    end
+    invites.reject! { |invite| @answered[invite.key] && @answered[invite.key][:mark] == invite.mark }
     messages = @messages.reverse.map { |entry| MGQ_MpActions::Notice.new(entry[:key], entry[:text], MESSAGE_COLOR) }
     (invites + messages).first(MAX_ROWS)
   end
@@ -95,6 +103,7 @@ module MGQ_MpNotices
     gone = @messages.select { |entry| entry[:frames] <= 0 || (entry[:world] && !in_world) }
     gone.each { |entry| log("message #{entry[:frames] <= 0 ? 'ran out' : 'dropped, the world closed'}: #{MGQ_MpLog.short(entry[:text])}") }
     @messages -= gone
+    @answered.each_value { |answer| answer[:frames] -= 1 if answer[:frames] }
     @answered.clear unless in_world
     list = shown? ? notices(in_world) : []
     answer = accept ? :take : decline ? :decline : nil
@@ -130,7 +139,7 @@ module MGQ_MpNotices
     end
 
     answer == :take ? Sound.play_ok : Sound.play_cancel
-    @answered[invite.key] = invite.mark
+    @answered[invite.key] = { :mark => invite.mark, :frames => answer == :take ? ACCEPT_HOLD_FRAMES : nil }
     log("#{answer == :take ? 'accepted' : 'declined'} the first invite (#{invite.key.inspect}): #{MGQ_MpLog.short(invite.text)}")
     invite[answer].call
     true

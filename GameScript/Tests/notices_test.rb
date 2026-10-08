@@ -2,6 +2,7 @@
 #  notices_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-08: Checked that an accepted invite shows again after a moment while it still stands, and a declined one stays away
 #      Paulinchen  2026-10-07: Checked that an accepted invite stays away while it stands
 #      Paulinchen  2026-10-06: Checked that a message shown outside a world shows there and goes after a moment
 #      Paulinchen  2026-10-04: Followed the scripts to their new names, without mp_
@@ -143,7 +144,13 @@ accept.call
 check("otherwise the accept key accepts the challenge on the map", $duel_answer, [:accept, "Cid"])
 $duel_answer = nil
 accept.call
-check("which then stays away while it stands, so another press accepts nothing", [shown.call.include?("Cid challenges you to a duel"), $duel_answer], [false, nil])
+check("which then stays away for a moment, so another press accepts nothing", [shown.call.include?("Cid challenges you to a duel"), $duel_answer], [false, nil])
+MGQ_MpNotices::ACCEPT_HOLD_FRAMES.times { notices.tick(true) }
+check("and shows again while it still stands, since the accept did nothing", shown.call.include?("Cid challenges you to a duel"), true)
+$pressed = 0x4E
+notices.tick(true)
+MGQ_MpNotices::ACCEPT_HOLD_FRAMES.times { notices.tick(true) }
+check("a declined invite stays away while it stands", shown.call.include?("Cid challenges you to a duel"), false)
 
 # Leaving the world.
 notices.message(:left, "Gone with the world")
