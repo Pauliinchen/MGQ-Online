@@ -2,7 +2,8 @@
 #  overworld_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-08: Checked the global, say and party chats, the commands that choose them, the log's tabs, its size and its depth while typing
+#      Paulinchen  2026-10-08: Started the status's count of frames anew before checking a new connection's seat, which a status look in the same frame replaced depending on how many frames the checks before took
+#                            - Checked the global, say and party chats, the commands that choose them, the log's tabs, its size and its depth while typing
 #                            - Checked that the numpad's Insert closes the chat box with Num Lock off
 #                            - Checked the menu a click on a sender's name opens
 #                            - Checked whispers and their list of names, the help tab, the bubbles' chats and that what Alt types with the numpad is dropped
@@ -1096,6 +1097,7 @@ me.forget_seat
 check("the seat is asked of the DLL the first time", [me.seat, $status_calls], [2, 1])
 check("and kept after that", [me.seat, me.seat, $status_calls], [2, 2, 1])
 $inbox << entry("seat", 5)
+MGQ_MpOverworldSync::Status.instance_variable_set(:@frames, 0)
 MGQ_MpOverworldSync.tick
 check("a new connection's seat replaces it", me.seat, 5)
 $status_seat = "6"
