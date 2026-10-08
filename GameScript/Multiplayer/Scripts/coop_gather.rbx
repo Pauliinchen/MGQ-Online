@@ -2,6 +2,10 @@
 #  coop_gather.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-08: Gathered nobody in a Raid World, where whoever is on the map watches, and took everyone on the map along where the story moves its teller
+#                            - Offered a teleport to the story in a Raid World, to where the story was last told until the relay keeps its endpoint, with that place's warp ban
+#                            - Kept telling the story to the players a Raid World's story took along until they arrive
+#                            - Took the followers and the teller from MGQ_MpCoop::Scope
 #      Paulinchen  2026-10-07: Dropped a call to a map this game lacks, which ended the game at the transfer
 #                            - Registered the encounter hook through core_hooks.rbx instead of a wrap of its own
 #                            - Gathered, held and called for the leader's story only the members synced with the leader, who follow it
@@ -23,6 +27,9 @@
 # play on; a member who plays their own story is never called. A member may also teleport to the leader on their own. The story
 # scenes themselves are sorted and told by coop_events.rbx, which hands this script its messages.
 #
+# A Raid World gathers nobody: whoever is on the map watches. A story that moves its teller elsewhere
+# takes everyone on the map along, and anyone may teleport to the story on their own.
+#
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpCoopGather
   # Frames a member gets to finish what they do before a story scene brings them to the leader,
@@ -42,6 +49,9 @@ module MGQ_MpCoopGather
   # Frames without a call after which a member's call lapses, two calls missed: the leader's story
   # started without them, or the leader left.
   CALL_LAPSE_FRAMES = CALL_FRAMES * 2
+
+  # What a teleport to the story calls the place it goes to, as a call names its leader.
+  STORY_NAME = "the story"
 
   @hold = nil
   @gather = nil
@@ -73,6 +83,13 @@ module MGQ_MpCoopGather
     @asked = nil
   end
 
+  # Forgets where the story was last told and whom it took along, as when the world closes.
+  def self.forget_story_place
+    @story_place = nil
+    @story_warp_ban = nil
+    forget_taken_along
+  end
+
   # Sends the party a message about gathering.
   #
   # @param seat [Integer] A member's seat, -1 for everyone, who ignore it outside the party.
@@ -92,6 +109,7 @@ module MGQ_MpCoopGather
   # @param message [Hash] The message's fields.
   def self.take(peer, message)
     log("got #{message['pevent']} from #{MGQ_MpOverworldSync.who(peer)}#{message['map'] ? " (map #{message['map']} #{message['x']},#{message['y']}#{message['warp_ban'] == '1' ? ', warping banned' : ''})" : ''}")
+    return take_raid(peer, message) if MGQ_MpCoop::Scope.raid?
     return answer_where(peer) if message["pevent"] == "where"
     return log("ignored #{message['pevent']}: #{MGQ_MpOverworldSync.who(peer)} does not lead the party") unless MGQ_MpCoop.party_leader.equal?(peer)
 
@@ -107,6 +125,17 @@ module MGQ_MpCoopGather
     end
   rescue => e
     log("taking #{message['pevent']} failed: #{e.class}: #{e.message}")
+  end
+
+  # Takes a message about gathering in a Raid World, which gathers nobody: only the story's call
+  # to follow where it moved its teller, sent to everyone who was on the teller's map.
+  #
+  # @param peer [MGQ_MpOverworldSync::Peers::Peer] Who sent it.
+  # @param message [Hash] The message's fields.
+  def self.take_raid(peer, message)
+    return log("ignored #{message['pevent']}: a Raid World gathers nobody") unless message["pevent"] == "follow"
+
+    followed(peer, [message["map"].to_i, message["x"].to_i, message["y"].to_i, message["d"].to_i], message["warp_ban"] == "1")
   end
 
   # As leader, holds a story scene until every member stands near: calls them now and every few
@@ -175,19 +204,19 @@ module MGQ_MpCoopGather
     false
   end
 
-  # As leader, lists the members who follow the player's story, through coop_story.rbx.
+  # As teller, lists those who follow the player's story, see MGQ_MpCoop::Scope.viewers.
   #
-  # @return [Array<MGQ_MpOverworldSync::Peers::Peer>] The members.
+  # @return [Array<MGQ_MpOverworldSync::Peers::Peer>] The players.
   def self.followers
-    defined?(MGQ_MpCoopStory) ? MGQ_MpCoopStory.synced_members : []
+    MGQ_MpCoop::Scope.viewers
   end
 
   # Reports whether every party member who follows the player's story stands near the player, on
-  # the player's map.
+  # the player's map; always in a Raid World, where whoever is on the map watches.
   #
   # @return [Boolean] Whether they do.
   def self.gathered?
-    missing.empty?
+    MGQ_MpCoop::Scope.raid? || missing.empty?
   end
 
   # Names the party members who follow the player's story and do not stand near the player yet;
@@ -248,20 +277,48 @@ module MGQ_MpCoopGather
   end
 
   # As leader, takes along the members who stood near when the story moved the player elsewhere,
-  # such as a theater show's stage or a story's own teleport. Called after
-  # Game_Player#perform_transfer.
+  # such as a theater show's stage or a story's own teleport; in a Raid World everyone who was on
+  # the map. Called after Game_Player#perform_transfer.
   def self.after_transfer
     from = @transfer_from
     @transfer_from = nil
     return unless from && MGQ_MpCoopEvents.leading_story?
 
-    along = followers.select { |peer| near_place?(peer.state, from) }
-    return log("took nobody along to map #{$game_map.map_id}: no member stood near") if along.empty?
+    raid = MGQ_MpCoop::Scope.raid?
+    along = raid ? (MGQ_MpCoop::Scope.peers_on(from[0]) + taken_along).uniq : followers.select { |peer| near_place?(peer.state, from) }
+    @taken_along = along.map { |peer| peer.state["id"].to_s } if raid
+    return log("took nobody along to map #{$game_map.map_id}: nobody stood near") if along.empty?
 
-    along.each { |peer| tell(peer.seat, "follow", place_fields) }
+    fields = place_fields
+    # In a Raid World the map's gate takes the call only for the map the others are on.
+    fields["mmap"] = from[0] if raid
+    along.each { |peer| tell(peer.seat, "follow", fields) }
     log("took #{along.map { |peer| peer.state['name'] }.join(', ')} along to map #{$game_map.map_id} #{$game_player.x},#{$game_player.y}")
   rescue => e
     log("taking the party along failed: #{e.class}: #{e.message}")
+  end
+
+  # As teller in a Raid World, lists the players the story took along who are not on the player's
+  # map yet, whose state still names the map they left, so the story's pages and scene reach them
+  # on the way. Forgets them once the telling ends.
+  #
+  # @return [Array<MGQ_MpOverworldSync::Peers::Peer>] The players.
+  def self.taken_along
+    return [] unless @taken_along
+    unless MGQ_MpCoopEvents.telling?
+      forget_taken_along
+      return []
+    end
+
+    along = MGQ_MpOverworldSync::Peers.present.select { |peer| @taken_along.include?(peer.state["id"].to_s) }
+    arrived = along.select { |peer| peer.state["map"].to_i == $game_map.map_id }
+    @taken_along -= arrived.map { |peer| peer.state["id"].to_s }
+    along - arrived
+  end
+
+  # Forgets whom the story took along, as when a new telling starts.
+  def self.forget_taken_along
+    @taken_along = nil
   end
 
   # Takes the leader's call to follow them, whom their story moved elsewhere: the player comes at
@@ -283,6 +340,54 @@ module MGQ_MpCoopGather
   # @return [Boolean] Whether they do.
   def self.story_map?(map_id)
     map_id == $game_map.map_id || (!@gather.nil? && @gather[:follow] && @gather[:place][0] == map_id)
+  end
+
+  # Finds where a teleport to the story goes: where the story was last told in the world, by the
+  # player or anyone else, as far as this game saw.
+  #
+  # @return [Array<Integer>, nil] The map, x, y and direction, nil while none is known.
+  def self.story_endpoint
+    @story_place
+  end
+
+  # Notes where the story is told, by the player or by anyone else in the world, which a teleport
+  # to the story goes to, and whether warping is banned there. Called after the map's update, in a
+  # Raid World alone.
+  def self.note_story_place
+    return unless MGQ_MpCoop::Scope.raid?
+
+    if MGQ_MpCoopEvents.story_playing?
+      @story_place = [$game_map.map_id, $game_player.x, $game_player.y, $game_player.direction]
+      @story_warp_ban = warp_ban?
+      return
+    end
+    teller = MGQ_MpOverworldSync::Peers.present.find { |peer| peer.state["telling"] == "1" }
+    return unless teller
+
+    @story_place = [teller.state["map"].to_i, teller.state["x"].to_i, teller.state["y"].to_i, teller.state["d"].to_i]
+    @story_warp_ban = teller.state.key?("twb") ? teller.state["twb"] == "1" : nil
+  rescue => e
+    log_once(:story_place, "noting where the story is told failed: #{e.class}: #{e.message}")
+  end
+
+  # Teleports the player to the story, see story_endpoint, as soon as they are free.
+  def self.join_story
+    place = story_endpoint
+    unless place
+      log("no teleport to the story: this game saw nobody tell it yet")
+      return MGQ_MpOverworldSync.notice("Nobody has told the story yet.")
+    end
+    if near_place?(own_place, place)
+      log("no teleport to the story: the player stands there already")
+      return MGQ_MpOverworldSync.notice("You are at the story already.")
+    end
+
+    log("teleporting to the story on map #{place[0]} #{place[1]},#{place[2]} as soon as the player is free")
+    @gather = { :since => Graphics.frame_count - GATHER_FRAMES, :name => STORY_NAME, :place => place,
+                :warp_ban => @story_warp_ban, :called => Graphics.frame_count, :asked => true }
+    MGQ_MpOverworldSync.notice("Teleporting to #{STORY_NAME} . . .")
+  rescue => e
+    log("teleporting to the story failed: #{e.class}: #{e.message}")
   end
 
   # As member, asks the leader where they stand, to come over as soon as the player is free.
@@ -416,13 +521,14 @@ module MGQ_MpCoopGather
     seconds > 0 ? "Joining #{gather[:name]} in #{seconds} s . . ." : "Joining #{gather[:name]} once free . . ."
   end
 
-  # Reports whether the player, a member, has to stand still: while their leader's story scene plays
-  # on the player's map and they follow it. A member it started without plays on elsewhere.
+  # Reports whether the player has to stand still: while the story scene they see plays on the
+  # player's map, their leader's or in a Raid World the teller's there. A member it started
+  # without plays on elsewhere, and so does a player whose story does not match the teller's.
   #
   # @return [Boolean] Whether they do.
   def self.blocked?
-    lead = MGQ_MpCoop.party_leader
-    lead.is_a?(MGQ_MpOverworldSync::Peers::Peer) && lead.state["telling"] == "1" && lead.state["map"].to_i == $game_map.map_id && MGQ_MpCoopEvents.following?
+    lead = MGQ_MpCoop::Scope.teller
+    lead.is_a?(MGQ_MpOverworldSync::Peers::Peer) && lead.state["telling"] == "1" && lead.state["map"].to_i == $game_map.map_id && MGQ_MpCoop::Scope.watches?(lead)
   end
 
   # Reports whether the player only waits for the party's story: as leader while it gathers, as
@@ -455,9 +561,10 @@ module MGQ_MpCoopGather
   # The game sets the ban in the events a player walks through to enter or leave a cave, which a
   # player brought over never touches, so the ban of the place they left would stay.
   #
-  # @param banned [Boolean] Whether warping is banned where the leader stands.
+  # @param banned [Boolean, nil] Whether warping is banned where the leader stands, nil when unknown,
+  #   which keeps the player's.
   def self.take_warp_ban(banned)
-    $game_switches[MGQ_MpCoopStory::WARP_BAN] = banned if defined?(MGQ_MpCoopStory)
+    $game_switches[MGQ_MpCoopStory::WARP_BAN] = banned if defined?(MGQ_MpCoopStory) && !banned.nil?
   end
 
   # Moves the player to the leader once a story scene's five seconds passed, once the player is
@@ -470,7 +577,7 @@ module MGQ_MpCoopGather
     map_id, x, y, direction = place
     gather = @gather
     @gather = nil
-    return log("dropped #{gather[:name]}'s call: the player is no longer in a party") unless MGQ_MpCoop.in_party?
+    return log("dropped #{gather[:name]}'s call: the player is no longer in a party") unless MGQ_MpCoop::Scope.sharing?
 
     unless map_id == $game_map.map_id || map_known?(map_id)
       return log("dropped #{gather[:name]}'s call to map #{map_id}: this game has no such map")
@@ -540,10 +647,15 @@ rescue => e
   MGQ_MpCoopGather.log("actions FAILED: #{e.class}: #{e.message}")
 end
 
-# The calls and the hold go once the world closes, through overworld_sync.rbx.
+# The calls, the hold and where the story was told go once the world closes, through overworld_sync.rbx.
 
 begin
-  MGQ_MpOverworldSync.on_tick { |in_world| MGQ_MpCoopGather.forget unless in_world }
+  MGQ_MpOverworldSync.on_tick do |in_world|
+    unless in_world
+      MGQ_MpCoopGather.forget
+      MGQ_MpCoopGather.forget_story_place
+    end
+  end
 rescue => e
   MGQ_MpCoopGather.log("overworld sync FAILED: #{e.class}: #{e.message}")
 end
@@ -563,6 +675,7 @@ begin
 
   # After the map's update, the player is brought to the leader's story scene when they are free.
   MGQ_MpHooks.after(Game_Map, :update, "coop_gather") do
+    MGQ_MpCoopGather.note_story_place
     MGQ_MpCoopGather.update
     MGQ_MpCoopGather.note_blocked
   end

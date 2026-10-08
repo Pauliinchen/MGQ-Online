@@ -2,7 +2,10 @@
 #  coop_events_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-08: Checked that the game's transfer process and the Library's replays gather nobody, and that the transfer process runs in a member's own game
+#      Paulinchen  2026-10-08: Checked a Raid World: a player telling the story on the map keeps the others' story events from starting, whoever entered the map first tells it when two start at once, its pages go to and show for the players whose story matches, the castle's Map Owner is the sync host, and no leader's story is borrowed
+#                            - Checked that a Raid World's tie between two tellers holds only at the telling's start on its map, and that its chests are personal
+#                            - Loaded coop_scope.rbx, which the party's scripts ask whom they share the map and the story with
+#                            - Checked that the game's transfer process and the Library's replays gather nobody, and that the transfer process runs in a member's own game
 #                            - Stood in for the faces this game has, of overworld.rbx
 #      Paulinchen  2026-10-07: Checked that a common event set up with its list alone is sorted
 #                            - Took variable 151 as the story's sample, since 150 is each player's own now
@@ -280,6 +283,7 @@ end
 class Game_Actor
   def learn_skill(id); (@skills ||= []) << id; end
 end
+load_script "coop_scope"
 load_script "coop_story"
 load_script "coop_events"
 load_script "coop_gather"
@@ -1799,3 +1803,119 @@ $leader = nil
 $members = []
 choices.forget("test over")
 MGQ_MpCoopStory.update
+
+# A Raid World: whoever tells the story on the map tells it to everyone there whose story matches,
+# party or not.
+module MGQ_MpWorld; def self.raid?; $raid; end; end
+module MGQ_MpOverworldSync
+  module Me; def self.map_since; 2000; end; end
+  module Peers
+    def self.present; $peers; end
+    def self.all; $peers; end
+    def self.on_this_map?(peer); peer.state["map"].to_i == $game_map.map_id; end
+  end
+end
+$raid = true
+$party = "p1"
+$leader = leader
+$members = [leader]
+$game_map = Game_Map.new
+$game_player = Game_Player.new
+SceneManager.scene = Scene_Map.new
+$game_message.clear
+$game_message.busy = false
+$game_switches = Game_Switches.new
+$game_variables = Game_Variables.new
+$game_variables[1001] = 12
+MGQ_MpCoopGather.forget
+MGQ_MpCoopEvents.page_ended
+teller = MGQ_MpOverworldSync::Peers::Peer.new(6, { "id" => "t", "name" => "Teller", "map" => "3", "since" => "1000", "telling" => "1", "sm" => "12,0,0,0" }, nil, false)
+stranger = MGQ_MpOverworldSync::Peers::Peer.new(7, { "id" => "s", "name" => "Stranger", "map" => "3", "since" => "3000", "sm" => "12,0,0,0" }, nil, false)
+behind = MGQ_MpOverworldSync::Peers::Peer.new(8, { "id" => "b", "name" => "Behind", "map" => "3", "since" => "3000", "sm" => "5,0,0,0" }, nil, false)
+leader.state.merge!("map" => "9", "telling" => "0", "since" => "500")
+$peers = [teller, stranger, behind, leader]
+check("a Raid World's parties lead no story: nobody borrows a leader's story or tells members one",
+      [MGQ_MpCoopStory.leader, MGQ_MpCoopStory.real_synced_members, MGQ_MpCoopStory.real_follows_leader?], [nil, [], false])
+
+raid_event = Game_Event.new(51, [story_page])
+$game_map.events = { 51 => raid_event }
+$notices.clear
+check("a player telling the story on the map, party or not, keeps the player's story events from starting",
+      [MGQ_MpCoopEvents.hand_over(raid_event), MGQ_MpCoopEvents.following?, $notices.last], [true, true, "Teller is telling the story here."])
+MGQ_MpCoopEvents.take(teller, { "pevent" => "say", "map" => "3", "page" => "r.1", "lines" => ["Raid line"].pack("m0") })
+$game_map.update
+check("their pages show for a player whose story matches", $game_message.texts, ["Raid line"])
+$game_message.clear
+MGQ_MpCoopEvents.page_ended
+MGQ_MpCoopEvents.take(stranger, { "pevent" => "say", "map" => "3", "page" => "s.1", "lines" => ["Not told"].pack("m0") })
+$game_variables[1001] = 5
+MGQ_MpCoopEvents.take(teller, { "pevent" => "say", "map" => "3", "page" => "r.2", "lines" => ["Too far"].pack("m0") })
+$game_map.update
+check("but neither a player's who does not tell it, nor the teller's for a player whose story differs", $game_message.texts, [])
+$game_variables[1001] = 12
+
+teller.state["telling"] = "0"
+raid_story = Game_Event.new(52, [story_page])
+$game_map.events = { 52 => raid_story }
+check("once nobody tells it here, the player's own story events start", MGQ_MpCoopEvents.hand_over(raid_story), false)
+$sent.clear
+interpreter = $game_map.interpreter
+interpreter.setup(story_page.list, 52)
+interpreter.busy = true
+check("the player tells it, alone too, with how far their story was as it started",
+      [MGQ_MpCoopGather.holding_story?, MGQ_MpCoopEvents.state_fields], [false, { "telling" => 1, "tsm" => "12,0,0,0", "twb" => 0 }])
+$game_message.add("Told line")
+MGQ_MpCoopEvents.show(interpreter)
+check("its pages go through the map's gate to the players on the map whose story matches",
+      $sent.map { |seat, fields| [seat, fields["map_pevent"], fields["mmap"]] }, [[6, "say", "3"], [7, "say", "3"]])
+$game_message.clear
+stranger.state["telling"] = "1"
+MGQ_MpCoopEvents.yield_story(interpreter)
+check("another player who started telling at the same moment but entered the map later stops, not the player",
+      MGQ_MpCoopEvents.telling?, true)
+stranger.state["telling"] = "0"
+teller.state["telling"] = "1"
+$notices.clear
+MGQ_MpCoopEvents.yield_story(interpreter)
+check("one who entered the map first tells it, and the player's event ends at its next command",
+      [interpreter.instance_variable_get(:@index), MGQ_MpCoopEvents.telling?, $notices.last], [story_page.list.size - 1, false, "Teller is telling the story here."])
+interpreter.busy = false
+
+teller.state["telling"] = "0"
+interpreter.setup(story_page.list, 52)
+interpreter.busy = true
+teller.state["telling"] = "1"
+$frame_count += MGQ_MpCoopEvents::TIE_FRAMES
+MGQ_MpCoopEvents.yield_story(interpreter)
+check("a player telling a while already is no tie and goes on", [MGQ_MpCoopEvents.telling?, MGQ_MpCoop::Scope.teller], [true, :me])
+interpreter.busy = false
+teller.state["telling"] = "0"
+interpreter.setup(story_page.list, 52)
+interpreter.busy = true
+$game_map.map_id = 4
+teller.state.merge!("telling" => "1", "map" => "4")
+MGQ_MpCoopEvents.yield_story(interpreter)
+check("nor is one whose story moved them onto a map where another player tells one", MGQ_MpCoopEvents.telling?, true)
+interpreter.busy = false
+$game_map.map_id = 3
+teller.state.merge!("telling" => "0", "map" => "3")
+
+$game_party = Game_Party.new
+$game_self_switches = Game_SelfSwitches.new
+$game_map.events = { 5 => Game_Event.new(5, [chest_page]) }
+MGQ_MpCoopEvents.instance_variable_set(:@chest_keys_map, nil)
+$sent.clear
+$game_map.interpreter.setup(chest_page.list, 5)
+$game_map.interpreter.run
+check("a Raid World's chests are personal: opening one tells nobody, party or not", $sent.select { |_, f| f["chest"] }, [])
+MGQ_MpCoopEvents.take(leader, { "chest" => "3.6.A", "party" => "p1", "gains" => "g0x50" })
+check("and one a party member opened gives nothing", $game_party.gold, 0)
+$game_map.events = {}
+MGQ_MpCoopEvents.instance_variable_set(:@chest_keys_map, nil)
+
+$game_map.map_id = 227
+check("the castle's Map Owner is the map's sync host, not the party's leader", MGQ_MpCoopCastle.owner([leader]), nil)
+$raid = false
+$party = nil
+$leader = nil
+$members = []

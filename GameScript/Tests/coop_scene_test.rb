@@ -2,6 +2,8 @@
 #  coop_scene_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-08: Checked a Raid World: the player telling the story shows its scene to the players on the map whose story matches, through the map's gate, and sees only the teller's whose story matches theirs
+#                            - Stood in for the players the story took along, of coop_gather.rbx
 #      Paulinchen  2026-10-07: Checked that the scene goes to the members who follow the story alone, and that one who plays their own sees none of it
 #      Paulinchen  2026-10-06: Covered the first change after the party gathered, the member's own tint coming back, the grace before the leader's state and picture names with dots
 #      Paulinchen  2026-10-04: Created
@@ -10,7 +12,8 @@
 
 # Covers coop_scene.rbx: the leader's story tells the party its pictures, screen effects and the
 # leader's hidden character, a member on the leader's map sees them, and the member's screen comes
-# back once the story ended.
+# back once the story ended. In a Raid World the teller on the map shows it to everyone there whose
+# story matches.
 
 require_relative "support"
 
@@ -90,8 +93,9 @@ module MGQ_MpCoopStory; def self.synced_members; $followers; end; end
 $followers = [MGQ_MpOverworldSync::Peers::Peer.new(4, { "name" => "Friend" })]
 module Graphics; def self.frame_count; $frame_count; end; end
 
-module MGQ_MpCoopGather; def self.story_map?(map_id); map_id == $game_map.map_id || map_id == $following; end; end
+module MGQ_MpCoopGather; def self.story_map?(map_id); map_id == $game_map.map_id || map_id == $following; end; def self.taken_along; []; end; end
 load_script "battles_sync_wire"
+load_script "coop_scope"
 load_script "coop_scene"
 
 $game_map = Game_Map.new
@@ -206,3 +210,58 @@ leader.state["telling"] = "0"
 $frame_count += MGQ_MpCoopScene::STATE_GRACE_FRAMES
 $game_map.update
 check("on another map the story's tint stays", $game_map.screen.done.last(3), [[:tone, [-68, -68, 0, 0], 30], [:clear_flash], [:clear_shake]])
+
+# In a Raid World the player telling the story on the map shows it to everyone there whose story matches.
+module MGQ_MpWorld; def self.raid?; $raid; end; end
+module MGQ_MpOverworldSync
+  def self.in_world?; true; end
+  def self.who(peer); peer == :me ? "the player" : peer.state["name"].to_s; end
+  def self.tell(seat, fields); $told << [seat, fields]; true; end
+  module Me; def self.map_since; 2000; end; def self.id; "me"; end; end
+  module Peers
+    def self.present; $peers; end
+    def self.on_this_map?(peer); peer.state["map"].to_i == $game_map.map_id; end
+  end
+end
+module MGQ_MpCoopEvents
+  def self.telling?; $playing; end
+  def self.leading_story?; MGQ_MpCoop::Scope.leads_story?; end
+  def self.told_markers; $playing ? [12, 0, 0, 0] : nil; end
+end
+# How far each story is, as coop_story.rbx reads it.
+module MGQ_MpCoopStory
+  def self.read_markers(text); values = text.to_s.split(","); values.size == 4 ? values.map(&:to_i) : nil; end
+  def self.own_markers; $own_markers; end
+end
+$raid = true
+$told = []
+$game_variables = {}
+$game_map = Game_Map.new
+$game_player = Game_Player.new
+main = $game_map.interpreter
+matching = MGQ_MpOverworldSync::Peers::Peer.new(4, { "name" => "Match", "id" => "m", "map" => "7", "sm" => "12,0,0,0", "since" => "3000" })
+behind = MGQ_MpOverworldSync::Peers::Peer.new(5, { "name" => "Behind", "id" => "b", "map" => "7", "sm" => "8,0,0,0", "since" => "3000" })
+away = MGQ_MpOverworldSync::Peers::Peer.new(6, { "name" => "Away", "id" => "a", "map" => "9", "sm" => "12,0,0,0", "since" => "3000" })
+$peers = [matching, behind, away]
+$playing = true
+run.call(main, lambda { $game_map.screen.pictures[3].show("story_cg", 0, 0, 0, 100, 100, 255, 0) })
+check("the teller's scene goes through the map's gate to the players on the map whose story matches",
+      $told.map { |seat, fields| [seat, fields["map_pscene"], fields["mmap"]] }, [[4, "picture.show", 7]])
+
+$playing = false
+$own_markers = [12, 0, 0, 0]
+$game_map = Game_Map.new
+teller = MGQ_MpOverworldSync::Peers::Peer.new(2, { "name" => "Teller", "id" => "t", "map" => "7", "telling" => "1", "tsm" => "12,0,0,0", "sm" => "13,0,0,0", "since" => "1000" })
+$peers = [teller, matching]
+show = lambda do |sender, number|
+  MGQ_MpCoop.take_map("pscene", sender, { "map_pscene" => "picture.show", "mmap" => "7", "map" => "7", "args" => wire.line([number, "story_cg", 0, 0, 0, 100, 100, 255, 0]) })
+end
+show.call(teller, 3)
+check("a player whose story is where the teller's was as the telling started sees the scene, though the teller's moved on",
+      [$game_map.screen.pictures[3].done.size, MGQ_MpCoopScene.watching?], [1, true])
+show.call(matching, 4)
+check("but none from a player who does not tell it", $game_map.screen.pictures[4].done, [])
+$own_markers = [8, 0, 0, 0]
+show.call(teller, 5)
+check("a player whose story does not match sees none of it", [$game_map.screen.pictures[5].done, MGQ_MpCoopScene.watching?], [[], false])
+$raid = false

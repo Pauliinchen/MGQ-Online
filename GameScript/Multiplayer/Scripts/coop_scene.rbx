@@ -2,6 +2,7 @@
 #  coop_scene.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-08: Took the teller, those who see the scene and the gate of its messages from MGQ_MpCoop::Scope, so in a Raid World the teller on the map shows it to everyone there whose story matches
 #      Paulinchen  2026-10-07: Registered the save hook through core_hooks.rbx instead of a wrap of its own, and named the number of pictures the screen holds
 #                            - Told the leader's story scene only to the members synced with the leader, who follow it, and showed it to them alone
 #                            - Logged each change of the scene told and applied, with the picture's name and the tone, the changes ignored and why, and what was put back and why
@@ -18,7 +19,8 @@
 # theater show's stage. While the story plays, the leader's game tells the party each change the
 # story makes, and every member on the leader's map sees it in their own game. Once the story ends,
 # or the leader or the member leaves the map, the member's screen is put back as it was. The
-# dialogue itself goes through coop_events.rbx.
+# dialogue itself goes through coop_events.rbx. In a Raid World the player telling the story on the
+# map shows it to everyone there whose story matches theirs, see MGQ_MpCoop::Scope.
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpCoopScene
@@ -123,8 +125,10 @@ module MGQ_MpCoopScene
   def self.send_change(kind, args)
     return log_once([:unsendable, kind], "did not tell the party #{kind}: its arguments do not go over the wire (#{describe(args)})") unless MGQ_MpBattlesSync::Wire.encodable?(args)
 
-    followers = MGQ_MpCoopStory.synced_members
-    sent = followers.map { |peer| MGQ_MpCoop.tell(peer.seat, "pscene", kind, "map" => $game_map.map_id, "args" => MGQ_MpBattlesSync::Wire.line(args)) }
+    followers = MGQ_MpCoop::Scope.viewers
+    return if followers.empty?
+
+    sent = followers.map { |peer| MGQ_MpCoop::Scope.tell(peer.seat, "pscene", kind, "map" => $game_map.map_id, "args" => MGQ_MpBattlesSync::Wire.line(args)) }
     log("told #{followers.map { |peer| peer.state['name'] }.join(', ')} #{kind} #{describe(args)} on map #{$game_map.map_id}#{sent.all? ? '' : ', which failed for some'}")
   end
 
@@ -146,17 +150,17 @@ module MGQ_MpCoopScene
 
   # Takes a change of the leader's story scene: the player sees it while on the leader's map or on
   # the way there, since the screen keeps its pictures and tint through a transfer.
-  # Called by coop.rbx, which drops another party's.
+  # Called by coop.rbx, which drops another party's, or by coop_scope.rbx, which drops another map's.
   #
   # @param peer [MGQ_MpOverworldSync::Peers::Peer] Who sent it.
   # @param message [Hash] The message, the change under "pscene".
   def self.take(peer, message)
     kind = message["pscene"].to_s
-    unless MGQ_MpCoop.party_leader.equal?(peer)
-      return log_once([:not_leader, kind, peer.state["id"]], "ignored #{kind} from #{MGQ_MpOverworldSync.who(peer)}: not the party's leader")
+    unless MGQ_MpCoop::Scope.story_from?(peer)
+      return log_once([:not_leader, kind, peer.state["id"]], "ignored #{kind} from #{MGQ_MpOverworldSync.who(peer)}: not the one who tells the story")
     end
-    unless MGQ_MpCoopEvents.following?
-      return log_once([:not_following, kind, peer.state["id"]], "ignored #{kind} from #{MGQ_MpOverworldSync.who(peer)}: not synced with the leader, the player plays their own story")
+    unless MGQ_MpCoop::Scope.watches?(peer)
+      return log_once([:not_following, kind, peer.state["id"]], "ignored #{kind} from #{MGQ_MpOverworldSync.who(peer)}: the player plays their own story")
     end
     unless MGQ_MpCoopGather.story_map?(message["map"].to_i)
       return log("ignored #{kind} on map #{message['map']}: the player is on map #{$game_map.map_id}")
@@ -220,13 +224,14 @@ module MGQ_MpCoopScene
   end
 
   # Reports whether the player sees the leader's story scene now: in a party whose leader tells
-  # the story on the player's map.
+  # the story on the player's map, or in a Raid World while the teller there tells a story that
+  # matches the player's.
   #
   # @return [Boolean] Whether they do.
   def self.watching?
-    lead = MGQ_MpCoop.party_leader
+    lead = MGQ_MpCoop::Scope.teller
     lead.is_a?(MGQ_MpOverworldSync::Peers::Peer) && lead.state["telling"] == "1" && MGQ_MpCoopGather.story_map?(lead.state["map"].to_i) &&
-      MGQ_MpCoopEvents.following?
+      MGQ_MpCoop::Scope.watches?(lead)
   end
 
   # Puts the player's screen back once they no longer see the leader's story scene. Called after
@@ -261,8 +266,8 @@ module MGQ_MpCoopScene
   #
   # @return [String] The reason.
   def self.why_not_watching
-    lead = MGQ_MpCoop.party_leader
-    return "the player is no longer a party's member" unless lead.is_a?(MGQ_MpOverworldSync::Peers::Peer)
+    lead = MGQ_MpCoop::Scope.teller
+    return "nobody else tells the story" unless lead.is_a?(MGQ_MpOverworldSync::Peers::Peer)
     return "#{lead.state['name']}'s story ended" unless lead.state["telling"] == "1"
 
     "#{lead.state['name']} tells it on map #{lead.state['map']}, the player is on map #{$game_map.map_id}"
@@ -320,10 +325,12 @@ module MGQ_MpCoopScene
   end
 end
 
-# What this script takes part in of the party's messages, through coop.rbx.
+# What this script takes part in of the party's messages, through coop.rbx, and of the map's in a
+# Raid World, through coop_scope.rbx.
 
 begin
   MGQ_MpCoop.route("pscene") { |peer, message| MGQ_MpCoopScene.take(peer, message) }
+  MGQ_MpCoop.route_map("pscene") { |peer, message| MGQ_MpCoopScene.take(peer, message) }
 rescue => e
   MGQ_MpCoopScene.log("co-op FAILED: #{e.class}: #{e.message}")
 end

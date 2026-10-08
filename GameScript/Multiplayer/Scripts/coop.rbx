@@ -2,6 +2,7 @@
 #  coop.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-08: Offered a teleport to the story on the player's own row of the World overview in a Raid World, in place of the teleport to the party's leader
 #      Paulinchen  2026-10-07: Added the helpers the party scripts shared copies of: a message's bytes and an event's name for the log, a random id and an option's registration in the Mod Config
 #                            - Logged invites sent, received, accepted, declined, run out and turned away with the reason, whom the leader admitted, the leader and why, and the party messages dropped
 #      Paulinchen  2026-10-06: Counted the player as a candidate for the party's leader only once the leader admitted them, so a player turned away as they join leaves the party
@@ -37,7 +38,8 @@
 # messages. The party scripts after it (coop_events.rbx, coop_scene.rbx, coop_npcs.rbx,
 # coop_story.rbx, battles_coop.rbx and battles_duel.rbx) register here for their fields, as does
 # the party chat of ui_chat.rbx; this script takes those messages from
-# overworld_sync.rbx, drops those of another party, and hands on the rest.
+# overworld_sync.rbx, drops those of another party, and hands on the rest. Whether a script shares
+# with the party or with the map is up to coop_scope.rbx.
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpCoop
@@ -818,21 +820,33 @@ module MGQ_MpCoop
     end
 
     # The choice of a party's member that teleports them to the party's leader, which closes the
-    # World overview too.
+    # World overview too. A Raid World's parties lead no story, so it has none, see story_option.
     #
-    # @return [MGQ_MpActions::Option, nil] The choice, nil for the leader and outside a party.
+    # @return [MGQ_MpActions::Option, nil] The choice, nil for the leader, outside a party and in a Raid World.
     def self.teleport_option
       lead = MGQ_MpCoop.party_leader
       return nil unless lead.is_a?(MGQ_MpOverworldSync::Peers::Peer) && defined?(MGQ_MpCoopGather)
+      return nil if Scope.raid?
 
       MGQ_MpActions::Option.new("Teleport to #{lead.state['name']}", lambda { MGQ_MpCoopGather.join_leader }, nil, nil, true)
+    end
+
+    # The choice that teleports the player to the story in a Raid World, which closes the World
+    # overview too.
+    #
+    # @return [MGQ_MpActions::Option, nil] The choice, nil in a Classic world.
+    def self.story_option
+      return nil unless Scope.raid? && defined?(MGQ_MpCoopGather)
+
+      known = !MGQ_MpCoopGather.story_endpoint.nil?
+      MGQ_MpActions::Option.new("Teleport to the story", known ? lambda { MGQ_MpCoopGather.join_story } : nil, "Nobody has told the story yet.", nil, true)
     end
 
     # The wheel's choice that leaves the party, or stops an invite nobody took.
     #
     # @return [MGQ_MpActions::Option] The choice.
     def self.wheel_leave_option
-      own_options.first || MGQ_MpActions::Option.new("Leave the party", nil, "You are in no party.")
+      party_options.first || MGQ_MpActions::Option.new("Leave the party", nil, "You are in no party.")
     end
 
     # Tells why the player may not invite now.
@@ -869,11 +883,18 @@ module MGQ_MpCoop
       option.new("Invite to party", lambda { Party.invite(peer.state["id"]) }, nil)
     end
 
-    # The party choices on the player's own row of the World overview: leaving the party, and
-    # stopping an invite.
+    # The choices on the player's own row of the World overview: leaving the party, stopping an
+    # invite, and in a Raid World the teleport to the story.
+    #
+    # @return [Array<MGQ_MpActions::Option>] The choices.
+    def self.own_options
+      party_options + [story_option].compact
+    end
+
+    # The party choices of the player's own: leaving the party, and stopping an invite.
     #
     # @return [Array<MGQ_MpActions::Option>] The choices, none outside a party and without an invite.
-    def self.own_options
+    def self.party_options
       choices = []
       choices << MGQ_MpActions::Option.new("Leave the party", lambda { Party.leave }, nil) unless Party.members.empty?
       choices << MGQ_MpActions::Option.new("Stop inviting", lambda { Party.stop_inviting }, nil) if Party.inviting?

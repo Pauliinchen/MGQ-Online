@@ -2,7 +2,8 @@
 #  coop_npcs.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-08: Found the members on this map through MGQ_MpOverworldSync::Peers.on_this_map?
+#      Paulinchen  2026-10-08: Shared the map through MGQ_MpCoop::Scope: with the party members on it in a Classic world, with everyone on it in a Raid World, who all block events there
+#                            - Found the members on this map through MGQ_MpOverworldSync::Peers.on_this_map?
 #      Paulinchen  2026-10-07: Registered the event hooks through core_hooks.rbx instead of wraps of its own, and named events through coop.rbx
 #                            - Logged the Map Owner of each map and why, the whole maps sent and taken, events turning pages, events left alone and why, stuck events, and the NPC messages ignored
 #      Paulinchen  2026-10-06: Left out the party members whose connection is down, who no longer move the map's events
@@ -23,11 +24,12 @@
 #
 #----------------------------------------------------------------
 
-# The NPCs a party shares on a map. Of the party members on a map, the one who entered it first is
-# its Map Owner: their game moves the map's events as the game does, and tells the others where each
-# stands, which way it faces and which page it shows. The other members' games stop moving events
-# on their own and walk them where the Map Owner's are. Players outside the party, or on other
-# maps, share nothing: each moves their own NPCs.
+# The NPCs players share on a map: a party's members in a Classic world, everyone on it in a Raid
+# World (see MGQ_MpCoop::Scope). Of those on a map, the one who entered it first is its Map Owner:
+# their game moves the map's events as the game does, and tells the others where each stands, which
+# way it faces and which page it shows. The others' games stop moving events on their own and walk
+# them where the Map Owner's are. In a Classic world players outside the party, or on other maps,
+# share nothing: each moves their own NPCs.
 #
 # The world's creator plays no part in this; every map has its own Map Owner, and it changes as
 # players come and go.
@@ -56,44 +58,40 @@ module MGQ_MpCoopNpcs
   # What starts this script's lines in Multiplayer InGame.log.
   LOG_TAG = "co-op npcs"
 
-  # Reports whether another party member's game moves this map's events.
+  # Reports whether another player's game moves this map's events.
   #
   # @return [Boolean] Whether it does.
   def self.following?
     @role == :follower
   end
 
-  # Lists the other party members on the player's map whose connection stands.
+  # Lists the others the player shares the map with whose connection stands, see
+  # MGQ_MpCoop::Scope.peers_here.
   #
   # A Map Owner whose connection is down would hold every NPC still until they are forgotten.
   #
-  # @return [Array<MGQ_MpOverworldSync::Peers::Peer>] The members.
-  def self.party_here
-    return [] unless MGQ_MpOverworldSync.in_world?
-    return [] unless MGQ_MpCoop::Party.id
-
-    MGQ_MpOverworldSync::Peers.all.select { |peer| peer.member && MGQ_MpOverworldSync::Peers.on_this_map?(peer) }
+  # @return [Array<MGQ_MpOverworldSync::Peers::Peer>] The players.
+  def self.peers_here
+    MGQ_MpCoop::Scope.peers_here
   end
 
-  # Finds the Map Owner among the party members on the map: the one who entered it first, the lower
-  # player id among equals, so every member's game finds the same one. On the Pocket Castle's maps
-  # it is the party's leader while they are there, see coop_castle.rbx.
+  # Finds the Map Owner among the players sharing the map: its sync host, the one who entered it
+  # first, the lower player id among equals, so every game finds the same one. On the Pocket
+  # Castle's maps of a Classic world it is the party's leader while they are there, see coop_castle.rbx.
   #
-  # @param members [Array<MGQ_MpOverworldSync::Peers::Peer>] The other party members on the map.
-  # @return [MGQ_MpOverworldSync::Peers::Peer, Symbol] The member, or :me for the player.
+  # @param members [Array<MGQ_MpOverworldSync::Peers::Peer>] The others sharing the map.
+  # @return [MGQ_MpOverworldSync::Peers::Peer, Symbol] The player, or :me for the player.
   def self.owner(members)
     castle = defined?(MGQ_MpCoopCastle) && MGQ_MpCoopCastle.owner(members)
     return castle if castle
 
-    me = [[MGQ_MpOverworldSync::Me.map_since.to_i, MGQ_MpOverworldSync::Me.id], :me]
-    others = members.map { |peer| [[peer.state["since"].to_i, peer.state["id"].to_s], peer] }
-    ([me] + others).min_by { |key, _| key }[1]
+    MGQ_MpCoop::Scope.sync_host(members)
   end
 
   # Follows the map for one frame: finds the Map Owner, and sends or follows the events. Called
   # after the map's own update, behind other screens too.
   def self.update
-    members = party_here
+    members = peers_here
     map_owner = members.empty? ? nil : owner(members)
     role = map_owner.nil? ? nil : (map_owner == :me ? :owner : :follower)
     note_owner(map_owner, members)
@@ -125,8 +123,8 @@ module MGQ_MpCoopNpcs
   # Logs the Map Owner of the player's map once it, or the map, changed, with why it is them.
   #
   # @param owner [MGQ_MpOverworldSync::Peers::Peer, Symbol, nil] The Map Owner, :me for the player,
-  #   nil while no other party member is on the map.
-  # @param members [Array<MGQ_MpOverworldSync::Peers::Peer>] The other party members on the map.
+  #   nil while nobody shares the map.
+  # @param members [Array<MGQ_MpOverworldSync::Peers::Peer>] The others sharing the map.
   def self.note_owner(owner, members)
     key = [$game_map.map_id, owner == :me ? :me : (owner && owner.state["id"])]
     return if key == @logged_owner
@@ -134,7 +132,7 @@ module MGQ_MpCoopNpcs
     had_owner = @logged_owner && @logged_owner[1]
     @logged_owner = key
     unless owner
-      return had_owner ? log("map #{$game_map.map_id}: each game moves its own NPCs, no other party member is here") : nil
+      return had_owner ? log("map #{$game_map.map_id}: each game moves its own NPCs, nobody shares the map") : nil
     end
 
     castle = defined?(MGQ_MpCoopCastle) && MGQ_MpCoopCastle.owner(members) ? "the party's leader in the Pocket Castle" : "entered the map first"
@@ -145,7 +143,7 @@ module MGQ_MpCoopNpcs
 
   # As Map Owner, sends newcomers the whole picture and everyone what changed.
   #
-  # @param members [Array<MGQ_MpOverworldSync::Peers::Peer>] The other party members on the map.
+  # @param members [Array<MGQ_MpOverworldSync::Peers::Peer>] The others sharing the map.
   def self.lead(members)
     seats = members.map(&:seat)
     (seats - @present).each do |seat|
@@ -178,7 +176,7 @@ module MGQ_MpCoopNpcs
       before = @sent[id]
       next unless before && before[3] != state[3]
 
-      log("event #{id}#{MGQ_MpCoop.event_name(id)} on map #{$game_map.map_id} turned to page #{state[3]} from #{before[3]}, told the party")
+      log("event #{id}#{MGQ_MpCoop.event_name(id)} on map #{$game_map.map_id} turned to page #{state[3]} from #{before[3]}, told the others")
     end
   rescue
   end
@@ -192,19 +190,19 @@ module MGQ_MpCoopNpcs
     states
   end
 
-  # Sends events' states to one party member or to everyone, who ignore it unless they are in the
-  # party on this map.
+  # Sends events' states through the scope's gate to one player or to everyone it reaches, who
+  # ignore it unless they share this map.
   #
-  # @param seat [Integer] The member's seat, -1 for everyone.
+  # @param seat [Integer] The player's seat, -1 for everyone.
   # @param states [Hash{Integer => Array<Integer>}] The events' states.
   # @param full [Boolean] Whether they are all the map's events.
   # @return [Boolean] Whether it went out.
   def self.tell(seat, states, full)
     list = states.map { |id, state| "#{id}:#{state.join(',')}" }.join(";")
-    MGQ_MpCoop.tell(seat, "npcs", $game_map.map_id, "full" => full ? 1 : 0, "events" => list)
+    MGQ_MpCoop::Scope.tell(seat, "npcs", $game_map.map_id, "full" => full ? 1 : 0, "events" => list)
   end
 
-  # Takes the Map Owner's events. Called by coop.rbx.
+  # Takes the Map Owner's events. Called by coop.rbx and coop_scope.rbx.
   #
   # @param peer [MGQ_MpOverworldSync::Peers::Peer, nil] Who sent them.
   # @param message [Hash] The message's fields.
@@ -212,7 +210,7 @@ module MGQ_MpCoopNpcs
     map = message["npcs"].to_i
     return log_once([:not_following, map, peer.state["id"]], "ignored NPCs of map #{map} from #{MGQ_MpOverworldSync.who(peer)}: the player's game moves its own (#{@role || 'no part'})") unless following?
     return log_once([:other_map, map, $game_map.map_id], "ignored NPCs of map #{map}: the player is on map #{$game_map.map_id}") unless map == $game_map.map_id
-    return log_once([:not_owner, map, peer.state["id"]], "ignored NPCs of map #{map} from #{MGQ_MpOverworldSync.who(peer)}: not the Map Owner") unless owner(party_here).equal?(peer)
+    return log_once([:not_owner, map, peer.state["id"]], "ignored NPCs of map #{map} from #{MGQ_MpOverworldSync.who(peer)}: not the Map Owner") unless owner(peers_here).equal?(peer)
 
     full = message["full"] == "1"
     @targets = {} if full
@@ -292,7 +290,7 @@ module MGQ_MpCoopNpcs
     event.mgq_mp_npc_face(state[2])
   end
 
-  # Reports whether a party member stands on a tile, which an event cannot walk onto.
+  # Reports whether another player sharing the map stands on a tile, which an event cannot walk onto.
   #
   # @param x [Integer] The tile's x.
   # @param y [Integer] The tile's y.
@@ -301,11 +299,11 @@ module MGQ_MpCoopNpcs
     @blockers.any? { |ghost| ghost.x == x && ghost.y == y }
   end
 
-  # Finds the party member an approaching event goes for on the Map Owner's map: the nearest of the
-  # player and the other members.
+  # Finds whom an approaching event goes for on the Map Owner's map: the nearest of the player and
+  # the others sharing the map.
   #
   # @param event [Game_Event] The event.
-  # @return [Game_Character, nil] The member's ghost when one is nearer than the player, else nil.
+  # @return [Game_Character, nil] The other's ghost when one is nearer than the player, else nil.
   def self.nearest_member(event)
     return nil unless @role == :owner
 
@@ -314,7 +312,7 @@ module MGQ_MpCoopNpcs
     nearest && distance.call(nearest) < distance.call($game_player) ? nearest : nil
   end
 
-  # Reports whether a party member is near enough for an approaching event to notice them.
+  # Reports whether another player sharing the map is near enough for an approaching event to notice them.
   #
   # @param event [Game_Event] The event.
   # @return [Boolean] Whether one is.
@@ -323,10 +321,12 @@ module MGQ_MpCoopNpcs
   end
 end
 
-# What this script takes part in of the party's messages, through coop.rbx.
+# What this script takes part in of the party's messages, through coop.rbx, and of the map's in a
+# Raid World, through coop_scope.rbx.
 
 begin
   MGQ_MpCoop.route("npcs") { |peer, message| MGQ_MpCoopNpcs.take(peer, message) }
+  MGQ_MpCoop.route_map("npcs") { |peer, message| MGQ_MpCoopNpcs.take(peer, message) }
 rescue => e
   MGQ_MpCoopNpcs.log("co-op FAILED: #{e.class}: #{e.message}")
 end

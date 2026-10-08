@@ -2,7 +2,8 @@
 #  Multiplayer.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-08: Named mp_dir_create with the world's type and how a Raid World shares companions
+#      Paulinchen  2026-10-08: Loaded coop_scope.rbx after coop.rbx, which tells the party scripts whom the player shares the map and the story with
+#                            - Named mp_dir_create with the world's type and how a Raid World shares companions
 #                            - Told whether a key or the left mouse button is held, for the chat log's tabs and its size
 #                            - Took a key nobody asked about in the frame before as let go, so the numpad's 0 that closed a screen closes the next one too
 #                            - Named mp_update_game, which starts the mod's updater, and told the player to pick Multiplayer to update
@@ -102,7 +103,7 @@ module MGQ_Multiplayer
   # loaded first, so their order decides how those hooks wrap each other.
   SCRIPTS = %w[
     core_log core_hooks core_game_access core_hotkeys ui ui_text_box core_actors core_async overworld_sync ui_wheel ui_actions ui_chat ui_emotes overworld
-    coop coop_squad coop_events coop_gather coop_scene coop_npcs coop_story_rewards coop_story coop_castle
+    coop coop_scope coop_squad coop_events coop_gather coop_scene coop_npcs coop_story_rewards coop_story coop_castle
     world world_mods world_save_distribution world_text world_screen world_save_export coop_choices
     battles battles_coop battles_coop_level_sync
     battles_sync battles_sync_wire battles_sync_recorder battles_sync_playback battles_sync_live

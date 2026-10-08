@@ -2,6 +2,7 @@
 #  coop_story.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-08: Kept the leader's story to Classic worlds: in a Raid World no member borrows a leader's story and no leader tells one
 #      Paulinchen  2026-10-07: Kept the variables the game sets for each area and battle, such as the rarity of enchanted drops, each player's own, since the leader's ended a member's game at a drop
 #                            - Dropped the switches, variables and key items of another game's story beyond this game's own, logged once per kind
 #                            - Registered the companion, map and save hooks through core_hooks.rbx instead of wraps of its own
@@ -157,11 +158,14 @@ module MGQ_MpCoopStory
     !@own.nil?
   end
 
-  # Finds the leader of the player's party, through coop.rbx.
+  # Finds the leader of the player's party, through coop.rbx, whose story the party plays in a
+  # Classic world. A Raid World's story is the world's, so its parties have no story leader.
   #
-  # @return [MGQ_MpOverworldSync::Peers::Peer, Symbol, nil] The leader, :me for the player, nil outside a party.
+  # @return [MGQ_MpOverworldSync::Peers::Peer, Symbol, nil] The leader, :me for the player, nil
+  #   outside a party and in a Raid World.
   def self.leader
     return nil unless MGQ_MpOverworldSync.in_world?
+    return nil if MGQ_MpCoop::Scope.raid?
 
     MGQ_MpCoop::Party.leader
   end
@@ -343,6 +347,8 @@ module MGQ_MpCoopStory
   #
   # @return [Boolean] Whether they do.
   def self.follows_leader?
+    return false if MGQ_MpCoop::Scope.raid?
+
     lead = MGQ_MpCoop.party_leader
     @synced && lead.is_a?(MGQ_MpOverworldSync::Peers::Peer) && lead.state["id"].to_s == @sync_with ? true : false
   end
@@ -351,7 +357,7 @@ module MGQ_MpCoopStory
   #
   # @return [Array<MGQ_MpOverworldSync::Peers::Peer>] The members.
   def self.synced_members
-    return [] unless MGQ_MpCoop.party_leader == :me
+    return [] unless MGQ_MpCoop.party_leader == :me && !MGQ_MpCoop::Scope.raid?
 
     me = MGQ_MpOverworldSync::Me.id.to_s
     MGQ_MpCoop::Party.members.select { |peer| peer.state["ssync"].to_s == me }
