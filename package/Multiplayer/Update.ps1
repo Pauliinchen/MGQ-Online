@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-08: Took the game's process from the game that starts the update, waited for it to close and started the game again afterwards, in the Multiplayer menu once updated
+#                            - Held the game's process from the start and waited on it, so a later wait never hangs on another program Windows gave its id
 #      Paulinchen  2026-10-04: Showed the release notes last and counted the removed files in one line, so they no longer push the notes out of sight
 #      Paulinchen  2026-09-30: Found the game folder two levels up, since the mod lives in Patch\Multiplayer
 #                            - Fetched MGQ-Online-<version>.zip from the repository under its new name, MGQ-Online
@@ -38,6 +39,35 @@ $Manifest = Join-Path $ModDir 'Manifest.txt'
 
 # Tells the game started again to open the Multiplayer menu, see world.rbx.
 $OpenWorldsVariable = 'MGQMP_OPEN_WORLDS'
+
+# Takes the game that started the update by its process id, once, while it still runs.
+#
+# The process object keeps its handle, so waiting on it later never waits on another program that
+# Windows gave the same id once the game closed.
+#
+# Returns the game's process, or $null when no game started the update, it closed already, or the
+# id names another program.
+function Get-StartingGame {
+    if ($GameProcess -le 0) {
+        return $null
+    }
+
+    try {
+        $process = Get-Process -Id $GameProcess -ErrorAction Stop
+        # Reading the handle opens it, which holds the process until this script ends.
+        $null = $process.Handle
+        # Windows may deny the path of a process, whose id the game handed over a moment ago.
+        if ($null -eq $process.Path -or $process.Path -eq $GameExe) {
+            return $process
+        }
+    }
+    catch {
+    }
+
+    return $null
+}
+
+$StartingGame = Get-StartingGame
 
 # Reads the version of the installed DLL.
 #
@@ -120,9 +150,9 @@ function Show-ReleaseNotes($Release) {
 # Waits until the game in this folder is closed, which unlocks the DLL: first for the game that
 # started the update, then for any other copy the player has to close.
 function Wait-GameClosed {
-    if ($GameProcess -gt 0) {
+    if ($StartingGame -and -not $StartingGame.HasExited) {
         Write-Host 'Waiting for the game to close . . .'
-        Wait-Process -Id $GameProcess -ErrorAction SilentlyContinue
+        $StartingGame.WaitForExit()
     }
 
     while (Test-GameRunning) {
