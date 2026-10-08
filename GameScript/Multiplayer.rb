@@ -4,6 +4,7 @@
 #  Changelog:
 #      Paulinchen  2026-10-07: Named mp_world_say, which mirrors a chat line to the relay for the world's admins
 #                            - Kept the logs of the last five game sessions, deleting older ones as a session starts
+#                            - Logged the hooks as one line per script with its count, once the scripts loaded and once a frame
 #                            - Logged how the game closes and each F12 reset, so a log that just stops tells a crash
 #                            - Kept the press that closes a screen of the mod from reaching the game in the same frame, which left a PvP battle when Escape closed the chat box
 #                            - Gave the background wrap its script, as every around now names who registers
@@ -212,6 +213,7 @@ module MGQ_Multiplayer
         Log.write("#{name}#{SCRIPT_EXTENSION} did not load: #{e.class}: #{e.message} (#{e.backtrace.to_a.first})")
       end
     end
+    MGQ_MpHooks.report if defined?(MGQ_MpHooks)
     Log.write("loaded #{SCRIPTS.size - failed.size} of #{SCRIPTS.size} scripts#{failed.empty? ? '' : ", not #{failed.join(', ')}"}")
   end
 
@@ -1174,11 +1176,13 @@ end
 # Game hooks, through core_hooks.rbx.
 
 begin
-  # After every frame, tells the Discord mod how the connection stands and polls for an update.
-  # Graphics.update runs every frame in every scene, so both happen wherever the player is.
+  # After every frame, tells the Discord mod how the connection stands, polls for an update and
+  # logs the hooks registered since the last frame. Graphics.update runs every frame in every
+  # scene, so all happen wherever the player is.
   MGQ_MpHooks.after(Graphics.singleton_class, :update, "Multiplayer") do
     MGQ_Multiplayer::Discord.tick
     MGQ_Multiplayer::UpdateCheck.tick
+    MGQ_MpHooks.report
   end
 
   # Guards the input as the game starts running. The game's plugins load after the Patch folder,

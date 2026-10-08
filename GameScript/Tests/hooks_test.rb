@@ -2,7 +2,8 @@
 #  hooks_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-07: Checked that who holds the player is logged when it changes
+#      Paulinchen  2026-10-07: Checked that the hooks are logged as one line per script, once
+#                            - Checked that who holds the player is logged when it changes
 #      Paulinchen  2026-10-04: Followed the scripts to their new names, without mp_
 #      Paulinchen  2026-10-03: Checked around and holding the player
 #      Paulinchen  2026-10-02: Created
@@ -88,6 +89,13 @@ check("a private method stays private around too", Scene_Around.private_method_d
 MGQ_MpHooks.around(Scene_Around, :double, "two") { |_scene, _args, original| [original.call, :again] }
 check("a script registering again replaces its wrap instead of wrapping once more", Scene_Around.new.double(2), [5, :again])
 check("and the replacement is logged", $log.grep(/two wrapped Scene_Around#double again/).size, 1)
+$log.clear
+MGQ_MpHooks.report
+check("the hooks are logged as one line per script with how many methods it follows and wraps, not one per method",
+      $log.grep(/: follows \d+, wraps \d+ game method\(s\)\z/).size == $log.size && $log.grep(/hooks: one: follows 0, wraps 2 game method/).size, 1)
+$log.clear
+MGQ_MpHooks.report
+check("and once only", $log, [])
 
 # Holding the player: no moving, no menu, while any script says so.
 class Game_Player; def movable?; true; end; end
