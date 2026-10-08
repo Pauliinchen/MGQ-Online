@@ -19,6 +19,7 @@
 #                            - Took only the directory's answer to its own settings, sending them again when another request took its place, and forgot them with the world
 #                            - Read the world's settings on the relay before sending the creator's and before telling a player whose game holds others, taking settings
 #                              someone else set there as the world's and joining the creator's changes to them
+#                            - Added the row of Shared Mod Settings to a Mod Config without entries too, and rescued noting the world entered
 #                            - Told the creator when the relay holds settings someone else set
 #      Paulinchen  2026-10-07: Sent the Mod Config options of every installed catalog mod, whatever its version, until the relay holds the current version's
 #                            - Logged a catalog unknown at the first read too
@@ -1034,6 +1035,8 @@ module MGQ_MpWorldMods
     add_row
     log("entering #{own ? "the player's own world" : 'a world'} #{MGQ_MpWorld.short(listed.id)}: " \
         "#{shared?(@world[:text]) ? "it shares #{settings_from(@world[:text]).size} mod setting(s): #{settings_text(settings_from(@world[:text]))}" : "each player keeps their own mod settings"}")
+  rescue => e
+    log("noting the world's mod settings failed: #{e.class}: #{e.message}")
   end
 
   # Reads a world's settings as they stand: the list's, or those the relay took from this game
@@ -1181,7 +1184,8 @@ module MGQ_MpWorldMods
     config::DATA[SHARED_OPTION] = [1, 0] if config.const_defined?(:DATA)
     config::DATA_TEXT[SHARED_OPTION] = { 1 => { :name => "On", :help => ROW_ON_HELP }, 0 => { :name => "Off", :help => ROW_OFF_HELP } } if config.const_defined?(:DATA_TEXT)
     config::DEFAULT[SHARED_OPTION] = 0 if config.const_defined?(:DEFAULT)
-    menu.insert(-2, :key => SHARED_OPTION, :name => ROW_NAME, :sub => true, :personal => true,
+    # Mod Config Remake's last entry is its Return.
+    menu.insert([menu.size - 1, 0].max, :key => SHARED_OPTION, :name => ROW_NAME, :sub => true, :personal => true,
                     :help => lambda { MGQ_MpWorldMods.row_help }, :enable => lambda { MGQ_MpWorldMods.own_world? },
                     :on_change => lambda { |value| MGQ_MpWorldMods.switch(value) })
   end

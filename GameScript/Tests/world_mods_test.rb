@@ -736,6 +736,15 @@ check("the title screen forgets the settings on their way, though their request 
 $dll["mp_dir_action"] = "state=done\nkind=settings\n\n"
 check("and the next request drops their answer", [MGQ_MpWorld::Directory.free?, $dll["mp_dir_action"]], [true, ""])
 
+# Mod Config without entries.
+contents = NWConst::Config.send(:remove_const, :MOD_CONTENTS)
+NWConst::Config.const_set(:MOD_CONTENTS, [])
+mods.enter_world(world.call("creator", ""), "me")
+check("the row joins a Mod Config without entries too", NWConst::Config::MOD_CONTENTS.map { |entry| entry[:key] }, [row_key])
+Scene_Title.new.start
+NWConst::Config.send(:remove_const, :MOD_CONTENTS)
+NWConst::Config.const_set(:MOD_CONTENTS, contents)
+
 # A world's settings are noted only once its entry goes on.
 strict = MGQ_MpWorld::Directory::ListedWorld.new("w2", 4, 0, "creator", 0, "Creator", "Strict", "none", [], false, false, true, false, true, "1:x", "", "", "", "@shared=o:1;mod_level_cap=i:0")
 differing = MGQ_MpWorld::GameData.method(:differing)
