@@ -23,6 +23,8 @@
 #                            - Stopped following the keys and the mouse once a menu's choice closed the chat box, which failed on the closed box
 #                            - Offered only the whisper in a player's menu during a battle
 #                            - Showed whispers in the closed chat log whatever the tab
+#                            - Numbered a name that several players share in the whisper list and /w, and whispered to the player chosen by their id
+#                            - Named the sender of a line by the same numbered name, in the log and in their menu
 #                            - Mirrored a global line to the relay before sending it, turning it down when it comes too fast
 #                            - Left out the line and paragraph separators of players' and admins' lines
 #      Paulinchen  2026-10-07: Mirrored every line sent to everyone to the relay for the world's admins, and showed an admin's line from the relay as [Admin] in gold
@@ -217,6 +219,7 @@ module MGQ_MpChat
   @channel = :say
   @tab = :all
   @whisper_to = nil
+  @whisper_id = nil
   @pick = 0
   @alt_frames = 0
   @menu = nil
@@ -294,17 +297,23 @@ module MGQ_MpChat
 
   # Chooses whom the whisper chat goes to, and the whisper chat.
   #
-  # @param name [String] Their name.
-  def self.whisper(name)
+  # The player is kept by their id, since the numbers of a name that several share change as they
+  # come and go.
+  #
+  # @param name [String] Their name, numbered when several share it, see names.
+  # @param peer [MGQ_MpOverworldSync::Peers::Peer, nil] The player, nil when nobody has that name.
+  def self.whisper(name, peer = MGQ_MpOverworldSync::Peers.named(name))
     @whisper_to = name
+    @whisper_id = peer && peer.state["id"].to_s
     choose(:whisper)
   end
 
-  # Lists the names of the world's other players, whom the player may whisper to.
+  # Lists the names of the world's other players, whom the player may whisper to; a name that
+  # several share is numbered, such as "Name (2)", so each of them is reachable.
   #
   # @return [Array<String>] The names.
   def self.names
-    MGQ_MpOverworldSync::Peers.present.map { |peer| peer.state["name"].to_s }.reject(&:empty?).uniq
+    MGQ_MpOverworldSync::Peers.labeled.map(&:first)
   end
 
   # Lists the names that fit what follows the whisper command in the chat box, before a name was taken.
@@ -382,8 +391,8 @@ module MGQ_MpChat
     peer = menu_peer
     return [] unless peer
 
-    name = peer.state["name"].to_s
-    option = MGQ_MpActions::Option.new("Whisper", lambda { whisper(name) }, nil)
+    name = MGQ_MpOverworldSync::Peers.label_of(peer) || peer.state["name"].to_s
+    option = MGQ_MpActions::Option.new("Whisper", lambda { whisper(name, peer) }, nil)
     SceneManager.scene.is_a?(Scene_Battle) ? [option] : MGQ_MpActions.peer_options(peer) + [option]
   end
 
@@ -782,13 +791,18 @@ module MGQ_MpChat
     channel == :whisper ? "(#{text.size} characters, not logged)" : MGQ_MpLog.short(text)
   end
 
-  # Tells the player the whisper chat goes to something, through overworld_sync.rbx.
+  # Tells the player the whisper chat goes to something, through overworld_sync.rbx, and names them
+  # as the whisper list does now.
   #
   # @param fields [Hash] The message's fields.
-  # @return [Boolean] Whether it went out, false when nobody of that name is in the world.
+  # @return [Boolean] Whether it went out, false when they are not in the world.
   def self.tell_whisper(fields)
-    peer = MGQ_MpOverworldSync::Peers.named(@whisper_to)
-    peer ? MGQ_MpOverworldSync.tell(peer.seat, fields) : false
+    peers = MGQ_MpOverworldSync::Peers
+    peer = @whisper_id.to_s.empty? ? peers.named(@whisper_to) : peers.with_id(@whisper_id)
+    return false unless peer
+
+    @whisper_to = peers.label_of(peer) || @whisper_to
+    MGQ_MpOverworldSync.tell(peer.seat, fields)
   end
 
   # Tells the players on the player's map something, through overworld_sync.rbx.
@@ -839,7 +853,8 @@ module MGQ_MpChat
     take_line(peer, message["whisper"], message["name"], :whisper)
   end
 
-  # Adds another player's line, without LINE_BREAKERS and cut to MAX_LENGTH.
+  # Adds another player's line, without LINE_BREAKERS and cut to MAX_LENGTH, under the name that
+  # tells them apart, such as "Name (2)" for one of several who share it.
   #
   # @param peer [MGQ_MpOverworldSync::Peers::Peer, nil] Who sent it.
   # @param text [String, nil] The line.
@@ -853,7 +868,9 @@ module MGQ_MpChat
 
     @received += 1
     log("#{TAB_NAMES[channel]} line from #{sender} (line #{@received} received): #{shown_in_log(text, channel)}")
-    add(peer ? peer.seat : nil, peer ? peer.state["name"] : name, text, channel, peer && member?(peer), admin, nil, peer && peer.state["id"])
+    id = peer && !peer.state["id"].to_s.empty? ? peer.state["id"] : nil
+    shown = peer ? MGQ_MpOverworldSync::Peers.label_of(peer) || peer.state["name"] : name
+    add(peer ? peer.seat : nil, shown, text, channel, peer && member?(peer), admin, nil, id)
   end
 
   # Reports whether another player is in the player's party, whose name the log shows green.
@@ -912,6 +929,7 @@ module MGQ_MpChat
     @log.clear
     @bubbles.clear
     @whisper_to = nil
+    @whisper_id = nil
     @sent = 0
     @received = 0
   end

@@ -9,7 +9,7 @@
 #                            - Checked whispers and their list of names, the help tab, the bubbles' chats and that what Alt types with the numpad is dropped
 #                            - Checked that a log made with the mouse button held and the box open draws without failing, and that a player's message cannot pose as an admin's line
 #                            - Checked that a menu's choice that leaves closes the chat box without failing, by click and by Enter, that a battle's menu offers only the whisper
-#                            - Checked the closed log's whispers and the separators a line loses
+#                            - Checked the closed log's whispers, the separators a line loses and numbered names of players sharing one
 #                            - Checked a global line too fast for the relay
 #      Paulinchen  2026-10-07: Checked the lines mirrored to the relay, the party chat kept from it, and an admin's line from the relay
 #                            - Checked scrolling the chat log
@@ -947,6 +947,19 @@ $inbox << entry("message", friend_seat, "chat=one two three\nname=Friend\n\n
 MGQ_MpOverworldSync.tick
 check("a line loses its line and paragraph separators", chat.log_lines.last, "[Global] Friend: onetwothree")
 chat.select_tab(:all, "in the test")
+
+# Two players of the same name, and the map a say line was said on.
+peers = MGQ_MpOverworldSync::Peers
+$inbox << entry("message", 8, told(friend.merge("id" => "zz-twin")))
+MGQ_MpOverworldSync.tick
+check("a name that two players share is numbered for the second, so each can be whispered to",
+      [chat.names.include?("Friend (2)"), peers.named("Friend").seat, peers.named("Friend (2)").seat, peers.label_of(peers.at(8))], [true, friend_seat, 8, "Friend (2)"])
+check("nobody is found by a missing id or name", [peers.with_id(nil), peers.with_id(""), peers.named(nil)], [nil, nil, nil])
+$sent.clear
+chat.start_typing
+$typed = "/w Friend (2) hi twin\r"
+map_frame
+check("/w and a numbered name whisper to that player", [$sent.map(&:first), chat.log_lines.last], [[8], "[To Friend (2)] Me: hi twin"])
 
 # A global line too fast for the relay.
 $say_result = MGQ_MpChat::TOO_FAST

@@ -5,6 +5,7 @@
 #      Paulinchen  2026-10-08: Marked an admin's line from the relay with a key no player's message can carry, which let any player post as an admin
 #                            - Passed on whether the relay got a chat line or the DLL dropped it for coming too fast, instead of whether it went out
 #                            - Listed the players whose connection stands, found them by name and id and told whether one is on the player's map, which the chat and the map share
+#                            - Numbered a name that several players share, such as "Name (2)", so each is found by it, and found nobody by a missing name or id
 #      Paulinchen  2026-10-07: Mirrored a chat line to the relay through say, and handed an admin's line from the relay to the chat's route
 #                            - Kept the player's seat as the inbox and the status tell it, asking the DLL only while none was told
 #                            - Logged a failing route once
@@ -602,20 +603,49 @@ module MGQ_MpOverworldSync
       all.select { |peer| peer.away.nil? }
     end
 
-    # Finds a player whose connection stands by their name.
+    # Lists the players whose connection stands by the names that tell them apart: a name that
+    # several share, whatever its case, is numbered from the second of them on by their ids, such
+    # as "Name (2)". Nameless players are left out.
+    #
+    # @return [Array<Array(String, Peer)>] Each name with its player.
+    def self.labeled
+      named = present.reject { |peer| peer.state["name"].to_s.empty? }
+      named.group_by { |peer| peer.state["name"].to_s.downcase }.values.map do |sharing|
+        sharing.sort_by { |peer| peer.state["id"].to_s }.each_with_index.map do |peer, index|
+          name = peer.state["name"].to_s
+          [index == 0 ? name : "#{name} (#{index + 1})", peer]
+        end
+      end.flatten(1)
+    end
+
+    # Tells the name that tells a player apart, see labeled.
+    #
+    # @param peer [Peer] The player.
+    # @return [String, nil] The name, nil once their connection is down or for a nameless player.
+    def self.label_of(peer)
+      pair = labeled.find { |_, other| other.equal?(peer) }
+      pair && pair[0]
+    end
+
+    # Finds a player whose connection stands by the name that tells them apart, see labeled.
     #
     # @param name [String, nil] The name.
-    # @return [Peer, nil] The player, nil when nobody present has that name.
+    # @return [Peer, nil] The player, nil when nobody present has that name, or for none.
     def self.named(name)
-      present.find { |peer| peer.state["name"] == name }
+      return nil if name.to_s.empty?
+
+      pair = labeled.find { |label, _| label == name }
+      pair && pair[1]
     end
 
     # Finds a player whose connection stands by their player id.
     #
     # @param id [String, nil] The id.
-    # @return [Peer, nil] The player, nil when nobody present has that id.
+    # @return [Peer, nil] The player, nil when nobody present has that id, or for none.
     def self.with_id(id)
-      present.find { |peer| peer.state["id"] == id }
+      return nil if id.to_s.empty?
+
+      present.find { |peer| peer.state["id"].to_s == id.to_s }
     end
 
     # Reports whether another player's connection stands and they are on the player's map.
