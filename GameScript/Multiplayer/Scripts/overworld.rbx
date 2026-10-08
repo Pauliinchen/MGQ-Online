@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-08: Found the players on this map through MGQ_MpOverworldSync::Peers.on_this_map?, which the chat shares
+#                            - Loaded the graphics other players' games name through graphic, which remembers the files this game lacks for the last 64 names only
 #                            - Named a ghost above its head as the chat names its player, such as "Name (2)" for the second of two players sharing a name, drawn anew as players come and go
 #      Paulinchen  2026-10-07: Showed Luka's sprite of the game's data for a ghost whose sprite this game lacks, which kept the map's sprites from drawing
 #                            - Took icons, white and the depths from MGQ_MpUi
@@ -69,6 +70,14 @@ module MGQ_MpOverworld
   # Icon of the game's icon set before the name of a party's leader: a crown.
   CROWN_ICON = 226
 
+  # Graphics another player's game named that graphic keeps whether this game has at most, the
+  # longest unused forgotten first, so a game naming ever new files cannot grow the list.
+  MOST_GRAPHICS_KEPT = 64
+
+  # Whether this game has each graphic another player's game named, by its folder and file, the
+  # longest unused first.
+  @graphics ||= {}
+
   # Tells what marks a player's party: its size, and whether they lead it.
   #
   # @param player [MGQ_MpOverworldSync::Peers::Peer, Symbol] The player, :me for the player.
@@ -120,6 +129,39 @@ module MGQ_MpOverworld
     log_once(:ghosts, "ghost update failed: #{e.class}: #{e.message}")
   end
 
+  # Loads a graphic another player's game named, see graphic?.
+  #
+  # @param folder [Symbol] The Cache method of the graphic's folder, such as :character or :face.
+  # @param name [String] The file.
+  # @return [Bitmap, nil] The graphic, nil while this game lacks it.
+  def self.graphic(folder, name)
+    graphic?(folder, name) ? Cache.send(folder, name) : nil
+  rescue => e
+    log_once(:graphic, "loading the #{folder} graphic #{name} failed: #{e.class}: #{e.message}")
+    nil
+  end
+
+  # Tells whether this game has a graphic another player's game named, such as a hero another mod
+  # added there, remembering the files it lacks, so a missing one is neither tried nor logged
+  # again every frame.
+  #
+  # @param folder [Symbol] The Cache method of the graphic's folder, such as :character or :face.
+  # @param name [String] The file.
+  # @return [Boolean] Whether it has it.
+  def self.graphic?(folder, name)
+    key = "#{folder}/#{name}"
+    known = @graphics.delete(key)
+    @graphics.shift while @graphics.size >= MOST_GRAPHICS_KEPT
+    @graphics[key] = false
+    return false if known == false
+
+    Cache.send(folder, name)
+    @graphics[key] = true
+  rescue => e
+    log("this game has no #{folder} graphic #{name} (#{e.class}: #{e.message}), a stand-in shows instead") if known.nil?
+    false
+  end
+
   # Tells which sprite a ghost or its follower shows for one its player's game sent: that one, or
   # Luka's of the game's data while this game lacks its file, such as a hero another mod added
   # there. A missing file raised in the map's sprites every frame, which kept the ghosts after it
@@ -129,17 +171,7 @@ module MGQ_MpOverworld
   # @param index [Integer] The sprite's index in the file.
   # @return [Array] The file and the index to show.
   def self.sprite(name, index)
-    @sprites ||= {}
-    unless @sprites.key?(name)
-      @sprites[name] = begin
-        Cache.character(name)
-        true
-      rescue => e
-        log("this game has no sprite #{name} (#{e.class}), ghosts showing it show #{stand_in[0]} instead")
-        false
-      end
-    end
-    @sprites[name] ? [name, index] : stand_in
+    graphic?(:character, name) ? [name, index] : stand_in
   end
 
   # Tells Luka's sprite as the game's data has it, read from the file itself, since a mod may have

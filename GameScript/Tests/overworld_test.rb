@@ -2,7 +2,8 @@
 #  overworld_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-08: Checked that a ghost's name tag numbers a name two players share as the chat does, and is drawn anew once one of them left
+#      Paulinchen  2026-10-08: Checked that the graphics checked stay few
+#                            - Checked that a ghost's name tag numbers a name two players share as the chat does, and is drawn anew once one of them left
 #                            - Started the status's count of frames anew before checking a new connection's seat, which a status look in the same frame replaced depending on how many frames the checks before took
 #                            - Checked the global, say and party chats, the commands that choose them, the log's tabs, its size and its depth while typing
 #                            - Checked that the numpad's Insert closes the chat box with Num Lock off
@@ -130,6 +131,12 @@ check("a name two players share is numbered for the second by id, as in the chat
 MGQ_MpOverworldSync::Peers.remove(9)
 tag.show(shown, peer)
 check("and the tag is drawn anew with the plain name once the other left", written, ["Friend"])
+
+# The graphics checked stay few however many names the others send, the longest unused forgotten.
+100.times { |n| MGQ_MpOverworld.graphic?(:character, "$missing") if n % 10 == 0; MGQ_MpOverworld.graphic?(:character, "Other#{n}") }
+graphics = MGQ_MpOverworld.instance_variable_get(:@graphics)
+check("at most MOST_GRAPHICS_KEPT graphics are kept, one in use stays", [graphics.size, graphics.key?("character/$missing"), graphics.key?("character/Other0")],
+      [MGQ_MpOverworld::MOST_GRAPHICS_KEPT, true, false])
 
 # One tile away: the ghost walks; far away: it jumps.
 $inbox << entry("message", 2, told(friend.merge("x" => 11)))
