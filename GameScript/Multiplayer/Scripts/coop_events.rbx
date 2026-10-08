@@ -2,6 +2,7 @@
 #  coop_events.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-08: Kept the Library's replays of scenes and the game's transfer process to the player's own game, never the party's story, so a leader's replay no longer brings the members over
 #      Paulinchen  2026-10-07: Took a common event's setup, which passes the list alone, instead of failing on it
 #                            - Registered the interpreter, map, message and party hooks through core_hooks.rbx instead of wraps of its own
 #                            - Let a page of the leader's story outside a fiber move on at once instead of failing, as the other waits do
@@ -125,6 +126,13 @@ module MGQ_MpCoopEvents
 
   # Messages about gathering for story scenes, which coop_gather.rbx takes.
   GATHER_MESSAGES = %w(gather come where follow)
+
+  # Common events that run only in the player's own game, never as the party's story: the game's
+  # transfer process, which runs by itself after a transfer.
+  OWN_COMMON_EVENTS = [114]
+
+  # The game's switch that is on while the Library replays a scene, by its id in 3.06.
+  LIBRARY_REPLAY_SWITCH = 443
 
   @common_kinds = {}
   @chest = nil
@@ -419,7 +427,7 @@ module MGQ_MpCoopEvents
     log("the page #{@mirrored[:page]} of the leader's story was cut short by an event starting") if @mirrored
     @mirrored = nil
     event = event_id > 0 ? $game_map.events[event_id] : nil
-    sorted = event ? kind(event) : kind_of(list || [])
+    sorted = own?(event ? nil : list) ? :own : (event ? kind(event) : kind_of(list || []))
     @telling = leading_story? && sorted == :story
     @may_tell = sorted == :talk && (following? || leading_story?) && may_tell?(list || [])
     hold = @telling && scene?(list) && !MGQ_MpCoopGather.gathered?
@@ -436,6 +444,7 @@ module MGQ_MpCoopEvents
   def self.log_start(event, sorted, hold)
     what = event ? "event #{event.id} (page #{event.mgq_mp_page + 1}) on map #{$game_map.map_id}" : "a common event on map #{$game_map.map_id}"
     notes = []
+    notes << "runs only in the player's own game: #{library_replay? ? "the Library's replay of a scene" : "the game's transfer process"}" if sorted == :own
     notes << "the leader tells the party this story" if @telling
     notes << "the player plays their own story, not synced with the leader or leading no member who follows it" unless following? || leading_story?
     notes << "held until the party gathers" if hold
@@ -589,7 +598,7 @@ module MGQ_MpCoopEvents
   # @return [Boolean] Whether it is the leader's, so it must not run here.
   def self.hand_over(event)
     lead = MGQ_MpCoop.party_leader
-    return false unless lead.is_a?(MGQ_MpOverworldSync::Peers::Peer) && kind(event) == :story
+    return false unless lead.is_a?(MGQ_MpOverworldSync::Peers::Peer) && !own? && kind(event) == :story
     unless following?
       log_once([:own_story, $game_map.map_id, event.id, lead.state["id"].to_s], "story event #{event.id} on map #{$game_map.map_id} runs in the player's own game: not synced with #{MGQ_MpOverworldSync.who(lead)}, the player plays their own story")
       return false
@@ -635,13 +644,39 @@ module MGQ_MpCoopEvents
     elapsed < 0 || elapsed >= frames
   end
 
+  # Reports whether what starts runs only in the player's own game, never as the party's story:
+  # anything while the Library replays a scene, whose replay the leader's game would otherwise
+  # bring the members over to, and the common events of OWN_COMMON_EVENTS.
+  #
+  # The game sets a common event up with its list alone, so the list is compared with each one's.
+  #
+  # @param list [Array<RPG::EventCommand>, nil] The common event's commands, nil for a map event.
+  # @return [Boolean] Whether it does.
+  def self.own?(list = nil)
+    return true if library_replay?
+    return false unless list
+
+    OWN_COMMON_EVENTS.any? { |id| (common = $data_common_events[id]) && list.equal?(common.list) }
+  rescue => e
+    log_once(:own, "telling the player's own events apart failed: #{e.class}: #{e.message}")
+    false
+  end
+
+  # Reports whether the Library replays a scene now.
+  #
+  # @return [Boolean] Whether it does.
+  def self.library_replay?
+    switch = defined?(NWConst::Sw::LIBRARY_H_MEMORY) ? NWConst::Sw::LIBRARY_H_MEMORY : LIBRARY_REPLAY_SWITCH
+    $game_switches[switch] ? true : false
+  end
+
   # Reports whether a common event that runs by itself is left to the leader's game.
   #
   # @param common [RPG::CommonEvent] The common event.
   # @return [Boolean] Whether it is.
   def self.leave_to_leader?(common)
     lead = MGQ_MpCoop.party_leader
-    left = lead.is_a?(MGQ_MpOverworldSync::Peers::Peer) && following? && kind_of(common.list || []) == :story
+    left = lead.is_a?(MGQ_MpOverworldSync::Peers::Peer) && following? && !own?(common.list) && kind_of(common.list || []) == :story
     if left
       id = common.respond_to?(:id) ? common.id : "?"
       log_once([:common, id, lead.state["id"].to_s], "kept common event #{id} that runs by itself from starting: it is story, which #{MGQ_MpOverworldSync.who(lead)}'s game runs")

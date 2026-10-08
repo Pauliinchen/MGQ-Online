@@ -2,6 +2,7 @@
 #  coop_events_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-08: Checked that the game's transfer process and the Library's replays gather nobody, and that the transfer process runs in a member's own game
 #      Paulinchen  2026-10-07: Checked that a common event set up with its list alone is sorted
 #                            - Took variable 151 as the story's sample, since 150 is each player's own now
 #                            - Stood in for the helpers of coop.rbx the party scripts share now, and gave the game's switches their full count, which the story bounds another game's by
@@ -531,6 +532,15 @@ check("but not for a talk, or for other interpreters", $sent.size, 0)
 $game_map.interpreter.setup([c(101, "", 0, 0, 2), c(121, 60, 60, 0)])
 check("a common event, set up with its list alone, gathers the party for its story scene too", $sent.map { |seat, f| [seat, f["pevent"], f["map"]] }, [[-1, "gather", "9"]])
 $sent.clear
+$data_common_events[114] = RPG::CommonEvent.new([c(101, "", 0, 0, 2), c(121, 60, 60, 0)])
+$game_map.interpreter.setup($data_common_events[114].list)
+check("the game's transfer process, a common event of the player's own, gathers nobody", [$sent, MGQ_MpCoopEvents.telling?], [[], false])
+raw($game_switches)[443] = true
+$game_map.interpreter.setup([c(101, "", 0, 0, 2), c(121, 60, 60, 0)])
+$game_map.interpreter.setup([c(101, "", 0, 0, 2), c(121, 60, 60, 0)], 1)
+check("nor does a scene the Library replays, or an event on its map", [$sent, MGQ_MpCoopEvents.telling?], [[], false])
+raw($game_switches)[443] = false
+$data_common_events[114] = nil
 
 $leader = leader
 $members = [leader]
@@ -767,6 +777,12 @@ $data_common_events[4] = RPG::CommonEvent.new([c(101, "", 0, 0, 2), c(121, 60, 6
 $data_common_events[4].switch_id = 70
 class Game_Switches; def [](id); @data[id] || false; end; end
 check("a story common event that runs by itself is left to the leader's game too", $game_map.setup_autorun_common_event, nil)
+story_common = $data_common_events[4]
+own_transfer = RPG::CommonEvent.new([c(101, "", 0, 0, 2), c(121, 60, 60, 0)])
+own_transfer.switch_id = 70
+$data_common_events[4], $data_common_events[114] = nil, own_transfer
+check("but the game's transfer process runs in the member's own game", $game_map.setup_autorun_common_event, own_transfer)
+$data_common_events[4], $data_common_events[114] = story_common, nil
 $leader = :me
 $members = [friend]
 check("the leader's own game runs it", $game_map.setup_autorun_common_event, $data_common_events[4])
