@@ -29,6 +29,7 @@
 #                            - Mirrored a global line to the relay before sending it, turning it down when it comes too fast
 #                            - Left out the 0 that the numpad's 0 types after it closed a player's menu
 #                            - Kept the chat's size while a battle draws the log smaller, and kept a drag within the screen
+#                            - Kept the typing of a frame in which the menu's player left, without its Enter or Escape
 #                            - Left out the line and paragraph separators of players' and admins' lines
 #      Paulinchen  2026-10-07: Mirrored every line sent to everyone to the relay for the world's admins, and showed an admin's line from the relay as [Admin] in gold
 #                            - Closed the chat box with the numpad's 0, as the game's windows close
@@ -579,8 +580,6 @@ module MGQ_MpChat
   # that type nothing, and scrolls the chat log. The numpad's 0 closes the open menu, else the box.
   def self.update_typing
     text, _keys = MGQ_Multiplayer::Link.take_typed
-    return close_menu("its player left the world") if @menu && !menu_peer
-
     if MGQ_MpUi.numpad_cancel?
       unless @menu
         # Its 0 arrives as the number row's, so what came with it is dropped; a 0 coming later
@@ -596,8 +595,14 @@ module MGQ_MpChat
       @echo = { :key => ZERO_KEY, :frames => KEY_ECHO_FRAMES }
     end
 
-    tab_key = MGQ_Multiplayer::Key.pressed?(TAB_KEY)
     typed = without_alt_code(without_echo(text.to_s))
+    if @menu && !menu_peer
+      close_menu("its player left the world")
+      # Enter and Escape were meant for the menu, so they neither send the line nor close the box.
+      typed = typed.delete("\r\e")
+    end
+
+    tab_key = MGQ_Multiplayer::Key.pressed?(TAB_KEY)
     typed.each_char do |char|
       next tab_key = true if char == "\t"
 

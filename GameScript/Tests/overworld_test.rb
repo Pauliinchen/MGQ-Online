@@ -12,7 +12,7 @@
 #                            - Checked that a menu's choice that leaves closes the chat box without failing, by click and by Enter, that a battle's menu offers only the whisper
 #                            - Checked the closed log's whispers, the separators a line loses, numbered names of players sharing one, and the say chat by the map its line was said on
 #                            - Checked that a line of a player whose name another shares shows their numbered name
-#                            - Checked the 0 after Numpad 0 closed a menu, a global line too fast for the relay and the size kept in a battle
+#                            - Checked the 0 after Numpad 0 closed a menu, the typing kept once the menu's player left, a global line too fast for the relay and the size kept in a battle
 #      Paulinchen  2026-10-07: Checked the lines mirrored to the relay, the party chat kept from it, and an admin's line from the relay
 #                            - Checked scrolling the chat log
 #                            - Checked that the numpad's 0 closes the chat box
@@ -1001,6 +1001,13 @@ $inbox << entry("message", friend_seat, "chat=first of us\nname=Friend\n\n")
 MGQ_MpOverworldSync.tick
 check("and one said on another map is dropped, though the last state names this one, while the first of them keeps the plain name",
       chat.log_lines.last(2), ["Friend (2): just arrived", "[Global] Friend: first of us"])
+chat.start_typing
+chat.open_menu(MGQ_MpChat::Line.new("Friend", "x", :other, :say, 0, nil, "zz-twin"), [100, 300])
+peers.remove(8)
+$typed = "ab\r"
+map_frame
+check("once the menu's player left, the frame's typing stays, without the Enter meant for the menu", [chat.menu, chat.typing?, chat.typed], [nil, true, "ab"])
+chat.stop_typing
 
 # A global line too fast for the relay.
 $say_result = MGQ_MpChat::TOO_FAST
