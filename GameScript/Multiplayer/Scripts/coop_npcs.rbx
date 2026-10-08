@@ -2,6 +2,7 @@
 #  coop_npcs.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-08: Found the members on this map through MGQ_MpOverworldSync::Peers.on_this_map?
 #      Paulinchen  2026-10-07: Registered the event hooks through core_hooks.rbx instead of wraps of its own, and named events through coop.rbx
 #                            - Logged the Map Owner of each map and why, the whole maps sent and taken, events turning pages, events left alone and why, stuck events, and the NPC messages ignored
 #      Paulinchen  2026-10-06: Left out the party members whose connection is down, who no longer move the map's events
@@ -71,7 +72,7 @@ module MGQ_MpCoopNpcs
     return [] unless MGQ_MpOverworldSync.in_world?
     return [] unless MGQ_MpCoop::Party.id
 
-    MGQ_MpOverworldSync::Peers.all.select { |peer| peer.member && peer.away.nil? && peer.state["map"].to_i == $game_map.map_id }
+    MGQ_MpOverworldSync::Peers.all.select { |peer| peer.member && MGQ_MpOverworldSync::Peers.on_this_map?(peer) }
   end
 
   # Finds the Map Owner among the party members on the map: the one who entered it first, the lower

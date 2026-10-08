@@ -2,6 +2,7 @@
 #  overworld_sync.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-08: Listed the players whose connection stands, found them by name and id and told whether one is on the player's map, which the chat and the map share
 #      Paulinchen  2026-10-07: Mirrored a chat line to the relay through say, and handed an admin's line from the relay to the chat's route
 #                            - Kept the player's seat as the inbox and the status tell it, asking the DLL only while none was told
 #                            - Logged a failing route once
@@ -588,6 +589,37 @@ module MGQ_MpOverworldSync
     # @return [Array<Peer>] The games.
     def self.all
       @peers.values
+    end
+
+    # Lists the other players whose connection stands, leaving out those kept while away.
+    #
+    # @return [Array<Peer>] The players.
+    def self.present
+      all.select { |peer| peer.away.nil? }
+    end
+
+    # Finds a player whose connection stands by their name.
+    #
+    # @param name [String, nil] The name.
+    # @return [Peer, nil] The player, nil when nobody present has that name.
+    def self.named(name)
+      present.find { |peer| peer.state["name"] == name }
+    end
+
+    # Finds a player whose connection stands by their player id.
+    #
+    # @param id [String, nil] The id.
+    # @return [Peer, nil] The player, nil when nobody present has that id.
+    def self.with_id(id)
+      present.find { |peer| peer.state["id"] == id }
+    end
+
+    # Reports whether another player's connection stands and they are on the player's map.
+    #
+    # @param peer [Peer] The player.
+    # @return [Boolean] Whether they are.
+    def self.on_this_map?(peer)
+      peer.away.nil? && $game_map && peer.state["map"].to_i == $game_map.map_id ? true : false
     end
   end
 

@@ -2,6 +2,7 @@
 #  Multiplayer.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-08: Told whether a key or the left mouse button is held, for the chat log's tabs and its size
 #      Paulinchen  2026-10-07: Named mp_world_say, which mirrors a chat line to the relay for the world's admins
 #                            - Kept the logs of the last five game sessions, deleting older ones as a session starts
 #                            - Logged the hooks as one line per script with its count, once the scripts loaded and once a frame
@@ -994,6 +995,24 @@ module MGQ_Multiplayer
       @down[code] = down
       pressed && Background.in_front?
     end
+
+    # Reports whether a key is held, while the game window is in front, without taking its press
+    # from pressed?.
+    #
+    # @param code [Integer] Windows' code of the key, such as 0x12 for Alt.
+    # @return [Boolean] Whether the key is down.
+    def self.down?(code)
+      raw_down?(code) && Background.in_front?
+    end
+
+    # Asks Windows whether a key is down, whichever window is in front.
+    #
+    # @param code [Integer] Windows' code of the key.
+    # @return [Boolean] Whether it is down.
+    def self.raw_down?(code)
+      (Windows.api('user32', 'GetAsyncKeyState', 'i', 'i').call(code) & DOWN) != 0
+    end
+    private_class_method :raw_down?
   end
 
   # The mouse over the game's window, read from Windows: where it points on the game's screen, and
@@ -1032,6 +1051,13 @@ module MGQ_Multiplayer
     # @return [Boolean] Whether it went down.
     def self.clicked?
       Key.pressed?(LEFT_BUTTON)
+    end
+
+    # Reports whether the left button is held, while the game window is in front.
+    #
+    # @return [Boolean] Whether it is.
+    def self.held?
+      Key.down?(LEFT_BUTTON)
     end
   end
 

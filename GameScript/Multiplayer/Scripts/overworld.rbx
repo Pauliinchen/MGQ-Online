@@ -2,6 +2,7 @@
 #  overworld.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-08: Found the players on this map through MGQ_MpOverworldSync::Peers.on_this_map?, which the chat shares
 #      Paulinchen  2026-10-07: Showed Luka's sprite of the game's data for a ghost whose sprite this game lacks, which kept the map's sprites from drawing
 #                            - Took icons, white and the depths from MGQ_MpUi
 #                            - Logged each ghost shown and hidden, with the map and why
@@ -101,7 +102,7 @@ module MGQ_MpOverworld
 
     map = $game_map.map_id
     MGQ_MpOverworldSync::Peers.all.each do |peer|
-      here = peer.away.nil? && peer.state["map"].to_i == map
+      here = MGQ_MpOverworldSync::Peers.on_this_map?(peer)
 
       if here
         unless peer.ghost

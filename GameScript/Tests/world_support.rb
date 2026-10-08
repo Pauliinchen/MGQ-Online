@@ -2,6 +2,7 @@
 #  world_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-08: Told the keys held from $down, and the mouse from $mouse
 #      Paulinchen  2026-10-07: Stood in for the chat lines mirrored to the relay
 #      Paulinchen  2026-10-06: Read the texts of the line at the bottom left here, since overworld_sync.rbx no longer offers them
 #                            - Kept the buttons held while any screen holds them, as Multiplayer.rb does
@@ -83,7 +84,11 @@ module Sound; %w[cursor ok cancel buzzer].each { |s| define_singleton_method("pl
 class Color; def initialize(*); end; end
 module MGQ_Multiplayer
   module Background; def self.in_front?; $in_front; end; def self.running?; true; end; end
-  module Key; def self.pressed?(code); p = $pressed == code || ($pressed == true && code == 0x42); $pressed = false if p; p; end; end
+  module Key
+    def self.pressed?(code); p = $pressed == code || ($pressed == true && code == 0x42); $pressed = false if p; p; end
+    def self.down?(code); ($down || []).include?(code); end
+  end
+  module Mouse; def self.held?; $mouse_held == true; end; def self.position; $mouse; end; end
   module Log; def self.write(m); puts "  log: #{m}"; end; end
   module Capture
     @owners = []

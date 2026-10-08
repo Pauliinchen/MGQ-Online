@@ -2,6 +2,7 @@
 #  world_overview.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-08: Took the choices of a player's menu from MGQ_MpActions, which the chat shares
 #      Paulinchen  2026-10-07: Logged once when the game has no variable or switch of a name, reading 0 or off
 #                            - Named players through MGQ_MpOverworldSync.who, cut places through MGQ_MpUi.cut with what measures them, and took icons, white and the depth from MGQ_MpUi
 #                            - Logged the overview opening and closing with why, each menu with its choices, the choice taken or refused, and the level and story told to the others
@@ -394,10 +395,10 @@ module MGQ_MpWorldOverview
   # @return [Array<MGQ_MpActions::Option>] The choices, at least one.
   def self.menu_options(row)
     if row.player == :me
-      options = MGQ_MpActions.offers.map(&:own_options).flatten.compact
+      options = MGQ_MpActions.own_options
       refusal = "Pick another player to invite them."
     else
-      options = MGQ_MpActions.offers.map { |offers| offers.peer_option(row.player) }.compact
+      options = MGQ_MpActions.peer_options(row.player)
       refusal = "Nothing can be done with #{row.name} right now."
     end
     options.empty? ? [MGQ_MpActions::Option.new("Nothing to do", nil, refusal)] : options

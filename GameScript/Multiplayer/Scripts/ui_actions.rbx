@@ -2,6 +2,7 @@
 #  ui_actions.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-08: Listed the choices of another player's menu and of the player's own here, which the World overview and the chat share
 #      Paulinchen  2026-10-07: Took the icon rect, white and the depths from MGQ_MpUi
 #                            - Logged the action wheel opening with its choices and closing with why, each choice taken or refused, a wheel key that went elsewhere, and the line above the player's head
 #      Paulinchen  2026-10-06: Kept the choice pointed at last once the arrows are let go, instead of going back to the middle, and the diagonal while its arrows are let go one after the other
@@ -139,6 +140,22 @@ module MGQ_MpActions
   #   menu; nil or none where it has nothing.
   def self.offer(offers)
     @offers << offers
+  end
+
+  # Lists the choices of another player's menu: what every script offers with them, in the order
+  # the scripts registered.
+  #
+  # @param peer [MGQ_MpOverworldSync::Peers::Peer] The other player.
+  # @return [Array<Option>] The choices, none when no script offers anything.
+  def self.peer_options(peer)
+    @offers.map { |offers| offers.peer_option(peer) }.compact
+  end
+
+  # Lists the choices of the player's own menu, such as leaving the party.
+  #
+  # @return [Array<Option>] The choices, none when no script offers anything.
+  def self.own_options
+    @offers.map(&:own_options).flatten.compact
   end
 
   # Lists what the scripts offer between two players, in the order they registered.

@@ -2,6 +2,10 @@
 #  overworld_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-08: Checked the global, say and party chats, the commands that choose them, the log's tabs, its size and its depth while typing
+#                            - Checked the menu a click on a sender's name opens
+#                            - Checked whispers and their list of names, the help tab, the bubbles' chats and that what Alt types with the numpad is dropped
+#                            - Checked that a log made with the mouse button held and the box open draws without failing
 #      Paulinchen  2026-10-07: Checked the lines mirrored to the relay, the party chat kept from it, and an admin's line from the relay
 #                            - Checked scrolling the chat log
 #                            - Checked that the numpad's 0 closes the chat box
@@ -329,16 +333,39 @@ $sent.clear
 $typed = "\r"
 map_frame
 check("enter sends and closes", [chat.typing?, $typing_on, MGQ_Multiplayer::Capture.on?], [false, false, false])
-check("the line is told", $sent.last[1].include?("chat=hi there") && !$sent.last[1].include?("map="), true)
+check("the line goes to the say chat, told only to the players on this map", [$sent.map(&:first), $sent.last[1].include?("chat=hi there"), $sent.last[1].include?("ch=say"), $sent.last[1].include?("map=")],
+      [[2], true, true, false])
 check("own line in the log and bubble", [chat.log_lines.last, chat.bubble(:me)], ["Me: hi there", "hi there"])
-check("the line is mirrored to the relay for the world's admins", $said, ["hi there"])
+check("the say chat is not mirrored to the relay", $said, [])
 
-$inbox << entry("message", 2, "chat=hello\x01 you\nname=Friend\n\n")
+$sent.clear
+chat.start_typing
+$typed = "/g hi all\r"
+map_frame
+check("/g sends to everyone, tagged, and mirrors the line to the relay for the world's admins",
+      [$sent.map(&:first), $sent.last[1].include?("ch="), chat.log_lines.last, $said, chat.channel], [[-1], false, "[Global] Me: hi all", ["hi all"], :global])
+chat.start_typing
+$typed = "/gx still global\r"
+map_frame
+check("the chosen chat holds for the lines after it, and an unknown command is just text", [$sent.last[0], chat.log_lines.last], [-1, "[Global] Me: /gx still global"])
+chat.start_typing
+$typed = "/s "
+map_frame
+check("a command and a space choose the chat at once, leaving the box empty", [chat.channel, chat.typed, chat.cursor], [:say, "", 0])
+$typed = "\r"
+map_frame
+$sent.clear
+$said.clear
+
+$inbox << entry("message", 2, "chat=hello\x01 you\nch=say\nname=Friend\n\n")
 MGQ_MpOverworldSync.tick
-check("a friend's line", [chat.log_lines.last, chat.bubble(2)], ["Friend: hello you", "hello you"])
+check("a friend's say line", [chat.log_lines.last, chat.bubble(2)], ["Friend: hello you", "hello you"])
 $inbox << entry("message", 7, "chat=who am i\nname=Stranger\n\n")
 MGQ_MpOverworldSync.tick
-check("a line before the first state names the sender", chat.log_lines.last, "Stranger: who am i")
+check("a global line before the first state names the sender", chat.log_lines.last, "[Global] Stranger: who am i")
+$inbox << entry("message", 7, "chat=far away\nch=say\nname=Stranger\n\n")
+MGQ_MpOverworldSync.tick
+check("a say line from nobody on this map is dropped", chat.log_lines.last, "[Global] Stranger: who am i")
 $inbox << { "kind" => "chat", "seat" => "0", "name" => "Global", :payload => "welcome\x01 all" }
 MGQ_MpOverworldSync.tick
 check("an admin's line from the relay shows tagged as the admin's, without a bubble",
@@ -368,11 +395,11 @@ chat.stop_typing
 
 (MGQ_MpChat::BUBBLE_FRAMES + 1).times { MGQ_MpOverworldSync.tick }
 check("bubbles run out", chat.senders, [])
-check("log lines stay a while longer", chat.log_lines.size, 4)
+check("log lines stay a while longer", chat.log_lines.size, 6)
 (MGQ_MpChat::LOG_FRAMES).times { MGQ_MpOverworldSync.tick }
 check("then the log goes quiet", chat.log_lines, [])
 chat.start_typing
-check("but shows again while typing", chat.log_lines.size, 4)
+check("but shows again while typing", chat.log_lines.size, 6)
 battle = Scene_Battle.new
 SceneManager.scene = battle
 MGQ_MpOverworldSync.tick
@@ -590,25 +617,31 @@ $inbox << entry("message", 4, "pchat=on my way\nname=Friend\nparty=#{mine}\n\n")
 $inbox << entry("message", 4, "chat=hello all\nname=Friend\n\n")
 MGQ_MpOverworldSync.tick
 check("a member's party line and world line show, their name in the member's color",
-      chat.log_entries.last(2).map { |line| [line.to_s, line.who] }, [["[Party] Friend: on my way", :member], ["Friend: hello all", :member]])
+      chat.log_entries.last(2).map { |line| [line.to_s, line.who] }, [["[Party] Friend: on my way", :member], ["[Global] Friend: hello all", :member]])
 $inbox << entry("message", 4, "pchat=sneaky\nname=Friend\nparty=other\n\n")
 MGQ_MpOverworldSync.tick
-check("another party's line is never heard", chat.log_lines.last, "Friend: hello all")
+check("another party's line is never heard", chat.log_lines.last, "[Global] Friend: hello all")
 parts = []
-font = Struct.new(:color, :size, :outline).new
+font = Struct.new(:color, :size, :outline, :bold).new
 canvas = Object.new
 canvas.define_singleton_method(:font) { font }
 canvas.define_singleton_method(:text_size) { |text| Struct.new(:width).new(text.size * 10) }
 canvas.define_singleton_method(:draw_text) { |x, _y, _w, _h, text| parts << [x, text, font.color] }
 log_sprite = Sprite_MpChatLog.allocate
+log_sprite.instance_variable_set(:@name_spots, [])
 log_sprite.define_singleton_method(:bitmap) { canvas }
-colors = { Sprite_MpChatLog::PARTY_TAG_COLOR => :tag, Sprite_MpChatLog::NAME_COLORS[:member] => :member, Sprite_MpChatLog::TEXT_COLOR => :text }
-log_sprite.draw_row("[Party] Friend: on my way", chat.log_entries[-2], 0)
+colors = { Sprite_MpChatLog::CHANNEL_COLORS[:party] => :party, Sprite_MpChatLog::CHANNEL_COLORS[:global] => :global,
+           Sprite_MpChatLog::NAME_COLORS[:member] => :member, Sprite_MpChatLog::TEXT_COLOR => :text }
+log_sprite.draw_row("[Party] Friend: on my way", chat.log_entries[-2], true, 0)
 check("the log draws the tag, then the name in its color, then the line", parts.map { |x, text, color| [x, text, colors[color]] },
-      [[4, "[Party] ", :tag], [84, "Friend: ", :member], [164, "on my way", :text]])
+      [[4, "[Party] ", :party], [84, "Friend: ", :member], [164, "on my way", :text]])
 parts.clear
-log_sprite.draw_row("on my way", nil, 0)
+log_sprite.draw_row("on my way", chat.log_entries[-2], false, 0)
 check("a row that goes on a line is all text", parts.map { |_, text, color| [text, colors[color]] }, [["on my way", :text]])
+parts.clear
+log_sprite.draw_row("[Global] Friend: hello all", chat.log_entries[-1], true, 0)
+check("a line of the global chat is orange, its tag and its text", parts.map { |_, text, color| [text, colors[color]] },
+      [["[Global] ", :global], ["Friend: ", :member], ["hello all", :global]])
 
 # The numpad's 0 closes the chat box, its 0 left out.
 chat.start_typing
@@ -624,7 +657,21 @@ fills = []
 canvas.define_singleton_method(:clear) { parts.clear }
 canvas.define_singleton_method(:fill_rect) { |*args| fills << args }
 canvas.define_singleton_method(:rect) { Rect.new(0, 0, 400, 154) }
-log_sprite.instance_variable_set(:@wrapped, {})
+canvas.define_singleton_method(:width) { 400 }
+canvas.define_singleton_method(:height) { Sprite_MpChatLog::TAB_ROW + Sprite_MpChatLog::ROW * 7 }
+module Graphics; def self.width; 640; end; def self.height; 480; end; end
+depth = Struct.new(:z).new(Sprite_MpChatLog::STATUS_ROOM)
+log_sprite.define_singleton_method(:viewport) { depth }
+log_sprite.define_singleton_method(:x) { 8 }
+log_sprite.define_singleton_method(:y) { 200 }
+log_sprite.define_singleton_method(:y=) { |_| }
+log_sprite.define_singleton_method(:bitmap=) { |_| }
+canvas.define_singleton_method(:dispose) {}
+Bitmap = Struct.new(:width, :height)
+Bitmap.define_singleton_method(:new) { |*_| canvas }
+{ :@wrapped => {}, :@tab_spots => [], :@size => [400, 6], :@width => 400, :@rows => 6, :@bottom_room => 96, :@resting_z => 100 }.each do |name, value|
+  log_sprite.instance_variable_set(name, value)
+end
 last_row = lambda do
   log_sprite.update
   parts.map { |_, text, _| text }.select { |text| text =~ /\Aline \d+\z/ }.last
@@ -646,15 +693,187 @@ check("a line coming in while scrolled up keeps the rows shown where they are", 
   map_frame
 end
 last_row.call
-oldest = chat.log_entries.size - Sprite_MpChatLog::ROWS
+oldest = chat.log_entries.size - MGQ_MpChat::DEFAULT_SIZE[1]
 check("the log scrolls no farther than its oldest row", chat.scroll, oldest)
 $pressed = MGQ_MpChat::PAGE_DOWN_KEY
 map_frame
 $buttons << :DOWN
 map_frame
 check("page down and down scroll back", chat.scroll, oldest - MGQ_MpChat::PAGE_ROWS - 1)
+check("the open box comes above everything", depth.z, MGQ_MpUi::Z[:typing])
 chat.stop_typing
 check("closing the box shows the newest rows again", [chat.scroll, last_row.call], [0, "line 13"])
+check("and puts the log back to its depth", depth.z, 100)
+
+# The log's tabs, and its size.
+chat.start_typing
+log_sprite.update
+names = parts.map { |_, text, _| text }
+check("the open box shows the tabs and the chosen chat", MGQ_MpChat::TABS.map { |tab| MGQ_MpChat::TAB_NAMES[tab] }.all? { |name| names.include?(name) } && names.include?("Party:"), true)
+$down = [MGQ_MpChat::ALT_KEY]
+$pressed = MGQ_MpChat::LEFT_KEY
+map_frame
+check("Alt and left pick the tab before, round the tabs, and choose its chat", [chat.tab, chat.channel, chat.typed], [:whisper, :whisper, ""])
+$pressed = MGQ_MpChat::RIGHT_KEY
+map_frame
+check("Alt and right pick the next tab, which keeps the chat", [chat.tab, chat.channel], [:all, :whisper])
+$down = []
+chat.add(2, "Friend", "global line", :global)
+chat.add(2, "Friend", "say line", :say)
+log_sprite.update
+global_spot = log_sprite.instance_variable_get(:@tab_spots).find { |tab, _, _| tab == :global }
+$mouse = [8 + global_spot[1] + 2, 202]
+$mouse_held = true
+log_sprite.update
+check("a click on a tab picks it and chooses its chat", [chat.tab, chat.channel], [:global, :global])
+check("a tab shows its chat's lines and the game's own", chat.log_entries.map(&:channel).uniq.sort_by(&:to_s), [nil, :global].sort_by(&:to_s))
+$mouse_held = false
+log_sprite.update
+map_frame
+$typed = "/s "
+map_frame
+check("a command on a chat's tab follows to the chat's tab", [chat.tab, chat.channel], [:say, :say])
+$down = [MGQ_MpChat::ALT_KEY]
+$mouse = [300, 300]
+$mouse_held = true
+log_sprite.update
+$mouse = [300 + 60, 300 - Sprite_MpChatLog::ROW * 2]
+log_sprite.update
+check("Alt and a drag resize the log, its bottom left staying put", chat.size, [460, 8])
+$mouse = [9999, -9999]
+log_sprite.update
+check("within the screen", chat.size, [624, (480 - 96 - Sprite_MpChatLog::TAB_ROW) / Sprite_MpChatLog::ROW - 1])
+$mouse = [310, 300]
+$mouse_held = false
+log_sprite.update
+check("letting go keeps the size in Player.ini", $player_ini[MGQ_MpChat::SIZE_SETTING], "410x6")
+$down = []
+chat.select_tab(:all, "in the test")
+chat.stop_typing
+
+# A click on a sender's name opens their menu.
+menu_sprite = Struct.new(:visible, :bitmap, :x, :y, :z).new(false)
+log_sprite.instance_variable_set(:@menu_sprite, menu_sprite)
+canvas.define_singleton_method(:font) { font }
+friend_peer = MGQ_MpOverworldSync::Peers.all.find { |peer| peer.state["name"] == "Friend" }
+friend_id = friend_peer.state["id"]
+$inbox << entry("message", friend_peer.seat, "chat=click my name
+name=Friend
+
+")
+MGQ_MpOverworldSync.tick
+chat.start_typing
+log_sprite.update
+spot = log_sprite.instance_variable_get(:@name_spots).find { |line, _, _, _| line.id == friend_id }
+check("another player's name in the log can be clicked, the player's own cannot", [!spot.nil?, log_sprite.instance_variable_get(:@name_spots).none? { |line, _, _, _| line.who == :me }], [true, true])
+$mouse = [8 + spot[1] + 1, 200 + spot[3] + 1]
+$mouse_held = true
+log_sprite.update
+check("a click on it opens their menu, with what the scripts offer and a whisper",
+      [chat.menu && chat.menu[:name], chat.menu_options.map(&:text).last, menu_sprite.visible], ["Friend", "Whisper", true])
+$mouse_held = false
+log_sprite.update
+$buttons << :UP
+map_frame
+check("up moves the pick round the menu instead of scrolling", [chat.menu[:pick], chat.scroll], [chat.menu_options.size - 1, 0])
+$typed = "\r"
+map_frame
+check("Enter takes the choice, closing the menu but not the box", [chat.menu, chat.typing?, chat.channel, chat.whisper_to], [nil, true, :whisper, "Friend"])
+$mouse = [8 + spot[1] + 1, 200 + spot[3] + 1]
+$mouse_held = true
+log_sprite.update
+$mouse_held = false
+log_sprite.update
+$typed = "\e"
+map_frame
+check("Escape closes the menu, not the box", [chat.menu, chat.typing?], [nil, true])
+$mouse_held = true
+log_sprite.update
+$mouse_held = false
+log_sprite.update
+$pressed = MGQ_MpChat::NUMPAD_0_KEY
+map_frame
+check("as does the numpad's 0", [chat.menu, chat.typing?], [nil, true])
+chat.select_tab(:all, "in the test")
+chat.stop_typing
+
+# A fresh log, made while the box is open and the mouse button held over it.
+fresh = Sprite_MpChatLog.allocate
+fresh_picture = nil
+fresh.define_singleton_method(:bitmap) { fresh_picture }
+fresh.define_singleton_method(:bitmap=) { |picture| fresh_picture = picture }
+fresh.define_singleton_method(:viewport) { depth }
+fresh.define_singleton_method(:x) { 8 }
+fresh.define_singleton_method(:y) { 200 }
+fresh.define_singleton_method(:y=) { |_| }
+{ :@wrapped => {}, :@tab_spots => [], :@name_spots => [], :@bottom_room => 96, :@resting_z => 100, :@menu_sprite => menu_sprite }.each { |name, value| fresh.instance_variable_set(name, value) }
+chat.start_typing
+$mouse = [20, 210]
+$mouse_held = true
+failure = begin
+  fresh.update
+  nil
+rescue => e
+  e.class
+end
+check("a log made while the button is held over it draws without failing", failure, nil)
+$mouse_held = false
+fresh.update
+chat.stop_typing
+
+# Alt codes, whispers and the help tab.
+chat.start_typing
+$down = [MGQ_MpChat::ALT_KEY]
+$typed = "♦"
+map_frame
+$down = []
+$typed = "♠"
+map_frame
+check("what Alt types with the numpad is dropped, also just after Alt was let go", chat.typed, "")
+map_frame
+$typed = "ok"
+map_frame
+check("then typing works again", chat.typed, "ok")
+chat.stop_typing
+
+chat.start_typing
+$typed = "/w fr"
+map_frame
+check("/w and the start of a name offer the names that fit", [chat.suggestions.include?("Friend"), chat.suggestions.all? { |name| name.downcase.start_with?("fr") }], [true, true])
+$typed = "\t"
+map_frame
+check("Tab takes the picked name for the whisper chat and empties the box", [chat.whisper_to, chat.channel, chat.typed, chat.suggestions], ["Friend", :whisper, "", []])
+$sent.clear
+$typed = "psst\r"
+map_frame
+friend_seat = MGQ_MpOverworldSync::Peers.all.find { |peer| peer.state["name"] == "Friend" }.seat
+check("a whisper goes to that player alone, and shows whom it went to", [$sent.map(&:first), $sent.last[1].include?("whisper=psst"), chat.log_lines.last],
+      [[friend_seat], true, "[To Friend] Me: psst"])
+check("the bubble carries the whisper's color", chat.bubble_channel(:me), :whisper)
+chat.start_typing
+$typed = "/w nobody here\r"
+map_frame
+check("a whisper to nobody of that name is refused", MGQ_MpOverworldSync::Status.lines.last, "Nobody called nobody is in the world.")
+$inbox << entry("message", friend_seat, "whisper=hi you\nname=Friend\n\n")
+MGQ_MpOverworldSync.tick
+check("a whisper to the player shows tagged", [chat.log_lines.last, chat.bubble_channel(friend_seat)], ["[Whisper] Friend: hi you", :whisper])
+
+chat.start_typing
+$typed = "/help\r"
+map_frame
+check("/help opens the help tab at the far right, which shows only the help", [chat.typing?, chat.tab, chat.tabs.last, chat.log_entries.map(&:text)],
+      [true, :help, :help, MGQ_MpChat::HELP])
+$typed = "abc\r"
+map_frame
+check("nobody types or sends on the help tab", [chat.typed, chat.typing?], ["", true])
+chat.select_tab(:all, "in the test")
+check("leaving the help tab closes it", chat.tabs.include?(:help), false)
+check("the All tab never shows the help", chat.log_entries.any? { |line| line.who == :help }, false)
+chat.start_typing
+$typed = "/help "
+map_frame
+chat.stop_typing
+check("closing the box leaves the help tab for the tab before it", chat.tab, :all)
 
 # The wheel's middle, which it opens on, and the pick it keeps once the arrows are let go.
 MGQ_MpActions::Wheel.open

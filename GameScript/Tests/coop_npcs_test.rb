@@ -2,6 +2,7 @@
 #  coop_npcs_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-08: Stood in for MGQ_MpOverworldSync::Peers.on_this_map?, which the map's party now asks
 #      Paulinchen  2026-10-06: Checked that a party member whose connection is down is left out of the map's party
 #      Paulinchen  2026-10-04: Created
 #
@@ -50,6 +51,7 @@ module MGQ_MpOverworldSync
   module Peers
     Peer = Struct.new(:seat, :state, :ghost, :member, :away)
     def self.all; $peers; end
+    def self.on_this_map?(peer); peer.away.nil? && peer.state["map"].to_i == $game_map.map_id; end
   end
 end
 module MGQ_MpCoop; module Party; def self.id; "p1"; end; end; end

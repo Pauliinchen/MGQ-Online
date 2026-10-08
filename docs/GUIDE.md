@@ -137,8 +137,11 @@ Press **B** on the map. Its choices sit in a ring around your character. The whe
 
 Press **T**, or pick *Chat* in the wheel. **Enter** sends, **Esc** or **0** on the numpad closes; **Left**, **Right**, **Home** and **End** move the cursor, and **Delete** removes the character after it. **Up** and **Down** scroll through the earlier lines, **Page Up** and **Page Down** a page at a time; small arrows at the right show that there's more above or below.
 
-- Your line shows in a speech bubble above your head for the players on your map, and in the chat log at the bottom left for everyone in the world.
-- Start a line with **/p** to send it to your party only; it shows as "[Party]" in the log.
+- The chat has five tabs: **All** (every line you can see), **Global** (everyone in the world, "[Global]" in orange), **Party** (your party only, "[Party]"), **Say** (the players on your map, where you start) and **Whisper** (one player, in pale pink). Start a line with **/g**, **/p** or **/s** to switch, or **/w** and a name to whisper: after the first letter of the name a list of players shows above the box; **Up** and **Down** pick one, **Enter** or **Tab** takes it. Type **/help** for a help tab at the far right; the chat stays until you switch again. The box shows the chat your line goes to.
+- While the box is open, tabs above the log show all lines or one chat's: click one, or press the left **Alt** with **Left** or **Right**. A chat's tab also switches to that chat.
+- Click another player's name in the open chat to invite them to your party, challenge them to a duel, offer a trade or whisper to them, as in the World overview. **Esc** closes that menu.
+- Hold **Alt** and drag the log with the mouse to make it larger or smaller (experimental); the size is kept.
+- Your line shows in a speech bubble in its chat's color above your head for the players on your map, and in the chat log at the bottom left.
 - Names in the log are yellow for you, green for your party's members and white for everyone else.
 - The chat works in battles too, where its log sits above the battle's windows, and while your party gathers for a story scene.
 

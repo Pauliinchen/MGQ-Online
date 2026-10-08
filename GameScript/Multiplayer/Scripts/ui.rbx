@@ -2,6 +2,7 @@
 #  ui.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-08: Added the depth of the chat while the player types, above everything
 #      Paulinchen  2026-10-07: Added the iconset rect, the cut with one ellipsis, white and the depths of the mod's sprites and windows, which the screens share
 #                            - Logged every message box shown, with its title and text
 #      Paulinchen  2026-10-06: Dropped the wrapped lines the top window kept but never read
@@ -40,8 +41,9 @@ module MGQ_MpUi
 
   # The depths of the mod's sprites and windows above the game's, by layer: the lines at the
   # screen's edges, the labels on the map, the bubbles and notices over them, the wheels and what
-  # lies above a screen's windows, the World overview, and the boxes above everything.
-  Z = { :lines => 200, :labels => 250, :bubbles => 260, :wheels => 300, :overview => 400, :boxes => 1000 }
+  # lies above a screen's windows, the World overview, the boxes, and the chat while the player types
+  # above everything.
+  Z = { :lines => 200, :labels => 250, :bubbles => 260, :wheels => 300, :overview => 400, :boxes => 1000, :typing => 1100 }
 
   # Finds an icon in the game's iconset.
   #

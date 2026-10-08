@@ -58,7 +58,7 @@ For a PvP battle without a world, press **F11** on the map and host; your friend
 | Hotkey | What it does |
 |---|---|
 | **B** | Action wheel: invite, duel, trade, chat, teleport to the leader |
-| **T** | Chat (**/p** at the start sends to your party only) |
+| **T** | Chat: **/g** everyone, **/p** your party, **/s** your map, **/w** one player, **/help** |
 | **E** | Emote wheel |
 | **F11** | World overview, or the PvP battle screen outside a world |
 | **Y** / **N** | Accept / decline the first invite at the top left |

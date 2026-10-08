@@ -99,7 +99,7 @@ friend joins with the join code you send them.
 HOTKEYS
 -------
    B        action wheel: invite, duel, trade, chat, teleport to the leader
-   T        chat (/p at the start sends to your party only)
+   T        chat: /g everyone, /p your party, /s your map, /w one player, /help
    E        emote wheel
    F11      World overview, or the PvP battle screen outside a world
    Y / N    accept / decline the first invite at the top left
