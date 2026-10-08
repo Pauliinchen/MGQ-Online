@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-08: Dropped a game's chat lines past the chat's rate limit, answering each with "slow chat", and ignored a chat frame without a line instead of closing the connection
+//                            - Logged a chat line the directory could not keep instead of letting the error escape the world room
 //      Paulinchen  2026-10-07: Handed the chat lines the games mirror to the directory, and told every game of a world what an admin said
 //                            - Passed the X-MGQ-Auth header on to the world rooms and the directory
 //                            - Answered a text body over 256 KB with 413 instead of taking it for no JSON, and named the routes by the core's version
@@ -732,7 +733,12 @@ export class World extends DurableObject {
     }
 
     this.world ??= await this.ctx.storage.get("world");
-    await internal(directoryOf(this.env), "say", { id: this.world, player: peer.player, name: peer.name, text: line });
+
+    try {
+      await internal(directoryOf(this.env), "say", { id: this.world, player: peer.player, name: peer.name, text: line });
+    } catch (error) {
+      console.error(`error chat of world ${this.world}: ${error?.stack ?? error}`);
+    }
   }
 
   /**
