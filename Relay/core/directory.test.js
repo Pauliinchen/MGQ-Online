@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-09: Covered telling a world room whether a key is an admin's
+//                            - Covered a world room's member question refused while the starting save is uploaded
 //      Paulinchen  2026-10-08: Covered telling a world room who plays its world
 //                            - Covered a world's type and companion sharing, fixed once made, and Raid Worlds kept from games that do not name them
 //                            - Covered lines said at once, all kept in order, and an admin's line for a world deleted meanwhile
@@ -713,6 +714,18 @@ test("member tells a world room who plays its world, with the world's type and a
   assert.equal((await directory.member("9".repeat(32), OTHER, AUTH)).status, 404);
   await directory.ban(WORLD, CREATOR, await playerIdOf(OTHER));
   assert.equal((await directory.member(WORLD, OTHER, AUTH)).status, 403);
+});
+
+test("member refuses a world whose starting save is still being uploaded", async () => {
+  const { directory } = newDirectory();
+  await directory.create(await newWorld({ type: "raid", start: true }));
+
+  const pending = await directory.member(WORLD, CREATOR, AUTH);
+  assert.equal(pending.status, 409);
+  assert.equal(pending.body.code, "pending");
+
+  await directory.putStart(WORLD, CREATOR, Uint8Array.of(7));
+  assert.equal((await directory.member(WORLD, CREATOR, AUTH)).status, 200);
 });
 
 test("raidAdmin tells a world room whether a key is an admin's, with the world's type", async () => {

@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-09: Tested a Raid World's boss pools over HTTP: reports, the frame every game hears, the admin routes and a deleted world, and that a Classic world keeps none
+//                            - Tested that a story write whose body comes after the world was deleted leaves no story behind
 //      Paulinchen  2026-10-08: Tested a Raid World's story over HTTP: writes, conflicts, checkpoints, the route lock, companions, the frame every game hears, removed players and a deleted world, and that a Classic world keeps none
 //                            - Tested that a world room lets into a Raid World only the games that name it in X-MGQ-Features
 //                            - Tested the chat's rate limit and a chat frame without a line, which keeps the connection
@@ -25,6 +26,7 @@
 
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
+import http from "node:http";
 import WebSocketClient from "ws";
 import { BOSS_LIMITS } from "../core/bosses.js";
 import { DIRECTORY_LIMITS, Directory, playerIdOf, sha256Hex } from "../core/directory.js";
@@ -701,6 +703,35 @@ test("a Raid World's players write its story over HTTP, every game in the room h
   assert.equal((await fetch(`${directoryBase}/${room}/delete`, { method: "POST", body: JSON.stringify({ player: CREATOR }) })).status, 200);
   assert.equal((await story("")).status, 404);
   assert.equal((await relay.storyOf(room).get()).body.rev, 0, "the deleted world's story is gone");
+});
+
+test("a story write whose body comes after the world was deleted leaves no story behind", async () => {
+  const room = roomId(132);
+  const created = await fetch(directoryBase, {
+    method: "POST",
+    headers: { [PLAYER_HEADER]: CREATOR },
+    body: JSON.stringify({ id: room, name: "Raid Gone", seats: 4, playerName: "Creator", authHash: await sha256Hex(AUTH), lock: { salt: "12".repeat(16), iterations: 200_000, box: "ab".repeat(40) }, type: "raid" }),
+  });
+  assert.equal(created.status, 201);
+
+  const body = JSON.stringify({ base: 0, counters: { p: 18, r1141: 0, r1142: 0, r1143: 0, clear: [] }, blob: "QUJD" });
+  const answered = new Promise((resolve, reject) => {
+    const request = http.request(`${directoryBase}/${room}/story`, { method: "POST", headers: { [PLAYER_HEADER]: playerKey(60), [AUTH_HEADER]: AUTH, "Content-Length": Buffer.byteLength(body) } }, (response) => {
+      response.resume();
+      response.on("end", () => resolve(response.statusCode));
+    });
+    request.on("error", reject);
+    request.write(body.slice(0, 10));
+    // The member check passes while the body is still on its way; the world goes before the rest.
+    setTimeout(async () => {
+      const deleted = await fetch(`${directoryBase}/${room}/delete`, { method: "POST", body: JSON.stringify({ player: CREATOR }) });
+      assert.equal(deleted.status, 200);
+      request.end(body.slice(10));
+    }, 50);
+  });
+
+  assert.equal(await answered, 200);
+  assert.equal((await relay.storyOf(room).get()).body.rev, 0, "the late write is removed again");
 });
 
 test("a Classic world keeps no story", async () => {

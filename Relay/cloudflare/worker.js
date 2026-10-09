@@ -3,6 +3,8 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-09: Kept a Raid World's boss pools in its world room's object, answered their routes there for the world's players and the admin routes for the relay's admins, and told every game of the world when a pool changed
+//                            - Kept a removed player or a deleted world out of the world room's player list when the directory answered for it meanwhile, and asked the directory again for a player let in over 10 minutes ago
+//                            - Removed a Raid World's story and boss pools again when the world was deleted while a request to them ran
 //      Paulinchen  2026-10-08: Kept a Raid World's story in its world room's object, answered its routes there for the world's players, and told every game of the world when it changed
 //                            - Passed what a game names in the X-MGQ-Features header on to the directory as it enters a world room
 //                            - Dropped a game's chat lines past the chat's rate limit, answering each with "slow chat", and ignored a chat frame without a line instead of closing the connection
@@ -37,7 +39,7 @@
 import { DurableObject } from "cloudflare:workers";
 import { BOSS_LIMITS, WorldBosses, bossRouteOf, bossText, handleBossRequest } from "../core/bosses.js";
 import { Directory as WorldDirectory, WORLD_TYPE, handleDirectoryRequest, parseAdmins, playerIdOf, sha256Hex } from "../core/directory.js";
-import { badRequest, routeIs } from "../core/http.js";
+import { badRequest, notFound, routeIs } from "../core/http.js";
 import { isHash, isId } from "../core/ids.js";
 import { ModCatalog, handleModRequest } from "../core/mods.js";
 import { handleRaidAdminRequest, raidAdminRouteOf } from "../core/raid_admin.js";
@@ -82,7 +84,7 @@ const BOSS_PREFIX = "boss:";
 
 /**
  * The storage key of what a world room keeps of the directory's answers about who plays the world:
- * its type, the hash of its auth key, and the players the directory let in.
+ * its type, the hash of its auth key, and the players the directory let in, each with when.
  */
 const ACCESS_KEY = "access";
 
@@ -90,6 +92,12 @@ const ACCESS_KEY = "access";
  * Most players a world room keeps as let in, more than a world may have.
  */
 const MAX_ACCESS_PLAYERS = 500;
+
+/**
+ * How long a world room takes a player as let in before it asks the directory again, which ends
+ * the access of a player whose removal never reached the room.
+ */
+const ACCESS_TTL_MS = 10 * 60 * 1000;
 
 /**
  * Counts how often each address enters a room. Each Worker instance keeps its own count, so it
@@ -678,6 +686,10 @@ export class World extends DurableObject {
   constructor(ctx, env) {
     super(ctx, env);
     ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair(PING, PONG));
+    // Counted up by every removal and deletion, so an answer of the directory that came meanwhile
+    // is not kept over them.
+    this.accessGeneration = 0;
+    this.deleted = false;
   }
 
   /**
@@ -691,10 +703,10 @@ export class World extends DurableObject {
     const url = new URL(request.url);
 
     if (url.pathname === "/internal/close") {
+      this.deleted = true;
+      this.accessGeneration++;
       await this.closeWhere(() => true, CLOSE.worldDeleted, "the world was deleted");
-      await this.storyOf().remove();
-      await this.bossesOf().remove();
-      await this.ctx.storage.delete(ACCESS_KEY);
+      await this.removeRaidData();
       return json(200, {});
     }
 
@@ -929,6 +941,7 @@ export class World extends DurableObject {
     }
 
     const answer = await handleStoryRequest(this.storyOf(), request.method, route.rest, () => readStoryText(request), access.player);
+    await this.tidyDeleted();
 
     if (answer.push) {
       this.tell(storyText(answer.push));
@@ -957,6 +970,7 @@ export class World extends DurableObject {
     }
 
     const answer = await handleBossRequest(this.bossesOf(), request.method, route.rest, () => readSmallText(request, BOSS_LIMITS.maxBodyLength), access.player);
+    await this.tidyDeleted();
 
     if (answer.boss) {
       this.tell(bossText(answer.boss.key, answer.boss.hp));
@@ -992,7 +1006,8 @@ export class World extends DurableObject {
 
   /**
    * Finds whether a game is a player of the world: from what the room keeps of the directory's
-   * last answer, or else from the directory, whose answer the room keeps.
+   * answer for the player within the last 10 minutes, or else from the directory, whose answer the
+   * room keeps unless a removal or the deletion came meanwhile.
    *
    * @param {string} id The world.
    * @param {string | null} key The player's key.
@@ -1004,21 +1019,36 @@ export class World extends DurableObject {
       return { refusal: badRequest("a player key and an auth key are needed") };
     }
 
+    if (this.deleted) {
+      return { refusal: notFound("world") };
+    }
+
     const player = await playerIdOf(key);
     const kept = await this.ctx.storage.get(ACCESS_KEY);
+    const now = Date.now();
 
-    if (kept && kept.players.includes(player) && (await sha256Hex(auth)) === kept.authHash) {
+    if (kept?.players?.some((each) => each.id === player && now - each.at < ACCESS_TTL_MS) && (await sha256Hex(auth)) === kept.authHash) {
       return { player, type: kept.type };
     }
 
+    const generation = this.accessGeneration;
     const answer = await internal(directoryOf(this.env), "member", { id, player: key, auth });
+
+    if (this.deleted) {
+      return { refusal: notFound("world") };
+    }
 
     if (answer.status !== 200) {
       return { refusal: { status: answer.status, body: answer.body } };
     }
 
-    const players = kept?.authHash === answer.authHash ? kept.players.filter((other) => other !== answer.player) : [];
-    await this.ctx.storage.put(ACCESS_KEY, { type: answer.type, authHash: answer.authHash, players: [...players, answer.player].slice(-MAX_ACCESS_PLAYERS) });
+    // The wait for the directory let other requests in, so a removal meanwhile must not be undone
+    // by a list read before it, nor the answer kept over it.
+    if (generation === this.accessGeneration) {
+      const current = await this.ctx.storage.get(ACCESS_KEY);
+      const players = current?.authHash === answer.authHash && Array.isArray(current.players) ? current.players.filter((each) => typeof each?.id === "string" && each.id !== answer.player) : [];
+      await this.ctx.storage.put(ACCESS_KEY, { type: answer.type, authHash: answer.authHash, players: [...players, { id: answer.player, at: Date.now() }].slice(-MAX_ACCESS_PLAYERS) });
+    }
 
     if (!this.world) {
       this.world = id;
@@ -1035,11 +1065,31 @@ export class World extends DurableObject {
    * @param {string} player The player's id.
    */
   async forget(player) {
+    this.accessGeneration++;
     const kept = await this.ctx.storage.get(ACCESS_KEY);
 
-    if (kept?.players.includes(player)) {
-      await this.ctx.storage.put(ACCESS_KEY, { ...kept, players: kept.players.filter((other) => other !== player) });
+    if (kept?.players?.some((each) => each.id === player)) {
+      await this.ctx.storage.put(ACCESS_KEY, { ...kept, players: kept.players.filter((each) => each.id !== player) });
     }
+  }
+
+  /**
+   * Removes the world's story, boss pools and player list once more when the world was deleted
+   * while a request to them ran, since its write may land after the deletion removed them.
+   */
+  async tidyDeleted() {
+    if (this.deleted) {
+      await this.removeRaidData();
+    }
+  }
+
+  /**
+   * Removes the world's story, boss pools and the list of its players.
+   */
+  async removeRaidData() {
+    await this.storyOf().remove();
+    await this.bossesOf().remove();
+    await this.ctx.storage.delete(ACCESS_KEY);
   }
 
   /**

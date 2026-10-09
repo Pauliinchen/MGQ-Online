@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-09: Told a world room whether a key is an admin's, for the admin routes of a Raid World it answers itself
+//                            - Refused a world room's member question for a world whose starting save is still being uploaded
 //      Paulinchen  2026-10-08: Told a world room whether a game is a player of its world, for the routes it answers itself, such as a Raid World's story
 //                            - Kept a world's type, Classic or Raid, and how a Raid World shares companions, both fixed once it is made
 //                            - Kept games that do not name Raid Worlds in X-MGQ-Features out of them
@@ -460,6 +461,9 @@ export class Directory {
    * Tells whether a game holds a world's token and was not removed from it, for the routes a world
    * room answers itself, such as a Raid World's story; unlike admit, no rate limit counts it.
    *
+   * A world still waiting for its starting save is refused as admit refuses it, since a
+   * sweep of a stale world removes only its entry and would leave a story or boss pool behind.
+   *
    * @param {string} id The world.
    * @param {unknown} key The player's key.
    * @param {unknown} auth The auth key the player's game made from the world's token.
@@ -470,6 +474,10 @@ export class Directory {
 
     if (refusal) {
       return refusal;
+    }
+
+    if (entry.start === START.pending) {
+      return { status: 409, body: { error: "the world's starting save is still being uploaded", code: REFUSAL.pending } };
     }
 
     const type = entry.type ?? WORLD_TYPE.classic;

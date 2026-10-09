@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-09: Kept each Raid World's boss pools, answered their routes for the world's players and the admin routes for the relay's admins, and told every game of the world when a pool changed
+//                            - Removed a Raid World's story and boss pools again when the world was deleted while a request to them ran
 //      Paulinchen  2026-10-08: Kept each Raid World's story, answered its routes for the world's players, and told every game of the world when it changed
 //                            - Passed what a game names in the X-MGQ-Features header on to the directory as it enters a world room
 //                            - Dropped a game's chat lines past the chat's rate limit, answering each with "slow chat", and ignored a chat frame without a line instead of closing the connection
@@ -460,10 +461,7 @@ export function createRelay({
 
     if (answer.close) {
       closeWorld(answer.id, CLOSE.worldDeleted, "the world was deleted");
-      await storyOf(answer.id).remove();
-      await bossesOf(answer.id).remove();
-      worldStories.delete(answer.id);
-      worldBosses.delete(answer.id);
+      await removeRaidData(answer.id);
     }
 
     if (answer.kick) {
@@ -504,6 +502,7 @@ export function createRelay({
     }
 
     const answer = await handleStoryRequest(storyOf(route.id), request.method, route.rest, () => readText(request, storyLimits.maxBodyLength), access.player);
+    await tidyDeleted(route.id);
 
     if (answer.push) {
       tellWorld(route.id, storyText(answer.push));
@@ -532,6 +531,7 @@ export function createRelay({
     }
 
     const answer = await handleBossRequest(bossesOf(route.id), request.method, route.rest, () => readText(request, bossLimits.maxBodyLength), access.player);
+    await tidyDeleted(route.id);
 
     if (answer.boss) {
       tellWorld(route.id, bossText(answer.boss.key, answer.boss.hp));
@@ -563,6 +563,32 @@ export function createRelay({
     }
 
     return answer;
+  }
+
+  /**
+   * Removes a Raid World's story and boss pools once the directory no longer has the world, since a
+   * write that passed the member check before the deletion may land after the deletion removed them.
+   *
+   * @param {string} id The world.
+   * @returns {Promise<void>} Completes once tidied.
+   */
+  async function tidyDeleted(id) {
+    if (!(await directory.load(id))) {
+      await removeRaidData(id);
+    }
+  }
+
+  /**
+   * Removes a Raid World's story and boss pools, and forgets them in memory.
+   *
+   * @param {string} id The world.
+   * @returns {Promise<void>} Completes once removed.
+   */
+  async function removeRaidData(id) {
+    await storyOf(id).remove();
+    await bossesOf(id).remove();
+    worldStories.delete(id);
+    worldBosses.delete(id);
   }
 
   /**
