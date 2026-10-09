@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-09: Loaded world_catchup_data.rbx before world_story.rbx, the generated data of a Raid World's catch-up
+#                            - Loaded world_catchup.rbx after world_story.rbx, which carries a player behind a Raid World's story along by their level
 #      Paulinchen  2026-10-08: Loaded coop_scope.rbx after coop.rbx, which tells the party scripts whom the player shares the map and the story with
 #                            - Loaded world_story.rbx after coop_story.rbx and world.rbx, a Raid World's story at the relay, and named the mp_raid_* exports it calls
 #                            - Loaded battles_raid_bosses.rbx before battles_coop.rbx, and battles_coop_hotjoin.rbx after it, whose hook wraps the live battle's
@@ -107,7 +108,7 @@ module MGQ_Multiplayer
   SCRIPTS = %w[
     core_log core_hooks core_game_access core_hotkeys ui ui_text_box core_actors core_async overworld_sync ui_wheel ui_actions ui_chat ui_emotes overworld
     coop coop_scope coop_squad coop_events coop_gather coop_scene coop_npcs coop_story_rewards coop_story coop_castle
-    world world_mods world_catchup_data world_story world_save_distribution world_text world_screen world_save_export coop_choices
+    world world_mods world_catchup_data world_story world_catchup world_save_distribution world_text world_screen world_save_export coop_choices
     battles battles_raid_bosses battles_coop battles_coop_hotjoin battles_coop_level_sync
     battles_sync battles_sync_wire battles_sync_recorder battles_sync_playback battles_sync_live
     battles_balance_pvp battles_pvp battles_pvp_backline battles_pvp_mirror battles_pvp_lobby battles_duel battles_team

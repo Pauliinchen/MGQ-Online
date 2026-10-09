@@ -2,6 +2,10 @@
 #  world_story.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-09: Kept a player behind the world's story on the checkpoint of their part and moved them on by their level through world_catchup.rbx, instead of letting them play their own story
+#                            - Made the chests that hold the story's key items the whole world's, so each opens once for the world and stays open for a player who opened it
+#                            - Kept a player behind until their level moves them on, also once the world returns from a route to their part
+#                            - Read the world's shared companions and the parts it keeps checkpoints of from the relay's state
 #      Paulinchen  2026-10-08: Created
 #
 #----------------------------------------------------------------
@@ -10,10 +14,11 @@
 # game fetches it as the world opens, after a save loaded or a new game, whenever the relay tells
 # a newer revision, and once a minute, and lays it over the player's own values (the state model of
 # coop_story.rbx, `mix`), as long as the player's story is in the world's current part; a player in
-# an earlier part plays their own story until the catch-up of a later step brings them on. A game
-# whose story moved on writes it back: its counters, which the relay reads, and the rest sealed,
-# with the revision it built on. A refused write takes the world's story and drops the step that
-# conflicts with it. Chests, the choices' outcomes and the side are each player's own.
+# an earlier part is behind, and world_catchup.rbx keeps them on their part's checkpoint until their
+# level moves them on. A game whose story moved on writes it back: its counters, which the relay
+# reads, and the rest sealed, with the revision it built on. A refused write takes the world's story
+# and drops the step that conflicts with it. Chests, the choices' outcomes and the side are each
+# player's own, except the chests that hold the story's key items, which are the world's.
 #
 # The Great Decision: the first route that reaches the relay is the world's; the game's own choice
 # offers only the routes the world may still take, and a player the world's story carries past the
@@ -227,8 +232,8 @@ module MGQ_MpWorldStory
 
   # How the player plays the world's story.
   #
-  # @return [Symbol, nil] :world while they play it, :own while their story is in an earlier part,
-  #   nil before the world's story came.
+  # @return [Symbol, nil] :world while they play it, :behind while their story is in an earlier
+  #   part (see world_catchup.rbx), nil before the world's story came.
   def self.mode
     @mode
   end
@@ -519,10 +524,11 @@ module MGQ_MpWorldStory
       @entry_story = nil
       return log("the world has #{world['wrev'] == 0 ? 'no story yet' : "no story this game can read at revision #{world['wrev']}"}: writing the player's (#{counters_text(own)})")
     end
-    if @mode != :world || @base.nil?
+    # A player the catch-up moves on into the world's story takes it whatever their part.
+    if (@mode != :world || @base.nil?) && !(defined?(MGQ_MpWorldCatchup) && MGQ_MpWorldCatchup.joins_world?)
       order = compare(key_of(own), key_of(world))
       return start_ahead(world, own) if order > 0 && !pending[:drop] && continues?(own, world)
-      return stay_own(world, own) if order < 0 && part_of(own) != part_of(world)
+      return fall_behind(world, own, text) if order < 0 && (part_of(own) != part_of(world) || kept_behind?)
     end
 
     take_world(world, local, own, text, pending, after_take)
@@ -594,19 +600,48 @@ module MGQ_MpWorldStory
     log("the player's story (#{counters_text(own)}) is further than the world's (#{counters_text(world)}): writing it as the world's")
   end
 
-  # Keeps the player on their own story, which is in an earlier part than the world's.
+  # Keeps the player behind the world's story, as theirs is in an earlier part: they write nothing,
+  # and world_catchup.rbx gives them their part's checkpoint and moves them on by their level.
   #
   # @param world [Hash] The world's counters.
   # @param own [Hash] The player's.
-  def self.stay_own(world, own)
-    @mode = :own
+  # @param text [String] The world's story, packed.
+  def self.fall_behind(world, own, text)
+    @mode = :behind
     @base = nil
     @entry_story = nil
-    log("the player's story (part #{part_of(own)}, #{counters_text(own)}) is in an earlier part than the world's (part #{part_of(world)}, #{counters_text(world)}): the player plays their own")
+    log_once([:behind, part_of(own), world["wrev"]], "the player's story (part #{part_of(own)}, #{counters_text(own)}) is in an earlier part than the world's (part #{part_of(world)}, #{counters_text(world)}): the player is behind")
+    catch_up = defined?(MGQ_MpWorldCatchup)
+    MGQ_MpWorldCatchup.behind(world, own, MGQ_MpCoopStory.decode_full(MGQ_MpCoopStory.unpack(text))) if catch_up
     return if @behind_told
 
     @behind_told = true
-    MGQ_MpOverworldSync.notice("The world's story is in a later part than yours. You play your own story until you reach it.")
+    MGQ_MpOverworldSync.notice(catch_up ? MGQ_MpWorldCatchup.behind_text(own) : "The world's story is further than yours.")
+  end
+
+  # Reports whether a player behind stays behind though the world's story is in their part again,
+  # see MGQ_MpWorldCatchup.keeps_behind?.
+  #
+  # @return [Boolean] Whether they do.
+  def self.kept_behind?
+    @mode == :behind && defined?(MGQ_MpWorldCatchup) && MGQ_MpWorldCatchup.keeps_behind? ? true : false
+  end
+
+  # Fetches the world's story to lay over the player's whatever its revision, as when the catch-up
+  # moves a player behind on into it.
+  #
+  # @param reason [Symbol] Why, for the log.
+  def self.refetch(reason)
+    @seen_wrev = nil
+    @need_fetch ||= reason
+  end
+
+  # Reports whether commands wait to play once the player is free, as the personal half of a
+  # return to the Great Decision.
+  #
+  # @return [Boolean] Whether they do.
+  def self.queued?
+    @queued ? true : false
   end
 
   # Lays the world's story over the player's: what is the player's own stays, and what they changed
@@ -626,7 +661,13 @@ module MGQ_MpWorldStory
     keep_unsent(applied, told, local)
     base = MGQ_MpCoopStory.deep_copy(applied)
     kept, dropped = keep_own(applied, told, local, @base || @entry_story, pending[:drop])
+    opened = keep_open_chests(applied, local)
+    kept.concat(opened.map { |key| [2, key] })
     MGQ_MpCoopStory.set_raw(*applied)
+    if defined?(MGQ_MpWorldCatchup)
+      MGQ_MpWorldCatchup.world_told(told)
+      MGQ_MpWorldCatchup.carried(local)
+    end
     @base = base
     @entry_story = nil
     @end_local = nil if pending[:drop]
@@ -819,17 +860,17 @@ module MGQ_MpWorldStory
     [$game_map.map_id, $game_player.x, $game_player.y]
   end
 
-  # Looks whether the story's progress moved, which is written soon; a player on their own story
-  # whose story reached the world's part fetches it again.
+  # Looks whether the story's progress moved, which is written soon; a player behind whose story
+  # reached the world's part fetches it again.
   def self.check_progress
     @checked = @clock
     return if @busy[:post]
 
     variables = MGQ_MpCoopStory.data_of($game_variables)
     switches = MGQ_MpCoopStory.data_of($game_switches)
-    if @mode == :own
+    if @mode == :behind
       own = local_counters([switches, variables, {}])
-      if @world && (part_of(own) == part_of(@world) || compare(key_of(own), key_of(@world)) >= 0)
+      if @world && ((part_of(own) == part_of(@world) && !kept_behind?) || compare(key_of(own), key_of(@world)) >= 0)
         log("the player's story reached the world's part (#{counters_text(own)}): fetching the world's")
         @seen_wrev = nil
         @mode = nil
@@ -1016,7 +1057,9 @@ module MGQ_MpWorldStory
   # Reads the world's counters from the DLL's state.
   #
   # @param state [Hash] The state's headers.
-  # @return [Hash] As local_counters, with "rev", "wrev", "route", "done", "end" and "part".
+  # @return [Hash] As local_counters, with "rev", "wrev", "route", "done", "end", "part",
+  #   "checkpoints" (the parts the relay keeps a checkpoint of) and "comps" (the shared companions'
+  #   actor ids).
   def self.counters_of(state)
     counters = { "rev" => state["rev"].to_i, "wrev" => state["wrev"].to_i, "p" => state["p"].to_i }
     ROUTE_VARIABLES.each { |id| counters["r#{id}"] = state["r#{id}"].to_i }
@@ -1025,6 +1068,8 @@ module MGQ_MpWorldStory
     counters["route"] = state["route"].to_s.empty? ? "none" : state["route"].to_s
     counters["end"] = state["end"].to_s
     counters["part"] = state["part"].to_s
+    counters["checkpoints"] = state["checkpoints"].to_s.split(",")
+    counters["comps"] = state["comps"].to_s.split(",").map { |id| id.to_i }
     counters
   end
 
@@ -1126,7 +1171,7 @@ module MGQ_MpWorldStory
   end
 
   # Reports whether a self switch is a chest's, each player's own: of the game's chests (see
-  # MGQ_MpCoopStoryRewards::CHESTS), or of the map's.
+  # MGQ_MpCoopStoryRewards::CHESTS), or of the map's; never one that holds the story's key items.
   #
   # @param key [Array] The self switch: map, event and letter.
   # @return [Boolean] Whether it is.
@@ -1135,14 +1180,46 @@ module MGQ_MpWorldStory
       @chests = {}
       MGQ_MpCoopStory.all_chest_keys.each { |chest| @chests[chest] = true }
     end
+    return false if world_chest?(key)
+
     @chests[key] || MGQ_MpCoopStory.personal_self_switch?(key) ? true : false
+  end
+
+  # Reports whether a chest holds the story's key items, which opens once for the whole world (see
+  # MGQ_MpWorldCatchupData::CHESTS).
+  #
+  # @param key [Array] Its self switch: map, event and letter.
+  # @return [Boolean] Whether it does.
+  def self.world_chest?(key)
+    world_chests[key] ? true : false
+  end
+
+  # The chests that hold the story's key items, see world_chest?.
+  #
+  # @return [Hash{Array => Boolean}] Their keys to true.
+  def self.world_chests
+    unless @world_chests
+      @world_chests = {}
+      MGQ_MpWorldCatchupData::CHESTS.each { |chest| @world_chests[chest.key] = true } if defined?(MGQ_MpWorldCatchupData)
+    end
+    @world_chests
+  end
+
+  # Keeps the world's chests the player opened open in a story laid over theirs, as each opens once
+  # for the world and the catch-up gave its items already.
+  #
+  # @param applied [Array] The story laid over the player's, which takes them.
+  # @param local [Array] The player's.
+  # @return [Array<Array>] The chests it opened, by their keys.
+  def self.keep_open_chests(applied, local)
+    world_chests.keys.select { |key| local[2][key] && !applied[2][key] }.each { |key| applied[2][key] = true }
   end
 
   # Lists the chests whose self switches stay the player's own when a story is laid over theirs.
   #
   # @return [Array<Array>] Their keys.
   def self.chest_list
-    (MGQ_MpCoopStory.all_chest_keys + MGQ_MpCoopStory.chest_keys).uniq
+    (MGQ_MpCoopStory.all_chest_keys + MGQ_MpCoopStory.chest_keys).uniq.reject { |key| world_chest?(key) }
   end
 
   # Makes an event command.

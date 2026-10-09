@@ -2,6 +2,7 @@
 #  coop_events_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-09: Checked that a player behind a Raid World's story starts no story event, is told the level that moves them on once, and that story which runs by itself waits while talks run
 #      Paulinchen  2026-10-08: Checked a Raid World: a player telling the story on the map keeps the others' story events from starting, whoever entered the map first tells it when two start at once, its pages go to and show for the players whose story matches, the castle's Map Owner is the sync host, and no leader's story is borrowed
 #                            - Checked that a Raid World's tie between two tellers holds only at the telling's start on its map, and that its chests are personal
 #                            - Loaded coop_scope.rbx, which the party's scripts ask whom they share the map and the story with
@@ -1912,6 +1913,34 @@ MGQ_MpCoopEvents.take(leader, { "chest" => "3.6.A", "party" => "p1", "gains" => 
 check("and one a party member opened gives nothing", $game_party.gold, 0)
 $game_map.events = {}
 MGQ_MpCoopEvents.instance_variable_set(:@chest_keys_map, nil)
+
+# A player behind the world's story starts no story event and hears the level that moves them on;
+# story that runs by itself waits silently, talks run.
+module MGQ_MpWorldCatchup
+  def self.holds_story?; $behind; end
+  def self.refusal_text; "Reach level 25 to continue the story."; end
+end
+$behind = true
+$peers = []
+$notices.clear
+MGQ_MpCoopEvents.instance_variable_set(:@refused, nil)
+behind_story = Game_Event.new(54, [story_page])
+behind_auto = Game_Event.new(55, [story_page], 3)
+behind_talk = Game_Event.new(56, [talk_page])
+check("a player behind the world's story starts no story event and hears the level that moves them on",
+      [MGQ_MpCoopEvents.hand_over(behind_story), $notices], [true, ["Reach level 25 to continue the story."]])
+check("once, however often they step on it", [MGQ_MpCoopEvents.hand_over(behind_story), $notices.size], [true, 1])
+check("story that runs by itself waits without a word, so a teleport onto its map cannot loop", [MGQ_MpCoopEvents.hand_over(behind_auto), $notices.size], [true, 1])
+check("talks run", MGQ_MpCoopEvents.hand_over(behind_talk), false)
+behind_common = RPG::CommonEvent.new([c(101, "", 0, 0, 2), c(121, 60, 60, 0)])
+behind_common.switch_id = 70
+$data_common_events[4] = behind_common
+raw($game_switches)[70] = true
+check("as does a story common event that runs by itself", $game_map.setup_autorun_common_event, nil)
+$behind = false
+check("caught up, the player's story events start again", [MGQ_MpCoopEvents.hand_over(behind_story), $game_map.setup_autorun_common_event], [false, behind_common])
+$data_common_events[4] = nil
+raw($game_switches)[70] = false
 
 $game_map.map_id = 227
 check("the castle's Map Owner is the map's sync host, not the party's leader", MGQ_MpCoopCastle.owner([leader]), nil)

@@ -2,6 +2,7 @@
 #  coop_events.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-09: Kept story events from starting while the player's story is behind a Raid World's, telling the level that moves them on, and held those that run by themselves, so a teleport onto their map cannot loop
 #      Paulinchen  2026-10-08: Took the teller, the viewers and the gate of the story's messages from MGQ_MpCoop::Scope: the party's leader and synced members in a Classic world, the player telling the story on the map and those whose story matches in a Raid World
 #                            - Stopped a story event in a Raid World once a player who entered the map first started telling the story there at the same moment, within TIE_FRAMES of its start and on its map alone
 #                            - Told the story's progress and whether warping is banned at the start of the telling in a Raid World, which tells who sees the scene and what a teleport to the story takes
@@ -503,7 +504,12 @@ module MGQ_MpCoopEvents
 
     @may_tell = false
     lead = MGQ_MpCoop::Scope.teller
-    if lead.is_a?(MGQ_MpOverworldSync::Peers::Peer) && following?
+    if behind?
+      # The list ends with an empty command, which ends the event as its last.
+      MGQ_MpGame.set(interpreter, :index, list.size - 1)
+      MGQ_MpOverworldSync.notice(MGQ_MpWorldCatchup.refusal_text)
+      log("ended a talk where it would move the story on (command #{list[index].code}): the player's story is behind the world's")
+    elsif lead.is_a?(MGQ_MpOverworldSync::Peers::Peer) && following?
       # The list ends with an empty command, which ends the event as its last.
       MGQ_MpGame.set(interpreter, :index, list.size - 1)
       MGQ_MpOverworldSync.notice(refusal_text(lead))
@@ -682,14 +688,16 @@ module MGQ_MpCoopEvents
   end
 
   # Keeps a member's story event from starting: only the leader starts story, in their own game.
-  # In a Raid World only while another player tells the story on the map. Called when the map's
-  # main event would start it.
+  # In a Raid World only while another player tells the story on the map, or while the player's
+  # story is behind the world's (held_behind). Called when the map's main event would start it.
   #
   # An event that runs by itself is left to the teller's own game, which runs it on its map.
   #
   # @param event [Game_Event] The event.
   # @return [Boolean] Whether it is the teller's, so it must not run here.
   def self.hand_over(event)
+    return held_behind(event) if behind? && !own? && kind(event) == :story
+
     lead = MGQ_MpCoop::Scope.teller
     return awaits_told_story?(event) unless lead.is_a?(MGQ_MpOverworldSync::Peers::Peer)
     return false unless !own? && kind(event) == :story
@@ -708,6 +716,36 @@ module MGQ_MpCoopEvents
   rescue => e
     log("keeping a story event from starting failed: #{e.class}: #{e.message}")
     false
+  end
+
+  # Reports whether the player's story is behind a Raid World's, which keeps their story events from
+  # starting, see MGQ_MpWorldCatchup.holds_story?.
+  #
+  # @return [Boolean] Whether it is.
+  def self.behind?
+    defined?(MGQ_MpWorldCatchup) && MGQ_MpWorldCatchup.holds_story? ? true : false
+  end
+
+  # Keeps a story event from starting while the player's story is behind the world's: one they
+  # start tells the level that moves them on, once per event in REFUSE_FRAMES, and one that runs by
+  # itself waits silently, so a teleport onto its map cannot loop.
+  #
+  # @param event [Game_Event] The story event.
+  # @return [Boolean] Always true: it must not run.
+  def self.held_behind(event)
+    if event.trigger == 3
+      log_once([:behind_autorun, $game_map.map_id, event.id], "kept event #{event.id} on map #{$game_map.map_id} that runs by itself from starting: it is story, and the player's story is behind the world's")
+      return true
+    end
+
+    key = [$game_map.map_id, event.id]
+    return true if @refused == key && !past?(@refused_at, REFUSE_FRAMES)
+
+    @refused = key
+    @refused_at = Graphics.frame_count
+    log("kept story event #{event.id} on map #{$game_map.map_id} from starting: the player's story is behind the world's")
+    MGQ_MpOverworldSync.notice(MGQ_MpWorldCatchup.refusal_text)
+    true
   end
 
   # Keeps a story event from starting in a Raid World while the world's story of a telling the
@@ -776,11 +814,17 @@ module MGQ_MpCoopEvents
     $game_switches[switch] ? true : false
   end
 
-  # Reports whether a common event that runs by itself is left to the teller's game.
+  # Reports whether a common event that runs by itself is left to the teller's game, or held while
+  # the player's story is behind a Raid World's.
   #
   # @param common [RPG::CommonEvent] The common event.
   # @return [Boolean] Whether it is.
   def self.leave_to_leader?(common)
+    if behind? && !own?(common.list) && kind_of(common.list || []) == :story
+      log_once([:behind_common, common.respond_to?(:id) ? common.id : "?"], "kept common event #{common.respond_to?(:id) ? common.id : '?'} that runs by itself from starting: it is story, and the player's story is behind the world's")
+      return true
+    end
+
     lead = MGQ_MpCoop::Scope.teller
     left = lead.is_a?(MGQ_MpOverworldSync::Peers::Peer) && following? && !own?(common.list) && kind_of(common.list || []) == :story
     if left

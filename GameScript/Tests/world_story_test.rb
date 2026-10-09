@@ -2,6 +2,7 @@
 #  world_story_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-09: Followed a player in an earlier part, who is behind the world's story now instead of playing their own
 #      Paulinchen  2026-10-08: Created
 #
 #----------------------------------------------------------------
@@ -428,7 +429,8 @@ check("keeping the player's affection, companions, chests, choices and side",
       [70, true, true, 1, true, false, true, false])
 check("and tells the player once", $notices.count("You play the world's story."), 1)
 
-# A loaded save in an earlier part: the player plays their own story until they reach the world's part.
+# A loaded save in an earlier part: the player is behind, writes nothing and fetches the world's story
+# again once theirs reaches its part.
 $calls.clear
 $notices.clear
 new_story({ 1001 => 10, 151 => 2 }, [310])
@@ -436,8 +438,8 @@ story.loaded(:load)
 frames(1)
 relay({ "rev" => 12, "wrev" => 12, "p" => 25, "part" => "2", "fetch" => "done" }, packed({ 1001 => 25, 151 => 5 }, [311]))
 frames(16)
-check("a player in an earlier part keeps their own story", [story.mode, $game_variables[1001], $game_switches[310], $game_switches[311]], [:own, 10, true, false])
-check("and is told so", $notices, ["The world's story is in a later part than yours. You play your own story until you reach it."])
+check("a player in an earlier part is behind, keeping their own story without a checkpoint", [story.mode, $game_variables[1001], $game_switches[310], $game_switches[311]], [:behind, 10, true, false])
+check("and is told so", $notices, ["The world's story is further than yours."])
 $game_variables[1001] = 11
 frames(400)
 check("and writes nothing", calls_of("mp_raid_story_post"), [])

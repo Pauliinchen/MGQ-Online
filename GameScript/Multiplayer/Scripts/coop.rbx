@@ -2,6 +2,7 @@
 #  coop.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-09: Closed the teleport to the story to a player behind the world's story in a Raid World
 #      Paulinchen  2026-10-08: Offered a teleport to the story on the player's own row of the World overview in a Raid World, in place of the teleport to the party's leader
 #      Paulinchen  2026-10-07: Added the helpers the party scripts shared copies of: a message's bytes and an event's name for the log, a random id and an option's registration in the Mod Config
 #                            - Logged invites sent, received, accepted, declined, run out and turned away with the reason, whom the leader admitted, the leader and why, and the party messages dropped
@@ -832,11 +833,14 @@ module MGQ_MpCoop
     end
 
     # The choice that teleports the player to the story in a Raid World, which closes the World
-    # overview too.
+    # overview too. A player behind the world's story cannot play it there, so it is closed to them.
     #
     # @return [MGQ_MpActions::Option, nil] The choice, nil in a Classic world.
     def self.story_option
       return nil unless Scope.raid? && defined?(MGQ_MpCoopGather)
+      if defined?(MGQ_MpWorldCatchup) && MGQ_MpWorldCatchup.holds_story?
+        return MGQ_MpActions::Option.new("Teleport to the story", nil, MGQ_MpWorldCatchup.refusal_text, nil, true)
+      end
 
       known = !MGQ_MpCoopGather.story_endpoint.nil?
       MGQ_MpActions::Option.new("Teleport to the story", known ? lambda { MGQ_MpCoopGather.join_story } : nil, "Nobody has told the story yet.", nil, true)
