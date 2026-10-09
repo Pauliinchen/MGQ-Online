@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-09: Checked that a guest and an encounter taken in fight with the host's enemy rates and get their own back
+#                            - Checked that an encounter brings along a player whose game window is in the background
 #                            - Checked that a battle that calls the Library or Config ends nothing
 #                            - Checked that a player another request brought along is taken in with their own encounter and ignores the invite it sent, and that an encounter brings along nobody who fights
 #      Paulinchen  2026-10-08: Created
@@ -479,11 +480,13 @@ check("which brings nobody, the other request only its own player",
 reset
 
 fighter = player(12, { "rb" => "hb9" })
-MGQ_MpOverworldSync::Peers.all.replace([host, guest, free, fighter])
+background = player(14, { "scene" => "away", "x" => "1" })
+MGQ_MpOverworldSync::Peers.all.replace([host, guest, free, fighter, background])
 $encounter_troop = 50
 $scene_now = Scene_Map.new
 $game_player.encounter
-check("an encounter brings along nobody whose state tells a battle", map_sent("hot").map { |_, f| f["seats"] }, ["7"])
+check("an encounter brings along a player whose game window is in the background, but nobody whose state tells a battle",
+      map_sent("hot").map { |_, f| f["seats"] }, ["7,14"])
 $sent.clear
 coop.take(host, { "coop" => "invite", "bid" => "hb1", "troop" => "31", "escape" => "1", "lose" => "0", "seats" => "0", "map" => "5", "hot" => "1" })
 check("a player who asks a running battle ignores its host's invite another request sent", battle_sent("decline"), [])

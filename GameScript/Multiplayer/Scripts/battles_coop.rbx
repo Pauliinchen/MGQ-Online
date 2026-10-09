@@ -8,6 +8,7 @@
 #                            - Ignored the invite of a running battle's host the player asks to take their own encounter in
 #                            - Passed a request to join a battle by choice and its refusal to battles_coop_join.rbx
 #                            - Ignored the late invite of a battle the player stopped waiting to join by choice
+#                            - Invited the players in a Raid World whose game window is in the background, as a Classic world does
 #      Paulinchen  2026-10-08: Brought each player's first three characters to a co-op battle in a Raid World, one on the Frontline and two on the Backline, also for a player left alone
 #                            - Brought only the squad to a team duel in a Raid World, never the fourth
 #                            - Invited the nearest free players on the map to a battle in a Raid World, party members first, up to four players, through the map's gate
@@ -112,8 +113,8 @@ module MGQ_MpBattlesCoop
   RAID_PLAYERS = 4
 
   # What another player in a Raid World does, by their state's scene, while they may be invited:
-  # walking the map.
-  RAID_FREE_SCENES = %w(map)
+  # walking the map, or on it with their window in the background, which keeps running.
+  RAID_FREE_SCENES = %w(map away)
 
   # Frames an invite waits for the player to be free before it is turned down, three seconds.
   ACCEPT_FRAMES = 180
@@ -518,9 +519,9 @@ module MGQ_MpBattlesCoop
     MGQ_MpCoop::Party.members.select { |peer| peer.state["map"].to_i == $game_map.map_id && FREE_SCENES.include?(peer.state["scene"]) }
   end
 
-  # Lists the players a battle in a Raid World invites: of those on the player's map who walk it
-  # and are not busy (see raid_free?), the party members first, then the nearest to the party's
-  # leader, or to the player outside a party, by their states; at most RAID_PLAYERS with the player.
+  # Lists the players a battle in a Raid World invites: of those on the player's map who are free
+  # (see raid_free?), the party members first, then the nearest to the party's leader, or to the
+  # player outside a party, by their states; at most RAID_PLAYERS with the player.
   #
   # @return [Array<MGQ_MpOverworldSync::Peers::Peer>] The players.
   def self.raid_candidates
@@ -533,8 +534,9 @@ module MGQ_MpBattlesCoop
     ranked.first(RAID_PLAYERS - 1)
   end
 
-  # Reports whether another player in a Raid World may be invited: walking the map and neither
-  # trading nor about to teleport, as their state says (see state_fields).
+  # Reports whether another player in a Raid World may be invited: walking the map, or on it with
+  # their window in the background, and neither trading nor about to teleport, as their state says
+  # (see state_fields).
   #
   # @param peer [MGQ_MpOverworldSync::Peers::Peer] The player.
   # @return [Boolean] Whether they may.

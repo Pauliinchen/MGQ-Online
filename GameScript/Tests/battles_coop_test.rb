@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-09: Checked that a player who yields to a rival's boss battle notes it as one
+#                            - Checked that a Raid World's battle takes a player whose game window is in the background, but not a busy one
 #      Paulinchen  2026-10-08: Checked that a face this game lacks is left out of a message the host shows
 #                            - Checked that a Raid World's co-op battle gives every player one and two, also to a host left alone, and that its team duels split as before
 #                            - Checked that a player brings only their squad to a Raid World's team duel
@@ -858,7 +859,7 @@ comrade = raid_peer(3, { "x" => "20", "y" => "20" }, true)
 near = raid_peer(6, { "x" => "1", "y" => "1" })
 middle = raid_peer(7, { "x" => "5", "y" => "0" })
 far = raid_peer(8, { "x" => "9", "y" => "9" })
-others = [raid_peer(9, { "scene" => "event" }), raid_peer(10, { "scene" => "away" }), raid_peer(11, { "busy" => "1" }), raid_peer(12, { "map" => "9" })]
+others = [raid_peer(9, { "scene" => "event" }), raid_peer(10, { "scene" => "away", "busy" => "1" }), raid_peer(11, { "busy" => "1" }), raid_peer(12, { "map" => "9" })]
 MGQ_MpOverworldSync::Peers.all.clear
 MGQ_MpOverworldSync::Peers.all.push(comrade, near, middle, far, *others)
 $leader = :me
@@ -869,6 +870,12 @@ check("counting from the leader's tile when the leader is on the map", MGQ_MpBat
 comrade.state["map"] = "9"
 check("else from the player's own", MGQ_MpBattlesCoop.raid_candidates.map(&:seat), [6, 7, 8])
 comrade.state["map"] = "5"
+background = raid_peer(13, { "scene" => "away", "x" => "3", "y" => "0" })
+MGQ_MpOverworldSync::Peers.all.push(background)
+$leader = :me
+check("and a player whose game window is in the background, which keeps running", MGQ_MpBattlesCoop.raid_candidates.map(&:seat), [3, 6, 13])
+MGQ_MpOverworldSync::Peers.all.delete(background)
+$leader = comrade
 
 $sent.clear
 BattleManager.setup(80)
