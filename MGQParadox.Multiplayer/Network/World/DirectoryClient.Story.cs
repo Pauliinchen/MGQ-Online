@@ -2,6 +2,7 @@
 //  DirectoryClient.Story.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-09: Logged the fetch of a world's story only when its outcome changed or it was slow, and let a boss route's request name the client it is sent with
 //      Paulinchen  2026-10-08: Created
 //
 //----------------------------------------------------------------
@@ -32,7 +33,7 @@ internal sealed partial class DirectoryClient
     /// <exception cref="DirectoryException">The relay could not be reached, the world is no Raid World, or the player may not read it.</exception>
     public StoryState GetStory(string world, string playerKey, string authKey)
     {
-        using var document = SendStory(HttpMethod.Get, StoryAddress(world, string.Empty), $"raid story {Log.Short(world)}", null, playerKey, authKey, null, out _);
+        using var document = SendStory(HttpMethod.Get, StoryAddress(world, string.Empty), $"raid story {Log.Short(world)}", null, playerKey, authKey, null, out _, repeatKey: $"raid story {world}");
         return StoryState.Read(document.RootElement);
     }
 
@@ -137,7 +138,7 @@ internal sealed partial class DirectoryClient
     private Uri StoryAddress(string world, string rest) => new($"{_worlds}/{Uri.EscapeDataString(world)}/story{rest}");
 
     /// <summary>
-    /// Sends a request of a story route with the player's and the world's keys, and reads its JSON answer.
+    /// Sends a request of a story or boss route with the player's and the world's keys, and reads its JSON answer.
     /// </summary>
     /// <param name="method">The method.</param>
     /// <param name="address">The address.</param>
@@ -147,9 +148,11 @@ internal sealed partial class DirectoryClient
     /// <param name="authKey">The auth key made from the world's token.</param>
     /// <param name="expected">A status the route answers with besides success, whose answer is read too; <see langword="null"/> for none.</param>
     /// <param name="status">The status the relay answered with.</param>
+    /// <param name="http">The client to send with; <see langword="null"/> for the one with the long timeout of a story, which is up to 200 KB each way and takes a slow line longer than other requests.</param>
+    /// <param name="repeatKey">Names a request the game repeats, see <see cref="Exchange"/>.</param>
     /// <returns>The answer, which the caller disposes.</returns>
     /// <exception cref="DirectoryException">The relay could not be reached, or answered with an error.</exception>
-    private static JsonDocument SendStory(HttpMethod method, Uri address, string route, string? body, string playerKey, string authKey, HttpStatusCode? expected, out HttpStatusCode status)
+    private static JsonDocument SendStory(HttpMethod method, Uri address, string route, string? body, string playerKey, string authKey, HttpStatusCode? expected, out HttpStatusCode status, HttpClient? http = null, string? repeatKey = null)
     {
         using var request = new HttpRequestMessage(method, address);
 
@@ -161,8 +164,7 @@ internal sealed partial class DirectoryClient
         request.Headers.Add(PlayerHeader, playerKey);
         request.Headers.Add(AuthHeader, authKey);
 
-        // The story is up to 200 KB each way, which a slow line takes longer for than other requests.
-        using var response = Exchange(request, TransferHttp, route, null, expected);
+        using var response = Exchange(request, http ?? TransferHttp, route, repeatKey, expected);
         status = response.StatusCode;
 
         try

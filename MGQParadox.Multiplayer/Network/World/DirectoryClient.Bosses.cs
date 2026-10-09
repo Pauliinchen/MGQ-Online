@@ -2,7 +2,8 @@
 //  DirectoryClient.Bosses.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-09: Created
+//      Paulinchen  2026-10-09: Sent boss requests with the timeout of other requests, and logged the fetch of the pools only when its outcome changed or it was slow
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -29,7 +30,7 @@ internal sealed partial class DirectoryClient
     /// <exception cref="DirectoryException">The relay could not be reached, the world is no Raid World, or the player may not read it.</exception>
     public BossList GetBosses(string world, string playerKey, string authKey)
     {
-        using var document = SendStory(HttpMethod.Get, BossAddress(world, string.Empty), $"raid bosses {Log.Short(world)}", null, playerKey, authKey, null, out _);
+        using var document = SendStory(HttpMethod.Get, BossAddress(world, string.Empty), $"raid bosses {Log.Short(world)}", null, playerKey, authKey, null, out _, Http, $"raid bosses {world}");
         var root = document.RootElement;
         var pools = root.TryGetProperty("bosses", out var bosses) && bosses.ValueKind == JsonValueKind.Array
             ? bosses.EnumerateArray().Where(pool => pool.ValueKind == JsonValueKind.Object).Select(BossPool.Read).ToList()
@@ -57,7 +58,8 @@ internal sealed partial class DirectoryClient
             writer.WriteNumber("dealt", dealt);
         });
 
-        using var document = SendStory(HttpMethod.Post, BossAddress(world, $"/{Uri.EscapeDataString(boss)}/report"), $"raid boss report {Log.Short(world)} battle {battle}", body, playerKey, authKey, null, out _);
+        // A small request: a hung relay must free the report within seconds, not the minutes a story may take.
+        using var document = SendStory(HttpMethod.Post, BossAddress(world, $"/{Uri.EscapeDataString(boss)}/report"), $"raid boss report {Log.Short(world)} battle {battle}", body, playerKey, authKey, null, out _, Http);
         var root = document.RootElement;
         return new BossReport(BossPool.Read(root), BossPool.Decimal(root, "dealt"), BossPool.Flag(root, "emptied"), BossPool.Flag(root, "repeat"));
     }

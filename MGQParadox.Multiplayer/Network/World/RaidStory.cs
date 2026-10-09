@@ -2,6 +2,7 @@
 //  RaidStory.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-09: Logged a fetch of the world's story only when its outcome changed, since the game script fetches it once a minute
 //      Paulinchen  2026-10-08: Created
 //
 //----------------------------------------------------------------
@@ -77,6 +78,11 @@ internal sealed class RaidStory
     private string? _checkpointPart;
 
     /// <summary>
+    /// What the last request of each kind that repeats logged it answered, by kind.
+    /// </summary>
+    private readonly Dictionary<string, string> _lastDetails = new(StringComparer.Ordinal);
+
+    /// <summary>
     /// The game's Raid World story, which the game script uses.
     /// </summary>
     public static RaidStory Current { get; } = new();
@@ -111,7 +117,7 @@ internal sealed class RaidStory
         var state = client.GetStory(world, me.Key, me.Auth);
         var text = Take(world, state, me.Token);
         return new Outcome(Kind.Done, Rev: state.Rev, Detail: $"rev {state.Rev}, part {state.Part}, {text.Length} characters");
-    });
+    }, repeats: true);
 
     /// <summary>
     /// Writes the world's story, which the relay takes when it built on the story as it stands and
@@ -296,8 +302,9 @@ internal sealed class RaidStory
     /// <param name="world">The world the game is in.</param>
     /// <param name="what">What the request does, for the log.</param>
     /// <param name="request">The request, given the relay's client and who asks; answers how it went.</param>
+    /// <param name="repeats">Whether the game script repeats the request, which is then logged only when its answer changed.</param>
     /// <returns><see langword="false"/> while one of that kind runs, without a player, or outside that world.</returns>
-    private bool Run(string kind, string world, string what, Func<DirectoryClient, Asker, Outcome> request)
+    private bool Run(string kind, string world, string what, Func<DirectoryClient, Asker, Outcome> request, bool repeats = false)
     {
         if (Playing() is not { } player || WorldOf(world) is not { } code || RelayAddress(code.Relay) is not { } relay)
         {
@@ -325,11 +332,14 @@ internal sealed class RaidStory
 
         var client = new DirectoryClient(relay);
         var asker = new Asker(player.Key, WorldKeys.AuthKeyOf(code.Token), code.Token);
-        Log.Write($"{what} in {Log.Short(world)}");
+        if (!repeats)
+        {
+            Log.Write($"{what} in {Log.Short(world)}");
+        }
 
         Threads.Start($"MultiplayerRaid{char.ToUpperInvariant(kind[0])}{kind[1..]}", () =>
         {
-            var outcome = Attempt(what, () => request(client, asker));
+            var outcome = Attempt(what, () => request(client, asker), repeats ? $"{kind} {world}" : null);
 
             lock (_gate)
             {
@@ -345,15 +355,21 @@ internal sealed class RaidStory
     /// </summary>
     /// <param name="what">What the request does, for the log.</param>
     /// <param name="request">The request.</param>
+    /// <param name="repeatKey">Names a request the game script repeats, whose answer is logged only when it changed; <see langword="null"/> to log it every time.</param>
     /// <returns>How it went.</returns>
-    private Outcome Attempt(string what, Func<Outcome> request)
+    private Outcome Attempt(string what, Func<Outcome> request, string? repeatKey = null)
     {
         for (var attempt = 0; ; attempt++)
         {
             try
             {
                 var outcome = request();
-                Log.Write($"{what}: {outcome.Detail}");
+
+                if (Changed(repeatKey, outcome.Detail))
+                {
+                    Log.Write($"{what}: {outcome.Detail}");
+                }
+
                 return outcome;
             }
             catch (DirectoryException ex) when (ex.Status == null && attempt < RetryDelays.Length)
@@ -366,6 +382,34 @@ internal sealed class RaidStory
                 Log.Write($"{what} failed: {ex.GetBaseException().Message}");
                 return new Outcome(Kind.Failed, Code: (ex as DirectoryException)?.Code, Error: ReasonFor(ex));
             }
+        }
+    }
+
+    /// <summary>
+    /// Tells whether a repeated request answered otherwise than when it was last logged, and keeps
+    /// its answer when it did.
+    /// </summary>
+    /// <param name="repeatKey">Names the request, <see langword="null"/> for one that is not repeated.</param>
+    /// <param name="detail">What it answered.</param>
+    /// <returns>Whether to log it.</returns>
+    private bool Changed(string? repeatKey, string detail)
+    {
+        if (repeatKey == null)
+        {
+            return true;
+        }
+
+        lock (_gate)
+        {
+            if (_lastDetails.TryGetValue(repeatKey, out var last) && last == detail)
+            {
+                return false;
+            }
+
+            // Only the world the game is in repeats, so a key of a world left is dropped.
+            _lastDetails.Clear();
+            _lastDetails[repeatKey] = detail;
+            return true;
         }
     }
 
