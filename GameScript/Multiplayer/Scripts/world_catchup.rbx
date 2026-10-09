@@ -4,6 +4,7 @@
 #  Changelog:
 #      Paulinchen  2026-10-09: Gave a key item whose event is only there to play up to its amount once the world's story is past it, and played the orbs' event for a player the catch-up gave every orb
 #                            - Held the story from a save's load until the world's story came while the save notes the player behind in their part
+#                            - Kept a shared companion away whose join the player's story passed
 #                            - Created
 #
 #----------------------------------------------------------------
@@ -1172,7 +1173,8 @@ module MGQ_MpWorldCatchup
 
   # Lets the companions the world shares join the player once their level reaches each one's gate:
   # a story companion at their first join's, a battle recruit at their start level. A companion the
-  # player had is never brought back this way, nor one their story took away for good.
+  # player had is never brought back this way, in their roster or past one of their joins in the
+  # player's story, nor one their story took away for good.
   #
   # @param sharing [Symbol] :story or :all, see MGQ_MpWorld.companion_sharing.
   # @param shared [Array<Integer>] The world's shared companions.
@@ -1184,7 +1186,7 @@ module MGQ_MpWorldCatchup
       next if id == HERO || done[key]
 
       lost ||= taken_for_good(done)
-      next done[key] = true if in_roster?(id) || lost[id]
+      next done[key] = true if in_roster?(id) || lost[id] || joined?(id, done)
 
       first = joins_of(id).first
       next unless first || sharing == :all
@@ -1195,6 +1197,17 @@ module MGQ_MpWorldCatchup
       done[key] = true
       bring_in(first ? first.persona : id, first && first.rule != START_RULE ? gate : nil, "shared by the world")
     end
+  end
+
+  # Reports whether the player's story got past a join of a companion, which gave them the companion
+  # whether or not they are in the roster now: a temporary removal of the story or the player may have
+  # let them go since.
+  #
+  # @param id [Integer] The companion's main persona.
+  # @param done [Hash] The rows done.
+  # @return [Boolean] Whether it did.
+  def self.joined?(id, done)
+    joins_of(id).any? { |row| done[key_of("j", row)] == true }
   end
 
   # Lists the companions the player's story took away for good: past a removal that lasts, on a

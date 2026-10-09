@@ -4,6 +4,7 @@
 #  Changelog:
 #      Paulinchen  2026-10-09: Checked that a key item whose event is only there to play comes up to its amount and that the catch-up giving the last orb plays the orbs' event
 #                            - Checked that a save that noted the player behind holds the story until the world's story came
+#                            - Checked that a shared companion whose join the player's story passed is not brought back
 #                            - Created
 #
 #----------------------------------------------------------------
@@ -606,10 +607,19 @@ check("a player the catch-up gives the last orb plays the orbs' event",
 frames(40)
 check("once", $setups.size, 1)
 
-# A shared companion joins a second playthrough's player whose story took them away on the first.
-tables(:REMOVALS => [removal.new(16, 16, "map:50:1:1", "1", 14, nil, [[:v, 1001, 14]], true, 5)],
+# A shared companion the player's own story gave them and took away for a while stays away.
+tables(:REMOVALS => [removal.new(16, 16, "map:50:1:1", "1", 14, nil, [[:v, 1001, 14]], false, 5)],
        :JOINS => [join.new(16, 16, "map:70:1:1", "1", 5, nil, [[:v, 1001, 5]], 10, :start, 3, true)])
 $sharing = :story
+new_game({ 1001 => 16 }, [], 15)
+frames(1)
+relay({ "rev" => 23, "wrev" => 23, "p" => 16, "part" => "1", "comps" => "16" }, packed({ 1001 => 16 }))
+frames(40)
+check("a shared companion whose join the player's story passed is not brought back", roster.include?(16), false)
+
+# A shared companion joins a second playthrough's player whose story took them away on the first.
+tables(:REMOVALS => [removal.new(16, 16, "map:50:1:1", "1", 14, nil, [[:v, 1001, 14]], true, 5)],
+       :JOINS => [join.new(16, 16, "map:70:1:1", "1", 20, nil, [[:v, 1001, 20]], 10, :start, 3, true)])
 [[1, true], [0, false]].each do |playthrough, joins|
   new_game({ 1001 => 16, 912 => playthrough }, [], 15)
   frames(1)
