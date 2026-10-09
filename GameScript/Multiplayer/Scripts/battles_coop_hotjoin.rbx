@@ -6,6 +6,7 @@
 #                            - Took in a player who asks with their own encounter while another request brought them along, instead of refusing them, and let them ignore that request's invite
 #                            - Took in a player who joins the battle by choice, without enemies, through battles_coop_join.rbx, and marked a boss battle in the invites of the players taken in
 #                            - Left the players whose state tells a battle out of those an encounter brings along
+#                            - Placed the enemies of an encounter taken in anew as its player joins, so they fill the places of enemies that fell meanwhile
 #      Paulinchen  2026-10-08: Created
 #
 #----------------------------------------------------------------
@@ -533,14 +534,16 @@ module MGQ_MpBattlesHotjoin
 
   # Finds places in the troop for an encounter's enemies: within TROOP_LIMIT with those standing or
   # hidden and those taken in before, and on the screen where at most MAX_OVERLAP of each picture
-  # hides behind another. Pictures as wide as the screen stand in its middle and count for no
-  # overlap, as the game's own troops stack them there (Game_Troop#auto_correct_bitmap_xy).
+  # hides behind another. A fallen enemy's place is free. Pictures as wide as the screen stand in
+  # its middle and count for no overlap, as the game's own troops stack them there
+  # (Game_Troop#auto_correct_bitmap_xy).
   #
   # @param entries [Array<Array>] The enemies: each one's id, screen x and y, and 1 when hidden.
+  # @param queued [Array<Array>] The enemies of the encounters taken in before that have not joined
+  #   the troop yet, which keep their places.
   # @return [Array<Array>, nil] The enemies at their new places, nil when one finds none.
-  def self.place(entries)
-    standing = $game_troop.members.reject(&:dead?)
-    queued = @pending.reject { |entry| entry[:added] }.map { |entry| entry[:enemies] }.flatten(1)
+  def self.place(entries, queued = queued_enemies)
+    standing = $game_troop.members.reject { |enemy| fallen?(enemy) }
     return nil if standing.size + queued.size + entries.size > TROOP_LIMIT
 
     taken = standing.reject(&:hidden?).map { |enemy| span(enemy.screen_x, enemy_width(enemy)) }
@@ -556,6 +559,22 @@ module MGQ_MpBattlesHotjoin
       taken << span(x, width)
       [id, x, y, 0]
     end
+  end
+
+  # Lists the enemies of the encounters taken in that have not joined the troop yet.
+  #
+  # @return [Array<Array>] Each enemy's id, screen x and y, and 0.
+  def self.queued_enemies
+    @pending.reject { |entry| entry[:added] }.map { |entry| entry[:enemies] }.flatten(1)
+  end
+
+  # Reports whether an enemy of the troop has fallen, also one hidden after its defeat, so its
+  # place is free.
+  #
+  # @param enemy [Game_Enemy] The enemy.
+  # @return [Boolean] Whether it has.
+  def self.fallen?(enemy)
+    enemy.dead? || (enemy.hidden? && enemy.respond_to?(:death_state?) && enemy.death_state?) ? true : false
   end
 
   # Reports whether a picture is as wide as the battle screen.
@@ -800,8 +819,10 @@ module MGQ_MpBattlesHotjoin
     log("took #{joined.keys.map { |seat| sync.who(seat) }.join(', ')} into battle #{sync.battle_id}#{added.empty? ? '' : ", and #{added.size} enemies"}")
   end
 
-  # Adds the enemies of the encounters whose player joined to the troop, where take_request placed
-  # them, as the game's troop setup makes them, and starts their battle.
+  # Adds the enemies of the encounters whose player joined to the troop, as the game's troop setup
+  # makes them, and starts their battle. Their places are found anew with the troop as it stands
+  # now, since enemies may have fallen after take_request placed them; where none is found they
+  # keep those.
   #
   # @param scene [Scene_Battle] The battle.
   # @param seats [Array<Integer>] The seats of the players who joined.
@@ -813,7 +834,7 @@ module MGQ_MpBattlesHotjoin
       next if entry[:added] || !seats.include?(entry[:requester])
 
       entry[:added] = true
-      entry[:enemies].each do |id, x, y, _hidden|
+      (place(entry[:enemies], []) || entry[:enemies]).each do |id, x, y, _hidden|
         enemy = Game_Enemy.new(enemies.size, id)
         enemy.screen_x = x
         enemy.screen_y = y
@@ -828,7 +849,7 @@ module MGQ_MpBattlesHotjoin
     escape_anew
     discover(added)
     MGQ_MpBattlesCoop.redraw_enemies(scene)
-    log("added #{added.map { |enemy| MGQ_MpBattlesSync.named(enemy) }.join(', ')} to the troop")
+    log("added #{added.map { |enemy| "#{MGQ_MpBattlesSync.named(enemy)} at x #{enemy.screen_x}" }.join(', ')} to the troop")
     added
   end
 

@@ -4,6 +4,7 @@
 #  Changelog:
 #      Paulinchen  2026-10-09: Checked that a guest and an encounter taken in fight with the host's enemy rates and get their own back
 #                            - Checked that an encounter brings along a player whose game window is in the background
+#                            - Checked that the enemies of an encounter taken in fill the place of an enemy that fell before its player joined
 #                            - Checked that a battle that calls the Library or Config ends nothing
 #                            - Checked that a player another request brought along is taken in with their own encounter and ignores the invite it sent, and that an encounter brings along nobody who fights
 #      Paulinchen  2026-10-08: Created
@@ -464,6 +465,25 @@ hotjoin.fight_alone("own12")
 $sent.clear
 coop.take(asker, request.merge("bid" => "own12", "seats" => ""))
 check("a boss battle taken over from its host takes no encounter in", map_sent("hot_no").map(&:first), [8])
+reset
+
+# An enemy that falls before the encounter's player joins leaves its place to the encounter's enemies.
+$scene_now = scene
+$game_troop.members = [Game_Enemy.new(0, 31), Game_Enemy.new(1, 32)]
+$game_troop.members.zip([240, 400]).each { |enemy, x| enemy.screen_x = x; enemy.screen_y = 300 }
+hotjoin.fight_alone("own14")
+MGQ_MpOverworldSync::Peers.all.replace([asker])
+coop.take(asker, request.merge("bid" => "own14", "seats" => "", "enemies" => "50:0:300:0"))
+check("an encounter's enemy is placed beside the troop's standing ones as it is taken in",
+      hotjoin.instance_variable_get(:@pending)[0][:enemies], [[50, 80, 300, 0]])
+$game_troop.members[1].dead = true
+sync.take(asker, { "battle" => "join", "bid" => "own14", :payload => sync::Wire.line(["5", [[50, 5]], 4]) })
+$sent.clear
+open_phase(scene)
+check("and takes the place of an enemy that fell before its player joined, nearest the middle",
+      $game_troop.members.map { |enemy| [enemy.enemy_id, enemy.screen_x] }, [[31, 240], [32, 400], [50, 400]])
+check("which the roster of the player who joined tells, the fallen enemy fallen",
+      sync::Wire.parse(battle_sent("roster")[0][1][:payload])[0], [[31, 240, 300, 0], [32, 400, 300, hotjoin::FALLEN], [50, 400, 300, 0]])
 reset
 
 # Two encounters that ask at once, each bringing the other's player along.
