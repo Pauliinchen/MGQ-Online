@@ -2,6 +2,7 @@
 #  coop_gather.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-09: Called the players a Raid World's story takes along in one message instead of one per player
 #      Paulinchen  2026-10-08: Gathered nobody in a Raid World, where whoever is on the map watches, and took everyone on the map along where the story moves its teller
 #                            - Offered a teleport to the story in a Raid World, to where the story was last told until the relay keeps its endpoint, with that place's warp ban
 #                            - Took the teleport to the story to the endpoint the relay keeps of the world's story, where this game last saw the story told only while the relay keeps none
@@ -293,7 +294,11 @@ module MGQ_MpCoopGather
     fields = place_fields
     # In a Raid World the map's gate takes the call only for the map the others are on.
     fields["mmap"] = from[0] if raid
-    along.each { |peer| tell(peer.seat, "follow", fields) }
+    if raid
+      MGQ_MpCoopEvents.tell_each(along, "follow", fields)
+    else
+      along.each { |peer| tell(peer.seat, "follow", fields) }
+    end
     log("took #{along.map { |peer| peer.state['name'] }.join(', ')} along to map #{$game_map.map_id} #{$game_player.x},#{$game_player.y}")
   rescue => e
     log("taking the party along failed: #{e.class}: #{e.message}")

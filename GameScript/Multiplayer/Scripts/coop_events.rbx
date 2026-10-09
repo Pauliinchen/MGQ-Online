@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-09: Kept story events from starting while the player's story is behind a Raid World's, telling the level that moves them on, and held those that run by themselves, so a teleport onto their map cannot loop
+#                            - Told the story's pages to a Raid World's viewers in one message instead of one per viewer
 #      Paulinchen  2026-10-08: Took the teller, the viewers and the gate of the story's messages from MGQ_MpCoop::Scope: the party's leader and synced members in a Classic world, the player telling the story on the map and those whose story matches in a Raid World
 #                            - Stopped a story event in a Raid World once a player who entered the map first started telling the story there at the same moment, within TIE_FRAMES of its start and on its map alone
 #                            - Told the story's progress and whether warping is banned at the start of the telling in a Raid World, which tells who sees the scene and what a teleport to the story takes
@@ -600,14 +601,29 @@ module MGQ_MpCoopEvents
     sent
   end
 
+  # Sends several players of the party, or of the map in a Raid World, one message about events,
+  # see MGQ_MpCoop::Scope.tell_each.
+  #
+  # @param peers [Array<MGQ_MpOverworldSync::Peers::Peer>] The players.
+  # @param kind [String] What it is about.
+  # @param fields [Hash] Its other fields.
+  # @return [Boolean] Whether it went out to every one.
+  def self.tell_each(peers, kind, fields = {})
+    sent = MGQ_MpCoop::Scope.tell_each(peers, "pevent", kind, fields)
+    log("#{sent ? 'sent' : 'could not send'} #{kind} to #{peers.map { |peer| MGQ_MpOverworldSync.who(peer) }.join(', ')} (#{MGQ_MpCoop.bytes_of(fields)} bytes)")
+    sent
+  end
+
   # As teller, sends a message about the story to those who see it, see MGQ_MpCoop::Scope.viewers.
   #
   # @param kind [String] What it is about.
   # @param fields [Hash] Its other fields.
   def self.tell_followers(kind, fields)
     followers = MGQ_MpCoop::Scope.viewers
-    log("told nobody #{kind}: nobody follows the player's story") if followers.empty?
-    followers.each { |peer| tell(peer.seat, kind, fields) }
+    return log("told nobody #{kind}: nobody follows the player's story") if followers.empty?
+    return followers.each { |peer| tell(peer.seat, kind, fields) } unless MGQ_MpCoop::Scope.raid?
+
+    tell_each(followers, kind, fields)
   end
 
   # Reports whether the player's story is another player's to move on: their leader's they follow,

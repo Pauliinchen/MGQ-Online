@@ -2,6 +2,7 @@
 #  coop_scene_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-09: Checked that a Raid World's scene goes to several viewers in one message
 #      Paulinchen  2026-10-08: Checked a Raid World: the player telling the story shows its scene to the players on the map whose story matches, through the map's gate, and sees only the teller's whose story matches theirs
 #                            - Stood in for the players the story took along, of coop_gather.rbx
 #      Paulinchen  2026-10-07: Checked that the scene goes to the members who follow the story alone, and that one who plays their own sees none of it
@@ -247,6 +248,12 @@ $playing = true
 run.call(main, lambda { $game_map.screen.pictures[3].show("story_cg", 0, 0, 0, 100, 100, 255, 0) })
 check("the teller's scene goes through the map's gate to the players on the map whose story matches",
       $told.map { |seat, fields| [seat, fields["map_pscene"], fields["mmap"]] }, [[4, "picture.show", 7]])
+second = MGQ_MpOverworldSync::Peers::Peer.new(7, { "name" => "Second", "id" => "s", "map" => "7", "sm" => "12,0,0,0", "since" => "3000" })
+$peers = [matching, behind, second]
+$told.clear
+run.call(main, lambda { $game_map.screen.pictures[3].show("story_cg", 0, 0, 0, 100, 100, 255, 0) })
+check("to several of them in one message that names them",
+      $told.map { |seat, fields| [seat, fields["map_pscene"], fields["mto"]] }, [[-1, "picture.show", "m,s"]])
 
 $playing = false
 $own_markers = [12, 0, 0, 0]

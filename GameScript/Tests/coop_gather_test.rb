@@ -2,6 +2,7 @@
 #  coop_gather_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-09: Stood in for MGQ_MpCoopEvents.tell_each, through which the story calls those it takes along in one message
 #      Paulinchen  2026-10-08: Checked a Raid World: nobody is gathered, everyone on the map follows where the story moves its teller, only a player whose story matches stands still, and a teleport goes to where the story was told
 #                            - Checked that the story keeps telling the players it took along until they arrive, and that a teleport to the story takes over the warp ban there
 #                            - Checked that a teleport to the story goes to the endpoint the relay keeps, where this game saw the story told only while the relay keeps none
@@ -109,6 +110,7 @@ module MGQ_MpCoopEvents
   def self.leading_story?; MGQ_MpCoop::Scope.leads_story?; end
   def self.told_markers; $telling ? [12, 0, 0, 0] : nil; end
   def self.tell(seat, kind, fields = {}); MGQ_MpCoop::Scope.tell(seat, "pevent", kind, fields); end
+  def self.tell_each(peers, kind, fields = {}); MGQ_MpCoop::Scope.tell_each(peers, "pevent", kind, fields); end
 end
 # How far each story is, as coop_story.rbx reads it.
 module MGQ_MpCoopStory

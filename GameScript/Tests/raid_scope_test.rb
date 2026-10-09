@@ -2,6 +2,7 @@
 #  raid_scope_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-09: Checked that a message for everyone on the map or for several players goes out once, and that the gate drops one naming others
 #      Paulinchen  2026-10-08: Created
 #
 #----------------------------------------------------------------
@@ -120,9 +121,24 @@ check("or from anyone while nobody's state says they tell yet, since states and 
 
 $told.clear
 MGQ_MpCoop.tell_map(-1, "npcs", 5, "full" => 1)
-check("a message to everyone goes to each seat on the map alone, marked for the map's gate",
+check("a message to everyone on the map goes out once, marked for the map's gate, which sorts it on arrival",
       $told.map { |seat, fields| [seat, fields["map_npcs"], fields["mmap"], fields["full"], fields.key?("party")] },
-      [[2, 5, 5, 1, false], [3, 5, 5, 1, false]])
+      [[-1, 5, 5, 1, false]])
+$told.clear
+$game_map.map_id = 6
+check("and not at all while nobody else is on the map", [MGQ_MpCoop.tell_map(-1, "npcs", 6), $told], [true, []])
+$game_map.map_id = 5
+scope.tell_each([member, elsewhere], "pevent", "say", "page" => "x")
+check("a message for several players goes out once and names them, wherever they stand",
+      $told.map { |seat, fields| [seat, fields["map_pevent"], fields["mto"], fields["mmap"]] }, [[-1, "say", "m,e", 5]])
+$told.clear
+scope.tell_each([member], "pevent", "say", "page" => "x")
+check("one for a single player goes to their seat", $told.map { |seat, fields| [seat, fields.key?("mto")] }, [[2, false]])
+$told.clear
+$raid = false
+scope.tell_each([member, stranger], "pevent", "say", "page" => "x")
+check("a Classic world still sends one to each member through the party's gate", $told.map { |seat, fields| seat }, [2, 3])
+$raid = true
 $told.clear
 scope.tell(4, "pevent", "follow", "mmap" => 8)
 check("a message to one seat goes there, and may name the map it is for", $told, [[4, { "map_pevent" => "follow", "mmap" => 8 }]])
@@ -141,3 +157,7 @@ module MGQ_MpCoopGather; def self.story_map?(map_id); map_id == $game_map.map_id
 taken.clear
 $routes["map_npcs"].call(elsewhere, { "map_npcs" => "8", "mmap" => "8" })
 check("and one for the map the story takes the player to", taken, [["e", "8"]])
+taken.clear
+$routes["map_npcs"].call(stranger, { "map_npcs" => "5", "mmap" => "5", "mto" => "m,k" })
+$routes["map_npcs"].call(stranger, { "map_npcs" => "6", "mmap" => "5", "mto" => "k,me" })
+check("but none that names other players", taken, [["k", "6"]])

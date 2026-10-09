@@ -2,7 +2,8 @@
 #  coop_events_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-09: Checked that a player behind a Raid World's story starts no story event, is told the level that moves them on once, and that story which runs by itself waits while talks run
+#      Paulinchen  2026-10-09: Checked that a Raid World's pages go to the viewers in one message
+#                            - Checked that a player behind a Raid World's story starts no story event, is told the level that moves them on once, and that story which runs by itself waits while talks run
 #      Paulinchen  2026-10-08: Checked a Raid World: a player telling the story on the map keeps the others' story events from starting, whoever entered the map first tells it when two start at once, its pages go to and show for the players whose story matches, the castle's Map Owner is the sync host, and no leader's story is borrowed
 #                            - Checked that a Raid World's tie between two tellers holds only at the telling's start on its map, and that its chests are personal
 #                            - Loaded coop_scope.rbx, which the party's scripts ask whom they share the map and the story with
@@ -1867,8 +1868,8 @@ check("the player tells it, alone too, with how far their story was as it starte
       [MGQ_MpCoopGather.holding_story?, MGQ_MpCoopEvents.state_fields], [false, { "telling" => 1, "tsm" => "12,0,0,0", "twb" => 0 }])
 $game_message.add("Told line")
 MGQ_MpCoopEvents.show(interpreter)
-check("its pages go through the map's gate to the players on the map whose story matches",
-      $sent.map { |seat, fields| [seat, fields["map_pevent"], fields["mmap"]] }, [[6, "say", "3"], [7, "say", "3"]])
+check("its pages go through the map's gate in one message to the players on the map whose story matches",
+      $sent.map { |seat, fields| [seat, fields["map_pevent"], fields["mmap"], fields["mto"]] }, [[-1, "say", "3", "t,s"]])
 $game_message.clear
 stranger.state["telling"] = "1"
 MGQ_MpCoopEvents.yield_story(interpreter)

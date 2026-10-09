@@ -2,6 +2,7 @@
 #  coop_scene.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-09: Told each change of the scene to a Raid World's viewers in one message instead of one per viewer
 #      Paulinchen  2026-10-08: Took the teller, those who see the scene and the gate of its messages from MGQ_MpCoop::Scope, so in a Raid World the teller on the map shows it to everyone there whose story matches
 #      Paulinchen  2026-10-07: Registered the save hook through core_hooks.rbx instead of a wrap of its own, and named the number of pictures the screen holds
 #                            - Told the leader's story scene only to the members synced with the leader, who follow it, and showed it to them alone
@@ -128,8 +129,8 @@ module MGQ_MpCoopScene
     followers = MGQ_MpCoop::Scope.viewers
     return if followers.empty?
 
-    sent = followers.map { |peer| MGQ_MpCoop::Scope.tell(peer.seat, "pscene", kind, "map" => $game_map.map_id, "args" => MGQ_MpBattlesSync::Wire.line(args)) }
-    log("told #{followers.map { |peer| peer.state['name'] }.join(', ')} #{kind} #{describe(args)} on map #{$game_map.map_id}#{sent.all? ? '' : ', which failed for some'}")
+    sent = MGQ_MpCoop::Scope.tell_each(followers, "pscene", kind, "map" => $game_map.map_id, "args" => MGQ_MpBattlesSync::Wire.line(args))
+    log("told #{followers.map { |peer| peer.state['name'] }.join(', ')} #{kind} #{describe(args)} on map #{$game_map.map_id}#{sent ? '' : ', which failed for some'}")
   end
 
   # Writes a change's arguments for the log: tones and colors by their values, long texts cut.

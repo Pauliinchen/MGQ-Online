@@ -2,6 +2,7 @@
 #  coop_npcs_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-09: Checked that the Map Owner sends the events to everyone on the map in one message
 #      Paulinchen  2026-10-08: Checked a Raid World: everyone on the map shares it, whoever entered first moves its events, every player there blocks them, and the Map Owner sends to the seats on the map alone
 #                            - Asked the scope for the players sharing the map, which coop_scope.rbx now tells
 #                            - Stood in for MGQ_MpOverworldSync::Peers.on_this_map?, which the map's party now asks
@@ -97,8 +98,8 @@ check("but nothing from a player on another map", MGQ_MpCoopNpcs.targets[1], [4,
 stranger.state["since"] = "9000"
 MGQ_MpCoopNpcs.update
 check("once the player came first, their game moves the events", MGQ_MpCoopNpcs.following?, false)
-check("and sends them to the seats on the map alone, through the map's gate",
+check("and sends them to the seats new on the map, then to everyone on it in one message, through the map's gate",
       $told.map { |seat, fields| [seat, fields["map_npcs"], fields["mmap"], fields.key?("npcs")] },
-      [[2, 5, 5, false], [4, 5, 5, false], [2, 5, 5, false], [4, 5, 5, false]])
+      [[2, 5, 5, false], [4, 5, 5, false], [-1, 5, 5, false]])
 $raid = false
 check("in a Classic world again only the party shares the map", MGQ_MpCoopNpcs.peers_here, [connected])

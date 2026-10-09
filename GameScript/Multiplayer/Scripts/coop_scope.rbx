@@ -2,6 +2,7 @@
 #  coop_scope.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-09: Sent a message for everyone on the map, or for several players, as one message the map's gate sorts on arrival instead of one per player, which ran past the relay's limit per connection on a busy map
 #      Paulinchen  2026-10-08: Created
 #
 #----------------------------------------------------------------
@@ -18,6 +19,10 @@ module MGQ_MpCoop
   # What starts the field of a message for the map's gate, so the party's gate and the map's never
   # take each other's messages.
   MAP_PREFIX = "map_"
+
+  # The field of a message for the map's gate that names the ids of the players it is for, comma
+  # separated; a message without it is for everyone on its map.
+  TO_FIELD = "mto"
 
   @map_routes = {}
 
@@ -51,11 +56,12 @@ module MGQ_MpCoop
   # Tells why the map's gate drops a message.
   #
   # @param peer [MGQ_MpOverworldSync::Peers::Peer, nil] Who sent it.
-  # @param message [Hash] The message's fields; "mmap" names the map it is for.
+  # @param message [Hash] The message's fields; "mmap" names the map it is for, TO_FIELD the players.
   # @return [String, nil] The reason, nil when the gate takes it.
   def self.map_drop_reason(peer, message)
     return "the sender has not told their state yet" unless peer
     return "no map is set up" unless $game_map
+    return "it is for other players" if message[TO_FIELD] && !message[TO_FIELD].to_s.split(",").include?(MGQ_MpOverworldSync::Me.id.to_s)
     return nil if MGQ_MpOverworldSync::Peers.on_this_map?(peer) || Scope.story_map?(message["mmap"].to_i)
 
     "it is for map #{message['mmap']}, from a player on map #{peer.state['map']}, and the player is on map #{$game_map.map_id}"
@@ -63,16 +69,38 @@ module MGQ_MpCoop
 
   # Sends a message through the map's gate to one player, or to everyone on the player's map.
   #
+  # Everyone on the map gets one message to the whole world, which the map's gate of every game
+  # sorts, since the relay ends a connection that sends more than its limit per second.
+  #
   # @param seat [Integer] The player's seat, -1 for everyone on the map.
   # @param field [String] The field that marks it, such as "npcs".
   # @param value [Object] The field's value.
   # @param fields [Hash] Its other fields; "mmap" names the map it is for, the player's by default.
-  # @return [Boolean] Whether it went out to every seat.
+  # @return [Boolean] Whether it went out, true while nobody else is on the map.
   def self.tell_map(seat, field, value, fields = {})
     message = { MAP_PREFIX + field => value, "mmap" => $game_map.map_id }.merge(fields)
     return MGQ_MpOverworldSync.tell(seat, message) if seat >= 0
+    return true if Scope.peers_on($game_map.map_id).empty?
 
-    Scope.peers_on($game_map.map_id).map { |peer| MGQ_MpOverworldSync.tell(peer.seat, message) }.all?
+    MGQ_MpOverworldSync.tell(-1, message)
+  end
+
+  # Sends one message through the map's gate to several players, whom it names in TO_FIELD, so
+  # it costs one message whatever their number.
+  #
+  # @param peers [Array<MGQ_MpOverworldSync::Peers::Peer>] The players.
+  # @param field [String] The field that marks it, such as "pevent".
+  # @param value [Object] The field's value.
+  # @param fields [Hash] Its other fields; "mmap" names the map it is for, the player's by default.
+  # @return [Boolean] Whether it went out, true for nobody.
+  def self.tell_map_to(peers, field, value, fields = {})
+    return true if peers.empty?
+    return tell_map(peers.first.seat, field, value, fields) if peers.size == 1
+
+    # Those the story took along may stand on another map, so the message goes out without asking
+    # who is on the player's.
+    message = { MAP_PREFIX + field => value, "mmap" => $game_map.map_id }.merge(fields)
+    MGQ_MpOverworldSync.tell(-1, message.merge(TO_FIELD => peers.map { |peer| peer.state["id"].to_s }.join(",")))
   end
 
   # Whom the player shares the map and the story with, by the type of the open world: Classic
@@ -180,6 +208,17 @@ module MGQ_MpCoop
     # @return [Boolean] Whether it went out.
     def self.tell(seat, field, value, fields = {})
       current.tell(seat, field, value, fields)
+    end
+
+    # Sends a message through the scope's gate to several players.
+    #
+    # @param peers [Array<MGQ_MpOverworldSync::Peers::Peer>] The players.
+    # @param field [String] The field that marks it, such as "pevent".
+    # @param value [Object] The field's value.
+    # @param fields [Hash] Its other fields.
+    # @return [Boolean] Whether it went out to every one.
+    def self.tell_each(peers, field, value, fields = {})
+      current.tell_each(peers, field, value, fields)
     end
 
     # Lists the other players on a map whose connection stands.
@@ -292,6 +331,17 @@ module MGQ_MpCoop
       def self.tell(seat, field, value, fields)
         MGQ_MpCoop.tell(seat, field, value, fields)
       end
+
+      # Sends a message through the party's gate to each of several members.
+      #
+      # @param peers [Array<MGQ_MpOverworldSync::Peers::Peer>] The members.
+      # @param field [String] The field that marks it.
+      # @param value [Object] The field's value.
+      # @param fields [Hash] Its other fields.
+      # @return [Boolean] Whether it went out to every one.
+      def self.tell_each(peers, field, value, fields)
+        peers.map { |peer| tell(peer.seat, field, value, fields) }.all?
+      end
     end
 
     # The scope of a Raid World: everyone on the map, party or not.
@@ -399,6 +449,17 @@ module MGQ_MpCoop
       # @return [Boolean] Whether it went out.
       def self.tell(seat, field, value, fields)
         MGQ_MpCoop.tell_map(seat, field, value, fields)
+      end
+
+      # Sends one message through the map's gate to several players.
+      #
+      # @param peers [Array<MGQ_MpOverworldSync::Peers::Peer>] The players.
+      # @param field [String] The field that marks it.
+      # @param value [Object] The field's value.
+      # @param fields [Hash] Its other fields.
+      # @return [Boolean] Whether it went out.
+      def self.tell_each(peers, field, value, fields)
+        MGQ_MpCoop.tell_map_to(peers, field, value, fields)
       end
 
       # Reads how far a story is, as a state tells it, through coop_story.rbx.
