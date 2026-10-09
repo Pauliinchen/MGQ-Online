@@ -5,6 +5,7 @@
 #      Paulinchen  2026-10-09: Gave a key item whose event is only there to play up to its amount once the world's story is past it, and played the orbs' event for a player the catch-up gave every orb
 #                            - Held the story from a save's load until the world's story came while the save notes the player behind in their part
 #                            - Kept a shared companion away whose join the player's story passed
+#                            - Moved a player behind in the world's part on to the world's story instead of a route it finished
 #                            - Created
 #
 #----------------------------------------------------------------
@@ -582,12 +583,15 @@ module MGQ_MpWorldCatchup
   end
 
   # Finds where a player moves on to from a part: the next part the world played that has a
-  # checkpoint, or the world's own story once that is the world's part or none is left.
+  # checkpoint, or the world's own story once that is the world's part or none is left. A player in
+  # the world's part, as after its return from a route to the Great Decision, goes to its story.
   #
   # @param from [String] The player's part.
   # @param world [Hash] The world's counters.
   # @return [String, Symbol] The part, or :world.
   def self.next_part(from, world)
+    return :world if from == world["part"].to_s
+
     parts = world_parts(world)
     at = parts.index(from)
     return :world unless at

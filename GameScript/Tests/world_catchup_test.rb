@@ -5,6 +5,7 @@
 #      Paulinchen  2026-10-09: Checked that a key item whose event is only there to play comes up to its amount and that the catch-up giving the last orb plays the orbs' event
 #                            - Checked that a save that noted the player behind holds the story until the world's story came
 #                            - Checked that a shared companion whose join the player's story passed is not brought back
+#                            - Checked that a player behind in the world's part moves on to the world's story
 #                            - Created
 #
 #----------------------------------------------------------------
@@ -643,6 +644,10 @@ catchup.loaded
 check("a save behind on its part's checkpoint holds the story from the moment it loads", [story.mode, catchup.holds_story?], [nil, true])
 $game_variables[1001] = 26
 check("but not once its story is in another part", catchup.holds_story?, false)
+
+# A player behind in the world's part goes to its story, not to a route the world finished.
+check("a player behind in Part 3 after the world's return to it moves on to the world's story",
+      catchup.next_part("3", "part" => "3", "done" => ["ad"], "checkpoints" => %w(1 2 3 ad)), :world)
 
 # Classic worlds have no catch-up.
 $raid = false
