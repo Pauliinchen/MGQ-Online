@@ -6,6 +6,7 @@
 //                            - Told every game of a Raid World its new difficulty once its creator or an admin changed it
 //                            - Kept a removed player or a deleted world out of the world room's player list when the directory answered for it meanwhile, and asked the directory again for a player let in over 10 minutes ago
 //                            - Removed a Raid World's story and boss pools again when the world was deleted while a request to them ran
+//                            - Read a Raid World request's body in full before handing it to the world room's object, which broke the request when it refused it unread
 //      Paulinchen  2026-10-08: Kept a Raid World's story in its world room's object, answered its routes there for the world's players, and told every game of the world when it changed
 //                            - Passed what a game names in the X-MGQ-Features header on to the directory as it enters a world room
 //                            - Dropped a game's chat lines past the chat's rate limit, answering each with "slow chat", and ignored a chat frame without a line instead of closing the connection
@@ -126,7 +127,7 @@ export default {
     // A world's story and boss pools stay with its world room's object, so the directory carries
     // none of them.
     if (world) {
-      return worldOf(env, world.id).fetch(request);
+      return forwardWhole(request, worldOf(env, world.id));
     }
 
     if (["worlds", "mods", "trades"].some((route) => routeIs(url, route))) {
@@ -206,6 +207,28 @@ async function internal(stub, path, body = {}) {
  */
 function json(status, body) {
   return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+}
+
+/**
+ * Hands a Raid World request to its world room's object with the body read in full first. A body
+ * passed on as a stream breaks the request when the object refuses it before reading the body.
+ *
+ * @param {Request} request The request.
+ * @param {DurableObjectStub} stub The world room's object.
+ * @returns {Promise<Response>} The object's answer, or 413 for a body longer than any of these routes takes.
+ */
+async function forwardWhole(request, stub) {
+  if (request.method === "GET" || request.method === "HEAD") {
+    return stub.fetch(request);
+  }
+
+  const body = await request.arrayBuffer();
+
+  if (body.byteLength > STORY_LIMITS.maxBodyLength) {
+    return json(413, { error: "the request is too long" });
+  }
+
+  return stub.fetch(new Request(request.url, { method: request.method, headers: request.headers, body }));
 }
 
 /**
