@@ -2,6 +2,12 @@
 #  coop_squad.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-08: Gave every player one place on the Frontline and two on the Backline in a Raid World, in a party or not, the fourth place cut
+#                            - Capped party_member_max at 4 in a Raid World, once the companions past the fourth wait on standby, never for a story's temporary party
+#                            - Fought the player's own battles in a Raid World with one character on the Frontline and two on the Backline, the fourth out even when a squad member is hidden
+#                            - Brought only the squad to the duels and team duels of a Raid World, its Frontline alone to a duel without the Backline
+#                            - Moved Luka into the squad when fitting the team to a Raid World left him in the fourth place
+#                            - Hid every follower in a Raid World
 #      Paulinchen  2026-10-07: Registered the followers' option through coop.rbx, and named the faces' and icons' sizes and columns
 #                            - Logged every player's share of the Frontline and the Backline and the followers' mode once they change
 #      Paulinchen  2026-10-06: Took the party's leader from coop.rbx's party_leader
@@ -23,12 +29,24 @@
 # nobody, as the leader chose in the Mod Config.
 #
 # A battle a player fights alone keeps their own full team, so nothing here changes the game's
-# party itself.
+# party itself, except in a Raid World: there every player keeps a squad of one on the Frontline
+# and two on the Backline, in a party or not and in every battle, the team holds at most four (the
+# companions past them wait on standby), and nobody follows on the map.
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpCoopSquad
   # Places of the Frontline, the game's battle members.
   FRONTLINE = 4
+
+  # Every player's squad in a Raid World, whatever the number of players: the Frontline's and the
+  # Backline's places.
+  RAID_SHARE = [1, 2]
+
+  # The characters of every player's squad in a Raid World, its Frontline and Backline together.
+  RAID_SQUAD = RAID_SHARE[0] + RAID_SHARE[1]
+
+  # The team's size in a Raid World, its party_member_max: the squad and one cut place.
+  RAID_PARTY_MAX = 4
 
   # The option of followers in a party, its key in $game_system.conf.
   FOLLOWERS = :mp_party_followers
@@ -65,6 +83,7 @@ module MGQ_MpCoopSquad
 
   @shown = nil
   @monochrome = {}
+  @capped = nil
 
   extend MGQ_MpLog
 
@@ -93,6 +112,48 @@ module MGQ_MpCoopSquad
     [split(FRONTLINE, count)[position].to_i, split(max - FRONTLINE, count)[position].to_i]
   end
 
+  # Tells a player's squad in a co-op battle: RAID_SHARE in a Raid World, else as share splits it.
+  #
+  # @param position [Integer] The player's place among the players, the leader first.
+  # @param count [Integer] The players.
+  # @param max [Integer] The player's party_member_max, Frontline and Backline together.
+  # @return [Array<Integer>] The Frontline's and the Backline's share.
+  def self.battle_share(position, count, max)
+    raid? ? RAID_SHARE.dup : share(position, count, max)
+  end
+
+  # Tells the places of the Frontline in a PvP battle between two players: RAID_SHARE's in a Raid
+  # World, else FRONTLINE.
+  #
+  # @return [Integer] The places.
+  def self.pvp_front
+    raid? ? RAID_SHARE[0] : FRONTLINE
+  end
+
+  # Lists the player's characters a PvP battle takes in a Raid World: their squad, or only its
+  # Frontline in a duel without the Backline.
+  #
+  # @param backline [Boolean] Whether the battle takes the Backline.
+  # @return [Array<Game_Actor>] The characters, the Frontline first.
+  def self.raid_team(backline = true)
+    own_order.first(backline ? RAID_SQUAD : RAID_SHARE[0])
+  end
+
+  # Reports whether a Raid World is open, where every player keeps RAID_SHARE.
+  #
+  # @return [Boolean] Whether one is.
+  def self.raid?
+    MGQ_MpCoop::Scope.raid?
+  end
+
+  # Reports whether the player's characters split into a squad and the cut ones: in a party, and
+  # always in a Raid World.
+  #
+  # @return [Boolean] Whether they do.
+  def self.squads?
+    raid? || MGQ_MpCoop.in_party?
+  end
+
   # Orders players as every member's game does: the leader first, then by their ids.
   #
   # @param players [Array<Array>] Each player's id and whether they lead.
@@ -101,10 +162,12 @@ module MGQ_MpCoopSquad
     players.sort_by { |id, leads| [leads ? 0 : 1, id.to_s] }.map { |id, _| id.to_s }
   end
 
-  # Tells the player's squad in their party.
+  # Tells the player's squad: RAID_SHARE in a Raid World, else their share in their party.
   #
-  # @return [Array<Integer>, nil] The Frontline's and the Backline's share, nil outside a party.
+  # @return [Array<Integer>, nil] The Frontline's and the Backline's share, nil outside a party in
+  #   a Classic world.
   def self.own_share
+    return RAID_SHARE.dup if raid?
     return nil unless MGQ_MpCoop.in_party?
 
     party = MGQ_MpCoop::Party
@@ -125,9 +188,10 @@ module MGQ_MpCoopSquad
   # Tells where a character stands in the player's squad.
   #
   # @param actor [Game_Actor, nil] The character.
-  # @return [Symbol, nil] :front, :bench or :cut, nil outside a party or for no character.
+  # @return [Symbol, nil] :front, :bench or :cut, nil without squads (see squads?) or for no
+  #   character.
   def self.place_of(actor)
-    return nil unless actor && MGQ_MpCoop.in_party?
+    return nil unless actor && squads?
 
     index = own_order.index(actor)
     index ? place_at(index) : :cut
@@ -136,7 +200,7 @@ module MGQ_MpCoopSquad
   # Tells what a place of the player's order is in their squad.
   #
   # @param index [Integer] The place, 0 for the player's first character.
-  # @return [Symbol, nil] :front, :bench or :cut, nil outside a party.
+  # @return [Symbol, nil] :front, :bench or :cut, nil without squads (see squads?).
   def self.place_at(index)
     front, bench = own_share
     return nil unless front
@@ -164,15 +228,17 @@ module MGQ_MpCoopSquad
   end
 
   # Reports whether a follower shows on the map: in a party only the player's share of the
-  # Frontline, and nobody when the party's leader chose the players alone. Reads the share and the
-  # choice tick took this frame, since the game asks for every follower several times a frame.
+  # Frontline, nobody when the party's leader chose the players alone, and nobody in a Raid World.
+  # Reads the share and the choice tick took this frame, since the game asks for every follower
+  # several times a frame.
   #
   # @param member_index [Integer] The follower's place in the Frontline, 1 for the first behind the
   #   player.
-  # @return [Boolean] Whether it shows; outside a party, always.
+  # @return [Boolean] Whether it shows; outside a party in a Classic world, always.
   def self.follower_shown?(member_index)
-    share, shown_mode = @shown
+    share, shown_mode, raid = @shown
     return true unless share
+    return false if raid
 
     shown_mode == ACTIVE_FRONTLINE && member_index.to_i < share[0]
   rescue
@@ -245,25 +311,145 @@ module MGQ_MpCoopSquad
     { "follow" => mode, "trail" => trail }
   end
 
-  # Shows the followers anew once the party, the player's share or the leader's choice changed.
-  # Called every frame in every scene.
+  # Fits the team to a Raid World, and shows the followers anew once the party, the player's share,
+  # the leader's choice or the world's type changed. Called every frame in every scene.
   #
   # @param in_world [Boolean] Whether a world is open.
   def self.tick(in_world)
-    shown = in_world ? [own_share, mode] : nil
+    raid = in_world && raid?
+    fit_team(raid)
+    shown = in_world ? [own_share, mode, raid] : nil
     return if shown == @shown
 
     @shown = shown
-    log("squads #{shares_line}; followers: #{FOLLOWER_VALUES[mode][0]}") if in_world
+    log("squads #{shares_line}; followers: #{raid ? 'none in a Raid World' : FOLLOWER_VALUES[mode][0]}") if in_world
     $game_player.refresh if $game_player
+  end
+
+  # Moves the companions past RAID_PARTY_MAX to standby once the player's team is in a Raid World,
+  # before the cap holds for it (see party_member_max), and lifts the cap outside one. A new game
+  # and a loaded save bring a team of their own, which is fitted anew.
+  #
+  # The game cuts its party list down to party_member_max whenever it changes, so the cap holds
+  # only for a team fitted first. A team in a battle waits. A story's temporary party lifts the cap,
+  # and the team is fitted anew once it ends, since companions may have joined meanwhile.
+  #
+  # @param raid [Boolean] Whether a Raid World is open.
+  def self.fit_team(raid)
+    return lift_cap("outside a Raid World") unless raid
+
+    party = $game_party
+    return if party.nil?
+    return lift_cap("while a story's temporary party plays") if party.temp_actors_use?
+    return if party.equal?(@capped) || party.in_battle
+
+    moved = past_cap(party.actors.to_a)
+    moved.each do |id|
+      party.add_stand_actor(id)
+      party.move_stand_actor(id)
+    end
+    luka_into_squad(party)
+    @capped = party
+    log("a Raid World holds a team of #{RAID_PARTY_MAX}#{moved.empty? ? '' : "; to standby: #{moved.map { |id| actor_name(id) }.join(', ')}"}")
+  rescue => e
+    log("fitting the team failed: #{e.class}: #{e.message}")
+  end
+
+  # Lifts the cap on the team's size until the team is fitted again.
+  #
+  # @param reason [String] When, for the log.
+  def self.lift_cap(reason)
+    log("the team's size is the game's again, #{reason}") if @capped
+    @capped = nil
+  end
+
+  # Picks the companions a team of RAID_PARTY_MAX leaves out: those past its first places, Luka
+  # always kept.
+  #
+  # @param ids [Array<Integer>] The team's character ids in order.
+  # @return [Array<Integer>] The ids left out, in order.
+  def self.past_cap(ids)
+    kept = ids.select { |id| luka?(id) }.first(RAID_PARTY_MAX)
+    ids.each { |id| kept << id if kept.size < RAID_PARTY_MAX && !kept.include?(id) }
+    ids - kept
+  end
+
+  # Swaps Luka into the squad's last place when he stands past it, which fitting a team leaves him
+  # in when he stood past RAID_PARTY_MAX.
+  #
+  # @param party [Game_Party] The team fitted.
+  def self.luka_into_squad(party)
+    place = party.actors.to_a.index { |id| luka?(id) }
+    return unless place && place >= RAID_SQUAD
+
+    party.swap_order(place, RAID_SQUAD - 1)
+    log("moved Luka into the squad's place #{RAID_SQUAD}, from place #{place + 1}")
+  end
+
+  # Reports whether a character is Luka, whom the game never sends to standby.
+  #
+  # @param id [Integer] The character's id.
+  # @return [Boolean] Whether it is.
+  def self.luka?(id)
+    actor = $game_actors[id]
+    actor.respond_to?(:luca?) && actor.luca? ? true : false
+  end
+
+  # Names a character for the log.
+  #
+  # @param id [Integer] The character's id.
+  # @return [String] Its name and id.
+  def self.actor_name(id)
+    "#{$game_actors[id].name} (#{id})"
+  rescue
+    id.to_s
+  end
+
+  # Caps the game's party size in a Raid World, for the team fitted to it (see fit_team), which
+  # leaves the items that raise the party size without effect there.
+  #
+  # A story's temporary party is its own standby list, so a cap on it would drop characters from
+  # the story.
+  #
+  # @param party [Game_Party] The party asked.
+  # @param max [Integer] The game's party_member_max.
+  # @return [Integer] RAID_PARTY_MAX or less in a Raid World, else the game's.
+  def self.party_member_max(party, max)
+    return max if @capped.nil? || !@capped.equal?(party) || party.temp_actors_use?
+
+    raid? ? [max, RAID_PARTY_MAX].min : max
+  end
+
+  # Reports whether a battle fights with the player's own squad of a Raid World: a battle of their
+  # own, a duel, or one a co-op battle left them alone in. A co-op party and a team duel bring their
+  # own.
+  #
+  # @param party [Game_Party] The party asked.
+  # @return [Boolean] Whether it does.
+  def self.raid_battle?(party)
+    return false unless party.equal?($game_party) && party.in_battle && raid?
+    return false if defined?(MGQ_MpBattlesCoop) && MGQ_MpBattlesCoop.active?
+
+    !(defined?(MGQ_MpBattlesSync) && MGQ_MpBattlesSync.team?)
+  end
+
+  # Keeps the members that stand in the squad's places of a Raid World battle, so a hidden squad
+  # member never lets the fourth in.
+  #
+  # @param party [Game_Party] The party.
+  # @param members [Array<Game_Actor>] The game's battle members or Backline.
+  # @return [Array<Game_Actor>] Those among the team's first RAID_SQUAD places, in order.
+  def self.in_squad(party, members)
+    members & party.all_members.first(RAID_SQUAD)
   end
 
   # Writes every player's squad in the party, for the log, as the player's game splits the places
   # by its own party_member_max.
   #
-  # @return [String] Each player's Frontline and Backline share, the leader first, or that the
-  #   player keeps the full team outside a party.
+  # @return [String] Each player's Frontline and Backline share, the leader first, the one share of
+  #   everyone in a Raid World, or that the player keeps the full team outside a party.
   def self.shares_line
+    return "(front/back of #{RAID_PARTY_MAX} places): #{RAID_SHARE.join('/')} for every player in a Raid World, the rest cut" if raid?
     return "none: the player keeps the full team outside a party" unless MGQ_MpCoop.in_party?
 
     leader = MGQ_MpCoop.party_leader
@@ -306,16 +492,51 @@ module MGQ_MpCoopSquad
     install_followers
     install_menu
     install_party_edit
+    install_party_cap
+    install_raid_battle
   end
 
-  # Shows only the player's share of the Frontline behind them in a party, or nobody when the
-  # party's leader chose the players alone.
+  # Caps the party's size in a Raid World, see party_member_max.
+  def self.install_party_cap
+    MGQ_MpHooks.around(Game_Party, :party_member_max, "coop_squad") { |party, _args, original| MGQ_MpCoopSquad.party_member_max(party, original.call) }
+  rescue => e
+    log("party size hook FAILED: #{e.class}: #{e.message}")
+  end
+
+  # Fights a battle of the player's own or a duel in a Raid World with their squad, see
+  # raid_battle?: one character on the Frontline and two on the Backline, the fourth out of the
+  # battle even for the skills that reach the Backline too.
+  #
+  # The game's Backline window and swap count the Backline's places from max_battle_members, so the
+  # Frontline is narrowed there. The game skips hidden members when it counts, so both lists are
+  # also kept to the squad's places.
+  def self.install_raid_battle
+    MGQ_MpHooks.around(Game_Party, :max_battle_members, "coop_squad") do |party, _args, original|
+      MGQ_MpCoopSquad.raid_battle?(party) ? MGQ_MpCoopSquad::RAID_SHARE[0] : original.call
+    end
+    [:battle_members, :bench_members].each do |name|
+      MGQ_MpHooks.around(Game_Party, name, "coop_squad") do |party, _args, original|
+        members = original.call
+        MGQ_MpCoopSquad.raid_battle?(party) ? MGQ_MpCoopSquad.in_squad(party, members) : members
+      end
+    end
+    MGQ_MpHooks.around(Game_Party, :item_target_members, "coop_squad") do |party, args, original|
+      item = args[0]
+      bench = MGQ_MpCoopSquad.raid_battle?(party) && item.respond_to?(:include_bench?) && item.include_bench?
+      bench ? party.battle_members + party.bench_members : original.call
+    end
+  rescue => e
+    log("raid battle hooks FAILED: #{e.class}: #{e.message}")
+  end
+
+  # Shows only the player's share of the Frontline behind them in a party, nobody when the party's
+  # leader chose the players alone, and nobody in a Raid World.
   def self.install_followers
     Game_Follower.class_eval do
       alias_method :mgq_mp_coop_squad_visible?, :visible?
 
       # Reports whether the follower shows: as in single player, but in a party only while it is in
-      # the player's share of the Frontline.
+      # the player's share of the Frontline, and never in a Raid World.
       #
       # @return [Boolean] Whether it shows.
       def visible?
@@ -335,8 +556,8 @@ module MGQ_MpCoopSquad
       alias_method :mgq_mp_coop_squad_text_color, :text_color
       alias_method :mgq_mp_coop_squad_draw_icon, :draw_icon
 
-      # Draws a character as the game does, in the style of their place in the party's squad
-      # while the player is in a party, with a line above the first character past the squad.
+      # Draws a character as the game does, in the style of their place in the player's squad
+      # while they have one, with a line above the first character past the squad.
       #
       # @param index [Integer] The row.
       def draw_item(index)
@@ -408,12 +629,12 @@ module MGQ_MpCoopSquad
       alias_method :mgq_mp_coop_squad_draw_item, :draw_item
       alias_method :mgq_mp_coop_squad_change_color, :change_color
 
-      # Draws a row as the game does, in the color of its place in the party's squad while the
-      # player is in a party, with a line above the first row past the squad.
+      # Draws a row as the game does, in the color of its place in the player's squad while they
+      # have one, with a line above the first row past the squad.
       #
       # @param index [Integer] The row.
       def draw_item(index)
-        place = MGQ_MpCoop.in_party? ? mgq_mp_coop_squad_place(index) : nil
+        place = MGQ_MpCoopSquad.squads? ? mgq_mp_coop_squad_place(index) : nil
         @mgq_mp_coop_squad_place = place
         mgq_mp_coop_squad_draw_item(index)
         return unless place == :cut && index > 0 && mgq_mp_coop_squad_place(index - 1) != :cut

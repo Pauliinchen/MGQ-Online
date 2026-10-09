@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-08: Checked the map box of a Raid World: its players and order, the Frontline level, its colors, its cap and its key
+#                            - Expected the Frontline level of a Raid World from its one Frontline character, and of a share of two from the first two
 #      Paulinchen  2026-10-07: Measured places with an object that measures texts, and checked the log of a name the game lacks
 #                            - Expected no place on a map the game names nowhere, headed Unnamed place in the list
 #      Paulinchen  2026-10-06: Checked that the emote wheel keeps the overview shut, and the menu of a player nothing is offered with
@@ -245,6 +246,10 @@ check("the leader may remove a member", MGQ_MpCoop::Offers.peer_option(bea).text
 
 # The map box of a Raid World.
 module MGQ_MpWorld; def self.raid?; $raid; end; end
+# A team within four, which coop_squad.rbx keeps as it is in a Raid World.
+def $game_party.in_battle; false; end
+def $game_party.temp_actors_use?; false; end
+def $game_party.actors; []; end
 own_order = MGQ_MpCoopSquad.method(:own_order)
 MGQ_MpCoopSquad.define_singleton_method(:own_order) { $front }
 $front = [Actor.new(40, true), Actor.new(70, false), Actor.new(90, false)]
@@ -252,18 +257,20 @@ overview.instance_variable_set(:@frames, 0)
 overview.tick(true)
 check("a Classic world tells no Frontline level", [MGQ_MpOverworldSync::Me.current.key?("flv"), MGQ_MpPartyBox.map_box?], [false, false])
 $raid = true
-check("in a party the Frontline level is the squad's share, Luka included", overview.front_level, 70)
+check("in a Raid World the Frontline level is the one Frontline character's, Luka included", overview.front_level, 40)
 own_share = MGQ_MpCoopSquad.method(:own_share)
+MGQ_MpCoopSquad.define_singleton_method(:own_share) { [2, 2] }
+check("a share of two reads the higher of the first two", overview.front_level, 70)
 MGQ_MpCoopSquad.define_singleton_method(:own_share) { nil }
 check("without a share it is the first character's", overview.front_level, 40)
 MGQ_MpCoopSquad.define_singleton_method(:own_share, own_share)
 overview.instance_variable_set(:@frames, 0)
 overview.tick(true)
-check("a Raid World tells it as flv beside lv", MGQ_MpOverworldSync::Me.current.values_at("lv", "flv"), [55, 70])
+check("a Raid World tells it as flv beside lv", MGQ_MpOverworldSync::Me.current.values_at("lv", "flv"), [55, 40])
 module MGQ_MpBattlesCoop; def self.active?; $coop_battle; end; end
 $coop_battle = true
 $front = [Actor.new(5, true)]
-check("during a co-op battle it keeps the level read before", overview.front_level, 70)
+check("during a co-op battle it keeps the level read before", overview.front_level, 40)
 $coop_battle = false
 $front = [Actor.new(40, true), Actor.new(70, false), Actor.new(90, false)]
 
@@ -273,7 +280,7 @@ $inbox << entry("message", 3, told(other.merge("party" => MGQ_MpCoop::Party.id, 
 MGQ_MpOverworldSync.tick
 map_rows = overview.map_rows
 check("the map box lists everyone on the map, the party first with its leader, then the others by name",
-      map_rows.map { |row| [row.name, row.member, row.level] }, [["Me", true, "Lv 70"], ["bea", true, "Lv 33"], ["anna", false, ""], ["Cleo", false, "Lv 20"]])
+      map_rows.map { |row| [row.name, row.member, row.level] }, [["Me", true, "Lv 40"], ["bea", true, "Lv 33"], ["anna", false, ""], ["Cleo", false, "Lv 20"]])
 check("only the party's leader keeps a crown, and every other player shows their ping", [map_rows.map { |row| row.badge && row.badge[1] }, map_rows[1..-1].map { |row| row.ping && row.ping[0] }],
       [[true, false, nil, nil], ["40 ms", "80 ms", "80 ms"]])
 check("the box follows the world's type", MGQ_MpPartyBox.map_box?, true)
@@ -294,7 +301,7 @@ green = lambda { |name| drawn.find { |kind, text, _| kind == :text && text == na
 row_height = Sprite_MpPartyBox::ROW
 map_box.draw_map(map_rows)
 check("it is titled with how many are on the map, a line each and no place", [texts.call, drawn.first],
-      [["Map 4", "Me", "Lv 70", "bea", "Lv 33", "anna", "", "Cleo", "Lv 20"], [:fill, Sprite_MpPartyBox::WIDTH, row_height * 5 + 4]])
+      [["Map 4", "Me", "Lv 40", "bea", "Lv 33", "anna", "", "Cleo", "Lv 20"], [:fill, Sprite_MpPartyBox::WIDTH, row_height * 5 + 4]])
 check("party members are green, the others not", %w[Me bea anna Cleo].map { |name| green.call(name) }, [true, true, false, false])
 crowd = map_rows * 3
 map_box.draw_map(crowd)

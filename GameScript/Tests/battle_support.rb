@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-08: Stood in for the faces this game has, of overworld.rbx
+#                            - Loaded coop_scope.rbx, which tells coop_squad.rbx whether a Raid World is open, and counted the party's Frontline from max_battle_members
 #      Paulinchen  2026-10-07: Stood in for the helpers of coop.rbx, overworld_sync.rbx and coop_scene.rbx the battle scripts share now: who, random_id and the pictures' count
 #                            - Let the characters clear their actions, and named the party after its first character
 #      Paulinchen  2026-10-06: Gave the party the targets of a skill that reaches the Backline too, and added the Library's counts of the battle's end and of a defeat
@@ -142,11 +143,12 @@ module MGQ_MpActors
   end
 end
 class Game_Party
-  attr_accessor :own, :party_member_max
+  attr_accessor :own, :party_member_max, :in_battle
   def initialize; @party_member_max = 8; end
   def all_members; @own; end
-  def battle_members; @own.first(4); end
-  def bench_members; @own[4..-1] || []; end
+  def max_battle_members; 4; end
+  def battle_members; @own.first(max_battle_members); end
+  def bench_members; @own[max_battle_members..-1] || []; end
   def swap_order(a, b); @own[a], @own[b] = @own[b], @own[a]; end
   def item_target_members(item); item.include_bench? ? all_members : battle_members; end
   def name; "#{battle_members.first.name}'s party"; end
@@ -256,6 +258,7 @@ module MGQ_MpOverworldSync
   def self.on_leave(*); end
   def self.label_line(*); end
 end
+load_script "coop_scope"
 load_script "coop_squad"
 load_script "battles"
 load_script "battles_coop"

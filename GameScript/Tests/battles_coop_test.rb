@@ -3,6 +3,8 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-08: Checked that a face this game lacks is left out of a message the host shows
+#                            - Checked that a Raid World's co-op battle gives every player one and two, also to a host left alone, and that its team duels split as before
+#                            - Checked that a player brings only their squad to a Raid World's team duel
 #      Paulinchen  2026-10-07: Read a rebuilt character's log line as the live battle names characters, its id after its name
 #                            - Checked that the log names the leader's answer, who joined, the roster, each rebuild and why an invite was turned down
 #                            - Checked that a guest who leaves takes their characters' actions along, and that the host's computer chooses none while it waits
@@ -774,3 +776,46 @@ MGQ_MpBattlesCoop.take(pal, { "coop" => "lead", "bid" => "r2", "troop" => "64", 
 check("a second request to lead refuses the one that waits",
       [$sent.map { |seat, text| [seat, fields_of(text)["coop"], fields_of(text)["bid"]] }, MGQ_MpBattlesCoop.instance_variable_get(:@request)[:message]["bid"]], [[[2, "no_lead", "r1"]], "r2"])
 MGQ_MpBattlesCoop.drop
+
+# A Raid World: every player brings one on the Frontline and two on the Backline.
+module MGQ_MpWorld; def self.raid?; $raid; end; end
+$raid = true
+$leader = :me
+$my_seat = 0
+$game_party.own = five.dup
+$game_party.in_battle = true
+MGQ_MpOverworldSync::Peers.all.clear
+MGQ_MpOverworldSync::Peers.all.push(mate)
+$game_map.map_id = 5
+raid_build = MGQ_MpBattlesCoop.own_build
+check("a player brings their first three", [raid_build[0], raid_build[1].size], ["1,2,3", 3])
+raid_players = [[0, "Me", "1,2,3", [], 4], [2, "Friend", "7,8,9", [], 4], [3, "Pal", "10,11,12", [], 4]]
+check("each of three players has one and two", MGQ_MpBattlesCoop.arrange(raid_players).map { |p| [p.front, p.bench] }, [[1, 2]] * 3)
+check("a team duel splits its Frontline as in a Classic world",
+      MGQ_MpBattlesCoop.arrange(raid_players.first(2).map { |seat, name, _, vitals, max| [seat, name, "1,2,3,4", vitals, max] }, false).map { |p| [p.front, p.bench] }, [[2, 0], [2, 0]])
+
+BattleManager.setup(70)
+raid_bid = MGQ_MpBattlesSync.battle_id
+MGQ_MpBattlesSync.take(mate, { "battle" => "join", "bid" => raid_bid, :payload => MGQ_MpBattlesSync::Wire.line(["7,8,9", [[50, 5], [60, 6], [70, 7]], 4]) })
+$frames = 0
+$sent.clear
+MGQ_MpBattlesCoop.gather(scene)
+raid_roster = $sent.map { |_, text| fields_of(text) }.find { |f| f["battle"] == "roster" }
+check("the roster gives each player one and two", MGQ_MpBattlesSync::Wire.parse(raid_roster[:payload])[1].map { |p| p[6, 2] }, [[1, 2], [1, 2]])
+check("the party is each player's first character", $game_party.battle_members.map(&:name), ["Actor1", "Actor7 (Friend)"])
+check("the player's Backline their next two", $game_party.bench_members.map(&:name), ["Actor2", "Actor3"])
+MGQ_MpBattlesSync.guest_left(2)
+MGQ_MpBattlesCoop.settle(scene)
+check("alone, the host fights on with one and two, never a bigger team",
+      [MGQ_MpBattlesCoop.active?, $game_party.max_battle_members, $game_party.battle_members, $game_party.bench_members], [false, 1, five.first(1), five[1, 2]])
+check("the fourth stays out of the skills that reach the Backline too", $game_party.item_target_members(TargetItem.new(true)).size, 3)
+MGQ_MpBattlesCoop.ended
+$game_party.in_battle = false
+check("outside a battle the game's Frontline stays", $game_party.max_battle_members, 4)
+check("a team duel takes only the squad, never the fourth", MGQ_MpBattlesCoop.team_build[0], "1,2,3")
+$raid = false
+$game_party.in_battle = true
+check("a Classic world's battles keep the whole team", [$game_party.max_battle_members, $game_party.battle_members], [4, five.first(4)])
+$game_party.in_battle = false
+$raid = false
+check("no hook failed", $log.grep(/FAILED/), [])

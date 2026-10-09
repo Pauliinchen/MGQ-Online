@@ -2,6 +2,10 @@
 #  coop_squad_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-08: Checked a Raid World's squads: one and two for every player, the team of four with the rest on standby, no followers, the line after the third place and the battles of the player's own
+#                            - Checked that a Raid World's duels fight with the squad, team duels with their own party, and that fitting a team moves Luka into the squad
+#                            - Checked that a story's temporary party keeps the game's size and that a hidden squad member never lets the fourth into a battle
+#                            - Stood in for the game's party list, which every change cuts down to party_member_max, and its standby
 #      Paulinchen  2026-10-07: Gave the world stand-in who, which the log names players with
 #                            - Checked only that no line of the log tells a failure, since the party logs what it does
 #      Paulinchen  2026-10-06: Stood in for wheel_choice instead of wheel_slot
@@ -16,7 +20,8 @@
 
 # Covers a party's squads, coop_squad.rbx with coop.rbx: the shares of the Frontline and the
 # Backline, the leader's choice of followers, the followers shown, the formation screens' cut, the
-# option in the Mod Config, and the cap of four players.
+# option in the Mod Config, the cap of four players, and a Raid World's squads, team of four and
+# battles of the player's own.
 
 require_relative "support"
 
@@ -54,14 +59,34 @@ $game_system = System.new({})
 class Game_Actor
   attr_reader :id
   def initialize(id); @id = id; end
-  def exist?; true; end
+  attr_writer :hidden
+  def exist?; !@hidden; end
   def face_name; "Face#{@id}"; end
   def face_index; 0; end
+  def name; "Actor#{@id}"; end
+  def luca?; @id == 1; end
 end
+# The game's party: its team, which every change cuts down to party_member_max, and every companion
+# the player has, those not in the team waiting on standby.
 class Game_Party
-  attr_accessor :all_members, :party_member_max, :in_battle
+  attr_accessor :all_members, :party_member_max, :in_battle, :temp
   def members; @all_members; end
+  def actors; @all_members.map(&:id); end
+  def included; @included ||= actors; end
+  def standby; included - actors; end
+  def add_stand_actor(id); included << id unless included.include?(id); end
+  def move_stand_actor(id); @all_members = @all_members.reject { |actor| actor.id == id }; cut; end
+  def add_actor(id); add_stand_actor(id); @all_members += [$game_actors[id]]; cut; end
+  def cut; @all_members = @all_members.first(party_member_max); end
+  def swap_order(first, second); @all_members[first], @all_members[second] = @all_members[second], @all_members[first]; end
+  def temp_actors_use?; @temp; end
+  def max_battle_members; 4; end
+  def battle_members; @all_members.select(&:exist?)[0, max_battle_members]; end
+  def bench_members; @all_members.select(&:exist?)[max_battle_members..-1] || []; end
+  def item_target_members(item); item.include_bench? ? @all_members : battle_members; end
 end
+# A skill or item, which reaches the Backline too or not.
+Usable = Struct.new(:include_bench?)
 class Game_Follower
   attr_reader :character_name, :character_index
   def initialize(member_index, name); @member_index = member_index; @character_name = name; @character_index = member_index; end
@@ -155,6 +180,7 @@ module MGQ_MpActions
   def self.own_doing_from; end
 end
 load_script "coop"
+load_script "coop_scope"
 load_script "coop_squad"
 SceneManager.run
 
@@ -249,4 +275,90 @@ check("so is another party of four seen from outside", party.full?("friend-p"), 
 $open = false
 check("outside a world nothing is cut", [squad.own_share, squad.place_of(actors[7])], [nil, nil])
 check("nor told to Discord", MGQ_MpCoop.status_fields, {})
+
+# A Raid World: one on the Frontline and two on the Backline for everyone, a team of four.
+module MGQ_MpWorld; def self.raid?; $open && $raid; end; end
+$raid = true
+$open = true
+$game_party.all_members = actors.first(7)
+check("the cap waits until the team is fitted, so the game cuts nobody", $game_party.party_member_max, 8)
+MGQ_MpOverworldSync.tick(true)
+check("the companions past the fourth wait on standby", [$game_party.actors, $game_party.standby], [[1, 2, 3, 4], [5, 6, 7]])
+check("then the team holds four", $game_party.party_member_max, 4)
+$game_party.party_member_max = 10
+check("which items raising the party size do not change", $game_party.party_member_max, 4)
+$game_party.add_actor(8)
+check("a companion joining the full team waits on standby", [$game_party.actors, $game_party.standby], [[1, 2, 3, 4], [5, 6, 7, 8]])
+$game_party.temp = true
+check("a story's temporary party keeps the game's size", $game_party.party_member_max, 10)
+MGQ_MpOverworldSync.tick(true)
+$game_party.add_actor(9)
+$game_party.temp = false
+check("and so does the team until it is fitted again", $game_party.party_member_max, 10)
+MGQ_MpOverworldSync.tick(true)
+check("which sends a companion who joined meanwhile to standby", [$game_party.actors, $game_party.standby, $game_party.party_member_max], [[1, 2, 3, 4], [5, 6, 7, 8, 9], 4])
+check("Luka stays in the team wherever he stands", squad.past_cap([2, 3, 4, 5, 1, 6]), [5, 6])
+check("every player has one and two, in a party of four too", [MGQ_MpCoop.in_party?, squad.own_share], [true, [1, 2]])
+check("the fourth place is cut", actors.first(4).map { |a| squad.place_of(a) }, [:front, :bench, :bench, :cut])
+check("nobody follows", $game_player.followers.map { |f| f.visible? }, [false, false, false])
+check("and no trail is told", squad.state_fields["trail"], "")
+menu = Window_MenuStatus.new
+(0...4).each { |row| menu.draw_item(row) }
+check("the menu draws the Frontline opaque, the Backline translucent", menu.faces, [[1, :opaque], [2, :translucent], [3, :translucent]])
+check("and the red line after the third place", menu.contents.fills.map { |f| f[1] }, [30])
+edit = Foo::PTEdit::Window_PartyMember.new(actors.first(4).map(&:id))
+(0...4).each { |row| edit.draw_item(row) }
+check("so does the party edit screen", [edit.rows.map { |color, _| color }, edit.contents.fills.map { |f| f[1] }],
+      [[[255, 255, 255], [132, 170, 255], [132, 170, 255], [168, 168, 168]], [30]])
+party.leave
+check("outside a party the same", [MGQ_MpCoop.in_party?, squad.own_share, squad.place_of(actors[3])], [false, [1, 2], :cut])
+check("and a battle of two players brings one and two each, as alone", [squad.battle_share(0, 2, 8), squad.battle_share(1, 2, 8), squad.share(0, 2, 8)], [[1, 2], [1, 2], [2, 2]])
+
+$game_party.in_battle = true
+check("a battle of the player's own fights with the squad", [$game_party.max_battle_members, $game_party.battle_members.map(&:id), $game_party.bench_members.map(&:id)], [1, [1], [2, 3]])
+check("the fourth out of the skills that reach the Backline too", [$game_party.item_target_members(Usable.new(true)).map(&:id), $game_party.item_target_members(Usable.new(false)).map(&:id)], [[1, 2, 3], [1]])
+$game_actors[1].hidden = true
+check("a hidden Frontline character never lets the fourth in", [$game_party.battle_members.map(&:id), $game_party.bench_members.map(&:id), $game_party.item_target_members(Usable.new(true)).map(&:id)], [[2], [3], [2, 3]])
+$game_actors[2].hidden = true
+check("nor does a hidden Backline character", [$game_party.battle_members.map(&:id), $game_party.bench_members.map(&:id)], [[3], []])
+$game_actors[1].hidden = $game_actors[2].hidden = false
+module MGQ_MpBattlesSync; def self.team?; $team_duel; end; end
+check("a duel fights with the squad too", [$game_party.max_battle_members, $game_party.bench_members.map(&:id)], [1, [2, 3]])
+$team_duel = true
+check("a team duel brings its own party", $game_party.max_battle_members, 4)
+$team_duel = false
+check("a duel takes the squad, or its Frontline alone without the Backline", [squad.raid_team.map(&:id), squad.raid_team(false).map(&:id), squad.pvp_front], [[1, 2, 3], [1], 1])
+loaded = Game_Party.new
+loaded.all_members = actors.first(6)
+loaded.party_member_max = 8
+loaded.in_battle = true
+$game_party = loaded
+MGQ_MpOverworldSync.tick(true)
+check("a save's team waits for the battle's end to be fitted", [loaded.actors.size, loaded.party_member_max], [6, 8])
+loaded.in_battle = false
+loaded.temp = true
+MGQ_MpOverworldSync.tick(true)
+check("and for a story's temporary party to end", loaded.actors.size, 6)
+loaded.temp = false
+MGQ_MpOverworldSync.tick(true)
+check("then it is fitted as well", [loaded.actors, loaded.standby, loaded.party_member_max], [[1, 2, 3, 4], [5, 6], 4])
+check("outside a battle the game's Frontline stays", [loaded.max_battle_members, loaded.bench_members], [4, []])
+luka_last = Game_Party.new
+luka_last.all_members = [2, 3, 4, 5, 6, 1].map { |id| $game_actors[id] }
+luka_last.party_member_max = 8
+$game_party = luka_last
+MGQ_MpOverworldSync.tick(true)
+check("Luka standing past the fourth moves into the squad's last place", [luka_last.actors, luka_last.standby, squad.place_of(actors[0])], [[2, 3, 1, 4], [5, 6], :bench])
+$game_party = loaded
+MGQ_MpOverworldSync.tick(true)
+
+$open = false
+MGQ_MpOverworldSync.tick(false)
+check("leaving the world lifts the cap", [loaded.party_member_max, squad.own_share], [8, nil])
+$open = true
+$raid = false
+check("a Classic world has no cap and no squad alone", [loaded.party_member_max, squad.own_share, squad.place_of(actors[3])], [8, nil, nil])
+check("and its duels keep the game's Frontline", squad.pvp_front, 4)
+loaded.in_battle = true
+check("nor narrows its battles", [loaded.max_battle_members, loaded.battle_members.size], [4, 4])
 check("nothing failed", $log.grep(/fail/i), [])
