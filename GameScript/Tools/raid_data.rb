@@ -2,7 +2,8 @@
 #  raid_data.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-09: Created
+#      Paulinchen  2026-10-09: Matched the names of scratch switches and variables as whole words, so a story value named after a temple keeps its marks
+#                            - Created
 #
 #----------------------------------------------------------------
 
@@ -188,6 +189,11 @@ class RaidData
   # The story's range of variables, and the first switch that tells the story's place.
   STORY_VARIABLES = 1001..1999
   FIRST_STORY_SWITCH = 2001
+
+  # Names of switches and variables the game uses as scratch while an event runs, as whole words.
+  # story_rewards.rb's TEMPORARY_NAMES matches "Temple", which names real story values such as the
+  # Silver Orb's "Northern Undersea Temple Event" (1068).
+  SCRATCH_NAMES = /\b(general|temp|temporary|system only)\b|汎用|一時/i
 
   # The switches that bring a companion into the party, which a page that needs one asks for the
   # player's own roster.
@@ -468,7 +474,7 @@ class RaidData
   # @param id [Integer] The variable.
   # @return [Boolean] Whether it does.
   def story_variable?(id)
-    STORY_VARIABLES.include?(id) && !unmarked?(:v, id, @names[1])
+    STORY_VARIABLES.include?(id) && !unmarked?(:v, id, @names[1], SCRATCH_NAMES)
   end
 
   # Reports whether a switch belongs to the world's story: from FIRST_STORY_SWITCH on, neither
@@ -477,7 +483,7 @@ class RaidData
   # @param id [Integer] The switch.
   # @return [Boolean] Whether it does.
   def story_switch?(id)
-    id >= FIRST_STORY_SWITCH && !unmarked?(:s, id, @names[0])
+    id >= FIRST_STORY_SWITCH && !unmarked?(:s, id, @names[0], SCRATCH_NAMES)
   end
 
   # Finds the branches each command of a list stands in: the command at each lower indent that last

@@ -2,7 +2,8 @@
 #  catchup_data_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-09: Created
+#      Paulinchen  2026-10-09: Checked that a story variable named after a temple is no scratch and that the Silver Orb comes to every player of the world
+#                            - Created
 #
 #----------------------------------------------------------------
 
@@ -114,3 +115,15 @@ check("the Level Cap's cap in the Chaos route's free order counts the areas the 
       [tool.cap_at(place.call("chaos", 21)), tool.cap_at(place.call("chaos", 21, [], [[:v, 1304, 5]])), tool.cap_at(place.call("chaos", 24)),
        tool.cap_at(place.call("chaos", 24, [], [[:v, 1348, 5]])), tool.cap_at(place.call("chaos", 25))], [130, 140, 260, 285, 300])
 check("and on a route all of the parts before it", tool.cap_at(place.call("ad", 18)), 70)
+
+names = Array.new(1100, "")
+names[908] = "Temp Difficulty Adjustment"
+names[1022] = "Ancient Temple Events"
+names[1068] = "Northern Undersea Temple Event"
+names[1075] = "Ilias Temple White Rabbit"
+tool.instance_variable_set(:@names, [[], names])
+$personal_variables ||= []
+check("a story variable named after a temple is no scratch, unlike a temporary one",
+      [tool.story_variable?(1022), tool.story_variable?(1068), tool.story_variable?(1075), tool.story_variable?(908)], [true, true, true, false])
+check("so the Silver Orb, given once the temple's event ran, comes to every player of the world",
+      DATA::KEY_ITEMS.find { |row| row.item == 542 }.values_at(2, 6, 7), ["map:149:107:1", [[:v, 1001, 30], [:v, 1068, 3]], true])

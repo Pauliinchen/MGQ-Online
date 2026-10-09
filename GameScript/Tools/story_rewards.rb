@@ -2,6 +2,7 @@
 #  story_rewards.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-09: Let a caller name the pattern of scratch names it reads
 #      Paulinchen  2026-10-07: Listed the variables the game sets per area and battle among each player's own, as coop_story.rbx does
 #                            - Read the maps from 1000 on where the game keeps them, as the Final Chapter's, and the companions set_actors brings
 #                            - Wrote the skills, companions and items only the Final Chapter gives
@@ -213,9 +214,10 @@ end
 # @param kind [Symbol] :s for a switch, :v for a variable.
 # @param id [Integer] Its id.
 # @param names [Array<String>] The names of the switches or variables.
+# @param scratch [Regexp] The names of scratch switches and variables.
 # @return [Boolean] Whether it is.
-def unmarked?(kind, id, names)
-  return true if names[id].to_s =~ TEMPORARY_NAMES
+def unmarked?(kind, id, names, scratch = TEMPORARY_NAMES)
+  return true if names[id].to_s =~ scratch
 
   ranges = kind == :s ? PERSONAL_SWITCHES : $personal_variables
   ranges.any? { |range| range === id }
