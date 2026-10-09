@@ -210,7 +210,7 @@ Stand next to another player, open the wheel and pick *Invite to a party*. "Invi
 
 ### Seeing your party
 
-- Party members are fully visible with green names; everyone else is slightly see-through.
+- Party members are fully visible with green names; everyone else is slightly see-through, except in a Raid World, where everyone on the map is fully visible.
 - A party's size shows after its players' names and above your head ("2 / 4"), and its leader has a crown. Discord shows it as "(2 of 4)".
 - **The party box** at the top right lists your party, its leader first and then by name, with each player's highest companion level, ping, and where they are (long names shortened). **Tab** makes it small, with only names and pings, and full again; it stays as you left it.
 

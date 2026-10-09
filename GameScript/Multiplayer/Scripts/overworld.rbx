@@ -64,8 +64,11 @@ module MGQ_MpOverworld
   # Tiles a ghost walks to catch up; farther away, it moves there at once.
   CATCH_UP_TILES = 3
 
-  # Opacity of the ghost of a player outside the party.
+  # Opacity of the ghost of a player outside the party, in a Classic world.
   STRANGER_OPACITY = 150
+
+  # Opacity of a ghost drawn solid.
+  SOLID_OPACITY = 255
 
   # Colors of a ping, by the most milliseconds each stands for; above them all, the last.
   PING_COLORS = [[100, Color.new(128, 255, 128)], [200, Color.new(255, 224, 96)], [nil, Color.new(255, 112, 96)]]
@@ -84,6 +87,22 @@ module MGQ_MpOverworld
   # Whether this game has each graphic another player's game named, by its folder and file, the
   # longest unused first.
   @graphics ||= {}
+
+  # Tells how opaque another player's ghost is drawn: solid for a party member, and for everyone in
+  # a Raid World, where every player on the map shares it; see-through a little otherwise.
+  #
+  # @param member [Boolean] Whether the player is in the player's party.
+  # @return [Integer] The opacity.
+  def self.ghost_opacity(member)
+    member || raid? ? SOLID_OPACITY : STRANGER_OPACITY
+  end
+
+  # Reports whether a Raid World is open, through coop_scope.rbx.
+  #
+  # @return [Boolean] Whether one is.
+  def self.raid?
+    defined?(MGQ_MpCoop::Scope) && MGQ_MpCoop::Scope.raid? ? true : false
+  end
 
   # Tells what marks a player's party: its size, and whether they lead it.
   #
@@ -306,14 +325,15 @@ class Game_MpGhost < Game_Character
   end
 
   # Walks toward where the player stands, at their speed, and looks like them: see-through a
-  # little while they are outside the player's party, with their followers while inside it.
+  # little while they are outside the player's party in a Classic world (see
+  # MGQ_MpOverworld.ghost_opacity), with their followers while inside it.
   #
   # @param state [Hash] What the player last told.
   # @param member [Boolean] Whether they are in the player's party.
   def follow(state, member)
     @member = member ? true : false
     look_like(state)
-    @opacity = member ? 255 : MGQ_MpOverworld::STRANGER_OPACITY
+    @opacity = MGQ_MpOverworld.ghost_opacity(@member)
     update
     trail(member && defined?(MGQ_MpCoopSquad) ? MGQ_MpCoopSquad.parse_trail(state["trail"]) : [])
     @followers.each(&:update)
