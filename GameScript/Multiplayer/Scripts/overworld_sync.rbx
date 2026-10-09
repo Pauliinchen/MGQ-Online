@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-08: Marked an admin's line from the relay with a key no player's message can carry, which let any player post as an admin
+#                            - Handed the relay's push of a Raid World's story to the script registered for it, marked the same way
 #                            - Passed on whether the relay got a chat line or the DLL dropped it for coming too fast, instead of whether it went out
 #                            - Listed the players whose connection stands, found them by name and id and told whether one is on the player's map, which the chat and the map share
 #                            - Numbered a name that several players share, such as "Name (2)", so each is found by it, and found nobody by a missing name or id
@@ -68,6 +69,10 @@ module MGQ_MpOverworldSync
 
   # The field that marks a message as a player's state, which no route may be named like.
   STATE_FIELD = "state"
+
+  # The field of the relay's push that a Raid World's story changed, with its revision, which the
+  # world's story registers its route for.
+  STORY_FIELD = "story_rev"
 
   @routes = {}
   @handlers = Hash.new { |handlers, kind| handlers[kind] = [] }
@@ -293,9 +298,9 @@ module MGQ_MpOverworldSync
   module Link
     # Hands out the oldest inbox entry.
     #
-    # @return [Hash, nil] "kind" ("seat", "in", "out", "message" or "chat"), "seat", "others",
-    #   "name" for a chat entry, and the message's or the chat line's text under :payload; nil
-    #   while none waits.
+    # @return [Hash, nil] "kind" ("seat", "in", "out", "message", "chat" or "story"), "seat", "others",
+    #   "name" for a chat entry, "rev" for a story entry, and the message's or the chat line's text
+    #   under :payload; nil while none waits.
     def self.next_entry
       text = MGQ_Multiplayer::Link.read('mp_world_receive', ENTRY_SIZE)
       text.empty? ? nil : MGQ_Multiplayer::Link.parse(text)
@@ -699,6 +704,11 @@ module MGQ_MpOverworldSync
         MGQ_MpOverworldSync.log("chat line from the relay for #{name}")
         # A Symbol key, which no player's message carries, since those are parsed into strings.
         MGQ_MpOverworldSync.hand_over(nil, { "chat" => entry[:payload].to_s, "name" => name, :relay => true })
+      when "story"
+        # The relay tells the Raid World's story changed: no seat said it, so its route takes it
+        # without a sender's state, marked as the relay's like an admin's line.
+        MGQ_MpOverworldSync.log("the relay tells the world's story is at revision #{entry['rev']}")
+        MGQ_MpOverworldSync.hand_over(nil, { STORY_FIELD => entry["rev"].to_s, :relay => true })
       when "message"
         message = MGQ_Multiplayer::Link.parse(entry[:payload].dup)
         # A state may carry a field named like a route, and a script's message may name a map, so

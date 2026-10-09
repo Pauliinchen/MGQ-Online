@@ -3,6 +3,9 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-08: Kept the leader's story to Classic worlds: in a Raid World no member borrows a leader's story and no leader tells one
+#                            - Kept the side each player's own in a Raid World, after the Great Decision too
+#                            - Let a join of stories keep the chests of a list the caller gives, every chest of the game for a Raid World's story
+#                            - Saved a Raid World's story as it is, which world_story.rbx lays over the player's own
 #      Paulinchen  2026-10-07: Kept the variables the game sets for each area and battle, such as the rarity of enchanted drops, each player's own, since the leader's ended a member's game at a drop
 #                            - Dropped the switches, variables and key items of another game's story beyond this game's own, logged once per kind
 #                            - Registered the companion, map and save hooks through core_hooks.rbx instead of wraps of its own
@@ -1727,12 +1730,13 @@ module MGQ_MpCoopStory
     @route_waiting = nil
   end
 
-  # The story a save holds: the member's own while they play the leader's.
+  # The story a save holds: the member's own while they play the leader's; in a Raid World the
+  # story as it is, the world's laid over the player's own.
   #
   # @param contents [Hash] What the game saves.
   # @return [Hash] The same, with the member's own story.
   def self.save_contents(contents)
-    return contents unless guest?
+    return contents if !guest? || MGQ_MpCoop::Scope.raid?
 
     switches, variables, self_switches = own_with_values
     contents[:switches] = with_data(contents[:switches], switches)
@@ -1805,24 +1809,27 @@ module MGQ_MpCoopStory
   #
   # @param story [Array] The switches, variables and self switches of the story.
   # @param personal [Array] Those of the player, whose own values win.
+  # @param chests [Array<Array>] The self switches of the chests that stay the player's own, those
+  #   on the map by default.
   # @return [Array] The joined switches, variables and self switches.
-  def self.mix(story, personal)
+  def self.mix(story, personal, chests = chest_keys)
     switches = story[0].dup
     variables = story[1].dup
     [personal[0].size, switches.size].max.times { |id| switches[id] = personal[0][id] if personal_switch?(id, story[1]) }
     [personal[1].size, variables.size].max.times { |id| variables[id] = personal[1][id] if personal_variable?(id) }
     self_switches = story[2].dup
-    chest_keys.each { |key| self_switches[key] = personal[2][key] }
+    chests.each { |key| self_switches[key] = personal[2][key] }
     [switches, variables, self_switches]
   end
 
-  # Reports whether a switch is the player's own.
+  # Reports whether a switch is the player's own. The side is until the Great Decision, and always
+  # in a Raid World, where everyone keeps the side they chose.
   #
   # @param id [Integer] The switch.
   # @param variables [Array, nil] The variables of the story it belongs to, nil for the one played.
   # @return [Boolean] Whether it is.
   def self.personal_switch?(id, variables = nil)
-    return sides_differ?(variables) if SIDE_SWITCHES.include?(id)
+    return MGQ_MpCoop::Scope.raid? || sides_differ?(variables) if SIDE_SWITCHES.include?(id)
 
     PERSONAL_SWITCHES.any? { |range| range === id } || id.between?(AWAKENING_SWITCHES, AWAKENING_LAST) || choice_key?(:s, id)
   end

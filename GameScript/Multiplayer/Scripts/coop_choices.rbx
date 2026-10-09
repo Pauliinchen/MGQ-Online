@@ -3,6 +3,9 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-08: Left drawing and turning the switches to Window_MpWorldForm, which the world screen's forms share
+#                            - Kept every choice's outcome each player's own in a Raid World, and asked a player the world's story carried past a choice, their side included, for their own outcome
+#                            - Offered at the Great Decision of a Raid World only the routes the world may still take, the third way once the world cleared both other routes, and played only the player's own half of the route the world took
+#                            - Offered no story sync in a Raid World, whose story is the world's
 #      Paulinchen  2026-10-07: Created
 #
 #----------------------------------------------------------------
@@ -17,6 +20,11 @@
 # carries them past, and is then brought there; one who takes the other side of the Great Decision
 # starts their own route. While a member plays the leader's story, the same screen asks them their
 # own outcome of each choice the story passes.
+#
+# In a Raid World every choice's outcome is each player's own, and a player the world's story
+# carries past a choice picks their own on the same screen; at the Great Decision the screen offers
+# the route the world took, whose global half the world's story brings, so only the player's own half
+# plays: the companions the side changes and the side.
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpCoopChoices
@@ -98,6 +106,10 @@ module MGQ_MpCoopChoices
   # Where the Great Decision's third way takes the player: map, x, y and direction.
   CHAOS_START = [437, 12, 12, 0]
 
+  # The switches that tell the world cleared the two first routes, which open the third way in a
+  # Raid World.
+  ROUTE_CLEARS = [7096, 7097]
+
   # Frames an offer of the leader stands, a minute.
   OFFER_FRAMES = 3600
 
@@ -110,6 +122,7 @@ module MGQ_MpCoopChoices
   @screen = nil
   @queued = nil
   @nonce = 0
+  @raid_route = nil
 
   extend MGQ_MpLog
 
@@ -176,22 +189,28 @@ module MGQ_MpCoopChoices
   end
 
   # Reports whether the player's own save cleared both endings, which the third way of the Great
-  # Decision asks, as the game's own event does.
+  # Decision asks, as the game's own event does; in a Raid World whether the world cleared both
+  # routes, by its clear switches.
   #
   # @return [Boolean] Whether it did.
   def self.both_endings?
+    return ROUTE_CLEARS.all? { |id| MGQ_MpCoopStory.data_of($game_switches)[id] } if raid?
+
     switches = defined?($game_system_switches) ? $game_system_switches : nil
     switches && switches[:ed1] && switches[:ed2] ? true : false
   rescue
     false
   end
 
-  # Lists the outcomes the screen offers for a choice: the third way only with both endings cleared.
+  # Lists the outcomes the screen offers for a choice: the third way only with both endings cleared;
+  # in a Raid World the routes of decision_routes.
   #
   # @param key [Symbol] The choice.
   # @return [Array<String>] The outcomes' labels.
   def self.labels(key)
     outcomes = branch(key).outcomes
+    return decision_routes.map { |index| outcomes[index][:label] } if key == :decision && raid?
+
     outcomes = outcomes.first(2) if key == :decision && !both_endings?
     outcomes.map { |outcome| outcome[:label] }
   end
@@ -224,6 +243,25 @@ module MGQ_MpCoopChoices
     { :switches => switches, :variables => { 1065 => 3 }, :joins => chosen[:joins] }
   end
 
+  # Reports whether the open world is a Raid World, see MGQ_MpCoop::Scope.
+  #
+  # @return [Boolean] Whether it is.
+  def self.raid?
+    MGQ_MpCoop::Scope.raid?
+  end
+
+  # Lists the Great Decision's outcomes the screen offers in a Raid World: the route the world took
+  # when it carried the player past the decision, else those the world may still take (see
+  # MGQ_MpWorldStory.decision_routes).
+  #
+  # @return [Array<Integer>] The outcomes, by their place in the decision's outcomes.
+  def self.decision_routes
+    return [@raid_route] if @raid_route
+
+    routes = defined?(MGQ_MpWorldStory) ? MGQ_MpWorldStory.decision_routes : nil
+    routes || (both_endings? ? [0, 1, 2] : [0, 1])
+  end
+
   # Writes what an outcome brings, for the screen's line below it.
   #
   # @param key [Symbol] The choice.
@@ -239,7 +277,7 @@ module MGQ_MpCoopChoices
       return lily ? "Natasha joins, as Lily is with you." : "Nobody joins: Natasha joins only while Lily is with you." if index == 0
 
       lucia ? "The mayor joins, as Lucia is with you." : "Nobody joins: the mayor joins only while Lucia is with you."
-    when :decision then decision_note(index, leader_route, leader_name)
+    when :decision then raid? ? raid_decision_note(decision_routes[index] || index) : decision_note(index, leader_route, leader_name)
     else branch(key).outcomes[index][:note].to_s
     end
   end
@@ -251,11 +289,27 @@ module MGQ_MpCoopChoices
   # @param leader_name [String] The leader's name.
   # @return [String] The line.
   def self.decision_note(index, leader_route, leader_name)
+    follow = index == leader_route ? "You follow #{leader_name}'s route." : "Not #{leader_name}'s route: you start it and play it on your own."
+    (decision_texts(index) + [follow]).reject { |part| part.empty? }.join(" ")
+  end
+
+  # Writes what an outcome of the Great Decision brings in a Raid World, where the world took it.
+  #
+  # @param index [Integer] The outcome.
+  # @return [String] The line.
+  def self.raid_decision_note(index)
+    (decision_texts(index) + ["The whole world plays this route."]).reject { |part| part.empty? }.join(" ")
+  end
+
+  # Names an outcome of the Great Decision and the companions it changes.
+  #
+  # @param index [Integer] The outcome.
+  # @return [Array<String>] The route, then the companions, empty when none change.
+  def self.decision_texts(index)
     route = ["Angelic Dominion route", "Monster Realm route", "Chaos route"][index]
     party = ["Alice, Alicetroemeria and Morrigan join; Ilias's companions leave.", "Ilias, Micaela-chan, Lucifina-chan, Eden and Heinrich join; Alice's companions leave.", ""][index]
     party = "" if variable(912) > 0
-    follow = index == leader_route ? "You follow #{leader_name}'s route." : "Not #{leader_name}'s route: you start it and play it on your own."
-    [route + ".", party, follow].reject { |part| part.empty? }.join(" ")
+    [route + ".", party]
   end
 
   # Reads a variable of the story played.
@@ -293,17 +347,35 @@ module MGQ_MpCoopChoices
   end
 
   # Reports whether a switch or a variable is the player's own as a choice's outcome, while they
-  # play the leader's story; never for the leader, whose story the members get.
+  # play the leader's story; never for the leader, whose story the members get. In a Raid World every
+  # choice's outcome is each player's own.
   #
   # @param kind [Symbol] :s for a switch, :v for a variable.
   # @param id [Integer] The switch or variable.
   # @return [Boolean] Whether it is.
   def self.personal?(kind, id)
+    return raid_keys[kind == :s ? 0 : 1].key?(id) if raid?
     return false unless MGQ_MpCoopStory.guest?
 
     own_keys[kind == :s ? 0 : 1].key?(id)
   rescue
     false
+  end
+
+  # Lists the switches and variables of every choice's outcomes, each player's own in a Raid World.
+  #
+  # @return [Array<Hash>] The switches and the variables, by id.
+  def self.raid_keys
+    @raid_keys ||= begin
+      switches = {}
+      variables = {}
+      BRANCHES.each do |branch|
+        keys = keys_of(branch)
+        keys[0].each { |id| switches[id] = true }
+        keys[1].each { |id| variables[id] = true }
+      end
+      [switches, variables]
+    end
   end
 
   # Tells why the catch-up leaves out a reward: a choice's companion, which comes with the member's
@@ -546,6 +618,25 @@ module MGQ_MpCoopChoices
     commands << RPG::EventCommand.new(0, 0, [])
   end
 
+  # Builds the commands that play the player's own half of the route a Raid World took at the Great
+  # Decision, whose global half the world's story brings: the outcome's part of common event 380
+  # without its transfer, which changes the companions when the player's side differs, then the side,
+  # and the screen faded in again, which that part fades out. The third way changes nothing of the
+  # player's own.
+  #
+  # @param index [Integer] The outcome: 0 the Dark Goddess, 1 the Goddess Ilias, 2 the third way.
+  # @return [Array<RPG::EventCommand>] The commands, none for the third way.
+  def self.raid_decision_commands(index)
+    outcome = branch(:decision).outcomes[index]
+    return [] unless outcome[:return]
+
+    commands = decision_part(outcome)
+    commands.pop if commands.last && commands.last.code == 201
+    [4, 5].each { |id| commands << RPG::EventCommand.new(121, 0, [id, id, id == outcome[:side] ? 0 : 1]) }
+    commands << RPG::EventCommand.new(222, 0, [])
+    commands << RPG::EventCommand.new(0, 0, [])
+  end
+
   # Copies the part of common event 380 that plays an outcome of the Great Decision: from where it
   # notes where a game over returns the player to the transfer to the outcome's map, moved to the
   # left so it runs on its own.
@@ -568,7 +659,8 @@ module MGQ_MpCoopChoices
 
   # Lists the choices a part of the leader's story the player plays carries them past, which they
   # made neither in their own story nor here, to ask their own outcome. Called once the player
-  # catches up, and whenever the leader's story moves on.
+  # catches up, and whenever the leader's story moves on; in a Raid World whenever the world's
+  # story does.
   #
   # @param from [Integer] The main story's progress before.
   # @param to [Integer] The progress after.
@@ -580,7 +672,8 @@ module MGQ_MpCoopChoices
     return unless story
 
     roster = MGQ_MpCoopStory.roster_ids
-    keys = passed(from, to, story[0], story[1], roster) - [:side, :decision]
+    # The side is each player's own in a Raid World, whose story nobody chose it in for them.
+    keys = passed(from, to, story[0], story[1], roster) - (raid? ? [:decision] : [:side, :decision])
     # The leader resolving a choice the player has not made asks it too.
     BRANCHES.each do |branch|
       next if [:side, :decision].include?(branch.key) || keys.include?(branch.key) || made?(branch.key, story[0], story[1], roster)
@@ -592,7 +685,17 @@ module MGQ_MpCoopChoices
     return if keys.empty?
 
     @prompts.concat(keys)
-    log("the leader's story passed #{keys.join(', ')} (1001 #{from} -> #{to}), whose own outcome the player picks once free")
+    log("the #{raid? ? 'world' : 'leader'}'s story passed #{keys.join(', ')} (1001 #{from} -> #{to}), whose own outcome the player picks once free")
+  end
+
+  # Asks the player at the Great Decision once a Raid World's story carried them past it: the screen
+  # offers the route the world took alone, whose own half plays once confirmed.
+  #
+  # @param index [Integer] The world's route, its place in ROUTES.
+  def self.raid_decision(index)
+    @raid_route = index
+    @prompts << :decision unless @prompts.include?(:decision)
+    log("the world's story took the #{labels(:decision).first} route at the Great Decision, which the player confirms once free")
   end
 
   # Shows the screen of the next choice the player picks their own outcome of, once they are free
@@ -602,14 +705,15 @@ module MGQ_MpCoopChoices
     play_queued
     return if @prompts.empty? || !MGQ_MpOverworldSync.map_free? || SceneManager.scene.class != Scene_Map
 
-    unless MGQ_MpCoopStory.follows_leader?
+    unless raid? || MGQ_MpCoopStory.follows_leader?
       log("forgot the choices #{@prompts.join(', ')} the player was to pick: they no longer follow the leader's story")
       return @prompts.clear
     end
 
     key = @prompts.first
     lead = MGQ_MpCoop.party_leader
-    show_screen("Your own outcome", [key], ["Confirm"], lead, nil, lambda { |answers| answered_prompt(key, answers) }, nil)
+    title = key == :decision && raid? ? "The world's route" : "Your own outcome"
+    show_screen(title, [key], ["Confirm"], lead, nil, lambda { |answers| answered_prompt(key, answers) }, nil)
   rescue => e
     log("updating the choices failed: #{e.class}: #{e.message}")
   end
@@ -620,7 +724,23 @@ module MGQ_MpCoopChoices
   # @param answers [Hash{Symbol => Integer}] The answer.
   def self.answered_prompt(key, answers)
     @prompts.delete(key)
-    apply(key, answers[key], answers) if answers.key?(key)
+    return unless answers.key?(key)
+    return take_raid_decision(answers[key]) if key == :decision && raid?
+
+    apply(key, answers[key], answers)
+  end
+
+  # Plays the player's own half of the route a Raid World took at the Great Decision, once free.
+  #
+  # @param place [Integer] The outcome's place among those the screen offered.
+  def self.take_raid_decision(place)
+    index = decision_routes[place.to_i]
+    @raid_route = nil
+    return unless index
+
+    commands = raid_decision_commands(index)
+    log("the Great Decision of the world: \"#{branch(:decision).outcomes[index][:label]}\", #{commands.empty? ? 'nothing of the player\'s own changes' : "the player's own half waits to play once free: #{commands.size} commands"}")
+    @queued = commands unless commands.empty?
   end
 
   # Plays the Great Decision's outcome that waits, once the player is free on the map.
@@ -701,6 +821,7 @@ module MGQ_MpCoopChoices
     @accepted = nil
     @prompts = []
     @queued = nil
+    @raid_route = nil
   end
 
   # Takes a message about the choices. Called by coop.rbx.
@@ -740,11 +861,12 @@ module MGQ_MpCoopChoices
     end
 
     # The choice for a member in the World overview, as their party's leader: offering to sync their
-    # story.
+    # story; none in a Raid World, whose story is the world's.
     #
     # @param peer [MGQ_MpOverworldSync::Peers::Peer] The other player.
     # @return [MGQ_MpActions::Option, nil] The choice, nil for another player than a member.
     def self.peer_option(peer)
+      return nil if MGQ_MpCoopChoices.raid?
       return nil unless MGQ_MpCoop.party_leader == :me && MGQ_MpCoop::Party.member?(peer.state)
 
       option = MGQ_MpActions::Option

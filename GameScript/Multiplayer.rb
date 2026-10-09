@@ -3,7 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-08: Loaded coop_scope.rbx after coop.rbx, which tells the party scripts whom the player shares the map and the story with
-#                            - Named the mp_raid_* exports of a Raid World's story at the relay
+#                            - Loaded world_story.rbx after coop_story.rbx and world.rbx, a Raid World's story at the relay, and named the mp_raid_* exports it calls
 #                            - Loaded battles_raid_bosses.rbx before battles_coop.rbx, and battles_coop_hotjoin.rbx after it, whose hook wraps the live battle's
 #                            - Named mp_dir_create with the world's type and how a Raid World shares companions
 #                            - Told whether a key or the left mouse button is held, for the chat log's tabs and its size
@@ -106,7 +106,7 @@ module MGQ_Multiplayer
   SCRIPTS = %w[
     core_log core_hooks core_game_access core_hotkeys ui ui_text_box core_actors core_async overworld_sync ui_wheel ui_actions ui_chat ui_emotes overworld
     coop coop_scope coop_squad coop_events coop_gather coop_scene coop_npcs coop_story_rewards coop_story coop_castle
-    world world_mods world_save_distribution world_text world_screen world_save_export coop_choices
+    world world_mods world_story world_save_distribution world_text world_screen world_save_export coop_choices
     battles battles_raid_bosses battles_coop battles_coop_hotjoin battles_coop_level_sync
     battles_sync battles_sync_wire battles_sync_recorder battles_sync_playback battles_sync_live
     battles_balance_pvp battles_pvp battles_pvp_backline battles_pvp_mirror battles_pvp_lobby battles_duel battles_team

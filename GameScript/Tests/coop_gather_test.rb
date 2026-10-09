@@ -4,6 +4,7 @@
 #  Changelog:
 #      Paulinchen  2026-10-08: Checked a Raid World: nobody is gathered, everyone on the map follows where the story moves its teller, only a player whose story matches stands still, and a teleport goes to where the story was told
 #                            - Checked that the story keeps telling the players it took along until they arrive, and that a teleport to the story takes over the warp ban there
+#                            - Checked that a teleport to the story goes to the endpoint the relay keeps, where this game saw the story told only while the relay keeps none
 #      Paulinchen  2026-10-06: Created
 #
 #----------------------------------------------------------------
@@ -183,4 +184,14 @@ gather.join_story
 check("the player's own telling notes the warp ban where they stand", [gather.story_endpoint[0], gather.pending_call[:warp_ban]], [3, false])
 gather.forget
 $game_map.map_id = 3
+
+# The endpoint the relay keeps of the world's story, which world_story.rbx tells, wins.
+module MGQ_MpWorldStory; def self.endpoint; $relay_end; end; end
+$relay_end = [9, 7, 8, 2]
+check("a teleport to the story goes to the endpoint the relay keeps", gather.story_endpoint, [9, 7, 8, 2])
+gather.join_story
+check("whose warp ban this game does not know, so the player keeps their own", gather.pending_call[:warp_ban], nil)
+gather.forget
+$relay_end = nil
+check("and where this game saw the story told while the relay keeps none", gather.story_endpoint[0], 3)
 $raid = false

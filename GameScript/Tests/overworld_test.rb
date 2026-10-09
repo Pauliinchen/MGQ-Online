@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-08: Checked that a follower whose sprite this game lacks shows the outline of Luka's, how the outline is drawn, and that the graphics checked stay few
+#                            - Checked that the relay's push of a Raid World's story goes to its route, marked as the relay's
 #                            - Checked which tabs a line marks unread and that the All tab takes them as seen
 #                            - Checked that a ghost's name tag numbers a name two players share as the chat does, and is drawn anew once one of them left
 #                            - Started the status's count of frames anew before checking a new connection's seat, which a status look in the same frame replaced depending on how many frames the checks before took
@@ -438,6 +439,11 @@ $inbox << { "kind" => "chat", "seat" => "0", "name" => "Global", :payload => "we
 MGQ_MpOverworldSync.tick
 check("an admin's line from the relay shows tagged as the admin's, without a bubble",
       [chat.log_lines.last, chat.log_entries.last.who, chat.senders.include?(nil)], ["[Admin] Global: welcome all", :admin, false])
+$pushes = []
+MGQ_MpOverworldSync.route(MGQ_MpOverworldSync::STORY_FIELD) { |peer, message| $pushes << [peer, message[MGQ_MpOverworldSync::STORY_FIELD], message[:relay]] }
+$inbox << { "kind" => "story", "rev" => "7" }
+MGQ_MpOverworldSync.tick
+check("the relay's push of a Raid World's story goes to its route without a sender, marked as the relay's", $pushes, [[nil, "7", true]])
 
 wheel(CHAT, :C)
 check("the wheel opens the chat box", [chat.typing?, MGQ_MpActions::Wheel.open?, MGQ_Multiplayer::Capture.on?], [true, false, true])

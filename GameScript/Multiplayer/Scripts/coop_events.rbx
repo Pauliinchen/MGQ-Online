@@ -8,6 +8,7 @@
 #                            - Kept chests personal in a Raid World, whose parties share no loot
 #                            - Kept the Library's replays of scenes and the game's transfer process to the player's own game, never the party's story, so a leader's replay no longer brings the members over
 #                            - Showed a page of the leader's story without its face while this game lacks the face file
+#                            - Kept a story event in a Raid World from starting until the world's story of a telling the player watched on the map arrived, so they no longer play the scene again
 #      Paulinchen  2026-10-07: Took a common event's setup, which passes the list alone, instead of failing on it
 #                            - Registered the interpreter, map, message and party hooks through core_hooks.rbx instead of wraps of its own
 #                            - Let a page of the leader's story outside a fiber move on at once instead of failing, as the other waits do
@@ -690,7 +691,8 @@ module MGQ_MpCoopEvents
   # @return [Boolean] Whether it is the teller's, so it must not run here.
   def self.hand_over(event)
     lead = MGQ_MpCoop::Scope.teller
-    return false unless lead.is_a?(MGQ_MpOverworldSync::Peers::Peer) && !own? && kind(event) == :story
+    return awaits_told_story?(event) unless lead.is_a?(MGQ_MpOverworldSync::Peers::Peer)
+    return false unless !own? && kind(event) == :story
     unless following?
       log_once([:own_story, $game_map.map_id, event.id, lead.state["id"].to_s], "story event #{event.id} on map #{$game_map.map_id} runs in the player's own game: not synced with #{MGQ_MpOverworldSync.who(lead)}, the player plays their own story")
       return false
@@ -706,6 +708,18 @@ module MGQ_MpCoopEvents
   rescue => e
     log("keeping a story event from starting failed: #{e.class}: #{e.message}")
     false
+  end
+
+  # Keeps a story event from starting in a Raid World while the world's story of a telling the
+  # player watched on the map has not arrived yet, see MGQ_MpWorldStory.awaits_teller?.
+  #
+  # @param event [Game_Event] The event.
+  # @return [Boolean] Whether it must not run yet.
+  def self.awaits_told_story?(event)
+    return false unless defined?(MGQ_MpWorldStory) && MGQ_MpWorldStory.awaits_teller? && !own? && kind(event) == :story
+
+    log_once([:await_told, $game_map.map_id, event.id], "kept story event #{event.id} on map #{$game_map.map_id} from starting: the world's story of the telling the player watched has not arrived yet")
+    true
   end
 
   # Tells the member that only the teller moves the story on, once per event in REFUSE_FRAMES,

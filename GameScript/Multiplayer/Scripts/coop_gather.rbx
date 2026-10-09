@@ -4,6 +4,7 @@
 #  Changelog:
 #      Paulinchen  2026-10-08: Gathered nobody in a Raid World, where whoever is on the map watches, and took everyone on the map along where the story moves its teller
 #                            - Offered a teleport to the story in a Raid World, to where the story was last told until the relay keeps its endpoint, with that place's warp ban
+#                            - Took the teleport to the story to the endpoint the relay keeps of the world's story, where this game last saw the story told only while the relay keeps none
 #                            - Kept telling the story to the players a Raid World's story took along until they arrive
 #                            - Took the followers and the teller from MGQ_MpCoop::Scope
 #      Paulinchen  2026-10-07: Dropped a call to a map this game lacks, which ended the game at the transfer
@@ -342,12 +343,23 @@ module MGQ_MpCoopGather
     map_id == $game_map.map_id || (!@gather.nil? && @gather[:follow] && @gather[:place][0] == map_id)
   end
 
-  # Finds where a teleport to the story goes: where the story was last told in the world, by the
-  # player or anyone else, as far as this game saw.
+  # Finds where a teleport to the story goes: the endpoint the relay keeps of the world's story (see
+  # MGQ_MpWorldStory.endpoint), else where the story was last told in the world, by the player or
+  # anyone else, as far as this game saw.
   #
   # @return [Array<Integer>, nil] The map, x, y and direction, nil while none is known.
   def self.story_endpoint
-    @story_place
+    relay = defined?(MGQ_MpWorldStory) ? MGQ_MpWorldStory.endpoint : nil
+    relay || @story_place
+  end
+
+  # Tells whether warping is banned where a teleport to the story goes, known only where this game
+  # saw the story told.
+  #
+  # @param place [Array<Integer>] Where it goes, see story_endpoint.
+  # @return [Boolean, nil] Whether it is, nil while unknown.
+  def self.story_warp_ban(place)
+    @story_place && @story_place[0, 3] == place[0, 3] ? @story_warp_ban : nil
   end
 
   # Notes where the story is told, by the player or by anyone else in the world, which a teleport
@@ -384,7 +396,7 @@ module MGQ_MpCoopGather
 
     log("teleporting to the story on map #{place[0]} #{place[1]},#{place[2]} as soon as the player is free")
     @gather = { :since => Graphics.frame_count - GATHER_FRAMES, :name => STORY_NAME, :place => place,
-                :warp_ban => @story_warp_ban, :called => Graphics.frame_count, :asked => true }
+                :warp_ban => story_warp_ban(place), :called => Graphics.frame_count, :asked => true }
     MGQ_MpOverworldSync.notice("Teleporting to #{STORY_NAME} . . .")
   rescue => e
     log("teleporting to the story failed: #{e.class}: #{e.message}")
