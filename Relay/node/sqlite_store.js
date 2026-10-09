@@ -2,16 +2,17 @@
 //  sqlite_store.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-09: Kept each Raid World's boss pools
 //      Paulinchen  2026-10-08: Kept each Raid World's story and its checkpoints
 //      Paulinchen  2026-10-07: Kept each world's chat, which goes with the world
 //                            - Created
 //
 //----------------------------------------------------------------
 
-// The world directory's, the mod catalog's, the trades' and the Raid Worlds' stories' stores over
-// one SQLite database, for the Node relay on a rented machine, so worlds, mods, trades and stories
-// outlast a restart. Entries, records, chats and stories are kept as JSON, starting saves and
-// uploaded mods' zips as blobs.
+// The world directory's, the mod catalog's, the trades' and the Raid Worlds' stories' and boss
+// pools' stores over one SQLite database, for the Node relay on a rented machine, so worlds, mods,
+// trades, stories and pools outlast a restart. Entries, records, chats, stories and pools are kept
+// as JSON, starting saves and uploaded mods' zips as blobs.
 
 import { DatabaseSync } from "node:sqlite";
 
@@ -19,7 +20,7 @@ import { DatabaseSync } from "node:sqlite";
  * Opens the stores over a SQLite database, making its tables when they are missing.
  *
  * @param {string} path The database file's path, made when it is missing.
- * @returns {{path: string, directory: import("../core/directory.js").DirectoryStore, mods: import("../core/mods.js").ModStore, trades: import("../core/trades.js").TradeStore, stories: (id: string) => import("../core/story.js").StoryStore, close: () => void}} The stores, and a way to close the database.
+ * @returns {{path: string, directory: import("../core/directory.js").DirectoryStore, mods: import("../core/mods.js").ModStore, trades: import("../core/trades.js").TradeStore, stories: (id: string) => import("../core/story.js").StoryStore, bosses: (id: string) => import("../core/bosses.js").BossStore, close: () => void}} The stores, and a way to close the database.
  */
 export function openSqliteStores(path) {
   const db = new DatabaseSync(path);
@@ -34,6 +35,10 @@ export function openSqliteStores(path) {
   const stories = jsonTable(db, "stories");
   const checkpoints = jsonTable(db, "story_checkpoints");
   const worldCheckpoints = db.prepare("DELETE FROM story_checkpoints WHERE id LIKE ?");
+  // A world id is hexadecimal, so its prefix holds none of the characters LIKE reads.
+  const pools = jsonTable(db, "boss_pools");
+  const worldPools = db.prepare("SELECT json FROM boss_pools WHERE id LIKE ?");
+  const worldPoolsRemove = db.prepare("DELETE FROM boss_pools WHERE id LIKE ?");
 
   return {
     path,
@@ -92,6 +97,13 @@ export function openSqliteStores(path) {
         stories.remove(id);
         worldCheckpoints.run(`${id}:%`);
       },
+    }),
+    bosses: (id) => ({
+      get: async (key) => pools.get(`${id}:${key}`),
+      put: async (pool) => pools.put(`${id}:${pool.key}`, pool),
+      all: async () => worldPools.all(`${id}:%`).map((row) => JSON.parse(row.json)),
+      remove: async (key) => pools.remove(`${id}:${key}`),
+      removeAll: async () => void worldPoolsRemove.run(`${id}:%`),
     }),
     close: () => db.close(),
   };

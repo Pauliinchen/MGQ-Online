@@ -2,6 +2,7 @@
 //  story.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-09: Let an admin take back the route locked at the Great Decision
 //      Paulinchen  2026-10-08: Created
 //
 //----------------------------------------------------------------
@@ -436,6 +437,26 @@ export class WorldStory {
       const next = { ...(story ?? this.first()), route, rev: (story?.rev ?? 0) + 1 };
       await this.store.put(next, null);
       return { status: 200, body: { ...stateOf(next, true), locked: route }, push: next.rev };
+    });
+  }
+
+  /**
+   * Takes back the route locked at the Great Decision, as an admin asks, so the next player who
+   * chooses sets it again.
+   *
+   * @returns {Promise<{status: number, body: object, push?: number}>} The state with `cleared` (whether a route was locked), and the revision to tell every game when it changed.
+   */
+  async clearRoute() {
+    return this.exclusive(async () => {
+      const story = await this.store.get();
+
+      if ((story?.route ?? ROUTE.none) === ROUTE.none) {
+        return { status: 200, body: { ...stateOf(story, false), cleared: false } };
+      }
+
+      const next = { ...story, route: ROUTE.none, rev: story.rev + 1 };
+      await this.store.put(next, null);
+      return { status: 200, body: { ...stateOf(next, false), cleared: true }, push: next.rev };
     });
   }
 

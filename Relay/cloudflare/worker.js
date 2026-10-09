@@ -2,6 +2,7 @@
 //  worker.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-09: Kept a Raid World's boss pools in its world room's object, answered their routes there for the world's players and the admin routes for the relay's admins, and told every game of the world when a pool changed
 //      Paulinchen  2026-10-08: Kept a Raid World's story in its world room's object, answered its routes there for the world's players, and told every game of the world when it changed
 //                            - Passed what a game names in the X-MGQ-Features header on to the directory as it enters a world room
 //                            - Dropped a game's chat lines past the chat's rate limit, answering each with "slow chat", and ignored a chat frame without a line instead of closing the connection
@@ -34,10 +35,12 @@
 // never passes on from outside.
 
 import { DurableObject } from "cloudflare:workers";
+import { BOSS_LIMITS, WorldBosses, bossRouteOf, bossText, handleBossRequest } from "../core/bosses.js";
 import { Directory as WorldDirectory, WORLD_TYPE, handleDirectoryRequest, parseAdmins, playerIdOf, sha256Hex } from "../core/directory.js";
 import { badRequest, routeIs } from "../core/http.js";
 import { isHash, isId } from "../core/ids.js";
 import { ModCatalog, handleModRequest } from "../core/mods.js";
+import { handleRaidAdminRequest, raidAdminRouteOf } from "../core/raid_admin.js";
 import { STORY_LIMITS, WorldStory, handleStoryRequest, noRaidWorld, storyRouteOf, storyText } from "../core/story.js";
 import { TradeBook, handleTradeRequest } from "../core/trades.js";
 import {
@@ -73,6 +76,11 @@ const STORY_KEY = "story";
 const CHECKPOINT_PREFIX = "checkpoint:";
 
 /**
+ * The start of the storage keys of a world's boss pools, one per boss.
+ */
+const BOSS_PREFIX = "boss:";
+
+/**
  * The storage key of what a world room keeps of the directory's answers about who plays the world:
  * its type, the hash of its auth key, and the players the directory let in.
  */
@@ -104,11 +112,12 @@ export default {
    */
   async fetch(request, env) {
     const url = new URL(request.url);
-    const story = storyRouteOf(url);
+    const world = storyRouteOf(url) ?? bossRouteOf(url) ?? raidAdminRouteOf(url);
 
-    // A world's story stays with its world room's object, so the directory carries none of it.
-    if (story) {
-      return worldOf(env, story.id).fetch(request);
+    // A world's story and boss pools stay with its world room's object, so the directory carries
+    // none of them.
+    if (world) {
+      return worldOf(env, world.id).fetch(request);
     }
 
     if (["worlds", "mods", "trades"].some((route) => routeIs(url, route))) {
@@ -326,7 +335,19 @@ async function readText(request) {
  * @returns {Promise<string | null>} The body, or null when it is too long.
  */
 async function readStoryText(request) {
-  const bytes = await readBytes(request, STORY_LIMITS.maxBodyLength);
+  return readSmallText(request, STORY_LIMITS.maxBodyLength);
+}
+
+/**
+ * Reads a request's body as text, unless it is longer than a route takes, which the route's
+ * router then answers with 413.
+ *
+ * @param {Request} request The request.
+ * @param {number} limit The most bytes the route takes.
+ * @returns {Promise<string | null>} The body, or null when it is too long.
+ */
+async function readSmallText(request, limit) {
+  const bytes = await readBytes(request, limit);
   return bytes ? new TextDecoder().decode(bytes) : null;
 }
 
@@ -413,6 +434,11 @@ export class Directory extends DurableObject {
     if (url.pathname === "/internal/member") {
       const { id, player, auth } = await request.json();
       return json(200, await this.directory.member(id, player, auth));
+    }
+
+    if (url.pathname === "/internal/raid-admin") {
+      const { id, player } = await request.json();
+      return json(200, await this.directory.raidAdmin(id, player));
     }
 
     if (url.pathname === "/internal/presence") {
@@ -667,6 +693,7 @@ export class World extends DurableObject {
     if (url.pathname === "/internal/close") {
       await this.closeWhere(() => true, CLOSE.worldDeleted, "the world was deleted");
       await this.storyOf().remove();
+      await this.bossesOf().remove();
       await this.ctx.storage.delete(ACCESS_KEY);
       return json(200, {});
     }
@@ -688,6 +715,18 @@ export class World extends DurableObject {
 
     if (story) {
       return this.answerStory(request, story);
+    }
+
+    const bosses = bossRouteOf(url);
+
+    if (bosses) {
+      return this.answerBosses(request, bosses);
+    }
+
+    const admin = raidAdminRouteOf(url);
+
+    if (admin) {
+      return this.answerRaidAdmin(request, url, admin);
     }
 
     const route = parseRoute(url, request.headers.get(PLAYER_HEADER), request.headers.get(AUTH_HEADER));
@@ -899,6 +938,59 @@ export class World extends DurableObject {
   }
 
   /**
+   * Answers a request to the world's boss pools, for a player of this Raid World only, and tells
+   * every game in the room when a pool changed.
+   *
+   * @param {Request} request The request.
+   * @param {{id: string, rest: string[]}} route The world and the boss route, see bossRouteOf.
+   * @returns {Promise<Response>} The answer.
+   */
+  async answerBosses(request, route) {
+    const access = await this.storyAccess(route.id, request.headers.get(PLAYER_HEADER), request.headers.get(AUTH_HEADER));
+
+    if (access.refusal) {
+      return json(access.refusal.status, access.refusal.body);
+    }
+
+    if (access.type !== WORLD_TYPE.raid) {
+      return json(noRaidWorld().status, noRaidWorld().body);
+    }
+
+    const answer = await handleBossRequest(this.bossesOf(), request.method, route.rest, () => readSmallText(request, BOSS_LIMITS.maxBodyLength), access.player);
+
+    if (answer.boss) {
+      this.tell(bossText(answer.boss.key, answer.boss.hp));
+    }
+
+    return json(answer.status, answer.body);
+  }
+
+  /**
+   * Answers a request to the world's admin routes, for the relay's admins only, whom the directory
+   * names, and tells every game in the room when the story or a pool changed.
+   *
+   * @param {Request} request The request.
+   * @param {URL} url The request's address.
+   * @param {{id: string, rest: string[]}} route The world and the admin route, see raidAdminRouteOf.
+   * @returns {Promise<Response>} The answer.
+   */
+  async answerRaidAdmin(request, url, route) {
+    const world = { story: this.storyOf(), bosses: this.bossesOf() };
+    const adminOf = (key) => internal(directoryOf(this.env), "raid-admin", { id: route.id, player: key ?? null });
+    const answer = await handleRaidAdminRequest(world, request.method, url, route.rest, () => readText(request), request.headers.get(PLAYER_HEADER), adminOf);
+
+    if (answer.push) {
+      this.tell(storyText(answer.push));
+    }
+
+    if (answer.boss) {
+      this.tell(bossText(answer.boss.key, answer.boss.hp));
+    }
+
+    return json(answer.status, answer.body);
+  }
+
+  /**
    * Finds whether a game is a player of the world: from what the room keeps of the directory's
    * last answer, or else from the directory, whose answer the room keeps.
    *
@@ -969,6 +1061,32 @@ export class World extends DurableObject {
     });
 
     return this.story;
+  }
+
+  /**
+   * Makes the world's boss pools over the object's storage, once per wake.
+   *
+   * @returns {WorldBosses} The pools.
+   */
+  bossesOf() {
+    const storage = this.ctx.storage;
+
+    this.bosses ??= new WorldBosses({
+      get: (key) => storage.get(`${BOSS_PREFIX}${key}`),
+      put: (pool) => storage.put(`${BOSS_PREFIX}${pool.key}`, pool),
+      all: async () => [...(await storage.list({ prefix: BOSS_PREFIX })).values()],
+      remove: (key) => storage.delete(`${BOSS_PREFIX}${key}`),
+      removeAll: async () => {
+        const keys = [...(await storage.list({ prefix: BOSS_PREFIX })).keys()];
+
+        // Storage deletes at most 128 keys at once.
+        for (let start = 0; start < keys.length; start += 128) {
+          await storage.delete(keys.slice(start, start + 128));
+        }
+      },
+    });
+
+    return this.bosses;
   }
 
   /**

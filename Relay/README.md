@@ -15,6 +15,9 @@ core/trades.js         the referee of trades between two players of a world
 core/trades.test.js    tests of the trades
 core/story.js          a Raid World's story: its counters, sealed story, checkpoints, route lock and shared companions
 core/story.test.js     tests of the story
+core/bosses.js         a Raid World's boss pools: hit points in kills, reports once per battle, the defeat
+core/bosses.test.js    tests of the boss pools and the admin routes
+core/raid_admin.js     what admins see and set right in a Raid World: counters, pools, the route lock
 core/mods.js           the mod catalog's rules, over a store the platform passes in
 core/mods.test.js      tests of the mod catalog
 core/http.js           the answers every router gives alike, and how each reads a JSON body
@@ -24,7 +27,7 @@ cloudflare/worker.js   the relay on Cloudflare Workers, one Durable Object per r
 cloudflare/wrangler.toml
 node/server.js         the relay as a plain Node server, for a rented machine
 node/server.test.js    tests of the Node server over real WebSockets
-node/sqlite_store.js   the directory's, the catalog's, the trades' and the stories' stores over one SQLite database, for the Node server
+node/sqlite_store.js   the directory's, the catalog's, the trades', the stories' and the boss pools' stores over one SQLite database, for the Node server
 node/sqlite_store.test.js tests of the SQLite stores
 ```
 
@@ -129,6 +132,24 @@ A Raid World plays one story, which the relay keeps beside the world room, on Cl
 | `POST /v1/worlds/<id>/story/route` | Locks the route at the Great Decision: the first one wins (409 `route`); a finished route (409 `finished`) and the third way before both others are finished (409 `closed`) are refused. |
 | `POST /v1/worlds/<id>/story/companions` | Adds actor ids to the shared companions, which only grow. |
 
+### Raid bosses
+
+A Raid World's story bosses each have a pool the whole world wears down together, kept beside the story in the world room's own object. A pool counts in kills: 5 when full, filling up again by 5 an hour, so an untouched pool is full again within the hour. The host of a boss battle reports once per battle the share of the boss's max HP its players dealt, at most 1; the report that empties the pool defeats the boss for the world for good. The routes take the player's key and the auth key in the headers, as the story's do, and answer the world's players only; Classic worlds keep none (404, code `classic`). The full contract is in [docs/DEVELOPER.md](../docs/DEVELOPER.md#raid-boss-pools-on-the-relay).
+
+| Request | What it does |
+|---|---|
+| `GET /v1/worlds/<id>/bosses` | Hands out every pool a report touched: `bosses`, each with `key`, `hp`, `max`, `regen` and `defeated`; and `max` and `regen`, which a pool never reported has. |
+| `GET /v1/worlds/<id>/bosses/<key>` | Hands out one pool (the key percent-encoded); a pool never reported is full. |
+| `POST /v1/worlds/<id>/bosses/<key>/report` | Counts a battle: `battle` (its id) and `dealt` (the share of the boss's max HP dealt, counted up to 1). The same battle again counts nothing (`repeat`). Answers the pool with `dealt`, `emptied` (this battle's report emptied it) and `repeat`. 429 with `code` `rate` past 6 reports at once, then one per 20 s, per player. |
+
+**Admins** (the `ADMINS` setting) look after a Raid World from outside the game. Each route takes an admin's key in `X-MGQ-Player`, or as `player` in the address (GET) or the JSON body (POST); 403 for everyone else, the creator included, 404 with `code` `classic` for a Classic world.
+
+| Request | What it does |
+|---|---|
+| `GET /v1/worlds/<id>/raid?player=<key>` | Hands out the story's counters without the sealed story (`story`) and every pool with `at`, `reports` and `by` (the player whose report emptied it). |
+| `POST /v1/worlds/<id>/raid/bosses/<key>/reset` | Fills a pool up again and takes its defeat back. |
+| `POST /v1/worlds/<id>/raid/route/clear` | Takes back the route locked at the Great Decision, so the next player who chooses sets it again. A world whose story is on that route already locks it again with its next write. |
+
 ### World rooms
 
 - **Connect:** `wss://<relay>/v1/world/<world id>?name=<name>`, with the player's key in the header `X-MGQ-Player` and the auth key in the header `X-MGQ-Auth` (released games send them as `player=<key>&auth=<auth key>` in the address instead, which is kept for them). The relay lets the game in only if the world is in the directory, the SHA-256 of the auth key is the world's `authHash`, and the creator has not removed the player: otherwise HTTP 404, 401 or 403 before the WebSocket opens, HTTP 409 while the creator is still uploading the starting save, and HTTP 400 when the world is a Raid World and the request's header `X-MGQ-Features` (features separated by commas) does not name `raid`, which released games never send and which they take as final, unlike a 409. A 400, 403 or 409 names why in the response header `X-MGQ-Refusal`, with the codes of the directory. Entering rooms and world rooms is limited per address, 30 at once and one more every 2 seconds (HTTP 429). When a player enters a world room again, the relay closes the player's earlier connection with 4009 and the reason `replaced`. The world's seats come from the directory; once every one is taken, the next game gets HTTP 409. After every change the room tells the directory who is in it.
@@ -139,6 +160,7 @@ A Raid World plays one story, which the relay keeps beside the world room, on Cl
   - Each connection may send 2 chat lines a second, after a burst of 10. The relay drops a line beyond that and answers the text `slow chat`; games that don't know it ignore it. A `chat` text without a line is ignored.
   - When an admin says something (`POST /v1/worlds/<id>/chat`), the relay sends the text `chat <name>` + tab + `<line>` to every game in the room; games that don't know the frame ignore it.
 - **Story:** after every change of a Raid World's story the relay sends the text `story <rev>` to every game in the room; games that don't know it ignore it.
+- **Bosses:** after every change of a Raid World's boss pool (a counted report, an admin's reset) the relay sends the text `boss <hp> <key>` to every game in the room, the hit points with up to three decimals and the key last, since it may hold spaces; games that don't know it ignore it.
 - **Limits:** each connection lasts at most 2 hours on its own; the game then connects again.
 
 ### Both

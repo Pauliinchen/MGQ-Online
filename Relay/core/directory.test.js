@@ -2,6 +2,7 @@
 //  directory.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-09: Covered telling a world room whether a key is an admin's
 //      Paulinchen  2026-10-08: Covered telling a world room who plays its world
 //                            - Covered a world's type and companion sharing, fixed once made, and Raid Worlds kept from games that do not name them
 //                            - Covered lines said at once, all kept in order, and an admin's line for a world deleted meanwhile
@@ -712,6 +713,17 @@ test("member tells a world room who plays its world, with the world's type and a
   assert.equal((await directory.member("9".repeat(32), OTHER, AUTH)).status, 404);
   await directory.ban(WORLD, CREATOR, await playerIdOf(OTHER));
   assert.equal((await directory.member(WORLD, OTHER, AUTH)).status, 403);
+});
+
+test("raidAdmin tells a world room whether a key is an admin's, with the world's type", async () => {
+  const { directory } = newDirectory(DIRECTORY_LIMITS, [await playerIdOf(ADMIN)]);
+  await directory.create(await newWorld({ type: "raid" }));
+
+  const answer = await directory.raidAdmin(WORLD, ADMIN);
+  assert.deepEqual([answer.status, answer.type], [200, "raid"]);
+  assert.equal((await directory.raidAdmin(WORLD, CREATOR)).status, 403, "the creator is no admin");
+  assert.equal((await directory.raidAdmin(WORLD, "zz")).status, 403);
+  assert.equal((await directory.raidAdmin("9".repeat(32), ADMIN)).status, 404);
 });
 
 test("parseFeatures reads the features a game names, separated by commas or white space, in lower case", () => {

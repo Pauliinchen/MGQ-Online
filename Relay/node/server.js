@@ -2,6 +2,7 @@
 //  server.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-09: Kept each Raid World's boss pools, answered their routes for the world's players and the admin routes for the relay's admins, and told every game of the world when a pool changed
 //      Paulinchen  2026-10-08: Kept each Raid World's story, answered its routes for the world's players, and told every game of the world when it changed
 //                            - Passed what a game names in the X-MGQ-Features header on to the directory as it enters a world room
 //                            - Dropped a game's chat lines past the chat's rate limit, answering each with "slow chat", and ignored a chat frame without a line instead of closing the connection
@@ -34,9 +35,11 @@
 import http from "node:http";
 import { pathToFileURL } from "node:url";
 import { WebSocketServer } from "ws";
+import { BOSS_LIMITS, WorldBosses, bossRouteOf, bossText, handleBossRequest } from "../core/bosses.js";
 import { Directory, WORLD_TYPE, handleDirectoryRequest, parseAdmins } from "../core/directory.js";
 import { routeIs } from "../core/http.js";
 import { ModCatalog, handleModRequest } from "../core/mods.js";
+import { handleRaidAdminRequest, raidAdminRouteOf } from "../core/raid_admin.js";
 import { STORY_LIMITS, WorldStory, handleStoryRequest, noRaidWorld, storyRouteOf, storyText } from "../core/story.js";
 import { TradeBook, handleTradeRequest } from "../core/trades.js";
 import {
@@ -207,11 +210,33 @@ export function memoryStoryStores() {
 }
 
 /**
- * Opens the stores the relay keeps its worlds, mods, trades and Raid Worlds' stories in: a SQLite
- * database at a path, or memory without one.
+ * Keeps the Raid Worlds' boss pools in memory, one store per world.
+ *
+ * @returns {(id: string) => import("../core/bosses.js").BossStore} Makes the store of a world's boss pools.
+ */
+export function memoryBossStores() {
+  const pools = new Map();
+  const worldPools = (id) => [...pools.keys()].filter((key) => key.startsWith(`${id}:`));
+
+  return (id) => ({
+    get: async (key) => (pools.has(`${id}:${key}`) ? structuredClone(pools.get(`${id}:${key}`)) : undefined),
+    put: async (pool) => void pools.set(`${id}:${pool.key}`, structuredClone(pool)),
+    all: async () => worldPools(id).map((key) => structuredClone(pools.get(key))),
+    remove: async (key) => void pools.delete(`${id}:${key}`),
+    removeAll: async () => {
+      for (const key of worldPools(id)) {
+        pools.delete(key);
+      }
+    },
+  });
+}
+
+/**
+ * Opens the stores the relay keeps its worlds, mods, trades and Raid Worlds' stories and boss
+ * pools in: a SQLite database at a path, or memory without one.
  *
  * @param {string | undefined} path The database's path, as DATABASE_VARIABLE names it; empty or undefined for memory.
- * @returns {Promise<{directory: import("../core/directory.js").DirectoryStore, mods: import("../core/mods.js").ModStore, trades: import("../core/trades.js").TradeStore, stories: (id: string) => import("../core/story.js").StoryStore, close: () => void}>} The stores, and a way to close them.
+ * @returns {Promise<{directory: import("../core/directory.js").DirectoryStore, mods: import("../core/mods.js").ModStore, trades: import("../core/trades.js").TradeStore, stories: (id: string) => import("../core/story.js").StoryStore, bosses: (id: string) => import("../core/bosses.js").BossStore, close: () => void}>} The stores, and a way to close them.
  */
 export async function openStores(path) {
   if (path) {
@@ -219,7 +244,7 @@ export async function openStores(path) {
     return openSqliteStores(path);
   }
 
-  return { directory: memoryStore(), mods: memoryModStore(), trades: memoryTradeStore(), stories: memoryStoryStores(), close: () => {} };
+  return { directory: memoryStore(), mods: memoryModStore(), trades: memoryTradeStore(), stories: memoryStoryStores(), bosses: memoryBossStores(), close: () => {} };
 }
 
 /**
@@ -297,16 +322,18 @@ function headerOf(request, name) {
 /**
  * Creates a relay server, not yet listening.
  *
- * @param {{limits?: typeof LIMITS, clock?: () => number, checkEveryMs?: number, sweepEveryMs?: number, directory?: Directory, mods?: ModCatalog, trades?: TradeBook, stories?: (id: string) => import("../core/story.js").StoryStore, storyLimits?: typeof STORY_LIMITS, log?: typeof consoleLog}} [options] Limits, clock, check and sweep intervals, directory, mod catalog, trades, the Raid Worlds' story stores, the stories' limits and log, which tests change.
- * @returns {{server: http.Server, directory: Directory, mods: ModCatalog, trades: TradeBook, storyOf: (id: string) => WorldStory, check: () => void, sweep: () => Promise<void>, stop: () => Promise<void>}} The HTTP server to listen with, what it serves, a world's story, a look at the deadlines, a sweep of what is kept too long, and a way to stop everything.
+ * @param {{limits?: typeof LIMITS, clock?: () => number, checkEveryMs?: number, sweepEveryMs?: number, directory?: Directory, mods?: ModCatalog, trades?: TradeBook, stories?: (id: string) => import("../core/story.js").StoryStore, storyLimits?: typeof STORY_LIMITS, bosses?: (id: string) => import("../core/bosses.js").BossStore, bossLimits?: typeof BOSS_LIMITS, log?: typeof consoleLog}} [options] Limits, clock, check and sweep intervals, directory, mod catalog, trades, the Raid Worlds' story stores, the stories' limits, the Raid Worlds' boss pool stores, the pools' limits and log, which tests change.
+ * @returns {{server: http.Server, directory: Directory, mods: ModCatalog, trades: TradeBook, storyOf: (id: string) => WorldStory, bossesOf: (id: string) => WorldBosses, check: () => void, sweep: () => Promise<void>, stop: () => Promise<void>}} The HTTP server to listen with, what it serves, a world's story, a world's boss pools, a look at the deadlines, a sweep of what is kept too long, and a way to stop everything.
  */
 export function createRelay({
   limits = LIMITS, clock = Date.now, checkEveryMs = CHECK_EVERY_MS, sweepEveryMs = SWEEP_EVERY_MS, directory = new Directory(memoryStore(), { clock }),
   mods = new ModCatalog(memoryModStore(), { clock }), trades = new TradeBook(memoryTradeStore(), (id) => directory.store.get(id), { clock }), stories = memoryStoryStores(),
-  storyLimits = STORY_LIMITS, log = consoleLog,
+  storyLimits = STORY_LIMITS, bosses = memoryBossStores(), bossLimits = BOSS_LIMITS, log = consoleLog,
 } = {}) {
   /** @type {Map<string, WorldStory>} */
   const worldStories = new Map();
+  /** @type {Map<string, WorldBosses>} */
+  const worldBosses = new Map();
   /** @type {Map<string, {socket: import("ws").WebSocket, record: object}[]>} */
   const rooms = new Map();
   /** @type {Map<string, {socket: import("ws").WebSocket, record: object}[]>} */
@@ -402,9 +429,11 @@ export function createRelay({
   async function answerDirectory(request, response) {
     const url = new URL(request.url, "http://relay");
     const storyRoute = storyRouteOf(url);
+    const bossRoute = bossRouteOf(url);
+    const adminRoute = raidAdminRouteOf(url);
 
-    if (storyRoute) {
-      const answer = await answerStory(request, storyRoute);
+    if (storyRoute || bossRoute || adminRoute) {
+      const answer = storyRoute ? await answerStory(request, storyRoute) : bossRoute ? await answerBosses(request, bossRoute) : await answerRaidAdmin(request, url, adminRoute);
       response.writeHead(answer.status, { "Content-Type": "application/json" });
       response.end(JSON.stringify(answer.body));
       return;
@@ -432,7 +461,9 @@ export function createRelay({
     if (answer.close) {
       closeWorld(answer.id, CLOSE.worldDeleted, "the world was deleted");
       await storyOf(answer.id).remove();
+      await bossesOf(answer.id).remove();
       worldStories.delete(answer.id);
+      worldBosses.delete(answer.id);
     }
 
     if (answer.kick) {
@@ -479,6 +510,73 @@ export function createRelay({
     }
 
     return answer;
+  }
+
+  /**
+   * Answers a request to a Raid World's boss pools, for its players only, and tells every game of
+   * the world when a pool changed.
+   *
+   * @param {http.IncomingMessage} request The request.
+   * @param {{id: string, rest: string[]}} route The world and the boss route, see bossRouteOf.
+   * @returns {Promise<{status: number, body: object}>} The answer.
+   */
+  async function answerBosses(request, route) {
+    const access = await directory.member(route.id, headerOf(request, PLAYER_HEADER), headerOf(request, AUTH_HEADER));
+
+    if (access.status !== 200) {
+      return access;
+    }
+
+    if (access.type !== WORLD_TYPE.raid) {
+      return noRaidWorld();
+    }
+
+    const answer = await handleBossRequest(bossesOf(route.id), request.method, route.rest, () => readText(request, bossLimits.maxBodyLength), access.player);
+
+    if (answer.boss) {
+      tellWorld(route.id, bossText(answer.boss.key, answer.boss.hp));
+    }
+
+    return answer;
+  }
+
+  /**
+   * Answers a request to a Raid World's admin routes, for the relay's admins only, and tells every
+   * game of the world when the story or a pool changed.
+   *
+   * @param {http.IncomingMessage} request The request.
+   * @param {URL} url The request's address.
+   * @param {{id: string, rest: string[]}} route The world and the admin route, see raidAdminRouteOf.
+   * @returns {Promise<{status: number, body: object}>} The answer.
+   */
+  async function answerRaidAdmin(request, url, route) {
+    // Made only once the directory found an admin, so requests for any id keep nothing in memory.
+    const world = { get story() { return storyOf(route.id); }, get bosses() { return bossesOf(route.id); } };
+    const answer = await handleRaidAdminRequest(world, request.method, url, route.rest, () => readText(request), headerOf(request, PLAYER_HEADER), (key) => directory.raidAdmin(route.id, key));
+
+    if (answer.push) {
+      tellWorld(route.id, storyText(answer.push));
+    }
+
+    if (answer.boss) {
+      tellWorld(route.id, bossText(answer.boss.key, answer.boss.hp));
+    }
+
+    return answer;
+  }
+
+  /**
+   * Finds a world's boss pools, made once over their store.
+   *
+   * @param {string} id The world.
+   * @returns {WorldBosses} The pools.
+   */
+  function bossesOf(id) {
+    if (!worldBosses.has(id)) {
+      worldBosses.set(id, new WorldBosses(bosses(id), { clock, limits: bossLimits }));
+    }
+
+    return worldBosses.get(id);
   }
 
   /**
@@ -825,7 +923,7 @@ export function createRelay({
     return new Promise((resolve) => server.close(() => resolve()));
   }
 
-  return { server, directory, mods, trades, storyOf, check, sweep, stop };
+  return { server, directory, mods, trades, storyOf, bossesOf, check, sweep, stop };
 }
 
 /**
@@ -853,7 +951,7 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   const directory = new Directory(stores.directory, { admins });
   const mods = new ModCatalog(stores.mods, { admins });
   const trades = new TradeBook(stores.trades, (id) => directory.store.get(id));
-  const relay = createRelay({ directory, mods, trades, stories: stores.stories });
+  const relay = createRelay({ directory, mods, trades, stories: stores.stories, bosses: stores.bosses });
 
   relay.server.listen(port, host, () => console.log(`${new Date().toISOString()} relay listening on ${host}:${port}, ${database ? `database ${database}` : "everything in memory"}`));
 

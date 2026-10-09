@@ -2,6 +2,7 @@
 //  WorldSession.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-09: Handed the relay's word that a Raid World's boss pool changed to the game script as a boss entry with its key and hit points
 //      Paulinchen  2026-10-08: Handed the relay's word that a Raid World's story changed to the game script as a story entry with its revision
 //                            - Stopped for good once the relay keeps the game out of a Raid World, which it cannot play, telling to update the mod
 //                            - Logged the traffic counted so far as another world is entered, and as the process exits or a thread throws out
@@ -97,6 +98,22 @@ internal sealed class WorldSession
     /// The story's revision now, in a <see cref="StoryKind"/> entry.
     /// </summary>
     public const string RevHeader = "rev";
+
+    /// <summary>
+    /// The kind of an inbox entry that tells a Raid World's boss pool changed at the relay, and the
+    /// word that starts the relay's text frame saying so, as Relay/README.md names it.
+    /// </summary>
+    public const string BossKind = "boss";
+
+    /// <summary>
+    /// The boss's key, in a <see cref="BossKind"/> entry.
+    /// </summary>
+    public const string KeyHeader = "key";
+
+    /// <summary>
+    /// The pool's hit points in kills, in a <see cref="BossKind"/> entry.
+    /// </summary>
+    public const string HpHeader = "hp";
 
     /// <summary>
     /// The kind of an inbox entry that carries another game's message.
@@ -731,7 +748,7 @@ internal sealed class WorldSession
     /// </summary>
     /// <param name="generation">The open this belongs to.</param>
     /// <param name="connection">The connection.</param>
-    /// <param name="text">The text, such as <c>seat 2 0 1</c>, <c>in 3</c>, <c>out 0</c>, <c>pong</c>, <c>slow chat</c>, <c>story 12</c> or <c>chat Global</c>, a tab and the line.</param>
+    /// <param name="text">The text, such as <c>seat 2 0 1</c>, <c>in 3</c>, <c>out 0</c>, <c>pong</c>, <c>slow chat</c>, <c>story 12</c>, <c>boss 4.25 Queen Harpy</c> or <c>chat Global</c>, a tab and the line.</param>
     private void TakeText(int generation, Connection connection, string text)
     {
         if (text == RelayWorldChannel.Pong)
@@ -755,6 +772,12 @@ internal sealed class WorldSession
         if (text.StartsWith($"{StoryKind} ", StringComparison.Ordinal))
         {
             TakeStory(generation, connection, text[(StoryKind.Length + 1)..]);
+            return;
+        }
+
+        if (text.StartsWith($"{BossKind} ", StringComparison.Ordinal))
+        {
+            TakeBoss(generation, connection, text[(BossKind.Length + 1)..]);
             return;
         }
 
@@ -832,6 +855,35 @@ internal sealed class WorldSession
         }
 
         Log.Write($"world story changed at the relay, rev {number}");
+    }
+
+    /// <summary>
+    /// Hands the relay's word that a Raid World's boss pool changed to the game script.
+    /// </summary>
+    /// <param name="generation">The open this belongs to.</param>
+    /// <param name="connection">The connection.</param>
+    /// <param name="pool">The pool's hit points in kills, a space and the boss's key.</param>
+    private void TakeBoss(int generation, Connection connection, string pool)
+    {
+        var space = pool.IndexOf(' ', StringComparison.Ordinal);
+
+        if (space <= 0 || space == pool.Length - 1 || !double.TryParse(pool[..space], NumberStyles.Float, CultureInfo.InvariantCulture, out var hp) || !double.IsFinite(hp))
+        {
+            Log.Write("world room boss text ignored, its hit points or key are missing");
+            return;
+        }
+
+        lock (_gate)
+        {
+            if (generation != _generation || connection != _connection)
+            {
+                return;
+            }
+
+            Enqueue(new Message([new(Message.Kind, BossKind), new(KeyHeader, pool[(space + 1)..]), new(HpHeader, hp.ToString("0.###", CultureInfo.InvariantCulture))]).Encode());
+        }
+
+        Log.Write($"world boss pool changed at the relay, {hp.ToString("0.###", CultureInfo.InvariantCulture)} left");
     }
 
     /// <summary>

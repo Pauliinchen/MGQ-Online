@@ -2,6 +2,7 @@
 //  TestRelay.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-09: Kept a Raid World's boss pools as the relay does: reports counted once per battle, the pool that fills up again and the boss an emptying report defeats, telling every game of each change
 //      Paulinchen  2026-10-08: Kept a Raid World's story as the relay does: writes on the last sealed story that are not behind it, checkpoints, the route lock and shared companions, telling every game of each change
 //                            - Kept a world's type and how a Raid World shares companions, and kept games that do not name Raid Worlds in X-MGQ-Features out of them
 //                            - Handed out the mirrored chat lines as a copy taken under the lock, and told any text to every game of a world room
@@ -35,6 +36,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -355,6 +357,12 @@ internal sealed class TestRelay : IDisposable
             return;
         }
 
+        if (!context.Request.IsWebSocketRequest && parts is ["v1", "worlds", _, "bosses", ..])
+        {
+            await ServeBossesAsync(context, parts);
+            return;
+        }
+
         if (!context.Request.IsWebSocketRequest && parts is ["v1", "worlds", ..])
         {
             await ServeDirectoryAsync(context, parts);
@@ -561,6 +569,78 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
         if (push is { } rev)
         {
             Tell(id, $"story {rev}");
+        }
+    }
+
+    /// <summary>
+    /// How many boss reports the relay counted in all Raid Worlds.
+    /// </summary>
+    public int BossReports { get; private set; }
+
+    /// <summary>
+    /// Tells the time the boss pools fill up by; a fixed time keeps them from filling up while a test runs.
+    /// </summary>
+    public Func<DateTime> BossClock { get; set; } = () => DateTime.UtcNow;
+
+    /// <summary>
+    /// Answers a Raid World's boss requests, for its players only: every pool, one pool and a report;
+    /// then tells every game of the world of a change.
+    /// </summary>
+    /// <param name="context">The request.</param>
+    /// <param name="parts">The path's parts, "v1", "worlds", the world and "bosses" first.</param>
+    /// <returns>Completes once answered.</returns>
+    private async Task ServeBossesAsync(HttpListenerContext context, string[] parts)
+    {
+        var method = context.Request.HttpMethod;
+        using var reader = new StreamReader(context.Request.InputStream, Encoding.UTF8);
+        var body = method == "POST" ? JsonNode.Parse(await reader.ReadToEndAsync()) : null;
+        var id = parts[2];
+        var key = PlayerKeyOf(context);
+        (int Status, JsonNode Body) answer;
+        string? push = null;
+
+        lock (_gate)
+        {
+            if (!_directory.TryGetValue(id, out var world))
+            {
+                answer = (404, Error("there is no such world"));
+            }
+            else if (key == null || Hash(AuthKeyOf(context) ?? string.Empty) != world.AuthHash)
+            {
+                answer = (401, Error("the world's token does not match"));
+            }
+            else if (world.Type != WorldType.Raid)
+            {
+                answer = (404, new JsonObject { ["error"] = "the world is no Raid World", ["code"] = "classic" });
+            }
+            else
+            {
+                var changed = false;
+                answer = parts[4..] switch
+                {
+                    [] when method == "GET" => (200, world.Bosses.List(BossClock())),
+                    [var boss] when method == "GET" => (200, world.Bosses.View(Uri.UnescapeDataString(boss), BossClock())),
+                    [var boss, "report"] when method == "POST" => world.Bosses.Report(Uri.UnescapeDataString(boss), body!["battle"]!.GetValue<string>(), body["dealt"]!.GetValue<double>(), BossClock(), out changed),
+                    _ => (404, Error("there is no such route")),
+                };
+
+                if (changed)
+                {
+                    BossReports++;
+                    push = $"boss {answer.Body["hp"]!.GetValue<double>().ToString("0.###", CultureInfo.InvariantCulture)} {answer.Body["key"]!.GetValue<string>()}";
+                }
+            }
+        }
+
+        var bytes = Encoding.UTF8.GetBytes(answer.Body.ToJsonString());
+        context.Response.StatusCode = answer.Status;
+        context.Response.ContentType = "application/json";
+        await context.Response.OutputStream.WriteAsync(bytes);
+        context.Response.Close();
+
+        if (push != null)
+        {
+            Tell(id, push);
         }
     }
 
@@ -1479,6 +1559,131 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
         /// Its story, which only a Raid World keeps.
         /// </summary>
         public TestStory Story { get; } = new();
+
+        /// <summary>
+        /// Its boss pools, which only a Raid World keeps.
+        /// </summary>
+        public TestBosses Bosses { get; } = new();
+    }
+
+    /// <summary>
+    /// A Raid World's boss pools as the relay keeps them, see Relay/core/bosses.js.
+    /// </summary>
+    private sealed class TestBosses
+    {
+        /// <summary>
+        /// A full pool, in kills.
+        /// </summary>
+        private const double Max = 5;
+
+        /// <summary>
+        /// The kills a pool fills up by per hour.
+        /// </summary>
+        private const double Regen = 5;
+
+        /// <summary>
+        /// The pools a report touched, by key.
+        /// </summary>
+        private readonly SortedDictionary<string, Pool> _pools = new(StringComparer.Ordinal);
+
+        /// <summary>
+        /// Writes every pool a report touched.
+        /// </summary>
+        /// <param name="now">The time now.</param>
+        /// <returns>The pools, with a full pool's kills and the rate.</returns>
+        public JsonObject List(DateTime now) => new()
+        {
+            ["bosses"] = new JsonArray(_pools.Keys.Select(key => (JsonNode)View(key, now)).ToArray()),
+            ["max"] = Max,
+            ["regen"] = Regen,
+        };
+
+        /// <summary>
+        /// Writes one pool as it stands now; one never reported is full.
+        /// </summary>
+        /// <param name="key">The boss.</param>
+        /// <param name="now">The time now.</param>
+        /// <returns>The pool.</returns>
+        public JsonObject View(string key, DateTime now)
+        {
+            var pool = _pools.GetValueOrDefault(key);
+            return new JsonObject { ["key"] = key, ["hp"] = Math.Round(HpOf(pool, now), 3), ["max"] = Max, ["regen"] = Regen, ["defeated"] = pool?.Defeated ?? false };
+        }
+
+        /// <summary>
+        /// Counts a battle against a pool, once per battle.
+        /// </summary>
+        /// <param name="key">The boss.</param>
+        /// <param name="battle">The battle's id.</param>
+        /// <param name="dealt">The share of the boss's max HP dealt.</param>
+        /// <param name="now">The time now.</param>
+        /// <param name="changed">Whether the report changed the pool.</param>
+        /// <returns>The answer.</returns>
+        public (int, JsonNode) Report(string key, string battle, double dealt, DateTime now, out bool changed)
+        {
+            _pools.TryGetValue(key, out var pool);
+            var repeat = pool != null && pool.Battles.Contains(battle);
+            var counted = 0.0;
+            changed = !repeat && pool?.Defeated != true;
+
+            if (changed)
+            {
+                pool ??= _pools[key] = new Pool { Hp = Max, At = now };
+                counted = Math.Min(1, dealt);
+                var left = HpOf(pool, now) - counted;
+                pool.Defeated = left < 0.0005;
+                pool.Hp = pool.Defeated ? 0 : left;
+                pool.At = now;
+                pool.EmptiedBy = pool.Defeated ? battle : null;
+                pool.Battles.Add(battle);
+            }
+
+            var view = View(key, now);
+            view["dealt"] = counted;
+            view["emptied"] = pool?.EmptiedBy == battle;
+            view["repeat"] = repeat;
+            return (200, view);
+        }
+
+        /// <summary>
+        /// Reads a pool's hit points now, filled up since the last report, at most full.
+        /// </summary>
+        /// <param name="pool">The pool, <see langword="null"/> for one never reported.</param>
+        /// <param name="now">The time now.</param>
+        /// <returns>The hit points in kills.</returns>
+        private static double HpOf(Pool? pool, DateTime now) =>
+            pool == null ? Max : pool.Defeated ? 0 : Math.Min(Max, pool.Hp + ((now - pool.At).TotalHours * Regen));
+
+        /// <summary>
+        /// One boss's pool.
+        /// </summary>
+        private sealed class Pool
+        {
+            /// <summary>
+            /// The hit points at the last report.
+            /// </summary>
+            public double Hp { get; set; }
+
+            /// <summary>
+            /// When it was last reported.
+            /// </summary>
+            public DateTime At { get; set; }
+
+            /// <summary>
+            /// Whether a report emptied it.
+            /// </summary>
+            public bool Defeated { get; set; }
+
+            /// <summary>
+            /// The battle whose report emptied it.
+            /// </summary>
+            public string? EmptiedBy { get; set; }
+
+            /// <summary>
+            /// The battles counted.
+            /// </summary>
+            public HashSet<string> Battles { get; } = [];
+        }
     }
 
     /// <summary>

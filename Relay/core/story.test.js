@@ -2,6 +2,7 @@
 //  story.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-09: Covered an admin taking back the route lock
 //      Paulinchen  2026-10-08: Created
 //
 //----------------------------------------------------------------
@@ -343,6 +344,19 @@ test("a wrong write is refused before it counts against the player's writes", as
   assert.equal(tooOften.status, 429);
   assert.equal(tooOften.body.code, "rate");
   assert.equal((await story.write(BOB, { base: 1, counters: counters(), blob: BLOB })).status, 200, "each player has writes of their own");
+});
+
+test("taking back the route lock counts the revision up once and lets another route be chosen", async () => {
+  const { story, kept } = makeStory();
+  const none = await story.clearRoute();
+  assert.deepEqual([none.body.cleared, none.push, kept.puts], [false, undefined, 0], "a world without a lock writes nothing");
+
+  await accepted(story, 0, { p: 40 });
+  await story.lockRoute("ad");
+  const cleared = await story.clearRoute();
+  assert.deepEqual([cleared.body.cleared, cleared.body.route, cleared.body.blob, cleared.push], [true, "none", undefined, 3]);
+  assert.equal((await story.lockRoute("mr")).body.locked, "mr");
+  assert.equal((await accepted(story, 1, { p: 40, r1142: 1 })).route, "mr", "a write on the last sealed story is still taken");
 });
 
 test("removing the story forgets it and its checkpoints", async () => {

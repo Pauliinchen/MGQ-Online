@@ -2,6 +2,7 @@
 //  directory.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-09: Told a world room whether a key is an admin's, for the admin routes of a Raid World it answers itself
 //      Paulinchen  2026-10-08: Told a world room whether a game is a player of its world, for the routes it answers itself, such as a Raid World's story
 //                            - Kept a world's type, Classic or Raid, and how a Raid World shares companions, both fixed once it is made
 //                            - Kept games that do not name Raid Worlds in X-MGQ-Features out of them
@@ -473,6 +474,29 @@ export class Directory {
 
     const type = entry.type ?? WORLD_TYPE.classic;
     return { status: 200, body: { player, type }, player, type, authHash: entry.authHash };
+  }
+
+  /**
+   * Tells whether a key is one of the relay's admins', for the admin routes a world room answers
+   * itself, such as a Raid World's boss pools.
+   *
+   * @param {string} id The world.
+   * @param {unknown} key The asking player's key.
+   * @returns {Promise<{status: number, body: object, type?: string}>} The world's type, or 404 for no world and 403 for anyone but an admin.
+   */
+  async raidAdmin(id, key) {
+    const { entry, player, refusal } = await this.worldAndPlayer(id, key);
+
+    if (refusal) {
+      return refusal;
+    }
+
+    if (!this.admins.has(player)) {
+      return { status: 403, body: { error: "only the relay's admins may do this" } };
+    }
+
+    const type = entry.type ?? WORLD_TYPE.classic;
+    return { status: 200, body: { type }, type };
   }
 
   /**

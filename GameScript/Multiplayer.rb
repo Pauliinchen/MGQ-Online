@@ -2,7 +2,8 @@
 #  Multiplayer.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-09: Loaded world_catchup_data.rbx before world_story.rbx, the generated data of a Raid World's catch-up
+#      Paulinchen  2026-10-09: Named the mp_raid_boss* exports of a Raid World's boss pools at the relay
+#                            - Loaded world_catchup_data.rbx before world_story.rbx, the generated data of a Raid World's catch-up
 #                            - Loaded world_catchup.rbx after world_story.rbx, which carries a player behind a Raid World's story along by their level
 #      Paulinchen  2026-10-08: Loaded coop_scope.rbx after coop.rbx, which tells the party scripts whom the player shares the map and the story with
 #                            - Loaded world_story.rbx after coop_story.rbx and world.rbx, a Raid World's story at the relay, and named the mp_raid_* exports it calls
@@ -633,6 +634,11 @@ module MGQ_Multiplayer
       'mp_raid_checkpoint_state' => READ_ARGUMENTS,
       'mp_raid_route_lock' => 'pp',
       'mp_raid_companions_add' => 'pp',
+
+      # A Raid World's boss pools at the relay.
+      'mp_raid_bosses_fetch' => 'p',
+      'mp_raid_boss_report' => 'pppp',
+      'mp_raid_boss_state' => READ_ARGUMENTS,
     }
 
     # Finds the mod folder and starts the DLL's log.
