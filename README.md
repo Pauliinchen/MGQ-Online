@@ -12,14 +12,15 @@ Play Monster Girl Quest! Paradox RPG together with friends over the internet, wi
   <img src="docs/images/world-list.png" alt="The world screen, with the list of worlds and a world's details" width="32%">
 </p>
 
-- **Worlds:** up to 32 players on the same maps, with emotes and an overview of everyone online.
+- **Worlds:** up to 32 players on the same maps, with emotes and an overview of everyone online. A world is *Classic*, where each party plays its own story, or a *Raid World*.
+- **Raid Worlds:** the whole world plays one story together. Everyone on a map sees the story's scenes together, party or not, and battles pull in the nearest players, up to four, each with one Frontline and two Backline characters. Whoever is furthest pushes the story on for everyone; a player behind sees the world as it was at the end of their part and catches up as they level, and companions join on reaching their level. Story bosses share their HP across the world and take several victories to beat. Raid Worlds are red and at the top of the list.
 - **Chat:** global, party, say and whisper chats in tabs, a glow on tabs with unread lines, and speech bubbles over the players on your map.
 - **Parties:** up to four players play the leader's story together and share one team's worth of companions.
 - **Co-op battles:** party members on the same map join each other's battles, each commanding their own characters.
 - **Duels and PvP battles:** your team against a friend's, live, inside a world or outside one.
 - **Trading:** swap items, equipment, stones and gold with a player on your map; the relay sees to it that a disconnect never loses or copies anything.
 
-Worlds, parties and co-op battles are a **prototype**: expect bugs, and please [report them](https://github.com/Pauliinchen/MGQ-Online/issues/new?template=bug_report.yml).
+Worlds, parties and co-op battles are a **prototype**, and Raid Worlds are **experimental**: expect bugs, and please [report them](https://github.com/Pauliinchen/MGQ-Online/issues/new?template=bug_report.yml).
 
 ## Requirements
 
@@ -49,9 +50,9 @@ While the mod is installed, the game keeps running when its window is in the bac
 ## Quick start
 
 1. Pick **Multiplayer** below *Continue* on the title screen and type the name the others see.
-2. One of you picks *Create new world*, gives it a name and, if you like, a password.
+2. One of you picks *Create new world*, gives it a name, picks *Classic* or *Raid* (fixed once created) and, if you like, a password.
 3. Everyone confirms on that world and picks *Enter the world*.
-4. On the map, stand next to a friend, press **B** and pick *Invite to a party*; they accept in their own wheel. You now play the leader's story together and fight co-op battles.
+4. On the map, stand next to a friend, press **B** and pick *Invite to a party*; they accept in their own wheel. You now play the leader's story together and fight co-op battles. In a Raid World a party only gets the first places in battles, since everyone plays the world's story.
 
 For a PvP battle without a world, press **F11** on the map and host; your friend joins with the join code you send them.
 
