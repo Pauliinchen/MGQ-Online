@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-09: Checked that a message for everyone on the map or for several players goes out once, and that the gate drops one naming others
+#                            - Checked that a teller whose connection is down still tells, and that the teller who took the player along is kept
 #      Paulinchen  2026-10-08: Created
 #
 #----------------------------------------------------------------
@@ -161,3 +162,25 @@ taken.clear
 $routes["map_npcs"].call(stranger, { "map_npcs" => "5", "mmap" => "5", "mto" => "m,k" })
 $routes["map_npcs"].call(stranger, { "map_npcs" => "6", "mmap" => "5", "mto" => "k,me" })
 check("but none that names other players", taken, [["k", "6"]])
+
+# Tellers whose connection is down, and the one whose story took the player along.
+member.state.merge!("telling" => "1", "since" => "3000")
+stranger.state.merge!("telling" => "0")
+elsewhere.state["telling"] = "0"
+member.away = 600
+check("a teller whose connection is down still tells until their game is forgotten", [scope.teller, scope::Raid.first_teller_here, scope.watches?(member)], [member, member, true])
+member.away = nil
+elsewhere.state.merge!("telling" => "1", "map" => "8", "since" => "9000")
+check("of two tellers on the story's maps the one who entered their map first", scope.teller, member)
+module MGQ_MpCoopGather; def self.followed_id; $followed; end; end
+module MGQ_MpCoopEvents; def self.heard_from; $heard; end; end
+$followed = "e"
+check("but the one whose story takes the player along, though another entered first", [scope.teller, scope.story_from?(elsewhere), scope.story_from?(member)], [elsewhere, true, false])
+$followed = nil
+$heard = "e"
+check("or whose pages the player follows", scope.teller, elsewhere)
+elsewhere.state["telling"] = "0"
+check("until they stop telling", scope.teller, member)
+$heard = nil
+member.state["telling"] = "0"
+elsewhere.state["map"] = "8"

@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-09: Checked that a Raid World's pages go to the viewers in one message
+#                            - Checked that the story's next event goes on with its telling
 #                            - Checked that a player behind a Raid World's story starts no story event, is told the level that moves them on once, and that story which runs by itself waits while talks run
 #      Paulinchen  2026-10-08: Checked a Raid World: a player telling the story on the map keeps the others' story events from starting, whoever entered the map first tells it when two start at once, its pages go to and show for the players whose story matches, the castle's Map Owner is the sync host, and no leader's story is borrowed
 #                            - Checked that a Raid World's tie between two tellers holds only at the telling's start on its map, and that its chests are personal
@@ -1901,6 +1902,26 @@ check("nor is one whose story moved them onto a map where another player tells o
 interpreter.busy = false
 $game_map.map_id = 3
 teller.state.merge!("telling" => "0", "map" => "3")
+# The story's next event starts in the frame its last ended, before the world's story went out.
+$game_map.update
+interpreter.setup(story_page.list, 52)
+interpreter.busy = true
+$game_map.update
+$game_variables[1001] = 13
+MGQ_MpCoopGather.instance_variable_set(:@taken_along, ["x"])
+MGQ_MpCoopEvents.finished(interpreter)
+interpreter.setup(story_page.list, 52)
+check("the story's next event goes on with the telling: how far the story was as it started, and whom it took along",
+      [MGQ_MpCoopEvents.state_fields["tsm"], MGQ_MpCoop::Scope.viewers, MGQ_MpCoopGather.instance_variable_get(:@taken_along)],
+      ["12,0,0,0", [teller, stranger], ["x"]])
+interpreter.busy = false
+$game_map.update
+interpreter.setup(story_page.list, 52)
+interpreter.busy = true
+check("a telling after a frame without one starts anew", [MGQ_MpCoopEvents.state_fields["tsm"], MGQ_MpCoopGather.instance_variable_get(:@taken_along)], ["13,0,0,0", nil])
+interpreter.busy = false
+$game_map.update
+$game_variables[1001] = 12
 
 $game_party = Game_Party.new
 $game_self_switches = Game_SelfSwitches.new

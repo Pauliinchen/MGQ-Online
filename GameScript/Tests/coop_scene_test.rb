@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-09: Checked that a Raid World's scene goes to several viewers in one message
+#                            - Stood in for MGQ_MpOverworldSync::Peers.all, among whom the teller is found now
 #      Paulinchen  2026-10-08: Checked a Raid World: the player telling the story shows its scene to the players on the map whose story matches, through the map's gate, and sees only the teller's whose story matches theirs
 #                            - Stood in for the players the story took along, of coop_gather.rbx
 #      Paulinchen  2026-10-07: Checked that the scene goes to the members who follow the story alone, and that one who plays their own sees none of it
@@ -221,6 +222,7 @@ module MGQ_MpOverworldSync
   module Me; def self.map_since; 2000; end; def self.id; "me"; end; end
   module Peers
     def self.present; $peers; end
+    def self.all; $peers; end
     def self.on_this_map?(peer); peer.state["map"].to_i == $game_map.map_id; end
   end
 end

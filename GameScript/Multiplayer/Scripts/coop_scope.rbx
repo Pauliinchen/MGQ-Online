@@ -3,6 +3,8 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-09: Sent a message for everyone on the map, or for several players, as one message the map's gate sorts on arrival instead of one per player, which ran past the relay's limit per connection on a busy map
+#                            - Counted a teller whose connection is down as telling until their game is forgotten, as the party's leader is
+#                            - Kept the teller whose story took the player along, or whose pages the player follows, over another player telling the story on the map they come to
 #      Paulinchen  2026-10-08: Created
 #
 #----------------------------------------------------------------
@@ -357,7 +359,8 @@ module MGQ_MpCoop
 
       # Finds whose story the player shares: their own while they tell it, else of the players whose
       # state says they tell it on the player's map, or on the map the story takes the player to,
-      # the one who entered their map first.
+      # the one whose story took the player along or whose pages the player follows, else the one
+      # who entered their map first.
       #
       # A story that moves its teller onto a map where another player tells one goes on, since only
       # two tellings started at the same moment break the tie, see first_teller_here.
@@ -366,7 +369,33 @@ module MGQ_MpCoop
       def self.teller
         return :me if telling?
 
-        Scope.first(MGQ_MpOverworldSync::Peers.present.select { |peer| peer.state["telling"] == "1" && Scope.story_map?(peer.state["map"].to_i) })
+        candidates = tellers.select { |peer| Scope.story_map?(peer.state["map"].to_i) }
+        followed_teller_ids.each do |id|
+          followed = candidates.find { |peer| peer.state["id"].to_s == id }
+          return followed if followed
+        end
+        Scope.first(candidates)
+      end
+
+      # Lists the others whose state says they tell the story, those whose connection is down
+      # included until their game is forgotten, so a moment without a connection, theirs or the
+      # player's, ends no scene; the party's leader of a Classic world stays the same way.
+      #
+      # @return [Array<MGQ_MpOverworldSync::Peers::Peer>] The players.
+      def self.tellers
+        MGQ_MpOverworldSync::Peers.all.select { |peer| peer.state["telling"] == "1" }
+      end
+
+      # Names the tellers the player keeps over the order of the map: the one whose story takes the
+      # player along now (MGQ_MpCoopGather.followed_id), then the one whose pages the player follows
+      # (MGQ_MpCoopEvents.heard_from).
+      #
+      # @return [Array<String>] Their ids, the first kept first.
+      def self.followed_teller_ids
+        ids = []
+        ids << MGQ_MpCoopGather.followed_id if defined?(MGQ_MpCoopGather) && MGQ_MpCoopGather.respond_to?(:followed_id)
+        ids << MGQ_MpCoopEvents.heard_from if defined?(MGQ_MpCoopEvents) && MGQ_MpCoopEvents.respond_to?(:heard_from)
+        ids.compact.map { |id| id.to_s }
       end
 
       # Finds who of the players telling the story on the player's map, the player included while
@@ -375,9 +404,10 @@ module MGQ_MpCoop
       #
       # @return [MGQ_MpOverworldSync::Peers::Peer, Symbol, nil] The first, :me for the player, nil for none.
       def self.first_teller_here
-        tellers = peers_here.select { |peer| peer.state["telling"] == "1" }
-        tellers << :me if telling?
-        Scope.first(tellers)
+        here = $game_map ? $game_map.map_id : nil
+        candidates = tellers.select { |peer| peer.state["map"].to_i == here }
+        candidates << :me if telling?
+        Scope.first(candidates)
       end
 
       # Reports whether the player tells their story now, through coop_events.rbx.

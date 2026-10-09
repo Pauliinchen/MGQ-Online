@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-09: Kept story events from starting while the player's story is behind a Raid World's, telling the level that moves them on, and held those that run by themselves, so a teleport onto their map cannot loop
+#                            - Kept a Raid World's telling, how far its story was, where it started and whom it took along, through the story's next event that starts in the frame its last ended, so its viewers see the rest of the story
 #                            - Told the story's pages to a Raid World's viewers in one message instead of one per viewer
 #      Paulinchen  2026-10-08: Took the teller, the viewers and the gate of the story's messages from MGQ_MpCoop::Scope: the party's leader and synced members in a Classic world, the player telling the story on the map and those whose story matches in a Raid World
 #                            - Stopped a story event in a Raid World once a player who entered the map first started telling the story there at the same moment, within TIE_FRAMES of its start and on its map alone
@@ -443,7 +444,11 @@ module MGQ_MpCoopEvents
     event = event_id > 0 ? $game_map.events[event_id] : nil
     sorted = own?(event ? nil : list) ? :own : (event ? kind(event) : kind_of(list || []))
     @telling = leading_story? && sorted == :story
-    note_telling_start if @telling
+    if @telling && @told_last_frame
+      log("the story's next event goes on with the telling that started on map #{@telling_map}")
+    elsif @telling
+      note_telling_start
+    end
     @may_tell = sorted == :talk && (following? || leading_story?) && may_tell?(list || [])
     hold = @telling && scene?(list) && !MGQ_MpCoopGather.gathered?
     MGQ_MpCoopGather.hold(interpreter) if hold
@@ -454,6 +459,10 @@ module MGQ_MpCoopEvents
   # Notes when and where the player's telling starts, and in a Raid World how far their story is,
   # which tells who sees the story: those whose story is there too, see
   # MGQ_MpCoop::Scope::Raid.viewers. Those an earlier telling took along no longer see it.
+  #
+  # Only a telling that starts after a frame without one is new: the story's next event starts in
+  # the frame its last one ended, before the world's story of its changes went out, and would
+  # otherwise lose the viewers whose story is still where the telling started.
   def self.note_telling_start
     @telling_at = Graphics.frame_count
     @telling_map = $game_map ? $game_map.map_id : nil
@@ -470,6 +479,12 @@ module MGQ_MpCoopEvents
   #   and in a Classic world.
   def self.told_markers
     @telling ? @told_markers : nil
+  end
+
+  # Notes whether the player tells the story as the map's update ends, which tells a story's next
+  # event from a new telling, see note_telling_start. Called after the map's update.
+  def self.note_told_frame
+    @told_last_frame = telling?
   end
 
   # Logs how an event starting on the map is sorted and what the party does with it.
@@ -975,6 +990,13 @@ module MGQ_MpCoopEvents
     MGQ_MpOverworldSync::Peers.all.find { |peer| peer.state["id"].to_s == @heard_from.to_s }
   end
 
+  # Names the teller whose story pages the player follows, see forget_former_leader.
+  #
+  # @return [String, nil] Their id, nil for nobody or the player.
+  def self.heard_from
+    @heard_from
+  end
+
   # Logs once why the page of the leader's story the window shows is over.
   #
   # @param reason [String] Why it is.
@@ -1089,6 +1111,7 @@ module MGQ_MpCoopEvents
   # Shows the leader's messages once the player is free, and chests other members opened. Called
   # after the map's update.
   def self.update
+    note_told_frame
     forget_former_leader
     show_heard
     take_held_chests

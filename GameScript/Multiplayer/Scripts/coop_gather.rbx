@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-09: Called the players a Raid World's story takes along in one message instead of one per player
+#                            - Kept whom the story took along for the whole telling, not only its first event, and named the teller whose call the player follows
 #      Paulinchen  2026-10-08: Gathered nobody in a Raid World, where whoever is on the map watches, and took everyone on the map along where the story moves its teller
 #                            - Offered a teleport to the story in a Raid World, to where the story was last told until the relay keeps its endpoint, with that place's warp ban
 #                            - Took the teleport to the story to the endpoint the relay keeps of the world's story, where this game last saw the story told only while the relay keeps none
@@ -306,15 +307,15 @@ module MGQ_MpCoopGather
 
   # As teller in a Raid World, lists the players the story took along who are not on the player's
   # map yet, whose state still names the map they left, so the story's pages and scene reach them
-  # on the way. Forgets them once the telling ends.
+  # on the way. None outside a telling; the next telling forgets them, see
+  # MGQ_MpCoopEvents.note_telling_start.
+  #
+  # The story's next event starts in the frame its last one ended, so the list outlasts the moment
+  # between them.
   #
   # @return [Array<MGQ_MpOverworldSync::Peers::Peer>] The players.
   def self.taken_along
-    return [] unless @taken_along
-    unless MGQ_MpCoopEvents.telling?
-      forget_taken_along
-      return []
-    end
+    return [] unless @taken_along && MGQ_MpCoopEvents.telling?
 
     along = MGQ_MpOverworldSync::Peers.present.select { |peer| @taken_along.include?(peer.state["id"].to_s) }
     arrived = along.select { |peer| peer.state["map"].to_i == $game_map.map_id }
@@ -336,7 +337,14 @@ module MGQ_MpCoopGather
   def self.followed(peer, place, warp_ban)
     log("following #{peer.state['name']} to map #{place[0]} #{place[1]},#{place[2]} as soon as the player is free")
     @gather = { :since => Graphics.frame_count - GATHER_FRAMES, :name => peer.state["name"].to_s, :place => place,
-                :warp_ban => warp_ban, :called => Graphics.frame_count, :follow => true }
+                :warp_ban => warp_ban, :called => Graphics.frame_count, :follow => true, :id => peer.state["id"].to_s }
+  end
+
+  # Names the teller whose story takes the player along now, see followed.
+  #
+  # @return [String, nil] Their id, nil while no story takes the player along.
+  def self.followed_id
+    @gather && @gather[:follow] ? @gather[:id] : nil
   end
 
   # Reports whether the leader's story pages of a map reach the player: the player's map, or the

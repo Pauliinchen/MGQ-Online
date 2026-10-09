@@ -3,6 +3,8 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-09: Stood in for MGQ_MpCoopEvents.tell_each, through which the story calls those it takes along in one message
+#                            - Checked that the story calls those it takes along in one message, keeps them through a moment between its events, and names its teller as the one the player follows
+#                            - Stood in for MGQ_MpOverworldSync::Peers.all, among whom the teller is found now
 #      Paulinchen  2026-10-08: Checked a Raid World: nobody is gathered, everyone on the map follows where the story moves its teller, only a player whose story matches stands still, and a teleport goes to where the story was told
 #                            - Checked that the story keeps telling the players it took along until they arrive, and that a teleport to the story takes over the warp ban there
 #                            - Checked that a teleport to the story goes to the endpoint the relay keeps, where this game saw the story told only while the relay keeps none
@@ -101,6 +103,7 @@ module MGQ_MpOverworldSync
   module Me; def self.map_since; 2000; end; def self.id; "me"; end; end
   module Peers
     def self.present; $peers; end
+    def self.all; $peers; end
     def self.on_this_map?(peer); peer.state["map"].to_i == $game_map.map_id; end
   end
 end
@@ -140,9 +143,12 @@ gather.take(teller, { "pevent" => "gather", "map" => "3", "x" => "5", "y" => "5"
 check("a call to gather is ignored", gather.coming?, false)
 gather.take(teller, { "pevent" => "follow", "map" => "8", "x" => "1", "y" => "2", "d" => "2" })
 check("but the story moving its teller elsewhere takes the player along", [gather.coming?, gather.story_map?(8)], [true, true])
+check("whose teller the player follows", gather.followed_id, "t")
 gather.forget
 
-$peers = [behind]
+$peers = [behind, teller]
+teller.state["map"] = "3"
+teller.state["telling"] = "0"
 $telling = true
 $game_player.transfer = true
 gather.before_transfer($game_player)
@@ -150,13 +156,21 @@ $game_player.transfer = false
 $game_map.map_id = 8
 gather.after_transfer
 check("the player telling the story takes everyone on the map along, even one whose story differs",
-      $told.map { |seat, fields| [seat, fields["map_pevent"], fields["mmap"], fields["map"]] }, [[5, "follow", 3, 8]])
-check("and keeps telling them the story on their way", gather.taken_along, [behind])
+      $told.map { |seat, fields| [seat, fields["map_pevent"], fields["mmap"], fields["map"]] }, [[-1, "follow", 3, 8]])
+check("in one message that names them", $told.last[1]["mto"], "b,t")
+check("and keeps telling them the story on their way", gather.taken_along, [behind, teller])
+$telling = false
+check("none outside a telling", gather.taken_along, [])
+$telling = true
+check("but still them as the story's next event goes on with it", gather.taken_along, [behind, teller])
 behind.state["map"] = "8"
+teller.state["map"] = "8"
 check("until they arrived", gather.taken_along, [])
 behind.state["map"] = "3"
 $telling = false
 $game_map.map_id = 3
+$peers = [teller, behind]
+teller.state["telling"] = "1"
 
 gather.forget_story_place
 gather.join_story
