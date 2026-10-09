@@ -2,7 +2,8 @@
 #  battles_coop_hotjoin.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-09: Told the guests the grown troop through battles_coop.rbx, which tells them every change of the troop once, and noted the troop a battle turned live with
+#      Paulinchen  2026-10-09: Added only the enemies of an encounter taken in that still find a place around the encounters still to join once enemies added after its request leave no room for them all, never more than the troop holds
+#                            - Told the guests the grown troop through battles_coop.rbx, which tells them every change of the troop once, and noted the troop a battle turned live with
 #                            - Let a guest transform, show or hide its enemies as the host's troop does, such as one that transformed or appeared, instead of building the whole troop anew
 #                            - Marked an enemy the game hid as it was eaten as fallen for the guests, who so count it among the defeated that pay out
 #                            - Sent the battle's enemy rates to the players it takes in, who fight with them
@@ -826,8 +827,8 @@ module MGQ_MpBattlesHotjoin
 
   # Adds the enemies of the encounters whose player joined to the troop, as the game's troop setup
   # makes them, and starts their battle. Their places are found anew with the troop as it stands
-  # now, since enemies may have fallen after take_request placed them; where none is found they
-  # keep those.
+  # now (see place_anew), since enemies may have fallen or been added after take_request placed
+  # them.
   #
   # @param scene [Scene_Battle] The battle.
   # @param seats [Array<Integer>] The seats of the players who joined.
@@ -839,7 +840,7 @@ module MGQ_MpBattlesHotjoin
       next if entry[:added] || !seats.include?(entry[:requester])
 
       entry[:added] = true
-      (place(entry[:enemies], []) || entry[:enemies]).each do |id, x, y, _hidden|
+      place_anew(entry[:enemies]).each do |id, x, y, _hidden|
         enemy = Game_Enemy.new(enemies.size, id)
         enemy.screen_x = x
         enemy.screen_y = y
@@ -856,6 +857,27 @@ module MGQ_MpBattlesHotjoin
     MGQ_MpBattlesCoop.redraw_enemies(scene)
     log("added #{added.map { |enemy| "#{MGQ_MpBattlesSync.named(enemy)} at x #{enemy.screen_x}" }.join(', ')} to the troop")
     added
+  end
+
+  # Places an encounter's enemies anew as its player joins, see add_enemies, around the places of
+  # the encounters still to join. When the troop has no room for them all any more, such as after
+  # enemies added mid-battle by another mod, only the first of them that still find a place join
+  # it, none when no place is left.
+  #
+  # The places take_request found are never taken instead, since they may lie past TROOP_LIMIT now.
+  #
+  # @param entries [Array<Array>] The encounter's enemies where take_request placed them.
+  # @return [Array<Array>] The enemies that join, at their new places.
+  def self.place_anew(entries)
+    count = entries.size
+    placed = nil
+    count -= 1 until (placed = place(entries.first(count))) || count == 0
+    dropped = entries.drop(placed ? count : 0)
+    unless dropped.empty?
+      log("left out #{dropped.size} of the encounter's #{entries.size} enemies (#{dropped.map(&:first).join(', ')}): " \
+          "the troop of #{$game_troop.members.size} has no place left for them")
+    end
+    placed || []
   end
 
   # Computes the party's chance to escape anew for the troop that changed, as the game does at a

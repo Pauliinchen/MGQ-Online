@@ -3,7 +3,8 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-09: Checked that a host tells its guests a troop that grew, whose hidden enemy appeared or whose enemy transformed once, before the send that names it and as a command phase opens, together with an encounter taken in, and that a guest shows or transforms its own enemy, keeping it
-#                            - Checked that an enemy the host's party ate stays fallen and shown for the guests, so its defeat pays out
+#                            - Checked that an enemy the host's party ate stays fallen and shown for the guests, so its defeat pays out, and that an encounter whose player joins first keeps clear of the place of one still to join
+#                            - Checked that an encounter whose enemies find no room any more once enemies were added after its request adds only those that fit, or none
 #                            - Checked that a guest and an encounter taken in fight with the host's enemy rates and get their own back
 #                            - Checked that an encounter brings along a player whose game window is in the background
 #                            - Checked that the enemies of an encounter taken in fill the place of an enemy that fell before its player joined
@@ -704,6 +705,56 @@ coop::Mode.take("coop_troop", scene, troop_bodies[1])
 appeared = $game_troop.members[3]
 check("and shows it once it appeared on the host, keeping its own enemies",
       [appeared.hidden?, appeared.letter.empty?, $game_troop.members[0].equal?(first), $game_troop.members.size], [false, false, true, 4])
+reset
+
+# An encounter whose enemies find no room any more once another mod added enemies after its request.
+$scene_now = scene
+own_troop
+hotjoin.fight_alone("own17")
+MGQ_MpOverworldSync::Peers.all.replace([asker])
+coop.take(asker, request.merge("bid" => "own17", "seats" => "", "enemies" => "50:0:300:0;52:0:300:0"))
+check("an encounter of two enemies is taken in while the troop has room", hotjoin.instance_variable_get(:@pending)[0][:enemies].size, 2)
+6.times { add_wide_enemy }
+sync.take(asker, { "battle" => "join", "bid" => "own17", :payload => sync::Wire.line(["5", [[50, 5]], 4]) })
+$log.clear
+open_phase(scene)
+check("only the first that still fits joins, the troop holding no more than it may",
+      [$game_troop.members.map(&:enemy_id).last(2), $game_troop.members.size], [[61, 50], hotjoin::TROOP_LIMIT])
+check("the one left out is logged", $log.grep(/left out 1 of the encounter's 2 enemies \(52\)/).size, 1)
+reset
+
+own_troop
+hotjoin.fight_alone("own18")
+coop.take(asker, request.merge("bid" => "own18", "seats" => "", "enemies" => "50:0:300:0"))
+7.times { add_wide_enemy }
+sync.take(asker, { "battle" => "join", "bid" => "own18", :payload => sync::Wire.line(["5", [[50, 5]], 4]) })
+$log.clear
+open_phase(scene)
+check("with no place left none joins, but its player does",
+      [$game_troop.members.size, $game_party.battle_members.map(&:name)], [hotjoin::TROOP_LIMIT, ["Actor1", "Actor5 (P8)"]])
+check("and the enemy left out is logged", $log.grep(/left out 1 of the encounter's 1 enemies \(50\)/).size, 1)
+reset
+
+# Two encounters taken in whose players join in turn: the first to join keeps clear of the place the
+# other was given.
+$scene_now = scene
+own_troop
+hotjoin.fight_alone("own19")
+late_asker = player(11, { "scene" => "battle", "rb" => "own19", "rbh" => "0" })
+MGQ_MpOverworldSync::Peers.all.replace([asker, late_asker])
+coop.take(asker, request.merge("bid" => "own19", "seats" => "", "enemies" => "50:0:300:0"))
+coop.take(late_asker, request.merge("bid" => "own19", "seats" => "", "enemies" => "52:0:300:0"))
+reserved = hotjoin.instance_variable_get(:@pending).map { |entry| entry[:enemies][0][1] }
+sync.take(late_asker, { "battle" => "join", "bid" => "own19", :payload => sync::Wire.line(["8", [[40, 4]], 4]) })
+open_phase(scene)
+first_x = $game_troop.members.last.screen_x
+sync.take(asker, { "battle" => "join", "bid" => "own19", :payload => sync::Wire.line(["5", [[50, 5]], 4]) })
+sync::Live.close_phase
+sync::Recorder.turn_started
+open_phase(scene)
+check("an encounter whose player joins first keeps clear of the place of one still to join, which joins there",
+      [first_x == reserved[0], $game_troop.members.map { |enemy| [enemy.enemy_id, enemy.screen_x] }.last],
+      [false, [50, reserved[0]]])
 reset
 
 # An enemy the host's party ate, which the game hides, and one that transformed.
