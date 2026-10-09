@@ -2,7 +2,8 @@
 #  battles_join_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-09: Created
+#      Paulinchen  2026-10-09: Covered a boss battle whose troop grew mid-battle, which stays one and hands the player every enemy
+#                            - Created
 #
 #----------------------------------------------------------------
 
@@ -326,6 +327,25 @@ check("though it still takes no encounter in", map_sent("hot_no").map(&:first), 
 sync.take(asker, { "battle" => "join", "bid" => "boss1", :payload => sync::Wire.line(["5", [[50, 5]], 4]) })
 open_phase(scene)
 check("the player joins the boss battle, which keeps its own troop", [sync.guests_in, $game_troop.members.map(&:enemy_id)], [[8], [29]])
+reset
+
+# A boss battle whose troop grew mid-battle, such as by another mod, stays one.
+$scene_now = scene
+$game_troop.setup(29)
+$game_troop.members << Game_Enemy.new(1, 31)
+hotjoin.fight_alone("boss2")
+coop.take_map(asker, request.merge("bid" => "boss2"))
+check("a boss battle whose troop grew mid-battle takes the player in as one",
+      [hotjoin.boss_battle?, map_sent("invite").map { |seat, f| [seat, f["boss"]] }], [true, [[8, "1"]]])
+$sent.clear
+coop.take_map(player(9, { "scene" => "battle", "rb" => "boss2", "rbh" => "0" }),
+              { "coop" => "hot", "bid" => "boss2", "troop" => "50", "enemies" => "50:320:300:0", "seats" => "", "map" => "5" })
+check("and takes no encounter in", map_sent("hot_no").map(&:first), [9])
+sync.take(asker, { "battle" => "join", "bid" => "boss2", :payload => sync::Wire.line(["5", [[50, 5]], 4]) })
+open_phase(scene)
+roster = battle_sent("roster")
+check("the player joins with every enemy in the roster, the one added mid-battle after the troop's own",
+      [sync.guests_in, sync::Wire.parse(roster[0][1][:payload])[0].map(&:first), $game_troop.members.map(&:enemy_id)], [[8], [29, 31], [29, 31]])
 reset
 
 $raid = false

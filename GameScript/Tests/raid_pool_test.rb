@@ -2,14 +2,16 @@
 #  raid_pool_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-09: Covered the boss fights whose events change the party, which fall back with the party as it was
+#      Paulinchen  2026-10-09: Covered the share of a kill and the boss's name that count only the troop's own enemies, never those added mid-battle
+#                            - Covered the boss fights whose events change the party, which fall back with the party as it was
 #                            - Covered the companions that join after the battle, the personas put back without marking them owned and the items a replay gives again
 #                            - Created
 #
 #----------------------------------------------------------------
 
 # Covers battles_raid_pool.rbx with battles_raid_bosses.rbx: which battles count against a raid
-# boss's pool, the share of a kill a battle reports, a boss that falls back (its event ends and
+# boss's pool, the share of a kill a battle reports (of the troop's own enemies, never those added
+# mid-battle), a boss that falls back (its event ends and
 # what it set before the battle is put back), one whose pool the battle emptied, a relay that does
 # not answer, the last phase of a fight of several, a lost battle and the game's retry, and the
 # relay's push, and the autosave a won retry holds. Events run in fibers as the game's interpreter runs them.
@@ -683,19 +685,24 @@ check("and the music", [$game_system.battle_bgm, RPG::BGM.last.name], ["battle",
 reset
 $game_troop.setup(71)
 $game_troop.members[0].hp = 600
-check("a boss with a quarter of its HP gone is a quarter of a kill", pool.dealt, 0.25)
+check("a boss with a quarter of its HP gone is a quarter of a kill", pool.dealt(1), 0.25)
 $game_troop.setup(1509)
 $game_troop.members[0].hp = 200
 $game_troop.members[1].hp = 600
-check("the enemies' HP lost counts as a share of the troop's HP", pool.dealt, 0.2)
+check("the enemies' HP lost counts as a share of the troop's HP", pool.dealt(2), 0.2)
 $game_troop.members[1].hp = 0
-check("so a helper that falls is no whole kill", pool.dealt, 0.8)
+check("so a helper that falls is no whole kill", pool.dealt(2), 0.8)
 $game_troop.members[0].hp = 0
-check("and a troop that falls is one", pool.dealt, 1.0)
+check("and a troop that falls is one", pool.dealt(2), 1.0)
 $game_troop.members[0].hp = 200
 $game_troop.members[1].hp = 600
 $game_troop.members[1].hidden = true
-check("an enemy that never appeared counts not", pool.dealt, 0.5)
+check("an enemy that never appeared counts not", pool.dealt(2), 0.5)
+$game_troop.setup(71)
+$game_troop.members[0].hp = 600
+$game_troop.members << Enemy.new("Invader", 9000, 0) << Enemy.new("Invader", 100, 100)
+check("enemies added mid-battle after the troop's own count not, fallen or standing", pool.dealt(1), 0.25)
+check("nor do they name the boss", pool.troop_name(1), "Queen Harpy")
 check("an answer of 0 kills that defeated nothing holds",
       pool.outcome_of("report" => "done", "report_hp" => "0", "report_emptied" => "0", "report_defeated" => "0"), :holds)
 
@@ -721,6 +728,30 @@ answer(4)
 frames(15)
 check("and is made once the boss fell back", $saves, 1)
 check("a retried battle that leaves kills has the boss fall back too", [$ran, $game_switches[54], $chat.last], [[], false, "Queen Harpy falls back. Raid HP left: 4/5."])
+
+# Enemies added mid-battle, such as by another mod, are no part of the boss's pool.
+reset
+start([[:battle, 71], [:mark, :after]])
+check("a boss battle notes how many enemies the troop's setup made", pool.instance_variable_get(:@fight).own, 1)
+$game_troop.members << Enemy.new("Invader", 5000, 5000)
+$game_troop.members[0].hp = 200
+lose
+check("a lost battle reports the share of the troop's own enemies, a standing one added mid-battle left out",
+      [reports.last[0], reports.last[2]], ["Queen Harpy", "0.750"])
+BattleManager.retry_battle
+$game_troop.members << Enemy.new("Invader", 100, 100) << Enemy.new("Invader", 100, 100)
+$game_troop.members[0].hp = 0
+lose
+check("so its enemies added mid-battle count not either", reports.last[2], "1.000")
+BattleManager.retry_battle
+$game_troop.members << Enemy.new("Invader", 100, 100)
+$game_troop.members[0].hp = 0
+BattleManager.battle_end(0)
+answer(4)
+$game_map.interpreter.setup([[:mark, :after]], 7)
+frames(15)
+check("a won battle with a standing enemy added mid-battle reports a whole kill and the boss falls back",
+      [reports.last[2], $chat.last], ["1.000", "Queen Harpy falls back. Raid HP left: 4/5."])
 
 # The relay's push.
 reset

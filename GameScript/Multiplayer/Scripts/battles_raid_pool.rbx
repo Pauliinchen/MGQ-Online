@@ -2,7 +2,8 @@
 #  battles_raid_pool.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-09: Took back the copies of the items a boss event equips at once that its replay leaves in the bag
+#      Paulinchen  2026-10-09: Counted only the boss troop's own enemies in the share of a kill and the boss's name, never enemies added mid-battle
+#                            - Took back the copies of the items a boss event equips at once that its replay leaves in the bag
 #                            - Counted the fights whose events change the party against their pools, putting the party back as the boss falls back
 #                            - Created
 #
@@ -190,7 +191,8 @@ module MGQ_MpRaidPool
   # @!attribute party [Hash] The party as the event started and as the battle started, see
   #   with_battle_party.
   # @!attribute gifts [Hash] The items the event left in the bag beyond what it equipped, see giving.
-  Fight = Struct.new(:key, :name, :troop, :battle, :writes, :map_id, :event_id, :scene, :party, :gifts)
+  # @!attribute own [Integer] How many enemies the troop's setup made, which come first in the troop.
+  Fight = Struct.new(:key, :name, :troop, :battle, :writes, :map_id, :event_id, :scene, :party, :gifts, :own)
 
   # Forgets every battle and report, as at the title screen.
   def self.forget
@@ -272,8 +274,9 @@ module MGQ_MpRaidPool
     return log("troop #{troop_id} counts against no pool: #{reason}") if reason
 
     root = $game_map.interpreter
-    @fight = Fight.new(key_of(troop_id), troop_name, troop_id.to_i, new_battle_id, writes_since(@snapshot[:story]), root.map_id, root.event_id,
-                       @snapshot[:scene], with_battle_party(@snapshot[:party]), @snapshot[:gifts].dup)
+    own = $game_troop.members.size
+    @fight = Fight.new(key_of(troop_id), troop_name(own), troop_id.to_i, new_battle_id, writes_since(@snapshot[:story]), root.map_id, root.event_id,
+                       @snapshot[:scene], with_battle_party(@snapshot[:party]), @snapshot[:gifts].dup, own)
     log("battle #{@fight.battle} against #{@fight.name} (troop #{troop_id}) counts against the pool #{@fight.key}, " \
         "#{change_count(@fight.writes)} story value(s) put back if it holds")
   rescue => e
@@ -387,12 +390,23 @@ module MGQ_MpRaidPool
     @caps.fetch(milestone, []).uniq.size > 1
   end
 
-  # Names the battle's enemies, as the player reads the boss.
+  # Names the troop's own enemies, as the player reads the boss.
   #
+  # @param own [Integer] How many enemies the troop's setup made, see Fight.
   # @return [String] Such as "Morrigan and Astaroth".
-  def self.troop_name
-    names = $game_troop.members.map { |enemy| enemy.respond_to?(:original_name) ? enemy.original_name : enemy.name }
+  def self.troop_name(own)
+    names = own_enemies(own).map { |enemy| enemy.respond_to?(:original_name) ? enemy.original_name : enemy.name }
     names.map { |name| name.to_s }.reject { |name| name.empty? }.uniq.first(3).join(" and ")
+  end
+
+  # Lists the boss troop's own enemies: those its setup made, which come first in the troop.
+  #
+  # Enemies another mod adds mid-battle come after them and are no part of the boss.
+  #
+  # @param own [Integer] How many enemies the troop's setup made, see Fight.
+  # @return [Array<Game_Enemy>] The enemies.
+  def self.own_enemies(own)
+    $game_troop.members.first(own.to_i)
   end
 
   # Makes a battle's id: letters and digits the relay takes, unique enough across the world.
@@ -814,14 +828,15 @@ module MGQ_MpRaidPool
     0
   end
 
-  # Finds the share of the boss's HP a battle dealt: what the troop's enemies that appeared lost of
-  # their max HP together.
+  # Finds the share of the boss's HP a battle dealt: what the troop's own enemies that appeared lost
+  # of their max HP together.
   #
   # Weighing by HP keeps a boss's small helpers from counting as a whole kill.
   #
+  # @param own [Integer] How many enemies the troop's setup made, see Fight.
   # @return [Float] The share, 0 to 1.
-  def self.dealt
-    shown = $game_troop.members.reject { |enemy| enemy.hidden? }
+  def self.dealt(own)
+    shown = own_enemies(own).reject { |enemy| enemy.hidden? }
     max = shown.inject(0.0) { |sum, enemy| sum + [enemy.mhp.to_f, 0.0].max }
     return 0.0 unless max > 0
 
@@ -840,10 +855,12 @@ module MGQ_MpRaidPool
     return unless fight
     return log("battle #{fight.battle} became a guest's of another player's battle: its host reports") if MGQ_MpBattlesSync.guest?
 
-    share = dealt
+    share = dealt(fight.own)
     started = Relay.report(MGQ_MpWorldStory.world_id, fight.key, fight.battle, format("%.3f", share))
     @own = [fight.key, @clock]
+    added = $game_troop.members.size - fight.own.to_i
     log("battle #{fight.battle} against #{fight.name} ended #{result == 0 ? 'won' : 'lost'} with #{format('%.3f', share)} of a kill" \
+        "#{added > 0 ? " (#{added} enemies added mid-battle left out)" : ''}" \
         "#{started ? ', reporting it' : ', but the DLL did not start the report'}")
     if result == 0
       @pending = { :fight => fight, :started => started, :since => @clock, :answer => nil }
