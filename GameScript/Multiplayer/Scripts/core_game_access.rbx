@@ -2,6 +2,7 @@
 #  core_game_access.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-08: Named whether a battle allows escaping and losing
 #      Paulinchen  2026-10-07: Named the counters the game keeps per state, the turns held and the steps left
 #                            - Named an interpreter's event and map, the trades a save keeps and the title screen's command closing
 #      Paulinchen  2026-10-06: Left scene_changing? out of the private methods, since the game makes it public
@@ -98,6 +99,8 @@ module MGQ_MpGame
     :retry_data => :@retry_data,
     :preemptive => :@preemptive,
     :surprise => :@surprise,
+    :can_escape => :@can_escape,
+    :can_lose => :@can_lose,
     :stack => :@stack,
     :system_save_count => :@system_save_count,
 

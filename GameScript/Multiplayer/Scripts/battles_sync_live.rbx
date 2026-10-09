@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-08: Closed a command phase the battle ended in, and forgot the guests who answered in it, as the battle ends instead of as the next one begins
+#                            - Started the battle of a host who became another battle's guest before it began as that battle's guest
 #      Paulinchen  2026-10-07: Left a command phase an earlier battle ended in out of the log as the next battle begins
 #                            - Let a battle message outside a fiber move on at once instead of failing, as the other waits do
 #                            - Logged the live battle's start, its command phases, the commands sent, escapes, leaving and its end, with the reasons
@@ -370,15 +371,22 @@ module MGQ_MpBattlesSync
       window.pause = false
     end
 
-    # The host waits for the guest's battle, then streams its own.
+    # The host waits for the guest's battle, then streams its own. A host who became another
+    # battle's guest meanwhile starts as a guest.
     #
     # @param scene [Scene_Battle] The battle.
-    # @return [Boolean] Whether the battle starts, false when it ended early.
+    # @return [Boolean] Whether the battle starts as the host's, false when it ended early or
+    #   started as a guest's.
     def self.host_start(scene)
       formed = MGQ_MpBattlesSync.mode.host_start(scene)
       if formed == :own
         MGQ_MpBattlesSync.log("nobody joined: the battle is the host's own, not live")
         return true
+      end
+      if formed == :guest
+        MGQ_MpBattlesSync.log("the host became a guest of #{MGQ_MpBattlesSync.player}'s battle, which it plays back")
+        guest_start(scene)
+        return false
       end
       return end_early(scene, formed) if formed.is_a?(Symbol)
 

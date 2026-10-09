@@ -4,6 +4,7 @@
 #  Changelog:
 #      Paulinchen  2026-10-08: Stood in for the faces this game has, of overworld.rbx
 #                            - Loaded coop_scope.rbx, which tells coop_squad.rbx whether a Raid World is open, and counted the party's Frontline from max_battle_members
+#                            - Stood in for the players whose connection stands, when the player entered the map, the player's tile, the party's leader and the troop's setup
 #      Paulinchen  2026-10-07: Stood in for the helpers of coop.rbx, overworld_sync.rbx and coop_scene.rbx the battle scripts share now: who, random_id and the pictures' count
 #                            - Let the characters clear their actions, and named the party after its first character
 #      Paulinchen  2026-10-06: Gave the party the targets of a skill that reaches the Backline too, and added the Library's counts of the battle's end and of a defeat
@@ -49,12 +50,15 @@ module MGQ_MpOverworldSync
     @all = []
     def self.all; @all; end
     def self.at(seat); @all.find { |p| p.seat == seat }; end
+    def self.present; @all; end
+    def self.on_this_map?(peer); peer.state["map"].to_i == $game_map.map_id; end
   end
   module Me
     def self.encode(state); state.map { |k, v| "#{k}=#{v}" }.join("\n") + "\n\n"; end
     def self.identity; ["id-me", "Me"]; end
     def self.id; identity[0]; end
     def self.seat; $my_seat.to_i; end
+    def self.map_since; $my_since.to_i; end
   end
   module Status; def self.notice(text); ($notices ||= []) << text; end; end
   module Link
@@ -81,6 +85,7 @@ module MGQ_MpCoop
   end
   def self.leads?(player); player == :me ? $leader == :me : ($leader.equal?(player) || Array($leaders).any? { |l| l.equal?(player) }); end
   def self.random_id(length); rand(36**length).to_s(36); end
+  def self.party_leader; Party.members.empty? ? nil : $leader; end
 end
 module RPG
   class Item
@@ -163,6 +168,8 @@ class Game_Troop
   def members; @enemies; end
   def members=(enemies); @enemies = enemies; end
   def make_actions; $troop_actions = ($troop_actions || 0) + 1; end
+  def setup(troop_id); @troop_id = troop_id; @enemies = [Game_Enemy.new(0, troop_id)]; end
+  attr_reader :troop_id
   def make_unique_names
     @names_count ||= {}
     @enemies.each do |enemy|
@@ -185,6 +192,9 @@ class Interpreter; attr_accessor :busy; def running?; @busy; end; end
 class Game_Map; attr_accessor :map_id, :interpreter; end
 class Game_Player
   attr_accessor :moving, :leader_shown
+  attr_writer :x, :y
+  def x; @x.to_i; end
+  def y; @y.to_i; end
   def transfer?; false; end
   def moving?; @moving; end
   def refresh; @leader_shown = $game_party.battle_members.first; end

@@ -4,6 +4,12 @@
 #  Changelog:
 #      Paulinchen  2026-10-08: Brought each player's first three characters to a co-op battle in a Raid World, one on the Frontline and two on the Backline, also for a player left alone
 #                            - Brought only the squad to a team duel in a Raid World, never the fourth
+#                            - Invited the nearest free players on the map to a battle in a Raid World, party members first, up to four players, through the map's gate
+#                            - Let the player who starts a battle in a Raid World host it, waiting ten seconds for the others to join, without a level sync
+#                            - Made a player whose random encounter in a Raid World started at the same moment as another player's battle a guest of that battle, an event's battle or else the one who entered the map first hosting, and the guests of the battle that yields follow to it
+#                            - Held only the players invited in a Raid World instead of the whole party, letting those a held encounter or a battle called off then left out walk on unless another battle still holds them
+#                            - Turned down one of two invites waiting in a Raid World, keeping the one whose battle hosts first, and invited the host of an invite waiting as the player's own battle began
+#                            - Told the others in a Raid World while the player trades or is about to teleport, which keeps their invites away
 #      Paulinchen  2026-10-07: Registered the battle setup and encounter hooks through core_hooks.rbx instead of wraps of its own, and the battle's end once the game runs, where plugins define it anew
 #                            - Named players and characters through battles_sync.rbx and overworld_sync.rbx, and made up a battle's id through coop.rbx, instead of copies of their helpers
 #                            - Logged the co-op messages, the invites, requests and who hosts with their reasons, the roster, rebuilds, swaps, choosing again, the Library counts left out and the battle's result
@@ -70,14 +76,35 @@
 # with their own full team, as in a battle of their own. Every game ends the battle with its own
 # rewards or its own defeat.
 #
+# In a Raid World a battle takes the free players on the map, party or not: the party members
+# first, then those nearest the party's leader, up to RAID_PLAYERS (see raid_candidates). The
+# player who starts it hosts it; of a random encounter and another player's battle started at the
+# same moment, an event's battle or else the player who entered the map first hosts, and the other
+# joins as a guest with the players who joined them (see rival? and follows?). Every player's
+# squad is one on the Frontline and two on the Backline, however many play and when left alone
+# too, and no level sync runs.
+#
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpBattlesCoop
   # Frames the host waits for the invited members to join, six seconds.
   JOIN_FRAMES = 360
 
+  # Frames the host of a battle in a Raid World waits for the invited players to join, ten seconds.
+  RAID_JOIN_FRAMES = 600
+
+  # Frames a guest waits for the host's party beyond the host's wait for the players to join.
+  ROSTER_MARGIN_FRAMES = 240
+
   # Frames a guest waits for the host's party, ten seconds: longer than the host waits for the
   # players to join after it sent the invite.
-  ROSTER_FRAMES = JOIN_FRAMES + 240
+  ROSTER_FRAMES = JOIN_FRAMES + ROSTER_MARGIN_FRAMES
+
+  # Players of a battle in a Raid World at most, the host included: one each on the Frontline.
+  RAID_PLAYERS = 4
+
+  # What another player in a Raid World does, by their state's scene, while they may be invited:
+  # walking the map.
+  RAID_FREE_SCENES = %w(map)
 
   # Frames an invite waits for the player to be free before it is turned down, three seconds.
   ACCEPT_FRAMES = 180
@@ -212,6 +239,26 @@ module MGQ_MpBattlesCoop
     sent
   end
 
+  # Sends a co-op message to some players of the map through the map's gate, since in a Raid World
+  # a battle's players need not share a party.
+  #
+  # @param seats [Array<Integer>] The players' seats.
+  # @param kind [String] What it is.
+  # @param fields [Hash] Its other fields.
+  def self.tell_map(seats, kind, fields)
+    seats.each do |seat|
+      sent = MGQ_MpCoop.tell_map(seat, "coop", kind, fields)
+      log("sent #{kind} through the map's gate to #{MGQ_MpBattlesSync.who(seat)}: #{fields_text(fields)}#{' (not sent)' unless sent}")
+    end
+  end
+
+  # Reports whether a Raid World is open, whose battles take the players on the map.
+  #
+  # @return [Boolean] Whether one is.
+  def self.raid?
+    MGQ_MpCoop::Scope.raid?
+  end
+
   # The results of a battle as the game numbers them, for Multiplayer InGame.log.
   RESULTS = { 0 => "won", 1 => "escaped", 2 => "lost" }
 
@@ -257,19 +304,29 @@ module MGQ_MpBattlesCoop
   # The host's side.
 
   # Makes a battle the game just set up a co-op battle: asks the party's leader to lead it when the
-  # leader plays on the map, else invites the party members on the map who are playing on it.
+  # leader plays on the map, else invites the party members on the map who are playing on it. In a
+  # Raid World the player hosts it and invites the players on the map, see raid_candidates.
   # Called after BattleManager.setup.
   #
   # @param troop_id [Integer] The troop.
   # @param can_escape [Boolean] Whether the party may escape.
   # @param can_lose [Boolean] Whether losing goes on without a game over.
-  def self.offer(troop_id, can_escape, can_lose)
+  # @param encounter [Boolean] Whether the battle is a random encounter, see rival?.
+  def self.offer(troop_id, can_escape, can_lose, encounter = @encountering)
     @frozen = nil
+    @rival = nil
     return if @joining
     return unless host_possible?(troop_id)
     return hold(troop_id, can_escape, can_lose) if @encountering && !busy_members.empty?
 
+    @random_encounter = encounter ? true : false
     @requester, battle_id = @leading
+    if raid?
+      log("hosts the battle against troop #{troop_id}: the player started it in a Raid World")
+      host(troop_id, can_escape, can_lose)
+      return answer_waiting_invite
+    end
+
     leader = MGQ_MpCoop::Party.leader
     return ask_leader(leader, troop_id, can_escape, can_lose) if @requester.nil? && candidates.include?(leader)
 
@@ -280,30 +337,65 @@ module MGQ_MpBattlesCoop
   end
 
   # Hosts a co-op battle, inviting the party members on the map who are playing on it, and the
-  # member who asked the player to lead it.
+  # member who asked the player to lead it; in a Raid World the players raid_candidates finds and the
+  # host of a waiting invite (see with_waiting_host), or nobody when a rival's invite waits, which
+  # the battle then yields to (see rival?). A Raid World's invite says whether the battle is a random
+  # encounter, which may yield.
   #
   # @param troop_id [Integer] The troop.
   # @param can_escape [Boolean] Whether the party may escape.
   # @param can_lose [Boolean] Whether losing goes on without a game over.
   # @param battle_id [String, nil] The battle's id the member who asked chose, nil for a new one.
   def self.host(troop_id, can_escape, can_lose, battle_id = nil)
-    seats = candidates.map(&:seat)
+    seats = invitees.map(&:seat)
     seats |= [@requester] if @requester
-    if seats.empty?
-      others = MGQ_MpCoop::Party.members.map { |peer| "#{peer.state['name']} on map #{peer.state['map']} (#{peer.state['scene']})" }
-      return log("nobody to invite on map #{$game_map.map_id}: #{others.empty? ? 'no other party member' : others.join(', ')}")
-    end
+    seats = with_waiting_host(seats) if raid?
+    return log("nobody to invite on map #{$game_map.map_id}: #{nobody_text}") if seats.empty? && !waiting_rival?
 
     battle_id ||= new_battle_id
-    MGQ_MpBattlesSync.join_world(:host, battle_id, seats, "the party")
+    MGQ_MpBattlesSync.join_world(:host, battle_id, seats, raid? ? "the players" : "the party")
     MGQ_MpBattlesSync.battle_started
     MGQ_MpBattles.begin(:coop)
-    freeze_party
-    tell(-1, "invite", "bid" => battle_id, "troop" => troop_id, "escape" => can_escape ? 1 : 0, "lose" => can_lose ? 1 : 0,
-                       "seats" => seats.join(","), "map" => $game_map.map_id)
-    log("invited #{seats.size} member(s) to battle #{battle_id} against troop #{troop_id} on map #{$game_map.map_id}: #{seats.map { |seat| MGQ_MpBattlesSync.who(seat) }.join(', ')}")
+    freeze_party(seats)
+    fields = { "bid" => battle_id, "troop" => troop_id, "escape" => can_escape ? 1 : 0, "lose" => can_lose ? 1 : 0,
+               "seats" => seats.join(","), "map" => $game_map.map_id }
+    fields["enc"] = @random_encounter ? 1 : 0 if raid?
+    raid? ? tell_map(seats, "invite", fields) : tell(-1, "invite", fields)
+    log("invited #{seats.size} #{raid? ? 'player' : 'member'}(s) to battle #{battle_id} against troop #{troop_id} on map #{$game_map.map_id}: #{seats.map { |seat| MGQ_MpBattlesSync.who(seat) }.join(', ')}")
   rescue => e
     log("could not host a co-op battle: #{e.class}: #{e.message}")
+  end
+
+  # Lists the players a battle the player hosts invites: raid_candidates in a Raid World, else
+  # candidates.
+  #
+  # @return [Array<MGQ_MpOverworldSync::Peers::Peer>] The players.
+  def self.invitees
+    raid? ? raid_candidates : candidates
+  end
+
+  # Adds the host of an invite that waits for the player to the players a battle in a Raid World
+  # invites, unless it is a rival's: that host's battle gathers too, so raid_candidates leaves them
+  # out, yet their random encounter yields to the player's battle (see rival?) instead of both
+  # fighting apart.
+  #
+  # @param seats [Array<Integer>] The seats the battle invites.
+  # @return [Array<Integer>] The seats, the waiting invite's host first, at most RAID_PLAYERS - 1.
+  def self.with_waiting_host(seats)
+    invite = @invite
+    return seats if invite.nil? || expired?(invite) || waiting_rival?
+
+    ([invite[:peer].seat] | seats).first(RAID_PLAYERS - 1)
+  end
+
+  # Tells what the others do while a battle invites nobody, for Multiplayer InGame.log.
+  #
+  # @return [String] Each party member's map and scene, in a Raid World each player's on the map.
+  def self.nobody_text
+    others = raid? ? MGQ_MpCoop::Scope.peers_on($game_map.map_id) : MGQ_MpCoop::Party.members
+    return raid? ? "no other player on the map" : "no other party member" if others.empty?
+
+    others.map { |peer| "#{peer.state['name']} on map #{peer.state['map']} (#{peer.state['scene']}#{', busy' if peer.state['busy'] == '1'})" }.join(", ")
   end
 
   # Tells why the player hosts a battle instead of asking the party's leader to lead it, for
@@ -378,14 +470,14 @@ module MGQ_MpBattlesCoop
   end
 
   # Reports whether a battle starting now may become a co-op battle: in a party of an open world,
-  # and no other multiplayer battle or Library replay running.
+  # or anywhere in a Raid World, and no other multiplayer battle or Library replay running.
   #
   # @param troop_id [Integer, nil] The battle's troop, for Multiplayer InGame.log.
   # @return [Boolean] Whether it may.
   def self.host_possible?(troop_id = nil)
     return false unless MGQ_MpOverworldSync.in_world?
 
-    reason = if !MGQ_MpCoop::Party.id then "not in a party"
+    reason = if !MGQ_MpCoop::Party.id && !raid? then "not in a party"
              elsif $game_temp && $game_temp.in_memory_battle then "a Library replay"
              elsif defined?(MGQ_MpBattlesPvp) && MGQ_MpBattlesPvp::Battle.running? then "a PvP battle runs"
              elsif MGQ_MpBattlesSync.role || MGQ_MpBattles.running?
@@ -400,6 +492,72 @@ module MGQ_MpBattlesCoop
   # @return [Array<MGQ_MpOverworldSync::Peers::Peer>] The members.
   def self.candidates
     MGQ_MpCoop::Party.members.select { |peer| peer.state["map"].to_i == $game_map.map_id && FREE_SCENES.include?(peer.state["scene"]) }
+  end
+
+  # Lists the players a battle in a Raid World invites: of those on the player's map who walk it
+  # and are not busy (see raid_free?), the party members first, then the nearest to the party's
+  # leader, or to the player outside a party, by their states; at most RAID_PLAYERS with the player.
+  #
+  # @return [Array<MGQ_MpOverworldSync::Peers::Peer>] The players.
+  def self.raid_candidates
+    members = MGQ_MpCoop::Party.members
+    x, y = raid_center
+    free = MGQ_MpCoop::Scope.peers_on($game_map.map_id).select { |peer| raid_free?(peer) }
+    ranked = free.sort_by do |peer|
+      [members.any? { |member| member.equal?(peer) } ? 0 : 1, distance(peer, x, y), peer.state["id"].to_s]
+    end
+    ranked.first(RAID_PLAYERS - 1)
+  end
+
+  # Reports whether another player in a Raid World may be invited: walking the map and neither
+  # trading nor about to teleport, as their state says (see state_fields).
+  #
+  # @param peer [MGQ_MpOverworldSync::Peers::Peer] The player.
+  # @return [Boolean] Whether they may.
+  def self.raid_free?(peer)
+    RAID_FREE_SCENES.include?(peer.state["scene"]) && peer.state["busy"] != "1"
+  end
+
+  # The fields the co-op battle adds to the state the player's game tells the others: in a Raid
+  # World "busy", 1 while the player trades or is about to teleport, whose scene says "map" all the
+  # same.
+  #
+  # @return [Hash] The fields, none in a Classic world.
+  def self.state_fields
+    return {} unless raid?
+
+    busy = trading? || (defined?(MGQ_MpCoopGather) && MGQ_MpCoopGather.coming?)
+    { "busy" => busy ? 1 : 0 }
+  end
+
+  # Reports whether the player takes part in a trade, through trade.rbx.
+  #
+  # @return [Boolean] Whether they do.
+  def self.trading?
+    defined?(MGQ_MpTrade) && MGQ_MpTrade.session ? true : false
+  end
+
+  # Tells the tile a Raid World's battle counts the players' distance from: the party leader's
+  # when the leader is on the player's map, else the player's own.
+  #
+  # @return [Array<Integer>] The x and y.
+  def self.raid_center
+    leader = MGQ_MpCoop.party_leader
+    if leader.is_a?(MGQ_MpOverworldSync::Peers::Peer) && leader.state["map"].to_i == $game_map.map_id
+      return [leader.state["x"].to_i, leader.state["y"].to_i]
+    end
+
+    [$game_player.x, $game_player.y]
+  end
+
+  # Counts the steps between another player and a tile, diagonal steps counted as one.
+  #
+  # @param peer [MGQ_MpOverworldSync::Peers::Peer] The player.
+  # @param x [Integer] The tile's x.
+  # @param y [Integer] The tile's y.
+  # @return [Integer] The steps.
+  def self.distance(peer, x, y)
+    [(peer.state["x"].to_i - x).abs, (peer.state["y"].to_i - y).abs].max
   end
 
   # Lists the party members on the player's map who could join once back on it: in a menu, typing
@@ -441,16 +599,18 @@ module MGQ_MpBattlesCoop
   end
 
   # Holds a random encounter the game just set up for up to HOLD_FRAMES, telling the busy party
-  # members on the map, so they can come back to the map and join; see tick_hold.
+  # members on the map, so they can come back to the map and join; see tick_hold. In a Raid World
+  # only they and the players the battle takes stand still.
   #
   # @param troop_id [Integer] The troop.
   # @param can_escape [Boolean] Whether the party may escape.
   # @param can_lose [Boolean] Whether losing goes on without a game over.
   def self.hold(troop_id, can_escape, can_lose)
     busy = busy_members
-    @hold = { :troop => troop_id, :escape => can_escape, :lose => can_lose, :frames => HOLD_FRAMES, :seats => busy.map(&:seat) }
+    frozen = raid? ? (raid_candidates + busy).map(&:seat).uniq : nil
+    @hold = { :troop => troop_id, :escape => can_escape, :lose => can_lose, :frames => HOLD_FRAMES, :seats => busy.map(&:seat), :frozen => frozen }
     busy.each { |peer| tell(peer.seat, "soon", "map" => $game_map.map_id) }
-    freeze_party
+    freeze_party(frozen)
     names = busy.map { |peer| peer.state["name"].to_s }.join(", ")
     MGQ_MpNotices.message(:hold, "Enemies! Waiting for #{names}", HOLD_FRAMES) if defined?(MGQ_MpNotices)
     log("held an encounter with troop #{troop_id} up to #{HOLD_FRAMES / 60} s for the busy members #{busy.map { |peer| "#{MGQ_MpOverworldSync.who(peer)} (#{peer.state['scene']})" }.join(', ')}")
@@ -466,11 +626,25 @@ module MGQ_MpBattlesCoop
     return unless waiting.empty? || hold[:frames] <= 0
 
     drop_hold
-    return log("dropped the held encounter with troop #{hold[:troop]} for an event") if $game_map.interpreter.running?
+    if $game_map.interpreter.running?
+      release(hold[:frozen])
+      return log("dropped the held encounter with troop #{hold[:troop]} for an event")
+    end
 
     log("starts the held encounter with troop #{hold[:troop]}: #{waiting.empty? ? 'every busy member is back on the map' : "the wait ran out, #{waiting.map { |peer| MGQ_MpOverworldSync.who(peer) }.join(', ')} still busy"}")
-    offer(hold[:troop], hold[:escape], hold[:lose])
+    offer(hold[:troop], hold[:escape], hold[:lose], true)
+    release(hold[:frozen])
     SceneManager.call(Scene_Battle)
+  end
+
+  # Lets the players a held encounter in a Raid World made stand still walk on, those its battle
+  # does not invite, through take_off.
+  #
+  # @param seats [Array<Integer>, nil] The seats the hold froze, nil in a Classic world.
+  def self.release(seats)
+    invited = MGQ_MpBattlesSync.role == :host && MGQ_MpBattlesSync.coop? ? MGQ_MpBattlesSync.seats : []
+    left = Array(seats) - invited
+    tell_map(left, "off", "map" => $game_map.map_id) unless left.empty?
   end
 
   # Tells the player for a moment that a party member on their map met enemies, whose battle waits
@@ -482,9 +656,13 @@ module MGQ_MpBattlesCoop
   end
 
   # Tells every party member that the player met enemies on their map, so the members there stand
-  # still until the battle invites them.
-  def self.freeze_party
-    tell(-1, "freeze", "map" => $game_map.map_id)
+  # still until the battle invites them; in a Raid World only the players the battle takes.
+  #
+  # @param seats [Array<Integer>, nil] The seats of the players a Raid World's battle takes, nil
+  #   in a Classic world.
+  def self.freeze_party(seats = nil)
+    fields = { "map" => $game_map.map_id }
+    raid? ? tell_map(Array(seats), "freeze", fields) : tell(-1, "freeze", fields)
   end
 
   # Holds the player once a party member on their map met enemies, until the player joins the
@@ -496,6 +674,8 @@ module MGQ_MpBattlesCoop
     return log("not standing still for #{MGQ_MpOverworldSync.who(peer)}: their map #{message['map']} is not the player's #{$game_map.map_id}") unless message["map"].to_i == $game_map.map_id
     return log("not standing still for #{MGQ_MpOverworldSync.who(peer)}: the player is in a battle") if MGQ_MpBattlesSync.role || SceneManager.scene.is_a?(Scene_Battle)
 
+    @freezers = [] unless @frozen
+    @freezers = Array(@freezers) | [peer.seat]
     @frozen = Time.now
     MGQ_MpNotices.message([:soon, peer.seat], "Enemies! #{peer.state['name']} is in a battle.", HOLD_FRAMES) if defined?(MGQ_MpNotices)
     log("stands still up to #{FREEZE_SECONDS} s: #{MGQ_MpOverworldSync.who(peer)} met enemies on map #{$game_map.map_id}")
@@ -513,11 +693,26 @@ module MGQ_MpBattlesCoop
     false
   end
 
+  # Lets the player walk on once a host whose battle made them stand still calls it off, unless
+  # another host's battle still holds them: one that froze them too, or whose invite waits.
+  #
+  # @param peer [MGQ_MpOverworldSync::Peers::Peer] The host who called it off.
+  def self.unfreeze_for(peer)
+    @freezers = Array(@freezers) - [peer.seat]
+    held = !@freezers.empty? || (@invite && !@invite[:peer].equal?(peer))
+    return log("still stands still after #{MGQ_MpOverworldSync.who(peer)} called their battle off: another battle holds the player") if held && @frozen
+
+    @frozen = nil
+  end
+
   # As host, waits for the invited members to join or turn the battle down, then sends everyone the
-  # party and the battle's level and builds the party. Without anyone joining, the battle is the host's own. Called at the battle's start.
+  # party and the battle's level and builds the party. Without anyone joining, the battle is the
+  # host's own. A rival's battle in a Raid World ends the wait, and the player joins it instead (see
+  # rival?). Called at the battle's start.
   #
   # @param scene [Scene_Battle] The battle.
-  # @return [Symbol, nil] An ending of battles_sync's Channel.ending, nil once the battle may start.
+  # @return [Symbol, nil] An ending of battles_sync's Channel.ending, :guest once the player became
+  #   a rival's guest, nil once the battle may start.
   def self.gather(scene)
     channel = MGQ_MpBattlesSync::Channel
     invited = MGQ_MpBattlesSync.seats
@@ -525,7 +720,10 @@ module MGQ_MpBattlesCoop
     answered = []
     outcomes = {}
     frames = 0
-    answer = MGQ_MpBattlesSync::Waiting.wait_for(scene, "Gathering the party...") do
+    limit = join_frames
+    answer = MGQ_MpBattlesSync::Waiting.wait_for(scene, raid? ? "Gathering the players..." : "Gathering the party...") do
+      next :rival if @rival
+
       invited.each do |seat|
         next if answered.include?(seat)
 
@@ -541,10 +739,11 @@ module MGQ_MpBattlesCoop
         outcomes[seat] = outcome
       end
       frames += 1
-      answered.size == invited.size || frames >= JOIN_FRAMES ? true : nil
+      answered.size == invited.size || frames >= limit ? true : nil
     end
     log("gathered battle #{MGQ_MpBattlesSync.battle_id} after #{frames} frames (#{answer.inspect}): " +
         invited.map { |seat| "#{MGQ_MpBattlesSync.who(seat)} #{outcomes[seat] || 'did not answer'}" }.join(", "))
+    return yield_to_rival(scene) if answer == :rival
     return answer if answer.is_a?(Symbol) && answer != :gone
     return call_off if @requester && !joined.key?(@requester)
     return stand_down if joined.empty? || answer == :gone
@@ -588,6 +787,235 @@ module MGQ_MpBattlesCoop
     nil
   end
 
+  # Tells the frames the host waits for the invited players to join: RAID_JOIN_FRAMES in a Raid
+  # World, else JOIN_FRAMES.
+  #
+  # @return [Integer] The frames.
+  def self.join_frames
+    raid? ? RAID_JOIN_FRAMES : JOIN_FRAMES
+  end
+
+  # Tells the frames a guest waits for the host's party: longer than the host waits for the players
+  # to join.
+  #
+  # @return [Integer] The frames.
+  def self.roster_frames
+    join_frames + ROSTER_MARGIN_FRAMES
+  end
+
+  # Reports whether an invite comes from a rival in a Raid World: another player on the player's map
+  # whose battle started at the same moment as the player's random encounter, which still gathers
+  # its players, inviting the player among at most RAID_PLAYERS, and whose battle is an event's or
+  # who entered the map first, the lower player id among equals, as every game finds. The rival
+  # hosts, and the player joins them.
+  #
+  # An event's battle never yields, since its event goes on by the battle's result.
+  #
+  # @param peer [MGQ_MpOverworldSync::Peers::Peer] Who invites.
+  # @param message [Hash] The invite.
+  # @return [Boolean] Whether they are a rival the player yields to.
+  def self.rival?(peer, message)
+    return false unless MGQ_MpBattlesSync.role == :host && MGQ_MpBattlesSync.coop? && message["bid"].to_s != MGQ_MpBattlesSync.battle_id
+
+    rival_battle?(peer, message)
+  end
+
+  # Reports whether an invite comes from a rival, see rival?, whether or not the player hosts yet.
+  #
+  # @param peer [MGQ_MpOverworldSync::Peers::Peer] Who invites.
+  # @param message [Hash] The invite.
+  # @return [Boolean] Whether they are a rival.
+  def self.rival_battle?(peer, message)
+    raid? && !active? && yields_to?(@random_encounter, :me, peer, message)
+  end
+
+  # Reports whether a battle on the player's map that still gathers its players yields to another
+  # player's battle there, see rival?.
+  #
+  # @param random [Boolean] Whether the battle is a random encounter, the only kind that yields.
+  # @param holder [MGQ_MpOverworldSync::Peers::Peer, Symbol] The battle's host, :me for the player.
+  # @param peer [MGQ_MpOverworldSync::Peers::Peer] The other battle's host.
+  # @param message [Hash] The other battle's invite.
+  # @return [Boolean] Whether it yields.
+  def self.yields_to?(random, holder, peer, message)
+    return false unless random
+    return false unless message["map"].to_i == $game_map.map_id && message["seats"].to_s.split(",").size < RAID_PLAYERS
+
+    message["enc"] == "0" || earlier?(peer, holder)
+  end
+
+  # Reports whether of two battles that may meet in a Raid World the first hosts: an event's battle
+  # before a random encounter, which may yield to it, else the one whose host entered the map first.
+  #
+  # @param peer [MGQ_MpOverworldSync::Peers::Peer] The first battle's host.
+  # @param message [Hash] The first battle's invite.
+  # @param other [MGQ_MpOverworldSync::Peers::Peer] The other battle's host.
+  # @param other_message [Hash] The other battle's invite.
+  # @return [Boolean] Whether the first hosts.
+  def self.hosts_first?(peer, message, other, other_message)
+    event = message["enc"] == "0"
+    return event if event != (other_message["enc"] == "0")
+
+    earlier?(peer, other)
+  end
+
+  # Reports whether a player entered the map before another, the lower player id among equals.
+  #
+  # @param player [MGQ_MpOverworldSync::Peers::Peer, Symbol] The player, :me for the player.
+  # @param other [MGQ_MpOverworldSync::Peers::Peer, Symbol] The other, :me for the player.
+  # @return [Boolean] Whether they did.
+  def self.earlier?(player, other)
+    scope = MGQ_MpCoop::Scope
+    (scope.key_of(player) <=> scope.key_of(other)) < 0
+  end
+
+  # Reports whether an invite that waited for the player as their own battle in a Raid World began
+  # comes from a rival.
+  #
+  # @return [Boolean] Whether it does.
+  def self.waiting_rival?
+    invite = @invite
+    raid? && !invite.nil? && rival_battle?(invite[:peer], invite[:message])
+  end
+
+  # Answers an invite that waited for the player as their own battle in a Raid World began: keeps a
+  # rival's (see rival?), turns any other down, so its host need not wait for the player.
+  def self.answer_waiting_invite
+    invite = @invite
+    return unless invite
+
+    @invite = nil
+    return keep_rival(invite[:peer], invite[:message]) if rival?(invite[:peer], invite[:message])
+
+    decline(invite[:peer], invite[:message], "the player began a battle of their own")
+  end
+
+  # Keeps a rival's invite, which ends the gathering of the player's own battle (see gather); of two
+  # rivals the one who hosts first (see hosts_first?), turning the other down.
+  #
+  # @param peer [MGQ_MpOverworldSync::Peers::Peer] The rival.
+  # @param message [Hash] The invite.
+  def self.keep_rival(peer, message)
+    kept = @rival
+    if kept && hosts_first?(kept[:peer], kept[:message], peer, message)
+      log("declined #{MGQ_MpOverworldSync.who(peer)}'s invite to battle #{message['bid']}: an earlier rival or an event's hosts first")
+      return MGQ_MpBattlesSync.tell(peer.seat, "decline", message["bid"].to_s)
+    end
+    if kept
+      log("declined #{MGQ_MpOverworldSync.who(kept[:peer])}'s invite to battle #{kept[:message]['bid']}: #{MGQ_MpOverworldSync.who(peer)} hosts first")
+      MGQ_MpBattlesSync.tell(kept[:peer].seat, "decline", kept[:message]["bid"].to_s)
+    end
+
+    @rival = { :peer => peer, :message => message }
+    log("#{MGQ_MpOverworldSync.who(peer)}'s battle #{message['bid']} started at the same moment as the player's battle #{MGQ_MpBattlesSync.battle_id}, and #{message['enc'] == '0' ? "it is an event's" : 'they entered the map first'}: the player joins theirs")
+  end
+
+  # Gives the player's battle up for the rival's (see rival?): tells the players it invited that it
+  # is off, takes the rival's troop and becomes the rival's guest.
+  #
+  # @param scene [Scene_Battle] The battle.
+  # @return [Symbol] :guest, after which the battle starts as the rival's guest.
+  def self.yield_to_rival(scene)
+    peer = @rival[:peer]
+    message = @rival[:message]
+    @rival = nil
+    own_bid = MGQ_MpBattlesSync.battle_id
+    tell_map(MGQ_MpBattlesSync.seats, "off", "bid" => own_bid)
+    MGQ_MpBattlesSync.finish
+    adopt_troop(scene, message)
+    MGQ_MpBattlesSync.join_world(:guest, message["bid"].to_s, [peer.seat], peer.state["name"].to_s)
+    MGQ_MpBattlesSync.battle_started
+    @awaited = { :peer => peer, :message => message }
+    log("gave battle #{own_bid} up and joins #{MGQ_MpOverworldSync.who(peer)}'s battle #{message['bid']} against troop #{message['troop']} as a guest")
+    :guest
+  end
+
+  # Reports whether the player keeps another host's invite while they wait as a guest for the party
+  # of a battle in a Raid World that would yield to that host's (see yields_to?), so they follow it
+  # once their own host gives up (see follow).
+  #
+  # @param peer [MGQ_MpOverworldSync::Peers::Peer] Who invites.
+  # @param message [Hash] The invite.
+  # @return [Boolean] Whether they keep it.
+  def self.follows?(peer, message)
+    awaited = @awaited
+    sync = MGQ_MpBattlesSync
+    return false unless raid? && awaited && sync.role == :guest && sync.coop? && !active?
+    return false unless awaited[:message]["bid"].to_s == sync.battle_id.to_s && !awaited[:peer].equal?(peer)
+
+    yields_to?(awaited[:message]["enc"] == "1", awaited[:peer], peer, message)
+  end
+
+  # Moves the player from the battle whose party they waited for, which its host gave up, to the
+  # battle of the invite they kept (see follows?): takes its troop and joins it as a guest, which
+  # join then tells its host.
+  def self.follow
+    invite = @invite
+    @invite = nil
+    peer = invite[:peer]
+    message = invite[:message]
+    adopt_troop(SceneManager.scene, message)
+    MGQ_MpBattlesSync.join_world(:guest, message["bid"].to_s, [peer.seat], peer.state["name"].to_s)
+    MGQ_MpBattlesSync.battle_started
+    @awaited = invite
+    @moved = true
+    log("follows to #{MGQ_MpOverworldSync.who(peer)}'s battle #{message['bid']} against troop #{message['troop']}, which the player's host yielded to")
+  end
+
+  # Sets the rival's battle up in place of the player's own, as joining an invite does: its troop,
+  # drawn anew, its chance to escape, and whether it allows escaping and losing; no first strike or
+  # surprise.
+  #
+  # @param scene [Scene_Battle] The battle.
+  # @param message [Hash] The rival's invite.
+  def self.adopt_troop(scene, message)
+    $game_troop.setup(message["troop"].to_i)
+    BattleManager.make_escape_ratio if BattleManager.respond_to?(:make_escape_ratio)
+    MGQ_MpGame.set(BattleManager, :can_escape, message["escape"] == "1")
+    MGQ_MpGame.set(BattleManager, :can_lose, message["lose"] == "1")
+    MGQ_MpGame.set(BattleManager, :preemptive, false)
+    MGQ_MpGame.set(BattleManager, :surprise, false)
+    redraw_enemies(scene)
+    log("took troop #{message['troop']} of the rival's battle: #{$game_troop.members.map { |enemy| "#{enemy.enemy_id} #{enemy.name}" }.join(', ')}")
+  rescue => e
+    log("taking the rival's troop failed: #{e.class}: #{e.message}")
+  end
+
+  # Draws the troop's enemies anew in the battle, as they changed.
+  #
+  # @param scene [Scene_Battle] The battle.
+  def self.redraw_enemies(scene)
+    spriteset = MGQ_MpGame.get(scene, :spriteset)
+    return unless spriteset
+
+    spriteset.dispose_enemies
+    spriteset.create_enemies
+  end
+
+  # Takes a host's word that their battle is off, since the host joined a rival's battle, or that
+  # their held encounter does not invite the player: lets the player walk on unless another battle
+  # holds them (see unfreeze_for), and forgets its invite or the rival's, or while waiting for its
+  # party follows to the battle of a kept invite (see follows?) or breaks the battle off.
+  #
+  # @param peer [MGQ_MpOverworldSync::Peers::Peer] The host.
+  # @param message [Hash] The message, the battle's id under "bid", none for a held encounter.
+  def self.take_off(peer, message)
+    bid = message["bid"].to_s
+    unfreeze_for(peer)
+    if @invite && @invite[:peer].equal?(peer) && @invite[:message]["bid"] == bid
+      @invite = nil
+      return log("forgot #{MGQ_MpOverworldSync.who(peer)}'s invite to battle #{bid}: it is off")
+    end
+    if @rival && @rival[:peer].equal?(peer) && @rival[:message]["bid"] == bid
+      @rival = nil
+      return log("forgot #{MGQ_MpOverworldSync.who(peer)}'s rival battle #{bid}: it is off, the player's own goes on")
+    end
+    return unless MGQ_MpBattlesSync.role == :guest && MGQ_MpBattlesSync.battle_id == bid && !active?
+    return follow if @invite
+
+    MGQ_MpBattlesSync.break_off("#{MGQ_MpOverworldSync.who(peer)} gave battle #{bid} up for another", false)
+  end
+
   # The guest's side.
 
   # Takes a co-op message. Called by coop.rbx.
@@ -602,13 +1030,27 @@ module MGQ_MpBattlesCoop
     when "no_lead" then answer_of(peer, message, :refused)
     when "soon" then take_soon(peer)
     when "freeze" then take_freeze(peer, message)
+    when "off" then take_off(peer, message)
     end
   rescue => e
     log("taking a co-op message failed: #{e.class}: #{e.message}")
   end
 
-  # Takes an invite to a battle: the answer of the leader the player asked to lead their battle, or
-  # an invite to join on the map, which a player in a battle of their own turns down at once.
+  # Takes a co-op message through the map's gate, which only a Raid World's battles use; a Classic
+  # world's keep the party's gate, which drops those of players outside the party. Called by
+  # coop_scope.rbx.
+  #
+  # @param peer [MGQ_MpOverworldSync::Peers::Peer] Who sent it.
+  # @param message [Hash] The message's fields.
+  def self.take_map(peer, message)
+    return take(peer, message) if raid?
+
+    log_once([:map_gate, message["coop"], peer && peer.state["id"]], "dropped #{message['coop']} from #{MGQ_MpOverworldSync.who(peer)} through the map's gate: not a Raid World")
+  end
+
+  # Takes an invite to a battle: the answer of the leader the player asked to lead their battle, a
+  # rival's in a Raid World (see rival?), or an invite to join on the map, which a player in a
+  # battle of their own turns down at once.
   #
   # @param peer [MGQ_MpOverworldSync::Peers::Peer] The host.
   # @param message [Hash] The invite.
@@ -617,11 +1059,13 @@ module MGQ_MpBattlesCoop
       return log("invite to battle #{message['bid']} ignored: it is for seats #{message['seats']}, not the player's")
     end
     return answer_of(peer, message, :leads) if asked?(peer, message)
+    return keep_rival(peer, message) if rival?(peer, message)
 
     # Turned down at once, so the host need not wait for the player: while the player waits for the
     # leader, or is in a battle, and the leader's late invite to a battle the player hosts instead.
     reason = if @asking then "the player waits for the leader to lead battle #{@asking[:bid]}"
              elsif message["bid"] == @dropped_bid then "a late invite to a battle the player hosts instead"
+             elsif follows?(peer, message) then nil
              elsif MGQ_MpBattlesSync.role then "the player is in a multiplayer battle (#{MGQ_MpBattlesSync.role})"
              elsif SceneManager.scene.is_a?(Scene_Battle) then "the player is in a battle"
              end
@@ -630,17 +1074,44 @@ module MGQ_MpBattlesCoop
       return MGQ_MpBattlesSync.tell(peer.seat, "decline", message["bid"].to_s)
     end
 
+    return if raid? && keeps_waiting_invite?(peer, message)
+
     log("replaced the waiting invite to battle #{@invite[:message]['bid']} with #{MGQ_MpOverworldSync.who(peer)}'s") if @invite
     @invite = { :peer => peer, :message => message, :at => Time.now }
-    log("keeps #{MGQ_MpOverworldSync.who(peer)}'s invite to battle #{message['bid']} against troop #{message['troop']} on map #{message['map']} until the player is free, #{ACCEPT_FRAMES / 60} s at most")
+    until_text = MGQ_MpBattlesSync.role ? "until the player's host gives battle #{MGQ_MpBattlesSync.battle_id} up" : "until the player is free, #{ACCEPT_FRAMES / 60} s at most"
+    log("keeps #{MGQ_MpOverworldSync.who(peer)}'s invite to battle #{message['bid']} against troop #{message['troop']} on map #{message['map']} #{until_text}")
+  end
+
+  # Of an invite that waits for the player in a Raid World and a newer one to another battle, keeps
+  # the one whose host hosts should the two battles meet (see hosts_first?), unless it waited too
+  # long, and turns the other down, so its host need not wait for the player.
+  #
+  # @param peer [MGQ_MpOverworldSync::Peers::Peer] The newer invite's host.
+  # @param message [Hash] The newer invite.
+  # @return [Boolean] Whether the waiting invite stays, the newer one turned down.
+  def self.keeps_waiting_invite?(peer, message)
+    waiting = @invite
+    return false if waiting.nil? || waiting[:message]["bid"] == message["bid"]
+
+    if !expired?(waiting) && hosts_first?(waiting[:peer], waiting[:message], peer, message)
+      log("declined #{MGQ_MpOverworldSync.who(peer)}'s invite to battle #{message['bid']}: #{MGQ_MpOverworldSync.who(waiting[:peer])}'s waits, which hosts first")
+      MGQ_MpBattlesSync.tell(peer.seat, "decline", message["bid"].to_s)
+      return true
+    end
+
+    log("declined #{MGQ_MpOverworldSync.who(waiting[:peer])}'s waiting invite to battle #{waiting[:message]['bid']}: #{MGQ_MpOverworldSync.who(peer)}'s came, which hosts first, or it waited too long")
+    MGQ_MpBattlesSync.tell(waiting[:peer].seat, "decline", waiting[:message]["bid"].to_s)
+    false
   end
 
   # Keeps a member's request that the player lead their battle, refusing an earlier one that waits
-  # still, whose member would otherwise wait for an answer in vain.
+  # still, whose member would otherwise wait for an answer in vain. A Raid World refuses it at once.
   #
   # @param peer [MGQ_MpOverworldSync::Peers::Peer] The member.
   # @param message [Hash] The request.
   def self.take_request(peer, message)
+    return refuse_lead(peer, message, "the player who starts a battle in a Raid World hosts it") if raid?
+
     waiting = @request
     if waiting && !(waiting[:peer].equal?(peer) && waiting[:message]["bid"] == message["bid"])
       refuse_lead(waiting[:peer], waiting[:message], "a newer request from #{MGQ_MpOverworldSync.who(peer)} came")
@@ -697,6 +1168,7 @@ module MGQ_MpBattlesCoop
     return decline(peer, message, "the player is in a multiplayer battle (#{MGQ_MpBattlesSync.role})") unless MGQ_MpBattlesSync.role.nil?
     return decline(peer, message, "the player stayed busy for #{ACCEPT_FRAMES / 60} s") if expired?(invite)
     return decline(peer, message, "the leader's story is about to bring the player over") if MGQ_MpCoopGather.coming?
+    return decline(peer, message, "the player trades") if raid? && trading?
     return unless free?
 
     @invite = nil
@@ -772,6 +1244,7 @@ module MGQ_MpBattlesCoop
     MGQ_MpBattlesSync.join_world(:guest, message["bid"].to_s, [peer.seat], peer.state["name"].to_s)
     MGQ_MpBattlesSync.battle_started
     MGQ_MpBattles.begin(:coop)
+    @awaited = { :peer => peer, :message => message }
     SceneManager.call(Scene_Battle)
     log("joined #{peer.state['name']}'s battle #{message['bid']} against troop #{message['troop']}")
   ensure
@@ -790,7 +1263,9 @@ module MGQ_MpBattlesCoop
     MGQ_MpBattlesSync.tell(peer.seat, "decline", message["bid"].to_s)
   end
 
-  # As guest, tells the host who joins and builds the party the host sends. Called at the battle's start.
+  # As guest, tells the host who joins and builds the party the host sends. Called at the battle's
+  # start. A player who follows to another battle meanwhile (see follow) joins that one, and one
+  # whose roster came turns a kept invite down.
   #
   # @param scene [Scene_Battle] The battle.
   # @return [Symbol, nil] An ending of battles_sync's Channel.ending, nil once the battle may start.
@@ -798,11 +1273,18 @@ module MGQ_MpBattlesCoop
     # The host's party says how many of them fight and how many wait on the Backline.
     build = own_build
     MGQ_MpBattlesSync::Channel.post("join", MGQ_MpBattlesSync::Wire.line(build))
-    log("sent join for battle #{MGQ_MpBattlesSync.battle_id} with #{Array(build[1]).size} characters, party_member_max #{build[2]}, waiting up to #{ROSTER_FRAMES / 60} s for the roster")
+    limit = roster_frames
+    log("sent join for battle #{MGQ_MpBattlesSync.battle_id} with #{Array(build[1]).size} characters, party_member_max #{build[2]}, waiting up to #{limit / 60} s for the roster")
     frames = 0
     roster = MGQ_MpBattlesSync::Waiting.wait_for(scene, "Joining #{MGQ_MpBattlesSync.player}'s battle...") do
       frames += 1
-      MGQ_MpBattlesSync::Channel.take("roster") || (frames >= ROSTER_FRAMES ? :late : nil)
+      next :moved if @moved
+
+      MGQ_MpBattlesSync::Channel.take("roster") || (frames >= limit ? :late : nil)
+    end
+    if roster == :moved
+      @moved = false
+      return join(scene)
     end
     return left_out("the host's party never came") if roster == :late
     if roster.is_a?(Symbol)
@@ -813,6 +1295,7 @@ module MGQ_MpBattlesCoop
     enemies, players, level = MGQ_MpBattlesSync::Wire.parse(roster.to_s)
     players = Array(players).map { |fields| Player.read(fields) }
     log("took the roster of battle #{MGQ_MpBattlesSync.battle_id} (#{roster.to_s.size} bytes): #{Array(enemies).size} enemies, #{players.size} players, level #{level.inspect}")
+    decline(@invite[:peer], @invite[:message], "the player's battle #{MGQ_MpBattlesSync.battle_id} began") if @invite
     return left_out("the host's party came without the player") unless players.any? { |player| player.seat == MGQ_MpOverworldSync::Me.seat }
 
     take_troop(scene, Array(enemies))
@@ -913,8 +1396,9 @@ module MGQ_MpBattlesCoop
 
   # Orders the battle's players as their party does, the leader first, and tells each player's
   # share of the Frontline and of the Backline in the battle, and the order of their places. A
-  # co-op battle in a Raid World gives every player one and two (see MGQ_MpCoopSquad.battle_share);
-  # a team duel's shares are split as in a Classic world.
+  # co-op battle in a Raid World puts its host first, whose game calls this, and gives every player
+  # one and two (see MGQ_MpCoopSquad.battle_share); a team duel's shares are split as in a Classic
+  # world.
   #
   # @param players [Array<Player, Array>] The players, or their fields: at least each one's seat,
   #   name, builds, HP and MP and party_member_max.
@@ -924,7 +1408,9 @@ module MGQ_MpBattlesCoop
   #   and their shares of the Frontline and of the Backline.
   def self.arrange(players, backline = true)
     players = players.map { |fields| Player.read(fields) }
-    ranked = MGQ_MpCoopSquad.ranked(players.map { |player| [player_id(player.seat), leads?(player.seat)] })
+    hosted = backline && raid?
+    first = lambda { |seat| hosted ? seat == MGQ_MpOverworldSync::Me.seat : leads?(seat) }
+    ranked = MGQ_MpCoopSquad.ranked(players.map { |player| [player_id(player.seat), first.call(player.seat)] })
     players = players.sort_by { |player| ranked.index(player_id(player.seat)) }
     players.each_with_index.map do |player, position|
       count = MGQ_MpActors::Builds.parse(player.builds.to_s, MOST_CHARACTERS).size
@@ -1260,7 +1746,8 @@ module MGQ_MpBattlesCoop
     @frozen = nil
   end
 
-  # Forgets the co-op party, its players and their characters.
+  # Forgets the co-op party, its players and their characters, a rival's invite and the battle the
+  # player joined as a guest.
   def self.clear
     @seen = nil
     @members = nil
@@ -1269,6 +1756,10 @@ module MGQ_MpBattlesCoop
     @allies = {}
     @reordered = false
     @requester = nil
+    @rival = nil
+    @random_encounter = false
+    @awaited = nil
+    @moved = false
   end
 
   # Swaps one of the player's characters on the Frontline with one of theirs on the Backline, in
@@ -1783,10 +2274,13 @@ class Game_MpAlly < Game_MpActor
   end
 end
 
-# What this script takes part in of the party's messages, through coop.rbx.
+# What this script takes part in of the party's messages, through coop.rbx, and in a Raid World of
+# the map's, through coop_scope.rbx.
 
 begin
   MGQ_MpCoop.route("coop") { |peer, message| MGQ_MpBattlesCoop.take(peer, message) }
+  MGQ_MpCoop.route_map("coop") { |peer, message| MGQ_MpBattlesCoop.take_map(peer, message) }
+  MGQ_MpOverworldSync.state_fields { MGQ_MpBattlesCoop.state_fields }
   MGQ_MpBattles.mode(:coop, MGQ_MpBattlesCoop::Mode)
 rescue => e
   MGQ_MpBattlesCoop.log("co-op FAILED: #{e.class}: #{e.message}")

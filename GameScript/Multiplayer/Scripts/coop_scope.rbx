@@ -10,8 +10,8 @@
 # map in a Raid World. coop_npcs.rbx, coop_castle.rbx, coop_events.rbx, coop_gather.rbx and
 # coop_scene.rbx ask MGQ_MpCoop::Scope instead of the party, and send their messages through it:
 # through the party's gate (MGQ_MpCoop.route) in a Classic world, through the map's gate
-# (MGQ_MpCoop.route_map) in a Raid World. The party chat, removing a member, invites, co-op battles
-# and duels keep the party's gate in both.
+# (MGQ_MpCoop.route_map) in a Raid World. The party chat, removing a member, invites and duels keep
+# the party's gate in both; co-op battles use the map's gate in a Raid World (see battles_coop.rbx).
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpCoop

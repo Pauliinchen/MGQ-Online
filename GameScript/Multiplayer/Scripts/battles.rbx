@@ -80,7 +80,8 @@ module MGQ_MpBattles
     #
     # @param _scene [Scene_Battle] The battle.
     # @return [Symbol, nil] :own when the battle is the host's own after all and no longer live,
-    #   another reason when it ends before it began, nil when it goes on.
+    #   :guest when the host became a guest of another battle, another reason when it ends before it
+    #   began, nil when it goes on.
     def host_start(_scene)
     end
 
