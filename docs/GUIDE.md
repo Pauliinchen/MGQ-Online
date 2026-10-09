@@ -23,8 +23,9 @@ Everything Monster Girl Quest! Online does, for players. To install the mod, see
 | **F11** | Opens the World overview, or the PvP battle screen outside a world. |
 | **Y** / **N** | Accepts / declines the first invite in the notification box. |
 | **Tab** | Makes the party box small or full. |
+| **J** | Joins the battle of a player next to you in a Raid World, while the prompt below your character shows. |
 
-This guide names the default hotkeys. To bind others, open *Mod Config → Monster Girl Quest! Online*, confirm the hotkey's row (*Action Wheel*, *Chat*, *World Overview*, *Accept Notification*, *Decline Notification*, *Emote Wheel* or *Party Box Size*) and press the new key; **Esc** keeps the old one.
+This guide names the default hotkeys. To bind others, open *Mod Config → Monster Girl Quest! Online*, confirm the hotkey's row (*Action Wheel*, *Chat*, *World Overview*, *Accept Notification*, *Decline Notification*, *Emote Wheel*, *Party Box Size* or *Join Battle*) and press the new key; **Esc** keeps the old one.
 
 - Keys the game uses itself can't be bound: the arrows, Enter, Esc, Z, X, Shift, A, S, D, Q and W. Neither can a key another hotkey already uses.
 - Your hotkeys are kept in `Patch\Multiplayer\Player.ini`, so they hold in every save and every world, and the texts in the game name the hotkeys you bound.

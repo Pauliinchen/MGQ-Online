@@ -13,7 +13,7 @@ Play Monster Girl Quest! Paradox RPG together with friends over the internet, wi
 </p>
 
 - **Worlds:** up to 32 players on the same maps, with emotes and an overview of everyone online. A world is *Classic*, where each party plays its own story, or a *Raid World*.
-- **Raid Worlds:** the whole world plays one story together. Everyone on a map sees the story's scenes together, party or not, and battles pull in the nearest players, up to four, each with one Frontline and two Backline characters. Whoever is furthest pushes the story on for everyone; a player behind sees the world as it was at the end of their part and catches up as they level, and companions join on reaching their level. Story bosses share their HP across the world and take several victories to beat. Raid Worlds are red and at the top of the list.
+- **Raid Worlds:** the whole world plays one story together. Everyone on a map sees the story's scenes together, party or not, and battles pull in the nearest players, up to four, each with one Frontline and two Backline characters. Stand next to a player in a battle and press **J** to join it. Whoever is furthest pushes the story on for everyone; a player behind sees the world as it was at the end of their part and catches up as they level, and companions join on reaching their level. Story bosses share their HP across the world and take several victories to beat. Raid Worlds are red and at the top of the list.
 - **Chat:** global, party, say and whisper chats in tabs, a glow on tabs with unread lines, and speech bubbles over the players on your map.
 - **Parties:** up to four players play the leader's story together and share one team's worth of companions.
 - **Co-op battles:** party members on the same map join each other's battles, each commanding their own characters.
@@ -66,6 +66,7 @@ For a PvP battle without a world, press **F11** on the map and host; your friend
 | **F11** | World overview, or the PvP battle screen outside a world |
 | **Y** / **N** | Accept / decline the first invite at the top left |
 | **Tab** | Make the party box small or full |
+| **J** | Join the battle of a player next to you in a Raid World |
 
 Rebind them in *Mod Config → Monster Girl Quest! Online*.
 

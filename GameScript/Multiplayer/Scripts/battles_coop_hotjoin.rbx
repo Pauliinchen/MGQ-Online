@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-09: Took in a player who asks with their own encounter while another request brought them along, instead of refusing them, and let them ignore that request's invite
+#                            - Took in a player who joins the battle by choice, without enemies, through battles_coop_join.rbx, and marked a boss battle in the invites of the players taken in
 #                            - Left the players whose state tells a battle out of those an encounter brings along
 #      Paulinchen  2026-10-08: Created
 #
@@ -429,7 +430,7 @@ module MGQ_MpBattlesHotjoin
     return "the player's battle still gathers its players" if sync.live? && !MGQ_MpBattlesCoop.active?
     return "the computer plays on for those who left" if sync.live? && sync.solo?
     return "the battle ends" if BattleManager.respond_to?(:battle_end?) && BattleManager.battle_end?
-    return "the player's battle is a boss battle" if @boss_battle || MGQ_MpRaidBosses.battle?(MGQ_MpGame.get($game_troop, :troop_id))
+    return "the player's battle is a boss battle" if boss_battle?
     return "the encounter's troop #{message['troop']} is a boss" if MGQ_MpRaidBosses.boss?(message["troop"])
     # The battle's guests who left stay among its seats, which the next command phase takes out.
     return "its player was in this battle before" if sync.role && Array(sync.seats).include?(seats.first)
@@ -479,17 +480,48 @@ module MGQ_MpBattlesHotjoin
     sync.join_world(:host, bid, [], "the players") unless sync.role
     @pending << { :requester => peer.seat, :seats => seats.dup, :enemies => placed, :at => Time.now, :added => false }
     sync.expect(seats)
-    escape = MGQ_MpGame.get(BattleManager, :can_escape) ? 1 : 0
-    lose = MGQ_MpGame.get(BattleManager, :can_lose) ? 1 : 0
     coop = MGQ_MpBattlesCoop
-    coop.tell_map([peer.seat], "hot_ok", "bid" => bid, "escape" => escape, "lose" => lose)
-    others = seats - [peer.seat]
-    unless others.empty?
-      coop.tell_map(others, "invite", "bid" => bid, "troop" => MGQ_MpGame.get($game_troop, :troop_id), "escape" => escape, "lose" => lose,
-                                       "seats" => others.join(","), "map" => $game_map.map_id, "hot" => 1)
-    end
+    fields = invite_fields(seats - [peer.seat])
+    coop.tell_map([peer.seat], "hot_ok", "bid" => bid, "escape" => fields["escape"], "lose" => fields["lose"])
+    coop.tell_map(seats - [peer.seat], "invite", fields) unless fields["seats"].empty?
     log("takes #{who(peer)}'s encounter into battle #{bid} at the next command phase: #{placed.size} enemies at x " \
         "#{placed.map { |entry| entry[1] }.join(', ')}, players #{seats.map { |seat| sync.who(seat) }.join(', ')}")
+  end
+
+  # Takes in a player who joins the battle the player hosts, or fights alone, by choice (see
+  # battles_coop_join.rbx): as a player another encounter brings along, without enemies, so an
+  # event's battle and a boss battle take them too. They join at the next command phase, see settle.
+  #
+  # @param peer [MGQ_MpOverworldSync::Peers::Peer] Who asked.
+  def self.take_in_player(peer)
+    sync = MGQ_MpBattlesSync
+    bid = running_battle[0]
+    sync.join_world(:host, bid, [], "the players") unless sync.role
+    @pending << { :requester => peer.seat, :seats => [peer.seat], :enemies => [], :at => Time.now, :added => false }
+    sync.expect([peer.seat])
+    MGQ_MpBattlesCoop.tell_map([peer.seat], "invite", invite_fields([peer.seat]))
+    log("takes #{who(peer)} into battle #{bid} at the next command phase: they join by choice, without enemies")
+  end
+
+  # Writes the invite to the battle the player hosts for players who join it late: its troop, escape
+  # and lose, and whether it is a boss battle, which stays one should one of them take it over.
+  #
+  # @param seats [Array<Integer>] The seats of the players invited.
+  # @return [Hash] The invite's fields.
+  def self.invite_fields(seats)
+    troop = MGQ_MpGame.get($game_troop, :troop_id)
+    fields = { "bid" => running_battle[0], "troop" => troop, "escape" => MGQ_MpGame.get(BattleManager, :can_escape) ? 1 : 0,
+               "lose" => MGQ_MpGame.get(BattleManager, :can_lose) ? 1 : 0, "seats" => seats.join(","), "map" => $game_map.map_id, "hot" => 1 }
+    fields["boss"] = 1 if boss_battle?
+    fields
+  end
+
+  # Reports whether the battle the player fights is a boss battle: its troop, or the word of the
+  # host whose battle the player took over.
+  #
+  # @return [Boolean] Whether it is.
+  def self.boss_battle?
+    @boss_battle || MGQ_MpRaidBosses.battle?(MGQ_MpGame.get($game_troop, :troop_id)) ? true : false
   end
 
   # Finds places in the troop for an encounter's enemies: within TROOP_LIMIT with those standing or

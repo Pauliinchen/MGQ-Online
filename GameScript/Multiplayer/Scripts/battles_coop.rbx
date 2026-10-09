@@ -5,6 +5,8 @@
 #      Paulinchen  2026-10-09: Ended a co-op battle only once its scene ended, not when its party command called the Library or Config
 #                            - Noted whether the battle the player's yields to in a Raid World is a boss battle, which then takes no encounter in should the player take it over
 #                            - Ignored the invite of a running battle's host the player asks to take their own encounter in
+#                            - Passed a request to join a battle by choice and its refusal to battles_coop_join.rbx
+#                            - Ignored the late invite of a battle the player stopped waiting to join by choice
 #      Paulinchen  2026-10-08: Brought each player's first three characters to a co-op battle in a Raid World, one on the Frontline and two on the Backline, also for a player left alone
 #                            - Brought only the squad to a team duel in a Raid World, never the fourth
 #                            - Invited the nearest free players on the map to a battle in a Raid World, party members first, up to four players, through the map's gate
@@ -87,7 +89,8 @@
 # joins as a guest with the players who joined them (see rival? and follows?). Every player's
 # squad is one on the Frontline and two on the Backline, however many play and when left alone
 # too, and no level sync runs. A random encounter on a map where a battle already runs joins that
-# battle instead (see battles_coop_hotjoin.rbx).
+# battle instead (see battles_coop_hotjoin.rbx), and a player near a running battle may join it by
+# choice (see battles_coop_join.rbx).
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpBattlesCoop
@@ -1057,6 +1060,8 @@ module MGQ_MpBattlesCoop
     when "hot" then MGQ_MpBattlesHotjoin.take_request(peer, message)
     when "hot_ok" then MGQ_MpBattlesHotjoin.take_answer(peer, message, :accepted)
     when "hot_no" then MGQ_MpBattlesHotjoin.take_answer(peer, message, :refused)
+    when "pick" then MGQ_MpBattlesJoin.take_request(peer, message)
+    when "pick_no" then MGQ_MpBattlesJoin.take_refusal(peer, message)
     end
   rescue => e
     log("taking a co-op message failed: #{e.class}: #{e.message}")
@@ -1077,7 +1082,8 @@ module MGQ_MpBattlesCoop
   # Takes an invite to a battle: the answer of the leader the player asked to lead their battle, a
   # rival's in a Raid World (see rival?), or an invite to join on the map, which a player in a
   # battle of their own turns down at once, unless it comes from the running battle the player asks
-  # to join (see MGQ_MpBattlesHotjoin.asks?).
+  # to join (see MGQ_MpBattlesHotjoin.asks?). A late invite the player stopped waiting for is ignored
+  # (see MGQ_MpBattlesJoin.gave_up?).
   #
   # @param peer [MGQ_MpOverworldSync::Peers::Peer] The host.
   # @param message [Hash] The invite.
@@ -1087,6 +1093,7 @@ module MGQ_MpBattlesCoop
     end
     return answer_of(peer, message, :leads) if asked?(peer, message)
     return log("ignored #{MGQ_MpOverworldSync.who(peer)}'s invite to battle #{message['bid']}: the player's own request to join it brings them") if MGQ_MpBattlesHotjoin.asks?(peer, message)
+    return log("ignored #{MGQ_MpOverworldSync.who(peer)}'s late invite to battle #{message['bid']}: the player stopped waiting for it") if defined?(MGQ_MpBattlesJoin) && MGQ_MpBattlesJoin.gave_up?(peer, message)
     return keep_rival(peer, message) if rival?(peer, message)
 
     # Turned down at once, so the host need not wait for the player: while the player waits for the
@@ -1146,6 +1153,16 @@ module MGQ_MpBattlesCoop
     end
     @request = { :peer => peer, :message => message, :at => Time.now }
     log("keeps #{MGQ_MpOverworldSync.who(peer)}'s request to lead battle #{message['bid']} against troop #{message['troop']} on map #{message['map']} until the player is free, #{ACCEPT_FRAMES / 60} s at most")
+  end
+
+  # Reports whether an invite from a host to a battle waits for the player to be free, see on_map.
+  #
+  # @param seat [Integer] The host's seat.
+  # @param bid [String] The battle's id.
+  # @return [Boolean] Whether one does.
+  def self.invited_by?(seat, bid)
+    invite = @invite
+    !invite.nil? && invite[:peer].seat == seat && invite[:message]["bid"].to_s == bid.to_s
   end
 
   # Reports whether an invite or a request to lead waited longer than ACCEPT_FRAMES. It counts by the
