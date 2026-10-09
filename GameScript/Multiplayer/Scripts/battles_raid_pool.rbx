@@ -2,7 +2,9 @@
 #  battles_raid_pool.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-09: Created
+#      Paulinchen  2026-10-09: Took back the copies of the items a boss event equips at once that its replay leaves in the bag
+#                            - Counted the fights whose events change the party against their pools, putting the party back as the boss falls back
+#                            - Created
 #
 #----------------------------------------------------------------
 
@@ -10,8 +12,8 @@
 # world wears down together, and that fills up again within the hour (Relay/core/bosses.js). A won
 # boss battle moves the story on only once it empties the pool; until then the boss falls back: the
 # event that started the battle ends as the game's defeat ends it, without the defeat scene, and
-# the switches, variables and self switches it set before the battle are put back with how the map
-# looked and sounded, so the event can be played again.
+# the switches, variables and self switches it set before the battle are put back with the party
+# and how the map looked and sounded, so the event can be played again.
 #
 # A battle counts when the player hosts it in a Raid World whose story they play, a story event
 # started it with its battle command, its troop is the last phase of a boss fight of
@@ -70,21 +72,15 @@ module MGQ_MpRaidPool
     2211 => "Fiend", 2212 => "Goddess", 2213 => "Demon",
   }
 
-  # Last phases that never count, by troop, with why: their events change the party in ways that
-  # cannot be put back, or set the route for the whole world.
+  # Last phases that never count, by troop, with why: their events set the route for the whole
+  # world.
   UNPOOLED = {
     1507 => "the Great Decision sets the world's route",
     1509 => "the Great Decision sets the world's route",
-    1725 => "its event puts a party of its own together",
-    1946 => "its event puts a party of its own together",
-    1975 => "its event adds companions for the fight alone",
-    2001 => "its event changes a companion's persona",
-    2095 => "its event changes a companion's persona",
-    2133 => "its event splits the party",
-    2158 => "its event changes a companion's persona and the story between its phases",
-    2188 => "its event changes the party's size and a companion's persona",
-    2219 => "its event puts a party of its own together",
   }
+
+  # The variable the game adds to its party size, which some boss events raise for their fight.
+  PARTY_SIZE_VARIABLE = 56
 
   # What tells each milestone beaten, by milestone and cap: alternatives split by "|", each a list
   # of conditions split by "&", a switch on ("s2261") or a variable at least a value ("v1003>=8").
@@ -191,7 +187,10 @@ module MGQ_MpRaidPool
   # @!attribute map_id [Integer] The map the event started on.
   # @!attribute event_id [Integer] The event.
   # @!attribute scene [Hash, nil] How the map looked and sounded as the event started, see raw_scene.
-  Fight = Struct.new(:key, :name, :troop, :battle, :writes, :map_id, :event_id, :scene)
+  # @!attribute party [Hash] The party as the event started and as the battle started, see
+  #   with_battle_party.
+  # @!attribute gifts [Hash] The items the event left in the bag beyond what it equipped, see giving.
+  Fight = Struct.new(:key, :name, :troop, :battle, :writes, :map_id, :event_id, :scene, :party, :gifts)
 
   # Forgets every battle and report, as at the title screen.
   def self.forget
@@ -226,7 +225,7 @@ module MGQ_MpRaidPool
     @snapshot = nil
     return unless interpreter.event_id > 0 && active?
 
-    @snapshot = { :event_id => interpreter.event_id, :map_id => interpreter.map_id, :story => raw_story, :scene => raw_scene }
+    @snapshot = { :event_id => interpreter.event_id, :map_id => interpreter.map_id, :story => raw_story, :scene => raw_scene, :party => raw_party, :gifts => {} }
   rescue => e
     @snapshot = nil
     log_once(:snapshot, "noting the story at an event's start failed: #{e.class}: #{e.message}")
@@ -273,7 +272,8 @@ module MGQ_MpRaidPool
     return log("troop #{troop_id} counts against no pool: #{reason}") if reason
 
     root = $game_map.interpreter
-    @fight = Fight.new(key_of(troop_id), troop_name, troop_id.to_i, new_battle_id, writes_since(@snapshot[:story]), root.map_id, root.event_id, @snapshot[:scene])
+    @fight = Fight.new(key_of(troop_id), troop_name, troop_id.to_i, new_battle_id, writes_since(@snapshot[:story]), root.map_id, root.event_id,
+                       @snapshot[:scene], with_battle_party(@snapshot[:party]), @snapshot[:gifts].dup)
     log("battle #{@fight.battle} against #{@fight.name} (troop #{troop_id}) counts against the pool #{@fight.key}, " \
         "#{change_count(@fight.writes)} story value(s) put back if it holds")
   rescue => e
@@ -305,6 +305,7 @@ module MGQ_MpRaidPool
     return "a Colosseum battle" if $game_switches[COLOSSEUM_SWITCH]
     return "the story beat #{boss.milestone} already" if beaten?(boss)
     return "no story was noted as its event started" unless snapshot_of_root?
+    return "no party was noted as its event started" unless @snapshot[:party]
 
     moved = moved_progress(writes_since(@snapshot[:story]))
     return "its event moved the story's progress (#{moved}) before the battle" if moved
@@ -501,6 +502,318 @@ module MGQ_MpRaidPool
     $game_map.need_refresh = true
   end
 
+  # Notes the party, which some boss events put together anew for their fight: a temporary party,
+  # companions added or sent away, a persona changed, the split parties joined or a larger party.
+  #
+  # @return [Hash, nil] The party size variable (:size); the team (:actors), the companions owned
+  #   (:include) and the temporary party (:temp) as character ids in order; the personas the
+  #   temporary party changed (:temp_personas); every made character's persona with its looks, by
+  #   its main persona (:personas, see persona_of); and the split parties (:split, see raw_split);
+  #   nil when noting failed.
+  def self.raw_party
+    party = $game_party
+    temp_personas = MGQ_MpGame.get(party, :temp_personas)
+    { :size => MGQ_MpGame.get($game_variables, :data)[PARTY_SIZE_VARIABLE],
+      :actors => party_ids(party, :actors), :include => party_ids(party, :include_actors),
+      :temp => party_ids(party, :temp_actors), :temp_personas => temp_personas && temp_personas.dup,
+      :personas => raw_personas, :split => raw_split(party) }
+  rescue => e
+    log_once(:party, "noting the party failed: #{e.class}: #{e.message}")
+    nil
+  end
+
+  # Reads one of the party's lists of characters.
+  #
+  # @param party [Game_Party] The party.
+  # @param field [Symbol] :actors, :include_actors or :temp_actors.
+  # @return [Array<Integer>] The character ids in order.
+  def self.party_ids(party, field)
+    list = MGQ_MpGame.get(party, field)
+    raise ArgumentError, "the party has no #{field}" unless list
+
+    list.to_a
+  end
+
+  # Adds the party as a battle starts to the party noted as its event started, so that a boss that
+  # falls back after the event ended undoes only what the event changed, and keeps what changed
+  # since, such as a companion the story's catch-up brought or a team the player put together.
+  #
+  # @param saved [Hash] What raw_party noted.
+  # @return [Hash] The noted party with the team, the companions owned and the temporary party
+  #   (:battle, by :actors, :include and :temp) and the personas (:battle_personas) as the battle
+  #   started.
+  def self.with_battle_party(saved)
+    party = $game_party
+    members = { :actors => party_ids(party, :actors), :include => party_ids(party, :include_actors), :temp => party_ids(party, :temp_actors) }
+    saved.merge(:battle => members, :battle_personas => raw_personas)
+  end
+
+  # Notes the persona of every character made so far that switches personas.
+  #
+  # @return [Hash] Each one's persona and looks (see persona_of), by its main persona's id.
+  def self.raw_personas
+    made = MGQ_MpGame.get($game_actors, :data)
+    persona_ids.each_with_object({}) { |id, out| out[id] = persona_of(made[id]) if made[id] }
+  end
+
+  # Finds the characters that switch personas, by their main persona, under whose id the game keeps
+  # the character whichever persona it shows.
+  #
+  # @return [Array<Integer>] Their ids.
+  def self.persona_ids
+    return @persona_ids if @persona_ids && @persona_source.equal?($data_actors)
+
+    @persona_source = $data_actors
+    @persona_ids = (1...$data_actors.size).select do |id|
+      actor = $data_actors[id]
+      actor && actor.respond_to?(:persona_kind) && actor.persona_kind == :original
+    end
+  end
+
+  # Notes a character's persona with the looks it brings.
+  #
+  # @param actor [Game_Actor] The character.
+  # @return [Array] Its persona's id, name, nickname, character sprite and index, and face and index.
+  def self.persona_of(actor)
+    [actor.id, actor.name, actor.nickname, actor.character_name, actor.character_index, actor.face_name, actor.face_index]
+  end
+
+  # Notes the split parties the player switches between, which an event joins again.
+  #
+  # @param party [Game_Party] The party.
+  # @return [Hash, nil] The party played (:current) and each party's character ids and place, [map
+  #   id, x, y, direction] (:parties), in order, the one played with its team where the player
+  #   stands; nil when the party is not split.
+  def self.raw_split(party)
+    return nil unless party.respond_to?(:multi_party?) && party.multi_party?
+
+    current = party.multi_party.id
+    parties = MGQ_MpGame.get(party.multi_party, :data).each_with_index.map do |split, index|
+      next [party.actors.to_a, [$game_map.map_id, $game_player.x, $game_player.y, $game_player.direction]] if index == current
+
+      [split.member.to_a, [split.map_id] + split.position.to_a]
+    end
+    { :current => current, :parties => parties }
+  end
+
+  # Puts back the party as the event found it, through the game's own methods where it has them,
+  # and fits the team to the Raid World's formation again.
+  #
+  # @param saved [Hash, nil] What raw_party noted.
+  # @return [Boolean] Whether anything changed.
+  def self.restore_party(saved)
+    return false unless saved
+
+    party = $game_party
+    changed = restore_party_size(saved[:size])
+    changed = restore_split(party, saved[:split]) || changed
+    changed = restore_personas(party, saved[:personas], saved[:battle_personas], saved[:temp_personas]) || changed
+    changed = restore_members(party, saved) || changed
+    MGQ_MpCoopSquad.fit_team(MGQ_MpCoop::Scope.raid?) if changed && defined?(MGQ_MpCoopSquad)
+    changed
+  rescue => e
+    log("putting back the party failed: #{e.class}: #{e.message}")
+    false
+  end
+
+  # Puts back the variable the game adds to its party size, before the lists the game cuts to it.
+  #
+  # @param size [Integer, nil] Its value as noted.
+  # @return [Boolean] Whether it changed.
+  def self.restore_party_size(size)
+    variables = MGQ_MpGame.get($game_variables, :data)
+    return false if variables[PARTY_SIZE_VARIABLE] == size
+
+    variables[PARTY_SIZE_VARIABLE] = size
+    true
+  end
+
+  # Splits the party again as the event found it, or joins the parties an event split, through the
+  # game's own methods. Splitting again moves the party played back to where it stood as the event
+  # started, as the game moves a party it switches to.
+  #
+  # @param party [Game_Party] The party.
+  # @param saved [Hash, nil] What raw_split noted.
+  # @return [Boolean] Whether anything changed.
+  def self.restore_split(party, saved)
+    split = party.respond_to?(:multi_party?) && party.multi_party? ? true : false
+    unless saved
+      return false unless split
+
+      party.end_multiparty
+      return true
+    end
+    return false if split
+
+    party.setup_multipartymember(saved[:parties].map { |members, _place| members.dup })
+    party.start_multiparty(*saved[:parties].map { |_members, place| place.dup })
+    return true if saved[:current] == 0
+
+    MGQ_MpGame.set(party.multi_party, :party_index, saved[:current])
+    party.multi_party.start
+    true
+  end
+
+  # Puts back the persona of every character an event changed before its battle, with the looks it
+  # had, and the personas the temporary party changed. A character the event made goes back to its
+  # main persona. The character's own persona_change is used, since the party's marks the persona
+  # owned in the system save that every save file shares.
+  #
+  # @param party [Game_Party] The party.
+  # @param personas [Hash] What raw_personas noted as the event started.
+  # @param battle_personas [Hash] What raw_personas noted as the battle started.
+  # @param temp_personas [Hash, nil] The personas the temporary party changed, as noted.
+  # @return [Boolean] Whether anything changed.
+  def self.restore_personas(party, personas, battle_personas, temp_personas)
+    made = MGQ_MpGame.get($game_actors, :data)
+    changed = false
+    persona_ids.each do |id|
+      actor = made[id]
+      was = personas[id] || [id]
+      at_battle = battle_personas[id]
+      next if actor.nil? || at_battle.nil? || actor.id == was[0] || at_battle[0] == was[0]
+
+      actor.persona_change(was[0])
+      restore_looks(actor, was) if was.size > 1
+      changed = true
+    end
+    if changed
+      $game_player.refresh
+      $game_map.need_refresh = true
+    end
+    return changed if MGQ_MpGame.get(party, :temp_personas) == temp_personas
+
+    MGQ_MpGame.set(party, :temp_personas, temp_personas && temp_personas.dup)
+    true
+  end
+
+  # Puts back a character's name, nickname and graphics where they differ from those of its persona.
+  #
+  # @param actor [Game_Actor] The character.
+  # @param was [Array] Its persona and looks, see persona_of.
+  def self.restore_looks(actor, was)
+    actor.name = was[1] unless actor.name == was[1]
+    actor.nickname = was[2] unless actor.nickname == was[2]
+    looks = was[3, 4]
+    actor.set_graphic(*looks) unless [actor.character_name, actor.character_index, actor.face_name, actor.face_index] == looks
+  end
+
+  # Puts back the temporary party, the team and the companions owned, in that order: the game cuts
+  # the team to the party size, which in a Raid World depends on whether a temporary party plays.
+  #
+  # @param party [Game_Party] The party.
+  # @param saved [Hash] What with_battle_party noted.
+  # @return [Boolean] Whether anything changed.
+  def self.restore_members(party, saved)
+    changed = false
+    [[:temp_actors, :temp], [:actors, :actors], [:include_actors, :include]].each do |field, key|
+      list = MGQ_MpGame.get(party, field)
+      ids = members_back(list.to_a, saved[key], saved[:battle][key])
+      next if list.to_a == ids
+
+      list.set(ids)
+      changed = true
+    end
+    $game_player.refresh if changed
+    changed
+  end
+
+  # Finds a list of characters as a boss that falls back leaves it: as the event found it, or, when
+  # the list changed since the battle started, with only what the event changed before the battle
+  # undone, a character it took out back at its place.
+  #
+  # @param now [Array<Integer>] The list now.
+  # @param start [Array<Integer>] The list as the event started.
+  # @param at_battle [Array<Integer>] The list as the battle started.
+  # @return [Array<Integer>] The list to put back.
+  def self.members_back(now, start, at_battle)
+    return start if now == at_battle
+
+    ids = now - (at_battle - start)
+    ((start - at_battle) - now).each { |id| ids.insert([start.index(id), ids.size].min, id) }
+    ids
+  end
+
+  # Runs one of the game's script calls that give the party items and equip them at once, noting
+  # how many of each it left in the bag while the event runs up to its battle. A replay of the event
+  # after a fall back gives the items again while the character wears them already, so each replay
+  # would leave another copy.
+  #
+  # @param call [Symbol] :equip for force_change_equip, :stones for change_actor_equip_stone.
+  # @param args [Array] The call's arguments.
+  # @return [Object] What the call returns.
+  def self.giving(call, args)
+    before = gift_counts(call, args)
+    result = yield
+    note_gifts(before) if before
+    result
+  end
+
+  # Counts the items a script call gives as it starts, while the event runs up to its battle.
+  #
+  # @param call [Symbol] See giving.
+  # @param args [Array] The call's arguments.
+  # @return [Array<Array>, nil] Each item, see gift_item, with its count in the bag; nil when no
+  #   event's gifts are noted now.
+  def self.gift_counts(call, args)
+    return nil unless @in_map && @snapshot && !$game_party.in_battle && snapshot_of_root?
+
+    gifts = call == :equip ? [[{ 1 => :weapon, 2 => :armor }[args[2]], args[3]]] : args[2..-1].to_a.map { |id| [:item, id] }
+    gifts.uniq.select { |gift| gift_item(gift) }.map { |gift| [gift, gift_count(gift)] }
+  rescue => e
+    log_once(:gifts, "counting an event's items failed: #{e.class}: #{e.message}")
+    nil
+  end
+
+  # Notes how many more of each item a script call left in the bag.
+  #
+  # @param before [Array<Array>] The counts as it started, see gift_counts.
+  def self.note_gifts(before)
+    gifts = @snapshot[:gifts]
+    before.each do |gift, count|
+      rise = gift_count(gift) - count
+      gifts[gift] = gifts.fetch(gift, 0) + rise if rise > 0
+    end
+  rescue => e
+    log_once(:gifts, "noting an event's items failed: #{e.class}: #{e.message}")
+  end
+
+  # Finds an item of the game's database.
+  #
+  # @param gift [Array] Its kind (:item, :weapon or :armor) and id.
+  # @return [RPG::BaseItem, nil] The item, nil for none.
+  def self.gift_item(gift)
+    kind, id = gift
+    data = { :item => $data_items, :weapon => $data_weapons, :armor => $data_armors }[kind]
+    data && id.is_a?(Integer) ? data[id] : nil
+  end
+
+  # Counts an item in the bag.
+  #
+  # @param gift [Array] See gift_item.
+  # @return [Integer] How many.
+  def self.gift_count(gift)
+    $game_party.item_number(gift_item(gift)).to_i
+  end
+
+  # Takes the copies the event left in the bag before its battle back out of it, as many as are left.
+  #
+  # @param gifts [Hash, nil] How many of each item, see giving.
+  # @return [Integer] How many items it took.
+  def self.take_back_gifts(gifts)
+    return 0 unless gifts
+
+    gifts.inject(0) do |taken, (gift, count)|
+      item = gift_item(gift)
+      lose = item ? [count, gift_count(gift)].min : 0
+      $game_party.lose_item(item, lose) if lose > 0
+      taken + lose
+    end
+  rescue => e
+    log("taking back the event's items failed: #{e.class}: #{e.message}")
+    0
+  end
+
   # Finds the share of the boss's HP a battle dealt: what the troop's enemies that appeared lost of
   # their max HP together.
   #
@@ -646,18 +959,22 @@ module MGQ_MpRaidPool
     :holds
   end
 
-  # Has a boss fall back: puts back what the event changed before the battle and how the map looked,
-  # ends the event as the game's defeat does, and tells the player how much is left.
+  # Has a boss fall back: puts back what the event changed before the battle, the party, the items
+  # it left in the bag and how the map looked, ends the event as the game's defeat does, and tells
+  # the player how much is left.
   #
   # @param fight [Fight] The battle.
   # @param state [Hash] The DLL's state of the report.
   # @param in_event [Boolean] Whether the event still runs.
   def self.fall_back(fight, state, in_event)
     restore(fight.writes)
+    party = restore_party(fight.party)
+    taken = take_back_gifts(fight.gifts)
     restore_scene(fight.scene)
     end_event(fight) if in_event
     left = "#{amount(state['report_hp'])}/#{amount(max_of(state, fight.key))}"
-    log("#{fight.name} falls back, #{left} left in the pool #{fight.key}: #{change_count(fight.writes)} story value(s) put back")
+    log("#{fight.name} falls back, #{left} left in the pool #{fight.key}: #{change_count(fight.writes)} story value(s)#{party ? ' and the party' : ''} put back" \
+        "#{taken > 0 ? ", #{taken} item(s) its event gave again taken back" : ''}")
     text = "#{fight.name} falls back. Raid HP left: #{left}."
     notice(text)
     chat(text)
@@ -877,4 +1194,15 @@ begin
   MGQ_MpHooks.around(Game_Interpreter, :command_301, "battles_raid_pool") { |_interpreter, _args, original| MGQ_MpRaidPool.at_command { original.call } }
 rescue => e
   MGQ_MpRaidPool.log("battle command hooks FAILED: #{e.class}: #{e.message}")
+end
+
+begin
+  # The script calls that give the party items and equip them at once note what they leave in the bag.
+  { :force_change_equip => :equip, :change_actor_equip_stone => :stones }.each do |name, call|
+    next unless Game_Interpreter.method_defined?(name)
+
+    MGQ_MpHooks.around(Game_Interpreter, name, "battles_raid_pool") { |_interpreter, args, original| MGQ_MpRaidPool.giving(call, args) { original.call } }
+  end
+rescue => e
+  MGQ_MpRaidPool.log("item call hooks FAILED: #{e.class}: #{e.message}")
 end

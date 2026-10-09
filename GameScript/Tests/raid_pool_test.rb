@@ -2,7 +2,9 @@
 #  raid_pool_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-09: Created
+#      Paulinchen  2026-10-09: Covered the boss fights whose events change the party, which fall back with the party as it was
+#                            - Covered the companions that join after the battle, the personas put back without marking them owned and the items a replay gives again
+#                            - Created
 #
 #----------------------------------------------------------------
 
@@ -11,6 +13,9 @@
 # what it set before the battle is put back), one whose pool the battle emptied, a relay that does
 # not answer, the last phase of a fight of several, a lost battle and the game's retry, and the
 # relay's push, and the autosave a won retry holds. Events run in fibers as the game's interpreter runs them.
+# The boss events that put the party together anew (a temporary party, companions added, a persona
+# changed, a larger party, split parties joined or split) fall back with the party as it was, and
+# without the copies of the items a replay of their event gives again.
 
 require_relative "support"
 
@@ -90,7 +95,179 @@ class Game_Troop
   attr_reader :members
   def setup(troop_id); @members = ($troops[troop_id] || [["Slime", 100]]).map { |name, mhp| Enemy.new(name, mhp, mhp) }; end
 end
-class Game_Party; attr_accessor :in_battle; end
+
+# The characters' database entries: a main persona (:original) lists its other personas (:sub).
+ActorData = Struct.new(:id, :persona_kind, :original_persona_id, :name)
+$data_actors = []
+(1..8).to_a.concat([41, 53, 683]).each { |id| $data_actors[id] = ActorData.new(id, :none, id, "Actor #{id}") }
+{ 9 => [909, "Micaela"], 20 => [21, "Twenty"], 40 => [400, "Forty"] }.each do |id, (sub, name)|
+  $data_actors[id] = ActorData.new(id, :original, id, name)
+  $data_actors[sub] = ActorData.new(sub, :sub, id, "Other #{name}")
+end
+
+# A character, kept under its main persona's id whichever persona it shows, as the game's, with its
+# equipment and the stones in it.
+class Game_Actor
+  attr_accessor :name, :nickname
+  attr_reader :character_name, :character_index, :face_name, :face_index
+  def initialize(id); @actor_id = id; init_looks; end
+  def id; @actor_id; end
+  def luca?; @actor_id == 1; end
+  def persona_change(persona_id)
+    return if $data_actors[persona_id].persona_kind == :none
+    @actor_id = persona_id
+    init_looks
+  end
+  def init_looks
+    @name = $data_actors[@actor_id].name
+    @nickname = ""
+    set_graphic(@name.downcase, 0, @name.downcase, 0)
+  end
+  def set_graphic(character_name, character_index, face_name, face_index)
+    @character_name, @character_index, @face_name, @face_index = character_name, character_index, face_name, face_index
+  end
+  def equips; @equips ||= []; end
+  def change_equip(slot_id, item)
+    return unless $game_party.trade_item(item, equips[slot_id])
+    equips[slot_id] = item
+  end
+  def change_stone(slot_id, stone_slot_id, stone)
+    stones = ((@stones ||= {})[slot_id] ||= [])
+    return unless $game_party.trade_item(stone, stones[stone_slot_id])
+    stones[stone_slot_id] = stone
+  end
+end
+
+# The game's items, weapons and armors, each an entry of its own.
+ItemData = Struct.new(:kind, :id)
+$data_items, $data_weapons, $data_armors = [], [], []
+[[$data_weapons, :weapon, [7, 4832]], [$data_armors, :armor, [861]], [$data_items, :item, [2104, 3060]]].each do |data, kind, ids|
+  ids.each { |id| data[id] = ItemData.new(kind, id) }
+end
+class Game_Actors
+  def initialize; @data = []; end
+  def original_id(id)
+    actor = $data_actors[id]
+    return nil unless actor
+    actor.persona_kind == :sub ? actor.original_persona_id : id
+  end
+  def [](id); original = original_id(id); original && (@data[original] ||= Game_Actor.new(original)); end
+end
+
+# The party's lists of characters, by main persona; the team's lists are cut to the party size.
+class Member
+  include Enumerable
+  def initialize(data = []); @data = []; set(data); end
+  def set(ary); @data = ary.map { |id| $game_actors.original_id(id) }.compact.uniq; end
+  def push(*ids); set(@data + ids); end
+  def delete(*ids); ids.each { |id| @data.delete($game_actors.original_id(id)) }; end
+  def each(&block); @data.each(&block); end
+  def clear; @data.clear; end
+  def empty?; @data.empty?; end
+end
+class BattleMember < Member
+  def set(ary); before = @data.clone; super; refresh if before != @data; end
+  def delete(*ids); before = @data.clone; super; refresh if before != @data; end
+  def clear; before = @data.clone; super; refresh if before != @data; end
+  def refresh; @data = @data.slice(0, $game_party.party_member_max); end
+end
+
+# The formation of a Raid World: the team of four while the cap holds, never for a temporary party.
+module MGQ_MpCoopSquad
+  def self.party_member_max(party, max); $capped && !party.temp_actors_use? ? [max, 4].min : max; end
+  def self.fit_team(raid); $fits << raid; $capped = raid && !$game_party.temp_actors_use?; end
+end
+
+# The game's split parties, each with its characters, map and place, and the one played.
+module MultiParty
+  Split = Struct.new(:member, :map_id, :position)
+  class Structs
+    attr_reader :id
+    def initialize; @id = 0; @data = []; end
+    def clear(size); @data = Array.new(size) { Split.new([], -1, [0, 0, 2]) }; end
+    def data; @data[@id]; end
+    def [](id); @data[id]; end
+    def reset; @id = 0; end
+    def setup(id, pos); return unless @data[id]; @data[id].map_id = pos[0]; @data[id].position = pos[1..-1]; end
+    def start
+      $game_player.reserve_transfer(data.map_id, *data.position)
+      $game_party.reserve_member = data.member
+    end
+  end
+end
+
+# The party, as the game's keeps its team, the companions owned, a story's temporary party, the
+# personas that party changed, the split parties and the bag; a persona the party changes to is
+# marked owned, as the game's system save marks it.
+class Game_Party
+  attr_accessor :in_battle, :reserve_member
+  def initialize; @actors = BattleMember.new; @temp_actors = BattleMember.new; @include_actors = Member.new; end
+  def actors; temp_actors_use? ? @temp_actors : @actors; end
+  def temp_actors_use?; !@temp_actors.empty?; end
+  def party_member_max; MGQ_MpCoopSquad.party_member_max(self, 8 + $game_variables[56]); end
+  def party_member_full?; party_member_max <= actors.to_a.size; end
+  def add_actor(id); @include_actors.push(id); @actors.push(id); end
+  def remove_actor(id); @include_actors.delete(id); @actors.delete(id); end
+  def move_stand_actor(id); @actors.delete(id); end
+  def persona_change(persona_id)
+    actor = $data_actors[persona_id]
+    return if actor.nil? || actor.persona_kind == :none
+    $game_actors[actor.original_persona_id].persona_change(persona_id)
+    $owned << persona_id
+  end
+  def bag; @bag ||= Hash.new(0); end
+  def item_number(item); bag[item]; end
+  def gain_item(item, amount); bag[item] = [bag[item] + amount, 0].max if item; end
+  def lose_item(item, amount); gain_item(item, -amount); end
+  def trade_item(new_item, old_item)
+    return false if new_item && item_number(new_item) == 0
+    gain_item(old_item, 1)
+    lose_item(new_item, 1)
+    true
+  end
+  def set_temp_actors(ids); load_persona(@temp_actors.to_a); @temp_actors.set(ids); save_persona(ids); end
+  def add_temp_actors(ids); @temp_actors.push(*ids); save_persona(ids); end
+  def release_temp_actors; @temp_actors.clear; end
+  def load_persona(ids)
+    return if multi_party? || !@bpersona
+    @bpersona.each { |id, persona| persona_change(persona) if ids.include?(id) }
+    ids.each { |id| @bpersona.delete(id) }
+  end
+  def save_persona(ids)
+    return if multi_party?
+    @bpersona ||= {}
+    ids.select { |id| $game_actors[id].id != id }.each { |id| @bpersona[id] = $game_actors[id].id; persona_change(id) }
+  end
+  def multi_party; @multi_party ||= MultiParty::Structs.new; end
+  def multi_party?; @multi_party_flag; end
+  def setup_multipartymember(parties); multi_party.clear(parties.size); parties.each_with_index { |ids, i| multi_party[i].member = ids }; end
+  def start_multiparty(*places)
+    return if multi_party?
+    places.each_with_index { |place, i| multi_party.setup(i, place) }
+    @multi_party_flag = true
+    multi_party.reset
+    multi_party.start
+  end
+  def end_multiparty
+    return unless multi_party?
+    multi_party.clear(0)
+    @multi_party_flag = false
+    release_temp_actors
+  end
+end
+
+# The game's command that adds a companion: a full team sends its last companion but Luka to standby,
+# as the player would choose.
+def add_actor_ex(id)
+  $game_party.persona_change(id)
+  return if $game_party.actors.include?(id)
+  if $game_party.party_member_full?
+    stand = $game_party.actors.to_a.reject { |member| member == 1 }.last
+    $game_party.move_stand_actor(stand) if stand
+  end
+  $game_party.add_actor(id)
+end
+
 $troops = { 609 => [["Alma Elma", 1000]], 610 => [["Granberia", 1000]], 1507 => [["Eden", 1000]],
             2017 => [["EX-Kyubi", 500]], 1509 => [["Morrigan", 400], ["Astaroth", 600]] }
 $troops[71] = [["Queen Harpy", 800]]
@@ -120,8 +297,9 @@ end
 # How the map looks: the player, the followers, the pictures and the screen.
 Game_System = Struct.new(:battle_bgm)
 Followers = Struct.new(:visible)
-Player = Struct.new(:transparent, :followers) do
+Player = Struct.new(:transparent, :followers, :x, :y, :direction, :transfer) do
   def refresh; $player_refreshed = true; end
+  def reserve_transfer(map_id, x, y, direction); self.transfer = [map_id, x, y, direction]; end
 end
 Picture = Struct.new(:number, :name) do
   def erase; self.name = ""; end
@@ -167,7 +345,7 @@ end
 
 # The interpreter, with commands of the tests' own: [:sw, id, value], [:var, id, value],
 # [:self, key, value], [:battle, troop], [:call, list] for a common event, [:mark, label] and
-# [:do, proc].
+# [:do, proc], and the game's script calls that give items and equip them at once.
 class Game_Interpreter
   attr_reader :map_id, :event_id
   def initialize(depth = 0); @depth = depth; clear; end
@@ -203,6 +381,17 @@ class Game_Interpreter
     $game_party.in_battle = true
     Fiber.yield
   end
+  def force_change_equip(actor_id, slot_id, equip_type, item_id)
+    items = equip_type == 1 ? $data_weapons : $data_armors
+    $game_party.gain_item(items[item_id], 1)
+    $game_actors[actor_id].change_equip(slot_id - 1, items[item_id])
+  end
+  def change_actor_equip_stone(actor_id, equip_slot_id, *stone_ids)
+    stone_ids.each_with_index do |stone_id, stone_slot_id|
+      $game_party.gain_item($data_items[stone_id], 1)
+      $game_actors[actor_id].change_stone(equip_slot_id, stone_slot_id, $data_items[stone_id])
+    end
+  end
 end
 
 load_script "battles_raid_bosses"
@@ -217,11 +406,19 @@ def reset
   $game_variables = Game_Variables.new
   $game_self_switches = Game_SelfSwitches.new
   $game_troop = Game_Troop.new
+  $game_actors = Game_Actors.new
+  $capped = true
   $game_party = Game_Party.new
+  [1, 2, 3, 4, 5, 9, 20, 40, 41].each { |id| $game_party.add_actor(id) }
+  $game_actors[9].persona_change(909)
+  $game_actors[20].name = "Renamed Twenty"
+  $game_actors[40].persona_change(400)
+  $owned = []
+  $fits = []
   $game_map = Game_Map.new
   $game_map.events[7] = Game_Event.new(7, 0)
   $game_system = Game_System.new("battle")
-  $game_player = Player.new(false, Followers.new(true))
+  $game_player = Player.new(false, Followers.new(true), 3, 4, 2, nil)
   RPG::BGM.last = RPG::BGM.new("field")
   RPG::BGS.last = RPG::BGS.new("")
   $player_refreshed = false
@@ -540,3 +737,193 @@ start([[:battle, 71], [:mark, :after]])
 win
 $routes["boss_key"].call(nil, { "boss_key" => "Queen Harpy", "hp" => "2", :relay => true })
 check("the push of the player's own report says nothing new", $chat, [])
+
+# Boss events that put the party together anew for their fight count, and their boss falls back
+# with the party as the event found it.
+check("only the Great Decision is left out of the pools", pool::UNPOOLED.keys, [1507, 1509])
+
+# The party as the tests read it: the team, the companions owned, the temporary party and the personas.
+def party_line
+  party = $game_party
+  [MGQ_MpGame.get(party, :actors).to_a, MGQ_MpGame.get(party, :include_actors).to_a, MGQ_MpGame.get(party, :temp_actors).to_a,
+   [9, 20, 40].map { |id| $game_actors[id].id }]
+end
+
+# Starts a boss event, wins its battle and has the boss fall back.
+#
+# @param list [Array] The event's commands.
+def fall_back(list)
+  start(list)
+  win
+  frames
+  win if $game_party.in_battle
+  answer(4)
+  frames(15)
+end
+
+reset
+before = party_line
+check("the team holds four, the other companions on standby, two of them showing another persona",
+      before, [[1, 2, 3, 4], [1, 2, 3, 4, 5, 9, 20, 40, 41], [], [909, 20, 400]])
+start([[:do, proc { $game_party.set_temp_actors([9]) }], [:battle, 1725], [:mark, :after]])
+check("a temporary party plays the fight with the persona the game gives it",
+      [pool.instance_variable_get(:@fight).key, $game_party.actors.to_a, $game_actors[9].id], ["Chaos Ilias", [9], 9])
+win
+answer(4)
+frames(15)
+check("a boss whose event set a temporary party falls back with the party as it was",
+      [party_line, MGQ_MpGame.get($game_party, :temp_personas), $game_party.temp_actors_use?, $ran], [before, nil, false, []])
+check("the formation of the Raid World holds again", [$fits, $capped, $game_party.party_member_max], [[true], true, 4])
+check("and the chat tells how much is left", $chat.last, "Slime falls back. Raid HP left: 4/5.")
+
+reset
+fall_back([[:do, proc { $game_party.add_temp_actors([53]) }], [:battle, 1975], [:mark, :after]])
+check("companions added for the fight alone are gone again", [party_line, $ran], [before, []])
+
+reset
+fall_back([[:do, proc { $game_party.persona_change(21) }], [:battle, 2001], [:mark, :after]])
+actor = $game_actors[20]
+check("a persona the event changed comes back with the name and looks the character had",
+      [actor.id, actor.name, actor.character_name, party_line], [20, "Renamed Twenty", "twenty", before])
+check("and is not marked owned in the system save, which only the event's own change marks", $owned, [21])
+
+reset
+start([[:var, 56, 14], [:do, proc { add_actor_ex(683); $game_party.persona_change(9) }], [:battle, 2188], [:mark, :after]])
+check("a larger party and a companion added to a full team send one to standby",
+      [$game_party.actors.to_a, $game_party.party_member_max], [[1, 2, 3, 683], 4])
+win
+frames
+win
+answer(4)
+frames(15)
+check("the party size, the team, the companions owned and the persona come back",
+      [$game_variables[56], party_line], [0, before])
+
+# The last phase of a fight of several counts, and the boss falls back to the party before the first.
+reset
+star_eater = proc do
+  $game_party.remove_actor(41)
+  $game_party.persona_change(40)
+  add_actor_ex(40)
+end
+start([[:do, star_eater], [:sw, 7027, true], [:var, 1339, 2], [:battle, 2157], [:var, 1339, 3], [:battle, 2158], [:mark, :after]])
+check("the first phase counts against no pool", pool.instance_variable_get(:@fight), nil)
+win
+frames
+check("the last phase does, its event having changed the party and the story between the phases",
+      [pool.instance_variable_get(:@fight).key, $game_variables[1339], $game_party.actors.to_a.include?(41)], ["Star Eater", 3, false])
+win
+answer(4)
+frames(15)
+check("the boss falls back to the story and the party before the first phase",
+      [$game_variables[1339], $game_switches[7027], party_line, $ran], [0, false, before, []])
+
+reset
+fall_back([[:do, proc { $game_party.persona_change(1); $game_party.remove_actor(2) }], [:var, 56, 25], [:battle, 2219], [:mark, :after]])
+check("the last fight of Chaos falls back with the party size and the team too", [$game_variables[56], party_line], [0, before])
+reset
+MGQ_MpGame.get($game_actors, :data)[40] = nil
+fall_back([[:do, proc { add_actor_ex(400) }], [:battle, 2095], [:mark, :after]])
+check("a character the event made goes back to its main persona", [$game_actors[40].id, $game_party.actors.to_a, MGQ_MpGame.get($game_party, :include_actors).to_a], [40, [1, 2, 3, 4], before[1]])
+check("which is not marked owned either", $owned, [400])
+
+# An event that ended with its battle waits for the answer on the map, where the party may change.
+reset
+start([[:do, proc { $game_party.set_temp_actors([9]); $game_party.remove_actor(41) }], [:battle, 1725]])
+win
+frames(3)
+check("an event whose battle was its last command has ended while the relay answers", $game_map.interpreter.running?, false)
+$game_party.add_actor(8)
+$game_actors[20].persona_change(21)
+answer(4)
+frames(15)
+check("a companion who joined after the battle stays, and the event's changes are undone",
+      [MGQ_MpGame.get($game_party, :include_actors).to_a, $game_party.temp_actors_use?], [before[1] + [8], false])
+check("a persona changed after the battle stays too", $game_actors[20].id, 21)
+
+# The items a boss event gives and equips at once come again as the event is played again.
+reset
+$game_party.gain_item($data_weapons[7], 1)
+$game_actors[40].change_equip(0, $data_weapons[7])
+gear = proc do
+  $game_map.interpreter.force_change_equip(40, 1, 1, 4832)
+  $game_map.interpreter.change_actor_equip_stone(40, 0, 2104, 3060)
+end
+bag = proc { [4832, 7].map { |id| $game_party.item_number($data_weapons[id]) } + [2104, 3060].map { |id| $game_party.item_number($data_items[id]) } }
+fall_back([[:do, gear], [:battle, 2158], [:mark, :after]])
+check("the event's weapon and stones are worn, the weapon it replaced in the bag", [$game_actors[40].equips[0], bag.call], [$data_weapons[4832], [0, 1, 0, 0]])
+start([[:do, gear], [:battle, 2158], [:mark, :after]])
+noted = pool.instance_variable_get(:@fight).gifts
+win
+answer(4)
+frames(15)
+check("a replay notes the copies it left in the bag", noted, { [:weapon, 4832] => 1, [:item, 2104] => 1, [:item, 3060] => 1 })
+check("and the boss that falls back again takes them back out", bag.call, [0, 1, 0, 0])
+start([[:do, gear], [:battle, 2158], [:mark, :after]])
+win
+answer(0, true)
+frames(15)
+check("a replay whose battle empties the pool keeps what it gave", [$ran, bag.call], [[:after], [1, 1, 1, 1]])
+$game_party.lose_item($data_weapons[4832], 1)
+start([[:do, gear], [:battle, 71], [:mark, :after]])
+win
+answer(4)
+frames(15)
+check("an item already in the bag before the event stays", bag.call, [0, 1, 1, 1])
+
+# A split party that the event joins comes back split, the party played where it stood.
+reset
+$game_party.setup_multipartymember([[1, 2], [3, 4]])
+$game_party.start_multiparty([1402, 5, 6, 8], [1404, 7, 8, 2])
+$game_party.set_temp_actors($game_party.reserve_member)
+$game_party.reserve_member = nil
+$game_player.transfer = nil
+$game_map.map_id = 1402
+$game_player.x, $game_player.y, $game_player.direction = 5, 6, 8
+split = party_line
+join = proc do
+  $game_party.end_multiparty
+  $game_map.map_id = 404
+end
+fall_back([[:do, join], [:battle, 2133], [:mark, :after]])
+parties = (0..1).map { |index| split_party = $game_party.multi_party[index]; [split_party.member, split_party.map_id, split_party.position] }
+check("a boss whose event joined the split parties splits them again", [$game_party.multi_party?, parties],
+      [true, [[[1, 2], 1402, [5, 6, 8]], [[3, 4], 1404, [7, 8, 2]]]])
+check("the party played goes back to where it stood as the event started, with its team",
+      [$game_party.multi_party.id, $game_player.transfer, $game_party.reserve_member, party_line], [0, [1402, 5, 6, 8], [1, 2], split])
+reset
+$game_party.setup_multipartymember([[1, 2], [3, 4]])
+$game_party.start_multiparty([1402, 5, 6, 8], [1404, 7, 8, 2])
+MGQ_MpGame.set($game_party.multi_party, :party_index, 1)
+$game_party.set_temp_actors([3, 4])
+$game_map.map_id = 1404
+$game_player.x, $game_player.y, $game_player.direction = 9, 9, 4
+fall_back([[:do, join], [:battle, 2133], [:mark, :after]])
+check("the second party played comes back as the one played, where it stood",
+      [$game_party.multi_party.id, $game_player.transfer, $game_party.reserve_member, $game_party.multi_party[0].position], [1, [1404, 9, 9, 4], [3, 4], [5, 6, 8]])
+reset
+split_up = proc do
+  $game_party.setup_multipartymember([[1, 2], [3, 4]])
+  $game_party.start_multiparty([1402, 5, 6, 8], [1404, 7, 8, 2])
+  $game_party.set_temp_actors([1, 2])
+end
+fall_back([[:do, split_up], [:battle, 2133], [:mark, :after]])
+check("parties an event split are joined again", [$game_party.multi_party?.to_s, party_line], ["false", before])
+
+# What the boss leaves as it is.
+reset
+start([[:do, proc { $game_party.set_temp_actors([9]) }], [:battle, 1725], [:mark, :after]])
+win
+answer(0, true)
+frames(15)
+check("a battle that empties the pool keeps the event's party", [$ran, $game_party.actors.to_a], [[:after], [9]])
+reset
+start([[:do, proc { $game_party.set_temp_actors([9]) }], [:battle, 1725], [:mark, :after]])
+noted = pool.instance_variable_get(:@fight).party
+lose
+BattleManager.retry_battle
+check("the retry of a lost battle keeps the party as the event found it", pool.instance_variable_get(:@fight).party, noted)
+reset
+$game_party.instance_variable_set(:@temp_actors, nil)
+start([[:battle, 71], [:mark, :after]])
+check("a battle whose event started without a party noted counts against no pool", pool.instance_variable_get(:@fight), nil)

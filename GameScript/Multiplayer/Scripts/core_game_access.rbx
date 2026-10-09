@@ -2,6 +2,7 @@
 #  core_game_access.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-09: Named the party's team, its temporary party with the personas it changed, and the split party played
 #      Paulinchen  2026-10-08: Named whether a battle allows escaping and losing
 #                            - Named a battle's phase and the troop it fights
 #      Paulinchen  2026-10-07: Named the counters the game keeps per state, the turns held and the steps left
@@ -97,6 +98,16 @@ module MGQ_MpGame
     # replaces with a story's temporary party while one plays.
     :include_actors => :@include_actors,
 
+    # $game_party: the team in order and a story's temporary party, which actors reads in turn, and
+    # the personas the temporary party changed, by character; a raid boss that falls back puts them
+    # back.
+    :actors => :@actors,
+    :temp_actors => :@temp_actors,
+    :temp_personas => :@bpersona,
+
+    # The game's split parties (MultiParty::Structs): the party played.
+    :party_index => :@id,
+
     # BattleManager, SceneManager and DataManager.
     :retry_data => :@retry_data,
     :preemptive => :@preemptive,
@@ -124,13 +135,14 @@ module MGQ_MpGame
     :map_lists => :@data,
 
     # $game_switches, $game_variables and $game_self_switches: their entries, written past the game's
-    # setters, which refresh the map and act on some switches by themselves.
+    # setters, which refresh the map and act on some switches by themselves. $game_actors: the
+    # characters made so far, by id, read without making one. The split parties: each party.
     :data => :@data,
   }
 
   # The fields the game sets only once it needs them, so one that is missing is no reason to log:
   # a battle has no acting battler before its first action, which a guest's playback reads first.
-  LAZY = [:stones, :enchants, :retry_data, :system_save_count, :subject, :trades]
+  LAZY = [:stones, :enchants, :retry_data, :system_save_count, :subject, :trades, :temp_personas]
 
   # The game's private methods the mod calls.
   METHODS = [
