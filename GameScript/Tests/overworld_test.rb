@@ -2,6 +2,7 @@
 #  overworld_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-09: Checked that the relay's push of a Raid World's boss pool goes to its route with the key and kills, marked as the relay's
 #      Paulinchen  2026-10-08: Checked that a follower whose sprite this game lacks shows the outline of Luka's, how the outline is drawn, and that the graphics checked stay few
 #                            - Checked that the relay's push of a Raid World's story goes to its route, marked as the relay's
 #                            - Checked which tabs a line marks unread and that the All tab takes them as seen
@@ -444,6 +445,10 @@ MGQ_MpOverworldSync.route(MGQ_MpOverworldSync::STORY_FIELD) { |peer, message| $p
 $inbox << { "kind" => "story", "rev" => "7" }
 MGQ_MpOverworldSync.tick
 check("the relay's push of a Raid World's story goes to its route without a sender, marked as the relay's", $pushes, [[nil, "7", true]])
+MGQ_MpOverworldSync.route(MGQ_MpOverworldSync::BOSS_FIELD) { |peer, message| $pushes << [peer, message[MGQ_MpOverworldSync::BOSS_FIELD], message["hp"], message[:relay]] }
+$inbox << { "kind" => "boss", "key" => "Alma Elma, then Granberia", "hp" => "3.5" }
+MGQ_MpOverworldSync.tick
+check("the relay's push of a boss pool goes to its route with its key and kills, marked as the relay's", $pushes.last, [nil, "Alma Elma, then Granberia", "3.5", true])
 
 wheel(CHAT, :C)
 check("the wheel opens the chat box", [chat.typing?, MGQ_MpActions::Wheel.open?, MGQ_Multiplayer::Capture.on?], [true, false, true])
