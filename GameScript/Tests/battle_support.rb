@@ -2,7 +2,8 @@
 #  battle_support.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-09: Stood in for the game's variables, which hold the enemy rates a guest takes from the host
+#      Paulinchen  2026-10-09: Let an enemy appear and transform, as the game's Enemy Appear and Enemy Transform do, and be eaten, which counts it among the defeated as the game does
+#                            - Stood in for the game's variables, which hold the enemy rates a guest takes from the host
 #                            - Lettered only the living enemies that have no letter yet, and counted an enemy with the death state as fallen, as the game does
 #      Paulinchen  2026-10-08: Stood in for the faces this game has, of overworld.rbx
 #                            - Loaded coop_scope.rbx, which tells coop_squad.rbx whether a Raid World is open, and counted the party's Frontline from max_battle_members
@@ -141,10 +142,16 @@ class Game_Enemy < Game_Battler
   def initialize(index, enemy_id); @index = index; @enemy_id = enemy_id; @screen_x = @screen_y = 0; @letter = ""; end
   def name; "Enemy#{@enemy_id}#{@letter}"; end
   def hide; @hidden = true; end
+  def appear; @hidden = false; end
+  def transform(enemy_id); @enemy_id = enemy_id; @letter = ""; end
+  def exist?; !hidden?; end
+  # Eaten by a predation skill, which the game marks only on the game that ran the skill.
+  def predationed?; @predationed ? true : false; end
   def hidden?; @hidden ? true : false; end
   attr_writer :dead
   # Fallen, as the game tells by the death state (1) a live battle's values give it.
-  def dead?; @dead || Array(@states).include?(1) ? true : false; end
+  def dead?; exist? && death_state?; end
+  def death_state?; @dead || Array(@states).include?(1) ? true : false; end
 end
 module MGQ_MpActors
   module Builds
@@ -176,6 +183,8 @@ class Game_Troop
   def make_actions; $troop_actions = ($troop_actions || 0) + 1; end
   def setup(troop_id); @troop_id = troop_id; @enemies = [Game_Enemy.new(0, troop_id)]; end
   attr_reader :troop_id
+  # The enemies whose EXP, gold and drops a victory pays out, as the game counts them.
+  def defeated_members; members.select { |m| m.predationed? || m.exist? }.select(&:death_state?); end
   def make_unique_names
     @names_count ||= {}
     @enemies.each do |enemy|

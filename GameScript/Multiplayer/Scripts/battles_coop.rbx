@@ -2,7 +2,8 @@
 #  battles_coop.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-09: Fought a battle joined in a Raid World with its host's enemy rates, the player's own back once it ended
+#      Paulinchen  2026-10-09: Told the guests the troop as host whenever it changed since they last heard of it, such as enemies another mod added mid-battle or an enemy that transformed or appeared, before the next send of the stream and as a command phase opens
+#                            - Fought a battle joined in a Raid World with its host's enemy rates, the player's own back once it ended
 #                            - Ended a co-op battle only once its scene ended, not when its party command called the Library or Config
 #                            - Noted whether the battle the player's yields to in a Raid World is a boss battle, which then takes no encounter in should the player take it over
 #                            - Ignored the invite of a running battle's host the player asks to take their own encounter in
@@ -788,6 +789,7 @@ module MGQ_MpBattlesCoop
     level = MGQ_MpCoopLevelSync.level_for(players)
     roster = MGQ_MpBattlesSync::Wire.line([troop_entries, players.map(&:to_a), level.to_i])
     channel.post("roster", roster)
+    note_troop
     log("sent the roster of battle #{MGQ_MpBattlesSync.battle_id} (#{roster.size} bytes): #{$game_troop.members.size} enemies, #{players.size} players, level #{level.inspect}")
     MGQ_MpCoopLevelSync.begin(level)
     form(scene, players)
@@ -1429,6 +1431,48 @@ module MGQ_MpBattlesCoop
     $game_troop.members.map { |enemy| [enemy.enemy_id, enemy.screen_x, enemy.screen_y, enemy.hidden? ? 1 : 0] }
   end
 
+  # Notes the troop as the battle's guests know it now, see share_troop: after the roster, and as a
+  # battle fought alone turns live for the players it took in.
+  def self.note_troop
+    @shared_troop = troop_signature
+  end
+
+  # Describes the troop as share_troop compares it: each enemy, what it is and whether it is hidden.
+  # A fallen enemy counts as shown, also one the game hid as it was eaten, which the guests keep
+  # fallen (see MGQ_MpBattlesHotjoin.mark).
+  #
+  # @return [Array<Array>] Each enemy's object id, enemy id, and 1 when hidden, else 0.
+  def self.troop_signature
+    $game_troop.members.map { |enemy| [enemy.object_id, enemy.enemy_id, MGQ_MpBattlesHotjoin.mark(enemy) == 1 ? 1 : 0] }
+  end
+
+  # As host, tells the guests the troop once it differs from what they last heard of (see
+  # note_troop): enemies added mid-battle, such as by another mod or an encounter taken in, or an
+  # enemy that transformed, appeared or hid. Each guest adds the new enemies after its own and
+  # transforms, shows or hides its own as the host's (see MGQ_MpBattlesHotjoin.take_troop). Called
+  # before every send of the host's stream, which may name the new enemies, and as a command phase
+  # opens.
+  #
+  # @param seats [Array<Integer>, nil] The world seats of the guests to tell, nil for those still in
+  #   the battle.
+  def self.share_troop(seats = nil)
+    sync = MGQ_MpBattlesSync
+    return unless sync.host? && sync.coop? && active?
+
+    seats ||= sync.guests_in
+    current = troop_signature
+    return if current == @shared_troop
+
+    hotjoin = MGQ_MpBattlesHotjoin
+    hotjoin.send_to(seats, "coop_troop", sync::Wire.line([hotjoin.late_entries, sync.names]))
+    # Noted only once sent, so a send that failed is tried again before the next one.
+    @shared_troop = current
+    log("the troop of battle #{sync.battle_id} changed, now #{current.size} enemies (#{current.count { |_, _, hidden| hidden == 1 }} hidden)" +
+        (seats.empty? ? ", no guest to tell" : ""))
+  rescue => e
+    log("telling the guests the troop failed: #{e.class}: #{e.message}")
+  end
+
   # As guest, fights the host's enemies in place of the player's own, which mods of either game
   # may have changed, such as one that doubles them: the host names every enemy by its place.
   #
@@ -1873,10 +1917,11 @@ module MGQ_MpBattlesCoop
     @kept_rates = nil
   end
 
-  # Forgets the co-op party, its players and their characters, a rival's invite and the battle the
-  # player joined as a guest.
+  # Forgets the co-op party, its players and their characters, the troop the guests know, a
+  # rival's invite and the battle the player joined as a guest.
   def self.clear
     @seen = nil
+    @shared_troop = nil
     @members = nil
     @players = nil
     @own_squad = nil
@@ -2325,7 +2370,13 @@ module MGQ_MpBattlesCoop::Mode
   def self.settle(scene)
     MGQ_MpBattlesHotjoin.settle(scene)
     MGQ_MpBattlesCoop.settle(scene)
+    MGQ_MpBattlesCoop.share_troop
     MGQ_MpBattlesCoop.note_places
+  end
+
+  # (see MGQ_MpBattles::Mode#before_send)
+  def self.before_send
+    MGQ_MpBattlesCoop.share_troop
   end
 
   # (see MGQ_MpBattles::Mode#own_order)

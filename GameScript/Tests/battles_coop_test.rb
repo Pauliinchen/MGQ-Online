@@ -2,7 +2,8 @@
 #  battles_coop_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-09: Checked that a player who yields to a rival's boss battle notes it as one
+#      Paulinchen  2026-10-09: Checked that a Classic co-op host tells its guest a troop that grew mid-battle once, before the send of its stream, and again should telling it fail
+#                            - Checked that a player who yields to a rival's boss battle notes it as one
 #                            - Checked that a Raid World's battle takes a player whose game window is in the background, but not a busy one
 #      Paulinchen  2026-10-08: Checked that a face this game lacks is left out of a message the host shows
 #                            - Checked that a Raid World's co-op battle gives every player one and two, also to a host left alone, and that its team duels split as before
@@ -125,6 +126,36 @@ party[2].turn_hit_damage_count = 3
 party[2].on_turn_start
 check("and each turn", party[2].turn_hit_damage_count, 0)
 check("strangers and wrong battles are not heard", MGQ_MpBattlesSync.seats, [2])
+
+# Another mod adds an enemy mid-battle: the host tells the guest the troop once, before its stream.
+recorder = MGQ_MpBattlesSync::Recorder
+recorder.start(:link)
+$sent.clear
+recorder.event("turn", 2)
+recorder.flush
+check("an unchanged troop is never told again", $sent.map { |_, text| fields_of(text)["battle"] }, ["events"])
+$game_troop.members.push(Game_Enemy.new(2, 33))
+$sent.clear
+recorder.event("turn", 2)
+recorder.flush
+sent_troop = $sent.map { |seat, text| [seat, fields_of(text)] }
+check("a troop that grew is told to the guest before the send", sent_troop.map { |seat, f| [seat, f["battle"]] }, [[2, "coop_troop"], [2, "events"]])
+check("with every enemy", MGQ_MpBattlesSync::Wire.parse(sent_troop[0][1][:payload])[0].map(&:first), [31, 32, 33])
+$sent.clear
+MGQ_MpBattlesCoop::Mode.settle(scene)
+check("and not again as the command phase opens", $sent.map { |_, text| fields_of(text)["battle"] }, [])
+$game_troop.members.push(Game_Enemy.new(3, 34))
+troop_entries = MGQ_MpBattlesHotjoin.method(:late_entries)
+MGQ_MpBattlesHotjoin.define_singleton_method(:late_entries) { raise "an enemy this game cannot read" }
+recorder.event("turn", 2)
+recorder.flush
+MGQ_MpBattlesHotjoin.define_singleton_method(:late_entries, troop_entries)
+$sent.clear
+recorder.event("turn", 2)
+recorder.flush
+check("a troop whose telling failed is told before the next send", $sent.map { |_, text| fields_of(text)["battle"] }, ["coop_troop", "events"])
+$game_troop.members.pop(2)
+recorder.stop
 
 # Commands.
 party[2].make_actions

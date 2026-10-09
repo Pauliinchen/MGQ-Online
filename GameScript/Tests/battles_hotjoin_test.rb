@@ -2,7 +2,9 @@
 #  battles_hotjoin_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-09: Checked that a guest and an encounter taken in fight with the host's enemy rates and get their own back
+#      Paulinchen  2026-10-09: Checked that a host tells its guests a troop that grew, whose hidden enemy appeared or whose enemy transformed once, before the send that names it and as a command phase opens, together with an encounter taken in, and that a guest shows or transforms its own enemy, keeping it
+#                            - Checked that an enemy the host's party ate stays fallen and shown for the guests, so its defeat pays out
+#                            - Checked that a guest and an encounter taken in fight with the host's enemy rates and get their own back
 #                            - Checked that an encounter brings along a player whose game window is in the background
 #                            - Checked that the enemies of an encounter taken in fill the place of an enemy that fell before its player joined
 #                            - Checked that an all-foes skill after a hotjoin reaches every enemy standing, and that a guest who joins names and finds the enemies as the host does
@@ -340,7 +342,10 @@ check("a guest adds the host's new enemies after its own", $game_troop.members.m
 check("drawing them", spriteset.enemies.size, 3)
 $game_troop.setup(77)
 coop::Mode.take("coop_troop", scene, troop_body)
-check("a guest whose troop differs takes the host's whole troop", $game_troop.members.map(&:enemy_id), [31, 50, 51])
+check("a guest whose enemy differs transforms it as the host's", $game_troop.members.map(&:enemy_id), [31, 50, 51])
+$game_troop.members.push(Game_Enemy.new(3, 77))
+coop::Mode.take("coop_troop", scene, troop_body)
+check("a guest whose troop is longer than the host's takes the host's whole troop", $game_troop.members.map(&:enemy_id), [31, 50, 51])
 reset
 
 # A late guest takes the battle's turn and waits for its next command phase.
@@ -598,6 +603,148 @@ reset
 coop.borrow_rates("rates" => "1,2")
 coop.borrow_rates("rates" => "")
 check("an invite without the host's enemy rates leaves the player's own", own_rates.call, [75] * 6)
+reset
+
+# Lists the kinds of the battle messages one player got.
+#
+# @param seat [Integer] The player's seat.
+# @return [Array<String>] The kinds, in the order sent.
+def kinds_to(seat)
+  $sent.select { |to, _| to == seat }.map { |_, text| fields_of(text)["battle"] }.compact
+end
+
+# Reads the troops a player got in coop_troop messages.
+#
+# @param seat [Integer] The player's seat.
+# @return [Array<Array>] Each message's troop, see MGQ_MpBattlesHotjoin.late_entries.
+def troops_to(seat)
+  battle_sent("coop_troop").select { |to, _| to == seat }.map { |_, f| MGQ_MpBattlesSync::Wire.parse(f[:payload])[0] }
+end
+
+# Adds an enemy to the running troop, as another mod may mid-battle: a picture as wide as the
+# screen, which leaves every place free.
+#
+# @param hidden [Boolean] Whether it starts hidden.
+# @return [Game_Enemy] The enemy.
+def add_wide_enemy(hidden = false)
+  enemy = Game_Enemy.new($game_troop.members.size, 61)
+  enemy.screen_x = 320
+  enemy.screen_y = 280
+  enemy.hide if hidden
+  $game_troop.members.push(enemy)
+  enemy
+end
+
+# Enemies added mid-battle by another mod: the host tells its guests once, before the stream that
+# names them.
+$scene_now = scene
+own_troop
+hotjoin.fight_alone("own16")
+MGQ_MpOverworldSync::Peers.all.replace([asker])
+coop.take(asker, request.merge("bid" => "own16", "seats" => ""))
+sync.take(asker, { "battle" => "join", "bid" => "own16", :payload => sync::Wire.line(["5", [[50, 5]], 4]) })
+open_phase(scene)
+$sent.clear
+added_enemy = add_wide_enemy
+sync::Recorder.event("battler.sprite_effect_type", added_enemy, "appear")
+sync::Recorder.flush
+check("a host whose troop grew tells its guest the troop before the send that names the new enemy",
+      kinds_to(8), ["coop_troop", "events"])
+check("the whole troop, the new enemy after the others", troops_to(8).map { |troop| troop.map(&:first) }, [[31, 50, 61]])
+$sent.clear
+sync::Recorder.event("turn", 2)
+sync::Recorder.flush
+check("the next send tells the troop no more", kinds_to(8), ["events"])
+$sent.clear
+sync::Recorder.flush
+check("nor does a flush without events", kinds_to(8), [])
+
+hidden_one = add_wide_enemy(true)
+sync::Recorder.event("turn", 2)
+sync::Recorder.flush
+hidden_one.appear
+sync::Recorder.event("battler.sprite_effect_type", hidden_one, "appear")
+sync::Recorder.flush
+check("a hidden enemy added, then appearing, is told twice, each before its send",
+      kinds_to(8), ["coop_troop", "events", "coop_troop", "events"])
+check("hidden first, then shown", troops_to(8).map { |troop| troop.last.last }, [1, 0])
+troop_bodies = battle_sent("coop_troop").map { |_, f| f[:payload] }
+$sent.clear
+add_wide_enemy
+sync::Live.close_phase
+sync::Recorder.turn_started
+open_phase(scene)
+check("an enemy added right before a command phase is told once as it opens, before its stream",
+      kinds_to(8), ["coop_troop", "events"])
+
+# An encounter taken in at a command phase that another mod's enemies join too: one troop for both.
+$sent.clear
+newcomer = player(11, { "scene" => "battle", "rb" => "own16", "rbh" => "0" })
+MGQ_MpOverworldSync::Peers.all.replace([asker, newcomer])
+coop.take(newcomer, request.merge("bid" => "own16", "seats" => "", "enemies" => "51:300:300:0"))
+sync.take(newcomer, { "battle" => "join", "bid" => "own16", :payload => sync::Wire.line(["8", [[40, 4]], 4]) })
+sync::Live.close_phase
+sync::Recorder.turn_started
+add_wide_enemy
+$sent.clear
+open_phase(scene)
+check("the guest hears of the encounter's enemies and the other mod's in one troop, before the phase's stream",
+      [kinds_to(8), troops_to(8).map { |troop| troop.map(&:first) }], [["coop_party", "coop_troop", "events"], [[31, 50, 61, 61, 61, 61, 51]]])
+check("and the new player of the troop in the roster alone", [kinds_to(11).first, kinds_to(11).count("coop_troop")], ["roster", 0])
+reset
+
+# A guest takes the troop that grew by a hidden enemy, then the troop where it appeared.
+sync.join_world(:guest, "own16", [0], "Me")
+own_troop
+$game_troop.members.push(Game_Enemy.new(1, 50), Game_Enemy.new(2, 61))
+first = $game_troop.members[0]
+coop::Mode.take("coop_troop", scene, troop_bodies[0])
+check("a guest adds the host's hidden enemy hidden", $game_troop.members.map(&:hidden?), [false, false, false, true])
+coop::Mode.take("coop_troop", scene, troop_bodies[1])
+appeared = $game_troop.members[3]
+check("and shows it once it appeared on the host, keeping its own enemies",
+      [appeared.hidden?, appeared.letter.empty?, $game_troop.members[0].equal?(first), $game_troop.members.size], [false, false, true, 4])
+reset
+
+# An enemy the host's party ate, which the game hides, and one that transformed.
+$scene_now = scene
+own_troop
+hotjoin.fight_alone("own20")
+MGQ_MpOverworldSync::Peers.all.replace([asker])
+coop.take(asker, request.merge("bid" => "own20", "seats" => ""))
+sync.take(asker, { "battle" => "join", "bid" => "own20", :payload => sync::Wire.line(["5", [[50, 5]], 4]) })
+open_phase(scene)
+eaten = $game_troop.members[1]
+eaten.dead = true
+eaten.hide
+eaten.instance_variable_set(:@predationed, true)
+$sent.clear
+sync::Recorder.event("turn", 2)
+sync::Recorder.flush
+check("an enemy the host's party ate tells the guests no troop", kinds_to(8), ["events"])
+check("and counts as fallen, not hidden, for a late guest", hotjoin.late_entries.map(&:last), [0, hotjoin::FALLEN])
+$game_troop.members[0].transform(52)
+$sent.clear
+sync::Recorder.event("turn", 2)
+sync::Recorder.flush
+check("an enemy that transformed is told before the send", kinds_to(8), ["coop_troop", "events"])
+changed_body = battle_sent("coop_troop")[0][1][:payload]
+reset
+
+sync.join_world(:guest, "own20", [0], "Me")
+own_troop
+$game_troop.members.push(Game_Enemy.new(1, 50))
+$game_troop.members[1].screen_x = 160
+kept = $game_troop.members[0]
+kept.hp = 40
+coop::Mode.take("coop_troop", scene, changed_body)
+check("a guest transforms its own enemy as the host's, keeping it and its HP",
+      [$game_troop.members.map(&:enemy_id), $game_troop.members[0].equal?(kept), kept.hp], [[52, 50], true, 40])
+eaten_copy = $game_troop.members[1]
+eaten_copy.dead = true
+check("and keeps the enemy the host's party ate shown, so its defeat pays out",
+      [eaten_copy.hidden?, $game_troop.defeated_members.include?(eaten_copy)], [false, true])
+reset
 
 $raid = false
 coop.take(asker, request)

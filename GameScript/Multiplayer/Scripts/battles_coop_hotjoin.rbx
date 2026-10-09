@@ -2,7 +2,10 @@
 #  battles_coop_hotjoin.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-09: Sent the battle's enemy rates to the players it takes in, who fight with them
+#      Paulinchen  2026-10-09: Told the guests the grown troop through battles_coop.rbx, which tells them every change of the troop once, and noted the troop a battle turned live with
+#                            - Let a guest transform, show or hide its enemies as the host's troop does, such as one that transformed or appeared, instead of building the whole troop anew
+#                            - Marked an enemy the game hid as it was eaten as fallen for the guests, who so count it among the defeated that pay out
+#                            - Sent the battle's enemy rates to the players it takes in, who fight with them
 #                            - Took in a player who asks with their own encounter while another request brought them along, instead of refusing them, and let them ignore that request's invite
 #                            - Took in a player who joins the battle by choice, without enemies, through battles_coop_join.rbx, and marked a boss battle in the invites of the players taken in
 #                            - Left the players whose state tells a battle out of those an encounter brings along
@@ -710,6 +713,7 @@ module MGQ_MpBattlesHotjoin
     MGQ_MpBattles.begin(:coop)
     sync.show_everything
     coop.form(scene, coop.arrange([[MGQ_MpOverworldSync::Me.seat, MGQ_Multiplayer::Player.name.to_s] + coop.own_build]))
+    coop.note_troop
     sync::Recorder.start(:link)
     log("battle #{sync.battle_id} turns live for the players who join it, the player hosting")
   end
@@ -809,7 +813,7 @@ module MGQ_MpBattlesHotjoin
     coop.form(scene, players)
     added = add_enemies(scene, joined.keys)
     send_to(guests, "coop_party", sync::Wire.line([players.map(&:to_a)]))
-    send_to(guests, "coop_troop", sync::Wire.line([late_entries, sync.names])) unless added.empty?
+    coop.share_troop(guests)
     sync.keep_seats(Array(sync.seats) | joined.keys)
     sync.unexpect(joined.keys)
     send_to(joined.keys, "roster", sync::Wire.line([late_entries, players.map(&:to_a), nil, $game_troop.turn_count.to_i]))
@@ -878,11 +882,22 @@ module MGQ_MpBattlesHotjoin
   # Describes the troop's enemies for players who join the battle late, or guests whose troop
   # differs: as the guests rebuild them, the fallen ones fallen (see lay_down).
   #
-  # @return [Array<Array>] Each enemy's id, screen x and y, and 1 when hidden, 2 when fallen, else 0.
+  # @return [Array<Array>] Each enemy's id, screen x and y, and its mark (see mark).
   def self.late_entries
-    $game_troop.members.map do |enemy|
-      [enemy.enemy_id, enemy.screen_x, enemy.screen_y, enemy.hidden? ? 1 : (enemy.dead? ? FALLEN : 0)]
-    end
+    $game_troop.members.map { |enemy| [enemy.enemy_id, enemy.screen_x, enemy.screen_y, mark(enemy)] }
+  end
+
+  # Marks an enemy of the troop as late_entries carries it.
+  #
+  # An enemy the game hid as it was eaten counts as fallen, not hidden: a guest's hidden copy would
+  # be left out of the defeated that pay out at victory, since only the host's game marks it eaten.
+  #
+  # @param enemy [Game_Enemy] The enemy.
+  # @return [Integer] FALLEN when fallen, else 1 when hidden, else 0.
+  def self.mark(enemy)
+    return FALLEN if fallen?(enemy)
+
+    enemy.hidden? ? 1 : 0
   end
 
   # Gives an enemy a guest rebuilds the death it has on the host, before its sprite is made, so it
@@ -949,9 +964,10 @@ module MGQ_MpBattlesHotjoin
 
   # The guest's side, after the roster.
 
-  # As guest, takes the troop the host sent once enemies joined it: adds the new ones after this
-  # game's own, or rebuilds the whole troop when it differs (see MGQ_MpBattlesCoop.take_troop), and
-  # learns the host's names anew.
+  # As guest, takes the troop the host sent once it changed (see MGQ_MpBattlesCoop.share_troop):
+  # transforms, shows or hides this game's enemies as the host's and adds the new ones after them,
+  # or rebuilds the whole troop when the host's is shorter or holds enemies this game lacks (see
+  # MGQ_MpBattlesCoop.take_troop), and learns the host's names anew.
   #
   # @param scene [Scene_Battle] The battle.
   # @param body [String] The troop, see late_entries, and the host's names.
@@ -959,10 +975,9 @@ module MGQ_MpBattlesHotjoin
     entries, names = MGQ_MpBattlesSync::Wire.parse(body.to_s)
     entries = Array(entries)
     count = $game_troop.members.size
-    own = $game_troop.members.map(&:enemy_id)
-    known = entries.first(count).map { |id, *| id.to_i }
-    if entries.size > count && known == own && entries.all? { |id, *| $data_enemies[id.to_i] }
-      grow_troop(scene, entries[count..-1])
+    if entries.size >= count && entries.all? { |id, *| $data_enemies[id.to_i] }
+      match_enemies(entries.first(count))
+      grow_troop(scene, entries[count..-1]) if entries.size > count
     else
       MGQ_MpBattlesCoop.take_troop(scene, entries)
     end
@@ -970,6 +985,35 @@ module MGQ_MpBattlesHotjoin
     MGQ_MpBattlesSync::Names.setup(names) if names.is_a?(String)
   rescue => e
     log("taking the host's troop failed: #{e.class}: #{e.message}")
+  end
+
+  # Transforms, shows or hides this game's enemies as the host's troop has them, such as one an
+  # event transformed or let appear, which only the host's game runs. Each keeps its HP and states,
+  # a transformed one takes the host's place too, its sprite takes the new picture or fades in or
+  # out by itself, and those that change get their letters as the game's own Enemy Transform and
+  # Enemy Appear give them.
+  #
+  # @param entries [Array<Array>] The host's enemies at the places of this game's own: each one's
+  #   id, screen x and y, and its mark (see mark).
+  def self.match_enemies(entries)
+    changed = $game_troop.members.zip(entries).select do |enemy, (id, x, y, mark)|
+      transformed = enemy.enemy_id != id.to_i
+      if transformed
+        enemy.transform(id.to_i)
+        enemy.screen_x = x.to_i
+        enemy.screen_y = y.to_i
+      end
+      hidden = mark.to_i == 1
+      next transformed if enemy.hidden? == hidden
+
+      hidden ? enemy.hide : enemy.appear
+      true
+    end
+    return if changed.empty?
+
+    MGQ_MpGame.call($game_troop, :make_unique_names)
+    log("transformed, showed or hid the enemies as the host's troop has them: " +
+        changed.map { |enemy, _| "#{MGQ_MpBattlesSync.named(enemy)} #{enemy.enemy_id}#{' hidden' if enemy.hidden?}" }.join(', '))
   end
 
   # Adds the host's new enemies after this game's own, see take_troop.

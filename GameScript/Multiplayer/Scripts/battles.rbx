@@ -2,6 +2,7 @@
 #  battles.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-09: Let a mode act on the host right before a send of its stream goes out
 #      Paulinchen  2026-10-07: Logged the rules a battle sets and puts back, switch by switch
 #                            - Let a mode take in that a guest left the battle
 #      Paulinchen  2026-10-06: Forgot the rules of a battle a reset interrupted, keeping the switches of the save loaded next
@@ -96,6 +97,11 @@ module MGQ_MpBattles
     #
     # @param _scene [Scene_Battle] The battle.
     def settle(_scene)
+    end
+
+    # Runs on the host right before a send of its stream goes out, whose events may name battlers
+    # the guests do not know yet.
+    def before_send
     end
 
     # Reports whether the host's opponents all left. Asked by the host.
