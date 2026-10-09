@@ -310,7 +310,7 @@ module MGQ_MpBattlesHotjoin
 
   # Notes whether an invite the player accepts is to a running battle, see late?, and whether its
   # host marked it a boss battle, which stays one should the player take it over. Called by
-  # MGQ_MpBattlesCoop.accept and follow.
+  # MGQ_MpBattlesCoop.accept, follow and yield_to_rival.
   #
   # @param message [Hash] The invite, "hot" 1 for a running battle, "boss" 1 for a boss battle.
   def self.note_invite(message)

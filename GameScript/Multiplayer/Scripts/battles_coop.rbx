@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-09: Ended a co-op battle only once its scene ended, not when its party command called the Library or Config
+#                            - Noted whether the battle the player's yields to in a Raid World is a boss battle, which then takes no encounter in should the player take it over
 #                            - Ignored the invite of a running battle's host the player asks to take their own encounter in
 #      Paulinchen  2026-10-08: Brought each player's first three characters to a co-op battle in a Raid World, one on the Frontline and two on the Backline, also for a player left alone
 #                            - Brought only the squad to a team duel in a Raid World, never the fourth
@@ -938,6 +939,7 @@ module MGQ_MpBattlesCoop
     tell_map(MGQ_MpBattlesSync.seats, "off", "bid" => own_bid)
     MGQ_MpBattlesSync.finish
     adopt_troop(scene, message)
+    MGQ_MpBattlesHotjoin.note_invite(message)
     MGQ_MpBattlesSync.join_world(:guest, message["bid"].to_s, [peer.seat], peer.state["name"].to_s)
     MGQ_MpBattlesSync.battle_started
     @awaited = { :peer => peer, :message => message }

@@ -2,6 +2,7 @@
 #  battles_coop_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-09: Checked that a player who yields to a rival's boss battle notes it as one
 #      Paulinchen  2026-10-08: Checked that a face this game lacks is left out of a message the host shows
 #                            - Checked that a Raid World's co-op battle gives every player one and two, also to a host left alone, and that its team duels split as before
 #                            - Checked that a player brings only their squad to a Raid World's team duel
@@ -928,7 +929,7 @@ $sent.clear
 $encounter_troop = 81
 $game_player.encounter
 own_bid = MGQ_MpBattlesSync.battle_id
-MGQ_MpBattlesCoop.take(rival, rival_invite)
+MGQ_MpBattlesCoop.take(rival, rival_invite.merge("boss" => "1"))
 check("a rival who entered the map first is not turned down", $sent.count { |_, t| t.include?("battle=decline") }, 0)
 $sent.clear
 $frames = 0
@@ -939,6 +940,7 @@ check("the players the own battle invited hear it is off", map_sent("off").map {
 sent_join = $sent.map { |seat, t| [seat, fields_of(t)] }.find { |_, f| f["battle"] == "join" }
 check("the player joins the rival's battle", [sent_join[0], sent_join[1]["bid"], MGQ_MpBattlesSync.role, MGQ_MpBattlesSync.seats], [13, "rv1", :guest, [13]])
 check("with its troop, escape and lose", [$game_troop.troop_id, MGQ_MpGame.get(BattleManager, :can_escape), MGQ_MpGame.get(BattleManager, :can_lose)], [90, false, true])
+check("and its word that it is a boss battle", MGQ_MpBattlesHotjoin.instance_variable_get(:@boss_battle), true)
 MGQ_MpBattlesCoop.ended
 MGQ_MpBattlesSync.finish
 
