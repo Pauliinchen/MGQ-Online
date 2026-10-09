@@ -6,6 +6,7 @@
 #                            - Made the chests that hold the story's key items the whole world's, so each opens once for the world and stays open for a player who opened it
 #                            - Kept a player behind until their level moves them on, also once the world returns from a route to their part
 #                            - Read the world's shared companions and the parts it keeps checkpoints of from the relay's state
+#                            - Brought back the companions the player's own Great Decision took away, with the notice and the teleport to the story, also when the relay refuses their write because another route was locked first
 #      Paulinchen  2026-10-08: Created
 #
 #----------------------------------------------------------------
@@ -148,6 +149,9 @@ module MGQ_MpWorldStory
 
   # Codes of a refused write or route whose own step the game drops: its progress is not the world's.
   DROP_CODES = %w(behind route finished closed)
+
+  # Code of a write the relay refused as another route was locked first.
+  ROUTE_REFUSAL = "route"
 
   extend MGQ_MpLog
 
@@ -430,7 +434,8 @@ module MGQ_MpWorldStory
   end
 
   # Takes a write that ended: accepted, it is the story this game builds on; refused, the world's
-  # story comes instead; failed, it goes again later.
+  # story comes instead, as after a refused route lock when another route was locked first; failed,
+  # it goes again later.
   #
   # @param state [Hash] The DLL's state.
   # @param text [String] The world's story, or the one written once accepted.
@@ -452,6 +457,8 @@ module MGQ_MpWorldStory
       log("the relay refused the story written on revision #{post[:base]} (#{code}): taking the world's at revision #{state['wrev']}" \
           "#{DROP_CODES.include?(code) ? ', dropping the own step' : ', keeping the own changes it lacks'}")
       offer(state, text, DROP_CODES.include?(code), "refused write (#{code})", true)
+      # The world locked another route after the player's Great Decision offered theirs.
+      @after_take = :route_taken if code == ROUTE_REFUSAL
     else
       code = state["post_code"].to_s
       @retry_at = @clock + (code == "rate" ? RATE_FRAMES : RETRY_FRAMES)

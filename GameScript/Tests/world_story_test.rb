@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-09: Followed a player in an earlier part, who is behind the world's story now instead of playing their own
+#                            - Checked that a write refused for another route brings back the companions of the player's own decision
 #      Paulinchen  2026-10-08: Created
 #
 #----------------------------------------------------------------
@@ -495,6 +496,28 @@ frames(20)
 check("a route locked goes out with the write", calls_of("mp_raid_story_post").map { |args| args[2] }, ["p=40;r1141=1;r1142=0;r1143=0;clear=\0"])
 relay("rev" => 24, "wrev" => 24, "p" => 40, "r1141" => 1, "part" => "ad", "route" => "ad", "post" => "accepted", "post_rev" => 24)
 frames(16)
+
+# Another route locked while the player's Great Decision offered every route: their write is refused.
+$calls.clear
+new_story({ 1001 => 39 }, [4])
+story.loaded(:load)
+frames(1)
+relay({ "rev" => 25, "wrev" => 25, "p" => 39, "part" => "3", "route" => "mr", "fetch" => "done" }, packed({ 1001 => 39 }))
+frames(16)
+story.instance_variable_set(:@decision_roster, [5, 45])
+$game_party.instance_variable_set(:@include_actors, [45])
+$game_variables[1001] = 40
+$game_variables[1141] = 1
+frames(80)
+check("a route the world locked already is not locked again, the story is written", [calls_of("mp_raid_route_lock"), calls_of("mp_raid_story_post").size], [[], 1])
+class << MGQ_MpCoopStory; def bring(id); ($brought ||= []) << id; end; end
+$brought = []
+$notices.clear
+relay({ "rev" => 25, "wrev" => 25, "p" => 39, "part" => "3", "route" => "mr", "post" => "conflict", "post_code" => "route" }, packed({ 1001 => 39 }))
+frames(16)
+check("the refused write gives the player the world's story and the companions their own decision took away",
+      [$game_variables[1001], $game_variables[1141], $brought, $notices], [39, 0, [5], ["The world took the Monster Realm route first."]])
+class << MGQ_MpCoopStory; alias_method :bring, :bring_before_check; end
 
 # The Great Decision's choice in the game's own event offers only the routes the world may still take.
 labels = ["Side with the Dark Goddess", "Side with the Goddess Ilias", "Search for a third way"]
