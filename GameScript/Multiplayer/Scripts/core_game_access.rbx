@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-08: Named whether a battle allows escaping and losing
+#                            - Named a battle's phase and the troop it fights
 #      Paulinchen  2026-10-07: Named the counters the game keeps per state, the turns held and the steps left
 #                            - Named an interpreter's event and map, the trades a save keeps and the title screen's command closing
 #      Paulinchen  2026-10-06: Left scene_changing? out of the private methods, since the game makes it public
@@ -86,6 +87,7 @@ module MGQ_MpGame
 
     # $game_troop, $game_party and $game_temp.
     :enemies => :@enemies,
+    :troop_id => :@troop_id,
     :names_count => :@names_count,
     :turn_count => :@turn_count,
     :in_battle => :@in_battle,
@@ -101,6 +103,7 @@ module MGQ_MpGame
     :surprise => :@surprise,
     :can_escape => :@can_escape,
     :can_lose => :@can_lose,
+    :phase => :@phase,
     :stack => :@stack,
     :system_save_count => :@system_save_count,
 

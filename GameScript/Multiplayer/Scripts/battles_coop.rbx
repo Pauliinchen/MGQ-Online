@@ -10,6 +10,7 @@
 #                            - Held only the players invited in a Raid World instead of the whole party, letting those a held encounter or a battle called off then left out walk on unless another battle still holds them
 #                            - Turned down one of two invites waiting in a Raid World, keeping the one whose battle hosts first, and invited the host of an invite waiting as the player's own battle began
 #                            - Told the others in a Raid World while the player trades or is about to teleport, which keeps their invites away
+#                            - Let a random encounter in a Raid World join a battle running on the map, through battles_coop_hotjoin.rbx, and the guests take the enemies the host adds
 #      Paulinchen  2026-10-07: Registered the battle setup and encounter hooks through core_hooks.rbx instead of wraps of its own, and the battle's end once the game runs, where plugins define it anew
 #                            - Named players and characters through battles_sync.rbx and overworld_sync.rbx, and made up a battle's id through coop.rbx, instead of copies of their helpers
 #                            - Logged the co-op messages, the invites, requests and who hosts with their reasons, the roster, rebuilds, swaps, choosing again, the Library counts left out and the battle's result
@@ -82,7 +83,8 @@
 # same moment, an event's battle or else the player who entered the map first hosts, and the other
 # joins as a guest with the players who joined them (see rival? and follows?). Every player's
 # squad is one on the Frontline and two on the Backline, however many play and when left alone
-# too, and no level sync runs.
+# too, and no level sync runs. A random encounter on a map where a battle already runs joins that
+# battle instead (see battles_coop_hotjoin.rbx).
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpBattlesCoop
@@ -305,7 +307,8 @@ module MGQ_MpBattlesCoop
 
   # Makes a battle the game just set up a co-op battle: asks the party's leader to lead it when the
   # leader plays on the map, else invites the party members on the map who are playing on it. In a
-  # Raid World the player hosts it and invites the players on the map, see raid_candidates.
+  # Raid World the player hosts it and invites the players on the map, see raid_candidates, unless
+  # it is a random encounter that joins a battle running on the map (MGQ_MpBattlesHotjoin.ask).
   # Called after BattleManager.setup.
   #
   # @param troop_id [Integer] The troop.
@@ -322,8 +325,11 @@ module MGQ_MpBattlesCoop
     @random_encounter = encounter ? true : false
     @requester, battle_id = @leading
     if raid?
+      return if encounter && @invite.nil? && MGQ_MpBattlesHotjoin.ask(troop_id, can_escape, can_lose)
+
       log("hosts the battle against troop #{troop_id}: the player started it in a Raid World")
       host(troop_id, can_escape, can_lose)
+      MGQ_MpBattlesHotjoin.fight_alone unless MGQ_MpBattlesSync.role
       return answer_waiting_invite
     end
 
@@ -359,7 +365,10 @@ module MGQ_MpBattlesCoop
     freeze_party(seats)
     fields = { "bid" => battle_id, "troop" => troop_id, "escape" => can_escape ? 1 : 0, "lose" => can_lose ? 1 : 0,
                "seats" => seats.join(","), "map" => $game_map.map_id }
-    fields["enc"] = @random_encounter ? 1 : 0 if raid?
+    if raid?
+      fields["enc"] = @random_encounter ? 1 : 0
+      fields["boss"] = 1 if MGQ_MpRaidBosses.battle?(troop_id)
+    end
     raid? ? tell_map(seats, "invite", fields) : tell(-1, "invite", fields)
     log("invited #{seats.size} #{raid? ? 'player' : 'member'}(s) to battle #{battle_id} against troop #{troop_id} on map #{$game_map.map_id}: #{seats.map { |seat| MGQ_MpBattlesSync.who(seat) }.join(', ')}")
   rescue => e
@@ -383,7 +392,7 @@ module MGQ_MpBattlesCoop
   # @return [Array<Integer>] The seats, the waiting invite's host first, at most RAID_PLAYERS - 1.
   def self.with_waiting_host(seats)
     invite = @invite
-    return seats if invite.nil? || expired?(invite) || waiting_rival?
+    return seats if invite.nil? || invite[:message]["hot"] == "1" || expired?(invite) || waiting_rival?
 
     ([invite[:peer].seat] | seats).first(RAID_PLAYERS - 1)
   end
@@ -638,11 +647,12 @@ module MGQ_MpBattlesCoop
   end
 
   # Lets the players a held encounter in a Raid World made stand still walk on, those its battle
-  # does not invite, through take_off.
+  # does not invite or bring along to a running battle (see MGQ_MpBattlesHotjoin.asked_seats),
+  # through take_off.
   #
   # @param seats [Array<Integer>, nil] The seats the hold froze, nil in a Classic world.
   def self.release(seats)
-    invited = MGQ_MpBattlesSync.role == :host && MGQ_MpBattlesSync.coop? ? MGQ_MpBattlesSync.seats : []
+    invited = MGQ_MpBattlesSync.role == :host && MGQ_MpBattlesSync.coop? ? MGQ_MpBattlesSync.seats : MGQ_MpBattlesHotjoin.asked_seats
     left = Array(seats) - invited
     tell_map(left, "off", "map" => $game_map.map_id) unless left.empty?
   end
@@ -777,11 +787,13 @@ module MGQ_MpBattlesCoop
     :broken
   end
 
-  # Ends the co-op battle before it began, since nobody joined: the battle is the host's own.
+  # Ends the co-op battle before it began, since nobody joined: the battle is the host's own, which
+  # other players' encounters may join in a Raid World.
   #
   # @return [nil] Nothing, the battle starts.
   def self.stand_down
     log("nobody joined battle #{MGQ_MpBattlesSync.battle_id}")
+    MGQ_MpBattlesHotjoin.fight_alone(MGQ_MpBattlesSync.battle_id)
     MGQ_MpBattlesSync.finish
     MGQ_MpBattles.finish
     nil
@@ -809,7 +821,8 @@ module MGQ_MpBattlesCoop
   # who entered the map first, the lower player id among equals, as every game finds. The rival
   # hosts, and the player joins them.
   #
-  # An event's battle never yields, since its event goes on by the battle's result.
+  # An event's battle never yields, since its event goes on by the battle's result, and an invite
+  # to a battle that runs already is never a rival's (see MGQ_MpBattlesHotjoin).
   #
   # @param peer [MGQ_MpOverworldSync::Peers::Peer] Who invites.
   # @param message [Hash] The invite.
@@ -838,7 +851,7 @@ module MGQ_MpBattlesCoop
   # @param message [Hash] The other battle's invite.
   # @return [Boolean] Whether it yields.
   def self.yields_to?(random, holder, peer, message)
-    return false unless random
+    return false unless random && message["hot"] != "1"
     return false unless message["map"].to_i == $game_map.map_id && message["seats"].to_s.split(",").size < RAID_PLAYERS
 
     message["enc"] == "0" || earlier?(peer, holder)
@@ -940,7 +953,7 @@ module MGQ_MpBattlesCoop
   def self.follows?(peer, message)
     awaited = @awaited
     sync = MGQ_MpBattlesSync
-    return false unless raid? && awaited && sync.role == :guest && sync.coop? && !active?
+    return false unless raid? && awaited && sync.role == :guest && sync.coop? && !active? && !MGQ_MpBattlesHotjoin.late?
     return false unless awaited[:message]["bid"].to_s == sync.battle_id.to_s && !awaited[:peer].equal?(peer)
 
     yields_to?(awaited[:message]["enc"] == "1", awaited[:peer], peer, message)
@@ -955,6 +968,7 @@ module MGQ_MpBattlesCoop
     peer = invite[:peer]
     message = invite[:message]
     adopt_troop(SceneManager.scene, message)
+    MGQ_MpBattlesHotjoin.note_invite(message)
     MGQ_MpBattlesSync.join_world(:guest, message["bid"].to_s, [peer.seat], peer.state["name"].to_s)
     MGQ_MpBattlesSync.battle_started
     @awaited = invite
@@ -995,11 +1009,15 @@ module MGQ_MpBattlesCoop
   # Takes a host's word that their battle is off, since the host joined a rival's battle, or that
   # their held encounter does not invite the player: lets the player walk on unless another battle
   # holds them (see unfreeze_for), and forgets its invite or the rival's, or while waiting for its
-  # party follows to the battle of a kept invite (see follows?) or breaks the battle off.
+  # party follows to the battle of a kept invite (see follows?) or breaks the battle off. A running
+  # battle that took the player's encounter in and calls it off lets the encounter start on its own;
+  # a player whose encounter the player's battle took in forgets it (see MGQ_MpBattlesHotjoin).
   #
   # @param peer [MGQ_MpOverworldSync::Peers::Peer] The host.
   # @param message [Hash] The message, the battle's id under "bid", none for a held encounter.
   def self.take_off(peer, message)
+    return if MGQ_MpBattlesHotjoin.take_off(peer, message)
+
     bid = message["bid"].to_s
     unfreeze_for(peer)
     if @invite && @invite[:peer].equal?(peer) && @invite[:message]["bid"] == bid
@@ -1011,6 +1029,7 @@ module MGQ_MpBattlesCoop
       return log("forgot #{MGQ_MpOverworldSync.who(peer)}'s rival battle #{bid}: it is off, the player's own goes on")
     end
     return unless MGQ_MpBattlesSync.role == :guest && MGQ_MpBattlesSync.battle_id == bid && !active?
+    return MGQ_MpBattlesHotjoin.call_off_own if MGQ_MpBattlesHotjoin.own_troop?
     return follow if @invite
 
     MGQ_MpBattlesSync.break_off("#{MGQ_MpOverworldSync.who(peer)} gave battle #{bid} up for another", false)
@@ -1031,6 +1050,9 @@ module MGQ_MpBattlesCoop
     when "soon" then take_soon(peer)
     when "freeze" then take_freeze(peer, message)
     when "off" then take_off(peer, message)
+    when "hot" then MGQ_MpBattlesHotjoin.take_request(peer, message)
+    when "hot_ok" then MGQ_MpBattlesHotjoin.take_answer(peer, message, :accepted)
+    when "hot_no" then MGQ_MpBattlesHotjoin.take_answer(peer, message, :refused)
     end
   rescue => e
     log("taking a co-op message failed: #{e.class}: #{e.message}")
@@ -1240,6 +1262,7 @@ module MGQ_MpBattlesCoop
     # The leader's story dialogue a member reads may be on screen; the battle takes its place.
     $game_message.clear
     @joining = true
+    MGQ_MpBattlesHotjoin.note_invite(message)
     BattleManager.setup(message["troop"].to_i, message["escape"] == "1", message["lose"] == "1")
     MGQ_MpBattlesSync.join_world(:guest, message["bid"].to_s, [peer.seat], peer.state["name"].to_s)
     MGQ_MpBattlesSync.battle_started
@@ -1264,41 +1287,51 @@ module MGQ_MpBattlesCoop
   end
 
   # As guest, tells the host who joins and builds the party the host sends. Called at the battle's
-  # start. A player who follows to another battle meanwhile (see follow) joins that one, and one
-  # whose roster came turns a kept invite down.
+  # start. A player who joins a running battle late (MGQ_MpBattlesHotjoin.late?) waits for its next
+  # command phase, and takes its turn count; one whose encounter it took in fights that encounter
+  # alone when the roster never comes. A player who follows to another battle meanwhile (see
+  # follow) joins that one, and one whose roster came turns a kept invite down.
   #
   # @param scene [Scene_Battle] The battle.
   # @return [Symbol, nil] An ending of battles_sync's Channel.ending, nil once the battle may start.
   def self.join(scene)
+    hotjoin = MGQ_MpBattlesHotjoin
     # The host's party says how many of them fight and how many wait on the Backline.
     build = own_build
     MGQ_MpBattlesSync::Channel.post("join", MGQ_MpBattlesSync::Wire.line(build))
-    limit = roster_frames
+    limit = hotjoin.late? ? hotjoin::ROSTER_FRAMES : roster_frames
     log("sent join for battle #{MGQ_MpBattlesSync.battle_id} with #{Array(build[1]).size} characters, party_member_max #{build[2]}, waiting up to #{limit / 60} s for the roster")
     frames = 0
-    roster = MGQ_MpBattlesSync::Waiting.wait_for(scene, "Joining #{MGQ_MpBattlesSync.player}'s battle...") do
+    text = hotjoin.late? ? "Joining #{MGQ_MpBattlesSync.player}'s battle at its next turn..." : "Joining #{MGQ_MpBattlesSync.player}'s battle..."
+    roster = MGQ_MpBattlesSync::Waiting.wait_for(scene, text) do
       frames += 1
+      next :called_off if hotjoin.called_off?
       next :moved if @moved
 
       MGQ_MpBattlesSync::Channel.take("roster") || (frames >= limit ? :late : nil)
     end
+    return hotjoin.fight_own("the host called it off") if roster == :called_off
     if roster == :moved
       @moved = false
       return join(scene)
     end
+    hotjoin.give_up(roster) if roster.is_a?(Symbol)
+    return hotjoin.fight_own("the host's party never came") if roster == :late && hotjoin.own_troop?
     return left_out("the host's party never came") if roster == :late
     if roster.is_a?(Symbol)
       log("no roster for battle #{MGQ_MpBattlesSync.battle_id}: the wait ended with #{roster.inspect}")
       return roster
     end
 
-    enemies, players, level = MGQ_MpBattlesSync::Wire.parse(roster.to_s)
+    enemies, players, level, turn = MGQ_MpBattlesSync::Wire.parse(roster.to_s)
     players = Array(players).map { |fields| Player.read(fields) }
-    log("took the roster of battle #{MGQ_MpBattlesSync.battle_id} (#{roster.to_s.size} bytes): #{Array(enemies).size} enemies, #{players.size} players, level #{level.inspect}")
+    log("took the roster of battle #{MGQ_MpBattlesSync.battle_id} (#{roster.to_s.size} bytes): #{Array(enemies).size} enemies, #{players.size} players, level #{level.inspect}#{", turn #{turn}" if turn}")
     decline(@invite[:peer], @invite[:message], "the player's battle #{MGQ_MpBattlesSync.battle_id} began") if @invite
     return left_out("the host's party came without the player") unless players.any? { |player| player.seat == MGQ_MpOverworldSync::Me.seat }
 
+    MGQ_MpGame.set($game_troop, :turn_count, turn) if turn.is_a?(Integer)
     take_troop(scene, Array(enemies))
+    hotjoin.escape_anew if hotjoin.late?
     MGQ_MpCoopLevelSync.begin(level)
     form(scene, players)
     nil
@@ -1340,6 +1373,7 @@ module MGQ_MpBattlesCoop
       enemy.screen_x = x.to_i
       enemy.screen_y = y.to_i
       enemy.hide if hidden.to_i == 1
+      MGQ_MpBattlesHotjoin.lay_down(enemy) if hidden.to_i == MGQ_MpBattlesHotjoin::FALLEN
       enemy
     end
     MGQ_MpGame.set($game_troop, :enemies, rebuilt)
@@ -1449,6 +1483,13 @@ module MGQ_MpBattlesCoop
   # @return [Array<Integer>] The order, the characters' own order when there was none or it is broken.
   def self.valid_order(order, count)
     order.is_a?(Array) && order.sort == (0...count).to_a ? order.dup : (0...count).to_a
+  end
+
+  # Lists the battle's players, as form took them.
+  #
+  # @return [Array<Player>] The players, none before the party is formed.
+  def self.players
+    Array(@players)
   end
 
   # Lists the world seats of the battle's players.
@@ -1691,20 +1732,26 @@ module MGQ_MpBattlesCoop
   end
 
   # Ends the co-op side of the battle, which goes on as the player's own: their own full team, the
-  # game's own settings, no live battle.
+  # game's own settings, no live battle; in a Raid World one that other players' encounters may join.
   #
   # @param scene [Scene_Battle] The battle.
   def self.stand_alone(scene)
+    MGQ_MpBattlesHotjoin.call_off("the battle goes on alone")
     forget
     MGQ_MpBattlesSync.finish
     MGQ_MpBattles.finish
+    MGQ_MpBattlesHotjoin.fight_alone
     show_party(scene, $game_party.battle_members)
     log("fights on with the player's own party: #{members_text($game_party.battle_members)}")
   end
 
   # Ends a co-op battle: the player's own party again, the game's own settings back, and the live
-  # battle over. Called once the battle's scene ended.
+  # battle over. A battle the player hosted alone for players who never joined stays their own, its
+  # Retry kept. Called once the battle's scene ended.
   def self.ended
+    alone = MGQ_MpBattlesHotjoin.waiting_alone? && MGQ_MpBattles.kind != :coop
+    MGQ_MpBattlesHotjoin.ended
+    return MGQ_MpBattlesSync.finish if alone
     return unless active? || (MGQ_MpBattlesSync.role && MGQ_MpBattlesSync.coop?) || MGQ_MpBattles.kind == :coop
 
     log("battle #{MGQ_MpBattlesSync.battle_id} is over (#{@result ? RESULTS.fetch(@result, @result.inspect) : 'no result'}), the player's own party is back")
@@ -1738,6 +1785,7 @@ module MGQ_MpBattlesCoop
             ("an invite" if @invite), ("a request to lead" if @request)].compact
     log("forgot #{held.join(', ')} after a reset") unless held.empty?
     @result = nil
+    MGQ_MpBattlesHotjoin.drop
     drop_hold
     clear
     @asking = nil
@@ -2164,6 +2212,7 @@ module MGQ_MpBattlesCoop::Mode
   # (see MGQ_MpBattles::Mode#before_start)
   def self.before_start(scene)
     MGQ_MpBattlesCoop.await_leader(scene)
+    MGQ_MpBattlesHotjoin.await(scene)
   end
 
   # (see MGQ_MpBattles::Mode#host_start)
@@ -2182,6 +2231,7 @@ module MGQ_MpBattlesCoop::Mode
 
   # (see MGQ_MpBattles::Mode#settle)
   def self.settle(scene)
+    MGQ_MpBattlesHotjoin.settle(scene)
     MGQ_MpBattlesCoop.settle(scene)
     MGQ_MpBattlesCoop.note_places
   end
@@ -2213,12 +2263,12 @@ module MGQ_MpBattlesCoop::Mode
 
   # (see MGQ_MpBattles::Mode#stream_kinds)
   def self.stream_kinds
-    ["coop_party"]
+    ["coop_party", "coop_troop"]
   end
 
   # (see MGQ_MpBattles::Mode#take)
-  def self.take(_kind, scene, body)
-    MGQ_MpBattlesCoop.reform(scene, body)
+  def self.take(kind, scene, body)
+    kind == "coop_troop" ? MGQ_MpBattlesHotjoin.take_troop(scene, body) : MGQ_MpBattlesCoop.reform(scene, body)
   end
 
   # (see MGQ_MpBattles::Mode#take_over)

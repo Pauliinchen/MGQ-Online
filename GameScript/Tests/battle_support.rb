@@ -5,6 +5,7 @@
 #      Paulinchen  2026-10-08: Stood in for the faces this game has, of overworld.rbx
 #                            - Loaded coop_scope.rbx, which tells coop_squad.rbx whether a Raid World is open, and counted the party's Frontline from max_battle_members
 #                            - Stood in for the players whose connection stands, when the player entered the map, the player's tile, the party's leader and the troop's setup
+#                            - Loaded battles_raid_bosses.rbx and battles_coop_hotjoin.rbx, and let enemies fall
 #      Paulinchen  2026-10-07: Stood in for the helpers of coop.rbx, overworld_sync.rbx and coop_scene.rbx the battle scripts share now: who, random_id and the pictures' count
 #                            - Let the characters clear their actions, and named the party after its first character
 #      Paulinchen  2026-10-06: Gave the party the targets of a skill that reaches the Backline too, and added the Library's counts of the battle's end and of a defeat
@@ -139,6 +140,8 @@ class Game_Enemy < Game_Battler
   def name; "Enemy#{@enemy_id}#{@letter}"; end
   def hide; @hidden = true; end
   def hidden?; @hidden ? true : false; end
+  attr_writer :dead
+  def dead?; @dead ? true : false; end
 end
 module MGQ_MpActors
   module Builds
@@ -271,7 +274,9 @@ end
 load_script "coop_scope"
 load_script "coop_squad"
 load_script "battles"
+load_script "battles_raid_bosses"
 load_script "battles_coop"
+load_script "battles_coop_hotjoin"
 %w[battles_sync battles_sync_wire battles_sync_recorder battles_sync_playback battles_sync_live].each { |name| load_script name }
 module MGQ_MpBattlesSync::Waiting
   def self.open(text); :window; end

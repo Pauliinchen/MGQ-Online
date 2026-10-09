@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-08: Closed a command phase the live battle ended in as it finishes, such as after a reset
+#                            - Took the messages of the players a running co-op battle expects to join it, before they are among its guests
 #      Paulinchen  2026-10-07: Named a player by their name and seat as the other scripts do, the player themselves too, and listed characters with their ids for every battle script
 #                            - Logged the live battle's players, the messages sent and received, the commands given per character and what happens once a player leaves
 #                            - Told the battle's mode on the host when a guest leaves, which stops a co-op guest's characters at once
@@ -161,6 +162,7 @@ module MGQ_MpBattlesSync
     @transport = :world
     @seats = seats.dup
     @left = []
+    @expected = []
     @battle_id = battle_id
     @solo = false
     @broken = false
@@ -260,6 +262,28 @@ module MGQ_MpBattlesSync
   # @return [Boolean] Whether it does.
   def self.world?
     @transport == :world
+  end
+
+  # Lets in the messages of players who are to join the running co-op battle late, before they are
+  # among its guests (see battles_coop_hotjoin.rbx).
+  #
+  # @param seats [Array<Integer>] Their world seats.
+  def self.expect(seats)
+    @expected = expected | seats
+  end
+
+  # Stops letting in the messages of players expected to join, once they joined or gave up.
+  #
+  # @param seats [Array<Integer>] Their world seats.
+  def self.unexpect(seats)
+    @expected = expected - seats
+  end
+
+  # Lists the players expected to join the running co-op battle late, see expect.
+  #
+  # @return [Array<Integer>] Their world seats.
+  def self.expected
+    Array(@expected)
   end
 
   # Narrows a co-op battle's guests to those who joined.
@@ -578,13 +602,13 @@ module MGQ_MpBattlesSync
     end
 
     # Takes a message that arrived over the world's room: a guest takes only the host's, the host
-    # only its guests'.
+    # only its guests' and those of the players it expects to join (see expect).
     #
     # @param seat [Integer] The sender's world seat.
     # @param kind [String] What it is.
     # @param body [String] The rest.
     def self.receive(seat, kind, body)
-      unless MGQ_MpBattlesSync.seats.include?(seat)
+      unless MGQ_MpBattlesSync.seats.include?(seat) || MGQ_MpBattlesSync.expected.include?(seat)
         return MGQ_MpBattlesSync.log_once([:not_taken, kind[0, 40], seat, MGQ_MpBattlesSync.battle_id],
                                           "ignored #{kind[0, 40]} from #{MGQ_MpBattlesSync.who(seat)}: " \
                                           "#{MGQ_MpBattlesSync.role == :host ? 'not a guest of this battle' : 'not the host'}")
