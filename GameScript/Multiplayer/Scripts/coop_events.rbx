@@ -4,6 +4,7 @@
 #  Changelog:
 #      Paulinchen  2026-10-09: Kept story events from starting while the player's story is behind a Raid World's, telling the level that moves them on, and held those that run by themselves, so a teleport onto their map cannot loop
 #                            - Kept a Raid World's telling, how far its story was, where it started and whom it took along, through the story's next event that starts in the frame its last ended, so its viewers see the rest of the story
+#                            - Held a Raid World's story event at its start for TIE_HOLD_FRAMES while someone on the map entered it first, so a tie stops it before it changed anything
 #                            - Told the story's pages to a Raid World's viewers in one message instead of one per viewer
 #      Paulinchen  2026-10-08: Took the teller, the viewers and the gate of the story's messages from MGQ_MpCoop::Scope: the party's leader and synced members in a Classic world, the player telling the story on the map and those whose story matches in a Raid World
 #                            - Stopped a story event in a Raid World once a player who entered the map first started telling the story there at the same moment, within TIE_FRAMES of its start and on its map alone
@@ -117,6 +118,11 @@ module MGQ_MpCoopEvents
   # Frames after a Raid World's telling starts in which another player who started telling on the
   # same map at the same moment, and entered it first, stops it, three seconds of the state's lag.
   TIE_FRAMES = 180
+
+  # Frames a Raid World's story event waits at its start while someone on the map entered it before
+  # the player, half a second, so their state can tell that they started telling at the same moment
+  # before the event changed anything.
+  TIE_HOLD_FRAMES = 30
 
   # Frames a page of the leader's story stays after the leader stopped telling the story, two
   # seconds, before a member's game ends it anyway.
@@ -438,6 +444,7 @@ module MGQ_MpCoopEvents
     return unless $game_map && interpreter.equal?($game_map.interpreter)
 
     MGQ_MpCoopGather.drop_hold
+    @tie_hold = nil
     # A page of the leader's story that a scene change cut short must not hold the player's own.
     log("the page #{@mirrored[:page]} of the leader's story was cut short by an event starting") if @mirrored
     @mirrored = nil
@@ -448,6 +455,7 @@ module MGQ_MpCoopEvents
       log("the story's next event goes on with the telling that started on map #{@telling_map}")
     elsif @telling
       note_telling_start
+      hold_for_tie(interpreter)
     end
     @may_tell = sorted == :talk && (following? || leading_story?) && may_tell?(list || [])
     hold = @telling && scene?(list) && !MGQ_MpCoopGather.gathered?
@@ -485,6 +493,43 @@ module MGQ_MpCoopEvents
   # event from a new telling, see note_telling_start. Called after the map's update.
   def self.note_told_frame
     @told_last_frame = telling?
+  end
+
+  # Holds a Raid World's story event at its first command while someone on the map entered it
+  # before the player, who would win a tie of two tellings started at the same moment, see
+  # tie_holding?.
+  #
+  # @param interpreter [Game_Interpreter] The map's interpreter.
+  def self.hold_for_tie(interpreter)
+    return unless MGQ_MpCoop::Scope.raid?
+
+    mine = MGQ_MpCoop::Scope.key_of(:me)
+    earlier = MGQ_MpCoop::Scope.peers_here.select { |peer| (MGQ_MpCoop::Scope.key_of(peer) <=> mine) < 0 }
+    return if earlier.empty?
+
+    @tie_hold = interpreter
+    log("holding the story event #{TIE_HOLD_FRAMES} frames: #{earlier.map { |peer| MGQ_MpOverworldSync.who(peer) }.join(', ')} entered the map first and may have started telling at the same moment")
+  rescue => e
+    @tie_hold = nil
+    log("holding a story event for a tie failed: #{e.class}: #{e.message}")
+  end
+
+  # Reports whether the player's story event still waits at its start, see hold_for_tie: for
+  # TIE_HOLD_FRAMES, unless another player turned out to tell the story here first, which
+  # yield_story then stops before its first command. Asked before each of the interpreter's commands.
+  #
+  # @param interpreter [Game_Interpreter] The interpreter about to run a command.
+  # @return [Boolean] Whether it waits.
+  def self.tie_holding?(interpreter)
+    return false unless @tie_hold && @tie_hold.equal?(interpreter)
+    return true if @telling && !past?(@telling_at, TIE_HOLD_FRAMES) && !MGQ_MpCoop::Scope::Raid.first_teller_here.is_a?(MGQ_MpOverworldSync::Peers::Peer)
+
+    @tie_hold = nil
+    false
+  rescue => e
+    @tie_hold = nil
+    log("holding a story event for a tie failed: #{e.class}: #{e.message}")
+    false
   end
 
   # Logs how an event starting on the map is sorted and what the party does with it.
@@ -1376,9 +1421,14 @@ begin
   # After the map's update, the leader's story pages show once the player is free.
   MGQ_MpHooks.after(Game_Map, :update, "coop_events") { MGQ_MpCoopEvents.update }
 
-  # Before an event command runs, a story told twice at once ends for the later teller, and a talk
-  # that may turn into story is watched.
+  # Before an event command runs, a story event waits a moment at its start for a tie, a story told
+  # twice at once ends for the later teller, and a talk that may turn into story is watched.
   MGQ_MpHooks.before(Game_Interpreter, :execute_command, "coop_events") do
+    begin
+      Fiber.yield while MGQ_MpCoopEvents.tie_holding?(self)
+    rescue FiberError
+      # An interpreter run outside a fiber cannot wait, so its command runs at once.
+    end
     MGQ_MpCoopEvents.yield_story(self)
     MGQ_MpCoopEvents.guard(self)
   end

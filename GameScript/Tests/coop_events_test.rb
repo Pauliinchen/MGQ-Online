@@ -4,6 +4,7 @@
 #  Changelog:
 #      Paulinchen  2026-10-09: Checked that a Raid World's pages go to the viewers in one message
 #                            - Checked that the story's next event goes on with its telling
+#                            - Checked that a story event waits at its start for a tie with a player who entered the map first
 #                            - Checked that a player behind a Raid World's story starts no story event, is told the level that moves them on once, and that story which runs by itself waits while talks run
 #      Paulinchen  2026-10-08: Checked a Raid World: a player telling the story on the map keeps the others' story events from starting, whoever entered the map first tells it when two start at once, its pages go to and show for the players whose story matches, the castle's Map Owner is the sync host, and no leader's story is borrowed
 #                            - Checked that a Raid World's tie between two tellers holds only at the telling's start on its map, and that its chests are personal
@@ -1922,6 +1923,30 @@ check("a telling after a frame without one starts anew", [MGQ_MpCoopEvents.state
 interpreter.busy = false
 $game_map.update
 $game_variables[1001] = 12
+
+# A story event waits at its start while someone on the map entered it first.
+interpreter.setup(story_page.list, 52)
+interpreter.busy = true
+check("a story event waits at its start while a player who entered the map first may tell at the same moment",
+      MGQ_MpCoopEvents.tie_holding?(interpreter), true)
+teller.state["telling"] = "1"
+check("and stops before its first command once they turn out to tell it",
+      [MGQ_MpCoopEvents.tie_holding?(interpreter), (interpreter.execute_command; interpreter.instance_variable_get(:@index)), MGQ_MpCoopEvents.telling?],
+      [false, story_page.list.size - 1, false])
+interpreter.busy = false
+teller.state["telling"] = "0"
+interpreter.setup(story_page.list, 52)
+interpreter.busy = true
+$frame_count += MGQ_MpCoopEvents::TIE_HOLD_FRAMES
+check("it waits no longer than TIE_HOLD_FRAMES", [MGQ_MpCoopEvents.tie_holding?(interpreter), MGQ_MpCoopEvents.telling?], [false, true])
+interpreter.busy = false
+teller.state["map"] = "9"
+interpreter.setup(story_page.list, 52)
+interpreter.busy = true
+check("nor at all once nobody on the map entered it first", MGQ_MpCoopEvents.tie_holding?(interpreter), false)
+interpreter.busy = false
+teller.state["map"] = "3"
+$game_map.update
 
 $game_party = Game_Party.new
 $game_self_switches = Game_SelfSwitches.new
