@@ -2,7 +2,8 @@
 //  directory.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-08: Kept a world's type, Classic or Raid, and how a Raid World shares companions, both fixed once it is made
+//      Paulinchen  2026-10-08: Told a world room whether a game is a player of its world, for the routes it answers itself, such as a Raid World's story
+//                            - Kept a world's type, Classic or Raid, and how a Raid World shares companions, both fixed once it is made
 //                            - Kept games that do not name Raid Worlds in X-MGQ-Features out of them
 //                            - Kept the lines of a world's chat one after another, so lines said at once no longer overwrite each other
 //                            - Answered an admin's line for a world deleted meanwhile with 404
@@ -452,6 +453,26 @@ export class Directory {
     }
 
     return { status: 200, body: { seats: entry.seats, player }, seats: entry.seats, player };
+  }
+
+  /**
+   * Tells whether a game holds a world's token and was not removed from it, for the routes a world
+   * room answers itself, such as a Raid World's story; unlike admit, no rate limit counts it.
+   *
+   * @param {string} id The world.
+   * @param {unknown} key The player's key.
+   * @param {unknown} auth The auth key the player's game made from the world's token.
+   * @returns {Promise<{status: number, body: object, player?: string, type?: string, authHash?: string}>} The player's id, the world's type and the hash of its auth key, which the world room keeps to check later requests itself; or why not.
+   */
+  async member(id, key, auth) {
+    const { entry, player, refusal } = await this.asPlayer(id, key, auth);
+
+    if (refusal) {
+      return refusal;
+    }
+
+    const type = entry.type ?? WORLD_TYPE.classic;
+    return { status: 200, body: { player, type }, player, type, authHash: entry.authHash };
   }
 
   /**

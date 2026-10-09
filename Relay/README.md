@@ -13,6 +13,8 @@ core/directory.js      the world directory's rules, over a store the platform pa
 core/directory.test.js tests of the directory
 core/trades.js         the referee of trades between two players of a world
 core/trades.test.js    tests of the trades
+core/story.js          a Raid World's story: its counters, sealed story, checkpoints, route lock and shared companions
+core/story.test.js     tests of the story
 core/mods.js           the mod catalog's rules, over a store the platform passes in
 core/mods.test.js      tests of the mod catalog
 core/http.js           the answers every router gives alike, and how each reads a JSON body
@@ -22,7 +24,7 @@ cloudflare/worker.js   the relay on Cloudflare Workers, one Durable Object per r
 cloudflare/wrangler.toml
 node/server.js         the relay as a plain Node server, for a rented machine
 node/server.test.js    tests of the Node server over real WebSockets
-node/sqlite_store.js   the directory's, the catalog's and the trades' stores over one SQLite database, for the Node server
+node/sqlite_store.js   the directory's, the catalog's, the trades' and the stories' stores over one SQLite database, for the Node server
 node/sqlite_store.test.js tests of the SQLite stores
 ```
 
@@ -115,6 +117,18 @@ Two players of a world swap items through their games, and the relay referees th
 
 Committed trades nobody finished are dropped after 30 days, cancelled ones after a day.
 
+### World story
+
+A Raid World plays one story, which the relay keeps beside the world room, on Cloudflare in the world room's own object: the counters it reads to tell which story is further (`p` for variable 1001, `r1141`, `r1142`, `r1143`, the finished routes, the story teleport's endpoint, the shared companions) and the rest sealed with a key from the world's token, which it only keeps. Classic worlds keep none (404, code `classic`). The routes take the player's key and the auth key in the headers, as the world room does, and answer the world's players only. The full contract is in [docs/DEVELOPER.md](../docs/DEVELOPER.md#world-story-on-the-relay-raid-worlds).
+
+| Request | What it does |
+|---|---|
+| `GET /v1/worlds/<id>/story` | Hands out the story: its revisions, counters, part, locked and finished routes, endpoint, shared companions, checkpoints and the sealed `blob`. |
+| `POST /v1/worlds/<id>/story` | Writes the story: `base` (the revision it built on), `counters` and `blob` (the sealed story in base64, at most 280,000 characters). Taken when it built on the last write and its counters are not behind the story's; else 409 with the story and `code` `rev`, `behind` or `route` (while a route is locked, until the world returned from it, only a write on it or returning from it, finishing no route the world did not play; a write with no route under way also while the world's story has not started the locked route). A write that moves the world into a later part keeps the story before it as that part's checkpoint. |
+| `GET /v1/worlds/<id>/story/checkpoint/<part>` | Hands out a part's checkpoint (`1`, `2`, `3`, `ad`, `mr`, `chaos`), 404 with `code` `none` for a part without one. |
+| `POST /v1/worlds/<id>/story/route` | Locks the route at the Great Decision: the first one wins (409 `route`); a finished route (409 `finished`) and the third way before both others are finished (409 `closed`) are refused. |
+| `POST /v1/worlds/<id>/story/companions` | Adds actor ids to the shared companions, which only grow. |
+
 ### World rooms
 
 - **Connect:** `wss://<relay>/v1/world/<world id>?name=<name>`, with the player's key in the header `X-MGQ-Player` and the auth key in the header `X-MGQ-Auth` (released games send them as `player=<key>&auth=<auth key>` in the address instead, which is kept for them). The relay lets the game in only if the world is in the directory, the SHA-256 of the auth key is the world's `authHash`, and the creator has not removed the player: otherwise HTTP 404, 401 or 403 before the WebSocket opens, HTTP 409 while the creator is still uploading the starting save, and HTTP 400 when the world is a Raid World and the request's header `X-MGQ-Features` (features separated by commas) does not name `raid`, which released games never send and which they take as final, unlike a 409. A 400, 403 or 409 names why in the response header `X-MGQ-Refusal`, with the codes of the directory. Entering rooms and world rooms is limited per address, 30 at once and one more every 2 seconds (HTTP 429). When a player enters a world room again, the relay closes the player's earlier connection with 4009 and the reason `replaced`. The world's seats come from the directory; once every one is taken, the next game gets HTTP 409. After every change the room tells the directory who is in it.
@@ -124,6 +138,7 @@ Committed trades nobody finished are dropped after 30 days, cancelled ones after
   - After every global line, a game sends the text `chat <line>`. The relay keeps it in the world's chat (`GET /v1/worlds/<id>/chat`) with the sender's player id and name, and passes it to nobody.
   - Each connection may send 2 chat lines a second, after a burst of 10. The relay drops a line beyond that and answers the text `slow chat`; games that don't know it ignore it. A `chat` text without a line is ignored.
   - When an admin says something (`POST /v1/worlds/<id>/chat`), the relay sends the text `chat <name>` + tab + `<line>` to every game in the room; games that don't know the frame ignore it.
+- **Story:** after every change of a Raid World's story the relay sends the text `story <rev>` to every game in the room; games that don't know it ignore it.
 - **Limits:** each connection lasts at most 2 hours on its own; the game then connects again.
 
 ### Both
@@ -155,7 +170,7 @@ The relay runs on the free Workers plan at `relay.mgqmp.workers.dev`. Past the f
 1. On the server, install Node.js 24 or later (the SQLite database needs `node:sqlite`) and [Caddy](https://caddyserver.com), and point a domain at the server.
 2. Copy `core/`, `node/`, `package.json` and `package-lock.json`, then run `npm install --omit=dev`.
 3. Start `node node/server.js` as a systemd service, with these environment variables:
-   - `MGQ_RELAY_DB=/var/lib/mgq-relay/relay.sqlite`: the SQLite database the worlds, their starting saves, the mod catalog, its uploaded zips and the trades are kept in, made on the first start (with its `-wal` and `-shm` files beside it). Without it everything stays in memory and is gone with the process. Back the file up with `sqlite3 relay.sqlite ".backup copy.sqlite"`, never by copying it while the relay runs.
+   - `MGQ_RELAY_DB=/var/lib/mgq-relay/relay.sqlite`: the SQLite database the worlds, their starting saves, the mod catalog, its uploaded zips, the trades and the Raid Worlds' stories are kept in, made on the first start (with its `-wal` and `-shm` files beside it). Without it everything stays in memory and is gone with the process. Back the file up with `sqlite3 relay.sqlite ".backup copy.sqlite"`, never by copying it while the relay runs.
    - `ADMINS`: the admins' player ids, as above.
    - `HOST` and `PORT`: where it listens, `127.0.0.1:8080` unless set.
 4. The relay writes one line per request to stdout (`<time> <method> <path> <status> <ms> <address>`, the path without its query, so no key ever appears) and every error it catches to stderr, with its stack. Under systemd both go to the journal (`journalctl -u <service>`); the service file's `StandardOutput=append:/var/log/mgq-relay/relay.log` keeps them in a file instead. The rooms and the WebSockets live in memory, so a restart ends every connection; the games connect again on their own.

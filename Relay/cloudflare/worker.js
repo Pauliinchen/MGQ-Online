@@ -2,7 +2,8 @@
 //  worker.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-08: Passed what a game names in the X-MGQ-Features header on to the directory as it enters a world room
+//      Paulinchen  2026-10-08: Kept a Raid World's story in its world room's object, answered its routes there for the world's players, and told every game of the world when it changed
+//                            - Passed what a game names in the X-MGQ-Features header on to the directory as it enters a world room
 //                            - Dropped a game's chat lines past the chat's rate limit, answering each with "slow chat", and ignored a chat frame without a line instead of closing the connection
 //                            - Logged a chat line the directory could not keep instead of letting the error escape the world room
 //      Paulinchen  2026-10-07: Handed the chat lines the games mirror to the directory, and told every game of a world what an admin said
@@ -33,9 +34,11 @@
 // never passes on from outside.
 
 import { DurableObject } from "cloudflare:workers";
-import { Directory as WorldDirectory, handleDirectoryRequest, parseAdmins } from "../core/directory.js";
-import { routeIs } from "../core/http.js";
+import { Directory as WorldDirectory, WORLD_TYPE, handleDirectoryRequest, parseAdmins, playerIdOf, sha256Hex } from "../core/directory.js";
+import { badRequest, routeIs } from "../core/http.js";
+import { isHash, isId } from "../core/ids.js";
 import { ModCatalog, handleModRequest } from "../core/mods.js";
+import { STORY_LIMITS, WorldStory, handleStoryRequest, noRaidWorld, storyRouteOf, storyText } from "../core/story.js";
 import { TradeBook, handleTradeRequest } from "../core/trades.js";
 import {
   AUTH_HEADER, CHAT_SLOW, CLOSE, FEATURES_HEADER, IN, OUT, PAIRED, PING, PLAYER_HEADER, PONG, RATE_LIMITS, REFUSAL_HEADER, RateLimiter, admit, chatLineOf, chatText,
@@ -59,6 +62,28 @@ const ADDRESS_HEADER = "CF-Connecting-IP";
 const MAX_TEXT_BYTES = 256 * 1024;
 
 /**
+ * The storage key of a world room's story, its counters and sealed story in one value, one row
+ * written per story write.
+ */
+const STORY_KEY = "story";
+
+/**
+ * The start of the storage keys of a world's checkpoints, one per part.
+ */
+const CHECKPOINT_PREFIX = "checkpoint:";
+
+/**
+ * The storage key of what a world room keeps of the directory's answers about who plays the world:
+ * its type, the hash of its auth key, and the players the directory let in.
+ */
+const ACCESS_KEY = "access";
+
+/**
+ * Most players a world room keeps as let in, more than a world may have.
+ */
+const MAX_ACCESS_PLAYERS = 500;
+
+/**
  * Counts how often each address enters a room. Each Worker instance keeps its own count, so it
  * only slows down an address that keeps reaching the same instance; world rooms are counted by
  * the directory instead.
@@ -79,6 +104,12 @@ export default {
    */
   async fetch(request, env) {
     const url = new URL(request.url);
+    const story = storyRouteOf(url);
+
+    // A world's story stays with its world room's object, so the directory carries none of it.
+    if (story) {
+      return worldOf(env, story.id).fetch(request);
+    }
 
     if (["worlds", "mods", "trades"].some((route) => routeIs(url, route))) {
       return directoryOf(env).fetch(request);
@@ -288,6 +319,18 @@ async function readText(request) {
 }
 
 /**
+ * Reads the body of a write to a world's story as text, unless it is longer than a write takes,
+ * which the story's router then answers with 413.
+ *
+ * @param {Request} request The request.
+ * @returns {Promise<string | null>} The body, or null when it is too long.
+ */
+async function readStoryText(request) {
+  const bytes = await readBytes(request, STORY_LIMITS.maxBodyLength);
+  return bytes ? new TextDecoder().decode(bytes) : null;
+}
+
+/**
  * The world directory: every world with its players, bans and locked token, one entry per world
  * in the object's storage, and each world's starting save in pieces beside it. It also keeps the
  * mod catalog, one entry per mod and each uploaded mod's zip in pieces, and the trades, one entry
@@ -365,6 +408,11 @@ export class Directory extends DurableObject {
     if (url.pathname === "/internal/admit") {
       const { id, player, auth, address, features } = await request.json();
       return json(200, await this.directory.admit(id, player, auth, address ?? null, Array.isArray(features) ? features : []));
+    }
+
+    if (url.pathname === "/internal/member") {
+      const { id, player, auth } = await request.json();
+      return json(200, await this.directory.member(id, player, auth));
     }
 
     if (url.pathname === "/internal/presence") {
@@ -618,12 +666,15 @@ export class World extends DurableObject {
 
     if (url.pathname === "/internal/close") {
       await this.closeWhere(() => true, CLOSE.worldDeleted, "the world was deleted");
+      await this.storyOf().remove();
+      await this.ctx.storage.delete(ACCESS_KEY);
       return json(200, {});
     }
 
     if (url.pathname === "/internal/kick") {
       const { player } = await request.json();
       await this.closeWhere((record) => record.player === player, CLOSE.removed, "the creator removed this player from the world");
+      await this.forget(player);
       return json(200, {});
     }
 
@@ -631,6 +682,12 @@ export class World extends DurableObject {
       const { name, text } = await request.json();
       this.tell(chatText(name, text));
       return json(200, {});
+    }
+
+    const story = storyRouteOf(url);
+
+    if (story) {
+      return this.answerStory(request, story);
     }
 
     const route = parseRoute(url, request.headers.get(PLAYER_HEADER), request.headers.get(AUTH_HEADER));
@@ -811,6 +868,107 @@ export class World extends DurableObject {
       await this.schedule();
       await this.report();
     }
+  }
+
+  /**
+   * Answers a request to the world's story, for a player of this Raid World only, and tells every
+   * game in the room when the story changed.
+   *
+   * @param {Request} request The request.
+   * @param {{id: string, rest: string[]}} route The world and the story route, see storyRouteOf.
+   * @returns {Promise<Response>} The answer.
+   */
+  async answerStory(request, route) {
+    const access = await this.storyAccess(route.id, request.headers.get(PLAYER_HEADER), request.headers.get(AUTH_HEADER));
+
+    if (access.refusal) {
+      return json(access.refusal.status, access.refusal.body);
+    }
+
+    if (access.type !== WORLD_TYPE.raid) {
+      return json(noRaidWorld().status, noRaidWorld().body);
+    }
+
+    const answer = await handleStoryRequest(this.storyOf(), request.method, route.rest, () => readStoryText(request), access.player);
+
+    if (answer.push) {
+      this.tell(storyText(answer.push));
+    }
+
+    return json(answer.status, answer.body);
+  }
+
+  /**
+   * Finds whether a game is a player of the world: from what the room keeps of the directory's
+   * last answer, or else from the directory, whose answer the room keeps.
+   *
+   * @param {string} id The world.
+   * @param {string | null} key The player's key.
+   * @param {string | null} auth The auth key the player's game made from the world's token.
+   * @returns {Promise<{player: string, type: string} | {refusal: {status: number, body: object}}>} The player's id and the world's type, or why the game may not.
+   */
+  async storyAccess(id, key, auth) {
+    if (!isId(key) || !isHash(auth)) {
+      return { refusal: badRequest("a player key and an auth key are needed") };
+    }
+
+    const player = await playerIdOf(key);
+    const kept = await this.ctx.storage.get(ACCESS_KEY);
+
+    if (kept && kept.players.includes(player) && (await sha256Hex(auth)) === kept.authHash) {
+      return { player, type: kept.type };
+    }
+
+    const answer = await internal(directoryOf(this.env), "member", { id, player: key, auth });
+
+    if (answer.status !== 200) {
+      return { refusal: { status: answer.status, body: answer.body } };
+    }
+
+    const players = kept?.authHash === answer.authHash ? kept.players.filter((other) => other !== answer.player) : [];
+    await this.ctx.storage.put(ACCESS_KEY, { type: answer.type, authHash: answer.authHash, players: [...players, answer.player].slice(-MAX_ACCESS_PLAYERS) });
+
+    if (!this.world) {
+      this.world = id;
+      await this.ctx.storage.put("world", id);
+    }
+
+    return { player: answer.player, type: answer.type };
+  }
+
+  /**
+   * Forgets a player the creator removed, so the room asks the directory again before the story
+   * answers them.
+   *
+   * @param {string} player The player's id.
+   */
+  async forget(player) {
+    const kept = await this.ctx.storage.get(ACCESS_KEY);
+
+    if (kept?.players.includes(player)) {
+      await this.ctx.storage.put(ACCESS_KEY, { ...kept, players: kept.players.filter((other) => other !== player) });
+    }
+  }
+
+  /**
+   * Makes the world's story over the object's storage, once per wake.
+   *
+   * @returns {WorldStory} The story.
+   */
+  storyOf() {
+    const storage = this.ctx.storage;
+
+    this.story ??= new WorldStory({
+      get: () => storage.get(STORY_KEY),
+      put: (story, checkpoint) => storage.put(checkpoint ? { [STORY_KEY]: story, [`${CHECKPOINT_PREFIX}${checkpoint.part}`]: checkpoint } : { [STORY_KEY]: story }),
+      getCheckpoint: (part) => storage.get(`${CHECKPOINT_PREFIX}${part}`),
+      remove: async () => {
+        const keys = [...(await storage.list({ prefix: CHECKPOINT_PREFIX })).keys(), STORY_KEY];
+        await storage.delete(keys);
+      },
+    });
+
+    return this.story;
   }
 
   /**

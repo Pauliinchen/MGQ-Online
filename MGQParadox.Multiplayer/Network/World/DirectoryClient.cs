@@ -2,7 +2,8 @@
 //  DirectoryClient.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-08: Named the Raid Worlds this game plays in the X-MGQ-Features header of every request
+//      Paulinchen  2026-10-08: Read the answer of a status a route expects besides success, such as the 409 that hands back a Raid World's story
+//                            - Named the Raid Worlds this game plays in the X-MGQ-Features header of every request
 //                            - Made worlds of a type, Classic or Raid, with how a Raid World shares companions, and read both from the list
 //                            - Read whether the relay kept the Mod Config options sent, and the version whose options it keeps
 //      Paulinchen  2026-10-07: Logged every request with its method, route and outcome, and its time when it failed or was slow, a repeated request only once its outcome changed
@@ -53,7 +54,7 @@ namespace MGQParadox.Multiplayer.Network.World;
 /// <remarks>
 /// It reads and writes JSON by hand, since NativeAOT leaves out what serializing by reflection needs.
 /// </remarks>
-internal sealed class DirectoryClient
+internal sealed partial class DirectoryClient
 {
     /// <summary>
     /// The request header that carries the player's key, which an address would leave in logs.
@@ -678,9 +679,10 @@ internal sealed class DirectoryClient
     /// <param name="http">The client to send it with.</param>
     /// <param name="route">What the request does, for the log, such as "world lock 1a2b3c4d5e6f"; never a key.</param>
     /// <param name="repeatKey">Names a request the game repeats, which is logged only when its outcome changes or it was slow; <see langword="null"/> to log it every time.</param>
-    /// <returns>The successful answer, which the caller disposes.</returns>
+    /// <param name="expected">A status the route answers with besides success, which the caller reads instead of an exception; <see langword="null"/> for none.</param>
+    /// <returns>The successful or expected answer, which the caller disposes.</returns>
     /// <exception cref="DirectoryException">The directory could not be reached, or answered with an error.</exception>
-    private static HttpResponseMessage Exchange(HttpRequestMessage request, HttpClient http, string route, string? repeatKey = null)
+    private static HttpResponseMessage Exchange(HttpRequestMessage request, HttpClient http, string route, string? repeatKey = null, HttpStatusCode? expected = null)
     {
         var started = Stopwatch.GetTimestamp();
         request.Headers.Add(FeaturesHeader, Features);
@@ -700,7 +702,10 @@ internal sealed class DirectoryClient
 
             try
             {
-                ThrowUnlessSuccess(response);
+                if (response.StatusCode != expected)
+                {
+                    ThrowUnlessSuccess(response);
+                }
             }
             catch
             {

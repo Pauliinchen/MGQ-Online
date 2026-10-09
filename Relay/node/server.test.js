@@ -2,7 +2,8 @@
 //  server.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-08: Tested that a world room lets into a Raid World only the games that name it in X-MGQ-Features
+//      Paulinchen  2026-10-08: Tested a Raid World's story over HTTP: writes, conflicts, checkpoints, the route lock, companions, the frame every game hears, removed players and a deleted world, and that a Classic world keeps none
+//                            - Tested that a world room lets into a Raid World only the games that name it in X-MGQ-Features
 //                            - Tested the chat's rate limit and a chat frame without a line, which keeps the connection
 //      Paulinchen  2026-10-07: Tested a world's chat: a game's mirrored line kept, an admin's line reaching every game, and other text still closing the connection
 //                            - Tested the auth key header, the request and error log lines, every mod catalog route, editing a world, the address behind a proxy, the sweep and a text body over the cap
@@ -27,6 +28,7 @@ import WebSocketClient from "ws";
 import { DIRECTORY_LIMITS, Directory, playerIdOf, sha256Hex } from "../core/directory.js";
 import { ModCatalog, zipHashes } from "../core/mods.js";
 import { AUTH_HEADER, CHAT_LIMITS, CHAT_SLOW, CLOSE, EVERYONE, FEATURES_HEADER, LIMITS, PAIRED, PING, PLAYER_HEADER, PONG, REFUSAL_HEADER, REPLACED } from "../core/relay.js";
+import { STORY_LIMITS } from "../core/story.js";
 import { TRADE_LIMITS } from "../core/trades.js";
 import { makeUpload, makeZip } from "../core/test_zip.js";
 import { addressOf, createRelay, errorLine, memoryModStore, memoryStore, requestLine } from "./server.js";
@@ -648,6 +650,62 @@ test("a world room lets into a Raid World only the games that name it in X-MGQ-F
   const game = await openWithHeaders(address, { [PLAYER_HEADER]: playerKey(52), [FEATURES_HEADER]: "raid" });
   assert.equal(await game.first, "seat 0");
   game.socket.close();
+});
+
+test("a Raid World's players write its story over HTTP, every game in the room hears of each change, and deleting the world forgets it", async () => {
+  const room = roomId(124);
+  const created = await fetch(directoryBase, {
+    method: "POST",
+    headers: { [PLAYER_HEADER]: CREATOR },
+    body: JSON.stringify({ id: room, name: "Raid Story", seats: 4, playerName: "Creator", authHash: await sha256Hex(AUTH), lock: { salt: "12".repeat(16), iterations: 200_000, box: "ab".repeat(40) }, type: "raid" }),
+  });
+  assert.equal(created.status, 201);
+  const watcher = await openWithHeaders(`${worldBase}${room}?name=Watcher&auth=${AUTH}`, { [PLAYER_HEADER]: playerKey(54), [FEATURES_HEADER]: "raid" });
+  assert.equal(await watcher.first, "seat 0");
+  const heard = [];
+  watcher.socket.on("message", (data) => heard.push(data.toString()));
+
+  const story = (path, init = {}, key = playerKey(53), auth = AUTH) => fetch(`${directoryBase}/${room}/story${path}`, { ...init, headers: { [PLAYER_HEADER]: key, [AUTH_HEADER]: auth } });
+  const write = (body) => story("", { method: "POST", body: JSON.stringify(body) });
+  const counters = (p) => ({ p, r1141: 0, r1142: 0, r1143: 0, clear: [] });
+
+  assert.equal((await story("")).status, 200);
+  assert.equal((await story("", {}, playerKey(53), "cd".repeat(32))).status, 401);
+  assert.equal((await story("", {}, "zz")).status, 400);
+
+  const first = await write({ base: 0, counters: counters(18), blob: "QUJD" });
+  assert.equal(first.status, 200);
+  assert.equal((await first.json()).rev, 1);
+  await until(async () => heard.includes("story 1"));
+
+  const second = await write({ base: 1, counters: { ...counters(19), end: { map: 2, x: 148, y: 243 } }, blob: "REVG" });
+  assert.deepEqual(await second.json().then((body) => [body.rev, body.part, body.checkpoints, body.end]), [2, "2", ["1"], { map: 2, x: 148, y: 243 }]);
+
+  const conflict = await write({ base: 1, counters: counters(20), blob: "R0hJ" });
+  assert.equal(conflict.status, 409);
+  assert.deepEqual(await conflict.json().then((body) => [body.code, body.rev, body.blob]), ["rev", 2, "REVG"]);
+
+  const checkpoint = await (await story("/checkpoint/1")).json();
+  assert.deepEqual([checkpoint.part, checkpoint.p, checkpoint.blob], ["1", 18, "QUJD"]);
+  assert.equal((await story("/route", { method: "POST", body: JSON.stringify({ route: "mr" }) })).status, 200);
+  assert.deepEqual((await (await story("/companions", { method: "POST", body: JSON.stringify({ ids: [382] }) })).json()).comps, [382]);
+  await until(async () => heard.includes("story 4"));
+  assert.equal((await write({ base: 2, counters: { ...counters(40), r1142: 1 }, blob: "R0hJ" })).status, 200, "a write on the last sealed story is taken after a lock and a companion");
+  assert.equal((await story("", { method: "POST", body: "x".repeat(STORY_LIMITS.maxBodyLength + 10) })).status, 413);
+
+  await fetch(`${directoryBase}/${room}/ban`, { method: "POST", body: JSON.stringify({ player: CREATOR, target: await playerIdOf(playerKey(55)) }) });
+  assert.equal((await story("", {}, playerKey(55))).status, 403);
+
+  assert.equal((await fetch(`${directoryBase}/${room}/delete`, { method: "POST", body: JSON.stringify({ player: CREATOR }) })).status, 200);
+  assert.equal((await story("")).status, 404);
+  assert.equal((await relay.storyOf(room).get()).body.rev, 0, "the deleted world's story is gone");
+});
+
+test("a Classic world keeps no story", async () => {
+  await makeWorld(roomId(125), 4);
+  const answer = await fetch(`${directoryBase}/${roomId(125)}/story`, { headers: { [PLAYER_HEADER]: playerKey(56), [AUTH_HEADER]: AUTH } });
+  assert.equal(answer.status, 404);
+  assert.equal((await answer.json()).code, "classic");
 });
 
 test("a starting save over the limit is refused with its status, not a cut connection", async () => {

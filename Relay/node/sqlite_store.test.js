@@ -2,6 +2,7 @@
 //  sqlite_store.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-08: Covered a Raid World's story and its checkpoints kept over a restart and removed
 //      Paulinchen  2026-10-07: Covered a world's chat kept and removed with the world
 //                            - Created
 //
@@ -14,6 +15,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Directory, playerIdOf, sha256Hex } from "../core/directory.js";
 import { ModCatalog, zipHashes } from "../core/mods.js";
+import { WorldStory } from "../core/story.js";
 import { makeUpload, makeZip } from "../core/test_zip.js";
 import { TradeBook } from "../core/trades.js";
 import { openStores } from "./server.js";
@@ -153,4 +155,25 @@ test("openStores opens the database the environment names, and memory without on
   assert.equal((await again.trades.getTrade("1".repeat(32))).state, "pending");
   await again.trades.removeTrade("1".repeat(32));
   again.close();
+});
+
+test("a Raid World's story and its checkpoints outlast a restart, and each world keeps its own until removed", async () => {
+  const first = openSqliteStores(path);
+  const story = new WorldStory(first.stories(WORLD), { clock: () => 5000 });
+  const counters = (p) => ({ p, r1141: 0, r1142: 0, r1143: 0, clear: [] });
+
+  assert.equal((await story.write("a1".repeat(16), { base: 0, counters: counters(18), blob: "QUJD" })).status, 200);
+  assert.equal((await story.write("a1".repeat(16), { base: 1, counters: counters(19), blob: "REVG" })).status, 200);
+  first.close();
+
+  const second = openSqliteStores(path);
+  const reopened = new WorldStory(second.stories(WORLD));
+  assert.deepEqual(await reopened.get().then((answer) => [answer.body.rev, answer.body.p, answer.body.blob, answer.body.checkpoints]), [2, 19, "REVG", ["1"]]);
+  assert.equal((await reopened.checkpoint("1")).body.blob, "QUJD");
+  assert.equal((await new WorldStory(second.stories("f".repeat(32))).get()).body.rev, 0, "another world has a story of its own");
+
+  await reopened.remove();
+  assert.equal((await reopened.get()).body.rev, 0);
+  assert.equal((await reopened.checkpoint("1")).status, 404);
+  second.close();
 });

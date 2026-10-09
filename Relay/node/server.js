@@ -2,7 +2,8 @@
 //  server.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-08: Passed what a game names in the X-MGQ-Features header on to the directory as it enters a world room
+//      Paulinchen  2026-10-08: Kept each Raid World's story, answered its routes for the world's players, and told every game of the world when it changed
+//                            - Passed what a game names in the X-MGQ-Features header on to the directory as it enters a world room
 //                            - Dropped a game's chat lines past the chat's rate limit, answering each with "slow chat", and ignored a chat frame without a line instead of closing the connection
 //      Paulinchen  2026-10-07: Kept the chat lines the games mirror as text frames, and told every game of a world what an admin said
 //                            - Logged every request as one line and every caught error with its stack, never a key
@@ -33,9 +34,10 @@
 import http from "node:http";
 import { pathToFileURL } from "node:url";
 import { WebSocketServer } from "ws";
-import { Directory, handleDirectoryRequest, parseAdmins } from "../core/directory.js";
+import { Directory, WORLD_TYPE, handleDirectoryRequest, parseAdmins } from "../core/directory.js";
 import { routeIs } from "../core/http.js";
 import { ModCatalog, handleModRequest } from "../core/mods.js";
+import { STORY_LIMITS, WorldStory, handleStoryRequest, noRaidWorld, storyRouteOf, storyText } from "../core/story.js";
 import { TradeBook, handleTradeRequest } from "../core/trades.js";
 import {
   AUTH_HEADER, CHAT_SLOW, CLOSE, FEATURES_HEADER, IN, LIMITS, OUT, PAIRED, PING, PLAYER_HEADER, PONG, REFUSAL_HEADER, admit, chatLineOf, chatText, newPeer, newWorldPeer,
@@ -176,11 +178,40 @@ export function memoryTradeStore() {
 }
 
 /**
- * Opens the stores the relay keeps its worlds, mods and trades in: a SQLite database at a path,
- * or memory without one.
+ * Keeps the Raid Worlds' stories and their checkpoints in memory, one store per world.
+ *
+ * @returns {(id: string) => import("../core/story.js").StoryStore} Makes the store of a world's story.
+ */
+export function memoryStoryStores() {
+  const stories = new Map();
+  const checkpoints = new Map();
+
+  return (id) => ({
+    get: async () => (stories.has(id) ? structuredClone(stories.get(id)) : undefined),
+    put: async (story, checkpoint) => {
+      stories.set(id, structuredClone(story));
+
+      if (checkpoint) {
+        checkpoints.set(`${id}:${checkpoint.part}`, structuredClone(checkpoint));
+      }
+    },
+    getCheckpoint: async (part) => (checkpoints.has(`${id}:${part}`) ? structuredClone(checkpoints.get(`${id}:${part}`)) : undefined),
+    remove: async () => {
+      stories.delete(id);
+
+      for (const key of [...checkpoints.keys()].filter((key) => key.startsWith(`${id}:`))) {
+        checkpoints.delete(key);
+      }
+    },
+  });
+}
+
+/**
+ * Opens the stores the relay keeps its worlds, mods, trades and Raid Worlds' stories in: a SQLite
+ * database at a path, or memory without one.
  *
  * @param {string | undefined} path The database's path, as DATABASE_VARIABLE names it; empty or undefined for memory.
- * @returns {Promise<{directory: import("../core/directory.js").DirectoryStore, mods: import("../core/mods.js").ModStore, trades: import("../core/trades.js").TradeStore, close: () => void}>} The stores, and a way to close them.
+ * @returns {Promise<{directory: import("../core/directory.js").DirectoryStore, mods: import("../core/mods.js").ModStore, trades: import("../core/trades.js").TradeStore, stories: (id: string) => import("../core/story.js").StoryStore, close: () => void}>} The stores, and a way to close them.
  */
 export async function openStores(path) {
   if (path) {
@@ -188,7 +219,7 @@ export async function openStores(path) {
     return openSqliteStores(path);
   }
 
-  return { directory: memoryStore(), mods: memoryModStore(), trades: memoryTradeStore(), close: () => {} };
+  return { directory: memoryStore(), mods: memoryModStore(), trades: memoryTradeStore(), stories: memoryStoryStores(), close: () => {} };
 }
 
 /**
@@ -222,13 +253,14 @@ export function readBytes(request, limit) {
 }
 
 /**
- * Reads a request's body as text, stopping at MAX_BODY_BYTES, which the routers then answer with 413.
+ * Reads a request's body as text, stopping at a limit, which the routers then answer with 413.
  *
  * @param {http.IncomingMessage} request The request.
+ * @param {number} [limit] The most bytes read, MAX_BODY_BYTES unless given.
  * @returns {Promise<string | null>} The body, or null when it is too large.
  */
-async function readText(request) {
-  return (await readBytes(request, MAX_BODY_BYTES))?.toString("utf8") ?? null;
+async function readText(request, limit = MAX_BODY_BYTES) {
+  return (await readBytes(request, limit))?.toString("utf8") ?? null;
 }
 
 /**
@@ -265,13 +297,16 @@ function headerOf(request, name) {
 /**
  * Creates a relay server, not yet listening.
  *
- * @param {{limits?: typeof LIMITS, clock?: () => number, checkEveryMs?: number, sweepEveryMs?: number, directory?: Directory, mods?: ModCatalog, trades?: TradeBook, log?: typeof consoleLog}} [options] Limits, clock, check and sweep intervals, directory, mod catalog, trades and log, which tests change.
- * @returns {{server: http.Server, directory: Directory, mods: ModCatalog, trades: TradeBook, check: () => void, sweep: () => Promise<void>, stop: () => Promise<void>}} The HTTP server to listen with, what it serves, a look at the deadlines, a sweep of what is kept too long, and a way to stop everything.
+ * @param {{limits?: typeof LIMITS, clock?: () => number, checkEveryMs?: number, sweepEveryMs?: number, directory?: Directory, mods?: ModCatalog, trades?: TradeBook, stories?: (id: string) => import("../core/story.js").StoryStore, storyLimits?: typeof STORY_LIMITS, log?: typeof consoleLog}} [options] Limits, clock, check and sweep intervals, directory, mod catalog, trades, the Raid Worlds' story stores, the stories' limits and log, which tests change.
+ * @returns {{server: http.Server, directory: Directory, mods: ModCatalog, trades: TradeBook, storyOf: (id: string) => WorldStory, check: () => void, sweep: () => Promise<void>, stop: () => Promise<void>}} The HTTP server to listen with, what it serves, a world's story, a look at the deadlines, a sweep of what is kept too long, and a way to stop everything.
  */
 export function createRelay({
   limits = LIMITS, clock = Date.now, checkEveryMs = CHECK_EVERY_MS, sweepEveryMs = SWEEP_EVERY_MS, directory = new Directory(memoryStore(), { clock }),
-  mods = new ModCatalog(memoryModStore(), { clock }), trades = new TradeBook(memoryTradeStore(), (id) => directory.store.get(id), { clock }), log = consoleLog,
+  mods = new ModCatalog(memoryModStore(), { clock }), trades = new TradeBook(memoryTradeStore(), (id) => directory.store.get(id), { clock }), stories = memoryStoryStores(),
+  storyLimits = STORY_LIMITS, log = consoleLog,
 } = {}) {
+  /** @type {Map<string, WorldStory>} */
+  const worldStories = new Map();
   /** @type {Map<string, {socket: import("ws").WebSocket, record: object}[]>} */
   const rooms = new Map();
   /** @type {Map<string, {socket: import("ws").WebSocket, record: object}[]>} */
@@ -366,6 +401,15 @@ export function createRelay({
    */
   async function answerDirectory(request, response) {
     const url = new URL(request.url, "http://relay");
+    const storyRoute = storyRouteOf(url);
+
+    if (storyRoute) {
+      const answer = await answerStory(request, storyRoute);
+      response.writeHead(answer.status, { "Content-Type": "application/json" });
+      response.end(JSON.stringify(answer.body));
+      return;
+    }
+
     const catalog = routeIs(url, "mods");
     const trading = routeIs(url, "trades");
 
@@ -387,6 +431,8 @@ export function createRelay({
 
     if (answer.close) {
       closeWorld(answer.id, CLOSE.worldDeleted, "the world was deleted");
+      await storyOf(answer.id).remove();
+      worldStories.delete(answer.id);
     }
 
     if (answer.kick) {
@@ -405,6 +451,48 @@ export function createRelay({
 
     response.writeHead(answer.status, { "Content-Type": "application/json" });
     response.end(JSON.stringify(answer.body));
+  }
+
+  /**
+   * Answers a request to a Raid World's story, for its players only, and tells every game of the
+   * world when the story changed.
+   *
+   * @param {http.IncomingMessage} request The request.
+   * @param {{id: string, rest: string[]}} route The world and the story route, see storyRouteOf.
+   * @returns {Promise<{status: number, body: object}>} The answer.
+   */
+  async function answerStory(request, route) {
+    const access = await directory.member(route.id, headerOf(request, PLAYER_HEADER), headerOf(request, AUTH_HEADER));
+
+    if (access.status !== 200) {
+      return access;
+    }
+
+    if (access.type !== WORLD_TYPE.raid) {
+      return noRaidWorld();
+    }
+
+    const answer = await handleStoryRequest(storyOf(route.id), request.method, route.rest, () => readText(request, storyLimits.maxBodyLength), access.player);
+
+    if (answer.push) {
+      tellWorld(route.id, storyText(answer.push));
+    }
+
+    return answer;
+  }
+
+  /**
+   * Finds a world's story, made once over its store.
+   *
+   * @param {string} id The world.
+   * @returns {WorldStory} The story.
+   */
+  function storyOf(id) {
+    if (!worldStories.has(id)) {
+      worldStories.set(id, new WorldStory(stories(id), { clock, limits: storyLimits }));
+    }
+
+    return worldStories.get(id);
   }
 
   /**
@@ -737,7 +825,7 @@ export function createRelay({
     return new Promise((resolve) => server.close(() => resolve()));
   }
 
-  return { server, directory, mods, trades, check, sweep, stop };
+  return { server, directory, mods, trades, storyOf, check, sweep, stop };
 }
 
 /**
@@ -765,7 +853,7 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   const directory = new Directory(stores.directory, { admins });
   const mods = new ModCatalog(stores.mods, { admins });
   const trades = new TradeBook(stores.trades, (id) => directory.store.get(id));
-  const relay = createRelay({ directory, mods, trades });
+  const relay = createRelay({ directory, mods, trades, stories: stores.stories });
 
   relay.server.listen(port, host, () => console.log(`${new Date().toISOString()} relay listening on ${host}:${port}, ${database ? `database ${database}` : "everything in memory"}`));
 

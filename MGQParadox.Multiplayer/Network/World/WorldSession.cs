@@ -2,7 +2,8 @@
 //  WorldSession.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-08: Stopped for good once the relay keeps the game out of a Raid World, which it cannot play, telling to update the mod
+//      Paulinchen  2026-10-08: Handed the relay's word that a Raid World's story changed to the game script as a story entry with its revision
+//                            - Stopped for good once the relay keeps the game out of a Raid World, which it cannot play, telling to update the mod
 //                            - Logged the traffic counted so far as another world is entered, and as the process exits or a thread throws out
 //                            - Dropped the chat lines past 2 a second after a burst of 10, as the relay does, and logged the relay dropping one
 //      Paulinchen  2026-10-07: Logged the messages sent and received as one line about every minute, through WorldTraffic, instead of a line per message
@@ -85,6 +86,17 @@ internal sealed class WorldSession
     /// Who said the line of a <see cref="ChatKind"/> entry.
     /// </summary>
     public const string NameHeader = "name";
+
+    /// <summary>
+    /// The kind of an inbox entry that tells a Raid World's story changed at the relay, and the word
+    /// that starts the relay's text frame saying so, as Relay/README.md names it.
+    /// </summary>
+    public const string StoryKind = "story";
+
+    /// <summary>
+    /// The story's revision now, in a <see cref="StoryKind"/> entry.
+    /// </summary>
+    public const string RevHeader = "rev";
 
     /// <summary>
     /// The kind of an inbox entry that carries another game's message.
@@ -719,7 +731,7 @@ internal sealed class WorldSession
     /// </summary>
     /// <param name="generation">The open this belongs to.</param>
     /// <param name="connection">The connection.</param>
-    /// <param name="text">The text, such as <c>seat 2 0 1</c>, <c>in 3</c>, <c>out 0</c>, <c>pong</c>, <c>slow chat</c> or <c>chat Global</c>, a tab and the line.</param>
+    /// <param name="text">The text, such as <c>seat 2 0 1</c>, <c>in 3</c>, <c>out 0</c>, <c>pong</c>, <c>slow chat</c>, <c>story 12</c> or <c>chat Global</c>, a tab and the line.</param>
     private void TakeText(int generation, Connection connection, string text)
     {
         if (text == RelayWorldChannel.Pong)
@@ -737,6 +749,12 @@ internal sealed class WorldSession
         if (text.StartsWith($"{ChatKind} ", StringComparison.Ordinal))
         {
             TakeChat(generation, connection, text[(ChatKind.Length + 1)..]);
+            return;
+        }
+
+        if (text.StartsWith($"{StoryKind} ", StringComparison.Ordinal))
+        {
+            TakeStory(generation, connection, text[(StoryKind.Length + 1)..]);
             return;
         }
 
@@ -787,6 +805,33 @@ internal sealed class WorldSession
                     break;
             }
         }
+    }
+
+    /// <summary>
+    /// Hands the relay's word that the world's story changed to the game script.
+    /// </summary>
+    /// <param name="generation">The open this belongs to.</param>
+    /// <param name="connection">The connection.</param>
+    /// <param name="rev">The story's revision now, as the relay wrote it.</param>
+    private void TakeStory(int generation, Connection connection, string rev)
+    {
+        if (!long.TryParse(rev, NumberStyles.None, CultureInfo.InvariantCulture, out var number))
+        {
+            Log.Write("world room story text ignored, its revision is no number");
+            return;
+        }
+
+        lock (_gate)
+        {
+            if (generation != _generation || connection != _connection)
+            {
+                return;
+            }
+
+            Enqueue(new Message([new(Message.Kind, StoryKind), new(RevHeader, number.ToString(CultureInfo.InvariantCulture))]).Encode());
+        }
+
+        Log.Write($"world story changed at the relay, rev {number}");
     }
 
     /// <summary>

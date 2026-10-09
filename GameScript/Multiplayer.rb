@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-08: Loaded coop_scope.rbx after coop.rbx, which tells the party scripts whom the player shares the map and the story with
+#                            - Named the mp_raid_* exports of a Raid World's story at the relay
 #                            - Loaded battles_raid_bosses.rbx before battles_coop.rbx, and battles_coop_hotjoin.rbx after it, whose hook wraps the live battle's
 #                            - Named mp_dir_create with the world's type and how a Raid World shares companions
 #                            - Told whether a key or the left mouse button is held, for the chat log's tabs and its size
@@ -620,6 +621,16 @@ module MGQ_Multiplayer
       'mp_trade_done' => 'pp',
       'mp_trade_pending' => 'p',
       'mp_trade_pending_list' => READ_ARGUMENTS,
+
+      # A Raid World's story at the relay.
+      'mp_raid_story_fetch' => 'p',
+      'mp_raid_story_post' => 'plpp',
+      'mp_raid_story_state' => READ_ARGUMENTS,
+      'mp_raid_story_headers' => READ_ARGUMENTS,
+      'mp_raid_checkpoint_fetch' => 'pp',
+      'mp_raid_checkpoint_state' => READ_ARGUMENTS,
+      'mp_raid_route_lock' => 'pp',
+      'mp_raid_companions_add' => 'pp',
     }
 
     # Finds the mod folder and starts the DLL's log.

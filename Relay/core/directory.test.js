@@ -2,7 +2,8 @@
 //  directory.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-08: Covered a world's type and companion sharing, fixed once made, and Raid Worlds kept from games that do not name them
+//      Paulinchen  2026-10-08: Covered telling a world room who plays its world
+//                            - Covered a world's type and companion sharing, fixed once made, and Raid Worlds kept from games that do not name them
 //                            - Covered lines said at once, all kept in order, and an admin's line for a world deleted meanwhile
 //      Paulinchen  2026-10-07: Covered a world's chat: the lines games mirror, the lines admins say, who reads them, the cap and the chat going with the world
 //                            - Covered the auth key header, the cap on removed players, and rate turns taken only after every check
@@ -697,6 +698,20 @@ test("a Raid World lets in only games that name Raid Worlds among their features
 
   await directory.create(await newWorld({ id: "1".repeat(32) }));
   assert.equal((await directory.admit("1".repeat(32), OTHER, AUTH)).status, 200, "a Classic world takes released games as before");
+});
+
+test("member tells a world room who plays its world, with the world's type and auth hash", async () => {
+  const { directory } = newDirectory();
+  await directory.create(await newWorld({ type: "raid" }));
+
+  const answer = await directory.member(WORLD, OTHER, AUTH);
+  assert.equal(answer.status, 200);
+  assert.deepEqual([answer.player, answer.type, answer.authHash], [await playerIdOf(OTHER), "raid", await sha256Hex(AUTH)]);
+
+  assert.equal((await directory.member(WORLD, OTHER, "cd".repeat(32))).status, 401);
+  assert.equal((await directory.member("9".repeat(32), OTHER, AUTH)).status, 404);
+  await directory.ban(WORLD, CREATOR, await playerIdOf(OTHER));
+  assert.equal((await directory.member(WORLD, OTHER, AUTH)).status, 403);
 });
 
 test("parseFeatures reads the features a game names, separated by commas or white space, in lower case", () => {
