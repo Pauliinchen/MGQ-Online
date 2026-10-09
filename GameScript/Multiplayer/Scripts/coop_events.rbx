@@ -2,7 +2,8 @@
 #  coop_events.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-09: Kept story events from starting while the player's story is behind a Raid World's, telling the level that moves them on, and held those that run by themselves, so a teleport onto their map cannot loop
+#      Paulinchen  2026-10-09: Asked story_state.rbx which switches and variables are the player's own instead of coop_story.rbx
+#                            - Kept story events from starting while the player's story is behind a Raid World's, telling the level that moves them on, and held those that run by themselves, so a teleport onto their map cannot loop
 #                            - Kept a Raid World's telling, how far its story was, where it started and whom it took along, through the story's next event that starts in the frame its last ended, so its viewers see the rest of the story
 #                            - Held a Raid World's story event at its start for TIE_HOLD_FRAMES while someone on the map entered it first, so a tie stops it before it changed anything
 #                            - Told the story's pages to a Raid World's viewers in one message instead of one per viewer
@@ -384,7 +385,7 @@ module MGQ_MpCoopEvents
   def self.temporary_switch?(id)
     return false if id.between?(1001, 2000)
 
-    $data_system.switches[id].to_s =~ TEMPORARY_NAMES || (defined?(MGQ_MpCoopStory) && MGQ_MpCoopStory.personal_switch?(id)) ? true : false
+    $data_system.switches[id].to_s =~ TEMPORARY_NAMES || (defined?(MGQ_MpStoryState) && MGQ_MpStoryState.personal_switch?(id)) ? true : false
   end
 
   # Reports whether a variable is only scratch, or the player's own, such as affection or where the
@@ -393,7 +394,7 @@ module MGQ_MpCoopEvents
   # @param id [Integer] The variable.
   # @return [Boolean] Whether it is.
   def self.temporary_variable?(id)
-    $data_system.variables[id].to_s =~ TEMPORARY_NAMES || (defined?(MGQ_MpCoopStory) && MGQ_MpCoopStory.personal_variable?(id)) ? true : false
+    $data_system.variables[id].to_s =~ TEMPORARY_NAMES || (defined?(MGQ_MpStoryState) && MGQ_MpStoryState.personal_variable?(id)) ? true : false
   end
 
   # Lists the self switches of the chests on the map.

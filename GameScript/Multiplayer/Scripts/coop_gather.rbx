@@ -2,7 +2,8 @@
 #  coop_gather.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-09: Called the players a Raid World's story takes along in one message instead of one per player
+#      Paulinchen  2026-10-09: Read the warp ban's switch from story_state.rbx instead of coop_story.rbx
+#                            - Called the players a Raid World's story takes along in one message instead of one per player
 #                            - Kept whom the story took along for the whole telling, not only its first event, and named the teller whose call the player follows
 #      Paulinchen  2026-10-08: Gathered nobody in a Raid World, where whoever is on the map watches, and took everyone on the map along where the story moves its teller
 #                            - Offered a teleport to the story in a Raid World, to where the story was last told until the relay keeps its endpoint, with that place's warp ban
@@ -578,7 +579,7 @@ module MGQ_MpCoopGather
   #
   # @return [Boolean] Whether it is.
   def self.warp_ban?
-    defined?(MGQ_MpCoopStory) && $game_switches[MGQ_MpCoopStory::WARP_BAN] ? true : false
+    defined?(MGQ_MpStoryState) && $game_switches[MGQ_MpStoryState::WARP_BAN] ? true : false
   end
 
   # Takes over the warp ban of the place the leader's story scene brought the player to.
@@ -589,7 +590,7 @@ module MGQ_MpCoopGather
   # @param banned [Boolean, nil] Whether warping is banned where the leader stands, nil when unknown,
   #   which keeps the player's.
   def self.take_warp_ban(banned)
-    $game_switches[MGQ_MpCoopStory::WARP_BAN] = banned if defined?(MGQ_MpCoopStory) && !banned.nil?
+    $game_switches[MGQ_MpStoryState::WARP_BAN] = banned if defined?(MGQ_MpStoryState) && !banned.nil?
   end
 
   # Moves the player to the leader once a story scene's five seconds passed, once the player is

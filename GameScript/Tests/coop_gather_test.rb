@@ -2,7 +2,8 @@
 #  coop_gather_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-09: Stood in for MGQ_MpCoopEvents.tell_each, through which the story calls those it takes along in one message
+#      Paulinchen  2026-10-09: Stood in for the warp ban of story_state.rbx, which names it now
+#                            - Stood in for MGQ_MpCoopEvents.tell_each, through which the story calls those it takes along in one message
 #                            - Checked that the story calls those it takes along in one message, keeps them through a moment between its events, and names its teller as the one the player follows
 #                            - Stood in for MGQ_MpOverworldSync::Peers.all, among whom the teller is found now
 #      Paulinchen  2026-10-08: Checked a Raid World: nobody is gathered, everyone on the map follows where the story moves its teller, only a player whose story matches stands still, and a teleport goes to where the story was told
@@ -115,9 +116,10 @@ module MGQ_MpCoopEvents
   def self.tell(seat, kind, fields = {}); MGQ_MpCoop::Scope.tell(seat, "pevent", kind, fields); end
   def self.tell_each(peers, kind, fields = {}); MGQ_MpCoop::Scope.tell_each(peers, "pevent", kind, fields); end
 end
+# The switch that bans warping, as story_state.rbx names it.
+module MGQ_MpStoryState; WARP_BAN = 100; end
 # How far each story is, as coop_story.rbx reads it.
 module MGQ_MpCoopStory
-  WARP_BAN = 100
   def self.read_markers(text); values = text.to_s.split(","); values.size == 4 ? values.map(&:to_i) : nil; end
   def self.own_markers; $own_markers; end
 end

@@ -2,7 +2,8 @@
 #  world_story.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-09: Kept a player behind the world's story on the checkpoint of their part and moved them on by their level through world_catchup.rbx, instead of letting them play their own story
+#      Paulinchen  2026-10-09: Read and wrote the story through the state model of story_state.rbx instead of coop_story.rbx
+#                            - Kept a player behind the world's story on the checkpoint of their part and moved them on by their level through world_catchup.rbx, instead of letting them play their own story
 #                            - Made the chests that hold the story's key items the whole world's, so each opens once for the world and stays open for a player who opened it
 #                            - Kept a player behind until their level moves them on, also once the world returns from a route to their part
 #                            - Read the world's shared companions and the parts it keeps checkpoints of from the relay's state
@@ -15,7 +16,7 @@
 # A Raid World's story, which the relay keeps for the whole world (see Relay/core/story.js). Every
 # game fetches it as the world opens, after a save loaded or a new game, whenever the relay tells
 # a newer revision, and once a minute, and lays it over the player's own values (the state model of
-# coop_story.rbx, `mix`), as long as the player's story is in the world's current part; a player in
+# story_state.rbx, `mix`), as long as the player's story is in the world's current part; a player in
 # an earlier part is behind, and world_catchup.rbx keeps them on their part's checkpoint until their
 # level moves them on. A game whose story moved on writes it back: its counters, which the relay
 # reads, and the rest sealed, with the revision it built on. A refused write takes the world's story
@@ -203,7 +204,7 @@ module MGQ_MpWorldStory
   #
   # @return [Array, nil] The switches, variables and self switches, nil before the game's exist.
   def self.entry_story
-    $game_switches && $game_variables && $game_self_switches ? MGQ_MpCoopStory.deep_copy(MGQ_MpCoopStory.raw_state) : nil
+    $game_switches && $game_variables && $game_self_switches ? MGQ_MpStoryState.deep_copy(MGQ_MpStoryState.raw_state) : nil
   rescue
     nil
   end
@@ -510,7 +511,7 @@ module MGQ_MpWorldStory
     pending = @pending
     state = pending[:state]
     world = counters_of(state)
-    local = MGQ_MpCoopStory.raw_state
+    local = MGQ_MpStoryState.raw_state
     own = local_counters(local)
     return if wait_for_return(own, world)
 
@@ -620,7 +621,7 @@ module MGQ_MpWorldStory
     @entry_story = nil
     log_once([:behind, part_of(own), world["wrev"]], "the player's story (part #{part_of(own)}, #{counters_text(own)}) is in an earlier part than the world's (part #{part_of(world)}, #{counters_text(world)}): the player is behind")
     catch_up = defined?(MGQ_MpWorldCatchup)
-    MGQ_MpWorldCatchup.behind(world, own, MGQ_MpCoopStory.decode_full(MGQ_MpCoopStory.unpack(text))) if catch_up
+    MGQ_MpWorldCatchup.behind(world, own, MGQ_MpStoryState.decode_full(MGQ_MpStoryState.unpack(text))) if catch_up
     return if @behind_told
 
     @behind_told = true
@@ -664,14 +665,14 @@ module MGQ_MpWorldStory
   # @param after_take [Symbol, nil] :route_taken when the world took another route than the player's.
   def self.take_world(world, local, own, text, pending, after_take = nil)
     first = @mode != :world
-    told = MGQ_MpCoopStory.decode_full(MGQ_MpCoopStory.unpack(text))
-    applied = MGQ_MpCoopStory.mix(told, local, chest_list)
+    told = MGQ_MpStoryState.decode_full(MGQ_MpStoryState.unpack(text))
+    applied = MGQ_MpStoryState.mix(told, local, chest_list)
     keep_unsent(applied, told, local)
-    base = MGQ_MpCoopStory.deep_copy(applied)
+    base = MGQ_MpStoryState.deep_copy(applied)
     kept, dropped = keep_own(applied, told, local, @base || @entry_story, pending[:drop])
     opened = keep_open_chests(applied, local)
     kept.concat(opened.map { |key| [2, key] })
-    MGQ_MpCoopStory.set_raw(*applied)
+    MGQ_MpStoryState.set_raw(*applied)
     if defined?(MGQ_MpWorldCatchup)
       MGQ_MpWorldCatchup.world_told(told)
       MGQ_MpWorldCatchup.carried(local)
@@ -709,7 +710,7 @@ module MGQ_MpWorldStory
   # @param local [Array] The player's.
   def self.keep_unsent(applied, told, local)
     local[1].each_with_index do |value, id|
-      applied[1][id] = value if told[1][id].nil? && !value.nil? && MGQ_MpCoopStory.encode_value(value).empty?
+      applied[1][id] = value if told[1][id].nil? && !value.nil? && MGQ_MpStoryState.encode_value(value).empty?
     end
   end
 
@@ -763,7 +764,7 @@ module MGQ_MpWorldStory
   #
   # @param before [Hash] The player's counters before.
   def self.returned(before)
-    side = MGQ_MpCoopStory.data_of($game_switches)[MGQ_MpCoopStory::ILIAS_CHOSEN] ? 1 : 0
+    side = MGQ_MpStoryState.data_of($game_switches)[MGQ_MpStoryState::ILIAS_CHOSEN] ? 1 : 0
     @queued = [command(117, [FINAL_RESET_EVENT]), command(122, [GAME_OVER_RETURN, GAME_OVER_RETURN, 0, 0, RETURN_POINTS[side]]),
                command(122, [TRANSFER_MAP, TRANSFER_MAP, 0, 0, DECISION_PLACE[0]]), command(201, [0, TRANSFER_RELAY_MAP, DECISION_PLACE[1], DECISION_PLACE[2], 8, 2]), command(0, [])]
     log("the world went back to the Great Decision from the #{ROUTE_NAMES[route_index(before)]} route: the Final Chapter's reset waits to play once the player is free")
@@ -797,9 +798,9 @@ module MGQ_MpWorldStory
     @decision_roster = nil
     return unless roster
 
-    missing = roster - MGQ_MpCoopStory.roster_ids
+    missing = roster - MGQ_MpStoryState.roster_ids
     log("the world took another route: bringing back the companions the player's own decision took away (#{missing.join(', ')})") unless missing.empty?
-    missing.each { |id| MGQ_MpCoopStory.bring(id) }
+    missing.each { |id| MGQ_MpStoryState.bring(id) }
   end
 
   # Notes the player's telling, where it ended is the story's endpoint, and the end of any event of
@@ -871,8 +872,8 @@ module MGQ_MpWorldStory
     @checked = @clock
     return if @busy[:post]
 
-    variables = MGQ_MpCoopStory.data_of($game_variables)
-    switches = MGQ_MpCoopStory.data_of($game_switches)
+    variables = MGQ_MpStoryState.data_of($game_variables)
+    switches = MGQ_MpStoryState.data_of($game_switches)
     if @mode == :behind
       own = local_counters([switches, variables, {}])
       if @world && ((part_of(own) == part_of(@world) && !kept_behind?) || compare(key_of(own), key_of(@world)) >= 0)
@@ -909,7 +910,7 @@ module MGQ_MpWorldStory
     @scanned = @clock
     return unless @mode == :world && @base && !@busy[:post]
 
-    local = MGQ_MpCoopStory.raw_state
+    local = MGQ_MpStoryState.raw_state
     found = []
     3.times { |kind| changes(kind, @base[kind], local[kind]).each { |key| found << [kind, key, local[kind][key]] } }
     if found.empty?
@@ -948,7 +949,7 @@ module MGQ_MpWorldStory
   #
   # @return [String, nil] The route, see ROUTES; nil for none.
   def self.lock_route
-    route = route_index(local_counters([MGQ_MpCoopStory.data_of($game_switches), MGQ_MpCoopStory.data_of($game_variables)]))
+    route = route_index(local_counters([MGQ_MpStoryState.data_of($game_switches), MGQ_MpStoryState.data_of($game_variables)]))
     return nil unless route && @world && @world["route"] == "none"
 
     done = @world["done"]
@@ -964,7 +965,7 @@ module MGQ_MpWorldStory
     route = lock_route
     return lock(route) if route
 
-    story = MGQ_MpCoopStory.deep_copy(MGQ_MpCoopStory.raw_state)
+    story = MGQ_MpStoryState.deep_copy(MGQ_MpStoryState.raw_state)
     counters = counters_text(local_counters(story), true)
     text = story_text(story)
     @force_post = false
@@ -1001,18 +1002,18 @@ module MGQ_MpWorldStory
   end
 
   # Packs the part of a story the world shares: the player's own switches, variables and chests
-  # left out (see MGQ_MpCoopStory.story_lists).
+  # left out (see MGQ_MpStoryState.story_lists).
   #
   # @param story [Array] The switches, variables and self switches.
   # @return [String, nil] The packed text, nil when it is too large even without what the story turned off.
   def self.story_text(story)
     shared = [story[0], story[1], story[2].reject { |key, _| chest?(key) }]
-    text = MGQ_MpCoopStory.pack(MGQ_MpCoopStory.story_lists(shared, true))
-    return text if text.size <= MGQ_MpCoopStory::MAX_FULL_BYTES
+    text = MGQ_MpStoryState.pack(MGQ_MpStoryState.story_lists(shared, true))
+    return text if text.size <= MGQ_MpStoryState::MAX_FULL_BYTES
 
     log_once(:story_size, "the story took #{text.size} characters, so it leaves out what the story turned off")
-    text = MGQ_MpCoopStory.pack(MGQ_MpCoopStory.story_lists(shared, false))
-    return text if text.size <= MGQ_MpCoopStory::MAX_FULL_BYTES
+    text = MGQ_MpStoryState.pack(MGQ_MpStoryState.story_lists(shared, false))
+    return text if text.size <= MGQ_MpStoryState::MAX_FULL_BYTES
 
     log_once(:story_too_large, "the story took #{text.size} characters even without what it turned off, more than the relay keeps: not written")
     nil
@@ -1151,8 +1152,8 @@ module MGQ_MpWorldStory
   # @return [Boolean] Whether it is.
   def self.personal?(kind, key)
     case kind
-    when 0 then MGQ_MpCoopStory.personal_switch?(key)
-    when 1 then MGQ_MpCoopStory.personal_variable?(key)
+    when 0 then MGQ_MpStoryState.personal_switch?(key)
+    when 1 then MGQ_MpStoryState.personal_variable?(key)
     else chest?(key)
     end
   end
@@ -1183,11 +1184,11 @@ module MGQ_MpWorldStory
   def self.chest?(key)
     unless @chests
       @chests = {}
-      MGQ_MpCoopStory.all_chest_keys.each { |chest| @chests[chest] = true }
+      MGQ_MpStoryState.all_chest_keys.each { |chest| @chests[chest] = true }
     end
     return false if world_chest?(key)
 
-    @chests[key] || MGQ_MpCoopStory.personal_self_switch?(key) ? true : false
+    @chests[key] || MGQ_MpStoryState.personal_self_switch?(key) ? true : false
   end
 
   # Reports whether a chest holds the story's key items, which opens once for the whole world (see
@@ -1224,7 +1225,7 @@ module MGQ_MpWorldStory
   #
   # @return [Array<Array>] Their keys.
   def self.chest_list
-    (MGQ_MpCoopStory.all_chest_keys + MGQ_MpCoopStory.chest_keys).uniq.reject { |key| world_chest?(key) }
+    (MGQ_MpStoryState.all_chest_keys + MGQ_MpStoryState.chest_keys).uniq.reject { |key| world_chest?(key) }
   end
 
   # Makes an event command.
@@ -1277,7 +1278,7 @@ module MGQ_MpWorldStory
   # @param index [Integer] Where the choice is.
   # @return [Array<RPG::EventCommand>, nil] The commands, nil when every route may still be taken.
   def self.decision_list(list, index)
-    @decision_roster = MGQ_MpCoopStory.roster_ids.dup
+    @decision_roster = MGQ_MpStoryState.roster_ids.dup
     routes = decision_routes
     return nil unless routes && routes.size < ROUTES.size
 
@@ -1350,7 +1351,7 @@ module MGQ_MpWorldStory
   #
   # @return [Boolean] Whether it is.
   def self.route_credits?
-    counters = local_counters([MGQ_MpCoopStory.data_of($game_switches), MGQ_MpCoopStory.data_of($game_variables)])
+    counters = local_counters([MGQ_MpStoryState.data_of($game_switches), MGQ_MpStoryState.data_of($game_variables)])
     route = route_index(counters)
     route && route < ROUTES.size - 1 && counters["clear"].include?(ROUTES[route]) ? true : false
   end
@@ -1372,7 +1373,7 @@ module MGQ_MpWorldStory
   #
   # @return [Array<RPG::EventCommand>] The commands.
   def self.return_commands
-    side = MGQ_MpCoopStory.data_of($game_switches)[MGQ_MpCoopStory::ILIAS_CHOSEN] ? 1 : 0
+    side = MGQ_MpStoryState.data_of($game_switches)[MGQ_MpStoryState::ILIAS_CHOSEN] ? 1 : 0
     event = $data_common_events[RETURN_EVENTS[side]]
     list = event && event.list
     if list && list.any? { |entry| entry.code == 117 && entry.parameters[0] == FINAL_RESET_EVENT } && list.any? { |entry| entry.code == 201 }
@@ -1394,7 +1395,7 @@ module MGQ_MpWorldStory
     id = SYSTEM_ENDINGS[key]
     return nil unless id && MGQ_MpCoop::Scope.raid? && $game_switches
 
-    MGQ_MpCoopStory.data_of($game_switches)[id] ? true : false
+    MGQ_MpStoryState.data_of($game_switches)[id] ? true : false
   rescue
     nil
   end

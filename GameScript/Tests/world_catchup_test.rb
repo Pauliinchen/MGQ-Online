@@ -2,7 +2,8 @@
 #  world_catchup_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-09: Checked that a key item whose event is only there to play comes up to its amount and that the catch-up giving the last orb plays the orbs' event
+#      Paulinchen  2026-10-09: Loaded story_state.rbx before coop_story.rbx and packed stories, read the roster and Luka's skills through MGQ_MpStoryState
+#                            - Checked that a key item whose event is only there to play comes up to its amount and that the catch-up giving the last orb plays the orbs' event
 #                            - Checked that a save that noted the player behind holds the story until the world's story came
 #                            - Checked that a shared companion whose join the player's story passed is not brought back
 #                            - Checked that a player behind in the world's part moves on to the world's story
@@ -10,11 +11,11 @@
 #
 #----------------------------------------------------------------
 
-# Covers world_catchup.rbx with world_story.rbx, coop_story.rbx and coop_choices.rbx: a player behind
-# a Raid World's story on their part's checkpoint, their story held, the level gate moving them on
-# (a cap of another mod too), the rewards, removals, key items and story chests a story laid over
-# theirs carries, companions by their gates, the world's shared companions, and never a companion
-# twice.
+# Covers world_catchup.rbx with world_story.rbx, story_state.rbx, coop_story.rbx and
+# coop_choices.rbx: a player behind a Raid World's story on their part's checkpoint, their story
+# held, the level gate moving them on (a cap of another mod too), the rewards, removals, key items
+# and story chests a story laid over theirs carries, companions by their gates, the world's shared
+# companions, and never a companion twice.
 
 require_relative "support"
 
@@ -218,6 +219,7 @@ module DataManager
   def self.setup_new_game; end
 end
 
+load_script "story_state"
 load_script "coop_story"
 load_script "coop_choices"
 load_script "world_catchup_data"
@@ -275,7 +277,7 @@ def packed(variables = {}, switches = [], selfs = {})
   v = []
   switches.each { |id| s[id] = true }
   variables.each { |id, value| v[id] = value }
-  MGQ_MpCoopStory.pack(MGQ_MpCoopStory.story_lists([s, v, selfs], true))
+  MGQ_MpStoryState.pack(MGQ_MpStoryState.story_lists([s, v, selfs], true))
 end
 
 # Sets what the DLL tells of the world's story.
@@ -310,7 +312,7 @@ def calls_of(name); $calls.select { |call| call[0] == name }.map { |call| call[1
 # Lists the player's companions.
 #
 # @return [Array<Integer>] Their main personas.
-def roster; MGQ_MpCoopStory.roster_ids.sort; end
+def roster; MGQ_MpStoryState.roster_ids.sort; end
 
 join = DATA::Join
 removal = DATA::Removal
@@ -349,7 +351,7 @@ check("the checkpoint is laid over the player's story, their own values kept",
       [$game_variables[1001], $game_variables[1032], $game_switches[500], $game_variables[3001], $game_switches[4]], [18, 5, true, 40, true])
 check("they write nothing", calls_of("mp_raid_story_post"), [])
 check("the rewards it carried them past come by story position, their own side's alone, not those their own game gave",
-      [MGQ_MpCoopStory.knows?($game_actors[1], 937), MGQ_MpCoopStory.knows?($game_actors[1], 930), $game_party.items[600]], [true, false, 7])
+      [MGQ_MpStoryState.knows?($game_actors[1], 937), MGQ_MpStoryState.knows?($game_actors[1], 930), $game_party.items[600]], [true, false, 7])
 check("a removal for good it carried them past takes the companion, a temporary one does not", [roster.include?(16), roster.include?(45)], [false, true])
 check("its companions join once the player's level reaches each join's gate", [roster.include?(77), roster.include?(80)], [true, false])
 check("the save notes the checkpoint taken", $game_system.instance_variable_get(:@mgq_mp_catchup)["checkpoint"], "1")
@@ -543,7 +545,7 @@ new_game({ 1001 => 39 }, [], 70)
 frames(1)
 relay({ "rev" => 16, "wrev" => 16, "p" => 40, "part" => "3", "clear" => "ad", "done" => "ad" }, packed({ 1001 => 40 }, [7096]))
 frames(40)
-check("a finished route's rows count while the story is back at the Great Decision", MGQ_MpCoopStory.knows?($game_actors[1], 930), true)
+check("a finished route's rows count while the story is back at the Great Decision", MGQ_MpStoryState.knows?($game_actors[1], 930), true)
 
 # A join and a removal of one event go by their order in its list.
 tables(:REMOVALS => [removal.new(16, 16, "map:483:86:1", "2", 24, nil, [[:v, 1001, 24]], true, 262),

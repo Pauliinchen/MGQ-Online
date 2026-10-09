@@ -2,7 +2,8 @@
 #  coop_choices.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-09: Forgot the choices waiting to be picked when a new game starts, so a Raid World's route waiting to be confirmed never plays on a fresh game
+#      Paulinchen  2026-10-09: Read the story and the roster and brought companions through the state model of story_state.rbx instead of coop_story.rbx
+#                            - Forgot the choices waiting to be picked when a new game starts, so a Raid World's route waiting to be confirmed never plays on a fresh game
 #      Paulinchen  2026-10-08: Left drawing and turning the switches to Window_MpWorldForm, which the world screen's forms share
 #                            - Kept every choice's outcome each player's own in a Raid World, and asked a player the world's story carried past a choice, their side included, for their own outcome
 #                            - Offered at the Great Decision of a Raid World only the routes the world may still take, the third way once the world cleared both other routes, and played only the player's own half of the route the world took
@@ -195,7 +196,7 @@ module MGQ_MpCoopChoices
   #
   # @return [Boolean] Whether it did.
   def self.both_endings?
-    return ROUTE_CLEARS.all? { |id| MGQ_MpCoopStory.data_of($game_switches)[id] } if raid?
+    return ROUTE_CLEARS.all? { |id| MGQ_MpStoryState.data_of($game_switches)[id] } if raid?
 
     switches = defined?($game_system_switches) ? $game_system_switches : nil
     switches && switches[:ed1] && switches[:ed2] ? true : false
@@ -224,8 +225,8 @@ module MGQ_MpCoopChoices
   def self.magistea_companions(answers)
     return [answers[:magistea] == 1, answers[:magistea] == 0] if answers.key?(:magistea)
 
-    switches = MGQ_MpCoopStory.data_of($game_switches)
-    roster = MGQ_MpCoopStory.roster_ids
+    switches = MGQ_MpStoryState.data_of($game_switches)
+    roster = MGQ_MpStoryState.roster_ids
     [switches[2097] || roster.include?(163) ? true : false, switches[2096] || roster.include?(167) ? true : false]
   rescue
     [false, false]
@@ -318,7 +319,7 @@ module MGQ_MpCoopChoices
   # @param id [Integer] The variable.
   # @return [Integer] Its value.
   def self.variable(id)
-    MGQ_MpCoopStory.data_of($game_variables)[id].to_i
+    MGQ_MpStoryState.data_of($game_variables)[id].to_i
   rescue
     0
   end
@@ -402,8 +403,8 @@ module MGQ_MpCoopChoices
     return MGQ_MpCoopStory.choose_side(index == 0 ? :alice : :ilias) if key == :side
 
     outcome = key == :succubus ? succubus_outcome(index, answers) : branch(key).outcomes[index]
-    switches = MGQ_MpCoopStory.data_of($game_switches)
-    variables = MGQ_MpCoopStory.data_of($game_variables)
+    switches = MGQ_MpStoryState.data_of($game_switches)
+    variables = MGQ_MpStoryState.data_of($game_variables)
     own = MGQ_MpCoopStory.own_story_aside
     written = []
     (outcome[:switches] || {}).each do |id, value|
@@ -419,7 +420,7 @@ module MGQ_MpCoopChoices
     $game_map.need_refresh = true if $game_map
     log("#{branch(key).title}: the player's own outcome \"#{labels(key)[index]}\": #{written.join(', ')}")
     (outcome[:joins] || []).each do |id|
-      name = MGQ_MpCoopStory.bring(id)
+      name = MGQ_MpStoryState.bring(id)
       MGQ_MpOverworldSync.notice("#{name} joined you.") if name
     end
   end
@@ -505,10 +506,10 @@ module MGQ_MpCoopChoices
       return MGQ_MpOverworldSync.notice("Your story is not behind #{peer.state['name']}'s.")
     end
 
-    switches = MGQ_MpCoopStory.data_of($game_switches)
-    variables = MGQ_MpCoopStory.data_of($game_variables)
+    switches = MGQ_MpStoryState.data_of($game_switches)
+    variables = MGQ_MpStoryState.data_of($game_variables)
     # Amira killed comes back, so she is asked of every member who never had her join.
-    keys = passed(own[0], theirs[0], switches, variables, MGQ_MpCoopStory.roster_ids, [:amira])
+    keys = passed(own[0], theirs[0], switches, variables, MGQ_MpStoryState.roster_ids, [:amira])
     log("accepted #{MGQ_MpOverworldSync.who(peer)}'s offer: own #{MGQ_MpCoopStory.markers_text(own)}, theirs #{MGQ_MpCoopStory.markers_text(theirs)}; " \
         "choices to make: #{keys.empty? ? 'none' : keys.join(', ')}")
     route = theirs[0] >= GREAT_DECISION ? MGQ_MpCoopStory.route_of(theirs) : nil
@@ -584,7 +585,7 @@ module MGQ_MpCoopChoices
   # @param index [Integer] The outcome.
   # @param peer [MGQ_MpOverworldSync::Peers::Peer] The leader.
   def self.start_route(index, peer)
-    variables = MGQ_MpCoopStory.data_of($game_variables)
+    variables = MGQ_MpStoryState.data_of($game_variables)
     # The kept story must not tell the leader's route, or the player would follow it again at once.
     ([1001] + (1140..1143).to_a).each { |id| variables[id] = id == 1001 ? GREAT_DECISION - 1 : 0 }
     MGQ_MpCoopStory.keep_and_leave("the player starts the #{["Angelic Dominion", "Monster Realm", "Chaos"][index]} route, not #{peer.state['name']}'s")
@@ -672,7 +673,7 @@ module MGQ_MpCoopChoices
     story = MGQ_MpCoopStory.own_story_data
     return unless story
 
-    roster = MGQ_MpCoopStory.roster_ids
+    roster = MGQ_MpStoryState.roster_ids
     # The side is each player's own in a Raid World, whose story nobody chose it in for them.
     keys = passed(from, to, story[0], story[1], roster) - (raid? ? [:decision] : [:side, :decision])
     # The leader resolving a choice the player has not made asks it too.

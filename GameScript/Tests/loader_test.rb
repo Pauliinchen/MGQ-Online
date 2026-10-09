@@ -2,6 +2,7 @@
 #  loader_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-09: Checked that story_state.rbx loads before the story scripts that build on it
 #      Paulinchen  2026-10-08: Checked that a watched key goes down once per frame, ended by a game window's own Input.update
 #                            - Checked that a held key reads as one press however often Input.update runs in a frame
 #                            - Checked that the sessions kept are counted by the scripts' logs, keeping a DLL's log named a moment early, that a game started
@@ -51,6 +52,8 @@ check("a family's base script loads before its other scripts",
       %w[ui world battles battles_sync battles_pvp coop].all? { |base| scripts.select { |name| name.start_with?("#{base}_") }.all? { |name| scripts.index(base) < scripts.index(name) } }, true)
 check("the party's gathering loads after the events that hand it its messages, the castle after the story it reads",
       [scripts.index("coop_events") < scripts.index("coop_gather"), scripts.index("coop_story") < scripts.index("coop_castle")], [true, true])
+check("the story's state model loads before the story scripts that build on it",
+      %w[coop_story coop_castle world_story world_catchup coop_choices].all? { |name| scripts.index("story_state") < scripts.index(name) }, true)
 check("the battle scripts keep the order their late hooks rely on",
       %w[battles battles_coop battles_sync].map { |name| scripts.index(name) }.each_cons(2).all? { |a, b| a < b }, true)
 

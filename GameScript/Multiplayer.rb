@@ -2,7 +2,8 @@
 #  Multiplayer.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-09: Named the mp_raid_boss* exports of a Raid World's boss pools at the relay
+#      Paulinchen  2026-10-09: Loaded story_state.rbx before coop_story.rbx, the story's state model the party's story and a Raid World's story share
+#                            - Named the mp_raid_boss* exports of a Raid World's boss pools at the relay
 #                            - Loaded battles_raid_pool.rbx after battles_coop_hotjoin.rbx, which counts a Raid World's won story boss battles against the bosses' pools
 #                            - Loaded world_catchup_data.rbx before world_story.rbx, the generated data of a Raid World's catch-up
 #                            - Loaded world_catchup.rbx after world_story.rbx, which carries a player behind a Raid World's story along by their level
@@ -109,7 +110,7 @@ module MGQ_Multiplayer
   # loaded first, so their order decides how those hooks wrap each other.
   SCRIPTS = %w[
     core_log core_hooks core_game_access core_hotkeys ui ui_text_box core_actors core_async overworld_sync ui_wheel ui_actions ui_chat ui_emotes overworld
-    coop coop_scope coop_squad coop_events coop_gather coop_scene coop_npcs coop_story_rewards coop_story coop_castle
+    coop coop_scope coop_squad coop_events coop_gather coop_scene coop_npcs coop_story_rewards story_state coop_story coop_castle
     world world_mods world_catchup_data world_story world_catchup world_save_distribution world_text world_screen world_save_export coop_choices
     battles battles_raid_bosses battles_coop battles_coop_hotjoin battles_raid_pool battles_coop_level_sync
     battles_sync battles_sync_wire battles_sync_recorder battles_sync_playback battles_sync_live

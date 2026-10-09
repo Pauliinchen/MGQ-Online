@@ -2,7 +2,8 @@
 #  world_catchup.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-09: Gave a key item whose event is only there to play up to its amount once the world's story is past it, and played the orbs' event for a player the catch-up gave every orb
+#      Paulinchen  2026-10-09: Read and wrote the story and granted its skills and companions through the state model of story_state.rbx instead of coop_story.rbx
+#                            - Gave a key item whose event is only there to play up to its amount once the world's story is past it, and played the orbs' event for a player the catch-up gave every orb
 #                            - Held the story from a save's load until the world's story came while the save notes the player behind in their part
 #                            - Kept a shared companion away whose join the player's story passed
 #                            - Moved a player behind in the world's part on to the world's story instead of a route it finished
@@ -250,7 +251,7 @@ module MGQ_MpWorldCatchup
   #
   # @return [Array] The switches, variables and self switches, the game's own data.
   def self.story_now
-    [MGQ_MpCoopStory.data_of($game_switches), MGQ_MpCoopStory.data_of($game_variables), MGQ_MpCoopStory.data_of($game_self_switches)]
+    [MGQ_MpStoryState.data_of($game_switches), MGQ_MpStoryState.data_of($game_variables), MGQ_MpStoryState.data_of($game_self_switches)]
   end
 
   # The notes the save keeps: the rows done ("done", a row's key to true, or to "c" or "o" for a
@@ -410,7 +411,7 @@ module MGQ_MpWorldCatchup
   end
 
   # Lays the checkpoint fetched over the player's story, keeping their own values (see
-  # MGQ_MpCoopStory.mix): the world as it was right before that part's ending. Only a player still
+  # MGQ_MpStoryState.mix): the world as it was right before that part's ending. Only a player still
   # behind takes it.
   def self.take_checkpoint
     ready = @ready
@@ -418,15 +419,15 @@ module MGQ_MpWorldCatchup
     @want = nil
     return log("dropped the checkpoint of #{part_name(ready[:part])}: the player is no longer behind") unless MGQ_MpWorldStory.mode == :behind
 
-    local = MGQ_MpCoopStory.raw_state
+    local = MGQ_MpStoryState.raw_state
     own = MGQ_MpWorldStory.local_counters(local)
     told = read_story(ready[:text])
     return without_checkpoint(ready[:part], "the checkpoint of #{part_name(ready[:part])} holds no story this game can read") unless told
 
-    applied = MGQ_MpCoopStory.mix(told, local, MGQ_MpWorldStory.chest_list)
+    applied = MGQ_MpStoryState.mix(told, local, MGQ_MpWorldStory.chest_list)
     MGQ_MpWorldStory.keep_unsent(applied, told, local)
     MGQ_MpWorldStory.keep_open_chests(applied, local)
-    MGQ_MpCoopStory.set_raw(*applied)
+    MGQ_MpStoryState.set_raw(*applied)
     ledger["checkpoint"] = ready[:part]
     after = MGQ_MpWorldStory.local_counters(applied)
     log("took the checkpoint of #{part_name(ready[:part])} (revision #{ready[:wrev]}): #{MGQ_MpWorldStory.counters_text(own)} -> #{MGQ_MpWorldStory.counters_text(after)}")
@@ -446,7 +447,7 @@ module MGQ_MpWorldCatchup
   def self.read_story(text)
     return nil if text.empty?
 
-    MGQ_MpCoopStory.decode_full(MGQ_MpCoopStory.unpack(text))
+    MGQ_MpStoryState.decode_full(MGQ_MpStoryState.unpack(text))
   rescue => e
     log("reading a checkpoint failed: #{e.class}: #{e.message}")
     nil
@@ -503,7 +504,7 @@ module MGQ_MpWorldCatchup
   # @param id [Integer] The companion.
   # @return [Boolean] Whether they are.
   def self.in_roster?(id)
-    roster_view[:ids][MGQ_MpCoopStory.main_id(id)] ? true : false
+    roster_view[:ids][MGQ_MpStoryState.main_id(id)] ? true : false
   end
 
   # What the rows ask of the player's roster: its companions, and the highest base level among
@@ -515,8 +516,8 @@ module MGQ_MpWorldCatchup
     return @roster_view if @roster_view
 
     ids = {}
-    MGQ_MpCoopStory.roster_ids.each { |id| ids[id] = true }
-    best = MGQ_MpCoopStory.roster.max_by { |actor| actor.base_level }
+    MGQ_MpStoryState.roster_ids.each { |id| ids[id] = true }
+    best = MGQ_MpStoryState.roster.max_by { |actor| actor.base_level }
     view = { :ids => ids, :best => best && best.base_level, :cap => best && best.max_level(:base) }
     @looking ? @roster_view = view : view
   end
@@ -641,7 +642,7 @@ module MGQ_MpWorldCatchup
   # @param own [Array] The player's story.
   # @return [Symbol, nil] :alice, :ilias or nil.
   def self.side_for(row, own)
-    side = MGQ_MpCoopStory.side_of(own[0])
+    side = MGQ_MpStoryState.side_of(own[0])
     return side unless SIDED_PARTS.include?(row.part)
 
     @noted_side = ledger["side"] || false if @noted_side.nil?
@@ -652,7 +653,7 @@ module MGQ_MpWorldCatchup
   #
   # @param story [Array] The player's story.
   def self.note_side(story)
-    side = MGQ_MpCoopStory.side_of(story[0])
+    side = MGQ_MpStoryState.side_of(story[0])
     return unless side && SIDED_PARTS.include?(story_part(story))
 
     ledger["side"] = @noted_side = side.to_s
@@ -860,7 +861,7 @@ module MGQ_MpWorldCatchup
   # @return [String, nil] What was given, as shown, nil for nothing.
   def self.give(kind, id, amount, key)
     if kind == :skill
-      name = MGQ_MpCoopStory.learn(id)
+      name = MGQ_MpStoryState.learn(id)
       return name.is_a?(String) ? name : nil
     end
 
@@ -885,7 +886,7 @@ module MGQ_MpWorldCatchup
   #
   # @param key [Array] Its self switch: map, event and letter.
   def self.open_chest(key)
-    MGQ_MpCoopStory.data_of($game_self_switches)[key] = true
+    MGQ_MpStoryState.data_of($game_self_switches)[key] = true
     $game_map.need_refresh = true if $game_map
   end
 
@@ -1085,7 +1086,7 @@ module MGQ_MpWorldCatchup
     return false if @granting || !active? || MGQ_MpWorldStory.mode != :world
     return false unless defined?(MGQ_MpCoopEvents) && MGQ_MpCoopEvents.telling?
 
-    main = MGQ_MpCoopStory.main_id(actor_id)
+    main = MGQ_MpStoryState.main_id(actor_id)
     return false if in_roster?(main)
 
     part = own_part
@@ -1128,7 +1129,7 @@ module MGQ_MpWorldCatchup
   # Notes the companions new in the player's roster, which the world's shared list takes once
   # sharing is on: the story's companions, every one with battle recruits shared too.
   def self.note_roster
-    ids = MGQ_MpCoopStory.roster_ids
+    ids = MGQ_MpStoryState.roster_ids
     fresh = ids - (@known_roster || [])
     @known_roster = ids
     sharing = MGQ_MpWorld.companion_sharing

@@ -2,6 +2,7 @@
 #  coop_castle.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-09: Read which variables are the player's own from story_state.rbx instead of coop_story.rbx
 #      Paulinchen  2026-10-08: Left the castle's Map Owner to the map's sync host in a Raid World, where parties lead nothing
 #      Paulinchen  2026-10-07: Named events through coop.rbx instead of a copy of its helper
 #                            - Logged each ghost of the leader's residents shown and hidden, with the event, the pages and why
@@ -41,7 +42,7 @@ module MGQ_MpCoopCastle
   FRONT_GATE = 126
 
   # Variables of where the castle's way out returns the player: the map, x and y where they used
-  # the castle's item, each player's own (see MGQ_MpCoopStory::PERSONAL_VARIABLES).
+  # the castle's item, each player's own (see MGQ_MpStoryState::PERSONAL_VARIABLES).
   EXIT_VARIABLES = [21, 22, 23]
 
   extend MGQ_MpLog
@@ -177,7 +178,7 @@ module MGQ_MpCoopCastle
     return false unless first
 
     first.parameters[0].to_s.scan(SHOWN_VARIABLE).any? do |(id)|
-      id.to_i >= MGQ_MpCoopStory::AFFECTION_VARIABLES && MGQ_MpCoopStory.personal_variable?(id.to_i)
+      id.to_i >= MGQ_MpStoryState::AFFECTION_VARIABLES && MGQ_MpStoryState.personal_variable?(id.to_i)
     end
   end
 end

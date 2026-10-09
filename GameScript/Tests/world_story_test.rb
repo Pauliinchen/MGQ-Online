@@ -2,17 +2,18 @@
 #  world_story_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-09: Followed a player in an earlier part, who is behind the world's story now instead of playing their own
+#      Paulinchen  2026-10-09: Loaded story_state.rbx before coop_story.rbx and packed stories and stood in for bringing companions through MGQ_MpStoryState
+#                            - Followed a player in an earlier part, who is behind the world's story now instead of playing their own
 #                            - Checked that a write refused for another route brings back the companions of the player's own decision
 #                            - Checked that one story asks the choices it passed and the route, and that a new game forgets them
 #      Paulinchen  2026-10-08: Created
 #
 #----------------------------------------------------------------
 
-# Covers world_story.rbx with coop_story.rbx and coop_choices.rbx: a Raid World's story fetched,
-# laid over the player's own values or kept apart, written back with its counters, refused writes
-# and routes, the relay's push and the poll, the Great Decision's choice and the world's return to
-# it, and the choices each player keeps their own.
+# Covers world_story.rbx with story_state.rbx, coop_story.rbx and coop_choices.rbx: a Raid World's
+# story fetched, laid over the player's own values or kept apart, written back with its counters,
+# refused writes and routes, the relay's push and the poll, the Great Decision's choice and the
+# world's return to it, and the choices each player keeps their own.
 
 require_relative "support"
 
@@ -173,6 +174,7 @@ module DataManager
   def self.setup_new_game; end
 end
 
+load_script "story_state"
 load_script "coop_story"
 load_script "coop_choices"
 load_script "world_story"
@@ -204,7 +206,7 @@ def packed(variables = {}, switches = [], selfs = {})
   v = []
   switches.each { |id| s[id] = true }
   variables.each { |id, value| v[id] = value }
-  MGQ_MpCoopStory.pack(MGQ_MpCoopStory.story_lists([s, v, selfs], true))
+  MGQ_MpStoryState.pack(MGQ_MpStoryState.story_lists([s, v, selfs], true))
 end
 
 # Sets what the DLL tells of the world's story and the requests.
@@ -232,7 +234,7 @@ def calls_of(name); $calls.select { |call| call[0] == name }.map { |call| call[1
 #
 # @param text [String] The story as written.
 # @return [Hash{String => String}] Its lists.
-def lists_of(text); MGQ_MpCoopStory.unpack(text.chomp("\0")); end
+def lists_of(text); MGQ_MpStoryState.unpack(text.chomp("\0")); end
 
 $game_map = Game_Map.new
 $game_player = Game_Player.new
@@ -474,7 +476,7 @@ $game_variables[1001] = 40
 $game_variables[1141] = 1
 frames(80)
 check("a route the world has not taken is locked before the write", [calls_of("mp_raid_route_lock"), calls_of("mp_raid_story_post")], [[["w1\0", "ad\0"]], []])
-class << MGQ_MpCoopStory; alias_method :bring_before_check, :bring; def bring(id); ($brought ||= []) << id; end; end
+class << MGQ_MpStoryState; alias_method :bring_before_check, :bring; def bring(id); ($brought ||= []) << id; end; end
 story.instance_variable_set(:@decision_roster, [5, 45])
 $game_party.instance_variable_set(:@include_actors, [45])
 relay({ "rev" => 21, "wrev" => 20, "p" => 39, "part" => "3", "route" => "mr", "lock" => "taken", "lock_code" => "route" }, packed({ 1001 => 39 }))
@@ -482,7 +484,7 @@ $notices.clear
 frames(16)
 check("one another player took first gives the player the world's story back", [$game_variables[1001], $game_variables[1141]], [39, 0])
 check("and the companions their own decision took away", $brought, [5])
-class << MGQ_MpCoopStory; alias_method :bring, :bring_before_check; end
+class << MGQ_MpStoryState; alias_method :bring, :bring_before_check; end
 check("and says so", $notices, ["The world took the Monster Realm route first."])
 story.pushed(MGQ_MpOverworldSync::STORY_FIELD => "22", :relay => true)
 frames(1)
@@ -511,14 +513,14 @@ $game_variables[1001] = 40
 $game_variables[1141] = 1
 frames(80)
 check("a route the world locked already is not locked again, the story is written", [calls_of("mp_raid_route_lock"), calls_of("mp_raid_story_post").size], [[], 1])
-class << MGQ_MpCoopStory; def bring(id); ($brought ||= []) << id; end; end
+class << MGQ_MpStoryState; def bring(id); ($brought ||= []) << id; end; end
 $brought = []
 $notices.clear
 relay({ "rev" => 25, "wrev" => 25, "p" => 39, "part" => "3", "route" => "mr", "post" => "conflict", "post_code" => "route" }, packed({ 1001 => 39 }))
 frames(16)
 check("the refused write gives the player the world's story and the companions their own decision took away",
       [$game_variables[1001], $game_variables[1141], $brought, $notices], [39, 0, [5], ["The world took the Monster Realm route first."]])
-class << MGQ_MpCoopStory; alias_method :bring, :bring_before_check; end
+class << MGQ_MpStoryState; alias_method :bring, :bring_before_check; end
 
 # The Great Decision's choice in the game's own event offers only the routes the world may still take.
 labels = ["Side with the Dark Goddess", "Side with the Goddess Ilias", "Search for a third way"]
@@ -660,12 +662,12 @@ check("the Great Decision then offers the route left", choices.labels(:decision)
 check("every choice's outcome is the player's own in a Raid World",
       [choices.personal?(:s, 7016), choices.personal?(:s, 7002), choices.personal?(:v, 1029), choices.personal?(:v, 1065), choices.personal?(:s, 151)], [true, true, true, true, false])
 $game_variables[1141] = 5
-check("and the side, after the Great Decision too", [MGQ_MpCoopStory.personal_switch?(4), MGQ_MpCoopStory.personal_switch?(5)], [true, true])
+check("and the side, after the Great Decision too", [MGQ_MpStoryState.personal_switch?(4), MGQ_MpStoryState.personal_switch?(5)], [true, true])
 check("as the story sync, whose story is the world's", MGQ_MpCoopChoices::Offers.peer_option(MGQ_MpOverworldSync::Peers::Peer.new(2, { "id" => "f" })), nil)
 contents = { :switches => $game_switches }
 check("a save holds the story as it is", MGQ_MpCoopStory.save_contents(contents).equal?(contents) && contents[:switches].equal?($game_switches), true)
 $raid = false
-check("a Classic world keeps them the leader's while the player plays their own story", [choices.personal?(:s, 7016), MGQ_MpCoopStory.personal_switch?(4)], [false, false])
+check("a Classic world keeps them the leader's while the player plays their own story", [choices.personal?(:s, 7016), MGQ_MpStoryState.personal_switch?(4)], [false, false])
 $raid = true
 
 # A choice the world's story carries the player past asks their own outcome, their side included.
