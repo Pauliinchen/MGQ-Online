@@ -9,6 +9,7 @@
 #                            - Passed a request to join a battle by choice and its refusal to battles_coop_join.rbx
 #                            - Ignored the late invite of a battle the player stopped waiting to join by choice
 #                            - Invited the players in a Raid World whose game window is in the background, as a Classic world does
+#                            - Laid the host's fallen enemies down only once the troop a guest takes was lettered, so the guest names every enemy as the host does
 #      Paulinchen  2026-10-08: Brought each player's first three characters to a co-op battle in a Raid World, one on the Frontline and two on the Backline, also for a player left alone
 #                            - Brought only the squad to a team duel in a Raid World, never the fourth
 #                            - Invited the nearest free players on the map to a battle in a Raid World, party members first, up to four players, through the map's gate
@@ -1446,19 +1447,22 @@ module MGQ_MpBattlesCoop
       enemy.screen_x = x.to_i
       enemy.screen_y = y.to_i
       enemy.hide if hidden.to_i == 1
-      MGQ_MpBattlesHotjoin.lay_down(enemy) if hidden.to_i == MGQ_MpBattlesHotjoin::FALLEN
       enemy
     end
     MGQ_MpGame.set($game_troop, :enemies, rebuilt)
     # The game counts each name's enemies for their letters, so the count starts over as in setup.
     MGQ_MpGame.set($game_troop, :names_count, {})
     MGQ_MpGame.call($game_troop, :make_unique_names)
+    # The game letters only the living, and the host's fallen got theirs before they fell.
+    rebuilt.each_with_index do |enemy, index|
+      MGQ_MpBattlesHotjoin.lay_down(enemy) if enemies[index][3].to_i == MGQ_MpBattlesHotjoin::FALLEN
+    end
     spriteset = MGQ_MpGame.get(scene, :spriteset)
     if spriteset
       spriteset.dispose_enemies
       spriteset.create_enemies
     end
-    log("took the host's troop of #{rebuilt.size} enemies in place of this game's own: #{rebuilt.map { |enemy| "#{enemy.enemy_id} #{enemy.name}#{' (hidden)' if enemy.hidden?}" }.join(', ')}")
+    log("took the host's troop of #{rebuilt.size} enemies in place of this game's own: #{rebuilt.map { |enemy| "#{enemy.enemy_id} #{enemy.name}#{' (hidden)' if enemy.hidden?}#{' (fallen)' if enemy.dead?}" }.join(', ')}")
   rescue => e
     log("taking the host's troop failed: #{e.class}: #{e.message}")
   end

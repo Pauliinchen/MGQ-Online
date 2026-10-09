@@ -5,6 +5,7 @@
 #      Paulinchen  2026-10-09: Checked that a guest and an encounter taken in fight with the host's enemy rates and get their own back
 #                            - Checked that an encounter brings along a player whose game window is in the background
 #                            - Checked that the enemies of an encounter taken in fill the place of an enemy that fell before its player joined
+#                            - Checked that an all-foes skill after a hotjoin reaches every enemy standing, and that a guest who joins names and finds the enemies as the host does
 #                            - Checked that a battle that calls the Library or Config ends nothing
 #                            - Checked that a player another request brought along is taken in with their own encounter and ignores the invite it sent, and that an encounter brings along nobody who fights
 #      Paulinchen  2026-10-08: Created
@@ -484,6 +485,52 @@ check("and takes the place of an enemy that fell before its player joined, neare
       $game_troop.members.map { |enemy| [enemy.enemy_id, enemy.screen_x] }, [[31, 240], [32, 400], [50, 400]])
 check("which the roster of the player who joined tells, the fallen enemy fallen",
       sync::Wire.parse(battle_sent("roster")[0][1][:payload])[0], [[31, 240, 300, 0], [32, 400, 300, hotjoin::FALLEN], [50, 400, 300, 0]])
+reset
+
+# An all-foes skill in a battle that took an encounter in after one of its enemies fell: the host
+# aims it at every enemy standing, and the guest who joined names and finds them as the host does.
+$scene_now = scene
+$game_troop.members = [Game_Enemy.new(0, 1), Game_Enemy.new(1, 1)]
+$game_troop.members.zip([218, 421]).each { |enemy, x| enemy.screen_x = x; enemy.screen_y = 332 }
+$game_troop.instance_variable_set(:@names_count, {})
+MGQ_MpGame.call($game_troop, :make_unique_names)
+hotjoin.fight_alone("own15")
+MGQ_MpOverworldSync::Peers.all.replace([asker])
+coop.take(asker, request.merge("bid" => "own15", "seats" => "", "enemies" => "1:218:332:0;1:421:332:0"))
+$game_troop.members[0].dead = true
+sync.take(asker, { "battle" => "join", "bid" => "own15", :payload => sync::Wire.line(["5", [[50, 5]], 4]) })
+$sent.clear
+open_phase(scene)
+host_troop = $game_troop.members.map { |enemy| [enemy.name, enemy.screen_x, enemy.dead?] }
+check("the host letters the added enemies after its own, its fallen one keeping its letter",
+      host_troop.map(&:first), ["Enemy1 A", "Enemy1 B", "Enemy1 C", "Enemy1 D"])
+# The game aims an all-foes skill at target_members(item).select(&:alive?), its troop's members.
+aimed = $game_troop.members.reject { |enemy| enemy.dead? || enemy.hidden? }
+check("an all-foes skill on the host reaches every enemy standing, the added ones too",
+      aimed.map { |enemy| sync::Recorder.ref(enemy) }, ["e1", "e2", "e3"])
+host_entries = sync::Wire.parse(battle_sent("roster")[0][1][:payload])[0]
+host_names = battle_sent("ready")[0][1][:payload]
+reset
+hotjoin.note_invite({ "hot" => "1" })
+sync.join_world(:guest, "own15", [5], "P5")
+sync.battle_started
+MGQ_MpOverworldSync::Peers.all.replace([host])
+own_troop
+$inject = lambda do |frame|
+  next unless frame == 2
+
+  players = [[5, "P5", "1,2,3", [], 4, [0, 1, 2], 1, 2], [0, "Me", "1,2,3", [], 4, [0, 1, 2], 1, 2]]
+  sync.take(host, { "battle" => "roster", "bid" => "own15", :payload => sync::Wire.line([host_entries, players, nil, 3]) })
+end
+coop.join(scene)
+check("a guest who joins rebuilds the troop with the host's places, the fallen enemy fallen",
+      $game_troop.members.map { |enemy| [enemy.name, enemy.screen_x, enemy.dead?] }, host_troop)
+sync::Names.setup(host_names)
+check("so the host's names in its stream need no swapping", sync::Names.swap("Enemy1 B, Enemy1 C and Enemy1 D"), "Enemy1 B, Enemy1 C and Enemy1 D")
+check("and the stream's references find the same enemies",
+      %w(e1 e2 e3).map { |ref| sync::Playback.battler(ref) }, $game_troop.members[1, 3])
+sync::Playback.values(sync::Playback.battler("e3"), 0, 0, 0, [1], [0], [0] * 8, 0)
+check("where the hit of the last one added lands", $game_troop.members.map(&:dead?), [true, false, false, true])
 reset
 
 # Two encounters that ask at once, each bringing the other's player along.

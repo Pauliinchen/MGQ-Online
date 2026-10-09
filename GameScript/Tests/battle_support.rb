@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-09: Stood in for the game's variables, which hold the enemy rates a guest takes from the host
+#                            - Lettered only the living enemies that have no letter yet, and counted an enemy with the death state as fallen, as the game does
 #      Paulinchen  2026-10-08: Stood in for the faces this game has, of overworld.rbx
 #                            - Loaded coop_scope.rbx, which tells coop_squad.rbx whether a Raid World is open, and counted the party's Frontline from max_battle_members
 #                            - Stood in for the players whose connection stands, when the player entered the map, the player's tile, the party's leader and the troop's setup
@@ -142,7 +143,8 @@ class Game_Enemy < Game_Battler
   def hide; @hidden = true; end
   def hidden?; @hidden ? true : false; end
   attr_writer :dead
-  def dead?; @dead ? true : false; end
+  # Fallen, as the game tells by the death state (1) a live battle's values give it.
+  def dead?; @dead || Array(@states).include?(1) ? true : false; end
 end
 module MGQ_MpActors
   module Builds
@@ -177,7 +179,7 @@ class Game_Troop
   def make_unique_names
     @names_count ||= {}
     @enemies.each do |enemy|
-      next if enemy.hidden?
+      next if enemy.hidden? || enemy.dead? || !enemy.letter.empty?
       count = @names_count[enemy.enemy_id] || 0
       enemy.letter = " #{(65 + count).chr}"
       @names_count[enemy.enemy_id] = count + 1

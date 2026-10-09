@@ -7,6 +7,7 @@
 #                            - Took in a player who joins the battle by choice, without enemies, through battles_coop_join.rbx, and marked a boss battle in the invites of the players taken in
 #                            - Left the players whose state tells a battle out of those an encounter brings along
 #                            - Placed the enemies of an encounter taken in anew as its player joins, so they fill the places of enemies that fell meanwhile
+#                            - Laid the host's fallen new enemies down only once a guest lettered them, so the guest names them as the host does
 #      Paulinchen  2026-10-08: Created
 #
 #----------------------------------------------------------------
@@ -983,10 +984,11 @@ module MGQ_MpBattlesHotjoin
       enemy.screen_x = x.to_i
       enemy.screen_y = y.to_i
       enemy.hide if hidden.to_i == 1
-      lay_down(enemy) if hidden.to_i == FALLEN
       enemies << enemy
     end
     MGQ_MpGame.call($game_troop, :make_unique_names)
+    # The game letters only the living, and the host's fallen got theirs before they fell.
+    enemies.last(entries.size).zip(entries) { |enemy, entry| lay_down(enemy) if entry[3].to_i == FALLEN }
     MGQ_MpBattlesCoop.redraw_enemies(scene)
     log("added the host's #{entries.size} new enemies to the troop: #{enemies.last(entries.size).map { |enemy| MGQ_MpBattlesSync.named(enemy) }.join(', ')}")
   end
