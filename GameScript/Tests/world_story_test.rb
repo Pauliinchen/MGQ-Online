@@ -4,6 +4,7 @@
 #  Changelog:
 #      Paulinchen  2026-10-09: Followed a player in an earlier part, who is behind the world's story now instead of playing their own
 #                            - Checked that a write refused for another route brings back the companions of the player's own decision
+#                            - Checked that one story asks the choices it passed and the route, and that a new game forgets them
 #      Paulinchen  2026-10-08: Created
 #
 #----------------------------------------------------------------
@@ -681,6 +682,11 @@ relay({ "rev" => 41, "wrev" => 41, "p" => 10, "part" => "1", "fetch" => "done" }
 frames(16)
 check("the world's story passing Iliasville and Iliasburg asks the side and Amira", choices.instance_variable_get(:@prompts), [:side, :amira])
 choices.forget("test")
+story.followed({ "p" => 25, "r1141" => 0, "r1142" => 0, "r1143" => 0, "clear" => [] }, { "p" => 40, "r1141" => 3, "r1142" => 0, "r1143" => 0, "clear" => [] })
+check("a story carrying the player past choices onto a route asks those choices, then the route",
+      choices.instance_variable_get(:@prompts), [:succubus, :spider, :sphinx, :decision])
+DataManager.setup_new_game
+check("a new game forgets the choices and the route waiting to be confirmed", [choices.instance_variable_get(:@prompts), choices.instance_variable_get(:@raid_route)], [[], nil])
 
 # A player further than the world, but on another route than the one it locked, takes the world's story.
 $calls.clear

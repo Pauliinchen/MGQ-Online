@@ -2,6 +2,7 @@
 #  coop_choices.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-09: Forgot the choices waiting to be picked when a new game starts, so a Raid World's route waiting to be confirmed never plays on a fresh game
 #      Paulinchen  2026-10-08: Left drawing and turning the switches to Window_MpWorldForm, which the world screen's forms share
 #                            - Kept every choice's outcome each player's own in a Raid World, and asked a player the world's story carried past a choice, their side included, for their own outcome
 #                            - Offered at the Great Decision of a Raid World only the routes the world may still take, the third way once the world cleared both other routes, and played only the player's own half of the route the world took
@@ -1033,6 +1034,9 @@ begin
 
   # A loaded save brings its own story, so what waited goes.
   MGQ_MpHooks.after(DataManager.singleton_class, :extract_save_contents, "coop_choices") { |_contents| MGQ_MpCoopChoices.forget("a save was loaded") }
+
+  # A new game too, which a Raid World's player may start while its route waits to be confirmed.
+  MGQ_MpHooks.after(DataManager.singleton_class, :setup_new_game, "coop_choices") { MGQ_MpCoopChoices.forget("a new game started") }
 rescue => e
   MGQ_MpCoopChoices.log("hooks FAILED: #{e.class}: #{e.message}")
 end

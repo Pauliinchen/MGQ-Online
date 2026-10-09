@@ -7,6 +7,7 @@
 #                            - Kept a player behind until their level moves them on, also once the world returns from a route to their part
 #                            - Read the world's shared companions and the parts it keeps checkpoints of from the relay's state
 #                            - Brought back the companions the player's own Great Decision took away, with the notice and the teleport to the story, also when the relay refuses their write because another route was locked first
+#                            - Asked the choices a story carried the player past also when the same story takes them onto a route
 #      Paulinchen  2026-10-08: Created
 #
 #----------------------------------------------------------------
@@ -743,19 +744,16 @@ module MGQ_MpWorldStory
   end
 
   # Follows what the world's story brought: the choices it carried the player past and the Great
-  # Decision's route.
+  # Decision's route, both when one story carries them past earlier choices onto a route.
   #
   # @param before [Hash] The player's counters before.
   # @param after [Hash] The counters of the story laid over theirs.
   def self.followed(before, after)
     return unless defined?(MGQ_MpCoopChoices)
 
+    MGQ_MpCoopChoices.story_passed(before["p"], after["p"]) if after["p"] > before["p"]
     route = route_index(after)
-    if route && route_index(before) != route && after["p"] >= GREAT_DECISION
-      MGQ_MpCoopChoices.raid_decision(route)
-    elsif after["p"] > before["p"]
-      MGQ_MpCoopChoices.story_passed(before["p"], after["p"])
-    end
+    MGQ_MpCoopChoices.raid_decision(route) if route && route_index(before) != route && after["p"] >= GREAT_DECISION
   end
 
   # Gives the player the personal half of the world's return to the Great Decision, which the game
