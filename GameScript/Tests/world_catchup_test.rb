@@ -2,7 +2,8 @@
 #  world_catchup_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-09: Created
+#      Paulinchen  2026-10-09: Checked that a key item whose event is only there to play comes up to its amount and that the catch-up giving the last orb plays the orbs' event
+#                            - Created
 #
 #----------------------------------------------------------------
 
@@ -140,7 +141,8 @@ $data_actors = Array.new(1000)
   $data_actors[id] = ActorData.new(id, name, level)
 end
 $data_items = Array.new(700)
-[[501, "Purple Orb"], [502, "Pass"], [503, "Key"], [504, "Medal"], [600, "Herb"]].each { |id, name| $data_items[id] = RPG::Item.new(id, name) }
+[[501, "Purple Orb"], [502, "Pass"], [503, "Key"], [504, "Medal"], [505, "Key to Hades"], [537, "Red Orb"], [538, "Blue Orb"], [540, "Yellow Orb"],
+ [541, "Green Orb"], [542, "Silver Orb"], [600, "Herb"]].each { |id, name| $data_items[id] = RPG::Item.new(id, name) }
 $data_weapons = Array.new(10)
 $data_armors = Array.new(10)
 $data_skills = Array.new(3000)
@@ -182,6 +184,7 @@ class Game_Party
   def temp_actors_use?; false; end
   def gain_item(item, amount); @items[item.id] += amount; end
   def lose_item(item, amount); @items[item.id] = [@items[item.id] - amount, 0].max; end
+  def item_number(item); @items[item.id]; end
   def all_members; @actors.map { |id| $game_actors[id] }; end
 end
 class Game_Interpreter
@@ -531,8 +534,8 @@ relay({ "rev" => 15, "wrev" => 15, "p" => 26, "part" => "2" }, packed({ 1001 => 
 frames(40)
 check("an earlier part's row gives only when its marks hold in the story laid over the player's",
       [$game_party.items[600], $game_party.items[504]], [0, 1])
-check("a row whose event is only there to play gives nothing, its companion joins nobody",
-      [$game_party.items[503], roster.include?(77)], [0, false])
+check("a row whose event is only there to play lets its companion join nobody, but its key item comes, being the world's",
+      [roster.include?(77), $game_party.items[503]], [false, 1])
 new_game({ 1001 => 39 }, [], 70)
 frames(1)
 relay({ "rev" => 16, "wrev" => 16, "p" => 40, "part" => "3", "clear" => "ad", "done" => "ad" }, packed({ 1001 => 40 }, [7096]))
@@ -576,6 +579,31 @@ relay({ "rev" => 19, "wrev" => 19, "p" => 24, "part" => "2" }, packed({ 1001 => 
 frames(40)
 MGQ_Multiplayer::Log.singleton_class.send(:alias_method, :write, :quiet_write)
 check("a skill Luka knows and an item the game lacks are no gifts", $messages.grep(/The story gave you/), [])
+
+# A key item whose event is only there to play, up to its amount, unless the story took it since.
+tables(:KEY_ITEMS => [key_item.new(505, 1, "map:29:35:2", "1", 7, nil, [[:v, 1001, 7]], false),
+                      key_item.new(503, 1, "map:6:33:1", "1", 7, nil, [[:v, 1001, 7]], false),
+                      key_item.new(503, -1, "map:7:25:1", "1", 9, nil, [[:v, 1001, 9]], true)])
+new_game({ 1001 => 6 }, [], 40)
+$game_party.gain_item($data_items[505], 1)
+frames(1)
+relay({ "rev" => 21, "wrev" => 21, "p" => 10, "part" => "1" }, packed({ 1001 => 10 }))
+frames(40)
+check("a key item only there to play comes up to its amount, never one the world's story took since",
+      [$game_party.items[505], $game_party.items[503]], [1, 0])
+
+# The catch-up completing the orbs plays the event that moves the story on, which only the orbs' events call.
+tables(:KEY_ITEMS => [key_item.new(542, 1, "map:149:107:1", "2", 30, nil, [[:v, 1001, 30], [:v, 1068, 3]], true)])
+new_game({ 1001 => 30 }, [], 40)
+[537, 538, 540, 541].each { |id| $game_party.gain_item($data_items[id], 1) }
+frames(1)
+$setups = []
+relay({ "rev" => 22, "wrev" => 22, "p" => 31, "part" => "2" }, packed({ 1001 => 31, 1068 => 3 }))
+frames(40)
+check("a player the catch-up gives the last orb plays the orbs' event",
+      [$game_party.items[542], $setups.map { |list| list.map { |entry| [entry.code, entry.parameters] } }], [1, [[[117, [330]], [0, []]]]])
+frames(40)
+check("once", $setups.size, 1)
 
 # A shared companion joins a second playthrough's player whose story took them away on the first.
 tables(:REMOVALS => [removal.new(16, 16, "map:50:1:1", "1", 14, nil, [[:v, 1001, 14]], true, 5)],

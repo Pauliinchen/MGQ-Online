@@ -2,7 +2,8 @@
 #  world_catchup.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-09: Created
+#      Paulinchen  2026-10-09: Gave a key item whose event is only there to play up to its amount once the world's story is past it, and played the orbs' event for a player the catch-up gave every orb
+#                            - Created
 #
 #----------------------------------------------------------------
 
@@ -22,7 +23,9 @@
 # items, takes the companions a first playthrough loses for good, and lets its companions join,
 # as long as its marks tell that its event ran: one only there to play stays the player's own.
 # The world's key items and the chests that hold them are the whole world's: once the world's story
-# is past one, every player gets it, whatever their part.
+# is past one, every player gets it, whatever their part, and a key item whose event is only there
+# to play up to its amount. A player who then holds every orb of Part 2 plays the event that moves
+# the story on, which only an orb's own event calls.
 #
 # A companion joins once the player's story is past the join and their highest base level reaches
 # the join's gate, and comes at least at that level unless it is a first join at the companion's
@@ -68,6 +71,17 @@ module MGQ_MpWorldCatchup
   # good.
   PLAYTHROUGH = 912
 
+  # Part 2's orbs the game keeps as items, all of which ORB_EVENT asks for before it moves the story
+  # on.
+  ORBS = [537, 538, 540, 541, 542]
+
+  # The common event that moves the story on to the Holy Wings Shrine once the player holds every
+  # orb, which each orb's event calls only for the player who plays it.
+  ORB_EVENT = 330
+
+  # The main story's progress ORB_EVENT sets.
+  ORBS_GATHERED = 32
+
   # Where each part stands in the story's order; the routes stand side by side.
   RANKS = { "1" => 0, "2" => 1, "3" => 2, "ad" => 3, "mr" => 3, "chaos" => 3 }
 
@@ -100,6 +114,8 @@ module MGQ_MpWorldCatchup
     @share_queue = []
     @adding = nil
     @share_at = 0
+    @orbs_due = false
+    @orbs_played = false
     @clock ||= 0
     @checked = @clock
     @state_read = @clock
@@ -160,9 +176,9 @@ module MGQ_MpWorldCatchup
     "The world's story is further than yours. You see the world as it was before the end of #{part_name(part)}; reach level #{gate_of(part)} to move on."
   end
 
-  # Follows the catch-up for one frame: the relay's answers, the checkpoint that waits, then every
-  # CHECK_FRAMES while the player is free the story's rows, the level gate and the shared
-  # companions. Called after the map's update.
+  # Follows the catch-up for one frame: the relay's answers, the checkpoint and the orbs' event that
+  # wait, then every CHECK_FRAMES while the player is free the story's rows, the level gate, the
+  # shared companions and the orbs. Called after the map's update.
   def self.tick
     @clock += 1
     return close unless active?
@@ -170,6 +186,7 @@ module MGQ_MpWorldCatchup
     note_world
     read_requests if (@fetching || @adding) && @clock - @state_read >= STATE_FRAMES
     start_fetch if @want && !@fetching && !@ready && @clock >= @fetch_at
+    play_orb_event if @orbs_due
     return if @clock - @checked < CHECK_FRAMES || !MGQ_MpWorldStory.quiet?
 
     @checked = @clock
@@ -181,6 +198,7 @@ module MGQ_MpWorldCatchup
       review(story_now, false)
       move_on if MGQ_MpWorldStory.mode == :behind && !@want && !@joins_world && gate_reached?
       note_roster
+      check_orbs
     end
     send_shared
   rescue => e
@@ -750,10 +768,11 @@ module MGQ_MpWorldCatchup
     told = @world_told
     DATA::KEY_ITEMS.each do |row|
       key = key_of("k", row)
-      next if done[key] || (carried && !carries?(row))
+      next if done[key]
+      next gifts << top_up(row, story, told, done, key) unless carries?(row)
 
       mine = passed?(row, story)
-      next unless mine || (told && carries?(row) && passed?(row, told, story))
+      next unless mine || (told && passed?(row, told, story))
 
       done[key] = true
       gifts << give("i", row.item, row.amount, key) if carried || !mine
@@ -772,6 +791,43 @@ module MGQ_MpWorldCatchup
       open_chest(row.key) unless mine
     end
     gifts
+  end
+
+  # Gives a key item whose row's marks only tell that its event is there to play, once the world's
+  # story is past the row: what the player lacks of its amount, unless the world's story took the
+  # item since.
+  #
+  # A global flag often uses such an event up for the whole world, as switch 2039 the Key to Hades,
+  # so only the player whose game played it would hold the item otherwise.
+  #
+  # @param row [MGQ_MpWorldCatchupData::KeyItem] The row.
+  # @param story [Array] The player's story.
+  # @param told [Array, nil] The world's story, nil before it came.
+  # @param done [Hash] The rows done.
+  # @param key [String] The row's key.
+  # @return [String, nil] What was given, as shown, nil for nothing.
+  def self.top_up(row, story, told, done, key)
+    return nil unless row.amount > 0 && told && passed?(row, told, story)
+
+    done[key] = true
+    item = MGQ_MpGame.item("i", row.item)
+    missing = item && !taken_since?(row, told, story) ? row.amount - $game_party.item_number(item) : 0
+    missing > 0 ? give("i", row.item, missing, key) : nil
+  end
+
+  # Reports whether a story took a key item after a row gave it: a later row of the same part, or a
+  # row of a later part, that takes it.
+  #
+  # @param row [MGQ_MpWorldCatchupData::KeyItem] The row that gives it.
+  # @param told [Array] The story.
+  # @param story [Array] The player's own story.
+  # @return [Boolean] Whether it did.
+  def self.taken_since?(row, told, story)
+    DATA::KEY_ITEMS.any? do |other|
+      next false unless other.item == row.item && other.amount < 0 && other.part && row.part
+      later = other.part == row.part ? after?(other, row) : RANKS[other.part] > RANKS[row.part]
+      later && passed?(other, told, story)
+    end
   end
 
   # Gives or takes what a row of the tables names.
@@ -820,6 +876,40 @@ module MGQ_MpWorldCatchup
 
     shown = gifts.first(4).join(", ")
     notice(:gifts, "The story gave you #{shown}#{gifts.size > 4 ? " and #{gifts.size - 4} more" : ''}.")
+  end
+
+  # Notes that ORB_EVENT waits to play once the player holds every orb before the story moved on,
+  # once per session: the orbs the catch-up gave came without the call of an orb's event.
+  def self.check_orbs
+    return if @orbs_due || @orbs_played || MGQ_MpWorldStory.mode != :world || !orbs_due?
+
+    @orbs_due = true
+    log("the player holds every orb of Part 2 at #{$game_variables[MGQ_MpWorldStory::MAIN_PROGRESS]}: common event #{ORB_EVENT} waits to play once the player is free")
+  end
+
+  # Reports whether the story waits for ORB_EVENT: the player holds every orb, and the main story
+  # has not reached ORBS_GATHERED.
+  #
+  # @return [Boolean] Whether it does.
+  def self.orbs_due?
+    return false unless $game_variables[MGQ_MpWorldStory::MAIN_PROGRESS].to_i < ORBS_GATHERED
+
+    ORBS.all? do |id|
+      item = MGQ_MpGame.item("i", id)
+      item && $game_party.item_number(item) > 0
+    end
+  end
+
+  # Plays ORB_EVENT once the player is free on the map, unless the story moved on meanwhile.
+  def self.play_orb_event
+    return unless MGQ_MpOverworldSync.map_free? && !MGQ_MpWorldStory.queued?
+
+    @orbs_due = false
+    return unless MGQ_MpWorldStory.mode == :world && orbs_due?
+
+    @orbs_played = true
+    log("playing common event #{ORB_EVENT} now")
+    $game_map.interpreter.setup([MGQ_MpWorldStory.command(117, [ORB_EVENT]), MGQ_MpWorldStory.command(0, [])], 0)
   end
 
   # Follows the story's companions, see the module: the removals and joins the player's story is
