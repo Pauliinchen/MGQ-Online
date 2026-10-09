@@ -2,6 +2,7 @@
 #  battles_coop.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-09: Ended a co-op battle only once its scene ended, not when its party command called the Library or Config
 #      Paulinchen  2026-10-08: Brought each player's first three characters to a co-op battle in a Raid World, one on the Frontline and two on the Backline, also for a player left alone
 #                            - Brought only the squad to a team duel in a Raid World, never the fourth
 #                            - Invited the nearest free players on the map to a battle in a Raid World, party members first, up to four players, through the map's gate
@@ -2020,11 +2021,24 @@ module MGQ_MpBattlesCoop
     install_end
   end
 
-  # Ends a co-op battle once the battle's scene ended.
+  # Ends a co-op battle once the battle's scene ended, not when it only called another screen.
   def self.install_end
-    MGQ_MpHooks.after(Scene_Battle, :terminate, "battles_coop") { MGQ_MpBattlesCoop.ended }
+    MGQ_MpHooks.after(Scene_Battle, :terminate, "battles_coop") { MGQ_MpBattlesCoop.ended unless MGQ_MpBattlesCoop.called_away?(self) }
   rescue => e
     log("battle end hook FAILED: #{e.class}: #{e.message}")
+  end
+
+  # Reports whether a battle's scene only called another screen, such as the Library or Config of
+  # the party command, which ends the scene but comes back to the same battle: SceneManager.call
+  # keeps the scene on the stack meanwhile.
+  #
+  # @param scene [Scene_Battle] The battle's scene.
+  # @return [Boolean] Whether it waits on the stack.
+  def self.called_away?(scene)
+    stack = MGQ_MpGame.get(SceneManager, :stack)
+    called = stack.is_a?(Array) && stack.any? { |waiting| waiting.equal?(scene) }
+    log("the battle called #{SceneManager.scene.class} and goes on once it returns") if called
+    called
   end
 
   # Aims the skills and items that reach the Backline too at the co-op party and the player's own

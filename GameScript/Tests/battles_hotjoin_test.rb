@@ -2,6 +2,7 @@
 #  battles_hotjoin_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-09: Checked that a battle that calls the Library or Config ends nothing
 #      Paulinchen  2026-10-08: Created
 #
 #----------------------------------------------------------------
@@ -393,6 +394,10 @@ hotjoin.fight_alone("own8")
 MGQ_MpOverworldSync::Peers.all.replace([asker, comrade])
 coop.take(asker, request.merge("bid" => "own8"))
 $sent.clear
+SceneManager.instance_variable_set(:@stack, [Scene_Map.new, scene])
+scene.terminate
+check("a battle that calls the Library or Config ends nothing", [map_sent("off"), hotjoin.state_fields["rb"], sync.role], [[], "own8", :host])
+SceneManager.instance_variable_set(:@stack, [Scene_Map.new])
 coop.ended
 check("the end of the battle calls joining off", map_sent("off").map { |seat, f| [seat, f["bid"]] }, [[8, "own8"], [9, "own8"]])
 check("and forgets the player's own battle", [hotjoin.state_fields, sync.role], [{ "rb" => "", "rbh" => "" }, nil])
