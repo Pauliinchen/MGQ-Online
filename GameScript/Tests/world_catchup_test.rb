@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-09: Checked that a key item whose event is only there to play comes up to its amount and that the catch-up giving the last orb plays the orbs' event
+#                            - Checked that a save that noted the player behind holds the story until the world's story came
 #                            - Created
 #
 #----------------------------------------------------------------
@@ -617,6 +618,21 @@ $sharing = :story
   check("a shared companion #{joins ? 'joins' : 'never joins'} a player whose story passed their removal on playthrough #{playthrough}", roster.include?(16), joins)
 end
 $sharing = :off
+
+# A save that noted the player behind holds their story until the world's story came.
+tables
+new_game({ 1001 => 7 }, [], 5)
+check("a fresh game holds nothing before the world's story came", [story.mode, catchup.holds_story?], [nil, false])
+frames(1)
+relay({ "rev" => 24, "wrev" => 24, "p" => 25, "part" => "2", "checkpoints" => "1" }, packed({ 1001 => 25 }))
+frames(16)
+checkpoint("1", packed({ 1001 => 18 }))
+frames(70)
+story.loaded(:load)
+catchup.loaded
+check("a save behind on its part's checkpoint holds the story from the moment it loads", [story.mode, catchup.holds_story?], [nil, true])
+$game_variables[1001] = 26
+check("but not once its story is in another part", catchup.holds_story?, false)
 
 # Classic worlds have no catch-up.
 $raid = false

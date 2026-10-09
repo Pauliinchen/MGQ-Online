@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-09: Gave a key item whose event is only there to play up to its amount once the world's story is past it, and played the orbs' event for a player the catch-up gave every orb
+#                            - Held the story from a save's load until the world's story came while the save notes the player behind in their part
 #                            - Created
 #
 #----------------------------------------------------------------
@@ -131,14 +132,28 @@ module MGQ_MpWorldCatchup
     MGQ_MpWorldStory.active?
   end
 
-  # Reports whether the player's story events are held: their story is behind the world's.
-  # Called by coop_events.rbx.
+  # Reports whether the player's story events are held: their story is behind the world's, or
+  # their save noted them behind in their part while the world's story has not come since the save
+  # loaded or the world opened, so a part's ending held on the map never starts before the relay
+  # answers. Called by coop_events.rbx.
   #
   # @return [Boolean] Whether they are.
   def self.holds_story?
-    active? && MGQ_MpWorldStory.mode == :behind
+    return false unless active?
+
+    mode = MGQ_MpWorldStory.mode
+    mode == :behind || (mode.nil? && noted_behind?)
   rescue
     false
+  end
+
+  # Reports whether the save notes the player behind in the part their story is in: they took its
+  # checkpoint, or keep their own story there for want of one.
+  #
+  # @return [Boolean] Whether it does.
+  def self.noted_behind?
+    noted = ledger["checkpoint"]
+    !noted.nil? && noted == own_part
   end
 
   # Reports whether a player behind stays behind though the world's story is in their part again,
@@ -318,12 +333,13 @@ module MGQ_MpWorldCatchup
     end
   end
 
-  # Notes the world's story laid over the player's, for the key items and chests it gave. Called
-  # by world_story.rbx.
+  # Notes the world's story laid over the player's, for the key items and chests it gave; the save
+  # no longer notes the player behind, see noted_behind?. Called by world_story.rbx.
   #
   # @param told [Array] The world's story.
   def self.world_told(told)
     @world_told = told
+    ledger["checkpoint"] = nil if active?
   end
 
   # Asks for a part's checkpoint.
