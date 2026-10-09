@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-09: Covered an admin taking back the route lock
+//                            - Covered Part 3 keeping the checkpoint of its first end once the world leaves it again
 //      Paulinchen  2026-10-08: Created
 //
 //----------------------------------------------------------------
@@ -298,6 +299,26 @@ test("a route lock before any write keeps revision 0 for the first write", async
   const first = await accepted(story, 1, { p: 40, r1142: 1 });
   assert.equal(first.route, "mr");
   assert.deepEqual(first.checkpoints, [], "a story without a sealed story leaves no checkpoint");
+});
+
+test("leaving Part 3 again for the next route keeps the checkpoint of its first end", async () => {
+  const { story } = makeStory();
+  const first = "cGFydDM=";
+  await accepted(story, 0, { p: 39 }, first);
+  assert.equal((await story.lockRoute("ad")).status, 200);
+  await accepted(story, 2, { p: 40, r1141: 1 });
+  await accepted(story, 3, { p: 40, r1141: 76, clear: ["ad"] });
+  await accepted(story, 4, { p: 39, clear: ["ad"] }, OTHER_BLOB);
+  assert.equal((await story.lockRoute("mr")).status, 200);
+
+  const second = await accepted(story, 6, { p: 40, r1142: 1, clear: ["ad"] });
+  assert.equal(second.part, "mr");
+  assert.deepEqual(second.checkpoints, ["3", "ad"]);
+
+  const checkpoint = await story.checkpoint("3");
+  assert.equal(checkpoint.body.blob, first);
+  assert.equal(checkpoint.body.p, 39);
+  assert.deepEqual(checkpoint.body.clear, [], "the checkpoint is the story before any route");
 });
 
 test("shared companions only grow, and the same ids again write nothing", async () => {

@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-09: Let an admin take back the route locked at the Great Decision
+//                            - Kept only the first end of a part as its checkpoint, so leaving Part 3 again no longer replaces the story before the first Great Decision
 //      Paulinchen  2026-10-08: Created
 //
 //----------------------------------------------------------------
@@ -11,7 +12,7 @@
 // to tell which story is further, and the rest of the story sealed with a key from the world's
 // token, which the relay only keeps. A game that moved the story on writes it here; the furthest
 // story wins, and two games writing at once cannot overwrite each other, since each names the
-// revision it built on. When a write moves the world into a later part, the story before it stays
+// revision it built on. When a write first moves the world out of a part, the story before it stays
 // as that part's checkpoint, for players who are behind.
 //
 // The revision counts every change: a write, a route lock and a grown companions list, so the
@@ -269,8 +270,8 @@ export class WorldStory {
   }
 
   /**
-   * Hands out a part's checkpoint: the story as it stood right before the write that moved the
-   * world past that part.
+   * Hands out a part's checkpoint: the story as it stood right before the write that first moved
+   * the world past that part.
    *
    * @param {unknown} part The part, one of PART.
    * @returns {Promise<{status: number, body: object}>} The checkpoint's state with its sealed story, or 404 with code `none`.
@@ -335,8 +336,10 @@ export class WorldStory {
 
       const locked = story?.route ?? ROUTE.none;
       const part = partOf(read.counters);
-      const checkpoint = story?.blob && story.part !== part ? checkpointOf(story) : null;
-      const checkpoints = checkpoint && !story.checkpoints.includes(story.part) ? [...story.checkpoints, story.part] : [...(story?.checkpoints ?? [])];
+      // Only a part's first end is its checkpoint: the world leaves Part 3 once for every route,
+      // and a later end would hand a player behind a story that already finished a route.
+      const checkpoint = story?.blob && story.part !== part && !story.checkpoints.includes(story.part) ? checkpointOf(story) : null;
+      const checkpoints = checkpoint ? [...story.checkpoints, story.part] : [...(story?.checkpoints ?? [])];
 
       const rev = (story?.rev ?? 0) + 1;
       const next = {
