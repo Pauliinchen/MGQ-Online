@@ -2,6 +2,7 @@
 #  world_save_distribution.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-09: Neither asked a new player of a Raid World where to start nor fetched its starting save, since it starts from the beginning
 #      Paulinchen  2026-10-07: Named the DLL's exports alone, their signatures living in Multiplayer.rb
 #                            - Logged the save picked, the files placed, the fetch started, the check of a fetched save and the files thrown away
 #                            - Shortened the save screen's help texts to fit its one line
@@ -143,23 +144,24 @@ module MGQ_MpSaveDistribution
   end
 
   # Reports whether a new player must be asked where to start before entering a world: the world
-  # lets its players choose, and this PC has no save of the world yet.
+  # lets its players choose, and this PC has no save of the world yet. Never in a Raid World, which
+  # starts from the beginning, even one made while it still offered a choice.
   #
   # @param world [MGQ_MpWorld::World] The world on this PC.
   # @param choose [Boolean, nil] Whether the world lets its players choose, nil when unknown.
   # @return [Boolean] Whether the player must be asked.
   def self.ask_start?(world, choose)
-    choose == true && new_player?(world)
+    choose == true && !world.raid? && new_player?(world)
   end
 
   # Reports whether a world's starting save must be fetched before entering it: the world has one,
-  # and this PC has no save of the world yet.
+  # and this PC has no save of the world yet. Never in a Raid World, as for ask_start?.
   #
   # @param world [MGQ_MpWorld::World] The world on this PC.
   # @param start [String, nil] How far the world is with its starting save, nil when unknown.
   # @return [Boolean] Whether it must.
   def self.fetch?(world, start)
-    start == "ready" && new_player?(world)
+    start == "ready" && !world.raid? && new_player?(world)
   end
 
   # Reports whether the player enters a world for the first time: this PC has no save of it yet.

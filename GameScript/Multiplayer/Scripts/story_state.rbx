@@ -2,7 +2,8 @@
 #  story_state.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-09: Created
+#      Paulinchen  2026-10-09: Kept the difficulty, the enemy rates it sets and the values of the Labyrinth of Chaos, the Colosseum and the special bosses each Raid World player's own
+#                            - Created
 #
 #----------------------------------------------------------------
 
@@ -32,6 +33,12 @@ module MGQ_MpStoryState
   # party (1001-2000).
   PERSONAL_SWITCHES = [95, WARP_BAN, 445, 446, 447, 502, 1001..2000]
 
+  # Switches that are each Raid World player's own, as the game sets them for the fights with values
+  # of their own: a special boss's NORMAL (23), the Colosseum and its match under way (28, 87), the
+  # Labyrinth of Chaos (41) and the final battles' fixed NORMAL (507). Laid over another player's
+  # game, one player's Labyrinth or Colosseum would put everyone on its values.
+  RAID_PERSONAL_SWITCHES = [23, 28, 41, 87, 507]
+
   # First switch that tells whether a companion awakened, one per companion.
   AWAKENING_SWITCHES = 6000
 
@@ -47,6 +54,14 @@ module MGQ_MpStoryState
   # transfer goes on to (57), where a game over returns them (1002), the counts of their enchanted
   # weapons and armors (200-201) and monsters' friendliness (2000-2999).
   PERSONAL_VARIABLES = [9, 21..23, 46..48, 56, 57, 150, 200..201, 1002, 2000...3000]
+
+  # Variables that are each Raid World player's own, beside PERSONAL_VARIABLES: the enemies' rates
+  # the difficulty sets (41-45, 49), the Ruler Ruler's own rates (92-99), the Labyrinth of Chaos's
+  # floors, area, level and tier (121, 123, 149, 151), the difficulty (902), the highest one cleared
+  # and its check (903, 906), and the difficulty a special boss or the Colosseum keeps while it sets
+  # its own (908). The world sets the difficulty for every player through world_difficulty.rbx, and
+  # each game keeps the values its own Labyrinth or Colosseum set.
+  RAID_PERSONAL_VARIABLES = [41..45, 49, 92..99, 121, 123, 149, 151, 902, 903, 906, 908]
 
   # First variable that holds a companion's affection, one per companion.
   AFFECTION_VARIABLES = 3000
@@ -139,6 +154,7 @@ module MGQ_MpStoryState
   # @return [Boolean] Whether it is.
   def self.personal_switch?(id, variables = nil)
     return MGQ_MpCoop::Scope.raid? || sides_differ?(variables) if SIDE_SWITCHES.include?(id)
+    return MGQ_MpCoop::Scope.raid? if RAID_PERSONAL_SWITCHES.include?(id)
 
     PERSONAL_SWITCHES.any? { |range| range === id } || id.between?(AWAKENING_SWITCHES, AWAKENING_LAST) || choice_key?(:s, id)
   end
@@ -158,7 +174,8 @@ module MGQ_MpStoryState
   # @param id [Integer] The variable.
   # @return [Boolean] Whether it is.
   def self.personal_variable?(id)
-    PERSONAL_VARIABLES.any? { |range| range === id } || (id >= AFFECTION_VARIABLES && id < AFFECTION_VARIABLES + companions) || choice_key?(:v, id)
+    PERSONAL_VARIABLES.any? { |range| range === id } || (id >= AFFECTION_VARIABLES && id < AFFECTION_VARIABLES + companions) || choice_key?(:v, id) ||
+      (RAID_PERSONAL_VARIABLES.any? { |range| range === id } && MGQ_MpCoop::Scope.raid?)
   end
 
   # Counts the game's companions, one affection variable each.

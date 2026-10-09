@@ -71,13 +71,14 @@ Confirm on a world and pick *Enter the world*.
 | Password | Left empty, anyone may enter. |
 | Max Players | 2 to 32. |
 | Hidden | Leaves the world out of the list. Only its players see it, and whoever adds it by its id. |
-| Shared save | Every new player starts from one of your saves, with your party, items, story and Library, instead of the opening. Choose the save after ticking it. |
-| Player's choice | Each new player chooses when they first enter: the beginning, one of their own saves, or yours if *Shared save* is ticked. Their own save is copied into the world; the original stays untouched. |
+| Shared save | Every new player starts from one of your saves, with your party, items, story and Library, instead of the opening. Choose the save after ticking it. Not in a Raid World, which starts from the beginning. |
+| Player's choice | Each new player chooses when they first enter: the beginning, one of their own saves, or yours if *Shared save* is ticked. Their own save is copied into the world; the original stays untouched. Not in a Raid World. |
+| Difficulty | Raid World only: the difficulty every player plays on. The game's own difficulty choice and the Reaper's change set it instead. The Labyrinth of Chaos, the Colosseum and the bosses with their own difficulty keep theirs, and a battle you join fights with its host's. |
 | Mods | The mods of the world, picked from a list of yours. See [Mods of a world](#mods-of-a-world). |
 | Allow data mismatch | Unticked at first: a game whose data differs from yours can't enter. Ticked, it is warned and may enter anyway. See [Game data](#game-data). |
 | Description | What the world is about, up to 1000 characters. |
 
-The creator can change Max Players, Mods and the Description later with *Edit the world*; everything else is fixed once the world exists.
+The creator can change Max Players, Mods, the Description and a Raid World's Difficulty later with *Edit the world*; a new difficulty reaches the players in the world at once. A Raid World made without one shows *Per player* there until a difficulty is picked. Everything else is fixed once the world exists.
 
 ### Managing worlds
 

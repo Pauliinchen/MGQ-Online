@@ -2,7 +2,8 @@
 #  battles_coop_hotjoin.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-09: Took in a player who asks with their own encounter while another request brought them along, instead of refusing them, and let them ignore that request's invite
+#      Paulinchen  2026-10-09: Sent the battle's enemy rates to the players it takes in, who fight with them
+#                            - Took in a player who asks with their own encounter while another request brought them along, instead of refusing them, and let them ignore that request's invite
 #                            - Took in a player who joins the battle by choice, without enemies, through battles_coop_join.rbx, and marked a boss battle in the invites of the players taken in
 #                            - Left the players whose state tells a battle out of those an encounter brings along
 #      Paulinchen  2026-10-08: Created
@@ -241,12 +242,13 @@ module MGQ_MpBattlesHotjoin
     log("waiting for the running battle's host failed: #{e.class}: #{e.message}")
   end
 
-  # Readies the player's battle to join the host's as a guest: its escape and lose, no first strike
-  # or surprise, which the game rolled for the encounter. The encounter's own come back should the
-  # host call it off (see fight_own).
+  # Readies the player's battle to join the host's as a guest: its escape, lose and enemy rates, no
+  # first strike or surprise, which the game rolled for the encounter. The encounter's own come back
+  # should the host call it off (see fight_own).
   #
-  # @param asking [Hash] The request, with the host's escape and lose.
+  # @param asking [Hash] The request, with the host's escape, lose and enemy rates.
   def self.join_late(asking)
+    MGQ_MpBattlesCoop.borrow_rates("rates" => asking[:host_rates])
     @late = :requester
     @own_flags = [asking[:escape], asking[:lose]]
     MGQ_MpGame.set(BattleManager, :can_escape, asking[:host_escape] ? true : false)
@@ -259,7 +261,8 @@ module MGQ_MpBattlesHotjoin
   # Takes the answer of the host the player asked, see ask.
   #
   # @param peer [MGQ_MpOverworldSync::Peers::Peer] Who answered.
-  # @param message [Hash] The answer, with the battle's escape and lose when it takes the player in.
+  # @param message [Hash] The answer, with the battle's escape, lose and enemy rates (see
+  #   MGQ_MpBattlesCoop.borrow_rates) when it takes the player in.
   # @param answer [Symbol] :accepted or :refused.
   def self.take_answer(peer, message, answer)
     asking = @asking
@@ -269,6 +272,7 @@ module MGQ_MpBattlesHotjoin
 
     asking[:host_escape] = message["escape"] == "1"
     asking[:host_lose] = message["lose"] == "1"
+    asking[:host_rates] = message["rates"]
     asking[:answer] = answer
     log("#{who(peer)} answered for battle #{message['bid']}: #{answer}")
   end
@@ -335,12 +339,13 @@ module MGQ_MpBattlesHotjoin
   end
 
   # Starts the player's own encounter alone, since the running battle never took them in: its own
-  # escape and lose back, from its start (see MGQ_MpBattlesCoop.take_over).
+  # escape, lose and enemy rates back, from its start (see MGQ_MpBattlesCoop.take_over).
   #
   # @param reason [String] Why, for Multiplayer InGame.log.
   # @return [Symbol] :gone, after which the battle goes on as the player's own.
   def self.fight_own(reason)
     own_flags_back
+    MGQ_MpBattlesCoop.give_back_rates
     @late = nil
     @called_off = false
     log("the encounter starts on its own: #{reason}")
@@ -482,7 +487,7 @@ module MGQ_MpBattlesHotjoin
     sync.expect(seats)
     coop = MGQ_MpBattlesCoop
     fields = invite_fields(seats - [peer.seat])
-    coop.tell_map([peer.seat], "hot_ok", "bid" => bid, "escape" => fields["escape"], "lose" => fields["lose"])
+    coop.tell_map([peer.seat], "hot_ok", "bid" => bid, "escape" => fields["escape"], "lose" => fields["lose"], "rates" => fields["rates"])
     coop.tell_map(seats - [peer.seat], "invite", fields) unless fields["seats"].empty?
     log("takes #{who(peer)}'s encounter into battle #{bid} at the next command phase: #{placed.size} enemies at x " \
         "#{placed.map { |entry| entry[1] }.join(', ')}, players #{seats.map { |seat| sync.who(seat) }.join(', ')}")
@@ -503,15 +508,17 @@ module MGQ_MpBattlesHotjoin
     log("takes #{who(peer)} into battle #{bid} at the next command phase: they join by choice, without enemies")
   end
 
-  # Writes the invite to the battle the player hosts for players who join it late: its troop, escape
-  # and lose, and whether it is a boss battle, which stays one should one of them take it over.
+  # Writes the invite to the battle the player hosts for players who join it late: its troop, escape,
+  # lose and enemy rates (see MGQ_MpBattlesCoop.borrow_rates), and whether it is a boss battle,
+  # which stays one should one of them take it over.
   #
   # @param seats [Array<Integer>] The seats of the players invited.
   # @return [Hash] The invite's fields.
   def self.invite_fields(seats)
     troop = MGQ_MpGame.get($game_troop, :troop_id)
     fields = { "bid" => running_battle[0], "troop" => troop, "escape" => MGQ_MpGame.get(BattleManager, :can_escape) ? 1 : 0,
-               "lose" => MGQ_MpGame.get(BattleManager, :can_lose) ? 1 : 0, "seats" => seats.join(","), "map" => $game_map.map_id, "hot" => 1 }
+               "lose" => MGQ_MpGame.get(BattleManager, :can_lose) ? 1 : 0, "seats" => seats.join(","), "map" => $game_map.map_id, "hot" => 1,
+               "rates" => MGQ_MpBattlesCoop.rates_text }
     fields["boss"] = 1 if boss_battle?
     fields
   end

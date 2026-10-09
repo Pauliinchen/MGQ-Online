@@ -53,7 +53,7 @@ Plain HTTP with JSON bodies of up to 32 KB (413 beyond, on every route of the re
 | `GET /v1/worlds?player=<key>&ids=<id>,<id>` | Lists every public world, and the hidden ones the player of `player` joined or `ids` names (up to 50 ids, which the worlds' creators hand out; without `player` and `ids`, public ones only), or every world for an admin. Answers `worlds`, each with the listed fields below, and `admin`, true for an admin. |
 | `POST /v1/worlds` | Makes a world from the fields sent on create below. 201, or 409 when the id is taken, 429 past 20 worlds per creator, a limit admins do not have, 503 past 2000 worlds in all, and 429 with `code` `rate` past 5 worlds at once and 10 an hour from one address. A world whose starting save has not come 10 minutes after it was made is deleted. |
 | `GET /v1/worlds/<id>/lock` | Hands out the world's `lock` (`salt`, `iterations`, `box`), which only the password opens, with its `name`, `seats`, `start` and `choose`, so a hidden world is entered by its id. |
-| `POST /v1/worlds/<id>/edit` | Changes whichever of `seats`, `description`, `mods` and `settings` (400 past 2000 characters) the body names, if `player` is the creator's or an admin's key, and replaces `data`, the creator's game data, and `modHashes`, if it is the creator's. Everything else of a world stays as it was made. |
+| `POST /v1/worlds/<id>/edit` | Changes whichever of `seats`, `description`, `mods`, `settings` (400 past 2000 characters) and a Raid World's `difficulty` (400 for a Classic world) the body names, if `player` is the creator's or an admin's key, and replaces `data`, the creator's game data, and `modHashes`, if it is the creator's. Everything else of a world stays as it was made. A new `difficulty` goes to every game in the world room as a text frame (see world rooms below). |
 | `POST /v1/worlds/<id>/delete` | Deletes the world, if `player` is the creator's or an admin's key, and closes its world room. |
 | `POST /v1/worlds/<id>/ban` | Removes the player whose id is `target` and keeps them out, if `player` is the creator's key. A world keeps at most 500 removed players (429 beyond). |
 | `POST /v1/worlds/<id>/start?player=<key>` | Keeps the world's starting save, the body as bytes (at most 8 MB), if `player` is the creator's key and the world was made with `start: true`. Only once: 409 afterwards. 413 past 8 MB, 507 with `code` `storage` once all starting saves together would pass 1 GB, and 429 with `code` `rate` past 5 uploads at once and 10 an hour from one address. |
@@ -72,9 +72,9 @@ A world's fields, as `POST /v1/worlds` takes them and `GET /v1/worlds` lists the
 | `creator` | | yes | The creator's `id` and `name`. |
 | `authHash` | yes | | SHA-256 of the auth key, hexadecimal. |
 | `lock` | yes | | `salt`, `iterations`, `box`: the token encrypted with a key from the password. |
-| `start` | `true` | `none`, `pending`, `ready` | Whether a starting save follows, and how far it is. |
+| `start` | `true` | `none`, `pending`, `ready` | Whether a starting save follows, and how far it is. A Raid World starts from the beginning: `true` is refused with 400 and `code` `raid_start`, and so is an upload. |
 | `hidden` | optional | yes | Left out of the list for everyone but its players. |
-| `choose` | optional | yes | Each new player chooses where to start: the beginning, one of their own saves, or the starting save. |
+| `choose` | optional | yes | Each new player chooses where to start: the beginning, one of their own saves, or the starting save. Refused for a Raid World like `start`. |
 | `open` | optional | yes | The password is empty, so the games enter without asking for it. |
 | `featured` | admins only | yes | Shown as one of the relay's own worlds. |
 | `description` | optional | yes | Kept up to 1000 characters. |
@@ -85,6 +85,7 @@ A world's fields, as `POST /v1/worlds` takes them and `GET /v1/worlds` lists the
 | `settings` | optional | yes | The creator's settings of the mods it names: `key=type:value` pairs separated by semicolons, up to 2000 characters; longer ones are refused, never cut. |
 | `type` | optional | yes | `classic` or `raid`; a world kept without one is `classic`. Fixed once made: an edit leaves it. |
 | `share` | optional | yes | How a Raid World shares companions: `off`, `story` (story companions) or `all` (story companions and battle recruits); `off` for every Classic world and when left out. Fixed once made. |
+| `difficulty` | optional | Raid only | The difficulty a Raid World sets for every player, the game's own values: -2 (VERY EASY) to 4 (PARADOX). Kept and listed only for a Raid World; left out, each player keeps their own. The creator or an admin changes it with an edit. |
 | `online`, `created`, `active` | | yes | How many players are in the world now, when it was made, when someone was last in it. |
 | `members` | | yes | Every player who joined: `id`, `name`, `online`, `seen` (when last in the world). |
 
@@ -161,6 +162,7 @@ A Raid World's story bosses each have a pool the whole world wears down together
   - When an admin says something (`POST /v1/worlds/<id>/chat`), the relay sends the text `chat <name>` + tab + `<line>` to every game in the room; games that don't know the frame ignore it.
 - **Story:** after every change of a Raid World's story the relay sends the text `story <rev>` to every game in the room; games that don't know it ignore it.
 - **Bosses:** after every change of a Raid World's boss pool (a counted report, an admin's reset) the relay sends the text `boss <hp> <key>` to every game in the room, the hit points with up to three decimals and the key last, since it may hold spaces; games that don't know it ignore it.
+- **Difficulty:** after an edit that names a Raid World's `difficulty`, the relay sends the text `difficulty <n>` to every game in the room; games that don't know it ignore it.
 - **Limits:** each connection lasts at most 2 hours on its own; the game then connects again.
 
 ### Both

@@ -2,6 +2,8 @@
 #  world_screen.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-09: Sent a Raid World's difficulty with the new world and, when it changed, with the creator's or an admin's edit, kept it in world.ini as a world is created or entered, and showed it in the details
+#                            - Sent neither a starting save nor the player's choice with a new Raid World, which starts from the beginning
 #      Paulinchen  2026-10-08: Showed Raid Worlds in red in the list and the details' title, and their type and companion sharing in the details
 #                            - Sent the new world's type and companion sharing, and kept both in world.ini as a world is created or entered
 #                            - Drew and turned the forms' switches in Window_MpWorldForm, which the story's choices share, and turned them in the world screen's forms with confirm and the arrows
@@ -489,7 +491,7 @@ class Scene_MpWorlds < Scene_MenuBase
     elsif @entry.local
       listed = @entry.listed
       log_screen("entering #{entry_text} from its folder #{@entry.local.id}#{listed ? '' : ' (deleted from the list, saves kept)'}")
-      @entry.local.describe(listed.name, listed.id, listed.seats, listed.type, listed.share) if listed
+      @entry.local.describe(listed.name, listed.id, listed.seats, listed.type, listed.share, listed.difficulty) if listed
       enter(@entry.local, listed && listed.start, listed && listed.choose)
     elsif @entry.open?
       log_screen("opening #{entry_text}, which has no password")
@@ -1437,15 +1439,27 @@ class Scene_MpWorlds < Scene_MenuBase
     @resume_form = true
   end
 
-  # Changes the chosen world as the form says; its creator's game sends the hashes of its required
-  # mods outside the catalog too, and then its mod settings when Shared Mod Settings changed.
+  # Changes the chosen world as the form says, a Raid World's difficulty with it only when the form
+  # changed it, since the relay moves every player onto a difficulty it is sent; its creator's game
+  # sends the hashes of its required mods outside the catalog too, and then its mod settings when
+  # Shared Mod Settings changed.
   def edit_world
     values = form
     own = @entry.listed.creator_id == @me
     hashes = own ? MGQ_MpWorldMods.creator_hashes(values[:mods]) : nil
     settings = MGQ_MpWorldMods.settings_of(@entry.listed, @list_state == "ready")
     @edited_settings = own && values[:shared] != MGQ_MpWorldMods.shared?(settings) ? (values[:shared] ? MGQ_MpWorldMods.with_marker(settings) : "") : nil
-    start_action("edit") { MGQ_MpWorld::Directory.edit(@entry.id, values[:seats].to_i, values[:description], values[:mods], hashes) }
+    difficulty = @entry.listed.raid? ? values.difficulty : nil
+    @edited_difficulty = difficulty && difficulty != @entry.listed.difficulty ? difficulty : nil
+    start_action("edit") { MGQ_MpWorld::Directory.edit(@entry.id, values[:seats].to_i, values[:description], values[:mods], hashes, @edited_difficulty) }
+  end
+
+  # Tells the creator or the admin that a Raid World's players play on its new difficulty, those
+  # in it now at once.
+  #
+  # @return [String] The sentence after the one that the world was changed, empty when the difficulty stayed.
+  def difficulty_text
+    @edited_difficulty ? " Its players play on #{MGQ_MpWorld.difficulty_name(@edited_difficulty)} now." : ""
   end
 
   # Tells the creator when their world's players get what it now does with its mod settings, since
@@ -1496,14 +1510,15 @@ class Scene_MpWorlds < Scene_MenuBase
       return @resume_form = true
     end
 
-    files = values[:from_save] ? MGQ_MpSaveDistribution.files_of(values[:save]) : []
+    files = values.from_save? ? MGQ_MpSaveDistribution.files_of(values[:save]) : []
+    raid = values.type == MGQ_MpWorld::RAID
     @creating = values[:name]
-    @creating_kind = [values.type, values.share]
+    @creating_kind = [values.type, values.share, raid ? values.difficulty : nil]
     @start_files = files
     about = { :description => values[:description], :mods => values[:mods], :data => MGQ_MpWorld::GameData.fingerprint, :strict => !values[:mismatch],
               :mod_hashes => MGQ_MpWorldMods.creator_hashes(values[:mods]), :settings => values[:shared] ? MGQ_MpWorldMods::MARKER : "",
-              :type => values.type, :share => values.share }
-    start_action("create") { MGQ_MpWorld::Directory.create(values[:name], values[:password], values[:seats].to_i, values[:hidden], values[:choose], MGQ_MpSaveDistribution.text_of(files), about) }
+              :type => values.type, :share => values.share, :difficulty => values.difficulty }
+    start_action("create") { MGQ_MpWorld::Directory.create(values[:name], values[:password], values[:seats].to_i, values[:hidden], values.choose?, MGQ_MpSaveDistribution.text_of(files), about) }
   end
 
   # Looks up the hidden world the form names by its id, to add it to the list.
@@ -1605,12 +1620,12 @@ class Scene_MpWorlds < Scene_MenuBase
       return start_action("settings") { MGQ_MpWorld::Directory.set_settings(@entry.id, @shared_settings) } if @shared_settings
 
       leave_form
-      say("#{@entry.name} was changed.")
+      say("#{@entry.name} was changed.#{difficulty_text}")
     when "settings"
       log_screen("changed #{entry_text} and its mod settings: #{MGQ_MpWorldMods.shared?(@shared_settings) ? 'shared' : "each player's own"}")
       MGQ_MpWorldMods.confirmed(@entry.id, @shared_settings)
       leave_form
-      say("#{@entry.name} was changed. #{shared_text(@shared_settings)}")
+      say("#{@entry.name} was changed.#{difficulty_text} #{shared_text(@shared_settings)}")
     end
 
     MGQ_MpWorld::Directory.refresh
@@ -1647,7 +1662,7 @@ class Scene_MpWorlds < Scene_MenuBase
       return false
     end
 
-    world = MGQ_MpWorld::World.found(action["code"], @entry.name, action["world"], @entry.listed.type, @entry.listed.share)
+    world = MGQ_MpWorld::World.found(action["code"], @entry.name, action["world"], @entry.listed.type, @entry.listed.share, @entry.listed.difficulty)
 
     unless world
       say("The world's folder could not be created.")
@@ -2392,7 +2407,7 @@ class Window_MpWorldDetail < Window_Base
   end
 
   # Tells who made a world, how full it is, how it is entered, where its new players start, and for a
-  # Raid World its type and how it shares companions.
+  # Raid World its type, how it shares companions and its difficulty.
   #
   # A Classic world gets no type row, since every row takes a line from the description below.
   #
@@ -2405,7 +2420,7 @@ class Window_MpWorldDetail < Window_Base
       [Cell.new("Password", listed.open ? "None" : "Needed", :normal), Cell.new("Listed", listed.hidden ? "Hidden" : "Public", :normal)],
     ]
     rows << type_row(listed) if listed.raid?
-    rows << [Cell.new("Start", start_text(listed), :normal)]
+    rows << (listed.raid? ? start_row(listed) : [Cell.new("Start", start_text(listed), :normal)])
     Panel.new("World", listed.featured ? "featured: one of the relay's own" : nil, rows)
   end
 
@@ -2570,6 +2585,15 @@ class Window_MpWorldDetail < Window_Base
   # @return [Array<Cell>] The row's two cells.
   def type_row(listed)
     [Cell.new("Type", "Raid", :raid), Cell.new("Sharing", SHARING_TEXTS[listed.share] || SHARING_TEXTS["off"], :normal)]
+  end
+
+  # Tells that a Raid World's new players start at the beginning, and the difficulty every player
+  # plays on.
+  #
+  # @param listed [MGQ_MpWorld::Directory::ListedWorld] The Raid World in the directory.
+  # @return [Array<Cell>] The row's two cells.
+  def start_row(listed)
+    [Cell.new("Start", "The beginning", :normal), Cell.new("Difficulty", MGQ_MpWorld.difficulty_name(listed.difficulty) || "Per player", :normal)]
   end
 
   # Tells where a world's new players start.

@@ -2,6 +2,7 @@
 #  start_choice_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-09: Expected the longer call of mp_dir_create, which takes a Raid World's difficulty
 #      Paulinchen  2026-10-08: Expected Player's choice in the form's World panel below Sharing companions, and the longer call of mp_dir_create
 #      Paulinchen  2026-10-07: Looked each DLL call's signature up in the export table of Multiplayer.rb
 #                            - Checked that every text of the save screen fits its line of help
@@ -170,7 +171,7 @@ $dll["mp_dir_list"] = "state=ready\n\nworld\tw1\t4\t0\tc\t0\tC\tFree\tnone\t0\t1
 _, _, listed, = MGQ_MpWorld::Directory.list
 check("the list reads which worlds let their players choose", listed.map { |world| world.choose }, [true, false, false])
 MGQ_MpWorld::Directory.create("W", "p", 4, false, true, "")
-check("create hands Players choose to the DLL", $calls.last[0..1] + [$calls.last[2][4]], ["mp_dir_create", "pplllpppplpppp", 1])
+check("create hands Players choose to the DLL", $calls.last[0..1] + [$calls.last[2][4]], ["mp_dir_create", "pplllpppplppppl", 1])
 
 # What the details say.
 detail = Window_MpWorldDetail.allocate

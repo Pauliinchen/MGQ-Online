@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-09: Kept a Raid World's boss pools in its world room's object, answered their routes there for the world's players and the admin routes for the relay's admins, and told every game of the world when a pool changed
+//                            - Told every game of a Raid World its new difficulty once its creator or an admin changed it
 //                            - Kept a removed player or a deleted world out of the world room's player list when the directory answered for it meanwhile, and asked the directory again for a player let in over 10 minutes ago
 //                            - Removed a Raid World's story and boss pools again when the world was deleted while a request to them ran
 //      Paulinchen  2026-10-08: Kept a Raid World's story in its world room's object, answered its routes there for the world's players, and told every game of the world when it changed
@@ -38,7 +39,7 @@
 
 import { DurableObject } from "cloudflare:workers";
 import { BOSS_LIMITS, WorldBosses, bossRouteOf, bossText, handleBossRequest } from "../core/bosses.js";
-import { Directory as WorldDirectory, WORLD_TYPE, handleDirectoryRequest, parseAdmins, playerIdOf, sha256Hex } from "../core/directory.js";
+import { Directory as WorldDirectory, WORLD_TYPE, difficultyText, handleDirectoryRequest, parseAdmins, playerIdOf, sha256Hex } from "../core/directory.js";
 import { badRequest, notFound, routeIs } from "../core/http.js";
 import { isHash, isId } from "../core/ids.js";
 import { ModCatalog, handleModRequest } from "../core/mods.js";
@@ -474,6 +475,10 @@ export class Directory extends DurableObject {
       await internal(worldOf(this.env, answer.id), "say", answer.say);
     }
 
+    if (answer.difficulty !== undefined) {
+      await internal(worldOf(this.env, answer.id), "difficulty", { difficulty: answer.difficulty });
+    }
+
     return respond(answer);
   }
 }
@@ -720,6 +725,12 @@ export class World extends DurableObject {
     if (url.pathname === "/internal/say") {
       const { name, text } = await request.json();
       this.tell(chatText(name, text));
+      return json(200, {});
+    }
+
+    if (url.pathname === "/internal/difficulty") {
+      const { difficulty } = await request.json();
+      this.tell(difficultyText(difficulty));
       return json(200, {});
     }
 

@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-09: Tested a Raid World's boss pools over HTTP: reports, the frame every game hears, the admin routes and a deleted world, and that a Classic world keeps none
+//                            - Tested that every game of a Raid World hears its new difficulty once its creator changes it over HTTP
 //                            - Tested that a story write whose body comes after the world was deleted leaves no story behind
 //      Paulinchen  2026-10-08: Tested a Raid World's story over HTTP: writes, conflicts, checkpoints, the route lock, companions, the frame every game hears, removed players and a deleted world, and that a Classic world keeps none
 //                            - Tested that a world room lets into a Raid World only the games that name it in X-MGQ-Features
@@ -914,6 +915,31 @@ test("the sweep deletes worlds whose starting save never came and trades kept lo
   await relay.sweep();
   assert.equal(await relay.trades.store.getTrade(trade), undefined);
   game.socket.close();
+});
+
+test("every game of a Raid World hears its new difficulty once its creator changes it over HTTP", async () => {
+  const room = roomId(133);
+  const created = await fetch(directoryBase, {
+    method: "POST",
+    headers: { [PLAYER_HEADER]: CREATOR },
+    body: JSON.stringify({ id: room, name: "Raid Difficulty", seats: 4, playerName: "Creator", authHash: await sha256Hex(AUTH), lock: { salt: "12".repeat(16), iterations: 200_000, box: "ab".repeat(40) }, type: "raid", difficulty: 1 }),
+  });
+  assert.equal(created.status, 201);
+  assert.equal((await listed(room)).difficulty, 1);
+  const watcher = await openWithHeaders(`${worldBase}${room}?name=Watcher&auth=${AUTH}`, { [PLAYER_HEADER]: playerKey(72), [FEATURES_HEADER]: "raid" });
+  assert.equal(await watcher.first, "seat 0");
+  const heard = [];
+  watcher.socket.on("message", (data) => heard.push(data.toString()));
+
+  const edit = await fetch(`${directoryBase}/${room}/edit`, { method: "POST", headers: { [PLAYER_HEADER]: CREATOR }, body: JSON.stringify({ seats: 4, difficulty: 3 }) });
+  assert.equal(edit.status, 200);
+  assert.deepEqual(await edit.json(), { edited: room }, "the answer names no difficulty");
+  await until(async () => heard.includes("difficulty 3"));
+  assert.equal((await listed(room)).difficulty, 3);
+
+  await fetch(`${directoryBase}/${room}/edit`, { method: "POST", headers: { [PLAYER_HEADER]: CREATOR }, body: JSON.stringify({ seats: 6 }) });
+  assert.deepEqual(heard.filter((text) => text.startsWith("difficulty")), ["difficulty 3"], "an edit without a difficulty tells none");
+  watcher.socket.close();
 });
 
 test("the creator or an admin edits a world over HTTP", async () => {

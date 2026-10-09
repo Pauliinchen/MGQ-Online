@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-09: Kept each Raid World's boss pools, answered their routes for the world's players and the admin routes for the relay's admins, and told every game of the world when a pool changed
+//                            - Told every game of a Raid World its new difficulty once its creator or an admin changed it
 //                            - Removed a Raid World's story and boss pools again when the world was deleted while a request to them ran
 //      Paulinchen  2026-10-08: Kept each Raid World's story, answered its routes for the world's players, and told every game of the world when it changed
 //                            - Passed what a game names in the X-MGQ-Features header on to the directory as it enters a world room
@@ -37,7 +38,7 @@ import http from "node:http";
 import { pathToFileURL } from "node:url";
 import { WebSocketServer } from "ws";
 import { BOSS_LIMITS, WorldBosses, bossRouteOf, bossText, handleBossRequest } from "../core/bosses.js";
-import { Directory, WORLD_TYPE, handleDirectoryRequest, parseAdmins } from "../core/directory.js";
+import { Directory, WORLD_TYPE, difficultyText, handleDirectoryRequest, parseAdmins } from "../core/directory.js";
 import { routeIs } from "../core/http.js";
 import { ModCatalog, handleModRequest } from "../core/mods.js";
 import { handleRaidAdminRequest, raidAdminRouteOf } from "../core/raid_admin.js";
@@ -470,6 +471,10 @@ export function createRelay({
 
     if (answer.say) {
       tellWorld(answer.id, chatText(answer.say.name, answer.say.text));
+    }
+
+    if (answer.difficulty !== undefined) {
+      tellWorld(answer.id, difficultyText(answer.difficulty));
     }
 
     if (answer.bytes) {

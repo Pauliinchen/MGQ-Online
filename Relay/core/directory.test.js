@@ -3,6 +3,9 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-09: Covered telling a world room whether a key is an admin's
+//                            - Covered a Raid World's difficulty: kept, listed, changed by its creator or an admin only, refused for a Classic world and out of range
+//                            - Covered a Raid World refused with a starting save or a player's choice, and its starting save upload refused
+//                            - Covered member's refusal during an upload with a Classic world, since a Raid World takes no starting save
 //                            - Covered a world room's member question refused while the starting save is uploaded
 //      Paulinchen  2026-10-08: Covered telling a world room who plays its world
 //                            - Covered a world's type and companion sharing, fixed once made, and Raid Worlds kept from games that do not name them
@@ -676,6 +679,48 @@ test("a Raid World keeps how it shares companions, a Classic one shares none, an
   assert.deepEqual((await typeOf())[WORLD], ["raid", "story"]);
 });
 
+test("a Raid World keeps its difficulty, which its creator or an admin changes and a Classic world never has", async () => {
+  const { directory } = newDirectory(DIRECTORY_LIMITS, [await playerIdOf(ADMIN)]);
+  await directory.create(await newWorld({ type: "raid", difficulty: 2 }));
+  await directory.create(await newWorld({ id: "1".repeat(32), type: "classic", difficulty: 2 }));
+  await directory.create(await newWorld({ id: "2".repeat(32), type: "raid" }));
+
+  const difficultyOf = async () => Object.fromEntries((await directory.list()).body.worlds.map((world) => [world.id, world.difficulty]));
+  assert.deepEqual(await difficultyOf(), { [WORLD]: 2, ["1".repeat(32)]: undefined, ["2".repeat(32)]: undefined }, "a Raid World made without one leaves each player their own");
+
+  const edited = await directory.edit(WORLD, CREATOR, { difficulty: -2 });
+  assert.deepEqual([edited.status, edited.difficulty], [200, -2], "the answer names the difficulty the world room tells");
+  assert.equal((await directory.edit(WORLD, ADMIN, { difficulty: 4 })).difficulty, 4);
+  assert.equal((await directory.edit(WORLD, OTHER, { difficulty: 0 })).status, 403);
+  assert.equal((await difficultyOf())[WORLD], 4);
+
+  for (const bad of [5, -3, 1.5, "1", null]) {
+    assert.equal((await directory.edit(WORLD, CREATOR, { difficulty: bad })).status, 400, `difficulty ${bad}`);
+  }
+
+  assert.equal((await directory.edit("1".repeat(32), CREATOR, { difficulty: 1 })).status, 400, "only a Raid World sets a difficulty");
+  assert.equal((await directory.edit("1".repeat(32), CREATOR, { seats: 6 })).difficulty, undefined, "an edit without one tells none");
+
+  for (const bad of [5, -3, 0.5, "0"]) {
+    assert.equal((await directory.create(await newWorld({ id: "3".repeat(32), type: "raid", difficulty: bad }))).status, 400, `new world with difficulty ${bad}`);
+  }
+});
+
+test("a Raid World starts from the beginning: no starting save and no player's choice", async () => {
+  const { directory } = newDirectory();
+
+  for (const changes of [{ start: true }, { choose: true }]) {
+    const refused = await directory.create(await newWorld({ type: "raid", ...changes }));
+    assert.deepEqual([refused.status, refused.body.code], [400, "raid_start"]);
+  }
+
+  assert.equal((await directory.create(await newWorld({ type: "raid", start: false, choose: false }))).status, 201);
+  const upload = await directory.putStart(WORLD, CREATOR, Uint8Array.of(1));
+  assert.deepEqual([upload.status, upload.body.code], [400, "raid_start"]);
+
+  assert.equal((await directory.create(await newWorld({ id: "1".repeat(32), start: true, choose: true }))).status, 201, "a Classic world keeps both as before");
+});
+
 test("a world kept from before types is Classic", async () => {
   const { directory } = newDirectory();
   await directory.create(await newWorld());
@@ -718,7 +763,7 @@ test("member tells a world room who plays its world, with the world's type and a
 
 test("member refuses a world whose starting save is still being uploaded", async () => {
   const { directory } = newDirectory();
-  await directory.create(await newWorld({ type: "raid", start: true }));
+  await directory.create(await newWorld({ start: true }));
 
   const pending = await directory.member(WORLD, CREATOR, AUTH);
   assert.equal(pending.status, 409);

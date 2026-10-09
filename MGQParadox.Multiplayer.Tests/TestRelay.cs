@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-09: Kept a Raid World's boss pools as the relay does: reports counted once per battle, the pool that fills up again and the boss an emptying report defeats, telling every game of each change
+//                            - Kept a Raid World's difficulty, set when it is made and changed with an edit, and listed it
 //      Paulinchen  2026-10-08: Kept a Raid World's story as the relay does: writes on the last sealed story that are not behind it, checkpoints, the route lock and shared companions, telling every game of each change
 //                            - Kept a world's type and how a Raid World shares companions, and kept games that do not name Raid Worlds in X-MGQ-Features out of them
 //                            - Handed out the mirrored chat lines as a copy taken under the lock, and told any text to every game of a world room
@@ -961,13 +962,14 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
             Settings = body["settings"]?.GetValue<string>() ?? string.Empty,
             Type = body["type"]?.GetValue<string>() ?? WorldType.Classic,
             Share = body["share"]?.GetValue<string>() ?? CompanionSharing.Off,
+            Difficulty = body["type"]?.GetValue<string>() == WorldType.Raid ? body["difficulty"]?.GetValue<int>() : null,
         };
 
         return (201, new JsonObject { ["id"] = id });
     }
 
     /// <summary>
-    /// Changes a world's seats, description and mods. Called with the gate held.
+    /// Changes a world's seats, description, mods and a Raid World's difficulty. Called with the gate held.
     /// </summary>
     /// <param name="world">The world's entry.</param>
     /// <param name="body">The changes.</param>
@@ -986,6 +988,17 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
         world.Seats = body["seats"]?.GetValue<int>() ?? world.Seats;
         world.Description = body["description"]?.GetValue<string>() ?? world.Description;
         world.Mods = body["mods"]?.GetValue<string>() ?? world.Mods;
+
+        if (body["difficulty"] != null)
+        {
+            if (world.Type != WorldType.Raid)
+            {
+                return (400, Error("only a Raid World sets a difficulty"));
+            }
+
+            world.Difficulty = body["difficulty"]!.GetValue<int>();
+        }
+
         return (200, new JsonObject { ["edited"] = true });
     }
 
@@ -1085,6 +1098,7 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
             ["settings"] = world.Settings,
             ["type"] = world.Type,
             ["share"] = world.Share,
+            ["difficulty"] = world.Difficulty,
             ["online"] = online.Count,
             ["created"] = 0,
             ["active"] = 0,
@@ -1534,6 +1548,11 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
         /// How a Raid World shares companions, see <see cref="CompanionSharing"/>.
         /// </summary>
         public string Share { get; init; } = CompanionSharing.Off;
+
+        /// <summary>
+        /// The difficulty a Raid World sets for every player, <see langword="null"/> for none.
+        /// </summary>
+        public int? Difficulty { get; set; }
 
         /// <summary>
         /// Whether only games with the same data may enter.

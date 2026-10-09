@@ -2,7 +2,8 @@
 #  world_story_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-09: Loaded story_state.rbx before coop_story.rbx and packed stories and stood in for bringing companions through MGQ_MpStoryState
+#      Paulinchen  2026-10-09: Took variable 152 as a story variable, since 151, the Labyrinth of Chaos's tier, is each Raid World player's own
+#                            - Loaded story_state.rbx before coop_story.rbx and packed stories and stood in for bringing companions through MGQ_MpStoryState
 #                            - Followed a player in an earlier part, who is behind the world's story now instead of playing their own
 #                            - Checked that a write refused for another route brings back the companions of the player's own decision
 #                            - Checked that one story asks the choices it passed and the route, and that a new game forgets them
@@ -244,7 +245,7 @@ SceneManager.scene = Scene_Map.new
 $telling = false
 
 # Entering a world nobody wrote a story for: the player's story becomes the world's.
-new_story({ 1001 => 12, 3001 => 50, 1029 => 6, 151 => 4 }, [300, 1005, 7016, 4], { [12, 3, "A"] => true, [5, 1, "B"] => true })
+new_story({ 1001 => 12, 3001 => 50, 1029 => 6, 152 => 4 }, [300, 1005, 7016, 4], { [12, 3, "A"] => true, [5, 1, "B"] => true })
 frames(1)
 check("entering a Raid World fetches its story", calls_of("mp_raid_story_fetch"), [["w1\0"]])
 relay("fetch" => "done")
@@ -253,7 +254,7 @@ post = calls_of("mp_raid_story_post").last
 check("a world without a story takes the player's, built on revision 0", [post && post[0], post && post[1], post && post[2]], ["w1\0", 0, "p=12;r1141=0;r1142=0;r1143=0;clear=\0"])
 lists = lists_of(post[3])
 check("which leaves out the player's own switches, variables and chests",
-      [lists["s"].split(","), lists["v"].split(",").map { |entry| entry.split(":")[0] }.sort, lists["ss"]], [["300"], ["1001", "151"], "5.1.B"])
+      [lists["s"].split(","), lists["v"].split(",").map { |entry| entry.split(":")[0] }.sort, lists["ss"]], [["300"], ["1001", "152"], "5.1.B"])
 relay("rev" => 1, "wrev" => 1, "p" => 12, "part" => "1", "post" => "accepted", "post_rev" => 1)
 frames(16)
 check("an accepted write is the story the player builds on", [story.mode, story.instance_variable_get(:@wrev)], [:world, 1])
@@ -296,10 +297,10 @@ check("nothing goes out while the player tells the story", calls_of("mp_raid_sto
 $telling = false
 frames(40)
 check("a write goes out on revision 3 soon after the telling", calls_of("mp_raid_story_post").map { |args| args[1] }, [3])
-relay({ "rev" => 4, "wrev" => 4, "p" => 13, "post" => "conflict", "post_code" => "rev" }, packed({ 1001 => 13, 151 => 9 }, [300, 301, 303]))
+relay({ "rev" => 4, "wrev" => 4, "p" => 13, "post" => "conflict", "post_code" => "rev" }, packed({ 1001 => 13, 152 => 9 }, [300, 301, 303]))
 frames(16)
 check("refused, it takes the world's story and keeps the player's own change the world lacks",
-      [$game_switches[303], $game_variables[151], $game_switches[302], $game_variables[3001], $game_switches[1006]], [true, 9, true, 60, true])
+      [$game_switches[303], $game_variables[152], $game_switches[302], $game_variables[3001], $game_switches[1006]], [true, 9, true, 60, true])
 frames(400)
 check("which goes out again on the world's revision", calls_of("mp_raid_story_post").map { |args| [args[1], lists_of(args[3])["s"]] }.last, [4, "300,301,302,303"])
 relay("rev" => 5, "wrev" => 5, "p" => 13, "post" => "accepted", "post_rev" => 5)
@@ -309,7 +310,7 @@ frames(16)
 $calls.clear
 $game_variables[1001] = 14
 frames(80)
-relay({ "rev" => 6, "wrev" => 6, "p" => 15, "post" => "conflict", "post_code" => "behind" }, packed({ 1001 => 15, 151 => 9 }, [300, 301, 302, 303]))
+relay({ "rev" => 6, "wrev" => 6, "p" => 15, "post" => "conflict", "post_code" => "behind" }, packed({ 1001 => 15, 152 => 9 }, [300, 301, 302, 303]))
 frames(16)
 check("a write behind the world's takes the world's progress", [$game_variables[1001], story.instance_variable_get(:@wrev)], [15, 6])
 frames(400)
@@ -326,7 +327,7 @@ check("nor does a message only a player sent", calls_of("mp_raid_story_fetch"), 
 story.pushed(MGQ_MpOverworldSync::STORY_FIELD => "9", :relay => true)
 frames(1)
 check("a newer one fetches the world's story", calls_of("mp_raid_story_fetch").size, 1)
-relay({ "rev" => 9, "wrev" => 9, "p" => 15, "fetch" => "done", "end" => "40,7,8" }, packed({ 1001 => 15, 151 => 9 }, [300, 301, 302, 303, 304]))
+relay({ "rev" => 9, "wrev" => 9, "p" => 15, "fetch" => "done", "end" => "40,7,8" }, packed({ 1001 => 15, 152 => 9 }, [300, 301, 302, 303, 304]))
 frames(16)
 check("whose changes reach the player", [$game_switches[304], story.endpoint], [true, [40, 7, 8, 2]])
 $calls.clear
@@ -421,12 +422,12 @@ check("or for AWAIT_TELLER_FRAMES at most", story.awaits_teller?, false)
 # A loaded save in the world's current part: the world's story is laid over it, the player's own
 # values kept.
 $calls.clear
-new_story({ 1001 => 19, 3001 => 70, 1029 => 1, 151 => 2 }, [1010, 7016, 4, 310], { [12, 3, "A"] => true })
+new_story({ 1001 => 19, 3001 => 70, 1029 => 1, 152 => 2 }, [1010, 7016, 4, 310], { [12, 3, "A"] => true })
 story.loaded(:load)
 frames(1)
-relay({ "rev" => 12, "wrev" => 12, "p" => 20, "part" => "2", "fetch" => "done" }, packed({ 1001 => 20, 151 => 5, 1029 => 9 }, [5, 7017, 311], { [12, 3, "A"] => false, [6, 1, "A"] => true }))
+relay({ "rev" => 12, "wrev" => 12, "p" => 20, "part" => "2", "fetch" => "done" }, packed({ 1001 => 20, 152 => 5, 1029 => 9 }, [5, 7017, 311], { [12, 3, "A"] => false, [6, 1, "A"] => true }))
 frames(16)
-check("a loaded save takes the world's story", [story.mode, $game_variables[1001], $game_variables[151], $game_switches[311], $game_switches[310], $game_self_switches[[6, 1, "A"]]],
+check("a loaded save takes the world's story", [story.mode, $game_variables[1001], $game_variables[152], $game_switches[311], $game_switches[310], $game_self_switches[[6, 1, "A"]]],
       [:world, 20, 5, true, false, true])
 check("keeping the player's affection, companions, chests, choices and side",
       [$game_variables[3001], $game_switches[1010], $game_self_switches[[12, 3, "A"]], $game_variables[1029], $game_switches[7016], $game_switches[7017], $game_switches[4], $game_switches[5]],
@@ -437,10 +438,10 @@ check("and tells the player once", $notices.count("You play the world's story.")
 # again once theirs reaches its part.
 $calls.clear
 $notices.clear
-new_story({ 1001 => 10, 151 => 2 }, [310])
+new_story({ 1001 => 10, 152 => 2 }, [310])
 story.loaded(:load)
 frames(1)
-relay({ "rev" => 12, "wrev" => 12, "p" => 25, "part" => "2", "fetch" => "done" }, packed({ 1001 => 25, 151 => 5 }, [311]))
+relay({ "rev" => 12, "wrev" => 12, "p" => 25, "part" => "2", "fetch" => "done" }, packed({ 1001 => 25, 152 => 5 }, [311]))
 frames(16)
 check("a player in an earlier part is behind, keeping their own story without a checkpoint", [story.mode, $game_variables[1001], $game_switches[310], $game_switches[311]], [:behind, 10, true, false])
 check("and is told so", $notices, ["The world's story is further than yours."])
@@ -450,16 +451,16 @@ check("and writes nothing", calls_of("mp_raid_story_post"), [])
 $game_variables[1001] = 19
 frames(31)
 check("reaching the world's part fetches its story again", calls_of("mp_raid_story_fetch").size, 2)
-relay({ "rev" => 12, "wrev" => 12, "p" => 25, "part" => "2", "fetch" => "done" }, packed({ 1001 => 25, 151 => 5 }, [311]))
+relay({ "rev" => 12, "wrev" => 12, "p" => 25, "part" => "2", "fetch" => "done" }, packed({ 1001 => 25, 152 => 5 }, [311]))
 frames(16)
 check("which the player then plays", [story.mode, $game_variables[1001]], [:world, 25])
 
 # A loaded save further than the world's story: the furthest story wins.
 $calls.clear
-new_story({ 1001 => 30, 151 => 2 }, [310])
+new_story({ 1001 => 30, 152 => 2 }, [310])
 story.loaded(:load)
 frames(1)
-relay({ "rev" => 14, "wrev" => 13, "p" => 25, "part" => "2", "fetch" => "done" }, packed({ 1001 => 25, 151 => 5 }, [311]))
+relay({ "rev" => 14, "wrev" => 13, "p" => 25, "part" => "2", "fetch" => "done" }, packed({ 1001 => 25, 152 => 5 }, [311]))
 frames(16)
 check("a player further than the world writes their story as the world's", calls_of("mp_raid_story_post").map { |args| [args[1], args[2]] }, [[13, "p=30;r1141=0;r1142=0;r1143=0;clear=\0"]])
 relay("rev" => 15, "wrev" => 15, "p" => 30, "part" => "2", "post" => "accepted", "post_rev" => 15)

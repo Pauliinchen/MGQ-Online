@@ -2,6 +2,8 @@
 #  world_data_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-09: Expected the Difficulty switch in place of the Save in the World panel of a Raid World's new world form, a new Raid World's difficulty kept for its folder, and the longer calls of mp_dir_create and mp_dir_edit
+#                            - Checked that editing a Raid World sends its difficulty only when it changed, offers Per player for one that sets none, and says when its players play on a new one
 #      Paulinchen  2026-10-08: Expected the starting point in the World panel of the new world's form, which keeps the form on one page with the world type, and the longer call of mp_dir_create
 #                            - Checked that a new world goes to the DLL as Classic, or as a Raid World with how it shares companions
 #                            - Covered Shared Mod Settings in the forms of a new world and of the creator's own world, and in a world's details
@@ -248,6 +250,10 @@ check("the description is a box of several lines in a panel of its own", [descri
 check("the mods and the mismatch checkbox share the Game data panel", [:mods, :mismatch].map { |key| field = form.fields.find { |candidate| candidate.key == key }; [field.kind, field.label, field.group] }, [[:mods, "Mods", "Game data"], [:check, "Allow data mismatch", "Game data"]])
 check("the world type and the starting point share the World panel", form.fields.select { |field| field.group == "World" }.map { |field| field.label },
       ["Name", "Password", "Max Players", "Hidden", "World type", "Sharing companions", "Shared save", "Player's choice", "Save"])
+form[:type] = 1
+check("a Raid World has the Difficulty in place of the Save", form.fields.select { |field| field.group == "World" }.map { |field| field.label },
+      ["Name", "Password", "Max Players", "Hidden", "World type", "Sharing companions", "Shared save", "Player's choice", "Difficulty"])
+form[:type] = 0
 check("a description is tidied", form.check(description, "  A slow run.  "), ["A slow run.", nil])
 check("and may be empty", form.check(description, "  "), ["", nil])
 check("while a name may not", form.check(form.fields[0], " ")[1], "The world needs a name.")
@@ -301,13 +307,13 @@ check("a Classic world shares no companions whatever the greyed-out switch shows
 strict_form[:type] = 1
 scene.create_world
 check("a Raid World goes with how it shares companions", $calls.last[2][12..13], ["raid\0", "all\0"])
-check("which the screen keeps for the world's folder", scene.instance_variable_get(:@creating_kind), ["raid", "all"])
+check("which the screen keeps for the world's folder with its difficulty", scene.instance_variable_get(:@creating_kind), ["raid", "all", 0])
 strict_form[:type] = 0
 strict_form[:share] = 0
 
 # The directory.
 MGQ_MpWorld::Directory.create("W", "p", 4, false, false, "", :description => "A slow run.", :mods => "Some Mod", :data => modded, :strict => true)
-check("create hands the description, the mods, the game data and the rule to the DLL", [$calls.last[1], $calls.last[2][6..9]], ["pplllpppplpppp", ["A slow run.\0", "Some Mod\0", "#{modded}\0", 1]])
+check("create hands the description, the mods, the game data and the rule to the DLL", [$calls.last[1], $calls.last[2][6..9]], ["pplllpppplppppl", ["A slow run.\0", "Some Mod\0", "#{modded}\0", 1]])
 MGQ_MpWorld::Directory.create("W", "p", 4, false, false, "")
 check("or nothing", $calls.last[2][6..9], ["\0", "\0", "\0", 0])
 $dll["mp_dir_list"] = "state=ready\n\n" \
@@ -648,7 +654,8 @@ scene.form[:seats] = "8"
 scene.form[:mods] = ""
 $calls.clear
 scene.send_form
-check("sending it hands the changes to the DLL", [$calls.last[0], $calls.last[1], $calls.last[2], scene.instance_variable_get(:@busy)], ["mp_dir_edit", "plpppl", ["w2\0", 8, "A slow run through part one of the story with friends.\0", "\0", "\0", 0], "edit"])
+check("sending it hands the changes to the DLL, a Classic world without a difficulty", [$calls.last[0], $calls.last[1], $calls.last[2], scene.instance_variable_get(:@busy)],
+      ["mp_dir_edit", "plppplll", ["w2\0", 8, "A slow run through part one of the story with friends.\0", "\0", "\0", 0, 0, 0], "edit"])
 $dll["mp_dir_action"] = "state=done\nkind=edit\n\n"
 scene.follow_action
 check("once changed, the form closes and the screen says so", [scene.form, said(scene)], [nil, "Loose was changed."])
@@ -657,6 +664,35 @@ scene.form[:seats] = "99"
 $calls.clear
 scene.send_form
 check("seats out of range are refused before anything is sent", [$calls, said(scene)], [[], "Max Players must be a number from 2 to 32."])
+raid_listed = listed[1].dup
+raid_listed.type = MGQ_MpWorld::RAID
+raid_listed.difficulty = 1
+scene.instance_variable_set(:@entry, MGQ_MpWorld::Entry.new("w2", "Loose", raid_listed, nil, false, false))
+scene.on_edit_world
+scene.form.turn(scene.form.fields.find { |field| field.key == :difficulty }, 1)
+$calls.clear
+scene.send_form
+check("editing a Raid World sends its difficulty along", [$calls.last[0], $calls.last[2][6..7]], ["mp_dir_edit", [2, 1]])
+scene.follow_action
+check("and says its players play on the new one now", said(scene), "Loose was changed. Its players play on VERY HARD now.")
+scene.on_edit_world
+scene.send_form
+sent = $calls.last[2][6..7]
+scene.follow_action
+check("but not when it stayed, since the relay would move every player onto it again", [sent, said(scene)], [[0, 0], "Loose was changed."])
+raid_listed.difficulty = nil
+scene.on_edit_world
+picked = scene.form.fields.find { |field| field.key == :difficulty }
+check("a Raid World that sets none shows Per player first", [picked.choices.first, picked.choices[scene.form[:difficulty]], scene.form.difficulty], ["Per player", "Per player", nil])
+scene.send_form
+sent = $calls.last[2][6..7]
+scene.follow_action
+check("which an unrelated edit leaves as it is", [sent, said(scene)], [[0, 0], "Loose was changed."])
+scene.on_edit_world
+scene.form.turn(scene.form.fields.find { |field| field.key == :difficulty }, 1)
+scene.send_form
+check("until the creator picks one", $calls.last[2][6..7], [-2, 1])
+scene.follow_action
 
 # The seats a world's code tells follow the directory.
 world = MGQ_MpWorld::World.new("abcdef012345", "code" => "mgqmp2;abcdefghjkmnpqrs;r1;4")

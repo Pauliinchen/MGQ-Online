@@ -3,6 +3,8 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-09: Loaded story_state.rbx before coop_story.rbx, the story's state model the party's story and a Raid World's story share
+#                            - Loaded world_difficulty.rbx after world_catchup.rbx, which plays every player of a Raid World on its difficulty
+#                            - Named mp_dir_create and mp_dir_edit with a Raid World's difficulty
 #                            - Named the mp_raid_boss* exports of a Raid World's boss pools at the relay
 #                            - Loaded battles_raid_pool.rbx after battles_coop_hotjoin.rbx, which counts a Raid World's won story boss battles against the bosses' pools
 #                            - Loaded world_catchup_data.rbx before world_story.rbx, the generated data of a Raid World's catch-up
@@ -112,7 +114,7 @@ module MGQ_Multiplayer
   SCRIPTS = %w[
     core_log core_hooks core_game_access core_hotkeys ui ui_text_box core_actors core_async overworld_sync ui_wheel ui_actions ui_chat ui_emotes overworld
     coop coop_scope coop_squad coop_events coop_gather coop_scene coop_npcs coop_story_rewards story_state coop_story coop_castle
-    world world_mods world_catchup_data world_story world_catchup world_save_distribution world_text world_screen world_save_export coop_choices
+    world world_mods world_catchup_data world_story world_catchup world_difficulty world_save_distribution world_text world_screen world_save_export coop_choices
     battles battles_raid_bosses battles_coop battles_coop_hotjoin battles_coop_join battles_raid_pool battles_coop_level_sync
     battles_sync battles_sync_wire battles_sync_recorder battles_sync_playback battles_sync_live
     battles_balance_pvp battles_pvp battles_pvp_backline battles_pvp_mirror battles_pvp_lobby battles_duel battles_team
@@ -592,10 +594,10 @@ module MGQ_Multiplayer
       'mp_dir_refresh' => 'v',
       'mp_dir_find' => 'p',
       'mp_dir_list' => READ_ARGUMENTS,
-      'mp_dir_create' => 'pplllpppplpppp',
+      'mp_dir_create' => 'pplllpppplppppl',
       'mp_dir_unlock' => 'pp',
       'mp_dir_unlock_code' => 'p',
-      'mp_dir_edit' => 'plpppl',
+      'mp_dir_edit' => 'plppplll',
       'mp_dir_set_settings' => 'pp',
       'mp_dir_set_data' => 'pp',
       'mp_dir_delete' => 'p',

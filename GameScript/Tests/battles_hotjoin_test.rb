@@ -2,7 +2,8 @@
 #  battles_hotjoin_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-09: Checked that a battle that calls the Library or Config ends nothing
+#      Paulinchen  2026-10-09: Checked that a guest and an encounter taken in fight with the host's enemy rates and get their own back
+#                            - Checked that a battle that calls the Library or Config ends nothing
 #                            - Checked that a player another request brought along is taken in with their own encounter and ignores the invite it sent, and that an encounter brings along nobody who fights
 #      Paulinchen  2026-10-08: Created
 #
@@ -487,6 +488,46 @@ $sent.clear
 coop.take(host, { "coop" => "invite", "bid" => "hb1", "troop" => "31", "escape" => "1", "lose" => "0", "seats" => "0", "map" => "5", "hot" => "1" })
 check("a player who asks a running battle ignores its host's invite another request sent", battle_sent("decline"), [])
 reset
+
+# The enemy rates: every game of a battle fights with its host's, each player's own back after it.
+rates = coop::RATE_VARIABLES
+own_rates = lambda { rates.map { |id| $game_variables[id] } }
+rates.each { |id| $game_variables[id] = 75 }
+MGQ_MpOverworldSync::Peers.all.replace([host, guest, free])
+$encounter_troop = 50
+$scene_now = Scene_Map.new
+$game_player.encounter
+coop.take(host, { "coop" => "hot_no", "bid" => "hb1" })
+$scene_now = scene
+coop::Mode.before_start(scene)
+check("a Raid World's invite carries its host's enemy rates", map_sent("invite").map { |seat, f| [seat, f["rates"]] }, [[7, "75,75,75,75,75,75"]])
+reset
+
+$scene_now = Scene_Map.new
+MGQ_MpOverworldSync::Peers.all.replace([host])
+coop.take(host, { "coop" => "invite", "bid" => "rt1", "troop" => "31", "escape" => "1", "lose" => "0", "seats" => "0", "map" => "5", "rates" => "100,100,100,90,100,100" })
+coop.on_map
+check("a guest fights with its host's enemy rates, such as a special boss's NORMAL on the guest's EASY", [sync.role, own_rates.call], [:guest, [100, 100, 100, 90, 100, 100]])
+SceneManager.instance_variable_set(:@stack, [Scene_Map.new])
+coop.ended
+check("and has its own back once the battle ended", own_rates.call, [75] * 6)
+reset
+
+$encounter_troop = 50
+$scene_now = Scene_Map.new
+MGQ_MpOverworldSync::Peers.all.replace([host, guest, free])
+$game_player.encounter
+coop.take(host, { "coop" => "hot_ok", "bid" => "hb1", "escape" => "1", "lose" => "0", "rates" => "120,120,120,120,120,120" })
+$scene_now = scene
+coop::Mode.before_start(scene)
+check("an encounter a running battle takes in fights with that battle's enemy rates", own_rates.call, [120] * 6)
+$inject = lambda { |frame| coop.take(host, { "coop" => "off", "bid" => "hb1" }) if frame == 3 }
+coop.join(scene)
+check("and with its own again once the host called it off", own_rates.call, [75] * 6)
+reset
+coop.borrow_rates("rates" => "1,2")
+coop.borrow_rates("rates" => "")
+check("an invite without the host's enemy rates leaves the player's own", own_rates.call, [75] * 6)
 
 $raid = false
 coop.take(asker, request)

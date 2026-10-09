@@ -2,7 +2,8 @@
 #  battles_coop.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-09: Ended a co-op battle only once its scene ended, not when its party command called the Library or Config
+#      Paulinchen  2026-10-09: Fought a battle joined in a Raid World with its host's enemy rates, the player's own back once it ended
+#                            - Ended a co-op battle only once its scene ended, not when its party command called the Library or Config
 #                            - Noted whether the battle the player's yields to in a Raid World is a boss battle, which then takes no encounter in should the player take it over
 #                            - Ignored the invite of a running battle's host the player asks to take their own encounter in
 #                            - Passed a request to join a battle by choice and its refusal to battles_coop_join.rbx
@@ -141,6 +142,12 @@ module MGQ_MpBattlesCoop
   # Characters a player's builds hold at most, the game's largest party.
   MOST_CHARACTERS = 14
 
+  # The variables of the enemies' strength the game reads as their parameters are asked: the rates
+  # of their HP, attack, defense, agility, instant death resistance and MP, which the difficulty, a
+  # fight's own values or the Labyrinth of Chaos's level set. The rates of experience, job
+  # experience and gold (46, 49, 47) stay each player's own rewards.
+  RATE_VARIABLES = [41, 42, 43, 44, 45, 48]
+
   # A player of a co-op battle, or of a side of a team duel. The battle's messages carry a player
   # as their fields in this order.
   #
@@ -173,6 +180,7 @@ module MGQ_MpBattlesCoop
   @members = nil
   @players = nil
   @allies = {}
+  @kept_rates = nil
 
   extend MGQ_MpLog
 
@@ -374,6 +382,7 @@ module MGQ_MpBattlesCoop
     if raid?
       fields["enc"] = @random_encounter ? 1 : 0
       fields["boss"] = 1 if MGQ_MpRaidBosses.battle?(troop_id)
+      fields["rates"] = rates_text
     end
     raid? ? tell_map(seats, "invite", fields) : tell(-1, "invite", fields)
     log("invited #{seats.size} #{raid? ? 'player' : 'member'}(s) to battle #{battle_id} against troop #{troop_id} on map #{$game_map.map_id}: #{seats.map { |seat| MGQ_MpBattlesSync.who(seat) }.join(', ')}")
@@ -983,13 +992,14 @@ module MGQ_MpBattlesCoop
     log("follows to #{MGQ_MpOverworldSync.who(peer)}'s battle #{message['bid']} against troop #{message['troop']}, which the player's host yielded to")
   end
 
-  # Sets the rival's battle up in place of the player's own, as joining an invite does: its troop,
-  # drawn anew, its chance to escape, and whether it allows escaping and losing; no first strike or
+  # Sets the rival's battle up in place of the player's own, as joining an invite does: its enemy
+  # rates (see borrow_rates), its troop, drawn anew, its chance to escape, and whether it allows escaping and losing; no first strike or
   # surprise.
   #
   # @param scene [Scene_Battle] The battle.
   # @param message [Hash] The rival's invite.
   def self.adopt_troop(scene, message)
+    borrow_rates(message)
     $game_troop.setup(message["troop"].to_i)
     BattleManager.make_escape_ratio if BattleManager.respond_to?(:make_escape_ratio)
     MGQ_MpGame.set(BattleManager, :can_escape, message["escape"] == "1")
@@ -1220,6 +1230,7 @@ module MGQ_MpBattlesCoop
     accept(peer, message)
   rescue => e
     @invite = nil
+    give_back_rates
     log("joining a co-op battle failed: #{e.class}: #{e.message}")
   end
 
@@ -1276,7 +1287,7 @@ module MGQ_MpBattlesCoop
     !$game_map.interpreter.running? && !$game_player.transfer? && !$game_player.moving?
   end
 
-  # Starts the invited battle as a guest.
+  # Starts the invited battle as a guest, with the host's enemy rates (see borrow_rates).
   #
   # @param peer [MGQ_MpOverworldSync::Peers::Peer] The host.
   # @param message [Hash] The invite.
@@ -1286,6 +1297,7 @@ module MGQ_MpBattlesCoop
     $game_message.clear
     @joining = true
     MGQ_MpBattlesHotjoin.note_invite(message)
+    borrow_rates(message)
     BattleManager.setup(message["troop"].to_i, message["escape"] == "1", message["lose"] == "1")
     MGQ_MpBattlesSync.join_world(:guest, message["bid"].to_s, [peer.seat], peer.state["name"].to_s)
     MGQ_MpBattlesSync.battle_started
@@ -1295,6 +1307,42 @@ module MGQ_MpBattlesCoop
     log("joined #{peer.state['name']}'s battle #{message['bid']} against troop #{message['troop']}")
   ensure
     @joining = false
+  end
+
+  # Writes the enemies' rates the player's game fights with, for the invites of a battle it hosts.
+  #
+  # @return [String] RATE_VARIABLES' values, separated by commas.
+  def self.rates_text
+    RATE_VARIABLES.map { |id| $game_variables[id].to_i }.join(",")
+  end
+
+  # Fights the battle the player joins with its host's enemy rates, which an invite in a Raid World
+  # carries, so its enemies are as strong in every game: those of a special boss, the Colosseum or
+  # the host's Labyrinth of Chaos too, whatever the player's own difficulty. Keeps the player's own
+  # until the battle's scene ended (see give_back_rates); a second invite keeps the first's.
+  #
+  # @param message [Hash] The invite, "rates" with rates_text of the host.
+  def self.borrow_rates(message)
+    rates = message["rates"].to_s.split(",")
+    return unless rates.size == RATE_VARIABLES.size && rates.all? { |rate| rate =~ /\A-?\d+\z/ }
+
+    @kept_rates ||= RATE_VARIABLES.map { |id| [id, $game_variables[id]] }
+    RATE_VARIABLES.each_with_index { |id, index| $game_variables[id] = rates[index].to_i }
+    log("fights with the host's enemy rates #{message['rates']} instead of the player's own #{@kept_rates.map { |_, rate| rate }.join(',')}")
+  rescue => e
+    log("taking the host's enemy rates failed: #{e.class}: #{e.message}")
+  end
+
+  # Puts the player's own enemy rates back once the battle they joined is over.
+  def self.give_back_rates
+    kept = @kept_rates
+    return unless kept
+
+    @kept_rates = nil
+    kept.each { |id, rate| $game_variables[id] = rate }
+    log("the player's own enemy rates #{kept.map { |_, rate| rate }.join(',')} are back")
+  rescue => e
+    log("putting the player's own enemy rates back failed: #{e.class}: #{e.message}")
   end
 
   # Turns an invite down, so the host need not wait for the player.
@@ -1768,10 +1816,11 @@ module MGQ_MpBattlesCoop
     log("fights on with the player's own party: #{members_text($game_party.battle_members)}")
   end
 
-  # Ends a co-op battle: the player's own party again, the game's own settings back, and the live
-  # battle over. A battle the player hosted alone for players who never joined stays their own, its
-  # Retry kept. Called once the battle's scene ended.
+  # Ends a co-op battle: the player's own party and enemy rates again, the game's own settings back,
+  # and the live battle over. A battle the player hosted alone for players who never joined stays
+  # their own, its Retry kept. Called once the battle's scene ended.
   def self.ended
+    give_back_rates
     alone = MGQ_MpBattlesHotjoin.waiting_alone? && MGQ_MpBattles.kind != :coop
     MGQ_MpBattlesHotjoin.ended
     return MGQ_MpBattlesSync.finish if alone
@@ -1801,8 +1850,8 @@ module MGQ_MpBattlesCoop
     $game_player.refresh if $game_player
   end
 
-  # Forgets a co-op battle a reset interrupted, and every invite, request and hold, without touching
-  # any character, whose save the reset dropped.
+  # Forgets a co-op battle a reset interrupted, and every invite, request, hold and the enemy rates
+  # kept, without touching any character or variable, whose save the reset dropped.
   def self.drop
     held = [("the battle" if @members), ("the hold" if @hold), ("the request to the leader" if @asking),
             ("an invite" if @invite), ("a request to lead" if @request)].compact
@@ -1815,6 +1864,7 @@ module MGQ_MpBattlesCoop
     @invite = nil
     @request = nil
     @frozen = nil
+    @kept_rates = nil
   end
 
   # Forgets the co-op party, its players and their characters, a rival's invite and the battle the

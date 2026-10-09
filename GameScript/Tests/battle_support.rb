@@ -2,6 +2,7 @@
 #  battle_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-09: Stood in for the game's variables, which hold the enemy rates a guest takes from the host
 #      Paulinchen  2026-10-08: Stood in for the faces this game has, of overworld.rbx
 #                            - Loaded coop_scope.rbx, which tells coop_squad.rbx whether a Raid World is open, and counted the party's Frontline from max_battle_members
 #                            - Stood in for the players whose connection stands, when the player entered the map, the player's tile, the party's leader and the troop's setup
@@ -207,6 +208,7 @@ class Game_Player
 end
 class Scene_Title; def start; end; end
 class Game_Switches; def initialize; @d = {}; end; def [](i); @d[i] || false; end; def []=(i, v); @d[i] = v; end; end
+class Game_Variables; def initialize; @d = {}; end; def [](i); @d[i] || 0; end; def []=(i, v); @d[i] = v; end; end
 System = Struct.new(:switches)
 $data_system = System.new(Array.new(100, ""))
 module NWConst; module Sw; FORBID_BATTLE_SHIFT_CHANGE = 27; end; end
@@ -299,6 +301,7 @@ def fields_of(text)
 end
 
 $game_switches = Game_Switches.new
+$game_variables = Game_Variables.new
 $game_temp = Game_Temp.new
 $game_message = Game_Message.new
 $game_map = Game_Map.new

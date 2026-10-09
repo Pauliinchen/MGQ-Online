@@ -3,6 +3,8 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-09: Told a world room whether a key is an admin's, for the admin routes of a Raid World it answers itself
+//                            - Kept a Raid World's difficulty, which its creator or an admin may change and every game in it is told of
+//                            - Refused a Raid World with a starting save or a player's choice, since it starts from the beginning
 //                            - Refused a world room's member question for a world whose starting save is still being uploaded
 //      Paulinchen  2026-10-08: Told a world room whether a game is a player of its world, for the routes it answers itself, such as a Raid World's story
 //                            - Kept a world's type, Classic or Raid, and how a Raid World shares companions, both fixed once it is made
@@ -103,6 +105,7 @@ export const REFUSAL = Object.freeze({
   rate: "rate",
   storage: "storage",
   raid: "raid_unsupported",
+  raidStart: "raid_start",
 });
 
 /**
@@ -121,6 +124,17 @@ export const WORLD_TYPE = Object.freeze({ classic: "classic", raid: "raid" });
  * and battle recruits. A world kept without it, and every Classic one, shares none.
  */
 export const SHARING = Object.freeze({ off: "off", story: "story", all: "all" });
+
+/**
+ * The difficulties a Raid World may set for every player, the game's own values of variable 902:
+ * VERY EASY (-2) up to PARADOX (4). A world kept without one leaves each player their own.
+ */
+export const DIFFICULTY = Object.freeze({ min: -2, max: 4 });
+
+/**
+ * The word that starts the text frame telling every game of a Raid World its new difficulty.
+ */
+export const DIFFICULTY_TEXT = "difficulty";
 
 /**
  * Lowercase hexadecimal of any length.
@@ -246,7 +260,7 @@ export class Directory {
   /**
    * Makes a world.
    *
-   * @param {object} request The world: id, name, seats, the creator's player key and name, the hash of the auth key, the lock, whether a starting save follows, whether it is hidden from the list, whether each new player chooses where to start, whether it has no password, whether it is featured, its description, the mods it needs, the creator's game data, whether only games with the same data may enter, the hashes of its required mods outside the catalog, its mod settings, its type and how a Raid World shares companions.
+   * @param {object} request The world: id, name, seats, the creator's player key and name, the hash of the auth key, the lock, whether a starting save follows, whether it is hidden from the list, whether each new player chooses where to start, whether it has no password, whether it is featured, its description, the mods it needs, the creator's game data, whether only games with the same data may enter, the hashes of its required mods outside the catalog, its mod settings, its type, how a Raid World shares companions and its difficulty.
    * @param {string | null} [address] The asking game's address, whose worlds a rate limit counts; null for none.
    * @returns {Promise<{status: number, body: object}>} The world's id, or why it was refused.
    */
@@ -255,6 +269,10 @@ export class Directory {
 
     if (refusal) {
       return badRequest(refusal);
+    }
+
+    if (request.type === WORLD_TYPE.raid && (request.start === true || request.choose === true)) {
+      return { status: 400, body: { error: "a Raid World starts from the beginning: it takes no starting save and no player's choice", code: REFUSAL.raidStart } };
     }
 
     if (await this.load(request.id)) {
@@ -306,6 +324,7 @@ export class Directory {
       settings: cleanSettings(request.settings),
       type: raid ? WORLD_TYPE.raid : WORLD_TYPE.classic,
       share: raid ? (request.share ?? SHARING.off) : SHARING.off,
+      ...(raid && request.difficulty !== undefined ? { difficulty: request.difficulty } : {}),
       created: now,
       active: now,
       members: { [creator]: { name: creatorName, seen: now } },
@@ -336,14 +355,14 @@ export class Directory {
 
   /**
    * Changes what of a world may change after it was made, if the creator or an admin asks: its
-   * seats, its description, the mods it needs and its mod settings. Games already in the world stay
-   * when the seats become fewer. Its game data and its mods' hashes only the creator replaces,
-   * whose game they come from.
+   * seats, its description, the mods it needs, its mod settings and a Raid World's difficulty.
+   * Games already in the world stay when the seats become fewer. Its game data and its mods'
+   * hashes only the creator replaces, whose game they come from.
    *
    * @param {string} id The world.
    * @param {unknown} key The asking player's key.
-   * @param {any} changes Whichever of `seats`, `description`, `mods`, `data`, `modHashes` and `settings` change.
-   * @returns {Promise<{status: number, body: object}>} The answer.
+   * @param {any} changes Whichever of `seats`, `description`, `mods`, `data`, `modHashes`, `settings` and `difficulty` change.
+   * @returns {Promise<{status: number, body: object, difficulty?: number}>} The answer, and the difficulty every game in the world room must be told.
    */
   async edit(id, key, changes) {
     const { entry, refusal } = await this.asCreatorOrAdmin(id, key);
@@ -352,7 +371,7 @@ export class Directory {
       return refusal;
     }
 
-    const { seats, description, mods, data, modHashes, settings } = changes ?? {};
+    const { seats, description, mods, data, modHashes, settings, difficulty } = changes ?? {};
 
     if (data !== undefined && (typeof data !== "string" || !GAME_DATA.test(data))) {
       return badRequest("the game data must be 1 to 160 lowercase letters, digits, colons and dots");
@@ -378,15 +397,24 @@ export class Directory {
       return badRequest("the description and the mods must be texts");
     }
 
+    if (difficulty !== undefined && entry.type !== WORLD_TYPE.raid) {
+      return badRequest("only a Raid World sets a difficulty");
+    }
+
+    if (difficulty !== undefined && !difficultyOk(difficulty)) {
+      return badRequest(`the difficulty must be a whole number from ${DIFFICULTY.min} to ${DIFFICULTY.max}`);
+    }
+
     if (seats !== undefined) entry.seats = seats;
     if (description !== undefined) entry.description = cleanText(description, this.limits.maxDescriptionLength);
     if (mods !== undefined) entry.mods = cleanText(mods, this.limits.maxModsLength);
     if (data !== undefined) entry.data = data;
     if (modHashes !== undefined) entry.modHashes = modHashes;
     if (settings !== undefined) entry.settings = cleanSettings(settings);
+    if (difficulty !== undefined) entry.difficulty = difficulty;
 
     await this.store.put(entry);
-    return { status: 200, body: { edited: entry.id } };
+    return { status: 200, body: { edited: entry.id }, ...(difficulty !== undefined ? { difficulty } : {}) };
   }
 
   /**
@@ -521,6 +549,10 @@ export class Directory {
 
     if (refusal) {
       return refusal;
+    }
+
+    if (entry.type === WORLD_TYPE.raid) {
+      return { status: 400, body: { error: "a Raid World starts from the beginning: it takes no starting save", code: REFUSAL.raidStart } };
     }
 
     if (entry.start !== START.pending) {
@@ -881,6 +913,7 @@ export class Directory {
     if (request.settings !== undefined && !this.settingsOk(request.settings)) return `the mod settings must be a text of at most ${this.limits.maxSettingsLength} characters`;
     if (request.type !== undefined && !Object.values(WORLD_TYPE).includes(request.type)) return `the type must be ${Object.values(WORLD_TYPE).join(" or ")}`;
     if (request.share !== undefined && !Object.values(SHARING).includes(request.share)) return `the companion sharing must be ${Object.values(SHARING).join(", ")}`;
+    if (request.difficulty !== undefined && !difficultyOk(request.difficulty)) return `the difficulty must be a whole number from ${DIFFICULTY.min} to ${DIFFICULTY.max}`;
     return null;
   }
 
@@ -906,6 +939,26 @@ export class Directory {
 }
 
 /**
+ * Checks a Raid World's difficulty.
+ *
+ * @param {unknown} value The difficulty.
+ * @returns {boolean} Whether it is one of the game's difficulties.
+ */
+function difficultyOk(value) {
+  return Number.isInteger(value) && value >= DIFFICULTY.min && value <= DIFFICULTY.max;
+}
+
+/**
+ * Writes the text frame that tells every game of a Raid World its new difficulty.
+ *
+ * @param {number} difficulty The difficulty.
+ * @returns {string} The frame.
+ */
+export function difficultyText(difficulty) {
+  return `${DIFFICULTY_TEXT} ${difficulty}`;
+}
+
+/**
  * Tidies a world's mod settings: without control characters, but otherwise as written, since a
  * text value may end in a space.
  *
@@ -925,7 +978,7 @@ function cleanSettings(text) {
  * @param {() => Promise<string | null>} readBody Reads the request's body as text, null when it is too large to read.
  * @param {(limit: number) => Promise<Uint8Array | null>} readBytes Reads the request's body as bytes, null when it is longer than the limit.
  * @param {{player?: string | null, auth?: string | null, address?: string | null}} [client] The PLAYER_HEADER and AUTH_HEADER of the request, which win over the key and auth key in its body or address, and the address it came from.
- * @returns {Promise<{status: number, body: object, bytes?: Uint8Array, close?: boolean, kick?: string, id?: string}>} The answer, sent as the bytes when there are any, and what the platform layer must do beyond it for the world with that id.
+ * @returns {Promise<{status: number, body: object, bytes?: Uint8Array, close?: boolean, kick?: string, difficulty?: number, id?: string}>} The answer, sent as the bytes when there are any, and what the platform layer must do beyond it for the world with that id.
  */
 export async function handleDirectoryRequest(directory, method, url, readBody, readBytes, client = {}) {
   const parts = url.pathname.split("/").filter((part) => part.length > 0);
@@ -957,7 +1010,7 @@ export async function handleDirectoryRequest(directory, method, url, readBody, r
   }
 
   if (parts.length === 4 && parts[3] === "edit" && method === "POST") {
-    return json((body) => directory.edit(parts[2], fromBody(body), body));
+    return json(async (body) => ({ ...(await directory.edit(parts[2], fromBody(body), body)), id: parts[2] }));
   }
 
   if (parts.length === 4 && parts[3] === "ban" && method === "POST") {
@@ -1010,6 +1063,7 @@ export function publicView(entry) {
     settings: entry.settings ?? "",
     type: entry.type ?? WORLD_TYPE.classic,
     share: entry.type === WORLD_TYPE.raid ? (entry.share ?? SHARING.off) : SHARING.off,
+    ...(entry.type === WORLD_TYPE.raid && difficultyOk(entry.difficulty) ? { difficulty: entry.difficulty } : {}),
     online: entry.online.length,
     created: entry.created,
     active: entry.active,

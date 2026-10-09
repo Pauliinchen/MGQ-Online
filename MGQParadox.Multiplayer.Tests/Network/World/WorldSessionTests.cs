@@ -2,6 +2,7 @@
 //  WorldSessionTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-09: Covered the relay's word of a Raid World's new difficulty handed to the game script, and a value that is no difficulty ignored
 //      Paulinchen  2026-10-08: Covered entering a Raid World, which the relay lets in only games that name it in the features header
 //                            - Read the relay's chat lines under its lock, and covered chat lines that come too fast and the relay saying so
 //      Paulinchen  2026-10-07: Covered a chat line mirrored to the relay and an admin's line handed to the game script
@@ -369,6 +370,30 @@ public sealed class WorldSessionTests
 
         session.Close();
         Assert.Equal(WorldSession.Mirror.NotMirrored, session.Say("gone"));
+    }
+
+    /// <summary>
+    /// Asserts that the relay's word of a world's new difficulty reaches the game script as a
+    /// difficulty entry, and that a value that is no difficulty is ignored.
+    /// </summary>
+    [Fact]
+    public void Difficulty_ReachesTheGame()
+    {
+        using var relay = new TestRelay();
+        var code = MakeWorld(relay, 4);
+        var session = NewSession(relay.Address);
+
+        session.Open(code);
+        AwaitState(session, "open");
+        Drain(session);
+
+        var room = Relays.WorldRoomOf(WorldCode.Parse(code)!.Token);
+        relay.Tell(room, $"{WorldSession.DifficultyKind} 9");
+        relay.Tell(room, $"{WorldSession.DifficultyKind} -2");
+        var told = NextEntry(session);
+        Assert.Equal((WorldSession.DifficultyKind, "-2"), (told[Message.Kind], told[WorldSession.ValueHeader]));
+
+        session.Close();
     }
 
     /// <summary>
