@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-09: Ended a co-op battle only once its scene ended, not when its party command called the Library or Config
+#                            - Ignored the invite of a running battle's host the player asks to take their own encounter in
 #      Paulinchen  2026-10-08: Brought each player's first three characters to a co-op battle in a Raid World, one on the Frontline and two on the Backline, also for a player left alone
 #                            - Brought only the squad to a team duel in a Raid World, never the fourth
 #                            - Invited the nearest free players on the map to a battle in a Raid World, party members first, up to four players, through the map's gate
@@ -1073,7 +1074,8 @@ module MGQ_MpBattlesCoop
 
   # Takes an invite to a battle: the answer of the leader the player asked to lead their battle, a
   # rival's in a Raid World (see rival?), or an invite to join on the map, which a player in a
-  # battle of their own turns down at once.
+  # battle of their own turns down at once, unless it comes from the running battle the player asks
+  # to join (see MGQ_MpBattlesHotjoin.asks?).
   #
   # @param peer [MGQ_MpOverworldSync::Peers::Peer] The host.
   # @param message [Hash] The invite.
@@ -1082,6 +1084,7 @@ module MGQ_MpBattlesCoop
       return log("invite to battle #{message['bid']} ignored: it is for seats #{message['seats']}, not the player's")
     end
     return answer_of(peer, message, :leads) if asked?(peer, message)
+    return log("ignored #{MGQ_MpOverworldSync.who(peer)}'s invite to battle #{message['bid']}: the player's own request to join it brings them") if MGQ_MpBattlesHotjoin.asks?(peer, message)
     return keep_rival(peer, message) if rival?(peer, message)
 
     # Turned down at once, so the host need not wait for the player: while the player waits for the

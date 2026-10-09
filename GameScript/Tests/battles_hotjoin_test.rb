@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-09: Checked that a battle that calls the Library or Config ends nothing
+#                            - Checked that a player another request brought along is taken in with their own encounter and ignores the invite it sent, and that an encounter brings along nobody who fights
 #      Paulinchen  2026-10-08: Created
 #
 #----------------------------------------------------------------
@@ -461,6 +462,30 @@ hotjoin.fight_alone("own12")
 $sent.clear
 coop.take(asker, request.merge("bid" => "own12", "seats" => ""))
 check("a boss battle taken over from its host takes no encounter in", map_sent("hot_no").map(&:first), [8])
+reset
+
+# Two encounters that ask at once, each bringing the other's player along.
+$scene_now = scene
+own_troop
+hotjoin.fight_alone("own13")
+MGQ_MpOverworldSync::Peers.all.replace([asker, comrade])
+coop.take(asker, request.merge("bid" => "own13"))
+$sent.clear
+coop.take(comrade, request.merge("bid" => "own13", "seats" => "8", "enemies" => "51:320:300:0"))
+check("a player another request brought along is taken in with their own encounter", map_sent("hot_ok").map(&:first), [9])
+check("which brings nobody, the other request only its own player",
+      [hotjoin.instance_variable_get(:@pending).map { |entry| [entry[:requester], entry[:seats]] }, sync.expected.sort], [[[8, [8]], [9, [9]]], [8, 9]])
+reset
+
+fighter = player(12, { "rb" => "hb9" })
+MGQ_MpOverworldSync::Peers.all.replace([host, guest, free, fighter])
+$encounter_troop = 50
+$scene_now = Scene_Map.new
+$game_player.encounter
+check("an encounter brings along nobody whose state tells a battle", map_sent("hot").map { |_, f| f["seats"] }, ["7"])
+$sent.clear
+coop.take(host, { "coop" => "invite", "bid" => "hb1", "troop" => "31", "escape" => "1", "lose" => "0", "seats" => "0", "map" => "5", "hot" => "1" })
+check("a player who asks a running battle ignores its host's invite another request sent", battle_sent("decline"), [])
 reset
 
 $raid = false

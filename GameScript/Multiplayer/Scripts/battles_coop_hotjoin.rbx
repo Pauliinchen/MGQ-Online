@@ -2,6 +2,8 @@
 #  battles_coop_hotjoin.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-09: Took in a player who asks with their own encounter while another request brought them along, instead of refusing them, and let them ignore that request's invite
+#                            - Left the players whose state tells a battle out of those an encounter brings along
 #      Paulinchen  2026-10-08: Created
 #
 #----------------------------------------------------------------
@@ -152,7 +154,7 @@ module MGQ_MpBattlesHotjoin
 
     host, bid = target
     coop = MGQ_MpBattlesCoop
-    seats = coop.raid_candidates.map(&:seat)
+    seats = coop.raid_candidates.select { |peer| peer.state["rb"].to_s.empty? }.map(&:seat)
     @asking = { :seat => host.seat, :bid => bid, :troop => troop_id, :escape => can_escape, :lose => can_lose, :seats => seats, :answer => nil }
     @late = nil
     @boss_battle = false
@@ -278,6 +280,18 @@ module MGQ_MpBattlesHotjoin
     @asking ? Array(@asking[:seats]) : []
   end
 
+  # Reports whether an invite comes from the host the player asks to take their encounter in, to
+  # the same battle: another player's request brought the player along, but the player's own
+  # request covers them (see release_companion), so the invite needs no answer.
+  #
+  # @param peer [MGQ_MpOverworldSync::Peers::Peer] Who invites.
+  # @param message [Hash] The invite.
+  # @return [Boolean] Whether it does.
+  def self.asks?(peer, message)
+    asking = @asking
+    asking && peer && peer.seat == asking[:seat] && message["bid"].to_s == asking[:bid].to_s && message["hot"] == "1" ? true : false
+  end
+
   # Reports whether the player joins a running battle late, for their encounter or invited by its
   # host, which sends its roster only at its next command phase.
   #
@@ -362,7 +376,8 @@ module MGQ_MpBattlesHotjoin
   # The host's side.
 
   # Takes another player's request to take their encounter into the battle the player hosts, or
-  # fights alone: takes it in when it can (see refusal), else refuses it.
+  # fights alone: takes it in when it can (see refusal), else refuses it. A player another request
+  # brought along comes with their own encounter instead (see release_companion).
   #
   # @param peer [MGQ_MpOverworldSync::Peers::Peer] Who asks.
   # @param message [Hash] The request: the battle's id, the encounter's troop and enemies, and the
@@ -371,6 +386,7 @@ module MGQ_MpBattlesHotjoin
     return log_once([:classic_request, peer && peer.seat], "ignored a request to join from #{who(peer)}: not a Raid World") unless raid?
 
     sync = MGQ_MpBattlesSync
+    release_companion(peer.seat)
     known = (sync.role ? Array(sync.seats) : []) + pending_seats + [MGQ_MpOverworldSync::Me.seat, peer.seat]
     others = message["seats"].to_s.split(",").map(&:to_i) - known
     seats = [peer.seat] + others
@@ -382,6 +398,20 @@ module MGQ_MpBattlesHotjoin
     take_in_later(peer, seats, placed)
   rescue => e
     log("taking a request to join failed: #{e.class}: #{e.message}")
+  end
+
+  # Takes a player who asks with their own encounter out of another encounter that brought them
+  # along and has not been taken in for them yet: both requests left at once, each player seeing the
+  # other walk the map, and their own request brings them now, or else refuses them.
+  #
+  # @param seat [Integer] The asking player's seat.
+  def self.release_companion(seat)
+    @pending.each do |entry|
+      next if entry[:requester] == seat || !entry[:seats].include?(seat)
+
+      drop_seat(entry, seat, "they ask with their own encounter")
+    end
+    @pending.reject! { |entry| entry[:seats].empty? }
   end
 
   # Tells why the player's battle cannot take another player's encounter in.
