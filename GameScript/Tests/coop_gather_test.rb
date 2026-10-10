@@ -3,6 +3,8 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-10: Checked that a Raid World's teller in the story's battle holds nobody
+#                            - Checked that a loaded save forgets a teleport the player asked for, in place of the question where the leader stands
+#                            - Checked that a leader's call taking over a teleport the player asked for lapses as a call does
 #      Paulinchen  2026-10-09: Stood in for the warp ban of story_state.rbx, which names it now
 #                            - Stood in for MGQ_MpCoopEvents.tell_each, through which the story calls those it takes along in one message
 #                            - Checked that the story calls those it takes along in one message, keeps them through a moment between its events, and names its teller as the one the player follows
@@ -15,7 +17,7 @@
 #----------------------------------------------------------------
 
 # Covers coop_gather.rbx where time and the world end what it waits for: a leader's call lapses, and
-# a loaded save or the world closing forgets the calls, the question where the leader stands and the
+# a loaded save or the world closing forgets the calls, a teleport the player asked for and the
 # hold, since a loaded save sets the frame count back. In a Raid World nobody is gathered, and a
 # teleport goes to the story.
 
@@ -83,11 +85,16 @@ check("an open world keeps it", gather.coming?, true)
 $tick.call(false)
 check("the world closing forgets it", gather.coming?, false)
 
-gather.join_leader
-check("a member asks the leader where they stand", $sent.last, [2, "where"])
+gather.come_to("Leader", place, false)
+check("a member teleporting to another is coming", gather.coming?, true)
 DataManager.extract_save_contents({})
-gather.answered($leader, place, false)
-check("and a loaded save forgets the question", gather.coming?, false)
+check("until a save is loaded", gather.coming?, false)
+
+gather.come_to("Friend", [4, 1, 1, 2], false)
+gather.called($leader, place)
+$frame_count += MGQ_MpCoopGather::CALL_LAPSE_FRAMES
+check("a leader's call that takes over a teleport the player asked for lapses as a call does",
+      [gather.pending_call, $notices.last], [nil, "Leader's story started without you."])
 
 $member = $leader
 $leader = :me

@@ -4,6 +4,7 @@
 #  Changelog:
 #      Paulinchen  2026-10-10: Named mp_dev_build, which tells a development build from a release
 #                            - Loaded ui_raid_bar.rbx, the raid bosses' HP bars, after ui_party_box.rbx
+#                            - Loaded coop_teleport.rbx after coop_gather.rbx, the teleports between a party's members
 #      Paulinchen  2026-10-09: Named the mp_mods_park, mp_mods_restore, mp_mods_parked, mp_mods_scripts, mp_mods_restart_parked and mp_mods_recover exports of the parked mods, and mp_dir_create and mp_dir_edit with whether a world turns other mods off
 #                            - Loaded world_mods_parking.rbx after world_mods.rbx, which turns other mods off for a world that asks for it
 #                            - Loaded story_state.rbx before coop_story.rbx, the story's state model the party's story and a Raid World's story share
@@ -117,7 +118,7 @@ module MGQ_Multiplayer
   # loaded first, so their order decides how those hooks wrap each other.
   SCRIPTS = %w[
     core_log core_hooks core_game_access core_hotkeys ui ui_text_box core_actors core_async overworld_sync ui_wheel ui_actions ui_chat ui_emotes overworld
-    coop coop_scope coop_squad coop_events coop_gather coop_scene coop_npcs coop_story_rewards story_state coop_story coop_castle
+    coop coop_scope coop_squad coop_events coop_gather coop_teleport coop_scene coop_npcs coop_story_rewards story_state coop_story coop_castle
     world world_mods world_mods_parking world_catchup_data world_story world_catchup world_difficulty world_save_distribution world_text world_screen world_save_export coop_choices
     battles battles_raid_bosses battles_coop battles_coop_hotjoin battles_coop_join battles_raid_pool battles_coop_level_sync
     battles_sync battles_sync_wire battles_sync_recorder battles_sync_playback battles_sync_live

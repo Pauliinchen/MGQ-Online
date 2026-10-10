@@ -2,7 +2,8 @@
 #  coop_events.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-10: Held a Raid World's story event a second instead of half a second for a tie, so a later teller stops before its first command more often
+#      Paulinchen  2026-10-10: Left the teleport to the party's leader to coop_teleport.rbx's messages
+#                            - Held a Raid World's story event a second instead of half a second for a tie, so a later teller stops before its first command more often
 #      Paulinchen  2026-10-09: Asked story_state.rbx which switches and variables are the player's own instead of coop_story.rbx
 #                            - Kept story events from starting while the player's story is behind a Raid World's, telling the level that moves them on, and held those that run by themselves, so a teleport onto their map cannot loop
 #                            - Kept a Raid World's telling, how far its story was, where it started and whom it took along, through the story's next event that starts in the frame its last ended, so its viewers see the rest of the story
@@ -148,7 +149,7 @@ module MGQ_MpCoopEvents
   SOUND_NAME = /\A[\w\- ]+(\.[\w\- ]+)*\z/
 
   # Messages about gathering for story scenes, which coop_gather.rbx takes.
-  GATHER_MESSAGES = %w(gather come where follow)
+  GATHER_MESSAGES = %w(gather follow)
 
   # Common events that run only in the player's own game, never as the party's story: the game's
   # transfer process, which runs by itself after a transfer.

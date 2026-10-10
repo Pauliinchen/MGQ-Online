@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-10: Checked that the relay's push of a Raid World's boss pool goes to its route with the share left, the max HP and whether it is defeated
+#                            - Expected the teleport to the party's leader on the wheel of a member who stands near them, in place of the invite
 #      Paulinchen  2026-10-09: Checked that the relay's push of a Raid World's boss pool goes to its route with the key and kills, marked as the relay's
 #                            - Checked that the relay's push of a Raid World's difficulty goes to its route with the value, marked as the relay's
 #                            - Checked that the relay's push of a world's rule on other mods goes to its route with the value and the mods, marked as the relay's
@@ -293,7 +294,8 @@ check("members", MGQ_MpCoop::Party.members.map { |peer| peer.state["name"] }, ["
 MGQ_MpOverworld.update_ghosts
 check("a member is solid", ghost.opacity, 255)
 check("the label knows the member", MGQ_MpOverworld.ghosts.first.member, true)
-check("a member is not invited again", option(PARTY), ["Invite to a party", false])
+# The test's short ids make Friend the party's leader, whom the player stands near already.
+check("a member is not invited again, the wheel offers the teleport to the leader instead", option(PARTY), ["Teleport to Friend", false])
 
 # A member's ghost has the followers they show, which step where the one before stood.
 check("followers are told only once shown", [$sent.last[1].include?("trail=\n"), $sent.last[1].include?("follow=0")], [true, true])

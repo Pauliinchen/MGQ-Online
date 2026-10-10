@@ -2,7 +2,8 @@
 #  coop_events_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-10: Checked that the world closing forgets the choices waiting and a Raid World's route waiting to be confirmed
+#      Paulinchen  2026-10-10: Checked that a teleport coop_teleport.rbx asks for brings the member over at once, in place of the leader's answer where they stand
+#                            - Checked that the world closing forgets the choices waiting and a Raid World's route waiting to be confirmed
 #                            - Checked that a Raid World's story event holds a whole second for a tie
 #                            - Checked that no event of coop_story_rewards.rbx is marked by a Library Flag, by its English or its untranslated name
 #      Paulinchen  2026-10-09: Loaded story_state.rbx before coop_story.rbx and read the story's state model, what is each player's own, a whole story and granting, from MGQ_MpStoryState
@@ -617,28 +618,13 @@ $game_map.update
 check("once the calls stop, the story started without the member, who stays", [MGQ_MpCoopGather.own_line, $notices.last, $game_player.reserved],
       [nil, "Leader's story started without you.", nil])
 
-# A member teleports to the leader on their own.
-$sent.clear
-come = { "pevent" => "come", "party" => "p1", "map" => "5", "x" => "1", "y" => "1", "d" => "2", "warp_ban" => "1" }
-leader_before = leader.state.dup
-leader.state.merge!("map" => "5", "x" => "1", "y" => "1")
-MGQ_MpCoopEvents.take(leader, come)
-$game_map.update
-check("the leader's place moves nobody who did not ask for it", [$game_player.reserved, MGQ_MpCoopGather.own_line], [nil, nil])
-MGQ_MpCoopGather.join_leader
-check("a member who teleports asks the leader where they stand", [$sent.map { |seat, f| [seat, f["pevent"]] }, $notices.last], [[[leader.seat, "where"]], "Teleporting to Leader . . ."])
-MGQ_MpCoopEvents.take(leader, come)
+# A member teleports to another member through coop_teleport.rbx, which brings them over here.
+MGQ_MpCoopGather.come_to("Leader", [5, 1, 1, 2], true)
+check("a member who teleports waits only to be free", MGQ_MpCoopGather.own_line, "Joining Leader once free . . .")
 $game_map.update
 check("and comes at once, taking over the place's warp ban", [$game_player.reserved, $game_switches[MGQ_MpStoryState::WARP_BAN]], [[5, 1, 1, 2], true])
 $game_player.instance_variable_set(:@reserved, nil)
-$sent.clear
-leader.state.merge!("map" => $game_map.map_id.to_s, "x" => $game_player.x.to_s, "y" => $game_player.y.to_s)
-MGQ_MpCoopGather.join_leader
-check("a member standing with the leader already asks nothing", [$sent, $notices.last], [[], "You are with Leader already."])
-MGQ_MpCoopEvents.take(friend, { "pevent" => "where", "party" => "p1" })
-check("a member never answers where the leader stands", $sent, [])
 $game_switches[MGQ_MpStoryState::WARP_BAN] = false
-leader.state.replace(leader_before)
 
 # While the leader's story scene plays, the member stands still.
 check("free while the leader tells no story", [$game_player.movable?, MGQ_MpCoopGather.blocked?], [true, false])

@@ -2,6 +2,7 @@
 #  coop.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-10: Offered the teleport to the party's leader in a Raid World too, through coop_teleport.rbx, which offers the teleport to every other member
 #      Paulinchen  2026-10-09: Closed the teleport to the story to a player behind the world's story in a Raid World
 #      Paulinchen  2026-10-08: Offered a teleport to the story on the player's own row of the World overview in a Raid World, in place of the teleport to the party's leader
 #      Paulinchen  2026-10-07: Added the helpers the party scripts shared copies of: a message's bytes and an event's name for the log, a random id and an option's registration in the Mod Config
@@ -820,16 +821,15 @@ module MGQ_MpCoop
       option.new("Invite to a party", near.empty? ? nil : lambda { Party.invite }, "Nobody is near enough to invite.")
     end
 
-    # The choice of a party's member that teleports them to the party's leader, which closes the
-    # World overview too. A Raid World's parties lead no story, so it has none, see story_option.
+    # The choice of a party's member that teleports them to the party's leader, see
+    # MGQ_MpCoopTeleport.option.
     #
-    # @return [MGQ_MpActions::Option, nil] The choice, nil for the leader, outside a party and in a Raid World.
+    # @return [MGQ_MpActions::Option, nil] The choice, nil for the leader and outside a party.
     def self.teleport_option
       lead = MGQ_MpCoop.party_leader
-      return nil unless lead.is_a?(MGQ_MpOverworldSync::Peers::Peer) && defined?(MGQ_MpCoopGather)
-      return nil if Scope.raid?
+      return nil unless lead.is_a?(MGQ_MpOverworldSync::Peers::Peer) && defined?(MGQ_MpCoopTeleport)
 
-      MGQ_MpActions::Option.new("Teleport to #{lead.state['name']}", lambda { MGQ_MpCoopGather.join_leader }, nil, nil, true)
+      MGQ_MpCoopTeleport.option(lead)
     end
 
     # The choice that teleports the player to the story in a Raid World, which closes the World
@@ -865,20 +865,17 @@ module MGQ_MpCoop
 
     # The party choice for another player in the World overview: accepting their invite, removing
     # them as the party's leader, else inviting them, which only a leader or a player outside a
-    # party may.
+    # party may. The teleport to a member is coop_teleport.rbx's.
     #
     # @param peer [MGQ_MpOverworldSync::Peers::Peer] The player.
-    # @return [MGQ_MpActions::Option] The choice.
+    # @return [MGQ_MpActions::Option, nil] The choice, nil for a member while the player does not lead.
     def self.peer_option(peer)
       option = MGQ_MpActions::Option
       if Party.invited_by?(peer)
         return option.new("Accept party invite", Party.full?(peer.state["party"]) ? nil : lambda { Party.join(peer) }, "Their party is full.")
       end
       if Party.member?(peer.state)
-        return option.new("Remove from party", lambda { Party.remove(peer) }, nil) if Party.leader == :me
-        return teleport_option if Party.leader.equal?(peer) && teleport_option
-
-        return option.new("In your party", nil, "#{peer.state['name']} is in your party already.")
+        return Party.leader == :me ? option.new("Remove from party", lambda { Party.remove(peer) }, nil) : nil
       end
       refusal = invite_refusal("Your party is full.")
       return option.new("Invite to party", nil, refusal) if refusal

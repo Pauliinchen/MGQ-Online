@@ -2,6 +2,7 @@
 #  world_overview_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-10: Expected the teleport to the party's leader in a member's menu, in place of the line that they are in the party
 #      Paulinchen  2026-10-08: Checked the map box of a Raid World: its players and order, the Frontline level, its colors, its cap and its key
 #                            - Expected the Frontline level of a Raid World from its one Frontline character, and of a share of two from the first two
 #      Paulinchen  2026-10-07: Measured places with an object that measures texts, and checked the log of a name the game lacks
@@ -236,7 +237,7 @@ check("the chat box closes it", [MGQ_MpChat.typing?, overview.open?], [true, fal
 # Only the party's leader invites and removes.
 friend_peer = MGQ_MpOverworldSync::Peers.at(2)
 bea = MGQ_MpOverworldSync::Peers.at(3)
-check("a member sees their leader in the party", MGQ_MpCoop::Offers.peer_option(friend_peer).text, "In your party")
+check("a member may teleport to their leader", MGQ_MpActions.peer_options(friend_peer).map(&:text), ["Teleport to Friend", "Duel"])
 check("and may not invite", [MGQ_MpCoop::Offers.peer_option(bea).run, MGQ_MpCoop::Offers.peer_option(bea).refusal], [nil, "Only the party's leader invites."])
 MGQ_MpCoop::Party.reset
 MGQ_MpCoop::Party.invite("zz-bea")

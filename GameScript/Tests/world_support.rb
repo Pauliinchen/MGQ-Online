@@ -2,6 +2,7 @@
 #  world_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-10: Loaded coop_gather.rbx and coop_teleport.rbx, which offer the teleport to a party's members
 #      Paulinchen  2026-10-08: Loaded coop_scope.rbx after coop.rbx, which the party's choices ask whether a Raid World is open
 #                            - Told the keys held from $down, and the mouse from $mouse
 #                            - Answered a mirrored chat line as the DLL does, 1 for taken unless $say_result tells otherwise
@@ -135,6 +136,8 @@ load_script "overworld"
 load_script "coop"
 load_script "coop_scope"
 load_script "coop_squad"
+load_script "coop_gather"
+load_script "coop_teleport"
 
 # One frame on the map: the wheel's keys, then the chat's, as the hooks run them.
 def map_frame; MGQ_MpActions.on_map; MGQ_MpChat.on_map; end
