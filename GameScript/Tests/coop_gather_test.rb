@@ -5,6 +5,7 @@
 #      Paulinchen  2026-10-10: Checked that a Raid World's teller in the story's battle holds nobody
 #                            - Checked that a loaded save forgets a teleport the player asked for, in place of the question where the leader stands
 #                            - Checked that only a player who watches a Raid World's teller and is not behind follows their story at once, and that any other is offered to follow in the notification box until they follow, decline, the telling ends, a minute passes or the world closes
+#                            - Checked that a teleport to a map this game lacks tells the player so
 #                            - Checked that an offer to follow which comes before the teller's state tells them telling stands, that a follow accepted there waits a minute for a busy player, and that a leader's call taking over an asked teleport lapses as a call does
 #                            - Stood in for the notification box's offers, the free map, the reserved transfer and whether the player's story is behind
 #      Paulinchen  2026-10-09: Stood in for the warp ban of story_state.rbx, which names it now
@@ -286,4 +287,12 @@ check("whose warp ban this game does not know, so the player keeps their own", g
 gather.forget
 $relay_end = nil
 check("and where this game saw the story told while the relay keeps none", gather.story_endpoint[0], 3)
+
+# A call or a teleport to a map this game lacks is dropped, which the player is told.
+def load_data(path); raise Errno::ENOENT, path; end
+$map_free = true
+gather.come_to("Friend", [77, 1, 1, 2], false)
+gather.update
+check("a teleport to a map this game lacks tells the player so", [gather.coming?, $notices.last, $game_player.reserved],
+      [false, "Cannot teleport to Friend: this game has no map 77.", nil])
 $raid = false

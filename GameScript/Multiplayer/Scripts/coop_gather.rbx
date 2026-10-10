@@ -5,6 +5,7 @@
 #      Paulinchen  2026-10-10: Let a player in a Raid World move while the teller fights the story's battle, so one who came late may join it
 #                            - Moved the teleport to the party's leader to coop_teleport.rbx, which brings the player over through come_to
 #                            - Let a teleport the player asked for wait a minute for the player to be free, as long as the request stood, instead of six seconds
+#                            - Told the player that a call or teleport to a map this game lacks cannot be taken, besides the log line
 #                            - Followed a Raid World's teller whose story moved on at once only while the player watches it and is not behind, and offered every other player to follow in the notification box while the teller tells there, a minute at most
 #                            - Let a follow the player accepted in the notification box wait a minute for them to be free, and a leader's call that takes over a teleport the player asked for lapse as a call does
 #      Paulinchen  2026-10-09: Read the warp ban's switch from story_state.rbx instead of coop_story.rbx
@@ -749,6 +750,7 @@ module MGQ_MpCoopGather
     return log("dropped #{gather[:name]}'s call: the player is no longer in a party") unless MGQ_MpCoop::Scope.sharing?
 
     unless map_id == $game_map.map_id || map_known?(map_id)
+      MGQ_MpOverworldSync.notice("Cannot teleport to #{gather[:name]}: this game has no map #{map_id}.")
       return log("dropped #{gather[:name]}'s call to map #{map_id}: this game has no such map")
     end
 
