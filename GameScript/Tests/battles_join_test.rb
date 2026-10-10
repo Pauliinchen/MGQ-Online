@@ -3,6 +3,8 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-10: Covered the side battle the prompt offers near a raid boss battle that takes the player in no more
+#                            - Checked that a side battle starts as the player's own, inviting and holding nobody, which another player then joins by choice
+#                            - Checked that an encounter bringing along more players than the running battle takes is refused and starts on its own, inviting them
 #                            - Checked that the prompt offers a battle, or a side battle next to a raid boss battle, whose players are under the Library or Config with their windows in the background
 #                            - Checked that the prompt stays whole on the screen at the map's edges
 #      Paulinchen  2026-10-09: Covered a boss battle whose troop grew mid-battle, which stays one and hands the player every enemy
@@ -451,12 +453,41 @@ $mgq_text_input = nil
 check("a press while the player types logs nothing", $log[before..-1].grep(/join battle hotkey/), [])
 reset
 
+# An encounter that would bring along more players than the running battle takes starts its own.
+companions = [player(7, { "x" => "1" }), player(9, { "x" => "2" }), player(10, { "x" => "3" })]
+$scene_now = scene
+$game_troop.setup(31)
+hotjoin.fight_alone("own7")
+asker7 = player(8, { "scene" => "battle", "rb" => "own7", "rbh" => "0" })
+MGQ_MpOverworldSync::Peers.all.replace([asker7] + companions)
+coop.take_map(asker7, { "coop" => "hot", "bid" => "own7", "troop" => "50", "enemies" => "50:320:300:0", "seats" => "7,9,10", "map" => "5" })
+check("a running battle refuses an encounter that brings along more players than it takes", map_sent("hot_no").map(&:first), [8])
+reset
+running = player(5, { "scene" => "battle", "rb" => "hb7", "rbh" => "5", "rbn" => "1" })
+MGQ_MpOverworldSync::Peers.all.replace([running] + companions)
+$scene_now = Scene_Map.new
+$encounter_troop = 50
+$game_player.encounter
+check("an encounter near a running battle asks its host, bringing along the free players",
+      map_sent("hot").map { |seat, f| [seat, f["seats"]] }, [[5, "7,9,10"]])
+coop.take_map(running, { "coop" => "hot_no", "bid" => "hb7" })
+$sent.clear
+$scene_now = scene
+coop::Mode.before_start(scene)
+check("refused, the requester starts a battle of their own, inviting the players it brought along",
+      [sync.role, sync.battle_id == "hb7", map_sent("invite").map(&:first), map_sent("off")], [:host, false, [7, 9, 10], []])
+reset
+
 # A side battle near a raid boss battle that takes the player in no more, through
 # battles_raid_pool.rbx and ui_raid_bar.rbx, which stand in here.
 module MGQ_MpRaidPool
   def self.side_of(host); host.state["rpb"].to_s =~ /\A(\d+);(.*)\z/ ? [$1.to_i, $2] : nil; end
   def self.troop_label(troop); troop == 71 ? "Queen Harpy" : "?"; end
   def self.start_side(troop, rates); $side_started = [troop, rates]; $side_ok; end
+  def self.kind_of(troop); troop.to_i == $side_troop ? :side : nil; end
+  def self.won_already?(_troop); false; end
+  def self.invite_fields(_troop = nil); {}; end
+  def self.note_invite(_message); end
 end
 $scene_now = Scene_Map.new
 boss_host = player(5, { "scene" => "battle", "rb" => "b3", "rbh" => "5", "rbn" => "4", "rpb" => "71;100,100,0", "x" => "2", "y" => "1" })
@@ -496,6 +527,26 @@ $down = [0x4A]
 map_frame
 $down = []
 check("a side battle that cannot start tells the player", $messages.last, "Cannot fight Queen Harpy now.")
+reset
+
+# The side battle starts as the player's own, which others may join by choice.
+bystander = player(9, { "x" => "1" })
+MGQ_MpOverworldSync::Peers.all.replace([bystander])
+$scene_now = Scene_Map.new
+$side_troop = 71
+BattleManager.setup(71, false, true)
+check("a side battle against a raid boss invites and holds nobody", [map_sent("invite"), map_sent("freeze"), sync.role], [[], [], nil])
+$scene_now = scene
+side_bid = hotjoin.state_fields["rb"]
+check("it is the player's own, which tells itself to the others", [side_bid.empty?, join.state_fields], [false, { "rbn" => 1 }])
+coop.take_map(bystander, { "coop" => "pick", "bid" => side_bid, "map" => "5" })
+check("and takes in a player who asks to join it by choice", map_sent("invite").map { |seat, f| [seat, f["bid"], f["hot"]] }, [[9, side_bid, "1"]])
+$side_troop = nil
+reset
+def MGQ_MpRaidPool.side_battle?(troop); troop.to_i == 72; end
+$scene_now = Scene_Map.new
+BattleManager.setup(72, false, true)
+check("battles_raid_pool.rbx's word that a battle is a side battle comes first", [map_sent("invite"), sync.role], [[], nil])
 reset
 
 check("no hook of joining by choice failed", $log.grep(/join battle.*FAILED/), [])

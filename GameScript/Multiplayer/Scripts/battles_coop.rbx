@@ -7,6 +7,9 @@
 #                            - Fought the raid boss's pools in the battle the player yields or follows to, and gave a troop taken from the host the boss's raised max HP at once
 #                            - Gave the player their own enemy rates and stats back as the battle ends, before the game's autosave, instead of only once its scene ended
 #                            - Fought a requester's own encounter with its own enemy rates when the wait for the running battle's roster ended as its host left or broke it off
+#                            - Started a side battle against a raid boss as the player's own, inviting and holding nobody, which others may join by choice
+#                            - Invited not even the host of a waiting invite to a raid boss battle whose pools are all empty already
+#                            - Told the raid pool as a guest takes a battle over, so its reports start from the enemies' HP at that moment
 #                            - Told whether the player is in a battle, also while its party command called the Library or Config
 #                            - Told whether another player fights a battle by its state, also while it waits under the Library or Config with their window in the background, and invited no such player
 #      Paulinchen  2026-10-09: Told the guests the troop as host whenever it changed since they last heard of it, such as enemies another mod added mid-battle or an enemy that transformed or appeared, before the next send of the stream and as a command phase opens
@@ -336,8 +339,9 @@ module MGQ_MpBattlesCoop
   # Makes a battle the game just set up a co-op battle: asks the party's leader to lead it when the
   # leader plays on the map, else invites the party members on the map who are playing on it. In a
   # Raid World the player hosts it and invites the players on the map, see raid_candidates, unless
-  # it is a random encounter that joins a battle running on the map (MGQ_MpBattlesHotjoin.ask).
-  # Called after BattleManager.setup.
+  # it is a random encounter that joins a battle running on the map (MGQ_MpBattlesHotjoin.ask) or a
+  # side battle against a raid boss, which starts as the player's own (see side_battle?). Called
+  # after BattleManager.setup.
   #
   # @param troop_id [Integer] The troop.
   # @param can_escape [Boolean] Whether the party may escape.
@@ -355,8 +359,12 @@ module MGQ_MpBattlesCoop
     if raid?
       return if encounter && @invite.nil? && MGQ_MpBattlesHotjoin.ask(troop_id, can_escape, can_lose)
 
-      log("hosts the battle against troop #{troop_id}: the player started it in a Raid World")
-      host(troop_id, can_escape, can_lose)
+      if side_battle?(troop_id)
+        log("fights the side battle against troop #{troop_id} as the player's own, inviting nobody: others may join it by choice")
+      else
+        log("hosts the battle against troop #{troop_id}: the player started it in a Raid World")
+        host(troop_id, can_escape, can_lose)
+      end
       MGQ_MpBattlesHotjoin.fight_alone unless MGQ_MpBattlesSync.role
       return answer_waiting_invite
     end
@@ -374,13 +382,16 @@ module MGQ_MpBattlesCoop
   # member who asked the player to lead it; in a Raid World the players raid_candidates finds and the
   # host of a waiting invite (see with_waiting_host), or nobody when a rival's invite waits, which
   # the battle then yields to (see rival?). A Raid World's invite says whether the battle is a random
-  # encounter, which may yield.
+  # encounter, which may yield. A raid boss battle whose pools are all empty already invites nobody,
+  # since it is won at once.
   #
   # @param troop_id [Integer] The troop.
   # @param can_escape [Boolean] Whether the party may escape.
   # @param can_lose [Boolean] Whether losing goes on without a game over.
   # @param battle_id [String, nil] The battle's id the member who asked chose, nil for a new one.
   def self.host(troop_id, can_escape, can_lose, battle_id = nil)
+    return log("invites nobody to the battle against troop #{troop_id}: the raid boss's pools are all empty, so it is won at once") if raid? && pools_won?(troop_id)
+
     seats = invitees(troop_id).map(&:seat)
     seats |= [@requester] if @requester
     seats = with_waiting_host(seats) if raid?
@@ -413,9 +424,31 @@ module MGQ_MpBattlesCoop
   # @return [Array<MGQ_MpOverworldSync::Peers::Peer>] The players.
   def self.invitees(troop_id = nil)
     return candidates unless raid?
-    return [] if troop_id && defined?(MGQ_MpRaidPool) && MGQ_MpRaidPool.won_already?(troop_id)
+    return [] if troop_id && pools_won?(troop_id)
 
     raid_candidates(troop_id && MGQ_MpRaidBosses.battle?(troop_id))
+  end
+
+  # Reports whether a battle just set up fights a raid boss's pools that are all empty already,
+  # through battles_raid_pool.rbx.
+  #
+  # @param troop_id [Integer] The battle's troop.
+  # @return [Boolean] Whether it does.
+  def self.pools_won?(troop_id)
+    defined?(MGQ_MpRaidPool) && MGQ_MpRaidPool.won_already?(troop_id) ? true : false
+  end
+
+  # Reports whether a battle just set up is a side battle against a raid boss (see
+  # MGQ_MpRaidPool.start_side), which the player fights as their own: it invites and holds nobody,
+  # and other players may join it by choice (see battles_coop_join.rbx).
+  #
+  # @param troop_id [Integer] The battle's troop.
+  # @return [Boolean] Whether it is.
+  def self.side_battle?(troop_id)
+    return false unless defined?(MGQ_MpRaidPool)
+    return MGQ_MpRaidPool.side_battle?(troop_id) ? true : false if MGQ_MpRaidPool.respond_to?(:side_battle?)
+
+    MGQ_MpRaidPool.respond_to?(:kind_of) && MGQ_MpRaidPool.kind_of(troop_id) == :side
   end
 
   # Adds the host of an invite that waits for the player to the players a battle in a Raid World
@@ -1884,6 +1917,7 @@ module MGQ_MpBattlesCoop
     formed = active?
     log("the host left battle #{MGQ_MpBattlesSync.battle_id}, it goes on alone #{formed ? 'from where the stream left it' : 'from its start, the host party never came'}")
     stand_alone(scene)
+    MGQ_MpRaidPool.taken_over if defined?(MGQ_MpRaidPool) && MGQ_MpRaidPool.respond_to?(:taken_over)
     if formed
       resume_alone
       BattleManager.turn_end

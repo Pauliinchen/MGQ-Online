@@ -9,6 +9,7 @@
 #                            - Covered a guest that takes the battle over after the host reported an action, and a guest that never kills the boss by its own view of the pool
 #                            - Covered a boss whose max HP changes and the Hades rematch hall
 #                            - Covered a boss whose max HP changes, small changes of the DLL's line in a row and the Hades rematch hall
+#                            - Covered the side battles' rewards once per boss, their troop's pages left out, side_battle? and the guests of a side battle
 #                            - Covered the pools' HP every few seconds while a battle waits for commands
 #                            - Covered the bosses' titles
 #                            - Covered the reports as a battle's actions end, a few seconds apart
@@ -25,9 +26,9 @@
 # take at each command phase (the regeneration, other battles' pushes and the player's own reports
 # the relay has not answered yet), an enemy the relay's empty pool kills, a boss troop of several
 # enemies, a battle against a pool that is empty already, the guests and a guest who takes the
-# battle over, the game's retry, the side battles, the invite's and the state's fields, the
-# pushes told in the chat log and fetching the pools. Events run in fibers as the game's
-# interpreter runs them.
+# battle over, the game's retry, the side battles with their rewards once per boss and without
+# their troop's pages, the invite's and the state's fields, the pushes told in the chat log and
+# fetching the pools. Events run in fibers as the game's interpreter runs them.
 
 require_relative "support"
 
@@ -108,17 +109,22 @@ class Game_Variables
   def []=(id, value); @data[id] = value; end
 end
 
-# The database's enemies and troops.
+# The save's system object, where scripts keep notes of their own.
+class Game_System; end
+
+# The database's enemies and troops; Queen Harpy's troop has a battle event page.
 EnemyData = Struct.new(:name, :params)
 TroopMember = Struct.new(:enemy_id)
-TroopData = Struct.new(:members)
+TroopData = Struct.new(:members, :pages)
 $data_enemies = []
 { 1 => ["Queen Harpy", 800], 2 => ["Alma Elma", 1000], 3 => ["Granberia", 1000], 4 => ["Metatronne", 2000], 5 => ["Sandalphone", 3000],
   6 => ["Slime", 100], 7 => ["Eden", 1000], 8 => ["EX-Kyubi", 500] }.each { |id, (name, hp)| $data_enemies[id] = EnemyData.new(name, [hp]) }
 $data_troops = []
 { 71 => [1], 609 => [2], 610 => [3], 1599 => [4, 5, 99], 31 => [6], 1507 => [7], 2017 => [8], 3127 => [7] }.each do |id, enemies|
-  $data_troops[id] = TroopData.new(enemies.map { |enemy| TroopMember.new(enemy) })
+  $data_troops[id] = TroopData.new(enemies.map { |enemy| TroopMember.new(enemy) }, [])
 end
+$data_troops[71].pages = [:harpy_taunts]
+$pages_run = []
 
 # An enemy, whose HP the game keeps between 0 and its max and which dies at 0.
 class Game_Enemy
@@ -134,9 +140,12 @@ end
 class Game_Troop
   attr_reader :members
   def setup(troop_id)
-    data = $data_troops[troop_id] || TroopData.new([TroopMember.new(6)])
+    @troop_id = troop_id
+    data = $data_troops[troop_id] || TroopData.new([TroopMember.new(6)], [])
     @members = data.members.select { |member| $data_enemies[member.enemy_id] }.each_with_index.map { |member, index| Game_Enemy.new(index, member.enemy_id) }
   end
+  def troop; $data_troops[@troop_id]; end
+  def setup_battle_event(_timing = nil); troop.pages.each { |page| $pages_run << page } if troop; end
   def all_dead?; @members.all? { |enemy| enemy.dead? }; end
 end
 class Game_Party; attr_accessor :in_battle; end
@@ -145,7 +154,15 @@ class Game_Party; attr_accessor :in_battle; end
 # hands its result back through event_proc, the retry sets the lost battle up again, and a troop
 # whose enemies are all dead wins.
 module BattleManager
-  def self.setup(troop_id, can_escape = true, can_lose = false); $game_troop.setup(troop_id); @troop_id = troop_id; $setups << [troop_id, can_escape, can_lose]; end
+  def self.setup(troop_id, can_escape = true, can_lose = false)
+    $side_at_setup << MGQ_MpRaidPool.side_battle?(troop_id) if $side_at_setup
+    $game_troop.setup(troop_id)
+    @troop_id = troop_id
+    $setups << [troop_id, can_escape, can_lose]
+  end
+  def self.enable_get_exp?; true; end
+  def self.enable_get_gold?; true; end
+  def self.enable_get_drop?; true; end
   def self.event_proc=(proc); @event_proc = proc; end
   def self.battle_end(result); @event_proc.call(result) if @event_proc; @event_proc = nil; $game_party.in_battle = false; end
   def self.retry_battle; setup(@troop_id); $game_party.in_battle = true; true; end
@@ -235,9 +252,11 @@ def reset
   $game_troop = Game_Troop.new
   $game_party = Game_Party.new
   $game_map = Game_Map.new
+  $game_system = Game_System.new
   $scene = Scene_Battle.new
   MGQ_MpRaidPool.forget
-  [$calls, $chat, $notices, $ran, $borrowed, $collapsed, $won, $called].each(&:clear)
+  [$calls, $chat, $notices, $ran, $borrowed, $collapsed, $won, $called, $pages_run].each(&:clear)
+  $side_at_setup = nil
   $setups = []
   $phases = []
   $given_back = 0
@@ -816,3 +835,53 @@ check("a line within LINE_TOLERANCE of the last one taken tells nothing new", po
 $state = "world=w1\n\nQueen Harpy\t0.8992\t6000\t0\t\n"
 ticks
 check("the next small change counts against the last line taken, so the two add up", pool.pool("Queen Harpy").left, 0.8992)
+
+# A side battle runs none of its troop's battle events and gives its boss's rewards only once.
+reset
+start([[:battle, 71], [:mark, :after]])
+$game_troop.setup_battle_event
+check("an event's boss battle runs its troop's pages", $pages_run, [:harpy_taunts])
+check("and is no side battle", pool.side_battle?(71), false)
+enemy.hp = 0
+BattleManager.battle_end(0)
+reset
+$side_at_setup = []
+pool.start_side(71, "100,100,0")
+check("a side battle is one while it is set up and while it runs, of its troop alone",
+      [$side_at_setup, pool.side_battle?(71), pool.side_battle?("71"), pool.side_battle?(609)], [[true], true, true, false])
+$game_troop.setup_battle_event
+$game_troop.setup_battle_event(:victory)
+check("it runs none of its troop's pages", $pages_run, [])
+check("and keeps them in the database", $data_troops[71].pages, [:harpy_taunts])
+check("its first victory gives the boss's EXP, gold and drops", [BattleManager.enable_get_exp?, BattleManager.enable_get_gold?, BattleManager.enable_get_drop?], [true, true, true])
+enemy.hp = 0
+BattleManager.battle_end(0)
+check("which the save notes, by the boss's key", $game_system.instance_variable_get(:@mgq_mp_raid_rewards), { "world" => "w1", "keys" => { "Queen Harpy" => true } })
+check("once it is over, it is a side battle no more", pool.side_battle?(71), false)
+push("Queen Harpy", "1")
+pool.start_side(71, "100,100,0")
+check("another side battle of that boss gives none", [BattleManager.enable_get_exp?, BattleManager.enable_get_gold?, BattleManager.enable_get_drop?], [false, false, false])
+$game_map.interpreter.clear
+BattleManager.battle_end(2)
+BattleManager.retry_battle
+check("nor does its retry, which is a side battle too", [pool.side_battle?(71), BattleManager.enable_get_exp?], [true, false])
+BattleManager.battle_end(1)
+start([[:battle, 71], [:mark, :after]])
+check("the boss's event battle still gives them", BattleManager.enable_get_exp?, true)
+BattleManager.battle_end(1)
+$game_system.instance_variable_set(:@mgq_mp_raid_rewards, { "world" => "w2", "keys" => { "Queen Harpy" => true } })
+pool.start_side(71, "100,100,0")
+check("the notes of another world count for nothing", BattleManager.enable_get_exp?, true)
+check("a side battle's invite tells it is one", pool.invite_fields, { "pool" => 1, "side" => 1 })
+BattleManager.battle_end(1)
+pool.note_rewarded("Queen Harpy")
+pool.note_invite("troop" => "71", "pool" => "1", "side" => "1")
+$role = :guest
+BattleManager.setup(71)
+$game_troop.setup_battle_event
+check("a guest of a side battle fights a side battle too: no troop pages, no rewards again",
+      [pool.fight.side, pool.side_battle?(71), $pages_run, BattleManager.enable_get_exp?], [true, true, [], false])
+BattleManager.battle_end(1)
+pool.note_invite("troop" => "71", "pool" => "1")
+BattleManager.setup(71)
+check("a guest of a boss's event battle does not", [pool.fight.side, BattleManager.enable_get_exp?], [false, true])

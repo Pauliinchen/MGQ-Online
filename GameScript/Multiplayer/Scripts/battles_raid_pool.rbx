@@ -10,6 +10,8 @@
 #                            - Counted a report from no more than the enemy's max HP now, so a lowered max HP reads as no damage
 #                            - Fought no pool on the Hades rematch hall's map either
 #                            - Compared the DLL's line of a pool with the last one taken, so small changes in a row count once they add up
+#                            - Gave a side battle's EXP, gold and drops once per boss, kept in the save, and ran none of its troop's battle events, for the players who join it too, whose invite tells it is a side battle
+#                            - Added side_battle?, which the co-op battles ask to leave side battles alone
 #                            - Took the pools' HP every five seconds while a battle waits for its players' commands, so its bar shows the other battles' blows meanwhile
 #                            - Reported what a battle dealt as its actions end too, at most every two seconds, so the other games see a long turn's damage
 #                            - Made each raid boss one fight the whole world shares: its enemies have 7.5 times their max HP, report what they lost and take their HP from the relay's pool at each command phase, and die when the pool is empty
@@ -89,6 +91,14 @@ module MGQ_MpRaidPool
 
   # The switch the Colosseum's battles turn on.
   COLOSSEUM_SWITCH = 87
+
+  # The field of $game_system the save keeps the bosses in whose side battle gave its rewards, see
+  # rewards.
+  REWARDS_FIELD = :@mgq_mp_raid_rewards
+
+  # What the game asks before it gives a won battle's EXP, gold and drops, which a side battle of a
+  # boss whose rewards the player got already answers no to.
+  REWARD_CHECKS = [:enable_get_exp?, :enable_get_gold?, :enable_get_drop?]
 
   # Longest key of a boss, which leaves room for the enemy's number the relay's key of one enemy of
   # several adds.
@@ -396,7 +406,7 @@ module MGQ_MpRaidPool
     end
 
     own = kind == :guest ? invited[1] : own_count(troop_id)
-    start(troop_id.to_i, own, kind)
+    start(troop_id.to_i, own, kind, kind == :side || (kind == :guest && invited[2]) ? true : false)
   rescue => e
     @fight = nil
     log("deciding on troop #{troop_id} failed: #{e.class}: #{e.message}")
@@ -407,12 +417,13 @@ module MGQ_MpRaidPool
   # @param troop [Integer] The troop.
   # @param own [Integer] How many enemies the troop's setup made.
   # @param kind [Symbol] See kind_of.
-  def self.start(troop, own, kind)
+  # @param side [Boolean] Whether it is a side battle, the player's own or a host's they join.
+  def self.start(troop, own, kind, side)
     key = key_of(troop)
     return log("troop #{troop} fights no pool: its key is none the relay takes") unless key
 
     members = member_keys(key, own).each_with_index.map { |member_key, index| Member.new(member_key, index, nil, false) }
-    @fight = Fight.new(key, troop_name(own), troop, new_battle_id, own, members, 0, kind == :side, kind == :guest || !reporter?)
+    @fight = Fight.new(key, troop_name(own), troop, new_battle_id, own, members, 0, side, kind == :guest || !reporter?)
     take_on(@fight)
     log("battle #{@fight.battle} (#{kind}) against #{@fight.name} (troop #{troop}, tier #{MGQ_MpRaidBosses.tier(troop)}) fights the pool(s) #{members.map(&:key).join(', ')}: " \
         "#{members.map { |member| enemy_text(member) }.join(', ')}")
@@ -806,8 +817,9 @@ module MGQ_MpRaidPool
     log_once(:turn_end, "taking the empty pools failed: #{e.class}: #{e.message}")
   end
 
-  # Reports the battle's last blows as it ends; a lost one is kept for the game's retry. Called as
-  # BattleManager.battle_end starts.
+  # Reports the battle's last blows as it ends; a lost one is kept for the game's retry, and a won
+  # side battle notes that its boss gave its rewards. Called as BattleManager.battle_end starts,
+  # after the game gave a won battle's rewards.
   #
   # @param result [Integer] The game's result: 0 won, 1 escaped, 2 lost.
   def self.battle_ended(result)
@@ -818,6 +830,7 @@ module MGQ_MpRaidPool
     reporting = reporting?(fight)
     report(fight) if reporting
     @lost = fight if result == 2
+    note_rewarded(fight.key) if result == 0 && fight.side
     log("battle #{fight.battle} against #{fight.name} ended #{{ 0 => 'won', 1 => 'escaped', 2 => 'lost' }.fetch(result, result.inspect)}" \
         "#{reporting ? '' : ', its host reports'}: #{fight.members.map { |member| enemy_text(member) }.join(', ')}")
   rescue => e
@@ -898,17 +911,24 @@ module MGQ_MpRaidPool
   end
 
   # Writes the fields an invite to the player's battle adds when it fights a pool: "pool", how many
-  # enemies the troop's setup made, so the guest fights the same pools (see note_invite).
+  # enemies the troop's setup made, so the guest fights the same pools (see note_invite), and
+  # "side" 1 for a side battle, which is one for the guest too.
   #
   # @param troop_id [Integer, nil] The troop of a battle just set up, before set_up decided on it;
   #   nil for the battle running.
   # @return [Hash] The fields, none for a battle that fights no pool.
   def self.invite_fields(troop_id = nil)
     fight = @fight
-    return { "pool" => fight.own } if fight && (troop_id.nil? || fight.troop == troop_id.to_i)
-    return {} unless troop_id && kind_of(troop_id)
+    if fight && (troop_id.nil? || fight.troop == troop_id.to_i)
+      own = fight.own
+      side = fight.side
+    else
+      return {} unless troop_id && kind_of(troop_id)
 
-    { "pool" => retry_of?(troop_id.to_i) ? @lost.own : own_count(troop_id) }
+      own = retry_of?(troop_id.to_i) ? @lost.own : own_count(troop_id)
+      side = side_battle?(troop_id)
+    end
+    side ? { "pool" => own, "side" => 1 } : { "pool" => own }
   rescue => e
     log("writing the invite's pool failed: #{e.class}: #{e.message}")
     {}
@@ -929,10 +949,10 @@ module MGQ_MpRaidPool
   # invite_fields), so its troop gets the same max HP and the player can report should they take it
   # over. Called by MGQ_MpBattlesHotjoin.note_invite.
   #
-  # @param message [Hash] The invite: "troop" and "pool".
+  # @param message [Hash] The invite: "troop", "pool" and "side".
   def self.note_invite(message)
     own = message["pool"].to_s
-    @invited = own =~ /\A[1-9]\d?\z/ ? [message["troop"].to_i, own.to_i] : nil
+    @invited = own =~ /\A[1-9]\d?\z/ ? [message["troop"].to_i, own.to_i, message["side"].to_s == "1"] : nil
   end
 
   # The field this script adds to the state the player's game tells the others: in a Raid World
@@ -975,8 +995,9 @@ module MGQ_MpRaidPool
   end
 
   # Starts a side battle: the same troop as a boss battle near the player, with its host's enemy
-  # rates, against the same pools. It runs no event and writes no story; the player may lose it
-  # without a game over, and the nearest free players are invited as to any battle.
+  # rates, against the same pools. It runs no event, not even its troop's, and writes no story; the
+  # player may lose it without a game over, and its boss gives its rewards only the first time the
+  # player wins one (see withhold_rewards?).
   #
   # @param troop [Integer] The troop.
   # @param rates [String] The host's enemy rates, see MGQ_MpBattlesCoop.rates_text.
@@ -1001,6 +1022,81 @@ module MGQ_MpRaidPool
     MGQ_MpBattlesCoop.give_back_rates
     log("starting a side battle against troop #{troop} failed: #{e.class}: #{e.message}")
     false
+  end
+
+  # Reports whether a side battle of a troop is being set up or runs, which the co-op battles leave
+  # to the player alone: no gathering and no invites.
+  #
+  # @param troop_id [Integer, String] The troop.
+  # @return [Boolean] Whether one is.
+  def self.side_battle?(troop_id)
+    troop = troop_id.to_i
+    return true if @side == troop
+    return true if @fight && @fight.side && @fight.troop == troop
+
+    retry_of?(troop) && @lost.side ? true : false
+  rescue
+    false
+  end
+
+  # Lists the bosses whose side battle gave the player its rewards, as the save keeps them; those of
+  # another world start anew.
+  #
+  # @return [Hash] The bosses' keys (see key_of), each to true.
+  def self.rewards
+    notes = $game_system.instance_variable_get(REWARDS_FIELD)
+    world = MGQ_MpWorldStory.world_id.to_s
+    unless notes.is_a?(Hash) && notes["world"] == world && notes["keys"].is_a?(Hash)
+      notes = { "world" => world, "keys" => {} }
+      $game_system.instance_variable_set(REWARDS_FIELD, notes)
+    end
+    notes["keys"]
+  end
+
+  # Notes in the save that a boss's side battle gave the player its rewards.
+  #
+  # @param key [String] The boss's key.
+  def self.note_rewarded(key)
+    kept = rewards
+    return if kept[key]
+
+    kept[key] = true
+    log("the side battles against #{key} give no more rewards")
+  end
+
+  # Reports whether the battle running is a side battle whose boss gave the player its rewards
+  # already, so it gives no EXP, gold or drops. Called as the game asks whether a won battle gives
+  # them.
+  #
+  # @return [Boolean] Whether it is.
+  def self.withhold_rewards?
+    fight = @fight
+    return false unless fight && fight.side && rewards[fight.key]
+
+    log_once([:withheld, fight.battle], "side battle #{fight.battle} gives no rewards: the player got those of #{fight.key} already")
+    true
+  rescue => e
+    log_once(:withhold_rewards, "deciding on the side battle's rewards failed: #{e.class}: #{e.message}")
+    false
+  end
+
+  # Runs the game's start of the troop's battle events with none of its pages during a side battle,
+  # so it runs nothing of the boss's event; the common events the battle's skills call still run.
+  #
+  # @param troop [Game_Troop] The troop.
+  # @return [Object] What the block returns.
+  def self.without_pages(troop)
+    fight = @fight
+    data = fight && fight.side && troop.respond_to?(:troop) ? troop.troop : nil
+    return yield unless data && data.respond_to?(:pages=)
+
+    kept = data.pages
+    data.pages = []
+    begin
+      yield
+    ensure
+      data.pages = kept
+    end
   end
 
   # Takes the relay's push that a pool changed, which every report and an admin's reset send to the
@@ -1223,6 +1319,22 @@ module MGQ_MpRaidPool
 
     # As a battle ends, its last blows are reported.
     MGQ_MpHooks.before(BattleManager.singleton_class, :battle_end, "battles_raid_pool") { |result| MGQ_MpRaidPool.battle_ended(result) }
+
+    # A side battle of a boss whose rewards the player got already gives none.
+    REWARD_CHECKS.each do |check|
+      next log("the game lacks BattleManager.#{check}, so side battles give their rewards each time") unless BattleManager.respond_to?(check)
+
+      MGQ_MpHooks.around(BattleManager.singleton_class, check, "battles_raid_pool") do |_manager, _args, original|
+        MGQ_MpRaidPool.withhold_rewards? ? false : original.call
+      end
+    end
+
+    # A side battle runs none of its troop's battle events.
+    if Game_Troop.method_defined?(:setup_battle_event)
+      MGQ_MpHooks.around(Game_Troop, :setup_battle_event, "battles_raid_pool") do |troop, _args, original|
+        MGQ_MpRaidPool.without_pages(troop) { original.call }
+      end
+    end
 
     # The game's retry of a lost battle fights the pools again.
     return unless BattleManager.respond_to?(:retry_battle)
