@@ -2,6 +2,7 @@
 #  catchup_data_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-11: Read the generator from MGQ-Paradox-Event-Checker next to the repository, and left its rules unchecked without it
 #      Paulinchen  2026-10-10: Checked that no row needs a Library Flag and that an event only a Library Flag told ran is marked by the scene after it
 #                            - Checked that the joins of Monte Carlo's evacuation count once it ended
 #      Paulinchen  2026-10-09: Checked that a story variable named after a temple is no scratch and that the Silver Orb comes to every player of the world
@@ -9,7 +10,7 @@
 #
 #----------------------------------------------------------------
 
-# Covers world_catchup_data.rbx, which GameScript/Tools/raid_data.rb writes from the game's data: the
+# Covers world_catchup_data.rbx, which raid_data.rb of MGQ-Paradox-Event-Checker writes from the game's data: the
 # shape of its tables, the parts and their gates as the relay splits the story, and key rows such as
 # Sonya's and Nuruko's Chaos returns. Also covers the generator's rules that need no game data: the
 # order of places and the Level Cap's cap a given-back companion joins at.
@@ -104,8 +105,11 @@ check("the six camps' skills have explicit marks", [camps.map { |row| row.site[/
 check("such as the first camp's Angel Dance for Ilias's side",
       camps.find { |row| row.id == 930 }.values_at(4, 6, 7), ["1", :ilias, [[:v, 1001, 8], [:s, 2023]]])
 
-# The generator's rules, read without the game's data.
-load File.expand_path("../Tools/raid_data.rb", __dir__)
+# The generator's rules, read without the game's data. The generator lives in
+# MGQ-Paradox-Event-Checker next to this repository; without it, its rules go unchecked here.
+generator = File.expand_path("../../../MGQ-Paradox-Event-Checker/Tools/raid_data.rb", __dir__)
+if File.exist?(generator)
+load generator
 tool = RaidData.allocate
 place = lambda { |part, step, needs = [], marks = []| RaidData::Place.new(part, step, needs, [], marks, nil) }
 check("an earlier part comes before a later one, and the two routes in either order",
@@ -152,3 +156,6 @@ switch_names[5588] = [0x56f3, 0x9451, 0x30d5, 0x30e9, 0x30b0, 0xff1a, 0x521d, 0x
 tool.instance_variable_set(:@names, [switch_names, names])
 check("a Library Flag is no story switch, by its English or its untranslated name, unlike a story switch named after the library",
       [tool.story_switch?(2922), tool.story_switch?(5109), tool.story_switch?(5352), tool.story_switch?(5588)], [true, true, false, false])
+else
+  puts "skipped the generator's rules: #{generator} is missing"
+end

@@ -2,6 +2,7 @@
 #  coop_events_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-11: Read the generator from MGQ-Paradox-Event-Checker next to the repository, and left its lists unchecked without it
 #      Paulinchen  2026-10-11: Checked that a branch on a choice script's variable counts as the choice's, that such a scene running by itself is story, that a signpost with its own self switch, the cosmetic scripts and the game's battle flags keep a talk
 #      Paulinchen  2026-10-10: Checked that the game's map display, Pocket Castle call and post-battle processing are the player's own, never story
 #                            - Checked that a transfer outside a telling goes on with none, and that only a story eventthat runs by itself goes on with the telling that moved the player, while one the player starts is a new telling
@@ -1633,14 +1634,20 @@ $members = []
 leader.state.delete("sm")
 MGQ_MpCoopStory.update
 
-# The generator of coop_story_rewards.rbx leaves out of its marks exactly what is each player's own.
+# The generator of coop_story_rewards.rbx, in MGQ-Paradox-Event-Checker next to this repository,
+# leaves out of its marks exactly what is each player's own; without that repository this goes unchecked.
 generator = Module.new
-load(File.expand_path("../Tools/story_rewards.rb", __dir__), generator)
-own_switches = generator::PERSONAL_SWITCHES.flat_map { |ids| Array(ids) }
-own_variables = Object.new.extend(generator).send(:personal_variables, $data_actors.size).flat_map { |ids| Array(ids) }
-check("the generator's switches of each player's own are this script's",
-      [own_switches.all? { |id| MGQ_MpStoryState.personal_switch?(id, []) }, (1..8000).select { |id| MGQ_MpStoryState.personal_switch?(id, []) } - own_switches], [true, []])
-check("and so are its variables", [own_variables.all? { |id| MGQ_MpStoryState.personal_variable?(id) }, (1..8000).select { |id| MGQ_MpStoryState.personal_variable?(id) } - own_variables], [true, []])
+generator_file = File.expand_path("../../../MGQ-Paradox-Event-Checker/Tools/story_rewards.rb", __dir__)
+if File.exist?(generator_file)
+  load(generator_file, generator)
+  own_switches = generator::PERSONAL_SWITCHES.flat_map { |ids| Array(ids) }
+  own_variables = Object.new.extend(generator).send(:personal_variables, $data_actors.size).flat_map { |ids| Array(ids) }
+  check("the generator's switches of each player's own are this script's",
+        [own_switches.all? { |id| MGQ_MpStoryState.personal_switch?(id, []) }, (1..8000).select { |id| MGQ_MpStoryState.personal_switch?(id, []) } - own_switches], [true, []])
+  check("and so are its variables", [own_variables.all? { |id| MGQ_MpStoryState.personal_variable?(id) }, (1..8000).select { |id| MGQ_MpStoryState.personal_variable?(id) } - own_variables], [true, []])
+else
+  puts "skipped the generator's lists: #{generator_file} is missing"
+end
 
 # An event command as the game's data holds it, which the generator reads by its fields.
 class ToolCommand
