@@ -2,7 +2,10 @@
 #  world_story.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-10: Kept a player noted behind below their gate after a load or a new entry into the world, before the world's story came
+#      Paulinchen  2026-10-10: Held the write between the story's events on another map while its next event may go on with the telling, so the viewers no longer take the scene's state half done and drop out of it
+#                            - Took the world's story as a return to the Great Decision only once it left the route the story this game built on was on, since a starting save that cleared every route names every route as done from the first write on
+#                            - Kept the player's own writes from ending the wait for the story of a telling they watched
+#                            - Kept a player noted behind below their gate after a load or a new entry into the world, before the world's story came
 #                            - Kept the story a player stood on as they fell behind as the base of their own changes, so a checkpoint or the world's story keeps them
 #                            - Brought back the companions of the player's own Great Decision and told the world's route also when another player locked it before the world had a story
 #                            - Dropped the story a player behind stood on once their own story becomes the world's first, so later stories are compared with theirs again
@@ -441,7 +444,8 @@ module MGQ_MpWorldStory
 
   # Takes a write that ended: accepted, it is the story this game builds on; refused, the world's
   # story comes instead, as after a refused route lock when another route was locked first; failed,
-  # it goes again later.
+  # it goes again later. An accepted write raises the revision a watched teller's story is waited
+  # past, so only another game's story ends that wait early (see awaits_teller?).
   #
   # @param state [Hash] The DLL's state.
   # @param text [String] The world's story, or the one written once accepted.
@@ -451,6 +455,7 @@ module MGQ_MpWorldStory
     when "accepted"
       @wrev = state["post_rev"].to_i
       @seen_wrev = @wrev if @seen_wrev.nil? || @wrev > @seen_wrev
+      @teller[:wrev] = @wrev if @teller && @wrev > @teller[:wrev].to_i
       @base = post[:story]
       @mode = :world
       @end_local = nil if post[:end] && post[:end] == @end_local
@@ -584,7 +589,9 @@ module MGQ_MpWorldStory
 
   # Gives the player the personal half of the world's return to the Great Decision before the
   # world's story is laid over theirs, when the world finished the route the player is on and left
-  # it (see returned); the world's story waits until it played.
+  # it since the story this game built on (see returned); the world's story waits until it played.
+  # A route the player started themselves since that story is no return: a starting save that
+  # cleared every route makes done and clear name every route from the first write on.
   #
   # @param own [Hash] The player's counters.
   # @param world [Hash] The world's.
@@ -595,6 +602,7 @@ module MGQ_MpWorldStory
 
     left = route_index(own)
     return false unless left && left != @returned_route && left != route_index(world)
+    return false unless route_index(local_counters(@base)) == left
     return false unless world["done"].include?(ROUTES[left]) || world["clear"].include?(ROUTES[left])
 
     @returned_route = left
@@ -831,9 +839,11 @@ module MGQ_MpWorldStory
   end
 
   # Notes the player's telling, where it ended is the story's endpoint, and the end of any event of
-  # the player's own, whose changes are compared soon.
+  # the player's own, whose changes are compared soon. A telling that moved the player onto another
+  # map ends only once its next event there can no longer go on with it, see
+  # MGQ_MpCoopEvents.telling_or_moved?.
   def self.note_telling
-    telling = MGQ_MpCoopEvents.telling?
+    telling = MGQ_MpCoopEvents.telling_or_moved?
     running = $game_map.interpreter.running?
     @watch = true if @was_running && !running
     told if @was_telling && !telling && @mode == :world
@@ -926,7 +936,7 @@ module MGQ_MpWorldStory
   #
   # @return [Boolean] Whether it is.
   def self.scan_due?
-    return false if MGQ_MpCoopEvents.telling?
+    return false if MGQ_MpCoopEvents.telling_or_moved?
     return @clock - @scanned >= SCAN_FRAMES if @watch
 
     @clock - @scanned >= IDLE_SCAN_FRAMES && !$game_map.interpreter.running?
@@ -957,7 +967,8 @@ module MGQ_MpWorldStory
 
   # Reports whether a write is due: the player's story moved on, another change rested for
   # DEBOUNCE_FRAMES or waited LONGEST_WAIT_FRAMES, or a write must go again. While the player tells
-  # the story only the route lock goes, since others would take the scene's state half done.
+  # the story, the moment between its events on another map included, only the route lock goes,
+  # since others would take the scene's state half done.
   #
   # @return [Boolean] Whether it is.
   def self.post_due?
@@ -965,7 +976,7 @@ module MGQ_MpWorldStory
     return false if MGQ_MpCoopEvents.pvp_running?
 
     settled = @marker_at && @clock - @marker_at >= SETTLE_FRAMES
-    return (settled || @force_post) && lock_route ? true : false if MGQ_MpCoopEvents.telling?
+    return (settled || @force_post) && lock_route ? true : false if MGQ_MpCoopEvents.telling_or_moved?
     return true if @force_post || settled
 
     @change_at && (@clock - @change_at >= DEBOUNCE_FRAMES || @clock - @first_change_at >= LONGEST_WAIT_FRAMES) ? true : false

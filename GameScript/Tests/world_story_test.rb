@@ -2,7 +2,12 @@
 #  world_story_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-10: Checked a Raid World started from a shared save, as a development build makes one: the save's story starts the
+#      Paulinchen  2026-10-10: Checked that no write goes out between the story's events on another map while its next event may go on with the telling
+#                            - Stood in for MGQ_MpCoopEvents.telling_or_moved?
+#                            - Checked that a world story before a route the player started themselves is no return to the Great Decision,
+#                              in a world whose starting save cleared every route
+#                            - Checked that the player's own write keeps their story events waiting for the teller's story
+#                            - Checked a Raid World started from a shared save, as a development build makes one: the save's story starts the
 #                              world's, the next player from the save plays it, a further one is taken, and a new game is behind
 #                            - Checked that a route lock refused before the world had a story brings back the player's companions with the world's first story
 #                            - Checked that a player behind whose own story becomes the world's leaves the story they stood on behind
@@ -82,6 +87,7 @@ module MGQ_MpCoop
 end
 module MGQ_MpCoopEvents
   def self.telling?; $telling ? true : false; end
+  def self.telling_or_moved?; telling? || ($moved ? true : false); end
   def self.pvp_running?; false; end
   def self.chest_keys; []; end
   def self.chest_key?(_key); false; end
@@ -349,6 +355,10 @@ story.story_transfer
 frames(80)
 check("the story's transfer waits for the telling to end", calls_of("mp_raid_story_post"), [])
 $telling = false
+$moved = true
+frames(80)
+check("and for the moment between the story's events on the new map, while its next event may go on with the telling", calls_of("mp_raid_story_post"), [])
+$moved = false
 frames(40)
 check("the story's transfer writes soon, with the endpoint", calls_of("mp_raid_story_post").map { |args| args[2] }, ["p=15;r1141=0;r1142=0;r1143=0;clear=;end=41,1,1\0"])
 relay("rev" => 10, "wrev" => 10, "p" => 15, "end" => "41,1,1", "post" => "accepted", "post_rev" => 10)
@@ -422,6 +432,21 @@ frames(2)
 $teller = nil
 frames(601)
 check("or for AWAIT_TELLER_FRAMES at most", story.awaits_teller?, false)
+$calls.clear
+$teller = MGQ_MpOverworldSync::Peers::Peer.new(2, { "telling" => "1", "name" => "Teller" })
+frames(2)
+$teller = nil
+frames(2)
+$game_variables[1001] = 19
+frames(80)
+relay("rev" => 17, "wrev" => 17, "p" => 19, "end" => "3,1,1", "post" => "accepted", "post_rev" => 17)
+frames(16)
+check("the player's own write accepted keeps their story events waiting for the teller's story", [calls_of("mp_raid_story_post").size, story.awaits_teller?], [1, true])
+story.pushed(MGQ_MpOverworldSync::STORY_FIELD => "18", :relay => true)
+frames(1)
+relay({ "rev" => 18, "wrev" => 18, "p" => 19, "end" => "3,1,1", "fetch" => "done" }, packed({ 1001 => 19 }, [300, 301, 302, 303, 304, 305, 306, 307]))
+frames(16)
+check("which ends the wait", [story.awaits_teller?, $game_switches[307]], [false, true])
 
 # A loaded save in the world's current part: the world's story is laid over it, the player's own
 # values kept.
@@ -760,6 +785,32 @@ relay({ "rev" => 62, "wrev" => 62, "p" => 40, "r1142" => 2, "clear" => "ad", "pa
 frames(16)
 check("plays the return's own half first, then the world's next route",
       [($setups.first || []).map { |entry| entry.code }, $game_variables[1141], $game_variables[1142], choices.instance_variable_get(:@prompts)], [[117, 122, 122, 201, 0], 0, 2, [:decision]])
+choices.forget("test")
+
+# A world whose starting save cleared every route names every route as done from the first write
+# on: a world story before a route the player started themselves since the world's last story is
+# no return to the Great Decision.
+$calls.clear
+$notices.clear
+$setups = []
+new_story({ 1001 => 39 }, [4, 7096, 7097, 7039])
+story.loaded(:load)
+frames(1)
+relay({ "rev" => 63, "wrev" => 63, "p" => 39, "part" => "3", "clear" => "ad,mr,chaos", "done" => "ad,mr,chaos", "fetch" => "done" }, packed({ 1001 => 39 }, [7096, 7097, 7039]))
+frames(16)
+$game_variables[1001] = 40
+$game_variables[1141] = 2
+story.pushed(MGQ_MpOverworldSync::STORY_FIELD => "64", :relay => true)
+frames(1)
+relay({ "rev" => 64, "wrev" => 64, "p" => 39, "part" => "3", "clear" => "ad,mr,chaos", "done" => "ad,mr,chaos", "fetch" => "done", "end" => "430,25,19" },
+      packed({ 1001 => 39 }, [7096, 7097, 7039]))
+frames(16)
+check("a world story before a route the player started themselves is no return to the Great Decision, though the world finished every route once",
+      [$notices, $setups, story.mode, story.endpoint], [[], [], :world, [430, 25, 19, 2]])
+check("the story is taken, and the player's own step since the story they built on stays, as the world's story did not change it",
+      [$game_variables[1001], $game_variables[1141]], [40, 2])
+frames(80)
+check("and goes out on the world's revision", calls_of("mp_raid_story_post").map { |args| [args[1], args[2]] }, [[64, "p=40;r1141=2;r1142=0;r1143=0;clear=ad,mr,chaos\0"]])
 choices.forget("test")
 
 # Progress made before the world's story first came stays where the world's did not change it.

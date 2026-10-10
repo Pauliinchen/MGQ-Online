@@ -2,7 +2,9 @@
 #  coop_gather.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-10: Let a player in a Raid World move while the teller fights the story's battle, so one who came late may join it
+#      Paulinchen  2026-10-10: Let a Raid World's follow wait a minute for the player to be free instead of six seconds, since the story calls once and a follower kept busy longer, by the teller's pages, a battle or a menu, lost the follow and started their own copy of the story
+#                            - Kept the follow of a teller's story the player took while they are on the way and for CALL_LAPSE_FRAMES after they arrived, which names that teller and takes their pages from the new map meanwhile
+#                            - Let a player in a Raid World move while the teller fights the story's battle, so one who came late may join it
 #                            - Moved the teleport to the party's leader to coop_teleport.rbx, which brings the player over through come_to
 #                            - Let a teleport the player asked for wait a minute for the player to be free, as long as the request stood, instead of six seconds
 #                            - Told the player that a call or teleport to a map this game lacks cannot be taken, besides the log line
@@ -63,8 +65,9 @@ module MGQ_MpCoopGather
   # started without them, or the leader left.
   CALL_LAPSE_FRAMES = CALL_FRAMES * 2
 
-  # Frames a teleport the player asked for waits for the player to be free before it lapses, a
-  # minute, as long as a request to another member stands (see MGQ_MpCoopTeleport::ASK_FRAMES).
+  # Frames a teleport the player asked for, or a Raid World's follow, waits for the player to be
+  # free before it lapses, a minute, as long as a request to another member stands (see
+  # MGQ_MpCoopTeleport::ASK_FRAMES).
   ASKED_LAPSE_FRAMES = 3600
 
   # Frames an offer to follow a Raid World's teller whose story moved on stands in the notification
@@ -102,6 +105,7 @@ module MGQ_MpCoopGather
     log("forgot #{[@hold && 'the held story', @gather && "#{@gather[:name]}'s call"].compact.join(', ')}") if @hold || @gather
     @hold = nil
     @gather = nil
+    @taken_follow = nil
   end
 
   # Forgets where the story was last told, whom it took along and the offers to follow its tellers,
@@ -238,7 +242,7 @@ module MGQ_MpCoopGather
   end
 
   # Follows a teller whose offer the player accepted, as a player who watches their story would at
-  # once, but waiting ASKED_LAPSE_FRAMES for the player to be free, as a teleport they asked for.
+  # once.
   #
   # @param peer [MGQ_MpOverworldSync::Peers::Peer] The teller.
   def self.accept_follow(peer)
@@ -247,7 +251,6 @@ module MGQ_MpCoopGather
 
     @follow_offers.delete(peer.state["id"].to_s)
     followed(peer, offer[:place], offer[:warp_ban])
-    @gather[:lapse] = ASKED_LAPSE_FRAMES
   rescue => e
     log("following a teller failed: #{e.class}: #{e.message}")
   end
@@ -493,7 +496,10 @@ module MGQ_MpCoopGather
   end
 
   # Takes the leader's call to follow them, whom their story moved elsewhere: the player comes at
-  # once, as soon as they are free.
+  # once, as soon as they are free. In a Raid World the follow waits ASKED_LAPSE_FRAMES for that, as
+  # a teleport the player asked for does, since the story calls once and the teller's pages, a
+  # battle or a menu keep the player busy longer than CALL_LAPSE_FRAMES; a Classic leader's next
+  # scene calls again.
   #
   # @param peer [MGQ_MpOverworldSync::Peers::Peer] The leader.
   # @param place [Array<Integer>] Where the leader stands now: map, x, y and direction.
@@ -502,22 +508,42 @@ module MGQ_MpCoopGather
     log("following #{peer.state['name']} to map #{place[0]} #{place[1]},#{place[2]} as soon as the player is free")
     @gather = { :since => Graphics.frame_count - GATHER_FRAMES, :name => peer.state["name"].to_s, :place => place,
                 :warp_ban => warp_ban, :called => Graphics.frame_count, :follow => true, :id => peer.state["id"].to_s }
+    @gather[:lapse] = ASKED_LAPSE_FRAMES if MGQ_MpCoop::Scope.raid?
   end
 
-  # Names the teller whose story takes the player along now, see followed.
+  # Finds the follow the player takes: a teller's call to follow where their story moved them while
+  # it stands and the player is on the way, and in a Raid World for CALL_LAPSE_FRAMES after they
+  # arrived.
+  #
+  # A Raid World's teller is whoever's state says they tell, which says nothing between the story's
+  # events, while the game's transfer process runs, and the player may arrive in that moment.
+  #
+  # @return [Hash, nil] The follow: the teller's :id and :name, and :place, their map, x, y and
+  #   direction; nil for none.
+  def self.follow_taken
+    return @gather if @gather && @gather[:follow] && coming?
+
+    @taken_follow && within?(@taken_follow[:since], CALL_LAPSE_FRAMES) ? @taken_follow : nil
+  end
+
+  # Names the teller whose story takes the player along now, see follow_taken.
   #
   # @return [String, nil] Their id, nil while no story takes the player along.
   def self.followed_id
-    @gather && @gather[:follow] ? @gather[:id] : nil
+    follow = follow_taken
+    follow ? follow[:id] : nil
   end
 
   # Reports whether the leader's story pages of a map reach the player: the player's map, or the
-  # one they are about to follow the leader to, whose pages wait until they arrived.
+  # one they follow the leader to, whose pages wait until they arrived.
   #
   # @param map_id [Integer] The map the leader tells the story on.
   # @return [Boolean] Whether they do.
   def self.story_map?(map_id)
-    map_id == $game_map.map_id || (!@gather.nil? && @gather[:follow] && @gather[:place][0] == map_id)
+    return true if map_id == $game_map.map_id
+
+    follow = follow_taken
+    follow && follow[:place][0] == map_id ? true : false
   end
 
   # Finds where a teleport to the story goes: the endpoint the relay keeps of the world's story (see
@@ -756,6 +782,7 @@ module MGQ_MpCoopGather
 
     reason = gather[:follow] ? "the story moved them" : (gather[:asked] ? "the player asked to teleport" : "their story scene called")
     log("#{gather[:follow] ? 'followed' : 'came to'} #{gather[:name]} on map #{map_id} #{x},#{y}, from map #{$game_map.map_id} #{$game_player.x},#{$game_player.y}: #{reason}")
+    @taken_follow = { :id => gather[:id], :name => gather[:name], :place => place, :since => Graphics.frame_count } if gather[:follow] && MGQ_MpCoop::Scope.raid?
     MGQ_MpCoopCastle.arriving(map_id) if defined?(MGQ_MpCoopCastle)
     warp_ban = gather[:warp_ban]
     if map_id == $game_map.map_id

@@ -2,7 +2,8 @@
 #  world_catchup_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-10: Checked that a shared save's own story counts as the player's in a Raid World started from it: no gifts, no companion
+#      Paulinchen  2026-10-10: Stood in for MGQ_MpCoopEvents.telling_or_moved?, which world_story.rbx asks now
+#                            - Checked that a shared save's own story counts as the player's in a Raid World started from it: no gifts, no companion
 #                              taken or brought, nothing held, also once the world's story from the same save is laid over it
 #                            - Checked that a save noting the player behind stays behind below the gate once it loaded again
 #                            - Checked that a player moves on past a finished route to the world's route and gets the finished route's rows
@@ -88,6 +89,7 @@ module MGQ_MpCoop
 end
 module MGQ_MpCoopEvents
   def self.telling?; $telling ? true : false; end
+  def self.telling_or_moved?; telling?; end
   def self.pvp_running?; false; end
   def self.chest_keys; []; end
   def self.chest_key?(_key); false; end

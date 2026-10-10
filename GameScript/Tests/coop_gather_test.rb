@@ -2,7 +2,9 @@
 #  coop_gather_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-10: Checked that a Raid World's teller in the story's battle holds nobody
+#      Paulinchen  2026-10-10: Checked that a Raid World's follow taken at once waits a minute for a busy player
+#                            - Checked that a follow taken in a Raid World names its teller and map while the player is on the way and after they arrived, until CALL_LAPSE_FRAMES passed
+#                            - Checked that a Raid World's teller in the story's battle holds nobody
 #                            - Checked that a loaded save forgets a teleport the player asked for, in place of the question where the leader stands
 #                            - Checked that only a player who watches a Raid World's teller and is not behind follows their story at once, and that any other is offered to follow in the notification box until they follow, decline, the telling ends, a minute passes or the world closes
 #                            - Checked that a teleport to a map this game lacks tells the player so
@@ -173,6 +175,12 @@ check("a call to gather is ignored", gather.coming?, false)
 gather.take(teller, { "pevent" => "follow", "map" => "8", "x" => "1", "y" => "2", "d" => "2" })
 check("but the story moving its teller elsewhere takes the player along", [gather.coming?, gather.story_map?(8)], [true, true])
 check("whose teller the player follows", gather.followed_id, "t")
+$map_free = false
+$frame_count += 20 * 60
+gather.update
+check("still while the player is busy for 20 s, since the story calls once", [gather.coming?, gather.followed_id, gather.story_map?(8)], [true, "t", true])
+$frame_count += MGQ_MpCoopGather::ASKED_LAPSE_FRAMES
+check("until a minute passed", [gather.pending_call, gather.followed_id, $notices.last], [nil, nil, "Teller's story went on without you."])
 gather.forget
 
 # Only a player who watches the teller's story and is not behind the world's follows at once; any
@@ -190,6 +198,14 @@ check("naming the place once the teller's state tells it from there", $offers.no
 $offers.notice_of(teller).take.call
 check("following brings the player there as a follow of that teller",
       [gather.coming?, gather.pending_call[:place], gather.followed_id, $offers.notice_of(teller)], [true, [8, 1, 2, 2], "t", nil])
+$map_free = true
+gather.update
+check("taken, the follow still names its teller and map while the player is on the way and after they arrived",
+      [$game_player.reserved, gather.coming?, gather.followed_id, gather.story_map?(8)], [[8, 1, 2, 2], false, "t", true])
+$frame_count += MGQ_MpCoopGather::CALL_LAPSE_FRAMES
+check("until CALL_LAPSE_FRAMES passed", [gather.followed_id, gather.story_map?(8)], [nil, false])
+$game_player.reserved = nil
+$map_free = false
 gather.forget
 gather.take(teller, follow)
 $offers.notice_of(teller).decline.call

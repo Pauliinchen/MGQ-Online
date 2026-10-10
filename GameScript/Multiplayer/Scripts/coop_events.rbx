@@ -2,7 +2,11 @@
 #  coop_events.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-10: Left the teleport to the party's leader to coop_teleport.rbx's messages
+#      Paulinchen  2026-10-10: Went on with a telling that moved the player only at a story event that runs by itself, so one the player starts on the new map is a new telling, whose viewers are those whose story is where the player's is now
+#                            - Told world_story.rbx that the telling may still go on between the story's events on the new map, so the scene's state no longer goes out half done there
+#                            - Went on with a Raid World's telling that moved the player onto another map at the story's next event there, within CONTINUE_FRAMES of the move, through the game's transfer process between them, so its viewers keep seeing the story instead of a new telling nobody follows
+#                            - Kept a story event from starting while the player follows a teller's story to where it moved them, so their own copy of it no longer starts while the teller's state says they tell nothing for a moment
+#                            - Left the teleport to the party's leader to coop_teleport.rbx's messages
 #                            - Held a Raid World's story event a second instead of half a second for a tie, so a later teller stops before its first command more often
 #      Paulinchen  2026-10-09: Asked story_state.rbx which switches and variables are the player's own instead of coop_story.rbx
 #                            - Kept story events from starting while the player's story is behind a Raid World's, telling the level that moves them on, and held those that run by themselves, so a teleport onto their map cannot loop
@@ -126,6 +130,12 @@ module MGQ_MpCoopEvents
   # the player, one second, so their state can tell that they started telling at the same moment
   # before the event changed anything.
   TIE_HOLD_FRAMES = 60
+
+  # Frames after the player's telling moved them onto another map in which the story's next event
+  # there, one that runs by itself, goes on with that telling, five seconds: the game's transfer
+  # process runs between them in the player's own game, and the next event may wait for the screen
+  # to fade in.
+  CONTINUE_FRAMES = 300
 
   # Frames a page of the leader's story stays after the leader stopped telling the story, two
   # seconds, before a member's game ends it anyway.
@@ -456,10 +466,13 @@ module MGQ_MpCoopEvents
     @telling = leading_story? && sorted == :story
     if @telling && @told_last_frame
       log("the story's next event goes on with the telling that started on map #{@telling_map}")
+    elsif @telling && moved_by_story? && by_itself?(event)
+      continue_telling
     elsif @telling
       note_telling_start
       hold_for_tie(interpreter)
     end
+    @moved_by_story_at = nil if @telling
     @may_tell = sorted == :talk && (following? || leading_story?) && may_tell?(list || [])
     hold = @telling && scene?(list) && !MGQ_MpCoopGather.gathered?
     MGQ_MpCoopGather.hold(interpreter) if hold
@@ -477,11 +490,63 @@ module MGQ_MpCoopEvents
   def self.note_telling_start
     @telling_at = Graphics.frame_count
     @telling_map = $game_map ? $game_map.map_id : nil
+    @telling_moved = false
     @told_markers = MGQ_MpCoop::Scope.raid? && defined?(MGQ_MpCoopStory) ? MGQ_MpCoopStory.own_markers : nil
     MGQ_MpCoopGather.forget_taken_along if defined?(MGQ_MpCoopGather)
   rescue => e
     @told_markers = nil
     log("noting the story's progress failed: #{e.class}: #{e.message}")
+  end
+
+  # Reports whether an event starts by itself, as the story's next event after its transfer does: a
+  # map event that runs by itself, or a common event a switch starts. One the player starts is no
+  # part of the telling that moved them.
+  #
+  # @param event [Game_Event, nil] The event, nil for a common event.
+  # @return [Boolean] Whether it does.
+  def self.by_itself?(event)
+    event.nil? || event.trigger == 3
+  end
+
+  # Goes on with the telling that moved the player onto this map, as the story's next event starts
+  # here, see moved_by_story?: when it started, how far the story was then and whom it took along
+  # stay, and no tie is held, since the telling is older than any that starts now.
+  def self.continue_telling
+    @telling_map = $game_map ? $game_map.map_id : nil
+    @telling_moved = true
+    log("the story's next event goes on with the telling that moved the player from map #{@moved_from}")
+  end
+
+  # Notes that the player's telling moves them onto another map, as the story's transfer does, so
+  # the story's next event there goes on with the telling, see started. Called before
+  # Game_Player#perform_transfer.
+  #
+  # @param player [Game_Player] The player.
+  def self.moving(player)
+    return unless player.transfer? && telling?
+
+    @moved_by_story_at = Graphics.frame_count
+    @moved_from = $game_map.map_id
+  rescue => e
+    log("noting the story's move failed: #{e.class}: #{e.message}")
+  end
+
+  # Reports whether the player's telling moved them onto another map within CONTINUE_FRAMES, and
+  # no story event went on with it yet, see moving.
+  #
+  # @return [Boolean] Whether it did.
+  def self.moved_by_story?
+    !@moved_by_story_at.nil? && !past?(@moved_by_story_at, CONTINUE_FRAMES)
+  end
+
+  # Reports whether the player's telling goes on: a story event of it runs, or it moved the player
+  # onto another map and the story's next event there may still go on with it, see
+  # moved_by_story?. world_story.rbx writes nothing meanwhile, since others would take the scene's
+  # state half done.
+  #
+  # @return [Boolean] Whether it does.
+  def self.telling_or_moved?
+    telling? || moved_by_story?
   end
 
   # How far the player's story was as their telling started, in a Raid World.
@@ -593,14 +658,14 @@ module MGQ_MpCoopEvents
   # it (MGQ_MpCoop::Scope::Raid.first_teller_here), and the other's event ends at its next command.
   # Called before each of an interpreter's commands.
   #
-  # Only within TIE_FRAMES of the start and on the map it started on, since the map's order starts
-  # anew with every transfer, so a story moving its teller onto a map where another player tells
-  # one would end halfway.
+  # Only within TIE_FRAMES of the start, on the map it started on and never once the telling moved
+  # its teller, since the map's order starts anew with every transfer, so a story moving its teller
+  # onto a map where another player tells one would end halfway.
   #
   # @param interpreter [Game_Interpreter] The interpreter about to run a command.
   def self.yield_story(interpreter)
     return unless @telling && $game_map && interpreter.equal?($game_map.interpreter) && MGQ_MpCoop::Scope.raid?
-    return if @telling_map != $game_map.map_id || past?(@telling_at, TIE_FRAMES)
+    return if @telling_moved || @telling_map != $game_map.map_id || past?(@telling_at, TIE_FRAMES)
 
     lead = MGQ_MpCoop::Scope::Raid.first_teller_here
     return unless lead.is_a?(MGQ_MpOverworldSync::Peers::Peer)
@@ -767,8 +832,9 @@ module MGQ_MpCoopEvents
   end
 
   # Keeps a member's story event from starting: only the leader starts story, in their own game.
-  # In a Raid World only while another player tells the story on the map, or while the player's
-  # story is behind the world's (held_behind). Called when the map's main event would start it.
+  # In a Raid World only while another player tells the story on the map, while the player follows
+  # a teller's story to where it moved them (held_following), or while the player's story is behind
+  # the world's (held_behind). Called when the map's main event would start it.
   #
   # An event that runs by itself is left to the teller's own game, which runs it on its map.
   #
@@ -776,6 +842,9 @@ module MGQ_MpCoopEvents
   # @return [Boolean] Whether it is the teller's, so it must not run here.
   def self.hand_over(event)
     return held_behind(event) if behind? && !own? && kind(event) == :story
+
+    follow = MGQ_MpCoopGather.follow_taken
+    return held_following(event, follow) if follow && !own? && kind(event) == :story
 
     lead = MGQ_MpCoop::Scope.teller
     return awaits_told_story?(event) unless lead.is_a?(MGQ_MpOverworldSync::Peers::Peer)
@@ -824,6 +893,21 @@ module MGQ_MpCoopEvents
     @refused_at = Graphics.frame_count
     log("kept story event #{event.id} on map #{$game_map.map_id} from starting: the player's story is behind the world's")
     MGQ_MpOverworldSync.notice(MGQ_MpWorldCatchup.refusal_text)
+    true
+  end
+
+  # Keeps a story event from starting while the player follows a teller's story to where it moved
+  # them, see MGQ_MpCoopGather.follow_taken: the player's own copy of that story would otherwise
+  # start while the teller's state says they tell nothing, as it does between the story's events.
+  # Logged once per event and never noticed, since the line above the player's head says whom they
+  # join.
+  #
+  # @param event [Game_Event] The story event.
+  # @param follow [Hash] The follow, see MGQ_MpCoopGather.follow_taken.
+  # @return [Boolean] Always true: it must not run.
+  def self.held_following(event, follow)
+    log_once([:following, $game_map.map_id, event.id],
+             "kept event #{event.id} on map #{$game_map.map_id} from starting: the player follows #{follow[:name]}'s story to map #{follow[:place][0]}")
     true
   end
 
@@ -1435,6 +1519,10 @@ begin
     MGQ_MpCoopEvents.yield_story(self)
     MGQ_MpCoopEvents.guard(self)
   end
+
+  # Before the player's transfer, a telling that moves them is noted, so the story's next event on
+  # the new map goes on with it.
+  MGQ_MpHooks.before(Game_Player, :perform_transfer, "coop_events") { MGQ_MpCoopEvents.moving(self) }
 rescue => e
   MGQ_MpCoopEvents.log("hooks FAILED: #{e.class}: #{e.message}")
 end

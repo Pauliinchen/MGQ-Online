@@ -2,6 +2,7 @@
 #  coop_scope.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-10: Kept the teller whose story the player follows to where it moved them as the teller while their state says they tell nothing for a moment, as it does between the story's events
 #      Paulinchen  2026-10-09: Sent a message for everyone on the map, or for several players, as one message the map's gate sorts on arrival instead of one per player, which ran past the relay's limit per connection on a busy map
 #                            - Counted a teller whose connection is down as telling until their game is forgotten, as the party's leader is
 #                            - Kept the teller whose story took the player along, or whose pages the player follows, over another player telling the story on the map they come to
@@ -360,6 +361,7 @@ module MGQ_MpCoop
       # Finds whose story the player shares: their own while they tell it, else of the players whose
       # state says they tell it on the player's map, or on the map the story takes the player to,
       # the one whose story took the player along or whose pages the player follows, else the one
+      # whose story the player follows to where it moved them (followed_on_the_way), else the one
       # who entered their map first.
       #
       # A story that moves its teller onto a map where another player tells one goes on, since only
@@ -374,7 +376,23 @@ module MGQ_MpCoop
           followed = candidates.find { |peer| peer.state["id"].to_s == id }
           return followed if followed
         end
-        Scope.first(candidates)
+        followed_on_the_way || Scope.first(candidates)
+      end
+
+      # Finds the teller whose story the player follows to where it moved them, on that map, whether
+      # or not their state says they tell, see MGQ_MpCoopGather.follow_taken.
+      #
+      # Their state says they tell nothing while the game's transfer process runs between the
+      # story's events, and the follow ends by itself, so this stops on its own.
+      #
+      # @return [MGQ_MpOverworldSync::Peers::Peer, nil] The teller, nil for none.
+      def self.followed_on_the_way
+        return nil unless defined?(MGQ_MpCoopGather) && MGQ_MpCoopGather.respond_to?(:follow_taken)
+
+        follow = MGQ_MpCoopGather.follow_taken
+        return nil unless follow
+
+        MGQ_MpOverworldSync::Peers.all.find { |peer| peer.state["id"].to_s == follow[:id] && peer.state["map"].to_i == follow[:place][0] }
       end
 
       # Lists the others whose state says they tell the story, those whose connection is down

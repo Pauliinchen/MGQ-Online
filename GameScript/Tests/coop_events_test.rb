@@ -2,7 +2,11 @@
 #  coop_events_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-10: Checked that a teleport coop_teleport.rbx asks for brings the member over at once, in place of the leader's answer where they stand
+#      Paulinchen  2026-10-10: Checked that a transfer outside a telling goes on with none, and that only a story eventthat runs by itself goes on with the telling that moved the player, while one the player starts is a new telling
+#                            - Checked that a Raid World's telling that moved the player goes on at the story's next event on the new map, through the game's transfer process, with no tie there, and starts anew after CONTINUE_FRAMES
+#                            - Checked that a follower on the way to where the teller's story moved them starts no story event of their own, on the way or just arrived, keeps that teller while their state says they tell nothing, hears their pages from the new map, and that the follow ends by itself
+#                            - Kept the log's lines, which the checks read
+#                            - Checked that a teleport coop_teleport.rbx asks for brings the member over at once, in place of the leader's answer where they stand
 #                            - Checked that the world closing forgets the choices waiting and a Raid World's route waiting to be confirmed
 #                            - Checked that a Raid World's story event holds a whole second for a tie
 #                            - Checked that no event of coop_story_rewards.rbx is marked by a Library Flag, by its English or its untranslated name
@@ -69,7 +73,8 @@
 
 require_relative "support"
 
-module MGQ_Multiplayer; module Log; def self.write(m); puts "  log: #{m}"; end; end; end
+module MGQ_Multiplayer; module Log; def self.write(m); puts "  log: #{m}"; $log << m; end; end; end
+$log = []
 $sent = []
 $notices = []
 module MGQ_MpOverworldSync
@@ -2006,6 +2011,141 @@ $behind = false
 check("caught up, the player's story events start again", [MGQ_MpCoopEvents.hand_over(behind_story), $game_map.setup_autorun_common_event], [false, behind_common])
 $data_common_events[4] = nil
 raw($game_switches)[70] = false
+
+# A telling the story carries onto another map goes on as the same telling at the story's next
+# event there, through the game's transfer process between them.
+$peers = [teller, stranger]
+stranger.state["map"] = "430"
+$game_map.map_id = 430
+$game_variables[1001] = 12
+$sent.clear
+interpreter.setup(story_page.list, 52)
+interpreter.busy = true
+$game_player.reserve_transfer(432, 0, 0, 2)
+$game_player.perform_transfer
+check("a telling that moves the player takes those on the map along", [$game_map.map_id, $sent.map { |seat, f| [seat, f["map_pevent"], f["mmap"]] }, MGQ_MpCoopGather.taken_along],
+      [432, [[7, "follow", "430"]], [stranger]])
+MGQ_MpCoopEvents.finished(interpreter)
+interpreter.busy = false
+$game_map.update
+transfer_process = RPG::CommonEvent.new([c(121, 20, 20, 0)])
+$data_common_events[114] = transfer_process
+interpreter.setup(transfer_process.list)
+interpreter.busy = true
+check("the game's transfer process runs between its events in the player's own game, telling nothing",
+      [MGQ_MpCoopEvents.state_fields["telling"], MGQ_MpCoopGather.taken_along], [0, []])
+MGQ_MpCoopEvents.finished(interpreter)
+interpreter.busy = false
+$game_map.update
+$game_variables[1001] = 13
+$log.clear
+interpreter.setup(story_page.list, 53)
+interpreter.busy = true
+check("a story event on the new map within CONTINUE_FRAMES goes on with the telling: how far the story was as it started, whom it took along, and that the player tells it",
+      [MGQ_MpCoopEvents.state_fields, MGQ_MpCoopGather.taken_along, MGQ_MpCoop::Scope.viewers, $log.grep(/goes on with the telling that moved the player from map 430/).size],
+      [{ "telling" => 1, "tsm" => "12,0,0,0", "twb" => 0 }, [stranger], [stranger], 1])
+teller.state.merge!("telling" => "1", "map" => "432")
+MGQ_MpCoopEvents.yield_story(interpreter)
+check("which no tie on the new map stops", MGQ_MpCoopEvents.telling?, true)
+teller.state.merge!("telling" => "0", "map" => "3")
+$game_player.reserve_transfer(433, 0, 0, 2)
+$game_player.perform_transfer
+MGQ_MpCoopEvents.finished(interpreter)
+interpreter.busy = false
+$game_map.update
+$frame_count += MGQ_MpCoopEvents::CONTINUE_FRAMES
+interpreter.setup(story_page.list, 54)
+interpreter.busy = true
+check("a story event later than CONTINUE_FRAMES after the move starts a telling anew",
+      [MGQ_MpCoopEvents::CONTINUE_FRAMES, MGQ_MpCoopEvents.state_fields["tsm"], MGQ_MpCoopGather.taken_along], [300, "13,0,0,0", []])
+MGQ_MpCoopEvents.finished(interpreter)
+interpreter.busy = false
+$game_map.update
+$data_common_events[114] = nil
+
+# A transfer outside a telling, such as a teleport, goes on with none, and a story event the player
+# starts on the new map is a new telling: only one that runs by itself goes on with the telling that
+# moved the player.
+$game_map.events = { 55 => Game_Event.new(55, [story_page], 3), 56 => Game_Event.new(56, [story_page]), 57 => Game_Event.new(57, [story_page], 3) }
+$game_variables[1001] = 14
+$game_player.reserve_transfer(434, 0, 0, 2)
+$game_player.perform_transfer
+$game_map.update
+$log.clear
+interpreter.setup(story_page.list, 55)
+interpreter.busy = true
+check("a transfer outside a telling, such as a teleport, goes on with none: a story event within CONTINUE_FRAMES after it starts a telling anew",
+      [MGQ_MpCoopEvents.state_fields["tsm"], $log.grep(/goes on with the telling/).size], ["14,0,0,0", 0])
+stranger.state["map"] = "434"
+$game_player.reserve_transfer(435, 0, 0, 2)
+$game_player.perform_transfer
+MGQ_MpCoopEvents.finished(interpreter)
+interpreter.busy = false
+$game_map.update
+$game_variables[1001] = 15
+$log.clear
+interpreter.setup(story_page.list, 56)
+interpreter.busy = true
+check("a story event the player starts on the new map within CONTINUE_FRAMES is a new telling: how far the story is now, nobody taken along",
+      [MGQ_MpCoopEvents.state_fields["tsm"], MGQ_MpCoopGather.taken_along, $log.grep(/goes on with the telling/).size], ["15,0,0,0", [], 0])
+$game_player.reserve_transfer(436, 0, 0, 2)
+$game_player.perform_transfer
+MGQ_MpCoopEvents.finished(interpreter)
+interpreter.busy = false
+$game_map.update
+$game_variables[1001] = 16
+$log.clear
+interpreter.setup(story_page.list, 57)
+interpreter.busy = true
+check("while one that runs by itself goes on with it",
+      [MGQ_MpCoopEvents.state_fields["tsm"], $log.grep(/goes on with the telling that moved the player from map 435/).size], ["15,0,0,0", 1])
+MGQ_MpCoopEvents.finished(interpreter)
+interpreter.busy = false
+$game_map.update
+$game_map.events = {}
+
+# A follower on the way to where the teller's story moved them starts no story event of their own,
+# keeps that teller while their state says they tell nothing, and hears their pages from the new map.
+$game_map.map_id = 430
+$game_player.moveto(25, 19)
+$game_variables[1001] = 12
+teller.state.merge!("map" => "432", "telling" => "0")
+stranger.state["map"] = "3"
+$peers = [teller, stranger]
+MGQ_MpCoopEvents.page_ended
+$game_message.clear
+$notices.clear
+$log.clear
+MGQ_MpCoopEvents.take(teller, { "pevent" => "follow", "map" => "432", "x" => "0", "y" => "0", "d" => "2", "warp_ban" => "0" })
+own_copy = Game_Event.new(57, [story_page], 3)
+check("a follower on the way to where the teller's story moved them keeps their own copy of it, which runs by itself, from starting, silently",
+      [MGQ_MpCoopEvents.hand_over(own_copy), MGQ_MpCoopEvents.hand_over(own_copy), $notices,
+       $log.grep(/kept event 57 on map 430 from starting: the player follows Teller's story to map 432/).size],
+      [true, true, [], 1])
+check("the teller they follow stays the teller while their state says they tell nothing for a moment", [MGQ_MpCoop::Scope.teller, MGQ_MpCoopEvents.following?], [teller, true])
+teller.state["map"] = "3"
+check("but not while they are not on the follow's map", MGQ_MpCoop::Scope.teller, nil)
+teller.state["map"] = "432"
+MGQ_MpCoopEvents.take(teller, { "pevent" => "say", "map" => "432", "page" => "m.1", "lines" => ["Moved line"].pack("m0") })
+check("and their pages from the new map wait for the player", MGQ_MpCoopEvents.instance_variable_get(:@heard).map { |page| page[:page] }, ["m.1"])
+$game_map.update
+check("the player follows as soon as they are free, and the pages heard show", [$game_player.reserved, $game_message.texts], [[432, 0, 0, 2], ["Moved line"]])
+check("and starts no story event on the way either", [MGQ_MpCoopEvents.hand_over(own_copy), MGQ_MpCoop::Scope.teller], [true, teller])
+$game_player.perform_transfer
+next_copy = Game_Event.new(2, [story_page], 3)
+check("arrived, their copy of the story's next event waits too while the teller's state still says they tell nothing",
+      [MGQ_MpCoopEvents.hand_over(next_copy), $log.grep(/kept event 2 on map 432 from starting: the player follows Teller's story to map 432/).size, MGQ_MpCoop::Scope.teller],
+      [true, 1, teller])
+teller.state["telling"] = "1"
+check("and once it says so again", [MGQ_MpCoopEvents.hand_over(next_copy), MGQ_MpCoop::Scope.teller], [true, teller])
+teller.state["telling"] = "0"
+$frame_count += MGQ_MpCoopGather::CALL_LAPSE_FRAMES
+check("the follow ends by itself", [MGQ_MpCoop::Scope.teller, MGQ_MpCoopEvents.hand_over(next_copy)], [nil, false])
+MGQ_MpCoopEvents.page_ended
+$game_message.clear
+teller.state["map"] = "3"
+$peers = []
+$game_map.update
 
 $game_map.map_id = 227
 check("the castle's Map Owner is the map's sync host, not the party's leader", MGQ_MpCoopCastle.owner([leader]), nil)
