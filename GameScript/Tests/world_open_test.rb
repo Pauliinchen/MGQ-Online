@@ -2,7 +2,8 @@
 #  world_open_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-10: Checked that a Raid World the directory no longer lists comes after the listed worlds
+#      Paulinchen  2026-10-10: Checked where a Raid World with a shared save starts in the details, by build, and a save's label drawn at its field's width
+#                            - Checked that a Raid World the directory no longer lists comes after the listed worlds
 #      Paulinchen  2026-10-09: Expected Sharing companions left out of a Classic world's form instead of greyed out, the call of mp_dir_create with
 #                              Turn off other mods, and loaded world_mods_parking.rbx, which the world screen calls
 #                            - Expected the longer call of mp_dir_create, which takes a Raid World's difficulty
@@ -404,6 +405,16 @@ check("or each on their own in one that sets none", cell_of(detail.panels(raid_e
 check("and a Classic world names no difficulty", cell_of(detail.panels(raid_entries[3], "me"), "Difficulty"), nil)
 plain_panels = detail.panels(raid_entries[3], "me")
 check("but a Classic world's World panel keeps its three rows, with no type row", [plain_panels[0].rows.size, cell_of(plain_panels, "Type"), raid_panels[0].rows.size], [3, nil, 4])
+saved_raid = typed[0].dup
+saved_raid.start = "ready"
+MGQ_MpWorld.instance_variable_set(:@dev_build, true)
+check("a development build's Raid World with a shared save starts from the creator's save", cell_of(detail.panels(MGQ_MpWorld::Entry.new("r1", "Raid Night", saved_raid, nil, false, false), "me"), "Start").text,
+      "The creator's save")
+saved_raid.start = "pending"
+check("or tells that its creator is still setting it up", detail.raid_start_text(saved_raid), "Its creator is still setting it up")
+MGQ_MpWorld.instance_variable_set(:@dev_build, false)
+saved_raid.start = "ready"
+check("while a release starts it at the beginning, as it never fetches a Raid World's save", detail.raid_start_text(saved_raid), "The beginning")
 
 # world.ini keeps the type and the sharing for a world entered while the directory listed it.
 MGQ_MpWorld::Link.define_singleton_method(:id_of) { |code| code[/\A[0-9a-f]{12}/] }
@@ -536,6 +547,13 @@ wide_window, wide_drawn = drawing_form(WideForm, MGQ_MpWorld::Form.new("Ways", [
 wide_window.draw_switch(Rect.new(0, 0, 380, 37), noted, true)
 check("a window of its own draws its names wider, and a switch's line below it", wide_drawn, [[150, "Way"], [380 - 150 - 8, "< Right >"], [376, "Picked 1"]])
 check("which makes its row higher than a switch without one", [wide_window.height_of(noted), wide_window.height_of(type_field)], [21 + 16, 21])
+MGQ_MpWorld.instance_variable_set(:@dev_build, true)
+dev_form = MGQ_MpWorld::Form.create
+dev_form[:type] = 1
+save_window, save_drawn = drawing_form(Window_MpWorldForm, dev_form)
+save_window.draw_box(Rect.new(0, 0, 188, 21), dev_form.fields.find { |field| field.key == :save }, true)
+check("a development build's Raid World draws its Save's label narrower, and the beginning while no save is chosen", save_drawn, [[40, "Save"], [188 - 40 - 8, "The beginning"]])
+MGQ_MpWorld.instance_variable_set(:@dev_build, false)
 
 # An outdated game.
 $outdated = true

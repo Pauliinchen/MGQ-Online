@@ -2,6 +2,7 @@
 //  WorldDirectoryTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-10: Covered a Raid World made with a starting save by a development build, which names the dev feature, and expected the dev feature in its requests
 //      Paulinchen  2026-10-09: Covered whether a world turns other mods off, made, changed and listed at the end of its line, by its type when the relay names none
 //                            - Expected whether a world turns other mods off at the end of its line
 //                            - Covered a Raid World made and changed with its difficulty, listed at the end of its line, and a Classic world listed without one
@@ -84,7 +85,43 @@ public sealed class WorldDirectoryTests
         var made = Act(creator, directory => directory.Create("Raid Night", "secret", 8, false, false, [], null, WorldType.Raid, CompanionSharing.Story));
         Assert.Equal("done", made["state"]);
         Assert.Contains(List(creator), line => line.StartsWith($"world\t{made["world"]}\t8\t") && line.EndsWith("\traid\tstory\t\t1"));
-        Assert.Equal("raid", relay.LastFeatures);
+        Assert.Equal("raid,dev", relay.LastFeatures);
+    }
+
+    /// <summary>
+    /// Asserts that a development build, as the tests run, makes a Raid World with a starting save,
+    /// which a player who opened it fetches as for a Classic world.
+    /// </summary>
+    [Fact]
+    public void Create_RaidWorldWithStartingSave_InADevelopmentBuild_HandsItToPlayers()
+    {
+        using var relay = new TestRelay();
+        using var folder = new TempFolder();
+        var save = folder.Write("Save03.rvdata2", 40_000);
+        var system = folder.Write("SystemSave.rvdata2", 2_000);
+        var creator = NewDirectory(relay, CreatorKey, "Creator");
+        var guest = NewDirectory(relay, PlayerKey(2), "Guest");
+
+        Assert.True(UpdateCheck.DevelopmentBuild);
+        var made = Act(creator, directory => directory.Create("Raid Night", "secret", 8, false, false, [("Save01.rvdata2", save), ("SystemSave.rvdata2", system)], null, WorldType.Raid, CompanionSharing.Off, 0));
+        Assert.Equal("done", made["state"]);
+        Assert.Contains(List(creator), line => line.StartsWith($"world\t{made["world"]}\t") && line.Contains("\tready\t") && line.EndsWith("\traid\toff\t0\t1"));
+
+        var opened = Act(guest, directory => directory.Unlock(made["world"], "secret"));
+        var target = Path.Combine(folder.Path, "World", "Save");
+
+        Assert.Equal("done", Act(guest, directory => directory.FetchStart(opened["code"], target))["state"]);
+        Assert.Equal(File.ReadAllBytes(save), File.ReadAllBytes(Path.Combine(target, "Save01.rvdata2")));
+    }
+
+    /// <summary>
+    /// Asserts that only a development build names the dev feature besides Raid Worlds.
+    /// </summary>
+    [Fact]
+    public void FeaturesOf_NamesDevOnlyForADevelopmentBuild()
+    {
+        Assert.Equal("raid,dev", DirectoryClient.FeaturesOf(true));
+        Assert.Equal("raid", DirectoryClient.FeaturesOf(false));
     }
 
     /// <summary>

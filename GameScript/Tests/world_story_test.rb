@@ -2,7 +2,9 @@
 #  world_story_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-10: Checked that a route lock refused before the world had a story brings back the player's companions with the world's first story
+#      Paulinchen  2026-10-10: Checked a Raid World started from a shared save, as a development build makes one: the save's story starts the
+#                              world's, the next player from the save plays it, a further one is taken, and a new game is behind
+#                            - Checked that a route lock refused before the world had a story brings back the player's companions with the world's first story
 #                            - Checked that a player behind whose own story becomes the world's leaves the story they stood on behind
 #      Paulinchen  2026-10-09: Took variable 152 as a story variable, since 151, the Labyrinth of Chaos's tier, is each Raid World player's own
 #                            - Loaded story_state.rbx before coop_story.rbx and packed stories and stood in for bringing companions through MGQ_MpStoryState
@@ -818,3 +820,56 @@ check("a player behind whose story the world cannot read writes theirs, built on
 MGQ_MpWorld.world = nil
 frames(1)
 check("closing the world forgets its story", [story.mode, story.world, story.endpoint], [nil, nil, nil])
+
+# A Raid World started from a shared save, as a development build makes one: its first game brings
+# the save's story, in Part 2, which the relay's empty story never takes back to the beginning.
+$calls.clear
+$notices.clear
+saved = { 1001 => 25, 1029 => 3, 152 => 6 }
+new_story(saved, [320, 4], { [12, 3, "A"] => true })
+MGQ_MpWorld.world = MGQ_MpWorld::World.new("w2")
+frames(1)
+check("the first game in a world from a shared save fetches its story", calls_of("mp_raid_story_fetch"), [["w2\0"]])
+relay("world" => "w2", "fetch" => "done")
+frames(16)
+post = calls_of("mp_raid_story_post").last
+check("the relay's empty story leaves the save's as it is and takes it as the world's first, on revision 0",
+      [$game_variables[1001], $game_switches[320], story.mode, post && post[1], post && post[2]], [25, true, :world, 0, "p=25;r1141=0;r1142=0;r1143=0;clear=\0"])
+check("with the save's shared values", [lists_of(post[3])["s"], lists_of(post[3])["v"].split(",").map { |entry| entry.split(":")[0] }.sort], ["320", ["1001", "152"]])
+relay("world" => "w2", "rev" => 1, "wrev" => 1, "p" => 25, "part" => "2", "post" => "accepted", "post_rev" => 1)
+frames(16)
+check("the world's story starts from the save", [story.mode, story.world["p"], story.world["part"]], [:world, 25, "2"])
+
+# The next player starts from the same save: they play the world's story at once, in its part.
+$calls.clear
+new_story(saved, [320, 4], { [12, 3, "A"] => true })
+story.loaded(:load)
+frames(1)
+relay({ "world" => "w2", "rev" => 1, "wrev" => 1, "p" => 25, "part" => "2", "fetch" => "done" }, packed({ 1001 => 25, 152 => 6 }, [320]))
+frames(16)
+frames(400)
+check("a player from the same save plays the world's story, behind nothing, and writes nothing",
+      [story.mode, $game_variables[1001], calls_of("mp_raid_story_post"), $notices.include?("The world's story is further than yours.")], [:world, 25, [], false])
+
+# Once the world moved on in the save's part, a player from the save takes its story.
+$calls.clear
+new_story(saved, [320, 4], { [12, 3, "A"] => true })
+story.loaded(:load)
+frames(1)
+relay({ "world" => "w2", "rev" => 4, "wrev" => 4, "p" => 28, "part" => "2", "fetch" => "done" }, packed({ 1001 => 28, 152 => 7 }, [320, 321]))
+frames(16)
+check("a player from the save takes the world's further story in the save's part",
+      [story.mode, $game_variables[1001], $game_variables[152], $game_switches[321], $game_variables[1029]], [:world, 28, 7, true, 3])
+
+# A new game in that world starts before the save's part: the player is behind the world's story.
+$calls.clear
+new_story({ 1001 => 0 })
+story.loaded(:new_game)
+frames(1)
+relay({ "world" => "w2", "rev" => 4, "wrev" => 4, "p" => 28, "part" => "2", "fetch" => "done" }, packed({ 1001 => 28, 152 => 7 }, [320, 321]))
+frames(16)
+frames(400)
+check("a new game in a world started from a save is behind its story and writes nothing",
+      [story.mode, $game_variables[1001], calls_of("mp_raid_story_post")], [:behind, 0, []])
+MGQ_MpWorld.world = nil
+frames(1)

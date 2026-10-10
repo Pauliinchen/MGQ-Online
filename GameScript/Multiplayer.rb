@@ -2,7 +2,8 @@
 #  Multiplayer.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-10: Loaded ui_raid_bar.rbx, the raid bosses' HP bars, after ui_party_box.rbx
+#      Paulinchen  2026-10-10: Named mp_dev_build, which tells a development build from a release
+#                            - Loaded ui_raid_bar.rbx, the raid bosses' HP bars, after ui_party_box.rbx
 #      Paulinchen  2026-10-09: Named the mp_mods_park, mp_mods_restore, mp_mods_parked, mp_mods_scripts, mp_mods_restart_parked and mp_mods_recover exports of the parked mods, and mp_dir_create and mp_dir_edit with whether a world turns other mods off
 #                            - Loaded world_mods_parking.rbx after world_mods.rbx, which turns other mods off for a world that asks for it
 #                            - Loaded story_state.rbx before coop_story.rbx, the story's state model the party's story and a Raid World's story share
@@ -574,6 +575,7 @@ module MGQ_Multiplayer
       'mp_player_id' => READ_ARGUMENTS,
       'mp_restart_game' => 'v',
       'mp_update_game' => 'v',
+      'mp_dev_build' => 'v',
 
       # The keyboard and the clipboard.
       'mp_typing' => 'l',

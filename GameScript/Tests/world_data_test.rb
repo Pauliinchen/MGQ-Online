@@ -2,6 +2,7 @@
 #  world_data_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-10: Expected a release's Raid World form without a Save, and a development build's with its Save beside the Difficulty on one row
 #      Paulinchen  2026-10-09: Expected Sharing companions in place of the starting point in a Raid World's new world form, Turn off other mods in the
 #                              edit form, the calls of mp_dir_create and mp_dir_edit with it, and loaded world_mods_parking.rbx, which the world screen calls
 #                            - Checked that the hints of the edit forms fit two lines too
@@ -245,7 +246,8 @@ check("many parts are counted past the first four", MGQ_MpWorld::GameData.text(%
 check("few are all named", MGQ_MpWorld::GameData.text(%w[skills maps]), "skills, maps")
 modded = MGQ_MpWorld::GameData.fingerprint
 
-# The form.
+# The form, as a release shows it.
+MGQ_MpWorld.instance_variable_set(:@dev_build, false)
 form = MGQ_MpWorld::Form.create
 form[:name] = "Modded Run"
 check("a new world needs no description, no mods, and keeps differing games out until told otherwise", [form.problem, form[:description], form[:mods], form[:mismatch]], [nil, "", "", false])
@@ -257,6 +259,12 @@ check("the world type and the starting point share the World panel", form.fields
 form[:type] = 1
 check("a Raid World has Sharing companions in place of the starting point and the Difficulty in place of the Save", form.fields.select { |field| field.group == "World" }.map { |field| field.label },
       ["Name", "Password", "Max Players", "Hidden", "World type", "Sharing companions", "Difficulty"])
+release_rows = form.fields.map { |field| field.row }.max
+MGQ_MpWorld.instance_variable_set(:@dev_build, true)
+check("a development build's Raid World has its Save beside the Difficulty, on the Save's row, so the form keeps its height",
+      [form.fields.select { |field| field.group == "World" }.last(2).map { |field| [field.label, field.row, field.side] }, form.fields.map { |field| field.row }.max],
+      [[["Save", 4, :left], ["Difficulty", 4, :right]], release_rows])
+MGQ_MpWorld.instance_variable_set(:@dev_build, false)
 form[:type] = 0
 check("a description is tidied", form.check(description, "  A slow run.  "), ["A slow run.", nil])
 check("and may be empty", form.check(description, "  "), ["", nil])

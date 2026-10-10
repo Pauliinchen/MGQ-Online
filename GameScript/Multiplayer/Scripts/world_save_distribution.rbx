@@ -2,6 +2,7 @@
 #  world_save_distribution.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-10: Fetched a Raid World's starting save in a development build, which alone may give a Raid World one
 #      Paulinchen  2026-10-09: Neither asked a new player of a Raid World where to start nor fetched its starting save, since it starts from the beginning
 #      Paulinchen  2026-10-07: Named the DLL's exports alone, their signatures living in Multiplayer.rb
 #                            - Logged the save picked, the files placed, the fetch started, the check of a fetched save and the files thrown away
@@ -155,13 +156,14 @@ module MGQ_MpSaveDistribution
   end
 
   # Reports whether a world's starting save must be fetched before entering it: the world has one,
-  # and this PC has no save of the world yet. Never in a Raid World, as for ask_start?.
+  # and this PC has no save of the world yet. Never in a Raid World, as for ask_start?, but in a
+  # development build, which alone may give a Raid World a starting save, for testing.
   #
   # @param world [MGQ_MpWorld::World] The world on this PC.
   # @param start [String, nil] How far the world is with its starting save, nil when unknown.
   # @return [Boolean] Whether it must.
   def self.fetch?(world, start)
-    start == "ready" && !world.raid? && new_player?(world)
+    start == "ready" && (!world.raid? || MGQ_MpWorld.dev_build?) && new_player?(world)
   end
 
   # Reports whether the player enters a world for the first time: this PC has no save of it yet.

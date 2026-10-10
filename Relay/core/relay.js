@@ -2,6 +2,7 @@
 //  relay.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-10: Added the dev feature, which development builds name and which lets them give a Raid World a starting save
 //      Paulinchen  2026-10-08: Added the X-MGQ-Features header, in which a game names what it can play, such as Raid Worlds
 //                            - Limited each world room connection to 2 chat lines a second after a burst of 10, answering a dropped line with "slow chat"
 //                            - Told a chat frame whose line is empty apart from a frame that is no chat frame
@@ -159,9 +160,12 @@ export const AUTH_HEADER = "X-MGQ-Auth";
 export const FEATURES_HEADER = "X-MGQ-Features";
 
 /**
- * What a game names in FEATURES_HEADER.
+ * What a game names in FEATURES_HEADER: Raid Worlds, and dev for a development build, which alone
+ * may give a Raid World a starting save, for testing.
+ *
+ * TODO: the dev feature goes before a release, see the Raid World's starting save in docs/DEVELOPER.md.
  */
-export const FEATURE = Object.freeze({ raid: "raid" });
+export const FEATURE = Object.freeze({ raid: "raid", dev: "dev" });
 
 /**
  * The response header that names why the relay turned a game away from a world room, since a

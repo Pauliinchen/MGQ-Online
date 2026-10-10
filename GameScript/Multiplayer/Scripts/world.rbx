@@ -2,7 +2,9 @@
 #  world.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-10: Put the parked mods back only once the updater started, so a failed updater leaves the session as it was
+#      Paulinchen  2026-10-10: Let a development build give a Raid World a shared save, for testing: a Save beside the Difficulty in the new world's
+#                              form, optional, sent as a Classic world's starting save
+#                            - Put the parked mods back only once the updater started, so a failed updater leaves the session as it was
 #                            - Listed the worlds the directory no longer has after the others, Raid Worlds among them too
 #      Paulinchen  2026-10-09: Added Turn off other mods: a checkbox in the new world's form, ticked for a Raid World until the player ticks it themselves,
 #                              and in the edit form, sent with the world and, when it changed, with its edits, and read from the list
@@ -186,6 +188,9 @@ module MGQ_MpWorld
   # The difficulty the forms offer first, NORMAL.
   DEFAULT_DIFFICULTY = 0
 
+  # The export that tells a development build from a release.
+  DEV_BUILD_EXPORT = 'mp_dev_build'
+
   # The buttons whose press, in a frame no key went down, tells a gamepad from the keyboard.
   #
   # Directions count by their first frame only, since an arrow key held down reports its
@@ -227,6 +232,20 @@ module MGQ_MpWorld
   # @return [World, nil] The world, nil while none is open.
   def self.world
     @world
+  end
+
+  # Tells whether the DLL is a development build, which alone may give a Raid World a shared save.
+  #
+  # TODO: only for testing; it goes before a release with the Raid World's starting save, see
+  # docs/DEVELOPER.md.
+  #
+  # @return [Boolean] Whether it is; false when the DLL cannot tell.
+  def self.dev_build?
+    @dev_build = MGQ_Multiplayer::Link.function(DEV_BUILD_EXPORT).call == 1 if @dev_build.nil?
+    @dev_build
+  rescue => e
+    log("asking the DLL whether it is a development build failed: #{e.class}: #{e.message}")
+    @dev_build = false
   end
 
   # Tells whether the open world is a Raid World, the one question every script asks.
@@ -1007,8 +1026,9 @@ module MGQ_MpWorld
     # @param choose [Boolean] Whether each new player chooses where to start.
     # @param start [String] The starting save's files, see MGQ_MpSaveDistribution.text_of; empty for none.
     # @param about [Hash] Whichever of :description, :mods, :data (the creator's game data), :strict (true when only games with the same data may enter), :mod_hashes, :settings,
-    #   :type (one of TYPES, CLASSIC when left out), :share (one of SHARING, "off" when left out) and :difficulty (one of DIFFICULTIES, NORMAL when left out) apply;
-    #   a Raid World starts from the beginning, so it takes no starting save and no player's choice.
+    #   :type (one of TYPES, CLASSIC when left out), :share (one of SHARING, "off" when left out), :difficulty (one of DIFFICULTIES, NORMAL when left out) and
+    #   :other_mods_off (whether it turns off every mod it does not name, by its type when left out) apply;
+    #   a Raid World starts from the beginning, so it takes no player's choice, and a starting save only in a development build.
     # @return [Boolean] Whether the action started.
     def self.create(name, password, seats, hidden, choose, start, about = {})
       MGQ_Multiplayer::Player.share
@@ -1018,7 +1038,7 @@ module MGQ_MpWorld
       difficulty = raid ? about[:difficulty] || DEFAULT_DIFFICULTY : DEFAULT_DIFFICULTY
       other_mods_off = about[:other_mods_off].nil? ? raid : about[:other_mods_off]
       choose = false if raid
-      start = "" if raid
+      start = "" if raid && !MGQ_MpWorld.dev_build?
       sent = MGQ_Multiplayer::Link.function('mp_dir_create').call(name + "\0", password + "\0", seats, hidden ? 1 : 0, choose ? 1 : 0, start + "\0",
                                                                                   about[:description].to_s + "\0", about[:mods].to_s + "\0", about[:data].to_s + "\0", about[:strict] ? 1 : 0,
                                                                                   about[:mod_hashes].to_s + "\0", about[:settings].to_s + "\0", type + "\0", share + "\0", difficulty,
@@ -1747,6 +1767,12 @@ module MGQ_MpWorld
     # Width of the world type's label, narrower than a text box's, so the switch fits half a row.
     TYPE_LABEL_WIDTH = 70
 
+    # Width of a Raid World's Save label, narrower than a text box's, so the save's name fits half a row.
+    RAID_SAVE_LABEL_WIDTH = 40
+
+    # What the lines at the top say on a Raid World's Save, which only a development build offers.
+    RAID_SAVE_HINT = "Dev build only: new players start from this save. Leave the save screen without one for none."
+
     # A field of a form: a text box (:text, :password, :number or :id), a box of several lines (:area), a checkbox (:check), a save
     # to choose (:save), the mods picked in the mod picker (:mods), a switch between several outcomes (:switch) or a button
     # (:button).
@@ -1776,7 +1802,7 @@ module MGQ_MpWorld
       # tells whether it may, nil for neither.
       attr_reader :needs
 
-      # Whether a text box may stay empty.
+      # Whether a text box may stay empty, or a save stay unchosen.
       attr_reader :optional
 
       # The heading of the panel it is in, nil for a field outside every panel.
@@ -1801,7 +1827,7 @@ module MGQ_MpWorld
       # the form and the outcome's index, nil for no line.
       attr_reader :note
 
-      # Width of a switch's label, nil for the width its window gives every switch.
+      # Width of a switch's or a save's label, nil for the width its window gives every label.
       attr_reader :label_width
 
       # A block called with the form that tells whether the field is part of it now, nil for always.
@@ -1814,8 +1840,8 @@ module MGQ_MpWorld
       # @param label [String] What it is called.
       # @param row [Integer] The row it is on.
       # @param hint [String] What the lines at the top say while the cursor is on it.
-      # @param options [Hash] Whichever of :side, :max_chars, :allowed, :needs (a key or a proc), :optional, :group, :lines, :empty_ok (a proc),
-      #   :empty_text, :choices, :note (a proc), :label_width and :shows (a proc) apply.
+      # @param options [Hash] Whichever of :side, :max_chars, :allowed, :needs (a key or a proc), :optional (also for a save), :group, :lines,
+      #   :empty_ok (a proc), :empty_text, :choices, :note (a proc), :label_width and :shows (a proc) apply.
       def initialize(key, kind, label, row, hint, options = {})
         @key = key
         @kind = kind
@@ -1882,7 +1908,12 @@ module MGQ_MpWorld
         Field.new(:save, :save, "Save", 4, "The save every new player starts from.", :group => "World",
                   :needs => lambda { |form| form.from_save? }, :shows => lambda { |form| form.type == CLASSIC }),
         Field.new(:difficulty, :switch, "Difficulty", 4, DIFFICULTY_HINT, :group => "World", :choices => DIFFICULTY_NAMES,
-                  :shows => lambda { |form| form.type == RAID }),
+                  :shows => lambda { |form| form.type == RAID && !form.raid_save? }),
+        # A development build's Raid World shares the row between its Save and the Difficulty, as the form has no row to spare.
+        Field.new(:save, :save, "Save", 4, RAID_SAVE_HINT, :side => :left, :group => "World", :optional => true, :label_width => RAID_SAVE_LABEL_WIDTH,
+                  :shows => lambda { |form| form.raid_save? }),
+        Field.new(:difficulty, :switch, "Difficulty", 4, DIFFICULTY_HINT, :side => :right, :group => "World", :choices => DIFFICULTY_NAMES,
+                  :label_width => TYPE_LABEL_WIDTH, :shows => lambda { |form| form.raid_save? }),
         Field.new(:mods, :mods, "Mods", 5, "The mods of the world: listed, required to enter or essential. Enter picks them.", :group => "Game data"),
         Field.new(:mismatch, :check, "Allow data mismatch", 6, "Ticked: games with other data are warned. Unticked: kept out. Fixed once created.", :side => :left, :group => "Game data"),
         Field.new(:shared, :check, "Shared Mod Settings", 6, SHARED_HINT, :side => :right, :group => "Game data"),
@@ -2036,12 +2067,22 @@ module MGQ_MpWorld
       name == PER_PLAYER ? nil : DEFAULT_DIFFICULTY
     end
 
-    # Tells whether the new world's form has new players start from one of the creator's saves,
-    # which only a Classic world does.
+    # Tells whether the new world's form has new players start from one of the creator's saves: a
+    # Classic world's with Shared save ticked, or a development build's Raid World's with a save chosen.
     #
     # @return [Boolean] Whether it does.
     def from_save?
+      return !@values[:save].nil? if raid_save?
+
       type == CLASSIC && @values[:from_save] == true
+    end
+
+    # Tells whether the new world's form offers a Raid World's shared save, which only a development
+    # build does, for testing.
+    #
+    # @return [Boolean] Whether it does.
+    def raid_save?
+      type == RAID && MGQ_MpWorld.dev_build?
     end
 
     # Tells whether the new world's form lets each new player choose where to start, which only a
@@ -2120,7 +2161,7 @@ module MGQ_MpWorld
         next unless enabled?(field)
 
         error = field.typed? ? check(field, @values[field.key])[1] : nil
-        error ||= "Choose the save its players start from." if field.kind == :save && @values[field.key].nil?
+        error ||= "Choose the save its players start from." if field.kind == :save && !field.optional && @values[field.key].nil?
         return [index, error] if error
       end
       nil

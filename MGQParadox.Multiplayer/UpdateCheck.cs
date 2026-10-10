@@ -2,6 +2,7 @@
 //  UpdateCheck.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-10: Told whether this DLL is a development build, which may give a Raid World a starting save
 //      Paulinchen  2026-10-07: Started its thread through Threads, shared with the connections
 //      Paulinchen  2026-09-30: Asked the repository under its new name, MGQ-Online
 //                            - Created
@@ -39,6 +40,11 @@ internal static class UpdateCheck
     private const string TagProperty = "tag_name";
 
     /// <summary>
+    /// The version the project stamps on every build that no release workflow made.
+    /// </summary>
+    private const string DevelopmentVersion = "0.0.0-dev";
+
+    /// <summary>
     /// How long the check waits for GitHub.
     /// </summary>
     private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(15);
@@ -59,6 +65,17 @@ internal static class UpdateCheck
     public static string? NewerVersion => Volatile.Read(ref _newerVersion);
 
     /// <summary>
+    /// Whether this DLL is a development build, stamped <c>0.0.0-dev</c>, which no release stamps.
+    /// </summary>
+    public static bool DevelopmentBuild { get; } = IsDevelopmentVersion(InformationalVersion);
+
+    /// <summary>
+    /// The version the build stamped, like <c>0.1.0+&lt;commit&gt;</c>, empty when it stamped none.
+    /// </summary>
+    private static string InformationalVersion =>
+        typeof(UpdateCheck).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? string.Empty;
+
+    /// <summary>
     /// Starts the check on a background thread, once per game session.
     /// </summary>
     /// <remarks>
@@ -71,10 +88,9 @@ internal static class UpdateCheck
             return;
         }
 
-        var informationalVersion = typeof(UpdateCheck).Assembly
-            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
+        var informationalVersion = InformationalVersion;
 
-        if (ReleaseVersionOf(informationalVersion ?? string.Empty) is not { } installed)
+        if (ReleaseVersionOf(informationalVersion) is not { } installed)
         {
             Log.Write($"update check skipped: {informationalVersion} is no release");
             return;
@@ -93,6 +109,17 @@ internal static class UpdateCheck
         var version = informationalVersion.Split('+')[0];
         return !version.Contains('-') && Version.TryParse(version, out var parsed) ? parsed : null;
     }
+
+    /// <summary>
+    /// Tells whether the DLL's informational version is the development stamp.
+    /// </summary>
+    /// <remarks>
+    /// Any other version, a pre-release tag like <c>0.6.0-beta</c> included, is a published build.
+    /// </remarks>
+    /// <param name="informationalVersion">The version the build stamped, like <c>0.0.0-dev+&lt;commit&gt;</c>.</param>
+    /// <returns><see langword="true"/> only for <c>0.0.0-dev</c>, with or without its commit.</returns>
+    internal static bool IsDevelopmentVersion(string informationalVersion) =>
+        string.Equals(informationalVersion.Split('+')[0], DevelopmentVersion, StringComparison.Ordinal);
 
     /// <summary>
     /// Compares the latest release with the installed version.

@@ -2,7 +2,9 @@
 #  world_catchup_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-10: Checked that a save noting the player behind stays behind below the gate once it loaded again
+#      Paulinchen  2026-10-10: Checked that a shared save's own story counts as the player's in a Raid World started from it: no gifts, no companion
+#                              taken or brought, nothing held, also once the world's story from the same save is laid over it
+#                            - Checked that a save noting the player behind stays behind below the gate once it loaded again
 #                            - Checked that a player moves on past a finished route to the world's route and gets the finished route's rows
 #                            - Checked that what a player changes while behind stays under the checkpoint and the world's story
 #      Paulinchen  2026-10-09: Loaded story_state.rbx before coop_story.rbx and packed stories, read the roster and Luka's skills through MGQ_MpStoryState
@@ -721,6 +723,32 @@ frames(40)
 relay({ "rev" => 43, "wrev" => 43, "p" => 25, "part" => "2" }, packed({ 1001 => 25 }))
 frames(40)
 check("also for a player behind without a checkpoint", [story.mode, $game_variables[1001], $game_self_switches[[40, 4, "A"]]], [:world, 25, true])
+
+# A Raid World started from a shared save, as a development build makes one: what the save's own
+# story played is the player's, so its rows give nothing, take no companion and hold nothing back,
+# whether the world's story starts from the save or is laid over it.
+tables(:REWARDS => [reward.new(:i, 600, 2, "map:36:17:1", "1", 6, nil, [[:v, 1001, 6]])],
+       :REMOVALS => [removal.new(16, 16, "map:50:1:1", "1", 14, nil, [[:v, 1001, 14]], true)],
+       :JOINS => [join.new(77, 77, "map:20:1:1", "1", 9, nil, [[:v, 1001, 9]], 7, :start),
+                  join.new(80, 80, "map:21:1:1", "2", 22, nil, [[:v, 1001, 22]], 20, :floor)])
+from_save = lambda do
+  new_game({ 1001 => 25 }, [4], 30)
+  [77, 80].each { |id| $game_party.add_actor(id) }
+end
+from_save.call
+frames(1)
+relay({ "rev" => 0, "wrev" => 0, "p" => 0, "part" => "1" })
+frames(40)
+check("the first player from the save starts the world's story with it, held by nothing",
+      [story.mode, $game_variables[1001], catchup.holds_story?, calls_of("mp_raid_story_post").map { |args| args[2] }], [:world, 25, false, ["p=25;r1141=0;r1142=0;r1143=0;clear=\0"]])
+check("and the rows the save played give nothing, take nobody and bring nobody back",
+      [$game_party.items[600].to_i, roster, $messages.grep(/The story gave you/)], [0, [1, 77, 80], []])
+from_save.call
+frames(1)
+relay({ "rev" => 1, "wrev" => 1, "p" => 25, "part" => "2" }, packed({ 1001 => 25 }, [4]))
+frames(40)
+check("the next player from the save plays the world's story at once, the save's rows still theirs",
+      [story.mode, catchup.holds_story?, $game_party.items[600].to_i, roster, $messages.grep(/The story gave you/)], [:world, false, 0, [1, 77, 80], []])
 
 # Classic worlds have no catch-up.
 $raid = false

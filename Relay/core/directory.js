@@ -2,11 +2,12 @@
 //  directory.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-10: Told a world room the name of a player of its world too, which a Raid World's boss pool keeps for its defeat
+//      Paulinchen  2026-10-10: Let a game that names the dev feature give a Raid World a starting save, for testing, and read what a game names in X-MGQ-Features for every public route
+//                            - Told a world room the name of a player of its world too, which a Raid World's boss pool keeps for its defeat
 //                            - Told a world room a Raid World's difficulty after an edit only when it changed
-//      Paulinchen  2026-10-09: Told a world room whether a key is an admin's, for the admin routes of a Raid World it answers itself
-//                            - Kept whether a world turns its players' other mods off, on by default for a Raid World, which its creator or an admin may change and every game in it is told of, with the world's mods
+//      Paulinchen  2026-10-09: Kept whether a world turns its players' other mods off, on by default for a Raid World, which its creator or an admin may change and every game in it is told of, with the world's mods
 //                            - Refused a world's mods past 300 characters instead of cutting them, since a cut name would turn off a mod the creator named
+//                            - Told a world room whether a key is an admin's, for the admin routes of a Raid World it answers itself
 //                            - Kept a Raid World's difficulty, which its creator or an admin may change and every game in it is told of
 //                            - Refused a Raid World with a starting save or a player's choice, since it starts from the beginning
 //                            - Refused a world room's member question for a world whose starting save is still being uploaded
@@ -272,17 +273,18 @@ export class Directory {
    *
    * @param {object} request The world: id, name, seats, the creator's player key and name, the hash of the auth key, the lock, whether a starting save follows, whether it is hidden from the list, whether each new player chooses where to start, whether it has no password, whether it is featured, its description, the mods it needs, the creator's game data, whether only games with the same data may enter, the hashes of its required mods outside the catalog, its mod settings, its type, how a Raid World shares companions, its difficulty and whether it turns other mods off.
    * @param {string | null} [address] The asking game's address, whose worlds a rate limit counts; null for none.
+   * @param {string[]} [features] What the game names in FEATURES_HEADER; a development build's FEATURE.dev lets it give a Raid World a starting save.
    * @returns {Promise<{status: number, body: object}>} The world's id, or why it was refused.
    */
-  async create(request, address = null) {
+  async create(request, address = null, features = []) {
     const refusal = this.checkNewWorld(request);
 
     if (refusal) {
       return badRequest(refusal);
     }
 
-    if (request.type === WORLD_TYPE.raid && (request.start === true || request.choose === true)) {
-      return { status: 400, body: { error: "a Raid World starts from the beginning: it takes no starting save and no player's choice", code: REFUSAL.raidStart } };
+    if (request.type === WORLD_TYPE.raid && (request.choose === true || (request.start === true && !features.includes(FEATURE.dev)))) {
+      return { status: 400, body: { error: "a Raid World starts from the beginning: it takes no player's choice, and a starting save only from a development build", code: REFUSAL.raidStart } };
     }
 
     if (await this.load(request.id)) {
@@ -373,7 +375,7 @@ export class Directory {
    * @param {string} id The world.
    * @param {unknown} key The asking player's key.
    * @param {any} changes Whichever of `seats`, `description`, `mods`, `data`, `modHashes`, `settings`, `difficulty` and `otherModsOff` change.
-   * @returns {Promise<{status: number, body: object, difficulty?: number, modsRule?: {off: boolean, mods: string}}>} The answer, the difficulty every game in the world room must be told, and whether the world turns other mods off with its mods, which every game must be told when either changed.
+   * @returns {Promise<{status: number, body: object, difficulty?: number, modsRule?: {off: boolean, mods: string}}>} The answer, the difficulty every game in the world room must be told when it changed, and whether the world turns other mods off with its mods, which every game must be told when either changed.
    */
   async edit(id, key, changes) {
     const { entry, refusal } = await this.asCreatorOrAdmin(id, key);
@@ -569,17 +571,18 @@ export class Directory {
    * @param {unknown} key The asking player's key.
    * @param {Uint8Array | null} bytes The starting save, encrypted by the creator's game; null when it was too large to read.
    * @param {string | null} [address] The asking game's address, whose uploads a rate limit counts; null for none.
+   * @param {string[]} [features] What the game names in FEATURES_HEADER; a development build's FEATURE.dev lets it upload a Raid World's starting save.
    * @returns {Promise<{status: number, body: object}>} The answer.
    */
-  async putStart(id, key, bytes, address = null) {
+  async putStart(id, key, bytes, address = null, features = []) {
     const { entry, refusal } = await this.asCreator(id, key);
 
     if (refusal) {
       return refusal;
     }
 
-    if (entry.type === WORLD_TYPE.raid) {
-      return { status: 400, body: { error: "a Raid World starts from the beginning: it takes no starting save", code: REFUSAL.raidStart } };
+    if (entry.type === WORLD_TYPE.raid && !features.includes(FEATURE.dev)) {
+      return { status: 400, body: { error: "a Raid World starts from the beginning: it takes a starting save only from a development build", code: REFUSAL.raidStart } };
     }
 
     if (entry.start !== START.pending) {
@@ -1048,13 +1051,14 @@ function cleanSettings(text) {
  * @param {URL} url The request's address.
  * @param {() => Promise<string | null>} readBody Reads the request's body as text, null when it is too large to read.
  * @param {(limit: number) => Promise<Uint8Array | null>} readBytes Reads the request's body as bytes, null when it is longer than the limit.
- * @param {{player?: string | null, auth?: string | null, address?: string | null}} [client] The PLAYER_HEADER and AUTH_HEADER of the request, which win over the key and auth key in its body or address, and the address it came from.
- * @returns {Promise<{status: number, body: object, bytes?: Uint8Array, close?: boolean, kick?: string, difficulty?: number, id?: string}>} The answer, sent as the bytes when there are any, and what the platform layer must do beyond it for the world with that id.
+ * @param {{player?: string | null, auth?: string | null, address?: string | null, features?: string[]}} [client] The PLAYER_HEADER and AUTH_HEADER of the request, which win over the key and auth key in its body or address, the address it came from and what it names in FEATURES_HEADER, see parseFeatures.
+ * @returns {Promise<{status: number, body: object, bytes?: Uint8Array, close?: boolean, kick?: string, difficulty?: number, modsRule?: {off: boolean, mods: string}, id?: string}>} The answer, sent as the bytes when there are any, and what the platform layer must do beyond it for the world with that id.
  */
 export async function handleDirectoryRequest(directory, method, url, readBody, readBytes, client = {}) {
   const parts = url.pathname.split("/").filter((part) => part.length > 0);
   const header = client.player || null;
   const address = client.address ?? null;
+  const features = Array.isArray(client.features) ? client.features : [];
   const fromQuery = () => header ?? url.searchParams.get("player");
   const fromBody = (body) => header ?? body?.player;
   const authOf = () => client.auth || url.searchParams.get("auth");
@@ -1069,7 +1073,7 @@ export async function handleDirectoryRequest(directory, method, url, readBody, r
   }
 
   if (parts.length === 2 && method === "POST") {
-    return json((body) => directory.create(body && typeof body === "object" && header ? { ...body, player: header } : body, address));
+    return json((body) => directory.create(body && typeof body === "object" && header ? { ...body, player: header } : body, address, features));
   }
 
   if (parts.length === 4 && parts[3] === "lock" && method === "GET") {
@@ -1089,7 +1093,7 @@ export async function handleDirectoryRequest(directory, method, url, readBody, r
   }
 
   if (parts.length === 4 && parts[3] === "start" && method === "POST") {
-    return directory.putStart(parts[2], fromQuery(), await readBytes(directory.limits.maxStartBytes), address);
+    return directory.putStart(parts[2], fromQuery(), await readBytes(directory.limits.maxStartBytes), address, features);
   }
 
   if (parts.length === 4 && parts[3] === "start" && method === "GET") {

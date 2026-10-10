@@ -2,8 +2,9 @@
 //  worker.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-10: Told every game of a Raid World a boss pool's share of HP left, raid max HP and defeat when a report or an admin changed it, and handed a boss report the reporting player's name
+//      Paulinchen  2026-10-10: Passed what a game names in the X-MGQ-Features header on to the directory's public routes too, for a development build's Raid World starting save
 //                            - Refused a Raid World request whose Content-Length is above the longest body these routes take before reading its body
+//                            - Told every game of a Raid World a boss pool's share of HP left, raid max HP and defeat when a report or an admin changed it, and handed a boss report the reporting player's name
 //      Paulinchen  2026-10-09: Told every game of a world whether it turns other mods off and which mods it names, once its creator or an admin changed either
 //                            - Kept a Raid World's boss pools in its world room's object, answered their routes there for the world's players and the admin routes for the relay's admins, and told every game of the world when a pool changed
 //                            - Told every game of a Raid World its new difficulty once its creator or an admin changed it
@@ -486,7 +487,7 @@ export class Directory extends DurableObject {
       return json(200, { line: await this.directory.say(id, { player, name }, text) });
     }
 
-    const client = { player: request.headers.get(PLAYER_HEADER), auth: request.headers.get(AUTH_HEADER), address: request.headers.get(ADDRESS_HEADER) };
+    const client = { player: request.headers.get(PLAYER_HEADER), auth: request.headers.get(AUTH_HEADER), address: request.headers.get(ADDRESS_HEADER), features: parseFeatures(request.headers.get(FEATURES_HEADER)) };
     const answer = await handleDirectoryRequest(this.directory, request.method, url, () => readText(request), (limit) => readBytes(request, limit), client);
 
     if (answer.close) {

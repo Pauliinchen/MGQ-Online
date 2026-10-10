@@ -2,7 +2,8 @@
 //  TestRelay.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-10: Kept a Raid World's boss pools as the relay does now: the share of the raid max HP left, filled up by 3 % of it a minute, reports taken once per sequence number of a battle and the boss a kill or an emptying report defeats, telling every game of each change; and let tests drop the answers of reports the relay took
+//      Paulinchen  2026-10-10: Refused a Raid World with a player's choice, and with a starting save unless the game names the dev feature, as the relay does
+//                            - Kept a Raid World's boss pools as the relay does now: the share of the raid max HP left, filled up by 3 % of it a minute, reports taken once per sequence number of a battle and the boss a kill or an emptying report defeats, telling every game of each change; and let tests drop the answers of reports the relay took
 //                            - Told a boss pool's change before answering, defeated a pool whose HP shows as 0 and left a report that takes nothing off unwritten, as the relay does, and let tests hold back the next boss answer or refuse the next reports as busy
 //      Paulinchen  2026-10-09: Kept whether a world turns other mods off, set when it is made, by its type unless named, and changed with an edit, telling its room of a change to it or to the mods, and listed it unless told to stand in for a relay from before
 //                            - Refused a mods text longer than the relay keeps, instead of cutting it
@@ -902,11 +903,11 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
             answer = parts switch
             {
                 ["v1", "worlds"] when method == "GET" => (200, List(PlayerKeyOf(context), query["ids"])),
-                ["v1", "worlds"] when method == "POST" => Create(body!),
+                ["v1", "worlds"] when method == "POST" => Create(body!, DevGame(context)),
                 ["v1", "worlds", var id, "lock"] when _directory.TryGetValue(id, out var world) => (200, LockOf(world)),
                 ["v1", "worlds", var id, "delete"] when CreatorOrAdminOf(id, body?["player"]?.GetValue<string>()) is { } world => Delete(id, toClose, out closeCode),
                 ["v1", "worlds", var id, "ban"] when CreatorOf(id, body?["player"]?.GetValue<string>()) is { } world => Ban(id, world, body!["target"]!.GetValue<string>(), toClose, out closeCode),
-                ["v1", "worlds", var id, "start"] when method == "POST" && CreatorOf(id, PlayerKeyOf(context)) is { } world => PutStart(world, upload),
+                ["v1", "worlds", var id, "start"] when method == "POST" && CreatorOf(id, PlayerKeyOf(context)) is { } world => PutStart(world, upload, DevGame(context)),
                 ["v1", "worlds", var id, "start"] when method == "GET" && _directory.TryGetValue(id, out var world) => GetStart(world, PlayerKeyOf(context), AuthKeyOf(context), out download),
                 ["v1", "worlds", var id, "edit"] when CreatorOrAdminOf(id, body?["player"]?.GetValue<string>()) is { } world => Edit(id, world, body!, PlayerIdOf(body!["player"]!.GetValue<string>()), toTell),
                 ["v1", "worlds", var id, "edit"] when _directory.ContainsKey(id) => (403, Error("only the world's creator or an admin may do this")),
@@ -968,9 +969,15 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
     /// </summary>
     /// <param name="world">The world's entry.</param>
     /// <param name="bytes">The starting save.</param>
+    /// <param name="dev">Whether the game names the dev feature, which alone may give a Raid World a starting save.</param>
     /// <returns>The answer.</returns>
-    private static (int, JsonNode) PutStart(DirectoryWorld world, byte[] bytes)
+    private static (int, JsonNode) PutStart(DirectoryWorld world, byte[] bytes, bool dev)
     {
+        if (world.Type == WorldType.Raid && !dev)
+        {
+            return (400, RaidStartRefusal());
+        }
+
         if (world.Start != "pending")
         {
             return (409, Error("the world takes no starting save"));
@@ -1011,10 +1018,16 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
     /// Makes a world in the directory. Called with the gate held.
     /// </summary>
     /// <param name="body">The new world.</param>
+    /// <param name="dev">Whether the game names the dev feature, which alone may give a Raid World a starting save.</param>
     /// <returns>The answer.</returns>
-    private (int, JsonNode) Create(JsonNode body)
+    private (int, JsonNode) Create(JsonNode body, bool dev)
     {
         var id = body["id"]!.GetValue<string>();
+
+        if (body["type"]?.GetValue<string>() == WorldType.Raid && (body["choose"]?.GetValue<bool>() == true || (body["start"]?.GetValue<bool>() == true && !dev)))
+        {
+            return (400, RaidStartRefusal());
+        }
 
         if (_directory.ContainsKey(id))
         {
@@ -1051,6 +1064,21 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
 
         return (201, new JsonObject { ["id"] = id });
     }
+
+    /// <summary>
+    /// Writes the refusal of a Raid World's starting save or player's choice, as the relay names it.
+    /// </summary>
+    /// <returns>The answer's body.</returns>
+    private static JsonObject RaidStartRefusal() =>
+        new() { ["error"] = "a Raid World starts from the beginning: it takes no player's choice, and a starting save only from a development build", ["code"] = "raid_start" };
+
+    /// <summary>
+    /// Tells whether a request names the dev feature in its X-MGQ-Features header, as development builds do.
+    /// </summary>
+    /// <param name="context">The request.</param>
+    /// <returns>Whether it does.</returns>
+    private static bool DevGame(HttpListenerContext context) =>
+        context.Request.Headers[DirectoryClient.FeaturesHeader]?.Split(',').Contains(DirectoryClient.DevFeature) == true;
 
     /// <summary>
     /// Tells whether a request's mods text is longer than the relay keeps, which it refuses instead of cutting.

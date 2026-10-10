@@ -2,17 +2,23 @@
 //  ExportsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-10: Covered mp_dev_build, exported without arguments
+//      Paulinchen  2026-10-09: Covered the parked mods' exports and the world exports that take whether a world turns other mods off, with their arguments
 //      Paulinchen  2026-10-07: Created
 //
 //----------------------------------------------------------------
 
 using System;
+using System.Linq;
+using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Text;
 
 namespace MGQParadox.Multiplayer.Tests;
 
 /// <summary>
-/// Covers the buffers the exports hand texts to the game script in, and read its texts from.
+/// Covers the buffers the exports hand texts to the game script in, and read its texts from, and
+/// the names and arguments the game script calls exports by.
 /// </summary>
 public sealed unsafe class ExportsTests
 {
@@ -77,5 +83,29 @@ public sealed unsafe class ExportsTests
         }
 
         Assert.Equal(string.Empty, Exports.Text(null));
+    }
+
+    /// <summary>
+    /// Asserts that the parked mods' functions, the world exports that take whether a world turns
+    /// other mods off and mp_dev_build are exported under the names the game script calls, each
+    /// taking what GameScript/Multiplayer.rb names for it.
+    /// </summary>
+    [Fact]
+    public void ParkingExports_AreRegistered()
+    {
+        var exported = typeof(Exports).GetMethods(BindingFlags.Public | BindingFlags.Static)
+            .Select(method => (Method: method, Attribute: method.GetCustomAttribute<UnmanagedCallersOnlyAttribute>()))
+            .Where(export => export.Attribute?.EntryPoint != null)
+            .ToDictionary(export => export.Attribute!.EntryPoint!, export => string.Concat(export.Method.GetParameters().Select(parameter => parameter.ParameterType == typeof(int) ? 'l' : 'p')));
+
+        Assert.Equal("pp", exported["mp_mods_park"]);
+        Assert.Equal("l", exported["mp_mods_restore"]);
+        Assert.Equal("pl", exported["mp_mods_parked"]);
+        Assert.Equal("pl", exported["mp_mods_scripts"]);
+        Assert.Equal("pl", exported["mp_mods_restart_parked"]);
+        Assert.Equal("p", exported["mp_mods_recover"]);
+        Assert.Equal("pplllpppplppppll", exported["mp_dir_create"]);
+        Assert.Equal("plppplllll", exported["mp_dir_edit"]);
+        Assert.Equal(string.Empty, exported["mp_dev_build"]);
     }
 }

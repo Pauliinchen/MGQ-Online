@@ -2,6 +2,8 @@
 #  raid_difficulty_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-10: Checked a release's Raid World without a starting save, and a development build's with an optional shared save beside
+#                              the Difficulty, sent to the DLL and fetched by new players, never with the player's choice
 #      Paulinchen  2026-10-09: Expected the starting point hidden in a Raid World's form, its row shared with Sharing companions, Turn off other mods in
 #                              the edit form, and the longer calls of mp_dir_create and mp_dir_edit
 #                            - Created
@@ -10,7 +12,8 @@
 
 # Covers a Raid World's difficulty and start: the new world's form without a starting point and
 # with the Difficulty switch for a Raid World only, the creator's edit form, what goes to the DLL,
-# no starting save or choice on entering (world.rbx, world_save_distribution.rbx); the world's
+# no starting save or choice on entering, but a shared save in a development build (world.rbx,
+# world_save_distribution.rbx); the world's
 # difficulty on entry, load, new game and after the relay's push, the game's own choice and the
 # Reaper's change set to the world's, and the Labyrinth of Chaos's, the Colosseum's and the special
 # bosses' own values left alone (world_difficulty.rbx); and these values each Raid World player's
@@ -126,6 +129,8 @@ load_script "story_state"
 load_script "world_difficulty"
 
 difficulty = MGQ_MpWorldDifficulty
+# A release, unless a check says otherwise.
+MGQ_MpWorld.instance_variable_set(:@dev_build, false)
 
 # Finds a form's field by its key.
 #
@@ -196,6 +201,30 @@ plain_world = MGQ_MpWorld::World.new("fedcba987654", "code" => "y", "type" => "c
 check("a new player of a Raid World starts a new game, even if it was made with a choice or a save",
       [MGQ_MpSaveDistribution.ask_start?(raid_world, true), MGQ_MpSaveDistribution.fetch?(raid_world, "ready")], [false, false])
 check("while a Classic world asks and fetches as before", [MGQ_MpSaveDistribution.ask_start?(plain_world, true), MGQ_MpSaveDistribution.fetch?(plain_world, "ready")], [true, true])
+
+# A development build gives a Raid World a shared save, for testing, but never the player's choice.
+MGQ_MpWorld.instance_variable_set(:@dev_build, true)
+dev_form = MGQ_MpWorld::Form.create
+dev_form[:name] = "Raid Test"
+dev_form[:type] = 1
+dev_save = field_of(dev_form, :save)
+dev_difficulty = field_of(dev_form, :difficulty)
+check("a development build's Raid World has an optional Save beside the Difficulty, the form as high as before",
+      [[dev_save.kind, dev_save.row, dev_save.side, dev_save.optional, dev_save.label_width], [dev_difficulty.row, dev_difficulty.side], dev_form.fields.size, dev_form.fields.last.row],
+      [[:save, 4, :left, true, MGQ_MpWorld::Form::RAID_SAVE_LABEL_WIDTH], [4, :right], 14, 9])
+check("without a save it starts from the beginning and can be sent", [dev_form.from_save?, dev_form.choose?, dev_form.problem, dev_save.hint.size <= 100], [false, false, nil, true])
+dev_form[:save] = 2
+dev_form[:choose] = true
+check("with one, its new players start from it, never with the player's choice", [dev_form.from_save?, dev_form.choose?, dev_form.problem], [true, false, nil])
+MGQ_MpWorld::Directory.create("Raid Test", "", 4, false, true, "Save01.rvdata2=Save/Save03.rvdata2", :type => "raid", :difficulty => 1)
+check("which goes to the DLL as a Classic world's starting save, without the choice", [$calls.last[2][4], $calls.last[2][5], $calls.last[2][12]],
+      [0, "Save01.rvdata2=Save/Save03.rvdata2\0", "raid\0"])
+check("and a new player fetches it, never asked where to start",
+      [MGQ_MpSaveDistribution.fetch?(raid_world, "ready"), MGQ_MpSaveDistribution.fetch?(raid_world, "none"), MGQ_MpSaveDistribution.ask_start?(raid_world, true)], [true, false, false])
+MGQ_MpWorld.instance_variable_set(:@dev_build, nil)
+$calls.clear
+check("the DLL tells a development build once", [MGQ_MpWorld.dev_build?, MGQ_MpWorld.dev_build?, $calls.map { |call| call[0] }], [true, true, ["mp_dev_build"]])
+MGQ_MpWorld.instance_variable_set(:@dev_build, false)
 
 # The game's state: the enemy rates' common event notes each time it works them out.
 $rates = []

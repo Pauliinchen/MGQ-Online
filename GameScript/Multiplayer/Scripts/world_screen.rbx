@@ -2,7 +2,9 @@
 #  world_screen.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-10: Stayed on the world screen with a notice instead of a plain restart for a world's downloaded mods while mods stay parked,
+#      Paulinchen  2026-10-10: Took leaving the save screen without a save as no shared save for a development build's Raid World, drew a save's
+#                              label at its field's width, and said in a Raid World's details when its new players start from the creator's save
+#                            - Stayed on the world screen with a notice instead of a plain restart for a world's downloaded mods while mods stay parked,
 #                              saying when parked mods could not be turned back on, and asked for a new start when the restart keeping them failed
 #                            - Kept the game out of a world that turns off scripts behind a link to another drive, before offering its downloads too
 #      Paulinchen  2026-10-09: Asked before entering a world that turns other mods off, then turned them off and started the game again to enter it,
@@ -1675,7 +1677,8 @@ class Scene_MpWorlds < Scene_MenuBase
 
     if purpose == :world
       log_screen(index ? "picked #{MGQ_MpWorld.save_name(index)} as the new world's starting save" : "left the save screen without a starting save")
-      @forms[:new_world][:save] = index if index
+      # A Raid World's Save has no checkbox, so leaving without a save is how it goes back to none.
+      @forms[:new_world][:save] = index if index || @forms[:new_world].raid_save?
     elsif index
       log_screen("picked own #{MGQ_MpWorld.save_name(index)} to start #{@starting.name} from")
       @own_start = index
@@ -2849,13 +2852,23 @@ class Window_MpWorldDetail < Window_Base
     [Cell.new("Type", "Raid", :raid), Cell.new("Sharing", SHARING_TEXTS[listed.share] || SHARING_TEXTS["off"], :normal)]
   end
 
-  # Tells that a Raid World's new players start at the beginning, and the difficulty every player
-  # plays on.
+  # Tells where a Raid World's new players start, and the difficulty every player plays on.
   #
   # @param listed [MGQ_MpWorld::Directory::ListedWorld] The Raid World in the directory.
   # @return [Array<Cell>] The row's two cells.
   def start_row(listed)
-    [Cell.new("Start", "The beginning", :normal), Cell.new("Difficulty", MGQ_MpWorld.difficulty_name(listed.difficulty) || "Per player", :normal)]
+    [Cell.new("Start", raid_start_text(listed), :normal), Cell.new("Difficulty", MGQ_MpWorld.difficulty_name(listed.difficulty) || "Per player", :normal)]
+  end
+
+  # Tells where a Raid World's new players start: at the beginning, or from the creator's save,
+  # which only a development build gives a Raid World and fetches.
+  #
+  # @param listed [MGQ_MpWorld::Directory::ListedWorld] The Raid World in the directory.
+  # @return [String] The text.
+  def raid_start_text(listed)
+    return start_text(listed) if listed.start == "pending"
+
+    listed.start == "ready" && MGQ_MpWorld.dev_build? ? "The creator's save" : "The beginning"
   end
 
   # Tells where a world's new players start.
@@ -3254,16 +3267,18 @@ class Window_MpWorldForm < Window_Selectable
     end
   end
 
-  # Draws a text box or the save to choose: its label, then its value on a darker box.
+  # Draws a text box or the save to choose: its label, at the field's label width or LABEL_WIDTH,
+  # then its value on a darker box.
   #
   # @param rect [Rect] Where.
   # @param field [MGQ_MpWorld::Form::Field] The field.
   # @param enabled [Boolean] Whether it can be used.
   def draw_box(rect, field, enabled)
+    label_width = field.label_width || LABEL_WIDTH
     contents.font.size = LABEL_SIZE
     change_color(system_color, enabled)
-    draw_text(rect.x, rect.y, LABEL_WIDTH, rect.height, field.label)
-    box = Rect.new(rect.x + LABEL_WIDTH, rect.y + 1, rect.width - LABEL_WIDTH, rect.height - 2)
+    draw_text(rect.x, rect.y, label_width, rect.height, field.label)
+    box = Rect.new(rect.x + label_width, rect.y + 1, rect.width - label_width, rect.height - 2)
     contents.fill_rect(box, TEXT_BOX_COLOR)
     contents.font.size = VALUE_SIZE
     change_color(normal_color, enabled)
@@ -3377,7 +3392,7 @@ class Window_MpWorldForm < Window_Selectable
   # @return [String] The text.
   def value_text(field)
     value = @form[field.key]
-    return value.nil? ? "Choose one of your saves" : save_text(value) if field.kind == :save
+    return value.nil? ? (field.optional ? "The beginning" : "Choose one of your saves") : save_text(value) if field.kind == :save
     return value.to_s.empty? ? "None. Confirm to pick them." : value if field.kind == :mods
 
     field.kind == :password ? "*" * value.size : value

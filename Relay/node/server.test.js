@@ -2,7 +2,8 @@
 //  server.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-10: Tested boss pools that keep the share of a raid max HP left over HTTP: turn reports, a kill named by its player, the frame every game hears and the admin view
+//      Paulinchen  2026-10-10: Tested that only a game naming the dev feature in X-MGQ-Features makes a Raid World with a starting save and uploads it over HTTP
+//                            - Tested boss pools that keep the share of a raid max HP left over HTTP: turn reports, a kill named by its player, the frame every game hears and the admin view
 //      Paulinchen  2026-10-09: Tested that every game of a world hears that it turns other mods off, with its mods, once its creator changes either over HTTP
 //                            - Tested a Raid World's boss pools over HTTP: reports, the frame every game hears, the admin routes and a deleted world, and that a Classic world keeps none
 //                            - Tested that every game of a Raid World hears its new difficulty once its creator changes it over HTTP
@@ -23,7 +24,7 @@
 //                            - Expected the lock to name its world
 //      Paulinchen  2026-09-29: Made every world in the directory first, and tested the directory over HTTP
 //                            - Tested world rooms over real WebSockets
-//                            - Created
+//      Paulinchen  2026-09-29: Created
 //
 //----------------------------------------------------------------
 
@@ -860,6 +861,19 @@ test("the auth key may come in the X-MGQ-Auth header, for the world rooms and th
   assert.equal(await game.first, "seat 0");
   assert.deepEqual(await openWithHeaders(`${worldBase}${room}?name=Player%2062&auth=${AUTH}`, { [PLAYER_HEADER]: playerKey(62), [AUTH_HEADER]: "cd".repeat(32) }), { status: 401, refusal: undefined });
   game.socket.close();
+});
+
+test("only a game that names the dev feature in X-MGQ-Features makes a Raid World with a starting save and uploads it", async () => {
+  const room = roomId(135);
+  const creator = playerKey(95);
+  const world = JSON.stringify({ id: room, name: "Dev Raid", seats: 4, player: creator, playerName: "Creator", authHash: await sha256Hex(AUTH), lock: { salt: "12".repeat(16), iterations: 200_000, box: "ab".repeat(40) }, start: true, type: "raid" });
+
+  assert.equal((await fetch(directoryBase, { method: "POST", headers: { [FEATURES_HEADER]: "raid" }, body: world })).status, 400);
+  assert.equal((await fetch(directoryBase, { method: "POST", headers: { [FEATURES_HEADER]: "raid, dev" }, body: world })).status, 201);
+
+  const upload = (features) => fetch(`${directoryBase}/${room}/start`, { method: "POST", headers: { [PLAYER_HEADER]: creator, [FEATURES_HEADER]: features }, body: Uint8Array.of(9) });
+  assert.equal((await upload("raid")).status, 400);
+  assert.equal((await upload("RAID,DEV")).status, 200);
 });
 
 test("every request is logged as one line without its query, and a caught error with its stack", async () => {

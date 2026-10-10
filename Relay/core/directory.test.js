@@ -2,7 +2,8 @@
 //  directory.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-10: Covered the player's name member tells a world room
+//      Paulinchen  2026-10-10: Covered a Raid World's starting save from a game that names the dev feature, made and uploaded, also through the public routes, and still refused a player's choice and every other game's starting save
+//                            - Covered the player's name member tells a world room
 //                            - Covered an edit that sends a Raid World's difficulty unchanged telling the world room nothing, and the first difficulty of a world made without one
 //      Paulinchen  2026-10-09: Covered whether a world turns other mods off: by type, as made, changed by its creator or an admin only, read by type for worlds kept from before, and told to the world room with the mods on a change only
 //                            - Expected mods past 300 characters refused instead of cut
@@ -727,6 +728,123 @@ test("a Raid World starts from the beginning: no starting save and no player's c
   assert.deepEqual([upload.status, upload.body.code], [400, "raid_start"]);
 
   assert.equal((await directory.create(await newWorld({ id: "1".repeat(32), start: true, choose: true }))).status, 201, "a Classic world keeps both as before");
+});
+
+test("a game that names the dev feature gives a Raid World a starting save, never a player's choice", async () => {
+  const { directory } = newDirectory();
+  const dev = ["raid", "dev"];
+
+  const choice = await directory.create(await newWorld({ type: "raid", start: true, choose: true }), null, dev);
+  assert.deepEqual([choice.status, choice.body.code], [400, "raid_start"], "a player's choice stays refused");
+
+  assert.equal((await directory.create(await newWorld({ type: "raid", start: true }), null, dev)).status, 201);
+  assert.equal((await directory.lock(WORLD)).body.start, "pending");
+
+  const released = await directory.putStart(WORLD, CREATOR, Uint8Array.of(1), null, ["raid"]);
+  assert.deepEqual([released.status, released.body.code], [400, "raid_start"], "a released game uploads none");
+
+  assert.deepEqual(await directory.putStart(WORLD, CREATOR, Uint8Array.of(1, 2, 3), null, dev), { status: 200, body: { bytes: 3 } });
+  const listed = (await directory.list(CREATOR)).body.worlds.find((world) => world.id === WORLD);
+  assert.deepEqual([listed.type, listed.start], ["raid", "ready"]);
+  assert.equal((await directory.getStart(WORLD, CREATOR, AUTH)).bytes.length, 3);
+});
+
+test("handleDirectoryRequest hands what a game names in X-MGQ-Features to making a world and uploading its starting save", async () => {
+  const { directory } = newDirectory();
+  const url = (path) => new URL(`https://relay.example${path}`);
+  const body = (value) => async () => JSON.stringify(value);
+  const bytes = async () => Uint8Array.of(7, 7);
+  const world = await newWorld({ type: "raid", start: true });
+
+  const released = await handleDirectoryRequest(directory, "POST", url("/v1/worlds"), body(world), bytes, { features: ["raid"] });
+  assert.deepEqual([released.status, released.body.code], [400, "raid_start"]);
+
+  assert.equal((await handleDirectoryRequest(directory, "POST", url("/v1/worlds"), body(world), bytes, { features: ["raid", "dev"] })).status, 201);
+  const refused = await handleDirectoryRequest(directory, "POST", url(`/v1/worlds/${WORLD}/start`), body(null), bytes, { player: CREATOR, features: ["raid"] });
+  assert.deepEqual([refused.status, refused.body.code], [400, "raid_start"]);
+  assert.equal((await handleDirectoryRequest(directory, "POST", url(`/v1/worlds/${WORLD}/start`), body(null), bytes, { player: CREATOR, features: ["raid", "dev"] })).status, 200);
+});
+
+test("a world's mods past the limit are refused, never cut, when it is made or edited", async () => {
+  const { directory } = newDirectory();
+  const refused = await directory.create(await newWorld({ mods: "!Level Cap;" + "x".repeat(300) }));
+  assert.equal(refused.status, 400);
+  assert.match(refused.body.error, /at most 300 characters/);
+
+  await directory.create(await newWorld({ mods: "!Level Cap" }));
+  assert.equal((await directory.edit(WORLD, CREATOR, { mods: "y".repeat(301) })).status, 400);
+  assert.equal((await directory.list()).body.worlds[0].mods, "!Level Cap", "a refused edit changes nothing");
+  assert.equal((await directory.edit(WORLD, CREATOR, { mods: "y".repeat(300) })).status, 200);
+  assert.equal((await directory.list()).body.worlds[0].mods, "y".repeat(300));
+});
+
+test("a world turns other mods off as made, by default a Raid World only", async () => {
+  const { directory } = newDirectory();
+  await directory.create(await newWorld({ type: "raid" }));
+  await directory.create(await newWorld({ id: "1".repeat(32), type: "classic" }));
+  await directory.create(await newWorld({ id: "2".repeat(32) }));
+  await directory.create(await newWorld({ id: "3".repeat(32), type: "raid", otherModsOff: false }));
+  await directory.create(await newWorld({ id: "4".repeat(32), otherModsOff: true }));
+
+  const offOf = Object.fromEntries((await directory.list()).body.worlds.map((world) => [world.id, world.otherModsOff]));
+  assert.deepEqual(offOf, { [WORLD]: true, ["1".repeat(32)]: false, ["2".repeat(32)]: false, ["3".repeat(32)]: false, ["4".repeat(32)]: true });
+});
+
+test("the creator or an admin turns other mods off or on, and the world room is told with the mods only on a change", async () => {
+  const { directory } = newDirectory(DIRECTORY_LIMITS, [await playerIdOf(ADMIN)]);
+  await directory.create(await newWorld({ mods: "!Level Cap;?Party Sheet" }));
+  const offOf = async () => (await directory.list()).body.worlds[0].otherModsOff;
+
+  const on = await directory.edit(WORLD, CREATOR, { otherModsOff: true });
+  assert.equal(on.status, 200);
+  assert.deepEqual(on.modsRule, { off: true, mods: "!Level Cap;?Party Sheet" }, "the answer names what the world room tells");
+  assert.equal(await offOf(), true);
+
+  assert.equal((await directory.edit(WORLD, CREATOR, { otherModsOff: true, seats: 6 })).modsRule, undefined, "the same value tells nothing");
+  assert.equal((await directory.edit(WORLD, CREATOR, { mods: "!Level Cap;?Party Sheet" })).modsRule, undefined, "the same mods tell nothing");
+  assert.deepEqual((await directory.edit(WORLD, ADMIN, { mods: "  !Level Cap\t " })).modsRule, { off: true, mods: "!Level Cap" }, "the mods are told as kept");
+  assert.deepEqual((await directory.edit(WORLD, ADMIN, { otherModsOff: false })).modsRule, { off: false, mods: "!Level Cap" });
+  assert.equal(await offOf(), false);
+
+  assert.equal((await directory.edit(WORLD, OTHER, { otherModsOff: true })).status, 403);
+
+  for (const bad of ["1", 1, null, "true"]) {
+    assert.equal((await directory.edit(WORLD, CREATOR, { otherModsOff: bad })).status, 400, `otherModsOff ${bad}`);
+  }
+
+  assert.equal(await offOf(), false);
+});
+
+test("modsRuleText writes the frame that tells a world room whether other mods are off and the world's mods", () => {
+  assert.equal(MODS_RULE_TEXT, "mods_rule");
+  assert.equal(modsRuleText(true, "!Level Cap;Party Sheet"), "mods_rule 1\t!Level Cap;Party Sheet");
+  assert.equal(modsRuleText(false, ""), "mods_rule 0\t");
+});
+
+test("an edit over HTTP hands the mods rule on with the world it is for", async () => {
+  const { directory } = newDirectory();
+  await directory.create(await newWorld({ type: "raid", mods: "Level Cap" }));
+  const url = new URL(`https://relay.test/v1/worlds/${WORLD}/edit`);
+
+  const answer = await handleDirectoryRequest(directory, "POST", url, async () => JSON.stringify({ player: CREATOR, otherModsOff: false }), async () => null);
+  assert.deepEqual([answer.status, answer.id, answer.modsRule], [200, WORLD, { off: false, mods: "Level Cap" }]);
+});
+
+test("a world kept from before the setting turns other mods off when it is a Raid World", async () => {
+  const { directory } = newDirectory();
+  await directory.create(await newWorld({ type: "raid", mods: "Level Cap" }));
+  await directory.create(await newWorld({ id: "1".repeat(32), mods: "Level Cap" }));
+
+  for (const id of [WORLD, "1".repeat(32)]) {
+    const entry = await directory.store.get(id);
+    delete entry.otherModsOff;
+    await directory.store.put(entry);
+  }
+
+  const offOf = async () => Object.fromEntries((await directory.list()).body.worlds.map((world) => [world.id, world.otherModsOff]));
+  assert.deepEqual(await offOf(), { [WORLD]: true, ["1".repeat(32)]: false });
+  assert.equal((await directory.edit(WORLD, CREATOR, { otherModsOff: true })).modsRule, undefined, "the value read by type counts as the old one");
+  assert.deepEqual((await directory.edit("1".repeat(32), CREATOR, { otherModsOff: true })).modsRule, { off: true, mods: "Level Cap" });
 });
 
 test("a world kept from before types is Classic", async () => {

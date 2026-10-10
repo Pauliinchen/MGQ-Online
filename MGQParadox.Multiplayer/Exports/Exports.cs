@@ -2,6 +2,7 @@
 //  Exports.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-10: Added mp_dev_build, which tells a development build from a release
 //      Paulinchen  2026-10-09: Took the parked mods' lock as the game starts, and marked their journal while an update runs, so their watchdog never starts a game beside the updater's
 //      Paulinchen  2026-10-08: Logged the Wine version the game runs under, if any
 //                            - Added mp_update_game, which starts the mod's updater, answering 2 under Wine, whose missing PowerShell leaves the updater unable to run
@@ -128,6 +129,27 @@ internal static unsafe partial class Exports
         catch (Exception ex)
         {
             Log.Write($"mp_newer_version failed: {ex}");
+            return 0;
+        }
+    }
+
+    /// <summary>
+    /// Tells whether this DLL is a development build, which may give a Raid World a starting save.
+    /// </summary>
+    /// <remarks>
+    /// Only for testing: a release must never offer it, see the Raid World's starting save in docs/DEVELOPER.md.
+    /// </remarks>
+    /// <returns>1 for a development build, 0 for a release.</returns>
+    [UnmanagedCallersOnly(EntryPoint = "mp_dev_build", CallConvs = [typeof(CallConvStdcall)])]
+    public static int DevBuild()
+    {
+        try
+        {
+            return UpdateCheck.DevelopmentBuild ? 1 : 0;
+        }
+        catch (Exception ex)
+        {
+            Log.Write($"mp_dev_build failed: {ex}");
             return 0;
         }
     }

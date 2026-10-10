@@ -2,6 +2,7 @@
 //  UpdateCheckTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-10: Covered that only the 0.0.0-dev stamp counts as a development build
 //      Paulinchen  2026-09-30: Created
 //
 //----------------------------------------------------------------
@@ -27,6 +28,21 @@ public sealed class UpdateCheckTests
     [InlineData("", null)]
     public void ReleaseVersionOf_SkipsDevelopmentBuilds(string informationalVersion, string? expected) =>
         Assert.Equal(expected, UpdateCheck.ReleaseVersionOf(informationalVersion)?.ToString());
+
+    /// <summary>
+    /// Asserts that only the development stamp counts as a development build, never a pre-release.
+    /// </summary>
+    /// <param name="informationalVersion">The version the build stamped.</param>
+    /// <param name="expected">Whether it is a development build.</param>
+    [Theory]
+    [InlineData("0.0.0-dev+9611cfb", true)]
+    [InlineData("0.0.0-dev", true)]
+    [InlineData("0.6.0-beta+9611cfb", false)]
+    [InlineData("0.6.0-rc1", false)]
+    [InlineData("0.5.3+4357977", false)]
+    [InlineData("", false)]
+    public void IsDevelopmentVersion_IsOnlyTheDevelopmentStamp(string informationalVersion, bool expected) =>
+        Assert.Equal(expected, UpdateCheck.IsDevelopmentVersion(informationalVersion));
 
     /// <summary>
     /// Asserts that only a newer release is reported, without the tag's <c>v</c>.
