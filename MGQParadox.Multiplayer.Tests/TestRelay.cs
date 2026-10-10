@@ -4,7 +4,10 @@
 //  Changelog:
 //      Paulinchen  2026-10-10: Kept a Raid World's boss pools as the relay does now: the share of the raid max HP left, filled up by 3 % of it a minute, reports taken once per sequence number of a battle and the boss a kill or an emptying report defeats, telling every game of each change; and let tests drop the answers of reports the relay took
 //                            - Told a boss pool's change before answering, defeated a pool whose HP shows as 0 and left a report that takes nothing off unwritten, as the relay does, and let tests hold back the next boss answer or refuse the next reports as busy
-//      Paulinchen  2026-10-09: Kept a Raid World's boss pools as the relay does: reports counted once per battle, the pool that fills up again and the boss an emptying report defeats, telling every game of each change
+//      Paulinchen  2026-10-09: Kept whether a world turns other mods off, set when it is made, by its type unless named, and changed with an edit, telling its room of a change to it or to the mods, and listed it unless told to stand in for a relay from before
+//                            - Refused a mods text longer than the relay keeps, instead of cutting it
+//                            - Left the entries of a name alone out of the games' mod list, and named every mod marked personal in its personal list
+//                            - Kept a Raid World's boss pools as the relay does: reports counted once per battle, the pool that fills up again and the boss an emptying report defeats, telling every game of each change
 //                            - Kept a Raid World's difficulty, set when it is made and changed with an edit, and listed it
 //      Paulinchen  2026-10-08: Kept a Raid World's story as the relay does: writes on the last sealed story that are not behind it, checkpoints, the route lock and shared companions, telling every game of each change
 //                            - Kept a world's type and how a Raid World shares companions, and kept games that do not name Raid Worlds in X-MGQ-Features out of them
@@ -84,6 +87,11 @@ internal sealed class TestRelay : IDisposable
     private const int Everyone = 255;
 
     /// <summary>
+    /// The longest mods text a world may name, as Relay/core/directory.js keeps it.
+    /// </summary>
+    private const int MaxModsLength = 300;
+
+    /// <summary>
     /// The games of each world room by seat.
     /// </summary>
     private readonly Dictionary<string, SortedDictionary<int, Peer?>> _worlds = new();
@@ -137,9 +145,16 @@ internal sealed class TestRelay : IDisposable
     public HashSet<string> Admins { get; init; } = [];
 
     /// <summary>
-    /// The mod catalog's mods as the relay lists them, which the tests fill.
+    /// The mod catalog's mods as the relay keeps them, which the tests fill: the games' list leaves
+    /// out entries of a name alone (kind "name"), and names every entry marked personal in its
+    /// personal list, as the relay does.
     /// </summary>
     public JsonArray CatalogMods { get; } = [];
+
+    /// <summary>
+    /// Whether the list names whether each world turns other mods off; tests clear it to stand in for a relay from before.
+    /// </summary>
+    public bool ListsOtherModsOff { get; set; } = true;
 
     /// <summary>
     /// The zips of uploaded mods by key, which the tests fill.
@@ -481,7 +496,10 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
         else if (parts is ["v1", "mods"])
         {
             context.Response.StatusCode = 200;
-            bytes = Encoding.UTF8.GetBytes(new JsonObject { ["mods"] = CatalogMods.DeepClone(), ["admin"] = false }.ToJsonString());
+            var listed = CatalogMods.Where(mod => mod?["kind"]?.GetValue<string>() != "name").Select(mod => mod!.DeepClone()).ToArray();
+            var personal = CatalogMods.Where(mod => mod?["personal"]?.GetValue<bool>() == true)
+                .Select(mod => (JsonNode)new JsonObject { ["key"] = mod!["key"]!.GetValue<string>(), ["name"] = mod["name"]!.GetValue<string>() }).ToArray();
+            bytes = Encoding.UTF8.GetBytes(new JsonObject { ["mods"] = new JsonArray(listed), ["personal"] = new JsonArray(personal), ["admin"] = false }.ToJsonString());
         }
         else if (parts is ["v1", "mods", var key, "file"] && ModFiles.TryGetValue(key, out var zip))
         {
@@ -874,6 +892,7 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
         var upload = raw.ToArray();
         var body = method == "POST" && parts is not [.., "start"] ? JsonNode.Parse(upload) : null;
         List<Peer> toClose = [];
+        List<(string Room, string Text)> toTell = [];
         var closeCode = 0;
         (int Status, JsonNode Body) answer;
         byte[]? download = null;
@@ -889,7 +908,7 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
                 ["v1", "worlds", var id, "ban"] when CreatorOf(id, body?["player"]?.GetValue<string>()) is { } world => Ban(id, world, body!["target"]!.GetValue<string>(), toClose, out closeCode),
                 ["v1", "worlds", var id, "start"] when method == "POST" && CreatorOf(id, PlayerKeyOf(context)) is { } world => PutStart(world, upload),
                 ["v1", "worlds", var id, "start"] when method == "GET" && _directory.TryGetValue(id, out var world) => GetStart(world, PlayerKeyOf(context), AuthKeyOf(context), out download),
-                ["v1", "worlds", var id, "edit"] when CreatorOrAdminOf(id, body?["player"]?.GetValue<string>()) is { } world => Edit(world, body!, PlayerIdOf(body!["player"]!.GetValue<string>())),
+                ["v1", "worlds", var id, "edit"] when CreatorOrAdminOf(id, body?["player"]?.GetValue<string>()) is { } world => Edit(id, world, body!, PlayerIdOf(body!["player"]!.GetValue<string>()), toTell),
                 ["v1", "worlds", var id, "edit"] when _directory.ContainsKey(id) => (403, Error("only the world's creator or an admin may do this")),
                 ["v1", "worlds", var id, "delete"] when _directory.ContainsKey(id) => (403, Error("only the world's creator or an admin may do this")),
                 ["v1", "worlds", var id, _] when _directory.ContainsKey(id) => (403, Error("only the world's creator may do this")),
@@ -900,6 +919,11 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
         foreach (var peer in toClose)
         {
             await peer.CloseAsync(closeCode);
+        }
+
+        foreach (var (room, text) in toTell)
+        {
+            Tell(room, text);
         }
 
         var bytes = download ?? Encoding.UTF8.GetBytes(answer.Body.ToJsonString());
@@ -997,6 +1021,11 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
             return (409, Error("a world with this id exists"));
         }
 
+        if (TooManyMods(body) || NoFlag(body, "otherModsOff"))
+        {
+            return (400, Error("the mods text is too long, or otherModsOff is no boolean"));
+        }
+
         var creator = PlayerIdOf(body["player"]!.GetValue<string>());
         var creatorName = body["playerName"]!.GetValue<string>();
         _directory[id] = new DirectoryWorld(
@@ -1017,25 +1046,53 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
             Type = body["type"]?.GetValue<string>() ?? WorldType.Classic,
             Share = body["share"]?.GetValue<string>() ?? CompanionSharing.Off,
             Difficulty = body["type"]?.GetValue<string>() == WorldType.Raid ? body["difficulty"]?.GetValue<int>() : null,
+            OtherModsOff = body["otherModsOff"]?.GetValue<bool>() ?? body["type"]?.GetValue<string>() == WorldType.Raid,
         };
 
         return (201, new JsonObject { ["id"] = id });
     }
 
     /// <summary>
-    /// Changes a world's seats, description, mods and a Raid World's difficulty. Called with the gate held.
+    /// Tells whether a request's mods text is longer than the relay keeps, which it refuses instead of cutting.
     /// </summary>
+    /// <param name="body">The request.</param>
+    /// <returns>Whether it is too long.</returns>
+    private static bool TooManyMods(JsonNode body) => body["mods"]?.GetValue<string>() is { Length: > MaxModsLength };
+
+    /// <summary>
+    /// Tells whether a request names a field that is no boolean.
+    /// </summary>
+    /// <param name="body">The request.</param>
+    /// <param name="name">The field.</param>
+    /// <returns>Whether the field is there and no boolean.</returns>
+    private static bool NoFlag(JsonNode body, string name) =>
+        body[name] is { } value && value.GetValueKind() is not (System.Text.Json.JsonValueKind.True or System.Text.Json.JsonValueKind.False);
+
+    /// <summary>
+    /// Changes a world's seats, description, mods, whether it turns other mods off and a Raid World's
+    /// difficulty, and tells its room when the mods or whether it turns other mods off changed. Called
+    /// with the gate held.
+    /// </summary>
+    /// <param name="id">The world.</param>
     /// <param name="world">The world's entry.</param>
     /// <param name="body">The changes.</param>
     /// <param name="player">The asking player's id.</param>
+    /// <param name="toTell">Receives the text frame its room is told, sent once the gate is let go.</param>
     /// <returns>The answer.</returns>
-    private static (int, JsonNode) Edit(DirectoryWorld world, JsonNode body, string player)
+    private static (int, JsonNode) Edit(string id, DirectoryWorld world, JsonNode body, string player, List<(string Room, string Text)> toTell)
     {
         if ((body["data"] != null || body["modHashes"] != null) && player != world.CreatorId)
         {
             return (403, Error("only the world's creator may replace its game data and mod hashes"));
         }
 
+        if (TooManyMods(body) || NoFlag(body, "otherModsOff"))
+        {
+            return (400, Error("the mods text is too long, or otherModsOff is no boolean"));
+        }
+
+        var rule = (world.OtherModsOff, world.Mods);
+        world.OtherModsOff = body["otherModsOff"]?.GetValue<bool>() ?? world.OtherModsOff;
         world.Data = body["data"]?.GetValue<string>() ?? world.Data;
         world.ModHashes = body["modHashes"]?.GetValue<string>() ?? world.ModHashes;
         world.Settings = body["settings"]?.GetValue<string>() ?? world.Settings;
@@ -1051,6 +1108,11 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
             }
 
             world.Difficulty = body["difficulty"]!.GetValue<int>();
+        }
+
+        if (rule != (world.OtherModsOff, world.Mods))
+        {
+            toTell.Add((id, $"mods_rule {(world.OtherModsOff ? 1 : 0)}\t{world.Mods}"));
         }
 
         return (200, new JsonObject { ["edited"] = true });
@@ -1153,6 +1215,7 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
             ["type"] = world.Type,
             ["share"] = world.Share,
             ["difficulty"] = world.Difficulty,
+            ["otherModsOff"] = ListsOtherModsOff ? world.OtherModsOff : null,
             ["online"] = online.Count,
             ["created"] = 0,
             ["active"] = 0,
@@ -1607,6 +1670,11 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
         /// The difficulty a Raid World sets for every player, <see langword="null"/> for none.
         /// </summary>
         public int? Difficulty { get; set; }
+
+        /// <summary>
+        /// Whether it turns off every mod of its players it does not name.
+        /// </summary>
+        public bool OtherModsOff { get; set; }
 
         /// <summary>
         /// Whether only games with the same data may enter.

@@ -5,6 +5,8 @@
 //      Paulinchen  2026-10-10: Told a world room the name of a player of its world too, which a Raid World's boss pool keeps for its defeat
 //                            - Told a world room a Raid World's difficulty after an edit only when it changed
 //      Paulinchen  2026-10-09: Told a world room whether a key is an admin's, for the admin routes of a Raid World it answers itself
+//                            - Kept whether a world turns its players' other mods off, on by default for a Raid World, which its creator or an admin may change and every game in it is told of, with the world's mods
+//                            - Refused a world's mods past 300 characters instead of cutting them, since a cut name would turn off a mod the creator named
 //                            - Kept a Raid World's difficulty, which its creator or an admin may change and every game in it is told of
 //                            - Refused a Raid World with a starting save or a player's choice, since it starts from the beginning
 //                            - Refused a world room's member question for a world whose starting save is still being uploaded
@@ -139,6 +141,12 @@ export const DIFFICULTY = Object.freeze({ min: -2, max: 4 });
 export const DIFFICULTY_TEXT = "difficulty";
 
 /**
+ * The word that starts the text frame telling every game of a world whether it turns other mods
+ * off now, and which mods it names.
+ */
+export const MODS_RULE_TEXT = "mods_rule";
+
+/**
  * Lowercase hexadecimal of any length.
  */
 const HEX = /^(?:[0-9a-f]{2})+$/;
@@ -262,7 +270,7 @@ export class Directory {
   /**
    * Makes a world.
    *
-   * @param {object} request The world: id, name, seats, the creator's player key and name, the hash of the auth key, the lock, whether a starting save follows, whether it is hidden from the list, whether each new player chooses where to start, whether it has no password, whether it is featured, its description, the mods it needs, the creator's game data, whether only games with the same data may enter, the hashes of its required mods outside the catalog, its mod settings, its type, how a Raid World shares companions and its difficulty.
+   * @param {object} request The world: id, name, seats, the creator's player key and name, the hash of the auth key, the lock, whether a starting save follows, whether it is hidden from the list, whether each new player chooses where to start, whether it has no password, whether it is featured, its description, the mods it needs, the creator's game data, whether only games with the same data may enter, the hashes of its required mods outside the catalog, its mod settings, its type, how a Raid World shares companions, its difficulty and whether it turns other mods off.
    * @param {string | null} [address] The asking game's address, whose worlds a rate limit counts; null for none.
    * @returns {Promise<{status: number, body: object}>} The world's id, or why it was refused.
    */
@@ -319,7 +327,7 @@ export class Directory {
       open: request.open === true,
       featured: request.featured === true,
       description: cleanText(request.description, this.limits.maxDescriptionLength),
-      mods: cleanText(request.mods, this.limits.maxModsLength),
+      mods: cleanMods(request.mods),
       data: request.data ?? "",
       strict: request.strict === true,
       modHashes: request.modHashes ?? "",
@@ -327,6 +335,7 @@ export class Directory {
       type: raid ? WORLD_TYPE.raid : WORLD_TYPE.classic,
       share: raid ? (request.share ?? SHARING.off) : SHARING.off,
       ...(raid && request.difficulty !== undefined ? { difficulty: request.difficulty } : {}),
+      otherModsOff: request.otherModsOff ?? raid,
       created: now,
       active: now,
       members: { [creator]: { name: creatorName, seen: now } },
@@ -357,14 +366,14 @@ export class Directory {
 
   /**
    * Changes what of a world may change after it was made, if the creator or an admin asks: its
-   * seats, its description, the mods it needs, its mod settings and a Raid World's difficulty.
-   * Games already in the world stay when the seats become fewer. Its game data and its mods'
-   * hashes only the creator replaces, whose game they come from.
+   * seats, its description, the mods it needs, its mod settings, a Raid World's difficulty and
+   * whether it turns other mods off. Games already in the world stay when the seats become fewer.
+   * Its game data and its mods' hashes only the creator replaces, whose game they come from.
    *
    * @param {string} id The world.
    * @param {unknown} key The asking player's key.
-   * @param {any} changes Whichever of `seats`, `description`, `mods`, `data`, `modHashes`, `settings` and `difficulty` change.
-   * @returns {Promise<{status: number, body: object, difficulty?: number}>} The answer, and the difficulty every game in the world room must be told.
+   * @param {any} changes Whichever of `seats`, `description`, `mods`, `data`, `modHashes`, `settings`, `difficulty` and `otherModsOff` change.
+   * @returns {Promise<{status: number, body: object, difficulty?: number, modsRule?: {off: boolean, mods: string}}>} The answer, the difficulty every game in the world room must be told, and whether the world turns other mods off with its mods, which every game must be told when either changed.
    */
   async edit(id, key, changes) {
     const { entry, refusal } = await this.asCreatorOrAdmin(id, key);
@@ -373,7 +382,7 @@ export class Directory {
       return refusal;
     }
 
-    const { seats, description, mods, data, modHashes, settings, difficulty } = changes ?? {};
+    const { seats, description, mods, data, modHashes, settings, difficulty, otherModsOff } = changes ?? {};
 
     if (data !== undefined && (typeof data !== "string" || !GAME_DATA.test(data))) {
       return badRequest("the game data must be 1 to 160 lowercase letters, digits, colons and dots");
@@ -399,6 +408,14 @@ export class Directory {
       return badRequest("the description and the mods must be texts");
     }
 
+    if (mods !== undefined && !this.modsOk(mods)) {
+      return badRequest(`the mods must be a text of at most ${this.limits.maxModsLength} characters`);
+    }
+
+    if (otherModsOff !== undefined && typeof otherModsOff !== "boolean") {
+      return badRequest("otherModsOff must be true or false");
+    }
+
     if (difficulty !== undefined && entry.type !== WORLD_TYPE.raid) {
       return badRequest("only a Raid World sets a difficulty");
     }
@@ -407,18 +424,23 @@ export class Directory {
       return badRequest(`the difficulty must be a whole number from ${DIFFICULTY.min} to ${DIFFICULTY.max}`);
     }
 
+    const rule = { off: otherModsOffOf(entry), mods: entry.mods ?? "" };
     const difficultyChanged = difficulty !== undefined && difficulty !== entry.difficulty;
 
     if (seats !== undefined) entry.seats = seats;
     if (description !== undefined) entry.description = cleanText(description, this.limits.maxDescriptionLength);
-    if (mods !== undefined) entry.mods = cleanText(mods, this.limits.maxModsLength);
+    if (mods !== undefined) entry.mods = cleanMods(mods);
     if (data !== undefined) entry.data = data;
     if (modHashes !== undefined) entry.modHashes = modHashes;
     if (settings !== undefined) entry.settings = cleanSettings(settings);
     if (difficulty !== undefined) entry.difficulty = difficulty;
+    if (otherModsOff !== undefined) entry.otherModsOff = otherModsOff;
+
+    const modsRule = { off: otherModsOffOf(entry), mods: entry.mods ?? "" };
+    const ruleChanged = modsRule.off !== rule.off || modsRule.mods !== rule.mods;
 
     await this.store.put(entry);
-    return { status: 200, body: { edited: entry.id }, ...(difficultyChanged ? { difficulty } : {}) };
+    return { status: 200, body: { edited: entry.id }, ...(difficultyChanged ? { difficulty } : {}), ...(ruleChanged ? { modsRule } : {}) };
   }
 
   /**
@@ -911,7 +933,7 @@ export class Directory {
     if (request.open !== undefined && typeof request.open !== "boolean") return "open must be true or false";
     if (request.featured !== undefined && typeof request.featured !== "boolean") return "featured must be true or false";
     if (request.description !== undefined && typeof request.description !== "string") return "the description must be a text";
-    if (request.mods !== undefined && typeof request.mods !== "string") return "the mods must be a text";
+    if (request.mods !== undefined && !this.modsOk(request.mods)) return `the mods must be a text of at most ${this.limits.maxModsLength} characters`;
     if (request.data !== undefined && (typeof request.data !== "string" || !GAME_DATA.test(request.data))) return "the game data must be 1 to 160 lowercase letters, digits, colons and dots";
     if (request.strict !== undefined && typeof request.strict !== "boolean") return "strict must be true or false";
     if (request.modHashes !== undefined && !this.modHashesOk(request.modHashes)) return "the mod hashes must be name=hash pairs separated by semicolons";
@@ -919,7 +941,19 @@ export class Directory {
     if (request.type !== undefined && !Object.values(WORLD_TYPE).includes(request.type)) return `the type must be ${Object.values(WORLD_TYPE).join(" or ")}`;
     if (request.share !== undefined && !Object.values(SHARING).includes(request.share)) return `the companion sharing must be ${Object.values(SHARING).join(", ")}`;
     if (request.difficulty !== undefined && !difficultyOk(request.difficulty)) return `the difficulty must be a whole number from ${DIFFICULTY.min} to ${DIFFICULTY.max}`;
+    if (request.otherModsOff !== undefined && typeof request.otherModsOff !== "boolean") return "otherModsOff must be true or false";
     return null;
+  }
+
+  /**
+   * Checks the mods a world names, which are refused rather than cut, since a cut name would turn
+   * off a mod the creator named.
+   *
+   * @param {unknown} text The mods, empty for none.
+   * @returns {boolean} Whether they are as they should be.
+   */
+  modsOk(text) {
+    return typeof text === "string" && [...cleanMods(text)].length <= this.limits.maxModsLength;
   }
 
   /**
@@ -961,6 +995,38 @@ function difficultyOk(value) {
  */
 export function difficultyText(difficulty) {
   return `${DIFFICULTY_TEXT} ${difficulty}`;
+}
+
+/**
+ * Writes the text frame that tells every game of a world whether it turns other mods off now, and
+ * which mods it names.
+ *
+ * @param {boolean} off Whether the world turns other mods off.
+ * @param {string} mods The world's mods as kept, which hold no tab or line break.
+ * @returns {string} The frame.
+ */
+export function modsRuleText(off, mods) {
+  return `${MODS_RULE_TEXT} ${off ? 1 : 0}\t${mods}`;
+}
+
+/**
+ * Tells whether a world turns its players' other mods off.
+ *
+ * @param {object} entry The world's entry.
+ * @returns {boolean} Whether it does; a world kept from before the setting does when it is a Raid World.
+ */
+function otherModsOffOf(entry) {
+  return typeof entry.otherModsOff === "boolean" ? entry.otherModsOff : entry.type === WORLD_TYPE.raid;
+}
+
+/**
+ * Tidies the mods a world names: on one line, without control characters and trimmed, but never cut.
+ *
+ * @param {unknown} text The mods.
+ * @returns {string} The mods, empty for none.
+ */
+function cleanMods(text) {
+  return cleanText(text, Infinity);
 }
 
 /**
@@ -1069,6 +1135,7 @@ export function publicView(entry) {
     type: entry.type ?? WORLD_TYPE.classic,
     share: entry.type === WORLD_TYPE.raid ? (entry.share ?? SHARING.off) : SHARING.off,
     ...(entry.type === WORLD_TYPE.raid && difficultyOk(entry.difficulty) ? { difficulty: entry.difficulty } : {}),
+    otherModsOff: otherModsOffOf(entry),
     online: entry.online.length,
     created: entry.created,
     active: entry.active,

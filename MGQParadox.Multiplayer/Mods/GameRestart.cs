@@ -2,6 +2,7 @@
 //  GameRestart.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-09: Started the parked mods' watchdog, which starts the game again into the world and moves the mods back once it closed
 //      Paulinchen  2026-10-08: Started the mod's updater, which updates the mod once the game closed and starts it again
 //                            - Started neither the updater nor the restart under Wine, which has no PowerShell for them, and told so apart from a failure
 //                            - Started the game again through ProcessStartInfo instead of Start-Process, which took brackets in the game's folder for wildcards
@@ -48,6 +49,11 @@ internal static class GameRestart
     /// The mod's updater in the mod folder, which runs Update.ps1.
     /// </summary>
     private const string Updater = "Update.bat";
+
+    /// <summary>
+    /// The parked mods' watchdog in the mod folder.
+    /// </summary>
+    private const string Watchdog = "ModParking.ps1";
 
     /// <summary>
     /// Reads the Wine version the game runs under, <see langword="null"/> on Windows; tests set another.
@@ -131,8 +137,58 @@ internal static class GameRestart
     }
 
     /// <summary>
-    /// Tells whether the game runs under Wine, where both the updater and the restart need a
-    /// PowerShell it lacks, so the game would close for nothing.
+    /// Has the watchdog ModParking.ps1 wait in a hidden PowerShell for this game to close, start it
+    /// again into the world when it rejoins, and move the parked mods back once no game of the
+    /// folder runs any more, whichever way the game closed.
+    /// </summary>
+    /// <param name="parking">The game's parking, whose journal the watchdog follows.</param>
+    /// <param name="modFolder">The mod folder, which holds the watchdog.</param>
+    /// <param name="world">The world the mods are parked for.</param>
+    /// <param name="rejoin">Whether the watchdog starts the game again into the world; else it starts it to the title once the mods are back.</param>
+    /// <returns>Whether the watchdog started, or why not.</returns>
+    public static RestartStart WatchParked(ModParking parking, string modFolder, string world, bool rejoin)
+    {
+        var game = Path.Combine(parking.GameFolder, "Game.exe");
+        var watchdog = Path.Combine(modFolder, Watchdog);
+
+        if (NeedsWindows("the parked mods' restart"))
+        {
+            return RestartStart.NeedsWindows;
+        }
+
+        if (!File.Exists(game) || !File.Exists(watchdog))
+        {
+            Log.Write($"the parked mods' restart failed: {(File.Exists(game) ? watchdog : game)} does not exist");
+            return RestartStart.Failed;
+        }
+
+        if (parking.PrepareWatch(world, rejoin) is not { } watch)
+        {
+            return RestartStart.Failed;
+        }
+
+        // The shell starts it without handing down the game's handles, which would outlive the game in it.
+        var start = new ProcessStartInfo("powershell.exe")
+        {
+            UseShellExecute = true,
+            WindowStyle = ProcessWindowStyle.Hidden,
+            WorkingDirectory = parking.GameFolder,
+        };
+
+        foreach (var argument in (string[])["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File", watchdog,
+            "-GameProcess", Environment.ProcessId.ToString(CultureInfo.InvariantCulture), "-GameFolder", parking.GameFolder, "-Mode", rejoin ? "rejoin" : "title", "-Watch", watch])
+        {
+            start.ArgumentList.Add(argument);
+        }
+
+        using var process = Process.Start(start);
+        Log.Write(process != null ? $"the parked mods' watchdog waits for the game to close, then {(rejoin ? $"starts it again into world {Log.Short(world)}" : "brings the mods back and starts it to the title")}" : "the parked mods' restart failed: PowerShell did not start");
+        return process != null ? RestartStart.Waiting : RestartStart.Failed;
+    }
+
+    /// <summary>
+    /// Tells whether the game runs under Wine, where the updater, the restart and the parked mods'
+    /// watchdog need a PowerShell it lacks, so the game would close for nothing.
     /// </summary>
     /// <param name="what">What is not started, for the log.</param>
     /// <returns><see langword="true"/> under Wine.</returns>

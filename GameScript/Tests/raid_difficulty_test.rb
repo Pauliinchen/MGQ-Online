@@ -2,7 +2,9 @@
 #  raid_difficulty_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-09: Created
+#      Paulinchen  2026-10-09: Expected the starting point hidden in a Raid World's form, its row shared with Sharing companions, Turn off other mods in
+#                              the edit form, and the longer calls of mp_dir_create and mp_dir_edit
+#                            - Created
 #
 #----------------------------------------------------------------
 
@@ -140,14 +142,15 @@ form[:name] = "Raid Night"
 starting = [:from_save, :choose].map { |key| field_of(form, key) }
 save = field_of(form, :save)
 check("a Classic world offers its starting point and its Save across the row, without the difficulty",
-      [starting.map { |field| form.enabled?(field) }, save.row, save.side, field_of(form, :difficulty)], [[true, true], 5, nil, nil])
+      [starting.map { |field| form.enabled?(field) }, save.row, save.side, field_of(form, :difficulty)], [[true, true], 4, nil, nil])
 form[:from_save] = true
 form[:choose] = true
 check("a Classic world takes a starting save and the player's choice", [form.enabled?(save), form.from_save?, form.choose?], [true, true, true])
 form[:type] = 1
 picked = field_of(form, :difficulty)
-check("a Raid World greys the starting point out and has the Difficulty across the Save's row instead",
-      [starting.map { |field| form.enabled?(field) }, field_of(form, :save), picked.row, picked.side, form.enabled?(picked), form.fields.size], [[false, false], nil, 5, nil, true, 14])
+check("a Raid World hides the starting point, Sharing companions on its row, and has the Difficulty across the Save's row instead",
+      [starting.map { |field| form.fields.include?(field) }, field_of(form, :share).row, field_of(form, :save), picked.row, picked.side, form.enabled?(picked), form.fields.size],
+      [[false, false], 3, nil, 4, nil, true, 13])
 check("which offers the game's difficulties and starts on NORMAL", [picked.kind, picked.choices, form.difficulty],
       [:switch, ["VERY EASY", "EASY", "NORMAL", "HARD", "VERY HARD", "HELL", "PARADOX"], 0])
 check("whose hint fits the lines at the top, as the starting point's do", ([picked] + starting).map { |field| field.hint.size <= 100 }, [true, true, true])
@@ -161,14 +164,14 @@ check("back on Classic the Save takes its place again", [field_of(form, :difficu
 MGQ_MpWorld::Directory.create("Raid Night", "", 4, false, true, "Save01.rvdata2=Save/Save01.rvdata2", :type => "raid", :share => "story", :difficulty => 3)
 args = $calls.last[2]
 check("a Raid World goes without a starting save and the player's choice, with its difficulty", [$calls.last[1], args[4], args[5], args[12], args[14]],
-      ["pplllpppplppppl", 0, "\0", "raid\0", 3])
+      ["pplllpppplppppll", 0, "\0", "raid\0", 3])
 MGQ_MpWorld::Directory.create("Raid Plain", "", 4, false, false, "", :type => "raid")
 check("on NORMAL unless told otherwise", $calls.last[2][14], 0)
 MGQ_MpWorld::Directory.create("Plain", "", 4, false, true, "Save01.rvdata2=Save/Save01.rvdata2", :difficulty => 3)
 check("a Classic world keeps both, and its difficulty is left at NORMAL, which the relay drops", [$calls.last[2][4], $calls.last[2][5], $calls.last[2][14]],
       [1, "Save01.rvdata2=Save/Save01.rvdata2\0", 0])
 MGQ_MpWorld::Directory.edit("r1", 6, "", "", nil, -2)
-check("an edit hands a Raid World's difficulty to the DLL", [$calls.last[1], $calls.last[2][6..7]], ["plppplll", [-2, 1]])
+check("an edit hands a Raid World's difficulty to the DLL", [$calls.last[1], $calls.last[2][6..7]], ["plppplllll", [-2, 1]])
 MGQ_MpWorld::Directory.edit("w1", 6, "", "")
 check("and none for a Classic world", $calls.last[2][6..7], [0, 0])
 
@@ -177,7 +180,7 @@ listed = MGQ_MpWorld::Directory::ListedWorld.new("r1", 4, 0, "me", 0, "Me", "Rai
 edit = MGQ_MpWorld::Form.edit(listed, true)
 check("a Raid World's edit form has the Difficulty switch below Max Players, on its difficulty",
       [edit.fields.map { |field| field.key }, field_of(edit, :seats).side, field_of(edit, :difficulty).side, field_of(edit, :difficulty).choices.size, edit.difficulty],
-      [[:seats, :difficulty, :mods, :data, :shared, :description, :confirm], nil, nil, 7, 2])
+      [[:seats, :difficulty, :mods, :data, :shared, :other_mods_off, :description, :confirm], nil, nil, 7, 2])
 listed.difficulty = nil
 unset = MGQ_MpWorld::Form.edit(listed, false)
 check("on Per player for a Raid World that sets none yet, its first outcome", [field_of(unset, :difficulty).choices.first, unset[:difficulty], unset.difficulty], ["Per player", 0, nil])

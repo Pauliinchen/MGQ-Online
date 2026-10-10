@@ -2,7 +2,8 @@
 //  Exports.Directory.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-09: Took a Raid World's difficulty in mp_dir_create and mp_dir_edit
+//      Paulinchen  2026-10-09: Took whether a world turns other mods off in mp_dir_create and mp_dir_edit
+//                            - Took a Raid World's difficulty in mp_dir_create and mp_dir_edit
 //      Paulinchen  2026-10-08: Took the world's type and how a Raid World shares companions in mp_dir_create
 //      Paulinchen  2026-10-06: Added mp_dir_unlock_code, which opens a world with its world code
 //                            - Added mp_dir_set_settings, which replaces a world's mod settings, and left them out of mp_dir_edit
@@ -127,9 +128,10 @@ internal static unsafe partial class Exports
     /// <param name="type">The world's type, "classic" or "raid", UTF-8 and null-terminated; empty for Classic.</param>
     /// <param name="share">How a Raid World shares companions, "off", "story" or "all", UTF-8 and null-terminated; empty for off.</param>
     /// <param name="difficulty">The difficulty a Raid World sets for every player, the game's own value from -2 (VERY EASY) to 4 (PARADOX); left out for a Classic world.</param>
+    /// <param name="otherModsOff">1 to turn off every mod of its players the world does not name, 0 to leave their mods on; any other value leaves it to the relay, which turns them off in a Raid World only.</param>
     /// <returns>1 when started, 0 while another action runs, for seats or a Raid World's difficulty out of range or when it failed.</returns>
     [UnmanagedCallersOnly(EntryPoint = "mp_dir_create", CallConvs = [typeof(CallConvStdcall)])]
-    public static int DirectoryCreate(byte* name, byte* password, int seats, int hidden, int choose, byte* start, byte* description, byte* mods, byte* data, int strict, byte* modHashes, byte* settings, byte* type, byte* share, int difficulty)
+    public static int DirectoryCreate(byte* name, byte* password, int seats, int hidden, int choose, byte* start, byte* description, byte* mods, byte* data, int strict, byte* modHashes, byte* settings, byte* type, byte* share, int difficulty, int otherModsOff)
     {
         try
         {
@@ -143,7 +145,7 @@ internal static unsafe partial class Exports
                 return 0;
             }
 
-            return WorldDirectory.Current.Create(Text(name), Text(password), seats, hidden == 1, choose == 1, StartFiles(Text(start)), about, worldType, sharing, raid ? difficulty : null) ? 1 : 0;
+            return WorldDirectory.Current.Create(Text(name), Text(password), seats, hidden == 1, choose == 1, StartFiles(Text(start)), about, worldType, sharing, raid ? difficulty : null, FlagOf(otherModsOff)) ? 1 : 0;
         }
         catch (Exception ex)
         {
@@ -216,8 +218,9 @@ internal static unsafe partial class Exports
     }
 
     /// <summary>
-    /// Changes a world's seats, description, mods and a Raid World's difficulty, which only its
-    /// creator or one of the relay's admins may, and for its creator its mod hashes. Returns at once.
+    /// Changes a world's seats, description, mods, whether it turns other mods off and a Raid World's
+    /// difficulty, which only its creator or one of the relay's admins may, and for its creator its
+    /// mod hashes. Returns at once.
     /// </summary>
     /// <param name="id">The world, UTF-8 and null-terminated.</param>
     /// <param name="seats">How many games it seats at once, 2 to 32.</param>
@@ -227,20 +230,23 @@ internal static unsafe partial class Exports
     /// <param name="own">1 when the player is the world's creator, whose mod hashes go along; 0 for an admin, who leaves them.</param>
     /// <param name="difficulty">A Raid World's new difficulty, the game's own value from -2 (VERY EASY) to 4 (PARADOX).</param>
     /// <param name="setDifficulty">1 when the world is a Raid World, whose difficulty goes along; 0 to leave it out.</param>
-    /// <returns>1 when started, 0 while another action runs, for seats or a difficulty out of range or when it failed.</returns>
+    /// <param name="otherModsOff">1 when the world now turns off every mod of its players it does not name, 0 when it leaves their mods on.</param>
+    /// <param name="setOtherModsOff">1 when the player changed whether the world turns other mods off, which then goes along; 0 to leave it out.</param>
+    /// <returns>1 when started, 0 while another action runs, for seats or a difficulty out of range, for neither 0 nor 1 whether other mods are off, or when it failed.</returns>
     [UnmanagedCallersOnly(EntryPoint = "mp_dir_edit", CallConvs = [typeof(CallConvStdcall)])]
-    public static int DirectoryEdit(byte* id, int seats, byte* description, byte* mods, byte* modHashes, int own, int difficulty, int setDifficulty)
+    public static int DirectoryEdit(byte* id, int seats, byte* description, byte* mods, byte* modHashes, int own, int difficulty, int setDifficulty, int otherModsOff, int setOtherModsOff)
     {
         try
         {
             var hashes = own == 1 ? Text(modHashes) : null;
+            var setOff = setOtherModsOff == 1;
 
-            if (seats is < WorldCode.MinSeats or > WorldCode.MaxSeats || (setDifficulty == 1 && !WorldDifficulty.IsValid(difficulty)))
+            if (seats is < WorldCode.MinSeats or > WorldCode.MaxSeats || (setDifficulty == 1 && !WorldDifficulty.IsValid(difficulty)) || (setOff && FlagOf(otherModsOff) == null))
             {
                 return 0;
             }
 
-            return WorldDirectory.Current.Edit(Text(id), seats, Text(description), Text(mods), hashes, setDifficulty == 1 ? difficulty : null) ? 1 : 0;
+            return WorldDirectory.Current.Edit(Text(id), seats, Text(description), Text(mods), hashes, setDifficulty == 1 ? difficulty : null, setOff ? otherModsOff == 1 : null) ? 1 : 0;
         }
         catch (Exception ex)
         {
@@ -367,6 +373,18 @@ internal static unsafe partial class Exports
             return 0;
         }
     }
+
+    /// <summary>
+    /// Reads a yes or no the game script hands over as a number.
+    /// </summary>
+    /// <param name="value">1 for yes, 0 for no.</param>
+    /// <returns>The answer, <see langword="null"/> for any other value.</returns>
+    private static bool? FlagOf(int value) => value switch
+    {
+        1 => true,
+        0 => false,
+        _ => null,
+    };
 
     /// <summary>
     /// Reads the files of a starting save as the game script lists them.

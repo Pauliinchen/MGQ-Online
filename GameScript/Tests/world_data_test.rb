@@ -2,7 +2,10 @@
 #  world_data_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-09: Expected the Difficulty switch in place of the Save in the World panel of a Raid World's new world form, a new Raid World's difficulty kept for its folder, and the longer calls of mp_dir_create and mp_dir_edit
+#      Paulinchen  2026-10-09: Expected Sharing companions in place of the starting point in a Raid World's new world form, Turn off other mods in the
+#                              edit form, the calls of mp_dir_create and mp_dir_edit with it, and loaded world_mods_parking.rbx, which the world screen calls
+#                            - Checked that the hints of the edit forms fit two lines too
+#                            - Expected the Difficulty switch in place of the Save in the World panel of a Raid World's new world form, a new Raid World's difficulty kept for its folder, and the longer calls of mp_dir_create and mp_dir_edit
 #                            - Checked that editing a Raid World sends its difficulty only when it changed, offers Per player for one that sets none, and says when its players play on a new one
 #      Paulinchen  2026-10-08: Expected the starting point in the World panel of the new world's form, which keeps the form on one page with the world type, and the longer call of mp_dir_create
 #                            - Checked that a new world goes to the DLL as Classic, or as a Raid World with how it shares companions
@@ -98,6 +101,7 @@ load_script "ui"
 load_script "ui_text_box"
 load_script "world"
 load_script "world_mods"
+load_script "world_mods_parking"
 load_script "world_text"
 load_script "world_screen"
 
@@ -249,10 +253,10 @@ description = form.fields.find { |field| field.key == :description }
 check("the description is a box of several lines in a panel of its own", [description.kind, description.lines, description.group, description.max_chars], [:area, 4, "Description", MGQ_MpWorld::MAX_DESCRIPTION_CHARS])
 check("the mods and the mismatch checkbox share the Game data panel", [:mods, :mismatch].map { |key| field = form.fields.find { |candidate| candidate.key == key }; [field.kind, field.label, field.group] }, [[:mods, "Mods", "Game data"], [:check, "Allow data mismatch", "Game data"]])
 check("the world type and the starting point share the World panel", form.fields.select { |field| field.group == "World" }.map { |field| field.label },
-      ["Name", "Password", "Max Players", "Hidden", "World type", "Sharing companions", "Shared save", "Player's choice", "Save"])
+      ["Name", "Password", "Max Players", "Hidden", "World type", "Shared save", "Player's choice", "Save"])
 form[:type] = 1
-check("a Raid World has the Difficulty in place of the Save", form.fields.select { |field| field.group == "World" }.map { |field| field.label },
-      ["Name", "Password", "Max Players", "Hidden", "World type", "Sharing companions", "Shared save", "Player's choice", "Difficulty"])
+check("a Raid World has Sharing companions in place of the starting point and the Difficulty in place of the Save", form.fields.select { |field| field.group == "World" }.map { |field| field.label },
+      ["Name", "Password", "Max Players", "Hidden", "World type", "Sharing companions", "Difficulty"])
 form[:type] = 0
 check("a description is tidied", form.check(description, "  A slow run.  "), ["A slow run.", nil])
 check("and may be empty", form.check(description, "  "), ["", nil])
@@ -313,7 +317,7 @@ strict_form[:share] = 0
 
 # The directory.
 MGQ_MpWorld::Directory.create("W", "p", 4, false, false, "", :description => "A slow run.", :mods => "Some Mod", :data => modded, :strict => true)
-check("create hands the description, the mods, the game data and the rule to the DLL", [$calls.last[1], $calls.last[2][6..9]], ["pplllpppplppppl", ["A slow run.\0", "Some Mod\0", "#{modded}\0", 1]])
+check("create hands the description, the mods, the game data and the rule to the DLL", [$calls.last[1], $calls.last[2][6..9]], ["pplllpppplppppll", ["A slow run.\0", "Some Mod\0", "#{modded}\0", 1]])
 MGQ_MpWorld::Directory.create("W", "p", 4, false, false, "")
 check("or nothing", $calls.last[2][6..9], ["\0", "\0", "\0", 0])
 $dll["mp_dir_list"] = "state=ready\n\n" \
@@ -625,12 +629,15 @@ form.edit = nil
 check("a description may be 1000 characters long", MGQ_MpWorld::MAX_DESCRIPTION_CHARS, 1000)
 
 # The hints, which share two lines at the top of the world screen.
-long = (MGQ_MpWorld::Form.create.fields + MGQ_MpWorld::Form.join.fields).select { |field| field.hint.size > 100 }
+hinted_raid = listed[1].dup
+hinted_raid.type = MGQ_MpWorld::RAID
+edits = (listed + [hinted_raid]).flat_map { |world| MGQ_MpWorld::Form.edit(world).fields + MGQ_MpWorld::Form.edit(world, true).fields }
+long = (MGQ_MpWorld::Form.create.fields + MGQ_MpWorld::Form.join.fields + edits).select { |field| field.hint.size > 100 }
 check("every field's hint fits two lines", long.map { |field| field.key }, [])
 
 # Changing a world.
 edit = MGQ_MpWorld::Form.edit(listed[1])
-check("the edit form holds what may change, filled in as the world is", [edit.title, edit.fields.map { |field| field.key }, edit[:seats], edit[:mods], edit[:description]], ["Edit Loose", [:seats, :mods, :description, :confirm], "4", "Some Mod", "A slow run through part one of the story with friends."])
+check("the edit form holds what may change, filled in as the world is", [edit.title, edit.fields.map { |field| field.key }, edit[:seats], edit[:mods], edit[:description]], ["Edit Loose", [:seats, :mods, :other_mods_off, :description, :confirm], "4", "Some Mod", "A slow run through part one of the story with friends."])
 check("and may be sent as it is", edit.problem, nil)
 offered = lambda do |me, admin|
   scene = new_scene
@@ -655,7 +662,7 @@ scene.form[:mods] = ""
 $calls.clear
 scene.send_form
 check("sending it hands the changes to the DLL, a Classic world without a difficulty", [$calls.last[0], $calls.last[1], $calls.last[2], scene.instance_variable_get(:@busy)],
-      ["mp_dir_edit", "plppplll", ["w2\0", 8, "A slow run through part one of the story with friends.\0", "\0", "\0", 0, 0, 0], "edit"])
+      ["mp_dir_edit", "plppplllll", ["w2\0", 8, "A slow run through part one of the story with friends.\0", "\0", "\0", 0, 0, 0, 0, 0], "edit"])
 $dll["mp_dir_action"] = "state=done\nkind=edit\n\n"
 scene.follow_action
 check("once changed, the form closes and the screen says so", [scene.form, said(scene)], [nil, "Loose was changed."])
@@ -947,9 +954,9 @@ check("the creator of a world for the same data whose game differs is told where
 
 # The edit form of a world's creator.
 own_edit = MGQ_MpWorld::Form.edit(listed[1], true)
-check("the creator's edit form has a button that updates the data scan", [own_edit.fields.map { |field| field.key }, own_edit.fields[2].kind, own_edit.fields[2].label, own_edit.fields[2].group], [[:seats, :mods, :data, :shared, :description, :confirm], :button, "Update current data scan", "Game data"])
+check("the creator's edit form has a button that updates the data scan", [own_edit.fields.map { |field| field.key }, own_edit.fields[2].kind, own_edit.fields[2].label, own_edit.fields[2].group], [[:seats, :mods, :data, :shared, :other_mods_off, :description, :confirm], :button, "Update current data scan", "Game data"])
 check("and Shared Mod Settings, unticked while the world leaves every player their own", [own_edit.fields[3].kind, own_edit.fields[3].label, own_edit.fields[3].group, own_edit[:shared]], [:check, "Shared Mod Settings", "Game data", false])
-check("another editor's form does not", MGQ_MpWorld::Form.edit(listed[1]).fields.map { |field| field.key }, [:seats, :mods, :description, :confirm])
+check("another editor's form does not", MGQ_MpWorld::Form.edit(listed[1]).fields.map { |field| field.key }, [:seats, :mods, :other_mods_off, :description, :confirm])
 scene = new_scene
 scene.instance_variable_set(:@me, "c")
 scene.instance_variable_set(:@entry, entries[1])
@@ -965,7 +972,7 @@ check("the button hands this game's data to the DLL at once, without asking", [$
 $dll["mp_dir_action"] = "state=done\nkind=data\n\n"
 scene.follow_action
 check("and leaves the form open", [scene.form.title, said(scene)], ["Edit Loose", "The data scan of Loose was updated to your game."])
-form_window.select(5)
+form_window.select(6)
 $calls.clear
 scene.on_field
 check("the form's own button still saves the other changes", $calls.last[0], "mp_dir_edit")
@@ -976,7 +983,7 @@ scene.follow_action
 check("with Shared Mod Settings as it was, no mod settings are sent", [$calls.map(&:first).include?("mp_dir_set_settings"), said(scene)], [false, "Loose was changed."])
 scene.on_edit_world
 scene.form[:shared] = true
-form_window.select(5)
+form_window.select(6)
 scene.on_field
 $calls.clear
 scene.follow_action
@@ -988,7 +995,7 @@ entries[1].listed.settings = "@shared=o:1;mod_level_cap=i:0"
 scene.on_edit_world
 check("a world that shares them has it ticked", scene.form[:shared], true)
 scene.form[:shared] = false
-form_window.select(5)
+form_window.select(6)
 scene.on_field
 $dll["mp_dir_action"] = "state=done\nkind=edit\n\n"
 $calls.clear

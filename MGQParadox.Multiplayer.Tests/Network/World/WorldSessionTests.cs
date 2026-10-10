@@ -2,7 +2,8 @@
 //  WorldSessionTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-09: Covered the relay's word of a Raid World's new difficulty handed to the game script, and a value that is no difficulty ignored
+//      Paulinchen  2026-10-09: Covered the relay's word that a world now turns other mods off handed to the game script with its mods, and a value that is neither 0 nor 1 ignored
+//                            - Covered the relay's word of a Raid World's new difficulty handed to the game script, and a value that is no difficulty ignored
 //      Paulinchen  2026-10-08: Covered entering a Raid World, which the relay lets in only games that name it in the features header
 //                            - Read the relay's chat lines under its lock, and covered chat lines that come too fast and the relay saying so
 //      Paulinchen  2026-10-07: Covered a chat line mirrored to the relay and an admin's line handed to the game script
@@ -392,6 +393,35 @@ public sealed class WorldSessionTests
         relay.Tell(room, $"{WorldSession.DifficultyKind} -2");
         var told = NextEntry(session);
         Assert.Equal((WorldSession.DifficultyKind, "-2"), (told[Message.Kind], told[WorldSession.ValueHeader]));
+
+        session.Close();
+    }
+
+    /// <summary>
+    /// Asserts that the relay's word that a world now turns other mods off, sent as its creator's
+    /// edit changes it, reaches the game script as a mods rule entry with the world's mods, and that
+    /// a value that is neither 0 nor 1 is ignored.
+    /// </summary>
+    [Fact]
+    public void ModsRule_ReachesTheGame()
+    {
+        using var relay = new TestRelay();
+        var code = MakeWorld(relay, 4);
+        var session = NewSession(relay.Address);
+        var room = Relays.WorldRoomOf(WorldCode.Parse(code)!.Token);
+
+        session.Open(code);
+        AwaitState(session, "open");
+        Drain(session);
+
+        relay.Tell(room, $"{WorldSession.ModsRuleKind} 2\t!Level Cap");
+        Assert.Equal("done", WorldDirectoryTests.Act(Creator(relay), directory => directory.Edit(room, 4, string.Empty, "!Level Cap, Victory Screen", null, null, true))["state"]);
+        var told = NextEntry(session);
+        Assert.Equal((WorldSession.ModsRuleKind, "1", "!Level Cap, Victory Screen"), (told[Message.Kind], told[WorldSession.ValueHeader], told[WorldSession.ModsHeader]));
+
+        relay.Tell(room, $"{WorldSession.ModsRuleKind} 0");
+        told = NextEntry(session);
+        Assert.Equal((WorldSession.ModsRuleKind, "0", string.Empty), (told[Message.Kind], told[WorldSession.ValueHeader], told[WorldSession.ModsHeader]));
 
         session.Close();
     }

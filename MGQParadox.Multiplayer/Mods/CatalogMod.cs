@@ -2,6 +2,8 @@
 //  CatalogMod.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-09: Knew whether the catalog marks the mod personal, which a world that turns other mods off never turns off
+//                            - Named the kind of an entry of a name alone, which only marks a mod personal
 //      Paulinchen  2026-10-06: Removed VersionOf, which only the game script needs
 //                            - Knew the version whose Mod Config options the relay keeps
 //                            - Told a link to a zip of a release from a link to a script
@@ -25,8 +27,14 @@ namespace MGQParadox.Multiplayer.Mods;
 /// <param name="FileUrl">A link mod's release file on GitHub; empty for an upload.</param>
 /// <param name="Archive">Whether a link mod's release file is a zip laid out as in Patch rather than a script.</param>
 /// <param name="OptionsVersion">The version whose Mod Config options the relay keeps; empty before an admin's game sent any.</param>
-internal sealed record CatalogMod(string Key, string Name, string Kind, string Version, IReadOnlyDictionary<string, string> Files, IReadOnlyList<ModVersion> Versions, string FileUrl, bool Archive = false, string OptionsVersion = "")
+/// <param name="Personal">Whether the catalog marks the mod personal, so a world that turns other mods off never turns it off.</param>
+internal sealed record CatalogMod(string Key, string Name, string Kind, string Version, IReadOnlyDictionary<string, string> Files, IReadOnlyList<ModVersion> Versions, string FileUrl, bool Archive = false, string OptionsVersion = "", bool Personal = false)
 {
+    /// <summary>
+    /// The kind of an entry of a name alone, without anything to download, which only marks a mod personal.
+    /// </summary>
+    public const string NameKind = "name";
+
     /// <summary>
     /// Whether an admin uploaded the mod's files, which the relay hands out; else it is on GitHub.
     /// </summary>

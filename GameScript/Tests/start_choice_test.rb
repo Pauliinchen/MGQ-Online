@@ -3,6 +3,8 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-09: Expected the longer call of mp_dir_create, which takes a Raid World's difficulty
+#                            - Expected Player's choice on the row Sharing companions takes in a Raid World's form, the call of mp_dir_create with
+#                              Turn off other mods, and loaded world_mods_parking.rbx, which the world screen calls
 #      Paulinchen  2026-10-08: Expected Player's choice in the form's World panel below Sharing companions, and the longer call of mp_dir_create
 #      Paulinchen  2026-10-07: Looked each DLL call's signature up in the export table of Multiplayer.rb
 #                            - Checked that every text of the save screen fits its line of help
@@ -81,6 +83,7 @@ load_script "ui"
 load_script "ui_text_box"
 load_script "world"
 load_script "world_mods"
+load_script "world_mods_parking"
 load_script "world_text"
 load_script "world_screen"
 
@@ -161,7 +164,7 @@ end
 # The form.
 form = MGQ_MpWorld::Form.create
 choose = form.fields.find { |field| field.key == :choose }
-check("the form has a Player's choice checkbox beside Shared save", [choose.kind, choose.row, choose.side, choose.label, choose.group], [:check, 4, :right, "Player's choice", "World"])
+check("the form has a Player's choice checkbox beside Shared save", [choose.kind, choose.row, choose.side, choose.label, choose.group], [:check, 3, :right, "Player's choice", "World"])
 check("Players choose starts unticked", form[:choose], false)
 check("the button comes last", form.fields.last.row, 9)
 check("a form with Players choose ticked alone can be sent", (form[:name] = "W"; form[:password] = "p"; form[:choose] = true; form.problem), nil)
@@ -171,7 +174,7 @@ $dll["mp_dir_list"] = "state=ready\n\nworld\tw1\t4\t0\tc\t0\tC\tFree\tnone\t0\t1
 _, _, listed, = MGQ_MpWorld::Directory.list
 check("the list reads which worlds let their players choose", listed.map { |world| world.choose }, [true, false, false])
 MGQ_MpWorld::Directory.create("W", "p", 4, false, true, "")
-check("create hands Players choose to the DLL", $calls.last[0..1] + [$calls.last[2][4]], ["mp_dir_create", "pplllpppplppppl", 1])
+check("create hands Players choose to the DLL", $calls.last[0..1] + [$calls.last[2][4]], ["mp_dir_create", "pplllpppplppppll", 1])
 
 # What the details say.
 detail = Window_MpWorldDetail.allocate

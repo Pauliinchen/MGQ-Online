@@ -4,7 +4,9 @@
 //  Changelog:
 //      Paulinchen  2026-10-10: Covered the player's name member tells a world room
 //                            - Covered an edit that sends a Raid World's difficulty unchanged telling the world room nothing, and the first difficulty of a world made without one
-//      Paulinchen  2026-10-09: Covered telling a world room whether a key is an admin's
+//      Paulinchen  2026-10-09: Covered whether a world turns other mods off: by type, as made, changed by its creator or an admin only, read by type for worlds kept from before, and told to the world room with the mods on a change only
+//                            - Expected mods past 300 characters refused instead of cut
+//                            - Covered telling a world room whether a key is an admin's
 //                            - Covered a Raid World's difficulty: kept, listed, changed by its creator or an admin only, refused for a Classic world and out of range
 //                            - Covered a Raid World refused with a starting save or a player's choice, and its starting save upload refused
 //                            - Covered member's refusal during an upload with a Classic world, since a Raid World takes no starting save
@@ -37,7 +39,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { DIRECTORY_LIMITS, Directory, cleanName, handleDirectoryRequest, parseAdmins, playerIdOf, sha256Hex } from "./directory.js";
+import { DIRECTORY_LIMITS, Directory, MODS_RULE_TEXT, cleanName, handleDirectoryRequest, modsRuleText, parseAdmins, playerIdOf, sha256Hex } from "./directory.js";
 import { FEATURE, RateLimiter, parseFeatures } from "./relay.js";
 
 /**
@@ -139,6 +141,7 @@ test("a made world is listed without its hashes or lock, with the creator as its
   assert.equal(body.worlds[0].featured, false);
   assert.equal(body.worlds[0].type, "classic");
   assert.equal(body.worlds[0].share, "off");
+  assert.equal(body.worlds[0].otherModsOff, false);
   assert.equal(JSON.stringify(body).includes("authHash"), false);
   assert.equal(JSON.stringify(body).includes("box"), false);
   assert.notEqual(creator, CREATOR);
@@ -151,7 +154,7 @@ test("a world is refused twice, with bad fields, or beyond a creator's limit", a
   assert.equal((await directory.create(await newWorld())).status, 409);
   assert.equal((await directory.create(await newWorld({ id: "1".repeat(32) }))).status, 429);
 
-  for (const bad of [{ start: "yes" }, { hidden: 1 }, { choose: "no" }, { open: "yes" }, { featured: 1 }, { description: 5 }, { mods: [] }, { data: "A B" }, { data: "x".repeat(161) }, { strict: "yes" }, { type: "duel" }, { type: true }, { share: "some" }, { share: 1 }, { seats: 1 }, { seats: 33 }, { name: " " }, { id: "xyz" }, { player: "short" }, { authHash: "00" }, { lock: { salt: "12", iterations: 200_000, box: "ab" } }, { lock: { salt: "12".repeat(16), iterations: 10, box: "ab" } }]) {
+  for (const bad of [{ start: "yes" }, { hidden: 1 }, { choose: "no" }, { open: "yes" }, { featured: 1 }, { description: 5 }, { mods: [] }, { data: "A B" }, { data: "x".repeat(161) }, { strict: "yes" }, { type: "duel" }, { type: true }, { share: "some" }, { share: 1 }, { otherModsOff: "yes" }, { otherModsOff: 1 }, { otherModsOff: null }, { mods: "x".repeat(301) }, { seats: 1 }, { seats: 33 }, { name: " " }, { id: "xyz" }, { player: "short" }, { authHash: "00" }, { lock: { salt: "12", iterations: 200_000, box: "ab" } }, { lock: { salt: "12".repeat(16), iterations: 10, box: "ab" } }]) {
     assert.equal((await directory.create(await newWorld({ id: "2".repeat(32), player: OTHER, ...bad }))).status, 400, JSON.stringify(bad));
   }
 });
@@ -175,11 +178,11 @@ test("a world whose new players choose where to start says so in the list and th
 
 test("a world tells what its creator wrote about it and which games may enter", async () => {
   const { directory } = newDirectory();
-  await directory.create(await newWorld({ description: "  A slow run\tthrough part one.  ", mods: "x".repeat(320), data: "1:0a1b2c3d.ffffffff", strict: true }));
+  await directory.create(await newWorld({ description: "  A slow run\tthrough part one.  ", mods: ` ${"x".repeat(300)}\t `, data: "1:0a1b2c3d.ffffffff", strict: true }));
 
   const world = (await directory.list()).body.worlds[0];
   assert.equal(world.description, "A slow runthrough part one.");
-  assert.equal(world.mods, "x".repeat(300));
+  assert.equal(world.mods, "x".repeat(300), "300 characters are kept once tidied");
   assert.equal(world.data, "1:0a1b2c3d.ffffffff");
   assert.equal(world.strict, true);
 });

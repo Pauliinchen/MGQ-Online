@@ -2,7 +2,9 @@
 //  WorldModsTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-09: Expected the empty difficulty of a Classic world at the end of its line
+//      Paulinchen  2026-10-09: Covered the mods the catalog marks personal, an entry of a name alone among them, told to the game script and read by the client
+//                            - Expected whether a Classic world turns other mods off at the end of its line
+//                            - Expected the empty difficulty of a Classic world at the end of its line
 //      Paulinchen  2026-10-08: Expected a world's type and companion sharing at the end of its line
 //                            - Covered reading whether the relay kept the Mod Config options sent
 //      Paulinchen  2026-10-06: Covered the Mod Config options sent for a catalog mod, and the version the relay keeps them of
@@ -86,6 +88,50 @@ public sealed class WorldModsTests
         ListState(player);
 
         Assert.Contains("opts\tlevelcap\t1.3.5", Message.Decode(player.DescribeMods()).Team.Split('\n'));
+    }
+
+    /// <summary>
+    /// Asserts that the game script is told every mod the catalog marks personal, an entry of a name
+    /// alone too, which is no mod to install.
+    /// </summary>
+    [Fact]
+    public void Refresh_TellsThePersonalMods()
+    {
+        using var relay = new TestRelay();
+        var entry = LinkEntry("1.4.0", "bb");
+        entry["personal"] = true;
+        relay.CatalogMods.Add(entry);
+        relay.CatalogMods.Add(new JsonObject
+        {
+            ["key"] = "victoryscreen", ["name"] = "Victory_Screen", ["kind"] = "name", ["version"] = string.Empty, ["fileUrl"] = string.Empty,
+            ["files"] = new JsonObject(), ["versions"] = new JsonArray(), ["personal"] = true,
+        });
+        var player = NewDirectory(relay, CreatorKey, "Player");
+
+        ListState(player);
+        var lines = Message.Decode(player.DescribeMods()).Team.Split('\n', System.StringSplitOptions.RemoveEmptyEntries);
+
+        Assert.Equal(["personal\tlevelcap\tLevel Cap", "personal\tvictoryscreen\tVictory_Screen"], lines.Where(line => line.StartsWith("personal\t", System.StringComparison.Ordinal)));
+        Assert.DoesNotContain(lines, line => line.StartsWith("mod\tvictoryscreen\t", System.StringComparison.Ordinal));
+        Assert.Contains(lines, line => line.StartsWith("mod\tlevelcap\t", System.StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// Asserts that the client reads the personal flag of a listed mod, and a mod of a name alone that
+    /// a relay lists for an admin as personal only, never as a mod to install.
+    /// </summary>
+    [Fact]
+    public void Mods_ReadsThePersonalFlag()
+    {
+        using var relay = new TestRelay();
+        var entry = LinkEntry("1.4.0", "bb");
+        entry["personal"] = true;
+        relay.CatalogMods.Add(entry);
+
+        var catalog = new DirectoryClient(relay.Address).Mods();
+
+        Assert.True(Assert.Single(catalog.Mods).Personal);
+        Assert.Equal(new PersonalMod("levelcap", "Level Cap"), Assert.Single(catalog.Personal));
     }
 
     /// <summary>
@@ -188,13 +234,13 @@ public sealed class WorldModsTests
         var hashes = $"Some Mod={new string('a', 64)}";
 
         var made = Act(creator, directory => directory.Create("Modded", "secret", 4, false, false, [], new WorldAbout(string.Empty, "!Some Mod", string.Empty, false, hashes, "key=i:1")));
-        Assert.Contains(List(creator), line => line.StartsWith($"world\t{made["world"]}\t") && line.EndsWith($"\t{hashes}\tkey=i:1\tclassic\toff\t"));
+        Assert.Contains(List(creator), line => line.StartsWith($"world\t{made["world"]}\t") && line.EndsWith($"\t{hashes}\tkey=i:1\tclassic\toff\t\t0"));
 
         Assert.Equal("done", Act(adminDirectory, directory => directory.Edit(made["world"], 6, "Edited.", "!Some Mod"))["state"]);
-        Assert.Contains(List(creator), line => line.StartsWith($"world\t{made["world"]}\t6\t") && line.EndsWith($"\t{hashes}\tkey=i:1\tclassic\toff\t"));
+        Assert.Contains(List(creator), line => line.StartsWith($"world\t{made["world"]}\t6\t") && line.EndsWith($"\t{hashes}\tkey=i:1\tclassic\toff\t\t0"));
 
         Assert.Equal("done", Act(creator, directory => directory.Edit(made["world"], 6, "Edited.", "!Some Mod", string.Empty))["state"]);
-        Assert.Contains(List(creator), line => line.StartsWith($"world\t{made["world"]}\t") && line.EndsWith("\t\tkey=i:1\tclassic\toff\t"));
+        Assert.Contains(List(creator), line => line.StartsWith($"world\t{made["world"]}\t") && line.EndsWith("\t\tkey=i:1\tclassic\toff\t\t0"));
     }
 
     /// <summary>
@@ -211,10 +257,10 @@ public sealed class WorldModsTests
 
         var made = Act(creator, directory => directory.Create("Modded", "secret", 4, false, false, [], new WorldAbout(string.Empty, "!Some Mod", string.Empty, false, string.Empty, string.Empty)));
         Assert.Equal("done", Act(creator, directory => directory.SetSettings(made["world"], "key=i:1"))["state"]);
-        Assert.Contains(List(creator), line => line.StartsWith($"world\t{made["world"]}\t") && line.EndsWith("\tkey=i:1\tclassic\toff\t"));
+        Assert.Contains(List(creator), line => line.StartsWith($"world\t{made["world"]}\t") && line.EndsWith("\tkey=i:1\tclassic\toff\t\t0"));
 
         Assert.Equal("done", Act(adminDirectory, directory => directory.SetSettings(made["world"], "key=i:2"))["state"]);
-        Assert.Contains(List(creator), line => line.StartsWith($"world\t{made["world"]}\t") && line.EndsWith("\tkey=i:2\tclassic\toff\t"));
+        Assert.Contains(List(creator), line => line.StartsWith($"world\t{made["world"]}\t") && line.EndsWith("\tkey=i:2\tclassic\toff\t\t0"));
         Assert.Equal("failed", Act(guest, directory => directory.SetSettings(made["world"], "key=i:3"))["state"]);
     }
 

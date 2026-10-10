@@ -2,6 +2,7 @@
 //  mods.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-09: Covered personal mods: marked by admins only, kept through kind changes, listed for games checked or not, and mods known by their name alone
 //      Paulinchen  2026-10-08: Covered an older copy's options that do not replace a newer version's
 //      Paulinchen  2026-10-07: Covered the options of any version kept until the current version's arrive
 //                            - Uploaded real zips, whose hashes the relay makes itself, and covered a file list that says otherwise and a header that lies about a file's size
@@ -17,7 +18,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { playerIdOf } from "./directory.js";
-import { MOD_LIMITS, ModCatalog, OTHER_VERSION, handleModRequest, hashModFile, modKey, splitUpload, zipHashes } from "./mods.js";
+import { MOD_LIMITS, ModCatalog, NAME_ONLY, OTHER_VERSION, handleModRequest, hashModFile, modKey, splitUpload, zipHashes } from "./mods.js";
 import { makeUpload, makeZip } from "./test_zip.js";
 
 /**
@@ -449,4 +450,97 @@ test("zipHashes stops inflating an entry past the size its header claims", async
   await assert.rejects(zipHashes(await makeZip([["a.rb", text, true, 200_000]])), /not the size the zip says/);
   await assert.rejects(zipHashes(await makeZip([["a.rb", text, false, 10]])), /not the size the zip says/);
   assert.deepEqual(Object.keys(await zipHashes(await makeZip([["a.rb", text, true]]))), ["a.rb"]);
+});
+
+test("only an admin marks a mod personal, which every game lists, checked or not", async () => {
+  const state = { tag: "v1.4.0", script: "# cap" };
+  const { catalog } = await newCatalog(state);
+  await catalog.setLink(ADMIN, "Level Cap", LATEST);
+
+  assert.equal((await catalog.setPersonal(OTHER, "levelcap", true)).status, 403);
+  assert.equal((await catalog.setPersonal(ADMIN, "nomod", true)).status, 404);
+
+  for (const bad of ["true", 1, null, undefined]) {
+    assert.equal((await catalog.setPersonal(ADMIN, "levelcap", bad)).status, 400, `personal ${bad}`);
+  }
+
+  assert.equal((await catalog.list()).body.mods[0].personal, false);
+  assert.deepEqual((await catalog.list()).body.personal, []);
+
+  const marked = await catalog.setPersonal(ADMIN, "levelcap", true);
+  assert.deepEqual([marked.status, marked.body.mod.personal], [200, true]);
+  assert.equal((await catalog.list()).body.mods[0].personal, true);
+  assert.deepEqual((await catalog.list()).body.personal, [{ key: "levelcap", name: "Level Cap" }]);
+
+  state.status = 404;
+  await catalog.setLink(ADMIN, "Victory Screen", LATEST.replace("Level_Cap", "Victory_Screen"));
+  await catalog.setPersonal(ADMIN, "victoryscreen", true);
+  const listed = (await catalog.list(OTHER)).body;
+  assert.deepEqual(listed.mods.map((mod) => mod.key), ["levelcap"], "a link never read stays out of the mods");
+  assert.deepEqual(listed.personal.map((mod) => mod.key), ["levelcap", "victoryscreen"], "but not out of the personal mods");
+
+  assert.equal((await catalog.setPersonal(ADMIN, "levelcap", false)).body.mod.personal, false);
+  assert.deepEqual((await catalog.list()).body.personal.map((mod) => mod.key), ["victoryscreen"]);
+});
+
+test("an admin adds a mod by its name alone, which is personal and never in the games' list of mods", async () => {
+  const { catalog } = await newCatalog({ tag: "v1", script: "" });
+
+  assert.equal((await catalog.setName(OTHER, "victoryscreen", "Victory_Screen")).status, 403);
+  assert.equal((await catalog.setName(ADMIN, "victoryscreen", " ")).status, 400);
+  assert.equal((await catalog.setName(ADMIN, "other", "Victory_Screen")).status, 400, "the name must have the address's key");
+
+  const added = await catalog.setName(ADMIN, "victoryscreen", "Victory_Screen");
+  assert.equal(added.status, 200);
+  assert.deepEqual([added.body.mod.kind, added.body.mod.personal, added.body.mod.files, added.body.mod.link, added.body.mod.fileUrl], [NAME_ONLY, true, {}, "", ""]);
+
+  const forGames = (await catalog.list(OTHER)).body;
+  assert.deepEqual([forGames.mods, forGames.personal], [[], [{ key: "victoryscreen", name: "Victory_Screen" }]]);
+  assert.deepEqual((await catalog.list(ADMIN)).body.mods.map((mod) => [mod.key, mod.kind]), [["victoryscreen", NAME_ONLY]], "admins see it");
+  assert.equal((await catalog.file("victoryscreen")).status, 404, "there is nothing to download");
+
+  await catalog.setPersonal(ADMIN, "victoryscreen", false);
+  const renamed = await catalog.setName(ADMIN, "victoryscreen", "Victory Screen");
+  assert.deepEqual([renamed.body.mod.name, renamed.body.mod.personal], ["Victory Screen", false], "a rename keeps the flag");
+  assert.equal(await catalog.checkAll(), 0, "the schedule never checks it");
+
+  assert.equal((await catalog.remove(ADMIN, "victoryscreen")).status, 200);
+  assert.deepEqual((await catalog.list(ADMIN)).body.mods, []);
+});
+
+test("a mod known by its name alone is refused for a key the catalog hands out, and a mod keeps personal through kind changes", async () => {
+  const { catalog } = await newCatalog({ tag: "v1.4.0", script: "# cap" });
+  await catalog.setLink(ADMIN, "Level Cap", LATEST);
+  await catalog.setPersonal(ADMIN, "levelcap", true);
+
+  assert.equal((await catalog.setName(ADMIN, "levelcap", "Level_Cap")).status, 409);
+
+  const uploaded = await catalog.upload(ADMIN, "Level Cap", "2.0", (await packed([["Level_Cap.rb", "# two"]])).upload);
+  assert.deepEqual([uploaded.body.mod.kind, uploaded.body.mod.personal], ["upload", true], "link to upload");
+  assert.equal((await catalog.setName(ADMIN, "levelcap", "Level Cap")).status, 409);
+
+  const linked = await catalog.setLink(ADMIN, "Level Cap", LATEST);
+  assert.deepEqual([linked.body.mod.kind, linked.body.mod.personal], ["link", true], "upload to link");
+
+  await catalog.setName(ADMIN, "partysheet", "Party Sheet");
+  const fromName = await catalog.upload(ADMIN, "Party Sheet", "1.0", (await packed([["Party_Sheet.rb", "# sheet"]])).upload);
+  assert.deepEqual([fromName.body.mod.kind, fromName.body.mod.personal], ["upload", true], "name to upload");
+  assert.deepEqual((await catalog.list(OTHER)).body.mods.map((mod) => [mod.key, mod.personal]), [["levelcap", true], ["partysheet", true]]);
+});
+
+test("handleModRequest routes marking a mod personal and adding one by name", async () => {
+  const { catalog } = await newCatalog({ tag: "v1", script: "" });
+  const url = (path) => new URL(`https://relay.test${path}`);
+  const body = (value) => async () => JSON.stringify(value);
+  const none = async () => null;
+
+  const added = await handleModRequest(catalog, "POST", url(`/v1/mods/${encodeURIComponent("victoryscreen")}/name`), body({ player: ADMIN, name: "Victory_Screen" }), none);
+  assert.deepEqual([added.status, added.body.mod.kind], [200, NAME_ONLY]);
+  assert.equal((await handleModRequest(catalog, "POST", url("/v1/mods/victoryscreen/name"), body({ player: OTHER, name: "Victory_Screen" }), none)).status, 403);
+
+  const unmarked = await handleModRequest(catalog, "POST", url("/v1/mods/victoryscreen/personal"), body({ personal: false }), none, ADMIN);
+  assert.deepEqual([unmarked.status, unmarked.body.mod.personal], [200, false], "the player header counts");
+  assert.equal((await handleModRequest(catalog, "POST", url("/v1/mods/victoryscreen/personal"), body({ player: ADMIN, personal: "no" }), none)).status, 400);
+  assert.equal((await handleModRequest(catalog, "POST", url("/v1/mods/nomod/personal"), body({ player: ADMIN, personal: true }), none)).status, 404);
+  assert.equal((await handleModRequest(catalog, "GET", url("/v1/mods/victoryscreen/personal"), body({}), none)).status, 404);
 });

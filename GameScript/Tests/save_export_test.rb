@@ -2,6 +2,7 @@
 #  save_export_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-09: Loaded world_mods_parking.rbx, which the world screen calls
 #      Paulinchen  2026-10-07: Checked the menu's handler once its commands are made
 #      Paulinchen  2026-10-06: Loaded world_mods.rbx, which the world screen calls
 #      Paulinchen  2026-10-04: Followed the scripts to their new names, without mp_
@@ -60,6 +61,7 @@ load_script "ui"
 load_script "ui_text_box"
 load_script "world"
 load_script "world_mods"
+load_script "world_mods_parking"
 load_script "world_screen"
 load_script "world_save_export"
 

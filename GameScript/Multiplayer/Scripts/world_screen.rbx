@@ -2,7 +2,27 @@
 #  world_screen.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-09: Sent a Raid World's difficulty with the new world and, when it changed, with the creator's or an admin's edit, kept it in world.ini as a world is created or entered, and showed it in the details
+#      Paulinchen  2026-10-10: Stayed on the world screen with a notice instead of a plain restart for a world's downloaded mods while mods stay parked,
+#                              saying when parked mods could not be turned back on, and asked for a new start when the restart keeping them failed
+#                            - Kept the game out of a world that turns off scripts behind a link to another drive, before offering its downloads too
+#      Paulinchen  2026-10-09: Asked before entering a world that turns other mods off, then turned them off and started the game again to enter it,
+#                              after opening its lock first when this PC never entered it, or kept the game out while the catalog is unknown
+#                            - Asked before putting back parked mods that a world allows, and kept the game out of every world once it moved
+#                              mods itself, until it starts again
+#                            - Turned other mods off too as the game starts again for a world's downloaded mods, naming them in the offer, after
+#                              opening the world's lock first when this PC never entered it
+#                            - Put the turned-off mods back and went to the title screen, which starts the game again, when the start for a world
+#                              ended without entering it, unless the player looked at the mods or chose a world themselves
+#                            - Refused a full world or one still being set up before anything starts the game again for it
+#                            - Asked the creator of a world that turns other mods off to take the game's data once they are off, then entered it
+#                            - Sent Turn off other mods with the new world and, when it changed, with the creator's or an admin's edit, and kept the
+#                              player's own tick of it in the new world's form
+#                            - Said in a world's details whether it turns other mods off, and listed the player's mods it turns off in its mods box,
+#                              one line per mod with its scripts counted
+#                            - Had the parked mods' journal name the world about to be entered when the mods parked for another world are those it
+#                              turns off, and kept the game out while the DLL cannot list the scripts
+#                            - Told the player that another game of this folder has mods turned off when it keeps them from coming back
+#                            - Sent a Raid World's difficulty with the new world and, when it changed, with the creator's or an admin's edit, kept it in world.ini as a world is created or entered, and showed it in the details
 #                            - Sent neither a starting save nor the player's choice with a new Raid World, which starts from the beginning
 #      Paulinchen  2026-10-08: Showed Raid Worlds in red in the list and the details' title, and their type and companion sharing in the details
 #                            - Sent the new world's type and companion sharing, and kept both in world.ini as a world is created or entered
@@ -163,7 +183,7 @@ class Scene_MpWorlds < Scene_MenuBase
     @detail_window = Window_MpWorldDetail.new(@list_window.width, @info_window.height, @list_window.height)
     @form_window = Window_MpWorldForm.new(@detail_window.x, @detail_window.y, @detail_window.width, @detail_window.height)
     @form_window.set_handler(:ok, method(:on_field))
-    @form_window.set_handler(:cancel, method(:leave_form))
+    @form_window.set_handler(:cancel, method(:on_form_cancel))
     @form_window.on_turn = method(:turn_switch)
     @list_window.set_handler(:world, method(:on_world))
     @list_window.set_handler(:new_world, method(:enter_form))
@@ -380,12 +400,27 @@ class Scene_MpWorlds < Scene_MenuBase
     @entry = entries.find { |entry| entry.id == id }
     unless @entry && state == "ready"
       log_screen("not entering world #{MGQ_MpWorld.short(id)} again after the restart: not in the list (list #{state})")
-      return say("The world you restarted for is not in the list right now.")
+      say("The world you restarted for is not in the list right now.")
+      return MGQ_MpModParking.holding? ? give_up_parking : nil
     end
 
     log_screen("entering #{entry_text} again after the restart for its mods")
     @data_accepted = false
+    @rejoin_entering = true
     on_enter
+  end
+
+  # Puts back the mods turned off for the world the game started again to enter, once that entry
+  # ended without entering it, and goes to the title screen, which tells why and starts the game
+  # again.
+  #
+  # @param reason [String, nil] Why, what the screen said last unless told otherwise; a question
+  #   the player backed out of tells none.
+  def give_up_parking(reason = @message)
+    log_screen("the entry the mods were turned off for ended without entering the world")
+    @rejoin_entering = false
+    MGQ_MpModParking.give_up(reason.to_s.end_with?("?") ? nil : reason)
+    return_scene
   end
 
   # Tells whether the screen waits for the player, with no action, form, small window, list box or
@@ -437,8 +472,10 @@ class Scene_MpWorlds < Scene_MenuBase
     end
   end
 
-  # Opens what can be done with the chosen world.
+  # Opens what can be done with the chosen world, which the player chose rather than the start
+  # after a restart.
   def on_world
+    @rejoin_entering = false
     @entry = @list_window.current_ext
     @data_accepted = false
     listed = @entry.listed
@@ -461,32 +498,27 @@ class Scene_MpWorlds < Scene_MenuBase
   end
 
   # Enters the chosen world, asking for its password the first time, unless it has none or a
-  # Discord invite into it came. A game whose data differs from the creator's is warned or kept out
-  # first, and every game while the world is full.
+  # Discord invite into it came. A world that turns other mods off is entered only once they are
+  # turned off, after the game started again. A game whose data differs from the creator's is
+  # warned or kept out first, and every game while the world is full or still being set up, before
+  # anything starts the game again for it.
   def on_enter
     listed = @entry.listed
     log_screen("enter #{entry_text}")
+    @park_after_unlock = nil
+    return if listed && !open_now?(listed)
     return if listed && !mods_allow?(listed)
 
     # Its mod settings are noted only as the world opens, so a refused entry leaves nothing behind.
     @entering = [listed, @list_state == "ready"]
-    return if listed && !data_allows?(@entry.name, listed.data, listed.strict, listed.mods, listed.creator_id == @me) { on_enter }
+    return if listed && !parking_allows?(listed)
+    return if listed && !data_allows?(@entry.name, listed.data, listed.strict, listed.mods, listed.creator_id == @me, MGQ_MpModParking.parked_for?(listed)) { on_enter }
 
-    if @entry.listed && @entry.listed.start == "pending"
-      log_screen("not entering #{entry_text}: its creator still sets up its starting save")
-      Sound.play_buzzer
-      say("#{@entry.name} is still being set up by its creator. Try again in a moment.")
-      back_to_list
-    elsif @entry.local && @entry.listed.nil? && (@entry.local.latest_save.nil? || !@entry.gone)
+    if @entry.local && @entry.listed.nil? && (@entry.local.latest_save.nil? || !@entry.gone)
       log_screen("not entering #{entry_text}: #{@entry.gone ? 'no longer in the list' : 'the list has not arrived'}")
       # Without the list, a first entry cannot know where the world's players start, and no entry
       # which mods and game data the world asks for.
       refuse(@entry.gone ? "#{@entry.name} is no longer in the list: it was deleted, or you were removed." : "#{@entry.name} is not in the list right now. Try again once the list has loaded.")
-      back_to_list
-    elsif @entry.listed && full?(@entry.listed)
-      log_screen("not entering #{entry_text}: full (#{@entry.listed.online}/#{@entry.listed.seats} online)")
-      Sound.play_buzzer
-      say("#{@entry.name} is full right now.")
       back_to_list
     elsif @entry.local
       listed = @entry.listed
@@ -502,6 +534,27 @@ class Scene_MpWorlds < Scene_MenuBase
     else
       ask_password
     end
+  end
+
+  # Decides whether a world takes players now: not while its creator still sets up its starting
+  # save, nor while it is full.
+  #
+  # @param listed [MGQ_MpWorld::Directory::ListedWorld] The world.
+  # @return [Boolean] Whether entering goes on now.
+  def open_now?(listed)
+    if listed.start == "pending"
+      log_screen("not entering #{entry_text}: its creator still sets up its starting save")
+      Sound.play_buzzer
+      say("#{@entry.name} is still being set up by its creator. Try again in a moment.")
+    elsif full?(listed)
+      log_screen("not entering #{entry_text}: full (#{listed.online}/#{listed.seats} online)")
+      Sound.play_buzzer
+      say("#{@entry.name} is full right now.")
+    else
+      return true
+    end
+    back_to_list
+    false
   end
 
   # Tells whether a world has no seat left for the player.
@@ -549,15 +602,22 @@ class Scene_MpWorlds < Scene_MenuBase
 
     @mod_rows = rows
     unavailable = rows.reject { |row| row.downloadable? }
+    plan = unavailable.empty? ? MGQ_MpModParking.change_for(listed) : nil
 
     if unavailable.size == rows.size && rows.all? { |row| row.yours == "not installed" }
       log_screen("kept out of #{entry_text}: required mods missing, none in the catalog")
       refuse("#{@entry.name} needs #{rows.map(&:name).join(', ')}: no such script in your Patch folder.")
       back_to_list
+    elsif plan == :elsewhere
+      # The restart for the downloads would be wasted: the entry after it is refused for this.
+      log_screen("kept out of #{entry_text} before downloading its mods: scripts it turns off lie behind a link to another drive")
+      refuse(MGQ_MpModParking.elsewhere_text(listed))
+      back_to_list
     elsif unavailable.empty?
       log_screen("offered to download #{rows.map(&:name).join(', ')} for #{entry_text} and restart")
       @confirming = :mods
-      say(MGQ_MpWorldMods.summary(@entry.name, rows))
+      # The restart for the downloads turns other mods off too.
+      say(MGQ_MpWorldMods.summary(@entry.name, rows) + MGQ_MpModParking.also_text(plan))
       @confirm_window.start([["Download and restart", :yes], ["See the mods", :show_mods], ["Back", :cancel]])
     else
       log_screen("kept out of #{entry_text}: #{unavailable.map(&:name).join(', ')} only from the author, no download offered")
@@ -569,8 +629,102 @@ class Scene_MpWorlds < Scene_MenuBase
     false
   end
 
-  # Shows each required mod with the player's and the world's version.
+  # Decides whether the player's game may enter a world as far as other mods go: a world that turns
+  # them off is entered only with them turned off, which takes a restart, so the player is asked
+  # first. A world this PC never entered has its lock opened first, so the start after the restart
+  # enters it without its password. Mods parked for another world that this one turns off too are
+  # parked for this one, see MGQ_MpModParking.claim.
+  #
+  # @param listed [MGQ_MpWorld::Directory::ListedWorld] The world.
+  # @return [Boolean] Whether entering goes on now.
+  def parking_allows?(listed)
+    plan = MGQ_MpModParking.change_for(listed)
+    if plan.nil?
+      MGQ_MpModParking.claim(listed)
+      return true
+    end
+
+    case plan
+    when :unknown
+      log_screen("kept out of #{entry_text} for now: it turns other mods off, and the catalog, which tells the personal mods, is unknown")
+      refuse(MGQ_MpModParking::CATALOG_TEXT)
+    when :unlisted
+      log_screen("kept out of #{entry_text}: it turns other mods off, and the DLL could not list the scripts")
+      refuse(format(MGQ_MpModParking::SCRIPTS_TEXT, @entry.name))
+    when :elsewhere
+      log_screen("kept out of #{entry_text}: it turns other mods off, and scripts it turns off lie behind a link to another drive")
+      refuse(MGQ_MpModParking.elsewhere_text(listed))
+    when :restart
+      log_screen("kept out of #{entry_text}: this session moved scripts, which load only after a restart")
+      refuse(format(MGQ_MpModParking::RESTART_FIRST_TEXT, @entry.name))
+    end
+    if plan.is_a?(Symbol)
+      back_to_list
+      return false
+    end
+
+    @park_plan = plan
+    return unlock_first if !plan.empty? && @entry.local.nil? && !@entry.open?
+
+    ask_parking
+    false
+  end
+
+  # Opens the lock of a world this PC never entered before its mods are turned off, with the
+  # Discord invite's code or the password the player types; enter_opened then goes on.
+  #
+  # @param after [true, Symbol] What enter_opened does then: true asks to turn the mods off, :mods
+  #   turns them off and starts the game again for the downloaded mods too.
+  # @return [Boolean] false, since entering waits for the lock.
+  def unlock_first(after = true)
+    @park_after_unlock = after
+    code = @invite_codes && @invite_codes[@entry.id]
+    log_screen("opening the lock of #{entry_text} #{code ? 'with the Discord invite' : 'with its password'} before turning other mods off")
+    code ? start_action("unlock") { MGQ_MpWorld::Directory.unlock_code(code) } : ask_password
+    false
+  end
+
+  # Asks whether to turn the player's other mods off, or the parked ones back on, start the game
+  # again and enter the world.
+  def ask_parking
+    if @park_plan.empty?
+      log_screen("#{entry_text} allows the mods turned off for another world: asking to put them back and start again to enter it")
+    else
+      log_screen("asking to turn off #{MGQ_MpModParking.names_of(@park_plan).join(', ')} for #{entry_text}")
+    end
+    @confirming = :parking
+    say(MGQ_MpModParking.confirm_text(@entry.name, @park_plan))
+    @confirm_window.start([["Restart and join", :yes]] + (@park_plan.empty? ? [] : [["See the mods", :show_mods]]) + [["Back", :cancel]])
+  end
+
+  # Turns the player's other mods off and starts the game again, which then enters the world; says
+  # what to do when it cannot.
+  #
+  # @return [Boolean] false, since the world is entered after the restart.
+  def park_and_join
+    close_popups
+    case MGQ_MpModParking.park_and_rejoin(@park_plan, @entry.id)
+    when :restarting
+      log_screen("closing the game to start it again with other mods turned off for #{entry_text}")
+      SceneManager.exit
+      return false
+    when :by_hand
+      say(format(@park_plan.empty? ? MGQ_MpModParking::BACK_BY_HAND_TEXT : MGQ_MpModParking::BY_HAND_TEXT, @entry.name))
+    when :held
+      refuse(MGQ_MpModParking::HELD_TEXT)
+    when :not_parked
+      refuse(@park_plan.empty? ? MGQ_MpModParking::NOT_BACK_TEXT : format(MGQ_MpModParking::PARK_FAILED_TEXT, @entry.name))
+    else
+      refuse(format(MGQ_MpModParking::RESTART_FAILED_TEXT, @entry.name))
+    end
+    back_to_list
+    false
+  end
+
+  # Shows each required mod with the player's and the world's version, which ends the entry the game
+  # started again for: the player enters again from the list.
   def on_show_mods
+    @rejoin_entering = false
     @confirm_window.finish
     open_box(:mods)
   end
@@ -583,15 +737,23 @@ class Scene_MpWorlds < Scene_MenuBase
   # @param strict [Boolean] Whether only games with the same data may enter.
   # @param mods [String, nil] The mods the world needs, as its creator wrote them.
   # @param own [Boolean] Whether the player made the world, and so may update its game data.
+  # @param parked [Boolean] Whether this game runs with the mods the world turns off parked, which
+  #   the world's data scan, made as the world was created, may still hold.
   # @yield What enters the world once the player said to enter anyway.
   # @return [Boolean] Whether entering goes on now.
-  def data_allows?(name, data, strict, mods, own = false, &enter)
+  def data_allows?(name, data, strict, mods, own = false, parked = false, &enter)
     differing = MGQ_MpWorld::GameData.differing(data)
     accepted = @data_accepted
     @data_accepted = false
     if differing.nil? || differing.empty?
       log_screen("data check of #{name}: #{differing.nil? ? 'cannot compare (unknown or other format), let in' : 'matches'}")
       return true
+    end
+
+    if own && parked && !accepted
+      log_screen("data check of #{name}: differs in #{differing.join(', ')} with the other mods turned off, asking the creator to take this game's data")
+      confirm(:own_data, format(MGQ_MpModParking::OWN_DATA_TEXT, name), "Update and enter")
+      return false
     end
 
     log_screen("data check of #{name}: differs in #{differing.join(', ')}; #{strict ? 'strict, kept out' : (accepted ? 'player entered anyway' : 'asking the player')}")
@@ -641,7 +803,7 @@ class Scene_MpWorlds < Scene_MenuBase
     @list_window.deactivate
     lines = case kind
             when :players then player_lines(listed.members)
-            when :mods then mod_lines(listed.mods, @entry.differing, MGQ_MpWorldMods.differing(listed))
+            when :mods then mod_lines(listed.mods, @entry.differing, MGQ_MpWorldMods.differing(listed), MGQ_MpModParking.plan_for(listed))
             else description_lines(listed.description.to_s)
             end
     @box = Sprite_MpListBox::View.of(@entry.name, { :players => "Players", :mods => "Mods" }[kind] || "Description", lines)
@@ -666,20 +828,28 @@ class Scene_MpWorlds < Scene_MenuBase
   end
 
   # Writes the list box's lines for the mods a world needs: the required ones first, then the
-  # essential ones, each marked as Window_MpWorldDetail.mod_marks says, then the listed ones.
+  # essential ones, each marked as Window_MpWorldDetail.mod_marks says, then the listed ones; and
+  # for a world that turns other mods off, the player's mods it turns off.
   #
   # @param text [String, nil] The mods as the world's creator wrote them.
   # @param differing [Array<String>, nil] What of this game's data differs from the world's, see MGQ_MpWorld::Entry#differing.
   # @param rows [Array<MGQ_MpWorldMods::Row>, nil] The required mods this game has in another version or lacks, see MGQ_MpWorldMods.differing.
-  # @return [Array<Array>] The lines, see Sprite_MpListBox::View.
-  def mod_lines(text, differing = nil, rows = nil)
+  # @param turned_off [Array<String>, nil] The player's scripts the world turns off, see MGQ_MpModParking.plan_for; nil or none for no such section.
+  # @return [Array<Array>] The lines, see Sprite_MpListBox::View; one per mod the turned-off scripts belong to.
+  def mod_lines(text, differing = nil, rows = nil, turned_off = nil)
     mods = MGQ_MpWorld.mods_of(text)
     marks = Window_MpWorldDetail.mod_marks(text, differing, rows)
     lines = mods.map do |mod|
       color, note = marks[mod] || [:plain, nil]
       [:item, mod, color, note]
     end
-    [[:head, "Mods (#{mods.size})"]] + lines
+    lines = [[:head, "Mods (#{mods.size})"]] + lines
+    return lines if turned_off.nil? || turned_off.empty?
+
+    off = MGQ_MpModParking.mods_of(turned_off).map do |name, scripts|
+      [:item, name, :grey, scripts > 1 ? "yours, #{scripts} scripts, turned off here" : "yours, turned off here"]
+    end
+    lines + [[:head, "Your mods turned off here (#{off.size})"]] + off
   end
 
   # Writes the list box's lines for a world's description, broken to the box's width.
@@ -866,12 +1036,17 @@ class Scene_MpWorlds < Scene_MenuBase
       back_to_list
     when :update_data
       update_data
+    when :own_data
+      @enter_after_data = true
+      update_data
     when :differing
       @confirm_window.finish
       @data_accepted = true
       @after_accept.call
     when :mods
       start_action("mods") { MGQ_MpWorldMods.install(@mod_rows) }
+    when :parking
+      park_and_join
     end
   end
 
@@ -942,6 +1117,14 @@ class Scene_MpWorlds < Scene_MenuBase
     @list_window.activate
   end
 
+  # Leaves the form the player backed out of; backing out of the password of the world the game
+  # started again for ends that entry.
+  def on_form_cancel
+    password = @form_symbol == :password
+    leave_form
+    give_up_parking(nil) if password && @rejoin_entering && MGQ_MpModParking.holding?
+  end
+
   # Puts the cursor back on the form after another screen, at the field it left from.
   def return_to_form
     @list_window.select_symbol(@form_symbol) unless WORLD_FORMS.include?(@form_symbol)
@@ -959,7 +1142,7 @@ class Scene_MpWorlds < Scene_MenuBase
 
     case field.kind
     when :check
-      form[field.key] = !form[field.key]
+      form.tick(field.key)
       log_screen("#{form[field.key] ? 'ticked' : 'unticked'} #{field.label} in the form #{@form_symbol}")
       @form_window.refresh
       @form_window.activate
@@ -1439,10 +1622,10 @@ class Scene_MpWorlds < Scene_MenuBase
     @resume_form = true
   end
 
-  # Changes the chosen world as the form says, a Raid World's difficulty with it only when the form
-  # changed it, since the relay moves every player onto a difficulty it is sent; its creator's game
-  # sends the hashes of its required mods outside the catalog too, and then its mod settings when
-  # Shared Mod Settings changed.
+  # Changes the chosen world as the form says, a Raid World's difficulty and Turn off other mods with
+  # it only when the form changed them, since the relay tells every player in it of either; its
+  # creator's game sends the hashes of its required mods outside the catalog too, and then its mod
+  # settings when Shared Mod Settings changed.
   def edit_world
     values = form
     own = @entry.listed.creator_id == @me
@@ -1451,15 +1634,19 @@ class Scene_MpWorlds < Scene_MenuBase
     @edited_settings = own && values[:shared] != MGQ_MpWorldMods.shared?(settings) ? (values[:shared] ? MGQ_MpWorldMods.with_marker(settings) : "") : nil
     difficulty = @entry.listed.raid? ? values.difficulty : nil
     @edited_difficulty = difficulty && difficulty != @entry.listed.difficulty ? difficulty : nil
-    start_action("edit") { MGQ_MpWorld::Directory.edit(@entry.id, values[:seats].to_i, values[:description], values[:mods], hashes, @edited_difficulty) }
+    @edited_other_mods = values.other_mods_off? == (@entry.listed.other_mods_off ? true : false) ? nil : values.other_mods_off?
+    start_action("edit") { MGQ_MpWorld::Directory.edit(@entry.id, values[:seats].to_i, values[:description], values[:mods], hashes, @edited_difficulty, @edited_other_mods) }
   end
 
   # Tells the creator or the admin that a Raid World's players play on its new difficulty, those
-  # in it now at once.
+  # in it now at once, and what turning other mods off or on does for its players.
   #
-  # @return [String] The sentence after the one that the world was changed, empty when the difficulty stayed.
+  # @return [String] The sentences after the one that the world was changed, empty when neither changed.
   def difficulty_text
-    @edited_difficulty ? " Its players play on #{MGQ_MpWorld.difficulty_name(@edited_difficulty)} now." : ""
+    text = @edited_difficulty ? " Its players play on #{MGQ_MpWorld.difficulty_name(@edited_difficulty)} now." : ""
+    return text if @edited_other_mods.nil?
+
+    text + (@edited_other_mods ? " Players in it with other mods enter again without them." : " Its players keep their mods from their next entry.")
   end
 
   # Tells the creator when their world's players get what it now does with its mod settings, since
@@ -1517,7 +1704,7 @@ class Scene_MpWorlds < Scene_MenuBase
     @start_files = files
     about = { :description => values[:description], :mods => values[:mods], :data => MGQ_MpWorld::GameData.fingerprint, :strict => !values[:mismatch],
               :mod_hashes => MGQ_MpWorldMods.creator_hashes(values[:mods]), :settings => values[:shared] ? MGQ_MpWorldMods::MARKER : "",
-              :type => values.type, :share => values.share, :difficulty => values.difficulty }
+              :type => values.type, :share => values.share, :difficulty => values.difficulty, :other_mods_off => values.other_mods_off? }
     start_action("create") { MGQ_MpWorld::Directory.create(values[:name], values[:password], values[:seats].to_i, values[:hidden], values.choose?, MGQ_MpSaveDistribution.text_of(files), about) }
   end
 
@@ -1558,6 +1745,8 @@ class Scene_MpWorlds < Scene_MenuBase
 
     kind = @busy
     @busy = nil
+    enter_after_data = @enter_after_data
+    @enter_after_data = nil
     MGQ_MpWorld::Directory.clear
 
     if action["state"] == "failed"
@@ -1613,6 +1802,11 @@ class Scene_MpWorlds < Scene_MenuBase
     when "data"
       log_screen("the data of #{entry_text} is this game's now")
       say("The data scan of #{@entry.name} was updated to your game.")
+      if enter_after_data && @entry.listed
+        # The list holds the old scan until it is fetched again.
+        @entry.listed.data = MGQ_MpWorld::GameData.fingerprint
+        return on_enter
+      end
     when "edit"
       log_screen("changed #{entry_text}")
       @shared_settings = @edited_settings
@@ -1633,10 +1827,34 @@ class Scene_MpWorlds < Scene_MenuBase
   end
 
   # Starts the game again once the world's mods are installed, so they load, and enters the world
-  # once it is back; says what to do when the game cannot start itself again.
+  # once it is back, turning other mods off first for a world that turns them off, so one restart
+  # does both, or keeping those parked for it through the watchdog's restart; says what to do when
+  # the game cannot start itself again. A world this PC never
+  # entered has its lock opened first, as parking_allows? does, so the start after the restart
+  # enters it without its password. While mods stay parked without a restart that keeps them for
+  # the world, the game stays open and the player tries again; when the restart that keeps them
+  # failed, the player starts the game again, since entering again in this session would find the
+  # mods parked for the world and enter it without loading the downloads.
   def restart_for_mods
     MGQ_MpWorldMods.forget_installed
-    case MGQ_MpWorldMods.restart(@entry.id)
+    plan = @entry.listed ? MGQ_MpModParking.change_for(@entry.listed) : nil
+    return unlock_first(:mods) if plan.is_a?(Array) && !plan.empty? && @entry.local.nil? && !@entry.open?
+
+    claimed = !plan.is_a?(Array) && plan != :elsewhere && @entry.listed && MGQ_MpModParking.claim(@entry.listed)
+    result = if plan.is_a?(Array) then MGQ_MpModParking.park_and_rejoin(plan, @entry.id)
+             elsif claimed then MGQ_MpModParking.rejoin_parked(@entry.id)
+             elsif MGQ_MpModParking.parked? then :not_kept
+             else MGQ_MpWorldMods.restart(@entry.id)
+             end
+    result = :not_kept if result == :not_parked && MGQ_MpModParking.parked?
+    if [:not_parked, :held].include?(result)
+      # The entry after the restart asks again.
+      log_screen("other mods could not be #{plan.is_a?(Array) && plan.empty? ? 'turned back on' : 'turned off'} for #{entry_text}, starting again for the downloaded mods alone")
+      result = MGQ_MpWorldMods.restart(@entry.id)
+    end
+    return keep_open_for_mods(plan) if result == :not_kept
+
+    case result
     when :restarting
       log_screen("closing the game to start it again for the mods of #{entry_text}")
       return SceneManager.exit
@@ -1644,17 +1862,39 @@ class Scene_MpWorlds < Scene_MenuBase
       log_screen("the game cannot start itself again under Wine, the player restarts it and enters #{entry_text} on its own")
       say("The mods were installed. Restart the game by hand: it enters #{@entry.name} once it is back.")
     else
-      log_screen("the game could not start itself again, the player restarts it for #{entry_text}")
+      log_screen("the game could not start itself again, the player restarts it for #{entry_text}#{claimed ? ', the mods parked for it staying parked until then' : ''}")
       say("The mods were installed. Close the game and start it again to enter #{@entry.name}.")
     end
     back_to_list
   end
 
-  # Enters the chosen world, whose lock was opened, or says why it cannot.
+  # Keeps the game open once a world's mods were installed, when the other mods could not be turned
+  # off, kept off or turned back on for the restart, and tells the player to try again.
+  #
+  # A plain restart would leave the parked mods to the watchdog, which puts them back while the next
+  # start loads.
+  #
+  # @param plan [Array<String>, Symbol, nil] What MGQ_MpModParking.change_for told for the world.
+  def keep_open_for_mods(plan)
+    back_on = plan.is_a?(Array) && plan.empty?
+    log_screen("installed the mods of #{entry_text}, but other mods could not be #{back_on ? 'turned back on' : 'turned off or kept off'} and stay parked: staying on the world screen")
+    text = if plan == :elsewhere then MGQ_MpModParking.elsewhere_text(@entry.listed)
+           elsif back_on then format(MGQ_MpModParking::NOT_BACK_ON_TEXT, @entry.name)
+           else format(MGQ_MpModParking::NOT_KEPT_TEXT, @entry.name)
+           end
+    refuse(text)
+    back_to_list
+  end
+
+  # Enters the chosen world, whose lock was opened, or says why it cannot; or, when the lock was
+  # opened to turn other mods off, asks to, or turns them off and starts the game again for the
+  # downloaded mods, keeping the world's folder, so the start after the restart needs no password.
   #
   # @param action [Hash] The ended action, with the world's code and id.
-  # @return [Boolean] Whether it went on to enter the world.
+  # @return [Boolean] Whether it went on to enter the world, to ask or to start the game again.
   def enter_opened(action)
+    park = @park_after_unlock
+    @park_after_unlock = nil
     if action["start"] == "pending"
       log_screen("not entering #{entry_text}: its creator still sets up its starting save")
       Sound.play_buzzer
@@ -1667,6 +1907,13 @@ class Scene_MpWorlds < Scene_MenuBase
     unless world
       say("The world's folder could not be created.")
       return false
+    end
+
+    if park
+      @entry.local = world
+      # The player agreed to turn the mods off with the offer to download the world's mods.
+      park == :mods ? restart_for_mods : ask_parking
+      return true
     end
 
     enter(world, @entry.listed.start, @entry.listed.choose)
@@ -1806,11 +2053,14 @@ class Scene_MpWorlds < Scene_MenuBase
     back_to_list
   end
 
-  # Closes the small windows and goes back to the list, or to the form the player was filling in.
+  # Closes the small windows and goes back to the list, or to the form the player was filling in;
+  # once the entry the game started again for ended without entering the world, puts the mods
+  # turned off for it back instead.
   def back_to_list
     close_popups
     show_info
     return if @busy
+    return give_up_parking if @rejoin_entering && MGQ_MpModParking.holding? && !MGQ_MpWorld.open?
 
     return @resume_form = true if form
 
@@ -2424,8 +2674,8 @@ class Window_MpWorldDetail < Window_Base
     Panel.new("World", listed.featured ? "featured: one of the relay's own" : nil, rows)
   end
 
-  # Tells the mods a world needs, whether the player's game data matches that of its creator, and
-  # which games may enter.
+  # Tells the mods a world needs, its mod settings, whether it turns other mods off, whether the
+  # player's game data matches that of its creator, and which games may enter.
   #
   # @param entry [MGQ_MpWorld::Entry] The world, which the directory lists.
   # @param me [String, nil] The player's id, who may update the game data of a world of their own.
@@ -2453,7 +2703,19 @@ class Window_MpWorldDetail < Window_Base
            end
     colors = mod_colors(listed.mods, differing, MGQ_MpWorldMods.differing(listed))
     settings = Cell.new(nil, MGQ_MpWorldMods.details_text(listed, me), MGQ_MpWorldMods.shared?(listed.settings) ? :gold : :normal)
-    Panel.new("Game data", note, [[Cell.new("Mods", mods.empty? ? "No mod named" : mods.join(", "), :normal, mods.empty? ? nil : :mods, mods.empty? ? nil : mods, colors)], [settings], [game]])
+    other_mods = Cell.new(nil, other_mods_text(listed), listed.other_mods_off ? :warn : :normal)
+    Panel.new("Game data", note, [[Cell.new("Mods", mods.empty? ? "No mod named" : mods.join(", "), :normal, mods.empty? ? nil : :mods, mods.empty? ? nil : mods, colors)], [settings], [other_mods], [game]])
+  end
+
+  # Tells whether a world turns other mods off, and how many of the player's.
+  #
+  # @param listed [MGQ_MpWorld::Directory::ListedWorld] The world in the directory.
+  # @return [String] Such as "Other mods: turned off (2 of yours)" or "Other mods: allowed".
+  def other_mods_text(listed)
+    return "Other mods: allowed" unless listed.other_mods_off
+
+    plan = MGQ_MpModParking.plan_for(listed)
+    plan.nil? || plan.empty? ? "Other mods: turned off" : "Other mods: turned off (#{MGQ_MpModParking.mods_of(plan).size} of yours)"
   end
 
   # Tells how the details and the list box mark a world's marked mods: a required one in the color

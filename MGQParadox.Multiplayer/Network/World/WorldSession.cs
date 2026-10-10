@@ -3,7 +3,8 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-10: Handed the relay's word that a Raid World's boss pool changed to the game script as a boss entry with its key, the share left, the raid max HP and whether it is defeated, and to the boss pools the game script reads
-//      Paulinchen  2026-10-09: Handed the relay's word that a Raid World's boss pool changed to the game script as a boss entry with its key and hit points
+//      Paulinchen  2026-10-09: Handed the relay's word that a world changed whether it turns other mods off, or its mods, to the game script as a mods_rule entry with both
+//                            - Handed the relay's word that a Raid World's boss pool changed to the game script as a boss entry with its key and hit points
 //                            - Handed the relay's word that a Raid World's difficulty changed to the game script as a difficulty entry with its value
 //      Paulinchen  2026-10-08: Handed the relay's word that a Raid World's story changed to the game script as a story entry with its revision
 //                            - Stopped for good once the relay keeps the game out of a Raid World, which it cannot play, telling to update the mod
@@ -134,9 +135,28 @@ internal sealed class WorldSession
     public const string DifficultyKind = "difficulty";
 
     /// <summary>
-    /// The difficulty now, in a <see cref="DifficultyKind"/> entry.
+    /// The difficulty now, in a <see cref="DifficultyKind"/> entry; 1 or 0 for whether the world
+    /// turns other mods off, in a <see cref="ModsRuleKind"/> entry.
     /// </summary>
     public const string ValueHeader = "value";
+
+    /// <summary>
+    /// The kind of an inbox entry that tells the world's creator or an admin changed whether it turns
+    /// other mods off or the mods it names, and the word that starts the relay's text frame saying so,
+    /// as Relay/README.md names it.
+    /// </summary>
+    public const string ModsRuleKind = "mods_rule";
+
+    /// <summary>
+    /// The world's mods text now, in a <see cref="ModsRuleKind"/> entry, left out when it names none.
+    /// </summary>
+    public const string ModsHeader = "mods";
+
+    /// <summary>
+    /// The longest mods text a <see cref="ModsRuleKind"/> frame may carry, far above the relay's own
+    /// limit, so a broken frame never fills the inbox.
+    /// </summary>
+    private const int MaxModsRuleLength = 4096;
 
     /// <summary>
     /// The kind of an inbox entry that carries another game's message.
@@ -815,6 +835,12 @@ internal sealed class WorldSession
             return;
         }
 
+        if (text.StartsWith($"{ModsRuleKind} ", StringComparison.Ordinal))
+        {
+            TakeModsRule(generation, connection, text[(ModsRuleKind.Length + 1)..]);
+            return;
+        }
+
         var words = text.Split(' ');
         var seats = words.Skip(1).Select(word => int.TryParse(word, NumberStyles.None, CultureInfo.InvariantCulture, out var seat) ? seat : -1).ToArray();
 
@@ -961,6 +987,38 @@ internal sealed class WorldSession
         }
 
         Log.Write($"world difficulty changed at the relay, now {difficulty.ToString(CultureInfo.InvariantCulture)}");
+    }
+
+    /// <summary>
+    /// Hands the relay's word that the world changed whether it turns other mods off, or the mods it
+    /// names, to the game script.
+    /// </summary>
+    /// <param name="generation">The open this belongs to.</param>
+    /// <param name="connection">The connection.</param>
+    /// <param name="rule">1 or 0 for whether the world turns other mods off, a tab and its mods text, as the relay wrote them.</param>
+    private void TakeModsRule(int generation, Connection connection, string rule)
+    {
+        var tab = rule.IndexOf('\t', StringComparison.Ordinal);
+        var value = tab < 0 ? rule : rule[..tab];
+        var mods = tab < 0 ? string.Empty : rule[(tab + 1)..];
+
+        if (value is not ("0" or "1") || mods.Length > MaxModsRuleLength)
+        {
+            Log.Write("world room mods rule text ignored, its value is neither 0 nor 1 or its mods are too long");
+            return;
+        }
+
+        lock (_gate)
+        {
+            if (generation != _generation || connection != _connection)
+            {
+                return;
+            }
+
+            Enqueue(new Message([new(Message.Kind, ModsRuleKind), new(ValueHeader, value), new(ModsHeader, mods)]).Encode());
+        }
+
+        Log.Write($"world mods rule changed at the relay: other mods {(value == "1" ? "off" : "allowed")}, mods text of {mods.Length.ToString(CultureInfo.InvariantCulture)} characters");
     }
 
     /// <summary>

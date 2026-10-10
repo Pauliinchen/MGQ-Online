@@ -2,6 +2,7 @@
 //  Exports.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-09: Took the parked mods' lock as the game starts, and marked their journal while an update runs, so their watchdog never starts a game beside the updater's
 //      Paulinchen  2026-10-08: Logged the Wine version the game runs under, if any
 //                            - Added mp_update_game, which starts the mod's updater, answering 2 under Wine, whose missing PowerShell leaves the updater unable to run
 //      Paulinchen  2026-10-07: Kept every log, which no longer starts over, and logged the version started and whether the game keeps running in the background
@@ -61,6 +62,7 @@ internal static unsafe partial class Exports
                 Log.Write($"the game runs under wine {wine}");
             }
 
+            ModParking.Current.Begin();
             return 1;
         }
         catch (Exception ex)
@@ -140,11 +142,30 @@ internal static unsafe partial class Exports
     {
         try
         {
-            return (int)GameRestart.UpdateAfterExit(ModFolder.Root);
+            // Marked before the updater starts, which may see the game close at once.
+            ModParking.Current.MarkUpdate(true);
+            var started = GameRestart.UpdateAfterExit(ModFolder.Root);
+
+            if (started != RestartStart.Waiting)
+            {
+                ModParking.Current.MarkUpdate(false);
+            }
+
+            return (int)started;
         }
         catch (Exception ex)
         {
             Log.Write($"mp_update_game failed: {ex}");
+
+            try
+            {
+                ModParking.Current.MarkUpdate(false);
+            }
+            catch (Exception unmark)
+            {
+                Log.Write($"mp_update_game could not take the update mark back: {unmark}");
+            }
+
             return 0;
         }
     }

@@ -2,7 +2,9 @@
 //  DirectoryClient.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-09: Made and changed a Raid World with its difficulty, and read it from the list
+//      Paulinchen  2026-10-09: Made and changed a world with whether it turns other mods off, and read it from the list, by the world's type where the relay names none
+//                            - Read the mods the catalog marks personal, those of a name alone among them
+//                            - Made and changed a Raid World with its difficulty, and read it from the list
 //      Paulinchen  2026-10-08: Read the answer of a status a route expects besides success, such as the 409 that hands back a Raid World's story
 //                            - Named the Raid Worlds this game plays in the X-MGQ-Features header of every request
 //                            - Made worlds of a type, Classic or Raid, with how a Raid World shares companions, and read both from the list
@@ -170,6 +172,7 @@ internal sealed partial class DirectoryClient
             }
 
             var creator = world.GetProperty("creator");
+            var type = Text(world, "type") is { Length: > 0 } named ? named : WorldType.Classic;
             worlds.Add(new ListedWorld(
                 world.GetProperty("id").GetString()!,
                 world.GetProperty("name").GetString() ?? "?",
@@ -185,9 +188,10 @@ internal sealed partial class DirectoryClient
                 Flag(world, "featured"),
                 new WorldAbout(Text(world, "description"), Text(world, "mods"), Text(world, "data"), Flag(world, "strict"), Text(world, "modHashes"), Text(world, "settings")),
                 members,
-                Text(world, "type") is { Length: > 0 } type ? type : WorldType.Classic,
+                type,
                 Text(world, "share") is { Length: > 0 } share ? share : CompanionSharing.Off,
-                world.TryGetProperty("difficulty", out var difficulty) && difficulty.ValueKind == JsonValueKind.Number && difficulty.TryGetInt32(out var level) && WorldDifficulty.IsValid(level) ? level : null));
+                world.TryGetProperty("difficulty", out var difficulty) && difficulty.ValueKind == JsonValueKind.Number && difficulty.TryGetInt32(out var level) && WorldDifficulty.IsValid(level) ? level : null,
+                world.TryGetProperty("otherModsOff", out var otherModsOff) && otherModsOff.ValueKind is JsonValueKind.True or JsonValueKind.False ? otherModsOff.GetBoolean() : type == WorldType.Raid));
         }
 
         return new WorldListing(worlds, Flag(document.RootElement, "admin"));
@@ -225,8 +229,9 @@ internal sealed partial class DirectoryClient
     /// <param name="type">Its type, see <see cref="WorldType"/>.</param>
     /// <param name="share">How a Raid World shares companions, see <see cref="CompanionSharing"/>.</param>
     /// <param name="difficulty">The difficulty a Raid World sets for every player, see <see cref="WorldDifficulty"/>; <see langword="null"/> for none.</param>
+    /// <param name="otherModsOff">Whether the world turns off every mod of its players it does not name; <see langword="null"/> to leave it to the relay, which goes by the type.</param>
     /// <exception cref="DirectoryException">The directory could not be reached or refused the world.</exception>
-    public void Create(string id, string name, int seats, string playerKey, string playerName, string authHash, WorldLock worldLock, bool start, bool hidden, bool choose, bool open, WorldAbout about, string type = WorldType.Classic, string share = CompanionSharing.Off, int? difficulty = null)
+    public void Create(string id, string name, int seats, string playerKey, string playerName, string authHash, WorldLock worldLock, bool start, bool hidden, bool choose, bool open, WorldAbout about, string type = WorldType.Classic, string share = CompanionSharing.Off, int? difficulty = null, bool? otherModsOff = null)
     {
         var body = Json(writer =>
         {
@@ -262,6 +267,11 @@ internal sealed partial class DirectoryClient
             if (difficulty is { } level)
             {
                 writer.WriteNumber("difficulty", level);
+            }
+
+            if (otherModsOff is { } off)
+            {
+                writer.WriteBoolean("otherModsOff", off);
             }
         });
 
@@ -312,7 +322,7 @@ internal sealed partial class DirectoryClient
     }
 
     /// <summary>
-    /// Changes a world's seats, description, mods and a Raid World's difficulty, and for its creator the hashes of its required mods outside the catalog.
+    /// Changes a world's seats, description, mods, whether it turns other mods off and a Raid World's difficulty, and for its creator the hashes of its required mods outside the catalog.
     /// </summary>
     /// <param name="id">The world.</param>
     /// <param name="playerKey">The creator's or an admin's key.</param>
@@ -321,8 +331,9 @@ internal sealed partial class DirectoryClient
     /// <param name="mods">The mods it needs.</param>
     /// <param name="modHashes">The creator's mod hashes, <see langword="null"/> to leave them, as an admin must.</param>
     /// <param name="difficulty">A Raid World's new difficulty, see <see cref="WorldDifficulty"/>; <see langword="null"/> to leave it.</param>
+    /// <param name="otherModsOff">Whether the world now turns off every mod of its players it does not name; <see langword="null"/> to leave it.</param>
     /// <exception cref="DirectoryException">The directory could not be reached or refused.</exception>
-    public void Edit(string id, string playerKey, int seats, string description, string mods, string? modHashes = null, int? difficulty = null)
+    public void Edit(string id, string playerKey, int seats, string description, string mods, string? modHashes = null, int? difficulty = null, bool? otherModsOff = null)
     {
         var body = Json(writer =>
         {
@@ -339,6 +350,11 @@ internal sealed partial class DirectoryClient
             if (difficulty is { } level)
             {
                 writer.WriteNumber("difficulty", level);
+            }
+
+            if (otherModsOff is { } off)
+            {
+                writer.WriteBoolean("otherModsOff", off);
             }
         });
 
@@ -411,15 +427,39 @@ internal sealed partial class DirectoryClient
     /// <summary>
     /// Lists the relay's mod catalog.
     /// </summary>
-    /// <returns>The mods.</returns>
+    /// <returns>The mods, and every mod the catalog marks personal.</returns>
     /// <exception cref="DirectoryException">The relay could not be reached or answered with an error.</exception>
-    public IReadOnlyList<CatalogMod> Mods()
+    public ModCatalog Mods()
     {
         using var document = Send(HttpMethod.Get, _mods, "mods", null, repeatKey: "mods");
         var mods = new List<CatalogMod>();
+        var personal = new List<PersonalMod>();
+
+        // Relays before personal mods name neither the list nor the flag, and leave nothing out.
+        if (document.RootElement.TryGetProperty("personal", out var marked) && marked.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var mod in marked.EnumerateArray())
+            {
+                if (mod.ValueKind == JsonValueKind.Object && Text(mod, "key") is { Length: > 0 } key)
+                {
+                    personal.Add(new PersonalMod(key, Text(mod, "name") is { Length: > 0 } name ? name : key));
+                }
+            }
+        }
 
         foreach (var mod in document.RootElement.GetProperty("mods").EnumerateArray())
         {
+            if (Flag(mod, "personal") && !personal.Exists(known => known.Key == Text(mod, "key")))
+            {
+                personal.Add(new PersonalMod(Text(mod, "key"), Text(mod, "name")));
+            }
+
+            // An entry of a name alone has nothing to install; the relay lists it for admins only.
+            if (Text(mod, "kind") == CatalogMod.NameKind)
+            {
+                continue;
+            }
+
             var versions = new List<ModVersion>();
 
             if (mod.TryGetProperty("versions", out var listed) && listed.ValueKind == JsonValueKind.Array)
@@ -430,10 +470,10 @@ internal sealed partial class DirectoryClient
                 }
             }
 
-            mods.Add(new CatalogMod(Text(mod, "key"), Text(mod, "name"), Text(mod, "kind"), Text(mod, "version"), FilesOf(mod), versions, Text(mod, "fileUrl"), Flag(mod, "archive"), Text(mod, "optionsVersion")));
+            mods.Add(new CatalogMod(Text(mod, "key"), Text(mod, "name"), Text(mod, "kind"), Text(mod, "version"), FilesOf(mod), versions, Text(mod, "fileUrl"), Flag(mod, "archive"), Text(mod, "optionsVersion"), Flag(mod, "personal")));
         }
 
-        return mods;
+        return new ModCatalog(mods, personal);
     }
 
     /// <summary>
@@ -879,7 +919,8 @@ internal sealed record WorldListing(IReadOnlyList<ListedWorld> Worlds, bool Admi
 /// <param name="Type">Its type, see <see cref="WorldType"/>; Classic for a world the relay names none of.</param>
 /// <param name="Share">How a Raid World shares companions, see <see cref="CompanionSharing"/>; off for one the relay names none of.</param>
 /// <param name="Difficulty">The difficulty a Raid World sets for every player, see <see cref="WorldDifficulty"/>; <see langword="null"/> for a world that sets none.</param>
-internal sealed record ListedWorld(string Id, string Name, int Seats, string CreatorId, string CreatorName, int Online, long Active, string Start, bool Hidden, bool Choose, bool Open, bool Featured, WorldAbout About, IReadOnlyList<ListedMember> Members, string Type, string Share, int? Difficulty = null);
+/// <param name="OtherModsOff">Whether the world turns off every mod of its players it does not name and the catalog does not mark personal.</param>
+internal sealed record ListedWorld(string Id, string Name, int Seats, string CreatorId, string CreatorName, int Online, long Active, string Start, bool Hidden, bool Choose, bool Open, bool Featured, WorldAbout About, IReadOnlyList<ListedMember> Members, string Type, string Share, int? Difficulty = null, bool OtherModsOff = false);
 
 /// <summary>
 /// A world's types, as the relay names them, fixed once the world is made.
@@ -983,6 +1024,20 @@ internal sealed record TradeAnswer(string State, string Reason);
 /// <param name="Hash">The SHA-256 of its offers, hexadecimal.</param>
 /// <param name="Sealed">Its offers as this player's game sealed them, see <see cref="TradeSeal.Seal"/>.</param>
 internal sealed record SealedTrade(string Id, string Hash, string Sealed);
+
+/// <summary>
+/// The relay's mod catalog as a game reads it.
+/// </summary>
+/// <param name="Mods">The mods a game may install.</param>
+/// <param name="Personal">Every mod the catalog marks personal, which a world that turns other mods off never turns off, whether or not a game may install it.</param>
+internal sealed record ModCatalog(IReadOnlyList<CatalogMod> Mods, IReadOnlyList<PersonalMod> Personal);
+
+/// <summary>
+/// A mod the catalog marks personal.
+/// </summary>
+/// <param name="Key">The mod's key, see <see cref="CatalogMod.Key"/>.</param>
+/// <param name="Name">The mod's name.</param>
+internal sealed record PersonalMod(string Key, string Name);
 
 /// <summary>
 /// A player of a world, as the directory lists them.

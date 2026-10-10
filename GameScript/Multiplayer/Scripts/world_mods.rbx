@@ -2,6 +2,10 @@
 #  world_mods.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-09: Read the catalog's personal mods, which a world that turns other mods off leaves on
+#                            - Took the mods the relay tells the open world names now
+#                            - Waited with entering a world again while the title screen starts the game again for the parked mods, and put them
+#                              back instead of offering the update to an outdated game started again to enter a world with them parked
 #      Paulinchen  2026-10-08: Let the creator share their mod settings or not through a row of Mod Config every player sees, which replaced the button
 #                            - Sent the creator's options of the world's mods as its settings whenever they change while it shares them, keeping those the creator's game does not know
 #                            - Told every player in the world the new settings at once, and a player whose game holds others as they tell their state
@@ -286,10 +290,18 @@ module MGQ_MpWorldMods
     payload = state[:payload].to_s
 
     case state["state"]
-    when "ready" then @catalog = parse(payload)
-    # The DLL hands out the catalog it had while it fetches the list again.
-    when "loading" then @catalog = parse(payload) unless payload.empty?
-    else @catalog = nil
+    when "ready"
+      @catalog = parse(payload)
+      @personal = personal_of(payload)
+    when "loading"
+      # The DLL hands out the catalog it had while it fetches the list again.
+      unless payload.empty?
+        @catalog = parse(payload)
+        @personal = personal_of(payload)
+      end
+    else
+      @catalog = nil
+      @personal = nil
     end
     log_catalog(state["state"])
     @catalog
@@ -337,6 +349,28 @@ module MGQ_MpWorldMods
     end
 
     mods
+  end
+
+  # Reads the catalog's personal mods, which a world that turns other mods off leaves on.
+  #
+  # The catalog names every personal mod on a line of its own, those without a download too, which
+  # parse leaves out.
+  #
+  # @param text [String] The catalog's lines, "personal", the key and the name for each.
+  # @return [Array<String>] The mods' keys, and the keys of their names, as MGQ_MpWorld.mod_key makes them.
+  def self.personal_of(text)
+    keys = text.split("\n").map do |line|
+      fields = line.split("\t", -1)
+      fields[0] == "personal" ? [MGQ_MpWorld.mod_key(fields[1]), MGQ_MpWorld.mod_key(fields[2])] : []
+    end
+    keys.flatten.reject { |key| key.empty? }.uniq
+  end
+
+  # Lists the personal mods of the catalog.
+  #
+  # @return [Array<String>, nil] Their keys, see personal_of; nil while the catalog is unknown.
+  def self.personal_keys
+    catalog ? @personal || [] : nil
   end
 
   # Reads files and their hashes from a line's fields.
@@ -570,7 +604,8 @@ module MGQ_MpWorldMods
 
   # Writes the options dump when the World Admin tool asked for it, forgets a world the player backed
   # out of before its new game, and opens the world screen to enter a world again after a restart,
-  # or offers the update once a newer release is out. Called by the title screen every frame.
+  # or offers the update once a newer release is out, first putting back mods parked for the world.
+  # Called by the title screen every frame.
   #
   # @param scene [Scene_Title] The title screen.
   def self.on_title_update(scene)
@@ -578,6 +613,8 @@ module MGQ_MpWorldMods
 
     forget_world if @world && !MGQ_MpWorld.open?
     return if @rejoining || scene.scene_changing?
+    # The title screen first starts the game again or tells why the mods came back.
+    return if defined?(MGQ_MpModParking) && MGQ_MpModParking.title_busy?
 
     id = take_rejoin
     return unless id
@@ -585,6 +622,8 @@ module MGQ_MpWorldMods
 
     if MGQ_Multiplayer.outdated?
       log("not entering world #{MGQ_MpWorld.short(id)} again after the restart: the mod is outdated")
+      return MGQ_MpModParking.give_up(MGQ_Multiplayer::UPDATE_MESSAGE) if defined?(MGQ_MpModParking) && MGQ_MpModParking.holding?
+
       return MGQ_MpWorld.offer_update(scene)
     end
 
@@ -1103,6 +1142,17 @@ module MGQ_MpWorldMods
   # @param text [String] The settings.
   def self.confirmed(id, text)
     @confirmed[id] = text.to_s
+  end
+
+  # Takes the mods the relay tells the open world names now, whose settings the creator shares from
+  # then on.
+  #
+  # @param mods [String] The mods as the world writes them.
+  def self.take_mods(mods)
+    return unless @world
+
+    log("the world's mods are \"#{mods}\" now") if @world[:mods] != mods
+    @world[:mods] = mods.to_s
   end
 
   # Forgets the world, its locks, the row of Shared Mod Settings and the settings on their way,

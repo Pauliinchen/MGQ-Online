@@ -2,7 +2,9 @@
 //  WorldDirectory.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-09: Made and changed a Raid World with its difficulty, and told the game script the difficulty at the end of each world's line
+//      Paulinchen  2026-10-09: Made and changed a world with whether it turns other mods off, and told the game script so at the end of each world's line
+//                            - Told the game script every mod the catalog marks personal
+//                            - Made and changed a Raid World with its difficulty, and told the game script the difficulty at the end of each world's line
 //      Paulinchen  2026-10-08: Made worlds of a type, Classic or Raid, with how a Raid World shares companions, and told the game script both at the end of each world's line
 //                            - Logged the type, code and stack of an action's unexpected failure
 //                            - Logged whether the relay kept the Mod Config options sent, or the version whose options it keeps instead
@@ -147,7 +149,7 @@ internal sealed class WorldDirectory
     /// <summary>
     /// The relay's mod catalog as last fetched with the list, <see langword="null"/> before one arrived.
     /// </summary>
-    private IReadOnlyList<CatalogMod>? _catalog;
+    private ModCatalog? _catalog;
 
     /// <summary>
     /// Why the last mod catalog could not be fetched.
@@ -246,7 +248,7 @@ internal sealed class WorldDirectory
         Threads.Start("MultiplayerDirectoryList", () =>
         {
             WorldListing? listing = null;
-            IReadOnlyList<CatalogMod>? catalog = null;
+            ModCatalog? catalog = null;
             string? error = null;
             string? catalogError = null;
 
@@ -321,15 +323,16 @@ internal sealed class WorldDirectory
     /// Sums a fetched mod catalog up for the log.
     /// </summary>
     /// <param name="catalog">The catalog.</param>
-    /// <returns>How many mods it holds, then each mod's key, version, kind and file count.</returns>
-    private static string CatalogSummary(IReadOnlyList<CatalogMod> catalog) =>
-        $"mod catalog: {catalog.Count} mod(s)"
-        + (catalog.Count > 0 ? ": " + string.Join(", ", catalog.Select(mod => $"{mod.Key} {OnOneField(mod.Version)} ({mod.ScriptKind}, {mod.Files.Count.ToString(CultureInfo.InvariantCulture)} file(s))")) : string.Empty);
+    /// <returns>How many mods it holds, then each mod's key, version, kind and file count, then the keys of the mods it marks personal.</returns>
+    private static string CatalogSummary(ModCatalog catalog) =>
+        $"mod catalog: {catalog.Mods.Count} mod(s)"
+        + (catalog.Mods.Count > 0 ? ": " + string.Join(", ", catalog.Mods.Select(mod => $"{mod.Key} {OnOneField(mod.Version)} ({mod.ScriptKind}, {mod.Files.Count.ToString(CultureInfo.InvariantCulture)} file(s))")) : string.Empty)
+        + (catalog.Personal.Count > 0 ? $"; personal: {string.Join(", ", catalog.Personal.Select(mod => mod.Key))}" : string.Empty);
 
     /// <summary>
     /// Describes the list for the game script.
     /// </summary>
-    /// <returns><c>state</c> ("loading", "ready" or "failed"), <c>error</c> and <c>admin</c> (1 for an admin), then one line per world and player: <c>world</c>, id, seats, players online, creator's id, when last active, creator's name, name, starting save ("none", "pending" or "ready"), 1 when hidden, 1 when new players choose where to start, 1 without a password, 1 when featured, 1 when only games with the same data may enter, the creator's game data, the mods it needs, its description, the creator's hashes of required mods outside the catalog, its mod settings, its type ("classic" or "raid"), how a Raid World shares companions ("off", "story" or "all"), a Raid World's difficulty (-2 to 4, empty when it sets none); <c>member</c>, id, 1 when online, name; each separated by tabs.</returns>
+    /// <returns><c>state</c> ("loading", "ready" or "failed"), <c>error</c> and <c>admin</c> (1 for an admin), then one line per world and player: <c>world</c>, id, seats, players online, creator's id, when last active, creator's name, name, starting save ("none", "pending" or "ready"), 1 when hidden, 1 when new players choose where to start, 1 without a password, 1 when featured, 1 when only games with the same data may enter, the creator's game data, the mods it needs, its description, the creator's hashes of required mods outside the catalog, its mod settings, its type ("classic" or "raid"), how a Raid World shares companions ("off", "story" or "all"), a Raid World's difficulty (-2 to 4, empty when it sets none), 1 when it turns other mods off; <c>member</c>, id, 1 when online, name; each separated by tabs.</returns>
     public string DescribeList()
     {
         lock (_gate)
@@ -342,7 +345,7 @@ internal sealed class WorldDirectory
     /// <summary>
     /// Describes the relay's mod catalog for the game script, as fetched with the list.
     /// </summary>
-    /// <returns><c>state</c> ("loading", "ready", "failed" or "idle") and <c>error</c>, then one line per mod and version: <c>mod</c>, key, name, kind ("link" for a script, "zip" for a zip of a release, "upload"), current version, then each current file's name or path and hash; <c>old</c>, key, version, then each of that version's files and hashes; <c>opts</c>, key, the version whose Mod Config options the relay keeps, for a mod that has any; each separated by tabs.</returns>
+    /// <returns><c>state</c> ("loading", "ready", "failed" or "idle") and <c>error</c>, then one line per mod and version: <c>mod</c>, key, name, kind ("link" for a script, "zip" for a zip of a release, "upload"), current version, then each current file's name or path and hash; <c>old</c>, key, version, then each of that version's files and hashes; <c>opts</c>, key, the version whose Mod Config options the relay keeps, for a mod that has any; <c>personal</c>, key, name, for every mod the catalog marks personal, installable or not; each separated by tabs.</returns>
     public string DescribeMods()
     {
         lock (_gate)
@@ -350,7 +353,7 @@ internal sealed class WorldDirectory
             var state = _listing ? "loading" : _catalog != null ? "ready" : _catalogError != null ? "failed" : "idle";
             var text = new StringBuilder();
 
-            foreach (var mod in _catalog ?? [])
+            foreach (var mod in _catalog?.Mods ?? [])
             {
                 text.Append("mod\t").Append(mod.Key).Append('\t').Append(OnOneField(mod.Name)).Append('\t').Append(mod.ScriptKind).Append('\t').Append(OnOneField(mod.Version));
                 AppendFiles(text, mod.Files);
@@ -365,6 +368,11 @@ internal sealed class WorldDirectory
                 {
                     text.Append("opts\t").Append(mod.Key).Append('\t').Append(OnOneField(mod.OptionsVersion)).Append('\n');
                 }
+            }
+
+            foreach (var mod in _catalog?.Personal ?? [])
+            {
+                text.Append("personal\t").Append(OnOneField(mod.Key)).Append('\t').Append(OnOneField(mod.Name)).Append('\n');
             }
 
             return new Message([new(StateHeader, state), new(ErrorHeader, _catalog == null ? _catalogError : null)], text.ToString()).Encode();
@@ -383,7 +391,7 @@ internal sealed class WorldDirectory
 
         lock (_gate)
         {
-            catalog = _catalog ?? throw new ActionException("The mod catalog has not been fetched yet.");
+            catalog = _catalog?.Mods ?? throw new ActionException("The mod catalog has not been fetched yet.");
         }
 
         var chosen = mods.Select(mod => (catalog.FirstOrDefault(entry => entry.Key == mod.Key) ?? throw new ActionException($"The relay has no mod {mod.Key}."), mod.Target)).ToList();
@@ -495,8 +503,9 @@ internal sealed class WorldDirectory
     /// <param name="type">Its type, see <see cref="WorldType"/>.</param>
     /// <param name="share">How a Raid World shares companions, see <see cref="CompanionSharing"/>.</param>
     /// <param name="difficulty">The difficulty a Raid World sets for every player, see <see cref="WorldDifficulty"/>; <see langword="null"/> for none.</param>
+    /// <param name="otherModsOff">Whether the world turns off every mod of its players it does not name; <see langword="null"/> to leave it to the relay, which goes by the type.</param>
     /// <returns><see langword="false"/> while another action runs.</returns>
-    public bool Create(string name, string password, int seats, bool hidden, bool choose, IReadOnlyList<(string Name, string Path)> start, WorldAbout? about = null, string type = WorldType.Classic, string share = CompanionSharing.Off, int? difficulty = null) => Start("create", () =>
+    public bool Create(string name, string password, int seats, bool hidden, bool choose, IReadOnlyList<(string Name, string Path)> start, WorldAbout? about = null, string type = WorldType.Classic, string share = CompanionSharing.Off, int? difficulty = null, bool? otherModsOff = null) => Start("create", () =>
     {
         var (key, playerName) = Me();
         var token = JoinCode.NewToken();
@@ -508,8 +517,8 @@ internal sealed class WorldDirectory
 
         var open = password.Length == 0;
         Log.Write($"making world {Log.Short(id)} {OnOneField(name)}: {seats.ToString(CultureInfo.InvariantCulture)} seats, {(box != null ? $"starting save of {start.Count.ToString(CultureInfo.InvariantCulture)} file(s), {box.Length.ToString(CultureInfo.InvariantCulture)} bytes" : "no starting save")}, mods '{OnOneField(about?.Mods ?? string.Empty)}', settings '{OnOneField(about?.Settings ?? string.Empty)}'");
-        client.Create(id, name, seats, key, playerName, WorldKeys.AuthHashOf(WorldKeys.AuthKeyOf(token)), worldLock, box != null, hidden, choose, open, about ?? WorldAbout.None, type, share, difficulty);
-        Log.Write($"made world {Log.Short(id)}, {type}{(type == WorldType.Raid ? $" sharing {share}" : string.Empty)}{(difficulty is { } level ? $", difficulty {level.ToString(CultureInfo.InvariantCulture)}" : string.Empty)}{(hidden ? ", hidden" : string.Empty)}{(choose ? ", players choose where to start" : string.Empty)}{(open ? ", without a password" : string.Empty)}{(about?.Strict == true ? ", for games with the same data only" : string.Empty)}");
+        client.Create(id, name, seats, key, playerName, WorldKeys.AuthHashOf(WorldKeys.AuthKeyOf(token)), worldLock, box != null, hidden, choose, open, about ?? WorldAbout.None, type, share, difficulty, otherModsOff);
+        Log.Write($"made world {Log.Short(id)}, {type}{(type == WorldType.Raid ? $" sharing {share}" : string.Empty)}{(difficulty is { } level ? $", difficulty {level.ToString(CultureInfo.InvariantCulture)}" : string.Empty)}{OtherModsOffNote(otherModsOff)}{(hidden ? ", hidden" : string.Empty)}{(choose ? ", players choose where to start" : string.Empty)}{(open ? ", without a password" : string.Empty)}{(about?.Strict == true ? ", for games with the same data only" : string.Empty)}");
 
         if (box != null)
         {
@@ -657,9 +666,9 @@ internal sealed class WorldDirectory
     });
 
     /// <summary>
-    /// Changes a world's seats, description, mods and a Raid World's difficulty, which only its
-    /// creator or one of the relay's admins may, and for its creator the hashes of its required mods
-    /// outside the catalog.
+    /// Changes a world's seats, description, mods, whether it turns other mods off and a Raid World's
+    /// difficulty, which only its creator or one of the relay's admins may, and for its creator the
+    /// hashes of its required mods outside the catalog.
     /// </summary>
     /// <param name="id">The world.</param>
     /// <param name="seats">How many games it seats at once.</param>
@@ -667,13 +676,26 @@ internal sealed class WorldDirectory
     /// <param name="mods">The mods it needs.</param>
     /// <param name="modHashes">The creator's mod hashes, <see langword="null"/> to leave them, as an admin must.</param>
     /// <param name="difficulty">A Raid World's new difficulty, see <see cref="WorldDifficulty"/>; <see langword="null"/> to leave it, as for every Classic world.</param>
+    /// <param name="otherModsOff">Whether the world now turns off every mod of its players it does not name; <see langword="null"/> to leave it.</param>
     /// <returns><see langword="false"/> while another action runs.</returns>
-    public bool Edit(string id, int seats, string description, string mods, string? modHashes = null, int? difficulty = null) => Start("edit", () =>
+    public bool Edit(string id, int seats, string description, string mods, string? modHashes = null, int? difficulty = null, bool? otherModsOff = null) => Start("edit", () =>
     {
-        Client().Edit(id, Me().Key, seats, description, mods, modHashes, difficulty);
-        Log.Write($"changed world {Log.Short(id)}: {seats.ToString(CultureInfo.InvariantCulture)} seats, description of {description.Length.ToString(CultureInfo.InvariantCulture)} characters, mods '{OnOneField(mods)}', {(modHashes != null ? $"mod hashes '{OnOneField(modHashes)}'" : "mod hashes left as they are")}{(difficulty is { } level ? $", difficulty {level.ToString(CultureInfo.InvariantCulture)}" : string.Empty)}");
+        Client().Edit(id, Me().Key, seats, description, mods, modHashes, difficulty, otherModsOff);
+        Log.Write($"changed world {Log.Short(id)}: {seats.ToString(CultureInfo.InvariantCulture)} seats, description of {description.Length.ToString(CultureInfo.InvariantCulture)} characters, mods '{OnOneField(mods)}', {(modHashes != null ? $"mod hashes '{OnOneField(modHashes)}'" : "mod hashes left as they are")}{(difficulty is { } level ? $", difficulty {level.ToString(CultureInfo.InvariantCulture)}" : string.Empty)}{OtherModsOffNote(otherModsOff)}");
         return null;
     });
+
+    /// <summary>
+    /// Tells the log whether a world turns other mods off.
+    /// </summary>
+    /// <param name="otherModsOff">Whether it does; <see langword="null"/> when left to the relay or as it is.</param>
+    /// <returns>", other mods off" or ", other mods allowed"; empty for <see langword="null"/>.</returns>
+    private static string OtherModsOffNote(bool? otherModsOff) => otherModsOff switch
+    {
+        true => ", other mods off",
+        false => ", other mods allowed",
+        null => string.Empty,
+    };
 
     /// <summary>
     /// Replaces a world's mod settings, which only its creator or one of the relay's admins may.
@@ -872,7 +894,8 @@ internal sealed class WorldDirectory
                 .Append('\t').Append(world.About.Strict ? '1' : '0').Append('\t').Append(OnOneField(world.About.Data)).Append('\t').Append(OnOneField(world.About.Mods))
                 .Append('\t').Append(OnOneField(world.About.Description)).Append('\t').Append(OnOneField(world.About.ModHashes))
                 .Append('\t').Append(OnOneField(world.About.Settings)).Append('\t').Append(OnOneField(world.Type)).Append('\t').Append(OnOneField(world.Share))
-                .Append('\t').Append(world.Difficulty is { } difficulty ? difficulty.ToString(CultureInfo.InvariantCulture) : string.Empty).Append('\n');
+                .Append('\t').Append(world.Difficulty is { } difficulty ? difficulty.ToString(CultureInfo.InvariantCulture) : string.Empty)
+                .Append('\t').Append(world.OtherModsOff ? '1' : '0').Append('\n');
 
             foreach (var member in world.Members.OrderByDescending(member => member.Online).ThenBy(member => member.Name, StringComparer.OrdinalIgnoreCase))
             {

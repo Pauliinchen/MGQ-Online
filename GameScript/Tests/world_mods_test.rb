@@ -2,6 +2,7 @@
 #  world_mods_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-09: Loaded world_mods_parking.rbx, which the world screen calls, its DLL's stand-in finding no parked mods at the start
 #      Paulinchen  2026-10-08: Covered the marker and settings from before it, the row of Shared Mod Settings for the creator and another player, the creator's
 #                              options sent only on a change and keeping those their game does not know, turning sharing off and on, live changes and
 #                              their notices, values a copy does not offer, and the options dump
@@ -169,6 +170,7 @@ module MGQ_Multiplayer
           args[1][0, hash.size] = hash
           hash.size
         when "mp_restart_game" then $restart
+        when "mp_mods_recover" then 0
         when "mp_dir_clear"
           $dll["mp_dir_action"] = ""
           1
@@ -198,6 +200,7 @@ load_script "ui"
 load_script "ui_text_box"
 load_script "world"
 load_script "world_mods"
+load_script "world_mods_parking"
 load_script "world_text"
 load_script "world_screen"
 

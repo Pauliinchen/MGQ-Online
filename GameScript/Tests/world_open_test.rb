@@ -3,7 +3,9 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-10: Checked that a Raid World the directory no longer lists comes after the listed worlds
-#      Paulinchen  2026-10-09: Expected the longer call of mp_dir_create, which takes a Raid World's difficulty
+#      Paulinchen  2026-10-09: Expected Sharing companions left out of a Classic world's form instead of greyed out, the call of mp_dir_create with
+#                              Turn off other mods, and loaded world_mods_parking.rbx, which the world screen calls
+#                            - Expected the longer call of mp_dir_create, which takes a Raid World's difficulty
 #                            - Checked a Raid World's difficulty in the list, the details and world.ini, and what the open world tells of it
 #      Paulinchen  2026-10-08: Checked Raid Worlds: their type and companion sharing in the list, details and world.ini, their place and red, raid? and companion_sharing, the form's switches and their arrows
 #                            - Checked the update offer in place of the update notice, and the world screen opening after the update
@@ -99,6 +101,7 @@ load_script "ui"
 load_script "ui_text_box"
 load_script "world"
 load_script "world_mods"
+load_script "world_mods_parking"
 load_script "world_text"
 load_script "world_screen"
 
@@ -448,15 +451,15 @@ MGQ_MpWorld.instance_variable_set(:@world, nil)
 # The new world's form.
 raid_form = MGQ_MpWorld::Form.create
 type_field = raid_form.fields.find { |field| field.key == :type }
-share_field = raid_form.fields.find { |field| field.key == :share }
+share_field = raid_form.instance_variable_get(:@fields).find { |field| field.key == :share }
 check("the form has a World type switch beside Hidden, Classic at first", [type_field.kind, type_field.row, type_field.side, type_field.choices, raid_form.type], [:switch, 2, :right, ["Classic", "Raid"], "classic"])
-check("and Sharing companions below it, greyed out for a Classic world", [share_field.kind, share_field.row, share_field.choices.size, raid_form.enabled?(share_field), raid_form.share], [:switch, 3, 3, false, "off"])
+check("and Sharing companions below it, left out of a Classic world", [share_field.kind, share_field.row, share_field.choices.size, raid_form.fields.include?(share_field), raid_form.share], [:switch, 3, 3, false, "off"])
 raid_form[:type] = 1
 raid_form[:share] = 1
-check("a Raid World brings it back", [raid_form.enabled?(share_field), raid_form.type, raid_form.share], [true, "raid", "story"])
+check("a Raid World brings it back", [raid_form.fields.include?(share_field), raid_form.type, raid_form.share], [true, "raid", "story"])
 check("whose hints fit the lines at the top", [type_field.hint.size <= 100, share_field.hint.size <= 100], [true, true])
 MGQ_MpWorld::Directory.create("Raid Night", "", 4, false, false, "", :type => "raid", :share => "story")
-check("create hands the type and the sharing to the DLL", [$calls.last[1], $calls.last[2][12..13]], ["pplllpppplppppl", ["raid\0", "story\0"]])
+check("create hands the type and the sharing to the DLL", [$calls.last[1], $calls.last[2][12..13]], ["pplllpppplppppll", ["raid\0", "story\0"]])
 MGQ_MpWorld::Directory.create("Plain", "", 4, false, false, "", :share => "all")
 check("a Classic world shares nothing", $calls.last[2][12..13], ["classic\0", "off\0"])
 
@@ -487,10 +490,11 @@ picked[0] = type_field
 window.cursor_right
 window.cursor_left
 check("an arrow away from a switch's neighbour turns it, one toward it moves there", [turned, moved], [[1], [:left]])
-picked[0] = share_field
+picked[0] = MGQ_MpWorld::Form::Field.new(:greyed, :switch, "Greyed", 3, "", :choices => ["A", "B"], :needs => lambda { |_form| false })
 $sounds.clear
 window.cursor_right
 check("a greyed-out switch buzzes", [turned, $sounds], [[1], ["buzzer"]])
+picked[0] = share_field
 window.form[:type] = 1
 window.cursor_left
 check("a switch across its row turns both ways", turned, [1, -1])

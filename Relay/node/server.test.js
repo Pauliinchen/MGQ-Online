@@ -3,7 +3,8 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-10: Tested boss pools that keep the share of a raid max HP left over HTTP: turn reports, a kill named by its player, the frame every game hears and the admin view
-//      Paulinchen  2026-10-09: Tested a Raid World's boss pools over HTTP: reports, the frame every game hears, the admin routes and a deleted world, and that a Classic world keeps none
+//      Paulinchen  2026-10-09: Tested that every game of a world hears that it turns other mods off, with its mods, once its creator changes either over HTTP
+//                            - Tested a Raid World's boss pools over HTTP: reports, the frame every game hears, the admin routes and a deleted world, and that a Classic world keeps none
 //                            - Tested that every game of a Raid World hears its new difficulty once its creator changes it over HTTP
 //                            - Tested that a story write whose body comes after the world was deleted leaves no story behind
 //      Paulinchen  2026-10-08: Tested a Raid World's story over HTTP: writes, conflicts, checkpoints, the route lock, companions, the frame every game hears, removed players and a deleted world, and that a Classic world keeps none
@@ -950,6 +951,36 @@ test("every game of a Raid World hears its new difficulty once its creator chang
   watcher.socket.close();
 });
 
+test("every game of a world hears that it turns other mods off, with its mods, once its creator changes either over HTTP", async () => {
+  const room = roomId(134);
+  // Its own creator, since CREATOR already made as many worlds as a player may.
+  const creator = playerKey(74);
+  const created = await fetch(directoryBase, {
+    method: "POST",
+    headers: { [PLAYER_HEADER]: creator },
+    body: JSON.stringify({ id: room, name: "Mods Rule", seats: 4, playerName: "Creator", authHash: await sha256Hex(AUTH), lock: { salt: "12".repeat(16), iterations: 200_000, box: "ab".repeat(40) } }),
+  });
+  assert.equal(created.status, 201);
+  assert.equal((await listed(room)).otherModsOff, false);
+  const watcher = await openWithHeaders(`${worldBase}${room}?name=Watcher&auth=${AUTH}`, { [PLAYER_HEADER]: playerKey(73) });
+  assert.equal(await watcher.first, "seat 0");
+  const heard = [];
+  watcher.socket.on("message", (data) => heard.push(data.toString()));
+  const edit = (body) => fetch(`${directoryBase}/${room}/edit`, { method: "POST", headers: { [PLAYER_HEADER]: creator }, body: JSON.stringify(body) });
+
+  const on = await edit({ otherModsOff: true, mods: "!Level Cap" });
+  assert.equal(on.status, 200);
+  assert.deepEqual(await on.json(), { edited: room }, "the answer names no rule");
+  await until(async () => heard.includes("mods_rule 1\t!Level Cap"));
+  assert.equal((await listed(room)).otherModsOff, true);
+
+  await edit({ seats: 6, otherModsOff: true });
+  await edit({ mods: "!Level Cap;Party Sheet" });
+  await until(async () => heard.includes("mods_rule 1\t!Level Cap;Party Sheet"));
+  assert.deepEqual(heard.filter((text) => text.startsWith("mods_rule")), ["mods_rule 1\t!Level Cap", "mods_rule 1\t!Level Cap;Party Sheet"], "an edit that changes neither tells none");
+  watcher.socket.close();
+});
+
 test("the creator or an admin edits a world over HTTP", async () => {
   const room = roomId(122);
   await makeWorld(room, 4);
@@ -998,7 +1029,7 @@ test("every mod catalog route answers over HTTP", async () => {
   const admin = { [PLAYER_HEADER]: ADMIN };
   const post = (path, body, headers = admin) => fetch(`${modsBase}${path}`, { method: "POST", headers, body: typeof body === "string" || body instanceof Uint8Array ? body : JSON.stringify(body) });
 
-  assert.deepEqual(await (await fetch(modsBase)).json(), { mods: [], admin: false });
+  assert.deepEqual(await (await fetch(modsBase)).json(), { mods: [], admin: false, personal: [] });
   assert.equal((await post("", { name: "Level Cap", link: LINK }, {})).status, 403);
   const added = await post("", { name: "Level Cap", link: LINK });
   assert.equal(added.status, 200);
@@ -1027,6 +1058,13 @@ test("every mod catalog route answers over HTTP", async () => {
   assert.equal(file.headers.get("content-type"), "application/octet-stream");
   assert.deepEqual(new Uint8Array(await file.arrayBuffer()), zip);
   assert.equal((await fetch(`${modsBase}/levelcap/file`)).status, 404);
+
+  assert.equal((await post("/victoryscreen/name", { name: "Victory_Screen" })).status, 200);
+  assert.equal((await post("/levelcap/personal", { personal: true }, {})).status, 403);
+  assert.equal((await post("/levelcap/personal", { personal: true })).status, 200);
+  const forGames = await (await fetch(modsBase)).json();
+  assert.deepEqual(forGames.mods.map((mod) => [mod.key, mod.personal]), [["levelcap", true], ["pack!", false]], "a mod known by its name alone is no mod to download");
+  assert.deepEqual(forGames.personal, [{ key: "levelcap", name: "Level Cap" }, { key: "victoryscreen", name: "Victory_Screen" }]);
 
   assert.equal((await post("/pack%21/delete", {}, {})).status, 403);
   assert.equal((await post("/pack%21/delete", {})).status, 200);

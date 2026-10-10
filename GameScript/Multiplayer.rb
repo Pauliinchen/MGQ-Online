@@ -3,7 +3,9 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-10: Loaded ui_raid_bar.rbx, the raid bosses' HP bars, after ui_party_box.rbx
-#      Paulinchen  2026-10-09: Loaded story_state.rbx before coop_story.rbx, the story's state model the party's story and a Raid World's story share
+#      Paulinchen  2026-10-09: Named the mp_mods_park, mp_mods_restore, mp_mods_parked, mp_mods_scripts, mp_mods_restart_parked and mp_mods_recover exports of the parked mods, and mp_dir_create and mp_dir_edit with whether a world turns other mods off
+#                            - Loaded world_mods_parking.rbx after world_mods.rbx, which turns other mods off for a world that asks for it
+#                            - Loaded story_state.rbx before coop_story.rbx, the story's state model the party's story and a Raid World's story share
 #                            - Loaded world_difficulty.rbx after world_catchup.rbx, which plays every player of a Raid World on its difficulty
 #                            - Named mp_dir_create and mp_dir_edit with a Raid World's difficulty
 #                            - Named the mp_raid_boss* exports of a Raid World's boss pools at the relay
@@ -115,7 +117,7 @@ module MGQ_Multiplayer
   SCRIPTS = %w[
     core_log core_hooks core_game_access core_hotkeys ui ui_text_box core_actors core_async overworld_sync ui_wheel ui_actions ui_chat ui_emotes overworld
     coop coop_scope coop_squad coop_events coop_gather coop_scene coop_npcs coop_story_rewards story_state coop_story coop_castle
-    world world_mods world_catchup_data world_story world_catchup world_difficulty world_save_distribution world_text world_screen world_save_export coop_choices
+    world world_mods world_mods_parking world_catchup_data world_story world_catchup world_difficulty world_save_distribution world_text world_screen world_save_export coop_choices
     battles battles_raid_bosses battles_coop battles_coop_hotjoin battles_coop_join battles_raid_pool battles_coop_level_sync
     battles_sync battles_sync_wire battles_sync_recorder battles_sync_playback battles_sync_live
     battles_balance_pvp battles_pvp battles_pvp_backline battles_pvp_mirror battles_pvp_lobby battles_duel battles_team
@@ -595,10 +597,10 @@ module MGQ_Multiplayer
       'mp_dir_refresh' => 'v',
       'mp_dir_find' => 'p',
       'mp_dir_list' => READ_ARGUMENTS,
-      'mp_dir_create' => 'pplllpppplppppl',
+      'mp_dir_create' => 'pplllpppplppppll',
       'mp_dir_unlock' => 'pp',
       'mp_dir_unlock_code' => 'p',
-      'mp_dir_edit' => 'plppplll',
+      'mp_dir_edit' => 'plppplllll',
       'mp_dir_set_settings' => 'pp',
       'mp_dir_set_data' => 'pp',
       'mp_dir_delete' => 'p',
@@ -622,6 +624,14 @@ module MGQ_Multiplayer
       'mp_mod_hash' => 'ppl',
       'mp_mods_install' => 'p',
       'mp_mods_options' => 'ppp',
+
+      # The mods a world that turns other mods off does not name, parked outside Patch.
+      'mp_mods_park' => 'pp',
+      'mp_mods_restore' => 'l',
+      'mp_mods_parked' => READ_ARGUMENTS,
+      'mp_mods_scripts' => READ_ARGUMENTS,
+      'mp_mods_restart_parked' => 'pl',
+      'mp_mods_recover' => 'p',
 
       # Trades.
       'mp_trade_commit' => 'pppp',

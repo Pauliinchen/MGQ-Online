@@ -4,7 +4,8 @@
 //  Changelog:
 //      Paulinchen  2026-10-10: Told every game of a Raid World a boss pool's share of HP left, raid max HP and defeat when a report or an admin changed it, and handed a boss report the reporting player's name
 //                            - Refused a Raid World request whose Content-Length is above the longest body these routes take before reading its body
-//      Paulinchen  2026-10-09: Kept a Raid World's boss pools in its world room's object, answered their routes there for the world's players and the admin routes for the relay's admins, and told every game of the world when a pool changed
+//      Paulinchen  2026-10-09: Told every game of a world whether it turns other mods off and which mods it names, once its creator or an admin changed either
+//                            - Kept a Raid World's boss pools in its world room's object, answered their routes there for the world's players and the admin routes for the relay's admins, and told every game of the world when a pool changed
 //                            - Told every game of a Raid World its new difficulty once its creator or an admin changed it
 //                            - Kept a removed player or a deleted world out of the world room's player list when the directory answered for it meanwhile, and asked the directory again for a player let in over 10 minutes ago
 //                            - Removed a Raid World's story and boss pools again when the world was deleted while a request to them ran
@@ -42,7 +43,7 @@
 
 import { DurableObject } from "cloudflare:workers";
 import { BOSS_LIMITS, WorldBosses, bossRouteOf, bossText, handleBossRequest } from "../core/bosses.js";
-import { Directory as WorldDirectory, WORLD_TYPE, difficultyText, handleDirectoryRequest, parseAdmins, playerIdOf, sha256Hex } from "../core/directory.js";
+import { Directory as WorldDirectory, WORLD_TYPE, difficultyText, handleDirectoryRequest, modsRuleText, parseAdmins, playerIdOf, sha256Hex } from "../core/directory.js";
 import { badRequest, notFound, routeIs } from "../core/http.js";
 import { isHash, isId } from "../core/ids.js";
 import { ModCatalog, handleModRequest } from "../core/mods.js";
@@ -504,6 +505,10 @@ export class Directory extends DurableObject {
       await internal(worldOf(this.env, answer.id), "difficulty", { difficulty: answer.difficulty });
     }
 
+    if (answer.modsRule) {
+      await internal(worldOf(this.env, answer.id), "mods-rule", answer.modsRule);
+    }
+
     return respond(answer);
   }
 }
@@ -756,6 +761,12 @@ export class World extends DurableObject {
     if (url.pathname === "/internal/difficulty") {
       const { difficulty } = await request.json();
       this.tell(difficultyText(difficulty));
+      return json(200, {});
+    }
+
+    if (url.pathname === "/internal/mods-rule") {
+      const { off, mods } = await request.json();
+      this.tell(modsRuleText(off === true, typeof mods === "string" ? mods : ""));
       return json(200, {});
     }
 

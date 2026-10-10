@@ -2,6 +2,9 @@
 //  mods.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-09: Let admins mark any mod personal, which games never turn off, and add a mod by its name alone only to mark it personal
+//                            - Listed every personal mod for the games, checked or not, and left mods known by their name alone out of their list of mods
+//                            - Kept whether a mod is personal when it changes between a link, an upload and a name
 //      Paulinchen  2026-10-08: Kept the Mod Config options of the newest version an admin's game sent, so an older copy no longer replaces a newer one's
 //      Paulinchen  2026-10-07: Kept the Mod Config options an admin's game sends from any version of a mod, until the current version's arrive
 //                            - Hashed an uploaded zip's files itself and refused an upload whose file list says otherwise
@@ -27,6 +30,10 @@
 // download what differs, checking every hash. An admin's game that has a mod's current version
 // sends the options the mod offers in Mod Config, which the relay keeps for the World Admin tool,
 // since only a running game can read them.
+//
+// An admin may mark a mod personal: a world that turns its players' other mods off leaves it on.
+// Such a mod may also be known by its name alone, with nothing to download, for a mod the admins
+// do not hand out themselves.
 
 import { playerIdOf } from "./directory.js";
 import { badRequest, notFound, tooLarge, withJson } from "./http.js";
@@ -65,6 +72,11 @@ export const LINK_START = "https://github.com/Pauliinchen/";
  * catalog knows, such as an admin's own build.
  */
 export const OTHER_VERSION = "?";
+
+/**
+ * The kind of a mod known by its name alone, with nothing to download, which exists to be personal.
+ */
+export const NAME_ONLY = "name";
 
 /**
  * A release file on the admins' GitHub, a script or a zip, with the release's tag and the file's name.
@@ -144,18 +156,17 @@ export class ModCatalog {
   }
 
   /**
-   * Lists the mods, with how each was checked for an admin.
+   * Lists the mods, with how each was checked for an admin, and every personal mod by key and name.
    *
    * @param {unknown} [key] The asking player's key.
-   * @returns {Promise<{status: number, body: object}>} The mods, and whether the player is an admin.
+   * @returns {Promise<{status: number, body: object}>} The mods, whether the player is an admin, and the personal mods, checked or not.
    */
   async list(key) {
     const admin = await this.isAdmin(key);
-    const mods = (await this.store.allMods())
-      .filter((entry) => admin || isChecked(entry))
-      .sort((a, b) => a.name.localeCompare(b.name))
-      .map((entry) => (admin ? adminView(entry) : publicView(entry)));
-    return { status: 200, body: { mods, admin } };
+    const entries = (await this.store.allMods()).sort((a, b) => a.name.localeCompare(b.name));
+    const mods = entries.filter((entry) => admin || (entry.kind !== NAME_ONLY && isChecked(entry))).map((entry) => (admin ? adminView(entry) : publicView(entry)));
+    const personal = entries.filter((entry) => entry.personal === true).map((entry) => ({ key: entry.key, name: entry.name }));
+    return { status: 200, body: { mods, admin, personal } };
   }
 
   /**
@@ -188,7 +199,7 @@ export class ModCatalog {
     }
 
     const existing = await this.store.getMod(modKey(cleaned));
-    const entry = existing?.kind === "link" ? { ...existing, name: cleaned, link } : newEntry(modKey(cleaned), cleaned, "link");
+    const entry = existing?.kind === "link" ? { ...existing, name: cleaned, link } : newEntry(modKey(cleaned), cleaned, "link", existing?.personal === true);
     entry.link = link;
 
     if (existing && existing.kind !== "link") {
@@ -245,7 +256,7 @@ export class ModCatalog {
     }
 
     const existing = await this.store.getMod(modKey(cleaned));
-    const entry = existing?.kind === "upload" ? { ...existing, name: cleaned } : newEntry(modKey(cleaned), cleaned, "upload");
+    const entry = existing?.kind === "upload" ? { ...existing, name: cleaned } : newEntry(modKey(cleaned), cleaned, "upload", existing?.personal === true);
 
     if (existing && existing.kind !== "upload") {
       await this.store.removeMod(existing.key);
@@ -256,6 +267,75 @@ export class ModCatalog {
     entry.checked = this.clock();
     entry.error = "";
     await this.store.putModFile(entry.key, parsed.zip);
+    await this.store.putMod(entry);
+    return { status: 200, body: { mod: adminView(entry) } };
+  }
+
+  /**
+   * Marks a mod personal or not: a world that turns its players' other mods off leaves a personal one on.
+   *
+   * @param {unknown} key The asking player's key.
+   * @param {string} modKeyOf The mod's key.
+   * @param {unknown} personal Whether the mod is personal.
+   * @returns {Promise<{status: number, body: object}>} The mod, or why it was refused.
+   */
+  async setPersonal(key, modKeyOf, personal) {
+    if (!(await this.isAdmin(key))) {
+      return forbidden();
+    }
+
+    const entry = await this.store.getMod(modKeyOf);
+
+    if (!entry) {
+      return noMod();
+    }
+
+    if (typeof personal !== "boolean") {
+      return badRequest("personal must be true or false");
+    }
+
+    entry.personal = personal;
+    await this.store.putMod(entry);
+    return { status: 200, body: { mod: adminView(entry) } };
+  }
+
+  /**
+   * Adds a mod by its name alone, with nothing to download, which exists to be personal; or renames
+   * such a mod. A new one is personal.
+   *
+   * @param {unknown} key The asking player's key.
+   * @param {string} modKeyOf The mod's key, which the name must have.
+   * @param {unknown} name The mod's name, as its script is called.
+   * @returns {Promise<{status: number, body: object}>} The mod, or why it was refused.
+   */
+  async setName(key, modKeyOf, name) {
+    if (!(await this.isAdmin(key))) {
+      return forbidden();
+    }
+
+    const cleaned = cleanText(name, this.limits.maxNameLength);
+
+    if (!cleaned || modKey(cleaned).length === 0) {
+      return badRequest("the mod needs a name");
+    }
+
+    if (modKey(cleaned) !== modKeyOf) {
+      return badRequest("the name must have the key the address names");
+    }
+
+    const existing = await this.store.getMod(modKeyOf);
+
+    if (existing && existing.kind !== NAME_ONLY) {
+      return { status: 409, body: { error: "the catalog hands out a mod of this name; mark it personal instead" } };
+    }
+
+    const refusal = await this.roomFor(modKeyOf);
+
+    if (refusal) {
+      return refusal;
+    }
+
+    const entry = existing ? { ...existing, name: cleaned } : newEntry(modKeyOf, cleaned, NAME_ONLY, true);
     await this.store.putMod(entry);
     return { status: 200, body: { mod: adminView(entry) } };
   }
@@ -806,11 +886,12 @@ function isChecked(entry) {
  *
  * @param {string} key The mod's key.
  * @param {string} name The mod's name.
- * @param {"link" | "upload"} kind How the mod reaches the relay.
+ * @param {"link" | "upload" | "name"} kind How the mod reaches the relay, or NAME_ONLY for a mod known by its name alone.
+ * @param {boolean} [personal] Whether the mod is personal.
  * @returns {object} The entry.
  */
-function newEntry(key, name, kind) {
-  return { key, name, kind, link: "", fileUrl: "", version: "", files: {}, versions: [], size: 0, checked: 0, error: "" };
+function newEntry(key, name, kind, personal = false) {
+  return { key, name, kind, link: "", fileUrl: "", version: "", files: {}, versions: [], size: 0, checked: 0, error: "", personal };
 }
 
 /**
@@ -831,6 +912,7 @@ export function publicView(entry) {
     archive: entry.kind === "link" && entry.archive === true,
     options: entry.options ?? [],
     optionsVersion: entry.optionsVersion ?? "",
+    personal: entry.personal === true,
   };
 }
 
@@ -940,6 +1022,14 @@ export async function handleModRequest(catalog, method, url, readBody, readBytes
 
   if (parts.length === 4 && parts[3] === "options" && method === "POST") {
     return json((body) => catalog.setOptions(fromBody(body), parts[2], body?.version, body?.options), catalog.limits.maxOptionsBytes);
+  }
+
+  if (parts.length === 4 && parts[3] === "personal" && method === "POST") {
+    return json((body) => catalog.setPersonal(fromBody(body), parts[2], body?.personal));
+  }
+
+  if (parts.length === 4 && parts[3] === "name" && method === "POST") {
+    return json((body) => catalog.setName(fromBody(body), parts[2], body?.name));
   }
 
   if (parts.length === 4 && parts[3] === "file" && method === "GET") {

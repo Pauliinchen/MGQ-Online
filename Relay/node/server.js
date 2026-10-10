@@ -3,7 +3,8 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-10: Told every game of a Raid World a boss pool's share of HP left, raid max HP and defeat when a report or an admin changed it, and handed a boss report the reporting player's name
-//      Paulinchen  2026-10-09: Kept each Raid World's boss pools, answered their routes for the world's players and the admin routes for the relay's admins, and told every game of the world when a pool changed
+//      Paulinchen  2026-10-09: Told every game of a world whether it turns other mods off and which mods it names, once its creator or an admin changed either
+//                            - Kept each Raid World's boss pools, answered their routes for the world's players and the admin routes for the relay's admins, and told every game of the world when a pool changed
 //                            - Told every game of a Raid World its new difficulty once its creator or an admin changed it
 //                            - Removed a Raid World's story and boss pools again when the world was deleted while a request to them ran
 //      Paulinchen  2026-10-08: Kept each Raid World's story, answered its routes for the world's players, and told every game of the world when it changed
@@ -39,7 +40,7 @@ import http from "node:http";
 import { pathToFileURL } from "node:url";
 import { WebSocketServer } from "ws";
 import { BOSS_LIMITS, WorldBosses, bossRouteOf, bossText, handleBossRequest } from "../core/bosses.js";
-import { Directory, WORLD_TYPE, difficultyText, handleDirectoryRequest, parseAdmins } from "../core/directory.js";
+import { Directory, WORLD_TYPE, difficultyText, handleDirectoryRequest, modsRuleText, parseAdmins } from "../core/directory.js";
 import { routeIs } from "../core/http.js";
 import { ModCatalog, handleModRequest } from "../core/mods.js";
 import { handleRaidAdminRequest, raidAdminRouteOf } from "../core/raid_admin.js";
@@ -476,6 +477,10 @@ export function createRelay({
 
     if (answer.difficulty !== undefined) {
       tellWorld(answer.id, difficultyText(answer.difficulty));
+    }
+
+    if (answer.modsRule) {
+      tellWorld(answer.id, modsRuleText(answer.modsRule.off, answer.modsRule.mods));
     }
 
     if (answer.bytes) {

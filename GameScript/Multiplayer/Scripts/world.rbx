@@ -2,8 +2,14 @@
 #  world.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-10: Listed the worlds the directory no longer has after the others, Raid Worlds among them too
-#      Paulinchen  2026-10-09: Added a Raid World's difficulty: a switch in the new world's form and in the edit form of a Raid World, sent with the world and its edits, read from the list, kept in world.ini and told through difficulty
+#      Paulinchen  2026-10-10: Put the parked mods back only once the updater started, so a failed updater leaves the session as it was
+#                            - Listed the worlds the directory no longer has after the others, Raid Worlds among them too
+#      Paulinchen  2026-10-09: Added Turn off other mods: a checkbox in the new world's form, ticked for a Raid World until the player ticks it themselves,
+#                              and in the edit form, sent with the world and, when it changed, with its edits, and read from the list
+#                            - Put the new world's Raid-only and Classic-only rows on one row, each shown for its type, which freed the row
+#                            - Had the parked mods come back as the game goes back to the title screen, and before the update, and noted the world entered
+#                            - Waited with a new game or a Discord invite while the title screen starts the game again for the parked mods
+#                            - Added a Raid World's difficulty: a switch in the new world's form and in the edit form of a Raid World, sent with the world and its edits, read from the list, kept in world.ini and told through difficulty
 #                            - Greyed out the new world's starting point for a Raid World, which starts from the beginning, and sent neither a starting save nor the player's choice with it
 #      Paulinchen  2026-10-08: Added the world's type, Classic or Raid, with how a Raid World shares companions: chosen in the new world's form, sent with the world, read from the list and kept in world.ini
 #                            - Showed Raid Worlds in red above every other world, red winning over the gold of a featured one
@@ -377,6 +383,7 @@ module MGQ_MpWorld
     @world = world
     world.played!
     Link.open(world.code)
+    MGQ_MpModParking.entered if defined?(MGQ_MpModParking)
     log("entered world #{world.id} (#{world.name}, directory #{short(world.directory_id)}, #{world.seats} seats)")
   end
 
@@ -396,12 +403,15 @@ module MGQ_MpWorld
   end
 
   # Closes the open world once the game went back to the title screen, unless the world screen
-  # sent it there to start a new game in the world. Called as the title screen starts.
+  # sent it there to start a new game in the world; the mods it had parked then come back. Called
+  # as the title screen starts.
   def self.on_title_start
     if @pending
       log("kept world #{@world.id} open on the title screen: its new game starts there") if @world
     else
+      left_world = !@world.nil?
       leave("the game went back to the title screen")
+      MGQ_MpModParking.on_title_start(left_world) if defined?(MGQ_MpModParking)
     end
   end
 
@@ -421,7 +431,7 @@ module MGQ_MpWorld
   # @param scene [Scene_Title] The title screen.
   def self.on_title_update(scene)
     return watch_new_game(scene) if @pending == :starting
-    return if UpdateOffer.shown? || open_after_update(scene)
+    return if UpdateOffer.shown? || (defined?(MGQ_MpModParking) && MGQ_MpModParking.title_busy?) || open_after_update(scene)
     return Invite.on_title_update(scene) unless @pending == :new_game
 
     @pending = nil
@@ -580,10 +590,12 @@ module MGQ_MpWorld
     end
 
     # Has the DLL start the updater and closes the game, or says that the updater could not start,
-    # or cannot run under Wine.
+    # or cannot run under Wine. Parked mods come back once the updater started, which waits for this
+    # game to close and then starts it again; an updater that did not start leaves them parked.
     def self.update_and_install
       started = MGQ_Multiplayer::Link.function('mp_update_game').call
       if started == 1
+        MGQ_MpModParking.restore_for_update if defined?(MGQ_MpModParking)
         Sound.play_ok
         MGQ_MpWorld.log("closing the game for the update to #{MGQ_Multiplayer.newer_version}")
         return SceneManager.exit
@@ -899,8 +911,9 @@ module MGQ_MpWorld
     # @!attribute type [String] Its type, one of TYPES; CLASSIC when the list names none.
     # @!attribute share [String] How a Raid World shares companions, one of SHARING; "off" when the list names none.
     # @!attribute difficulty [Integer, nil] The difficulty a Raid World sets for every player, one of DIFFICULTIES; nil when it sets none.
+    # @!attribute other_mods_off [Boolean] Whether it turns off every mod it does not name, see MGQ_MpModParking.
     ListedWorld = Struct.new(:id, :seats, :online, :creator_id, :active, :creator_name, :name, :start, :members, :hidden, :choose, :open, :featured, :strict, :data, :mods, :description, :mod_hashes, :settings,
-                             :type, :share, :difficulty) do
+                             :type, :share, :difficulty, :other_mods_off) do
       # Tells whether the world is a Raid World.
       #
       # @return [Boolean] Whether it is.
@@ -956,7 +969,8 @@ module MGQ_MpWorld
         case fields[0]
         when "world"
           worlds.push(ListedWorld.new(fields[1], fields[2].to_i, fields[3].to_i, fields[4], fields[5].to_i, fields[6].to_s, fields[7].to_s, fields[8] || "none", [], fields[9] == "1", fields[10] == "1", fields[11] == "1", fields[12] == "1", fields[13] == "1", fields[14].to_s, fields[15].to_s, fields[16].to_s, fields[17].to_s, fields[18].to_s,
-                                     fields[19].to_s.empty? ? CLASSIC : fields[19], fields[20].to_s.empty? ? SHARING[0] : fields[20], fields[19] == RAID ? MGQ_MpWorld.difficulty_of(fields[21]) : nil))
+                                     fields[19].to_s.empty? ? CLASSIC : fields[19], fields[20].to_s.empty? ? SHARING[0] : fields[20], fields[19] == RAID ? MGQ_MpWorld.difficulty_of(fields[21]) : nil,
+                                     fields[22].to_s.empty? ? fields[19] == RAID : fields[22] == "1"))
         when "member"
           worlds.last.members.push(Member.new(fields[1], fields[2] == "1", fields[3].to_s)) if worlds.last
         end
@@ -1002,13 +1016,16 @@ module MGQ_MpWorld
       raid = type == RAID
       share = raid ? about[:share] || SHARING[0] : SHARING[0]
       difficulty = raid ? about[:difficulty] || DEFAULT_DIFFICULTY : DEFAULT_DIFFICULTY
+      other_mods_off = about[:other_mods_off].nil? ? raid : about[:other_mods_off]
       choose = false if raid
       start = "" if raid
       sent = MGQ_Multiplayer::Link.function('mp_dir_create').call(name + "\0", password + "\0", seats, hidden ? 1 : 0, choose ? 1 : 0, start + "\0",
                                                                                   about[:description].to_s + "\0", about[:mods].to_s + "\0", about[:data].to_s + "\0", about[:strict] ? 1 : 0,
-                                                                                  about[:mod_hashes].to_s + "\0", about[:settings].to_s + "\0", type + "\0", share + "\0", difficulty) == 1
+                                                                                  about[:mod_hashes].to_s + "\0", about[:settings].to_s + "\0", type + "\0", share + "\0", difficulty,
+                                                                                  other_mods_off ? 1 : 0) == 1
       files = start.empty? ? "no starting save" : "a starting save of #{start.split("\n").size} file(s)"
-      started(sent, "create #{name}: #{raid ? "raid, sharing #{share}, difficulty #{MGQ_MpWorld.difficulty_name(difficulty)}" : 'classic'}, #{seats} seats, #{password.empty? ? 'no password' : 'a password'}, #{hidden ? 'hidden' : 'public'}, " \
+      started(sent, "create #{name}: #{raid ? "raid, sharing #{share}, difficulty #{MGQ_MpWorld.difficulty_name(difficulty)}" : 'classic'}, #{other_mods_off ? 'other mods off' : 'other mods allowed'}, " \
+                    "#{seats} seats, #{password.empty? ? 'no password' : 'a password'}, #{hidden ? 'hidden' : 'public'}, " \
                     "#{choose ? "player's choice" : 'no choice'}, #{files}, mods \"#{about[:mods]}\", #{about[:strict] ? 'strict' : 'mismatch allowed'}, " \
                     "data #{about[:data].to_s.empty? ? 'unknown' : about[:data]}, description of #{about[:description].to_s.size} chars, creator hashes \"#{about[:mod_hashes]}\", " \
                     "#{about[:settings].to_s.empty? ? "each player's own mod settings" : "mod settings \"#{about[:settings]}\""}")
@@ -1035,8 +1052,9 @@ module MGQ_MpWorld
       started(MGQ_Multiplayer::Link.function('mp_dir_unlock_code').call(code + "\0") == 1, "unlock a world with an invite")
     end
 
-    # Changes a world's seats, description, mods and a Raid World's difficulty, which its creator or
-    # an admin may, and for its creator the hashes of its required mods outside the catalog.
+    # Changes a world's seats, description, mods, a Raid World's difficulty and whether it turns other
+    # mods off, which its creator or an admin may, and for its creator the hashes of its required mods
+    # outside the catalog.
     #
     # @param id [String] The world.
     # @param seats [Integer] How many players it seats at once.
@@ -1044,13 +1062,14 @@ module MGQ_MpWorld
     # @param mods [String] The mods it needs, empty for none.
     # @param mod_hashes [String, nil] The creator's mod hashes, nil to leave them, as an admin must.
     # @param difficulty [Integer, nil] A Raid World's difficulty, one of DIFFICULTIES; nil to leave it, as for every Classic world.
+    # @param other_mods_off [Boolean, nil] Whether it turns off every mod it does not name; nil to leave it.
     # @return [Boolean] Whether the action started.
-    def self.edit(id, seats, description, mods, mod_hashes = nil, difficulty = nil)
+    def self.edit(id, seats, description, mods, mod_hashes = nil, difficulty = nil, other_mods_off = nil)
       MGQ_Multiplayer::Player.share
       sent = MGQ_Multiplayer::Link.function('mp_dir_edit').call(id + "\0", seats, description + "\0", mods + "\0", mod_hashes.to_s + "\0", mod_hashes ? 1 : 0,
-                                                                                difficulty.to_i, difficulty ? 1 : 0) == 1
+                                                                                difficulty.to_i, difficulty ? 1 : 0, other_mods_off ? 1 : 0, other_mods_off.nil? ? 0 : 1) == 1
       started(sent, "edit world #{MGQ_MpWorld.short(id)}: #{seats} seats, mods \"#{mods}\", description of #{description.size} chars, creator hashes #{mod_hashes ? "\"#{mod_hashes}\"" : 'kept'}" \
-                    "#{difficulty ? ", difficulty #{MGQ_MpWorld.difficulty_name(difficulty)}" : ''}")
+                    "#{difficulty ? ", difficulty #{MGQ_MpWorld.difficulty_name(difficulty)}" : ''}#{other_mods_off.nil? ? '' : ", other mods #{other_mods_off ? 'off' : 'allowed'}"}")
     end
 
     # Replaces a world's mod settings, which its creator or an admin may.
@@ -1703,6 +1722,12 @@ module MGQ_MpWorld
     # What the lines at the top say on Shared Mod Settings.
     SHARED_HINT = "Ticked: every player plays with your mod options here. Unticked: each keeps their own."
 
+    # What the lines at the top say on Turn off other mods.
+    OTHER_MODS_HINT = "Ticked: mods the world does not name are off in it. Personal mods stay on."
+
+    # What the lines at the top say on Turn off other mods in the edit form.
+    EDIT_OTHER_MODS_HINT = "Ticked: mods the world does not name are off. Personal mods stay on. Players in it enter again."
+
     # What the lines at the top say on the world type.
     TYPE_HINT = "Classic: each party plays its own story. Raid: the whole world plays one. Fixed once created."
 
@@ -1847,24 +1872,26 @@ module MGQ_MpWorld
         Field.new(:seats, :number, "Max Players", 1, "Players in the world at once, #{MIN_SEATS} to #{MAX_SEATS}.", :max_chars => MAX_SEATS.to_s.size, :allowed => /\A\d\z/, :side => :right, :group => "World"),
         Field.new(:hidden, :check, "Hidden", 2, "Only its players see it in the list. Others add it with its id.", :side => :left, :group => "World"),
         Field.new(:type, :switch, "World type", 2, TYPE_HINT, :side => :right, :group => "World", :choices => ["Classic", "Raid"], :label_width => TYPE_LABEL_WIDTH),
+        # Raid only and Classic only, each shown for its type, so the form keeps to one page.
         Field.new(:share, :switch, "Sharing companions", 3, SHARING_HINT, :group => "World", :choices => SHARING_NAMES,
-                  :needs => lambda { |form| TYPES[form[:type].to_i] == RAID }),
-        Field.new(:from_save, :check, "Shared save", 4, "Classic only: new players start from one of your saves. Fixed once created.", :side => :left, :group => "World",
-                  :needs => lambda { |form| form.type == CLASSIC }),
-        Field.new(:choose, :check, "Player's choice", 4, "Classic only: new players pick their start, the opening or a save. Fixed once created.", :side => :right, :group => "World",
-                  :needs => lambda { |form| form.type == CLASSIC }),
-        Field.new(:save, :save, "Save", 5, "The save every new player starts from.", :group => "World",
-                  :needs => lambda { |form| form.from_save? }, :shows => lambda { |form| form.type == CLASSIC }),
-        Field.new(:difficulty, :switch, "Difficulty", 5, DIFFICULTY_HINT, :group => "World", :choices => DIFFICULTY_NAMES,
                   :shows => lambda { |form| form.type == RAID }),
-        Field.new(:mods, :mods, "Mods", 6, "The mods of the world: listed, required to enter or essential. Enter picks them.", :group => "Game data"),
-        Field.new(:mismatch, :check, "Allow data mismatch", 7, "Ticked: games with other data are warned. Unticked: kept out. Fixed once created.", :side => :left, :group => "Game data"),
-        Field.new(:shared, :check, "Shared Mod Settings", 7, SHARED_HINT, :side => :right, :group => "Game data"),
+        Field.new(:from_save, :check, "Shared save", 3, "Classic only: new players start from one of your saves. Fixed once created.", :side => :left, :group => "World",
+                  :shows => lambda { |form| form.type == CLASSIC }),
+        Field.new(:choose, :check, "Player's choice", 3, "Classic only: new players pick their start, the opening or a save. Fixed once created.", :side => :right, :group => "World",
+                  :shows => lambda { |form| form.type == CLASSIC }),
+        Field.new(:save, :save, "Save", 4, "The save every new player starts from.", :group => "World",
+                  :needs => lambda { |form| form.from_save? }, :shows => lambda { |form| form.type == CLASSIC }),
+        Field.new(:difficulty, :switch, "Difficulty", 4, DIFFICULTY_HINT, :group => "World", :choices => DIFFICULTY_NAMES,
+                  :shows => lambda { |form| form.type == RAID }),
+        Field.new(:mods, :mods, "Mods", 5, "The mods of the world: listed, required to enter or essential. Enter picks them.", :group => "Game data"),
+        Field.new(:mismatch, :check, "Allow data mismatch", 6, "Ticked: games with other data are warned. Unticked: kept out. Fixed once created.", :side => :left, :group => "Game data"),
+        Field.new(:shared, :check, "Shared Mod Settings", 6, SHARED_HINT, :side => :right, :group => "Game data"),
+        Field.new(:other_mods_off, :check, "Turn off other mods", 7, OTHER_MODS_HINT, :group => "Game data"),
         Field.new(:description, :area, "What the world is about", 8, "Shown in the world's details. Optional.", :max_chars => MAX_DESCRIPTION_CHARS, :optional => true, :lines => DESCRIPTION_LINES, :group => "Description"),
         Field.new(:confirm, :button, "Create the world", 9, "Creates the world. You enter it from the list."),
       ]
       new("Create a new world", fields, :name => "", :password => "", :seats => DEFAULT_SEATS.to_s, :hidden => false, :type => 0, :share => 0, :from_save => false, :save => nil, :choose => false, :description => "", :mods => "",
-                                        :mismatch => false, :shared => false, :difficulty => DIFFICULTIES.index(DEFAULT_DIFFICULTY))
+                                        :mismatch => false, :shared => false, :difficulty => DIFFICULTIES.index(DEFAULT_DIFFICULTY), :other_mods_off => false)
     end
 
     # The form that changes a world, for its creator or an admin: what may change after it was made.
@@ -1878,8 +1905,9 @@ module MGQ_MpWorld
       fields = [
         Field.new(:seats, :number, "Max Players", 0, "Players in the world at once, #{MIN_SEATS} to #{MAX_SEATS}.", :max_chars => MAX_SEATS.to_s.size, :allowed => /\A\d\z/, :group => "World"),
         Field.new(:mods, :mods, "Mods", 2, "The mods of the world: listed, required to enter or essential. Enter picks them.", :group => "Game data"),
-        Field.new(:description, :area, "What the world is about", 5, "Shown in the world's details. Optional.", :max_chars => MAX_DESCRIPTION_CHARS, :optional => true, :lines => DESCRIPTION_LINES, :group => "Description"),
-        Field.new(:confirm, :button, "Save the changes", 6, "Changes the world for everyone."),
+        Field.new(:other_mods_off, :check, "Turn off other mods", 5, EDIT_OTHER_MODS_HINT, :group => "Game data"),
+        Field.new(:description, :area, "What the world is about", 6, "Shown in the world's details. Optional.", :max_chars => MAX_DESCRIPTION_CHARS, :optional => true, :lines => DESCRIPTION_LINES, :group => "Description"),
+        Field.new(:confirm, :button, "Save the changes", 7, "Changes the world for everyone."),
       ]
       if own
         fields.insert(2, Field.new(:data, :button, "Update current data scan", 3, "Scans your game's data as it is now and makes it the world's, such as after a mod update.", :group => "Game data"),
@@ -1888,7 +1916,7 @@ module MGQ_MpWorld
       choices = listed.difficulty.nil? ? [PER_PLAYER] + DIFFICULTY_NAMES : DIFFICULTY_NAMES
       fields.insert(1, Field.new(:difficulty, :switch, "Difficulty", 1, EDIT_DIFFICULTY_HINT, :group => "World", :choices => choices)) if listed.type == RAID
       new("Edit #{listed.name}", fields, :seats => listed.seats.to_s, :mods => listed.mods.to_s, :description => listed.description.to_s, :shared => MGQ_MpWorldMods.shared?(listed.settings),
-                                         :difficulty => choices.index(MGQ_MpWorld.difficulty_name(listed.difficulty) || PER_PLAYER))
+                                         :difficulty => choices.index(MGQ_MpWorld.difficulty_name(listed.difficulty) || PER_PLAYER), :other_mods_off => listed.other_mods_off ? true : false)
     end
 
     # The form of the name the others see.
@@ -2032,6 +2060,32 @@ module MGQ_MpWorld
     def turn(field, step)
       count = [field.choices.size, 1].max
       @values[field.key] = (@values[field.key].to_i + step) % count
+      follow_type if field.key == :type
+      @values[field.key]
+    end
+
+    # Ticks a checkbox, or unticks it, which from then on keeps what the player chose.
+    #
+    # @param key [Symbol] The checkbox's key.
+    # @return [Boolean] Whether it is ticked now.
+    def tick(key)
+      @ticked = (@ticked || []) | [key]
+      @values[key] = !@values[key]
+    end
+
+    # Ticks Turn off other mods for a Raid World and unticks it for a Classic one, unless the player
+    # ticked or unticked it themselves.
+    def follow_type
+      return if !@values.key?(:other_mods_off) || (@ticked || []).include?(:other_mods_off)
+
+      @values[:other_mods_off] = type == RAID
+    end
+
+    # Tells whether the form turns off every mod the world does not name.
+    #
+    # @return [Boolean] Whether it does.
+    def other_mods_off?
+      @values[:other_mods_off] == true
     end
 
     # Checks what a text box holds, and tidies it.

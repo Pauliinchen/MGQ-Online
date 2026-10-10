@@ -5,6 +5,7 @@
 #      Paulinchen  2026-10-10: Checked that the relay's push of a Raid World's boss pool goes to its route with the share left, the max HP and whether it is defeated
 #      Paulinchen  2026-10-09: Checked that the relay's push of a Raid World's boss pool goes to its route with the key and kills, marked as the relay's
 #                            - Checked that the relay's push of a Raid World's difficulty goes to its route with the value, marked as the relay's
+#                            - Checked that the relay's push of a world's rule on other mods goes to its route with the value and the mods, marked as the relay's
 #                            - Checked that a stranger's ghost is solid in a Raid World and see-through in a Classic world
 #      Paulinchen  2026-10-08: Checked that a follower whose sprite this game lacks shows the outline of Luka's, how the outline is drawn, and that the graphics checked stay few
 #                            - Checked that the relay's push of a Raid World's story goes to its route, marked as the relay's
@@ -466,6 +467,12 @@ MGQ_MpOverworldSync.route(MGQ_MpOverworldSync::DIFFICULTY_FIELD) { |peer, messag
 $inbox << { "kind" => "difficulty", "value" => "-2" }
 MGQ_MpOverworldSync.tick
 check("the relay's push of a Raid World's difficulty goes to its route with the value, marked as the relay's", $pushes.last, [nil, "-2", true])
+MGQ_MpOverworldSync.route(MGQ_MpOverworldSync::MODS_RULE_FIELD) { |peer, message| $pushes << [peer, message[MGQ_MpOverworldSync::MODS_RULE_FIELD], message["mods"], message[:relay]] }
+$inbox << { "kind" => "mods_rule", "value" => "1", "mods" => "!Level Cap; Party Sheet" }
+$inbox << { "kind" => "mods_rule", "value" => "0" }
+MGQ_MpOverworldSync.tick
+check("the relay's push of a world's rule on other mods goes to its route with the value and the mods, none when it names none, marked as the relay's",
+      $pushes.last(2), [[nil, "1", "!Level Cap; Party Sheet", true], [nil, "0", "", true]])
 
 wheel(CHAT, :C)
 check("the wheel opens the chat box", [chat.typing?, MGQ_MpActions::Wheel.open?, MGQ_Multiplayer::Capture.on?], [true, false, true])
