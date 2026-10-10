@@ -5,7 +5,8 @@
 #      Paulinchen  2026-10-10: Let a player in a Raid World move while the teller fights the story's battle, so one who came late may join it
 #                            - Moved the teleport to the party's leader to coop_teleport.rbx, which brings the player over through come_to
 #                            - Let a teleport the player asked for wait a minute for the player to be free, as long as the request stood, instead of six seconds
-#                            - Let a leader's call that takes over a teleport the player asked for lapse as a call does
+#                            - Followed a Raid World's teller whose story moved on at once only while the player watches it and is not behind, and offered every other player to follow in the notification box while the teller tells there, a minute at most
+#                            - Let a follow the player accepted in the notification box wait a minute for them to be free, and a leader's call that takes over a teleport the player asked for lapse as a call does
 #      Paulinchen  2026-10-09: Read the warp ban's switch from story_state.rbx instead of coop_story.rbx
 #                            - Called the players a Raid World's story takes along in one message instead of one per player
 #                            - Kept whom the story took along for the whole telling, not only its first event, and named the teller whose call the player follows
@@ -37,7 +38,9 @@
 # member, see coop_teleport.rbx, brings the player over here too.
 #
 # A Raid World gathers nobody: whoever is on the map watches. A story that moves its teller elsewhere
-# takes everyone on the map along, and anyone may teleport to the story on their own.
+# calls everyone on the map along: a player who watches it and is not behind the world's story
+# follows at once, any other is offered to follow in the notification box. Anyone may teleport to
+# the story on their own.
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpCoopGather
@@ -63,11 +66,16 @@ module MGQ_MpCoopGather
   # minute, as long as a request to another member stands (see MGQ_MpCoopTeleport::ASK_FRAMES).
   ASKED_LAPSE_FRAMES = 3600
 
+  # Frames an offer to follow a Raid World's teller whose story moved on stands in the notification
+  # box at most, a minute.
+  FOLLOW_OFFER_FRAMES = 3600
+
   # What a teleport to the story calls the place it goes to, as a call names its leader.
   STORY_NAME = "the story"
 
   @hold = nil
   @gather = nil
+  @follow_offers = {}
 
   extend MGQ_MpLog
 
@@ -95,10 +103,12 @@ module MGQ_MpCoopGather
     @gather = nil
   end
 
-  # Forgets where the story was last told and whom it took along, as when the world closes.
+  # Forgets where the story was last told, whom it took along and the offers to follow its tellers,
+  # as when the world closes.
   def self.forget_story_place
     @story_place = nil
     @story_warp_ban = nil
+    @follow_offers.clear
     forget_taken_along
   end
 
@@ -138,14 +148,154 @@ module MGQ_MpCoopGather
   end
 
   # Takes a message about gathering in a Raid World, which gathers nobody: only the story's call
-  # to follow where it moved its teller, sent to everyone who was on the teller's map.
+  # to follow where it moved its teller, sent to everyone who was on the teller's map. The player
+  # follows at once only while they watch the teller's story, else it is offered, see offer_follow.
   #
   # @param peer [MGQ_MpOverworldSync::Peers::Peer] Who sent it.
   # @param message [Hash] The message's fields.
   def self.take_raid(peer, message)
     return log("ignored #{message['pevent']}: a Raid World gathers nobody") unless message["pevent"] == "follow"
 
-    followed(peer, [message["map"].to_i, message["x"].to_i, message["y"].to_i, message["d"].to_i], message["warp_ban"] == "1")
+    place = [message["map"].to_i, message["x"].to_i, message["y"].to_i, message["d"].to_i]
+    warp_ban = message["warp_ban"] == "1"
+    reason = follow_refusal(peer)
+    reason ? offer_follow(peer, place, warp_ban, reason) : followed(peer, place, warp_ban)
+  end
+
+  # Tells why the player does not follow a Raid World's teller at once where their story moved
+  # them: only a player who watches that teller's story and is not behind the world's does.
+  #
+  # @param peer [MGQ_MpOverworldSync::Peers::Peer] The teller.
+  # @return [String, nil] The reason, nil when the player follows at once.
+  def self.follow_refusal(peer)
+    return "the player's story is behind the world's" if MGQ_MpCoopEvents.behind?
+    return "the player's story is not where #{MGQ_MpOverworldSync.who(peer)}'s is" unless MGQ_MpCoop::Scope.watches?(peer)
+
+    nil
+  end
+
+  # Offers the player in the notification box to follow a Raid World's teller whose story moved
+  # them elsewhere, see Offers.notice_of; a newer move of the same teller replaces the offer.
+  #
+  # @param peer [MGQ_MpOverworldSync::Peers::Peer] The teller.
+  # @param place [Array<Integer>] Where the teller stands now: map, x, y and direction.
+  # @param warp_ban [Boolean] Whether warping is banned there.
+  # @param reason [String] Why the player does not follow at once, for the log.
+  def self.offer_follow(peer, place, warp_ban, reason)
+    @follow_offers[peer.state["id"].to_s] = { :name => peer.state["name"].to_s, :place => place, :warp_ban => warp_ban, :since => Graphics.frame_count }
+    log("offered to follow #{MGQ_MpOverworldSync.who(peer)} to map #{place[0]} #{place[1]},#{place[2]} in the notification box: #{reason}")
+  end
+
+  # Finds the standing offer to follow a teller, dropping it once their telling ended, the player
+  # came to its map or FOLLOW_OFFER_FRAMES passed.
+  #
+  # @param peer [MGQ_MpOverworldSync::Peers::Peer] The teller.
+  # @return [Hash, nil] The offer: :name, :place, :warp_ban, :since and :seen once the teller's
+  #   state told them telling; nil for none.
+  def self.follow_offer(peer)
+    id = peer.state["id"].to_s
+    offer = @follow_offers[id]
+    return nil unless offer
+
+    reason = follow_offer_end(peer, offer)
+    return offer unless reason
+
+    @follow_offers.delete(id)
+    log("dropped the offer to follow #{offer[:name]}: #{reason}")
+    nil
+  end
+
+  # Tells why an offer to follow a teller ends, noting in the offer once their state told them
+  # telling.
+  #
+  # The teller's state travels apart from the follow and may still say they are not telling when
+  # it arrives, so only a telling seen to end drops the offer.
+  #
+  # @param peer [MGQ_MpOverworldSync::Peers::Peer] The teller.
+  # @param offer [Hash] The offer, see follow_offer.
+  # @return [String, nil] The reason, nil while it stands.
+  def self.follow_offer_end(peer, offer)
+    telling = peer.state["telling"] == "1"
+    offer[:seen] = true if telling
+    return "their telling ended" if offer[:seen] && !telling
+    return "it stood #{FOLLOW_OFFER_FRAMES / 60} s" unless within?(offer[:since], FOLLOW_OFFER_FRAMES)
+    return "the player is on that map already" if $game_map && $game_map.map_id == offer[:place][0]
+
+    nil
+  end
+
+  # Writes the notification box's line of an offer to follow a teller, naming the place as the
+  # teller's state names it once they told it from there, else the map's id.
+  #
+  # @param peer [MGQ_MpOverworldSync::Peers::Peer] The teller.
+  # @param offer [Hash] The offer, see follow_offer.
+  # @return [String] The line.
+  def self.follow_text(peer, offer)
+    map_id = offer[:place][0]
+    place = peer.state["map"].to_i == map_id ? peer.state["place"].to_s : ""
+    "#{offer[:name]}'s story moved on to #{place.empty? ? "map #{map_id}" : place}. Follow?"
+  end
+
+  # Follows a teller whose offer the player accepted, as a player who watches their story would at
+  # once, but waiting ASKED_LAPSE_FRAMES for the player to be free, as a teleport they asked for.
+  #
+  # @param peer [MGQ_MpOverworldSync::Peers::Peer] The teller.
+  def self.accept_follow(peer)
+    offer = follow_offer(peer)
+    return log("did not follow #{MGQ_MpOverworldSync.who(peer)}: the offer no longer stands") unless offer
+
+    @follow_offers.delete(peer.state["id"].to_s)
+    followed(peer, offer[:place], offer[:warp_ban])
+    @gather[:lapse] = ASKED_LAPSE_FRAMES
+  rescue => e
+    log("following a teller failed: #{e.class}: #{e.message}")
+  end
+
+  # Drops the offer to follow a teller, which the player declined.
+  #
+  # @param peer [MGQ_MpOverworldSync::Peers::Peer] The teller.
+  def self.decline_follow(peer)
+    offer = @follow_offers.delete(peer.state["id"].to_s)
+    log("declined to follow #{offer[:name]}") if offer
+  end
+
+  # What gathering adds to the notification box: the offers to follow a Raid World's teller whose
+  # story moved on, see offer_follow.
+  module Offers
+    # Tells nothing to the World overview, whose own row offers the teleport to the story.
+    #
+    # @param _peer [MGQ_MpOverworldSync::Peers::Peer] The other player.
+    # @return [nil] Always.
+    def self.call_of(_peer)
+      nil
+    end
+
+    # Tells the offer to follow a teller for the notification box.
+    #
+    # @param peer [MGQ_MpOverworldSync::Peers::Peer] The other player.
+    # @return [MGQ_MpActions::Notice, nil] The offer, nil for none.
+    def self.notice_of(peer)
+      offer = MGQ_MpCoopGather.follow_offer(peer)
+      return nil unless offer
+
+      MGQ_MpActions::Notice.new([:story_follow, peer.seat], MGQ_MpCoopGather.follow_text(peer, offer), MGQ_MpCoop::INVITE_COLOR, "Follow",
+                                lambda { MGQ_MpCoopGather.accept_follow(peer) }, lambda { MGQ_MpCoopGather.decline_follow(peer) }, offer[:since])
+    end
+
+    # Adds no choice to another player's menu.
+    #
+    # @param _peer [MGQ_MpOverworldSync::Peers::Peer] The other player.
+    # @return [nil] Always.
+    def self.peer_option(_peer)
+      nil
+    end
+
+    # Adds no choice to the player's own row.
+    #
+    # @return [Array] None.
+    def self.own_options
+      []
+    end
   end
 
   # As leader, holds a story scene until every member stands near: calls them now and every few
@@ -292,8 +442,9 @@ module MGQ_MpCoopGather
   end
 
   # As leader, takes along the members who stood near when the story moved the player elsewhere,
-  # such as a theater show's stage or a story's own teleport; in a Raid World everyone who was on
-  # the map. Called after Game_Player#perform_transfer.
+  # such as a theater show's stage or a story's own teleport; in a Raid World calls everyone who was
+  # on the map, whose games decide whether they follow at once (see take_raid). Called after
+  # Game_Player#perform_transfer.
   def self.after_transfer
     from = @transfer_from
     @transfer_from = nil
@@ -657,10 +808,12 @@ module MGQ_MpCoopGather
   end
 end
 
-# The line above the player's own head while the leader's story calls them, through ui_actions.rbx.
+# The line above the player's own head while the leader's story calls them, and the offers to follow
+# a Raid World's teller in the notification box, through ui_actions.rbx.
 
 begin
   MGQ_MpActions.own_line_from { MGQ_MpCoopGather.own_line }
+  MGQ_MpActions.offer(MGQ_MpCoopGather::Offers)
 rescue => e
   MGQ_MpCoopGather.log("actions FAILED: #{e.class}: #{e.message}")
 end

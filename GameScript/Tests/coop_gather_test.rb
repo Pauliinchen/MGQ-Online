@@ -4,7 +4,9 @@
 #  Changelog:
 #      Paulinchen  2026-10-10: Checked that a Raid World's teller in the story's battle holds nobody
 #                            - Checked that a loaded save forgets a teleport the player asked for, in place of the question where the leader stands
-#                            - Checked that a leader's call taking over a teleport the player asked for lapses as a call does
+#                            - Checked that only a player who watches a Raid World's teller and is not behind follows their story at once, and that any other is offered to follow in the notification box until they follow, decline, the telling ends, a minute passes or the world closes
+#                            - Checked that an offer to follow which comes before the teller's state tells them telling stands, that a follow accepted there waits a minute for a busy player, and that a leader's call taking over an asked teleport lapses as a call does
+#                            - Stood in for the notification box's offers, the free map, the reserved transfer and whether the player's story is behind
 #      Paulinchen  2026-10-09: Stood in for the warp ban of story_state.rbx, which names it now
 #                            - Stood in for MGQ_MpCoopEvents.tell_each, through which the story calls those it takes along in one message
 #                            - Checked that the story calls those it takes along in one message, keeps them through a moment between its events, and names its teller as the one the player follows
@@ -39,13 +41,18 @@ class Game_Player
 end
 class Scene_Map; def update_call_menu; end; end
 module DataManager; def self.extract_save_contents(contents); end; end
-module MGQ_MpActions; def self.own_line_from(&line); end; end
+module MGQ_MpActions
+  Notice = Struct.new(:key, :text, :color, :action, :take, :decline, :mark)
+  def self.own_line_from(&line); end
+  def self.offer(offers); $offers = offers; end
+end
 module MGQ_MpOverworldSync
   module Peers; Peer = Struct.new(:seat, :state); end
   def self.on_tick(&block); $tick = block; end
   def self.notice(text); ($notices ||= []) << text; end
 end
 module MGQ_MpCoop
+  INVITE_COLOR = :invite
   module Party; def self.members; [$member]; end; end
   def self.party_leader; $leader; end
   def self.party_leading?; $leader == :me; end
@@ -109,6 +116,7 @@ module MGQ_MpOverworldSync
   def self.in_world?; true; end
   def self.who(peer); peer == :me ? "the player" : peer.state["name"].to_s; end
   def self.tell(seat, fields); $told << [seat, fields]; true; end
+  def self.map_free?; $map_free; end
   module Me; def self.map_since; 2000; end; def self.id; "me"; end; end
   module Peers
     def self.present; $peers; end
@@ -117,6 +125,7 @@ module MGQ_MpOverworldSync
   end
 end
 module MGQ_MpCoopEvents
+  def self.behind?; $behind; end
   def self.telling?; $telling; end
   def self.story_playing?; $telling; end
   def self.leading_story?; MGQ_MpCoop::Scope.leads_story?; end
@@ -131,8 +140,13 @@ module MGQ_MpCoopStory
   def self.read_markers(text); values = text.to_s.split(","); values.size == 4 ? values.map(&:to_i) : nil; end
   def self.own_markers; $own_markers; end
 end
-# A player whose transfer is set from outside.
-class Game_Player; attr_writer :transfer; def transfer?; @transfer ? true : false; end; end
+# A player whose transfer is set from outside, and who notes the transfer reserved.
+class Game_Player
+  attr_writer :transfer
+  attr_accessor :reserved
+  def transfer?; @transfer ? true : false; end
+  def reserve_transfer(*args); @reserved = args; end
+end
 $raid = true
 $telling = false
 $told = []
@@ -159,6 +173,54 @@ gather.take(teller, { "pevent" => "follow", "map" => "8", "x" => "1", "y" => "2"
 check("but the story moving its teller elsewhere takes the player along", [gather.coming?, gather.story_map?(8)], [true, true])
 check("whose teller the player follows", gather.followed_id, "t")
 gather.forget
+
+# Only a player who watches the teller's story and is not behind the world's follows at once; any
+# other is offered to follow in the notification box while the teller tells there.
+follow = { "pevent" => "follow", "map" => "8", "x" => "1", "y" => "2", "d" => "2" }
+teller.state["tsm"] = "9,0,0,0"
+gather.take(teller, follow)
+notice = $offers.notice_of(teller)
+check("a player whose story differs from the teller's does not follow at once", gather.coming?, false)
+check("but is offered to in the notification box", [notice.text, notice.action, notice.color, notice.key],
+      ["Teller's story moved on to map 8. Follow?", "Follow", :invite, [:story_follow, 4]])
+check("which leaves the World overview's rows alone", [$offers.call_of(teller), $offers.peer_option(teller), $offers.own_options], [nil, nil, []])
+teller.state.merge!("map" => "8", "place" => "Iliasville")
+check("naming the place once the teller's state tells it from there", $offers.notice_of(teller).text, "Teller's story moved on to Iliasville. Follow?")
+$offers.notice_of(teller).take.call
+check("following brings the player there as a follow of that teller",
+      [gather.coming?, gather.pending_call[:place], gather.followed_id, $offers.notice_of(teller)], [true, [8, 1, 2, 2], "t", nil])
+gather.forget
+gather.take(teller, follow)
+$offers.notice_of(teller).decline.call
+check("declining drops the offer", [$offers.notice_of(teller), gather.coming?], [nil, false])
+gather.take(teller, follow)
+teller.state["telling"] = "0"
+check("an offer that comes before the teller's state tells them telling stands", $offers.notice_of(teller).nil?, false)
+teller.state["telling"] = "1"
+$offers.notice_of(teller)
+teller.state["telling"] = "0"
+check("an offer ends with the teller's telling", $offers.notice_of(teller), nil)
+teller.state["telling"] = "1"
+gather.take(teller, follow)
+$offers.notice_of(teller).take.call
+$map_free = false
+$frame_count += 20 * 60
+gather.update
+check("a follow accepted while the player is busy for 20 s still stands", [gather.coming?, gather.followed_id], [true, "t"])
+$frame_count += MGQ_MpCoopGather::ASKED_LAPSE_FRAMES
+check("until a minute passed", [gather.pending_call, $notices.last], [nil, "Teller's story went on without you."])
+gather.take(teller, follow)
+$frame_count += MGQ_MpCoopGather::FOLLOW_OFFER_FRAMES
+check("or after a minute", $offers.notice_of(teller), nil)
+teller.state.delete("tsm")
+$behind = true
+gather.take(teller, follow)
+check("a player behind the world's story is offered to follow too, though their story matches", [gather.coming?, $offers.notice_of(teller).nil?], [false, false])
+$behind = false
+gather.forget_story_place
+check("the world closing forgets the offers", $offers.notice_of(teller), nil)
+teller.state["map"] = "3"
+teller.state.delete("place")
 
 $peers = [behind, teller]
 teller.state["map"] = "3"

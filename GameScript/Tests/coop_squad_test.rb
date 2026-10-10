@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-10: Checked that a hidden squad member never brings the cut fourth into a duel or a co-op battle
+#                            - Checked that a Raid World offers the teleport to the story whenever its endpoint is known
 #      Paulinchen  2026-10-08: Checked a Raid World's squads: one and two for every player, the team of four with the rest on standby, no followers, the line after the third place and the battles of the player's own
 #                            - Checked that a Raid World's duels fight with the squad, team duels with their own party, and that fitting a team moves Luka into the squad
 #                            - Checked that a story's temporary party keeps the game's size and that a hidden squad member never lets the fourth into a battle
@@ -333,6 +334,15 @@ $game_actors[2].hidden = true
 check("a hidden squad member never brings the cut fourth into a duel or a co-op battle",
       [squad.raid_team.map(&:id), squad.own_order.map(&:id), squad.place_of(actors[3])], [[1, 3], [1, 3], :cut])
 $game_actors[2].hidden = false
+
+# The teleport to the story on demand, which coop.rbx offers on the player's own row in a Raid World.
+module MGQ_MpCoopGather; def self.story_endpoint; $story_end; end; def self.join_story; $joined_story = true; end; end
+story = lambda { MGQ_MpCoop::Offers.own_options.find { |option| option.text == "Teleport to the story" } }
+$story_end = nil
+check("a Raid World offers the teleport to the story, closed while nobody told it", [story.call.run, story.call.refusal], [nil, "Nobody has told the story yet."])
+$story_end = [9, 1, 1, 2]
+story.call.run.call
+check("and open whenever its endpoint is known", $joined_story, true)
 loaded = Game_Party.new
 loaded.all_members = actors.first(6)
 loaded.party_member_max = 8
