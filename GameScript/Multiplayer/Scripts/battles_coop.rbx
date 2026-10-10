@@ -2,7 +2,9 @@
 #  battles_coop.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-10: Invited the players on the map who watch the story told there to a boss battle in a Raid World too
+#      Paulinchen  2026-10-10: Stretched the steps to the next random encounter in a Raid World by half a draw per other player on the map, up to a battle's four players
+#                            - Stretched the steps to a party's next random encounter in a Classic world once per member on the map, within a wider margin, so the party meets encounters about as often as one player
+#                            - Invited the players on the map who watch the story told there to a boss battle in a Raid World too
 #                            - Named the raid boss's pools in the invite to a battle that fights them, and invited nobody to one whose pools are all empty already
 #                            - Fought the raid boss's pools in the battle the player yields or follows to, and gave a troop taken from the host the boss's raised max HP at once
 #                            - Gave the player their own enemy rates and stats back as the battle ends, before the game's autosave, instead of only once its scene ended
@@ -147,6 +149,15 @@ module MGQ_MpBattlesCoop
   # Seconds a party member on the map stands still at most once another member met enemies, until
   # they join the battle or turn it down.
   FREEZE_SECONDS = 10
+
+  # The share either way by which the steps to a party's next random encounter vary around the
+  # game's draw, wider than the game's own margin, so the members' steps never fall into step.
+  ENCOUNTER_MARGIN = 0.5
+
+  # The share of a draw each other player on the map adds to the steps in a Raid World, where the
+  # players on a map fight together only as far as invites and hot-joins bring them, less than a
+  # party does.
+  RAID_ENCOUNTER_SHARE = 0.5
 
   # What another player does, by their state's scene, while they may be invited: walking the map,
   # reading an event's messages, such as the leader's story, or on the map with their window in the
@@ -674,6 +685,41 @@ module MGQ_MpBattlesCoop
     MGQ_MpCoop::Party.members.select do |peer|
       peer.state["map"].to_i == $game_map.map_id && !FREE_SCENES.include?(peer.state["scene"]) && peer.state["scene"] != "battle"
     end
+  end
+
+  # Stretches the steps the game drew to the next random encounter for the players who fight it
+  # together (see encounter_players), by a wider random margin than the game's (ENCOUNTER_MARGIN).
+  # In a party of a Classic world once per member on the map, since any member's encounter is the
+  # whole party's battle, so the party meets encounters about as often as one player would; in a
+  # Raid World by RAID_ENCOUNTER_SHARE of a draw per other player on the map. A player alone on
+  # their map keeps the game's draw.
+  #
+  # @param steps [Numeric] The steps the game drew.
+  # @return [Numeric] The steps the player takes.
+  def self.party_encounter_steps(steps)
+    return steps unless raid? || MGQ_MpCoop.in_party?
+
+    players = encounter_players
+    return steps if players < 2
+
+    stretch = raid? ? 1 + (players - 1) * RAID_ENCOUNTER_SHARE : players
+    stretched = steps * stretch * (1 - ENCOUNTER_MARGIN + rand * 2 * ENCOUNTER_MARGIN)
+    log("drew #{stretched.round} steps to the next random encounter instead of #{steps.round}: #{players} #{raid? ? 'players' : 'party members'} on the map")
+    stretched
+  rescue => e
+    log("stretching the steps to the next random encounter failed: #{e.class}: #{e.message}")
+    steps
+  end
+
+  # Counts the players who fight the player's next random encounter together, the player included:
+  # in a Raid World everyone on the map whose connection stands, up to the RAID_PLAYERS a battle
+  # holds, in a Classic world the party members on the map.
+  #
+  # @return [Integer] The players, 1 for the player alone.
+  def self.encounter_players
+    return [MGQ_MpCoop::Scope.peers_on($game_map.map_id).size + 1, RAID_PLAYERS].min if raid?
+
+    MGQ_MpCoop::Party.members.count { |peer| peer.state["map"].to_i == $game_map.map_id } + 1
   end
 
   # Runs the game's random encounter, which holds its battle while party members on the map are
@@ -2259,6 +2305,14 @@ module MGQ_MpBattlesCoop
     install_shift_change
     install_counts
     install_end
+    install_encounters
+  end
+
+  # Stretches the steps to the next random encounter for a party once the game drew them.
+  def self.install_encounters
+    MGQ_MpHooks.after(Game_Player, :make_encounter_count, "battles_coop") { mgq_mp_party_encounter_steps }
+  rescue => e
+    log("encounter steps hook FAILED: #{e.class}: #{e.message}")
   end
 
   # Puts back what the battle lent the player's game as the battle ends, before the game saves (see
@@ -2635,6 +2689,16 @@ begin
   MGQ_MpHooks.hold_player("battles_coop") { MGQ_MpBattlesCoop.holding? || MGQ_MpBattlesCoop.frozen? }
 rescue => e
   MGQ_MpBattlesCoop.log("title hook FAILED: #{e.class}: #{e.message}")
+end
+
+# What the party asks of the player.
+
+class Game_Player
+  # Stretches the steps to the next random encounter the game just drew for the party, see
+  # MGQ_MpBattlesCoop.party_encounter_steps.
+  def mgq_mp_party_encounter_steps
+    @encounter_count = MGQ_MpBattlesCoop.party_encounter_steps(@encounter_count)
+  end
 end
 
 # Game hooks of this script alone, through core_hooks.rbx.

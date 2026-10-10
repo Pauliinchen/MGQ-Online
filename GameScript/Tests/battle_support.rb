@@ -2,6 +2,7 @@
 #  battle_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-10: Stood in for the game's draw of the steps to the next random encounter and for being in a party
 #      Paulinchen  2026-10-09: Let an enemy appear and transform, as the game's Enemy Appear and Enemy Transform do, and be eaten, which counts it among the defeated as the game does
 #                            - Stood in for the game's variables, which hold the enemy rates a guest takes from the host
 #                            - Lettered only the living enemies that have no letter yet, and counted an enemy with the death state as fallen, as the game does
@@ -87,6 +88,7 @@ module MGQ_MpCoop
     def self.members; MGQ_MpOverworldSync::Peers.all.select(&:member); end
     def self.leader; $leader; end
   end
+  def self.in_party?; !Party.members.empty?; end
   def self.leads?(player); player == :me ? $leader == :me : ($leader.equal?(player) || Array($leaders).any? { |l| l.equal?(player) }); end
   def self.random_id(length); rand(36**length).to_s(36); end
   def self.party_leader; Party.members.empty? ? nil : $leader; end
@@ -216,6 +218,9 @@ class Game_Player
   def movable?; true; end
   # The game's random encounter: the troop set up once the steps ran out.
   def encounter; return false unless $encounter_troop; BattleManager.setup($encounter_troop); $encounter_troop = nil; true; end
+  attr_reader :encounter_count
+  # The game's draw of the steps to the next random encounter, always 100 here.
+  def make_encounter_count; @encounter_count = 100.0; end
 end
 class Scene_Title; def start; end; end
 class Game_Switches; def initialize; @d = {}; end; def [](i); @d[i] || false; end; def []=(i, v); @d[i] = v; end; end

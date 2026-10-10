@@ -2,7 +2,9 @@
 #  battles_coop_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-10: Checked that a boss battle in a Raid World invites the players reading the story the player tells
+#      Paulinchen  2026-10-10: Checked that a Raid World stretches the steps to the next random encounter by half a draw per other player on the map, no more than a battle holds
+#                            - Checked that a party of a Classic world stretches the steps to the next random encounter once per member on the map, within a wider margin
+#                            - Checked that a boss battle in a Raid World invites the players reading the story the player tells
 #                            - Checked that a guest who follows to the battle its host yields to fights the raid boss's pools of its invite
 #                            - Checked that a player who yields to a rival fights with its enemy rates and pools and has its own rates back as the battle ends, before the game's autosave
 #                            - Checked that a raid boss battle whose pools are all empty invites not even the host of a waiting invite, and that a rival's invite that comes twice is kept once
@@ -820,9 +822,32 @@ check("a second request to lead refuses the one that waits",
       [$sent.map { |seat, text| [seat, fields_of(text)["coop"], fields_of(text)["bid"]] }, MGQ_MpBattlesCoop.instance_variable_get(:@request)[:message]["bid"]], [[[2, "no_lead", "r1"]], "r2"])
 MGQ_MpBattlesCoop.drop
 
+# A party of a Classic world stretches the steps to the next random encounter.
+$log.clear
+draws = (1..200).map { $game_player.make_encounter_count; $game_player.encounter_count }
+check("three party members on the map draw three times the game's steps, within half either way", [draws.min >= 150, draws.max < 450, draws.min < 225, draws.max > 375], [true, true, true, true])
+check("and the log says why", $log.grep(/steps to the next random encounter instead of 100: 3 party members on the map/).size, 200)
+pal.state["map"] = "6"
+draws = (1..200).map { $game_player.make_encounter_count; $game_player.encounter_count }
+check("a member on another map does not count", [draws.min >= 100, draws.max < 300], [true, true])
+mate.state["map"] = "6"
+$game_player.make_encounter_count
+check("alone on the map the game's draw stands", $game_player.encounter_count, 100.0)
+mate.state["map"] = "5"
+pal.state["map"] = "5"
+
 # A Raid World: every player brings one on the Frontline and two on the Backline.
 module MGQ_MpWorld; def self.raid?; $raid; end; end
 $raid = true
+$log.clear
+draws = (1..200).map { $game_player.make_encounter_count; $game_player.encounter_count }
+check("a Raid World stretches the steps by half a draw per other player on the map, three on it here", [draws.min >= 100, draws.max < 300, draws.min < 150, draws.max > 250], [true, true, true, true])
+check("and the log counts the players", $log.grep(/instead of 100: 3 players on the map/).size, 200)
+crowd = (10..14).map { |seat| MGQ_MpOverworldSync::Peers::Peer.new(seat, { "id" => "id-#{seat}", "name" => "Player #{seat}", "map" => "5", "scene" => "map" }, nil, false) }
+MGQ_MpOverworldSync::Peers.all.push(*crowd)
+draws = (1..200).map { $game_player.make_encounter_count; $game_player.encounter_count }
+check("and counts no more players than a battle holds", [draws.min >= 125, draws.max < 375], [true, true])
+MGQ_MpOverworldSync::Peers.all.reject! { |peer| crowd.any? { |extra| extra.equal?(peer) } }
 $leader = :me
 $my_seat = 0
 $game_party.own = five.dup
