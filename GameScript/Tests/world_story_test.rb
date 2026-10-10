@@ -9,6 +9,7 @@
 #                            - Checked that the player's own write keeps their story events waiting for the teller's story
 #                            - Checked a Raid World started from a shared save, as a development build makes one: the save's story starts the
 #                              world's, the next player from the save plays it, a further one is taken, and a new game is behind
+#                            - Checked that the player's story events name the teller they wait for
 #                            - Checked that a route lock refused before the world had a story brings back the player's companions with the world's first story
 #                            - Checked that a player behind whose own story becomes the world's leaves the story they stood on behind
 #      Paulinchen  2026-10-09: Took variable 152 as a story variable, since 151, the Labyrinth of Chaos's tier, is each Raid World player's own
@@ -417,11 +418,12 @@ relay("rev" => 15, "wrev" => 15, "p" => 17, "end" => "3,1,1", "post" => "accepte
 frames(16)
 
 # The player's story events wait for the world's story of a telling they watched on the map.
-$teller = MGQ_MpOverworldSync::Peers::Peer.new(2, { "telling" => "1" })
+$teller = MGQ_MpOverworldSync::Peers::Peer.new(2, { "telling" => "1", "name" => "Teller" })
 frames(2)
 $teller = nil
 frames(2)
 check("the player's story events wait once a telling they watched ended", story.awaits_teller?, true)
+check("for the teller, whom it names", story.watched_teller, "Teller")
 story.pushed(MGQ_MpOverworldSync::STORY_FIELD => "16", :relay => true)
 frames(1)
 relay({ "rev" => 16, "wrev" => 16, "p" => 18, "end" => "3,1,1", "fetch" => "done" }, packed({ 1001 => 18 }, [300, 301, 302, 303, 304, 305, 306]))

@@ -2,11 +2,18 @@
 #  coop_events.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-11: Counted a branch on the variable an unlimited_choices script writes the choice into as a choice's branches, since the choice is not made yet when the page is sorted, so the story behind it is caught at the choice as any other
+#                            - Sorted a scene that runs by itself and hides its story behind such a choice as story, so a member's copy of it does not start over and over
+#                            - Sorted a page of dialogue and its own self switch alone as a talk, so a signpost or a villager who speaks once no longer waits for the leader
+#                            - Let a talk run the cosmetic scripts: custom move routes, waits, character zooms and angles, map zooms, key input and picture checks
 #      Paulinchen  2026-10-10: Went on with a telling that moved the player only at a story event that runs by itself, so one the player starts on the new map is a new telling, whose viewers are those whose story is where the player's is now
 #                            - Told world_story.rbx that the telling may still go on between the story's events on the new map, so the scene's state no longer goes out half done there
 #                            - Went on with a Raid World's telling that moved the player onto another map at the story's next event there, within CONTINUE_FRAMES of the move, through the game's transfer process between them, so its viewers keep seeing the story instead of a new telling nobody follows
 #                            - Kept a story event from starting while the player follows a teller's story to where it moved them, so their own copy of it no longer starts while the teller's state says they tell nothing for a moment
+#                            - Kept the game's map display, Pocket Castle call and post-battle processing to the player's own game, never the story, so a battle no longer makes its player a Raid World's teller whose story the others wait for
 #                            - Left the teleport to the party's leader to coop_teleport.rbx's messages
+#                            - Told the player why a story event waits for the world's story of a telling they watched, instead of keeping it back silently
+#                            - Sorted an event that calls the game's map display, Pocket Castle call, post-battle processing or transfer process by the rest of its list, since those common events are the player's own
 #                            - Held a Raid World's story event a second instead of half a second for a tie, so a later teller stops before its first command more often
 #      Paulinchen  2026-10-09: Asked story_state.rbx which switches and variables are the player's own instead of coop_story.rbx
 #                            - Kept story events from starting while the player's story is behind a Raid World's, telling the level that moves them on, and held those that run by themselves, so a teleport onto their map cannot loop
@@ -97,8 +104,14 @@ module MGQ_MpCoopEvents
 
   # Scripts a talk may run: companions' own lines, choices, presents and affection, medals,
   # music, skill names on screen, and the menus of job change, synthesis, the casino and the party.
-  # Shops that list their goods in a script, such as the Casino's coin sellers, are talks too.
-  TALK_SCRIPTS = /\A\s*(actor_label_jump|unlimited_choices|ex_choice_\w+|present_start|change_friend|gain_medal|gain_coin|play_base_bgm|clear_skill_name|display_skill_name|call_synthesize|call_slot_scene|start_poker|call_party_edit|SceneManager\.call\(Scene_JobChange\)|names = party_members|@?goods\b)/
+  # Shops that list their goods in a script, such as the Casino's coin sellers, are talks too, and
+  # so are the cosmetic scripts: custom move routes, waits, character zooms and angles, map zooms,
+  # key input of the mini-games and picture checks.
+  TALK_SCRIPTS = /\A\s*(actor_label_jump|unlimited_choices|ex_choice_\w+|present_start|change_friend|gain_medal|gain_coin|play_base_bgm|clear_skill_name|display_skill_name|call_synthesize|call_slot_scene|start_poker|call_party_edit|SceneManager\.call\(Scene_JobChange\)|names = party_members|@?goods\b|\w+ = RPG::MoveRoute\.new|wait\(|set_(angle|zoom|zoom_anime|swing_anime|circle_anime|cycle)\(|map_zoom|input_keys|check_picture_exist)/
+
+  # A script that shows a choice and writes the answer into a variable, which the page then
+  # branches on. The variable's id is its first argument.
+  CHOICE_SCRIPT = /\A\s*unlimited_choices\(\s*(\d+)/
 
   # Event commands that start a choice's branch: one choice (402) and the choice of cancelling (403).
   CHOICE_BRANCHES = [402, 403]
@@ -161,9 +174,13 @@ module MGQ_MpCoopEvents
   # Messages about gathering for story scenes, which coop_gather.rbx takes.
   GATHER_MESSAGES = %w(gather follow)
 
-  # Common events that run only in the player's own game, never as the party's story: the game's
-  # transfer process, which runs by itself after a transfer.
-  OWN_COMMON_EVENTS = [114]
+  # Common events that run only in the player's own game, never as the party's story: the game's map
+  # display, its Pocket Castle call, its processing after every battle (which turns Luka Solo on)
+  # and its transfer process, which runs by itself after a transfer.
+  OWN_COMMON_EVENTS = [2, 3, 5, 114]
+
+  # What a player whose story event waits for the world's story of a telling they watched reads.
+  AWAIT_TOLD_TEXT = "Waiting a moment for the story %s told to arrive."
 
   # The game's switch that is on while the Library replays a scene, by its id in 3.06.
   LIBRARY_REPLAY_SWITCH = 443
@@ -184,8 +201,13 @@ module MGQ_MpCoopEvents
   # @return [Symbol] :talk, :travel, :chest, :battle or :story; :talk for an event without a page.
   def self.kind(event)
     return :talk if event.mgq_mp_page < 0
+    return :travel if exit?(event)
 
-    exit?(event) ? :travel : kind_of(event.list || [])
+    sorted = kind_of(event.list || [])
+    # A scene that runs by itself and hides its story behind a choice, as Alice's recap at the
+    # Strategy Conference, plays in the leader's game alone: a member's copy, ended at the story
+    # as a talk's would be, would start over and over.
+    sorted == :talk && event.trigger == 3 && may_tell?(event.list || []) ? :story : sorted
   end
 
   # Reports whether an event's page only takes the player elsewhere when they step on it or press a
@@ -212,18 +234,50 @@ module MGQ_MpCoopEvents
   def self.runnable(list)
     held = {}
     skip = nil
+    variables = choice_variables(list)
     list.select do |command|
       indent = command.indent
       next false if skip && indent > skip
 
       case command.code
       when 111
-        held[indent] = holds?(command.parameters)
+        # A branch on a choice's variable may run either way, since the choice is not made yet.
+        params = command.parameters
+        held[indent] = params[0] == 1 && variables.include?(params[1]) ? nil : holds?(params)
         skip = indent if held[indent] == false
       when 411 then skip = held[indent] == true ? indent : nil
       when 412 then skip = nil
       end
       true
+    end
+  end
+
+  # Lists the variables the choice scripts of a list write their answers into, see CHOICE_SCRIPT.
+  #
+  # @param list [Array<RPG::EventCommand>] The commands.
+  # @return [Array<Integer>] The variables.
+  def self.choice_variables(list)
+    list.each_with_object([]) do |command, ids|
+      ids.push(Regexp.last_match(1).to_i) if command.code == 355 && command.parameters[0].to_s =~ CHOICE_SCRIPT
+    end
+  end
+
+  # Reports whether a command starts a branch on a choice script's variable, which counts as a
+  # choice's branch: the branch itself (111) and its else (411), until the branch ends (412).
+  #
+  # @param command [RPG::EventCommand] The command.
+  # @param variables [Array<Integer>] The choice scripts' variables, see choice_variables.
+  # @param open [Hash] The indents of such branches open now, kept between calls.
+  # @return [Boolean] Whether it does.
+  def self.choice_branch?(command, variables, open)
+    params = command.parameters
+    case command.code
+    when 111 then open[command.indent] = params[0] == 1 && variables.include?(params[1])
+    when 411 then open[command.indent] ? true : false
+    when 412
+      open.delete(command.indent)
+      false
+    else false
     end
   end
 
@@ -264,9 +318,21 @@ module MGQ_MpCoopEvents
     marks = marks_of(list, 0)
     return :story if story_marks?(marks)
     return :chest if marks[:gives] && marks[:own_switch]
+    return :talk if one_time_talk?(marks)
     return :story if marks[:own_switch] || marks[:battle]
 
     marks[:travel] ? :travel : :talk
+  end
+
+  # Reports whether marks are a one-time talk's: dialogue and the page's own self switch, nothing
+  # else, as a signpost or a villager who says something once. Each player reads it in their own
+  # game; the self switch follows the leader's story like any other and only decides whether the
+  # first words show.
+  #
+  # @param marks [Hash] The marks, see marks_of.
+  # @return [Boolean] Whether they are.
+  def self.one_time_talk?(marks)
+    marks[:own_switch] && marks[:says] && marks.none? { |key, value| value && ![:own_switch, :says].include?(key) } ? true : false
   end
 
   # Reports whether marks say story, past a choice or not.
@@ -296,9 +362,11 @@ module MGQ_MpCoopEvents
     marks = {}
     choice = {}
     branches = []
+    open = {}
+    variables = choice_variables(list)
     list.each_with_index do |command, index|
       branches.pop while !branches.empty? && command.indent <= branches.last
-      next branches.push(command.indent) if CHOICE_BRANCHES.include?(command.code)
+      next branches.push(command.indent) if CHOICE_BRANCHES.include?(command.code) || choice_branch?(command, variables, open)
 
       mark_command(branches.empty? ? marks : choice, list, index, depth)
     end
@@ -341,8 +409,10 @@ module MGQ_MpCoopEvents
   #
   # @param id [Integer] The common event.
   # @param depth [Integer] How deep it is called.
-  # @return [Hash] What it does, see marks_of; a common event too deep counts as story.
+  # @return [Hash] What it does, see marks_of; nothing for one of OWN_COMMON_EVENTS, which runs in
+  #   the player's own game whoever calls it; a common event too deep counts as story.
   def self.common_marks(id, depth)
+    return {} if OWN_COMMON_EVENTS.include?(id)
     return { :story => true } if depth > MAX_DEPTH
 
     unless @common_frame == Graphics.frame_count
@@ -919,8 +989,24 @@ module MGQ_MpCoopEvents
   def self.awaits_told_story?(event)
     return false unless defined?(MGQ_MpWorldStory) && MGQ_MpWorldStory.awaits_teller? && !own? && kind(event) == :story
 
-    log_once([:await_told, $game_map.map_id, event.id], "kept story event #{event.id} on map #{$game_map.map_id} from starting: the world's story of the telling the player watched has not arrived yet")
+    tell_await(event)
     true
+  end
+
+  # Tells the player that their story event waits for the world's story of a telling they watched,
+  # once per event in REFUSE_FRAMES, since an event the player stands on starts again with every
+  # step.
+  #
+  # @param event [Game_Event] The story event.
+  def self.tell_await(event)
+    key = [:await, $game_map.map_id, event.id]
+    return if @refused == key && !past?(@refused_at, REFUSE_FRAMES)
+
+    @refused = key
+    @refused_at = Graphics.frame_count
+    teller = MGQ_MpWorldStory.watched_teller
+    log("kept story event #{event.id} on map #{$game_map.map_id} from starting: the world's story of the telling the player watched#{teller ? " (#{teller})" : ''} has not arrived yet")
+    MGQ_MpOverworldSync.notice(format(AWAIT_TOLD_TEXT, teller || "another player"))
   end
 
   # Tells the member that only the teller moves the story on, once per event in REFUSE_FRAMES,

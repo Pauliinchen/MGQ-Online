@@ -5,6 +5,7 @@
 #      Paulinchen  2026-10-10: Held the write between the story's events on another map while its next event may go on with the telling, so the viewers no longer take the scene's state half done and drop out of it
 #                            - Took the world's story as a return to the Great Decision only once it left the route the story this game built on was on, since a starting save that cleared every route names every route as done from the first write on
 #                            - Kept the player's own writes from ending the wait for the story of a telling they watched
+#                            - Named the player whose telling the player's story events wait for
 #                            - Kept a player noted behind below their gate after a load or a new entry into the world, before the world's story came
 #                            - Kept the story a player stood on as they fell behind as the base of their own changes, so a checkpoint or the world's story keeps them
 #                            - Brought back the companions of the player's own Great Decision and told the world's route also when another player locked it before the world had a story
@@ -865,7 +866,9 @@ module MGQ_MpWorldStory
   def self.note_teller
     teller = MGQ_MpCoop::Scope.teller
     if teller.is_a?(MGQ_MpOverworldSync::Peers::Peer)
-      @teller = { :wrev => @seen_wrev.to_i } if (@teller.nil? || @teller[:stopped]) && @mode == :world && MGQ_MpCoop::Scope.watches?(teller)
+      if (@teller.nil? || @teller[:stopped]) && @mode == :world && MGQ_MpCoop::Scope.watches?(teller)
+        @teller = { :wrev => @seen_wrev.to_i, :name => teller.state["name"].to_s }
+      end
       return
     end
     @teller[:stopped] = @clock if @teller && !@teller[:stopped]
@@ -882,6 +885,15 @@ module MGQ_MpWorldStory
 
     @teller = nil
     false
+  end
+
+  # Names the player whose telling the player watched, whose world's story the player's story events
+  # wait for, see awaits_teller?.
+  #
+  # @return [String, nil] Their name, nil when the player waits for nobody's.
+  def self.watched_teller
+    name = @teller && @teller[:name]
+    name && !name.empty? ? name : nil
   end
 
   # Notes where the player's own telling moved them, the story's endpoint, written soon. Called

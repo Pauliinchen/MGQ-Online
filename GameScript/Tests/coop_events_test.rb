@@ -2,11 +2,15 @@
 #  coop_events_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-10: Checked that a transfer outside a telling goes on with none, and that only a story eventthat runs by itself goes on with the telling that moved the player, while one the player starts is a new telling
+#      Paulinchen  2026-10-11: Checked that a branch on a choice script's variable counts as the choice's, that such a scene running by itself is story, that a signpost with its own self switch, the cosmetic scripts and the game's battle flags keep a talk
+#      Paulinchen  2026-10-10: Checked that the game's map display, Pocket Castle call and post-battle processing are the player's own, never story
+#                            - Checked that a transfer outside a telling goes on with none, and that only a story eventthat runs by itself goes on with the telling that moved the player, while one the player starts is a new telling
 #                            - Checked that a Raid World's telling that moved the player goes on at the story's next event on the new map, through the game's transfer process, with no tie there, and starts anew after CONTINUE_FRAMES
 #                            - Checked that a follower on the way to where the teller's story moved them starts no story event of their own, on the way or just arrived, keeps that teller while their state says they tell nothing, hears their pages from the new map, and that the follow ends by itself
 #                            - Kept the log's lines, which the checks read
 #                            - Checked that a teleport coop_teleport.rbx asks for brings the member over at once, in place of the leader's answer where they stand
+#                            - Checked that an event calling the game's map display, Pocket Castle call, post-battle processing or transfer process is sorted by the rest of its list
+#                            - Moved the common events that call each other to 6 and 7, since 2 and 3 are the player's own
 #                            - Checked that the world closing forgets the choices waiting and a Raid World's route waiting to be confirmed
 #                            - Checked that a Raid World's story event holds a whole second for a tie
 #                            - Checked that no event of coop_story_rewards.rbx is marked by a Library Flag, by its English or its untranslated name
@@ -132,7 +136,7 @@ System = Struct.new(:switches, :variables)
 $data_system = System.new(Array.new(8000, ""), Array.new(4000, ""))
 $data_system.switches[20] = "Event General-Purpose 1"
 $data_system.variables[7] = "General 0"
-$data_common_events = [nil, RPG::CommonEvent.new([c(121, 50, 50, 0)]), RPG::CommonEvent.new([c(101, "", 0, 0, 2), c(117, 3)]), RPG::CommonEvent.new([c(117, 2)])]
+$data_common_events = [nil, RPG::CommonEvent.new([c(121, 50, 50, 0)]), nil, nil, nil, nil, RPG::CommonEvent.new([c(101, "", 0, 0, 2), c(117, 7)]), RPG::CommonEvent.new([c(117, 6)])]
 $data_actors = Array.new(10)
 $data_items = [nil, RPG::Item.new(1, "Potion"), RPG::Item.new(2, "Elixir"), RPG::Item.new(3, "Basement Key")]
 $data_items[3].key = true
@@ -363,11 +367,19 @@ pocket_castle = [c(101, "", 0, 0, 2), c(122, 21, 21, 0, 3, 7, 0, 0), c(122, 22, 
 check("the Pocket Castle item, which notes where it was used, is travel and no story scene", [kind(pocket_castle), MGQ_MpCoopEvents.scene?(pocket_castle)], [:travel, false])
 check("items and the event's own switch make a chest", kind([c(126, 1, 0, 0, 1), c(123, "A", 0)]), :chest)
 check("with a found-it message too", kind([c(101, "", 0, 0, 2), c(126, 1, 0, 0, 1), c(123, "A", 0)]), :chest)
-check("its own switch without items is story", kind([c(101, "", 0, 0, 2), c(123, "A", 0)]), :story)
+check("its own switch with dialogue alone is a one-time talk", kind([c(101, "", 0, 0, 2), c(123, "A", 0)]), :talk)
+check("its own switch without dialogue is story", kind([c(123, "A", 0), c(214)]), :story)
 check("a fight without dialogue is a battle", kind([c(301, 0, 5, false, false), c(214)]), :battle)
 check("a fight with dialogue is story", kind([c(101, "", 0, 0, 2), c(301, 0, 5, false, false)]), :story)
 check("a called common event counts", kind([c(117, 1)]), :story)
-check("common events calling each other end", kind([c(117, 2)]), :story)
+check("common events calling each other end", kind([c(117, 6)]), :story)
+$data_common_events[5] = RPG::CommonEvent.new([c(121, 60, 60, 0), c(301, 0, 5, false, false)])
+check("the game's processing after every battle, common event 5, called at a talk's end leaves it a talk",
+      kind([c(101, "", 0, 0, 2), c(401, "Hello"), c(117, 5)]), :talk)
+check("and a story event story", kind([c(101, "", 0, 0, 2), c(121, 61, 61, 0), c(117, 5)]), :story)
+check("as the map display and the Pocket Castle call, 2 and 3, and the transfer process, 114",
+      [2, 3, 114].map { |id| $data_common_events[id] = $data_common_events[5]; kind([c(201, 0, 5, 1, 1, 2, 0), c(117, id)]) }, [:travel] * 3)
+[2, 3, 5, 114].each { |id| $data_common_events[id] = nil }
 (20..25).each { |id| $data_common_events[id] = RPG::CommonEvent.new([c(117, id + 1)]) }
 $data_common_events[26] = RPG::CommonEvent.new([c(101, "", 0, 0, 2)])
 check("a chain of common events too deep counts as story", kind([c(117, 20)]), :story)
@@ -442,6 +454,23 @@ boxed_chest = [c(101, "", 0, 0, 2), Command.new(102, 0, [["Open it", "Leave it"]
 check("a chest that asks first stays a chest", [kind(boxed_chest), MGQ_MpCoopEvents.may_tell?(boxed_chest)], [:chest, false])
 story_choice = [c(101, "", 0, 0, 2), c(121, 60, 60, 0), Command.new(102, 0, [["Yes", "No"], 2]), Command.new(402, 0, [0, "Yes"]), Command.new(121, 1, [61, 61, 0])]
 check("story outside a choice stays story", kind(story_choice), :story)
+
+# A choice a script shows writes its answer into a variable the page then branches on, as Alice's
+# recap at the Strategy Conference does: the branch counts as the choice's, since the choice is not
+# made yet when the page is sorted.
+recap = [c(355, "unlimited_choices(11, [\"The rabbit\", \"Tartarus\"])"),
+         Command.new(111, 0, [1, 11, 0, 1, 0]), Command.new(101, 1, ["", 0, 0, 2]), Command.new(122, 1, [1011, 1011, 0, 0, 1]), Command.new(0, 1, []),
+         Command.new(411, 0, []), Command.new(101, 1, ["", 0, 0, 2]), Command.new(122, 1, [1014, 1014, 0, 0, 1]), Command.new(0, 1, []),
+         Command.new(412, 0, [])]
+$game_variables[11] = 0
+check("a talk whose branch on a choice script's variable moves the story on may turn into story", [kind(recap), MGQ_MpCoopEvents.may_tell?(recap)], [:talk, true])
+check("both sides of that branch count", MGQ_MpCoopEvents.runnable(recap).size, recap.size)
+$game_map.events[25] = Game_Event.new(25, [RPG::Page.new(recap)], 3)
+check("a scene running by itself that hides its story behind such a choice is story", MGQ_MpCoopEvents.kind($game_map.events[25]), :story)
+check("a signpost of dialogue and its own self switch is a talk", kind([c(101, "", 0, 0, 2), c(401, "Keep out"), c(123, "A", 0)]), :talk)
+check("its own self switch with anything else stays story", [kind([c(123, "A", 0)]), kind([c(101, "", 0, 0, 2), c(123, "A", 0), c(121, 60, 60, 0)]), kind([c(101, "", 0, 0, 2), c(123, "A", 0), c(201, 0, 2, 296, 355, 0, 0)])], [:story, :story, :story])
+check("the cosmetic scripts keep a talk", kind([c(101, "", 0, 0, 2), c(355, "mr = RPG::MoveRoute.new"), c(355, "wait(30)"), c(355, "set_zoom(1, 150)"), c(355, "map_zoom(120)"), c(355, "input_keys(60)")]), :talk)
+check("the flags the game toggles around its fights are the player's own", kind([c(101, "", 0, 0, 2), c(121, 73, 73, 1), c(121, 22, 22, 1), c(121, 97, 97, 1)]), :talk)
 $frame_count = frames_before
 $game_switches = $game_variables = nil
 check("without the game's switches every branch counts", MGQ_MpCoopEvents.kind($game_map.events[24]), :story)
@@ -557,6 +586,13 @@ $sent.clear
 $data_common_events[114] = RPG::CommonEvent.new([c(101, "", 0, 0, 2), c(121, 60, 60, 0)])
 $game_map.interpreter.setup($data_common_events[114].list)
 check("the game's transfer process, a common event of the player's own, gathers nobody", [$sent, MGQ_MpCoopEvents.telling?], [[], false])
+[2, 3, 5].each do |id|
+  $data_common_events[id] = RPG::CommonEvent.new([c(101, "", 0, 0, 2), c(121, 7, 7, 0)])
+  $game_map.interpreter.setup($data_common_events[id].list)
+  check("the game's common event #{id} (map display, Pocket Castle call, after every battle) is the player's own, never story",
+        [$sent, MGQ_MpCoopEvents.telling?], [[], false])
+  $data_common_events[id] = nil
+end
 raw($game_switches)[443] = true
 $game_map.interpreter.setup([c(101, "", 0, 0, 2), c(121, 60, 60, 0)])
 $game_map.interpreter.setup([c(101, "", 0, 0, 2), c(121, 60, 60, 0)], 1)
