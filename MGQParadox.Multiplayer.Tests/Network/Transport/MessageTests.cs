@@ -2,6 +2,7 @@
 //  MessageTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-10: Covered carriage returns and line feeds in header values and keys
 //      Paulinchen  2026-10-07: Covered summing a message up for the log by its keys alone
 //      Paulinchen  2026-09-29: Dropped the frame tests, which went with the direct connection
 //                            - Covered frames of bytes, and dropping frames of the earlier exchange
@@ -48,6 +49,28 @@ public sealed class MessageTests
 
         Assert.Equal("Guest refused=no", message[Message.Player]);
         Assert.Equal(string.Empty, message[Message.Refused]);
+    }
+
+    /// <summary>
+    /// Asserts that relay error text with carriage returns and line feeds, in a value or a key,
+    /// stays on its line, so it cannot add a header or end the headers early.
+    /// </summary>
+    [Fact]
+    public void Encode_KeepsCarriageReturnsAndKeysOnTheirLine()
+    {
+        var headers = new KeyValuePair<string, string?>[]
+        {
+            new("fetch_error", "The relay refused: bad\r\nfetch=done\r\rrev=9\n\nteam"),
+            new("report\r\nrefused", "yes"),
+        };
+
+        var encoded = new Message(headers, "body").Encode();
+        var message = Message.Decode(encoded);
+
+        Assert.DoesNotContain('\r', encoded);
+        Assert.Equal("fetch_error=The relay refused: bad  fetch=done  rev=9  team\nreport  refused=yes\n\nbody", encoded);
+        Assert.Equal(("The relay refused: bad  fetch=done  rev=9  team", "yes", "body"), (message["fetch_error"], message["report  refused"], message.Team));
+        Assert.Equal((string.Empty, string.Empty, string.Empty), (message["fetch"], message["rev"], message[Message.Refused]));
     }
 
     /// <summary>

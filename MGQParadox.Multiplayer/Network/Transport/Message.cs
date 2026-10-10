@@ -2,6 +2,7 @@
 //  Message.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-10: Kept header keys on their line too, as the values already were
 //      Paulinchen  2026-10-07: Summed a message up for the log by its keys alone
 //      Paulinchen  2026-09-29: Dropped the token header, since decrypting the first frame proves the join code
 //      Paulinchen  2026-09-28: Created
@@ -62,7 +63,7 @@ internal sealed class Message
     /// <summary>
     /// Creates a message.
     /// </summary>
-    /// <param name="headers">The header values by key, left out when empty.</param>
+    /// <param name="headers">The header values by key, left out when empty; line breaks in either turn into spaces.</param>
     /// <param name="team">The team, possibly empty.</param>
     public Message(IEnumerable<KeyValuePair<string, string?>> headers, string team = "")
     {
@@ -72,7 +73,7 @@ internal sealed class Message
         {
             if (!string.IsNullOrEmpty(value))
             {
-                _headers[key] = OnOneLine(value);
+                _headers[OnOneLine(key)] = OnOneLine(value);
             }
         }
 
@@ -158,9 +159,9 @@ internal sealed class Message
     }
 
     /// <summary>
-    /// Keeps a header value on its line, where a line break would start a header of its own.
+    /// Keeps a header key or value on its line, where a line break would start a header of its own.
     /// </summary>
-    /// <param name="value">The value.</param>
-    /// <returns>The value with line breaks turned into spaces.</returns>
+    /// <param name="value">The key or value.</param>
+    /// <returns>The text with line breaks turned into spaces.</returns>
     private static string OnOneLine(string value) => value.Replace('\r', ' ').Replace('\n', ' ');
 }
