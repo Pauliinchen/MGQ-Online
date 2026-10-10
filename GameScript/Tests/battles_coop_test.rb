@@ -5,6 +5,7 @@
 #      Paulinchen  2026-10-10: Checked that a boss battle in a Raid World invites the players reading the story the player tells
 #                            - Checked that a guest who follows to the battle its host yields to fights the raid boss's pools of its invite
 #                            - Checked that a player who yields to a rival fights with its enemy rates and pools and has its own rates back as the battle ends, before the game's autosave
+#                            - Checked that a raid boss battle whose pools are all empty invites not even the host of a waiting invite, and that a rival's invite that comes twice is kept once
 #                            - Checked that a Raid World's battle invites no player whose battle waits under the Library or Config while their window is in the background
 #      Paulinchen  2026-10-09: Checked that a Classic co-op host tells its guest a troop that grew mid-battle once, before the send of its stream, and again should telling it fail
 #                            - Checked that a player who yields to a rival's boss battle notes it as one
@@ -1155,6 +1156,29 @@ check("fighting with the rival's enemy rates and the raid boss's pools its invit
       [rates.map { |id| $game_variables[id] }, $pool_set_ups.last], [[110] * 6, 90])
 BattleManager.battle_end(0)
 check("and has its own rates back as the battle ends", rates.map { |id| $game_variables[id] }, [50] * 6)
+MGQ_MpBattlesCoop.ended
+MGQ_MpBattlesSync.finish
+
+# A raid boss battle whose pools are all empty already is won at once and invites nobody.
+def MGQ_MpRaidPool.won_already?(troop_id); troop_id.to_i == 95; end
+$my_since = 50
+MGQ_MpBattlesCoop.take(rival, rival_invite)
+$sent.clear
+BattleManager.setup(95)
+check("a raid boss battle whose pools are all empty invites not even the host of a waiting invite",
+      [map_sent("invite"), map_sent("freeze"), MGQ_MpBattlesSync.role, declines], [[], [], nil, [[13, "rv1"]]])
+MGQ_MpBattlesCoop.ended
+def MGQ_MpRaidPool.won_already?(_troop_id); false; end
+$my_since = 200
+
+# A rival's invite that comes twice.
+$encounter_troop = 96
+$game_player.encounter
+$sent.clear
+MGQ_MpBattlesCoop.take(rival, rival_invite)
+MGQ_MpBattlesCoop.take(rival, rival_invite)
+check("a rival's invite that comes twice is kept once, its battle never turned down",
+      [MGQ_MpBattlesCoop.instance_variable_get(:@rival)[:message]["bid"], declines], ["rv1", []])
 MGQ_MpBattlesCoop.ended
 MGQ_MpBattlesSync.finish
 

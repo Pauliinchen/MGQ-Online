@@ -9,6 +9,7 @@
 #                            - Fought a requester's own encounter with its own enemy rates when the wait for the running battle's roster ended as its host left or broke it off
 #                            - Started a side battle against a raid boss as the player's own, inviting and holding nobody, which others may join by choice
 #                            - Invited not even the host of a waiting invite to a raid boss battle whose pools are all empty already
+#                            - Kept a rival's invite that came twice, instead of turning down the battle the player joins
 #                            - Told the raid pool as a guest takes a battle over, so its reports start from the enemies' HP at that moment
 #                            - Told whether the player is in a battle, also while its party command called the Library or Config
 #                            - Told whether another player fights a battle by its state, also while it waits under the Library or Config with their window in the background, and invited no such player
@@ -1001,12 +1002,16 @@ module MGQ_MpBattlesCoop
   end
 
   # Keeps a rival's invite, which ends the gathering of the player's own battle (see gather); of two
-  # rivals the one who hosts first (see hosts_first?), turning the other down.
+  # rivals the one who hosts first (see hosts_first?), turning the other down. The same invite again
+  # changes nothing.
   #
   # @param peer [MGQ_MpOverworldSync::Peers::Peer] The rival.
   # @param message [Hash] The invite.
   def self.keep_rival(peer, message)
     kept = @rival
+    if kept && kept[:peer].equal?(peer) && kept[:message]["bid"].to_s == message["bid"].to_s
+      return log("kept #{MGQ_MpOverworldSync.who(peer)}'s invite to battle #{message['bid']} once: it came again")
+    end
     if kept && hosts_first?(kept[:peer], kept[:message], peer, message)
       log("declined #{MGQ_MpOverworldSync.who(peer)}'s invite to battle #{message['bid']}: an earlier rival or an event's hosts first")
       return MGQ_MpBattlesSync.tell(peer.seat, "decline", message["bid"].to_s)
