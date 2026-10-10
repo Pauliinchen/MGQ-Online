@@ -3,6 +3,8 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-10: Expected the teleport to the party's leader in a member's menu, in place of the line that they are in the party
+#                            - Named the map box's players outside the party with placeholders
+#                            - Named the party member in the checks with a placeholder
 #      Paulinchen  2026-10-08: Checked the map box of a Raid World: its players and order, the Frontline level, its colors, its cap and its key
 #                            - Expected the Frontline level of a Raid World from its one Frontline character, and of a share of two from the first two
 #      Paulinchen  2026-10-07: Measured places with an object that measures texts, and checked the log of a name the game lacks
@@ -89,13 +91,13 @@ overview.tick(true)
 check("the state tells place, level and story", MGQ_MpOverworldSync::Me.current.values_at("place", "lv", "progress"), ["Ilias Village", 55, "3:destroyer"])
 
 # The list by place.
-other = { "id" => "other", "name" => "bea", "map" => 5, "x" => 30, "y" => 30, "d" => 2, "scene" => "menu", "place" => "Ilias Village", "lv" => 12, "progress" => "1", "ping" => 40 }
+other = { "id" => "other", "name" => "member", "map" => 5, "x" => 30, "y" => 30, "d" => 2, "scene" => "menu", "place" => "Ilias Village", "lv" => 12, "progress" => "1", "ping" => 40 }
 friend = { "id" => "friend", "name" => "Friend", "map" => 7, "x" => 1, "y" => 1, "d" => 2, "scene" => "battle", "place" => "Forest", "lv" => 30, "progress" => "2:ilias", "ping" => 250 }
 $inbox << entry("seat", 0) << entry("in", 2) << entry("message", 2, told(friend)) << entry("in", 3) << entry("message", 3, told(other))
 MGQ_MpOverworldSync.tick
 lines = overview.lines(overview.rows)
 check("places: the player's first, each with its players, the player first", lines.map { |kind, value| kind == :place ? value : value.name },
-      ["Ilias Village", "Me (you)", "bea", "Forest", "Friend"])
+      ["Ilias Village", "Me (you)", "member", "Forest", "Friend"])
 friend_row = lines[4][1]
 check("a player's row", [friend_row.level, friend_row.story, friend_row.ping[0], friend_row.icon], ["Lv 30", "Part 2: Ilias side", "250 ms", 451])
 
@@ -236,14 +238,14 @@ check("the chat box closes it", [MGQ_MpChat.typing?, overview.open?], [true, fal
 
 # Only the party's leader invites and removes.
 friend_peer = MGQ_MpOverworldSync::Peers.at(2)
-bea = MGQ_MpOverworldSync::Peers.at(3)
+member_peer = MGQ_MpOverworldSync::Peers.at(3)
 check("a member may teleport to their leader", MGQ_MpActions.peer_options(friend_peer).map(&:text), ["Teleport to Friend", "Duel"])
-check("and may not invite", [MGQ_MpCoop::Offers.peer_option(bea).run, MGQ_MpCoop::Offers.peer_option(bea).refusal], [nil, "Only the party's leader invites."])
+check("and may not invite", [MGQ_MpCoop::Offers.peer_option(member_peer).run, MGQ_MpCoop::Offers.peer_option(member_peer).refusal], [nil, "Only the party's leader invites."])
 MGQ_MpCoop::Party.reset
-MGQ_MpCoop::Party.invite("zz-bea")
-$inbox << entry("message", 3, told(other.merge("party" => MGQ_MpCoop::Party.id, "id" => "zz-bea")))
+MGQ_MpCoop::Party.invite("zz-member")
+$inbox << entry("message", 3, told(other.merge("party" => MGQ_MpCoop::Party.id, "id" => "zz-member")))
 MGQ_MpOverworldSync.tick
-check("the leader may remove a member", MGQ_MpCoop::Offers.peer_option(bea).text, "Remove from party")
+check("the leader may remove a member", MGQ_MpCoop::Offers.peer_option(member_peer).text, "Remove from party")
 
 # The map box of a Raid World.
 module MGQ_MpWorld; def self.raid?; $raid; end; end
@@ -275,13 +277,13 @@ check("during a co-op battle it keeps the level read before", overview.front_lev
 $coop_battle = false
 $front = [Actor.new(40, true), Actor.new(70, false), Actor.new(90, false)]
 
-cleo = { "id" => "cleo", "name" => "Cleo", "map" => 5, "x" => 2, "y" => 2, "d" => 2, "scene" => "map", "place" => "Ilias Village", "lv" => 80, "flv" => 20, "progress" => "1", "ping" => 80 }
-$inbox << entry("in", 4) << entry("message", 4, told(cleo)) << entry("in", 5) << entry("message", 5, told(cleo.merge("id" => "anna", "name" => "anna", "flv" => 0, "party" => "anna-p", "invite" => 0)))
-$inbox << entry("message", 3, told(other.merge("party" => MGQ_MpCoop::Party.id, "id" => "zz-bea", "flv" => 33)))
+stranger = { "id" => "stranger", "name" => "Stranger", "map" => 5, "x" => 2, "y" => 2, "d" => 2, "scene" => "map", "place" => "Ilias Village", "lv" => 80, "flv" => 20, "progress" => "1", "ping" => 80 }
+$inbox << entry("in", 4) << entry("message", 4, told(stranger)) << entry("in", 5) << entry("message", 5, told(stranger.merge("id" => "loner", "name" => "loner", "flv" => 0, "party" => "loner-p", "invite" => 0)))
+$inbox << entry("message", 3, told(other.merge("party" => MGQ_MpCoop::Party.id, "id" => "zz-member", "flv" => 33)))
 MGQ_MpOverworldSync.tick
 map_rows = overview.map_rows
 check("the map box lists everyone on the map, the party first with its leader, then the others by name",
-      map_rows.map { |row| [row.name, row.member, row.level] }, [["Me", true, "Lv 40"], ["bea", true, "Lv 33"], ["anna", false, ""], ["Cleo", false, "Lv 20"]])
+      map_rows.map { |row| [row.name, row.member, row.level] }, [["Me", true, "Lv 40"], ["member", true, "Lv 33"], ["loner", false, ""], ["Stranger", false, "Lv 20"]])
 check("only the party's leader keeps a crown, and every other player shows their ping", [map_rows.map { |row| row.badge && row.badge[1] }, map_rows[1..-1].map { |row| row.ping && row.ping[0] }],
       [[true, false, nil, nil], ["40 ms", "80 ms", "80 ms"]])
 check("the box follows the world's type", MGQ_MpPartyBox.map_box?, true)
@@ -302,8 +304,8 @@ green = lambda { |name| drawn.find { |kind, text, _| kind == :text && text == na
 row_height = Sprite_MpPartyBox::ROW
 map_box.draw_map(map_rows)
 check("it is titled with how many are on the map, a line each and no place", [texts.call, drawn.first],
-      [["Map 4", "Me", "Lv 40", "bea", "Lv 33", "anna", "", "Cleo", "Lv 20"], [:fill, Sprite_MpPartyBox::WIDTH, row_height * 5 + 4]])
-check("party members are green, the others not", %w[Me bea anna Cleo].map { |name| green.call(name) }, [true, true, false, false])
+      [["Map 4", "Me", "Lv 40", "member", "Lv 33", "loner", "", "Stranger", "Lv 20"], [:fill, Sprite_MpPartyBox::WIDTH, row_height * 5 + 4]])
+check("party members are green, the others not", %w[Me member loner Stranger].map { |name| green.call(name) }, [true, true, false, false])
 crowd = map_rows * 3
 map_box.draw_map(crowd)
 check("past ten lines it lists nine and says how many more", [texts.call.first, texts.call.size, texts.call.last, drawn.first[2]],
@@ -314,7 +316,7 @@ shown, more = MGQ_MpPartyBox.capped(crowd)
 check("cut short, it keeps the player's own line in place of the last listed", [shown.size, shown.last.player, shown.count { |row| row.player == :me }, more],
       [9, :me, 1, 4])
 crowd = map_rows * 3
-check("small, it keeps to ten lines too, the others white", [texts.call.size, texts.call.last, green.call("anna"), drawn.first[1..2]],
+check("small, it keeps to ten lines too, the others white", [texts.call.size, texts.call.last, green.call("loner"), drawn.first[1..2]],
       [10, "+3 more", false, [Sprite_MpPartyBox::SMALL_WIDTH, row_height * 10 + 4]])
 
 MGQ_MpChat.stop_typing
@@ -326,7 +328,7 @@ MGQ_MpCoop::Scope.define_singleton_method(:peers_here) { [] }
 check("alone on the map there is no box, and its key says why", [overview.map_rows, MGQ_MpPartyBox.busy_reason], [[], "nobody else is on the map"])
 MGQ_MpCoop::Scope.define_singleton_method(:peers_here, peers_here)
 $raid = false
-check("back in a Classic world the party box lists the party alone", overview.party_rows.map(&:name), ["Me", "bea"])
+check("back in a Classic world the party box lists the party alone", overview.party_rows.map(&:name), ["Me", "member"])
 MGQ_MpCoopSquad.define_singleton_method(:own_order, own_order)
 overview.tick(false)
 check("a closed world forgets what the player told, so the next one reads it at once",
