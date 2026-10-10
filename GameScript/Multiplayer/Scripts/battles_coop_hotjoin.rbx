@@ -3,6 +3,8 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-10: Named the raid boss's pools in the invite of players who join a battle that fights them late, and handed the pools an invite names to battles_raid_pool.rbx
+#                            - Told the battle the player fights, and its scene as a battle, also while its party command called the Library or Config
+#                            - Let an encounter join a battle that waits under the Library or Config while its player's window is in the background, whose state tells "away"
 #                            - Let the players an encounter brought along walk on once the running battle refused it, stayed silent or the request was taken back, unless the encounter invites them anew
 #                            - Counted every enemy of the troop toward TROOP_LIMIT, the fallen too, so the troop never holds more than it may
 #                            - Started the battle of the enemies a guest adds to its troop, entered them in the Library and gave a raid boss's pools their max HP, as the host does
@@ -93,17 +95,28 @@ module MGQ_MpBattlesHotjoin
   end
 
   # Tells the battle the player fights in a Raid World: a co-op battle as its host or a guest, or a
-  # battle of their own (see fight_alone).
+  # battle of their own (see fight_alone), also while its party command called the Library or
+  # Config (see MGQ_MpBattlesCoop.in_battle_scene?).
   #
   # @return [Array, nil] The battle's id and the seat of its host, nil outside a battle.
   def self.running_battle
-    return nil unless SceneManager.scene.is_a?(Scene_Battle)
+    return nil unless MGQ_MpBattlesCoop.in_battle_scene?
 
     sync = MGQ_MpBattlesSync
     if sync.role && sync.coop?
       return [sync.battle_id, sync.role == :host ? MGQ_MpOverworldSync::Me.seat : Array(sync.seats).first]
     end
     @own_bid ? [@own_bid, MGQ_MpOverworldSync::Me.seat] : nil
+  end
+
+  # Tells the scene the player's state names while a battle in a Raid World waits on SceneManager's
+  # stack under the Library or Config: still the battle, so the others find it to join.
+  #
+  # @return [String, nil] "battle", nil outside such a screen.
+  def self.busy_scene
+    return nil unless raid? && !SceneManager.scene.is_a?(Scene_Battle)
+
+    MGQ_MpBattlesCoop.in_battle_scene? ? "battle" : nil
   end
 
   # Notes that the player's battle in a Raid World goes on as their own, without other players,
@@ -219,15 +232,15 @@ module MGQ_MpBattlesHotjoin
   end
 
   # Finds the co-op battle running on the player's map that an encounter would join: of the other
-  # players on the map who fight one, as their states tell, the battle whose host entered the map
-  # first.
+  # players on the map who fight one, as their states tell (see MGQ_MpBattlesCoop.fights?), the
+  # battle whose host entered the map first.
   #
   # @return [Array, nil] The battle's host and its id, nil when none runs.
   def self.target_battle
     map = $game_map.map_id
     battles = MGQ_MpCoop::Scope.peers_on(map).map do |peer|
       bid = peer.state["rb"].to_s
-      next if bid.empty? || peer.state["scene"] != "battle" || peer.state["rbh"].to_s !~ /\A\d+\z/
+      next if !MGQ_MpBattlesCoop.fights?(peer) || peer.state["rbh"].to_s !~ /\A\d+\z/
 
       host = MGQ_MpOverworldSync::Peers.at(peer.state["rbh"].to_i)
       next unless host && host.state["map"].to_i == map && host.state["rb"].to_s == bid
@@ -1144,6 +1157,7 @@ end
 
 begin
   MGQ_MpOverworldSync.state_fields { MGQ_MpBattlesHotjoin.state_fields }
+  MGQ_MpOverworldSync.busy_scene { MGQ_MpBattlesHotjoin.busy_scene }
 rescue => e
   MGQ_MpBattlesHotjoin.log("state FAILED: #{e.class}: #{e.message}")
 end

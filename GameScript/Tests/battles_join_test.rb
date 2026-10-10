@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-10: Covered the side battle the prompt offers near a raid boss battle that takes the player in no more
+#                            - Checked that the prompt offers a battle, or a side battle next to a raid boss battle, whose players are under the Library or Config with their windows in the background
 #                            - Checked that the prompt stays whole on the screen at the map's edges
 #      Paulinchen  2026-10-09: Covered a boss battle whose troop grew mid-battle, which stays one and hands the player every enemy
 #                            - Created
@@ -192,6 +193,11 @@ host = player(5, { "scene" => "battle", "rb" => "b1", "rbh" => "5", "rbn" => "1"
 MGQ_MpOverworldSync::Peers.all.replace([host])
 map_frame
 check("a player near a battle that takes players in sees the prompt", [join.target, join.prompt_text], [[host, "b1"], "Press J to join battle"])
+host.state["scene"] = "away"
+check("so does one near a battle under the Library or Config, whose window is in the background", join.target, [host, "b1"])
+host.state["rb"] = ""
+check("but not near a player whose window is merely in the background", join.target, nil)
+host.state.merge!("scene" => "battle", "rb" => "b1")
 host.state["x"] = "4"
 map_frame
 check("not when its player stands further than #{join::JOIN_DISTANCE} steps", join.prompt_text, nil)
@@ -457,6 +463,9 @@ boss_host = player(5, { "scene" => "battle", "rb" => "b3", "rbh" => "5", "rbn" =
 MGQ_MpOverworldSync::Peers.all.replace([boss_host])
 map_frame
 check("near a full raid boss battle the prompt offers a side battle", [join.target, join.prompt_text], [nil, "Press J to fight Queen Harpy alongside"])
+boss_host.state["scene"] = "away"
+check("also while its host is in the Library or Config with the window in the background", join.side_target, [71, "100,100,0", "Queen Harpy"])
+boss_host.state["scene"] = "battle"
 $settings = { "key_overview" => "74" }
 map_frame
 check("a hotkey that turns Join Battle off hides the side battle's prompt too", join.prompt_text, nil)

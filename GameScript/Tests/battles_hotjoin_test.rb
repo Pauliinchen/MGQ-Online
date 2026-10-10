@@ -3,6 +3,8 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-10: Checked that a requester whose running battle broke off before the roster fights its encounter from its start with its own enemy rates, and that a guest has its own rates back as the battle ends, before the game's autosave
+#                            - Checked that a battle whose party command called the Library or Config still tells itself as a battle and takes encounters in
+#                            - Checked that an encounter finds a battle under the Library or Config whose players' windows are in the background, which tell "away"
 #                            - Checked that the players a refused, silent or taken back request brought along walk on unless the encounter invites them anew
 #                            - Checked that the fallen enemies count toward the troop's limit, and that a guest starts the enemies it adds, enters them in the Library and rescales a raid boss's pools
 #      Paulinchen  2026-10-09: Checked that a host tells its guests a troop that grew, whose hidden enemy appeared or whose enemy transformed once, before the send that names it and as a command phase opens, together with an encounter taken in, and that a guest shows or transforms its own enemy, keeping it
@@ -285,6 +287,13 @@ check("of two running battles it asks the one whose host entered the map first",
 host.state.merge!("scene" => "map", "rb" => "")
 MGQ_MpOverworldSync::Peers.all.replace([host, guest])
 check("and none whose host left it", hotjoin.target_battle, nil)
+host.state.merge!("scene" => "away", "rb" => "hb1")
+guest.state["scene"] = "away"
+check("but one under the Library or Config, whose players' windows are in the background", hotjoin.target_battle, [host, "hb1"])
+host.state["rb"] = ""
+guest.state["rb"] = ""
+check("and none whose players merely have their windows in the background", hotjoin.target_battle, nil)
+guest.state.merge!("scene" => "battle", "rb" => "hb1")
 host.state.merge!("scene" => "battle", "rb" => "hb1")
 $raid = false
 $encounter_troop = 50
@@ -450,6 +459,24 @@ coop.ended
 check("the end of the battle calls joining off", map_sent("off").map { |seat, f| [seat, f["bid"]] }, [[8, "own8"], [9, "own8"]])
 check("and forgets the player's own battle", [hotjoin.state_fields, sync.role], [{ "rb" => "", "rbh" => "" }, nil])
 reset
+
+# A battle whose party command called the Library or Config, which waits on the scene stack.
+class Scene_Library; end
+$scene_now = scene
+own_troop
+hotjoin.fight_alone("own21")
+SceneManager.instance_variable_set(:@stack, [Scene_Map.new, scene])
+$scene_now = Scene_Library.new
+check("a battle under the Library or Config still tells itself, as a battle",
+      [hotjoin.state_fields, hotjoin.busy_scene], [{ "rb" => "own21", "rbh" => "0" }, "battle"])
+MGQ_MpOverworldSync::Peers.all.replace([asker])
+coop.take(asker, request.merge("bid" => "own21", "seats" => ""))
+check("and takes an encounter in", [map_sent("hot_ok").map(&:first), map_sent("hot_no")], [[8], []])
+SceneManager.instance_variable_set(:@stack, [])
+$scene_now = Scene_Map.new
+check("back on the map no battle is told", [hotjoin.running_battle, hotjoin.busy_scene], [nil, nil])
+reset
+$scene_now = scene
 
 own_troop
 hotjoin.fight_alone("own9")

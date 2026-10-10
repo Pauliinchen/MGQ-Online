@@ -5,6 +5,7 @@
 #      Paulinchen  2026-10-10: Checked that a boss battle in a Raid World invites the players reading the story the player tells
 #                            - Checked that a guest who follows to the battle its host yields to fights the raid boss's pools of its invite
 #                            - Checked that a player who yields to a rival fights with its enemy rates and pools and has its own rates back as the battle ends, before the game's autosave
+#                            - Checked that a Raid World's battle invites no player whose battle waits under the Library or Config while their window is in the background
 #      Paulinchen  2026-10-09: Checked that a Classic co-op host tells its guest a troop that grew mid-battle once, before the send of its stream, and again should telling it fail
 #                            - Checked that a player who yields to a rival's boss battle notes it as one
 #                            - Checked that a Raid World's battle takes a player whose game window is in the background, but not a busy one
@@ -908,6 +909,8 @@ background = raid_peer(13, { "scene" => "away", "x" => "3", "y" => "0" })
 MGQ_MpOverworldSync::Peers.all.push(background)
 $leader = :me
 check("and a player whose game window is in the background, which keeps running", MGQ_MpBattlesCoop.raid_candidates.map(&:seat), [3, 6, 13])
+background.state["rb"] = "b4"
+check("but not one whose battle waits under the Library or Config", MGQ_MpBattlesCoop.raid_candidates.map(&:seat), [3, 6, 7])
 MGQ_MpOverworldSync::Peers.all.delete(background)
 class << MGQ_MpCoop::Scope
   alias_method :viewers_of_scope, :viewers

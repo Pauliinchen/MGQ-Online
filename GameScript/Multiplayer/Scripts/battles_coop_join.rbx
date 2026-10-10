@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-10: Offered a side battle against the same raid boss near a boss battle that takes the player in no more, on the same hotkey
+#                            - Offered a battle that waits under the Library or Config while its player's window is in the background, whose state tells "away"
 #                            - Kept the prompt whole on the screen at the map's edges
 #      Paulinchen  2026-10-09: Created
 #
@@ -142,8 +143,8 @@ module MGQ_MpBattlesJoin
   # The joining side.
 
   # Finds the battle the prompt offers: of the other players within JOIN_DISTANCE who fight one, as
-  # their states tell, the nearest whose battle takes players in (see open_battle), while the player
-  # is free (see busy_reason).
+  # their states tell (see MGQ_MpBattlesCoop.fights?), the nearest whose battle takes players in
+  # (see open_battle), while the player is free (see busy_reason).
   #
   # @return [Array, nil] The battle's host and its id, nil when none or the player is busy.
   def self.target
@@ -152,7 +153,7 @@ module MGQ_MpBattlesJoin
     x = $game_player.x
     y = $game_player.y
     near = MGQ_MpCoop::Scope.peers_on($game_map.map_id).select do |peer|
-      peer.state["scene"] == "battle" && !peer.state["rb"].to_s.empty? && MGQ_MpBattlesCoop.distance(peer, x, y) <= JOIN_DISTANCE
+      MGQ_MpBattlesCoop.fights?(peer) && MGQ_MpBattlesCoop.distance(peer, x, y) <= JOIN_DISTANCE
     end
     near = near.sort_by { |peer| [MGQ_MpBattlesCoop.distance(peer, x, y), peer.state["id"].to_s] }
     near.map { |peer| open_battle(peer) }.compact.first
@@ -171,7 +172,7 @@ module MGQ_MpBattlesJoin
     return nil if bid == MGQ_MpBattlesSync.battle_id.to_s
 
     host = MGQ_MpOverworldSync::Peers.at(peer.state["rbh"].to_i)
-    return nil unless host && host.state["map"].to_i == $game_map.map_id && host.state["scene"] == "battle" && host.state["rb"].to_s == bid
+    return nil unless host && host.state["map"].to_i == $game_map.map_id && MGQ_MpBattlesCoop.fights?(host) && host.state["rb"].to_s == bid
 
     host.state["rbn"].to_i.between?(1, MGQ_MpBattlesCoop::RAID_PLAYERS - 1) ? [host, bid] : nil
   end
@@ -278,7 +279,7 @@ module MGQ_MpBattlesJoin
     map = $game_map.map_id
     MGQ_MpCoop::Scope.peers_on(map).map do |peer|
       bid = peer.state["rb"].to_s
-      next if bid.empty? || peer.state["scene"] != "battle" || peer.state["rbh"].to_s !~ /\A\d+\z/
+      next if !MGQ_MpBattlesCoop.fights?(peer) || peer.state["rbh"].to_s !~ /\A\d+\z/
 
       host = MGQ_MpOverworldSync::Peers.at(peer.state["rbh"].to_i)
       next unless host && host.state["map"].to_i == map && host.state["rb"].to_s == bid

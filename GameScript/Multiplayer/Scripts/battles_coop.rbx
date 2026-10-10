@@ -7,6 +7,8 @@
 #                            - Fought the raid boss's pools in the battle the player yields or follows to, and gave a troop taken from the host the boss's raised max HP at once
 #                            - Gave the player their own enemy rates and stats back as the battle ends, before the game's autosave, instead of only once its scene ended
 #                            - Fought a requester's own encounter with its own enemy rates when the wait for the running battle's roster ended as its host left or broke it off
+#                            - Told whether the player is in a battle, also while its party command called the Library or Config
+#                            - Told whether another player fights a battle by its state, also while it waits under the Library or Config with their window in the background, and invited no such player
 #      Paulinchen  2026-10-09: Told the guests the troop as host whenever it changed since they last heard of it, such as enemies another mod added mid-battle or an enemy that transformed or appeared, before the next send of the stream and as a command phase opens
 #                            - Fought a battle joined in a Raid World with its host's enemy rates, the player's own back once it ended
 #                            - Ended a co-op battle only once its scene ended, not when its party command called the Library or Config
@@ -122,6 +124,10 @@ module MGQ_MpBattlesCoop
   # What another player in a Raid World does, by their state's scene, while they may be invited:
   # walking the map, or on it with their window in the background, which keeps running.
   RAID_FREE_SCENES = %w(map away)
+
+  # What another player in a Raid World does, by their state's scene, while they fight a battle:
+  # the battle, or a screen its party command called with their window in the background.
+  RAID_BATTLE_SCENES = %w(battle away)
 
   # Frames an invite waits for the player to be free before it is turned down, three seconds.
   ACCEPT_FRAMES = 180
@@ -551,13 +557,25 @@ module MGQ_MpBattlesCoop
   end
 
   # Reports whether another player in a Raid World may be invited: walking the map, or on it with
-  # their window in the background, and neither trading nor about to teleport, as their state says
-  # (see state_fields).
+  # their window in the background, and neither fighting a battle (see fights?), trading nor about
+  # to teleport, as their state says (see state_fields).
   #
   # @param peer [MGQ_MpOverworldSync::Peers::Peer] The player.
   # @return [Boolean] Whether they may.
   def self.raid_free?(peer)
-    RAID_FREE_SCENES.include?(peer.state["scene"]) && peer.state["busy"] != "1"
+    RAID_FREE_SCENES.include?(peer.state["scene"]) && peer.state["busy"] != "1" && !fights?(peer)
+  end
+
+  # Reports whether another player in a Raid World fights a battle, as their state says: it names
+  # the battle (MGQ_MpBattlesHotjoin.state_fields) and its scene is a battle's.
+  #
+  # A battle waiting under the Library or Config tells "away", not "battle", while its game window
+  # is in the background, as MGQ_MpOverworldSync::Me.scene checks that first.
+  #
+  # @param peer [MGQ_MpOverworldSync::Peers::Peer] The player.
+  # @return [Boolean] Whether they do.
+  def self.fights?(peer)
+    !peer.state["rb"].to_s.empty? && RAID_BATTLE_SCENES.include?(peer.state["scene"])
   end
 
   # Reports whether another player in a Raid World reads the story the player tells on the map, as
@@ -2225,6 +2243,20 @@ module MGQ_MpBattlesCoop
     called = stack.is_a?(Array) && stack.any? { |waiting| waiting.equal?(scene) }
     log("the battle called #{SceneManager.scene.class} and goes on once it returns") if called
     called
+  end
+
+  # Reports whether the player is in a battle: in its scene, or in a screen its party command
+  # called, such as the Library or Config, while the battle waits on SceneManager's stack as in
+  # called_away?.
+  #
+  # @return [Boolean] Whether they are.
+  def self.in_battle_scene?
+    current = SceneManager.scene
+    return true if current.is_a?(Scene_Battle)
+    return false if current.is_a?(Scene_Map)
+
+    stack = MGQ_MpGame.get(SceneManager, :stack)
+    stack.is_a?(Array) && stack.any? { |waiting| waiting.is_a?(Scene_Battle) }
   end
 
   # Aims the skills and items that reach the Backline too at the co-op party and the player's own
