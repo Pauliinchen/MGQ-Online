@@ -2,7 +2,8 @@
 //  directory.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-10: Covered an edit that sends a Raid World's difficulty unchanged telling the world room nothing, and the first difficulty of a world made without one
+//      Paulinchen  2026-10-10: Covered the player's name member tells a world room
+//                            - Covered an edit that sends a Raid World's difficulty unchanged telling the world room nothing, and the first difficulty of a world made without one
 //      Paulinchen  2026-10-09: Covered telling a world room whether a key is an admin's
 //                            - Covered a Raid World's difficulty: kept, listed, changed by its creator or an admin only, refused for a Classic world and out of range
 //                            - Covered a Raid World refused with a starting save or a player's choice, and its starting save upload refused
@@ -761,6 +762,9 @@ test("member tells a world room who plays its world, with the world's type and a
 
   assert.equal((await directory.member(WORLD, OTHER, "cd".repeat(32))).status, 401);
   assert.equal((await directory.member("9".repeat(32), OTHER, AUTH)).status, 404);
+  assert.equal(answer.name, null, "a player who never entered the world has no name yet");
+  assert.equal((await directory.member(WORLD, CREATOR, AUTH)).name, "Creator");
+
   await directory.ban(WORLD, CREATOR, await playerIdOf(OTHER));
   assert.equal((await directory.member(WORLD, OTHER, AUTH)).status, 403);
 });

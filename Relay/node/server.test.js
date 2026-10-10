@@ -2,6 +2,7 @@
 //  server.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-10: Tested boss pools that keep the share of a raid max HP left over HTTP: turn reports, a kill named by its player, the frame every game hears and the admin view
 //      Paulinchen  2026-10-09: Tested a Raid World's boss pools over HTTP: reports, the frame every game hears, the admin routes and a deleted world, and that a Classic world keeps none
 //                            - Tested that every game of a Raid World hears its new difficulty once its creator changes it over HTTP
 //                            - Tested that a story write whose body comes after the world was deleted leaves no story behind
@@ -21,7 +22,7 @@
 //                            - Expected the lock to name its world
 //      Paulinchen  2026-09-29: Made every world in the directory first, and tested the directory over HTTP
 //                            - Tested world rooms over real WebSockets
-//      Paulinchen  2026-09-29: Created
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -756,26 +757,33 @@ test("a Raid World's players wear its boss pools down over HTTP, every game hear
   watcher.socket.on("message", (data) => heard.push(data.toString()));
 
   const bosses = (path, init = {}, key = playerKey(58), auth = AUTH) => fetch(`${directoryBase}/${room}/bosses${path}`, { ...init, headers: { [PLAYER_HEADER]: key, [AUTH_HEADER]: auth } });
-  const report = (key, body) => bosses(`/${encodeURIComponent(key)}/report`, { method: "POST", body: JSON.stringify(body) });
+  const report = (key, body, player = playerKey(58)) => bosses(`/${encodeURIComponent(key)}/report`, { method: "POST", body: JSON.stringify(body) }, player);
 
-  assert.deepEqual(await (await bosses("")).json(), { bosses: [], max: 5, regen: 5 });
+  assert.deepEqual(await (await bosses("")).json(), { bosses: [], regenPerMinute: 0.03 });
   assert.equal((await bosses("", {}, playerKey(58), "cd".repeat(32))).status, 401);
 
-  const first = await report("Queen Harpy", { battle: "b1", dealt: 0.75 });
-  assert.deepEqual(await first.json(), { key: "Queen Harpy", hp: 4.25, max: 5, regen: 5, defeated: false, dealt: 0.75, emptied: false, repeat: false });
-  await until(async () => heard.includes("boss 4.25 Queen Harpy"));
-  assert.equal((await (await bosses("/Queen%20Harpy")).json()).hp, 4.25);
-  assert.equal((await report("Queen Harpy", { battle: "b1", dealt: 0.75 }).then((answer) => answer.json())).repeat, true);
-  assert.equal((await bosses("/Queen%20Harpy/report", { method: "POST", body: "x".repeat(BOSS_LIMITS.maxBodyLength + 10) })).status, 413);
+  const first = await report("Queen Harpy#1", { battle: "b1", seq: 1, delta: 0.25, max: 5_000_000, killed: false });
+  const firstBody = await first.json();
+  assert.deepEqual([firstBody.boss.key, firstBody.boss.left, firstBody.boss.max, firstBody.boss.defeated, firstBody.repeat], ["Queen Harpy#1", 0.75, 5_000_000, false, false]);
+  await until(async () => heard.includes("boss 0.75 5000000 0 Queen Harpy#1"));
+  assert.equal((await (await bosses("/Queen%20Harpy%231")).json()).max, 5_000_000);
+  assert.equal((await report("Queen Harpy#1", { battle: "b1", seq: 1, delta: 0.25, max: 5_000_000 }).then((answer) => answer.json())).repeat, true);
+  assert.equal((await report("Queen Harpy#1", { battle: "b1", dealt: 0.25 })).status, 400, "a report in kills is refused");
+  assert.equal((await bosses("/Queen%20Harpy%231/report", { method: "POST", body: "x".repeat(BOSS_LIMITS.maxBodyLength + 10) })).status, 413);
+
+  const killed = await report("Lilith", { battle: "b3", seq: 1, delta: 0, max: 900, killed: true }, playerKey(57));
+  assert.deepEqual(await killed.json().then((body) => [body.boss.defeated, body.boss.by]), [true, "Watcher"]);
+  await until(async () => heard.includes("boss 0 900 1 Lilith"));
 
   const admin = (path, init = {}) => fetch(`${directoryBase}/${room}/raid${path}`, init);
   assert.equal((await admin(`?player=${CREATOR}`)).status, 403, "the creator is no admin");
   const view = await (await admin(`?player=${ADMIN}`)).json();
-  assert.deepEqual([view.story.rev, view.bosses.map((pool) => [pool.key, pool.hp, pool.reports]), view.max], [0, [["Queen Harpy", 4.25, 1]], 5]);
+  assert.deepEqual([view.story.rev, view.bosses.map((pool) => [pool.key, pool.hp, pool.max, pool.defeated, pool.by, pool.reports]), view.regenPerMinute],
+    [0, [["Lilith", 0, 900, true, "Watcher", 1], ["Queen Harpy#1", 3_750_000, 5_000_000, false, null, 1]], 0.03]);
 
-  const reset = await admin("/bosses/Queen%20Harpy/reset", { method: "POST", body: JSON.stringify({ player: ADMIN }) });
-  assert.equal((await reset.json()).hp, 5);
-  await until(async () => heard.includes("boss 5 Queen Harpy"));
+  const reset = await admin("/bosses/Lilith/reset", { method: "POST", body: JSON.stringify({ player: ADMIN }) });
+  assert.deepEqual(await reset.json().then((body) => [body.left, body.reset]), [1, true]);
+  await until(async () => heard.includes("boss 1 900 0 Lilith"));
 
   const story = (path, init = {}) => fetch(`${directoryBase}/${room}/story${path}`, { ...init, headers: { [PLAYER_HEADER]: playerKey(58), [AUTH_HEADER]: AUTH } });
   assert.equal((await story("/route", { method: "POST", body: JSON.stringify({ route: "ad" }) })).status, 200);
@@ -783,7 +791,7 @@ test("a Raid World's players wear its boss pools down over HTTP, every game hear
   assert.deepEqual(await cleared.json().then((body) => [body.cleared, body.route, body.rev]), [true, "none", 2]);
   await until(async () => heard.includes("story 2"));
 
-  await report("Morrigan", { battle: "b2", dealt: 0.5 });
+  await report("Morrigan", { battle: "b2", seq: 1, delta: 0.5, max: 900 });
   assert.equal((await fetch(`${directoryBase}/${room}/delete`, { method: "POST", body: JSON.stringify({ player: CREATOR }) })).status, 200);
   assert.equal((await bosses("")).status, 404);
   assert.deepEqual((await relay.bossesOf(room).list()).body.bosses, [], "the deleted world's pools are gone");

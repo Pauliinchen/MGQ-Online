@@ -2,6 +2,7 @@
 #  overworld_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-10: Checked that the relay's push of a Raid World's boss pool goes to its route with the share left, the max HP and whether it is defeated
 #      Paulinchen  2026-10-09: Checked that the relay's push of a Raid World's boss pool goes to its route with the key and kills, marked as the relay's
 #                            - Checked that the relay's push of a Raid World's difficulty goes to its route with the value, marked as the relay's
 #                            - Checked that a stranger's ghost is solid in a Raid World and see-through in a Classic world
@@ -454,10 +455,13 @@ MGQ_MpOverworldSync.route(MGQ_MpOverworldSync::STORY_FIELD) { |peer, message| $p
 $inbox << { "kind" => "story", "rev" => "7" }
 MGQ_MpOverworldSync.tick
 check("the relay's push of a Raid World's story goes to its route without a sender, marked as the relay's", $pushes, [[nil, "7", true]])
-MGQ_MpOverworldSync.route(MGQ_MpOverworldSync::BOSS_FIELD) { |peer, message| $pushes << [peer, message[MGQ_MpOverworldSync::BOSS_FIELD], message["hp"], message[:relay]] }
-$inbox << { "kind" => "boss", "key" => "Alma Elma, then Granberia", "hp" => "3.5" }
+MGQ_MpOverworldSync.route(MGQ_MpOverworldSync::BOSS_FIELD) do |peer, message|
+  $pushes << [peer, message[MGQ_MpOverworldSync::BOSS_FIELD], message["left"], message["max"], message["defeated"], message["by"], message[:relay]]
+end
+$inbox << { "kind" => "boss", "key" => "Metatronne and Sandalphone#1", "left" => "0.682576", "max" => "5000000", "defeated" => "0" }
 MGQ_MpOverworldSync.tick
-check("the relay's push of a boss pool goes to its route with its key and kills, marked as the relay's", $pushes.last, [nil, "Alma Elma, then Granberia", "3.5", true])
+check("the relay's push of a boss pool goes to its route with its key, share left, max and defeat, marked as the relay's",
+      $pushes.last, [nil, "Metatronne and Sandalphone#1", "0.682576", "5000000", "0", "", true])
 MGQ_MpOverworldSync.route(MGQ_MpOverworldSync::DIFFICULTY_FIELD) { |peer, message| $pushes << [peer, message[MGQ_MpOverworldSync::DIFFICULTY_FIELD], message[:relay]] }
 $inbox << { "kind" => "difficulty", "value" => "-2" }
 MGQ_MpOverworldSync.tick

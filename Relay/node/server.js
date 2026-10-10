@@ -2,6 +2,7 @@
 //  server.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-10: Told every game of a Raid World a boss pool's share of HP left, raid max HP and defeat when a report or an admin changed it, and handed a boss report the reporting player's name
 //      Paulinchen  2026-10-09: Kept each Raid World's boss pools, answered their routes for the world's players and the admin routes for the relay's admins, and told every game of the world when a pool changed
 //                            - Told every game of a Raid World its new difficulty once its creator or an admin changed it
 //                            - Removed a Raid World's story and boss pools again when the world was deleted while a request to them ran
@@ -535,11 +536,11 @@ export function createRelay({
       return noRaidWorld();
     }
 
-    const answer = await handleBossRequest(bossesOf(route.id), request.method, route.rest, () => readText(request, bossLimits.maxBodyLength), access.player);
+    const answer = await handleBossRequest(bossesOf(route.id), request.method, route.rest, () => readText(request, bossLimits.maxBodyLength), access.player, access.name);
     await tidyDeleted(route.id);
 
     if (answer.boss) {
-      tellWorld(route.id, bossText(answer.boss.key, answer.boss.hp));
+      tellWorld(route.id, bossText(answer.boss.key, answer.boss.left, answer.boss.max, answer.boss.defeated));
     }
 
     return answer;
@@ -564,7 +565,7 @@ export function createRelay({
     }
 
     if (answer.boss) {
-      tellWorld(route.id, bossText(answer.boss.key, answer.boss.hp));
+      tellWorld(route.id, bossText(answer.boss.key, answer.boss.left, answer.boss.max, answer.boss.defeated));
     }
 
     return answer;

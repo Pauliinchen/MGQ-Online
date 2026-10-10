@@ -2,6 +2,7 @@
 #  ui_party_box.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-10: Moved the box down while a strip of the mod takes the top of the map's screen, such as the raid boss's bar
 #      Paulinchen  2026-10-08: Made the box a map box in a Raid World: everyone on the map, the party first in green, each with their Frontline's level and ping, as many as fit and how many more
 #      Paulinchen  2026-10-07: Took the icon rect, white and the depth from MGQ_MpUi, and measured places with the box's picture
 #                            - Logged the box's size changes, a size key that does nothing and why, and who the box lists whenever that changes
@@ -137,7 +138,8 @@ class Sprite_MpPartyBox < Sprite
   # Height of one player: their line and where they are.
   PLAYER_ROW = ROW + PLACE_ROW
 
-  # Room between the box and the top and right edges of the screen.
+  # Room between the box and the top and right edges of the screen, below a strip of the mod at the
+  # top (see MGQ_MpUi.top_room).
   MARGIN = 8
 
   # Left edge of each column: the crown, the name and the level, and the ping's right edge.
@@ -168,6 +170,7 @@ class Sprite_MpPartyBox < Sprite
   # READ_FRAMES, and at once when the overview opens or closes.
   def update
     super
+    self.y = MARGIN + MGQ_MpUi.top_room
     overview = MGQ_MpWorldOverview.open?
     @frames -= 1
     return if @frames > 0 && overview == @overview
@@ -200,7 +203,6 @@ class Sprite_MpPartyBox < Sprite
   def draw(rows)
     height = ROW + PLAYER_ROW * rows.size + 4
     self.x = Graphics.width - WIDTH - MARGIN
-    self.y = MARGIN
     bitmap.clear
     bitmap.fill_rect(0, 0, WIDTH, height, BACK)
     bitmap.font.outline = true
@@ -219,7 +221,6 @@ class Sprite_MpPartyBox < Sprite
     shown, more = MGQ_MpPartyBox.capped(rows)
     lines = shown.size + (more > 0 ? 1 : 0)
     self.x = Graphics.width - WIDTH - MARGIN
-    self.y = MARGIN
     bitmap.clear
     bitmap.fill_rect(0, 0, WIDTH, ROW + ROW * lines + 4, BACK)
     bitmap.font.outline = true
@@ -238,7 +239,6 @@ class Sprite_MpPartyBox < Sprite
   def draw_small(rows, map = false)
     shown, more = map ? MGQ_MpPartyBox.capped(rows) : [rows, 0]
     self.x = Graphics.width - SMALL_WIDTH - MARGIN
-    self.y = MARGIN
     bitmap.clear
     bitmap.fill_rect(0, 0, SMALL_WIDTH, ROW * (shown.size + (more > 0 ? 1 : 0)) + 4, BACK)
     bitmap.font.outline = true

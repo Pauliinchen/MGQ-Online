@@ -2,6 +2,7 @@
 #  overworld_sync.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-10: Handed on the share left, the max HP and whether a Raid World's boss pool is defeated with the relay's push of it, instead of its kills
 #      Paulinchen  2026-10-09: Handed the relay's push that a Raid World's boss pool changed to the script registered for it, marked as the relay's
 #                            - Handed the relay's push that a Raid World's difficulty changed to the script registered for it, marked as the relay's
 #      Paulinchen  2026-10-08: Marked an admin's line from the relay with a key no player's message can carry, which let any player post as an admin
@@ -77,7 +78,8 @@ module MGQ_MpOverworldSync
   STORY_FIELD = "story_rev"
 
   # The field of the relay's push that a Raid World's boss pool changed, with the pool's key, which
-  # the raid bosses' pools register their route for; "hp" holds its kills.
+  # the raid bosses' pools register their route for; "left", "max", "defeated" and "by" hold the
+  # rest of the push.
   BOSS_FIELD = "boss_key"
 
   # The field of the relay's push that a Raid World's creator or an admin changed its difficulty,
@@ -308,10 +310,11 @@ module MGQ_MpOverworldSync
   module Link
     # Hands out the oldest inbox entry.
     #
-    # @return [Hash, nil] "kind" ("seat", "in", "out", "message", "chat", "story", "boss" or
-    #   "difficulty"), "seat", "others", "name" for a chat entry, "rev" for a story entry, "key" and
-    #   "hp" for a boss entry, "value" for a difficulty entry, and the message's or the chat line's text
-    #   under :payload; nil while none waits.
+    # @return [Hash, nil] "kind" ("seat", "in", "out", "message", "chat", "story", "boss",
+    #   "difficulty" or "mods_rule"), "seat", "others", "name" for a chat entry, "rev" for a story
+    #   entry, "key", "left", "max", "defeated" and "by" for a boss entry, "value" for a difficulty
+    #   or mods rule entry, "mods" for a mods rule entry that names any, and the message's or the
+    #   chat line's text under :payload; nil while none waits.
     def self.next_entry
       text = MGQ_Multiplayer::Link.read('mp_world_receive', ENTRY_SIZE)
       text.empty? ? nil : MGQ_Multiplayer::Link.parse(text)
@@ -722,8 +725,9 @@ module MGQ_MpOverworldSync
         MGQ_MpOverworldSync.hand_over(nil, { STORY_FIELD => entry["rev"].to_s, :relay => true })
       when "boss"
         # The relay tells a Raid World's boss pool changed, marked as the relay's like the story.
-        MGQ_MpOverworldSync.log("the relay tells the boss pool #{entry['key']} holds #{entry['hp']}")
-        MGQ_MpOverworldSync.hand_over(nil, { BOSS_FIELD => entry["key"].to_s, "hp" => entry["hp"].to_s, :relay => true })
+        MGQ_MpOverworldSync.log("the relay tells the boss pool #{entry['key']} holds #{entry['left']} of #{entry['max']}#{entry['defeated'] == '1' ? ', defeated' : ''}")
+        MGQ_MpOverworldSync.hand_over(nil, { BOSS_FIELD => entry["key"].to_s, "left" => entry["left"].to_s, "max" => entry["max"].to_s,
+                                             "defeated" => entry["defeated"].to_s, "by" => entry["by"].to_s, :relay => true })
       when "difficulty"
         # The relay tells a Raid World's creator or an admin changed its difficulty, marked as the
         # relay's like the story.

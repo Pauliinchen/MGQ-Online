@@ -2,6 +2,7 @@
 //  Exports.RaidBosses.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-10: Queued a report of what a battle's turn did to a boss's pool, as "seq	delta	max	killed", instead of the share a whole battle dealt
 //      Paulinchen  2026-10-09: Created
 //
 //----------------------------------------------------------------
@@ -14,8 +15,8 @@ using MGQParadox.Multiplayer.Network.World;
 namespace MGQParadox.Multiplayer;
 
 /// <summary>
-/// The functions of a Raid World's boss pools at the relay: fetching every pool and reporting a
-/// battle, see docs/DEVELOPER.md, "Raid boss pools on the relay".
+/// The functions of a Raid World's boss pools at the relay: fetching every pool and reporting what
+/// each turn of a boss battle did, see docs/DEVELOPER.md, "Raid boss pools on the relay".
 /// </summary>
 internal static unsafe partial class Exports
 {
@@ -39,19 +40,19 @@ internal static unsafe partial class Exports
     }
 
     /// <summary>
-    /// Reports how much of a boss's max HP a battle dealt, counted once per battle. Returns at once; how it went follows in <c>mp_raid_boss_state</c>.
+    /// Queues a report of what a battle's turn did to a boss's pool, sent in order and again until the relay answers. Returns at once; the pool follows in <c>mp_raid_boss_state</c>.
     /// </summary>
     /// <param name="world">The world the game is in, UTF-8 and null-terminated.</param>
-    /// <param name="key">The boss's key, UTF-8 and null-terminated.</param>
+    /// <param name="key">The pool's key, UTF-8 and null-terminated.</param>
     /// <param name="battle">The battle's id, letters, digits, _ or -, null-terminated.</param>
-    /// <param name="dealt">The share of the boss's max HP dealt as text, such as "0.75", null-terminated.</param>
-    /// <returns>1 when started, 0 while a report runs, without a player, outside that world, for a key, battle or share that is not as it should be, or when it failed.</returns>
+    /// <param name="turn">"seq	delta	max	killed", such as "3	0.0125	5000000	0", null-terminated; see <see cref="RaidBosses.Report"/>.</param>
+    /// <returns>1 when queued, 0 without a player, outside that world, with too many reports waiting, for a key, battle or turn that is not as it should be, or when it failed.</returns>
     [UnmanagedCallersOnly(EntryPoint = "mp_raid_boss_report", CallConvs = [typeof(CallConvStdcall)])]
-    public static int RaidBossReport(byte* world, byte* key, byte* battle, byte* dealt)
+    public static int RaidBossReport(byte* world, byte* key, byte* battle, byte* turn)
     {
         try
         {
-            return RaidBosses.Current.Report(Text(world), Text(key), Text(battle), Text(dealt)) ? 1 : 0;
+            return RaidBosses.Current.Report(Text(world), Text(key), Text(battle), Text(turn)) ? 1 : 0;
         }
         catch (Exception ex)
         {
@@ -61,7 +62,7 @@ internal static unsafe partial class Exports
     }
 
     /// <summary>
-    /// Hands out the pools the relay told and how each request stands, see <see cref="RaidBosses.Describe"/>.
+    /// Hands out the pools known, filled up to now, and how the requests stand, see <see cref="RaidBosses.Describe"/>.
     /// </summary>
     /// <param name="buffer">Receives the state, UTF-8 and null-terminated.</param>
     /// <param name="size">The size of the buffer in bytes.</param>

@@ -17,7 +17,8 @@
 # fights before it.
 module MGQ_MpRaidBosses
   # The switch the game's events turn on right before every story boss battle and off right after
-  # it, "Seduction During Boss Decision", which also covers the bosses outside the table.
+  # it, the one the game's ero offer in boss battles reads, which also covers the bosses outside the
+  # table.
   BOSS_SWITCH = 22
 
   # A story boss troop.

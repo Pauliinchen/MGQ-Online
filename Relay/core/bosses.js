@@ -2,18 +2,19 @@
 //  bosses.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-10: Kept each boss pool as the share of its raid max HP left, which every pooled battle's host reports turn by turn, instead of a count of kills
 //      Paulinchen  2026-10-09: Created
 //
 //----------------------------------------------------------------
 
-// The raid bosses of a Raid World: one pool per story boss, which the whole world wears down
-// together. A pool counts in kills, not HP, because each host's difficulty and mods set the boss's
-// max HP: a won or lost battle takes off the share of the boss's max HP its players dealt. An
-// untouched pool fills up again over time; the one battle that empties it defeats the boss for the
-// world for good, and only that battle's story goes on.
+// The raid bosses of a Raid World: one pool per story boss, whose HP the whole world shares. Every
+// battle fighting a boss reports what its players took off since its last report, as a share of
+// the boss's max HP, since each host's difficulty and mods set the boss's max HP in its own game.
+// The share left fills up again slowly; the report that empties it defeats the boss for the world
+// for good.
 //
-// The hit points are kept as they stood at the last report and read lazily, so regeneration costs
-// no writes: only a report and an admin's reset write.
+// The share left is kept as it stood at the last report and read lazily, so regeneration costs no
+// writes: only a report and an admin's reset write.
 
 import { badRequest, notFound, withJson } from "./http.js";
 import { CONTROL_CHARACTERS, isId } from "./ids.js";
@@ -23,24 +24,26 @@ import { RateLimiter, VERSION } from "./relay.js";
  * The limits a world's raid bosses keep.
  */
 export const BOSS_LIMITS = Object.freeze({
-  // A full pool, in kills: the boss falls five times before it is defeated for the world.
-  max: 5,
-  // How long an untouched pool takes from empty to full.
-  refillMs: 60 * 60 * 1000,
-  maxKeyLength: 64,
+  // The share of the max HP a pool fills up by per minute, also while battles fight it.
+  regenPerMinute: 0.03,
+  // A game's key of up to 64 characters, with "#" and the index of a troop's member after it.
+  maxKeyLength: 72,
   maxBattleLength: 64,
   maxPools: 500,
-  // The battle ids each pool remembers, so a report sent again is not counted twice.
+  // The battles each pool remembers with their last report, so a report sent again counts once.
   recentBattles: 32,
+  // The highest raid max HP a game may name; Void Image of Paradise reaches about 6e15 at tier 1 on Hell.
+  maxMax: 1e18,
   maxBodyLength: 4 * 1024,
-  // Reports per player: a burst, then one more every few seconds, so a game stuck in a loop
-  // cannot empty a pool or spend the free plan's daily writes.
-  reports: Object.freeze({ burst: 6, refillMs: 20 * 1000 }),
+  // Reports per player: a burst, then two a second, enough for a report per pool every two seconds
+  // of a battle against up to four enemies, while a game stuck in a loop cannot spend the free plan's
+  // daily writes in minutes.
+  reports: Object.freeze({ burst: 30, refillMs: 500 }),
 });
 
 /**
  * The word the text frame starts with that tells every game of a world a boss pool changed, as
- * `boss <hp> <key>`.
+ * `boss <left> <max> <defeated> <key>`.
  */
 export const BOSS = "boss";
 
@@ -55,29 +58,34 @@ export const BOSS_REFUSAL = Object.freeze({ rate: "rate", full: "full" });
 const BATTLE = /^[A-Za-z0-9_-]+$/;
 
 /**
- * Hit points that round to 0 in an answer count as 0, so a pool that answers 0 is always defeated.
+ * A minute in milliseconds.
  */
-const EMPTY = 0.0005;
+const MINUTE = 60_000;
+
+/**
+ * The decimals the share left travels with in a text frame.
+ */
+const FRAME_DECIMALS = 6;
+
+/**
+ * The smallest share left a text frame names for a boss still standing.
+ */
+const FRAME_SMALLEST = 10 ** -FRAME_DECIMALS;
 
 /**
  * Writes the text frame that tells every game of a world a boss pool changed.
  *
  * @param {string} key The boss.
- * @param {number} hp The pool's hit points now, in kills.
- * @returns {string} The frame, such as "boss 3.5 Alma Elma"; the key goes last since it may hold spaces.
+ * @param {number} left The share of the max HP left now, 0 to 1.
+ * @param {number} max The raid max HP.
+ * @param {boolean} defeated Whether the boss is defeated for the world.
+ * @returns {string} The frame, such as "boss 0.25 5000000 0 Alma Elma#1"; the key goes last since it may hold spaces.
  */
-export function bossText(key, hp) {
-  return `${BOSS} ${roundHp(hp)} ${key}`;
-}
-
-/**
- * Rounds hit points for an answer, so float leftovers do not travel.
- *
- * @param {number} hp The hit points.
- * @returns {number} The hit points to three decimals.
- */
-function roundHp(hp) {
-  return Math.round(hp * 1000) / 1000;
+export function bossText(key, left, max, defeated) {
+  // A standing pool of a huge max may hold less than the frame's smallest share, which must not
+  // read as empty in the games.
+  const shown = defeated ? 0 : left > 0 ? Math.max(FRAME_SMALLEST, Number(left.toFixed(FRAME_DECIMALS))) : 0;
+  return `${BOSS} ${shown} ${Math.round(max)} ${defeated ? 1 : 0} ${key}`;
 }
 
 /**
@@ -107,24 +115,31 @@ export function readKey(raw, limits = BOSS_LIMITS) {
 /**
  * @typedef {object} BossPool A boss pool as kept.
  * @property {string} key The boss.
- * @property {number} hp The hit points in kills when last reported.
- * @property {number} max The full pool.
- * @property {number} regen The kills it fills up by per hour.
+ * @property {number} max The raid max HP the first report named, a whole number of 1 or more.
+ * @property {number} left The share of the max HP left at the last report, 0 to 1.
  * @property {number} at When it was last reported.
  * @property {boolean} defeated Whether a report emptied it, which defeats the boss for the world.
- * @property {string | null} emptiedBy The battle whose report emptied it.
- * @property {string | null} by The player whose report emptied it.
- * @property {string[]} battles The battles counted lately, newest last.
+ * @property {string | null} by The name of the player whose report emptied it.
+ * @property {string | null} byPlayer The id of the player whose report emptied it.
+ * @property {{id: string, seq: number}[]} battles The battles reported lately with their last report's number, the most recent last.
  * @property {number} reports How many reports were counted.
  */
 
 /**
  * @typedef {object} BossStore Where one world's boss pools are kept.
- * @property {(key: string) => Promise<BossPool | undefined>} get Reads a pool, undefined for one never reported.
+ * @property {(key: string) => Promise<object | undefined>} get Reads a pool, undefined for one never reported.
  * @property {(pool: BossPool) => Promise<void>} put Writes a pool.
- * @property {() => Promise<BossPool[]>} all Reads every pool.
+ * @property {() => Promise<object[]>} all Reads every pool.
  * @property {(key: string) => Promise<void>} remove Deletes a pool.
  * @property {() => Promise<void>} removeAll Deletes every pool.
+ */
+
+/**
+ * @typedef {object} BossPush The pool to tell every game of the world, see bossText.
+ * @property {string} key The boss.
+ * @property {number} left The share left now.
+ * @property {number} max The raid max HP.
+ * @property {boolean} defeated Whether the boss is defeated for the world.
  */
 
 /**
@@ -149,17 +164,17 @@ export class WorldBosses {
    * Hands out every pool a report touched, as they stand now.
    *
    * @param {boolean} [admin] Whether to add what only admins see, see viewOf.
-   * @returns {Promise<{status: number, body: object}>} `bosses`, sorted by key; `max` and `regen`, which a pool never reported has.
+   * @returns {Promise<{status: number, body: object}>} `bosses`, sorted by key, and `regenPerMinute`.
    */
   async list(admin = false) {
-    const pools = await this.exclusive(() => this.store.all());
+    const pools = await this.exclusive(() => this.pools());
     const now = this.clock();
-    const bosses = pools.sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0)).map((pool) => viewOf(pool, now, admin));
-    return { status: 200, body: { bosses, max: this.limits.max, regen: this.regen() } };
+    const bosses = pools.sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0)).map((pool) => viewOf(pool, now, this.limits, admin));
+    return { status: 200, body: { bosses, regenPerMinute: this.limits.regenPerMinute } };
   }
 
   /**
-   * Hands out one pool as it stands now; a pool never reported is full.
+   * Hands out one pool as it stands now; a pool never reported is full, with no max yet.
    *
    * @param {unknown} raw The boss's key as the address names it.
    * @returns {Promise<{status: number, body: object}>} The pool, see viewOf.
@@ -171,87 +186,84 @@ export class WorldBosses {
       return badRequest(this.keyError());
     }
 
-    const pool = (await this.exclusive(() => this.store.get(key))) ?? this.fresh(key);
-    return { status: 200, body: viewOf(pool, this.clock(), false) };
+    const pool = await this.exclusive(async () => poolOf(await this.store.get(key)));
+    return { status: 200, body: pool ? viewOf(pool, this.clock(), this.limits, false) : untouchedView(key) };
   }
 
   /**
-   * Counts a battle against a boss's pool, once per battle.
+   * Counts a battle's report against a boss's pool, once per report number of the battle.
    *
    * @param {string} player The reporting player's id.
    * @param {unknown} raw The boss's key as the address names it.
-   * @param {any} request The report: `battle`, the battle's id; `dealt`, the share of the boss's max HP its players dealt, 0 or more, counted up to 1.
-   * @returns {Promise<{status: number, body: object, boss?: {key: string, hp: number}}>} The pool with `dealt` (what was counted), `emptied` (this battle's report emptied it), `defeated` and `repeat` (the battle was counted before), and the pool to tell every game when it changed; or why the report is wrong.
+   * @param {any} request The report: `battle`, the battle's id; `seq`, the report's number, rising within the battle; `delta`, the share of the boss's max HP lost since the battle's last report, negative for healing; `max`, the raid max HP in the reporting game; `killed`, whether the boss died in the reporting game.
+   * @param {string | null} [name] The reporting player's name, which a defeat keeps.
+   * @returns {Promise<{status: number, body: object, boss?: BossPush}>} `boss`, the pool as viewOf makes it, and `repeat`, whether the battle reported this number before; the pool to tell every game when it changed; or why the report is wrong.
    */
-  async report(player, raw, request) {
+  async report(player, raw, request, name = null) {
     const key = readKey(raw, this.limits);
 
     if (key === null) {
       return badRequest(this.keyError());
     }
 
-    if (!request || typeof request !== "object") {
-      return badRequest("the report must be a JSON object");
-    }
+    const refusal = this.reportError(request);
 
-    const battle = request.battle;
-
-    if (typeof battle !== "string" || battle.length === 0 || battle.length > this.limits.maxBattleLength || !BATTLE.test(battle)) {
-      return badRequest(`battle must be 1 to ${this.limits.maxBattleLength} letters, digits, _ or -`);
-    }
-
-    if (typeof request.dealt !== "number" || !Number.isFinite(request.dealt) || request.dealt < 0) {
-      return badRequest("dealt must be the share of the boss's max HP dealt, a number of 0 or more");
+    if (refusal) {
+      return badRequest(refusal);
     }
 
     if (!this.reports.take(player)) {
       return { status: 429, body: { error: "the bosses are reported too often, try again later", code: BOSS_REFUSAL.rate } };
     }
 
-    const dealt = Math.min(1, request.dealt);
+    const { battle, seq, delta } = request;
+    const killed = request.killed === true || request.killed === 1;
 
     return this.exclusive(async () => {
       const now = this.clock();
-      const kept = await this.store.get(key);
-      const answer = (pool, counted, repeat) => ({ ...viewOf(pool, now, false), dealt: counted, emptied: pool.emptiedBy === battle, repeat });
+      const kept = poolOf(await this.store.get(key));
+      const answer = (pool, repeat) => ({ status: 200, body: { boss: viewOf(pool, now, this.limits, false), repeat } });
+      const last = kept?.battles.find((each) => each.id === battle);
 
-      if (kept && (kept.battles.includes(battle) || kept.emptiedBy === battle)) {
-        return { status: 200, body: answer(kept, 0, true) };
+      if (last && seq <= last.seq) {
+        return answer(kept, true);
       }
 
-      // A defeated boss stays defeated; a late report changes nothing, so it writes nothing.
-      if (kept?.defeated) {
-        return { status: 200, body: answer(kept, 0, false) };
+      // A defeated boss stays defeated, and a report that takes nothing off changes nothing, so
+      // neither writes.
+      if (kept && (kept.defeated || (delta === 0 && !killed))) {
+        return answer(kept, false);
       }
 
-      if (!kept && (await this.store.all()).length >= this.limits.maxPools) {
+      if (!kept && (await this.pools()).length >= this.limits.maxPools) {
         return { status: 413, body: { error: `the world keeps at most ${this.limits.maxPools} boss pools`, code: BOSS_REFUSAL.full } };
       }
 
-      const pool = kept ?? this.fresh(key);
-      const left = hpOf(pool, now) - dealt;
-      const emptied = left < EMPTY;
+      const pool = kept ?? this.fresh(key, request.max, now);
+      const left = killed ? 0 : Math.min(1, Math.max(0, leftOf(pool, now, this.limits) - delta));
+      // A pool whose HP shows as 0 is empty, so float leftovers never keep a boss standing.
+      const defeated = left * pool.max < 0.5;
       const next = {
         ...pool,
-        hp: emptied ? 0 : left,
+        left: defeated ? 0 : left,
         at: now,
-        defeated: emptied,
-        emptiedBy: emptied ? battle : null,
-        by: emptied ? player : null,
-        battles: [...pool.battles, battle].slice(-this.limits.recentBattles),
+        defeated,
+        by: defeated ? name : null,
+        byPlayer: defeated ? player : null,
+        battles: [...pool.battles.filter((each) => each.id !== battle), { id: battle, seq }].slice(-this.limits.recentBattles),
         reports: pool.reports + 1,
       };
 
       await this.store.put(next);
-      return { status: 200, body: answer(next, dealt, false), boss: { key, hp: next.hp } };
+      return { ...answer(next, false), boss: { key, left: next.left, max: next.max, defeated } };
     });
   }
 
   /**
-   * Fills a boss's pool up again and takes its defeat back, as an admin asks.
+   * Fills a boss's pool up again and takes its defeat back, as an admin asks, by deleting it.
    *
    * @param {unknown} raw The boss's key as the address names it.
-   * @returns {Promise<{status: number, body: object, boss?: {key: string, hp: number}}>} The full pool with `reset` (whether there was one to reset), and the pool to tell every game when it changed.
+   * @returns {Promise<{status: number, body: object, boss?: BossPush}>} The full pool with `reset` (whether there was one to reset), and the pool to tell every game when it changed.
    */
   async reset(raw) {
     const key = readKey(raw, this.limits);
@@ -261,14 +273,15 @@ export class WorldBosses {
     }
 
     return this.exclusive(async () => {
-      const kept = await this.store.get(key);
+      const stored = await this.store.get(key);
+      const kept = poolOf(stored);
 
-      if (kept) {
+      if (stored) {
         await this.store.remove(key);
       }
 
-      const body = { ...viewOf(this.fresh(key), this.clock(), true), reset: Boolean(kept) };
-      return kept ? { status: 200, body, boss: { key, hp: this.limits.max } } : { status: 200, body };
+      const body = { ...untouchedView(key), reset: Boolean(kept) };
+      return kept ? { status: 200, body, boss: { key, left: 1, max: kept.max, defeated: false } } : { status: 200, body };
     });
   }
 
@@ -282,22 +295,60 @@ export class WorldBosses {
   }
 
   /**
-   * Makes the pool of a boss nobody reported yet: full.
-   *
-   * @param {string} key The boss.
-   * @returns {BossPool} The pool.
+   * Reads every pool kept in the current shape; pools kept in kills before the shared HP read as
+   * never reported, so they never count.
+   * @returns {Promise<BossPool[]>} The pools.
    */
-  fresh(key) {
-    return { key, hp: this.limits.max, max: this.limits.max, regen: this.regen(), at: this.clock(), defeated: false, emptiedBy: null, by: null, battles: [], reports: 0 };
+  async pools() {
+    return (await this.store.all()).map(poolOf).filter(Boolean);
   }
 
   /**
-   * Tells how many kills a pool fills up by per hour.
+   * Makes the pool of a boss nobody reported yet: full.
    *
-   * @returns {number} The kills per hour.
+   * @param {string} key The boss.
+   * @param {number} max The raid max HP the first report names.
+   * @param {number} now The time now.
+   * @returns {BossPool} The pool.
    */
-  regen() {
-    return (this.limits.max * 3_600_000) / this.limits.refillMs;
+  fresh(key, max, now) {
+    return { key, max: Math.max(1, Math.round(max)), left: 1, at: now, defeated: false, by: null, byPlayer: null, battles: [], reports: 0 };
+  }
+
+  /**
+   * Finds what is wrong with a report's body.
+   *
+   * @param {any} request The report.
+   * @returns {string | null} Why it is wrong, or null when it is right.
+   */
+  reportError(request) {
+    if (!request || typeof request !== "object" || Array.isArray(request)) {
+      return "the report must be a JSON object";
+    }
+
+    const { battle, seq, delta, max, killed } = request;
+
+    if (typeof battle !== "string" || battle.length === 0 || battle.length > this.limits.maxBattleLength || !BATTLE.test(battle)) {
+      return `battle must be 1 to ${this.limits.maxBattleLength} letters, digits, _ or -`;
+    }
+
+    if (!Number.isSafeInteger(seq) || seq < 0) {
+      return "seq must be the report's number within the battle, a whole number of 0 or more";
+    }
+
+    if (typeof delta !== "number" || !Number.isFinite(delta) || Math.abs(delta) > 1) {
+      return "delta must be the share of the boss's max HP lost since the battle's last report, -1 to 1";
+    }
+
+    if (typeof max !== "number" || !Number.isFinite(max) || max <= 0 || max > this.limits.maxMax) {
+      return `max must be the boss's raid max HP, more than 0 and at most ${this.limits.maxMax}`;
+    }
+
+    if (killed !== undefined && killed !== true && killed !== false && killed !== 0 && killed !== 1) {
+      return "killed must be true or false";
+    }
+
+    return null;
   }
 
   /**
@@ -324,19 +375,30 @@ export class WorldBosses {
 }
 
 /**
- * Reads a pool's hit points now: what was left at the last report, filled up since, at most full;
- * a defeated boss stays at 0.
+ * Reads a kept pool, if it is one in the current shape.
+ *
+ * @param {any} kept What the store kept.
+ * @returns {BossPool | undefined} The pool, undefined for none or one kept in kills.
+ */
+function poolOf(kept) {
+  return kept && typeof kept.left === "number" && typeof kept.max === "number" && Array.isArray(kept.battles) ? kept : undefined;
+}
+
+/**
+ * Reads the share of a pool's max HP left now: what was left at the last report, filled up since,
+ * at most full; a defeated boss stays at 0.
  *
  * @param {BossPool} pool The pool as kept.
  * @param {number} now The time now.
- * @returns {number} The hit points in kills.
+ * @param {typeof BOSS_LIMITS} [limits] The limits.
+ * @returns {number} The share left, 0 to 1.
  */
-export function hpOf(pool, now) {
+export function leftOf(pool, now, limits = BOSS_LIMITS) {
   if (pool.defeated) {
     return 0;
   }
 
-  return Math.min(pool.max, pool.hp + (Math.max(0, now - pool.at) * pool.regen) / 3_600_000);
+  return Math.min(1, pool.left + (limits.regenPerMinute * Math.max(0, now - pool.at)) / MINUTE);
 }
 
 /**
@@ -344,12 +406,24 @@ export function hpOf(pool, now) {
  *
  * @param {BossPool} pool The pool as kept.
  * @param {number} now The time now.
+ * @param {typeof BOSS_LIMITS} limits The limits.
  * @param {boolean} admin Whether to add what only admins see.
- * @returns {object} `key`, `hp` (now, to three decimals), `max`, `regen` (kills per hour) and `defeated`; for admins also `at` (the last report), `reports` and `by` (the player whose report emptied it).
+ * @returns {object} `key`, `left` (the share left now), `max`, `defeated`, `at` (the last report) and `by` (the name of the player whose report emptied it); for admins also `hp` (the HP left now, rounded), `reports` and `byPlayer`.
  */
-export function viewOf(pool, now, admin) {
-  const view = { key: pool.key, hp: roundHp(hpOf(pool, now)), max: pool.max, regen: pool.regen, defeated: pool.defeated };
-  return admin ? { ...view, at: pool.at, reports: pool.reports, by: pool.by } : view;
+export function viewOf(pool, now, limits, admin) {
+  const left = leftOf(pool, now, limits);
+  const view = { key: pool.key, left, max: pool.max, defeated: pool.defeated, at: pool.at, by: pool.by };
+  return admin ? { ...view, hp: Math.round(left * pool.max), reports: pool.reports, byPlayer: pool.byPlayer } : view;
+}
+
+/**
+ * Makes the view of a pool nobody reported: full, with its max HP still unknown.
+ *
+ * @param {string} key The boss.
+ * @returns {object} The view, see viewOf.
+ */
+function untouchedView(key) {
+  return { key, left: 1, max: null, defeated: false, at: null, by: null };
 }
 
 /**
@@ -372,9 +446,10 @@ export function bossRouteOf(url) {
  * @param {string[]} rest The address's parts after `bosses`, see bossRouteOf.
  * @param {() => Promise<string | null>} readBody Reads the request's body as text, null when it is too large to read.
  * @param {string} player The asking player's id.
- * @returns {Promise<{status: number, body: object, boss?: {key: string, hp: number}}>} The answer, and the pool to tell every game of the world when it changed.
+ * @param {string | null} [name] The asking player's name, which a defeat keeps.
+ * @returns {Promise<{status: number, body: object, boss?: BossPush}>} The answer, and the pool to tell every game of the world when it changed.
  */
-export async function handleBossRequest(bosses, method, rest, readBody, player) {
+export async function handleBossRequest(bosses, method, rest, readBody, player, name = null) {
   if (rest.length === 0 && method === "GET") {
     return bosses.list();
   }
@@ -384,7 +459,7 @@ export async function handleBossRequest(bosses, method, rest, readBody, player) 
   }
 
   if (rest.length === 2 && rest[1] === "report" && method === "POST") {
-    return withJson(readBody, bosses.limits.maxBodyLength, (body) => bosses.report(player, rest[0], body));
+    return withJson(readBody, bosses.limits.maxBodyLength, (body) => bosses.report(player, rest[0], body, name));
   }
 
   return notFound("route");

@@ -2,6 +2,7 @@
 #  Multiplayer.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-10: Loaded ui_raid_bar.rbx, the raid bosses' HP bars, after ui_party_box.rbx
 #      Paulinchen  2026-10-09: Loaded story_state.rbx before coop_story.rbx, the story's state model the party's story and a Raid World's story share
 #                            - Loaded world_difficulty.rbx after world_catchup.rbx, which plays every player of a Raid World on its difficulty
 #                            - Named mp_dir_create and mp_dir_edit with a Raid World's difficulty
@@ -119,7 +120,7 @@ module MGQ_Multiplayer
     battles_sync battles_sync_wire battles_sync_recorder battles_sync_playback battles_sync_live
     battles_balance_pvp battles_pvp battles_pvp_backline battles_pvp_mirror battles_pvp_lobby battles_duel battles_team
     trade ui_trade
-    world_overview ui_party_box ui_notices
+    world_overview ui_party_box ui_raid_bar ui_notices
   ]
 
   # Extension of the scripts, which the mod loader skips, since only this script may load them.

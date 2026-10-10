@@ -2,7 +2,8 @@
 //  worker.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-10: Refused a Raid World request whose Content-Length is above the longest body these routes take before reading its body
+//      Paulinchen  2026-10-10: Told every game of a Raid World a boss pool's share of HP left, raid max HP and defeat when a report or an admin changed it, and handed a boss report the reporting player's name
+//                            - Refused a Raid World request whose Content-Length is above the longest body these routes take before reading its body
 //      Paulinchen  2026-10-09: Kept a Raid World's boss pools in its world room's object, answered their routes there for the world's players and the admin routes for the relay's admins, and told every game of the world when a pool changed
 //                            - Told every game of a Raid World its new difficulty once its creator or an admin changed it
 //                            - Kept a removed player or a deleted world out of the world room's player list when the directory answered for it meanwhile, and asked the directory again for a player let in over 10 minutes ago
@@ -1004,11 +1005,11 @@ export class World extends DurableObject {
       return json(noRaidWorld().status, noRaidWorld().body);
     }
 
-    const answer = await handleBossRequest(this.bossesOf(), request.method, route.rest, () => readSmallText(request, BOSS_LIMITS.maxBodyLength), access.player);
+    const answer = await handleBossRequest(this.bossesOf(), request.method, route.rest, () => readSmallText(request, BOSS_LIMITS.maxBodyLength), access.player, access.name);
     await this.tidyDeleted();
 
     if (answer.boss) {
-      this.tell(bossText(answer.boss.key, answer.boss.hp));
+      this.tell(bossText(answer.boss.key, answer.boss.left, answer.boss.max, answer.boss.defeated));
     }
 
     return json(answer.status, answer.body);
@@ -1033,7 +1034,7 @@ export class World extends DurableObject {
     }
 
     if (answer.boss) {
-      this.tell(bossText(answer.boss.key, answer.boss.hp));
+      this.tell(bossText(answer.boss.key, answer.boss.left, answer.boss.max, answer.boss.defeated));
     }
 
     return json(answer.status, answer.body);
@@ -1047,7 +1048,7 @@ export class World extends DurableObject {
    * @param {string} id The world.
    * @param {string | null} key The player's key.
    * @param {string | null} auth The auth key the player's game made from the world's token.
-   * @returns {Promise<{player: string, type: string} | {refusal: {status: number, body: object}}>} The player's id and the world's type, or why the game may not.
+   * @returns {Promise<{player: string, name: string | null, type: string} | {refusal: {status: number, body: object}}>} The player's id and name, null when the directory knew none, and the world's type; or why the game may not.
    */
   async storyAccess(id, key, auth) {
     if (!isId(key) || !isHash(auth)) {
@@ -1062,8 +1063,10 @@ export class World extends DurableObject {
     const kept = await this.ctx.storage.get(ACCESS_KEY);
     const now = Date.now();
 
-    if (kept?.players?.some((each) => each.id === player && now - each.at < ACCESS_TTL_MS) && (await sha256Hex(auth)) === kept.authHash) {
-      return { player, type: kept.type };
+    const known = kept?.players?.find((each) => each.id === player && now - each.at < ACCESS_TTL_MS);
+
+    if (known && (await sha256Hex(auth)) === kept.authHash) {
+      return { player, name: typeof known.name === "string" ? known.name : null, type: kept.type };
     }
 
     const generation = this.accessGeneration;
@@ -1082,7 +1085,7 @@ export class World extends DurableObject {
     if (generation === this.accessGeneration) {
       const current = await this.ctx.storage.get(ACCESS_KEY);
       const players = current?.authHash === answer.authHash && Array.isArray(current.players) ? current.players.filter((each) => typeof each?.id === "string" && each.id !== answer.player) : [];
-      await this.ctx.storage.put(ACCESS_KEY, { type: answer.type, authHash: answer.authHash, players: [...players, { id: answer.player, at: Date.now() }].slice(-MAX_ACCESS_PLAYERS) });
+      await this.ctx.storage.put(ACCESS_KEY, { type: answer.type, authHash: answer.authHash, players: [...players, { id: answer.player, name: answer.name ?? null, at: Date.now() }].slice(-MAX_ACCESS_PLAYERS) });
     }
 
     if (!this.world) {
@@ -1090,7 +1093,7 @@ export class World extends DurableObject {
       await this.ctx.storage.put("world", id);
     }
 
-    return { player: answer.player, type: answer.type };
+    return { player: answer.player, name: answer.name ?? null, type: answer.type };
   }
 
   /**

@@ -2,6 +2,9 @@
 #  battles_coop.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-10: Invited the players on the map who watch the story told there to a boss battle in a Raid World too
+#                            - Named the raid boss's pools in the invite to a battle that fights them, and invited nobody to one whose pools are all empty already
+#                            - Fought the raid boss's pools in the battle the player yields or follows to, and gave a troop taken from the host the boss's raised max HP at once
 #      Paulinchen  2026-10-09: Told the guests the troop as host whenever it changed since they last heard of it, such as enemies another mod added mid-battle or an enemy that transformed or appeared, before the next send of the stream and as a command phase opens
 #                            - Fought a battle joined in a Raid World with its host's enemy rates, the player's own back once it ended
 #                            - Ended a co-op battle only once its scene ended, not when its party command called the Library or Config
@@ -370,7 +373,7 @@ module MGQ_MpBattlesCoop
   # @param can_lose [Boolean] Whether losing goes on without a game over.
   # @param battle_id [String, nil] The battle's id the member who asked chose, nil for a new one.
   def self.host(troop_id, can_escape, can_lose, battle_id = nil)
-    seats = invitees.map(&:seat)
+    seats = invitees(troop_id).map(&:seat)
     seats |= [@requester] if @requester
     seats = with_waiting_host(seats) if raid?
     return log("nobody to invite on map #{$game_map.map_id}: #{nobody_text}") if seats.empty? && !waiting_rival?
@@ -386,6 +389,7 @@ module MGQ_MpBattlesCoop
       fields["enc"] = @random_encounter ? 1 : 0
       fields["boss"] = 1 if MGQ_MpRaidBosses.battle?(troop_id)
       fields["rates"] = rates_text
+      fields.update(MGQ_MpRaidPool.invite_fields(troop_id)) if defined?(MGQ_MpRaidPool)
     end
     raid? ? tell_map(seats, "invite", fields) : tell(-1, "invite", fields)
     log("invited #{seats.size} #{raid? ? 'player' : 'member'}(s) to battle #{battle_id} against troop #{troop_id} on map #{$game_map.map_id}: #{seats.map { |seat| MGQ_MpBattlesSync.who(seat) }.join(', ')}")
@@ -393,12 +397,17 @@ module MGQ_MpBattlesCoop
     log("could not host a co-op battle: #{e.class}: #{e.message}")
   end
 
-  # Lists the players a battle the player hosts invites: raid_candidates in a Raid World, else
-  # candidates.
+  # Lists the players a battle the player hosts invites: raid_candidates in a Raid World, those
+  # watching the story told on the map too for a boss battle, else candidates. A raid boss battle
+  # whose pools are all empty already invites nobody, since it is won at once.
   #
+  # @param troop_id [Integer, nil] The battle's troop.
   # @return [Array<MGQ_MpOverworldSync::Peers::Peer>] The players.
-  def self.invitees
-    raid? ? raid_candidates : candidates
+  def self.invitees(troop_id = nil)
+    return candidates unless raid?
+    return [] if troop_id && defined?(MGQ_MpRaidPool) && MGQ_MpRaidPool.won_already?(troop_id)
+
+    raid_candidates(troop_id && MGQ_MpRaidBosses.battle?(troop_id))
   end
 
   # Adds the host of an invite that waits for the player to the players a battle in a Raid World
@@ -522,14 +531,17 @@ module MGQ_MpBattlesCoop
   end
 
   # Lists the players a battle in a Raid World invites: of those on the player's map who are free
-  # (see raid_free?), the party members first, then the nearest to the party's leader, or to the
-  # player outside a party, by their states; at most RAID_PLAYERS with the player.
+  # (see raid_free?), and for a boss battle those reading the story the player tells there (see
+  # watching?), the party members first, then the nearest to the party's leader, or to the player
+  # outside a party, by their states; at most RAID_PLAYERS with the player.
   #
+  # @param boss [Boolean] Whether it is a boss battle.
   # @return [Array<MGQ_MpOverworldSync::Peers::Peer>] The players.
-  def self.raid_candidates
+  def self.raid_candidates(boss = false)
     members = MGQ_MpCoop::Party.members
     x, y = raid_center
-    free = MGQ_MpCoop::Scope.peers_on($game_map.map_id).select { |peer| raid_free?(peer) }
+    viewers = boss ? MGQ_MpCoop::Scope.viewers : []
+    free = MGQ_MpCoop::Scope.peers_on($game_map.map_id).select { |peer| raid_free?(peer) || watching?(peer, viewers) }
     ranked = free.sort_by do |peer|
       [members.any? { |member| member.equal?(peer) } ? 0 : 1, distance(peer, x, y), peer.state["id"].to_s]
     end
@@ -544,6 +556,18 @@ module MGQ_MpBattlesCoop
   # @return [Boolean] Whether they may.
   def self.raid_free?(peer)
     RAID_FREE_SCENES.include?(peer.state["scene"]) && peer.state["busy"] != "1"
+  end
+
+  # Reports whether another player in a Raid World reads the story the player tells on the map, as
+  # their state says, and neither trades nor is about to teleport: a boss battle the story starts
+  # invites them too.
+  #
+  # @param peer [MGQ_MpOverworldSync::Peers::Peer] The player.
+  # @param viewers [Array<MGQ_MpOverworldSync::Peers::Peer>] Those the player's story is told to, see
+  #   MGQ_MpCoop::Scope.viewers.
+  # @return [Boolean] Whether they do.
+  def self.watching?(peer, viewers)
+    peer.state["scene"] == "event" && peer.state["busy"] != "1" && viewers.any? { |viewer| viewer.equal?(peer) }
   end
 
   # The fields the co-op battle adds to the state the player's game tells the others: in a Raid
@@ -957,6 +981,7 @@ module MGQ_MpBattlesCoop
     MGQ_MpBattlesSync.finish
     adopt_troop(scene, message)
     MGQ_MpBattlesHotjoin.note_invite(message)
+    take_pool(message)
     MGQ_MpBattlesSync.join_world(:guest, message["bid"].to_s, [peer.seat], peer.state["name"].to_s)
     MGQ_MpBattlesSync.battle_started
     @awaited = { :peer => peer, :message => message }
@@ -990,6 +1015,7 @@ module MGQ_MpBattlesCoop
     message = invite[:message]
     adopt_troop(SceneManager.scene, message)
     MGQ_MpBattlesHotjoin.note_invite(message)
+    take_pool(message)
     MGQ_MpBattlesSync.join_world(:guest, message["bid"].to_s, [peer.seat], peer.state["name"].to_s)
     MGQ_MpBattlesSync.battle_started
     @awaited = invite
@@ -1015,6 +1041,15 @@ module MGQ_MpBattlesCoop
     log("took troop #{message['troop']} of the rival's battle: #{$game_troop.members.map { |enemy| "#{enemy.enemy_id} #{enemy.name}" }.join(', ')}")
   rescue => e
     log("taking the rival's troop failed: #{e.class}: #{e.message}")
+  end
+
+  # Fights the raid boss's pools an invite names in the troop taken from it (see adopt_troop), as
+  # BattleManager.setup has the battle of an accepted invite do, which a battle taken over in place
+  # never runs.
+  #
+  # @param message [Hash] The invite.
+  def self.take_pool(message)
+    MGQ_MpRaidPool.set_up(message["troop"].to_i) if defined?(MGQ_MpRaidPool)
   end
 
   # Draws the troop's enemies anew in the battle, as they changed.
@@ -1494,6 +1529,7 @@ module MGQ_MpBattlesCoop
       enemy
     end
     MGQ_MpGame.set($game_troop, :enemies, rebuilt)
+    MGQ_MpRaidPool.rescale if defined?(MGQ_MpRaidPool)
     # The game counts each name's enemies for their letters, so the count starts over as in setup.
     MGQ_MpGame.set($game_troop, :names_count, {})
     MGQ_MpGame.call($game_troop, :make_unique_names)

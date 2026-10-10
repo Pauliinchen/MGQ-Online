@@ -2,6 +2,18 @@
 #  battles_raid_pool.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-10: Added taken_over, which the co-op battles call as a guest takes a battle over, so the damage of a battle that starts then is reported
+#                            - Started a guest's reports from the enemies' HP as it takes the battle over, so the host's reported damage is not reported again, and kept a guest from killing enemies by its own view of the pools
+#                            - Counted a report from no more than the enemy's max HP now, so a lowered max HP reads as no damage
+#                            - Compared the DLL's line of a pool with the last one taken, so small changes in a row count once they add up
+#                            - Took the pools' HP every five seconds while a battle waits for its players' commands, so its bar shows the other battles' blows meanwhile
+#                            - Reported what a battle dealt as its actions end too, at most every two seconds, so the other games see a long turn's damage
+#                            - Made each raid boss one fight the whole world shares: its enemies have 7.5 times their max HP, report what they lost and take their HP from the relay's pool at each command phase, and die when the pool is empty
+#                            - Kept a pool per enemy of a boss troop of several, so each falls on its own
+#                            - Let a player near a boss battle that takes nobody in fight the same boss in a side battle of their own, which may be lost
+#                            - Let a guest of a boss battle report once it takes the battle over
+#                            - Fetched the pools as the player enters the world and each map
+#                            - Dropped the boss that falls back with everything it put back: the story, the party, how the map looked, the items an event gave, the held event and autosave
 #      Paulinchen  2026-10-09: Counted only the boss troop's own enemies in the share of a kill and the boss's name, never enemies added mid-battle
 #                            - Took back the copies of the items a boss event equips at once that its replay leaves in the bag
 #                            - Counted the fights whose events change the party against their pools, putting the party back as the boss falls back
@@ -9,42 +21,63 @@
 #
 #----------------------------------------------------------------
 
-# The raid bosses of a Raid World: each story boss has a pool of kills at the relay that the whole
-# world wears down together, and that fills up again within the hour (Relay/core/bosses.js). A won
-# boss battle moves the story on only once it empties the pool; until then the boss falls back: the
-# event that started the battle ends as the game's defeat ends it, without the defeat scene, and
-# the switches, variables and self switches it set before the battle are put back with the party
-# and how the map looked and sounded, so the event can be played again.
+# The raid bosses of a Raid World: each story boss is one fight the whole world shares, its enemies'
+# stats raised by the factors of its tier (MGQ_MpRaidBosses::TIERS). Its pool at the relay
+# (Relay/core/bosses.js) keeps how much of its HP is left, as a share of its max, and refills by
+# REGEN_PER_MINUTE of it every minute. Every battle against the boss fights the same HP: as its
+# actions end, at most every REPORT_SECONDS, and at each command phase the battle reports what it
+# dealt since the last report; as each command phase opens, and every INPUT_SYNC_SECONDS while it
+# waits for commands, it also takes the pool's HP, so a boss falls only once the world wore its pool
+# down. A battle that empties the pool, or
+# fights on as another empties it, wins as the game's own battles win, and the story goes on through
+# the event that started it, without waiting for the relay.
 #
-# A battle counts when the player hosts it in a Raid World whose story they play, a story event
-# started it with its battle command, its troop is the last phase of a boss fight of
-# MGQ_MpRaidBosses whose milestone the story has not beaten, and the event moved none of the
-# story's progress before the battle. Guests of a co-op battle and Classic worlds are never touched.
-# The host reports the share of the boss's HP the battle dealt, in kills, since each host's
-# difficulty and mods set the boss's HP; a relay that does not answer in time lets the story go on.
+# A battle fights a pool when the player plays the story of a Raid World, the event of the map
+# started it with its battle command, and its troop is the last phase of a boss fight of
+# MGQ_MpRaidBosses whose milestone the story has not beaten; a guest of such a battle fights it with
+# its host (see note_invite) and reports once it takes the battle over. A player near a boss
+# battle that takes nobody in may fight the same pool in a side battle of their own (start_side).
+# Classic worlds are never touched.
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpRaidPool
-  # Frames a won battle waits at most for the relay's answer before the story goes on, ten seconds,
-  # as long as the DLL's first two tries.
-  WAIT_FRAMES = 600
+  # How many times its own max HP a pooled enemy has.
+  RAID_SCALE = 7.5
 
-  # Frames a lost battle's report is followed at most for the line in the chat log, thirty seconds,
-  # longer than all of the DLL's tries.
-  WATCH_FRAMES = 1800
+  # Share of its max HP a pool gains back every minute, also while battles fight it, as the relay
+  # counts it.
+  REGEN_PER_MINUTE = 0.03
 
-  # Frames between two reads of the DLL's state while a report runs.
+  # Least seconds between two reports of a battle as its actions end; a command phase and the
+  # battle's end report at once. Keeps a player's reports within the relay's two a second
+  # (Relay/core/bosses.js) for a boss of up to four enemies.
+  REPORT_SECONDS = 2
+
+  # Seconds between two takes of the pools' HP while a battle waits for its players' commands.
+  INPUT_SYNC_SECONDS = 5
+
+  # Frames between two reads of the DLL's state of the pools.
   STATE_FRAMES = 10
-
-  # Frames after the player's own report in which the relay's push of the same pool says nothing
-  # new, ten seconds.
-  OWN_PUSH_FRAMES = 600
 
   # Bytes the DLL may write the pools' state into at first.
   STATE_SIZE = 4096
 
-  # Kills a full pool holds while the DLL tells none.
-  DEFAULT_MAX = 5
+  # Share of a pool's max by which the DLL's line of a pool must differ from the one it gave before
+  # to tell anything new, beyond the regeneration since; the DLL rounds the share it writes.
+  LINE_TOLERANCE = 0.0006
+
+  # Smallest share of a pool's max a report carries.
+  MIN_DELTA = 1.0e-12
+
+  # Share of its max a pool the relay keeps standing has at least here: the relay and the DLL round
+  # the share to 6 decimals, so the last HP of a large pool arrive as 0.
+  MIN_LEFT = 1.0e-9
+
+  # Frames before the pools' fetch is tried again after the DLL did not start it.
+  FETCH_RETRY_FRAMES = 120
+
+  # Most reports the player's game counts as not answered yet, as many as the DLL queues.
+  MAX_PENDING = 1000
 
   # The switch the Hades rematches turn on around their battles.
   HADES_SWITCH = 97
@@ -52,11 +85,13 @@ module MGQ_MpRaidPool
   # The switch the Colosseum's battles turn on.
   COLOSSEUM_SWITCH = 87
 
-  # The trigger of an event that starts by itself, which would start again at once.
-  AUTORUN = 3
+  # Longest key of a boss, which leaves room for the enemy's number the relay's key of one enemy of
+  # several adds.
+  MAX_KEY_LENGTH = 60
 
-  # Longest key the relay takes.
-  MAX_KEY_LENGTH = 64
+  # The field this script adds to the state the player's game tells the others: the troop and enemy
+  # rates of the boss battle the player hosts, which a side battle fights (see state_fields).
+  STATE_FIELD = "rpb"
 
   # The notification box's key of this script's messages.
   NOTICE_KEY = :raid_pool
@@ -79,9 +114,6 @@ module MGQ_MpRaidPool
     1507 => "the Great Decision sets the world's route",
     1509 => "the Great Decision sets the world's route",
   }
-
-  # The variable the game adds to its party size, which some boss events raise for their fight.
-  PARTY_SIZE_VARIABLE = 56
 
   # What tells each milestone beaten, by milestone and cap: alternatives split by "|", each a list
   # of conditions split by "&", a switch on ("s2261") or a variable at least a value ("v1003>=8").
@@ -172,39 +204,69 @@ module MGQ_MpRaidPool
 
   @clock = 0
   @read_at = 0
+  @pools = {}
+  @lines = {}
+  @scaled = []
+  @announced = {}
+  @pending = []
 
   extend MGQ_MpLog
 
   # What starts this script's lines in Multiplayer InGame.log.
   LOG_TAG = "raid pool"
 
-  # A battle that counts against a pool.
+  # A battle that fights a boss's pools.
   #
-  # @!attribute key [String] The pool's key at the relay.
+  # @!attribute key [String] The boss's key, see key_of.
   # @!attribute name [String] What the player reads the boss as: the troop's enemies.
   # @!attribute troop [Integer] The troop.
-  # @!attribute battle [String] The battle's id, which the relay counts once.
-  # @!attribute writes [Array<Hash>] What the event changed before the battle, see writes_since.
-  # @!attribute map_id [Integer] The map the event started on.
-  # @!attribute event_id [Integer] The event.
-  # @!attribute scene [Hash, nil] How the map looked and sounded as the event started, see raw_scene.
-  # @!attribute party [Hash] The party as the event started and as the battle started, see
-  #   with_battle_party.
-  # @!attribute gifts [Hash] The items the event left in the bag beyond what it equipped, see giving.
+  # @!attribute battle [String] The battle's id, under which the relay counts its reports once.
   # @!attribute own [Integer] How many enemies the troop's setup made, which come first in the troop.
-  Fight = Struct.new(:key, :name, :troop, :battle, :writes, :map_id, :event_id, :scene, :party, :gifts, :own)
+  # @!attribute members [Array<Member>] The troop's own enemies, each with its pool.
+  # @!attribute seq [Integer] The number of the battle's last report, which the relay counts once.
+  # @!attribute side [Boolean] Whether it is a side battle, see start_side.
+  # @!attribute guest [Boolean] Whether a host's stream governed it when last looked at, see
+  #   reporting?.
+  Fight = Struct.new(:key, :name, :troop, :battle, :own, :members, :seq, :side, :guest)
 
-  # Forgets every battle and report, as at the title screen.
+  # One of the troop's own enemies in a battle that fights a boss's pools.
+  #
+  # @!attribute key [String] Its pool's key at the relay.
+  # @!attribute index [Integer] Its place in the troop.
+  # @!attribute base [Integer, nil] Its HP as last taken from the pool or reported, nil before.
+  # @!attribute killed [Boolean] Whether its death was reported.
+  # @!attribute held [Boolean] Whether the DLL refused its last report, so its HP waits for the next
+  #   instead of taking the pool's.
+  Member = Struct.new(:key, :index, :base, :killed, :held)
+
+  # A pool as the player's game knows it.
+  #
+  # @!attribute left [Float] The share of its max HP left at :at, 0 to 1.
+  # @!attribute max [Integer] Its max HP as the relay shows it, 0 while unknown.
+  # @!attribute defeated [Boolean] Whether a battle emptied it, which lasts until an admin resets it.
+  # @!attribute by [String, nil] Who emptied it.
+  # @!attribute at [Time] When :left held.
+  Pool = Struct.new(:left, :max, :defeated, :by, :at)
+
+  # Forgets every battle and what the relay told, as at the title screen.
   def self.forget
-    @snapshot = nil
     @fight = nil
+    @reported_at = nil
+    @synced_at = nil
     @lost = nil
-    @pending = nil
-    @watch = nil
-    @own = nil
+    @invited = nil
+    @side = nil
     @at_command = false
     @retrying = false
-    @save_held = false
+    @fetched = nil
+    @tried = nil
+    @tried_at = 0
+    @world = nil
+    @pools = {}
+    @lines = {}
+    @scaled = []
+    @announced = {}
+    @pending = []
   end
 
   # Reports whether the pools apply: the player plays the story of a Raid World.
@@ -216,21 +278,41 @@ module MGQ_MpRaidPool
     false
   end
 
-  # Notes the story as a map event starts on the map's interpreter, which a boss that falls back
-  # puts back. Called after Game_Interpreter#setup.
+  # Tells the battle that fights a boss's pools now.
   #
-  # @param interpreter [Game_Interpreter] The interpreter set up.
-  def self.event_started(interpreter)
-    return unless $game_map && interpreter.equal?($game_map.interpreter)
+  # @return [Fight, nil] The battle, nil for none.
+  def self.fight
+    @fight
+  end
 
-    @lost = nil
-    @snapshot = nil
-    return unless interpreter.event_id > 0 && active?
+  # Finds a pool as the player's game knows it.
+  #
+  # @param key [String] Its key.
+  # @return [Pool, nil] The pool, nil while the relay told nothing of it.
+  def self.pool(key)
+    @pools[key]
+  end
 
-    @snapshot = { :event_id => interpreter.event_id, :map_id => interpreter.map_id, :story => raw_story, :scene => raw_scene, :party => raw_party, :gifts => {} }
-  rescue => e
-    @snapshot = nil
-    log_once(:snapshot, "noting the story at an event's start failed: #{e.class}: #{e.message}")
+  # Finds the share of a pool's max HP left now, with what it gained back since it was told.
+  #
+  # @param pool [Pool] The pool.
+  # @param now [Time] The moment.
+  # @return [Float] The share, 0 to 1.
+  def self.left_now(pool, now = Time.now)
+    return 0.0 if pool.defeated
+
+    [pool.left.to_f + REGEN_PER_MINUTE * (now - pool.at) / 60.0, 1.0].min
+  end
+
+  # Finds an enemy's HP for a share of its max HP: at least 1 while any is left.
+  #
+  # @param left [Float] The share.
+  # @param max [Integer] Its max HP.
+  # @return [Integer] The HP.
+  def self.hp_of(left, max)
+    return 0 unless left > 0
+
+    [(left * max).ceil, 1].max
   end
 
   # Runs the map's interpreter, noting that its commands run, which are the story's.
@@ -258,48 +340,94 @@ module MGQ_MpRaidPool
     @retrying = false
   end
 
-  # Decides whether the battle just set up counts against a pool. Called after BattleManager.setup.
+  # Tells how a battle about to be set up, or just set up, fights a pool, without forgetting why.
+  #
+  # @param troop_id [Integer, String] The battle's troop.
+  # @return [Symbol, nil] :side for a side battle, :guest for one a host's invite marked, :event for
+  #   an event's story boss battle, nil for none; the lost battle's kind for the game's retry of it.
+  def self.kind_of(troop_id)
+    troop = troop_id.to_i
+    return (@lost.side ? :side : :event) if retry_of?(troop)
+    return :side if @side == troop
+    return :guest if @invited && @invited[0] == troop
+    return nil unless @at_command && @in_map && active? && MGQ_MpRaidBosses.boss?(troop)
+    return nil unless $game_map.interpreter.event_id > 0
+
+    refusal(troop) ? nil : :event
+  end
+
+  # Reports whether a battle about to be set up is the game's retry of the lost battle that fought a
+  # pool, which battles_coop.rbx invites to before set_up takes it.
+  #
+  # @param troop [Integer] The battle's troop.
+  # @return [Boolean] Whether it is.
+  def self.retry_of?(troop)
+    @retrying && @lost && @lost.troop == troop ? true : false
+  end
+
+  # Decides whether the battle just set up fights a pool, and takes its HP from it. Called after
+  # BattleManager.setup.
   #
   # @param troop_id [Integer] The battle's troop.
   def self.set_up(troop_id)
     return retried if @retrying
 
-    at_command = @at_command
+    kind = kind_of(troop_id)
+    invited = @invited
+    explain = @at_command && @in_map && MGQ_MpRaidBosses.boss?(troop_id) && active?
     @at_command = false
+    @invited = nil
+    @side = nil
     @fight = nil
     @lost = nil
-    return unless at_command && @in_map && active? && MGQ_MpRaidBosses.boss?(troop_id)
+    @scaled = []
+    unless kind
+      reason = explain ? refusal(troop_id.to_i) || ($game_map.interpreter.event_id > 0 ? nil : "a common event of its own started it") : nil
+      return reason ? log("troop #{troop_id} fights no pool: #{reason}") : nil
+    end
 
-    reason = refusal(troop_id.to_i)
-    return log("troop #{troop_id} counts against no pool: #{reason}") if reason
-
-    root = $game_map.interpreter
-    own = $game_troop.members.size
-    @fight = Fight.new(key_of(troop_id), troop_name(own), troop_id.to_i, new_battle_id, writes_since(@snapshot[:story]), root.map_id, root.event_id,
-                       @snapshot[:scene], with_battle_party(@snapshot[:party]), @snapshot[:gifts].dup, own)
-    log("battle #{@fight.battle} against #{@fight.name} (troop #{troop_id}) counts against the pool #{@fight.key}, " \
-        "#{change_count(@fight.writes)} story value(s) put back if it holds")
+    own = kind == :guest ? invited[1] : own_count(troop_id)
+    start(troop_id.to_i, own, kind)
   rescue => e
     @fight = nil
     log("deciding on troop #{troop_id} failed: #{e.class}: #{e.message}")
   end
 
-  # Takes a retry of a lost battle that counted as one that counts again, with an id of its own.
+  # Starts fighting a boss's pools: its own enemies get RAID_SCALE times their max HP and the pools'
+  # HP.
+  #
+  # @param troop [Integer] The troop.
+  # @param own [Integer] How many enemies the troop's setup made.
+  # @param kind [Symbol] See kind_of.
+  def self.start(troop, own, kind)
+    key = key_of(troop)
+    return log("troop #{troop} fights no pool: its key is none the relay takes") unless key
+
+    members = member_keys(key, own).each_with_index.map { |member_key, index| Member.new(member_key, index, nil, false) }
+    @fight = Fight.new(key, troop_name(own), troop, new_battle_id, own, members, 0, kind == :side, kind == :guest || !reporter?)
+    take_on(@fight)
+    log("battle #{@fight.battle} (#{kind}) against #{@fight.name} (troop #{troop}) fights the pool(s) #{members.map(&:key).join(', ')}: " \
+        "#{members.map { |member| enemy_text(member) }.join(', ')}")
+  end
+
+  # Takes a retry of a lost battle that fought a pool as one that fights it again, with an id of
+  # its own and its HP from the pool.
   def self.retried
     @retrying = false
     lost = @lost
     @lost = nil
     return unless lost
 
-    @fight = Fight.new(*lost.to_a)
-    @fight.battle = new_battle_id
-    log("the retry of the battle against #{@fight.name} counts as battle #{@fight.battle}")
+    members = lost.members.map { |member| Member.new(member.key, member.index, nil, false) }
+    @fight = Fight.new(lost.key, lost.name, lost.troop, new_battle_id, lost.own, members, 0, lost.side, !reporter?)
+    take_on(@fight)
+    log("the retry of the battle against #{@fight.name} fights its pools as battle #{@fight.battle}")
   end
 
-  # Finds why a story boss battle counts against no pool.
+  # Finds why a story boss battle fights no pool.
   #
   # @param troop_id [Integer] The troop.
-  # @return [String, nil] Why, nil when it counts.
+  # @return [String, nil] Why, nil when it fights one.
   def self.refusal(troop_id)
     boss = MGQ_MpRaidBosses.at(troop_id)
     return "an earlier phase of its fight" unless MGQ_MpRaidBosses.last_phase?(troop_id)
@@ -307,21 +435,19 @@ module MGQ_MpRaidPool
     return "a Hades rematch" if $game_switches[HADES_SWITCH]
     return "a Colosseum battle" if $game_switches[COLOSSEUM_SWITCH]
     return "the story beat #{boss.milestone} already" if beaten?(boss)
-    return "no story was noted as its event started" unless snapshot_of_root?
-    return "no party was noted as its event started" unless @snapshot[:party]
-
-    moved = moved_progress(writes_since(@snapshot[:story]))
-    return "its event moved the story's progress (#{moved}) before the battle" if moved
 
     key_of(troop_id) ? nil : "its key is none the relay takes"
   end
 
-  # Reports whether the noted story belongs to the event the map's interpreter runs.
+  # Reports whether a troop's boss has pools the player may fight: the last phase of a story boss
+  # the story has not beaten, which the relay takes a key of.
   #
-  # @return [Boolean] Whether it does.
-  def self.snapshot_of_root?
-    root = $game_map.interpreter
-    @snapshot && @snapshot[:event_id] == root.event_id && @snapshot[:map_id] == root.map_id ? true : false
+  # @param troop_id [Integer, String] The troop.
+  # @return [Boolean] Whether it has.
+  def self.pooled_troop?(troop_id)
+    troop = troop_id.to_i
+    boss = MGQ_MpRaidBosses.at(troop)
+    !boss.nil? && MGQ_MpRaidBosses.last_phase?(troop) && !UNPOOLED[troop] && !beaten?(boss) && !key_of(troop).nil?
   end
 
   # Reports whether the story beat a milestone, by its markers in BEATEN.
@@ -353,20 +479,8 @@ module MGQ_MpRaidPool
     end
   end
 
-  # Names the story's progress an event wrote, which the relay orders the world's story by and
-  # would refuse to take back.
-  #
-  # @param writes [Array<Hash>] What it wrote, see writes_since.
-  # @return [String, nil] Such as "v1001", nil for none.
-  def self.moved_progress(writes)
-    switches = writes[0].keys & MGQ_MpWorldStory::PROGRESS_SWITCHES
-    variables = writes[1].keys & MGQ_MpWorldStory::PROGRESS_VARIABLES
-    moved = switches.map { |id| "s#{id}" } + variables.map { |id| "v#{id}" }
-    moved.empty? ? nil : moved.join(", ")
-  end
-
-  # Finds a troop's pool: the fight's own name for a fight of FIGHTS, else its milestone, with its
-  # cap where several milestones share the name.
+  # Finds a troop's boss key: the fight's own name for a fight of FIGHTS, else its milestone, with
+  # its cap where several milestones share the name.
   #
   # @param troop_id [Integer, String] The troop.
   # @return [String, nil] The key, nil for a troop that is no story boss or a key the relay refuses.
@@ -378,7 +492,26 @@ module MGQ_MpRaidPool
 
       key = shared_name?(boss.milestone) ? "#{boss.milestone} (cap #{boss.cap})" : boss.milestone
     end
-    key.strip == key && !key.empty? && key.length <= MAX_KEY_LENGTH ? key : nil
+    key.strip == key && !key.empty? && !key.include?("#") && key.length <= MAX_KEY_LENGTH ? key : nil
+  end
+
+  # Finds the pools' keys of a boss's own enemies: the boss's key for one enemy, else one per enemy,
+  # the key with its place in the troop, such as "Metatronne and Sandalphone#1".
+  #
+  # @param key [String] The boss's key, see key_of.
+  # @param own [Integer] How many enemies the troop's setup makes.
+  # @return [Array<String>] The keys.
+  def self.member_keys(key, own)
+    own.to_i <= 1 ? [key] : (0...own.to_i).map { |index| "#{key}##{index}" }
+  end
+
+  # Finds the pools' keys of a troop's own enemies, as its setup makes them.
+  #
+  # @param troop_id [Integer, String] The troop.
+  # @return [Array<String>] The keys, none for a troop without a key.
+  def self.troop_keys(troop_id)
+    key = key_of(troop_id)
+    key ? member_keys(key, data_own(troop_id)) : []
   end
 
   # Reports whether milestones of several caps share a name.
@@ -390,18 +523,56 @@ module MGQ_MpRaidPool
     @caps.fetch(milestone, []).uniq.size > 1
   end
 
+  # Counts the enemies the setup of the troop just set up made, which come first in the troop.
+  #
+  # Enemies another mod adds come after them and are no part of the boss.
+  #
+  # @param troop_id [Integer, String] The troop.
+  # @return [Integer] How many.
+  def self.own_count(troop_id)
+    made = $game_troop.members.size
+    data = data_own(troop_id)
+    data > 0 ? [data, made].min : made
+  end
+
+  # Counts the enemies the game's setup of a troop makes: its members whose enemy the database has.
+  #
+  # @param troop_id [Integer, String] The troop.
+  # @return [Integer] How many, 0 for a troop the database lacks.
+  def self.data_own(troop_id)
+    troop = $data_troops && $data_troops[troop_id.to_i]
+    troop ? troop.members.count { |member| $data_enemies[member.enemy_id] } : 0
+  end
+
   # Names the troop's own enemies, as the player reads the boss.
   #
   # @param own [Integer] How many enemies the troop's setup made, see Fight.
   # @return [String] Such as "Morrigan and Astaroth".
   def self.troop_name(own)
     names = own_enemies(own).map { |enemy| enemy.respond_to?(:original_name) ? enemy.original_name : enemy.name }
+    joined_names(names)
+  end
+
+  # Names a troop's own enemies by the database, as the player reads the boss outside a battle.
+  #
+  # @param troop_id [Integer, String] The troop.
+  # @return [String] Such as "Morrigan and Astaroth", the boss's key when the database lacks them.
+  def self.troop_label(troop_id)
+    troop = $data_troops && $data_troops[troop_id.to_i]
+    enemies = troop ? troop.members.map { |member| $data_enemies[member.enemy_id] }.compact : []
+    name = joined_names(enemies.map { |enemy| enemy.name })
+    name.empty? ? key_of(troop_id).to_s : name
+  end
+
+  # Joins the names of a boss's enemies, each once, at most three.
+  #
+  # @param names [Array] The names.
+  # @return [String] Such as "Morrigan and Astaroth".
+  def self.joined_names(names)
     names.map { |name| name.to_s }.reject { |name| name.empty? }.uniq.first(3).join(" and ")
   end
 
   # Lists the boss troop's own enemies: those its setup made, which come first in the troop.
-  #
-  # Enemies another mod adds mid-battle come after them and are no part of the boss.
   #
   # @param own [Integer] How many enemies the troop's setup made, see Fight.
   # @return [Array<Game_Enemy>] The enemies.
@@ -416,696 +587,597 @@ module MGQ_MpRaidPool
     "rp#{Time.now.to_i.to_s(36)}#{rand(36**8).to_s(36)}"
   end
 
-  # Copies the story as the game keeps it.
+  # Readies a battle's own enemies to fight their pools: RAID_SCALE times their max HP with the share
+  # of it they had, then their pools' HP.
   #
-  # @return [Array] The switches, variables and self switches.
-  def self.raw_story
-    [$game_switches, $game_variables, $game_self_switches].map { |object| MGQ_MpGame.get(object, :data).dup }
+  # @param fight [Fight] The battle.
+  def self.take_on(fight)
+    scale_enemies(fight)
+    sync(fight)
   end
 
-  # Notes how the map looks and sounds, which a boss event sets up for its battle and puts back only
-  # in its commands after the battle.
+  # Gives a battle's own enemies RAID_SCALE times their max HP, see max_hp, each new one keeping the
+  # share of it it had. Done again at each command phase and as a guest builds its troop anew from
+  # the host's (see rescale).
   #
-  # @return [Hash, nil] The battle BGM, the BGM and BGS playing, the player's transparency, the
-  #   followers' visibility, the pictures shown by number with their names, and the screen's tone,
-  #   brightness and weather; nil when noting failed.
-  def self.raw_scene
-    screen = $game_map.screen
-    pictures = {}
-    screen.pictures.each { |picture| pictures[picture.number] = picture.name unless picture.name.to_s.empty? }
-    { :battle_bgm => $game_system.battle_bgm, :bgm => RPG::BGM.last.clone, :bgs => RPG::BGS.last.clone,
-      :transparent => $game_player.transparent, :followers => $game_player.followers.visible,
-      :pictures => pictures, :tone => screen.tone.clone, :brightness => screen.brightness,
-      :weather => [screen.weather_type, screen.weather_power] }
+  # @param fight [Fight] The battle.
+  def self.scale_enemies(fight)
+    enemies = own_enemies(fight.own).compact
+    fresh = enemies.reject { |enemy| scaled?(enemy) }
+    shares = fresh.map { |enemy| enemy.mhp.to_i > 0 ? enemy.hp.to_f / enemy.mhp : 1.0 }
+    @scaled = enemies
+    fresh.each_with_index { |enemy, index| enemy.hp = hp_of(shares[index], enemy.mhp) unless enemy.dead? }
+  end
+
+  # Gives the enemies of a troop built anew in the battle that fights a pool RAID_SCALE times their
+  # max HP before the host's HP reaches them, which their own max HP would cut. Called by
+  # MGQ_MpBattlesCoop.take_troop.
+  def self.rescale
+    fight = @fight
+    scale_enemies(fight) if fight
   rescue => e
-    log_once(:scene, "noting how the map looks failed: #{e.class}: #{e.message}")
-    nil
+    log("raising the max HP of the troop built anew failed: #{e.class}: #{e.message}")
   end
 
-  # Puts back how the map looked and sounded as the event started: the battle BGM, the player and
-  # followers shown, the screen, and the BGM and BGS the battle's end played again. Pictures shown
-  # since are erased; one the event erased stays erased.
+  # Reports whether an enemy has RAID_SCALE times its max HP.
   #
-  # @param scene [Hash, nil] What raw_scene noted.
-  def self.restore_scene(scene)
-    return unless scene
+  # @param enemy [Game_Enemy] The enemy.
+  # @return [Boolean] Whether it has.
+  def self.scaled?(enemy)
+    @scaled.any? { |scaled| scaled.equal?(enemy) }
+  end
 
-    $game_system.battle_bgm = scene[:battle_bgm]
-    $game_player.transparent = scene[:transparent]
-    unless $game_player.followers.visible == scene[:followers]
-      $game_player.followers.visible = scene[:followers]
-      $game_player.refresh
+  # Finds an enemy's max HP: RAID_SCALE times its own for an enemy of a battle that fights a pool.
+  #
+  # The scale is applied on every call instead of stored, since the game computes the max HP anew
+  # each time, from the difficulty and the enemy's states.
+  #
+  # @param enemy [Game_Enemy] The enemy.
+  # @param own [Integer] Its max HP as the game computes it.
+  # @return [Integer] Its max HP.
+  def self.max_hp(enemy, own)
+    return own if @scaled.empty? || !scaled?(enemy)
+
+    (own * RAID_SCALE).round
+  end
+
+  # Reports whether the player's game reports the battle's pools: as its host, alone or once it
+  # took the battle over, never as a co-op guest.
+  #
+  # @return [Boolean] Whether it does.
+  def self.reporter?
+    MGQ_MpBattlesSync.role != :guest
+  end
+
+  # Gives the battle's own enemies the HP of their pools, and kills those whose pool is empty. An
+  # enemy that is dead keeps its death; one whose pool the relay told nothing of, or whose last
+  # report the DLL refused, keeps its HP. A guest's enemies keep the HP of their host's stream.
+  #
+  # @param fight [Fight] The battle.
+  # @param only_kill [Boolean] Whether only enemies whose pool is empty change.
+  # @return [Boolean] Whether it killed one.
+  def self.sync(fight, only_kill = false)
+    return false if fight.guest
+
+    enemies = $game_troop.members
+    killed = false
+    now = Time.now
+    fight.members.each do |member|
+      enemy = enemies[member.index]
+      next unless enemy
+
+      pool = @pools[member.key]
+      unless pool && !enemy.dead?
+        # Set only once, since a later base would swallow what the battle dealt since its last report.
+        member.base = enemy.hp if member.base.nil? && !only_kill
+        next
+      end
+
+      left = left_now(pool, now)
+      next if only_kill && left > 0
+
+      target = hp_of(left, enemy.mhp)
+      if target <= 0
+        kill(enemy)
+        killed = true
+      elsif member.held
+        next
+      elsif enemy.hp != target
+        enemy.hp = target
+      end
+      member.base = enemy.hp
     end
-    screen = $game_map.screen
-    screen.pictures.each { |picture| picture.erase unless picture.name.to_s.empty? || scene[:pictures][picture.number] == picture.name }
-    screen.start_tone_change(scene[:tone], 0)
-    screen.clear_fade if scene[:brightness] == 255
-    weather, power = scene[:weather]
-    screen.change_weather(weather, power, 0)
-    scene[:bgm].replay unless scene[:bgm].name == RPG::BGM.last.name
-    scene[:bgs].replay unless scene[:bgs].name == RPG::BGS.last.name
-  rescue => e
-    log("putting back how the map looked failed: #{e.class}: #{e.message}")
+    killed
   end
 
-  # Finds what changed in the story since it was noted.
+  # Reports whether the player's game reports the battle's pools now, noting whether a host's stream
+  # governs the battle. The first time a battle a host governed is the player's to report, as the
+  # player takes it over, every enemy's base becomes its HP at that moment, since the host reported
+  # what came before.
   #
-  # @param before [Array] The noted switches, variables and self switches.
-  # @return [Array<Hash>] The switches, variables and self switches that changed, each with its
-  #   value as noted (nil for a self switch that was not set).
-  def self.writes_since(before)
-    now = raw_story
-    [changed(before[0], now[0]), changed(before[1], now[1]), changed_keys(before[2], now[2])]
-  end
-
-  # Finds the entries of a list that changed.
-  #
-  # @param before [Array] The list as noted.
-  # @param now [Array] The list now.
-  # @return [Hash] The value as noted, by the id of each entry that changed.
-  def self.changed(before, now)
-    (0...[before.size, now.size].max).each_with_object({}) { |id, out| out[id] = before[id] unless before[id] == now[id] }
-  end
-
-  # Finds the keys of a table whose value changed.
-  #
-  # @param before [Hash] The table as noted.
-  # @param now [Hash] The table now.
-  # @return [Hash] The value as noted, by each key whose value changed.
-  def self.changed_keys(before, now)
-    (before.keys | now.keys).each_with_object({}) { |key, out| out[key] = before[key] unless before[key] == now[key] }
-  end
-
-  # Counts what an event changed.
-  #
-  # @param writes [Array<Hash>] What it changed, see writes_since.
-  # @return [Integer] How many values.
-  def self.change_count(writes)
-    writes.inject(0) { |sum, table| sum + table.size }
-  end
-
-  # Puts back what an event changed before its battle, past the game's own handling, which would
-  # act on some switches by itself.
-  #
-  # @param writes [Array<Hash>] What it changed, see writes_since.
-  def self.restore(writes)
-    switches, variables, self_switches = [$game_switches, $game_variables, $game_self_switches].map { |object| MGQ_MpGame.get(object, :data) }
-    writes[0].each { |id, value| switches[id] = value }
-    writes[1].each { |id, value| variables[id] = value }
-    writes[2].each { |key, value| value.nil? ? self_switches.delete(key) : self_switches[key] = value }
-    $game_map.need_refresh = true
-  end
-
-  # Notes the party, which some boss events put together anew for their fight: a temporary party,
-  # companions added or sent away, a persona changed, the split parties joined or a larger party.
-  #
-  # @return [Hash, nil] The party size variable (:size); the team (:actors), the companions owned
-  #   (:include) and the temporary party (:temp) as character ids in order; the personas the
-  #   temporary party changed (:temp_personas); every made character's persona with its looks, by
-  #   its main persona (:personas, see persona_of); and the split parties (:split, see raw_split);
-  #   nil when noting failed.
-  def self.raw_party
-    party = $game_party
-    temp_personas = MGQ_MpGame.get(party, :temp_personas)
-    { :size => MGQ_MpGame.get($game_variables, :data)[PARTY_SIZE_VARIABLE],
-      :actors => party_ids(party, :actors), :include => party_ids(party, :include_actors),
-      :temp => party_ids(party, :temp_actors), :temp_personas => temp_personas && temp_personas.dup,
-      :personas => raw_personas, :split => raw_split(party) }
-  rescue => e
-    log_once(:party, "noting the party failed: #{e.class}: #{e.message}")
-    nil
-  end
-
-  # Reads one of the party's lists of characters.
-  #
-  # @param party [Game_Party] The party.
-  # @param field [Symbol] :actors, :include_actors or :temp_actors.
-  # @return [Array<Integer>] The character ids in order.
-  def self.party_ids(party, field)
-    list = MGQ_MpGame.get(party, field)
-    raise ArgumentError, "the party has no #{field}" unless list
-
-    list.to_a
-  end
-
-  # Adds the party as a battle starts to the party noted as its event started, so that a boss that
-  # falls back after the event ended undoes only what the event changed, and keeps what changed
-  # since, such as a companion the story's catch-up brought or a team the player put together.
-  #
-  # @param saved [Hash] What raw_party noted.
-  # @return [Hash] The noted party with the team, the companions owned and the temporary party
-  #   (:battle, by :actors, :include and :temp) and the personas (:battle_personas) as the battle
-  #   started.
-  def self.with_battle_party(saved)
-    party = $game_party
-    members = { :actors => party_ids(party, :actors), :include => party_ids(party, :include_actors), :temp => party_ids(party, :temp_actors) }
-    saved.merge(:battle => members, :battle_personas => raw_personas)
-  end
-
-  # Notes the persona of every character made so far that switches personas.
-  #
-  # @return [Hash] Each one's persona and looks (see persona_of), by its main persona's id.
-  def self.raw_personas
-    made = MGQ_MpGame.get($game_actors, :data)
-    persona_ids.each_with_object({}) { |id, out| out[id] = persona_of(made[id]) if made[id] }
-  end
-
-  # Finds the characters that switch personas, by their main persona, under whose id the game keeps
-  # the character whichever persona it shows.
-  #
-  # @return [Array<Integer>] Their ids.
-  def self.persona_ids
-    return @persona_ids if @persona_ids && @persona_source.equal?($data_actors)
-
-    @persona_source = $data_actors
-    @persona_ids = (1...$data_actors.size).select do |id|
-      actor = $data_actors[id]
-      actor && actor.respond_to?(:persona_kind) && actor.persona_kind == :original
+  # @param fight [Fight] The battle.
+  # @return [Boolean] Whether it does.
+  def self.reporting?(fight)
+    unless reporter?
+      fight.guest = true
+      return false
     end
-  end
+    return true unless fight.guest
 
-  # Notes a character's persona with the looks it brings.
-  #
-  # @param actor [Game_Actor] The character.
-  # @return [Array] Its persona's id, name, nickname, character sprite and index, and face and index.
-  def self.persona_of(actor)
-    [actor.id, actor.name, actor.nickname, actor.character_name, actor.character_index, actor.face_name, actor.face_index]
-  end
-
-  # Notes the split parties the player switches between, which an event joins again.
-  #
-  # @param party [Game_Party] The party.
-  # @return [Hash, nil] The party played (:current) and each party's character ids and place, [map
-  #   id, x, y, direction] (:parties), in order, the one played with its team where the player
-  #   stands; nil when the party is not split.
-  def self.raw_split(party)
-    return nil unless party.respond_to?(:multi_party?) && party.multi_party?
-
-    current = party.multi_party.id
-    parties = MGQ_MpGame.get(party.multi_party, :data).each_with_index.map do |split, index|
-      next [party.actors.to_a, [$game_map.map_id, $game_player.x, $game_player.y, $game_player.direction]] if index == current
-
-      [split.member.to_a, [split.map_id] + split.position.to_a]
+    fight.guest = false
+    fight.members.each do |member|
+      enemy = $game_troop.members[member.index]
+      member.base = enemy.hp if enemy
+      member.held = false
     end
-    { :current => current, :parties => parties }
-  end
-
-  # Puts back the party as the event found it, through the game's own methods where it has them,
-  # and fits the team to the Raid World's formation again.
-  #
-  # @param saved [Hash, nil] What raw_party noted.
-  # @return [Boolean] Whether anything changed.
-  def self.restore_party(saved)
-    return false unless saved
-
-    party = $game_party
-    changed = restore_party_size(saved[:size])
-    changed = restore_split(party, saved[:split]) || changed
-    changed = restore_personas(party, saved[:personas], saved[:battle_personas], saved[:temp_personas]) || changed
-    changed = restore_members(party, saved) || changed
-    MGQ_MpCoopSquad.fit_team(MGQ_MpCoop::Scope.raid?) if changed && defined?(MGQ_MpCoopSquad)
-    changed
-  rescue => e
-    log("putting back the party failed: #{e.class}: #{e.message}")
-    false
-  end
-
-  # Puts back the variable the game adds to its party size, before the lists the game cuts to it.
-  #
-  # @param size [Integer, nil] Its value as noted.
-  # @return [Boolean] Whether it changed.
-  def self.restore_party_size(size)
-    variables = MGQ_MpGame.get($game_variables, :data)
-    return false if variables[PARTY_SIZE_VARIABLE] == size
-
-    variables[PARTY_SIZE_VARIABLE] = size
+    log("battle #{fight.battle} is the player's to report from here: #{fight.members.map { |member| enemy_text(member) }.join(', ')}")
     true
   end
 
-  # Splits the party again as the event found it, or joins the parties an event split, through the
-  # game's own methods. Splitting again moves the party played back to where it stood as the event
-  # started, as the game moves a party it switches to.
+  # Makes a battle the player took over from its host the player's to report from the enemies' HP
+  # at this moment. Called by MGQ_MpBattlesCoop.take_over once the co-op side ended.
   #
-  # @param party [Game_Party] The party.
-  # @param saved [Hash, nil] What raw_split noted.
-  # @return [Boolean] Whether anything changed.
-  def self.restore_split(party, saved)
-    split = party.respond_to?(:multi_party?) && party.multi_party? ? true : false
-    unless saved
-      return false unless split
-
-      party.end_multiparty
-      return true
-    end
-    return false if split
-
-    party.setup_multipartymember(saved[:parties].map { |members, _place| members.dup })
-    party.start_multiparty(*saved[:parties].map { |_members, place| place.dup })
-    return true if saved[:current] == 0
-
-    MGQ_MpGame.set(party.multi_party, :party_index, saved[:current])
-    party.multi_party.start
-    true
-  end
-
-  # Puts back the persona of every character an event changed before its battle, with the looks it
-  # had, and the personas the temporary party changed. A character the event made goes back to its
-  # main persona. The character's own persona_change is used, since the party's marks the persona
-  # owned in the system save that every save file shares.
-  #
-  # @param party [Game_Party] The party.
-  # @param personas [Hash] What raw_personas noted as the event started.
-  # @param battle_personas [Hash] What raw_personas noted as the battle started.
-  # @param temp_personas [Hash, nil] The personas the temporary party changed, as noted.
-  # @return [Boolean] Whether anything changed.
-  def self.restore_personas(party, personas, battle_personas, temp_personas)
-    made = MGQ_MpGame.get($game_actors, :data)
-    changed = false
-    persona_ids.each do |id|
-      actor = made[id]
-      was = personas[id] || [id]
-      at_battle = battle_personas[id]
-      next if actor.nil? || at_battle.nil? || actor.id == was[0] || at_battle[0] == was[0]
-
-      actor.persona_change(was[0])
-      restore_looks(actor, was) if was.size > 1
-      changed = true
-    end
-    if changed
-      $game_player.refresh
-      $game_map.need_refresh = true
-    end
-    return changed if MGQ_MpGame.get(party, :temp_personas) == temp_personas
-
-    MGQ_MpGame.set(party, :temp_personas, temp_personas && temp_personas.dup)
-    true
-  end
-
-  # Puts back a character's name, nickname and graphics where they differ from those of its persona.
-  #
-  # @param actor [Game_Actor] The character.
-  # @param was [Array] Its persona and looks, see persona_of.
-  def self.restore_looks(actor, was)
-    actor.name = was[1] unless actor.name == was[1]
-    actor.nickname = was[2] unless actor.nickname == was[2]
-    looks = was[3, 4]
-    actor.set_graphic(*looks) unless [actor.character_name, actor.character_index, actor.face_name, actor.face_index] == looks
-  end
-
-  # Puts back the temporary party, the team and the companions owned, in that order: the game cuts
-  # the team to the party size, which in a Raid World depends on whether a temporary party plays.
-  #
-  # @param party [Game_Party] The party.
-  # @param saved [Hash] What with_battle_party noted.
-  # @return [Boolean] Whether anything changed.
-  def self.restore_members(party, saved)
-    changed = false
-    [[:temp_actors, :temp], [:actors, :actors], [:include_actors, :include]].each do |field, key|
-      list = MGQ_MpGame.get(party, field)
-      ids = members_back(list.to_a, saved[key], saved[:battle][key])
-      next if list.to_a == ids
-
-      list.set(ids)
-      changed = true
-    end
-    $game_player.refresh if changed
-    changed
-  end
-
-  # Finds a list of characters as a boss that falls back leaves it: as the event found it, or, when
-  # the list changed since the battle started, with only what the event changed before the battle
-  # undone, a character it took out back at its place.
-  #
-  # @param now [Array<Integer>] The list now.
-  # @param start [Array<Integer>] The list as the event started.
-  # @param at_battle [Array<Integer>] The list as the battle started.
-  # @return [Array<Integer>] The list to put back.
-  def self.members_back(now, start, at_battle)
-    return start if now == at_battle
-
-    ids = now - (at_battle - start)
-    ((start - at_battle) - now).each { |id| ids.insert([start.index(id), ids.size].min, id) }
-    ids
-  end
-
-  # Runs one of the game's script calls that give the party items and equip them at once, noting
-  # how many of each it left in the bag while the event runs up to its battle. A replay of the event
-  # after a fall back gives the items again while the character wears them already, so each replay
-  # would leave another copy.
-  #
-  # @param call [Symbol] :equip for force_change_equip, :stones for change_actor_equip_stone.
-  # @param args [Array] The call's arguments.
-  # @return [Object] What the call returns.
-  def self.giving(call, args)
-    before = gift_counts(call, args)
-    result = yield
-    note_gifts(before) if before
-    result
-  end
-
-  # Counts the items a script call gives as it starts, while the event runs up to its battle.
-  #
-  # @param call [Symbol] See giving.
-  # @param args [Array] The call's arguments.
-  # @return [Array<Array>, nil] Each item, see gift_item, with its count in the bag; nil when no
-  #   event's gifts are noted now.
-  def self.gift_counts(call, args)
-    return nil unless @in_map && @snapshot && !$game_party.in_battle && snapshot_of_root?
-
-    gifts = call == :equip ? [[{ 1 => :weapon, 2 => :armor }[args[2]], args[3]]] : args[2..-1].to_a.map { |id| [:item, id] }
-    gifts.uniq.select { |gift| gift_item(gift) }.map { |gift| [gift, gift_count(gift)] }
+  # A battle that never had its host's party starts after this, and the first command phase would
+  # otherwise fold the damage of that start into the base.
+  def self.taken_over
+    fight = @fight
+    reporting?(fight) if fight
   rescue => e
-    log_once(:gifts, "counting an event's items failed: #{e.class}: #{e.message}")
-    nil
+    log("taking the battle over for its reports failed: #{e.class}: #{e.message}")
   end
 
-  # Notes how many more of each item a script call left in the bag.
+  # Kills an enemy whose pool another battle emptied, as a blow would, with its collapse.
   #
-  # @param before [Array<Array>] The counts as it started, see gift_counts.
-  def self.note_gifts(before)
-    gifts = @snapshot[:gifts]
-    before.each do |gift, count|
-      rise = gift_count(gift) - count
-      gifts[gift] = gifts.fetch(gift, 0) + rise if rise > 0
-    end
+  # @param enemy [Game_Enemy] The enemy.
+  def self.kill(enemy)
+    enemy.hp = 0
+    enemy.perform_collapse_effect if enemy.respond_to?(:perform_collapse_effect) && SceneManager.scene.is_a?(Scene_Battle)
+    log("#{enemy.name} falls: its pool is empty")
+  end
+
+  # Reports what the battle dealt since the last command phase and takes the pools' HP as a command
+  # phase opens, before battles_sync_live.rbx tells it the guests: the battle's host or a player
+  # alone reports, gives the enemies their pools' HP, and wins once every enemy is dead; a guest
+  # keeps the HP its host sent. Called before Scene_Battle#start_party_command_selection.
+  #
+  # The report waits for the command phase, since the game's turn end and battle start deal damage
+  # of their own (slip damage, auto skills, troop events) that a sync before it would undo.
+  def self.command_phase
+    fight = @fight
+    return unless fight
+
+    scale_enemies(fight)
+    return unless reporting?(fight)
+
+    report(fight)
+    @synced_at = Time.now
+    BattleManager.judge_win_loss if sync(fight) && $game_troop.all_dead?
   rescue => e
-    log_once(:gifts, "noting an event's items failed: #{e.class}: #{e.message}")
+    log_once(:command_phase, "reporting the turn and taking the pools' HP failed: #{e.class}: #{e.message}")
   end
 
-  # Finds an item of the game's database.
-  #
-  # @param gift [Array] Its kind (:item, :weapon or :armor) and id.
-  # @return [RPG::BaseItem, nil] The item, nil for none.
-  def self.gift_item(gift)
-    kind, id = gift
-    data = { :item => $data_items, :weapon => $data_weapons, :armor => $data_armors }[kind]
-    data && id.is_a?(Integer) ? data[id] : nil
-  end
+  # Takes the pools' HP every INPUT_SYNC_SECONDS while the battle waits for its players' commands,
+  # so its bar and enemies show the other battles' blows and the regeneration meanwhile. Nothing
+  # of the battle's own runs then, so the HP undoes none of its damage. A battle whose enemies all
+  # fall wins, as at the command phase; a guest's keeps its host's HP and falls with its host's.
+  # Called after Scene_Battle#update_basic, every frame.
+  def self.waiting_for_commands
+    fight = @fight
+    return unless fight && reporting?(fight) && MGQ_MpGame.get(BattleManager, :phase) == :input
 
-  # Counts an item in the bag.
-  #
-  # @param gift [Array] See gift_item.
-  # @return [Integer] How many.
-  def self.gift_count(gift)
-    $game_party.item_number(gift_item(gift)).to_i
-  end
+    now = Time.now
+    @synced_at ||= now
+    return if now - @synced_at < INPUT_SYNC_SECONDS
 
-  # Takes the copies the event left in the bag before its battle back out of it, as many as are left.
-  #
-  # @param gifts [Hash, nil] How many of each item, see giving.
-  # @return [Integer] How many items it took.
-  def self.take_back_gifts(gifts)
-    return 0 unless gifts
-
-    gifts.inject(0) do |taken, (gift, count)|
-      item = gift_item(gift)
-      lose = item ? [count, gift_count(gift)].min : 0
-      $game_party.lose_item(item, lose) if lose > 0
-      taken + lose
-    end
+    @synced_at = now
+    BattleManager.judge_win_loss if sync(fight) && $game_troop.all_dead?
   rescue => e
-    log("taking back the event's items failed: #{e.class}: #{e.message}")
-    0
+    log_once(:waiting_for_commands, "taking the pools' HP while waiting for commands failed: #{e.class}: #{e.message}")
   end
 
-  # Finds the share of the boss's HP a battle dealt: what the troop's own enemies that appeared lost
-  # of their max HP together.
-  #
-  # Weighing by HP keeps a boss's small helpers from counting as a whole kill.
-  #
-  # @param own [Integer] How many enemies the troop's setup made, see Fight.
-  # @return [Float] The share, 0 to 1.
-  def self.dealt(own)
-    shown = own_enemies(own).reject { |enemy| enemy.hidden? }
-    max = shown.inject(0.0) { |sum, enemy| sum + [enemy.mhp.to_f, 0.0].max }
-    return 0.0 unless max > 0
+  # Reports what the battle dealt as one of its actions ends, at most every REPORT_SECONDS, so the
+  # other games see a long turn's damage. Its enemies take the pools' HP only at the command phase,
+  # which would otherwise undo the turn's damage. Called after Scene_Battle#process_action.
+  def self.action_done
+    fight = @fight
+    return unless fight && reporting?(fight)
+    return if @reported_at && Time.now - @reported_at < REPORT_SECONDS
 
-    lost = shown.inject(0.0) { |sum, enemy| sum + [[enemy.mhp.to_f - enemy.hp.to_f, 0.0].max, enemy.mhp.to_f].min }
-    [lost / max, 1.0].min
+    report(fight)
+  rescue => e
+    log_once(:action_done, "reporting an action failed: #{e.class}: #{e.message}")
   end
 
-  # Reports a battle that counts as it ends: a won one waits for the relay's answer before the
-  # event goes on, a lost one keeps its fight for the game's retry. Called as BattleManager.battle_end
-  # starts.
+  # Kills the enemies whose pool another battle emptied as a turn ends, which the game's turn end
+  # then counts. Called before Scene_Battle#turn_end.
+  def self.turn_ended
+    fight = @fight
+    return unless fight && reporting?(fight)
+
+    sync(fight, true)
+  rescue => e
+    log_once(:turn_end, "taking the empty pools failed: #{e.class}: #{e.message}")
+  end
+
+  # Reports the battle's last blows as it ends; a lost one is kept for the game's retry. Called as
+  # BattleManager.battle_end starts.
   #
   # @param result [Integer] The game's result: 0 won, 1 escaped, 2 lost.
   def self.battle_ended(result)
     fight = @fight
     @fight = nil
     return unless fight
-    return log("battle #{fight.battle} became a guest's of another player's battle: its host reports") if MGQ_MpBattlesSync.guest?
 
-    share = dealt(fight.own)
-    started = Relay.report(MGQ_MpWorldStory.world_id, fight.key, fight.battle, format("%.3f", share))
-    @own = [fight.key, @clock]
-    added = $game_troop.members.size - fight.own.to_i
-    log("battle #{fight.battle} against #{fight.name} ended #{result == 0 ? 'won' : 'lost'} with #{format('%.3f', share)} of a kill" \
-        "#{added > 0 ? " (#{added} enemies added mid-battle left out)" : ''}" \
-        "#{started ? ', reporting it' : ', but the DLL did not start the report'}")
-    if result == 0
-      @pending = { :fight => fight, :started => started, :since => @clock, :answer => nil }
-      notice("Telling the world how the battle against #{fight.name} went...", WAIT_FRAMES + 60) if started
-    else
-      @lost = fight if result == 2
-      @watch = { :fight => fight, :since => @clock } if started
-    end
+    reporting = reporting?(fight)
+    report(fight) if reporting
+    @lost = fight if result == 2
+    log("battle #{fight.battle} against #{fight.name} ended #{{ 0 => 'won', 1 => 'escaped', 2 => 'lost' }.fetch(result, result.inspect)}" \
+        "#{reporting ? '' : ', its host reports'}: #{fight.members.map { |member| enemy_text(member) }.join(', ')}")
   rescue => e
-    @pending = nil
-    log("reporting the battle failed: #{e.class}: #{e.message}")
+    log("reporting the battle's end failed: #{e.class}: #{e.message}")
   end
 
-  # Holds the event that started a won battle until the relay answered, then lets it go on or has
-  # the boss fall back. Called before each command of the map's interpreter, in its fiber.
-  def self.before_command
-    return unless @pending && @in_map
-
-    Fiber.yield while waiting?
-    return unless finish(true) == :holds
-
-    # The event ended: its fiber is never resumed again.
-    Fiber.yield
-  rescue FiberError => e
-    log("holding the event failed: #{e.message}")
-  end
-
-  # Reports whether a won battle still waits for the relay's answer, reading the DLL's state now
-  # and then.
-  #
-  # @return [Boolean] Whether it does.
-  def self.waiting?
-    pending = @pending
-    return false unless pending && pending[:started] && pending[:answer].nil?
-    return false if @clock - pending[:since] >= WAIT_FRAMES
-
-    pending[:answer] = answer_for(pending[:fight].battle) if @clock - @read_at >= STATE_FRAMES
-    pending[:answer].nil?
-  end
-
-  # Reads the relay's answer to a report.
-  #
-  # @param battle [String] The battle's id.
-  # @return [Hash, nil] The DLL's state once the report of that battle ended, nil before.
-  def self.answer_for(battle)
-    @read_at = @clock
-    state = Relay.state
-    state["report_battle"] == battle && %w(done failed).include?(state["report"]) ? state : nil
-  end
-
-  # Ends the wait for a won battle's answer: the story goes on, or the boss falls back.
-  #
-  # @param in_event [Boolean] Whether the event still runs, which then ends.
-  # @return [Symbol] :emptied, :defeated, :holds or :unknown, see outcome_of.
-  def self.finish(in_event)
-    pending = @pending
-    @pending = nil
-    drop_notice
-    fight = pending[:fight]
-    state = pending[:answer]
-    outcome = outcome_of(state)
-    case outcome
-    when :emptied
-      log("battle #{fight.battle} emptied the pool #{fight.key}: the story goes on")
-      chat("#{fight.name} is defeated for the whole world.")
-    when :defeated
-      log("the pool #{fight.key} was emptied by another battle before: the story goes on")
-      chat("The world defeated #{fight.name} already.")
-    when :holds
-      fall_back(fight, state, in_event)
-    else
-      why = state ? [state['report_code'], state['report_error']].compact.reject { |part| part.empty? }.join(": ") : "none in time"
-      log("no answer for battle #{fight.battle} (#{why}): the story goes on")
-    end
-    release_save
-    outcome
-  rescue => e
-    log("ending the wait failed: #{e.class}: #{e.message}")
-    :unknown
-  end
-
-  # Runs the game's autosave, unless a won battle waits for the relay's answer: the game autosaves
-  # after a won retry, and a save then would let a loaded game play the event on past a boss that
-  # falls back. finish makes the save once the answer is in.
-  #
-  # @return [Object] What the autosave returns, nil when held.
-  def self.auto_saving
-    return yield unless @pending
-
-    @save_held = true
-    log("held the autosave until the relay answers")
-    nil
-  end
-
-  # Makes the autosave held for a won battle's answer.
-  def self.release_save
-    return unless @save_held
-
-    @save_held = false
-    DataManager.auto_save_game
-  end
-
-  # Reads how a report ended.
-  #
-  # @param state [Hash, nil] The DLL's state of the report, nil without an answer.
-  # @return [Symbol] :emptied when this battle emptied the pool, :defeated when another did before,
-  #   :holds while kills are left, :unknown without an answer.
-  def self.outcome_of(state)
-    return :unknown unless state && state["report"] == "done"
-    return :emptied if state["report_emptied"] == "1"
-    return :defeated if state["report_defeated"] == "1"
-
-    :holds
-  end
-
-  # Has a boss fall back: puts back what the event changed before the battle, the party, the items
-  # it left in the bag and how the map looked, ends the event as the game's defeat does, and tells
-  # the player how much is left.
+  # Reports what each of the battle's own enemies lost since its HP was last taken or reported,
+  # as a share of its max HP, and its death. A report the DLL refuses is added to the next.
   #
   # @param fight [Fight] The battle.
-  # @param state [Hash] The DLL's state of the report.
-  # @param in_event [Boolean] Whether the event still runs.
-  def self.fall_back(fight, state, in_event)
-    restore(fight.writes)
-    party = restore_party(fight.party)
-    taken = take_back_gifts(fight.gifts)
-    restore_scene(fight.scene)
-    end_event(fight) if in_event
-    left = "#{amount(state['report_hp'])}/#{amount(max_of(state, fight.key))}"
-    log("#{fight.name} falls back, #{left} left in the pool #{fight.key}: #{change_count(fight.writes)} story value(s)#{party ? ' and the party' : ''} put back" \
-        "#{taken > 0 ? ", #{taken} item(s) its event gave again taken back" : ''}")
-    text = "#{fight.name} falls back. Raid HP left: #{left}."
-    notice(text)
-    chat(text)
+  def self.report(fight)
+    @reported_at = Time.now
+    world = MGQ_MpWorldStory.world_id.to_s
+    enemies = $game_troop.members
+    fight.members.each do |member|
+      enemy = enemies[member.index]
+      next if member.killed || enemy.nil?
+
+      max = enemy.mhp.to_i
+      next unless max > 0
+
+      dead = enemy.dead? ? true : false
+      # A base above the max HP now is a max the game lowered since, which took the HP down with it.
+      base = [member.base || max, max].min
+      delta = [[(base - enemy.hp).to_f / max, -1.0].max, 1.0].min
+      next if !dead && delta.abs < MIN_DELTA
+
+      seq = fight.seq + 1
+      text = "#{seq}\t#{format('%.10f', delta)}\t#{max}\t#{dead ? 1 : 0}"
+      unless Relay.report(world, member.key, fight.battle, text)
+        member.held = true
+        log_once([:refused, fight.battle], "the DLL took no report of battle #{fight.battle}: what it dealt goes with the next")
+        next
+      end
+
+      fight.seq = seq
+      member.base = enemy.hp
+      member.killed = dead
+      member.held = false
+      @pending << member.key
+      @pending.shift if @pending.size > MAX_PENDING
+      note_own(member.key, delta, max, dead)
+      log("battle #{fight.battle} reports #{member.key} ##{seq}: #{format('%.6f', delta)} of #{max}#{dead ? ', killed' : ''}")
+    end
   end
 
-  # Ends the event of a battle, which may then start again. Clearing the interpreter skips the
-  # unlock Game_Map#update_interpreter does for an event that ended, so it is done here. One whose
-  # page, with the story put back, starts by itself is erased until the map is entered again, since
-  # it would start again at once.
+  # Counts the player's own report in the pool as the player's game knows it, so a command phase
+  # before the relay's answer keeps what the battle dealt.
   #
-  # @param fight [Fight] The battle.
-  def self.end_event(fight)
-    root = $game_map.interpreter
-    root.clear
-    return unless fight.map_id == $game_map.map_id
-
-    $game_map.unlock_event(fight.event_id)
-    event = $game_map.events[fight.event_id]
-    return unless event
-
-    event.refresh
-    event.erase if event.trigger == AUTORUN
-  end
-
-  # Finds a pool's full kills in the DLL's state.
-  #
-  # @param state [Hash] The state.
   # @param key [String] The pool's key.
-  # @return [Float] Its max, DEFAULT_MAX when the state lists it not.
-  def self.max_of(state, key)
-    line = state[:payload].to_s.split("\n").map { |row| row.split("\t") }.find { |row| row[0] == key }
-    line && line[2].to_f > 0 ? line[2].to_f : (state["max"] ? state["max"].to_f : DEFAULT_MAX)
+  # @param delta [Float] The share of its max reported lost.
+  # @param max [Integer] The battle's max HP of the enemy, the pool's while the relay told none.
+  # @param dead [Boolean] Whether the enemy died.
+  def self.note_own(key, delta, max, dead)
+    now = Time.now
+    pool = @pools[key]
+    left = pool ? left_now(pool, now) - delta : 1.0 - delta
+    empty = dead || left <= 0 || (pool && pool.defeated)
+    @pools[key] = Pool.new(empty ? 0.0 : [left, 1.0].min, pool && pool.max > 0 ? pool.max : max, empty ? true : false, pool && pool.by, now)
   end
 
-  # Writes kills as the player reads them.
+  # Describes an enemy of the battle for Multiplayer InGame.log.
   #
-  # @param value [Object] The kills.
-  # @return [String] Such as "4", "3.5" or "0.25".
-  def self.amount(value)
-    format("%.2f", value.to_f).sub(/\.?0+\z/, "")
+  # @param member [Member] The enemy.
+  # @return [String] Such as "Queen Harpy 812/6000".
+  def self.enemy_text(member)
+    enemy = $game_troop.members[member.index]
+    enemy ? "#{enemy.name} #{enemy.hp}/#{enemy.mhp}" : "#{member.key} missing"
   end
 
-  # Follows the reports for one frame: ends a won battle's wait whose event already ended, and tells
-  # the answer to a lost battle's report. Called after the map's update.
-  def self.tick
-    @clock += 1
-    if @pending && !$game_map.interpreter.running? && !waiting?
-      finish(false)
-    elsif @watch && !@pending
-      watch_loss
-    end
+  # Reports whether every pool of a troop's own enemies is empty, as the player's game knows them.
+  #
+  # @param troop_id [Integer, String] The troop.
+  # @return [Boolean] Whether it is; false for a troop without pools or one the relay told nothing of.
+  def self.defeated?(troop_id)
+    keys = troop_keys(troop_id)
+    !keys.empty? && keys.all? { |key| (pool = @pools[key]) && left_now(pool) <= 0 }
+  end
+
+  # Writes the fields an invite to the player's battle adds when it fights a pool: "pool", how many
+  # enemies the troop's setup made, so the guest fights the same pools (see note_invite).
+  #
+  # @param troop_id [Integer, nil] The troop of a battle just set up, before set_up decided on it;
+  #   nil for the battle running.
+  # @return [Hash] The fields, none for a battle that fights no pool.
+  def self.invite_fields(troop_id = nil)
+    fight = @fight
+    return { "pool" => fight.own } if fight && (troop_id.nil? || fight.troop == troop_id.to_i)
+    return {} unless troop_id && kind_of(troop_id)
+
+    { "pool" => retry_of?(troop_id.to_i) ? @lost.own : own_count(troop_id) }
   rescue => e
-    log_once(:tick, "following the reports failed: #{e.class}: #{e.message}")
+    log("writing the invite's pool failed: #{e.class}: #{e.message}")
+    {}
   end
 
-  # Tells the answer to a lost battle's report in the chat log.
-  def self.watch_loss
-    watch = @watch
-    return @watch = nil if @clock - watch[:since] >= WATCH_FRAMES
-    return unless @clock - @read_at >= STATE_FRAMES
-
-    state = answer_for(watch[:fight].battle)
-    return unless state
-
-    @watch = nil
-    return log("the lost battle's report failed (#{state['report_code']}): #{state['report_error']}") unless state["report"] == "done"
-
-    fight = watch[:fight]
-    chat("#{fight.name} holds on. Raid HP left: #{amount(state['report_hp'])}/#{amount(max_of(state, fight.key))}.")
-  end
-
-  # Takes the relay's push that a pool changed, which another player's battle or an admin's reset
-  # did, as a line in the chat log. The push of the player's own report says nothing new.
+  # Reports whether a battle just set up fights pools that are all empty already, which it then
+  # wins at once without inviting anyone.
   #
-  # @param message [Hash] The push: MGQ_MpOverworldSync::BOSS_FIELD with the pool's key, "hp" with
-  #   its kills, and :relay, which no player's message carries.
+  # @param troop_id [Integer] The troop.
+  # @return [Boolean] Whether it does.
+  def self.won_already?(troop_id)
+    kind_of(troop_id) && defeated?(troop_id) ? true : false
+  rescue
+    false
+  end
+
+  # Notes the pools of a host's battle the player joins, which its invite names (see
+  # invite_fields), so its troop gets the same max HP and the player can report should they take it
+  # over. Called by MGQ_MpBattlesHotjoin.note_invite.
+  #
+  # @param message [Hash] The invite: "troop" and "pool".
+  def self.note_invite(message)
+    own = message["pool"].to_s
+    @invited = own =~ /\A[1-9]\d?\z/ ? [message["troop"].to_i, own.to_i] : nil
+  end
+
+  # The field this script adds to the state the player's game tells the others: in a Raid World
+  # STATE_FIELD, the troop and the enemy rates of the boss battle the player fights as its host or
+  # alone while its pools are not all empty, such as "71;100,100,0", which a side battle fights, else
+  # empty.
+  #
+  # @return [Hash] The field, none in a Classic world.
+  def self.state_fields
+    return {} unless MGQ_MpCoop::Scope.raid?
+
+    fight = @fight
+    open = fight && reporter? && SceneManager.scene.is_a?(Scene_Battle) && !defeated?(fight.troop)
+    { STATE_FIELD => open ? "#{fight.troop};#{MGQ_MpBattlesCoop.rates_text}" : "" }
+  rescue => e
+    log_once(:state_fields, "telling the boss battle failed: #{e.class}: #{e.message}")
+    { STATE_FIELD => "" }
+  end
+
+  # Finds the boss battle another player hosts that the player may fight in a side battle: one
+  # whose pools are not all empty, of a boss the player's story has not beaten.
+  #
+  # @param host [MGQ_MpOverworldSync::Peers::Peer] The battle's host.
+  # @return [Array, nil] Its troop and enemy rates, nil for none.
+  def self.side_of(host)
+    return nil unless host.state[STATE_FIELD].to_s =~ /\A(\d+);(-?\d+(?:,-?\d+)*)?\z/
+
+    troop = $1.to_i
+    rates = $2.to_s
+    side_troop?(troop) ? [troop, rates] : nil
+  end
+
+  # Reports whether the player may fight a boss in a side battle: they play the world's story, the
+  # boss has pools and they are not all empty.
+  #
+  # @param troop_id [Integer] The troop.
+  # @return [Boolean] Whether they may.
+  def self.side_troop?(troop_id)
+    active? && pooled_troop?(troop_id) && !defeated?(troop_id)
+  end
+
+  # Starts a side battle: the same troop as a boss battle near the player, with its host's enemy
+  # rates, against the same pools. It runs no event and writes no story; the player may lose it
+  # without a game over, and the nearest free players are invited as to any battle.
+  #
+  # @param troop [Integer] The troop.
+  # @param rates [String] The host's enemy rates, see MGQ_MpBattlesCoop.rates_text.
+  # @return [Boolean] Whether it started.
+  def self.start_side(troop, rates)
+    return false unless side_troop?(troop)
+
+    coop = MGQ_MpBattlesCoop
+    coop.borrow_rates("rates" => rates)
+    @side = troop
+    BattleManager.setup(troop, false, true)
+    unless @fight && @fight.side
+      coop.give_back_rates
+      log("the side battle against troop #{troop} did not start")
+      return false
+    end
+
+    SceneManager.call(Scene_Battle)
+    true
+  rescue => e
+    @side = nil
+    MGQ_MpBattlesCoop.give_back_rates
+    log("starting a side battle against troop #{troop} failed: #{e.class}: #{e.message}")
+    false
+  end
+
+  # Takes the relay's push that a pool changed, which every report and an admin's reset send to the
+  # whole world. A pool the push empties is told in the chat log.
+  #
+  # @param message [Hash] The push: MGQ_MpOverworldSync::BOSS_FIELD with the pool's key, "left"
+  #   with the share of its max left, "max", "defeated" 1 or 0, "by" who emptied it, and :relay,
+  #   which no player's message carries.
   def self.pushed(message)
     return log("ignored a boss push not from the relay") unless message[:relay]
 
     key = message[MGQ_MpOverworldSync::BOSS_FIELD].to_s
-    hp = message["hp"].to_f
-    own = @own && @own[0] == key && @clock - @own[1] < OWN_PUSH_FRAMES
-    log("the relay tells the pool #{key} holds #{amount(hp)}#{own ? ', after the player\'s own report' : ''}")
-    return if own || key.empty?
+    left = message["left"].to_s
+    return log("ignored a boss push without a key or share: #{key.inspect} #{left.inspect}") if key.empty? || left !~ /\A\d+(\.\d+)?\z/
 
-    chat(push_line(key, hp))
+    was = @pools[key]
+    defeated = message["defeated"].to_s == "1"
+    share = share_of(left, defeated)
+    return log("ignored the relay's push of #{key} at #{left}: the player's own reports since are not answered yet") if behind?(key, share, defeated)
+
+    by = message["by"].to_s
+    @pools[key] = Pool.new(share, integer(message["max"]) || (was ? was.max : 0), defeated, by.empty? ? (was && was.by) : by, Time.now)
+    log("the relay tells the pool #{key} holds #{left} of #{message['max']}#{defeated ? ', defeated' : ''}")
+    defeated ? announce(key) : back_up(key)
   rescue => e
     log("taking the relay's push failed: #{e.class}: #{e.message}")
   end
 
-  # Words a push of the relay for the chat log. A full pool reads as a boss that stands again, since
-  # an admin's reset pushes one and no battle took place.
+  # Tells the chat log and the notification box that a boss is defeated for the whole world, once
+  # every pool of its enemies is empty, and only once.
+  #
+  # @param key [String] The pool that emptied.
+  def self.announce(key)
+    boss = boss_key(key)
+    return if @announced[boss]
+
+    troop = troop_of_key(boss)
+    keys = troop ? troop_keys(troop) : [key]
+    keys = [key] if keys.empty?
+    return unless keys.all? { |member| (pool = @pools[member]) && pool.defeated }
+
+    @announced[boss] = true
+    text = "#{troop ? troop_label(troop) : boss} is defeated for the whole world."
+    chat(text)
+    MGQ_MpNotices.message(NOTICE_KEY, text, NOTICE_FRAMES) if defined?(MGQ_MpNotices)
+  end
+
+  # Forgets that a boss was told defeated once an admin's reset fills a pool of it again.
+  #
+  # @param key [String] The pool.
+  def self.back_up(key)
+    @announced.delete(boss_key(key))
+  end
+
+  # Finds the boss's key of a pool's key, without the enemy's place in the troop.
   #
   # @param key [String] The pool's key.
-  # @param hp [Float] Its kills.
-  # @return [String] The line.
-  def self.push_line(key, hp)
-    return "#{key} is defeated for the whole world." unless hp > 0
-    return "#{key} stands again. Raid HP: #{amount(hp)}/#{amount(DEFAULT_MAX)}." if hp >= DEFAULT_MAX
-
-    "A raid battle against #{key} ended. Raid HP left: #{amount(hp)}/#{amount(DEFAULT_MAX)}."
+  # @return [String] The boss's key.
+  def self.boss_key(key)
+    key.sub(/#\d+\z/, "")
   end
 
-  # Shows a message in the notification box.
+  # Finds the troop of a boss's key: its last phase.
   #
-  # @param text [String] The message.
-  # @param frames [Integer] How long it shows.
-  def self.notice(text, frames = NOTICE_FRAMES)
-    MGQ_MpNotices.message(NOTICE_KEY, text, frames) if defined?(MGQ_MpNotices)
+  # @param boss [String] The boss's key, see key_of.
+  # @return [Integer, nil] The troop, nil for none.
+  def self.troop_of_key(boss)
+    @troops_by_key ||= MGQ_MpRaidBosses::TROOPS.keys.select { |troop| MGQ_MpRaidBosses.at(troop).last }.each_with_object({}) do |troop, out|
+      key = key_of(troop)
+      out[key] ||= troop if key
+    end
+    @troops_by_key[boss]
   end
 
-  # Takes the waiting message away.
-  def self.drop_notice
-    MGQ_MpNotices.drop(NOTICE_KEY, "the relay answered") if defined?(MGQ_MpNotices)
+  # Reads a whole number the relay sent.
+  #
+  # @param text [Object] The number as text.
+  # @return [Integer, nil] The number, nil for none.
+  def self.integer(text)
+    text = text.to_s
+    return text.to_i if text =~ /\A\d+\z/
+    return text.to_f.round if text =~ /\A\d+(\.\d+)?(e\+?\d+)?\z/i
+
+    nil
+  end
+
+  # Reads the share of a pool's max HP left the relay or the DLL told: at least MIN_LEFT while the
+  # pool stands, at most all of it.
+  #
+  # @param left [String] The share as text.
+  # @param defeated [Boolean] Whether the pool is empty for good.
+  # @return [Float] The share, 0 to 1.
+  def self.share_of(left, defeated)
+    defeated ? 0.0 : [[left.to_f, MIN_LEFT].max, 1.0].min
+  end
+
+  # Reports whether word of a pool is older than the player's own reports the relay has not answered
+  # yet: more HP than the player's game counts while such a report waits. A pool that fills up again
+  # after an admin's reset is never older.
+  #
+  # @param key [String] The pool's key.
+  # @param left [Float] The share of its max left the word tells.
+  # @param defeated [Boolean] Whether the word tells it empty for good.
+  # @return [Boolean] Whether it is older.
+  def self.behind?(key, left, defeated)
+    was = @pools[key]
+    return false unless was && @pending.include?(key) && !defeated && !was.defeated && left < 1.0
+
+    left > left_now(was) + LINE_TOLERANCE
+  end
+
+  # Follows the pools for one frame: fetches them as the player enters the world or a map, and reads
+  # what the DLL learned now and then. Called every frame through overworld_sync.rbx.
+  #
+  # @param in_world [Boolean] Whether a world is open.
+  def self.tick(in_world)
+    @clock += 1
+    return unless in_world && MGQ_MpCoop::Scope.raid?
+
+    fetch_on_move
+    read_state if @clock - @read_at >= STATE_FRAMES
+  rescue => e
+    log_once(:tick, "following the pools failed: #{e.class}: #{e.message}")
+  end
+
+  # Fetches the world's pools as the player enters the world's story or another map, forgetting
+  # those of another world first; a fetch the DLL did not start is tried again after
+  # FETCH_RETRY_FRAMES.
+  def self.fetch_on_move
+    return unless $game_map && active?
+
+    place = [MGQ_MpWorldStory.world_id.to_s, $game_map.map_id]
+    return if place == @fetched || place[0].empty?
+
+    if @world != place[0]
+      @world = place[0]
+      @pools = {}
+      @lines = {}
+      @announced = {}
+      @pending = []
+    end
+    return if place == @tried && @clock - @tried_at < FETCH_RETRY_FRAMES
+
+    @tried = place
+    @tried_at = @clock
+    @fetched = place if Relay.fetch(place[0])
+  end
+
+  # Reads the pools the DLL knows of the player's world, taking each line that tells something new
+  # (see take_line), and forgets the player's reports it answered.
+  def self.read_state
+    @read_at = @clock
+    state = Relay.state
+    return unless state["world"].to_s == MGQ_MpWorldStory.world_id.to_s
+
+    @pending = @pending.last(state["report_queued"].to_i)
+    now = Time.now
+    state[:payload].to_s.split("\n").each do |line|
+      fields = line.split("\t")
+      take_line(fields, now) if fields.size >= 4 && !fields[0].empty?
+    end
+  end
+
+  # Takes a pool the DLL knows when it tells something new: the first line of the pool, or one that
+  # differs from the last line taken beyond the regeneration since. A line the DLL keeps telling
+  # unchanged would take back what the player's own reports dealt meanwhile (see note_own), and so
+  # would one older than them (see behind?), which is weighed again at the next read.
+  #
+  # A line within LINE_TOLERANCE is never noted, so small changes in a row count once they add up.
+  #
+  # @param fields [Array<String>] The line: key, share left now, max, defeated and who emptied it.
+  # @param now [Time] When the line was read.
+  def self.take_line(fields, now)
+    key, left, max, defeated, by = fields
+    line = Pool.new(share_of(left, defeated == "1"), integer(max) || 0, defeated == "1", by.to_s.empty? ? nil : by, now)
+    taken = @lines[key]
+    return if taken && taken.defeated == line.defeated && taken.max == line.max && (left_now(taken, now) - line.left).abs <= LINE_TOLERANCE
+    return if behind?(key, line.left, line.defeated)
+
+    @lines[key] = line
+    was = @pools[key]
+    line.by ||= was && was.by
+    @pools[key] = line
+    log("the DLL tells the pool #{key} holds #{left} of #{max}#{line.defeated ? ', defeated' : ''}") unless was && was.left == line.left && was.defeated == line.defeated
   end
 
   # Adds a line of the game's own to the chat log.
@@ -1116,19 +1188,31 @@ module MGQ_MpRaidPool
   end
 
   # Installs the battle hooks on methods the game's plugins may define anew, as the game starts
-  # running.
+  # running. Installed after battles_sync_live.rbx's, so the command phase's wrap runs first.
   def self.install
-    # As a battle ends, a battle that counts reports.
-    MGQ_MpHooks.before(BattleManager.singleton_class, :battle_end, "battles_raid_pool") { |result| MGQ_MpRaidPool.battle_ended(result) }
+    # A pooled enemy's max HP.
+    MGQ_MpHooks.around(Game_Enemy, :mhp, "battles_raid_pool") { |enemy, _args, original| MGQ_MpRaidPool.max_hp(enemy, original.call) }
 
-    # A won battle's autosave waits for the relay's answer.
-    if DataManager.respond_to?(:auto_save_game)
-      MGQ_MpHooks.around(DataManager.singleton_class, :auto_save_game, "battles_raid_pool") do |_manager, _args, original|
-        MGQ_MpRaidPool.auto_saving { original.call }
-      end
+    # As a command phase opens, the battle reports what it dealt and the enemies take their pools'
+    # HP, before the guests are told it.
+    MGQ_MpHooks.around(Scene_Battle, :start_party_command_selection, "battles_raid_pool") do |scene, _args, original|
+      MGQ_MpRaidPool.command_phase unless scene.scene_changing?
+      original.call
     end
 
-    # The game's retry of a lost battle counts again.
+    # As each action ends, the battle reports what it dealt, a few seconds apart.
+    MGQ_MpHooks.after(Scene_Battle, :process_action, "battles_raid_pool") { MGQ_MpRaidPool.action_done } if Scene_Battle.method_defined?(:process_action)
+
+    # While the battle waits for commands, its enemies take the pools' HP every few seconds.
+    MGQ_MpHooks.after(Scene_Battle, :update_basic, "battles_raid_pool") { MGQ_MpRaidPool.waiting_for_commands } if Scene_Battle.method_defined?(:update_basic)
+
+    # As a turn ends, the enemies whose pool is empty fall.
+    MGQ_MpHooks.before(Scene_Battle, :turn_end, "battles_raid_pool") { MGQ_MpRaidPool.turn_ended }
+
+    # As a battle ends, its last blows are reported.
+    MGQ_MpHooks.before(BattleManager.singleton_class, :battle_end, "battles_raid_pool") { |result| MGQ_MpRaidPool.battle_ended(result) }
+
+    # The game's retry of a lost battle fights the pools again.
     return unless BattleManager.respond_to?(:retry_battle)
 
     MGQ_MpHooks.around(BattleManager.singleton_class, :retry_battle, "battles_raid_pool") do |_manager, _args, original|
@@ -1140,21 +1224,33 @@ module MGQ_MpRaidPool
 
   # Patch/Multiplayer/Multiplayer.dll's boss pools at the relay.
   module Relay
-    # Starts reporting a battle.
+    # Starts fetching the world's pools.
+    #
+    # @param world [String] The world's id.
+    # @return [Boolean] Whether it started.
+    def self.fetch(world)
+      MGQ_Multiplayer::Link.function('mp_raid_bosses_fetch').call(world + "\0") == 1
+    rescue => e
+      MGQ_MpRaidPool.log("fetching the pools failed: #{e.class}: #{e.message}")
+      false
+    end
+
+    # Queues a report of a battle, which the DLL sends in order and tries again until the relay
+    # answers.
     #
     # @param world [String] The world's id.
     # @param key [String] The pool's key.
     # @param battle [String] The battle's id.
-    # @param dealt [String] The share of a kill, such as "1.000".
-    # @return [Boolean] Whether it started.
-    def self.report(world, key, battle, dealt)
-      MGQ_Multiplayer::Link.function('mp_raid_boss_report').call(world + "\0", key + "\0", battle + "\0", dealt + "\0") == 1
+    # @param text [String] "seq\tdelta\tmax\tkilled", see MGQ_MpRaidPool.report.
+    # @return [Boolean] Whether the DLL queued it.
+    def self.report(world, key, battle, text)
+      MGQ_Multiplayer::Link.function('mp_raid_boss_report').call(world + "\0", key + "\0", battle + "\0", text + "\0") == 1
     rescue => e
       MGQ_MpRaidPool.log("reporting failed: #{e.class}: #{e.message}")
       false
     end
 
-    # Reads the pools the relay told and how the requests stand.
+    # Reads the pools the DLL knows.
     #
     # @return [Hash] The headers (see docs/DEVELOPER.md), the pools' lines under :payload; empty
     #   before any request.
@@ -1172,6 +1268,8 @@ end
 
 begin
   MGQ_MpOverworldSync.route(MGQ_MpOverworldSync::BOSS_FIELD) { |_peer, message| MGQ_MpRaidPool.pushed(message) }
+  MGQ_MpOverworldSync.on_tick { |in_world| MGQ_MpRaidPool.tick(in_world) }
+  MGQ_MpOverworldSync.state_fields { MGQ_MpRaidPool.state_fields }
 rescue => e
   MGQ_MpRaidPool.log("overworld sync FAILED: #{e.class}: #{e.message}")
 end
@@ -1182,20 +1280,10 @@ begin
   # Installs the battle hooks as the game starts running.
   MGQ_MpHooks.before(SceneManager.singleton_class, :run, "battles_raid_pool") { MGQ_MpRaidPool.install }
 
-  # Before the title screen starts, every battle and report is forgotten.
+  # Before the title screen starts, every battle and pool is forgotten.
   MGQ_MpHooks.before(Scene_Title, :start, "battles_raid_pool") { MGQ_MpRaidPool.forget }
 
-  # After the map's update, the reports.
-  MGQ_MpHooks.after(Game_Map, :update, "battles_raid_pool") { MGQ_MpRaidPool.tick }
-
-  # After a list of commands is set up, the map's event notes the story. A common event passes the
-  # list alone, which a block of two parameters would spread over both.
-  MGQ_MpHooks.after(Game_Interpreter, :setup, "battles_raid_pool") { |*_args| MGQ_MpRaidPool.event_started(self) }
-
-  # Before an event command runs, an event whose won battle waits for the relay holds.
-  MGQ_MpHooks.before(Game_Interpreter, :execute_command, "battles_raid_pool") { MGQ_MpRaidPool.before_command }
-
-  # After a battle is set up, it counts against a pool or not.
+  # After a battle is set up, it fights a pool or not.
   MGQ_MpHooks.after(BattleManager.singleton_class, :setup, "battles_raid_pool") { |troop_id, *_rest| MGQ_MpRaidPool.set_up(troop_id) }
 rescue => e
   MGQ_MpRaidPool.log("hooks FAILED: #{e.class}: #{e.message}")
@@ -1211,15 +1299,4 @@ begin
   MGQ_MpHooks.around(Game_Interpreter, :command_301, "battles_raid_pool") { |_interpreter, _args, original| MGQ_MpRaidPool.at_command { original.call } }
 rescue => e
   MGQ_MpRaidPool.log("battle command hooks FAILED: #{e.class}: #{e.message}")
-end
-
-begin
-  # The script calls that give the party items and equip them at once note what they leave in the bag.
-  { :force_change_equip => :equip, :change_actor_equip_stone => :stones }.each do |name, call|
-    next unless Game_Interpreter.method_defined?(name)
-
-    MGQ_MpHooks.around(Game_Interpreter, name, "battles_raid_pool") { |_interpreter, args, original| MGQ_MpRaidPool.giving(call, args) { original.call } }
-  end
-rescue => e
-  MGQ_MpRaidPool.log("item call hooks FAILED: #{e.class}: #{e.message}")
 end

@@ -2,7 +2,8 @@
 #  battles_join_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-10: Checked that the prompt stays whole on the screen at the map's edges
+#      Paulinchen  2026-10-10: Covered the side battle the prompt offers near a raid boss battle that takes the player in no more
+#                            - Checked that the prompt stays whole on the screen at the map's edges
 #      Paulinchen  2026-10-09: Covered a boss battle whose troop grew mid-battle, which stays one and hands the player every enemy
 #                            - Created
 #
@@ -11,7 +12,8 @@
 # Covers joining a battle by choice in a Raid World, battles_coop_join.rbx with
 # battles_coop_hotjoin.rbx, battles_coop.rbx and battles_sync.rbx: the state a host tells, when the
 # prompt shows, the hotkey, the host that takes the player in or refuses them, and the late guest
-# who joins an event's battle and a boss battle without enemies.
+# who joins an event's battle and a boss battle without enemies, and the side battle against a raid
+# boss the prompt offers near a battle that takes the player in no more.
 
 require_relative "battle_support"
 
@@ -441,6 +443,50 @@ map_frame
 $down = []
 $mgq_text_input = nil
 check("a press while the player types logs nothing", $log[before..-1].grep(/join battle hotkey/), [])
+reset
+
+# A side battle near a raid boss battle that takes the player in no more, through
+# battles_raid_pool.rbx and ui_raid_bar.rbx, which stand in here.
+module MGQ_MpRaidPool
+  def self.side_of(host); host.state["rpb"].to_s =~ /\A(\d+);(.*)\z/ ? [$1.to_i, $2] : nil; end
+  def self.troop_label(troop); troop == 71 ? "Queen Harpy" : "?"; end
+  def self.start_side(troop, rates); $side_started = [troop, rates]; $side_ok; end
+end
+$scene_now = Scene_Map.new
+boss_host = player(5, { "scene" => "battle", "rb" => "b3", "rbh" => "5", "rbn" => "4", "rpb" => "71;100,100,0", "x" => "2", "y" => "1" })
+MGQ_MpOverworldSync::Peers.all.replace([boss_host])
+map_frame
+check("near a full raid boss battle the prompt offers a side battle", [join.target, join.prompt_text], [nil, "Press J to fight Queen Harpy alongside"])
+$settings = { "key_overview" => "74" }
+map_frame
+check("a hotkey that turns Join Battle off hides the side battle's prompt too", join.prompt_text, nil)
+$settings = nil
+map_frame
+boss_host.state["rbn"] = "2"
+map_frame
+check("near one that takes the player in it offers to join it", join.prompt_text, "Press J to join battle")
+boss_host.state["rbn"] = "4"
+boss_host.state["rpb"] = ""
+map_frame
+check("a full battle against no raid boss offers nothing", join.prompt_text, nil)
+boss_host.state["rpb"] = "71;100,100,0"
+boss_host.state["x"] = "6"
+map_frame
+check("nor one too far", join.prompt_text, nil)
+module MGQ_MpRaidBar; def self.distance_to_boss(troop, _x, _y); troop == 71 ? 1 : 9999; end; end
+map_frame
+check("unless the boss's event stands near the player", join.prompt_text, "Press J to fight Queen Harpy alongside")
+$side_ok = true
+$down = [0x4A]
+map_frame
+$down = []
+check("the hotkey starts the side battle with the host's troop and enemy rates", $side_started, [71, "100,100,0"])
+$side_ok = false
+map_frame
+$down = [0x4A]
+map_frame
+$down = []
+check("a side battle that cannot start tells the player", $messages.last, "Cannot fight Queen Harpy now.")
 reset
 
 check("no hook of joining by choice failed", $log.grep(/join battle.*FAILED/), [])

@@ -2,6 +2,7 @@
 #  ui_notices.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-10: Moved the box down while a strip of the mod takes the top of the map's screen, such as the raid boss's bar
 #      Paulinchen  2026-10-08: Kept an accepted invite away only for a moment, so one whose accept did nothing, such as in a menu, shows again
 #                            - Kept an accepted invite away until the inviter drops it or turns the accept down, ten seconds at most, which a slow inviter let a second press accept again
 #      Paulinchen  2026-10-07: Kept an accepted invite away while it stands, as a declined one, so a second press no longer accepts it again
@@ -203,7 +204,8 @@ class Sprite_MpNoticeBox < Sprite
   # Height of one notification.
   ROW = 22
 
-  # Room between the box and the top and left edges of the screen.
+  # Room between the box and the top and left edges of the screen, below a strip of the mod at the
+  # top (see MGQ_MpUi.top_room).
   MARGIN = 8
 
   # Width of what the keys do to the first invite, such as "Y: Accept  N: Decline".
@@ -231,6 +233,7 @@ class Sprite_MpNoticeBox < Sprite
   # @param list [Array<MGQ_MpActions::Notice>] The notifications, at least one.
   def show(list)
     self.visible = true
+    self.y = MARGIN + MGQ_MpUi.top_room
     keys = keys_text(list.first)
     drawn = list.map { |notice| notice.text } << keys
     return if drawn == @shown

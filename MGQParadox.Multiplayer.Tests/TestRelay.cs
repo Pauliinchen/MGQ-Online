@@ -2,6 +2,8 @@
 //  TestRelay.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-10: Kept a Raid World's boss pools as the relay does now: the share of the raid max HP left, filled up by 3 % of it a minute, reports taken once per sequence number of a battle and the boss a kill or an emptying report defeats, telling every game of each change; and let tests drop the answers of reports the relay took
+//                            - Told a boss pool's change before answering, defeated a pool whose HP shows as 0 and left a report that takes nothing off unwritten, as the relay does, and let tests hold back the next boss answer or refuse the next reports as busy
 //      Paulinchen  2026-10-09: Kept a Raid World's boss pools as the relay does: reports counted once per battle, the pool that fills up again and the boss an emptying report defeats, telling every game of each change
 //                            - Kept a Raid World's difficulty, set when it is made and changed with an edit, and listed it
 //      Paulinchen  2026-10-08: Kept a Raid World's story as the relay does: writes on the last sealed story that are not behind it, checkpoints, the route lock and shared companions, telling every game of each change
@@ -574,7 +576,7 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
     }
 
     /// <summary>
-    /// How many boss reports the relay counted in all Raid Worlds.
+    /// How many boss reports changed a pool in all Raid Worlds.
     /// </summary>
     public int BossReports { get; private set; }
 
@@ -582,6 +584,28 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
     /// Tells the time the boss pools fill up by; a fixed time keeps them from filling up while a test runs.
     /// </summary>
     public Func<DateTime> BossClock { get; set; } = () => DateTime.UtcNow;
+
+    /// <summary>
+    /// How many of the next boss reports the relay takes but cuts the connection of instead of
+    /// answering, as a line that drops does.
+    /// </summary>
+    public int DroppedBossAnswers { get; set; }
+
+    /// <summary>
+    /// How many of the next boss reports the relay refuses unread with <see cref="BusyBossStatus"/>.
+    /// </summary>
+    public int BusyBossReports { get; set; }
+
+    /// <summary>
+    /// The status the relay refuses a busy boss report with, such as 429 or 503.
+    /// </summary>
+    public int BusyBossStatus { get; set; } = 429;
+
+    /// <summary>
+    /// Holds back the answer of the next boss request, after the relay told its change, until it
+    /// completes; the relay sets it back to <see langword="null"/> once a request waits for it.
+    /// </summary>
+    public TaskCompletionSource? BossAnswerHold { get; set; }
 
     /// <summary>
     /// Answers a Raid World's boss requests, for its players only: every pool, one pool and a report;
@@ -594,17 +618,24 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
     {
         var method = context.Request.HttpMethod;
         using var reader = new StreamReader(context.Request.InputStream, Encoding.UTF8);
-        var body = method == "POST" ? JsonNode.Parse(await reader.ReadToEndAsync()) : null;
+        var body = method == "POST" ? JsonNode.Parse(await reader.ReadToEndAsync()) as JsonObject : null;
         var id = parts[2];
         var key = PlayerKeyOf(context);
         (int Status, JsonNode Body) answer;
         string? push = null;
+        var drop = false;
+        Task? hold = null;
 
         lock (_gate)
         {
             if (!_directory.TryGetValue(id, out var world))
             {
                 answer = (404, Error("there is no such world"));
+            }
+            else if (BusyBossReports > 0 && parts[4..] is [_, "report"])
+            {
+                BusyBossReports--;
+                answer = (BusyBossStatus, Error("the relay is busy"));
             }
             else if (key == null || Hash(AuthKeyOf(context) ?? string.Empty) != world.AuthHash)
             {
@@ -617,31 +648,54 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
             else
             {
                 var changed = false;
+                var name = world.Members.GetValueOrDefault(PlayerIdOf(key)) ?? "?";
                 answer = parts[4..] switch
                 {
                     [] when method == "GET" => (200, world.Bosses.List(BossClock())),
-                    [var boss] when method == "GET" => (200, world.Bosses.View(Uri.UnescapeDataString(boss), BossClock())),
-                    [var boss, "report"] when method == "POST" => world.Bosses.Report(Uri.UnescapeDataString(boss), body!["battle"]!.GetValue<string>(), body["dealt"]!.GetValue<double>(), BossClock(), out changed),
+                    [var boss] when method == "GET" => (200, new JsonObject { ["boss"] = world.Bosses.View(Uri.UnescapeDataString(boss), BossClock()) }),
+                    [var boss, "report"] when method == "POST" => world.Bosses.Report(Uri.UnescapeDataString(boss), body, name, BossClock(), out changed),
                     _ => (404, Error("there is no such route")),
                 };
+
+                if (answer.Status == 200 && parts[4..] is [_, "report"])
+                {
+                    drop = DroppedBossAnswers > 0;
+                    DroppedBossAnswers -= drop ? 1 : 0;
+                }
+
+                hold = BossAnswerHold?.Task;
+                BossAnswerHold = null;
 
                 if (changed)
                 {
                     BossReports++;
-                    push = $"boss {answer.Body["hp"]!.GetValue<double>().ToString("0.###", CultureInfo.InvariantCulture)} {answer.Body["key"]!.GetValue<string>()}";
+                    var view = answer.Body["boss"]!;
+                    push = string.Create(CultureInfo.InvariantCulture, $"boss {view["left"]!.GetValue<double>():0.######} {view["max"]!.GetValue<double>():0} {(view["defeated"]!.GetValue<bool>() ? 1 : 0)} {view["key"]!.GetValue<string>()}");
                 }
             }
         }
 
-        var bytes = Encoding.UTF8.GetBytes(answer.Body.ToJsonString());
-        context.Response.StatusCode = answer.Status;
-        context.Response.ContentType = "application/json";
-        await context.Response.OutputStream.WriteAsync(bytes);
-        context.Response.Close();
-
         if (push != null)
         {
             Tell(id, push);
+        }
+
+        if (hold != null)
+        {
+            await hold;
+        }
+
+        if (drop)
+        {
+            context.Response.Abort();
+        }
+        else
+        {
+            var bytes = Encoding.UTF8.GetBytes(answer.Body.ToJsonString());
+            context.Response.StatusCode = answer.Status;
+            context.Response.ContentType = "application/json";
+            await context.Response.OutputStream.WriteAsync(bytes);
+            context.Response.Close();
         }
     }
 
@@ -1591,14 +1645,19 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
     private sealed class TestBosses
     {
         /// <summary>
-        /// A full pool, in kills.
+        /// The share of the raid max HP a pool fills up by per minute.
         /// </summary>
-        private const double Max = 5;
+        private const double RegenPerMinute = 0.03;
 
         /// <summary>
-        /// The kills a pool fills up by per hour.
+        /// The largest raid max HP the relay takes.
         /// </summary>
-        private const double Regen = 5;
+        private const double MaxRaidHp = 1e18;
+
+        /// <summary>
+        /// The most battles a pool keeps the last sequence number of.
+        /// </summary>
+        private const int MaxBattles = 32;
 
         /// <summary>
         /// The pools a report touched, by key.
@@ -1609,69 +1668,87 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
         /// Writes every pool a report touched.
         /// </summary>
         /// <param name="now">The time now.</param>
-        /// <returns>The pools, with a full pool's kills and the rate.</returns>
+        /// <returns>The pools and the rate they fill up by.</returns>
         public JsonObject List(DateTime now) => new()
         {
             ["bosses"] = new JsonArray(_pools.Keys.Select(key => (JsonNode)View(key, now)).ToArray()),
-            ["max"] = Max,
-            ["regen"] = Regen,
+            ["regenPerMinute"] = RegenPerMinute,
         };
 
         /// <summary>
-        /// Writes one pool as it stands now; one never reported is full.
+        /// Writes one pool as it stands now; one never reported is full, without a max.
         /// </summary>
-        /// <param name="key">The boss.</param>
+        /// <param name="key">The pool's key.</param>
         /// <param name="now">The time now.</param>
         /// <returns>The pool.</returns>
         public JsonObject View(string key, DateTime now)
         {
             var pool = _pools.GetValueOrDefault(key);
-            return new JsonObject { ["key"] = key, ["hp"] = Math.Round(HpOf(pool, now), 3), ["max"] = Max, ["regen"] = Regen, ["defeated"] = pool?.Defeated ?? false };
+            return new JsonObject
+            {
+                ["key"] = key,
+                ["left"] = Math.Round(LeftOf(pool, now), 6),
+                ["max"] = pool?.Max ?? 0,
+                ["defeated"] = pool?.Defeated ?? false,
+                ["at"] = pool == null ? 0 : new DateTimeOffset(pool.At).ToUnixTimeMilliseconds(),
+                ["by"] = pool?.By,
+            };
         }
 
         /// <summary>
-        /// Counts a battle against a pool, once per battle.
+        /// Takes a battle's report against a pool, once per sequence number of the battle.
         /// </summary>
-        /// <param name="key">The boss.</param>
-        /// <param name="battle">The battle's id.</param>
-        /// <param name="dealt">The share of the boss's max HP dealt.</param>
+        /// <param name="key">The pool's key.</param>
+        /// <param name="body">The report: battle, seq, delta, max and killed.</param>
+        /// <param name="name">The reporting player's name.</param>
         /// <param name="now">The time now.</param>
         /// <param name="changed">Whether the report changed the pool.</param>
         /// <returns>The answer.</returns>
-        public (int, JsonNode) Report(string key, string battle, double dealt, DateTime now, out bool changed)
+        public (int, JsonNode) Report(string key, JsonObject? body, string name, DateTime now, out bool changed)
         {
+            changed = false;
+
+            if (body?["battle"] is not JsonValue battleValue || !battleValue.TryGetValue<string>(out var battle)
+                || body["seq"] is not JsonValue seqValue || !seqValue.TryGetValue<long>(out var seq) || seq < 0
+                || body["delta"] is not JsonValue deltaValue || !deltaValue.TryGetValue<double>(out var delta) || Math.Abs(delta) > 1
+                || body["max"] is not JsonValue maxValue || !maxValue.TryGetValue<double>(out var max) || max <= 0 || max > MaxRaidHp
+                || body["killed"] is not JsonValue killedValue || !killedValue.TryGetValue<bool>(out var killed))
+            {
+                return (400, new JsonObject { ["error"] = "the report is not as it should be", ["code"] = "bad_report" });
+            }
+
             _pools.TryGetValue(key, out var pool);
-            var repeat = pool != null && pool.Battles.Contains(battle);
-            var counted = 0.0;
-            changed = !repeat && pool?.Defeated != true;
+            var repeat = pool != null && pool.Battles.TryGetValue(battle, out var last) && seq <= last.Seq;
+            changed = !repeat && (pool == null || (!pool.Defeated && (delta != 0 || killed)));
 
             if (changed)
             {
-                pool ??= _pools[key] = new Pool { Hp = Max, At = now };
-                counted = Math.Min(1, dealt);
-                var left = HpOf(pool, now) - counted;
-                pool.Defeated = left < 0.0005;
-                pool.Hp = pool.Defeated ? 0 : left;
+                pool ??= _pools[key] = new Pool { Left = 1, Max = Math.Max(1, Math.Round(max)), At = now };
+                var left = killed ? 0 : Math.Clamp(LeftOf(pool, now) - delta, 0, 1);
+                pool.Defeated = left * pool.Max < 0.5;
+                pool.Left = pool.Defeated ? 0 : left;
                 pool.At = now;
-                pool.EmptiedBy = pool.Defeated ? battle : null;
-                pool.Battles.Add(battle);
+                pool.By = pool.Defeated ? name : pool.By;
+                pool.Reports++;
+                pool.Battles[battle] = (seq, now);
+
+                if (pool.Battles.Count > MaxBattles)
+                {
+                    pool.Battles.Remove(pool.Battles.MinBy(entry => entry.Value.At).Key);
+                }
             }
 
-            var view = View(key, now);
-            view["dealt"] = counted;
-            view["emptied"] = pool?.EmptiedBy == battle;
-            view["repeat"] = repeat;
-            return (200, view);
+            return (200, new JsonObject { ["boss"] = View(key, now), ["repeat"] = repeat });
         }
 
         /// <summary>
-        /// Reads a pool's hit points now, filled up since the last report, at most full.
+        /// Reads the share of a pool's raid max HP left now, filled up since the last report, at most full.
         /// </summary>
         /// <param name="pool">The pool, <see langword="null"/> for one never reported.</param>
         /// <param name="now">The time now.</param>
-        /// <returns>The hit points in kills.</returns>
-        private static double HpOf(Pool? pool, DateTime now) =>
-            pool == null ? Max : pool.Defeated ? 0 : Math.Min(Max, pool.Hp + ((now - pool.At).TotalHours * Regen));
+        /// <returns>The share left, 0 to 1.</returns>
+        private static double LeftOf(Pool? pool, DateTime now) =>
+            pool == null ? 1 : pool.Defeated ? 0 : Math.Min(1, pool.Left + ((now - pool.At).TotalMinutes * RegenPerMinute));
 
         /// <summary>
         /// One boss's pool.
@@ -1679,9 +1756,14 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
         private sealed class Pool
         {
             /// <summary>
-            /// The hit points at the last report.
+            /// The share of the raid max HP left at the last report.
             /// </summary>
-            public double Hp { get; set; }
+            public double Left { get; set; }
+
+            /// <summary>
+            /// The raid max HP, as the first report named it.
+            /// </summary>
+            public double Max { get; init; }
 
             /// <summary>
             /// When it was last reported.
@@ -1689,19 +1771,24 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
             public DateTime At { get; set; }
 
             /// <summary>
-            /// Whether a report emptied it.
+            /// Whether the boss died.
             /// </summary>
             public bool Defeated { get; set; }
 
             /// <summary>
-            /// The battle whose report emptied it.
+            /// The name of the player who defeated it, <see langword="null"/> before.
             /// </summary>
-            public string? EmptiedBy { get; set; }
+            public string? By { get; set; }
 
             /// <summary>
-            /// The battles counted.
+            /// How many reports changed it.
             /// </summary>
-            public HashSet<string> Battles { get; } = [];
+            public int Reports { get; set; }
+
+            /// <summary>
+            /// The last sequence number taken of each recent battle, with when.
+            /// </summary>
+            public Dictionary<string, (long Seq, DateTime At)> Battles { get; } = new(StringComparer.Ordinal);
         }
     }
 

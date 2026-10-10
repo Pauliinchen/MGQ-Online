@@ -2,7 +2,8 @@
 #  battles_coop_hotjoin.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-10: Let the players an encounter brought along walk on once the running battle refused it, stayed silent or the request was taken back, unless the encounter invites them anew
+#      Paulinchen  2026-10-10: Named the raid boss's pools in the invite of players who join a battle that fights them late, and handed the pools an invite names to battles_raid_pool.rbx
+#                            - Let the players an encounter brought along walk on once the running battle refused it, stayed silent or the request was taken back, unless the encounter invites them anew
 #                            - Counted every enemy of the troop toward TROOP_LIMIT, the fallen too, so the troop never holds more than it may
 #                            - Started the battle of the enemies a guest adds to its troop, entered them in the Library and gave a raid boss's pools their max HP, as the host does
 #      Paulinchen  2026-10-09: Added only the enemies of an encounter taken in that still find a place around the encounters still to join once enemies added after its request leave no room for them all, never more than the troop holds
@@ -341,8 +342,9 @@ module MGQ_MpBattlesHotjoin
     @late == :requester
   end
 
-  # Notes whether an invite the player accepts is to a running battle, see late?, and whether its
-  # host marked it a boss battle, which stays one should the player take it over. Called by
+  # Notes whether an invite the player accepts is to a running battle, see late?, whether its host
+  # marked it a boss battle, which stays one should the player take it over, and the raid boss's
+  # pools it fights (see MGQ_MpRaidPool.note_invite). Called by
   # MGQ_MpBattlesCoop.accept, follow and yield_to_rival.
   #
   # @param message [Hash] The invite, "hot" 1 for a running battle, "boss" 1 for a boss battle.
@@ -350,6 +352,7 @@ module MGQ_MpBattlesHotjoin
     @late = message["hot"] == "1" ? :invited : nil
     @boss_battle = message["boss"] == "1"
     @called_off = false
+    MGQ_MpRaidPool.note_invite(message) if defined?(MGQ_MpRaidPool)
   end
 
   # Takes the host's word that it called off the player's joining before its roster came, see
@@ -537,8 +540,8 @@ module MGQ_MpBattlesHotjoin
   end
 
   # Writes the invite to the battle the player hosts for players who join it late: its troop, escape,
-  # lose and enemy rates (see MGQ_MpBattlesCoop.borrow_rates), and whether it is a boss battle,
-  # which stays one should one of them take it over.
+  # lose and enemy rates (see MGQ_MpBattlesCoop.borrow_rates), whether it is a boss battle,
+  # which stays one should one of them take it over, and the raid boss's pools it fights.
   #
   # @param seats [Array<Integer>] The seats of the players invited.
   # @return [Hash] The invite's fields.
@@ -548,6 +551,7 @@ module MGQ_MpBattlesHotjoin
                "lose" => MGQ_MpGame.get(BattleManager, :can_lose) ? 1 : 0, "seats" => seats.join(","), "map" => $game_map.map_id, "hot" => 1,
                "rates" => MGQ_MpBattlesCoop.rates_text }
     fields["boss"] = 1 if boss_battle?
+    fields.update(MGQ_MpRaidPool.invite_fields) if defined?(MGQ_MpRaidPool)
     fields
   end
 

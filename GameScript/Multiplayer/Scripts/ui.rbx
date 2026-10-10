@@ -2,6 +2,7 @@
 #  ui.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-10: Added the room a strip of the mod takes at the top of the map's screen and whole numbers grouped by commas
 #      Paulinchen  2026-10-08: Added the depth of the chat while the player types, above everything
 #                            - Added the cancel of the mod's screens, which takes the numpad's 0 with Num Lock on and off
 #                            - Took the numpad's 0 frame by frame, so a press a game window cancelled with never cancels again in the next frame
@@ -48,6 +49,8 @@ module MGQ_MpUi
   # above everything.
   Z = { :lines => 200, :labels => 250, :bubbles => 260, :wheels => 300, :overview => 400, :boxes => 1000, :typing => 1100 }
 
+  @top_room = 0
+
   # Windows' codes of the numpad's 0, the game's cancel key, with Num Lock on and off; the second
   # is also the Insert key's.
   NUMPAD_CANCEL_KEYS = [0x60, 0x2D]
@@ -78,6 +81,32 @@ module MGQ_MpUi
   # @return [Rect] Where the icon lies in the iconset.
   def self.icon_rect(icon)
     Rect.new(icon % ICONS_PER_ROW * ICON_SIZE, icon / ICONS_PER_ROW * ICON_SIZE, ICON_SIZE, ICON_SIZE)
+  end
+
+  # Tells the pixels at the top of the map's screen a strip of the mod takes, such as the raid
+  # boss's bar, which the boxes there move down by.
+  #
+  # @return [Integer] The pixels, 0 while none shows.
+  def self.top_room
+    @top_room
+  end
+
+  # Sets the pixels at the top of the map's screen a strip of the mod takes, see top_room.
+  #
+  # @param pixels [Integer] The pixels.
+  def self.top_room=(pixels)
+    @top_room = pixels.to_i
+  end
+
+  # Writes a whole number with its thousands grouped by commas, unlike the game's own number
+  # helpers, which shorten large numbers.
+  #
+  # @param number [Numeric] The number.
+  # @return [String] Such as "3,412,880".
+  def self.grouped(number)
+    whole = number.to_i
+    digits = whole.abs.to_s.reverse.scan(/\d{1,3}/).join(",").reverse
+    whole < 0 ? "-#{digits}" : digits
   end
 
   # Cuts a text at its end until it fits a width with ELLIPSIS and what follows it.

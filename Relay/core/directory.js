@@ -2,7 +2,8 @@
 //  directory.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-10: Told a world room a Raid World's difficulty after an edit only when it changed
+//      Paulinchen  2026-10-10: Told a world room the name of a player of its world too, which a Raid World's boss pool keeps for its defeat
+//                            - Told a world room a Raid World's difficulty after an edit only when it changed
 //      Paulinchen  2026-10-09: Told a world room whether a key is an admin's, for the admin routes of a Raid World it answers itself
 //                            - Kept a Raid World's difficulty, which its creator or an admin may change and every game in it is told of
 //                            - Refused a Raid World with a starting save or a player's choice, since it starts from the beginning
@@ -498,7 +499,7 @@ export class Directory {
    * @param {string} id The world.
    * @param {unknown} key The player's key.
    * @param {unknown} auth The auth key the player's game made from the world's token.
-   * @returns {Promise<{status: number, body: object, player?: string, type?: string, authHash?: string}>} The player's id, the world's type and the hash of its auth key, which the world room keeps to check later requests itself; or why not.
+   * @returns {Promise<{status: number, body: object, player?: string, name?: string | null, type?: string, authHash?: string}>} The player's id and name (null before the player first entered the world), the world's type and the hash of its auth key, which the world room keeps to check later requests itself; or why not.
    */
   async member(id, key, auth) {
     const { entry, player, refusal } = await this.asPlayer(id, key, auth);
@@ -512,7 +513,8 @@ export class Directory {
     }
 
     const type = entry.type ?? WORLD_TYPE.classic;
-    return { status: 200, body: { player, type }, player, type, authHash: entry.authHash };
+    const name = entry.members[player]?.name ?? null;
+    return { status: 200, body: { player, type }, player, name, type, authHash: entry.authHash };
   }
 
   /**

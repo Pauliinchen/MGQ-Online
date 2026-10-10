@@ -2,7 +2,8 @@
 #  battles_coop_join.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-10: Kept the prompt whole on the screen at the map's edges
+#      Paulinchen  2026-10-10: Offered a side battle against the same raid boss near a boss battle that takes the player in no more, on the same hotkey
+#                            - Kept the prompt whole on the screen at the map's edges
 #      Paulinchen  2026-10-09: Created
 #
 #----------------------------------------------------------------
@@ -12,7 +13,9 @@
 # prompt below the player's character names the hotkey that joins it (Sprite_MpJoinPrompt). Its
 # press asks the battle's host (request), who takes the player in as a late guest without enemies
 # (MGQ_MpBattlesHotjoin.take_in_player), so an event's battle and a boss battle take them too, or
-# refuses, which the player reads in the notification box (take_refusal).
+# refuses, which the player reads in the notification box (take_refusal). Near a raid boss battle
+# that takes the player in no more, such as a full one, the prompt offers a side battle against the
+# same boss instead (side_target), which the player fights as their own (MGQ_MpRaidPool.start_side).
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpBattlesJoin
@@ -199,19 +202,23 @@ module MGQ_MpBattlesJoin
   def self.on_map(changing)
     settle
     @target = nil
+    @side = nil
     return unless reads_hotkey?
 
     pressed = MGQ_MpHotkeys.pressed?(:join_battle)
     @target = changing ? nil : target
+    @side = changing || @target ? nil : side_target
     return unless pressed && !changing
 
     found = @target
     return request(*found) if found
+    return fight_alongside(*@side) if @side
     return if $mgq_text_input
 
     log("join battle hotkey ignored: #{busy_reason || 'nobody near the player fights a battle that takes players in'}")
   rescue => e
     @target = nil
+    @side = nil
     log("joining a battle by choice failed: #{e.class}: #{e.message}")
   end
 
@@ -234,9 +241,63 @@ module MGQ_MpBattlesJoin
   # Tells the prompt below the player's character, see Sprite_MpJoinPrompt. The map stops finding its
   # battle while a message shows, so the prompt hides then too.
   #
-  # @return [String, nil] The prompt, nil while no battle near the player takes them in.
+  # @return [String, nil] The prompt, nil while no battle near the player takes them in and none
+  #   offers a side battle.
   def self.prompt_text
-    @target && MGQ_MpOverworldSync.map_free? ? "Press #{MGQ_MpHotkeys.label(:join_battle)} to join battle" : nil
+    return nil unless MGQ_MpOverworldSync.map_free?
+    return "Press #{MGQ_MpHotkeys.label(:join_battle)} to join battle" if @target
+
+    @side ? "Press #{MGQ_MpHotkeys.label(:join_battle)} to fight #{@side[2]} alongside" : nil
+  end
+
+  # Finds the raid boss battle near the player that the prompt offers a side battle against, while
+  # none takes the player in (see target) and the player is free (see busy_reason): of the boss
+  # battles on the player's map whose host's state names its troop (MGQ_MpRaidPool.side_of), the
+  # nearest with a player in it, or its boss's event, within JOIN_DISTANCE.
+  #
+  # @return [Array, nil] The troop, the host's enemy rates and the boss's name, nil for none.
+  def self.side_target
+    return nil if busy_reason || !defined?(MGQ_MpRaidPool)
+
+    x = $game_player.x
+    y = $game_player.y
+    near = side_battles.map do |peer, troop, rates|
+      steps = MGQ_MpBattlesCoop.distance(peer, x, y)
+      steps = [steps, MGQ_MpRaidBar.distance_to_boss(troop, x, y)].min if defined?(MGQ_MpRaidBar)
+      [steps, peer.state["id"].to_s, troop, rates]
+    end
+    best = near.select { |entry| entry[0] <= JOIN_DISTANCE }.min_by { |entry| entry.first(2) }
+    best ? [best[2], best[3], MGQ_MpRaidPool.troop_label(best[2])] : nil
+  end
+
+  # Lists the players on the player's map who fight a raid boss battle a side battle may fight too,
+  # by its host's state, see MGQ_MpRaidPool.side_of.
+  #
+  # @return [Array<Array>] Each player with the battle's troop and its host's enemy rates.
+  def self.side_battles
+    map = $game_map.map_id
+    MGQ_MpCoop::Scope.peers_on(map).map do |peer|
+      bid = peer.state["rb"].to_s
+      next if bid.empty? || peer.state["scene"] != "battle" || peer.state["rbh"].to_s !~ /\A\d+\z/
+
+      host = MGQ_MpOverworldSync::Peers.at(peer.state["rbh"].to_i)
+      next unless host && host.state["map"].to_i == map && host.state["rb"].to_s == bid
+
+      side = MGQ_MpRaidPool.side_of(host)
+      side ? [peer] + side : nil
+    end.compact
+  end
+
+  # Starts a side battle against the boss of a battle near the player, telling the player when it
+  # cannot start.
+  #
+  # @param troop [Integer] The troop.
+  # @param rates [String] The host's enemy rates.
+  # @param name [String] The boss's name.
+  def self.fight_alongside(troop, rates, name)
+    @side = nil
+    log("fights #{name} (troop #{troop}) in a side battle alongside a full boss battle near the player")
+    notice("Cannot fight #{name} now.") unless MGQ_MpRaidPool.start_side(troop, rates)
   end
 
   # Asks the host of a battle near the player to take them in, through the map's gate. The player
@@ -339,6 +400,7 @@ module MGQ_MpBattlesJoin
     @asking = nil
     @gave_up = nil
     @target = nil
+    @side = nil
   end
 end
 

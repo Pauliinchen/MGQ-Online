@@ -2,6 +2,7 @@
 //  WorldSession.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-10: Handed the relay's word that a Raid World's boss pool changed to the game script as a boss entry with its key, the share left, the raid max HP and whether it is defeated, and to the boss pools the game script reads
 //      Paulinchen  2026-10-09: Handed the relay's word that a Raid World's boss pool changed to the game script as a boss entry with its key and hit points
 //                            - Handed the relay's word that a Raid World's difficulty changed to the game script as a difficulty entry with its value
 //      Paulinchen  2026-10-08: Handed the relay's word that a Raid World's story changed to the game script as a story entry with its revision
@@ -112,9 +113,19 @@ internal sealed class WorldSession
     public const string KeyHeader = "key";
 
     /// <summary>
-    /// The pool's hit points in kills, in a <see cref="BossKind"/> entry.
+    /// The share of the pool's raid max HP left, 0 to 1, in a <see cref="BossKind"/> entry.
     /// </summary>
-    public const string HpHeader = "hp";
+    public const string LeftHeader = "left";
+
+    /// <summary>
+    /// The pool's raid max HP, a whole number, in a <see cref="BossKind"/> entry.
+    /// </summary>
+    public const string MaxHeader = "max";
+
+    /// <summary>
+    /// 1 when the boss is defeated for the world, else 0, in a <see cref="BossKind"/> entry.
+    /// </summary>
+    public const string DefeatedHeader = "defeated";
 
     /// <summary>
     /// The kind of an inbox entry that tells a Raid World's creator or an admin changed its
@@ -362,6 +373,11 @@ internal sealed class WorldSession
     /// Tells who plays: the game script's <see cref="Player"/>, or another for tests that run several players at once.
     /// </summary>
     public Func<(string Key, string Name)?> Playing { get; init; } = Player.Current;
+
+    /// <summary>
+    /// The boss pools that take the pools the world room tells; tests hand out their own.
+    /// </summary>
+    public RaidBosses Bosses { get; init; } = RaidBosses.Current;
 
     /// <summary>
     /// How often the connection pings the relay, which times the round trip and keeps it open.
@@ -760,7 +776,7 @@ internal sealed class WorldSession
     /// </summary>
     /// <param name="generation">The open this belongs to.</param>
     /// <param name="connection">The connection.</param>
-    /// <param name="text">The text, such as <c>seat 2 0 1</c>, <c>in 3</c>, <c>out 0</c>, <c>pong</c>, <c>slow chat</c>, <c>story 12</c>, <c>boss 4.25 Queen Harpy</c>, <c>difficulty 2</c> or <c>chat Global</c>, a tab and the line.</param>
+    /// <param name="text">The text, such as <c>seat 2 0 1</c>, <c>in 3</c>, <c>out 0</c>, <c>pong</c>, <c>slow chat</c>, <c>story 12</c>, <c>boss 0.25 5000000 0 Queen Harpy</c>, <c>difficulty 2</c>, <c>mods_rule 1</c>, a tab and the mods text, or <c>chat Global</c>, a tab and the line.</param>
     private void TakeText(int generation, Connection connection, string text)
     {
         if (text == RelayWorldChannel.Pong)
@@ -876,32 +892,48 @@ internal sealed class WorldSession
     }
 
     /// <summary>
-    /// Hands the relay's word that a Raid World's boss pool changed to the game script.
+    /// Hands the relay's word that a Raid World's boss pool changed to the game script and to the boss pools it reads.
     /// </summary>
     /// <param name="generation">The open this belongs to.</param>
     /// <param name="connection">The connection.</param>
-    /// <param name="pool">The pool's hit points in kills, a space and the boss's key.</param>
+    /// <param name="pool">The share left, the raid max HP, 1 or 0 for defeated and the pool's key, each but the key followed by a space.</param>
     private void TakeBoss(int generation, Connection connection, string pool)
     {
-        var space = pool.IndexOf(' ', StringComparison.Ordinal);
+        var words = pool.Split(' ', 4);
 
-        if (space <= 0 || space == pool.Length - 1 || !double.TryParse(pool[..space], NumberStyles.Float, CultureInfo.InvariantCulture, out var hp) || !double.IsFinite(hp))
+        if (words.Length != 4 || words[3].Length == 0
+            || !double.TryParse(words[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var left) || !double.IsFinite(left)
+            || !double.TryParse(words[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var max) || !double.IsFinite(max) || max < 0
+            || words[2] is not ("0" or "1"))
         {
-            Log.Write("world room boss text ignored, its hit points or key are missing");
+            Log.Write("world room boss text ignored, its share left, max HP, defeated flag or key are missing");
             return;
         }
 
+        var defeated = words[2] == "1";
+        var heard = new BossPool(words[3], defeated ? 0 : Math.Clamp(left, 0, 1), max, defeated, string.Empty);
+        string world;
+
         lock (_gate)
         {
-            if (generation != _generation || connection != _connection)
+            if (generation != _generation || connection != _connection || _world is not { } open)
             {
                 return;
             }
 
-            Enqueue(new Message([new(Message.Kind, BossKind), new(KeyHeader, pool[(space + 1)..]), new(HpHeader, hp.ToString("0.###", CultureInfo.InvariantCulture))]).Encode());
+            world = Relays.WorldRoomOf(open.Token);
+            Enqueue(new Message(
+            [
+                new(Message.Kind, BossKind),
+                new(KeyHeader, heard.Key),
+                new(LeftHeader, heard.Left.ToString("0.######", CultureInfo.InvariantCulture)),
+                new(MaxHeader, Math.Round(heard.Max).ToString("0", CultureInfo.InvariantCulture)),
+                new(DefeatedHeader, defeated ? "1" : "0"),
+            ]).Encode());
         }
 
-        Log.Write($"world boss pool changed at the relay, {hp.ToString("0.###", CultureInfo.InvariantCulture)} left");
+        Bosses.Heard(world, heard);
+        Log.Write($"world boss pool changed at the relay, {heard.Left.ToString("0.###", CultureInfo.InvariantCulture)} of {Math.Round(heard.Max).ToString("0", CultureInfo.InvariantCulture)} left{(defeated ? ", defeated" : string.Empty)}");
     }
 
     /// <summary>

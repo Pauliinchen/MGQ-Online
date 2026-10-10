@@ -2,6 +2,7 @@
 //  raid_admin.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-10: Showed each boss pool's HP left of its raid max HP and the pools' regeneration per minute, instead of kills
 //      Paulinchen  2026-10-09: Created
 //
 //----------------------------------------------------------------
@@ -42,7 +43,7 @@ export function raidAdminRouteOf(url) {
  * @param {() => Promise<string | null>} readBody Reads the request's body as text, null when it is too large to read.
  * @param {string | null} header The key the PLAYER_HEADER names, which wins over the address and the body.
  * @param {(key: unknown) => Promise<{status: number, body: object, type?: string}>} adminOf Asks the directory whether a key is an admin's, and the world's type.
- * @returns {Promise<{status: number, body: object, push?: number, boss?: {key: string, hp: number}}>} The answer, the story's revision to tell every game when it changed, and the pool to tell every game when it changed.
+ * @returns {Promise<{status: number, body: object, push?: number, boss?: import("./bosses.js").BossPush}>} The answer, the story's revision to tell every game when it changed, and the pool to tell every game when it changed.
  */
 export async function handleRaidAdminRequest(world, method, url, rest, readBody, header, adminOf) {
   const asAdmin = async (key, work) => {
@@ -58,8 +59,8 @@ export async function handleRaidAdminRequest(world, method, url, rest, readBody,
   if (rest.length === 0 && method === "GET") {
     return asAdmin(header || url.searchParams.get("player"), async () => {
       const { blob: _sealed, ...story } = (await world.story.get()).body;
-      const { bosses, max, regen } = (await world.bosses.list(true)).body;
-      return { status: 200, body: { story, bosses, max, regen } };
+      const { bosses, regenPerMinute } = (await world.bosses.list(true)).body;
+      return { status: 200, body: { story, bosses, regenPerMinute } };
     });
   }
 

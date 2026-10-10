@@ -2,6 +2,7 @@
 //  sqlite_store.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-10: Covered boss pools that keep the share of a raid max HP left over a restart
 //      Paulinchen  2026-10-09: Covered a Raid World's boss pools kept over a restart and removed
 //      Paulinchen  2026-10-08: Covered a Raid World's story and its checkpoints kept over a restart and removed
 //      Paulinchen  2026-10-07: Covered a world's chat kept and removed with the world
@@ -183,14 +184,14 @@ test("a Raid World's story and its checkpoints outlast a restart, and each world
 test("a Raid World's boss pools outlast a restart, and each world keeps its own until removed", async () => {
   const first = openSqliteStores(path);
   const bosses = new WorldBosses(first.bosses(WORLD), { clock: () => 5000 });
-  assert.equal((await bosses.report("a1".repeat(16), "Queen%20Harpy", { battle: "b1", dealt: 0.5 })).status, 200);
-  assert.equal((await bosses.report("a1".repeat(16), "Morrigan", { battle: "b2", dealt: 1 })).status, 200);
+  assert.equal((await bosses.report("a1".repeat(16), "Queen%20Harpy", { battle: "b1", seq: 1, delta: 0.5, max: 1000 })).status, 200);
+  assert.equal((await bosses.report("a1".repeat(16), "Morrigan", { battle: "b2", seq: 3, delta: 0.25, max: 1000 })).status, 200);
   first.close();
 
   const second = openSqliteStores(path);
   const reopened = new WorldBosses(second.bosses(WORLD), { clock: () => 5000 });
-  assert.deepEqual((await reopened.list()).body.bosses.map((pool) => [pool.key, pool.hp]), [["Morrigan", 4], ["Queen Harpy", 4.5]]);
-  assert.equal((await reopened.report("a1".repeat(16), "Morrigan", { battle: "b2", dealt: 1 })).body.repeat, true, "the battles counted outlast the restart too");
+  assert.deepEqual((await reopened.list()).body.bosses.map((pool) => [pool.key, pool.left, pool.max]), [["Morrigan", 0.75, 1000], ["Queen Harpy", 0.5, 1000]]);
+  assert.equal((await reopened.report("a1".repeat(16), "Morrigan", { battle: "b2", seq: 3, delta: 0.25, max: 1000 })).body.repeat, true, "the battles' report numbers outlast the restart too");
   assert.deepEqual((await new WorldBosses(second.bosses("f".repeat(32))).list()).body.bosses, [], "another world has pools of its own");
 
   await reopened.reset("Morrigan");

@@ -2,6 +2,8 @@
 #  battles_coop_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-10: Checked that a boss battle in a Raid World invites the players reading the story the player tells
+#                            - Checked that a guest who follows to the battle its host yields to fights the raid boss's pools of its invite
 #      Paulinchen  2026-10-09: Checked that a Classic co-op host tells its guest a troop that grew mid-battle once, before the send of its stream, and again should telling it fail
 #                            - Checked that a player who yields to a rival's boss battle notes it as one
 #                            - Checked that a Raid World's battle takes a player whose game window is in the background, but not a busy one
@@ -906,6 +908,15 @@ MGQ_MpOverworldSync::Peers.all.push(background)
 $leader = :me
 check("and a player whose game window is in the background, which keeps running", MGQ_MpBattlesCoop.raid_candidates.map(&:seat), [3, 6, 13])
 MGQ_MpOverworldSync::Peers.all.delete(background)
+class << MGQ_MpCoop::Scope
+  alias_method :viewers_of_scope, :viewers
+  def viewers; $viewers || viewers_of_scope; end
+end
+$viewers = [others[0], others[1]]
+check("a boss battle takes those reading the story the player tells too, unless busy", MGQ_MpBattlesCoop.raid_candidates(true).map(&:seat), [3, 9, 6])
+check("but no other battle", MGQ_MpBattlesCoop.raid_candidates(false).map(&:seat), [3, 6, 7])
+check("nor a player reading another story", MGQ_MpBattlesCoop.watching?(others[0], [others[1]]), false)
+$viewers = nil
 $leader = comrade
 
 $sent.clear
@@ -1094,7 +1105,15 @@ check("and an event's battle replaces an earlier rival's random encounter", [MGQ
 MGQ_MpBattlesCoop.ended
 MGQ_MpBattlesSync.finish
 
-# A guest whose host yields follows to the battle it yields to.
+# A guest whose host yields follows to the battle it yields to, through battles_raid_pool.rbx,
+# which stands in here.
+module MGQ_MpRaidPool
+  def self.note_invite(_message); end
+  def self.set_up(troop_id); ($pool_set_ups ||= []) << troop_id; end
+  def self.invite_fields(_troop_id = nil); {}; end
+  def self.won_already?(_troop_id); false; end
+  def self.rescale; $rescaled = ($rescaled || 0) + 1; end
+end
 $scene_now = scene
 b_invite = rival_invite.merge("bid" => "b1", "seats" => "0", "enc" => "1")
 a_invite = rival_invite.merge("bid" => "a1", "troop" => "93", "seats" => "0", "enc" => "1")
@@ -1108,6 +1127,7 @@ MGQ_MpBattlesCoop.join(scene)
 $inject = nil
 joins = $sent.map { |seat, t| [seat, fields_of(t)] }.select { |_, f| f["battle"] == "join" }.map { |seat, f| [seat, f["bid"]] }
 check("and joins that battle once its host gives up", [joins, MGQ_MpBattlesSync.battle_id, $game_troop.troop_id, waiting_bid], [[[13, "b1"], [14, "a1"]], "a1", 93, nil])
+check("fighting the raid boss's pools its invite names", $pool_set_ups.last, 93)
 MGQ_MpBattlesCoop.ended
 MGQ_MpBattlesSync.finish
 MGQ_MpBattlesCoop.accept(rival, b_invite.merge("enc" => "0"))
