@@ -2,6 +2,7 @@
 #  loader_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-10: Checked that a text read from the DLL that grew again between asking its size and copying it is asked for again, three more times at most
 #      Paulinchen  2026-10-09: Checked that story_state.rbx loads before the story scripts that build on it
 #      Paulinchen  2026-10-08: Checked that a watched key goes down once per frame, ended by a game window's own Input.update
 #                            - Checked that a held key reads as one press however often Input.update runs in a frame
@@ -309,3 +310,36 @@ check("a chosen name replaces the name on Discord", [player.name, $player_ini_wr
 player.name = "   "
 check("clearing it keeps no name in Player.ini and brings the name on Discord back",
       [player.name, $player_ini_written.key?("name"), $shared_name], ["Discord Me", false, "Discord Me"])
+
+# Reading a text from the DLL: one that grew between asking its size and copying it is asked for
+# again with the size it needs then, READ_TRIES times at most.
+reader = Module.new
+reader.const_set(:READ_TRIES, Integer(source[/    READ_TRIES = (\d+)/, 1]))
+reader.module_eval(source[/    def self\.read\(name, size\)\n.*?\n    end\n/m])
+# An export that answers each call from a list: a text it writes, or the size it needs, negated.
+answers = []
+sizes = []
+export = Object.new
+export.define_singleton_method(:call) do |buffer, size|
+  sizes << size
+  answer = answers.shift
+  if answer.is_a?(Integer)
+    answer
+  else
+    buffer[0, answer.bytesize] = answer
+    answer.bytesize
+  end
+end
+reader.define_singleton_method(:function) { |_name| export }
+answers.replace(["fits"])
+check("a text that fits is read at once", [reader.read("mp_text", 8), sizes], ["fits", [8]])
+answers.replace([-5, "grown"])
+sizes.clear
+check("a larger one with the buffer it asks for", [reader.read("mp_text", 4), sizes], ["grown", [4, 6]])
+answers.replace([-5, -7, -11, "grown again"])
+sizes.clear
+check("one that grew again between asking its size and copying it is asked for again",
+      [reader.read("mp_text", 4), sizes], ["grown again", [4, 6, 8, 12]])
+answers.replace([-5, -6, -7, -8, -9, -10])
+sizes.clear
+check("three more times at most, after which it reads as none", [reader.read("mp_text", 4), sizes, answers], ["", [4, 6, 7, 8, 9], [-10]])
