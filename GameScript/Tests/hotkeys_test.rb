@@ -2,6 +2,7 @@
 #  hotkeys_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-10: Checked that every help says hotkey and keeps its lines short
 #      Paulinchen  2026-10-09: Checked the hotkey that joins a battle nearby
 #      Paulinchen  2026-10-04: Checked the party box size key and the name of Tab
 #                            - Checked the emote wheel's key
@@ -69,3 +70,9 @@ check("a bound key is still named", [keys.label(:wheel), keys.label(:overview), 
 before = NWConst::Config::MOD_CONTENTS.size
 keys.register
 check("and no key bindings are added", NWConst::Config::MOD_CONTENTS.size, before)
+
+# The help texts.
+check("every help calls its binding a hotkey", keys::BINDINGS.values.map { |binding| binding.help[/\A\S+ \S+/] }.uniq, ["The hotkey"])
+check("no help line is longer than 120 characters",
+      keys::BINDINGS.values.map { |binding| binding.help.split("\n") }.flatten.select { |line| line.size > 120 }, [])
+check("the Party Box Size help has two lines", keys::BINDINGS[:party_box].help.split("\n").size, 2)

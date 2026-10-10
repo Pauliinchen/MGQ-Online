@@ -2,7 +2,8 @@
 #  core_hotkeys.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-10: Told that the party box size key also shows the battle's raid boss bar with or without its title and name
+#      Paulinchen  2026-10-10: Told that the party box size hotkey also shows the battle's raid boss bar with or without its title and name
+#                            - Called every binding a hotkey in its help, and split the Party Box Size help into two lines
 #      Paulinchen  2026-10-09: Added the hotkey that joins the battle of a player nearby in a Raid World, J unless bound
 #      Paulinchen  2026-10-07: Logged the hotkeys bound as the game starts, each hotkey pressed and what it is for, and a setting that is no key
 #      Paulinchen  2026-10-04: Added the party box size key, Tab unless bound, and named Tab
@@ -23,7 +24,7 @@
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpHotkeys
-  # A key the player binds.
+  # A hotkey the player binds.
   #
   # @!attribute setting [String] Its setting in Player.ini.
   # @!attribute default [Integer] Windows' code of its key until the player binds another.
@@ -32,23 +33,24 @@ module MGQ_MpHotkeys
   # @!attribute help [String] Its help in the Mod Config.
   Binding = Struct.new(:setting, :default, :option, :name, :help)
 
-  # The keys the player binds, by what they open. The defaults are keys neither the game's Input nor
-  # its gamepad plugin reads.
+  # The hotkeys the player binds, by what they open. The defaults are keys neither the game's Input
+  # nor its gamepad plugin reads.
   BINDINGS = {
     :wheel => Binding.new("key_wheel", 0x42, :mp_key_wheel, "Action Wheel",
-                          "The key that opens and closes the action wheel on the map of a world."),
+                          "The hotkey that opens and closes the action wheel on the map of a world."),
     :chat => Binding.new("key_chat", 0x54, :mp_key_chat, "Chat",
-                         "The key that opens the chat box of a world, on the map and in battles."),
+                         "The hotkey that opens the chat box of a world, on the map and in battles."),
     :overview => Binding.new("key_overview", 0x7A, :mp_key_overview, "World Overview",
-                             "The key that opens and closes the World overview in a world, and the PvP battle screen outside one."),
+                             "The hotkey that opens and closes the World overview in a world, and the PvP battle screen outside one."),
     :accept => Binding.new("key_accept", 0x59, :mp_key_accept, "Accept Notification",
-                           "The key that accepts the first invite or challenge in the notification box at the top left, in a world."),
+                           "The hotkey that accepts the first invite or challenge in the notification box at the top left, in a world."),
     :decline => Binding.new("key_decline", 0x4E, :mp_key_decline, "Decline Notification",
-                            "The key that declines the first invite or challenge in the notification box at the top left, in a world."),
+                            "The hotkey that declines the first invite or challenge in the notification box at the top left, in a world."),
     :emotes => Binding.new("key_emotes", 0x45, :mp_key_emotes, "Emote Wheel",
-                           "The key that opens and closes the emote wheel on the map of a world: jump, or show a balloon above your character."),
+                           "The hotkey that opens and closes the emote wheel on the map of a world: jump, or show a balloon above your character."),
     :party_box => Binding.new("key_party_box", 0x09, :mp_key_party_box, "Party Box Size",
-                              "The key that makes the party box at the top right small, with only names and pings, and full again; in a raid boss battle, it shows the boss's HP bar with or without its title and name."),
+                              "The hotkey that makes the party box at the top right small, with only names and pings, and full again.\n" \
+                              "In a raid boss battle, it shows the boss's HP bar with or without its title and name."),
     :join_battle => Binding.new("key_join_battle", 0x4A, :mp_key_join_battle, "Join Battle",
                                 "The hotkey that joins the battle of a player near you in a Raid World, while the prompt below your character shows."),
   }
