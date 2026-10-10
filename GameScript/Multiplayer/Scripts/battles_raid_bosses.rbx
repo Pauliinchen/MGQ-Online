@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-10: Counted the Three Nobles of Black, fought before Black Alice and again before the Heavenly Knights of Part 3, as raid bosses
+#                            - Gave each raid boss a title for its HP bar, the group the game names it in
 #                            - Ranked the raid bosses in tiers 0 to 9, each with the factors it gives their stats: 50 times the max HP and 5 times the defense and magic defense at tier 0, down to 5 times the max HP and the game's defenses at tier 9
 #                            - Counted the six one-time bosses of the Chaos Domain as raid bosses
 #      Paulinchen  2026-10-08: Created
@@ -244,6 +245,33 @@ module MGQ_MpRaidBosses
     8 => ["Morrigan", "Adramelech"],
     9 => ["Four bandits", "Queen Harpy"],
   }
+
+  # The title above a raid boss's name on its HP bar, by the group the game's enemy library names it
+  # in: each title with its bosses' milestone names (see milestone_key) or OPTIONAL names. A boss
+  # outside them reads as a raid boss of its tier.
+  TITLES = {
+    "Heavenly Knight" => ["Alma Elma, then Granberia", "Tamamo (cap 61)", "Erubetie", "Granberia"],
+    "Archangel" => ["Gabriela", "Uriela, Sabiriel and Fernandez", "Sariela", "Metatronne and Sandalphone", "Zion (three fights)"],
+    "Six Ancestors" => ["Malboro Girl, then Kanon", "Kanade (cap 75)", "Tamamo (cap 80)", "Tamamo (cap 83)", "Minagi and Alipheese the 10th",
+                        "Hiruko (cap 95)", "Saja (cap 105)", "Hiruko, Kanon and Kanade"],
+    "Apostle of Chaos" => ["Apiro Lagos", "Idea Lukas", "EX Sonya"],
+    "Phenomenon of Ruin" => ["Angolmois (cap 130)", "Magatsu-Omikami", "Metatronne and Sandalphone, then Singularity", "World Drown",
+                             "Angolmois (cap 190)", "Baal Zebub", "Seven Deadly Sins", "Dimensional Eroder"],
+    "Chaos' Phantom" => ["Fourth Law", "Null Lilith", "Fifth Law - Nirvana", "Void Image of Paradise", "Chaos Maria", "Fifth Law - Fallen Angel"],
+  }
+
+  # Finds the title above a boss's name on its HP bar, see TITLES.
+  #
+  # @param troop_id [Integer, String] The troop.
+  # @return [String, nil] The title, such as "Archangel" or "Tier 6 Raid Boss"; nil for a troop
+  #   that is no boss.
+  def self.title(troop_id)
+    key = milestone_key(troop_id)
+    return nil unless key
+
+    @titles ||= TITLES.each_with_object({}) { |(title, names), titles| names.each { |name| titles[name] = title } }
+    @titles[key] || "Tier #{tier(troop_id)} Raid Boss"
+  end
 
   # Finds a boss troop of the story or of OPTIONAL.
   #

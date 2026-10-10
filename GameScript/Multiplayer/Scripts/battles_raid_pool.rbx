@@ -8,6 +8,7 @@
 #                            - Added taken_over, which the co-op battles call as a guest takes a battle over, so the damage of a battle that starts then is reported
 #                            - Started a guest's reports from the enemies' HP as it takes the battle over, so the host's reported damage is not reported again, and kept a guest from killing enemies by its own view of the pools
 #                            - Counted a report from no more than the enemy's max HP now, so a lowered max HP reads as no damage
+#                            - Fought no pool on the Hades rematch hall's map either
 #                            - Compared the DLL's line of a pool with the last one taken, so small changes in a row count once they add up
 #                            - Took the pools' HP every five seconds while a battle waits for its players' commands, so its bar shows the other battles' blows meanwhile
 #                            - Reported what a battle dealt as its actions end too, at most every two seconds, so the other games see a long turn's damage
@@ -81,6 +82,10 @@ module MGQ_MpRaidPool
 
   # The switch the Hades rematches turn on around their battles.
   HADES_SWITCH = 97
+
+  # The map of the Hades rematch hall, whose events start the rematches before they turn
+  # HADES_SWITCH on.
+  HADES_MAP = 576
 
   # The switch the Colosseum's battles turn on.
   COLOSSEUM_SWITCH = 87
@@ -435,11 +440,19 @@ module MGQ_MpRaidPool
     boss = MGQ_MpRaidBosses.at(troop_id)
     return "an earlier phase of its fight" unless MGQ_MpRaidBosses.last_phase?(troop_id)
     return UNPOOLED[troop_id] if UNPOOLED[troop_id]
-    return "a Hades rematch" if $game_switches[HADES_SWITCH]
+    return "a Hades rematch" if hades?
     return "a Colosseum battle" if $game_switches[COLOSSEUM_SWITCH]
     return "the story beat #{boss.milestone} already" if beaten?(boss)
 
     key_of(troop_id) ? nil : "its key is none the relay takes"
+  end
+
+  # Reports whether the player is at a Hades rematch: its switch is on, or the player stands in the
+  # rematch hall, whose events start the rematches before they turn the switch on.
+  #
+  # @return [Boolean] Whether they are.
+  def self.hades?
+    $game_switches[HADES_SWITCH] || ($game_map && $game_map.map_id == HADES_MAP) ? true : false
   end
 
   # Reports whether a troop's boss has pools the player may fight: the last phase of a story boss

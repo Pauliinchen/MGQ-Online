@@ -2,6 +2,7 @@
 #  core_hotkeys.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-10: Told that the party box size key also shows the battle's raid boss bar with or without its title and name
 #      Paulinchen  2026-10-09: Added the hotkey that joins the battle of a player nearby in a Raid World, J unless bound
 #      Paulinchen  2026-10-07: Logged the hotkeys bound as the game starts, each hotkey pressed and what it is for, and a setting that is no key
 #      Paulinchen  2026-10-04: Added the party box size key, Tab unless bound, and named Tab
@@ -47,7 +48,7 @@ module MGQ_MpHotkeys
     :emotes => Binding.new("key_emotes", 0x45, :mp_key_emotes, "Emote Wheel",
                            "The key that opens and closes the emote wheel on the map of a world: jump, or show a balloon above your character."),
     :party_box => Binding.new("key_party_box", 0x09, :mp_key_party_box, "Party Box Size",
-                              "The key that makes the party box at the top right small, with only names and pings, and full again."),
+                              "The key that makes the party box at the top right small, with only names and pings, and full again; in a raid boss battle, it shows the boss's HP bar with or without its title and name."),
     :join_battle => Binding.new("key_join_battle", 0x4A, :mp_key_join_battle, "Join Battle",
                                 "The hotkey that joins the battle of a player near you in a Raid World, while the prompt below your character shows."),
   }

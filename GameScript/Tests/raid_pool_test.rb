@@ -7,9 +7,10 @@
 #                            - Covered the one-time Chaos Domain bosses, which fight pools of their own
 #                            - Covered a takeover the co-op battles tell as it happens, which reports the damage of the battle's start that follows
 #                            - Covered a guest that takes the battle over after the host reported an action, and a guest that never kills the boss by its own view of the pool
+#                            - Covered a boss whose max HP changes and the Hades rematch hall
 #                            - Covered a boss whose max HP changes, small changes of the DLL's line in a row and the Hades rematch hall
-#                            - Covered a boss whose max HP changes
 #                            - Covered the pools' HP every few seconds while a battle waits for commands
+#                            - Covered the bosses' titles
 #                            - Covered the reports as a battle's actions end, a few seconds apart
 #                            - Covered the shared fight against a raid boss's pools instead of the kills and the boss that falls back: the raised max HP, the reports and the pools' HP at each command phase (with the damage of the turn end and battle start, refused reports and word older than the player's own reports), the kills by the relay, the guests, the side battles and the pushes
 #      Paulinchen  2026-10-09: Covered the share of a kill and the boss's name that count only the troop's own enemies, never those added mid-battle
@@ -350,6 +351,12 @@ check("each boss has the tier its list names, tier 0 the strongest",
       [9, 7, 3, 4, 1, 0, 1, nil])
 check("a shared name tells the milestones apart by their cap", [bosses.milestone_key(1502), bosses.milestone_key(71), bosses.milestone_key(3127)],
       ["Tamamo (cap 61)", "Queen Harpy", "Void Image of Paradise"])
+check("a boss's title is the group the game names it in, else its tier",
+      [bosses.title(1599), bosses.title(3127), bosses.title(2219), bosses.title(71), bosses.title(31)],
+      ["Archangel", "Chaos' Phantom", "Tier 0 Raid Boss", "Tier 9 Raid Boss", nil])
+titled = bosses::TITLES.values.flatten
+check("the titles name each boss once and none the tables lack",
+      [titled.size - titled.uniq.size, titled - (bosses::TROOPS.keys + bosses::OPTIONAL.keys).map { |troop| bosses.milestone_key(troop) }], [0, []])
 check("every boss has a tier the table holds", (bosses::TROOPS.keys + bosses::OPTIONAL.keys).reject { |troop| bosses::TIERS.key?(bosses.tier(troop)) }, [])
 names = bosses::TIER_BOSSES.values.flatten
 check("the tier lists name each milestone once and none the table lacks",
@@ -459,6 +466,7 @@ check("and reports nothing", [reports, $ran], [[], [:after]])
 {
   "a player whose story is in an earlier part" => proc { $mode = :own },
   "a Hades rematch" => proc { $game_switches[97] = true },
+  "an event of the Hades rematch hall, before it turns the rematch's switch on" => proc { $game_map.map_id = 576 },
   "a Colosseum battle" => proc { $game_switches[87] = true },
   "a boss the story beat" => proc { $game_variables[1011] = 4 },
 }.each do |label, set|
