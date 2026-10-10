@@ -2,7 +2,8 @@
 #  battles_hotjoin_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-10: Checked that the players a refused, silent or taken back request brought along walk on unless the encounter invites them anew
+#      Paulinchen  2026-10-10: Checked that a requester whose running battle broke off before the roster fights its encounter from its start with its own enemy rates, and that a guest has its own rates back as the battle ends, before the game's autosave
+#                            - Checked that the players a refused, silent or taken back request brought along walk on unless the encounter invites them anew
 #                            - Checked that the fallen enemies count toward the troop's limit, and that a guest starts the enemies it adds, enters them in the Library and rescales a raid boss's pools
 #      Paulinchen  2026-10-09: Checked that a host tells its guests a troop that grew, whose hidden enemy appeared or whose enemy transformed once, before the send that names it and as a command phase opens, together with an encounter taken in, and that a guest shows or transforms its own enemy, keeping it
 #                            - Checked that an enemy the host's party ate stays fallen and shown for the guests, so its defeat pays out, and that an encounter whose player joins first keeps clear of the place of one still to join
@@ -469,9 +470,12 @@ $scene_now = scene
 coop::Mode.before_start(scene)
 $sent.clear
 $inject = lambda { |frame| sync.take(host, { "battle" => "broken", "bid" => "hb1", :payload => "" }) if frame == 2 }
-check("a late guest whose battle breaks off before the roster stops waiting", coop.join(scene), :broken)
+check("a requester whose running battle breaks off before the roster stops waiting and fights its encounter on its own", coop.join(scene), :gone)
 check("telling the host", battle_sent("decline").map(&:first), [5])
 check("with its encounter's own escape and lose back", [MGQ_MpGame.get(BattleManager, :can_escape), MGQ_MpGame.get(BattleManager, :can_lose)], [true, false])
+$battle_started = false
+coop.take_over(scene)
+check("which starts from its start as the player's own", [$battle_started, sync.role, hotjoin.state_fields["rb"].empty?], [true, nil, false])
 reset
 
 # The host forgets a player taken in who left the battle before it took them in.
@@ -621,8 +625,12 @@ coop.take(host, { "coop" => "invite", "bid" => "rt1", "troop" => "31", "escape" 
 coop.on_map
 check("a guest fights with its host's enemy rates, such as a special boss's NORMAL on the guest's EASY", [sync.role, own_rates.call], [:guest, [100, 100, 100, 90, 100, 100]])
 SceneManager.instance_variable_set(:@stack, [Scene_Map.new])
+BattleManager.battle_end(0)
+check("and has its own back as the battle ends, before the game's victory saves its autosave", own_rates.call, [75] * 6)
+$game_variables[41] = 60
 coop.ended
-check("and has its own back once the battle ended", own_rates.call, [75] * 6)
+check("which the end of the battle's scene puts back no second time", $game_variables[41], 60)
+$game_variables[41] = 75
 reset
 
 $encounter_troop = 50
@@ -636,6 +644,17 @@ check("an encounter a running battle takes in fights with that battle's enemy ra
 $inject = lambda { |frame| coop.take(host, { "coop" => "off", "bid" => "hb1" }) if frame == 3 }
 coop.join(scene)
 check("and with its own again once the host called it off", own_rates.call, [75] * 6)
+reset
+
+$encounter_troop = 50
+$scene_now = Scene_Map.new
+$game_player.encounter
+coop.take(host, { "coop" => "hot_ok", "bid" => "hb1", "escape" => "1", "lose" => "0", "rates" => "120,120,120,120,120,120" })
+$scene_now = scene
+coop::Mode.before_start(scene)
+$inject = lambda { |frame| sync.take(host, { "battle" => "broken", "bid" => "hb1", :payload => "" }) if frame == 2 }
+coop.join(scene)
+check("and when the running battle broke off before its roster came", own_rates.call, [75] * 6)
 reset
 coop.borrow_rates("rates" => "1,2")
 coop.borrow_rates("rates" => "")

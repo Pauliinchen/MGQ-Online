@@ -4,6 +4,7 @@
 #  Changelog:
 #      Paulinchen  2026-10-10: Checked that a boss battle in a Raid World invites the players reading the story the player tells
 #                            - Checked that a guest who follows to the battle its host yields to fights the raid boss's pools of its invite
+#                            - Checked that a player who yields to a rival fights with its enemy rates and pools and has its own rates back as the battle ends, before the game's autosave
 #      Paulinchen  2026-10-09: Checked that a Classic co-op host tells its guest a troop that grew mid-battle once, before the send of its stream, and again should telling it fail
 #                            - Checked that a player who yields to a rival's boss battle notes it as one
 #                            - Checked that a Raid World's battle takes a player whose game window is in the background, but not a busy one
@@ -1137,6 +1138,22 @@ check("a guest of an event's battle turns other invites down at once", [waiting_
 MGQ_MpBattlesCoop.ended
 MGQ_MpBattlesSync.finish
 $scene_now = Scene_Map.new
+
+# The player yields to a rival: its enemy rates and pools, and the player's own rates back as the
+# battle ends, before the game's victory saves its autosave.
+rates = MGQ_MpBattlesCoop::RATE_VARIABLES
+rates.each { |id| $game_variables[id] = 50 }
+$encounter_troop = 94
+$game_player.encounter
+MGQ_MpBattlesCoop.take(rival, rival_invite.merge("rates" => "110,110,110,110,110,110"))
+$sent.clear
+check("a player who yields to a rival becomes its guest", [MGQ_MpBattlesCoop.gather(scene), MGQ_MpBattlesSync.role, MGQ_MpBattlesSync.battle_id], [:guest, :guest, "rv1"])
+check("fighting with the rival's enemy rates and the raid boss's pools its invite names",
+      [rates.map { |id| $game_variables[id] }, $pool_set_ups.last], [[110] * 6, 90])
+BattleManager.battle_end(0)
+check("and has its own rates back as the battle ends", rates.map { |id| $game_variables[id] }, [50] * 6)
+MGQ_MpBattlesCoop.ended
+MGQ_MpBattlesSync.finish
 
 # A battle called off lets the player walk on only when no other battle holds them.
 MGQ_MpBattlesCoop.drop

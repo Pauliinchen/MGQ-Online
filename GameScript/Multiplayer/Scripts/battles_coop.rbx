@@ -5,6 +5,8 @@
 #      Paulinchen  2026-10-10: Invited the players on the map who watch the story told there to a boss battle in a Raid World too
 #                            - Named the raid boss's pools in the invite to a battle that fights them, and invited nobody to one whose pools are all empty already
 #                            - Fought the raid boss's pools in the battle the player yields or follows to, and gave a troop taken from the host the boss's raised max HP at once
+#                            - Gave the player their own enemy rates and stats back as the battle ends, before the game's autosave, instead of only once its scene ended
+#                            - Fought a requester's own encounter with its own enemy rates when the wait for the running battle's roster ended as its host left or broke it off
 #      Paulinchen  2026-10-09: Told the guests the troop as host whenever it changed since they last heard of it, such as enemies another mod added mid-battle or an enemy that transformed or appeared, before the next send of the stream and as a command phase opens
 #                            - Fought a battle joined in a Raid World with its host's enemy rates, the player's own back once it ended
 #                            - Ended a co-op battle only once its scene ended, not when its party command called the Library or Config
@@ -1359,7 +1361,7 @@ module MGQ_MpBattlesCoop
   # Fights the battle the player joins with its host's enemy rates, which an invite in a Raid World
   # carries, so its enemies are as strong in every game: those of a special boss, the Colosseum or
   # the host's Labyrinth of Chaos too, whatever the player's own difficulty. Keeps the player's own
-  # until the battle's scene ended (see give_back_rates); a second invite keeps the first's.
+  # until the battle ends (see restore); a second invite keeps the first's.
   #
   # @param message [Hash] The invite, "rates" with rates_text of the host.
   def self.borrow_rates(message)
@@ -1400,8 +1402,8 @@ module MGQ_MpBattlesCoop
   # As guest, tells the host who joins and builds the party the host sends. Called at the battle's
   # start. A player who joins a running battle late (MGQ_MpBattlesHotjoin.late?) waits for its next
   # command phase, and takes its turn count; one whose encounter it took in fights that encounter
-  # alone when the roster never comes. A player who follows to another battle meanwhile (see
-  # follow) joins that one, and one whose roster came turns a kept invite down.
+  # alone when the roster never comes (see own_ending?). A player who follows to another battle
+  # meanwhile (see follow) joins that one, and one whose roster came turns a kept invite down.
   #
   # @param scene [Scene_Battle] The battle.
   # @return [Symbol, nil] An ending of battles_sync's Channel.ending, nil once the battle may start.
@@ -1427,7 +1429,7 @@ module MGQ_MpBattlesCoop
       return join(scene)
     end
     hotjoin.give_up(roster) if roster.is_a?(Symbol)
-    return hotjoin.fight_own("the host's party never came") if roster == :late && hotjoin.own_troop?
+    return hotjoin.fight_own(roster == :late ? "the host's party never came" : "the host's battle ended before its party came (#{roster.inspect})") if own_ending?(roster)
     return left_out("the host's party never came") if roster == :late
     if roster.is_a?(Symbol)
       log("no roster for battle #{MGQ_MpBattlesSync.battle_id}: the wait ended with #{roster.inspect}")
@@ -1446,6 +1448,16 @@ module MGQ_MpBattlesCoop
     MGQ_MpCoopLevelSync.begin(level)
     form(scene, players)
     nil
+  end
+
+  # Reports whether a guest's wait for the roster ended so that the player's own encounter starts on
+  # its own (see MGQ_MpBattlesHotjoin.fight_own): the player asked a running battle to take it in,
+  # and its party never came, its host left or the battle broke off.
+  #
+  # @param ending [Object] How the wait ended, see join.
+  # @return [Boolean] Whether it did.
+  def self.own_ending?(ending)
+    MGQ_MpBattlesHotjoin.own_troop? && [:late, :gone, :broken].include?(ending)
   end
 
   # Ends a guest's battle the host's party left out, since the guest joined after the host stopped
@@ -1902,11 +1914,23 @@ module MGQ_MpBattlesCoop
     log("fights on with the player's own party: #{members_text($game_party.battle_members)}")
   end
 
+  # Puts back what a battle lent the player's game that its save keeps: the player's own enemy rates
+  # and the stats of their characters the level sync changed. Called as BattleManager.battle_end
+  # ends, and again once the battle's scene ended, which then puts nothing back twice.
+  #
+  # The game's victory saves its autosave right after battle_end, before the battle's scene ends.
+  def self.restore
+    give_back_rates
+    MGQ_MpCoopLevelSync.finish if active?
+  rescue => e
+    log("putting the player's own rates and stats back failed: #{e.class}: #{e.message}")
+  end
+
   # Ends a co-op battle: the player's own party and enemy rates again, the game's own settings back,
   # and the live battle over. A battle the player hosted alone for players who never joined stays
   # their own, its Retry kept. Called once the battle's scene ended.
   def self.ended
-    give_back_rates
+    restore
     alone = MGQ_MpBattlesHotjoin.waiting_alone? && MGQ_MpBattles.kind != :coop
     MGQ_MpBattlesHotjoin.ended
     return MGQ_MpBattlesSync.finish if alone
@@ -2180,8 +2204,11 @@ module MGQ_MpBattlesCoop
     install_end
   end
 
-  # Ends a co-op battle once the battle's scene ended, not when it only called another screen.
+  # Puts back what the battle lent the player's game as the battle ends, before the game saves (see
+  # restore), and ends a co-op battle once the battle's scene ended, not when it only called another
+  # screen.
   def self.install_end
+    MGQ_MpHooks.after(BattleManager.singleton_class, :battle_end, "battles_coop") { |*_args| MGQ_MpBattlesCoop.restore }
     MGQ_MpHooks.after(Scene_Battle, :terminate, "battles_coop") { MGQ_MpBattlesCoop.ended unless MGQ_MpBattlesCoop.called_away?(self) }
   rescue => e
     log("battle end hook FAILED: #{e.class}: #{e.message}")
