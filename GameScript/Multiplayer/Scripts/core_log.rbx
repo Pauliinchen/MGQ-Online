@@ -2,6 +2,7 @@
 #  core_log.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-10: Made log and log_once return nil, never the byte count of the line written
 #      Paulinchen  2026-10-07: Added failure, which describes an error with the pictures in memory when one could not be made
 #                            - Added short and named, which cut a text and name a database entry with its id for a line of the log
 #      Paulinchen  2026-10-04: Renamed from mp_log.rbx
@@ -77,17 +78,25 @@ module MGQ_MpLog
 
   # Writes a line to Multiplayer InGame.log, after the script's LOG_TAG.
   #
+  # Many methods give nothing through `return log(...)`, so a log must never hand back what writing
+  # the file returned, such as its byte count.
+  #
   # @param message [String] The line.
+  # @return [nil] Always.
   def log(message)
     MGQ_Multiplayer::Log.write("#{self::LOG_TAG}: #{message}")
+    nil
   rescue
+    nil
   end
 
   # Writes a line the first time only, for what would otherwise fail every frame.
   #
   # @param key [Object] What tells the line from the script's other lines.
   # @param message [String] The line.
+  # @return [nil] Always, see log.
   def log_once(key, message)
     log(message) if MGQ_MpLog.first_time?(self, key)
+    nil
   end
 end
