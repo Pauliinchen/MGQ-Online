@@ -4,6 +4,7 @@
 #  Changelog:
 #      Paulinchen  2026-10-10: Took leaving the save screen without a save as no shared save for a development build's Raid World, drew a save's
 #                              label at its field's width, and said in a Raid World's details when its new players start from the creator's save
+#                            - Forgot to enter the world after its data update when the update was refused or could not start
 #                            - Stayed on the world screen with a notice instead of a plain restart for a world's downloaded mods while mods stay parked,
 #                              saying when parked mods could not be turned back on, and asked for a new start when the restart keeping them failed
 #                            - Kept the game out of a world that turns off scripts behind a link to another drive, before offering its downloads too
@@ -947,6 +948,7 @@ class Scene_MpWorlds < Scene_MenuBase
   # button does.
   def update_data
     if MGQ_MpWorld::GameData.fingerprint.empty?
+      @enter_after_data = nil
       log_screen("not updating the data of #{entry_text}: this game's data could not be read")
       refuse("Your game data could not be read.")
       return back_to_list
@@ -1037,6 +1039,7 @@ class Scene_MpWorlds < Scene_MenuBase
       look_at_list
       back_to_list
     when :update_data
+      @enter_after_data = nil
       update_data
     when :own_data
       @enter_after_data = true
@@ -1724,6 +1727,7 @@ class Scene_MpWorlds < Scene_MenuBase
     close_popups
 
     unless yield
+      @enter_after_data = nil
       log_screen("the #{kind} request could not be started")
       Sound.play_buzzer
       say(kind == "settings" ? settings_failed_text("the request could not be started. Try again in a moment.") : "The request could not be started. Try again in a moment.")

@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-10: Expected a release's Raid World form without a Save, and a development build's with its Save beside the Difficulty on one row
+#                            - Checked that an update of the data to enter with that was refused or could not start enters nothing after a later update
 #      Paulinchen  2026-10-09: Expected Sharing companions in place of the starting point in a Raid World's new world form, Turn off other mods in the
 #                              edit form, the calls of mp_dir_create and mp_dir_edit with it, and loaded world_mods_parking.rbx, which the world screen calls
 #                            - Checked that the hints of the edit forms fit two lines too
@@ -954,6 +955,32 @@ check("then hands this game's data to the DLL", [$calls.last[0], $calls.last[2],
 $dll["mp_dir_action"] = "state=done\nkind=data\n\n"
 scene.follow_action
 check("and says so once it is done", said(scene), "The data scan of Loose was updated to your game.")
+
+# An update to enter with that was refused, or could not start, enters nothing after a later update.
+[[:refused, "the game data could not be read"], [:not_started, "the request could not start"]].each do |kind, label|
+  scene = new_scene
+  scene.instance_variable_set(:@me, "c")
+  scene.instance_variable_set(:@entry, entries[1])
+  entered = []
+  scene.define_singleton_method(:on_enter) { entered << true }
+  known_maps = $data_mapinfos
+  set_data = MGQ_MpWorld::Directory.method(:set_data)
+  if kind == :refused
+    $data_mapinfos = nil
+    MGQ_MpWorld::GameData.instance_variable_set(:@fingerprint, nil)
+  else
+    MGQ_MpWorld::Directory.define_singleton_method(:set_data) { |_id| false }
+  end
+  scene.instance_variable_set(:@confirming, :own_data)
+  scene.on_confirmed
+  $data_mapinfos = known_maps
+  MGQ_MpWorld::GameData.instance_variable_set(:@fingerprint, nil)
+  MGQ_MpWorld::Directory.define_singleton_method(:set_data, set_data)
+  scene.update_data
+  $dll["mp_dir_action"] = "state=done\nkind=data\n\n"
+  scene.follow_action
+  check("when #{label} for the update to enter with, the edit form's later update enters nothing", [entered, said(scene)], [[], "The data scan of Loose was updated to your game."])
+end
 scene = new_scene
 scene.instance_variable_set(:@me, "c")
 scene.instance_variable_set(:@entry, entries[0])
