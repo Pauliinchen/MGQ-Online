@@ -2,7 +2,10 @@
 #  battles_raid_pool.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-10: Added taken_over, which the co-op battles call as a guest takes a battle over, so the damage of a battle that starts then is reported
+#      Paulinchen  2026-10-10: Told the Three Nobles of Black beaten by the castle quest's progress in Part 2 and the treasure gallery's switch in Part 3
+#                            - Gave a pooled enemy the factors of its boss's tier for its stats instead of 7.5 times its max HP, after the game's difficulty
+#                            - Named the one-time Chaos Domain bosses in the message that a boss is defeated for the whole world
+#                            - Added taken_over, which the co-op battles call as a guest takes a battle over, so the damage of a battle that starts then is reported
 #                            - Started a guest's reports from the enemies' HP as it takes the battle over, so the host's reported damage is not reported again, and kept a guest from killing enemies by its own view of the pools
 #                            - Counted a report from no more than the enemy's max HP now, so a lowered max HP reads as no damage
 #                            - Compared the DLL's line of a pool with the last one taken, so small changes in a row count once they add up
@@ -41,9 +44,6 @@
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpRaidPool
-  # How many times its own max HP a pooled enemy has.
-  RAID_SCALE = 7.5
-
   # Share of its max HP a pool gains back every minute, also while battles fight it, as the relay
   # counts it.
   REGEN_PER_MINUTE = 0.03
@@ -130,9 +130,11 @@ module MGQ_MpRaidPool
     ["Queen Mermaid", 45] => "v1071>=3",
     ["Spider Princess", 47] => "v1072>=3",
     ["Queen Vampire", 50] => "v1073>=3",
+    ["Black Dahlia, Black Mamba and Black Rose", 55] => "v1069>=9",
     ["Black Alice", 65] => "s2261",
     ["Sonya Chaos", 55] => "v1001>=34",
     ["Garuda", 60] => "v1001>=37",
+    ["Black Dahlia, Black Mamba and Black Rose", 60] => "s2435",
     ["Tamamo", 61] => "s2485",
     ["Erubetie", 62] => "s2486",
     ["Granberia", 63] => "s2487",
@@ -207,6 +209,7 @@ module MGQ_MpRaidPool
   @pools = {}
   @lines = {}
   @scaled = []
+  @scaled_troop = nil
   @announced = {}
   @pending = []
 
@@ -265,6 +268,7 @@ module MGQ_MpRaidPool
     @pools = {}
     @lines = {}
     @scaled = []
+    @scaled_troop = nil
     @announced = {}
     @pending = []
   end
@@ -393,8 +397,7 @@ module MGQ_MpRaidPool
     log("deciding on troop #{troop_id} failed: #{e.class}: #{e.message}")
   end
 
-  # Starts fighting a boss's pools: its own enemies get RAID_SCALE times their max HP and the pools'
-  # HP.
+  # Starts fighting a boss's pools: its own enemies get the stats of its tier and the pools' HP.
   #
   # @param troop [Integer] The troop.
   # @param own [Integer] How many enemies the troop's setup made.
@@ -406,7 +409,7 @@ module MGQ_MpRaidPool
     members = member_keys(key, own).each_with_index.map { |member_key, index| Member.new(member_key, index, nil, false) }
     @fight = Fight.new(key, troop_name(own), troop, new_battle_id, own, members, 0, kind == :side, kind == :guest || !reporter?)
     take_on(@fight)
-    log("battle #{@fight.battle} (#{kind}) against #{@fight.name} (troop #{troop}) fights the pool(s) #{members.map(&:key).join(', ')}: " \
+    log("battle #{@fight.battle} (#{kind}) against #{@fight.name} (troop #{troop}, tier #{MGQ_MpRaidBosses.tier(troop)}) fights the pool(s) #{members.map(&:key).join(', ')}: " \
         "#{members.map { |member| enemy_text(member) }.join(', ')}")
   end
 
@@ -485,13 +488,9 @@ module MGQ_MpRaidPool
   # @param troop_id [Integer, String] The troop.
   # @return [String, nil] The key, nil for a troop that is no story boss or a key the relay refuses.
   def self.key_of(troop_id)
-    key = FIGHTS[troop_id.to_i]
-    unless key
-      boss = MGQ_MpRaidBosses.at(troop_id)
-      return nil unless boss
+    key = FIGHTS[troop_id.to_i] || MGQ_MpRaidBosses.milestone_key(troop_id)
+    return nil unless key
 
-      key = shared_name?(boss.milestone) ? "#{boss.milestone} (cap #{boss.cap})" : boss.milestone
-    end
     key.strip == key && !key.empty? && !key.include?("#") && key.length <= MAX_KEY_LENGTH ? key : nil
   end
 
@@ -512,15 +511,6 @@ module MGQ_MpRaidPool
   def self.troop_keys(troop_id)
     key = key_of(troop_id)
     key ? member_keys(key, data_own(troop_id)) : []
-  end
-
-  # Reports whether milestones of several caps share a name.
-  #
-  # @param milestone [String] The name.
-  # @return [Boolean] Whether they do.
-  def self.shared_name?(milestone)
-    @caps ||= MGQ_MpRaidBosses::TROOPS.values.each_with_object({}) { |row, caps| (caps[row[0]] ||= []) << row[1] }
-    @caps.fetch(milestone, []).uniq.size > 1
   end
 
   # Counts the enemies the setup of the troop just set up made, which come first in the troop.
@@ -587,8 +577,8 @@ module MGQ_MpRaidPool
     "rp#{Time.now.to_i.to_s(36)}#{rand(36**8).to_s(36)}"
   end
 
-  # Readies a battle's own enemies to fight their pools: RAID_SCALE times their max HP with the share
-  # of it they had, then their pools' HP.
+  # Readies a battle's own enemies to fight their pools: their tier's stats, keeping the share of
+  # their max HP they had, then their pools' HP.
   #
   # @param fight [Fight] The battle.
   def self.take_on(fight)
@@ -596,8 +586,8 @@ module MGQ_MpRaidPool
     sync(fight)
   end
 
-  # Gives a battle's own enemies RAID_SCALE times their max HP, see max_hp, each new one keeping the
-  # share of it it had. Done again at each command phase and as a guest builds its troop anew from
+  # Gives a battle's own enemies their tier's stats, see stat, each new one keeping the share of its
+  # max HP it had. Done again at each command phase and as a guest builds its troop anew from
   # the host's (see rescale).
   #
   # @param fight [Fight] The battle.
@@ -606,11 +596,12 @@ module MGQ_MpRaidPool
     fresh = enemies.reject { |enemy| scaled?(enemy) }
     shares = fresh.map { |enemy| enemy.mhp.to_i > 0 ? enemy.hp.to_f / enemy.mhp : 1.0 }
     @scaled = enemies
+    @scaled_troop = fight.troop
     fresh.each_with_index { |enemy, index| enemy.hp = hp_of(shares[index], enemy.mhp) unless enemy.dead? }
   end
 
-  # Gives the enemies of a troop built anew in the battle that fights a pool RAID_SCALE times their
-  # max HP before the host's HP reaches them, which their own max HP would cut. Called by
+  # Gives the enemies of a troop built anew in the battle that fights a pool their tier's stats
+  # before the host's HP reaches them, which their own max HP would cut. Called by
   # MGQ_MpBattlesCoop.take_troop.
   def self.rescale
     fight = @fight
@@ -619,7 +610,7 @@ module MGQ_MpRaidPool
     log("raising the max HP of the troop built anew failed: #{e.class}: #{e.message}")
   end
 
-  # Reports whether an enemy has RAID_SCALE times its max HP.
+  # Reports whether an enemy has its tier's stats.
   #
   # @param enemy [Game_Enemy] The enemy.
   # @return [Boolean] Whether it has.
@@ -627,18 +618,21 @@ module MGQ_MpRaidPool
     @scaled.any? { |scaled| scaled.equal?(enemy) }
   end
 
-  # Finds an enemy's max HP: RAID_SCALE times its own for an enemy of a battle that fights a pool.
+  # Finds one of an enemy's stats: for an enemy of a battle that fights a pool, its own times the
+  # factor its boss's tier gives the stat (MGQ_MpRaidBosses.factor).
   #
-  # The scale is applied on every call instead of stored, since the game computes the max HP anew
-  # each time, from the difficulty and the enemy's states.
+  # The factor is applied on every call instead of stored, since the game computes the stat anew each
+  # time, from the difficulty and the enemy's states, so it always comes after the difficulty.
   #
   # @param enemy [Game_Enemy] The enemy.
-  # @param own [Integer] Its max HP as the game computes it.
-  # @return [Integer] Its max HP.
-  def self.max_hp(enemy, own)
+  # @param stat [Symbol] The stat, such as :mhp.
+  # @param own [Integer] The stat as the game computes it.
+  # @return [Integer] The stat.
+  def self.stat(enemy, stat, own)
     return own if @scaled.empty? || !scaled?(enemy)
 
-    (own * RAID_SCALE).round
+    factor = MGQ_MpRaidBosses.factor(@scaled_troop, stat)
+    factor == 1 ? own : (own * factor).round
   end
 
   # Reports whether the player's game reports the battle's pools: as its host, alone or once it
@@ -1061,7 +1055,8 @@ module MGQ_MpRaidPool
   # @param boss [String] The boss's key, see key_of.
   # @return [Integer, nil] The troop, nil for none.
   def self.troop_of_key(boss)
-    @troops_by_key ||= MGQ_MpRaidBosses::TROOPS.keys.select { |troop| MGQ_MpRaidBosses.at(troop).last }.each_with_object({}) do |troop, out|
+    bosses = MGQ_MpRaidBosses
+    @troops_by_key ||= (bosses::TROOPS.keys + bosses::OPTIONAL.keys).select { |troop| bosses.at(troop).last }.each_with_object({}) do |troop, out|
       key = key_of(troop)
       out[key] ||= troop if key
     end
@@ -1190,8 +1185,12 @@ module MGQ_MpRaidPool
   # Installs the battle hooks on methods the game's plugins may define anew, as the game starts
   # running. Installed after battles_sync_live.rbx's, so the command phase's wrap runs first.
   def self.install
-    # A pooled enemy's max HP.
-    MGQ_MpHooks.around(Game_Enemy, :mhp, "battles_raid_pool") { |enemy, _args, original| MGQ_MpRaidPool.max_hp(enemy, original.call) }
+    # A pooled enemy's max HP, and each other stat a tier changes.
+    ([:mhp] + MGQ_MpRaidBosses.tier_stats).each do |stat|
+      next log("tiers change #{stat}, which the game's enemies lack") unless Game_Enemy.method_defined?(stat)
+
+      MGQ_MpHooks.around(Game_Enemy, stat, "battles_raid_pool") { |enemy, _args, original| MGQ_MpRaidPool.stat(enemy, stat, original.call) }
+    end
 
     # As a command phase opens, the battle reports what it dealt and the enemies take their pools'
     # HP, before the guests are told it.

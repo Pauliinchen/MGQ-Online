@@ -2,6 +2,9 @@
 #  battles_raid_bosses.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-10: Counted the Three Nobles of Black, fought before Black Alice and again before the Heavenly Knights of Part 3, as raid bosses
+#                            - Ranked the raid bosses in tiers 0 to 9, each with the factors it gives their stats: 50 times the max HP and 5 times the defense and magic defense at tier 0, down to 5 times the max HP and the game's defenses at tier 9
+#                            - Counted the six one-time bosses of the Chaos Domain as raid bosses
 #      Paulinchen  2026-10-08: Created
 #
 #----------------------------------------------------------------
@@ -62,6 +65,7 @@ module MGQ_MpRaidBosses
     812 => ["Queen Vampire", 50, false],
     813 => ["Queen Vampire", 50, false],
     814 => ["Queen Vampire", 50, true],
+    836 => ["Black Dahlia, Black Mamba and Black Rose", 55, true],
     837 => ["Black Alice", 65, false],
     838 => ["Black Alice", 65, false],
     839 => ["Black Alice", 65, true],
@@ -71,6 +75,7 @@ module MGQ_MpRaidBosses
 
     # Part 3 before the Great Decision, and the Great Decision on either route.
     1451 => ["Garuda", 60, true],
+    1501 => ["Black Dahlia, Black Mamba and Black Rose", 60, true],
     1502 => ["Tamamo", 61, true],
     1503 => ["Erubetie", 62, true],
     1504 => ["Granberia", 63, true],
@@ -191,22 +196,116 @@ module MGQ_MpRaidBosses
     2219 => ["Chaos", nil, true],
   }
 
-  # Finds a story boss troop.
+  # The one-time bosses outside the story that count as raid bosses too, by troop: each its own
+  # fight of one phase under its name, without a cap, and its tier (see TIERS).
+  #
+  # The Megid Pandoras guarding several Chaos Domain maps share one troop, so they stay out.
+  OPTIONAL = {
+    2549 => ["Fourth Law", 1], 3338 => ["Null Lilith", 1], 2923 => ["Fifth Law - Nirvana", 1],
+    3127 => ["Void Image of Paradise", 1], 2410 => ["Chaos Maria", 1], 2922 => ["Fifth Law - Fallen Angel", 1],
+  }
+
+  # What each tier of raid bosses changes, tier 0 the strongest: per stat of the game's (:mhp, :mmp,
+  # :atk, :def, :mat, :mdf, :agi, :luk) the factor its enemies have, applied after the game's own
+  # difficulty. A stat a tier leaves out stays as the game has it.
+  TIERS = {
+    0 => { :mhp => 50, :def => 5.0, :mdf => 5.0 },
+    1 => { :mhp => 45, :def => 4.33, :mdf => 4.33 },
+    2 => { :mhp => 40, :def => 3.67, :mdf => 3.67 },
+    3 => { :mhp => 35, :def => 3.0, :mdf => 3.0 },
+    4 => { :mhp => 30, :def => 2.33, :mdf => 2.33 },
+    5 => { :mhp => 25, :def => 1.67, :mdf => 1.67 },
+    6 => { :mhp => 20 },
+    7 => { :mhp => 15 },
+    8 => { :mhp => 10 },
+    9 => { :mhp => 5 },
+  }
+
+  # The story's bosses of each tier, by their milestone's name (see milestone_key), in the order the
+  # story meets them. The bosses of OPTIONAL carry their tier themselves.
+  TIER_BOSSES = {
+    0 => ["Chaos"],
+    1 => ["Cosmos (cap 180)", "No Life King", "Angolmois (cap 190)", "Hiruko, Kanon and Kanade", "Baal Zebub",
+          "Seven Deadly Sins vessels", "Greedy, Envious and Slothful Eva", "Seven Deadly Sins", "The All-Knowing", "Agaliarept",
+          "Echidna Queen", "Cthulhu", "Dimensional Eroder", "Star Eater", "Black Alice (cap 245)", "Idea Lukas", "EX Sonya",
+          "Koron", "Goddess, Demon and Fiend", "World Breaker and Judgement", "Deus Ex Machina"],
+    2 => ["Kagetsumugi and her dolls (cap 125)", "Angolmois (cap 130)", "Greedy Papi, Gob, Teeny and Vanilla", "Gabriela and Kanon",
+          "Uriela", "Kanade (cap 140)", "Hiruko (cap 140)", "Magatsu-Omikami", "Apiro Lagos", "Zion and Laplace", "Sigrdrifa",
+          "Metatronne and Sandalphone, then Singularity", "Sisel, EX-Kyubi, Frere and Bloody Dragon", "Saja (cap 168)", "World Drown"],
+    3 => ["Ilias", "Chaos Ilias", "Alipheese", "Chaos Alipheese"],
+    4 => ["Heaven's Gate", "Gabriela", "Uriela, Sabiriel and Fernandez", "Sariela", "Laplace", "Metatronne and Sandalphone",
+          "Zion (three fights)", "Cosmos (cap 90)", "Aži Dahāka", "Marcellus and Black Alice", "Doppel Lukas and Lucifina", "Micaela",
+          "Queen Eva", "Malboro Girl, then Kanon", "Kanade (cap 75)", "Tamamo (cap 80)", "Tamamo (cap 83)", "Minagi and Alipheese the 10th",
+          "Kagetsumugi and her dolls (cap 90)", "Hiruko (cap 95)", "Kagetsumugi and Magatsu-Karura, then Black Alice", "Saja (cap 105)"],
+    5 => ["Sonya Chaos", "Black Dahlia, Black Mamba and Black Rose (cap 55)", "Black Alice (cap 65)", "Garuda", "Black Dahlia, Black Mamba and Black Rose (cap 60)", "Tamamo (cap 61)",
+          "Erubetie", "Granberia", "Great Decision"],
+    6 => ["Queen Elf", "Queen Mermaid", "Spider Princess", "Queen Vampire"],
+    7 => ["Alma Elma, then Granberia", "Lilith", "Salamander"],
+    8 => ["Morrigan", "Adramelech"],
+    9 => ["Four bandits", "Queen Harpy"],
+  }
+
+  # Finds a boss troop of the story or of OPTIONAL.
   #
   # @param troop_id [Integer, String] The troop.
-  # @return [Boss, nil] The troop's milestone, cap and last phase, nil for a troop that is no story
-  #   boss.
+  # @return [Boss, nil] The troop's milestone, cap and last phase, nil for a troop that is no boss.
   def self.at(troop_id)
     row = TROOPS[troop_id.to_i]
-    row && Boss.new(*row)
+    return Boss.new(*row) if row
+
+    optional = OPTIONAL[troop_id.to_i]
+    optional && Boss.new(optional[0], nil, true)
   end
 
-  # Reports whether a troop is one of the story's bosses.
+  # Finds the tier of a boss troop, see TIERS.
+  #
+  # @param troop_id [Integer, String] The troop.
+  # @return [Integer, nil] The tier, nil for a troop that is no boss.
+  def self.tier(troop_id)
+    optional = OPTIONAL[troop_id.to_i]
+    return optional[1] if optional
+
+    key = milestone_key(troop_id)
+    @tiers ||= TIER_BOSSES.each_with_object({}) { |(tier, names), tiers| names.each { |name| tiers[name] = tier } }
+    key && @tiers[key]
+  end
+
+  # Finds the name of a boss troop's milestone, with its cap where several milestones share the
+  # name, such as "Tamamo (cap 61)".
+  #
+  # @param troop_id [Integer, String] The troop.
+  # @return [String, nil] The name, nil for a troop that is no boss.
+  def self.milestone_key(troop_id)
+    boss = at(troop_id)
+    return nil unless boss
+
+    @caps ||= TROOPS.values.each_with_object({}) { |row, caps| (caps[row[0]] ||= []) << row[1] }
+    @caps.fetch(boss.milestone, []).uniq.size > 1 ? "#{boss.milestone} (cap #{boss.cap})" : boss.milestone
+  end
+
+  # Finds the factor a boss troop's tier gives one of its enemies' stats.
+  #
+  # @param troop_id [Integer, String] The troop.
+  # @param stat [Symbol] The stat, such as :mhp.
+  # @return [Numeric] The factor, 1 for a stat the tier leaves as it is or a troop that is no boss.
+  def self.factor(troop_id, stat)
+    tier = tier(troop_id)
+    tier ? TIERS.fetch(tier, {}).fetch(stat, 1) : 1
+  end
+
+  # Lists the stats any tier changes besides max HP, whose methods the raid pool then wraps.
+  #
+  # @return [Array<Symbol>] The stats.
+  def self.tier_stats
+    TIERS.values.map(&:keys).flatten.uniq - [:mhp]
+  end
+
+  # Reports whether a troop is one of the story's bosses or of OPTIONAL.
   #
   # @param troop_id [Integer, String] The troop.
   # @return [Boolean] Whether it is.
   def self.boss?(troop_id)
-    TROOPS.key?(troop_id.to_i)
+    TROOPS.key?(troop_id.to_i) || OPTIONAL.key?(troop_id.to_i)
   end
 
   # Reports whether a troop is the last phase of its boss fight, reading the side's switch where

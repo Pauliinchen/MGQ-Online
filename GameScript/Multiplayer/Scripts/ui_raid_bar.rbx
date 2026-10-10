@@ -224,7 +224,7 @@ module MGQ_MpRaidBar
         hp += pool.hp_of(pool.left_now(known, now), known.max.to_i)
         max += known.max.to_i
       else
-        full = raid_max(enemies[index])
+        full = raid_max(enemies[index], troop)
         hp += known ? pool.hp_of(pool.left_now(known, now), full) : full
         max += full
       end
@@ -241,17 +241,18 @@ module MGQ_MpRaidBar
     data ? data.members.map { |member| member.enemy_id }.select { |id| $data_enemies[id] } : []
   end
 
-  # Finds the max HP an enemy has in a battle that fights its pool: MGQ_MpRaidPool::RAID_SCALE
-  # times its own at the player's difficulty, kept while the difficulty stays.
+  # Finds the max HP an enemy has in a battle that fights its pool: its own at the player's
+  # difficulty, kept while the difficulty stays, times the factor of its boss's tier.
   #
   # @param enemy_id [Integer, nil] The enemy.
+  # @param troop [Integer] The boss's troop.
   # @return [Integer] The max HP, 0 for none.
-  def self.raid_max(enemy_id)
+  def self.raid_max(enemy_id, troop)
     return 0 unless enemy_id
 
     key = [enemy_id, $game_variables[DIFFICULTY_VARIABLE]]
     @base_hp[key] ||= own_max(enemy_id)
-    (@base_hp[key] * MGQ_MpRaidPool::RAID_SCALE).round
+    (@base_hp[key] * MGQ_MpRaidBosses.factor(troop, :mhp)).round
   end
 
   # Finds an enemy's own max HP at the player's difficulty, as the game computes it in battle, or

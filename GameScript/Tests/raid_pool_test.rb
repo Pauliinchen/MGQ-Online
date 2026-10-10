@@ -2,7 +2,10 @@
 #  raid_pool_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-10: Covered a takeover the co-op battles tell as it happens, which reports the damage of the battle's start that follows
+#      Paulinchen  2026-10-10: Checked that the keys of the Three Nobles of Black carry their caps
+#                            - Covered the boss tiers, their max HP, defense and magic defense factors and the factors they give the stats of pooled enemies
+#                            - Covered the one-time Chaos Domain bosses, which fight pools of their own
+#                            - Covered a takeover the co-op battles tell as it happens, which reports the damage of the battle's start that follows
 #                            - Covered a guest that takes the battle over after the host reported an action, and a guest that never kills the boss by its own view of the pool
 #                            - Covered a boss whose max HP changes, small changes of the DLL's line in a row and the Hades rematch hall
 #                            - Covered a boss whose max HP changes
@@ -217,6 +220,9 @@ end
 
 load_script "battles_raid_bosses"
 load_script "battles_raid_pool"
+# The battles below count on 7.5 times the max HP in every tier; the real tiers are checked on their own.
+REAL_TIERS = MGQ_MpRaidBosses::TIERS.dup
+MGQ_MpRaidBosses::TIERS.replace(REAL_TIERS.keys.each_with_object({}) { |tier, tiers| tiers[tier] = { :mhp => 7.5 } })
 
 pool = MGQ_MpRaidPool
 SceneManager.run
@@ -312,7 +318,8 @@ keys = MGQ_MpRaidBosses::TROOPS.keys.select { |troop| MGQ_MpRaidBosses.at(troop)
 check("every last phase has a key the relay takes, with room for an enemy's place", keys.select { |key, _, _| key.nil? }, [])
 shared = keys.group_by { |key, _, _| key }.select { |_, list| list.map { |_, milestone, cap| [milestone, cap] }.uniq.size > 1 }.keys
 check("no two milestones share a pool", shared, [])
-check("a name several milestones share carries the cap", [pool.key_of(1502), pool.key_of(1807), pool.key_of(71)], ["Tamamo (cap 61)", "Tamamo (cap 80)", "Queen Harpy"])
+check("a name several milestones share carries the cap", [pool.key_of(1502), pool.key_of(1807), pool.key_of(71), pool.key_of(836), pool.key_of(1501)],
+      ["Tamamo (cap 61)", "Tamamo (cap 80)", "Queen Harpy", "Black Dahlia, Black Mamba and Black Rose (cap 55)", "Black Dahlia, Black Mamba and Black Rose (cap 60)"])
 check("a fight of a free order has a pool of its own", [pool.key_of(2017), pool.key_of(2099)], ["EX-Kyubi", "Lustful Witch"])
 check("a boss of several enemies has a pool per enemy", pool.troop_keys(1599), ["Metatronne and Sandalphone#0", "Metatronne and Sandalphone#1"])
 check("a boss of one enemy has one pool under its key", pool.troop_keys(71), ["Queen Harpy"])
@@ -323,12 +330,46 @@ $game_variables[1142] = 25
 check("then the test holds", pool.met?("s2594&v1142>=25"), true)
 check("any alternative may hold", [pool.met?("v1141>=1|v1142>=1"), pool.met?("v1141>=1|v1143>=1")], [true, false])
 
+# A one-time boss outside the story fights a pool of its own under its name.
+reset
+check("a one-time Chaos Domain boss is a boss of one phase without a cap", [MGQ_MpRaidBosses.boss?(3127), MGQ_MpRaidBosses.last_phase?(3127), MGQ_MpRaidBosses.at(3127).cap], [true, true, nil])
+check("its pool goes by its name", [pool.key_of(3127), pool.pooled_troop?(3127), pool.troop_of_key("Void Image of Paradise")], ["Void Image of Paradise", true, 3127])
+check("and no name of the story table or of another boss", (MGQ_MpRaidBosses::OPTIONAL.values.map(&:first) & (MGQ_MpRaidBosses::TROOPS.values.map(&:first) + pool::FIGHTS.values)), [])
+start([[:battle, 3127], [:mark, :after]])
+check("its event battle fights that pool with 7.5 times the max HP", [pool.fight && pool.fight.key, enemy.mhp], ["Void Image of Paradise", 7500])
+
 # A story boss's last phase fights its pool with RAID_SCALE times the max HP.
 reset
 start([[:var, 1001, 40], [:battle, 71], [:mark, :after]])
 fight = pool.fight
 check("a story boss's last phase fights its pool, even after the event moved the story", [$game_party.in_battle, fight && fight.key, fight && fight.own], [true, "Queen Harpy", 1])
 check("its enemy has 7.5 times its max HP, all of it", [enemy.mhp, enemy.hp], [6000, 6000])
+bosses = MGQ_MpRaidBosses
+check("each boss has the tier its list names, tier 0 the strongest",
+      [bosses.tier(71), bosses.tier(752), bosses.tier(1725), bosses.tier(1807), bosses.tier(2188), bosses.tier(2219), bosses.tier(3127), bosses.tier(31)],
+      [9, 7, 3, 4, 1, 0, 1, nil])
+check("a shared name tells the milestones apart by their cap", [bosses.milestone_key(1502), bosses.milestone_key(71), bosses.milestone_key(3127)],
+      ["Tamamo (cap 61)", "Queen Harpy", "Void Image of Paradise"])
+check("every boss has a tier the table holds", (bosses::TROOPS.keys + bosses::OPTIONAL.keys).reject { |troop| bosses::TIERS.key?(bosses.tier(troop)) }, [])
+names = bosses::TIER_BOSSES.values.flatten
+check("the tier lists name each milestone once and none the table lacks",
+      [names.size - names.uniq.size, names - bosses::TROOPS.keys.map { |troop| bosses.milestone_key(troop) }], [0, []])
+check("tiers name only stats the game has", bosses::TIERS.values.map(&:keys).flatten.uniq - [:mhp, :mmp, :atk, :def, :mat, :mdf, :agi, :luk], [])
+check("a tier gives max HP its factor and leaves the stats it does not name", [bosses.factor(71, :mhp), bosses.factor(71, :atk), bosses.factor(31, :mhp)], [7.5, 1, 1])
+kept = bosses::TIERS[9]
+bosses::TIERS[9] = kept.merge(:atk => 2)
+check("another stat a tier names takes its factor after the game computed it", [pool.stat(enemy, :atk, 101), pool.stat(Game_Enemy.new(0, 6), :atk, 101)], [202, 101])
+check("and the max HP its own", pool.stat(enemy, :mhp, 800), 6000)
+bosses::TIERS[9] = kept
+bosses::TIERS.replace(REAL_TIERS)
+check("the real tiers: 50 times the max HP at tier 0, 5 less each tier down to 5 times at tier 9",
+      (0..9).map { |tier| bosses::TIERS[tier][:mhp] }, [50, 45, 40, 35, 30, 25, 20, 15, 10, 5])
+check("and 5 times the defense and magic defense at tier 0, falling evenly to the game's own from tier 6 on",
+      [:def, :mdf].map { |stat| (0..9).map { |tier| bosses::TIERS[tier].fetch(stat, 1) } }, [[5.0, 4.33, 3.67, 3.0, 2.33, 1.67, 1, 1, 1, 1]] * 2)
+check("so Chaos, Chaos Ilias and Queen Harpy get these", [[2219, 1725, 71].map { |troop| bosses.factor(troop, :mhp) }, [2219, 1725, 71].map { |troop| bosses.factor(troop, :def) }],
+      [[50, 35, 5], [5.0, 3.0, 1]])
+check("which wraps both defenses of the game's enemies too", bosses.tier_stats, [:def, :mdf])
+bosses::TIERS.replace(REAL_TIERS.keys.each_with_object({}) { |tier, tiers| tiers[tier] = { :mhp => 7.5 } })
 check("its battle id is one the relay takes", fight.battle =~ /\A[a-z0-9]{3,64}\z/ ? true : false, true)
 $scene.start_party_command_selection
 check("a command phase without word from the relay keeps the HP", enemy.hp, 6000)
