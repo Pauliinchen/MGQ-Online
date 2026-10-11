@@ -2,7 +2,8 @@
 #  Multiplayer.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Loaded ui_theme.rbx and ui_layout.rbx after ui.rbx, the interface presets and the boxes the player moves and resizes
+#      Paulinchen  2026-10-11: Loaded world_opening.rbx after world_catchup.rbx, which runs a new game's opening setup without its scene in a Raid World past it
+#                            - Loaded ui_theme.rbx and ui_layout.rbx after ui.rbx, the interface presets and the boxes the player moves and resizes
 #                            - Kept the mouse's clicks from the mod's screens while the left Alt is held, which moves and resizes the boxes instead
 #                            - Loaded ui_edge_arrows.rbx, the arrows toward the players off the screen, after ui_party_box.rbx
 #      Paulinchen  2026-10-10: Named mp_dev_build, which tells a development build from a release
@@ -123,7 +124,7 @@ module MGQ_Multiplayer
   SCRIPTS = %w[
     core_log core_hooks core_game_access core_hotkeys ui ui_theme ui_layout ui_text_box core_actors core_async overworld_sync ui_wheel ui_actions ui_chat ui_emotes overworld
     coop coop_scope coop_squad coop_events coop_gather coop_teleport coop_scene coop_npcs coop_story_rewards story_state coop_story coop_castle
-    world world_mods world_mods_parking world_catchup_data world_story world_catchup world_difficulty world_save_distribution world_text world_screen world_save_export coop_choices
+    world world_mods world_mods_parking world_catchup_data world_story world_catchup world_opening world_difficulty world_save_distribution world_text world_screen world_save_export coop_choices
     battles battles_raid_bosses battles_coop battles_coop_hotjoin battles_coop_join battles_raid_pool battles_coop_level_sync
     battles_sync battles_sync_wire battles_sync_recorder battles_sync_playback battles_sync_live
     battles_balance_pvp battles_pvp battles_pvp_backline battles_pvp_mirror battles_pvp_lobby battles_duel battles_team

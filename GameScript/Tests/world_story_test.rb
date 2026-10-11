@@ -2,6 +2,7 @@
 #  world_story_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-11: Checked that the world's story waits for a new game's opening setup and is laid over the story it made
 #      Paulinchen  2026-10-10: Checked that no write goes out between the story's events on another map while its next event may go on with the telling
 #                            - Stood in for MGQ_MpCoopEvents.telling_or_moved?
 #                            - Checked that a world story before a route the player started themselves is no return to the Great Decision,
@@ -963,5 +964,24 @@ frames(16)
 frames(400)
 check("a new game in a world started from a save is behind its story and writes nothing",
       [story.mode, $game_variables[1001], calls_of("mp_raid_story_post")], [:behind, 0, []])
+
+# A new game in a world past the opening: the world's story waits while the opening's setup runs
+# (world_opening.rbx), then is laid over the story the setup made.
+module MGQ_MpWorldOpening; def self.before_take(_world); $opening.shift; end; end
+$opening = [:wait, :wait, :opened]
+$calls.clear
+new_story({ 1001 => 0 })
+story.loaded(:new_game)
+frames(1)
+relay({ "world" => "w2", "rev" => 5, "wrev" => 5, "p" => 7, "part" => "1", "fetch" => "done" }, packed({ 1001 => 7 }, [320]))
+frames(2)
+check("the world's story waits while the opening's setup runs", [story.mode, $game_variables[1001]], [nil, 0])
+$game_variables[1001] = 0
+$game_variables[152] = 5
+frames(16)
+frames(400)
+check("then it is laid over the story the setup made, whose values are no own change of the player's",
+      [story.mode, $game_variables[1001], $game_variables[152], calls_of("mp_raid_story_post")], [:world, 7, 0, []])
+$opening = []
 MGQ_MpWorld.world = nil
 frames(1)

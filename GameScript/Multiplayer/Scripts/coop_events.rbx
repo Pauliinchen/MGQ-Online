@@ -2,7 +2,8 @@
 #  coop_events.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Told the party the dialogue of the common events the story calls, which the game runs in a child interpreter, such as the companions' lines
+#      Paulinchen  2026-10-11: Kept a new game's opening from starting while its setup runs without its scene in a Raid World past it
+#                            - Told the party the dialogue of the common events the story calls, which the game runs in a child interpreter, such as the companions' lines
 #                            - Left a page of the leader's story a moment to read once the leader moved past it, confirm or the game's skip held reading on sooner, and left out only the oldest pages past three waiting, instead of every page the leader moved past, and gave way to whatever waits for the player to be free and lapses meanwhile, the story's follow and a battle's invite, which the pages kept from happening
 #                            - Kept a page of the leader's story the game's own transfer process starts under instead of cutting it short
 #                            - Watched a page sorted as travel whose story lies behind a choice as a talk is watched, so the Great Decision tells its story from the choice on and takes the players on the map along
@@ -934,13 +935,15 @@ module MGQ_MpCoopEvents
   # In a Raid World only while another player tells the story on the map, while the player follows
   # a teller's story to where it moved them (held_following), while the player's story is behind
   # the world's (held_behind), or until the world's story came (awaits_world_story). Called when the
-  # map's main event would start it.
+  # map's main event would start it. A new game's opening never starts while world_opening.rbx runs
+  # its setup without its scene.
   #
   # An event that runs by itself is left to the teller's own game, which runs it on its map.
   #
   # @param event [Game_Event] The event.
   # @return [Boolean] Whether it is the teller's, so it must not run here.
   def self.hand_over(event)
+    return true if defined?(MGQ_MpWorldOpening) && MGQ_MpWorldOpening.holds?(event)
     return awaits_world_story(event) if defined?(MGQ_MpWorldStory) && MGQ_MpWorldStory.awaits_world? && !own? && kind(event) == :story
     return held_behind(event) if behind? && !own? && kind(event) == :story
 

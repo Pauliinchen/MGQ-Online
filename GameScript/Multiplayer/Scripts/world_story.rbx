@@ -2,7 +2,8 @@
 #  world_story.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Took a route the player chose at the Great Decision the world stands at as further than the decision, which a world that finished every route ranked below it and so pulled the player back to the decision
+#      Paulinchen  2026-10-11: Laid the world's story over a new game only after its opening's setup ran without its scene, which put the story back to its start when it ran afterwards, and counted the player's own changes from the story it set up
+#                            - Took a route the player chose at the Great Decision the world stands at as further than the decision, which a world that finished every route ranked below it and so pulled the player back to the decision
 #                            - Opened every route at the Great Decision again once the world finished all of them, as the relay does
 #                            - Kept the player's story events waiting for the world's story for ten seconds at most after the world opened or a save loaded, so their own story no longer plays before the world's is laid over it
 #                            - Took the story values a teller's scene laid over the player's as the world's, so they are not written as the player's own
@@ -579,8 +580,14 @@ module MGQ_MpWorldStory
   end
 
   # Lays the world's story that waits over the player's, or keeps the player's own, see the module.
-  # A step the relay refused (pending[:drop]) is never written again as it was.
+  # A step the relay refused (pending[:drop]) is never written again as it was. A new game's opening
+  # that the world's story is past runs its setup first (world_opening.rbx); the story it set up is
+  # the one the player's own changes count from.
   def self.take_pending
+    opening = defined?(MGQ_MpWorldOpening) ? MGQ_MpWorldOpening.before_take(counters_of(@pending[:state])) : nil
+    return if opening == :wait
+
+    @entry_story = entry_story if opening == :opened
     @awaited_since = nil
     pending = @pending
     state = pending[:state]
