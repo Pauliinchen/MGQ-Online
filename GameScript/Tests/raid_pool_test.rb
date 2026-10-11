@@ -2,17 +2,17 @@
 #  raid_pool_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-11: Covered the readers the World overview uses: the pools as a copy, the share left now, a troop's label and a pool's boss key
 #      Paulinchen  2026-10-10: Checked that the keys of the Three Nobles of Black carry their caps
-#                            - Covered the boss tiers, their max HP, defense and magic defense factors and the factors they give the stats of pooled enemies
-#                            - Covered the one-time Chaos Domain bosses, which fight pools of their own
 #                            - Covered a takeover the co-op battles tell as it happens, which reports the damage of the battle's start that follows
 #                            - Covered a guest that takes the battle over after the host reported an action, and a guest that never kills the boss by its own view of the pool
-#                            - Covered a boss whose max HP changes and the Hades rematch hall
 #                            - Covered a boss whose max HP changes, small changes of the DLL's line in a row and the Hades rematch hall
 #                            - Covered the side battles' rewards once per boss, their troop's pages left out, side_battle? and the guests of a side battle
 #                            - Covered the pools' HP every few seconds while a battle waits for commands
 #                            - Covered the bosses' titles
 #                            - Covered the reports as a battle's actions end, a few seconds apart
+#                            - Covered the boss tiers, their max HP, defense and magic defense factors and the factors they give the stats of pooled enemies
+#                            - Covered the one-time Chaos Domain bosses, which fight pools of their own
 #                            - Covered the shared fight against a raid boss's pools instead of the kills and the boss that falls back: the raised max HP, the reports and the pools' HP at each command phase (with the damage of the turn end and battle start, refused reports and word older than the player's own reports), the kills by the relay, the guests, the side battles and the pushes
 #      Paulinchen  2026-10-09: Covered the share of a kill and the boss's name that count only the troop's own enemies, never those added mid-battle
 #                            - Covered the boss fights whose events change the party, which fall back with the party as it was
@@ -885,3 +885,13 @@ BattleManager.battle_end(1)
 pool.note_invite("troop" => "71", "pool" => "1")
 BattleManager.setup(71)
 check("a guest of a boss's event battle does not", [pool.fight.side, BattleManager.enable_get_exp?], [false, true])
+
+# The readers the World overview uses.
+reset
+push("Queen Harpy", "0.4", "6000")
+pools = pool.pools
+check("pools lists what the relay told, by key", [pools.keys, pools["Queen Harpy"].left, pools["Queen Harpy"].max], [["Queen Harpy"], 0.4, 6000])
+pools["Other"] = :nothing
+check("as a copy, so a reader changes nothing", pool.pools.keys, ["Queen Harpy"])
+check("the share left now, a troop's label and a pool's boss key stay readable from outside",
+      [pool.left_now(pools["Queen Harpy"]), pool.troop_label(71), pool.boss_key("Metatronne and Sandalphone#1")], [0.4, "Queen Harpy", "Metatronne and Sandalphone"])

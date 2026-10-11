@@ -2,6 +2,11 @@
 #  world_overview_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-11: Left the map box's size hint out of the texts read, as the pings are
+#                            - Read the small party box's left, which its motion places, instead of its x, and compared its green against the shared style's member color
+#                            - Checked the World page: turning with the arrows and the tabs, a cancel held with a click on a tab, its rows in a Classic and a Raid World, the raid bosses from their pools, a share rounded, scrolling, the title with the type and difficulty, the hint, a boss's row and the Players tab's mark while a call waits
+#                            - Checked the confirm box before leaving the party and removing a member, that the overview waits while it asks, and that yes leaves no party that dissolved under the box
+#                            - Stood in for the open world, its difficulty, its story and the raid bosses' pools, and for pictures
 #      Paulinchen  2026-10-10: Expected the teleport to the party's leader in a member's menu, in place of the line that they are in the party
 #                            - Named the map box's players outside the party with placeholders
 #                            - Named the party member in the checks with a placeholder
@@ -23,19 +28,63 @@
 
 # Covers the World overview, world_overview.rbx: what the player tells the others (place,
 # highest companion level, place in the story), the list by place, opening with F11 and the
-# wheel, the arrows, the menu of a player, the mouse, the places the party box shortens, and the
-# map box that replaces the party box in a Raid World.
+# wheel, the arrows, the menu of a player, the mouse, the places the party box shortens, the
+# map box that replaces the party box in a Raid World, the World page with the world's rows and
+# its raid bosses, and the confirm box before leaving the party or removing a member.
 
 require_relative "world_support"
 
-# Stand-ins for the mouse, the open world and the game's data.
+# Stand-ins for the mouse, the open world, its difficulty, its story as the relay told it, the
+# raid bosses' pools, pictures and the game's data.
 module MGQ_Multiplayer
   module Mouse
     def self.position; $mouse; end
     def self.clicked?; c = $click; $click = false; c; end
   end
 end
-module MGQ_MpWorld; def self.world; Struct.new(:name).new("Test World"); end; end
+World = Struct.new(:name, :seats)
+$world = World.new("Test World", 8)
+module MGQ_MpWorld
+  DIFFICULTY_NAMES = ["VERY EASY", "EASY", "NORMAL", "HARD", "VERY HARD", "HELL", "PARADOX"]
+  def self.world; $world; end
+  def self.raid?; $raid; end
+  def self.difficulty_name(value); value ? DIFFICULTY_NAMES[value + 2] : nil; end
+end
+module MGQ_MpWorldDifficulty; def self.value; $difficulty; end; end
+module MGQ_MpWorldStory
+  ROUTES = %w(ad mr chaos)
+  ROUTE_VARIABLES = [1141, 1142, 1143]
+  def self.world; $world_story; end
+  def self.part_of(counters); counters["part"]; end
+end
+$pools = {}
+module MGQ_MpRaidPool
+  Pool = Struct.new(:left, :max, :defeated, :by, :at)
+  def self.pools; $pools.dup; end
+  def self.boss_key(key); key.sub(/#\d+\z/, ""); end
+  def self.left_now(pool, _now = Time.now); pool.defeated ? 0.0 : pool.left; end
+end
+load_script "battles_raid_bosses"
+class Sprite
+  attr_accessor :bitmap, :x, :y, :z, :ox, :oy, :opacity, :visible
+  def dispose; @disposed = true; end
+  def disposed?; @disposed ? true : false; end
+end
+# A picture that records what it draws, measuring each character at half the font's size.
+class Bitmap
+  Font = Struct.new(:size, :color, :bold, :outline, :out_color)
+  attr_reader :width, :height, :font, :drawn
+  def initialize(width, height); @width = width; @height = height; @font = Font.new(24, nil, false, false, nil); @drawn = []; end
+  def rect; Rect.new(0, 0, @width, @height); end
+  def text_size(text); Rect.new(0, 0, text.to_s.size * @font.size / 2, @font.size); end
+  def draw_text(x, y, width, height, text, align = 0); @drawn << [:text, text, @font.color, x, width, align]; end
+  def fill_rect(*args); @drawn << [:fill, args]; end
+  def stretch_blt(*_); end
+  def clear; @drawn.clear; end
+  def dispose; @disposed = true; end
+  def disposed?; @disposed ? true : false; end
+  def texts; @drawn.select { |kind, _| kind == :text }.map { |_, text, _| text }; end
+end
 # A character, whose levels the game keeps as a Hash of base, class and race level.
 Actor = Struct.new(:base_level, :luca) do
   def luca?; luca; end
@@ -164,7 +213,7 @@ $pressed = 0x7A
 overview.on_map
 overview.on_map
 box = Sprite_MpWorldOverview::BOX
-$mouse = [box.x + 100, box.y + Sprite_MpWorldOverview::TITLE + Sprite_MpWorldOverview::ROW * 4 + 5]
+$mouse = [box.x + 100, box.y + Sprite_MpWorldOverview::LIST_TOP + Sprite_MpWorldOverview::ROW * 4 + 5]
 overview.on_map
 check("pointing picks a player", overview.view[:selected], 4)
 $click = true
@@ -189,12 +238,13 @@ check("Tab makes it small, which Player.ini keeps", [MGQ_MpPartyBox.small?, $pla
 MGQ_MpPartyBox.instance_variable_set(:@small, nil)
 check("so it is small again after a restart", MGQ_MpPartyBox.small?, true)
 drawn = []
-font = Struct.new(:color, :size, :outline).new
+font = Struct.new(:color, :size, :outline, :bold, :out_color).new
 canvas = Object.new
 canvas.define_singleton_method(:font) { font }
 canvas.define_singleton_method(:clear) {}
 canvas.define_singleton_method(:fill_rect) { |*args| drawn << [:fill, args[2]] }
-canvas.define_singleton_method(:stretch_blt) { |*_| drawn << [:crown] }
+canvas.define_singleton_method(:text_size) { |text| Rect.new(0, 0, text.to_s.size * 8, 16) }
+canvas.define_singleton_method(:stretch_blt) { |_dest, _set, rect, *_| drawn << (rect == MGQ_MpUi.icon_rect(MGQ_MpOverworld::CROWN_ICON) ? [:crown] : [:icon]) }
 canvas.define_singleton_method(:draw_text) { |_x, _y, _w, _h, text, *_| drawn << [:text, text] }
 module Cache; def self.system(_name); nil; end; end
 module Graphics; def self.width; 640; end; end
@@ -203,7 +253,7 @@ class << box; attr_accessor :x, :y; end
 box.define_singleton_method(:bitmap) { canvas }
 box.draw_small(overview.party_rows)
 check("small, it lists only the crown, the names and the pings, in a narrower box at the top right",
-      [box.x, drawn.first, drawn.select { |kind, _| kind == :crown }.size, drawn.select { |kind, _| kind == :text }.map(&:last).reject { |text| text.end_with?("ms") }],
+      [box.instance_variable_get(:@left), drawn.first, drawn.select { |kind, _| kind == :crown }.size, drawn.select { |kind, _| kind == :text }.map(&:last).reject { |text| text.end_with?("ms") }],
       [640 - Sprite_MpPartyBox::SMALL_WIDTH - Sprite_MpPartyBox::MARGIN, [:fill, Sprite_MpPartyBox::SMALL_WIDTH], 1, ["Friend", "Me"]])
 MGQ_MpChat.start_typing
 $pressed = MGQ_MpHotkeys.code(:party_box)
@@ -248,7 +298,6 @@ MGQ_MpOverworldSync.tick
 check("the leader may remove a member", MGQ_MpCoop::Offers.peer_option(member_peer).text, "Remove from party")
 
 # The map box of a Raid World.
-module MGQ_MpWorld; def self.raid?; $raid; end; end
 # A team within four, which coop_squad.rbx keeps as it is in a Raid World.
 def $game_party.in_battle; false; end
 def $game_party.temp_actors_use?; false; end
@@ -289,23 +338,25 @@ check("only the party's leader keeps a crown, and every other player shows their
 check("the box follows the world's type", MGQ_MpPartyBox.map_box?, true)
 
 drawn = []
-font = Struct.new(:color, :size, :outline).new
+font = Struct.new(:color, :size, :outline, :bold, :out_color).new
 canvas = Object.new
 canvas.define_singleton_method(:font) { font }
 canvas.define_singleton_method(:clear) { drawn.clear }
 canvas.define_singleton_method(:fill_rect) { |*args| drawn << [:fill, args[2], args[3]] }
-canvas.define_singleton_method(:stretch_blt) { |*_| drawn << [:crown] }
+canvas.define_singleton_method(:text_size) { |text| Rect.new(0, 0, text.to_s.size * 8, 16) }
+canvas.define_singleton_method(:stretch_blt) { |_dest, _set, rect, *_| drawn << (rect == MGQ_MpUi.icon_rect(MGQ_MpOverworld::CROWN_ICON) ? [:crown] : [:icon]) }
 canvas.define_singleton_method(:draw_text) { |_x, _y, _w, _h, text, *_| drawn << [:text, text, font.color] }
 map_box = Sprite_MpPartyBox.allocate
 class << map_box; attr_accessor :x, :y; end
 map_box.define_singleton_method(:bitmap) { canvas }
-texts = lambda { drawn.select { |kind, _| kind == :text }.map { |_, text, _| text }.reject { |text| text.end_with?("ms") } }
-green = lambda { |name| drawn.find { |kind, text, _| kind == :text && text == name }[2].equal?(Sprite_MpWorldOverview::MEMBER_COLOR) }
+size_hint = Sprite_MpPartyBox::SIZE_HINT % MGQ_MpHotkeys.label(:party_box)
+texts = lambda { drawn.select { |kind, _| kind == :text }.map { |_, text, _| text }.reject { |text| text.end_with?("ms") || text == size_hint } }
+green = lambda { |name| drawn.find { |kind, text, _| kind == :text && text == name }[2].equal?(MGQ_MpUi::Style::MEMBER) }
 row_height = Sprite_MpPartyBox::ROW
 map_box.draw_map(map_rows)
 check("it is titled with how many are on the map, a line each and no place", [texts.call, drawn.first],
       [["Map 4", "Me", "Lv 40", "member", "Lv 33", "loner", "", "Stranger", "Lv 20"], [:fill, Sprite_MpPartyBox::WIDTH, row_height * 5 + 4]])
-check("party members are green, the others not", %w[Me member loner Stranger].map { |name| green.call(name) }, [true, true, false, false])
+check("party members are green, the player's own line and the others not", %w[Me member loner Stranger].map { |name| green.call(name) }, [false, true, false, false])
 crowd = map_rows * 3
 map_box.draw_map(crowd)
 check("past ten lines it lists nine and says how many more", [texts.call.first, texts.call.size, texts.call.last, drawn.first[2]],
@@ -329,6 +380,185 @@ check("alone on the map there is no box, and its key says why", [overview.map_ro
 MGQ_MpCoop::Scope.define_singleton_method(:peers_here, peers_here)
 $raid = false
 check("back in a Classic world the party box lists the party alone", overview.party_rows.map(&:name), ["Me", "member"])
+# The World page, turned with the arrows.
+$mouse = nil
+$buttons.clear
+$pressed = 0x7A
+overview.on_map
+overview.on_map
+check("the overview opens on the Players page", [overview.page, overview.view[:page]], [:players, :players])
+$buttons << :RIGHT
+overview.on_map
+online = overview.rows.size
+check("Right turns to the World page, which in a Classic world tells the world's name, type, difficulty and players",
+      [overview.page, overview.view[:page], overview.view[:lines]],
+      [:world, :world, [[:info, "World", "Test World"], [:info, "Type", "Classic"], [:info, "Difficulty", "Per player"], [:info, "Players", "#{online} / 8"]]])
+$buttons << :RIGHT
+overview.on_map
+check("past the last page it comes round to the first", overview.page, :players)
+$buttons << :LEFT
+overview.on_map
+check("and Left turns back", overview.page, :world)
+
+# A Raid World with a difficulty, a story and pools.
+$raid = true
+$difficulty = 1
+$world_story = { "part" => "2" }
+overview.on_map
+lines = overview.view[:lines]
+check("a Raid World tells its difficulty and its story, then heads its raid bosses",
+      lines[2..5], [[:info, "Difficulty", "Hard"], [:info, "Players", "#{online} / 8"], [:info, "Story", "Part 2"], [:place, "Raid bosses"]])
+bosses = lines[6..-1].map { |_, boss| boss }
+all_bosses = MGQ_MpRaidBosses::TIER_BOSSES.keys.sort.map { |tier| MGQ_MpRaidBosses::TIER_BOSSES[tier] }.flatten
+check("every raid boss of the story follows, the strongest tier first in the story's order, untouched while the relay told no pool",
+      [bosses.map(&:name), bosses.first.to_a, bosses.last.to_a], [all_bosses, ["Chaos", 0, 1.0, false, nil], ["Queen Harpy", 9, 1.0, false, nil]])
+check("the title says the type and the difficulty after the world's name", [overview.world_name, overview.title_tail], ["Test World", " | Raid | Hard"])
+$difficulty = nil
+check("without a difficulty the type alone", overview.title_tail, " | Raid")
+$difficulty = 1
+$world_story = { "part" => "mr" }
+check("the world's route is named as the player's own, through the variable that counts it", overview.world_story_text, "Part 3: Destroyer route")
+$data_system.variables[1143] = "混沌ルート進行度"
+$world_story = { "part" => "chaos" }
+check("so is the Chaos route", overview.world_story_text, "Part 3: Chaos route")
+$world_story = nil
+check("before the relay told the story", overview.world_story_text, "Not told yet")
+$world_story = { "part" => "2" }
+told = Time.at(1_000_000)
+pool = MGQ_MpRaidPool::Pool
+$pools = { "Queen Harpy" => pool.new(0.4, 6000, false, "Player A", told), "Four bandits" => pool.new(0.0, 6000, true, "Player B", told),
+           "Metatronne and Sandalphone#0" => pool.new(0.5, 9000, false, "Player C", told), "Metatronne and Sandalphone#1" => pool.new(1.0, 9000, false, "Player D", told + 1),
+           "Fourth Law" => pool.new(0.25, 1, false, "", told) }
+bosses = overview.bosses
+boss_named = lambda { |name| bosses.find { |boss| boss.name == name } }
+check("a pool tells a boss's share left and who last hurt it", boss_named.call("Queen Harpy").to_a, ["Queen Harpy", 9, 0.4, false, "Player A"])
+check("an empty pool tells it defeated", boss_named.call("Four bandits").to_a[2..4], [0.0, true, "Player B"])
+check("a boss of several enemies shares its pools' HP, hurt last by whoever hurt the pool told of last", boss_named.call("Metatronne and Sandalphone").to_a[2..4], [0.75, false, "Player D"])
+check("a one-time boss the relay told a pool of follows the story's, with its own tier and nobody known to have hurt it",
+      [bosses.last.to_a, bosses.size], [["Fourth Law", 1, 0.25, false, nil], all_bosses.size + 1])
+check("the share is written in percent, rounded, never 0% while any is left", %w[1.0 0.4 0.55 0.07 0.001 0.0].map { |left| overview.share_text(left.to_f) }, ["100%", "40%", "55%", "7%", "1%", "0%"])
+
+# Scrolling the World page, and its tabs.
+overview.on_map
+$buttons << :DOWN
+overview.on_map
+check("Down scrolls the World page", overview.view[:scroll], 1)
+most = overview.view[:lines].size - Sprite_MpWorldOverview::LIST_ROWS
+100.times { $buttons << :DOWN; overview.on_map }
+check("no further than the last line in sight", overview.view[:scroll], most)
+$buttons << :UP
+overview.on_map
+check("and Up scrolls back", overview.view[:scroll], most - 1)
+box = Sprite_MpWorldOverview::BOX
+tab_y = box.y + Sprite_MpWorldOverview::TITLE + 5
+tab_step = Sprite_MpWorldOverview::TAB_WIDTH + MGQ_MpUi::Style::GAP
+$mouse = [box.x + Sprite_MpWorldOverview::MARGIN + 10, tab_y]
+$click = true
+overview.on_map
+check("a click on the Players tab turns to it", overview.page, :players)
+$mouse = [box.x + Sprite_MpWorldOverview::MARGIN + tab_step + 10, tab_y]
+$click = true
+$buttons << :B
+overview.on_map
+check("and a click on the World tab to the World page, where a cancel held with the click does not reach the page left", [overview.page, overview.open?], [:world, true])
+$buttons.clear
+check("the room between the tabs and the room past them is no tab",
+      [Sprite_MpWorldOverview.tab_at(box.x + Sprite_MpWorldOverview::MARGIN + Sprite_MpWorldOverview::TAB_WIDTH + 1, tab_y), Sprite_MpWorldOverview.tab_at(box.x + Sprite_MpWorldOverview::MARGIN + 3 * tab_step, tab_y)], [nil, nil])
+$mouse = nil
+
+# The picture: the title with the world's type and difficulty before the party, the tabs, the
+# hint and a raid boss's row.
+sprite = Sprite_MpWorldOverview.allocate
+sprite.bitmap = Bitmap.new(box.width, box.height)
+sprite.draw(overview.view)
+style = MGQ_MpUi::Style
+check("the title says the world's type and difficulty after its name, the party at the right, then the tabs",
+      sprite.bitmap.texts.first(4), ["Party 2 / 4", "Test World | Raid | Hard", "Players", "World"])
+check("the hint names Left and Right and the numpad's 0", sprite.bitmap.texts.last, "Left or right: page   Up or down: scroll   Esc, Numpad 0 or F11: close")
+gold_marks = lambda { sprite.bitmap.drawn.count { |kind, args| kind == :fill && args[4].equal?(style::GOLD) } }
+check("the invite from afar still waits on the Players page, which marks its tab in gold while the World page shows", [overview.view[:calls], gold_marks.call], [true, 1])
+$inbox << entry("message", 2, told(friend.merge("party" => "friend-p", "invite" => 0)))
+MGQ_MpOverworldSync.tick
+sprite.draw(overview.view)
+check("without a call the tab has no mark", [overview.view[:calls], gold_marks.call], [false, 0])
+$world.name = "A" * 60
+sprite.draw(overview.view)
+title = sprite.bitmap.texts[1]
+room = box.width - 2 * (Sprite_MpWorldOverview::MARGIN + 2) - "Party 2 / 4".size * style::TITLE_SIZE / 2 - Sprite_MpWorldOverview::TITLE_GAP
+check("a long world name is cut before its type, which stays whole, so it never runs into the party",
+      [title.end_with?("... | Raid | Hard"), title.size * style::TITLE_SIZE / 2 <= room], [true, true])
+$world.name = "Test World"
+sprite.bitmap.clear
+sprite.draw_boss(boss_named.call("Queen Harpy"), 0)
+gauge = sprite.bitmap.drawn.select { |kind, _| kind == :fill }.map { |_, args| args }
+columns = Sprite_MpWorldOverview::WORLD_COLUMNS
+check("a raid boss's row: its name, tier, share and who last hurt it", sprite.bitmap.texts, ["Queen Harpy", "Tier 9", "40%", "last hurt by Player A"])
+check("over a thin gauge: its frame, its empty part and the share left in the bad color",
+      gauge, [[columns[:gauge], 9, 90, 6, style::OUTLINE], [columns[:gauge] + 1, 10, 88, 4, style::PLATE], [columns[:gauge] + 1, 10, 35, 4, style::BAD]])
+sprite.bitmap.clear
+sprite.draw_boss(boss_named.call("Four bandits"), 0)
+check("a defeated boss says so in place of its share, dimmed, with an empty gauge",
+      [sprite.bitmap.texts, sprite.bitmap.drawn.find { |kind, _| kind == :text }[2].equal?(style::DIM), sprite.bitmap.drawn.count { |kind, _| kind == :fill }],
+      [["Four bandits", "Tier 9", "Defeated", "last hurt by Player B"], true, 2])
+$pools = {}
+$raid = false
+
+# The confirm box before removing a member and leaving the party, which the overview waits for.
+confirm = MGQ_MpUi::Confirm
+$frame = 1
+member_peer = MGQ_MpOverworldSync::Peers.at(3)
+removed = []
+remove = MGQ_MpCoop::Party.method(:remove)
+MGQ_MpCoop::Party.define_singleton_method(:remove) { |peer| removed << peer.seat }
+MGQ_MpCoop::Offers.peer_option(member_peer).run.call
+check("removing a member asks first, naming them", [confirm.open?, confirm.instance_variable_get(:@question), confirm.instance_variable_get(:@yes), confirm.instance_variable_get(:@no)],
+      [true, "Remove member from the party?", "Remove", "Keep"])
+$frame += 1
+$pressed = MGQ_MpHotkeys.code(:decline)
+2.times { confirm.tick }
+check("no keeps them", [confirm.open?, removed], [false, []])
+MGQ_MpCoop::Offers.peer_option(member_peer).run.call
+$frame += 1
+$pressed = MGQ_MpHotkeys.code(:accept)
+2.times { confirm.tick }
+check("yes removes them", removed, [3])
+MGQ_MpCoop::Party.define_singleton_method(:remove, remove)
+overview.turn_to(:players, "the test")
+overview.close
+$pressed = 0x7A
+overview.on_map
+overview.on_map
+$buttons << :C
+overview.on_map
+check("the player's own menu offers to leave", overview.view[:menu].map(&:text).first, "Leave the party")
+$buttons << :C
+overview.on_map
+check("leaving asks first, closing the menu, and the overview stays", [confirm.open?, confirm.instance_variable_get(:@question), overview.view[:menu], overview.open?], [true, "Leave the party?", nil, true])
+$buttons << :B
+overview.on_map
+check("the overview reads no key while the box asks", [overview.open?, $buttons], [true, [:B]])
+$buttons.clear
+$frame += 1
+$pressed = MGQ_MpHotkeys.code(:decline)
+2.times { confirm.tick }
+check("no keeps the party", [confirm.open?, MGQ_MpCoop::Party.id.nil?], [false, false])
+leave_option = MGQ_MpCoop::Offers.party_options(true).first
+$buttons << :C
+overview.on_map
+$buttons << :C
+overview.on_map
+$frame += 1
+$pressed = MGQ_MpHotkeys.code(:accept)
+2.times { confirm.tick }
+check("yes leaves it", [confirm.open?, MGQ_MpCoop::Party.id], [false, nil])
+overview.close
+leave_option.run.call
+notices = MGQ_MpOverworldSync::Status.lines.size
+$pressed = MGQ_MpHotkeys.code(:accept)
+$frame += 1
+2.times { confirm.tick }
+check("yes once the party dissolved under the box leaves nothing, so nothing says so", [confirm.open?, MGQ_MpOverworldSync::Status.lines.size], [false, notices])
+
 MGQ_MpCoopSquad.define_singleton_method(:own_order, own_order)
 overview.tick(false)
 check("a closed world forgets what the player told, so the next one reads it at once",

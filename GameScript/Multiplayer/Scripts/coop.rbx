@@ -2,6 +2,9 @@
 #  coop.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-11: Told the frames an invite has left, which the line above the player's head counts down
+#                            - Counted the invite's seconds down in the line above the player's head
+#                            - Asked before the World overview leaves the party or removes a member, and left no party that dissolved while the box asked
 #      Paulinchen  2026-10-10: Offered the teleport to the party's leader in a Raid World too, through coop_teleport.rbx, which offers the teleport to every other member
 #      Paulinchen  2026-10-09: Closed the teleport to the story to a player behind the world's story in a Raid World
 #      Paulinchen  2026-10-08: Offered a teleport to the story on the player's own row of the World overview in a Raid World, in place of the teleport to the party's leader
@@ -353,6 +356,13 @@ module MGQ_MpCoop
       @frames > 0
     end
 
+    # Tells the frames the invite stands for still.
+    #
+    # @return [Integer] The frames, 0 while no invite stands.
+    def frames_left
+      inviting? ? @frames : 0
+    end
+
     # The ids of the players the invite reaches wherever they are, besides those nearby.
     #
     # @return [Array<String>] The ids, none while no invite stands.
@@ -433,6 +443,13 @@ module MGQ_MpCoop
     # @return [Boolean] Whether they do.
     def self.inviting?
       @invite.inviting?
+    end
+
+    # Tells the frames the player's invite stands for still.
+    #
+    # @return [Integer] The frames, 0 while the player invites nobody.
+    def self.invite_frames_left
+      @invite.frames_left
     end
 
     # The ids of the players the party's leader admitted, which the leader keeps and every member
@@ -850,8 +867,19 @@ module MGQ_MpCoop
     #
     # @return [MGQ_MpActions::Option] The choice.
     def self.wheel_leave_option
-      party_options.first || MGQ_MpActions::Option.new("Leave the party", nil, "You are in no party.")
+      party_options(false).first || MGQ_MpActions::Option.new("Leave the party", nil, "You are in no party.")
     end
+
+    # What the World overview asks before the leader removes a member, with the member's name, and
+    # its choices.
+    REMOVE_QUESTION = "Remove %s from the party?"
+    REMOVE_CHOICES = ["Remove", "Keep"]
+
+    # What the World overview asks before the player leaves the party, and its choices. The
+    # wheel's choices ask nothing, since picking a wheel's side and confirming it is a deliberate
+    # pair of steps already.
+    LEAVE_QUESTION = "Leave the party?"
+    LEAVE_CHOICES = ["Leave", "Stay"]
 
     # Tells why the player may not invite now.
     #
@@ -864,8 +892,8 @@ module MGQ_MpCoop
     end
 
     # The party choice for another player in the World overview: accepting their invite, removing
-    # them as the party's leader, else inviting them, which only a leader or a player outside a
-    # party may. The teleport to a member is coop_teleport.rbx's.
+    # them as the party's leader, which asks first, else inviting them, which only a leader or a
+    # player outside a party may. The teleport to a member is coop_teleport.rbx's.
     #
     # @param peer [MGQ_MpOverworldSync::Peers::Peer] The player.
     # @return [MGQ_MpActions::Option, nil] The choice, nil for a member while the player does not lead.
@@ -875,7 +903,9 @@ module MGQ_MpCoop
         return option.new("Accept party invite", Party.full?(peer.state["party"]) ? nil : lambda { Party.join(peer) }, "Their party is full.")
       end
       if Party.member?(peer.state)
-        return Party.leader == :me ? option.new("Remove from party", lambda { Party.remove(peer) }, nil) : nil
+        return nil unless Party.leader == :me
+
+        return option.new("Remove from party", lambda { MGQ_MpUi::Confirm.ask(REMOVE_QUESTION % peer.state["name"], REMOVE_CHOICES) { |yes| Party.remove(peer) if yes } }, nil)
       end
       refusal = invite_refusal("Your party is full.")
       return option.new("Invite to party", nil, refusal) if refusal
@@ -884,20 +914,25 @@ module MGQ_MpCoop
       option.new("Invite to party", lambda { Party.invite(peer.state["id"]) }, nil)
     end
 
-    # The choices on the player's own row of the World overview: leaving the party, stopping an
-    # invite, and in a Raid World the teleport to the story.
+    # The choices on the player's own row of the World overview: leaving the party, which asks
+    # first, stopping an invite, and in a Raid World the teleport to the story.
     #
     # @return [Array<MGQ_MpActions::Option>] The choices.
     def self.own_options
-      party_options + [story_option].compact
+      party_options(true) + [story_option].compact
     end
 
     # The party choices of the player's own: leaving the party, and stopping an invite.
     #
+    # @param asking [Boolean] Whether leaving asks the player first, as the World overview does.
     # @return [Array<MGQ_MpActions::Option>] The choices, none outside a party and without an invite.
-    def self.party_options
+    def self.party_options(asking)
       choices = []
-      choices << MGQ_MpActions::Option.new("Leave the party", lambda { Party.leave }, nil) unless Party.members.empty?
+      unless Party.members.empty?
+        # The party may have dissolved while the box asked, and leaving none would still say so.
+        leave = asking ? lambda { MGQ_MpUi::Confirm.ask(LEAVE_QUESTION, LEAVE_CHOICES) { |yes| Party.leave if yes && !Party.members.empty? } } : lambda { Party.leave }
+        choices << MGQ_MpActions::Option.new("Leave the party", leave, nil)
+      end
       choices << MGQ_MpActions::Option.new("Stop inviting", lambda { Party.stop_inviting }, nil) if Party.inviting?
       choices
     end
@@ -922,11 +957,11 @@ module MGQ_MpCoop
                                 lambda { Party.join(peer) }, lambda { Party.decline(peer) }, peer.state["party"])
     end
 
-    # Names what the player is doing for the line above their own head.
+    # Names what the player is doing for the line above their own head, with when it lapses.
     #
-    # @return [String, nil] That they invite, nil while they do not.
+    # @return [Array, nil] That they invite and when the invite runs out, nil while they do not.
     def self.own_doing
-      Party.inviting? ? "Inviting to a party" : nil
+      Party.inviting? ? ["Inviting to a party", MGQ_MpActions.lapse_in(Party.invite_frames_left)] : nil
     end
   end
 end

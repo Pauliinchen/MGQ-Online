@@ -2,6 +2,9 @@
 #  ui_trade.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-11: Asked through the confirm box before cancelling the trade, since both offers are lost
+#                            - Left the commands alone once the trade ended under the box, whose windows are disposed by then
+#                            - Took the marks' colors from the shared style
 #      Paulinchen  2026-10-08: Closed with the numpad's 0 through MGQ_MpUi.cancel?, also with Num Lock off
 #      Paulinchen  2026-10-07: Logged where the screen failed and the pictures in memory, since a picture could not be made in the field
 #                            - Cut names through MGQ_MpUi.cut and took the window's depth from MGQ_MpUi
@@ -21,11 +24,11 @@
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpTradeUi
-  # Color of a confirmed offer's mark.
-  CONFIRMED_COLOR = Color.new(128, 255, 128)
+  # What the confirm box asks before the trade is cancelled, with the other player's name.
+  CANCEL_QUESTION = "Cancel the trade with %s? Both offers are lost."
 
-  # Color of a mark that waits.
-  WAITING_COLOR = Color.new(200, 200, 200)
+  # The confirm box's choices for cancelling: the yes and the no label.
+  CANCEL_CHOICES = ["Cancel trade", "Keep trading"]
 
   # Pixels between whose offer it is and whether its player confirmed, in an offer's first row.
   HEAD_GAP = 8
@@ -144,7 +147,7 @@ class Window_MpTradeOffer < Window_Selectable
     contents.font.size = MGQ_MpTradeUi::HEAD_FONT_SIZE
     confirmed = confirmed?(@session)
     status = confirmed ? "Confirmed" : "Not confirmed"
-    change_color(confirmed ? MGQ_MpTradeUi::CONFIRMED_COLOR : MGQ_MpTradeUi::WAITING_COLOR)
+    change_color(confirmed ? MGQ_MpUi::Style::GOOD : MGQ_MpUi::Style::DIM)
     draw_text(rect, status, 2)
     room = rect.width - text_size(status).width - MGQ_MpTradeUi::HEAD_GAP
     change_color(system_color)
@@ -317,7 +320,7 @@ class Window_MpTradeBag < Window_Selectable
     rect = item_rect_for_text(index)
     offered = offered(item)
     draw_item_name(item, rect.x, rect.y, true, rect.width - 120)
-    change_color(offered > 0 ? MGQ_MpTradeUi::CONFIRMED_COLOR : normal_color)
+    change_color(offered > 0 ? MGQ_MpUi::Style::GOOD : normal_color)
     draw_text(rect.x, rect.y, rect.width, line_height, "#{offered} / #{MGQ_MpTrade::Items.held(item)}", 2)
   end
 
@@ -603,9 +606,21 @@ class Scene_MpTrade < Scene_MenuBase
     @command_window.activate
   end
 
-  # Cancels the trade.
+  # Asks through the confirm box before cancelling the trade, since both offers are lost: yes
+  # cancels it, no hands the input back to the commands, as does a box that could not open. The
+  # box takes the buttons meanwhile, so the windows stay quiet under it.
   def on_cancel_trade
-    MGQ_MpTrade.cancel
-    @command_window.activate
+    session = MGQ_MpTrade.session
+    return @command_window.activate unless session
+
+    asked = MGQ_MpUi::Confirm.ask(MGQ_MpTradeUi::CANCEL_QUESTION % session.name, MGQ_MpTradeUi::CANCEL_CHOICES) do |yes|
+      # A trade that ended under the box returned the scene, whose windows are disposed by now.
+      if yes
+        MGQ_MpTrade.cancel
+      elsif !@command_window.disposed?
+        @command_window.activate
+      end
+    end
+    @command_window.activate unless asked
   end
 end

@@ -2,18 +2,19 @@
 #  battles_raid_pool.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-11: Listed the pools the game knows, which the World overview reads
 #      Paulinchen  2026-10-10: Told the Three Nobles of Black beaten by the castle quest's progress in Part 2 and the treasure gallery's switch in Part 3
-#                            - Gave a pooled enemy the factors of its boss's tier for its stats instead of 7.5 times its max HP, after the game's difficulty
-#                            - Named the one-time Chaos Domain bosses in the message that a boss is defeated for the whole world
 #                            - Added taken_over, which the co-op battles call as a guest takes a battle over, so the damage of a battle that starts then is reported
 #                            - Started a guest's reports from the enemies' HP as it takes the battle over, so the host's reported damage is not reported again, and kept a guest from killing enemies by its own view of the pools
 #                            - Counted a report from no more than the enemy's max HP now, so a lowered max HP reads as no damage
-#                            - Fought no pool on the Hades rematch hall's map either
 #                            - Compared the DLL's line of a pool with the last one taken, so small changes in a row count once they add up
 #                            - Gave a side battle's EXP, gold and drops once per boss, kept in the save, and ran none of its troop's battle events, for the players who join it too, whose invite tells it is a side battle
 #                            - Added side_battle?, which the co-op battles ask to leave side battles alone
+#                            - Fought no pool on the Hades rematch hall's map either
 #                            - Took the pools' HP every five seconds while a battle waits for its players' commands, so its bar shows the other battles' blows meanwhile
 #                            - Reported what a battle dealt as its actions end too, at most every two seconds, so the other games see a long turn's damage
+#                            - Gave a pooled enemy the factors of its boss's tier for its stats instead of 7.5 times its max HP, after the game's difficulty
+#                            - Named the one-time Chaos Domain bosses in the message that a boss is defeated for the whole world
 #                            - Made each raid boss one fight the whole world shares: its enemies have 7.5 times their max HP, report what they lost and take their HP from the relay's pool at each command phase, and die when the pool is empty
 #                            - Kept a pool per enemy of a boss troop of several, so each falls on its own
 #                            - Let a player near a boss battle that takes nobody in fight the same boss in a side battle of their own, which may be lost
@@ -310,6 +311,14 @@ module MGQ_MpRaidPool
   # @return [Pool, nil] The pool, nil while the relay told nothing of it.
   def self.pool(key)
     @pools[key]
+  end
+
+  # Lists the pools as the player's game knows them, for the World overview: a copy, so a reader
+  # changes nothing here.
+  #
+  # @return [Hash{String => Pool}] The pools by their key, see Pool.
+  def self.pools
+    @pools.dup
   end
 
   # Finds the share of a pool's max HP left now, with what it gained back since it was told.

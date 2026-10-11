@@ -2,6 +2,13 @@
 #  world_overview.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-11: Took the box's place, the title's insets and the picked row's from the list box, whose lazy rectangle reads the screen's size once asked
+#                            - Added the World page, turned with Left and Right or a click on its tab, with the page's lines laid out once a frame: the world's name, type, difficulty, players, story and in a Raid World every raid boss with a thin gauge, its share left rounded, Defeated and who last hurt it
+#                            - Marked the Players tab in gold while a player's call waits there and the World page shows, where the notification box hides
+#                            - Showed the world's type and difficulty after its name in the title, joined with a bar, and cut a long name before the party's size
+#                            - Named Left and Right in the hint, shortened the Players page's hint to fit the box, and named the close keys as every screen does
+#                            - Skipped the keys while the confirm box asks over the overview
+#                            - Took the colors, font sizes and column gap from the shared style, the players' colors from MGQ_MpUi::PlayerColor, the ping column and the party's title from MGQ_MpOverworld and the icons from MGQ_MpUi.draw_icon, dropping the colors the party box read here once
 #      Paulinchen  2026-10-08: Listed everyone on the player's map for the map box of a Raid World, the party first, and told the others the Frontline's highest level there
 #                            - Forgot the level and story told the others when the world closes, so the next world tells its own at once
 #                            - Closed with the numpad's 0 through MGQ_MpUi.cancel?, also with Num Lock off
@@ -32,12 +39,14 @@
 #----------------------------------------------------------------
 
 # The World overview: a large box over the map, opened with its key (F11 unless the player binds
-# another, see core_hotkeys.rbx) or the action wheel's middle, that
+# another, see core_hotkeys.rbx) or the action wheel's middle, with two pages turned with Left
+# and Right or a click on their tabs. The Players page
 # lists every player of the world online, grouped by where they are, with their highest companion
 # level, their place in the story and their ping. A player picked with the arrows and confirm, or
 # with the mouse, opens a menu of what the scripts offer, such as party invites, duels and trades;
-# a player's row shows their invite, challenge or offer that reaches the player. The map keeps
-# running behind it.
+# a player's row shows their invite, challenge or offer that reaches the player. The World page
+# shows the world itself: its name, type, difficulty, players, story and in a Raid World every
+# raid boss with how much of its HP the world left it. The map keeps running behind it.
 #
 # It also lists the player's party for the party box of ui_party_box.rbx, and in a Raid World
 # everyone on the player's map for the map box that replaces it.
@@ -83,6 +92,66 @@ module MGQ_MpWorldOverview
     "judgment" => "Judgment route",
   }
 
+  # The overview's pages in the order Left and Right pass through them, each with its tab's title:
+  # the players online, and the world itself.
+  PAGES = [[:players, "Players"], [:world, "World"]]
+
+  # What the overview calls each kind of world, by whether it is a Raid World.
+  WORLD_TYPES = { true => "Raid", false => "Classic" }
+
+  # What joins the world's name, its type and its difficulty in the title.
+  TITLE_JOINT = " | "
+
+  # What the title says while no world is open.
+  NO_WORLD = "World"
+
+  # What the World page says of a world that sets no difficulty, whose players keep their own.
+  PER_PLAYER = "Per player"
+
+  # What the World page says of the world's story before the relay told it.
+  STORY_UNTOLD = "Not told yet"
+
+  # The labels of the World page's rows.
+  WORLD_LABELS = { :name => "World", :type => "Type", :difficulty => "Difficulty", :players => "Players", :story => "Story" }
+
+  # How the World page writes the players online and the world's seats.
+  PLAYERS_OF = "%d / %d"
+
+  # The World page's heading over the raid bosses.
+  BOSSES_HEADING = "Raid bosses"
+
+  # What the World page says of a raid boss the world defeated.
+  DEFEATED = "Defeated"
+
+  # How the World page names who last hurt a raid boss.
+  LAST_HURT_BY = "last hurt by %s"
+
+  # How the World page writes a raid boss's tier.
+  TIER = "Tier %d"
+
+  # How the World page writes the share of a raid boss's HP left, in percent.
+  SHARE_LEFT = "%d%%"
+
+  # Percent of a share, for SHARE_LEFT.
+  PERCENT = 100
+
+  # The share of its HP a raid boss has while the relay told no pool of it: all of it.
+  UNTOUCHED = 1.0
+
+  # The part of the story every route belongs to, see story_code.
+  ROUTE_PART = "3"
+
+  # A raid boss of the World page.
+  #
+  # @!attribute name [String] Its milestone's name, such as "Tamamo (cap 61)", or its pool's key.
+  # @!attribute tier [Integer, nil] Its tier, see MGQ_MpRaidBosses::TIERS; nil for a pool whose
+  #   boss the tables lack.
+  # @!attribute left [Float] The share of its HP left, 0 to 1, over its pools; UNTOUCHED while the
+  #   relay told none.
+  # @!attribute defeated [Boolean] Whether the world defeated it.
+  # @!attribute by [String, nil] Who last hurt it, nil while no pool of it knows.
+  Boss = Struct.new(:name, :tier, :left, :defeated, :by)
+
   # What the list's heading says for the maps the game names nowhere.
   UNNAMED_PLACE = "Unnamed place"
 
@@ -114,6 +183,8 @@ module MGQ_MpWorldOverview
   @selected = :me
   @scroll = 0
   @frames = 0
+  @page = :players
+  @world_scroll = 0
 
   # The game's globe icon, which stands for the overview in the action wheel's middle.
   WORLD_ICON = 3988
@@ -148,7 +219,7 @@ module MGQ_MpWorldOverview
     true
   end
 
-  # Opens the overview on the player's own row.
+  # Opens the overview on the Players page, on the player's own row.
   #
   # @param via [String] What opened it, for the log.
   def self.open(via = "the action wheel")
@@ -158,6 +229,8 @@ module MGQ_MpWorldOverview
     @menu = nil
     @selected = :me
     @scroll = 0
+    @page = :players
+    @world_scroll = 0
     @mouse = nil
     @view = view
     log("opened through #{via}, #{@view[:lines].count { |kind, _| kind == :player }} player(s) online")
@@ -211,6 +284,189 @@ module MGQ_MpWorldOverview
   # @return [Boolean] Whether it may.
   def self.openable_while_open?
     MGQ_MpOverworldSync.in_world? && MGQ_MpOverworldSync.map_quiet? && !MGQ_MpChat.typing?
+  end
+
+  # The page shown.
+  #
+  # @return [Symbol] :players or :world, see PAGES.
+  def self.page
+    @page
+  end
+
+  # Turns to a page, closing the menu, which belongs to the Players page. Nothing for the page
+  # shown already.
+  #
+  # @param page [Symbol] The page, see PAGES.
+  # @param via [String] What turned it, for the log.
+  def self.turn_to(page, via)
+    title = PAGES.assoc(page)
+    return unless title && page != @page
+
+    @page = page
+    @menu = nil
+    Sound.play_cursor
+    log("turned to the #{title[1]} page through #{via}")
+  end
+
+  # Turns a page on, or back, round past the ends.
+  #
+  # @param step [Integer] 1 for the next page, -1 for the one before.
+  # @param via [String] What turned it, for the log.
+  def self.turn(step, via)
+    index = PAGES.index { |page, _| page == @page }.to_i
+    turn_to(PAGES[(index + step) % PAGES.size][0], via)
+  end
+
+  # Turns the page with Left and Right.
+  #
+  # @return [Boolean] Whether a page turned.
+  def self.turn_by_keys
+    step = axis_step(:LEFT, :RIGHT)
+    return false if step == 0
+
+    turn(step, "the arrows")
+    true
+  end
+
+  # Reads two arrows held or repeating as a step along their axis.
+  #
+  # @param back [Symbol] The arrow that steps back, :UP or :LEFT.
+  # @param forth [Symbol] The arrow that steps on, :DOWN or :RIGHT.
+  # @return [Integer] 1 on, -1 back, 0 while neither repeats.
+  def self.axis_step(back, forth)
+    capture = MGQ_Multiplayer::Capture
+    capture.repeat?(forth) ? 1 : capture.repeat?(back) ? -1 : 0
+  end
+
+  # Closes the overview with the cancel sound once cancel went down.
+  #
+  # @return [Boolean] Whether it closed.
+  def self.closed_by_cancel?
+    return false unless MGQ_MpUi.cancel?
+
+    Sound.play_cancel
+    close("cancel")
+    true
+  end
+
+  # The open world's name, for the title and the World page.
+  #
+  # @return [String] The name, NO_WORLD while none is open.
+  def self.world_name
+    world = MGQ_MpWorld.world
+    world ? world.name.to_s : NO_WORLD
+  end
+
+  # What follows the world's name in the title: its type, and its difficulty when it sets one.
+  #
+  # @return [String] Such as " | Raid | Hard".
+  def self.title_tail
+    [WORLD_TYPES[MGQ_MpCoop::Scope.raid?], difficulty_name].compact.map { |part| "#{TITLE_JOINT}#{part}" }.join
+  end
+
+  # Names the difficulty the world sets for every player, as the game's own difficulty choice
+  # names it, in plain case.
+  #
+  # @return [String, nil] Such as "Hard"; nil while the players keep their own.
+  def self.difficulty_name
+    name = MGQ_MpWorld.difficulty_name(MGQ_MpWorldDifficulty.value)
+    name ? name.capitalize : nil
+  end
+
+  # Reads the world's place in the story as the relay told it: its part, and on a route of the
+  # final chapter the route, found through the variable that counts it (see ROUTES), since the
+  # world's story names routes as the relay does. The side is each player's own, so the world
+  # has none.
+  #
+  # @return [String] "part" or "part:route", see story_code; empty before the relay told the story.
+  def self.world_story_code
+    counters = MGQ_MpWorldStory.world
+    return "" unless counters
+
+    part = MGQ_MpWorldStory.part_of(counters)
+    index = MGQ_MpWorldStory::ROUTES.index(part)
+    return part.to_s unless index
+
+    id = MGQ_MpWorldStory::ROUTE_VARIABLES[index]
+    route = ROUTES.keys.find { |key| ROUTES[key].any? { |name| $data_system.variables.index(name) == id } }
+    log_once([:world_route, part], "no variable of the game counts the world's #{part} route, telling the part alone") unless route
+    route ? "#{ROUTE_PART}:#{route}" : ROUTE_PART
+  rescue => e
+    log("reading the world's story failed: #{e.class}: #{e.message}")
+    ""
+  end
+
+  # Writes the world's place in the story the way the overview shows it.
+  #
+  # @return [String] Such as "Part 3: Chaos route", STORY_UNTOLD before the relay told the story.
+  def self.world_story_text
+    code = world_story_code
+    code.empty? ? STORY_UNTOLD : story_text(code)
+  end
+
+  # Lays the World page out: the world's name, type, difficulty and players, then in a Raid World
+  # its story and its raid bosses under a heading.
+  #
+  # @param online [Integer] The players online, the player included.
+  # @return [Array<Array>] Each line: [:info, label, value], [:place, heading] or [:boss, boss].
+  def self.world_lines(online)
+    world = MGQ_MpWorld.world
+    raid = MGQ_MpCoop::Scope.raid?
+    seats = world ? world.seats.to_i : 0
+    lines = [[:info, WORLD_LABELS[:name], world_name], [:info, WORLD_LABELS[:type], WORLD_TYPES[raid]],
+             [:info, WORLD_LABELS[:difficulty], difficulty_name || PER_PLAYER],
+             [:info, WORLD_LABELS[:players], seats > 0 ? PLAYERS_OF % [online, seats] : online.to_s]]
+    return lines unless raid
+
+    lines << [:info, WORLD_LABELS[:story], world_story_text]
+    lines << [:place, BOSSES_HEADING]
+    lines + bosses.map { |boss| [:boss, boss] }
+  end
+
+  # Lists the raid bosses for the World page: the story's by tier, the strongest first, in the
+  # order the story meets them, then any other boss the relay told a pool of, by name.
+  #
+  # @return [Array<Boss>] The bosses.
+  def self.bosses
+    pools = MGQ_MpRaidPool.pools.group_by { |key, _| MGQ_MpRaidPool.boss_key(key) }
+    tiers = MGQ_MpRaidBosses::TIER_BOSSES
+    listed = tiers.keys.sort.map { |tier| tiers[tier].map { |name| boss_of(name, tier, pools.delete(name)) } }.flatten(1)
+    listed + pools.keys.sort.map { |name| boss_of(name, optional_tier(name), pools[name]) }
+  end
+
+  # Sums a raid boss up from its pools: the share left over them, whether every one is empty for
+  # good, and who hurt the one last told of.
+  #
+  # @param name [String] The boss's name, see Boss.
+  # @param tier [Integer, nil] Its tier.
+  # @param entries [Array<Array>, nil] Its pools, each with its key; nil while the relay told none.
+  # @return [Boss] The boss.
+  def self.boss_of(name, tier, entries)
+    pools = (entries || []).map { |_, pool| pool }
+    return Boss.new(name, tier, UNTOUCHED, false, nil) if pools.empty?
+
+    now = Time.now
+    left = pools.inject(0.0) { |sum, pool| sum + MGQ_MpRaidPool.left_now(pool, now) } / pools.size
+    hurt = pools.select { |pool| !pool.by.to_s.empty? }.max_by { |pool| pool.at.to_f }
+    Boss.new(name, tier, left, pools.all? { |pool| pool.defeated }, hurt && hurt.by.to_s)
+  end
+
+  # Finds the tier of a boss outside the story's tiers: one of the one-time bosses, which carry
+  # their tier themselves.
+  #
+  # @param name [String] The boss's name.
+  # @return [Integer, nil] Its tier, nil for a name the tables lack.
+  def self.optional_tier(name)
+    row = MGQ_MpRaidBosses::OPTIONAL.values.find { |boss, _| boss == name }
+    row && row[1]
+  end
+
+  # Writes the share of a raid boss's HP left, never 0% while any is.
+  #
+  # @param left [Float] The share, 0 to 1.
+  # @return [String] Such as "68%".
+  def self.share_text(left)
+    SHARE_LEFT % [(left * PERCENT).round, left > 0 ? 1 : 0].max
   end
 
   # Closes the overview once the map is left. Called by overworld_sync.rbx every frame in every
@@ -481,11 +737,40 @@ module MGQ_MpWorldOverview
     options.empty? ? [MGQ_MpActions::Option.new("Nothing to do", nil, refusal)] : options
   end
 
-  # What the overview shows now.
+  # What the overview shows now, on its page.
   #
-  # @return [Hash] :lines, :selected (a line), :scroll, :menu (the choices) and :menu_index.
+  # @return [Hash] :page, :lines, :selected (a line), :scroll, :menu (the choices), :menu_index,
+  #   and on the World page :calls, whether a player's call waits on the Players page.
   def self.view
-    view_of(lines(rows))
+    all = rows
+    page_view(page_lines(all), all)
+  end
+
+  # Lays the page out that is open: the World page's lines, or the Players page's list.
+  #
+  # @param rows [Array<Row>] The players, see rows.
+  # @return [Array<Array>] The lines, see world_lines and lines.
+  def self.page_lines(rows)
+    @page == :world ? world_lines(rows.size) : lines(rows)
+  end
+
+  # What the overview shows on its page: the World page, or the Players page's list.
+  #
+  # @param lines [Array<Array>] The page's lines, see page_lines.
+  # @param rows [Array<Row>] The players, see rows.
+  # @return [Hash] The view, see view.
+  def self.page_view(lines, rows)
+    @page == :world ? world_view(lines, rows.any? { |row| row.call }) : view_of(lines)
+  end
+
+  # The World page's view: its lines from its scroll, nothing picked and no menu, and whether a
+  # player's call waits on the Players page, which the notification box hides behind the overview.
+  #
+  # @param lines [Array<Array>] The World page's lines, see world_lines.
+  # @param calls [Boolean] Whether a player's invite, challenge or offer reaches the player.
+  # @return [Hash] The view, see view.
+  def self.world_view(lines, calls)
+    { :page => :world, :lines => lines, :selected => nil, :scroll => @world_scroll, :menu => nil, :menu_index => nil, :calls => calls }
   end
 
   # What the overview shows, as update last saw it, which its picture draws.
@@ -505,7 +790,7 @@ module MGQ_MpWorldOverview
     row = lines[selected] && lines[selected][1]
     menu = @menu && row ? menu_options(row) : nil
     @menu = [[@menu, menu.size - 1].min, 0].max if menu
-    { :lines => lines, :selected => selected, :scroll => @scroll, :menu => menu, :menu_index => @menu }
+    { :page => :players, :lines => lines, :selected => selected, :scroll => @scroll, :menu => menu, :menu_index => @menu }
   end
 
   # Finds the line of the player picked.
@@ -516,32 +801,72 @@ module MGQ_MpWorldOverview
     lines.index { |kind, row| kind == :player && key_of(row) == @selected } || 1
   end
 
-  # Follows the arrows, confirm, cancel and the mouse while the overview is open.
+  # Follows the arrows, confirm, cancel and the mouse while the overview is open; nothing while
+  # the confirm box asks over it, whose answer would reach the menu otherwise. The page's lines
+  # are laid out once a frame, again only once the page turned.
   def self.update
-    lines = lines(rows)
-    view = view_of(lines)
-    players = (0...lines.size).select { |index| lines[index][0] == :player }
+    return if MGQ_MpUi::Confirm.open?
+
+    all = rows
+    page = @page
+    lines = page_lines(all)
     # The press that opened the overview from the wheel is still down this frame.
     if @fresh
       @fresh = false
+    elsif page == :world
+      update_world(lines)
     else
-      mouse(view, players)
-      view[:menu] ? update_menu(view) : update_list(view, players)
-      keep_in_sight(lines, players)
+      update_players(lines)
     end
-    @view = @open ? view_of(lines) : nil
+    lines = page_lines(all) if @page != page
+    @view = @open ? page_view(lines, all) : nil
   end
 
-  # Moves through the list, opens the menu of the player picked, or closes the overview.
+  # Follows the mouse, the arrows, confirm and cancel on the Players page; the keys only while
+  # a click did not turn the page, else a key held with the click would reach the page left.
+  #
+  # @param lines [Array<Array>] The Players page's list, see lines.
+  def self.update_players(lines)
+    view = view_of(lines)
+    players = (0...lines.size).select { |index| lines[index][0] == :player }
+    mouse(view, players)
+    return unless @page == :players
+
+    view[:menu] ? update_menu(view) : update_list(view, players)
+    keep_in_sight(lines, players)
+  end
+
+  # Scrolls the World page with the arrows, turns the page, follows the mouse, or closes the
+  # overview.
+  #
+  # @param lines [Array<Array>] The World page's lines, see world_lines.
+  def self.update_world(lines)
+    mouse_world
+    return unless @open
+    return if closed_by_cancel? || turn_by_keys
+
+    step = axis_step(:UP, :DOWN)
+    return if step == 0
+
+    most = [lines.size - Sprite_MpWorldOverview::LIST_ROWS, 0].max
+    scroll = MGQ_MpUi.within(@world_scroll + step, 0, most)
+    return if scroll == @world_scroll
+
+    @world_scroll = scroll
+    Sound.play_cursor
+  end
+
+  # Moves through the list, opens the menu of the player picked, turns the page, or closes the
+  # overview.
   #
   # @param view [Hash] What the overview shows, see view.
   # @param players [Array<Integer>] The lines that are players.
   def self.update_list(view, players)
-    capture = MGQ_Multiplayer::Capture
-    return (Sound.play_cancel; close("cancel")) if MGQ_MpUi.cancel?
-    return open_menu(view[:lines][view[:selected]][1]) if capture.trigger?(:C)
+    return if closed_by_cancel?
+    return open_menu(view[:lines][view[:selected]][1]) if MGQ_Multiplayer::Capture.trigger?(:C)
+    return if turn_by_keys
 
-    step = capture.repeat?(:DOWN) ? 1 : capture.repeat?(:UP) ? -1 : 0
+    step = axis_step(:UP, :DOWN)
     return if step == 0
 
     at = players.index(view[:selected]).to_i
@@ -554,11 +879,10 @@ module MGQ_MpWorldOverview
   #
   # @param view [Hash] What the overview shows, see view.
   def self.update_menu(view)
-    capture = MGQ_Multiplayer::Capture
     return (Sound.play_cancel; log("menu closed with cancel"); @menu = nil) if MGQ_MpUi.cancel?
-    return choose(view[:menu][@menu], view[:lines][view[:selected]][1]) if capture.trigger?(:C)
+    return choose(view[:menu][@menu], view[:lines][view[:selected]][1]) if MGQ_Multiplayer::Capture.trigger?(:C)
 
-    step = capture.repeat?(:DOWN) ? 1 : capture.repeat?(:UP) ? -1 : 0
+    step = axis_step(:UP, :DOWN)
     return if step == 0
 
     @menu = (@menu + step) % view[:menu].size
@@ -597,8 +921,9 @@ module MGQ_MpWorldOverview
     end
   end
 
-  # Follows the mouse: pointing picks a player or a choice, a click opens the player's menu or takes
-  # the choice, and a click outside the menu closes it, outside the box the overview.
+  # Follows the mouse on the Players page: pointing picks a player or a choice, a click opens the
+  # player's menu or takes the choice, a click on a tab turns the page, and a click outside the
+  # menu closes it, outside the box the overview.
   #
   # @param view [Hash] What the overview shows, see view.
   # @param players [Array<Integer>] The lines that are players.
@@ -610,6 +935,14 @@ module MGQ_MpWorldOverview
     return unless position
 
     x, y = position
+    tab = Sprite_MpWorldOverview.tab_at(x, y)
+    if tab
+      return unless clicked
+
+      log("menu closed with a click on a tab") if view[:menu]
+      @menu = nil
+      return turn_to(tab, "a click on its tab")
+    end
     if view[:menu]
       choice = Sprite_MpWorldOverview.choice_at(x, y, view)
       @menu = choice if choice && moved
@@ -630,6 +963,23 @@ module MGQ_MpWorldOverview
     end
   end
 
+  # Follows the mouse on the World page: a click on a tab turns the page, a click outside the box
+  # closes the overview.
+  def self.mouse_world
+    position = MGQ_Multiplayer::Mouse.position
+    clicked = MGQ_Multiplayer::Mouse.clicked?
+    @mouse = position
+    return unless position && clicked
+
+    x, y = position
+    tab = Sprite_MpWorldOverview.tab_at(x, y)
+    return turn_to(tab, "a click on its tab") if tab
+    return if Sprite_MpWorldOverview.inside?(x, y)
+
+    Sound.play_cancel
+    close("a click outside the box")
+  end
+
   # Scrolls so the player picked stays in sight.
   #
   # @param lines [Array<Array>] The list, see lines.
@@ -644,11 +994,12 @@ module MGQ_MpWorldOverview
   end
 end
 
-# The overview's box over the map: the world's name and the player's party at the top, the list of
-# players by place, and the menu of the player picked.
+# The overview's box over the map: the world's name, type and difficulty and the player's party at
+# the top, the pages' tabs under them, the page's lines, and on the Players page the menu of the
+# player picked.
 class Sprite_MpWorldOverview < Sprite
   # Where the box sits on the screen, the list box's place.
-  BOX = Sprite_MpListBox::BOX
+  BOX = Sprite_MpListBox.box
 
   # Height of one line of the list, the list box's.
   ROW = Sprite_MpListBox::ROW
@@ -656,35 +1007,52 @@ class Sprite_MpWorldOverview < Sprite
   # Height of the title, the list box's.
   TITLE = Sprite_MpListBox::TITLE
 
+  # Height of the row of tabs under the title.
+  TABS = ROW
+
+  # Top of the page's lines, under the title and the tabs.
+  LIST_TOP = TITLE + TABS
+
   # Height of the hint at the bottom, the list box's.
   HINT_HEIGHT = Sprite_MpListBox::HINT_HEIGHT
 
-  # Lines of the list the box shows at once, the list box's.
-  LIST_ROWS = Sprite_MpListBox::LIST_ROWS
+  # Room between the box's edge and its texts and lines.
+  MARGIN = 8
 
-  # Left edge of each column: icons, name, party size, level, story, and the ping's right edge.
+  # Lines of a page the box shows at once.
+  LIST_ROWS = (BOX.height - LIST_TOP - HINT_HEIGHT - MARGIN) / ROW
+
+  # Width of a page's tab; the style's gap lies between two tabs.
+  TAB_WIDTH = 100
+
+  # Side of the mark at the Players tab's corner while a player's call waits there and the World
+  # page shows.
+  CALL_MARK = 6
+
+  # Room between the world's name and the party's size in the title.
+  TITLE_GAP = 12
+
+  # Left edge of each column: icons, name, party size, level, story, and the ping's right edge;
+  # the ping column is MGQ_MpOverworld::PING_WIDTH wide.
   COLUMNS = { :icons => 8, :name => 60, :party => 232, :level => 284, :story => 340, :ping_right => BOX.width - 10 }
+
+  # Left edge of each column of the World page: a row's label and value; a raid boss's name
+  # (at the label's), tier, gauge, share with its right edge, and who last hurt it.
+  WORLD_COLUMNS = { :label => 8, :value => 140, :tier => 192, :gauge => 240, :share => 334, :share_right => 394, :by => 400 }
+
+  # Width and height of a raid boss's gauge, and the pixels its frame takes on each side.
+  GAUGE_WIDTH = 90
+  GAUGE_HEIGHT = 6
+  GAUGE_FRAME = 1
 
   # Width of the menu beside the player picked.
   MENU_WIDTH = 210
 
-  # Background of the box, the action wheel's.
-  BACK = Sprite_MpActionWheel::BACK
-
-  # Background of the player picked and the menu's choice picked, the action wheel's.
-  PICKED_BACK = Sprite_MpActionWheel::PICKED_BACK
-
-  # Background of the menu.
-  MENU_BACK = Color.new(16, 16, 24, 235)
-
-  # Color of a place's heading, the list box's headings'.
-  PLACE_COLOR = Sprite_MpListBox::HEAD_COLOR
-
-  # Color of a party member's name, the ghost label's.
-  MEMBER_COLOR = Sprite_MpGhostLabel::MEMBER_COLOR
-
-  # Color of the hint and of a choice that cannot be taken, the action wheel's.
-  GREY = Sprite_MpActionWheel::GREY
+  # The hint at the bottom of each page, with the overview's hotkey.
+  HINTS = {
+    :players => ["Left or right: page", "Enter: invite, duel or trade", MGQ_MpUi::Style.close_hint("%s")].join(MGQ_MpUi::Style::HINT_GAP),
+    :world => ["Left or right: page", "Up or down: scroll", MGQ_MpUi::Style.close_hint("%s")].join(MGQ_MpUi::Style::HINT_GAP),
+  }
 
   # Creates the box, hidden.
   #
@@ -717,11 +1085,25 @@ class Sprite_MpWorldOverview < Sprite
   def self.line_at(x, y, view)
     return nil unless inside?(x, y)
 
-    row = (y - BOX.y - TITLE) / ROW
-    return nil if y < BOX.y + TITLE || row >= LIST_ROWS
+    row = (y - BOX.y - LIST_TOP) / ROW
+    return nil if y < BOX.y + LIST_TOP || row >= LIST_ROWS
 
     line = view[:scroll] + row
     line < view[:lines].size ? line : nil
+  end
+
+  # Finds the page's tab under a point of the screen.
+  #
+  # @param x [Integer] The point's x.
+  # @param y [Integer] The point's y.
+  # @return [Symbol, nil] The page, see MGQ_MpWorldOverview::PAGES; nil outside the tabs.
+  def self.tab_at(x, y)
+    return nil unless y >= BOX.y + TITLE && y < BOX.y + LIST_TOP && x >= BOX.x + MARGIN
+
+    across = x - BOX.x - MARGIN
+    step = TAB_WIDTH + MGQ_MpUi::Style::GAP
+    page = MGQ_MpWorldOverview::PAGES[across / step]
+    page && across % step < TAB_WIDTH ? page[0] : nil
   end
 
   # Finds the menu's choice under a point of the screen.
@@ -746,11 +1128,11 @@ class Sprite_MpWorldOverview < Sprite
   # @param view [Hash] What the overview shows, see MGQ_MpWorldOverview.view.
   # @return [Array<Integer>] The menu's left and top edge in the box.
   def self.menu_origin(view)
-    row_top = TITLE + (view[:selected] - view[:scroll]) * ROW
+    row_top = LIST_TOP + (view[:selected] - view[:scroll]) * ROW
     height = view[:menu].size * ROW
     top = row_top + ROW
     top = row_top - height if top + height > BOX.height - HINT_HEIGHT
-    [BOX.width - MENU_WIDTH - 8, top]
+    [BOX.width - MENU_WIDTH - MARGIN, top]
   end
 
   # Draws the overview while it is open, if it changed.
@@ -760,10 +1142,16 @@ class Sprite_MpWorldOverview < Sprite
     self.visible = MGQ_MpWorldOverview.open? && !view.nil?
     return unless visible
 
-    rows = view[:lines].map do |kind, row|
-      kind == :player ? [row.name, row.level, row.story, row.ping && row.ping[0], row.icon, row.member, row.badge, row.call && row.call[0]] : row
+    overview = MGQ_MpWorldOverview
+    rows = view[:lines].map do |kind, row, value|
+      case kind
+      when :player then [row.name, row.level, row.story, row.ping && row.ping[0], row.icon, row.member, row.badge, row.call && row.call[0]]
+      when :boss then [row.name, row.tier, overview.share_text(row.left), (row.left * GAUGE_WIDTH).round, row.defeated, row.by]
+      when :info then [row, value]
+      else row
+      end
     end
-    drawn = [rows, view[:selected], view[:scroll],
+    drawn = [view[:page], view[:calls], overview.world_name, overview.title_tail, MGQ_MpOverworld.party_badge(:me), rows, view[:selected], view[:scroll],
              view[:menu] && view[:menu].map { |option| [option.text, !option.run.nil?] }, view[:menu_index]]
     return if drawn == @shown
 
@@ -777,62 +1165,158 @@ class Sprite_MpWorldOverview < Sprite
   #
   # @param view [Hash] What the overview shows, see MGQ_MpWorldOverview.view.
   def draw(view)
+    style = MGQ_MpUi::Style
     bitmap.clear
-    bitmap.fill_rect(bitmap.rect, BACK)
-    bitmap.font.outline = true
-    draw_title(view)
+    bitmap.fill_rect(bitmap.rect, style::BACK)
+    draw_title
+    draw_tabs(view[:page], view[:calls])
     lines = view[:lines][view[:scroll], LIST_ROWS] || []
-    lines.each_with_index { |line, index| draw_line(line, TITLE + index * ROW, view[:scroll] + index == view[:selected]) }
-    bitmap.font.size = 16
-    bitmap.font.color = GREY
-    bitmap.draw_text(8, BOX.height - HINT_HEIGHT, BOX.width - 16, HINT_HEIGHT, "Enter or click: invite, duel or trade    Esc, Numpad 0 or #{MGQ_MpHotkeys.label(:overview)}: close", 1)
+    lines.each_with_index { |line, index| draw_line(line, LIST_TOP + index * ROW, view[:scroll] + index == view[:selected]) }
+    style.use_font(bitmap, style::SMALL_SIZE, style::DIM)
+    bitmap.draw_text(MARGIN, BOX.height - HINT_HEIGHT, BOX.width - 2 * MARGIN, HINT_HEIGHT, HINTS[view[:page]] % MGQ_MpHotkeys.label(:overview), 1)
     draw_menu(view) if view[:menu]
   end
 
-  # Draws the world's name and the player's party.
-  #
-  # @param view [Hash] What the overview shows, see MGQ_MpWorldOverview.view.
-  def draw_title(view)
-    world = MGQ_MpWorld.world
+  # Draws the world's name with its type and difficulty, the name cut before the player's party,
+  # which keeps the right.
+  def draw_title
+    style = MGQ_MpUi::Style
+    overview = MGQ_MpWorldOverview
     badge = MGQ_MpOverworld.party_badge(:me)
-    bitmap.font.size = 20
-    bitmap.font.color = MGQ_MpUi::WHITE
-    bitmap.draw_text(10, 2, BOX.width - 20, TITLE - 4, world ? world.name.to_s : "World")
-    return unless badge
-
-    bitmap.font.color = MEMBER_COLOR
-    bitmap.draw_text(10, 2, BOX.width - 20, TITLE - 4, "Party #{badge[0]}", 2)
+    inset = Sprite_MpListBox::TITLE_INSET
+    left = MARGIN + inset
+    room = BOX.width - 2 * left
+    if badge
+      party = MGQ_MpOverworld.party_title(badge)
+      style.use_font(bitmap, style::TITLE_SIZE, style::MEMBER)
+      bitmap.draw_text(left, inset, room, TITLE - 2 * inset, party, 2)
+      room -= bitmap.text_size(party).width + TITLE_GAP
+    end
+    style.use_font(bitmap, style::TITLE_SIZE, style::TEXT)
+    bitmap.draw_text(left, inset, room, TITLE - 2 * inset, MGQ_MpUi.cut(bitmap, overview.world_name, room, overview.title_tail))
   end
 
-  # Draws one line of the list: a place's heading or a player.
+  # Draws the pages' tabs under the title, the page shown on the picked plate, and on the World
+  # page a gold mark at the Players tab's corner while a player's call waits there.
   #
-  # @param line [Array] [:place, name] or [:player, row].
+  # @param page [Symbol] The page shown.
+  # @param calls [Boolean] Whether a player's call waits on the Players page.
+  def draw_tabs(page, calls = false)
+    style = MGQ_MpUi::Style
+    MGQ_MpWorldOverview::PAGES.each_with_index do |(key, title), index|
+      x = MARGIN + index * (TAB_WIDTH + style::GAP)
+      shown = key == page
+      bitmap.fill_rect(x, TITLE, TAB_WIDTH, TABS, style::PICKED) if shown
+      style.use_font(bitmap, style::SMALL_SIZE, shown ? style::TEXT : style::DIM)
+      bitmap.draw_text(x, TITLE, TAB_WIDTH, TABS, title, 1)
+      bitmap.fill_rect(x + TAB_WIDTH - CALL_MARK - style::GAP, TITLE + style::GAP, CALL_MARK, CALL_MARK, style::GOLD) if calls && !shown && key == :players
+    end
+  end
+
+  # Draws one line of a page: a heading, a player, a row of the World page or a raid boss.
+  #
+  # @param line [Array] [:place, name], [:player, row], [:info, label, value] or [:boss, boss].
   # @param y [Integer] The line's top.
   # @param picked [Boolean] Whether it is the player picked.
   def draw_line(line, y, picked)
-    kind, value = line
-    bitmap.font.size = 18
-    if kind == :place
-      bitmap.font.color = PLACE_COLOR
-      bitmap.draw_text(8, y, BOX.width - 16, ROW, value)
-      return
+    kind, value, extra = line
+    case kind
+    when :place then draw_heading(value, y)
+    when :info then draw_info(value, extra, y)
+    when :boss then draw_boss(value, y)
+    else draw_player(value, y, picked)
     end
+  end
 
-    bitmap.fill_rect(4, y, BOX.width - 8, ROW, PICKED_BACK) if picked
-    draw_icons(value, y)
-    bitmap.font.color = value.member ? MEMBER_COLOR : MGQ_MpUi::WHITE
-    bitmap.draw_text(COLUMNS[:name], y, COLUMNS[:party] - COLUMNS[:name] - 4, ROW, value.name)
-    bitmap.font.size = 16
-    bitmap.draw_text(COLUMNS[:party], y, COLUMNS[:level] - COLUMNS[:party], ROW, value.badge[0]) if value.badge
-    bitmap.font.color = MGQ_MpUi::WHITE
-    bitmap.draw_text(COLUMNS[:level], y, COLUMNS[:story] - COLUMNS[:level], ROW, value.level)
-    text, color = value.call || [value.story, MGQ_MpUi::WHITE]
-    bitmap.font.color = color
-    bitmap.draw_text(COLUMNS[:story], y, COLUMNS[:ping_right] - 60 - COLUMNS[:story], ROW, text)
-    return unless value.ping
+  # Draws a heading: a place's, or the raid bosses'.
+  #
+  # @param text [String] The heading.
+  # @param y [Integer] The line's top.
+  def draw_heading(text, y)
+    style = MGQ_MpUi::Style
+    style.use_font(bitmap, style::TEXT_SIZE, style::HEADING)
+    bitmap.draw_text(MARGIN, y, BOX.width - 2 * MARGIN, ROW, text)
+  end
 
-    bitmap.font.color = value.ping[1]
-    bitmap.draw_text(COLUMNS[:ping_right] - 56, y, 56, ROW, value.ping[0], 2)
+  # Draws a player: their icons, their name in their color, their party's size, their level, their
+  # place in the story or their call, and their ping.
+  #
+  # @param row [MGQ_MpWorldOverview::Row] The player.
+  # @param y [Integer] The line's top.
+  # @param picked [Boolean] Whether they are picked.
+  def draw_player(row, y, picked)
+    style = MGQ_MpUi::Style
+    inset = Sprite_MpListBox::PICK_INSET
+    bitmap.fill_rect(inset, y, BOX.width - 2 * inset, ROW, style::PICKED) if picked
+    draw_icons(row, y)
+    color = MGQ_MpUi::PlayerColor.of(row.player, row.member)
+    style.use_font(bitmap, style::TEXT_SIZE, color)
+    name_width = COLUMNS[:party] - COLUMNS[:name] - style::GAP
+    bitmap.draw_text(COLUMNS[:name], y, name_width, ROW, MGQ_MpUi.cut(bitmap, row.name, name_width))
+    style.use_font(bitmap, style::SMALL_SIZE, color)
+    bitmap.draw_text(COLUMNS[:party], y, COLUMNS[:level] - COLUMNS[:party], ROW, row.badge[0]) if row.badge
+    style.use_font(bitmap, style::SMALL_SIZE, style::TEXT)
+    bitmap.draw_text(COLUMNS[:level], y, COLUMNS[:story] - COLUMNS[:level], ROW, row.level)
+    text, text_color = row.call || [row.story, style::TEXT]
+    style.use_font(bitmap, style::SMALL_SIZE, text_color)
+    ping_left = COLUMNS[:ping_right] - MGQ_MpOverworld::PING_WIDTH
+    bitmap.draw_text(COLUMNS[:story], y, ping_left - style::GAP - COLUMNS[:story], ROW, text)
+    MGQ_MpOverworld.draw_ping(bitmap, row.ping, ping_left, y, ROW) if row.ping
+  end
+
+  # Draws a row of the World page: its label and its value.
+  #
+  # @param label [String] The label.
+  # @param value [String] The value.
+  # @param y [Integer] The line's top.
+  def draw_info(label, value, y)
+    style = MGQ_MpUi::Style
+    columns = WORLD_COLUMNS
+    style.use_font(bitmap, style::TEXT_SIZE, style::HEADING)
+    bitmap.draw_text(columns[:label], y, columns[:value] - columns[:label] - style::GAP, ROW, label)
+    style.use_font(bitmap, style::TEXT_SIZE, style::TEXT)
+    width = BOX.width - MARGIN - columns[:value]
+    bitmap.draw_text(columns[:value], y, width, ROW, MGQ_MpUi.cut(bitmap, value, width))
+  end
+
+  # Draws a raid boss: its name, dimmed once defeated, its tier, its gauge, its share left or
+  # Defeated, and who last hurt it.
+  #
+  # @param boss [MGQ_MpWorldOverview::Boss] The boss.
+  # @param y [Integer] The line's top.
+  def draw_boss(boss, y)
+    style = MGQ_MpUi::Style
+    overview = MGQ_MpWorldOverview
+    columns = WORLD_COLUMNS
+    style.use_font(bitmap, style::TEXT_SIZE, boss.defeated ? style::DIM : style::TEXT)
+    name_width = columns[:tier] - columns[:label] - style::GAP
+    bitmap.draw_text(columns[:label], y, name_width, ROW, MGQ_MpUi.cut(bitmap, boss.name, name_width))
+    style.use_font(bitmap, style::TINY_SIZE, style::DIM)
+    bitmap.draw_text(columns[:tier], y, columns[:gauge] - columns[:tier] - style::GAP, ROW, overview::TIER % boss.tier) if boss.tier
+    draw_gauge(columns[:gauge], y + (ROW - GAUGE_HEIGHT) / 2, boss.defeated ? 0.0 : boss.left)
+    style.use_font(bitmap, style::TINY_SIZE, boss.defeated ? style::BAD : style::TEXT)
+    bitmap.draw_text(columns[:share], y, columns[:share_right] - columns[:share], ROW, boss.defeated ? overview::DEFEATED : overview.share_text(boss.left), 2)
+    return unless boss.by
+
+    style.use_font(bitmap, style::TINY_SIZE, style::DIM)
+    by_width = BOX.width - MARGIN - columns[:by]
+    bitmap.draw_text(columns[:by], y, by_width, ROW, MGQ_MpUi.cut(bitmap, overview::LAST_HURT_BY % boss.by, by_width))
+  end
+
+  # Draws a thin gauge of a raid boss's HP: its frame in the outline color, its empty part on the
+  # plate color, the share left in the bad color.
+  #
+  # @param x [Integer] Its left.
+  # @param y [Integer] Its top.
+  # @param left [Float] The share of the HP left, 0 to 1.
+  def draw_gauge(x, y, left)
+    style = MGQ_MpUi::Style
+    inner_width = GAUGE_WIDTH - 2 * GAUGE_FRAME
+    inner_height = GAUGE_HEIGHT - 2 * GAUGE_FRAME
+    bitmap.fill_rect(x, y, GAUGE_WIDTH, GAUGE_HEIGHT, style::OUTLINE)
+    bitmap.fill_rect(x + GAUGE_FRAME, y + GAUGE_FRAME, inner_width, inner_height, style::PLATE)
+    filled = (inner_width * MGQ_MpUi.within(left.to_f, 0.0, 1.0)).round
+    bitmap.fill_rect(x + GAUGE_FRAME, y + GAUGE_FRAME, filled, inner_height, style::BAD) if filled > 0
   end
 
   # Draws the icon of what a player does and the crown of a party's leader.
@@ -841,26 +1325,21 @@ class Sprite_MpWorldOverview < Sprite
   # @param y [Integer] The line's top.
   def draw_icons(row, y)
     icons = [row.icon, row.badge && row.badge[1] ? MGQ_MpOverworld::CROWN_ICON : nil].compact
-    return if icons.empty?
-
-    iconset = Cache.system("Iconset")
-    icons.each_with_index do |icon, index|
-      bitmap.blt(COLUMNS[:icons] + index * 26, y, iconset, MGQ_MpUi.icon_rect(icon))
-    end
+    icons.each_with_index { |icon, index| MGQ_MpUi.draw_icon(bitmap, icon, COLUMNS[:icons] + index * MGQ_MpUi::ICON_STEP, y) }
   end
 
-  # Draws the menu beside the player picked.
+  # Draws the menu beside the player picked, on its own back over the box's.
   #
   # @param view [Hash] What the overview shows, see MGQ_MpWorldOverview.view.
   def draw_menu(view)
+    style = MGQ_MpUi::Style
     left, top = self.class.menu_origin(view)
-    bitmap.fill_rect(left, top, MENU_WIDTH, view[:menu].size * ROW, MENU_BACK)
-    bitmap.font.size = 18
+    bitmap.fill_rect(left, top, MENU_WIDTH, view[:menu].size * ROW, style::BACK)
     view[:menu].each_with_index do |option, index|
       y = top + index * ROW
-      bitmap.fill_rect(left, y, MENU_WIDTH, ROW, PICKED_BACK) if index == view[:menu_index]
-      bitmap.font.color = option.run ? MGQ_MpUi::WHITE : GREY
-      bitmap.draw_text(left + 8, y, MENU_WIDTH - 16, ROW, option.text)
+      bitmap.fill_rect(left, y, MENU_WIDTH, ROW, style::PICKED) if index == view[:menu_index]
+      style.use_font(bitmap, style::TEXT_SIZE, option.run ? style::TEXT : style::DIM)
+      bitmap.draw_text(left + MARGIN, y, MENU_WIDTH - 2 * MARGIN, ROW, option.text)
     end
   end
 

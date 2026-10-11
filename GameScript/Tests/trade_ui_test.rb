@@ -2,14 +2,17 @@
 #  trade_ui_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-11: Checked the confirm box before cancelling the trade, with a stand-in that records the question and answers
+#                            - Checked that a no after the trade ended under the box leaves the disposed commands alone
 #      Paulinchen  2026-10-07: Cut names through MGQ_MpUi.cut, loading ui.rbx first
 #                            - Created
 #
 #----------------------------------------------------------------
 
 # Covers the trade screen, ui_trade.rbx: an offer's first row, whose head never runs into whether
-# its player confirmed, and the status line, which shows a message about the trade while it lasts.
-# The game's windows stand in, measuring each character at four tenths of the font's size.
+# its player confirmed, the status line, which shows a message about the trade while it lasts,
+# and the confirm box before cancelling. The game's windows stand in, measuring each character at
+# four tenths of the font's size.
 
 require_relative "support"
 
@@ -82,4 +85,38 @@ MGQ_MpTrade.note = "You cannot carry more High-Quality Herb."
 check("the status line shows a message about the trade while it lasts", MGQ_MpTradeUi.status_line(session), "You cannot carry more High-Quality Herb.")
 MGQ_MpTrade.note = nil
 check("then how the trade stands", MGQ_MpTradeUi.status_line(session), "Confirm once both offers are right. Any change takes both confirmations back.")
+
+# The confirm box before cancelling, which stands in here, recording the question and answering.
+asked = []
+$answer = false
+$opens = true
+MGQ_MpUi::Confirm.define_singleton_method(:ask) { |question, choices, &answer| asked << [question] + choices; answer.call($answer) if $opens; $opens }
+activated = 0
+$disposed = false
+commands = Object.new
+commands.define_singleton_method(:activate) { activated += 1 }
+commands.define_singleton_method(:disposed?) { $disposed }
+cancelled = 0
+MGQ_MpTrade.define_singleton_method(:cancel) { cancelled += 1 }
+scene = Scene_MpTrade.allocate
+scene.instance_variable_set(:@command_window, commands)
+MGQ_MpTrade.session = session
+scene.on_cancel_trade
+check("cancelling asks first, naming the other player and what is lost", asked.last, ["Cancel the trade with Tester A? Both offers are lost.", "Cancel trade", "Keep trading"])
+check("no keeps trading: the commands take the input back", [cancelled, activated], [0, 1])
+$answer = true
+scene.on_cancel_trade
+check("yes cancels the trade", [cancelled, activated], [1, 1])
+$opens = false
+scene.on_cancel_trade
+check("a box that could not open hands the input back", [cancelled, activated], [1, 2])
+$opens = true
+$answer = false
+$disposed = true
+scene.on_cancel_trade
+check("no after the trade ended under the box leaves the disposed commands alone", [asked.size, cancelled, activated], [4, 1, 2])
+$disposed = false
+MGQ_MpTrade.session = nil
+scene.on_cancel_trade
+check("without a trade nothing is asked", [asked.size, cancelled, activated], [4, 1, 3])
 
