@@ -2,7 +2,8 @@
 #  coop_scene.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Told the viewers the story's music, background sounds, fanfares and sound effects, played, stopped and faded with the game's defaults for what the story left out, which a viewer plays on the teller's map screen alone, holding the music for when they are there, and its changes of the map's tileset, battle backgrounds and parallax
+#      Paulinchen  2026-10-11: Let the teller's move routes skip a blocked step and ended the one the player's character walks once the viewer no longer sees the scene, so it never holds the player for good
+#                            - Told the viewers the story's music, background sounds, fanfares and sound effects, played, stopped and faded with the game's defaults for what the story left out, which a viewer plays on the teller's map screen alone, holding the music for when they are there, and its changes of the map's tileset, battle backgrounds and parallax
 #                            - Told a Raid World's viewers the switches, variables and self switches the story changes once a frame, so their games show the scene's characters on the pages the story turns on and keep watching the telling, without writing them as their own story
 #                            - Told the move routes the story gives the map's events and the player's character, without their scripts, and the animations, balloons and erasures it shows on them, so the viewers see the characters move and react, their own character walking the teller's route without starting what it touches
 #                            - Told where the teller's camera stands while the story plays, which the viewers' cameras ease to, and the game's map zoom, putting both back once the viewer no longer sees the scene
@@ -698,6 +699,9 @@ module MGQ_MpCoopScene
   # Gives an event the move route the teller's story gave it, without the commands this game
   # cannot run safely (see route_command); the player's own interpreter never waits for it.
   #
+  # The route always skips a blocked step, since the viewer's characters stand elsewhere than the
+  # teller's and a step that never succeeds would hold the character for good.
+  #
   # @param event [Game_Event] The event.
   # @param args [Array] The event's id, whether the route repeats, whether it skips what it cannot
   #   do, and its commands, see route_entry.
@@ -708,7 +712,7 @@ module MGQ_MpCoopScene
     commands.push(RPG::MoveCommand.new(0)) unless commands.last && commands.last.code == 0
     route = RPG::MoveRoute.new
     route.repeat = args[1] ? true : false
-    route.skippable = args[2] ? true : false
+    route.skippable = true
     route.wait = false
     route.list = commands
     event.force_move_route(route)
@@ -841,6 +845,10 @@ module MGQ_MpCoopScene
       $game_player.transparent = @transparent
       done << "character #{@transparent ? 'hidden' : 'shown'} again"
     end
+    if walks_player?
+      end_player_route
+      done << "ended the teller's route the player's character walked"
+    end
     done << "dropped the held #{@held_audio.keys.sort.join(' and ')}" unless @held_audio.empty?
     log("put the screen back, since #{reason}: #{done.join(', ')}")
     forget
@@ -850,7 +858,15 @@ module MGQ_MpCoopScene
   #
   # @return [Boolean] Whether it does.
   def self.pending?
-    !(@pictures.empty? && @screen.nil? && @transparent.nil? && @zoom.nil? && @camera_target.nil? && @held_audio.empty?)
+    !(@pictures.empty? && @screen.nil? && @transparent.nil? && @zoom.nil? && @camera_target.nil? && @held_audio.empty? && !walks_player?)
+  end
+
+  # Ends the teller's route the player's character walks, giving it back its own, as the game
+  # does at a forced route's end.
+  def self.end_player_route
+    MGQ_MpGame.set($game_player, :move_route_forcing, false)
+    $game_player.restore_move_route
+    @player_route = false
   end
 
   # Forgets what to put back, as when a save is loaded, which brings its own screen.
@@ -867,6 +883,7 @@ module MGQ_MpCoopScene
     @camera = nil
     @changed_at = nil
     @held_audio = {}
+    @player_route = false
   end
 end
 

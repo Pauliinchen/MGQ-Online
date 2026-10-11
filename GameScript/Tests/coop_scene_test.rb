@@ -2,7 +2,8 @@
 #  coop_scene_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Checked that the story's music, sounds and fades and the map's tileset, battle backgrounds and parallax reach the viewers, never a path, a file or a tileset the game lacks, the game's defaults filled in, and that a viewer away from the teller's map screen hears the music once there and none of the sound effects
+#      Paulinchen  2026-10-11: Checked that the viewer's character skips a blocked step of the teller's route and walks none of it once the viewer no longer sees the scene
+#                            - Checked that the story's music, sounds and fades and the map's tileset, battle backgrounds and parallax reach the viewers, never a path, a file or a tileset the game lacks, the game's defaults filled in, and that a viewer away from the teller's map screen hears the music once there and none of the sound effects
 #                            - Checked that the player's route, the camera's place and the map's zoom reach the viewers, whose own character walks the route without starting what it touches
 #                            - Checked that a viewer the story values moved on keeps watching the telling, on the teller's side and their own, also with values between the story's events on two maps
 #                            - Checked that a Raid World teller tells the story values, move routes without scripts, balloons and erasures, and that a viewer takes the values as the world, the routes without what this game lacks and the effects on the right characters
@@ -100,7 +101,7 @@ class Game_Variables; def initialize; @data = []; end; def [](id); @data[id]; en
 class Game_SelfSwitches; def initialize; @data = {}; end; def [](key); @data[key]; end; def []=(key, value); @data[key] = value; end; end
 # Characters that note their routes, animations, balloons and erasure.
 class Game_CharacterBase; attr_accessor :animation_id, :balloon_id; end
-class Game_Character < Game_CharacterBase; attr_reader :route; def force_move_route(route); @route = route; end; end
+class Game_Character < Game_CharacterBase; attr_reader :route; def force_move_route(route); @route = route; end; def restore_move_route; $restored = true; $forcing = false; end; end
 class Game_Event < Game_Character; attr_reader :id, :erased; def initialize(id); @id = id; end; def erase; @erased = true; end; end
 class Game_Player < Game_Character
   attr_accessor :transparent
@@ -532,4 +533,15 @@ check("the viewer's own character walks the teller's route, starting nothing it 
 $forcing = false
 $game_player.update_nonmoving(true)
 check("once the route ended, it does again", $nonmoving, true)
+check("the route skips a step the viewer's character cannot take, which stands elsewhere than the teller's",
+      $game_player.route.skippable, true)
+scene.call("event.route", [-1, true, false, [[4], [0]]])
+$forcing = true
+$restored = nil
+teller.state["telling"] = "0"
+$frame_count += MGQ_MpCoopScene::STATE_GRACE_FRAMES
+$game_map.update
+check("a route still walked once the viewer no longer sees the scene ends, giving the player their character back",
+      [$restored, $game_player.instance_variable_get(:@move_route_forcing), MGQ_MpCoopScene.walks_player?], [true, false, false])
+teller.state["telling"] = "1"
 $raid = false

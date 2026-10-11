@@ -2,6 +2,7 @@
 #  core_game_access.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-11: Named whether a forced move route moves a character
 #      Paulinchen  2026-10-10: Dropped the party's team, its temporary party with the personas it changed and the split party played, which only the raid boss's fall back read
 #                            - Named the game's HP bar of an enemy's sprite, which the raid boss's bar moves down
 #      Paulinchen  2026-10-09: Named the party's team, its temporary party with the personas it changed, and the split party played
@@ -125,6 +126,9 @@ module MGQ_MpGame
 
     # Scene_Map: whether the game's menu was asked for.
     :menu_calling => :@menu_calling,
+
+    # Game_Character: whether a forced move route moves the character instead of its own.
+    :move_route_forcing => :@move_route_forcing,
 
     # $data_mapinfos: the map lists, the main one and one per further map folder.
     :map_lists => :@data,
