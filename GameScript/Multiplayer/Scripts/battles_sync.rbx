@@ -2,6 +2,10 @@
 #  battles_sync.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-11: Let the waiting box name the players still waited for and count the seconds, written as the line above the player's head writes them, drawn once a second, before the leave offer takes the last line
+#                            - Named the wait for a player once, which the live battle and the playback share
+#                            - Named a player of the world by their seat for the waiting box, "you" for the player, through the peer's name the log's naming shares
+#                            - Told of a player who joined the running battle the way a departure is told, once per battle apart from their leaving
 #      Paulinchen  2026-10-08: Closed a command phase the live battle ended in as it finishes, such as after a reset
 #                            - Took the messages of the players a running co-op battle expects to join it, before they are among its guests
 #      Paulinchen  2026-10-07: Named a player by their name and seat as the other scripts do, the player themselves too, and listed characters with their ids for every battle script
@@ -181,11 +185,34 @@ module MGQ_MpBattlesSync
     return @player.to_s if seat.nil?
     return "the player (seat #{seat})" if seat == MGQ_MpOverworldSync::Me.seat
 
-    peer = MGQ_MpOverworldSync::Peers.at(seat)
-    name = peer && peer.state && peer.state["name"]
+    name = peer_name(seat)
     name ? "#{name} (seat #{seat})" : "seat #{seat}"
   rescue
     "seat #{seat}"
+  end
+
+  # Names a player of the world by their seat for the waiting box: "you" for the player, the name
+  # of the peer at the seat, the seat alone for a player the game does not know.
+  #
+  # @param seat [Integer] Their world seat.
+  # @return [String] The name.
+  def self.seat_name(seat)
+    return Waiting::OWN_NAME if seat == MGQ_MpOverworldSync::Me.seat
+
+    peer_name(seat) || "seat #{seat}"
+  end
+
+  # Names the peer at a seat of the world.
+  #
+  # @param seat [Integer] The world seat.
+  # @return [String, nil] The name, nil for a seat the game does not know or cannot read, as on a
+  #   guest whose world closed during the battle.
+  def self.peer_name(seat)
+    peer = MGQ_MpOverworldSync::Peers.at(seat)
+    name = peer && peer.state && peer.state["name"]
+    name ? name.to_s : nil
+  rescue
+    nil
   end
 
   # Names a battler with its id for Multiplayer InGame.log.
@@ -969,7 +996,7 @@ module MGQ_MpBattlesSync
 
   # Tells the player at once when another player leaves the live battle, in the chat log, which
   # shows in battle, and in the world's status line: the battle itself takes them out only at its
-  # next command phase.
+  # next command phase. Tells the same way when a player joins the running battle.
   module Departures
     # Battles and seats already told, at most this many kept.
     KEPT = 32
@@ -992,12 +1019,22 @@ module MGQ_MpBattlesSync
       tell(peer, "#{peer.state['name']} left the world, and the battle.")
     end
 
-    # Tells of a player leaving, once per battle.
+    # Tells that a player joined the running battle, as the host took them in. Called by
+    # battles_coop.rbx.
+    #
+    # @param peer [MGQ_MpOverworldSync::Peers::Peer] The player.
+    def self.joined(peer)
+      tell(peer, "#{peer.state['name']} joined the battle.", :joined)
+    end
+
+    # Tells of a player leaving or joining, once per battle and player.
     #
     # @param peer [MGQ_MpOverworldSync::Peers::Peer] The player.
     # @param text [String] What the player sees.
-    def self.tell(peer, text)
-      key = [MGQ_MpBattlesSync.battle_id, peer.seat]
+    # @param kind [Symbol] :left for a departure, :joined for a join, told apart since a player may
+    #   join and then leave.
+    def self.tell(peer, text, kind = :left)
+      key = [MGQ_MpBattlesSync.battle_id, peer.seat, kind]
       return if @told.include?(key)
 
       @told.push(key)
@@ -1010,13 +1047,30 @@ module MGQ_MpBattlesSync
     end
   end
 
-  # The box that says what the game waits for, and offers to leave the battle when the wait drags on.
+  # The box that says what the game waits for, whom it still waits for and for how long, and offers
+  # to leave the battle when the wait drags on.
   module Waiting
     # Width of the box.
     WIDTH = 360
 
-    # Height of the box, two lines.
-    HEIGHT = 72
+    # Lines of the box: the text, the names, and the seconds or the leave offer.
+    LINES = 3
+
+    # Height of a line, as the game's Window_Base#line_height has it.
+    LINE_HEIGHT = 24
+
+    # Room between the window's edge and its contents, as the game's Window_Base#standard_padding
+    # has it.
+    PADDING = 12
+
+    # Height of the box. The contents are made once with the window, so the height is set at open.
+    HEIGHT = LINE_HEIGHT * LINES + 2 * PADDING
+
+    # Top of the box on the screen.
+    TOP = 120
+
+    # How far above the battle's windows the box lies.
+    Z = 250
 
     # Frames a wait lasts before the box offers to leave the battle, ten seconds. Offered later, the
     # key that moved the last message on never leaves by chance.
@@ -1025,38 +1079,115 @@ module MGQ_MpBattlesSync
     # What the box says once it offers to leave.
     LEAVE_TEXT = "Cancel leaves the battle."
 
-    # Opens the box.
+    # What starts the names line unless the caller passes another.
+    WAITING_PREFIX = "Waiting for: "
+
+    # What the box says while the game waits for a player, with their name.
+    WAITING_FOR = "Waiting for %s..."
+
+    # What the names line calls the player.
+    OWN_NAME = "you"
+
+    # Frames between two drawings of the seconds line, one second.
+    REDRAW_FRAMES = MGQ_MpUi::FRAMES_PER_SECOND
+
+    # Lines of the box, from the top.
+    TEXT_LINE = 0
+    NAMES_LINE = 1
+    TIME_LINE = 2
+
+    # An open box.
+    #
+    # @!attribute window [Window_Base] The window.
+    # @!attribute text [String] What the game waits for.
+    # @!attribute details [Proc, nil] Names the players still waited for.
+    # @!attribute prefix [String] What starts the names line.
+    # @!attribute names [Array<String>, nil] The names last drawn, nil before the first drawing.
+    # @!attribute seconds [Integer, nil] The seconds last drawn, nil before the first drawing.
+    Box = Struct.new(:window, :text, :details, :prefix, :names, :seconds)
+
+    # Opens the box with its first line drawn, the others empty.
     #
     # @param text [String] What the game waits for.
-    # @return [Window_Base] The box.
-    def self.open(text)
-      @text = text
-      window = Window_Base.new((Graphics.width - WIDTH) / 2, 120, WIDTH, HEIGHT)
-      window.z = 250
-      window.contents.draw_text(0, 0, window.contents.width, window.line_height, text, 1)
-      window
+    # @param details [Proc, nil] Returns an Array<String> of the names still waited for, or nil or
+    #   an empty Array for none; asked every frame, so it must be cheap. One that raises is logged
+    #   once and the line stays empty.
+    # @param prefix [String] What starts the names line, such as "Still choosing: ".
+    # @return [Box] The box.
+    def self.open(text, details = nil, prefix = WAITING_PREFIX)
+      window = Window_Base.new((Graphics.width - WIDTH) / 2, TOP, WIDTH, HEIGHT)
+      window.z = Z
+      box = Box.new(window, text, details, prefix, nil, nil)
+      draw_line(box, TEXT_LINE, text)
+      box
     end
 
-    # Offers to leave the battle once the wait lasted LEAVE_FRAMES, and tells whether the player took it.
+    # Draws a line of the box anew, cleared first.
     #
-    # @param window [Window_Base] The box.
+    # @param box [Box] The box.
+    # @param line [Integer] The line, from TEXT_LINE.
+    # @param text [String] What it says, "" for nothing.
+    def self.draw_line(box, line, text)
+      contents = box.window.contents
+      height = box.window.line_height
+      contents.clear_rect(0, line * height, contents.width, height)
+      contents.draw_text(0, line * height, contents.width, height, text, 1) unless text.empty?
+    end
+
+    # Draws what changed: the names line when the names differ from those drawn, the seconds once
+    # every REDRAW_FRAMES, or the leave offer at LEAVE_FRAMES, which stays. Frames below 0 draw no
+    # seconds.
+    #
+    # @param box [Box] The box.
+    # @param frames [Integer] Frames the box has been open, 0 in the frame it opened.
+    def self.refresh(box, frames)
+      names = names_of(box)
+      if names != box.names
+        box.names = names
+        contents = box.window.contents
+        draw_line(box, NAMES_LINE, names.empty? ? "" : MGQ_MpUi.cut(contents, "#{box.prefix}#{names.join(', ')}", contents.width))
+      end
+      if frames == LEAVE_FRAMES
+        draw_line(box, TIME_LINE, LEAVE_TEXT)
+      elsif frames >= 0 && frames < LEAVE_FRAMES && frames % REDRAW_FRAMES == 0
+        box.seconds = frames / REDRAW_FRAMES
+        draw_line(box, TIME_LINE, MGQ_MpUi::SECONDS_TEXT % box.seconds)
+      end
+    end
+
+    # Asks a box's details for the names still waited for.
+    #
+    # @param box [Box] The box.
+    # @return [Array<String>] The names, none without details or when they fail.
+    def self.names_of(box)
+      return [] unless box.details
+
+      Array(box.details.call).map { |name| name.to_s }
+    rescue => e
+      MGQ_MpBattlesSync.log_once(box.details, "the waiting box could not name whom it waits for: #{e.class}: #{e.message}")
+      []
+    end
+
+    # Draws what changed, offers to leave the battle once the wait lasted LEAVE_FRAMES, and tells
+    # whether the player took the offer.
+    #
+    # @param box [Box] The box.
     # @param frames [Integer] Frames the box has been open.
     # @return [Boolean] Whether the player leaves the battle.
-    def self.leave?(window, frames)
+    def self.leave?(box, frames)
+      refresh(box, frames)
       return false if frames < LEAVE_FRAMES
 
-      if frames == LEAVE_FRAMES
-        MGQ_MpBattlesSync.log("still waiting after #{LEAVE_FRAMES / 60} s (#{@text}), Cancel now leaves the battle")
-        window.contents.draw_text(0, window.line_height, window.contents.width, window.line_height, LEAVE_TEXT, 1)
-      end
+      MGQ_MpBattlesSync.log("still waiting after #{LEAVE_FRAMES / MGQ_MpUi::FRAMES_PER_SECOND} s (#{box.text}), Cancel now leaves the battle") if frames == LEAVE_FRAMES
       Input.trigger?(:B)
     end
 
     # Closes a box.
     #
-    # @param window [Window_Base, nil] The box.
-    def self.close(window)
-      window.dispose if window && !window.disposed?
+    # @param box [Box, nil] The box.
+    # @return [nil] Always, so the caller's box is gone.
+    def self.close(box)
+      box.window.dispose if box && !box.window.disposed?
       nil
     end
 
@@ -1065,10 +1196,12 @@ module MGQ_MpBattlesSync
     #
     # @param scene [Scene_Battle] The battle.
     # @param text [String] What the game waits for.
-    # @yieldreturn [String, nil] The answer, nil to wait on.
-    # @return [String, Symbol] The answer, an ending of Channel.ending, or :left when the player left.
-    def self.wait_for(scene, text)
-      window = nil
+    # @param details [Proc, nil] Names the players still waited for, see open.
+    # @param prefix [String] What starts the names line, see open.
+    # @yieldreturn [Object, nil] The answer, nil to wait on.
+    # @return [Object, Symbol] The answer, an ending of Channel.ending, or :left when the player left.
+    def self.wait_for(scene, text, details = nil, prefix = WAITING_PREFIX)
+      box = nil
       frames = 0
       held = hold_input(scene)
       loop do
@@ -1078,17 +1211,17 @@ module MGQ_MpBattlesSync
         ending = Channel.ending
         return ending if ending
 
-        window ||= open(text)
-        frames += 1
-        if leave?(window, frames)
+        box ||= open(text, details, prefix)
+        if leave?(box, frames)
           MGQ_MpBattlesSync.log("the player left the battle during the wait (#{text})")
           return :left
         end
 
+        frames += 1
         MGQ_MpGame.call(scene, :update_for_wait)
       end
     ensure
-      close(window)
+      close(box)
       release_input(held)
     end
 

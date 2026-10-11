@@ -2,6 +2,8 @@
 #  notices_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-11: Checked the box fading in and out, an answered invite and a message that runs out fading away, the last row saying how many more wait, a long notification cut to its row and the three spaces between what the keys do
+#                            - Checked the keys drawn whole with a rebound key's longer name
 #      Paulinchen  2026-10-08: Checked that an accepted invite shows again after a moment while it still stands, and a declined one stays away
 #                            - Checked that an accepted invite stays away for the whole hold, and shows again at once when the inviter turns the accept down
 #      Paulinchen  2026-10-07: Checked that an accepted invite stays away while it stands
@@ -13,28 +15,39 @@
 #----------------------------------------------------------------
 
 # Covers the notification box, ui_notices.rbx: the invites it lists from anywhere in the world while
-# they stand, the messages it shows for a moment, the scenes it shows in, and its keys.
+# they stand, the messages it shows for a moment, the scenes it shows in, its keys, its fades and
+# the row that says how many more wait. Pictures measure each character at 7 pixels.
 
 require_relative "world_support"
 
-# Stand-ins for the game's pictures, the World overview and duels.
+# Stand-ins for the game's pictures, which record the texts drawn whole and those drawn fading,
+# the colors, the World overview and duels.
+class Color
+  attr_reader :red, :green, :blue, :alpha
+  def initialize(red = nil, green = nil, blue = nil, alpha = nil); @red, @green, @blue, @alpha = red, green, blue, alpha; end
+end
 class Bitmap
-  Font = Struct.new(:outline, :size, :color)
-  attr_reader :texts, :font
-  def initialize(*); @texts = []; @font = Font.new; end
-  def clear; @texts = []; end
+  Font = Struct.new(:outline, :size, :color, :bold, :out_color)
+  attr_reader :texts, :fading, :font
+  def initialize(*); @texts = []; @fading = []; @font = Font.new; end
+  def clear; @texts = []; @fading = []; end
   def fill_rect(*); end
-  def draw_text(_x, _y, _width, _height, text, _align = 0); @texts << text; end
+  def text_size(text); Rect.new(0, 0, text.to_s.size * 7, 16); end
+  def draw_text(_x, _y, _width, _height, text, _align = 0)
+    color = font.color
+    (color.is_a?(Color) && color.alpha && color.alpha < 255 ? @fading : @texts) << text
+  end
   def dispose; end
 end
 class Sprite
-  attr_accessor :bitmap, :x, :y, :z, :visible
+  attr_accessor :bitmap, :x, :y, :z, :visible, :opacity
+  def update; end
   def disposed?; false; end
   def dispose; end
 end
 module MGQ_MpWorldOverview; def self.open?; $overview_open; end; end
 module MGQ_MpBattlesDuel
-  CHALLENGE_COLOR = :challenge
+  CHALLENGE_COLOR = Color.new(255, 128, 128)
   def self.available?; true; end
   def self.challenged_by?(peer); peer.state["challenge"] == "1"; end
   def self.accept(peer); $duel_answer = [:accept, peer.state["name"]]; end
@@ -58,7 +71,9 @@ load_script "ui_notices"
 
 notices = MGQ_MpNotices
 box = lambda { notices.instance_variable_get(:@box) }
-shown = lambda { box.call && box.call.visible ? box.call.bitmap.texts : [] }
+showing = lambda { box.call && box.call.instance_variable_get(:@motion).shown? }
+shown = lambda { showing.call ? box.call.bitmap.texts : [] }
+fading = lambda { showing.call ? box.call.bitmap.fading : [] }
 accept = lambda { $pressed = 0x59; notices.tick(true) }
 decline = lambda { $pressed = 0x4E; notices.tick(true) }
 
@@ -73,17 +88,29 @@ cid = { "id" => "cid", "name" => "Cid", "map" => 7, "x" => 1, "y" => 1, "d" => 2
 $inbox << entry("in", 2) << entry("message", 2, told(bea)) << entry("in", 3) << entry("message", 3, told(cid))
 MGQ_MpOverworldSync.tick
 check("an invite and a challenge from afar show, the keys on the first", shown.call,
-      ["Bea invites you to a party", "Y: Accept  N: Decline", "Cid challenges you to a duel"])
-check("at the top left", [box.call.x, box.call.y], [8, 8])
+      ["Bea invites you to a party", "Y: Accept   N: Decline", "Cid challenges you to a duel"])
+check("at the top left, fading in", [box.call.x, box.call.y, box.call.visible, box.call.opacity < 255], [8, 8, true, true])
+(MGQ_MpUi::Style::FADE_FRAMES - 1).times { notices.tick(true) }
+check("opaque after FADE_FRAMES", box.call.opacity, 255)
 4000.times { notices.tick(true) }
 check("they stay as long as they stand", shown.call.first, "Bea invites you to a party")
+
+# A rebound key with a longer name widens the keys' column instead of cutting the keys.
+MGQ_MpHotkeys.bind(:accept, 0x20)
+MGQ_MpHotkeys.bind(:decline, 0x0D)
+notices.tick(true)
+check("the keys stay whole with a rebound key's longer name, given the room they need", shown.call[1], "key 32: Accept   key 13: Decline")
+$player_ini.delete("key_accept")
+$player_ini.delete("key_decline")
+notices.tick(true)
+check("and read the default keys again once they are back", shown.call[1], "Y: Accept   N: Decline")
 
 # Messages show for a moment, below the invites, and take no key.
 notices.message([:soon, 2], "Bea is in a battle!")
 notices.tick(true)
 check("a message shows below the invites, without a key", shown.call,
-      ["Bea invites you to a party", "Y: Accept  N: Decline", "Cid challenges you to a duel", "Bea is in a battle!"])
-MGQ_MpNotices::MESSAGE_FRAMES.times { notices.tick(true) }
+      ["Bea invites you to a party", "Y: Accept   N: Decline", "Cid challenges you to a duel", "Bea is in a battle!"])
+MGQ_MpUi::Style::LINGER_FRAMES.times { notices.tick(true) }
 check("and goes after a moment", shown.call.include?("Bea is in a battle!"), false)
 notices.message(:alone, "A message alone")
 notices.tick(true)
@@ -102,7 +129,7 @@ decline.call
 check("the decline key declines the first invite and tells the inviter", [$sent.map { |seat, text| [seat, text.include?("party_decline=1")] }, $sounds],
       [[[2, true]], ["cancel"]])
 notices.tick(true)
-check("which stays away while it stands", shown.call, ["Cid challenges you to a duel", "Y: Accept  N: Decline"])
+check("which stays away while it stands", shown.call, ["Cid challenges you to a duel", "Y: Accept   N: Decline"])
 $inbox << entry("message", 2, told(bea.merge("party" => "bea-p2")))
 MGQ_MpOverworldSync.tick
 check("a new invite of the same player shows again", shown.call.first, "Bea invites you to a party")
@@ -111,9 +138,12 @@ check("a new invite of the same player shows again", shown.call.first, "Bea invi
 $sounds.clear
 accept.call
 check("the accept key accepts the first invite", [MGQ_MpCoop::Party.id, $sounds], ["bea-p2", ["ok"]])
+check("which fades away below the others, taking no key", [fading.call.uniq, shown.call.first], [["Bea invites you to a party"], "Cid challenges you to a duel"])
+MGQ_MpUi::Style::FADE_FRAMES.times { notices.tick(true) }
+check("and is gone after FADE_FRAMES", fading.call, [])
 $inbox << entry("message", 2, told(bea.merge("party" => "bea-p2", "party_members" => "me", "invite" => 0)))
 MGQ_MpOverworldSync.tick
-check("then the challenge is first", shown.call, ["Cid challenges you to a duel", "Y: Accept  N: Decline"])
+check("then the challenge is first", shown.call, ["Cid challenges you to a duel", "Y: Accept   N: Decline"])
 
 # A challenge in a menu.
 SceneManager.scene = Scene_Item.new
@@ -172,6 +202,30 @@ $open = false
 notices.message(:world_invite, "Discord invite taken")
 notices.tick(false)
 check("shows outside a world too, without the world's invites", shown.call, ["Discord invite taken"])
-MGQ_MpNotices::MESSAGE_FRAMES.times { notices.tick(false) }
+MGQ_MpUi::Style::LINGER_FRAMES.times { notices.tick(false) }
 check("and goes after a moment", shown.call, [])
 $open = true
+
+# A message fades over its last frames, then the box fades out, keeping its picture meanwhile.
+$inbox << entry("message", 3, told(cid.merge("challenge" => 0)))
+MGQ_MpOverworldSync.tick
+MGQ_MpUi::Style::FADE_FRAMES.times { notices.tick(true) }
+notices.message(:fading, "Going soon", MGQ_MpUi::Style::FADE_FRAMES + 1)
+notices.tick(true)
+check("a message with time left shows whole", [shown.call, fading.call], [["Going soon"], []])
+notices.tick(true)
+check("and fades over its last frames", [shown.call, fading.call], [[], ["Going soon"]])
+MGQ_MpUi::Style::FADE_FRAMES.times { notices.tick(true) }
+check("until it ran out, after which the box fades out with its picture kept", [showing.call, box.call.visible, box.call.opacity < 255, box.call.bitmap.fading], [false, true, true, ["Going soon"]])
+(MGQ_MpUi::Style::FADE_FRAMES - 1).times { notices.tick(true) }
+check("and is gone after FADE_FRAMES", [box.call.visible, box.call.opacity], [false, 0])
+
+# More notifications than rows: the last row says how many more wait, and a long one is cut.
+(1..7).each { |n| notices.message([:many, n], n == 7 ? "A message that goes on and on and on and on and on far past the box's width" : "Message #{n}") }
+notices.tick(true)
+check("past the box's rows the last row says how many more wait, the newest message first",
+      [shown.call.size, shown.call.last, shown.call[1], shown.call.first.end_with?(MGQ_MpUi::ELLIPSIS)], [5, "+3 more", "Message 6", true])
+check("the long message is cut to its row", box.call.bitmap.text_size(shown.call.first).width <= Sprite_MpNoticeBox::WIDTH - 2 * Sprite_MpNoticeBox::EDGE, true)
+(1..7).each { |n| notices.drop([:many, n]) }
+notices.tick(true)
+check("dropped, they are gone at once", notices.notices, [])

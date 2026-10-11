@@ -2,9 +2,10 @@
 #  battles_coop_join.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-11: Kept the prompt on the screen through MGQ_MpUi.within instead of a copy of it
 #      Paulinchen  2026-10-10: Offered a side battle against the same raid boss near a boss battle that takes the player in no more, on the same hotkey
-#                            - Offered a battle that waits under the Library or Config while its player's window is in the background, whose state tells "away"
 #                            - Kept the prompt whole on the screen at the map's edges
+#                            - Offered a battle that waits under the Library or Config while its player's window is in the background, whose state tells "away"
 #      Paulinchen  2026-10-09: Created
 #
 #----------------------------------------------------------------
@@ -443,8 +444,8 @@ class Sprite_MpJoinPrompt < Sprite
     self.visible = !text.nil? && !sprite.nil? && sprite.visible && sprite.opacity > 0
     return unless visible
 
-    self.x = within(sprite.x, ox, Graphics.width - WIDTH + ox)
-    self.y = within(sprite.y + GAP, 0, Graphics.height - HEIGHT)
+    self.x = MGQ_MpUi.within(sprite.x, ox, Graphics.width - WIDTH + ox)
+    self.y = MGQ_MpUi.within(sprite.y + GAP, 0, Graphics.height - HEIGHT)
     return if text == @shown
 
     @shown = text
@@ -453,16 +454,6 @@ class Sprite_MpJoinPrompt < Sprite
     bitmap.font.outline = true
     bitmap.font.color = COLOR
     bitmap.draw_text(0, 0, WIDTH, HEIGHT, text, 1)
-  end
-
-  # Keeps a coordinate between two bounds.
-  #
-  # @param value [Integer] The coordinate.
-  # @param low [Integer] The lowest it may be.
-  # @param high [Integer] The highest it may be.
-  # @return [Integer] The coordinate within the bounds.
-  def within(value, low, high)
-    [[value, low].max, high].min
   end
 
   # Frees the prompt's picture.

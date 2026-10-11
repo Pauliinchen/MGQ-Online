@@ -2,6 +2,7 @@
 #  core_hotkeys.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-11: Held every hotkey while a confirm box of the mod is open, which takes the press
 #      Paulinchen  2026-10-10: Told that the party box size hotkey also shows the battle's raid boss bar with or without its title and name
 #                            - Called every binding a hotkey in its help, and split the Party Box Size help into two lines
 #      Paulinchen  2026-10-09: Added the hotkey that joins the battle of a player nearby in a Raid World, J unless bound
@@ -87,14 +88,28 @@ module MGQ_MpHotkeys
     log("bound #{BINDINGS[action].name} to #{label(action)} (key code #{code})")
   end
 
-  # Reports whether the key bound to an action went down since the last call for that key.
+  # Reports whether the key bound to an action went down since the last call for that key. A
+  # press while a confirm box of the mod is open goes to the box: the key is read, so the press is
+  # over, and nothing opens under the box.
   #
   # @param action [Symbol] A key of BINDINGS.
   # @return [Boolean] Whether it went down.
   def self.pressed?(action)
     pressed = MGQ_Multiplayer::Key.pressed?(code(action))
+    if pressed && confirm_open?
+      log("hotkey #{label(action)} went to the confirm box")
+      return false
+    end
+
     log_press(action) if pressed && !$mgq_text_input
     pressed
+  end
+
+  # Reports whether a confirm box of the mod is open, which takes every hotkey.
+  #
+  # @return [Boolean] Whether one is; false before ui.rbx loaded.
+  def self.confirm_open?
+    defined?(MGQ_MpUi::Confirm) && MGQ_MpUi::Confirm.open? ? true : false
   end
 
   # Logs a hotkey pressed and what it is for. Not while the player types, whose letters would land

@@ -2,6 +2,7 @@
 #  actors_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-11: Checked a rebuilt character's owner and its own name
 #      Paulinchen  2026-10-07: Checked that a hero that cannot be read is logged once
 #      Paulinchen  2026-10-06: Checked the fingerprint's databases, a rebuilt character's enchanted equipment past the switch's setter, and that its affection stays the owner's
 #      Paulinchen  2026-10-05: Created
@@ -71,3 +72,8 @@ check("enchanted equipment is allowed without the switch's setter, which takes t
 $affection = 7
 rebuilt.love = 9
 check("a won battle leaves the player's affection alone", $affection, 7)
+
+# A rebuilt character's owner and its own name, which the battle status window colors by player.
+rebuilt.instance_variable_set(:@player, "Player A")
+rebuilt.define_singleton_method(:actor) { Named.new("Alice") }
+check("a rebuilt character names its owner, its own name and both", [rebuilt.owner, rebuilt.base_name, rebuilt.name], ["Player A", "Alice", "Alice (Player A)"])

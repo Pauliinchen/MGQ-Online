@@ -2,6 +2,7 @@
 #  world_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-11: Gave the screen its size and frame count and stood in for the scenes' base, which the confirm box centres on and ticks after
 #      Paulinchen  2026-10-10: Loaded coop_gather.rbx and coop_teleport.rbx, which offer the teleport to a party's members
 #      Paulinchen  2026-10-08: Loaded coop_scope.rbx after coop.rbx, which the party's choices ask whether a Raid World is open
 #                            - Told the keys held from $down, and the mouse from $mouse
@@ -30,8 +31,9 @@ require_relative "support"
 # Stand-ins for the game.
 class Sprite; def initialize(*); end; end
 class Sprite_Character < Sprite; end
-module Graphics; def self.update; end; end
+module Graphics; def self.update; end; def self.width; 640; end; def self.height; 480; end; def self.frame_count; $frame.to_i; end; end
 class Spriteset_Map; def update; end; def dispose; end; end
+class Scene_Base; def update; end; def start; end; end
 Rect = Struct.new(:x, :y, :width, :height)
 class Game_Map
   attr_accessor :map_id, :interpreter, :display_name

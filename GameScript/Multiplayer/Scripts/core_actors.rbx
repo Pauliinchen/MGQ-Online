@@ -2,6 +2,7 @@
 #  core_actors.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-11: Named a rebuilt character's owner and its own name without the owner, which the battle status window colors by player
 #      Paulinchen  2026-10-07: Logged once when a hero, a counter or the switches of a character cannot be read, which stood in silently before
 #                            - Logged the builds written, what of a build this game's data lacks, each character rebuilt and what the owner's save decides for it
 #      Paulinchen  2026-10-06: Left the player's affection alone when the game raises a rebuilt character's after a won battle
@@ -551,6 +552,20 @@ class Game_MpActor < Game_Actor
   # @return [String] The character's name with its owner's, like "Alice (<player>)".
   def name
     "#{actor.name} (#{@player})"
+  end
+
+  # Names the player the character belongs to, whom name adds in parentheses.
+  #
+  # @return [String] The owner.
+  def owner
+    @player
+  end
+
+  # Names the character alone, without its owner: "Alice" of "Alice (<player>)".
+  #
+  # @return [String] The character's own name.
+  def base_name
+    actor.name
   end
 
   # Tells whether the character is Luka.

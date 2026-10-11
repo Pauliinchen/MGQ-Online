@@ -2,6 +2,12 @@
 #  ui_actions.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-11: Drew the wheel and the line above the player's own head in the shared style, fading them in and out, with the hint under the ring the wheels share, which names Esc, the numpad's 0 and the wheel's hotkey
+#                            - Made the line half the screen wide and cut it and a choice's text to their room, the line without its seconds once they make it too wide
+#                            - Drew the wheel's hint whole through the shared style, so a rebound key's longer name never cuts it, and its icons through MGQ_MpUi.draw_icon
+#                            - Showed the seconds left after a doing in the line above the player's own head, which a script names with the moment it lapses, also counted from a moment in frames
+#                            - Left a line or doing that fails out of the line, logged once, instead of losing the line and the wheel
+#                            - Told whether a screen of the mod lies over the map, which the edge arrows ask
 #      Paulinchen  2026-10-08: Closed with the numpad's 0 through MGQ_MpUi.cancel?, also with Num Lock off
 #                            - Listed the choices of another player's menu and of the player's own here, which the World overview and the chat share
 #      Paulinchen  2026-10-07: Took the icon rect, white and the depths from MGQ_MpUi
@@ -76,8 +82,12 @@ module MGQ_MpActions
   # The wheel's middle choice while no script fills it.
   NO_OPTION = Option.new("", nil, nil)
 
-  # Color of the line above the player's own head, which invites share.
-  LINE_COLOR = Color.new(255, 224, 128)
+  # Color of the line above the player's own head, the style's own color, which the invites'
+  # notices share.
+  LINE_COLOR = MGQ_MpUi::Style::OWN
+
+  # How the seconds left are written after a doing in the line above the player's own head.
+  TIME_LEFT = " (#{MGQ_MpUi::SECONDS_TEXT})"
 
   @offers = []
   @choices = []
@@ -203,11 +213,54 @@ module MGQ_MpActions
   end
 
   # Lets a script name what the player is doing in the line above their own head, such as
-  # "Inviting to a party". The line joins what every script names.
+  # "Inviting to a party". The line joins what every script names, each with its seconds left.
   #
-  # @yieldreturn [String, nil] What the player is doing, nil while nothing.
+  # @yieldreturn [String, Array, nil] What the player is doing, or the doing with the Time it
+  #   lapses (see lapse_in), nil while nothing.
   def self.own_doing_from(&doing)
     @doings << doing
+  end
+
+  # Tells the moment a number of frames from now, for a timer counted in frames.
+  #
+  # @param frames [Integer] The frames left; 0 or less lapse now.
+  # @return [Time] The moment.
+  def self.lapse_in(frames)
+    Time.now + frames / MGQ_MpUi::FRAMES_PER_SECOND.to_f
+  end
+
+  # Tells the moment some frames after a moment lapse, for a timer that counts frames from a
+  # Graphics.frame_count.
+  #
+  # @param since [Integer] The moment's Graphics.frame_count.
+  # @param frames [Integer] The frames it lasts.
+  # @return [Time] The moment, now or past once they passed.
+  def self.lapse_at(since, frames)
+    lapse_in(since + frames - Graphics.frame_count)
+  end
+
+  # Writes a doing with its seconds left, such as "Asking Player A to teleport (45 s)"; the text
+  # alone once it lapsed or has no time. A lapse that is no Time, such as a frame count by
+  # mistake, counts as none, so one wrong caller cannot break the line.
+  #
+  # @param doing [String, Array] The doing, see own_doing_from.
+  # @param now [Time] The moment the seconds count from.
+  # @return [Array(String, String)] The text alone, the log's key, and the text as shown.
+  def self.doing_text(doing, now = Time.now)
+    text, lapse = doing.is_a?(Array) ? doing : [doing, nil]
+    seconds = lapse.is_a?(Time) ? (lapse - now).ceil : 0
+    [text.to_s, seconds > 0 ? "#{text}#{TIME_LEFT % seconds}" : text.to_s]
+  end
+
+  # Asks a script's block for the line or doing it names, leaving out one that fails, logged once.
+  #
+  # @param block [Proc] The block.
+  # @return [String, Array, nil] What it names.
+  def self.named_by(block)
+    block.call
+  rescue => e
+    log_once(block, "a line or doing failed: #{e.class}: #{e.message}")
+    nil
   end
 
   # Lets a script tell that one of its screens lies over the map, which the wheel leaves the
@@ -219,22 +272,45 @@ module MGQ_MpActions
     @covers << open
   end
 
-  # Tells what the line above the player's own head says, if anything.
+  # Reports whether a screen of the mod lies over the map: the action wheel, or a screen that
+  # registered with cover, such as the emote wheel, the chat box or the World overview.
+  #
+  # @return [Boolean] Whether one does.
+  def self.covered?
+    Wheel.open? || @covers.any? { |open| open.call(false) }
+  end
+
+  # Tells what the line above the player's own head says, if anything: a script's line, else the
+  # doings with their seconds left, and the same without the seconds, which the line falls back
+  # to once the seconds make it too wide. The seconds stay out of the log, which says the line
+  # once.
+  #
+  # @return [Array(String, String), nil] The line with the seconds and without them, nil for none.
+  def self.own_lines
+    return nil unless MGQ_MpOverworldSync.in_world? && !Wheel.open?
+
+    line = key = @lines.map { |block| named_by(block) }.compact.first
+    unless line
+      named = @doings.map { |block| named_by(block) }.compact
+      # The clock is read after the doings named their lapses, so none lies a moment ahead of it.
+      now = Time.now
+      doings = named.map { |doing| doing_text(doing, now) }
+      key = doings.empty? ? nil : "#{doings.map { |pair| pair[0] }.join(', ')} . . ."
+      line = doings.empty? ? nil : "#{doings.map { |pair| pair[1] }.join(', ')} . . ."
+    end
+    if key != @own_line
+      log(key ? "the line above the player's head says: #{key}" : "the line above the player's head is gone")
+      @own_line = key
+    end
+    line ? [line, key] : nil
+  end
+
+  # Tells what the line above the player's own head says, with the seconds left, see own_lines.
   #
   # @return [String, nil] The line.
   def self.own_line
-    return nil unless MGQ_MpOverworldSync.in_world? && !Wheel.open?
-
-    line = @lines.map(&:call).compact.first
-    unless line
-      doing = @doings.map(&:call).compact
-      line = doing.empty? ? nil : "#{doing.join(', ')} . . ."
-    end
-    if line != @own_line
-      log(line ? "the line above the player's head says: #{line}" : "the line above the player's head is gone")
-      @own_line = line
-    end
-    line
+    lines = own_lines
+    lines && lines[0]
   end
 
   # The action wheel's choices, by the direction that picks them.
@@ -351,10 +427,11 @@ module MGQ_MpActions
 end
 
 # The line above the player's own head: what the scripts say there, such as an invite to a party,
-# a trade offer or the wait for the party's story, see MGQ_MpActions.own_line.
+# a trade offer or the wait for the party's story, see MGQ_MpActions.own_line. Half the screen
+# wide, cut to that, in the style's own color, fading in and out.
 class Sprite_MpOwnLine < Sprite
-  # Width of the line.
-  WIDTH = 320
+  # How many times the line fits across the screen.
+  SCREEN_SHARE = 2
 
   # Height of the line.
   HEIGHT = 24
@@ -364,30 +441,43 @@ class Sprite_MpOwnLine < Sprite
   # @param viewport [Viewport] The map's viewport of characters.
   def initialize(viewport)
     super(viewport)
-    self.bitmap = Bitmap.new(WIDTH, HEIGHT)
-    self.ox = WIDTH / 2
+    width = Graphics.width / SCREEN_SHARE
+    self.bitmap = Bitmap.new(width, HEIGHT)
+    self.ox = width / 2
     self.z = MGQ_MpUi::Z[:labels]
+    @motion = MGQ_MpUi::Motion.new(self)
     @shown = nil
   end
 
-  # Draws the line, if it changed, above the player's sprite.
+  # Draws the line, if it changed, above the player's sprite, fading it in, and fades it out once
+  # there is none, keeping its picture until it is gone.
   #
   # @param sprite [Sprite_Character, nil] The player's sprite.
   def show(sprite)
-    text = MGQ_MpActions.own_line
-    self.visible = !text.nil? && !sprite.nil?
-    return unless visible
+    lines = MGQ_MpActions.own_lines
+    unless lines && sprite
+      @motion.hide
+      @motion.update
+      return
+    end
 
-    self.x = sprite.x
-    self.y = sprite.y - sprite.height - MGQ_MpActions::HEAD_ROOM - HEIGHT
-    return if text == @shown
+    @motion.place(sprite.x, sprite.y - sprite.height - MGQ_MpActions::HEAD_ROOM - HEIGHT)
+    @motion.show
+    draw(lines) unless lines == @shown
+    @motion.update
+  end
 
-    @shown = text
+  # Draws the line: with its seconds while that fits the picture, else without them, cut to the
+  # picture's width, so a cut only ever loses the end of a text, never a countdown that fits.
+  #
+  # @param lines [Array(String, String)] The line with the seconds and without them.
+  def draw(lines)
+    style = MGQ_MpUi::Style
+    @shown = lines
     bitmap.clear
-    bitmap.font.size = 18
-    bitmap.font.outline = true
-    bitmap.font.color = MGQ_MpActions::LINE_COLOR
-    bitmap.draw_text(0, 0, WIDTH, HEIGHT, text, 1)
+    style.use_font(bitmap, style::TEXT_SIZE, style::OWN)
+    text = bitmap.text_size(lines[0]).width <= bitmap.width ? lines[0] : MGQ_MpUi.cut(bitmap, lines[1], bitmap.width)
+    bitmap.draw_text(0, 0, bitmap.width, HEIGHT, text, 1)
   end
 
   # Frees the line's picture.
@@ -399,7 +489,9 @@ end
 
 # The action wheel around the player: the ring's boxes in a column left and right of them and one
 # above and below, a square one with an icon over them, the picked one lit, those that cannot be
-# taken grey. The boxes are laid out from the directions the ring has, so the picture fits them.
+# taken dim, and under them the hint that names what closes the wheel. The boxes are laid out
+# from the directions the ring has, so the picture fits them. Drawn in the shared style, it fades
+# in and out.
 class Sprite_MpActionWheel < Sprite
   # Width of a choice's box.
   BOX_WIDTH = 200
@@ -414,8 +506,8 @@ class Sprite_MpActionWheel < Sprite
   # Size of an icon in the game's icon set.
   ICON_SIZE = MGQ_MpUi::ICON_SIZE
 
-  # Opacity of an icon whose choice cannot be taken.
-  GREY_OPACITY = 110
+  # Room between a box's side edges and its text.
+  TEXT_MARGIN = 4
 
   # Room kept free around the player's sprite, which is 32 by 48 pixels, and between boxes.
   GAP = 4
@@ -433,18 +525,6 @@ class Sprite_MpActionWheel < Sprite
     :UP_RIGHT => [1, -1], :RIGHT => [1, 0], :DOWN_RIGHT => [1, 1],
     :DOWN_LEFT => [-1, 1], :LEFT => [-1, 0], :UP_LEFT => [-1, -1],
   }
-
-  # Background of a box.
-  BACK = Color.new(0, 0, 0, 170)
-
-  # Background of the picked box.
-  PICKED_BACK = Color.new(48, 96, 176, 220)
-
-  # Color of a choice that can be taken.
-  TEXT = MGQ_MpUi::WHITE
-
-  # Color of a choice that cannot be taken.
-  GREY = Color.new(150, 150, 150)
 
   # Lays the boxes out around the player.
   #
@@ -475,34 +555,47 @@ class Sprite_MpActionWheel < Sprite
   def initialize(viewport)
     super(viewport)
     self.z = MGQ_MpUi::Z[:wheels]
-    self.visible = false
+    @motion = MGQ_MpUi::Motion.new(self)
     @shown = nil
     @places = nil
     @boxes = {}
+    @hint = nil
   end
 
-  # Draws the wheel around the player's sprite while it is open, if it changed.
+  # Draws the wheel around the player's sprite while it is open, if it changed, and fades it in;
+  # fades it out once it closed, keeping its picture until it is gone.
   #
   # @param sprite [Sprite_Character, nil] The player's sprite.
   def show(sprite)
-    self.visible = MGQ_MpActions::Wheel.open? && !sprite.nil?
-    return unless visible
+    unless MGQ_MpActions::Wheel.open? && sprite
+      @motion.hide
+      @motion.update
+      return
+    end
 
     arrange(MGQ_MpActions.wheel_places)
-    self.x = sprite.x
-    self.y = sprite.y
+    @motion.place(sprite.x, sprite.y)
+    @motion.show
     options = MGQ_MpActions.wheel_options
     drawn = [MGQ_MpActions::Wheel.selected] + options.map { |direction, option| [direction, option.text, option.icon, !option.run.nil?] }
-    return if drawn == @shown
-
-    @shown = drawn
-    bitmap.clear
-    bitmap.font.size = 18
-    bitmap.font.outline = true
-    options.each { |direction, option| draw_box(direction, option) }
+    draw(options, drawn) unless drawn == @shown
+    @motion.update
   end
 
-  # Lays the boxes out and sizes the picture to them, when the ring's directions changed.
+  # Draws the boxes and the hint under them.
+  #
+  # @param options [Hash{Symbol => MGQ_MpActions::Option}] The choices by their direction.
+  # @param drawn [Array] What the picture then shows, which show compares.
+  def draw(options, drawn)
+    style = MGQ_MpUi::Style
+    @shown = drawn
+    bitmap.clear
+    options.each { |direction, option| draw_box(direction, option) }
+    MGQ_MpWheel.draw_hint(bitmap, @hint.x, @hint.y, @hint.width, :wheel)
+  end
+
+  # Lays the boxes out, with the hint's room under them, and sizes the picture to them, when the
+  # ring's directions changed.
   #
   # @param places [Array<Symbol>] The directions of the ring's choices.
   def arrange(places)
@@ -518,14 +611,15 @@ class Sprite_MpActionWheel < Sprite
       box.x -= left
       box.y -= top
     end
+    @hint = Rect.new(0, bottom - top, right - left, MGQ_MpWheel::HINT_HEIGHT)
     bitmap.dispose if bitmap
-    self.bitmap = Bitmap.new(right - left, bottom - top)
+    self.bitmap = Bitmap.new(right - left, bottom - top + MGQ_MpWheel::HINT_HEIGHT)
     self.ox = -left
     self.oy = -top
     @shown = nil
   end
 
-  # Draws one choice's box.
+  # Draws one choice's box, its text cut to the box.
   #
   # @param direction [Symbol] The direction that picks it.
   # @param option [MGQ_MpActions::Option] The choice.
@@ -533,22 +627,23 @@ class Sprite_MpActionWheel < Sprite
     box = @boxes[direction]
     return unless box
 
+    style = MGQ_MpUi::Style
     picked = direction == MGQ_MpActions::Wheel.selected
-    bitmap.fill_rect(box.x, box.y, box.width, box.height, picked ? PICKED_BACK : BACK)
+    bitmap.fill_rect(box.x, box.y, box.width, box.height, picked ? style::PICKED : style::BACK)
     return draw_icon(option, box.x + (box.width - ICON_SIZE) / 2, box.y + (box.height - ICON_SIZE) / 2) if option.icon
 
-    bitmap.font.color = option.run ? TEXT : GREY
-    bitmap.draw_text(box.x + 4, box.y, box.width - 8, box.height, option.text, 1)
+    style.use_font(bitmap, style::TEXT_SIZE, option.run ? style::TEXT : style::DIM)
+    room = box.width - 2 * TEXT_MARGIN
+    bitmap.draw_text(box.x + TEXT_MARGIN, box.y, room, box.height, MGQ_MpUi.cut(bitmap, option.text, room), 1)
   end
 
-  # Draws a choice's icon, faded while it cannot be taken.
+  # Draws a choice's icon, dim while it cannot be taken.
   #
   # @param option [MGQ_MpActions::Option] The choice.
   # @param x [Integer] The icon's left edge.
   # @param y [Integer] The icon's top edge.
   def draw_icon(option, x, y)
-    source = MGQ_MpUi.icon_rect(option.icon)
-    bitmap.blt(x, y, Cache.system("Iconset"), source, option.run ? 255 : GREY_OPACITY)
+    MGQ_MpUi.draw_icon(bitmap, option.icon, x, y, ICON_SIZE, option.run ? MGQ_MpUi::Motion::OPAQUE : MGQ_MpUi::Style::DIM_OPACITY)
   end
 
   # Frees the wheel's picture.

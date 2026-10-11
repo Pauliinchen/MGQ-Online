@@ -2,11 +2,13 @@
 #  battles_join_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-11: Took the depths and the screen from ui.rbx, which battle_support.rb loads now
+#                            - Kept the bitmap stand-in's width, which the waiting box's names line of a late join is cut to
 #      Paulinchen  2026-10-10: Covered the side battle the prompt offers near a raid boss battle that takes the player in no more
 #                            - Checked that a side battle starts as the player's own, inviting and holding nobody, which another player then joins by choice
 #                            - Checked that an encounter bringing along more players than the running battle takes is refused and starts on its own, inviting them
-#                            - Checked that the prompt offers a battle, or a side battle next to a raid boss battle, whose players are under the Library or Config with their windows in the background
 #                            - Checked that the prompt stays whole on the screen at the map's edges
+#                            - Checked that the prompt offers a battle, or a side battle next to a raid boss battle, whose players are under the Library or Config with their windows in the background
 #      Paulinchen  2026-10-09: Covered a boss battle whose troop grew mid-battle, which stays one and hands the player every enemy
 #                            - Created
 #
@@ -72,7 +74,8 @@ end
 class Bitmap
   Font = Struct.new(:size, :outline, :color)
   attr_reader :font, :drawn
-  def initialize(_width, _height); @font = Font.new; @drawn = []; end
+  # The width stays, which the waiting box cuts its names line to.
+  def initialize(width, height); @width = width; @height = height; @font = Font.new; @drawn = []; end
   def clear; @drawn = []; end
   def draw_text(*args); @drawn << args; end
   def dispose; end
@@ -83,8 +86,6 @@ class Sprite
   def dispose; end
 end
 class Spriteset_Map; def update; end; def dispose; end; end
-module MGQ_MpUi; Z = { :labels => 250 }; end
-module Graphics; def self.width; 640; end; def self.height; 480; end; end
 
 load_script "core_hotkeys"
 load_script "battles_coop_join"

@@ -2,6 +2,7 @@
 #  ui_wheel.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-11: Drew the hint under a wheel, which names Esc, the numpad's 0 and the wheel's hotkey, for both wheels
 #      Paulinchen  2026-10-06: Waited a moment before an arrow let go of a diagonal counts, since two arrows are seldom let go in the same frame
 #                            - Spread a wheel's choices evenly over the directions the arrows point to
 #                            - Created
@@ -27,6 +28,9 @@ module MGQ_MpWheel
   # Frames one arrow of a diagonal must stay held alone before it points to its own side, about an
   # eighth of a second, since two arrows let go together are seldom let go in the same frame.
   GRACE_FRAMES = 8
+
+  # Height of the hint under a wheel, see draw_hint.
+  HINT_HEIGHT = 18
 
   @steady = nil
   @waited = 0
@@ -82,5 +86,19 @@ module MGQ_MpWheel
   # @return [Array<Symbol>] Each choice's direction, in the choices' order.
   def self.places(count)
     Array.new(count) { |index| DIRECTIONS[(index * DIRECTIONS.size.to_f / count).round % DIRECTIONS.size] }
+  end
+
+  # Draws the hint under a wheel, HINT_HEIGHT high: what closes it, Esc, the numpad's 0 and the
+  # wheel's hotkey, in the style's tiny size and heading color, whole even when a rebound key's
+  # longer name makes it wide.
+  #
+  # @param bitmap [Bitmap] The wheel's picture.
+  # @param x [Integer] The hint's left.
+  # @param y [Integer] The hint's top.
+  # @param width [Integer] The hint's width.
+  # @param action [Symbol] The wheel's hotkey, see MGQ_MpHotkeys.label.
+  def self.draw_hint(bitmap, x, y, width, action)
+    style = MGQ_MpUi::Style
+    style.draw_hint(bitmap, x, y, width, HINT_HEIGHT, style.close_hint(MGQ_MpHotkeys.label(action)), style::TINY_SIZE, style::HEADING)
   end
 end

@@ -2,6 +2,10 @@
 #  battle_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-11: Let the real waiting box run: stood in for the screen, the windows' contents, the cancel button and the scenes' base, loaded ui.rbx, and stopped a wait that never ends
+#                            - Gave the rebuilt character stand-in its owner and its own name
+#                            - Let the battle status window stand-in draw a character's name, which battles_coop.rbx wraps
+#                            - Kept every window opened, which the tests of the waiting box read
 #      Paulinchen  2026-10-10: Stood in for the game's draw of the steps to the next random encounter and for being in a party
 #      Paulinchen  2026-10-09: Let an enemy appear and transform, as the game's Enemy Appear and Enemy Transform do, and be eaten, which counts it among the defeated as the game does
 #                            - Stood in for the game's variables, which hold the enemy rates a guest takes from the host
@@ -136,7 +140,9 @@ end
 class Game_MpActor < Game_Actor
   attr_accessor :mp_seat, :mp_place
   def initialize(member, player); super(member.actor_id); @player = player; end
-  def name; "Actor#{@id} (#{@player})"; end
+  def name; "#{base_name} (#{@player})"; end
+  def owner; @player; end
+  def base_name; "Actor#{@id}"; end
 end
 class Game_Enemy < Game_Battler
   attr_reader :enemy_id, :index
@@ -257,7 +263,8 @@ class Scene_Battle
   def start_party_command_selection; $commands_phase = true; end
   attr_accessor :changing
   def scene_changing?; @changing; end
-  def update_for_wait; $frames += 1; $inject.call($frames) if $inject; end
+  # A wait that never ends fails the test instead of hanging it.
+  def update_for_wait; $frames += 1; raise "a wait ran past #{WAIT_LIMIT} frames" if $frames > WAIT_LIMIT; $inject.call($frames) if $inject; end
   def no_change_all_dead_on_bench?; :original; end
   def bench_member_ok; :original; end
   def bench_member_cancel; $bench_cancelled = true; end
@@ -269,10 +276,40 @@ end
 class Window_BattleStatus
   attr_accessor :index
   def current_item_enabled?; :original; end
+  def draw_actor_name(actor, x, y, width = 144); :original; end
 end
 class Scene_Map; def update_scene; end; def scene_changing?; false; end; def update_call_menu; @menu_calling = true; end; attr_reader :menu_calling; end
-class Window_Base; end
-module Input; def self.trigger?(*); false; end; end
+class Scene_Base; def update; end; def start; end; end
+# Frames a wait may last in a test before it fails.
+WAIT_LIMIT = 10_000
+module Graphics; def self.width; 640; end; def self.height; 480; end; def self.frame_count; $frames.to_i; end; end
+Rect = Struct.new(:x, :y, :width, :height)
+class Sprite; def initialize(*); end; end
+# A window's contents: the texts drawn by line, each line's drawings counted. The records are made
+# as needed, since a test may open the class anew with an initialize of its own.
+class Bitmap
+  attr_reader :width, :height
+  def initialize(width, height); @width = width; @height = height; end
+  def lines; @lines ||= {}; end
+  def draws; @draws ||= Hash.new(0); end
+  def text_size(text); Rect.new(0, 0, text.to_s.size * 8, 24); end
+  def draw_text(x, y, width, height, text, align = 0); lines[y / 24] = text; draws[y / 24] += 1; end
+  def clear_rect(x, y, width, height); lines.delete(y / 24); end
+  def clear; lines.clear; end
+  def dispose; @disposed = true; end
+  def disposed?; @disposed ? true : false; end
+end
+class Window_Base
+  attr_reader :x, :y, :width, :height, :contents
+  attr_accessor :z
+  # Every window opened, newest last, for a test that reads the waiting box's lines.
+  def initialize(x = 0, y = 0, width = 0, height = 0); @x, @y, @width, @height = x, y, width, height; @contents = Bitmap.new(width - 24, height - 24); ($windows ||= []) << self; end
+  def line_height; 24; end
+  def dispose; @disposed = true; end
+  def disposed?; @disposed ? true : false; end
+end
+# The cancel button, which $leave presses.
+module Input; def self.trigger?(button); button == :B && $leave ? true : false; end; end
 
 module MGQ_MpCoop
   def self.tell(seat, field, value, fields = {})
@@ -289,6 +326,7 @@ module MGQ_MpOverworldSync
   def self.on_leave(*); end
   def self.label_line(*); end
 end
+load_script "ui"
 load_script "coop_scope"
 load_script "coop_squad"
 load_script "battles"
@@ -296,11 +334,6 @@ load_script "battles_raid_bosses"
 load_script "battles_coop"
 load_script "battles_coop_hotjoin"
 %w[battles_sync battles_sync_wire battles_sync_recorder battles_sync_playback battles_sync_live].each { |name| load_script name }
-module MGQ_MpBattlesSync::Waiting
-  def self.open(text); :window; end
-  def self.close(window); nil; end
-  def self.leave?(window, frames); false; end
-end
 SceneManager.run
 MGQ_MpBattlesCoop.install
 

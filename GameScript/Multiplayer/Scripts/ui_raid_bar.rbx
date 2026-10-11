@@ -2,6 +2,8 @@
 #  ui_raid_bar.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-11: Took the font, the outline and the plate from the shared style instead of copies of them, with the style's outline, plate and slide timing, and the slide's step from the motion
+#                            - Named the hotkey that makes the battle's strip small at the right of its title, and kept the title out of its room
 #      Paulinchen  2026-10-10: Showed a boss of several enemies with a name and a gauge per enemy, sharing the gauge's width
 #                            - Kept a shortened HP from reading above the max
 #                            - Showed no bars in the Hades rematch hall
@@ -513,17 +515,7 @@ class Sprite_MpRaidBar < Sprite
   # Pixels between the top of an event's sprite and its bar.
   GAP = 4
 
-  # How far the bar's texts' outline reaches, in pixels, drawn as copies straight above, below and
-  # beside them; more than 1 fills in the game's small letters.
-  OUTLINE_REACH = 1
-
-  # The plate behind each line of text, as wide as its text with PLATE_MARGIN on either side; the
-  # plates stack onto each other and onto the gauge's frame without a gap.
-  PLATE = Color.new(0, 0, 0, 150)
-  PLATE_MARGIN = 8
-
-  # The gauge's outer frame and the thin gold edge inside it.
-  FRAME = Color.new(0, 0, 0, 255)
+  # The thin gold edge inside the gauge's outer frame, which is the style's outline.
   EDGE = Color.new(200, 164, 96, 230)
 
   # The gauge's empty part, a dark maroon.
@@ -549,17 +541,14 @@ class Sprite_MpRaidBar < Sprite
   # Frames between two drawings while a damage trail drains.
   TRAIL_REDRAW_FRAMES = 2
 
-  # Frames the battle's strip takes to slide up or down, see MGQ_MpRaidBar.small?.
-  SLIDE_FRAMES = 8
-
   # The title's color, a light gold.
   TITLE_COLOR = Color.new(255, 224, 140)
 
-  # The texts' outline, solid black instead of the game's half see-through one.
-  OUTLINE = Color.new(0, 0, 0, 255)
-
   # Room the numbers and the names keep from the gauge's ends.
   NUMBERS_MARGIN = 4
+
+  # What the battle's strip says at the right of its title, with the hotkey that makes it small.
+  BARS_HINT = "%s: bars"
 
   # Creates the bar, hidden.
   #
@@ -666,16 +655,19 @@ class Sprite_MpRaidBar < Sprite
     MGQ_MpRaidBar.log_once(:battle, "drawing the battle's boss bar failed: #{e.class}: #{e.message}")
   end
 
-  # Slides the battle's strip a step of SLIDE_FRAMES towards where it stands: up until only its
-  # gauges show, or down in full. A new strip starts where it stands, without sliding.
+  # Slides the battle's strip a step of MGQ_MpUi::Style::SLIDE_FRAMES towards where it stands: up
+  # until only its gauges show, or down in full. A new strip starts where it stands, without
+  # sliding.
+  #
+  # The strip keeps its own slide instead of MGQ_MpUi::Motion, since its showing and hiding follow
+  # the game's top message at once and the game's own boss bar follows its place.
   #
   # @param small [Boolean] Whether only its gauges show.
   def slide(small)
     room = MGQ_MpRaidBar::STRIP_HEIGHT - MGQ_MpRaidBar::SMALL_STRIP_HEIGHT
     target = small ? -room : 0
     @slide = target.to_f if @slide.nil?
-    step = room.to_f / SLIDE_FRAMES
-    @slide = @slide < target ? [@slide + step, target].min : [@slide - step, target].max
+    @slide = MGQ_MpUi::Motion.step_towards(@slide, target.to_f, room.to_f / MGQ_MpUi::Style::SLIDE_FRAMES)
     self.y = @slide.round
   end
 
@@ -715,13 +707,15 @@ class Sprite_MpRaidBar < Sprite
 
   # Draws a bar: its title centered across the bar and below it the row of gauges, centered, each
   # with its name centered over it and the HP inside, the row's width shared among them with
-  # GAUGE_GAP between.
+  # GAUGE_GAP between; the strip's title line names the hotkey that makes it small at its right,
+  # and keeps the title out of the hint's room on either side, so it stays centered.
   #
   # @param bar [MGQ_MpRaidBar::Bar] The bar.
   # @param layout [Layout] The sizes of its parts.
   # @param top [Integer] Room above the title.
   # @param row_width [Integer] The width of the row of gauges, inside their frames.
   def draw_bar(bar, layout, top, row_width)
+    style = MGQ_MpUi::Style
     gauges = bar.gauges
     count = [gauges.size, 1].max
     gauge_width = (row_width - GAUGE_GAP * (count - 1)) / count
@@ -730,15 +724,22 @@ class Sprite_MpRaidBar < Sprite
     gauge_top = name_top + layout.name + LINE_EXTRA
     size = name_size(gauges, layout.name, gauge_width)
     bitmap.clear
-    draw_plate(bar.title.to_s, layout.title, 0, bitmap.width, 0, name_top)
+    hint_room = 0
+    unless @overhead
+      hint = BARS_HINT % MGQ_MpHotkeys.label(:party_box)
+      use_font(style::TINY_SIZE, style::DIM)
+      hint_room = bitmap.text_size(hint).width + NUMBERS_MARGIN
+      draw_outlined(0, top, bitmap.width - NUMBERS_MARGIN, layout.title + LINE_EXTRA, hint, 2)
+    end
+    draw_plate(bar.title.to_s, layout.title, hint_room, bitmap.width - 2 * hint_room, 0, name_top)
     gauges.each_with_index do |gauge, index|
       x, width = name_box(count, left, gauge_width, index)
       draw_plate(gauge.name.to_s, size, x, width, name_top, gauge_top - FRAME_WIDTH - name_top)
     end
-    draw_line(bar.title.to_s, layout.title, TITLE_COLOR, 0, top, bitmap.width)
+    draw_line(bar.title.to_s, layout.title, TITLE_COLOR, hint_room, top, bitmap.width - 2 * hint_room)
     gauges.each_with_index do |gauge, index|
       x, width = name_box(count, left, gauge_width, index)
-      draw_line(gauge.name.to_s, size, MGQ_MpUi::WHITE, x, name_top, width, gauge_top - name_top)
+      draw_line(gauge.name.to_s, size, style::TEXT, x, name_top, width, gauge_top - name_top)
     end
     gauges.each_with_index do |gauge, index|
       x = left + (gauge_width + GAUGE_GAP) * index
@@ -772,14 +773,15 @@ class Sprite_MpRaidBar < Sprite
 
     room = gauge_width - NUMBERS_MARGIN * 2
     fitting = (MIN_NAME_SIZE..size).to_a.reverse.find do |candidate|
-      use_font(candidate, MGQ_MpUi::WHITE)
+      use_font(candidate, MGQ_MpUi::Style::TEXT)
       gauges.all? { |gauge| bitmap.text_size(gauge.name.to_s).width <= room }
     end
     fitting || [MIN_NAME_SIZE, size].min
   end
 
   # Draws the plate behind a line of text, centered in its box and as wide as the text, so it never
-  # stands on the busy picture behind the bar; none for an empty line.
+  # stands on the busy picture behind the bar; none for an empty line. The plates stack onto each
+  # other and onto the gauge's frame without a gap.
   #
   # @param text [String] The line's text.
   # @param size [Integer] Its font's size.
@@ -788,11 +790,8 @@ class Sprite_MpRaidBar < Sprite
   # @param y [Integer] The plate's top.
   # @param height [Integer] The plate's height.
   def draw_plate(text, size, x, box_width, y, height)
-    return if text.empty?
-
-    use_font(size, MGQ_MpUi::WHITE)
-    width = [bitmap.text_size(text).width + PLATE_MARGIN * 2, box_width].min
-    bitmap.fill_rect(x + (box_width - width) / 2, y, width, height, PLATE)
+    use_font(size, MGQ_MpUi::Style::TEXT)
+    MGQ_MpUi::Style.draw_plate(bitmap, x, y, box_width, height, text)
   end
 
   # Draws a line of text centered in its box, cut to fit.
@@ -807,44 +806,27 @@ class Sprite_MpRaidBar < Sprite
   #   keeps its row's, so it stays centered over its gauge.
   def draw_line(text, size, color, x, y, width, height = size + LINE_EXTRA)
     use_font(size, color)
-    draw_outlined(x, y, width, height, MGQ_MpUi.cut(bitmap, text, width - NUMBERS_MARGIN * 2, ""), color)
+    draw_outlined(x, y, width, height, MGQ_MpUi.cut(bitmap, text, width - NUMBERS_MARGIN * 2, ""))
   end
 
-  # Draws a text centered in a box in its solid outline, widened by copies in OUTLINE around it as
-  # far as OUTLINE_REACH.
+  # Draws a text in a box in the style's solid outline, in the font's color.
   #
   # @param x [Integer] The box's left.
   # @param y [Integer] The box's top.
   # @param width [Integer] The box's width.
   # @param height [Integer] The box's height.
   # @param text [String] The text.
-  # @param color [Color] The text's color.
-  def draw_outlined(x, y, width, height, text, color)
-    reach = OUTLINE_REACH
-    bitmap.font.color = OUTLINE if reach > 0
-    (-reach..reach).each do |dx|
-      (-reach..reach).each do |dy|
-        next if (dx.zero? && dy.zero?) || (dx.abs == reach && dy.abs == reach)
-
-        bitmap.draw_text(x + dx, y + dy, width, height, text, 1)
-      end
-    end
-    bitmap.font.color = color
-    bitmap.draw_text(x, y, width, height, text, 1)
+  # @param align [Integer] 1 for centered, 2 for right, as Bitmap#draw_text takes it.
+  def draw_outlined(x, y, width, height, text, align = 1)
+    MGQ_MpUi::Style.draw_outlined(bitmap, x, y, width, height, text, align)
   end
 
-  # Sets the font of what is drawn next, with the solid outline every text of the bar has, never
-  # bold, which smears the game's pixel font.
+  # Sets the font of what is drawn next, in the style's way: never bold, with the solid outline.
   #
   # @param size [Integer] Its size.
   # @param color [Color] Its color.
   def use_font(size, color)
-    font = bitmap.font
-    font.size = size
-    font.bold = false
-    font.color = color
-    font.outline = true
-    font.out_color = OUTLINE
+    MGQ_MpUi::Style.use_font(bitmap, size, color)
   end
 
   # Draws a gauge in its frame, filled by the share left.
@@ -856,7 +838,7 @@ class Sprite_MpRaidBar < Sprite
   # @param left [Float] The share left.
   # @param trail [Float] The share the damage trail reaches, at least the share left.
   def draw_gauge(x, y, width, height, left, trail = left)
-    bitmap.fill_rect(x - FRAME_WIDTH, y - FRAME_WIDTH, width + FRAME_WIDTH * 2, height + FRAME_WIDTH * 2, FRAME)
+    bitmap.fill_rect(x - FRAME_WIDTH, y - FRAME_WIDTH, width + FRAME_WIDTH * 2, height + FRAME_WIDTH * 2, MGQ_MpUi::Style::OUTLINE)
     bitmap.fill_rect(x - 1, y - 1, width + 2, height + 2, EDGE)
     bitmap.fill_rect(x, y, width, height, EMPTY)
     filled = (width * left).ceil
@@ -888,11 +870,11 @@ class Sprite_MpRaidBar < Sprite
   # @param width [Integer] The gauge's width.
   # @param height [Integer] The gauge's height.
   def draw_numbers(gauge, size, x, y, width, height)
-    use_font(size, MGQ_MpUi::WHITE)
+    use_font(size, MGQ_MpUi::Style::TEXT)
     room = width - NUMBERS_MARGIN * 2
     texts = ["#{numbers(gauge)}  (#{percent(gauge)})", numbers(gauge), percent(gauge)]
     text = texts.find { |candidate| bitmap.text_size(candidate).width <= room } || texts.last
-    draw_outlined(x, y, width, height, text, MGQ_MpUi::WHITE)
+    draw_outlined(x, y, width, height, text)
   end
 
   # Frees the bar's picture.

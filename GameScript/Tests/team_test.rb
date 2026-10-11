@@ -2,6 +2,7 @@
 #  team_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-11: Let the stand-in of the waiting box take the names still waited for and their prefix
 #      Paulinchen  2026-10-06: Checked that the players of a team duel bring no share of the Backline
 #                            - Checked that a guest names no commands for the others' characters
 #      Paulinchen  2026-10-04: Followed the scripts to their new names, without mp_
@@ -140,6 +141,6 @@ MGQ_MpBattlesSync::Live.instance_variable_set(:@ready, [5, 6])
 MGQ_MpBattlesSync::Channel.receive(2, "ready", "")
 $answers = []
 $game_system = Struct.new(:conf).new({})
-def (MGQ_MpBattlesSync::Waiting).wait_for(scene, text); $answers << yield; :broken; end
+def (MGQ_MpBattlesSync::Waiting).wait_for(scene, text, *rest); $answers << yield; :broken; end
 MGQ_MpBattlesSync::Live.host_start(scene)
 check("guests ready in an earlier wait do not count in the next", $answers, [nil])

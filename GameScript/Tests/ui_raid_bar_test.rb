@@ -2,6 +2,9 @@
 #  ui_raid_bar_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-11: Expected the strip's hint with the hotkey that makes it small, the plates with the shared style's padding, and read the plate and the slide timing from the style
+#                            - Checked a long title of the strip cut before the hint's room, and expected the title's box inset by that room
+#                            - Stood in for the scene the confirm box follows, so ui.rbx hooks without failing
 #      Paulinchen  2026-10-10: Covered a boss of several enemies with a name and a gauge per enemy, the names shrinking to fit, the wider map bar and a damage trail per gauge
 #                            - Covered a full boss whose shortened max is no multiple of the unit and the Hades rematch hall without bars
 #                            - Created
@@ -42,7 +45,10 @@ class Bitmap
     @texts << [x, text.to_s, font.size, align]
     @boxes << [x, y, width, height]
   end
-  def fill_rect(x, y, width, height, color); @fills << [x, y, width, height, color]; end
+  def fill_rect(*args)
+    x, y, width, height, color = args[0].is_a?(Rect) ? [args[0].x, args[0].y, args[0].width, args[0].height, args[1]] : args
+    @fills << [x, y, width, height, color]
+  end
   def gradient_fill_rect(x, _y, width, *); @gauges << [x, width]; end
   def dispose; @disposed = true; end
   def disposed?; @disposed ? true : false; end
@@ -73,8 +79,12 @@ module MGQ_MpWorldStory
   def self.world_id; "w1"; end
 end
 module MGQ_MpBattlesSync; def self.role; :guest; end; end
-# The party box's hotkey, held for one update by $tab_pressed, Player.ini and the cursor sound.
-module MGQ_MpHotkeys; def self.pressed?(action); action == :party_box && $tab_pressed; end; end
+# The party box's hotkey, held for one update by $tab_pressed and named Tab, Player.ini and the
+# cursor sound.
+module MGQ_MpHotkeys
+  def self.pressed?(action); action == :party_box && $tab_pressed; end
+  def self.label(_action); "Tab"; end
+end
 module MGQ_Multiplayer
   module Player
     def self.setting(name); ($settings ||= {})[name]; end
@@ -137,6 +147,7 @@ class Game_Map
   def update_interpreter; end
 end
 
+class Scene_Base; def update; end; end
 load_script "ui"
 load_script "battles_raid_bosses"
 load_script "battles_raid_pool"
@@ -203,7 +214,7 @@ end
 # @param sprite [Sprite_MpRaidBar] The bar.
 # @return [Array<Array>] Each plate's rectangle.
 def plates_of(sprite)
-  sprite.bitmap.fills.select { |_x, _y, _w, _h, color| color.equal?(Sprite_MpRaidBar::PLATE) }.map { |x, y, w, h, _color| [x, y, w, h] }
+  sprite.bitmap.fills.select { |_x, _y, _w, _h, color| color.equal?(MGQ_MpUi::Style::PLATE) }.map { |x, y, w, h, _color| [x, y, w, h] }
 end
 
 # The numbers grouped by commas.
@@ -224,12 +235,12 @@ spriteset = Spriteset_Battle.new
 spriteset.update
 strip = spriteset.instance_variable_get(:@mgq_mp_raid_bar)
 check("the strip lies at the top under the game's windows", [strip.visible, strip.x, strip.y, strip.z, strip.bitmap.width, strip.bitmap.height], [true, 0, 0, 90, 640, 86])
-check("with the boss's title, its name below it over the gauge and the HP with the share left inside the gauge, all centered",
+check("with the hotkey that makes it small at the right of its title line, dim and small, the boss's title, its name below it over the gauge and the HP with the share left inside the gauge, all centered",
       strip.bitmap.texts.map { |x, text, size, align| [x, text, size, align] },
-      [[0, "Tier 9 Raid Boss", 20, 1], [0, "Queen Harpy", 24, 1], [112, "5,250 / 7,000  (75.0%)", 21, 1]])
-check("each in a solid black outline widened by 4 copies above, below and beside it, never bold", [strip.bitmap.outlines, strip.bitmap.font.out_color.to_a, strip.bitmap.font.bold], [12, [0, 0, 0, 255], false])
-check("a plate behind each line, as wide as its text, the title's on the name's and the name's on the gauge's frame",
-      plates_of(strip), [[232, 0, 176, 26], [246, 26, 148, 26]])
+      [[0, "Tab: bars", 14, 2], [67, "Tier 9 Raid Boss", 20, 1], [0, "Queen Harpy", 24, 1], [112, "5,250 / 7,000  (75.0%)", 21, 1]])
+check("each in a solid black outline widened by 4 copies above, below and beside it, never bold", [strip.bitmap.outlines, strip.bitmap.font.out_color.to_a, strip.bitmap.font.bold], [16, [0, 0, 0, 255], false])
+check("a plate behind each line, as wide as its text with the style's padding, the title's on the name's and the name's on the gauge's frame",
+      plates_of(strip), [[234, 0, 172, 26], [248, 26, 144, 26]])
 check("its gauge, 65 % of the screen wide, filled by the share left in two glossy halves", strip.bitmap.gauges, [[112, 312], [112, 312]])
 sprite = Sprite_Battler.new(Struct.new(:boss).new(true).tap { |battler| def battler.boss?; boss; end })
 sprite.update_hp_bar
@@ -249,8 +260,8 @@ check("which comes a few frames later", strip.bitmap.texts.last[1], "5,134 / 7,0
 $tab_pressed = true
 spriteset.update
 $tab_pressed = false
-check("Tab starts sliding the strip up and keeps the choice", [strip.y, strip.bitmap.texts.size, $settings["raid_bar_small"]], [-6, 3, "1"])
-(Sprite_MpRaidBar::SLIDE_FRAMES - 1).times { spriteset.update }
+check("Tab starts sliding the strip up and keeps the choice", [strip.y, strip.bitmap.texts.size, $settings["raid_bar_small"]], [-6, 4, "1"])
+(MGQ_MpUi::Style::SLIDE_FRAMES - 1).times { spriteset.update }
 check("until after SLIDE_FRAMES only its gauge with the HP shows, the title and the name above the screen", strip.y, -50)
 sprite.update_hp_bar
 check("the game's own boss bar follows it up", sprite.instance_variable_get(:@hp_bar).y, 24)
@@ -259,7 +270,7 @@ check("and it stays there", strip.y, -50)
 $tab_pressed = true
 spriteset.update
 $tab_pressed = false
-Sprite_MpRaidBar::SLIDE_FRAMES.times { spriteset.update }
+MGQ_MpUi::Style::SLIDE_FRAMES.times { spriteset.update }
 sprite.update_hp_bar
 check("Tab again slides it back down in full", [strip.y, sprite.instance_variable_get(:@hp_bar).y, $settings["raid_bar_small"]], [0, 74, "0"])
 spriteset.dispose
@@ -275,11 +286,11 @@ check("the battle's bar has a gauge per enemy of the boss, with its own HP", fla
 spriteset = Spriteset_Battle.new
 spriteset.update
 strip = spriteset.instance_variable_get(:@mgq_mp_raid_bar)
-check("the strip shows the title once and each enemy's name over its gauge, with the numbers of each inside",
+check("the strip shows the hint and the title once and each enemy's name over its gauge, with the numbers of each inside",
       strip.bitmap.texts,
-      [[0, "Archangel", 20, 1], [112, "Metatronne", 24, 1], [323, "Sandalphone", 24, 1], [112, "15,000 / 15,000", 21, 1], [323, "9,000 / 22,500", 21, 1]])
+      [[0, "Tab: bars", 14, 2], [67, "Archangel", 20, 1], [112, "Metatronne", 24, 1], [323, "Sandalphone", 24, 1], [112, "15,000 / 15,000", 21, 1], [323, "9,000 / 22,500", 21, 1]])
 check("two gauges share the gauge's width, 6 px apart", strip.bitmap.gauges, [[112, 205], [112, 205], [323, 82], [323, 82]])
-check("the title's plate spans the strip, each name's its gauge", plates_of(strip), [[267, 0, 106, 26], [146, 26, 136, 26], [351, 26, 148, 26]])
+check("the title's plate spans the strip, each name's its gauge", plates_of(strip), [[269, 0, 102, 26], [148, 26, 132, 26], [353, 26, 144, 26]])
 spriteset.dispose
 reset
 pool.note_invite("troop" => "836", "pool" => "3")
@@ -290,14 +301,19 @@ spriteset.update
 strip = spriteset.instance_variable_get(:@mgq_mp_raid_bar)
 check("each a third of the gauge's width", strip.bitmap.gauges.each_slice(2).map(&:first), [[112, 134], [252, 134], [392, 134]])
 check("the names share the largest font size down from the layout's at which every name fits its gauge",
-      strip.bitmap.texts[1..3], [[112, "Black Dahlia", 21, 1], [252, "Black Mamba", 21, 1], [392, "Black Rose", 21, 1]])
+      strip.bitmap.texts[2..4], [[112, "Black Dahlia", 21, 1], [252, "Black Mamba", 21, 1], [392, "Black Rose", 21, 1]])
 check("the plates stand on the gauges' frames and the title's on the plates", plates_of(strip).map { |_x, y, _w, h| [y, h] }.uniq, [[0, 26], [26, 26]])
-check("the shrunken names keep their row's height, so they stay centered over their gauges", strip.bitmap.boxes[1..3].map { |_x, y, _w, h| [y, h] }.uniq, [[26, 28]])
+check("the shrunken names keep their row's height, so they stay centered over their gauges", strip.bitmap.boxes[2..4].map { |_x, y, _w, h| [y, h] }.uniq, [[26, 28]])
 spriteset.dispose
 strip = Sprite_MpRaidBar.new(nil, false)
 strip.show(MGQ_MpRaidBar::Bar.new("Tier 5 Raid Boss", [MGQ_MpRaidBar::Gauge.new("Queen Harpy of the Sky Realm", 1, 1), MGQ_MpRaidBar::Gauge.new("Black Mamba", 1, 1), MGQ_MpRaidBar::Gauge.new("Black Rose", 1, 1)]))
-check("a name too long even at the smallest size is cut, every name at that size", strip.bitmap.texts[1..3],
+check("a name too long even at the smallest size is cut, every name at that size", strip.bitmap.texts[2..4],
       [[112, "Queen Harpy of...", 14, 1], [252, "Black Mamba", 14, 1], [392, "Black Rose", 14, 1]])
+strip = Sprite_MpRaidBar.new(nil, false)
+strip.show(one("Black Rose", 1, 1, "A Raid Boss Whose Title Goes On And On And On And On Far Past The Strip's Width"))
+title = strip.bitmap.texts[1]
+check("a long title of the strip is cut before the hint's room on either side, so it stays centered and never meets the hint",
+      [title[0], title[1].end_with?(MGQ_MpUi::ELLIPSIS), strip.bitmap.boxes[1].values_at(0, 2), plates_of(strip).first], [67, true, [67, 506], [67, 0, 506, 26]])
 
 # The bosses' events on the map.
 reset

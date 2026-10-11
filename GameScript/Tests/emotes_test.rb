@@ -2,6 +2,8 @@
 #  emotes_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-11: Checked the wheel's picture: its hint under the ring, the name of the emote pointed at and the fade in and out
+#                            - Checked the hint drawn whole with a rebound key's longer name
 #      Paulinchen  2026-10-06: Checked that the World overview keeps the wheel shut, and that a loaded save with fewer frames ends the cooldown
 #                            - Left loading ui_wheel.rbx to world_support.rb, which loads it already
 #                            - Pointed at emotes with the arrows held, diagonals and none included, and kept the last one once they are let go, a diagonal also when its arrows are let go one after the other
@@ -140,3 +142,52 @@ emotes.on_map
 emotes.close
 check("a wheel that opened and closed under another screen leaves its hold", MGQ_Multiplayer::Capture.on?, true)
 MGQ_Multiplayer::Capture.stop(:overview)
+
+# The wheel's picture: its boxes in the shared style, the picked emote's name below the ring and
+# the hint under it, fading in on open and out on close with the picture kept. Pictures measure
+# each character at 7 pixels.
+class Sprite
+  attr_accessor :bitmap, :x, :y, :z, :ox, :oy, :opacity, :visible
+  def disposed?; false; end
+  def dispose; end
+end
+class Bitmap
+  Font = Struct.new(:size, :color, :bold, :outline, :out_color)
+  attr_reader :texts, :fills, :font
+  def initialize(*); @texts = []; @fills = []; @font = Font.new; end
+  def clear; @texts.clear; @fills.clear; end
+  def fill_rect(_x, _y, _w, _h, color); @fills << color; end
+  def text_size(text); Rect.new(0, 0, text.to_s.size * 7, 14); end
+  def draw_text(_x, y, _w, _h, text, _align = 0); @texts << [y, text, font.size, font.color]; end
+  def blt(*); end
+  def dispose; end
+end
+module Cache; def self.system(_name); :balloons; end; end
+style = MGQ_MpUi::Style
+wheel = Sprite_MpEmoteWheel.new(nil)
+player = Struct.new(:x, :y).new(100, 120)
+emotes.open
+wheel.show(player)
+hint = wheel.bitmap.texts.last
+check("open, the wheel draws around the player, None named below the ring and the hint under it, fading in",
+      [wheel.visible, wheel.opacity.between?(1, 254), wheel.x, wheel.y, wheel.bitmap.texts[-2][1], hint[1], hint[2], hint[3].equal?(style::HEADING)],
+      [true, true, 100, 120, "None", "Esc, Numpad 0 or E: close", style::TINY_SIZE, true])
+check("the hint lies under the name's line, and the boxes fill with the style's colors",
+      [hint[0], wheel.bitmap.fills.all? { |color| color.equal?(style::BACK) || color.equal?(style::PICKED) }], [Sprite_MpEmoteWheel::SIZE + Sprite_MpEmoteWheel::NAME_HEIGHT, true])
+(style::FADE_FRAMES - 1).times { wheel.show(player) }
+check("opaque after FADE_FRAMES", wheel.opacity, 255)
+MGQ_MpHotkeys.bind(:emotes, 0xBA)
+wide = Sprite_MpEmoteWheel.new(nil)
+wide.show(player)
+check("a rebound key's longer name leaves the hint whole, wider than the wheel, never cut", wide.bitmap.texts.last[1], "Esc, Numpad 0 or key 186: close")
+$player_ini.delete("key_emotes")
+$held = [:RIGHT]
+emotes.on_map
+$held = []
+wheel.show(player)
+check("the emote pointed at is named", wheel.bitmap.texts[-2][1], "Question")
+emotes.close
+wheel.show(player)
+check("closed, the wheel fades out with its picture kept", [wheel.visible, wheel.opacity < 255, wheel.bitmap.texts.empty?], [true, true, false])
+(style::FADE_FRAMES - 1).times { wheel.show(player) }
+check("until it is gone", [wheel.visible, wheel.opacity], [false, 0])

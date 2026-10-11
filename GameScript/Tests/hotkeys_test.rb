@@ -2,6 +2,7 @@
 #  hotkeys_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-11: Checked that a hotkey pressed while a confirm box is open goes to the box
 #      Paulinchen  2026-10-10: Checked that every help says hotkey and keeps its lines short
 #      Paulinchen  2026-10-09: Checked the hotkey that joins a battle nearby
 #      Paulinchen  2026-10-04: Checked the party box size key and the name of Tab
@@ -23,8 +24,9 @@ module NWConst; module Config; MOD_CONTENTS = [{ :key => :return }]; end; end
 module ModConfigRemake; module Keys; def self.name(code); { 0x4B => "K", 0x54 => "T" }.fetch(code, "?"); end; end; end
 $player_ini = {}
 $down = []
+$log = []
 module MGQ_Multiplayer
-  module Log; def self.write(_message); end; end
+  module Log; def self.write(message); $log << message; end; end
   module Key; def self.pressed?(code); $down.include?(code); end; end
   module Player
     def self.setting(key); $player_ini[key]; end
@@ -42,6 +44,15 @@ check("the defaults: B, T, F11, Y, N, E, Tab and J",
        keys.code(:join_battle)],
       [0x42, 0x54, 0x7A, 0x59, 0x4E, 0x45, 0x09, 0x4A])
 check("a key is read by its code", [($down = [0x54]) && keys.pressed?(:chat), keys.pressed?(:wheel)], [true, false])
+
+# A confirm box of the mod takes every hotkey while it is open.
+check("no confirm box is open before ui.rbx loaded", keys.confirm_open?, false)
+module MGQ_MpUi; module Confirm; def self.open?; $confirm_open; end; end; end
+$confirm_open = true
+$log.clear
+check("a hotkey pressed while a confirm box is open goes to the box", [keys.pressed?(:chat), $log], [false, ["keys: hotkey T went to the confirm box"]])
+$confirm_open = false
+check("and reads again once the box is gone", keys.pressed?(:chat), true)
 
 # Binding.
 keys.bind(:wheel, 0x4B)
