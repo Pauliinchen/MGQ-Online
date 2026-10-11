@@ -2,7 +2,8 @@
 #  story_state.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Kept the flags the game toggles around its fights (22, 73, 97) each player's own, so a battle page no longer counts as story and the story's deltas no longer carry them
+#      Paulinchen  2026-10-11: Kept the switches that only stay on while a scene runs each Raid World player's own, so a story written mid-scene no longer leaves the scene's characters standing for everyone
+#                            - Kept the flags the game toggles around its fights (22, 73, 97) each player's own, so a battle page no longer counts as story and the story's deltas no longer carry them
 #                            - Kept the variant of an event the game picks before calling it (129) each player's own, so a trader's talk no longer counts as story for it
 #      Paulinchen  2026-10-10: Joined the self switches of only the chests the player's own story holds, so a take no longer fills the save with empty keys
 #      Paulinchen  2026-10-09: Kept the difficulty, the enemy rates it sets and the values of the Labyrinth of Chaos, the Colosseum and the special bosses each Raid World player's own
@@ -160,16 +161,26 @@ module MGQ_MpStoryState
   end
 
   # Reports whether a switch is the player's own. The side is until the Great Decision, and always
-  # in a Raid World, where everyone keeps the side they chose.
+  # in a Raid World, where everyone keeps the side they chose; a scene switch is in a Raid World,
+  # whose story a game may write while one of its scenes runs.
   #
   # @param id [Integer] The switch.
   # @param variables [Array, nil] The variables of the story it belongs to, nil for the one played.
   # @return [Boolean] Whether it is.
   def self.personal_switch?(id, variables = nil)
     return MGQ_MpCoop::Scope.raid? || sides_differ?(variables) if SIDE_SWITCHES.include?(id)
-    return MGQ_MpCoop::Scope.raid? if RAID_PERSONAL_SWITCHES.include?(id)
+    return MGQ_MpCoop::Scope.raid? if RAID_PERSONAL_SWITCHES.include?(id) || scene_switch?(id)
 
     PERSONAL_SWITCHES.any? { |range| range === id } || id.between?(AWAKENING_SWITCHES, AWAKENING_LAST) || choice_key?(:s, id)
+  end
+
+  # Reports whether a switch only stays on while a scene runs, such as "White Rabbit Emerged" (2029),
+  # see MGQ_MpWorldCatchupData::SCENE_SWITCHES.
+  #
+  # @param id [Integer] The switch.
+  # @return [Boolean] Whether it does.
+  def self.scene_switch?(id)
+    defined?(MGQ_MpWorldCatchupData::SCENE_SWITCHES) && MGQ_MpWorldCatchupData::SCENE_SWITCHES.include?(id) ? true : false
   end
 
   # Reports whether a switch or a variable is the outcome of a story's choice the player made,

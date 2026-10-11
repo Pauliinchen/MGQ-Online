@@ -1214,4 +1214,10 @@ module MGQ_MpWorldCatchupData
     [:skill, 866, 1, "map:935:9:1", nil, nil, nil, [[:v, 1216, 2], [:ss, 935, 9, "A"]], true]
   ].map { |row| Reward.new(*row) }
 
+  # The story switches that only stay on while a scene runs, such as "White Rabbit Emerged"
+  # (2029): every event that turns one on turns it off again, so they tell nothing of the story.
+  SCENE_SWITCHES = [
+    2002, 2004, 2014, 2024, 2025, 2026, 2029, 2030, 2034, 2037, 2038, 2051, 2054, 2082, 2083, 2084,
+    2109, 2306, 2331, 2424, 2924
+  ]
 end

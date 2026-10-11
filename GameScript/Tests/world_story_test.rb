@@ -2,7 +2,8 @@
 #  world_story_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Checked that the world's story waits for a new game's opening setup and is laid over the story it made
+#      Paulinchen  2026-10-11: Checked that a scene switch is each Raid World player's own and that a take turns one left on off, unless the player watches a scene
+#                            - Checked that the world's story waits for a new game's opening setup and is laid over the story it made
 #      Paulinchen  2026-10-10: Checked that no write goes out between the story's events on another map while its next event may go on with the telling
 #                            - Stood in for MGQ_MpCoopEvents.telling_or_moved?
 #                            - Checked that a world story before a route the player started themselves is no return to the Great Decision,
@@ -187,6 +188,8 @@ module DataManager
   def self.setup_new_game; end
 end
 
+# The story switches that only stay on while a scene runs, as world_catchup_data.rbx lists them.
+module MGQ_MpWorldCatchupData; SCENE_SWITCHES = [2029]; end
 load_script "story_state"
 load_script "coop_story"
 load_script "coop_choices"
@@ -696,11 +699,12 @@ check("every choice's outcome is the player's own in a Raid World",
       [choices.personal?(:s, 7016), choices.personal?(:s, 7002), choices.personal?(:v, 1029), choices.personal?(:v, 1065), choices.personal?(:s, 151)], [true, true, true, true, false])
 $game_variables[1141] = 5
 check("and the side, after the Great Decision too", [MGQ_MpStoryState.personal_switch?(4), MGQ_MpStoryState.personal_switch?(5)], [true, true])
+check("and a switch that only stays on while a scene runs, but no other story switch", [MGQ_MpStoryState.personal_switch?(2029), MGQ_MpStoryState.personal_switch?(2030)], [true, false])
 check("as the story sync, whose story is the world's", MGQ_MpCoopChoices::Offers.peer_option(MGQ_MpOverworldSync::Peers::Peer.new(2, { "id" => "f" })), nil)
 contents = { :switches => $game_switches }
 check("a save holds the story as it is", MGQ_MpCoopStory.save_contents(contents).equal?(contents) && contents[:switches].equal?($game_switches), true)
 $raid = false
-check("a Classic world keeps them the leader's while the player plays their own story", [choices.personal?(:s, 7016), MGQ_MpStoryState.personal_switch?(4)], [false, false])
+check("a Classic world keeps them the leader's while the player plays their own story", [choices.personal?(:s, 7016), MGQ_MpStoryState.personal_switch?(4), MGQ_MpStoryState.personal_switch?(2029)], [false, false, false])
 $raid = true
 
 # A choice the world's story carries the player past asks their own outcome, their side included.
@@ -983,5 +987,22 @@ frames(400)
 check("then it is laid over the story the setup made, whose values are no own change of the player's",
       [story.mode, $game_variables[1001], $game_variables[152], calls_of("mp_raid_story_post")], [:world, 7, 0, []])
 $opening = []
+
+# A scene switch a world's story written mid-scene left on is the player's own now, and a take turns
+# it off while no scene runs, but not while the player watches a teller's scene.
+module MGQ_MpCoopScene; def self.pending?; $scene_pending; end; end
+$scene_pending = true
+$game_switches[2029] = true
+story.refetch(:test)
+frames(1)
+relay({ "world" => "w2", "rev" => 6, "wrev" => 6, "p" => 7, "part" => "1", "fetch" => "done" }, packed({ 1001 => 7 }, [320, 2029]))
+frames(16)
+check("a scene switch the player sees in a teller's scene stays on as the world's story is laid over", [story.instance_variable_get(:@wrev), $game_switches[2029]], [6, true])
+$scene_pending = false
+story.refetch(:test)
+frames(1)
+relay({ "world" => "w2", "rev" => 7, "wrev" => 7, "p" => 7, "part" => "1", "fetch" => "done" }, packed({ 1001 => 7 }, [320, 2029]))
+frames(16)
+check("once no scene runs, the take turns it off, though the world's story has it on", [story.instance_variable_get(:@wrev), $game_switches[2029]], [7, false])
 MGQ_MpWorld.world = nil
 frames(1)

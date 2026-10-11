@@ -2,7 +2,8 @@
 #  world_story.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Laid the world's story over a new game only after its opening's setup ran without its scene, which put the story back to its start when it ran afterwards, and counted the player's own changes from the story it set up
+#      Paulinchen  2026-10-11: Turned off the scene switches left on while no scene runs as the world's story is laid over, which a story written mid-scene left on for everyone
+#                            - Laid the world's story over a new game only after its opening's setup ran without its scene, which put the story back to its start when it ran afterwards, and counted the player's own changes from the story it set up
 #                            - Took a route the player chose at the Great Decision the world stands at as further than the decision, which a world that finished every route ranked below it and so pulled the player back to the decision
 #                            - Opened every route at the Great Decision again once the world finished all of them, as the relay does
 #                            - Kept the player's story events waiting for the world's story for ten seconds at most after the world opened or a save loaded, so their own story no longer plays before the world's is laid over it
@@ -780,6 +781,7 @@ module MGQ_MpWorldStory
     opened = keep_open_chests(applied, local)
     kept.concat(opened.map { |key| [2, key] })
     MGQ_MpStoryState.set_raw(*applied)
+    end_left_scenes
     if defined?(MGQ_MpWorldCatchup)
       MGQ_MpWorldCatchup.world_told(told)
       MGQ_MpWorldCatchup.carried(local)
@@ -807,6 +809,20 @@ module MGQ_MpWorldStory
     followed(own, after)
     @returned_route = nil
     route_taken if after_take == :route_taken
+  end
+
+  # Turns off the scene switches (MGQ_MpStoryState.scene_switch?) still on while no scene runs, as a
+  # world's story written mid-scene left them before they were each player's own. Called while the
+  # player is quiet (quiet?), unless they watch a teller's scene, which shows them.
+  def self.end_left_scenes
+    return unless defined?(MGQ_MpWorldCatchupData::SCENE_SWITCHES)
+    return if defined?(MGQ_MpCoopScene) && MGQ_MpCoopScene.pending?
+
+    left = MGQ_MpWorldCatchupData::SCENE_SWITCHES.select { |id| $game_switches[id] }
+    return if left.empty?
+
+    left.each { |id| $game_switches[id] = false }
+    log("turned off scene switch(es) #{left.join(', ')}, which no scene runs for")
   end
 
   # Keeps the variables of the player's whose values no story carries, such as lists, where the

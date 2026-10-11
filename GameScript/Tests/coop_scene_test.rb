@@ -2,7 +2,8 @@
 #  coop_scene_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Checked that a viewer the story brought to another map keeps the character the story showed
+#      Paulinchen  2026-10-11: Checked that a scene switch, though each player's own, reaches the viewers, is not taken as the world's and goes back once the viewer no longer sees the scene
+#                            - Checked that a viewer the story brought to another map keeps the character the story showed
 #                            - Checked that the viewer's character skips a blocked step of the teller's route and walks none of it once the viewer no longer sees the scene
 #                            - Checked that the story's music, sounds and fades and the map's tileset, battle backgrounds and parallax reach the viewers, never a path, a file or a tileset the game lacks, the game's defaults filled in, and that a viewer away from the teller's map screen hears the music once there and none of the sound effects
 #                            - Checked that the player's route, the camera's place and the map's zoom reach the viewers, whose own character walks the route without starting what it touches
@@ -342,10 +343,10 @@ $raid = false
 # In a Raid World the teller's story values, the move routes it gives the map's events and the
 # effects it shows on them reach the viewers, and the viewers' games take the values as the world's.
 module MGQ_MpWorldStory
-  def self.personal?(kind, key); kind == 0 && key == 4; end
+  def self.personal?(kind, key); kind == 0 && [4, 2029].include?(key); end
   def self.mirrored(kind, key, value); ($mirrored ||= []) << [kind, key, value]; end
 end
-module MGQ_MpStoryState; def self.known_id?(_kind, id); id < 5000; end; end
+module MGQ_MpStoryState; def self.known_id?(_kind, id); id < 5000; end; def self.scene_switch?(id); id == 2029; end; end
 module MGQ_MpOverworld; def self.graphic?(_folder, name); name == "Actor1"; end; end
 $data_animations = Array.new(10)
 $raid = true
@@ -370,6 +371,7 @@ run.call(main, lambda do
   $game_switches[4] = true
   $game_switches[40] = true
   $game_variables[1001] = 41
+  $game_switches[2029] = true
   $game_variables[1002] = [1, 2]
   $game_self_switches[[7, 12, "A"]] = true
   mover.force_move_route(route)
@@ -378,8 +380,8 @@ run.call(main, lambda do
 end)
 $game_map.update
 told = lambda { |kind| $told.select { |_, fields| fields["map_pscene"] == kind }.map { |_, fields| wire.parse(fields["args"]) } }
-check("the teller's story values go out once at the frame's end, what is each player's own and a list left out",
-      told.call("story.values"), [[[0, 40, true], [1, 1001, 41], [2, [7, 12, "A"], true]]])
+check("the teller's story values go out once at the frame's end, what is each player's own and a list left out, but a scene switch",
+      told.call("story.values"), [[[0, 40, true], [1, 1001, 41], [0, 2029, true], [2, [7, 12, "A"], true]]])
 check("the move route goes out without its script, its sound by its file",
       told.call("event.route"), [[12, false, false, [[1], [41, "Actor1", 2], [44, "Door", 80, 100], [0]]]])
 check("so do the balloon and the erasure", [told.call("event.balloon"), told.call("event.erase")], [[[12, 1]], [[12]]])
@@ -444,10 +446,10 @@ $mirrored = []
 scene = lambda do |kind, args, map = "7"|
   MGQ_MpCoop.take_map("pscene", teller, { "map_pscene" => kind, "mmap" => "7", "map" => map, "args" => wire.line(args) })
 end
-scene.call("story.values", [[0, 40, true], [0, 4, true], [1, 1001, 41], [2, [7, 12, "A"], true], [1, 9999, 3], [2, [7, 12, "Z"], true]])
-check("a viewer takes the teller's story values, never what is their own or names nothing of this game",
-      [$game_switches[40], $game_switches[4], $game_variables[1001], $game_self_switches[[7, 12, "A"]], $game_variables[9999], $game_self_switches[[7, 12, "Z"]]],
-      [true, nil, 41, true, nil, nil])
+scene.call("story.values", [[0, 40, true], [0, 4, true], [1, 1001, 41], [0, 2029, true], [2, [7, 12, "A"], true], [1, 9999, 3], [2, [7, 12, "Z"], true]])
+check("a viewer takes the teller's story values, never what is their own or names nothing of this game, but the scene switches",
+      [$game_switches[40], $game_switches[4], $game_variables[1001], $game_switches[2029], $game_self_switches[[7, 12, "A"]], $game_variables[9999], $game_self_switches[[7, 12, "Z"]]],
+      [true, nil, 41, true, true, nil, nil])
 check("as the world's, so they are not written as the viewer's own", $mirrored, [[0, 40, true], [1, 1001, 41], [2, [7, 12, "A"], true]])
 $own_markers = [13, 0, 0, 0]
 other = MGQ_MpOverworldSync::Peers::Peer.new(9, { "name" => "Other", "id" => "o", "map" => "7", "telling" => "1", "tsm" => "12,0,0,0", "since" => "1000" })
@@ -548,5 +550,6 @@ $frame_count += MGQ_MpCoopScene::STATE_GRACE_FRAMES
 $game_map.update
 check("a route still walked once the viewer no longer sees the scene ends, giving the player their character back",
       [$restored, $game_player.instance_variable_get(:@move_route_forcing), MGQ_MpCoopScene.walks_player?], [true, false, false])
+check("and the scene switch the scene turned on is off again", $game_switches[2029], false)
 teller.state["telling"] = "1"
 $raid = false

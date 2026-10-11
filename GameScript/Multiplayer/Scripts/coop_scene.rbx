@@ -2,7 +2,8 @@
 #  coop_scene.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Let the teller's move routes skip a blocked step and ended the one the player's character walks once the viewer no longer sees the scene, so it never holds the player for good
+#      Paulinchen  2026-10-11: Told the viewers the switches that only stay on while a scene runs, which are each player's own, and put them back once the viewer no longer sees the scene
+#                            - Let the teller's move routes skip a blocked step and ended the one the player's character walks once the viewer no longer sees the scene, so it never holds the player for good
 #                            - Kept the character shown or hidden as the story left it once it brought the viewer to another map, so a new game's hidden start no longer hides them again
 #                            - Told the viewers the story's music, background sounds, fanfares and sound effects, played, stopped and faded with the game's defaults for what the story left out, which a viewer plays on the teller's map screen alone, holding the music for when they are there, and its changes of the map's tileset, battle backgrounds and parallax
 #                            - Told a Raid World's viewers the switches, variables and self switches the story changes once a frame, so their games show the scene's characters on the pages the story turns on and keep watching the telling, without writing them as their own story
@@ -114,6 +115,7 @@ module MGQ_MpCoopScene
   @transparent = nil
   @updating = []
   @held_audio = {}
+  @scene_switches = {}
 
   extend MGQ_MpLog
 
@@ -196,7 +198,8 @@ module MGQ_MpCoopScene
   # As teller in a Raid World, keeps a change the story makes to a switch, variable or self switch,
   # which send_values tells the viewers at the frame's end: their games show the scene's characters
   # on the pages the story turns on, which the world's story brings only once the telling ended.
-  # What is each player's own, and a variable that holds no whole number, stays out.
+  # What is each player's own, but a scene switch (MGQ_MpStoryState.scene_switch?), and a variable
+  # that holds no whole number, stays out.
   #
   # @param kind [Integer] 0 for a switch, 1 for a variable, 2 for a self switch.
   # @param key [Integer, Array] Its id, or a self switch's map, event and letter.
@@ -204,7 +207,7 @@ module MGQ_MpCoopScene
   def self.story_value(kind, key, value)
     return unless MGQ_MpCoop::Scope.raid? && story_change?
     return if kind == 1 && !value.is_a?(Integer)
-    return if MGQ_MpWorldStory.personal?(kind, key)
+    return if MGQ_MpWorldStory.personal?(kind, key) && !scene_value?(kind, key)
 
     @values.delete([kind, key])
     @values[[kind, key]] = kind == 1 ? value : (value ? true : false)
@@ -486,16 +489,22 @@ module MGQ_MpCoopScene
 
   # Lays the teller's story values over the player's while they watch, see story_value: what is
   # the player's own stays, and the world's story takes each as the world's
-  # (MGQ_MpWorldStory.mirrored), so none is written as the player's own change. A Classic party's
-  # members get the leader's values through coop_story.rbx instead.
+  # (MGQ_MpWorldStory.mirrored), so none is written as the player's own change. A scene switch is
+  # taken too, with its value before noted for restore. A Classic party's members get the leader's
+  # values through coop_story.rbx instead.
   #
   # @param entries [Array<Array>] Each value's kind, key and value.
   def self.apply_values(entries)
     return log_once(:classic_values, "ignored story values: only a Raid World's teller tells them") unless MGQ_MpCoop::Scope.raid?
 
-    taken = entries.select { |entry| value_known?(entry) && !MGQ_MpWorldStory.personal?(entry[0], entry[1]) }
+    taken = entries.select { |entry| value_known?(entry) && (!MGQ_MpWorldStory.personal?(entry[0], entry[1]) || scene_value?(entry[0], entry[1])) }
     taken.each do |kind, key, value|
       value = kind == 1 ? value : (value ? true : false)
+      if scene_value?(kind, key)
+        @scene_switches[key] = $game_switches[key] ? true : false unless @scene_switches.key?(key)
+        $game_switches[key] = value
+        next
+      end
       case kind
       when 0 then $game_switches[key] = value
       when 1 then $game_variables[key] = value
@@ -505,6 +514,16 @@ module MGQ_MpCoopScene
     end
     log("applied the teller's #{taken.size} of #{entries.size} story value(s): " \
         "#{taken.first(6).map { |kind, key, value| "#{VALUE_KINDS[kind]} #{Array(key).join('.')}=#{value}" }.join(', ')}#{taken.size > 6 ? ', ...' : ''}")
+  end
+
+  # Reports whether a story value is a scene switch, which the scene's viewers see though it is each
+  # player's own.
+  #
+  # @param kind [Integer] 0 for a switch, 1 for a variable, 2 for a self switch.
+  # @param key [Integer, Array] Its id, or a self switch's map, event and letter.
+  # @return [Boolean] Whether it is.
+  def self.scene_value?(kind, key)
+    kind == 0 && MGQ_MpStoryState.scene_switch?(key)
   end
 
   # Reports whether a story value another game sent names one of this game's switches, variables
@@ -853,6 +872,10 @@ module MGQ_MpCoopScene
         done << "kept the story's #{$game_player.transparent ? 'hidden' : 'shown'} character, on map #{$game_map.map_id} instead of #{@transparent_map}"
       end
     end
+    unless @scene_switches.empty?
+      @scene_switches.each { |id, before| $game_switches[id] = before }
+      done << "scene switch(es) #{@scene_switches.keys.sort.join(', ')} back as before"
+    end
     if walks_player?
       end_player_route
       done << "ended the teller's route the player's character walked"
@@ -866,7 +889,7 @@ module MGQ_MpCoopScene
   #
   # @return [Boolean] Whether it does.
   def self.pending?
-    !(@pictures.empty? && @screen.nil? && @transparent.nil? && @zoom.nil? && @camera_target.nil? && @held_audio.empty? && !walks_player?)
+    !(@pictures.empty? && @screen.nil? && @transparent.nil? && @zoom.nil? && @camera_target.nil? && @held_audio.empty? && @scene_switches.empty? && !walks_player?)
   end
 
   # Ends the teller's route the player's character walks, giving it back its own, as the game
@@ -892,6 +915,7 @@ module MGQ_MpCoopScene
     @camera = nil
     @changed_at = nil
     @held_audio = {}
+    @scene_switches = {}
     @player_route = false
   end
 end
