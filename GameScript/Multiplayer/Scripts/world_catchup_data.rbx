@@ -1285,4 +1285,42 @@ module MGQ_MpWorldCatchupData
     2002, 2004, 2014, 2024, 2025, 2026, 2029, 2030, 2034, 2037, 2038, 2051, 2054, 2082, 2083, 2084,
     2109, 2306, 2331, 2424, 2924
   ]
+
+  # A Makina: the item, the level a player reaches it at, the area level of the easiest place
+  # that gives it (the highest enemy level of the random encounters where it lies, else of the
+  # nearest maps', else of the fights there), and that place's site.
+  Makina = Struct.new(:item, :level, :site)
+
+  # Every Makina, by level.
+  MAKINA = [
+    [700, 6, "map:215:23:1"],
+    [701, 6, "map:218:21:1"],
+    [702, 6, "map:215:27:1"],
+    [703, 11, "map:418:14:1"],
+    [704, 11, "map:419:23:1"],
+    [705, 11, "map:419:24:1"],
+    [706, 13, "map:140:47:1"],
+    [707, 13, "map:140:47:1"],
+    [710, 15, "map:588:8:1"],
+    [711, 15, "map:588:8:1"],
+    [708, 16, "map:112:7:1"],
+    [709, 16, "map:111:6:1"],
+    [712, 23, "map:200:29:1"],
+    [713, 24, "map:174:2:1"],
+    [714, 40, "map:424:28:1"],
+    [715, 45, "map:588:8:1"],
+    [716, 53, "map:137:28:1"],
+    [717, 53, "map:152:15:1"],
+    [719, 60, "map:588:8:1"],
+    [722, 61, "map:331:13:1"],
+    [718, 64, "map:388:10:1"],
+    [721, 71, "map:1081:52:1"],
+    [720, 72, "map:1872:42:1"],
+    [723, 80, "map:1502:18:1"],
+    [725, 90, "map:1037:34:1"],
+    [724, 96, "map:1521:31:1"],
+    [726, 99, "map:1530:27:1"],
+    [727, 147, "map:1077:86:1"],
+    [728, 260, "map:1333:14:1"]
+  ].map { |row| Makina.new(*row) }
 end

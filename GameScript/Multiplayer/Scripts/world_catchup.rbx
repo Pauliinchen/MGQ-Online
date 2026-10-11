@@ -2,7 +2,8 @@
 #  world_catchup.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Followed the story values of a telling the player watched as a story laid over theirs once they are free, so a viewer gets what the scene gave and loses the key items it took
+#      Paulinchen  2026-10-11: Gave every Makina once the player's level reaches the area level of its easiest place, and took back copies beyond the first, as a chest another player's story closed again gave one twice
+#                            - Followed the story values of a telling the player watched as a story laid over theirs once they are free, so a viewer gets what the scene gave and loses the key items it took
 #                            - Took a key item as taken since a row of the same step gave it when the taking row's marks lie further, so the Yggdrasil Fruit the Queen Harpy event took no longer comes back
 #                            - Raised Amira's information network to 2 for a player who has her, as a companion the world shares comes without it and her information stayed shut
 #                            - Checked everything once on entering the world, after a load and on every level up: the story's skills, key items and companions the player lacks, and the player's own values the story sets
@@ -37,7 +38,8 @@
 # The world's key items and the chests that hold them are the whole world's: once the world's story
 # is past one, every player gets it, whatever their part, and a key item whose event is only there
 # to play up to its amount. A player who then holds every orb of Part 2 plays the event that moves
-# the story on, which only an orb's own event calls.
+# the story on, which only an orb's own event calls. Every Makina comes once the player's level
+# reaches the area level of its easiest place, one of each.
 #
 # A companion joins once the player's story is past the join and their highest base level reaches
 # the join's gate, and comes at least at that level unless it is a first join at the companion's
@@ -218,7 +220,7 @@ module MGQ_MpWorldCatchup
 
   # Follows the catch-up for one frame: the relay's answers, the checkpoint and the orbs' event that
   # wait, then every CHECK_FRAMES while the player is free the story's rows, the level gate, the
-  # shared companions and the orbs. Called after the map's update.
+  # shared companions, the orbs and the Makina. Called after the map's update.
   def self.tick
     @clock += 1
     return close unless active?
@@ -241,6 +243,7 @@ module MGQ_MpWorldCatchup
       move_on if MGQ_MpWorldStory.mode == :behind && !@want && !@joins_world && gate_reached?
       note_roster
       check_orbs
+      check_makina
     end
     send_shared
   rescue => e
@@ -1097,6 +1100,28 @@ module MGQ_MpWorldCatchup
     MGQ_MpCoopEvents.granting { $game_party.gain_item(item, amount) }
     log("gave #{item.name} x#{amount} (#{key})")
     amount > 1 ? "#{item.name} x#{amount}" : item.name
+  end
+
+  # Hands out every Makina whose level the player reached and they lack (DATA::MAKINA), and takes
+  # back every copy of one beyond the first, which the game never uses: a Raid World gives Makina by
+  # level, since a chest of one another player's story closed again gave it twice.
+  def self.check_makina
+    gifts = DATA::MAKINA.map do |row|
+      item = MGQ_MpGame.item("i", row.item)
+      next unless item
+
+      held = $game_party.item_number(item)
+      if held > 1
+        $game_party.lose_item(item, held - 1)
+        log("took #{item.name} x#{held - 1}: a Makina counts once")
+        next
+      end
+      held == 0 && reached?(row.level) ? give("i", row.item, 1, "makina:#{row.item} at level #{row.level}") : nil
+    end.compact
+    return if gifts.empty?
+
+    shown = gifts.first(4).join(", ")
+    notice(:makina, "Your level brought you Makina: #{shown}#{gifts.size > 4 ? " and #{gifts.size - 4} more" : ''}.")
   end
 
   # Shows a world-wide chest the world opened as open in the player's story too, so it gives

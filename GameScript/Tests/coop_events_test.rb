@@ -2,7 +2,8 @@
 #  coop_events_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Stood in for the player's followers, which a move to another map shows
+#      Paulinchen  2026-10-11: Checked that a chest turning on a chest flag stays a chest, in the game and in the generator, and stood in for the chest flags
+#                            - Stood in for the player's followers, which a move to another map shows
 #                            - Checked that a page with story behind a choice is no chest, as Amira's paid tip in Iliasburg
 #                            - Checked that Amira in Iliasburg is no choice any more
 #                            - Checked the generator's rules only where the event checker repository lies next to this one, as on this PC and not in the workflow
@@ -323,6 +324,10 @@ module MGQ_MpActions
 end
 load_script "coop_scope"
 load_script "story_state"
+# The chest flags of coop_story_rewards.rbx, as the game has them; the rest of that table stays out,
+# since these checks build their own stories.
+CHEST_FLAGS = eval(File.read(File.join(SCRIPTS_DIR, "coop_story_rewards.rbx"), :encoding => "UTF-8")[/CHEST_FLAGS = (\[[\d, ]*\])/, 1])
+def MGQ_MpStoryState.chest_flags; CHEST_FLAGS; end
 load_script "coop_story"
 load_script "coop_events"
 load_script "coop_gather"
@@ -387,6 +392,8 @@ pocket_castle = [c(101, "", 0, 0, 2), c(122, 21, 21, 0, 3, 7, 0, 0), c(122, 22, 
 check("the Pocket Castle item, which notes where it was used, is travel and no story scene", [kind(pocket_castle), MGQ_MpCoopEvents.scene?(pocket_castle)], [:travel, false])
 check("items and the event's own switch make a chest", kind([c(126, 1, 0, 0, 1), c(123, "A", 0)]), :chest)
 check("with a found-it message too", kind([c(101, "", 0, 0, 2), c(126, 1, 0, 0, 1), c(123, "A", 0)]), :chest)
+check("and with a chest flag turned on, as the first Makina's (2045)", kind([c(126, 700, 0, 0, 1), c(123, "A", 0), c(121, 2045, 2045, 0)]), :chest)
+check("but another story switch makes it story", kind([c(126, 700, 0, 0, 1), c(123, "A", 0), c(121, 60, 60, 0)]), :story)
 check("its own switch with dialogue alone is a one-time talk", kind([c(101, "", 0, 0, 2), c(123, "A", 0)]), :talk)
 check("its own switch without dialogue is story", kind([c(123, "A", 0), c(214)]), :story)
 check("a fight without dialogue is a battle", kind([c(301, 0, 5, false, false), c(214)]), :battle)
@@ -1717,8 +1724,9 @@ if File.exist?(generator_file)
   load(generator_file, generator)
   own_switches = generator::PERSONAL_SWITCHES.flat_map { |ids| Array(ids) }
   own_variables = Object.new.extend(generator).send(:personal_variables, $data_actors.size).flat_map { |ids| Array(ids) }
-  check("the generator's switches of each player's own are this script's",
-        [own_switches.all? { |id| MGQ_MpStoryState.personal_switch?(id, []) }, (1..8000).select { |id| MGQ_MpStoryState.personal_switch?(id, []) } - own_switches], [true, []])
+  # The chest flags are each player's own too, but only chests set them, which no marks come from.
+  check("the generator's switches of each player's own are this script's, the chest flags aside",
+        [own_switches.all? { |id| MGQ_MpStoryState.personal_switch?(id, []) }, (1..8000).select { |id| MGQ_MpStoryState.personal_switch?(id, []) } - own_switches - CHEST_FLAGS], [true, []])
   check("and so are its variables", [own_variables.all? { |id| MGQ_MpStoryState.personal_variable?(id) }, (1..8000).select { |id| MGQ_MpStoryState.personal_variable?(id) } - own_variables], [true, []])
 else
   puts "skipped the generator's lists: #{generator_file} is missing"
@@ -1728,9 +1736,26 @@ end
 class ToolCommand
   def initialize(code, parameters, indent = 0); @code = code; @parameters = parameters; @indent = indent; end
 end
+# An event page's condition as the game's data holds it: whether it asks for a variable, which.
+class ToolCondition
+  def initialize(variable_valid, variable_id); @variable_valid = variable_valid; @variable_id = variable_id; @switch1_valid = false; @switch2_valid = false; end
+end
+# An event page as the game's data holds it, its condition alone.
+class ToolPage
+  def initialize(condition); @condition = condition; end
+end
 tool = File.exist?(generator_file) ? Object.new.extend(generator) : nil
 if tool
   check("the generator counts a chest of gold alone as a chest", tool.send(:chest?, [ToolCommand.new(125, [0, 0, 50]), ToolCommand.new(123, ["A", 0])]), true)
+  flag_chest = [ToolCommand.new(126, [700, 0, 0, 1]), ToolCommand.new(123, ["A", 0]), ToolCommand.new(121, [2045, 2045, 0])]
+  plain_page = ToolPage.new(ToolCondition.new(false, 0))
+  $chest_flags = [2045]
+  check("and a chest that turns on a chest flag, on a page that asks for no story, but no other switch",
+        [tool.send(:chest?, flag_chest, plain_page), tool.send(:chest?, flag_chest, ToolPage.new(ToolCondition.new(true, 1001))),
+         tool.send(:chest?, flag_chest + [ToolCommand.new(121, [60, 60, 0])], plain_page)], [true, false, false])
+  check("a chest flag is a switch only such chests turn on",
+        [tool.send(:flag_chest?, flag_chest, plain_page), tool.send(:switches_of, flag_chest + [ToolCommand.new(121, [61, 61, 1])], true)], [true, [2045]])
+  $chest_flags = nil
   found = []
   tool.send(:rewards, [ToolCommand.new(121, [1005, 1005, 0]), ToolCommand.new(121, [1001, 1001, 0]), ToolCommand.new(121, [1006, 1006, 1])], nil) { |*reward| found << reward }
   check("and a companion who joins by their switch as joining, never Luka nor one whose switch turns off", found, [[:actor, 5, 1, nil]])

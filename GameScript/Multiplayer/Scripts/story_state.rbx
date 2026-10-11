@@ -2,7 +2,8 @@
 #  story_state.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Kept the escape spell's ban (94) each player's own, so changing jobs at Ilias Temple no longer counts as story
+#      Paulinchen  2026-10-11: Kept the chest flags each player's own, such as the first Makina's (2045), so a Makina chest stays a chest instead of story the world's story opens and closes for everyone
+#                            - Kept the escape spell's ban (94) each player's own, so changing jobs at Ilias Temple no longer counts as story
 #                            - Kept the switches that only stay on while a scene runs each Raid World player's own, so a story written mid-scene no longer leaves the scene's characters standing for everyone
 #                            - Kept the flags the game toggles around its fights (22, 73, 97) each player's own, so a battle page no longer counts as story and the story's deltas no longer carry them
 #                            - Kept the variant of an event the game picks before calling it (129) each player's own, so a trader's talk no longer counts as story for it
@@ -177,7 +178,22 @@ module MGQ_MpStoryState
     return MGQ_MpCoop::Scope.raid? || sides_differ?(variables) if SIDE_SWITCHES.include?(id)
     return MGQ_MpCoop::Scope.raid? if RAID_PERSONAL_SWITCHES.include?(id) || scene_switch?(id)
 
-    PERSONAL_SWITCHES.any? { |range| range === id } || id.between?(AWAKENING_SWITCHES, AWAKENING_LAST) || choice_key?(:s, id)
+    PERSONAL_SWITCHES.any? { |range| range === id } || id.between?(AWAKENING_SWITCHES, AWAKENING_LAST) || choice_key?(:s, id) || chest_flag?(id)
+  end
+
+  # Reports whether a switch is a chest flag, which only chests turn on.
+  #
+  # @param id [Integer] The switch.
+  # @return [Boolean] Whether it is.
+  def self.chest_flag?(id)
+    chest_flags.include?(id)
+  end
+
+  # Lists the chest flags, see MGQ_MpCoopStoryRewards::CHEST_FLAGS.
+  #
+  # @return [Array<Integer>] The switches.
+  def self.chest_flags
+    defined?(MGQ_MpCoopStoryRewards::CHEST_FLAGS) ? MGQ_MpCoopStoryRewards::CHEST_FLAGS : []
   end
 
   # Reports whether a switch only stays on while a scene runs, such as "White Rabbit Emerged" (2029),

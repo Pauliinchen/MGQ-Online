@@ -2,7 +2,8 @@
 #  world_catchup_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Checked that a telling the player watched takes the key items its scene took, and that a key item taken at the step that gave it does not come back
+#      Paulinchen  2026-10-11: Checked that a Makina comes at its area level and that copies beyond the first go
+#                            - Checked that a telling the player watched takes the key items its scene took, and that a key item taken at the step that gave it does not come back
 #                            - Checked that Amira in the roster raises her information network to 2
 #                            - Checked one look at everything on entering and on a level up: the story's own values moved on from an earlier step's but not a player's own, encounters left to a map that sets them, the warp ban lifted where warping is free, a missing skill and a missing companion
 #                            - Stood in for whether random encounters are on and for the map's events
@@ -156,9 +157,9 @@ $data_actors = Array.new(1000)
 [[1, "Luka", 1], [5, "Alice", 1], [16, "Granberia", 20], [45, "Tamamo", 12], [77, "Slime", 7], [80, "Harpy", 9], [525, "Sonya", 2], [841, "Sonya", 1], [842, "Sonya", 1]].each do |id, name, level|
   $data_actors[id] = ActorData.new(id, name, level)
 end
-$data_items = Array.new(700)
+$data_items = Array.new(730)
 [[501, "Purple Orb"], [502, "Pass"], [503, "Key"], [504, "Medal"], [505, "Key to Hades"], [537, "Red Orb"], [538, "Blue Orb"], [540, "Yellow Orb"],
- [541, "Green Orb"], [542, "Silver Orb"], [600, "Herb"]].each { |id, name| $data_items[id] = RPG::Item.new(id, name) }
+ [541, "Green Orb"], [542, "Silver Orb"], [600, "Herb"], [700, "Auto Crossbow"], [701, "Bio Blaster"]].each { |id, name| $data_items[id] = RPG::Item.new(id, name) }
 $data_weapons = Array.new(10)
 $data_armors = Array.new(10)
 $data_skills = Array.new(3000)
@@ -247,7 +248,7 @@ REAL_JOINS = DATA::JOINS
 #
 # @param tables [Hash{Symbol => Array}] The rows by table, the others empty.
 def tables(tables = {})
-  [:JOINS, :REMOVALS, :KEY_ITEMS, :CHESTS, :REWARDS, :SETTINGS, :WARP_FREE_MAPS].each do |name|
+  [:JOINS, :REMOVALS, :KEY_ITEMS, :CHESTS, :REWARDS, :SETTINGS, :WARP_FREE_MAPS, :MAKINA].each do |name|
     DATA.send(:remove_const, name)
     DATA.const_set(name, tables[name] || [])
   end
@@ -845,6 +846,23 @@ check("a telling the player watched takes the key item its scene took, once the 
       watch.call(4, lambda { catchup.watched { MGQ_MpStoryState.deep_copy(catchup.story_now) } }), 0)
 check("the player's own event taking it gets nothing back from the catch-up, though the same step gave it",
       watch.call(4, lambda { $game_party.lose_item($data_items[600], 1) }), 0)
+
+# Makina come by level, one of each, whatever chest gave them.
+makina = DATA::Makina
+tables(:MAKINA => [makina.new(700, 6, "map:215:23:1"), makina.new(701, 30, "map:218:21:1")])
+new_game({ 1001 => 9 }, [], 10)
+$game_party.gain_item($data_items[701], 3)
+frames(1)
+relay({ "rev" => 30, "wrev" => 30, "p" => 9, "part" => "1" }, packed({ 1001 => 9 }))
+frames(40)
+check("a Makina comes once the player's level reaches its area level, and copies beyond the first go",
+      [$game_party.items[700], $game_party.items[701], $messages.grep(/Makina/).last], [1, 1, "Your level brought you Makina: Auto Crossbow."])
+$game_party.gain_item($data_items[700], 1)
+frames(40)
+check("a chest giving one held already leaves one", $game_party.items[700], 1)
+$game_party.lose_item($data_items[701], 1)
+frames(40)
+check("one above the player's level does not come", $game_party.items[701], 0)
 
 # Classic worlds have no catch-up.
 $raid = false
