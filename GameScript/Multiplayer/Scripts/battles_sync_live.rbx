@@ -2,6 +2,9 @@
 #  battles_sync_live.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-11: Named in the waiting box the guests whose commands or ready word the host still waits for, with the seconds waited, the wait for a player worded as the waiting box words it
+#                            - Told the guests whom the host still waits for, as that changes and as a command phase opens, so their own waiting boxes name them too
+#                            - Told the guests who chooses again after a swap, the host itself included
 #      Paulinchen  2026-10-08: Closed a command phase the battle ended in, and forgot the guests who answered in it, as the battle ends instead of as the next one begins
 #                            - Started the battle of a host who became another battle's guest before it began as that battle's guest
 #      Paulinchen  2026-10-07: Left a command phase an earlier battle ended in out of the log as the next battle begins
@@ -351,6 +354,75 @@ module MGQ_MpBattlesSync
       :gone => "the other side is gone",
     }
 
+    # What starts the waiting box's names line while the host waits for the players' commands.
+    STILL_CHOOSING = "Still choosing: "
+
+    # What starts the waiting box's names line while the host waits for the guests' battles to be
+    # ready.
+    NOT_READY = "Not ready: "
+
+    # The message the host tells its guests whom it still waits for with: their seats, joined by
+    # WAITING_SEPARATOR, "" for nobody.
+    WAITING_KIND = "waiting"
+
+    # What separates the seats in a WAITING_KIND message.
+    WAITING_SEPARATOR = ","
+
+    # As host, waits as Waiting.wait_for does, the box naming the players still waited for, and
+    # tells the guests those players as they change, so their own boxes name them too (see
+    # host_waits_for). Once the wait is answered the guests hear that nobody is waited for.
+    #
+    # @param scene [Scene_Battle] The battle.
+    # @param text [String] What the game waits for.
+    # @param prefix [String] What starts the names line, such as STILL_CHOOSING.
+    # @param seats [Proc] Returns the Array<Integer> of the seats still waited for.
+    # @yieldreturn [Object, nil] The answer, nil to wait on.
+    # @return [Object, Symbol] The answer, an ending of Channel.ending, or :left.
+    def self.wait_telling(scene, text, prefix, seats)
+      answer = Waiting.wait_for(scene, text, lambda { seats.call.map { |seat| MGQ_MpBattlesSync.seat_name(seat) } }, prefix) do
+        tell_waiting(seats.call)
+        yield
+      end
+      tell_waiting([]) unless answer.is_a?(Symbol)
+      answer
+    end
+
+    # As host of a battle over the world's room, tells the guests whom the host still waits for,
+    # when that changed since the last telling, so a guest whose turn waits on the others knows why.
+    #
+    # @param seats [Array<Integer>] The seats still waited for, none once the wait is answered.
+    def self.tell_waiting(seats)
+      return unless MGQ_MpBattlesSync.world?
+
+      seats = seats.sort
+      return if seats == @told_waiting
+
+      @told_waiting = seats
+      Channel.post(WAITING_KIND, seats.join(WAITING_SEPARATOR))
+    end
+
+    # As guest, names the players the host still waits for, as the host last told (see
+    # tell_waiting), the player themself left out: what their own waiting box names while the
+    # host's stream stalls. Over the link nobody, since the friend's game names no seats.
+    #
+    # @return [Array<String>] Their names, see MGQ_MpBattlesSync.seat_name.
+    def self.host_waits_for
+      return [] unless MGQ_MpBattlesSync.world?
+
+      while (body = Channel.take(WAITING_KIND))
+        @host_waiting = body.split(WAITING_SEPARATOR).map { |seat| seat.to_i }
+        MGQ_MpBattlesSync.log("the host still waits for #{@host_waiting.empty? ? 'nobody' : @host_waiting.map { |seat| MGQ_MpBattlesSync.who(seat) }.join(', ')}")
+      end
+      (Array(@host_waiting) - [MGQ_MpOverworldSync::Me.seat]).map { |seat| MGQ_MpBattlesSync.seat_name(seat) }
+    end
+
+    # Forgets whom the host told it waits for, as a battle begins, so an earlier battle's word
+    # never names anyone.
+    def self.forget_waiting
+      @told_waiting = nil
+      @host_waiting = nil
+    end
+
     # Moves a battle message on by itself after MESSAGE_FRAMES, or at a button, so neither player
     # holds the battle up for the other.
     #
@@ -393,8 +465,9 @@ module MGQ_MpBattlesSync
       MGQ_MpBattlesSync.show_everything
       Channel.post("ready", MGQ_MpBattlesSync.names)
       @ready = []
+      forget_waiting
       MGQ_MpBattlesSync.log("host's battle built, waiting for #{guests_text} to be ready")
-      ready = Waiting.wait_for(scene, "Waiting for #{MGQ_MpBattlesSync.player}...") { all_ready? }
+      ready = wait_telling(scene, Waiting::WAITING_FOR % MGQ_MpBattlesSync.player, NOT_READY, lambda { not_ready }) { all_ready? }
       return end_early(scene, ready) if ready.is_a?(Symbol)
 
       MGQ_MpBattlesSync.log("every guest is ready, the host's battle starts and streams")
@@ -411,7 +484,14 @@ module MGQ_MpBattlesSync
       return Channel.take("ready") ? true : nil unless MGQ_MpBattlesSync.several?
 
       MGQ_MpBattlesSync.guests_in.each { |seat| @ready << seat if !@ready.include?(seat) && Channel.take_from("ready", seat) }
-      (MGQ_MpBattlesSync.guests_in - @ready).empty? ? true : nil
+      not_ready.empty? ? true : nil
+    end
+
+    # Lists the guests still in the battle whose battle is not ready yet, see all_ready?.
+    #
+    # @return [Array<Integer>] Their seats.
+    def self.not_ready
+      MGQ_MpBattlesSync.guests_in - Array(@ready)
     end
 
     # The guest waits for the host's battle, then plays its start.
@@ -427,8 +507,9 @@ module MGQ_MpBattlesSync
       return end_early(scene, joined) if joined.is_a?(Symbol)
 
       Channel.post("ready")
+      forget_waiting
       MGQ_MpBattlesSync.log("guest's battle built, waiting for #{MGQ_MpBattlesSync.player}'s battle to be ready")
-      names = Waiting.wait_for(scene, "Waiting for #{MGQ_MpBattlesSync.player}...") { Channel.take("ready") }
+      names = Waiting.wait_for(scene, Waiting::WAITING_FOR % MGQ_MpBattlesSync.player, lambda { host_waits_for }, NOT_READY) { Channel.take("ready") }
       return end_early(scene, names) if names.is_a?(Symbol)
 
       Names.setup(names)
@@ -598,6 +679,8 @@ module MGQ_MpBattlesSync
       @answered = []
       MGQ_MpBattlesSync.log("command phase of turn #{MGQ_MpBattlesSync.turn + 1} opened, #{guests_text} in")
       MGQ_MpBattlesSync.mode.settle(scene)
+      # Everyone chooses now, the host too, which a guest done choosing sees while its turn waits.
+      tell_waiting(MGQ_MpBattlesSync.guests_in + [MGQ_MpOverworldSync::Me.seat])
     end
 
     # As host, closes the command phase as the turn starts.
@@ -642,7 +725,7 @@ module MGQ_MpBattlesSync
       unless waiting.empty?
         MGQ_MpBattlesSync.log("waiting for the commands of #{waiting.map { |seat| MGQ_MpBattlesSync.who(seat) }.join(', ')}")
       end
-      answer = Waiting.wait_for(scene, "Waiting for the party's commands...") do
+      answer = wait_telling(scene, "Waiting for the party's commands...", STILL_CHOOSING, lambda { waiting }) do
         waiting.dup.each do |seat|
           staying = MGQ_MpBattlesSync.guests_in.include?(seat)
           commands = Channel.take_from("commands", seat)
@@ -682,6 +765,8 @@ module MGQ_MpBattlesSync
       return host_guests_commands(scene) if asked.empty?
 
       @answered -= asked
+      # The guests were told the wait was over as it answered; now they choose again, the host too.
+      tell_waiting(asked)
       Recorder.event("choose_again", asked)
       Recorder.flush
       return host_guests_commands(scene) unless asked.include?(MGQ_MpOverworldSync::Me.seat)

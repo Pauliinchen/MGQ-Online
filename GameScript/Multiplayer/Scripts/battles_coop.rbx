@@ -2,6 +2,12 @@
 #  battles_coop.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-11: Drew each character's name in the battle's status window in its player's color, another player's character by its own name
+#                            - Told the player in the battle's chat log of the players who joined the running battle, as the host takes them in or its new party names them
+#                            - Showed the notice of a member's battle as long as the player stands still for it, and took it away once they walk on early
+#                            - Told a player who joins a running battle at its next turn how long the wait may last, written as the shared seconds are, with the seconds waited
+#                            - Left a status name the mod cannot draw to the game, logged once, instead of failing the status window
+#                            - Wrote the late join's seconds as the waiting box does, and logged a telling of who joined that fails on its own
 #      Paulinchen  2026-10-10: Stretched the steps to the next random encounter in a Raid World by half a draw per other player on the map, up to a battle's four players
 #                            - Stretched the steps to a party's next random encounter in a Classic world once per member on the map, within a wider margin, so the party meets encounters about as often as one player
 #                            - Invited the players on the map who watch the story told there to a boss battle in a Raid World too
@@ -149,6 +155,13 @@ module MGQ_MpBattlesCoop
   # Seconds a party member on the map stands still at most once another member met enemies, until
   # they join the battle or turn it down.
   FREEZE_SECONDS = 10
+
+  # How long the notice of the member's battle shows: as long as the player stands still.
+  FREEZE_FRAMES = FREEZE_SECONDS * MGQ_MpUi::FRAMES_PER_SECOND
+
+  # What starts the waiting box's names line of a player who joins a running battle at its next
+  # turn, which names no player: how long the wait may last.
+  UP_TO_PREFIX = "Up to "
 
   # The share either way by which the steps to a party's next random encounter vary around the
   # game's draw, wider than the game's own margin, so the members' steps never fall into step.
@@ -360,7 +373,7 @@ module MGQ_MpBattlesCoop
   # @param can_lose [Boolean] Whether losing goes on without a game over.
   # @param encounter [Boolean] Whether the battle is a random encounter, see rival?.
   def self.offer(troop_id, can_escape, can_lose, encounter = @encountering)
-    @frozen = nil
+    thaw("the player's own battle begins")
     @rival = nil
     return if @joining
     return unless host_possible?(troop_id)
@@ -805,7 +818,16 @@ module MGQ_MpBattlesCoop
   #
   # @param peer [MGQ_MpOverworldSync::Peers::Peer] The member.
   def self.take_soon(peer)
-    MGQ_MpNotices.message([:soon, peer.seat], "#{peer.state['name']} is in a battle!", HOLD_FRAMES) if defined?(MGQ_MpNotices)
+    MGQ_MpNotices.message(soon_key(peer.seat), "#{peer.state['name']} is in a battle!", HOLD_FRAMES) if defined?(MGQ_MpNotices)
+  end
+
+  # The key of the notice about another player's battle on the player's map, see take_soon and
+  # take_freeze, whose notices replace each other.
+  #
+  # @param seat [Integer] The player's seat.
+  # @return [Array] The key.
+  def self.soon_key(seat)
+    [:soon, seat]
   end
 
   # Tells every party member that the player met enemies on their map, so the members there stand
@@ -830,7 +852,7 @@ module MGQ_MpBattlesCoop
     @freezers = [] unless @frozen
     @freezers = Array(@freezers) | [peer.seat]
     @frozen = Time.now
-    MGQ_MpNotices.message([:soon, peer.seat], "Enemies! #{peer.state['name']} is in a battle.", HOLD_FRAMES) if defined?(MGQ_MpNotices)
+    MGQ_MpNotices.message(soon_key(peer.seat), "Enemies! #{peer.state['name']} is in a battle.", FREEZE_FRAMES) if defined?(MGQ_MpNotices)
     log("stands still up to #{FREEZE_SECONDS} s: #{MGQ_MpOverworldSync.who(peer)} met enemies on map #{$game_map.map_id}")
   end
 
@@ -841,9 +863,20 @@ module MGQ_MpBattlesCoop
     return false unless @frozen
     return true if Time.now - @frozen < FREEZE_SECONDS
 
-    @frozen = nil
+    thaw("no invite came within #{FREEZE_SECONDS} s")
     log("stands still no more: no invite came within #{FREEZE_SECONDS} s")
     false
+  end
+
+  # Lets the player walk on before FREEZE_SECONDS passed, taking the notices of the battles that
+  # made them stand still away with their reason. Nothing while the player walks.
+  #
+  # @param reason [String] Why, for the notices' log line.
+  def self.thaw(reason)
+    seats = Array(@freezers)
+    @frozen = nil
+    @freezers = []
+    seats.each { |seat| MGQ_MpNotices.drop(soon_key(seat), reason) } if defined?(MGQ_MpNotices)
   end
 
   # Lets the player walk on once a host whose battle made them stand still calls it off, unless
@@ -852,10 +885,11 @@ module MGQ_MpBattlesCoop
   # @param peer [MGQ_MpOverworldSync::Peers::Peer] The host who called it off.
   def self.unfreeze_for(peer)
     @freezers = Array(@freezers) - [peer.seat]
+    MGQ_MpNotices.drop(soon_key(peer.seat), "the battle was called off") if defined?(MGQ_MpNotices)
     held = !@freezers.empty? || (@invite && !@invite[:peer].equal?(peer))
     return log("still stands still after #{MGQ_MpOverworldSync.who(peer)} called their battle off: another battle holds the player") if held && @frozen
 
-    @frozen = nil
+    thaw("#{MGQ_MpOverworldSync.who(peer)} called their battle off")
   end
 
   # As host, waits for the invited members to join or turn the battle down, then sends everyone the
@@ -1436,7 +1470,7 @@ module MGQ_MpBattlesCoop
   # @param peer [MGQ_MpOverworldSync::Peers::Peer] The host.
   # @param message [Hash] The invite.
   def self.accept(peer, message)
-    @frozen = nil
+    thaw("the player joins the battle")
     # The leader's story dialogue a member reads may be on screen; the battle takes its place.
     $game_message.clear
     @joining = true
@@ -1496,7 +1530,7 @@ module MGQ_MpBattlesCoop
   # @param reason [String] Why, for Multiplayer InGame.log.
   def self.decline(peer, message, reason = "?")
     @invite = nil
-    @frozen = nil
+    thaw("the invite was turned down")
     log("declined #{MGQ_MpOverworldSync.who(peer)}'s invite to battle #{message['bid']}: #{reason}")
     MGQ_MpBattlesSync.tell(peer.seat, "decline", message["bid"].to_s)
   end
@@ -1518,7 +1552,10 @@ module MGQ_MpBattlesCoop
     log("sent join for battle #{MGQ_MpBattlesSync.battle_id} with #{Array(build[1]).size} characters, party_member_max #{build[2]}, waiting up to #{limit / 60} s for the roster")
     frames = 0
     text = hotjoin.late? ? "Joining #{MGQ_MpBattlesSync.player}'s battle at its next turn..." : "Joining #{MGQ_MpBattlesSync.player}'s battle..."
-    roster = MGQ_MpBattlesSync::Waiting.wait_for(scene, text) do
+    # A late join may last a whole turn, which the box's names line tells, since the text line
+    # would clip with that note and the wait names nobody.
+    limit_text = lambda { [MGQ_MpUi::SECONDS_TEXT % (limit / MGQ_MpUi::FRAMES_PER_SECOND)] }
+    roster = MGQ_MpBattlesSync::Waiting.wait_for(scene, text, hotjoin.late? ? limit_text : nil, UP_TO_PREFIX) do
       frames += 1
       next :called_off if hotjoin.called_off?
       next :moved if @moved
@@ -1941,9 +1978,27 @@ module MGQ_MpBattlesCoop
   def self.reform(scene, body)
     log("took the host's new party (#{body.to_s.size} bytes)")
     players = MGQ_MpBattlesSync::Wire.parse(body.to_s)
+    before = player_seats
     form(scene, Array(players && players[0]))
+    tell_joined(player_seats - before)
   rescue => e
     log("taking the new party failed: #{e.class}: #{e.message}")
+  end
+
+  # Tells the player, in the battle's chat log, of the players who joined the running battle: on
+  # the host as it takes them in (see MGQ_MpBattlesHotjoin.take_in), on a guest as the host's new
+  # party names them.
+  #
+  # @param seats [Array<Integer>] The seats new to the party.
+  def self.tell_joined(seats)
+    (seats - [MGQ_MpOverworldSync::Me.seat]).each do |seat|
+      peer = MGQ_MpOverworldSync::Peers.at(seat)
+      next MGQ_MpBattlesSync::Departures.joined(peer) if peer
+
+      log("#{MGQ_MpBattlesSync.who(seat)} joined battle #{MGQ_MpBattlesSync.battle_id}, which the player is not told: the game does not know them")
+    end
+  rescue => e
+    log("telling who joined failed: #{e.class}: #{e.message}")
   end
 
   # As host, fights on alone with the player's own full team, as in a battle of their own: in a Raid
@@ -2076,7 +2131,7 @@ module MGQ_MpBattlesCoop
     @asking = nil
     @invite = nil
     @request = nil
-    @frozen = nil
+    thaw("a reset forgets it")
     @kept_rates = nil
   end
 
@@ -2303,6 +2358,7 @@ module MGQ_MpBattlesCoop
     install_party
     install_targets
     install_shift_change
+    install_status_names
     install_counts
     install_end
     install_encounters
@@ -2510,6 +2566,41 @@ module MGQ_MpBattlesCoop
     end
   rescue => e
     log("shift change hooks FAILED: #{e.class}: #{e.message}")
+  end
+
+  # Draws each character's name in the battle's status window in its player's color while a co-op
+  # battle runs, see draw_status_name.
+  def self.install_status_names
+    MGQ_MpHooks.around(Window_BattleStatus, :draw_actor_name, "battles_coop") do |window, args, original|
+      MGQ_MpBattlesCoop.draw_status_name(window, args, original)
+    end
+  rescue => e
+    log("status names hook FAILED: #{e.class}: #{e.message}")
+  end
+
+  # Draws a character's name in the status window of a co-op battle: the player's own in
+  # MGQ_MpUi::Style::OWN, another player's character by its own name, without its owner, in its
+  # owner's MGQ_MpUi::PlayerColor. A character in crisis or knocked out is left to the game, which
+  # colors it (hp_color: below a quarter of its max HP, which covers 0); so is every character
+  # outside a co-op battle, and one drawn without a width.
+  #
+  # @param window [Window_BattleStatus] The window.
+  # @param args [Array] The character, x, y and width, as draw_actor_name takes them.
+  # @param original [Proc] Draws the name as the game does.
+  # @return [Object] What the game's drawing returns, nil for the mod's.
+  def self.draw_status_name(window, args, original)
+    actor, x, y, width = args
+    return original.call unless active? && actor && width && actor.hp >= actor.mhp / 4
+
+    ally = actor.is_a?(Game_MpAlly)
+    window.change_color(ally ? MGQ_MpUi::PlayerColor.of(MGQ_MpOverworldSync::Peers.at(actor.mp_seat) || actor.owner) : MGQ_MpUi::Style::OWN)
+    window.draw_text(x, y, width, window.line_height, MGQ_MpUi.cut(window, ally ? actor.base_name : actor.name, width))
+    nil
+  rescue => e
+    # A wrapped method's body runs without MGQ_MpHooks' rescue, and a raise here would take the
+    # status window down every time it refreshes.
+    log_once([:status_name, actor && actor.id], "drawing a status name failed, the game draws it: #{e.class}: #{e.message}")
+    original.call
   end
 end
 

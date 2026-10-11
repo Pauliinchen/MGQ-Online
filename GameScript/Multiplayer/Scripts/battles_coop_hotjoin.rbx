@@ -2,6 +2,7 @@
 #  battles_coop_hotjoin.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-11: Told the host in the battle's chat log of the players it took into its battle
 #      Paulinchen  2026-10-10: Named the raid boss's pools in the invite of players who join a battle that fights them late, and handed the pools an invite names to battles_raid_pool.rbx
 #                            - Told the battle the player fights, and its scene as a battle, also while its party command called the Library or Config
 #                            - Let an encounter join a battle that waits under the Library or Config while its player's window is in the background, whose state tells "away"
@@ -865,6 +866,7 @@ module MGQ_MpBattlesHotjoin
     @pending.each { |entry| entry[:seats] -= joined.keys }
     @pending.reject! { |entry| entry[:seats].empty? }
     log("took #{joined.keys.map { |seat| sync.who(seat) }.join(', ')} into battle #{sync.battle_id}#{added.empty? ? '' : ", and #{added.size} enemies"}")
+    coop.tell_joined(joined.keys)
   end
 
   # Adds the enemies of the encounters whose player joined to the troop, as the game's troop setup

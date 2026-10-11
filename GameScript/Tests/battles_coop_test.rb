@@ -2,6 +2,10 @@
 #  battles_coop_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-11: Checked that the status window names each character in its player's color, leaving a character in crisis to the game
+#                            - Checked that a guest reads in the chat log who joined the host's party, and nothing when a player leaves it
+#                            - Checked that the notice of a member's battle lasts as long as the player stands still and goes when they walk on early
+#                            - Checked that a status name the mod cannot draw is left to the game, and that the guests are told when the host chooses again
 #      Paulinchen  2026-10-10: Checked that a Raid World stretches the steps to the next random encounter by half a draw per other player on the map, no more than a battle holds
 #                            - Checked that a party of a Classic world stretches the steps to the next random encounter once per member on the map, within a wider margin
 #                            - Checked that a boss battle in a Raid World invites the players reading the story the player tells
@@ -128,6 +132,31 @@ check("every character of the party is offered to the level sync", $synced.map(&
 check("two players bring two each, the host's own first", party.map(&:name), ["Actor1", "Actor2", "Actor7 (Friend)", "Actor8 (Friend)"])
 check("the others' characters keep their HP and MP", party[2, 2].map { |a| [a.hp, a.mp, a.mp_seat] }, [[50, 5, 2], [60, 6, 2]])
 check("the status windows show the party", $refreshed, true)
+
+# The status window names each character in its player's color: a stand-in that records what it
+# draws, with the game's max HP.
+class Game_Actor; def mhp; 100; end; end
+class Window_BattleStatus
+  attr_reader :drawn, :color
+  def change_color(color); @color = color; end
+  def line_height; 24; end
+  def text_size(text); Rect.new(0, 0, text.to_s.size * 8, 24); end
+  def draw_text(x, y, width, height, text, align = 0); (@drawn ||= []) << [x, y, width, height, text, @color]; end
+end
+status = Window_BattleStatus.new
+own_drawn = status.draw_actor_name(party[0], 4, 0, 100)
+ally_drawn = status.draw_actor_name(party[2], 4, 24, 100)
+check("the status window names the player's own character in their color and another player's by its own name in its owner's",
+      [own_drawn, ally_drawn, status.drawn.map { |x, y, width, height, text, color| [x, y, width, height, text, color.equal?(MGQ_MpUi::Style::OWN), color.equal?(MGQ_MpUi::PlayerColor.of(friend))] }],
+      [nil, nil, [[4, 0, 100, 24, "Actor1", true, false], [4, 24, 100, 24, "Actor7", false, true]]])
+party[2].hp = 24
+check("a character in crisis is left to the game's colors, as is one drawn without a width", [status.draw_actor_name(party[2], 4, 24, 100), status.draw_actor_name(party[0], 4, 0), status.drawn.size], [:original, :original, 2])
+party[2].hp = 50
+class Window_MpFailingStatus < Window_BattleStatus; def change_color(_color); raise "no color"; end; end
+failing = Window_MpFailingStatus.new
+check("a name the mod cannot draw is left to the game, logged once",
+      [failing.draw_actor_name(party[2], 4, 24, 100), failing.draw_actor_name(party[2], 4, 24, 100), $log.grep(/drawing a status name failed, the game draws it: RuntimeError: no color/).size], [:original, :original, 1])
+check("its name for the battle's messages stays whole", party[2].name, "Actor7 (Friend)")
 check("the others' characters start the battle, which the game does only for its own", party[2, 2].map(&:turn_hit_damage_count), [0, 0])
 party[2].turn_hit_damage_count = 3
 party[2].on_turn_start
@@ -331,6 +360,20 @@ MGQ_MpBattlesSync::Channel.receive(0, "events", "")
 MGQ_MpBattlesSync::Playback.reset
 MGQ_MpBattlesSync::Playback.next_event(scene)
 check("a new party is taken before the next send", $game_party.battle_members.map(&:name), ["Actor4 (Host)", "Actor5 (Host)", "Actor1", "Actor2"])
+newcomer = MGQ_MpOverworldSync::Peers::Peer.new(4, { "id" => "id-new", "name" => "Newcomer", "map" => "5", "scene" => "battle" }, nil, false)
+MGQ_MpOverworldSync::Peers.all.push(newcomer)
+$chat = []
+$notices = []
+MGQ_MpBattlesSync::Channel.receive(0, "coop_party", MGQ_MpBattlesSync::Wire.line([[[0, "Host", "4,5", [[80, 8], [90, 9]], 8, [0, 1], 2, 0], [2, "Me", "1,2,3", [], 8, [0, 1, 2], 2, 1], [4, "Newcomer", "12", [[70, 7]], 8, [0], 1, 0]]]))
+MGQ_MpBattlesSync::Channel.receive(0, "events", "")
+MGQ_MpBattlesSync::Playback.next_event(scene)
+check("a guest reads in the battle's chat log who joined the host's party", [$chat, $notices, $game_party.battle_members.map(&:name)],
+      [["Newcomer joined the battle."], ["Newcomer joined the battle."], ["Actor4 (Host)", "Actor5 (Host)", "Actor1", "Actor2", "Actor12 (Newcomer)"]])
+MGQ_MpBattlesSync::Channel.receive(0, "coop_party", MGQ_MpBattlesSync::Wire.line([[[0, "Host", "4,5", [[80, 8], [90, 9]], 8, [0, 1], 2, 0], [2, "Me", "1,2,3", [], 8, [0, 1, 2], 2, 1]]]))
+MGQ_MpBattlesSync::Channel.receive(0, "events", "")
+MGQ_MpBattlesSync::Playback.next_event(scene)
+check("and nothing when a player leaves it, which the departure tells", [$chat.size, $game_party.battle_members.size], [1, 4])
+MGQ_MpOverworldSync::Peers.all.delete(newcomer)
 $game_party.battle_members[0].actions = [:hosts]
 $game_party.battle_members[2].actions = [:chosen]
 $chat = []
@@ -459,12 +502,15 @@ $chat = []
 $commands_phase = false
 $actor_cleared = false
 $troop_actions = 0
+$sent.clear
 MGQ_MpBattlesSync::Channel.receive(2, "commands", MGQ_MpBattlesSync::Wire.line([[[], [], [], [["skill", 12, 0]]], [3, 1, 2, 0]]))
 check("the host whose command was for a character a guest swapped out chooses again", [live.host_guests_commands(scene), $commands_phase, $actor_cleared], [false, true, true])
+check("the guests are told the host still chooses, after the wait for them was answered",
+      $sent.map { |_, text| fields_of(text) }.select { |f| f["battle"] == "waiting" }.map { |f| f[:payload] }, ["2", "", "0"])
 check("only the host's own commands start anew; the enemies keep theirs", [own[0].actions.map(&:item), $troop_actions], [[nil], 0])
 check("the guest's commands were given as they came, and stay", $game_party.battle_members[3].actions.map(&:item), [[:skill, 12]])
 check("the host is told why", $chat, ["A character you chose a command for left the Frontline. Choose your commands again."])
-check("the log names who lost a target and who chooses again", $log.last.to_s.end_with?("commands of seats 0 lost their target to a swap, choosing again: 0"), true)
+check("the log names who lost a target and who chooses again", $log.grep(/commands of seats 0 lost their target to a swap, choosing again: 0\z/).size, 1)
 own = $game_party.battle_members
 own[0].actions = [command(own[0], RAISE, 2)]
 check("chosen again, the turn goes on without waiting for the guest again", [live.host_guests_commands(scene), own[3].actions.map(&:item)], [true, [[:skill, 12]]])
@@ -634,16 +680,26 @@ $encounter_troop = 74
 check("a member in a battle of their own is not waited for", [$game_player.encounter, MGQ_MpBattlesCoop.holding?], [true, false])
 MGQ_MpBattlesCoop.ended
 
-# A member on the map stands still while another member's encounter waits for the party.
+# A member on the map stands still while another member's encounter waits for the party. The
+# notification box stands in, keeping what is posted and dropped.
+module MGQ_MpNotices
+  def self.message(key, text, frames = nil); ($notice_posts ||= []) << [key, text, frames]; end
+  def self.drop(key, reason = "taken away"); ($notice_drops ||= []) << [key, reason]; end
+end
+$notice_posts = []
+$notice_drops = []
 MGQ_MpBattlesCoop.take(mate, { "coop" => "freeze", "map" => "9" })
-check("another map's encounter holds nobody here", $game_player.movable?, true)
+check("another map's encounter holds nobody here", [$game_player.movable?, $notice_posts], [true, []])
 MGQ_MpBattlesCoop.take(mate, { "coop" => "freeze", "map" => "5" })
 check("a member's encounter on the player's map holds them", $game_player.movable?, false)
+check("with a notice as long as they stand still", $notice_posts, [[[:soon, 2], "Enemies! Friend is in a battle.", MGQ_MpBattlesCoop::FREEZE_SECONDS * 60]])
 MGQ_MpBattlesCoop.decline(mate, invite_of.call("i3"))
-check("until they turn its invite down", $game_player.movable?, true)
+check("until they turn its invite down, which takes the notice away", [$game_player.movable?, $notice_drops], [true, [[[:soon, 2], "the invite was turned down"]]])
+$notice_drops.clear
 MGQ_MpBattlesCoop.take(mate, { "coop" => "freeze", "map" => "5" })
 MGQ_MpBattlesCoop.instance_variable_set(:@frozen, Time.now - MGQ_MpBattlesCoop::FREEZE_SECONDS)
-check("or ten seconds passed", $game_player.movable?, true)
+check("or ten seconds passed, which takes it away too", [$game_player.movable?, $notice_drops], [true, [[[:soon, 2], "no invite came within 10 s"]]])
+check("and nothing is taken away twice", [MGQ_MpBattlesCoop.frozen?, $notice_drops.size], [false, 1])
 mate.state["scene"] = "map"
 $scene_now = scene
 
@@ -1212,10 +1268,12 @@ MGQ_MpBattlesCoop.drop
 MGQ_MpBattlesCoop.take(rival, { "coop" => "freeze", "map" => "5" })
 MGQ_MpBattlesCoop.take(rival, rival_invite)
 MGQ_MpBattlesCoop.take(early, { "coop" => "freeze", "map" => "5" })
+$notice_drops.clear
 MGQ_MpBattlesCoop.take(early, { "coop" => "off", "map" => "5" })
-check("another host's word that their battle is off keeps the player still for a waiting invite", MGQ_MpBattlesCoop.frozen?, true)
+check("another host's word that their battle is off keeps the player still for a waiting invite, their notice alone taken away",
+      [MGQ_MpBattlesCoop.frozen?, $notice_drops], [true, [[[:soon, early.seat], "the battle was called off"]]])
 MGQ_MpBattlesCoop.take(rival, { "coop" => "off", "bid" => "rv1" })
-check("its own host's lets them walk on", [MGQ_MpBattlesCoop.frozen?, waiting_bid], [false, nil])
+check("its own host's lets them walk on", [MGQ_MpBattlesCoop.frozen?, waiting_bid, $notice_drops.map(&:first)], [false, nil, [[:soon, early.seat], [:soon, rival.seat]]])
 MGQ_MpBattlesCoop.drop
 
 # A held encounter lets the players its battle leaves out walk on.

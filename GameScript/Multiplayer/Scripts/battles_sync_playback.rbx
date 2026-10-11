@@ -2,6 +2,7 @@
 #  battles_sync_playback.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-11: Named in the guest's waiting box the players the host still waits for, as the host tells them, with the seconds waited, the wait for the host worded as the waiting box words it
 #      Paulinchen  2026-10-08: Showed a message of the host without its face while this game lacks the face file
 #      Paulinchen  2026-10-07: Gave the states the host adds the counters the game keeps per state, without which a turn's end on the map ended the game
 #                            - Checked the arguments of the host's audio calls as a picture's are checked, and left out a call that fails, logged once
@@ -92,9 +93,12 @@ module MGQ_MpBattlesSync
 
           quiet += 1
           count(:quiet)
+          # The host's word of whom it waits for is taken as it comes, so none piles up until the
+          # box asks for it.
+          Live.host_waits_for unless window
           if quiet == QUIET_FRAMES
             count(:stalls)
-            window ||= Waiting.open("Waiting for #{MGQ_MpBattlesSync.player}...")
+            window ||= Waiting.open(Waiting::WAITING_FOR % MGQ_MpBattlesSync.player, lambda { Live.host_waits_for }, Live::STILL_CHOOSING)
           end
           if window && Waiting.leave?(window, quiet - QUIET_FRAMES)
             outcome = "the player left while waiting for the host's stream"

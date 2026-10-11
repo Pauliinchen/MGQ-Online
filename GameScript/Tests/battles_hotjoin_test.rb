@@ -2,10 +2,12 @@
 #  battles_hotjoin_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-11: Checked that the host reads in the chat log who joined its battle, that it tells the guests whom it waits for as a command phase opens, and that a late guest's box tells how long the wait may last
+#                            - Read the windows opened from battle_support.rb instead of keeping them itself
 #      Paulinchen  2026-10-10: Checked that a requester whose running battle broke off before the roster fights its encounter from its start with its own enemy rates, and that a guest has its own rates back as the battle ends, before the game's autosave
+#                            - Checked that the players a refused, silent or taken back request brought along walk on unless the encounter invites them anew
 #                            - Checked that a battle whose party command called the Library or Config still tells itself as a battle and takes encounters in
 #                            - Checked that an encounter finds a battle under the Library or Config whose players' windows are in the background, which tell "away"
-#                            - Checked that the players a refused, silent or taken back request brought along walk on unless the encounter invites them anew
 #                            - Checked that the fallen enemies count toward the troop's limit, and that a guest starts the enemies it adds, enters them in the Library and rescales a raid boss's pools
 #      Paulinchen  2026-10-09: Checked that a host tells its guests a troop that grew, whose hidden enemy appeared or whose enemy transformed once, before the send that names it and as a command phase opens, together with an encounter taken in, and that a guest shows or transforms its own enemy, keeping it
 #                            - Checked that an enemy the host's party ate stays fallen and shown for the guests, so its defeat pays out, and that an encounter whose player joins first keeps clear of the place of one still to join
@@ -188,7 +190,14 @@ coop.take(host, { "coop" => "hot_ok", "bid" => "hb1", "escape" => "1", "lose" =>
 $scene_now = scene
 coop::Mode.before_start(scene)
 $frames = 0
+# The waiting box, which the window stand-in keeps as it opens.
+$windows = []
+box_lines = nil
+$inject = lambda { |frame| box_lines = $windows.last.contents.lines.dup if frame == 2 }
 check("a late guest whose roster never comes fights its encounter alone", [coop.join(scene), $frames], [:gone, hotjoin::ROSTER_FRAMES - 1])
+$inject = nil
+check("having read how long the wait may last, and the seconds, in its box",
+      box_lines, { 0 => "Joining P5's battle at its next turn...", 1 => "Up to #{hotjoin::ROSTER_FRAMES / 60} s", 2 => "0 s" })
 reset
 
 $encounter_troop = 50
@@ -343,9 +352,15 @@ check("and more enemies than a troop holds", map_sent("hot_no").map(&:first), [1
 
 # The command phase turns the battle live and takes in who joined.
 $sent.clear
+$chat = []
+$notices = []
 sync.take(asker, { "battle" => "join", "bid" => "own7", :payload => sync::Wire.line(["5,6,7", [[50, 5], [60, 6], [70, 7]], 4]) })
 open_phase(scene)
 check("the command phase still opens", $commands_phase, true)
+check("the host reads in the battle's chat log who joined, once", [$chat, $notices], [["P8 joined the battle."], ["P8 joined the battle."]])
+sync::Departures.joined(asker)
+sync::Departures.left(asker)
+check("and still reads when they leave later", $chat, ["P8 joined the battle.", "P8 left the battle."])
 check("the battle turned live, the player hosting it", [sync.host?, sync.coop?, MGQ_MpBattles.kind, sync::Recorder.active?], [true, true, :coop, true])
 check("with the player who joined as its guest", [sync.guests_in, sync.expected], [[8], [9]])
 check("whose first character joins the party", $game_party.battle_members.map(&:name), ["Actor1", "Actor5 (P8)"])
@@ -371,8 +386,9 @@ sync::Live.close_phase
 sync::Recorder.turn_started
 $sent.clear
 open_phase(scene)
-check("the guest gets the new party and troop before the phase's stream",
-      $sent.select { |seat, _| seat == 8 }.map { |_, text| fields_of(text)["battle"] }, ["coop_party", "coop_troop", "events"])
+check("the guest gets the new party and troop before the phase's stream, and whom the host waits for",
+      $sent.select { |seat, _| seat == 8 }.map { |_, text| fields_of(text)["battle"] }, ["coop_party", "coop_troop", "waiting", "events"])
+check("which is everyone, the host itself included", battle_sent("waiting").map { |seat, fields| [seat, fields[:payload]] }, [[8, "0,8,11"], [11, "0,8,11"]])
 check("the new player gets the roster", battle_sent("roster").map(&:first), [11])
 check("three players fight, the host first, then by their ids", $game_party.battle_members.map(&:name), ["Actor1", "Actor8 (P11)", "Actor5 (P8)"])
 check("the word of the late guest that it is ready is dropped", sync::Channel.pending("ready"), 0)
@@ -772,7 +788,7 @@ add_wide_enemy
 $sent.clear
 open_phase(scene)
 check("the guest hears of the encounter's enemies and the other mod's in one troop, before the phase's stream",
-      [kinds_to(8), troops_to(8).map { |troop| troop.map(&:first) }], [["coop_party", "coop_troop", "events"], [[31, 50, 61, 61, 61, 61, 51]]])
+      [kinds_to(8), troops_to(8).map { |troop| troop.map(&:first) }], [["coop_party", "coop_troop", "waiting", "events"], [[31, 50, 61, 61, 61, 61, 51]]])
 check("and the new player of the troop in the roster alone", [kinds_to(11).first, kinds_to(11).count("coop_troop")], ["roster", 0])
 reset
 
