@@ -4,6 +4,7 @@
 #  Changelog:
 #      Paulinchen  2026-10-11: Followed the story values of a telling the player watched as a story laid over theirs once they are free, so a viewer gets what the scene gave and loses the key items it took
 #                            - Took a key item as taken since a row of the same step gave it when the taking row's marks lie further, so the Yggdrasil Fruit the Queen Harpy event took no longer comes back
+#                            - Raised Amira's information network to 2 for a player who has her, as a companion the world shares comes without it and her information stayed shut
 #                            - Checked everything once on entering the world, after a load and on every level up: the story's skills, key items and companions the player lacks, and the player's own values the story sets
 #                            - Moved the player's own values the story's events set, the game over's return point and the random encounters, on to the latest step their story passed where they still hold an earlier step's, and lifted a warp ban left on where the game lets the player warp
 #                            - Handed out every key item the story's place owes the player and they lack, whoever's game played its event, so a key item a newer table lists or a laid-over story skipped still comes
@@ -108,6 +109,12 @@ module MGQ_MpWorldCatchup
   # The rule of a join whose gate is the companion's start level, which a companion new to the
   # player has anyway.
   START_RULE = :start
+
+  # The story values a companion's own join stands for, by companion: each variable with the least
+  # it holds once they joined. A companion the world shared, or the catch-up brought, comes without
+  # them: Amira joins only once her information network ("Pornof Rabbit Events") reached 2, and her
+  # information in the Pocket Castle stays shut below it.
+  COMPANION_VALUES = { 540 => { 1009 => 2 } }
 
   # The field of $game_system the save keeps the notes in, see ledger.
   LEDGER = :@mgq_mp_catchup
@@ -823,6 +830,7 @@ module MGQ_MpWorldCatchup
     gifts = missing_skills(story, told)
     gifts.concat(restock_key_items(story, told))
     missing_companions(story, told, done)
+    companion_values
     settle(story, told)
     lift_warp_ban
     log("looked at everything the story owes the player once")
@@ -862,6 +870,23 @@ module MGQ_MpWorldCatchup
       log("#{actor_label(row.persona)} of #{row.site} is missing from the roster: joins at level #{row.gate}")
     end
     bring_waiting(done)
+  end
+
+  # Raises the story values of the companions in the player's roster to what their joins stand for
+  # (COMPANION_VALUES), which a companion the world shared or the catch-up brought comes without.
+  # The raised values reach the world's story like any change of the player's.
+  def self.companion_values
+    COMPANION_VALUES.each do |actor, values|
+      next unless in_roster?(actor)
+
+      values.each do |id, least|
+        now = $game_variables[id].to_i
+        next if now >= least
+
+        $game_variables[id] = least
+        log("raised variable #{id} from #{now} to #{least}: #{actor_label(actor)} is in the roster, whose join stands for it")
+      end
+    end
   end
 
   # Moves the player's own values the story's events set (DATA::SETTINGS: the game over's return
@@ -1254,6 +1279,7 @@ module MGQ_MpWorldCatchup
     raise_level(persona, level)
     log("#{actor_label(persona)} joined the player's roster (#{reason})")
     notice([:joined, persona], "#{actor_name(persona)} joined: #{reason}.")
+    companion_values
     true
   end
 

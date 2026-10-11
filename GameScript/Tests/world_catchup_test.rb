@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-11: Checked that a telling the player watched takes the key items its scene took, and that a key item taken at the step that gave it does not come back
+#                            - Checked that Amira in the roster raises her information network to 2
 #                            - Checked one look at everything on entering and on a level up: the story's own values moved on from an earlier step's but not a player's own, encounters left to a map that sets them, the warp ban lifted where warping is free, a missing skill and a missing companion
 #                            - Stood in for whether random encounters are on and for the map's events
 #                            - Checked that a key item the story's place owes comes to a player who lacks it, also after the row was marked done, but not one taken since or of the other side
@@ -666,6 +667,22 @@ check("a level up looks again: a value of the player's own making stays, the enc
 check("and one gone from the roster joins again", $game_party.all_members.map(&:id).include?(77), true)
 $game_map.events.clear
 $game_map.map_id = 3
+
+# A companion the world shared comes with the story values their own join stands for.
+$data_actors[540] = ActorData.new(540, "Amira", 6)
+$game_variables[1009] = 0
+MGQ_MpWorldCatchup.level_up
+frames(40)
+check("without Amira the rabbit quest stays where it is", $game_variables[1009], 0)
+$game_party.add_actor(540)
+MGQ_MpWorldCatchup.level_up
+frames(40)
+check("with Amira in the roster her information network stands at 2, so her information in the Pocket Castle opens", $game_variables[1009], 2)
+$game_variables[1009] = 5
+MGQ_MpWorldCatchup.level_up
+frames(40)
+check("and a quest further along stays", $game_variables[1009], 5)
+$game_party.remove_actor(540)
 
 # The catch-up completing the orbs plays the event that moves the story on, which only the orbs' events call.
 tables(:KEY_ITEMS => [key_item.new(542, 1, "map:149:107:1", "2", 30, nil, [[:v, 1001, 30], [:v, 1068, 3]], true)])
