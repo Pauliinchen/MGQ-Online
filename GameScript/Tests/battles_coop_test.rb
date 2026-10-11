@@ -2,7 +2,8 @@
 #  battles_coop_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Checked that the status window names each character in its player's color, leaving a character in crisis to the game
+#      Paulinchen  2026-10-11: Checked that the party takes commands while the player's Frontline is down and their Backline may swap in, and not once it may not
+#                            - Checked that the status window names each character in its player's color, leaving a character in crisis to the game
 #                            - Checked that a guest reads in the chat log who joined the host's party, and nothing when a player leaves it
 #                            - Checked that the notice of a member's battle lasts as long as the player stands still and goes when they walk on early
 #                            - Checked that a status name the mod cannot draw is left to the game, and that the guests are told when the host chooses again
@@ -452,6 +453,16 @@ scene.bench_member_ok
 check("the shift change swaps the player's own in", [$game_party.battle_members.map(&:name), $game_party.bench_members.map(&:name), $bench_cancelled],
       [["Actor1", "Actor4", "Actor7 (Friend)", "Actor8 (Friend)"], ["Actor3", "Actor2"], true])
 check("in their own party too, as in a battle of their own", $game_party.own.map(&:id), [1, 4, 3, 2, 5])
+front = $game_party.battle_members
+front.each { |member| member.define_singleton_method(:inputable?) { false } }
+check("a party whose characters cannot act still takes commands while the player's Backline may swap in", [MGQ_MpBattlesCoop.may_swap_in?, $game_party.inputable?], [true, true])
+$game_switches[NWConst::Sw::FORBID_BATTLE_SHIFT_CHANGE] = true
+check("but not while the game forbids the change", $game_party.inputable?, false)
+$game_switches[NWConst::Sw::FORBID_BATTLE_SHIFT_CHANGE] = false
+$game_party.bench_members.each { |member| member.hp = 0 }
+check("nor once nobody of the Backline stands", [MGQ_MpBattlesCoop.may_swap_in?, $game_party.inputable?], [false, false])
+$game_party.bench_members.each { |member| member.hp = 100 }
+front.each { |member| member.singleton_class.send(:remove_method, :inputable?) }
 $sent.clear
 MGQ_MpBattlesCoop.share_order
 told = $sent.map { |_, text| fields_of(text) }.find { |f| f["battle"] == "coop_party" }

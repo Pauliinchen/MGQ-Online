@@ -2,7 +2,8 @@
 #  battles_coop.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Named the battle invite or lead request waiting for the player to be free, which the pages of a teller's story give way to, so a viewer reading them no longer turns the invite down
+#      Paulinchen  2026-10-11: Opened the player's command phase while their own Frontline is down but their Backline may swap in, so they can still change the formation
+#                            - Named the battle invite or lead request waiting for the player to be free, which the pages of a teller's story give way to, so a viewer reading them no longer turns the invite down
 #                            - Drew each character's name in the battle's status window in its player's color, another player's character by its own name
 #                            - Told the player in the battle's chat log of the players who joined the running battle, as the host takes them in or its new party names them
 #                            - Showed the notice of a member's battle as long as the player stands still for it, and took it away once they walk on early
@@ -1834,6 +1835,21 @@ module MGQ_MpBattlesCoop
     player && @own_squad ? player.lines[1].map { |place| @own_squad[place] }.compact : []
   end
 
+  # Reports whether the player may swap a character of their own Backline in, as the game's Party
+  # command allows it (Window_PartyCommand#can_shift_change?): one of them stands, and neither the
+  # game's switch nor a challenge battle forbids the change.
+  #
+  # Alone the game ends the battle once the Frontline is down, so it never opens the command phase
+  # for a swap alone; in a co-op battle the other players fight on.
+  #
+  # @return [Boolean] Whether they may.
+  def self.may_swap_in?
+    return false unless own_bench.any?(&:alive?)
+    return false if defined?(NWConst::Sw::FORBID_BATTLE_SHIFT_CHANGE) && $game_switches[NWConst::Sw::FORBID_BATTLE_SHIFT_CHANGE]
+
+    !($game_troop.respond_to?(:challenge_battle?) && $game_troop.challenge_battle?)
+  end
+
   # The order of the player's places, which their commands tell the host.
   #
   # @return [Array<Integer>, nil] The places, the Frontline's first, nil outside a co-op battle.
@@ -2520,6 +2536,17 @@ module MGQ_MpBattlesCoop
       # @return [Array<Game_Actor>] The members.
       def bench_members
         MGQ_MpBattlesCoop.active? ? MGQ_MpBattlesCoop.own_bench : mgq_mp_battles_coop_bench_members
+      end
+
+      alias_method :mgq_mp_battles_coop_inputable?, :inputable?
+
+      # Reports whether the party takes commands this turn: also while a co-op battle runs and the
+      # player's Frontline is down, as long as their Backline may swap in (see
+      # MGQ_MpBattlesCoop.may_swap_in?), so the command phase offers the Party command.
+      #
+      # @return [Boolean] Whether it does.
+      def inputable?
+        mgq_mp_battles_coop_inputable? || (MGQ_MpBattlesCoop.active? && MGQ_MpBattlesCoop.may_swap_in?)
       end
 
       alias_method :mgq_mp_battles_coop_name, :name

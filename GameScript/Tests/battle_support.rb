@@ -2,7 +2,8 @@
 #  battle_support.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Loaded ui_layout.rbx and stood in for Player.ini, the screen's update and a window's new width, which the waiting box follows
+#      Paulinchen  2026-10-11: Stood in for whether a character stands and whether the party takes commands, as the game tells them
+#                            - Loaded ui_layout.rbx and stood in for Player.ini, the screen's update and a window's new width, which the waiting box follows
 #                            - Let the real waiting box run: stood in for the screen, the windows' contents, the cancel button and the scenes' base, loaded ui.rbx, and stopped a wait that never ends
 #                            - Gave the rebuilt character stand-in its owner and its own name
 #                            - Let the battle status window stand-in draw a character's name, which battles_coop.rbx wraps
@@ -129,6 +130,7 @@ class Game_Actor < Game_Battler
   def name; "Actor#{@id}"; end
   def exist?; true; end
   def all_dead?; @hp == 0; end
+  def alive?; @hp > 0; end
   def inputable?; true; end
   def luca?; false; end
   def make_actions; @actions = [Game_Action.new(self)]; end
@@ -177,6 +179,7 @@ class Game_Party
   def battle_members; @own.first(max_battle_members); end
   def bench_members; @own[max_battle_members..-1] || []; end
   def swap_order(a, b); @own[a], @own[b] = @own[b], @own[a]; end
+  def inputable?; battle_members.any?(&:inputable?); end
   def item_target_members(item); item.include_bench? ? all_members : battle_members; end
   def name; "#{battle_members.first.name}'s party"; end
 end
