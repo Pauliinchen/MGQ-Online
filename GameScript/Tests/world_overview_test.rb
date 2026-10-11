@@ -2,7 +2,8 @@
 #  world_overview_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Checked the overview as a box the player moves and resizes: its default, a placement Player.ini keeps, its least size, the lines, the scroll, the menu and the clicks following it, the sprite placed, offered and drawn anew on a new size or preset, and a box at its least size still drawing every column, the title, the tabs and the whole hint on both pages
+#      Paulinchen  2026-10-11: Checked that a Raid World's box lists the party wherever its members are, with Frontline levels, and the others on the map below it, and stays with the party alone on the map
+#                            - Checked the overview as a box the player moves and resizes: its default, a placement Player.ini keeps, its least size, the lines, the scroll, the menu and the clicks following it, the sprite placed, offered and drawn anew on a new size or preset, and a box at its least size still drawing every column, the title, the tabs and the whole hint on both pages
 #                            - Expected the raid bosses' gauges in the edge and well colors, and the box, its tabs and its title in the preset's colors
 #                            - Loaded ui_theme.rbx and ui_layout.rbx, which the overview draws and lies by
 #                            - Checked the raid bosses grouped by the story's sections, only those the world's story reached or holding a pool, a fight's own pool in its section and an unknown one under Other
@@ -369,7 +370,7 @@ crowd = map_rows * 3
 map_box.draw_map(crowd)
 check("past ten lines it lists nine and says how many more", [texts.call.first, texts.call.size, texts.call.last, drawn.first[2]],
       ["Map 12", 1 + 9 * 2 + 1, "+3 more", row_height * 11 + 4])
-map_box.draw_small(crowd, true)
+map_box.draw_small([], crowd)
 crowd = map_rows[1..-1] * 4 + map_rows.first(1)
 shown, more = MGQ_MpPartyBox.capped(crowd)
 check("cut short, it keeps the player's own line in place of the last listed", [shown.size, shown.last.player, shown.count { |row| row.player == :me }, more],
@@ -377,6 +378,13 @@ check("cut short, it keeps the player's own line in place of the last listed", [
 crowd = map_rows * 3
 check("small, it keeps to ten lines too, the others white", [texts.call.size, texts.call.last, green.call("loner"), drawn.first[1..2]],
       [10, "+3 more", false, [Sprite_MpPartyBox::SMALL_WIDTH, row_height * 10 + 4]])
+party, others = MGQ_MpPartyBox.sections
+check("in a party the box lists the party first, with Frontline levels, then the others on the map",
+      [party.map { |row| [row.name, row.level] }, others.map(&:name)], [[["Me", "Lv 40"], ["member", "Lv 33"]], ["loner", "Stranger"]])
+map_box.draw(party, others)
+place_height = Sprite_MpPartyBox::PLAYER_ROW
+check("drawn as the party box, its places below the members, then the map's title and a line for each other player",
+      [texts.call.last(5), drawn.first], [["Map 2", "loner", "", "Stranger", "Lv 20"], [:fill, Sprite_MpPartyBox::WIDTH, row_height + place_height * 2 + row_height * 3 + 4]])
 
 MGQ_MpChat.stop_typing
 $pressed = MGQ_MpHotkeys.code(:party_box)
@@ -384,7 +392,12 @@ MGQ_MpPartyBox.on_map
 check("its key makes it small", MGQ_MpPartyBox.small?, true)
 peers_here = MGQ_MpCoop::Scope.method(:peers_here)
 MGQ_MpCoop::Scope.define_singleton_method(:peers_here) { [] }
-check("alone on the map there is no box, and its key says why", [overview.map_rows, MGQ_MpPartyBox.busy_reason], [[], "nobody else is on the map"])
+check("alone on the map the party box still lists the party, and its key works", [overview.map_rows, MGQ_MpPartyBox.busy_reason, MGQ_MpPartyBox.sections.map { |rows| rows.map(&:name) }],
+      [[], nil, [["Me", "member"], []]])
+in_party = MGQ_MpCoop.method(:in_party?)
+MGQ_MpCoop.define_singleton_method(:in_party?) { false }
+check("outside a party there is no box then, and its key says why", MGQ_MpPartyBox.busy_reason, "nobody else is on the map")
+MGQ_MpCoop.define_singleton_method(:in_party?, in_party)
 MGQ_MpCoop::Scope.define_singleton_method(:peers_here, peers_here)
 $raid = false
 check("back in a Classic world the party box lists the party alone", overview.party_rows.map(&:name), ["Me", "member"])

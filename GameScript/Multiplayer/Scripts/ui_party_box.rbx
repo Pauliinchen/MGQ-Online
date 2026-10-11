@@ -2,7 +2,8 @@
 #  ui_party_box.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Made the box movable and widenable with the left Alt held, as "Party box", the map box too: the extra width goes to the names, levels and places, the ping stays at the right edge, the small box at the right of the box's place, never narrower than the full box's columns
+#      Paulinchen  2026-10-11: Listed a Raid World's party in the box wherever its members are, as in a Classic world, and the other players on the map below it under the map's title, the map box alone only outside a party
+#                            - Made the box movable and widenable with the left Alt held, as "Party box", the map box too: the extra width goes to the names, levels and places, the ping stays at the right edge, the small box at the right of the box's place, never narrower than the full box's columns
 #                            - Framed the box in the preset's colors, drawn anew once the preset changes
 #                            - Drew the box's background and titles in the shared style, faded the box in and out, and named the hotkey that changes its size at the right of its title
 #                            - Kept the level and the ping apart in their own columns, with room for "Lv 100" and "999+ ms" (the ping column and the party's title are MGQ_MpOverworld's), the name column 116 pixels wide, and cut a long name to its column
@@ -87,7 +88,7 @@ module MGQ_MpPartyBox
   def self.busy_reason
     return "no world is open" unless MGQ_MpOverworldSync.in_world?
     if map_box?
-      return "nobody else is on the map" if MGQ_MpCoop::Scope.peers_here.empty?
+      return "nobody else is on the map" if MGQ_MpCoop::Scope.peers_here.empty? && !MGQ_MpCoop.in_party?
     else
       return "the player is in no party" unless MGQ_MpCoop.in_party?
     end
@@ -96,6 +97,22 @@ module MGQ_MpPartyBox
     return "the emote wheel is open" if MGQ_MpEmotes.open?
 
     MGQ_MpWorldOverview.open? ? "the World overview is open" : nil
+  end
+
+  # Splits the players the box lists into the party and the others on the map: in a Classic world
+  # the party alone; in a Raid World the party wherever its members are (as raid_party_rows), then
+  # the players on the map outside it, or outside a party everyone on the map (as map_rows).
+  #
+  # @return [Array(Array, Array)] The party's rows and the others', each empty while there are none.
+  def self.sections
+    overview = MGQ_MpWorldOverview
+    return [overview.party_rows, []] unless map_box?
+
+    party = overview.raid_party_rows
+    others = overview.map_rows
+    return [[], others] if party.empty?
+
+    [party, others.reject { |row| row.member || row.player == :me }]
   end
 
   # Reports whether the box lists everyone on the map instead of the party: in a Raid World.
@@ -171,7 +188,9 @@ end
 # size at its right. Drawn in the shared style, the box fades in and out. A wider box gives the
 # names, the levels and the places more room; its height follows the players.
 #
-# In a Raid World it is the map box instead: everyone on the player's map, the party's members
+# In a Raid World the party's members show with their Frontline's highest level, and the other
+# players on the player's map follow below the party under the map's title, a line each. Outside a
+# party it is the map box instead: everyone on the player's map, the party's members
 # first, each with their Frontline's highest level and ping, and no place, since all share the
 # player's.
 class Sprite_MpPartyBox < Sprite
@@ -299,11 +318,12 @@ class Sprite_MpPartyBox < Sprite
     return if bitmap && !bitmap.disposed? && bitmap.width == width
 
     bitmap.dispose if bitmap && !bitmap.disposed?
-    self.bitmap = Bitmap.new(width, [ROW + PLAYER_ROW * MGQ_MpCoop::MAX_PLAYERS, ROW + ROW * MGQ_MpPartyBox::MAP_LINES].max + 2 * SPACING)
+    self.bitmap = Bitmap.new(width, ROW + PLAYER_ROW * MGQ_MpCoop::MAX_PLAYERS + ROW + ROW * MGQ_MpPartyBox::MAP_LINES + 2 * SPACING)
   end
 
-  # Draws the party while the player is in one, or in a Raid World everyone on the map while
-  # someone else is on it, and the World overview is closed, if it, the width or the preset
+  # Draws the party while the player is in one, in a Raid World with the others on the map below,
+  # else in a Raid World everyone on the map while someone else is on it, and the World overview is
+  # closed, if it, the width or the preset
   # changed, fading the box in; fades it out once there is nobody to list, keeping its picture
   # until it is gone.
   #
@@ -313,34 +333,56 @@ class Sprite_MpPartyBox < Sprite
     @frames = READ_FRAMES
     @overview = overview
     @width = width
-    map = MGQ_MpPartyBox.map_box?
-    rows = overview ? [] : map ? MGQ_MpWorldOverview.map_rows : MGQ_MpWorldOverview.party_rows
-    MGQ_MpPartyBox.note_rows(rows, map) unless overview
+    party, others = overview ? [[], []] : MGQ_MpPartyBox.sections
+    map = party.empty?
+    rows = party + others
+    MGQ_MpPartyBox.note_rows(rows, map && MGQ_MpPartyBox.map_box?) unless overview
     return @motion.hide if rows.empty?
 
     @motion.show
     small = MGQ_MpPartyBox.small?
-    drawn = [small, map, width, MGQ_MpUi::Theme.serial] +
+    drawn = [small, party.size, width, MGQ_MpUi::Theme.serial] +
             rows.map { |row| [row.name, row.level, row.ping && row.ping[0], row.badge, row.place, row.member, row.icon, MGQ_MpPartyBox.away?(row)] }
     return if drawn == @shown
 
     @shown = drawn
     fit_bitmap(width)
     if small
-      draw_small(rows, map)
+      draw_small(party, others)
     else
-      map ? draw_map(rows) : draw(rows)
+      map ? draw_map(others) : draw(party, others)
     end
   end
 
-  # Draws the box, as wide as the layout says and as tall as the party needs.
+  # Draws the box, as wide as the layout says and as tall as the party needs, and in a Raid World
+  # the others on the map below it under the map's title, a line each, up to
+  # MGQ_MpPartyBox::MAP_LINES.
   #
-  # @param rows [Array<MGQ_MpWorldOverview::Row>] The party, see MGQ_MpWorldOverview.party_rows.
-  def draw(rows)
+  # @param rows [Array<MGQ_MpWorldOverview::Row>] The party, see MGQ_MpPartyBox.sections.
+  # @param others [Array<MGQ_MpWorldOverview::Row>] The others on the map, see MGQ_MpPartyBox.sections.
+  def draw(rows, others = [])
     width = box_width
-    start(width, ROW + PLAYER_ROW * rows.size + 2 * SPACING, false)
+    shown, more = MGQ_MpPartyBox.capped(others)
+    party_height = ROW + PLAYER_ROW * rows.size + SPACING
+    map_height = others.empty? ? 0 : ROW * (1 + shown.size + (more > 0 ? 1 : 0))
+    start(width, party_height + map_height + SPACING, false)
     draw_title(MGQ_MpOverworld.party_title(MGQ_MpOverworld.party_badge(:me)), MGQ_MpUi::Style::MEMBER, width)
     rows.each_with_index { |row, index| draw_row(row, ROW + PLAYER_ROW * index + SPACING, width) }
+    return if others.empty?
+
+    draw_heading("Map #{others.size}", party_height, width)
+    shown.each_with_index { |row, index| draw_line(row, party_height + ROW * (index + 1), width) }
+    draw_more(more, party_height + ROW * (shown.size + 1), width) if more > 0
+  end
+
+  # Draws the title of the others on the map below the party, without the size hint.
+  #
+  # @param title [String] The title.
+  # @param y [Integer] The line's top.
+  # @param width [Integer] The box's width.
+  def draw_heading(title, y, width)
+    MGQ_MpUi::Style.use_font(bitmap, MGQ_MpUi::Style::SMALL_SIZE, MGQ_MpUi::Style::TEXT)
+    bitmap.draw_text(EDGE, y, width - 2 * EDGE, ROW, MGQ_MpUi.cut(bitmap, title, width - 2 * EDGE))
   end
 
   # Draws the map box, as wide as the layout says and as tall as its players need up to
@@ -358,13 +400,15 @@ class Sprite_MpPartyBox < Sprite
   end
 
   # Draws the small box, SMALL_WIDTH wide at the right edge of the box's place: a row per player
-  # with the crown, the icon, the name and the ping, and no title.
+  # with the crown, the icon, the name and the ping, and no title; the party first, then as many of
+  # the others on the map as fit.
   #
-  # @param rows [Array<MGQ_MpWorldOverview::Row>] The players, see MGQ_MpWorldOverview.party_rows
-  #   and map_rows.
-  # @param map [Boolean] Whether it is the map box, which lists only as many as fit.
-  def draw_small(rows, map = false)
-    shown, more = map ? MGQ_MpPartyBox.capped(rows) : [rows, 0]
+  # @param party [Array<MGQ_MpWorldOverview::Row>] The party, see MGQ_MpPartyBox.sections.
+  # @param others [Array<MGQ_MpWorldOverview::Row>] The others on the map, or everyone on it
+  #   outside a party, see MGQ_MpPartyBox.sections.
+  def draw_small(party, others = [])
+    listed, more = MGQ_MpPartyBox.capped(others)
+    shown = party + listed
     start(SMALL_WIDTH, ROW * (shown.size + (more > 0 ? 1 : 0)) + 2 * SPACING, true)
     shown.each_with_index { |row, index| draw_line(row, ROW * index + SPACING, SMALL_WIDTH, false) }
     draw_more(more, ROW * shown.size + SPACING, SMALL_WIDTH) if more > 0

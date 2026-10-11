@@ -2,7 +2,8 @@
 #  ui_party_box_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Checked the box's place in the layout: its default below a strip at the top, a place the player left it in with the extra width for the names and places, its least width with every column, the small box at the right of its place, and drawing anew after a preset change
+#      Paulinchen  2026-10-11: Called the small box with the party and the others on the map apart
+#                            - Checked the box's place in the layout: its default below a strip at the top, a place the player left it in with the extra width for the names and places, its least width with every column, the small box at the right of its place, and drawing anew after a preset change
 #                            - Checked that a stranger is named in plain white
 #                            - Created
 #
@@ -145,7 +146,7 @@ check("a stranger is named in plain white, which the keyboard of their typing pr
 check("the member stays green and the player's own line yellow", [named.call(long_name).color.equal?(style::MEMBER), text.call("Me").color.equal?(style::OWN)], [true, true])
 
 # The small box: no level, the icon still before the name, the ping at the edge.
-box.draw_small(map_rows, true)
+box.draw_small([], map_rows)
 small_name = text.call(MGQ_MpUi.cut(box.bitmap, long_name, box.name_width(box_class::SMALL_WIDTH, false)))
 small_ping = text.call("999 ms")
 check("small, the box is narrower and shows no level", [box.instance_variable_get(:@left), box.bitmap.fills.first[2], texts.call.include?("Lv 100")], [640 - box_class::SMALL_WIDTH - box_class::MARGIN, box_class::SMALL_WIDTH, false])

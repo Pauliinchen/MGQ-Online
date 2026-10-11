@@ -2,7 +2,8 @@
 #  world_overview.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Made the box movable and resizable with the left Alt held as the World overview, starting at the list box's place, never smaller than what shows every column, the tabs, the hint and three lines or the longest menu
+#      Paulinchen  2026-10-11: Listed a Raid World's party for the party box with each member's Frontline level, wherever they are
+#                            - Made the box movable and resizable with the left Alt held as the World overview, starting at the list box's place, never smaller than what shows every column, the tabs, the hint and three lines or the longest menu
 #                            - Gave the extra width to the story, the World page's values and the raid bosses' names, the ping keeping the right edge, and the extra height to more lines, the picked player kept in sight
 #                            - Read the box's place for the clicks on its lines, tabs and menu and for a click outside it
 #                            - Drew the box and its menu framed in the interface preset's colors, the tabs not shown on the tab color, the world's name in the title color and the raid bosses' gauges in the edge and well colors, drawing anew once the preset changes
@@ -713,6 +714,14 @@ module MGQ_MpWorldOverview
 
     party = [own_row(MGQ_Multiplayer::Player.name.to_s)] + MGQ_MpCoop::Party.members.map { |peer| row_of(peer) }
     party.sort_by { |row| [row.badge && row.badge[1] ? 0 : 1, row.name.downcase] }
+  end
+
+  # Lists the player's party for the party box of a Raid World, as party_rows does, but with each
+  # player's Frontline's highest level, as the map box shows it.
+  #
+  # @return [Array<Row>] The players, the player included; none outside a party of two or more.
+  def self.raid_party_rows
+    party_rows.each { |row| row.level = level_text(row.player == :me ? @front : row.player.state["flv"]) }
   end
 
   # Lists everyone on the player's map for the map box of a Raid World: the party's members first,
