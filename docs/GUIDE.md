@@ -248,11 +248,11 @@ Press **E** on the map for a ring of eight emotes around your character: a jump,
 
 ![The World overview](images/world-overview.png)
 
-Press **F11** or pick the middle of the action wheel; **F11**, **B**, cancel, numpad **0** or a click outside closes it. The world keeps running behind it. The title names the world, its type and a Raid World's difficulty ("World | Raid | Hard") and your party's size, and two tabs below it hold the pages **Players** and **World**: **Left** and **Right**, or a click on a tab, switch between them.
+Press **F11** or pick the middle of the action wheel; **F11**, **B**, cancel, numpad **0** or a click outside closes it. The world keeps running behind it. The title names the world, its type and a Raid World's difficulty ("World | Raid | Hard") and your party's size, and the tabs below it hold the pages **Players**, **World** and in a Raid World **Levels**: **Left** and **Right**, or a click on a tab, switch between them.
 
 **The Players page:**
 
-- **Every player online**, grouped by where they are, yours first: their name in their color, the level of their highest companion, where they are in the story ("Part 2: Alice side") and their ping.
+- **Every player online**, grouped by where they are, yours first: their name in their color, the highest level in their formation, where they are in the story ("Part 2: Alice side") and their ping.
 - Party leaders have a crown, a party's size shows as "2 / 4", and your party's members are green, you yellow. A player whose invite or challenge reaches you shows "Invites you to a party" or "Challenges you to a duel" in their row.
 - **Pick a player** with the arrow keys and confirm, or click them, to invite them to your party or accept their invite, and to challenge them to a duel or accept theirs, wherever in the world they are. A party invite from afar stands for a minute; "Inviting to a party (58 s) . . ." above your head counts it down. As your party's leader you also remove members here, after a question ("Remove \<name> from the party?"). On your own row you can leave your party, after a question too, or stop inviting.
 
@@ -262,6 +262,12 @@ Press **F11** or pick the middle of the action wheel; **F11**, **B**, cancel, nu
 - In a Raid World also where the world's story stands ("Part 2: Alice side", *Not told yet* before anyone moved it), the **objective**: what to do next, as Amira would tell you when you ask her for information, also before her information network is ready, and its **raid bosses**, grouped under a heading per part of the story in the order the story meets them: *Part 1*, *Part 2*, *Part 3*, *Angelic Dominion*, *Monster Realm*, *Chaos route* and *Chaos Domain*. Only the parts the world's story has reached show, and any part with a boss someone has fought already. Each boss shows its name, its tier, a thin gauge of the HP the world has left of it with the share ("68%"), *Defeated* once it fell, and who last hurt it. A boss nobody has fought yet is full.
 - While you look at the World page, a gold corner on the *Players* tab tells you an invite, challenge or trade offer waits there; **Y** and **N** answer it once you're back on the Players page or have closed the overview.
 - **Up** and **Down** scroll the page.
+
+**The Levels page** (Raid Worlds only) shows what catching up gives you by level, and only what the world has unlocked already:
+
+- **Your level**, the highest base level among your characters, which catching up goes by.
+- Under a heading per level ("Level 25"): moving on from a part of the story the world is past (*Story*), the companions whose joins the world's story has got past or the world shares (*Companion*), and every Makina (*Makina*).
+- A row you already have is dimmed and says *Done*; one your level has reached says *Due* and comes within a moment. **Up** and **Down** scroll the page.
 
 ### Notifications
 
@@ -285,7 +291,7 @@ Stand next to another player, open the wheel and pick *Invite to a party*. "Invi
 
 - Party members are fully visible with green names; everyone else is slightly see-through, in white, except in a Raid World, where everyone on the map is fully visible.
 - A party's size shows after its players' names and above your head ("2 / 4"), and its leader has a crown. Discord shows it as "(2 of 4)".
-- **The party box** at the top right lists your party, its leader first and then by name: the crown, the icon of what they're doing, their name (yours in yellow, the others in green, a long one cut with "..."), their highest companion level, their ping in its own column ("999+ ms" at most) and where they are on a smaller line. A member whose connection dropped shows dimmed with the away icon until they're back. The title names the hotkey that resizes the box: **Tab** makes it small, with only icons, names and pings, and full again; it stays as you left it. The box fades in and out.
+- **The party box** at the top right lists your party, its leader first and then by name: the crown, the icon of what they're doing, their name (yours in yellow, the others in green, a long one cut with "..."), the highest level in their formation, their ping in its own column ("999+ ms" at most) and where they are on a smaller line. A member whose connection dropped shows dimmed with the away icon until they're back. The title names the hotkey that resizes the box: **Tab** makes it small, with only icons, names and pings, and full again; it stays as you left it. The box fades in and out.
 - **In a Raid World** the party box lists your party wherever its members are, as above but with each one's Frontline level, and below it, under "Map 2", the other players on your map, a line each. Outside a party it is **the map box**, while anyone else is on your map: everyone there by name in white, each with their icon, the level of their Frontline character and their ping, without a place. Its title says how many are on the map ("Map 4"). It grows up to 10 lines; with more players the last line says "+3 more". **Tab** makes it small too.
 
 ### Your squad
@@ -361,6 +367,7 @@ A Raid World plays one story for the whole world, and everyone on a map shares i
 - **One story:** the relay keeps the world's story, and whoever moves it on moves it on for everyone. Your game takes the world's story when you enter the world, load a save or start a new game, and whenever another player's story moved on, once you're free on the map. Your saves hold the world's story as it was then.
 - **What stays yours:** your party, companions and affection, your side (Alice or Ilias), your own answers to the story's choices, and your chests. The chests that hold the story's key items are the world's: each opens once, for everyone.
 - **Key items:** every key item the world's story gives or takes reaches every player, whatever part of the story they're in.
+- **Makina:** each Makina comes to you once your level reaches the level of the area where it can be found, such as level 6 for the three in Tartarus I299387 ("Your level brought you Makina: Auto Crossbow."). You hold one of each; a chest of one you already have gives no second.
 - **Telling the story:** a story event starts only while nobody else on your map tells one; otherwise you read "\<name> is telling the story here." Everyone on the map whose story stands where the teller's stood watches the scene, its dialogue, pictures and fades, and stands still while it plays, though not while the teller fights the story's battle. A player whose story stands elsewhere sees the NPCs move, but not the scene.
 - **Two at once:** when two players on one map start a story event at the same moment, the one who came onto the map first goes on. The other's event waits a second at its start and usually stops before it changed anything; on a slow connection it can stop part-way. That second's wait comes before every story event while a player who came onto the map before you is on it.
 - **NPCs:** everyone on a map sees the same NPCs, moved as in the game of whoever entered the map first.

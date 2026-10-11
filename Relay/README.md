@@ -20,6 +20,8 @@ core/bosses.test.js    tests of the boss pools and the admin routes
 core/raid_admin.js     what admins see and set right in a Raid World: counters, pools, the route lock
 core/mods.js           the mod catalog's rules, over a store the platform passes in
 core/mods.test.js      tests of the mod catalog
+core/reports.js        the bug reports games send, committed to GitHub as private files with a public issue
+core/reports.test.js   tests of the bug reports, against a stand-in for GitHub
 core/http.js           the answers every router gives alike, and how each reads a JSON body
 core/ids.js            how ids, hashes and texts are read everywhere
 core/test_zip.js       the zips the tests feed the mod catalog
@@ -124,6 +126,16 @@ Two players of a world swap items through their games, and the relay referees th
 
 Committed trades nobody finished are dropped after 30 days, cancelled ones after a day.
 
+### Bug reports
+
+A player reports a bug from the game. The relay commits the report as a folder of plain files, `reports/<id>/` with `report.md` as its index, in one commit to the branch `REPORT_FILES_BRANCH` (default `main`) of the private `REPORT_FILES_REPO` (default `Pauliinchen/MGQ-Online-Bug-Reports`), so a report reads in the browser or after a `git pull`. Then it opens a public issue in `REPORT_ISSUES_REPO` (default `Pauliinchen/MGQ-Online`) with the player's title and text and a few public facts, linking `report.md` and the screenshot, which only the developer can open. It takes reports only with two GitHub tokens (secrets on Cloudflare): `GITHUB_ISSUES_TOKEN`, which may write issues in the issues repository, and `GITHUB_BUG_FILES_TOKEN`, which may write contents in the files repository alone, so no token of the relay can change the public repository the mod updates from. The relay keeps nothing of a report; it unpacks the text files and passes the screenshot's base64 to GitHub as sent.
+
+| Request | What it does |
+|---|---|
+| `POST /v1/reports` | Takes a report from the player whose key is in `X-MGQ-Player`. The body, at most 15 MB: one line of JSON, a line break, then the base64 of each file in the order the JSON lists them, with nothing between them. The JSON (at most 16 KB): `title` (1 to 100 characters on one line), `text` (1 to 4000 characters), `version` (1 to 32 letters, digits, `.`, `+` or `-`), `facts` (at most 12 `[label, value]` pairs on one line each, the label 1 to 32 characters, the value up to 120) and `files`, 1 to 32, each with `name`, `length` (the characters of its base64, a multiple of 4; together they add up to the rest of the body) and `gzip` (`true` or `false`, false unless given). A name is up to 120 characters, a file or a folder and a file, each starting with a letter or digit, then letters, digits, spaces and `._()+-`, and no two alike whatever their case. `report.md` is required; `screenshot.png` is the one binary file, never gzipped, at most 4 MB of base64; every other file ends in `.md`, `.log` or `.txt` and is text, unpacked from gzip when flagged and read as UTF-8, at most 8 MB each and 24 MB together unpacked. Answers 201 with `issue` (its number), `url` and `id` (the report's, `<UTC day>-<8 hexadecimal characters>`); 400 for a body that breaks a rule or a gzip stream that does not unpack, 401 with `code` `player` without a player key, 413 for a body or file over its limit, 429 with `code` `rate` past 3 reports a player an hour, 10 a player a day or 6 an address an hour, 503 with `code` `off` without both tokens, and 502 with `code` `github` when GitHub refused or could not be reached, whose status the relay logs per step. |
+
+The commit goes through GitHub's Git Data API: the screenshot as a blob, the text files inline in a tree on the branch's head, the commit `report <id>: <title>`, then the branch moved to it; when another report moved the branch meanwhile, the relay commits again on the new head, 3 tries in all. The issue is titled `[In-game] <title>` and labelled `in-game report` (left off when GitHub refuses the label); every `@` in the title, text and facts gets a zero-width space after it, so a report mentions nobody.
+
 ### World story
 
 A Raid World plays one story, which the relay keeps beside the world room, on Cloudflare in the world room's own object: the counters it reads to tell which story is further (`p` for variable 1001, `r1141`, `r1142`, `r1143`, the finished routes, the story teleport's endpoint, the shared companions) and the rest sealed with a key from the world's token, which it only keeps. Classic worlds keep none (404, code `classic`). The routes take the player's key and the auth key in the headers, as the world room does, and answer the world's players only. The full contract is in [docs/DEVELOPER.md](../docs/DEVELOPER.md#world-story-on-the-relay-raid-worlds).
@@ -192,6 +204,7 @@ The relay runs on the free Workers plan at `relay.mgqmp.workers.dev`. Past the f
 - **Try it locally:** `npm run dev:cloudflare` runs the Worker on this PC at `ws://127.0.0.1:8787`, without an account.
 - **Log in once:** `npx wrangler login` (in PowerShell `npx.cmd wrangler login` if scripts are blocked) opens the browser to allow wrangler on the Cloudflare account.
 - **Deploy:** `npm run deploy:cloudflare`.
+- **Bug reports:** `npx wrangler secret put GITHUB_ISSUES_TOKEN --config cloudflare/wrangler.toml` and the same for `GITHUB_BUG_FILES_TOKEN` set the tokens once; the repositories and the branch are the `[vars]` in `wrangler.toml`.
 
 ## Moving to a rented server
 
@@ -200,6 +213,7 @@ The relay runs on the free Workers plan at `relay.mgqmp.workers.dev`. Past the f
 3. Start `node node/server.js` as a systemd service, with these environment variables:
    - `MGQ_RELAY_DB=/var/lib/mgq-relay/relay.sqlite`: the SQLite database the worlds, their starting saves, the mod catalog, its uploaded zips, the trades, the Raid Worlds' stories and their boss pools are kept in, made on the first start (with its `-wal` and `-shm` files beside it). Without it everything stays in memory and is gone with the process. Back the file up with `sqlite3 relay.sqlite ".backup copy.sqlite"`, never by copying it while the relay runs.
    - `ADMINS`: the admins' player ids, as above.
+   - `GITHUB_ISSUES_TOKEN` and `GITHUB_BUG_FILES_TOKEN`, and `REPORT_ISSUES_REPO`, `REPORT_FILES_REPO` and `REPORT_FILES_BRANCH` unless the defaults fit: where the bug reports go, see above. Without both tokens the relay takes no reports.
    - `HOST` and `PORT`: where it listens, `127.0.0.1:8080` unless set.
 4. The relay writes one line per request to stdout (`<time> <method> <path> <status> <ms> <address>`, the path without its query, so no key ever appears) and every error it catches to stderr, with its stack. Under systemd both go to the journal (`journalctl -u <service>`); the service file's `StandardOutput=append:/var/log/mgq-relay/relay.log` keeps them in a file instead. The rooms and the WebSockets live in memory, so a restart ends every connection; the games connect again on their own.
 5. On its own the relay closes rooms and connections whose time is up every minute, checks the mod catalog's links every half hour, and every ten minutes sweeps out worlds whose starting save never came and trades kept long enough, so the database does not grow with what nobody asks for again.
