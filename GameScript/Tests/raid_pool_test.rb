@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-11: Checked a boss outside the Level Cap milestones and Carmilla and Elizabeth counting only in the Vampire Castle
+#                            - Checked that a side battle's defeat is the game's
 #                            - Covered the readers the World overview uses: the pools as a copy, the share left now, a troop's label and a pool's boss key
 #      Paulinchen  2026-10-10: Checked that the keys of the Three Nobles of Black carry their caps
 #                            - Covered a takeover the co-op battles tell as it happens, which reports the damage of the battle's start that follows
@@ -641,7 +642,7 @@ check("a host's boss battle offers a side battle", pool.side_of(Host.new({ "rpb"
 check("one without a boss battle none", [pool.side_of(Host.new({ "rpb" => "" })), pool.side_of(Host.new({}))], [nil, nil])
 check("nor one whose boss is no pooled last phase", [pool.side_of(Host.new({ "rpb" => "609;1,2" })), pool.side_of(Host.new({ "rpb" => "1507;1,2" }))], [nil, nil])
 check("the side battle starts", pool.start_side(71, "90,100,0"), true)
-check("with the host's rates, the same troop, no escape, and a defeat that is no game over", [$borrowed, $setups.last, $called], [["90,100,0"], [71, false, true], [Scene_Battle]])
+check("with the host's rates, the same troop, no escape, and the game's defeat", [$borrowed, $setups.last, $called], [["90,100,0"], [71, false, false], [Scene_Battle]])
 check("it fights the same pool, marked a side battle", [pool.fight.key, pool.fight.side, enemy.mhp], ["Queen Harpy", true, 6000])
 enemy.hp = 5400
 next_turn

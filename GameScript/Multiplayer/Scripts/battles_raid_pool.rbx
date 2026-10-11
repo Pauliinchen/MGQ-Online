@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-11: Told the story bosses newly counted as raid bosses, such as the four spirits and the Part 2 queens' own fights, beaten by what their events set after the fight
+#                            - Made losing a side battle the game's defeat, as losing the boss's own battle is, instead of a return to the map at 1 HP that let the player fight again at once
 #                            - Listed the pools the game knows, which the World overview reads
 #      Paulinchen  2026-10-10: Told the Three Nobles of Black beaten by the castle quest's progress in Part 2 and the treasure gallery's switch in Part 3
 #                            - Added taken_over, which the co-op battles call as a guest takes a battle over, so the damage of a battle that starts then is reported
@@ -1027,9 +1028,12 @@ module MGQ_MpRaidPool
   end
 
   # Starts a side battle: the same troop as a boss battle near the player, with its host's enemy
-  # rates, against the same pools. It runs no event, not even its troop's, and writes no story; the
-  # player may lose it without a game over, and its boss gives its rewards only the first time the
-  # player wins one (see withhold_rewards?).
+  # rates, against the same pools. It runs no event, not even its troop's, and writes no story; its
+  # boss gives its rewards only the first time the player wins one (see withhold_rewards?).
+  #
+  # Losing it is the game's defeat, as losing the boss's own battle is: one the player could lose
+  # brought them back at 1 HP beside the boss, free to start the next at once while every side
+  # battle's damage stayed in the pools.
   #
   # @param troop [Integer] The troop.
   # @param rates [String] The host's enemy rates, see MGQ_MpBattlesCoop.rates_text.
@@ -1040,7 +1044,7 @@ module MGQ_MpRaidPool
     coop = MGQ_MpBattlesCoop
     coop.borrow_rates("rates" => rates)
     @side = troop
-    BattleManager.setup(troop, false, true)
+    BattleManager.setup(troop, false, false)
     unless @fight && @fight.side
       coop.give_back_rates
       log("the side battle against troop #{troop} did not start")
