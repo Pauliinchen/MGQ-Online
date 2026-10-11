@@ -2,6 +2,7 @@
 #  coop_npcs.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-11: Started anew on every map the player enters, not only when their part changes, and moved no event before the Map Owner's whole map came, so a follower no longer puts the last map's places on the new map's events, as Hades' exit into a wall
 #      Paulinchen  2026-10-08: Shared the map through MGQ_MpCoop::Scope: with the party members on it in a Classic world, with everyone on it in a Raid World, who all block events there
 #                            - Found the members on this map through MGQ_MpOverworldSync::Peers.on_this_map?
 #      Paulinchen  2026-10-07: Registered the event hooks through core_hooks.rbx instead of wraps of its own, and named events through coop.rbx
@@ -52,6 +53,8 @@ module MGQ_MpCoopNpcs
   @targets = {}
   @stuck = {}
   @blockers = []
+  @map_id = nil
+  @whole_map = nil
 
   extend MGQ_MpLog
 
@@ -89,13 +92,14 @@ module MGQ_MpCoopNpcs
   end
 
   # Follows the map for one frame: finds the Map Owner, and sends or follows the events. Called
-  # after the map's own update, behind other screens too.
+  # after the map's own update, behind other screens too. A new map starts anew, as a new part
+  # does: what the last map's events did means nothing for this one's.
   def self.update
     members = peers_here
     map_owner = members.empty? ? nil : owner(members)
     role = map_owner.nil? ? nil : (map_owner == :me ? :owner : :follower)
     note_owner(map_owner, members)
-    change_role(role) if role != @role
+    change_role(role) if role != @role || $game_map.map_id != @map_id
     @blockers = members.map(&:ghost).compact
 
     case @role
@@ -106,13 +110,15 @@ module MGQ_MpCoopNpcs
     log_once(:update, "update failed: #{e.class}: #{e.message}")
   end
 
-  # Starts a new part, forgetting what the old one sent or followed.
+  # Starts a new part, or the same on a new map, forgetting what the old one sent or followed.
   #
   # @param role [Symbol, nil] The new part.
   def self.change_role(role)
     log("#{@role == :owner ? 'sent' : 'took'} #{@updates} NPC update(s) as #{@role == :owner ? 'the Map Owner' : 'a follower'}, now #{role || 'no part'}") if @updates.to_i > 0
     @updates = 0
     @role = role
+    @map_id = $game_map.map_id
+    @whole_map = nil
     @sent = {}
     @present = []
     @targets = {}
@@ -213,6 +219,10 @@ module MGQ_MpCoopNpcs
     return log_once([:not_owner, map, peer.state["id"]], "ignored NPCs of map #{map} from #{MGQ_MpOverworldSync.who(peer)}: not the Map Owner") unless owner(peers_here).equal?(peer)
 
     full = message["full"] == "1"
+    # A part of the map before its whole would leave the other events where the last map had them.
+    return log_once([:before_whole, map, peer.state["id"]], "waits for the whole map #{map} from #{MGQ_MpOverworldSync.who(peer)} before following its events") unless full || @whole_map == map
+
+    @whole_map = map if full
     @targets = {} if full
     message["events"].to_s.split(";").each do |entry|
       id, state = entry.split(":", 2)

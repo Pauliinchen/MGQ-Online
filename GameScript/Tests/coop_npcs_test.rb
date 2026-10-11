@@ -2,6 +2,7 @@
 #  coop_npcs_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-11: Checked that a follower who comes onto another map forgets the last map's events and follows none before the Map Owner's whole map came
 #      Paulinchen  2026-10-09: Checked that the Map Owner sends the events to everyone on the map in one message
 #      Paulinchen  2026-10-08: Checked a Raid World: everyone on the map shares it, whoever entered first moves its events, every player there blocks them, and the Map Owner sends to the seats on the map alone
 #                            - Asked the scope for the players sharing the map, which coop_scope.rbx now tells
@@ -91,10 +92,21 @@ check("its Map Owner is whoever entered it first, party or not", MGQ_MpCoopNpcs.
 MGQ_MpCoopNpcs.update
 check("so the player's game follows them", MGQ_MpCoopNpcs.following?, true)
 check("and every player on the map blocks an event, not only party members", MGQ_MpCoopNpcs.member_at?(6, 6), true)
-MGQ_MpCoop.take_map("npcs", stranger, { "map_npcs" => "5", "mmap" => "5", "full" => "0", "events" => "1:4,4,8,0" })
+MGQ_MpCoop.take_map("npcs", stranger, { "map_npcs" => "5", "mmap" => "5", "full" => "0", "events" => "1:3,3,8,0" })
+check("a part of the map before the Map Owner's whole map moves nothing", MGQ_MpCoopNpcs.targets[1], nil)
+MGQ_MpCoop.take_map("npcs", stranger, { "map_npcs" => "5", "mmap" => "5", "full" => "1", "events" => "1:4,4,8,0" })
 check("the Map Owner's events come through the map's gate", MGQ_MpCoopNpcs.targets[1], [4, 4, 8, 0])
 MGQ_MpCoop.take_map("npcs", elsewhere, { "map_npcs" => "9", "mmap" => "9", "full" => "0", "events" => "1:9,9,2,0" })
 check("but nothing from a player on another map", MGQ_MpCoopNpcs.targets[1], [4, 4, 8, 0])
+[stranger, connected].each { |peer| peer.state["map"] = "7" }
+$game_map.map_id = 7
+MGQ_MpCoopNpcs.update
+check("a follower who comes onto another map, still following, forgets the last map's events", [MGQ_MpCoopNpcs.following?, MGQ_MpCoopNpcs.targets], [true, {}])
+MGQ_MpCoop.take_map("npcs", stranger, { "map_npcs" => "7", "mmap" => "7", "full" => "0", "events" => "1:9,9,2,0" })
+check("and follows none before the Map Owner's whole map came", MGQ_MpCoopNpcs.targets[1], nil)
+[stranger, connected].each { |peer| peer.state["map"] = "5" }
+$game_map.map_id = 5
+MGQ_MpCoopNpcs.update
 stranger.state["since"] = "9000"
 MGQ_MpCoopNpcs.update
 check("once the player came first, their game moves the events", MGQ_MpCoopNpcs.following?, false)
