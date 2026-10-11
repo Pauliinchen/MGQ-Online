@@ -2,7 +2,8 @@
 #  battles_raid_bosses.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Grouped the raid bosses by the story's sections, Part 1 to the Chaos route and the Chaos Domain, and found the section and the tier of a boss by its name
+#      Paulinchen  2026-10-11: Moved Adramelech from tier 8 to tier 6 and Morrigan to tier 7
+#                            - Grouped the raid bosses by the story's sections, Part 1 to the Chaos route and the Chaos Domain, and found the section and the tier of a boss by its name
 #      Paulinchen  2026-10-10: Counted the Three Nobles of Black, fought before Black Alice and again before the Heavenly Knights of Part 3, as raid bosses
 #                            - Gave each raid boss a title for its HP bar, the group the game names it in
 #                            - Ranked the raid bosses in tiers 0 to 9, each with the factors it gives their stats: 50 times the max HP and 5 times the defense and magic defense at tier 0, down to 5 times the max HP and the game's defenses at tier 9
@@ -249,9 +250,9 @@ module MGQ_MpRaidBosses
           "Kagetsumugi and her dolls (cap 90)", "Hiruko (cap 95)", "Kagetsumugi and Magatsu-Karura, then Black Alice", "Saja (cap 105)"],
     5 => ["Sonya Chaos", "Black Dahlia, Black Mamba and Black Rose (cap 55)", "Black Alice (cap 65)", "Garuda", "Black Dahlia, Black Mamba and Black Rose (cap 60)", "Tamamo (cap 61)",
           "Erubetie", "Granberia", "Great Decision"],
-    6 => ["Queen Elf", "Queen Mermaid", "Spider Princess", "Queen Vampire"],
-    7 => ["Alma Elma, then Granberia", "Lilith", "Salamander"],
-    8 => ["Morrigan", "Adramelech"],
+    6 => ["Adramelech", "Queen Elf", "Queen Mermaid", "Spider Princess", "Queen Vampire"],
+    7 => ["Morrigan", "Alma Elma, then Granberia", "Lilith", "Salamander"],
+    8 => [],
     9 => ["Four bandits", "Queen Harpy"],
   }
 
