@@ -2,6 +2,7 @@
 #  story_state.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Kept the small and large medals handed in (55, 59) each player's own, so another player's exchanges no longer move the Medal Queen's prizes on
 #      Paulinchen  2026-10-11: Kept the chest flags each player's own, such as the first Makina's (2045), so a Makina chest stays a chest instead of story the world's story opens and closes for everyone
 #                            - Kept the escape spell's ban (94) each player's own, so changing jobs at Ilias Temple no longer counts as story
 #                            - Kept the switches that only stay on while a scene runs each Raid World player's own, so a story written mid-scene no longer leaves the scene's characters standing for everyone
@@ -62,13 +63,14 @@ module MGQ_MpStoryState
   # Variables that are the player's own: the last choice's answer (9), which an event of their own
   # reads, where the Pocket Castle's way out returns them (21-23, the map, x and y where they used
   # the castle's item), the enemies' experience, gold and MP corrections (46-48) and the rarity of
-  # enchanted drops (150), which the events of each area set for the battles there, the places
-  # their party has beyond eight (56), since the game cuts a party down to its places, the map a
-  # transfer goes on to (57), where a game over returns them (1002), the counts of their enchanted
-  # weapons and armors (200-201), the variant of an event the game picks right before it calls
-  # it ("Event Selection", 129, which a trader's talk sets as a story value would) and monsters'
-  # friendliness (2000-2999).
-  PERSONAL_VARIABLES = [9, 21..23, 46..48, 56, 57, 129, 150, 200..201, 1002, 2000...3000]
+  # enchanted drops (150), which the events of each area set for the battles there, the small and
+  # large medals they handed to the Medal Queen and King (55, 59), whose prizes go by them, the
+  # places their party has beyond eight (56), since the game cuts a party down to its places, the
+  # map a transfer goes on to (57), where a game over returns them (1002), the counts of their
+  # enchanted weapons and armors (200-201), the variant of an event the game picks right before it
+  # calls it ("Event Selection", 129, which a trader's talk sets as a story value would) and
+  # monsters' friendliness (2000-2999).
+  PERSONAL_VARIABLES = [9, 21..23, 46..48, 55..57, 59, 129, 150, 200..201, 1002, 2000...3000]
 
   # Variables that are each Raid World player's own, beside PERSONAL_VARIABLES: the enemies' rates
   # the difficulty sets (41-45, 49), the Ruler Ruler's own rates (92-99), the Labyrinth of Chaos's
