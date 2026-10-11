@@ -2,7 +2,8 @@
 #  ui_chat.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Moved and resized the chat log with Alt and the mouse through MGQ_MpUi::Layout, the map's as Chat and the battle's as Battle chat, each starting where it lay before at the size chat_size keeps
+#      Paulinchen  2026-10-11: Started the chat in the global chat instead of the map chat, also in every world after the first
+#                            - Moved and resized the chat log with Alt and the mouse through MGQ_MpUi::Layout, the map's as Chat and the battle's as Battle chat, each starting where it lay before at the size chat_size keeps
 #                            - Dropped the log's own resizing with Alt and the mouse, which kept its size in chat_size
 #                            - Snapped the log's height to whole rows below its tabs and above the chat box
 #                            - Raised the log's narrowest width to what its tabs and hints need, and its fewest rows to the list of fitting names
@@ -276,7 +277,7 @@ module MGQ_MpChat
   @sent = 0
   @received = 0
   @scroll = 0
-  @channel = :map
+  @channel = :global
   @tab = :all
   @unread = {}
   @whisper_to = nil
@@ -1135,7 +1136,7 @@ module MGQ_MpChat
   end
 
   # Forgets the log and the bubbles and closes the box, as when the world closes. The Whisper tab
-  # goes too, and with it the whisper chat for the map chat.
+  # goes too, and the next world starts in the global chat again.
   def self.reset
     stop_typing("no world is open")
     log("forgot #{@log.size} chat lines as the world closed (#{@sent} sent, #{@received} received)") unless @log.empty?
@@ -1147,7 +1148,7 @@ module MGQ_MpChat
     @whisper_id = nil
     @reply_to = nil
     @whisper_tab = false
-    @channel = :map if @channel == :whisper
+    @channel = :global
     @tab = :all if @tab == :whisper
     @sent = 0
     @received = 0

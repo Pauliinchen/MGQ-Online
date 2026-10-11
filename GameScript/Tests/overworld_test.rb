@@ -2,7 +2,8 @@
 #  overworld_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Checked the status line's place in the layout: its default at the bottom left, a place the player left it in with its notices broken to its width, and its least width
+#      Paulinchen  2026-10-11: Chose the map chat before sending its line, since the chat starts in the global chat
+#                            - Checked the status line's place in the layout: its default at the bottom left, a place the player left it in with its notices broken to its width, and its least width
 #                            - Left the chat log's resizing and its smaller room in a battle to ui_chat_test.rb, since the layout sizes the log
 #                            - Checked each of the action wheel's boxes in its frame, the picked one lit, and the wheel drawn anew after a preset change
 #                            -Checked the map chat, chosen with /m, its lines tagged and drawn in its color, the global chat untagged in white, and the Whisper tab hidden until a whisper
@@ -549,6 +550,7 @@ map_frame
 check("the cursor shows right after a change", chat.cursor_shown?, true)
 MGQ_MpUi::TextEdit::BLINK_FRAMES.times { map_frame }
 check("then blinks", chat.cursor_shown?, false)
+chat.choose(:map)
 $sent.clear
 $typed = "\r"
 map_frame

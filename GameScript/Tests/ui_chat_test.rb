@@ -2,7 +2,8 @@
 #  ui_chat_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Checked the chat log's places in the layout: its default from chat_size, a kept place honored, its least size, its rows from its height, the battle's box apart, and every hint and tab fitting the least width
+#      Paulinchen  2026-10-11: Expected the chat to start in the global chat, and to return to it once the world closes
+#                            - Checked the chat log's places in the layout: its default from chat_size, a kept place honored, its least size, its rows from its height, the battle's box apart, and every hint and tab fitting the least width
 #                            - Checked the open chat drawn in the preset's frame, open under the picked tab, anew once the preset changes, and no resizing of its own left
 #                            - Checked the map chat chosen with /m, /s sent as text, the global chat untagged in white, a line marked say landing in the map chat, and the Whisper tab hidden until a whisper and again once the world closes
 #                            - Created
@@ -91,9 +92,9 @@ chat.start_typing
 alt_press(MGQ_MpChat::UP_KEY)
 $typed = "\r"
 map_frame
-check("a line brought back and sent again is sent once more and kept once", [chat.log_lines.last, chat.history.last(2)], ["[Map] Me: line 25", ["line 24", "line 25"]])
+check("a line brought back and sent again is sent once more and kept once", [chat.log_lines.last, chat.history.last(2)], ["Me: line 25", ["line 24", "line 25"]])
 
-check("the map chat is the one chosen first, and a /w naming nobody shows no Whisper tab", [chat.channel, chat.whisper_tab?, chat.tabs], [:map, false, [:all, :global, :map, :party]])
+check("the global chat is the one chosen first, and a /w naming nobody shows no Whisper tab", [chat.channel, chat.whisper_tab?, chat.tabs], [:global, false, [:all, :global, :map, :party]])
 chat.start_typing
 $down = [MGQ_MpChat::ALT_KEY]
 $pressed = MGQ_MpChat::LEFT_KEY
@@ -272,7 +273,7 @@ check("the help says Alt and a drag move or resize the chat and a double click p
 $open = false
 MGQ_MpOverworldSync.tick
 check("closing the world forgets the lines sent and whom /r answers", [chat.history, chat.reply_to], [[], nil])
-check("and the Whisper tab with the whisper chat, for the map chat", [chat.whisper_tab?, chat.tabs.include?(:whisper), chat.channel, chat.tab], [false, false, :map, :all])
+check("and the Whisper tab with the whisper chat, for the global chat", [chat.whisper_tab?, chat.tabs.include?(:whisper), chat.channel, chat.tab], [false, false, :global, :all])
 $open = true
 $inbox << entry("message", friend_seat, told(friend))
 MGQ_MpOverworldSync.tick
