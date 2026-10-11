@@ -2,6 +2,7 @@
 #  loader_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-11: Checked that a log past MAX_BYTES keeps its newest lines from a whole line on, behind a line that says so
 #      Paulinchen  2026-10-10: Checked that a text read from the DLL that grew again between asking its size and copying it is asked for again, three more times at most
 #      Paulinchen  2026-10-09: Checked that story_state.rbx loads before the story scripts that build on it
 #      Paulinchen  2026-10-08: Checked that a watched key goes down once per frame, ended by a game window's own Input.update
@@ -103,8 +104,8 @@ check("a script that does not parse is logged by name", log.any? { |line| line.s
 check("a missing script is logged by name", log.any? { |line| line.start_with?("missing.rbx did not load: Errno::ENOENT") }, true)
 check("the log counts the scripts loaded and names those that did not", log.last, "loaded 2 of 4 scripts, not broken, missing")
 
-# The in-game log: a file per session, named after the game's start, without a line limit, and a
-# line repeated is counted.
+# The in-game log: a file per session, named after the game's start, without a line limit, cut to
+# its newest lines past MAX_BYTES, and a line repeated is counted.
 module MGQ_Multiplayer; end
 MGQ_Multiplayer.const_set(:LOG_DIR, "Logs")
 MGQ_Multiplayer.module_eval(source[/  def self\.log_path\(name\)\n.*?\n  end\n/m])
@@ -126,6 +127,14 @@ Dir.mktmpdir do |game|
           ["flood", "(the line above repeated 10 times so far)", "(the line above repeated 11 times in all)"])
     3100.times { |index| MGQ_Multiplayer::Log.write("line #{index}") }
     check("the log has no line limit", File.read(path).lines.last.split("  ", 2)[1].chomp, "line 3099")
+    File.open(path, "ab") { |file| 100_000.times { |index| file.write("2026-10-11 20:00:00 +0200  old line #{index}\n") } }
+    MGQ_Multiplayer::Log.instance_variable_set(:@size, nil)
+    MGQ_Multiplayer::Log.write("newest")
+    lines = File.read(path).lines
+    check("a log past MAX_BYTES keeps its newest lines from a whole line on, behind a line that says so",
+          [lines.first.split("  ", 2)[1].chomp, lines[1] =~ /\A2026-10-11 20:00:00 \+0200  old line \d+\n\z/ ? true : false,
+           lines.last.split("  ", 2)[1].chomp, File.size(path) <= MGQ_Multiplayer::Log::KEPT_BYTES + 200],
+          [MGQ_Multiplayer::Log::CUT_LINE, true, "newest", true])
     older = (1..6).map { |day| "2026-01-0#{day} 10-00-00" }
     older.each { |stamp| ["Multiplayer", "Multiplayer InGame"].each { |name| File.write(File.join("Logs", "#{name} #{stamp}.log"), "x") } }
     ["Multiplayer.log", "DiscordPresence 2026-01-01 10-00-00.log"].each { |name| File.write(File.join("Logs", name), "x") }

@@ -2,6 +2,7 @@
 //  Log.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-11: Cut the session's log to its newest 2 MB once it passes 4 MB, so it never grows without end and a bug report still sends where the trouble is
 //      Paulinchen  2026-10-07: Wrote the file on a thread of the log's own, so no caller waits for the disk, flushed what is queued as the process exits, and exposed Flush for the tests
 //                            - Wrote each game session into a log of its own, named after the game's start, without a size limit, and counted a line repeated as it is instead of writing it again
 //      Paulinchen  2026-10-06: Wrote the log into the game folder's Logs folder
@@ -34,6 +35,21 @@ internal static class Log
     /// How many characters of a long id the log keeps.
     /// </summary>
     private const int ShortIdLength = 12;
+
+    /// <summary>
+    /// Bytes a session's log may reach before its oldest lines are cut.
+    /// </summary>
+    internal const long MaxBytes = 4 * 1024 * 1024;
+
+    /// <summary>
+    /// Bytes of its newest lines a log keeps when it is cut, so it is cut again only after as many more were written.
+    /// </summary>
+    internal const int KeptBytes = 2 * 1024 * 1024;
+
+    /// <summary>
+    /// The line a cut log starts with.
+    /// </summary>
+    internal const string CutLine = "(earlier lines were cut, the log keeps its newest lines only)";
 
     /// <summary>
     /// How long a flush waits for the file, which the writer thread may hold while the process exits.
@@ -204,7 +220,37 @@ internal static class Log
         {
             Directory.CreateDirectory(Path.GetDirectoryName(FilePath)!);
             File.AppendAllText(FilePath, text.ToString(), Encoding.UTF8);
+
+            if (new FileInfo(FilePath).Length > MaxBytes)
+            {
+                CutToNewest(FilePath, KeptBytes);
+            }
         }
+    }
+
+    /// <summary>
+    /// Cuts a log down to its newest lines, from a whole line on, behind <see cref="CutLine"/>.
+    /// </summary>
+    /// <remarks>
+    /// A bug report sends the newest lines, so the oldest are the ones to lose.
+    /// </remarks>
+    /// <param name="path">The log.</param>
+    /// <param name="kept">The most bytes of its end it keeps.</param>
+    internal static void CutToNewest(string path, int kept)
+    {
+        byte[] tail;
+
+        using (var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+        {
+            tail = new byte[(int)Math.Min(kept, file.Length)];
+            file.Seek(-tail.Length, SeekOrigin.End);
+            file.ReadExactly(tail);
+        }
+
+        var start = Array.IndexOf(tail, (byte)'\n') + 1;
+        using var output = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.Read | FileShare.Delete);
+        output.Write(Encoding.UTF8.GetBytes(CutLine + "\r\n"));
+        output.Write(tail, start, tail.Length - start);
     }
 
     /// <summary>

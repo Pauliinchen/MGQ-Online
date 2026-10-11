@@ -2,6 +2,7 @@
 //  LogTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-11: Checked that a log cut down keeps its newest whole lines behind the line that says so
 //      Paulinchen  2026-10-07: Created
 //
 //----------------------------------------------------------------
@@ -84,6 +85,38 @@ public sealed class LogTests
 
         var between = text[atSecond..atThird];
         Assert.True(between.Contains("(the line above came 1 more time)\r\n", StringComparison.Ordinal) || between.LastIndexOf(second, StringComparison.Ordinal) > 0, "the repeated line was neither counted nor written again");
+    }
+
+    /// <summary>
+    /// Asserts that a log cut down keeps its newest lines from a whole line on, behind the line that says so.
+    /// </summary>
+    [Fact]
+    public void CutToNewest_KeepsTheNewestWholeLines()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"log test {Guid.NewGuid():N}.log");
+
+        try
+        {
+            var text = new StringBuilder();
+
+            for (var index = 0; index < 1000; index++)
+            {
+                text.Append($"12:00:00.000  line {index}\r\n");
+            }
+
+            File.WriteAllText(path, text.ToString());
+            Log.CutToNewest(path, 100);
+
+            var lines = File.ReadAllLines(path);
+            Assert.Equal(Log.CutLine, lines[0]);
+            Assert.Equal("12:00:00.000  line 999", lines[^1]);
+            Assert.All(lines[1..], line => Assert.StartsWith("12:00:00.000  line ", line));
+            Assert.True(lines.Length is > 2 and < 6, $"kept {lines.Length - 1} lines of about 25 bytes from 100 bytes");
+        }
+        finally
+        {
+            File.Delete(path);
+        }
     }
 
     /// <summary>

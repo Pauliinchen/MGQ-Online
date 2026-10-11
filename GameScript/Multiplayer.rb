@@ -2,7 +2,8 @@
 #  Multiplayer.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Loaded world_opening.rbx after world_catchup.rbx, which runs a new game's opening setup without its scene in a Raid World past it
+#      Paulinchen  2026-10-11: Cut the session's log to its newest 2 MB once it passes 4 MB, so it never grows without end and a bug report still sends where the trouble is
+#                            - Loaded world_opening.rbx after world_catchup.rbx, which runs a new game's opening setup without its scene in a Raid World past it
 #                            - Loaded ui_theme.rbx and ui_layout.rbx after ui.rbx, the interface presets and the boxes the player moves and resizes
 #                            - Kept the mouse's clicks from the mod's screens while the left Alt is held, which moves and resizes the boxes instead
 #                            - Loaded ui_edge_arrows.rbx, the arrows toward the players off the screen, after ui_party_box.rbx
@@ -261,7 +262,7 @@ module MGQ_Multiplayer
 
   # The scripts' log in the game folder's Logs folder, one file per game session, such as
   # Logs/Multiplayer InGame 2026-10-07 18-30-05.log, named after the time the game started, as the
-  # DLL names its Multiplayer.log of the same session.
+  # DLL names its Multiplayer.log of the same session. Past MAX_BYTES it keeps its newest lines.
   module Log
     # The start of the log's file name, which the session's start and ".log" follow.
     NAME = "Multiplayer InGame"
@@ -298,11 +299,22 @@ module MGQ_Multiplayer
     # world_mods.rbx's MGQ_MpWorldMods::DUMP_SETTING names it.
     DUMP_SETTING = "MGQMP_OPTIONS_DUMP"
 
+    # Bytes a session's log may reach before its oldest lines are cut.
+    MAX_BYTES = 4 * 1024 * 1024
+
+    # Bytes of its newest lines a log keeps when it is cut, so it is cut again only after as many
+    # more were written.
+    KEPT_BYTES = 2 * 1024 * 1024
+
+    # The line a cut log starts with.
+    CUT_LINE = "(earlier lines were cut, the log keeps its newest lines only)"
+
     # When this script loaded, which stands in for the game's start when Windows cannot tell it.
     @loaded = Time.now
     @last = nil
     @streak = 0
     @reported = 0
+    @size = nil
 
     # Appends a line, prefixed with the time. A line the same as the one before is only counted;
     # the count is written once the streak ends, and at REPEAT_REPORTS while it goes on.
@@ -335,7 +347,24 @@ module MGQ_Multiplayer
     #
     # @param text [String] The line.
     def self.append(text)
-      File.open(MGQ_Multiplayer.log_path(file_name), "ab") { |file| file.write("#{Time.now}  #{text}\n") }
+      path = MGQ_Multiplayer.log_path(file_name)
+      line = "#{Time.now}  #{text}\n"
+      File.open(path, "ab") { |file| file.write(line) }
+      @size = (@size || File.size(path)) + line.bytesize
+      cut(path) if @size > MAX_BYTES
+    end
+
+    # Cuts a log down to its newest KEPT_BYTES, from a whole line on, behind CUT_LINE.
+    #
+    # A bug report sends the newest lines, so the oldest are the ones to lose.
+    #
+    # @param path [String] The log.
+    def self.cut(path)
+      text = File.open(path, "rb") { |file| file.read }
+      kept = text[-KEPT_BYTES, KEPT_BYTES] || text
+      kept = kept[(kept.index("\n") || -1) + 1..-1].to_s
+      File.open(path, "wb") { |file| file.write("#{Time.now}  #{CUT_LINE}\n#{kept}") }
+      @size = File.size(path)
     end
 
     # Deletes the logs of every session older than the newest KEPT_SESSIONS the player played, the
