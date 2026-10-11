@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-12: Checked the vehicle rows, Galda's first at Mt. Saint Amos and none for the Escape spell
+#                            - Checked that every ore comes from a world-wide chest or a key item row, and the chest flags of the Chaos forge's ores
 #      Paulinchen  2026-10-11: Checked that a talk join counts once a story page that needs the companion in the party ran
 #                            - Read the generator from MGQ-Paradox-Event-Checker next to the repository, and left its rules unchecked without it
 #      Paulinchen  2026-10-10: Checked that no row needs a Library Flag and that an event only a Library Flag told ran is marked by the scene after it
@@ -97,8 +98,13 @@ check("Granberia joins and then leaves in one event at Part 2's step 24, in that
 orb = DATA::KEY_ITEMS.select { |row| row.item == 596 && row.part.nil? }.map(&:amount)
 check("an item given and taken with no step between comes first, then goes", orb, [1, -1])
 
-check("the chests that hold key items are the story's 25", DATA::CHESTS.size, 25)
+check("the chests that hold key items are the story's 25 and 11 of ore", DATA::CHESTS.size, 36)
 check("the Ghost Ship's Purple Orb chest is one of them", DATA::CHESTS.find { |chest| chest.key == [371, 12, "A"] }.items, [541])
+ores = (151..158).to_a + (943..947).to_a
+check("every ore the blacksmiths ask for comes from a chest or a key item row",
+      ores - DATA::CHESTS.flat_map(&:items) - DATA::KEY_ITEMS.map(&:item), [])
+check("the Chaos forge's ores turn on the flags it asks for",
+      DATA::CHESTS.select { |chest| !chest.flags.empty? }.map { |chest| [chest.items, chest.flags] }.sort, [[[945], [7102]], [[946], [7103]], [[947], [7104]]])
 check("every key item has an amount and marks", DATA::KEY_ITEMS.all? { |row| row.item.is_a?(Integer) && row.amount != 0 && marks_shaped?(row.marks) }, true)
 check("Marcellus' Letter comes with the main story's step 11", DATA::KEY_ITEMS.find { |row| row.item == 510 }.values_at(2, 3, 4), ["map:311:7:1", "1", 11])
 

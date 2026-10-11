@@ -3,6 +3,8 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-12: Took a vehicle off its map while no event that gives it is behind the player's story or the world's, as a new game whose setup never ran left the ship and Galda on the field
+#                            - Turned on the chest flags of a world-wide chest with its items, so the Chaos forge works its ores for every player
+#                            - Kept the Randolphs found at the number of Randolph switches on, as two players finding one each at once counted one
 #      Paulinchen  2026-10-11: Listed what the catch-up hands out by level that the world already unlocked, for the World overview's Levels page
 #                            - Gave every Makina once the player's level reaches the area level of its easiest place, and took back copies beyond the first, as a chest another player's story closed again gave one twice
 #                            - Followed the story values of a telling the player watched as a story laid over theirs once they are free, so a viewer gets what the scene gave and loses the key items it took
@@ -106,6 +108,11 @@ module MGQ_MpWorldCatchup
 
   # The main story's progress ORB_EVENT sets.
   ORBS_GATHERED = 32
+
+  # Variables that count switches, by variable: the Randolphs found (1354), one switch each (3101 to
+  # 3180). The game adds 1 as it turns one on, so two players finding a Randolph each before either
+  # story reached the other kept one addition alone.
+  COUNTS = { 1354 => 3101..3180 }
 
   # Where each part stands in the story's order; the routes stand side by side.
   RANKS = { "1" => 0, "2" => 1, "3" => 2, "ad" => 3, "mr" => 3, "chaos" => 3 }
@@ -265,6 +272,7 @@ module MGQ_MpWorldCatchup
       note_roster
       check_orbs
       check_makina
+      check_counts
     end
     send_shared
   rescue => e
@@ -1065,6 +1073,7 @@ module MGQ_MpWorldCatchup
       next unless carried || !mine
 
       row.items.each { |id| gifts << give("i", id, 1, key) }
+      turn_on_flags(row, key)
       open_chest(row.key) unless mine
     end
     gifts.concat(restock_key_items(story, told))
@@ -1276,6 +1285,31 @@ module MGQ_MpWorldCatchup
 
     shown = gifts.first(4).join(", ")
     notice(:makina, "Your level brought you Makina: #{shown}#{gifts.size > 4 ? " and #{gifts.size - 4} more" : ''}.")
+  end
+
+  # Turns on the chest flags a world-wide chest turns on, which are each player's own: the Chaos
+  # forge asks for "Carrying Moonbow Crystal" (7102) rather than the ore it gave.
+  #
+  # @param row [MGQ_MpWorldCatchupData::Chest] The chest.
+  # @param key [String] Its row, for the log.
+  def self.turn_on_flags(row, key)
+    Array(row.flags).each do |id|
+      next if $game_switches[id]
+
+      $game_switches[id] = true
+      log("turned on s#{id} of #{key}")
+    end
+  end
+
+  # Sets each variable of COUNTS to how many of its switches are on.
+  def self.check_counts
+    COUNTS.each do |variable, switches|
+      count = switches.count { |id| $game_switches[id] }
+      next if $game_variables[variable] == count
+
+      log("set v#{variable} from #{$game_variables[variable].inspect} to #{count}, the switches it counts")
+      $game_variables[variable] = count
+    end
   end
 
   # Shows a world-wide chest the world opened as open in the player's story too, so it gives

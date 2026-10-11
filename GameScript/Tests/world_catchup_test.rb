@@ -4,6 +4,7 @@
 #  Changelog:
 #      Paulinchen  2026-10-12: Checked that a vehicle no event of the story gave yet leaves its map, one the player rides once they got off, and that Galda stays past its event
 #                            - Stood in for the map's vehicles and the one the player rides
+#                            - Checked that a world-wide chest turns on its chest flags with its items, and that the Randolphs found follow the Randolph switches
 #      Paulinchen  2026-10-11: Checked the list of what the catch-up hands out by level for the Levels page, and the level it counts
 #                            - Checked that a Makina comes at its area level and that copies beyond the first go
 #                            - Checked that a telling the player watched takes the key items its scene took, and that a key item taken at the step that gave it does not come back
@@ -107,6 +108,7 @@ end
 module MGQ_MpCoopGather; def self.join_story; end; end
 module MGQ_MpCoopStoryRewards
   CHESTS = [[12, 3, "A"], [30, 4, "A"]]
+  CHEST_FLAGS = [7102]
   GROUPS = []
   ACTORS = []
   SIDED = { :skills => [], :actors => [] }
@@ -421,7 +423,7 @@ tables(:KEY_ITEMS => [key_item.new(502, 1, "map:6:33:1", "1", 5, nil, [[:v, 1001
                       key_item.new(503, 1, "map:7:24:2", "2", 22, nil, [[:v, 1001, 22]]),
                       key_item.new(503, -1, "map:7:25:1", "2", 24, nil, [[:v, 1001, 24]]),
                       key_item.new(504, 1, "map:8:1:1", "2", 30, nil, [[:v, 1001, 30]])],
-       :CHESTS => [chest.new([30, 4, "A"], [501], "2", 22)])
+       :CHESTS => [chest.new([30, 4, "A"], [501], "2", 22, [7102])])
 new_game({ 1001 => 5 }, [], 5)
 check("a story chest is the world's: its self switch goes with the story, not kept as the player's",
       [story.chest?([30, 4, "A"]), story.chest?([12, 3, "A"]), story.chest_list.include?([30, 4, "A"])], [false, true, false])
@@ -431,6 +433,7 @@ frames(40)
 check("a player behind gets every key item the world's story gave, and loses what it took",
       [$game_party.items[502], $game_party.items[503], $game_party.items[504]], [1, 0, 0])
 check("and the story chests the world opened, which show open for them too", [$game_party.items[501], $game_self_switches[[30, 4, "A"]]], [1, true])
+check("with the chest flags they turn on, such as an ore the Chaos forge asks for", $game_switches[7102], true)
 frames(40)
 story.pushed(MGQ_MpOverworldSync::STORY_FIELD => "5", :relay => true)
 frames(1)
@@ -602,6 +605,15 @@ frames(40)
 check("a world chest the player opened stays open under the world's story", [story.mode, $game_self_switches[[30, 4, "A"]], $game_party.items[501]], [:world, true, 0])
 frames(600)
 check("and goes to the world's story with the next write", calls_of("mp_raid_story_post").size > 0, true)
+
+# The Randolphs found follow the Randolph switches on, as two players finding one each at once kept
+# one addition.
+tables
+new_game({ 1001 => 24, 1354 => 1 }, [3101], 40)
+frames(1)
+relay({ "rev" => 18, "wrev" => 18, "p" => 24, "part" => "2" }, packed({ 1001 => 24, 1354 => 1 }, [3101, 3150]))
+frames(40)
+check("the Randolphs found count the Randolph switches of the world's story laid over the player's", [story.mode, $game_variables[1354]], [:world, 2])
 
 # What the story could not give shows as nothing given, whatever the log returns.
 tables(:REWARDS => [reward.new(:skill, 937, 1, "map:60:2:1", "2", 24, nil, [[:v, 1001, 24]], true),
