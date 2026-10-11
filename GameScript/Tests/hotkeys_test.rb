@@ -2,6 +2,7 @@
 #  hotkeys_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Checked the hotkeys' own group in the Mod Config
 #      Paulinchen  2026-10-11: Checked the hotkey that opens the bug report
 #                            - Checked that a hotkey pressed while a confirm box is open goes to the box
 #      Paulinchen  2026-10-10: Checked that every help says hotkey and keeps its lines short
@@ -66,11 +67,11 @@ check("as does a code no key has", keys.code(:chat), 0x54)
 
 # The options in Mod Config Remake.
 rows = NWConst::Config::MOD_CONTENTS[0..-2]
-check("one key binding per key, before Return", rows.map { |row| [row[:name], row[:keybind]] },
-      [["[Monster Girl Quest! Online] Action Wheel", true], ["[Monster Girl Quest! Online] Chat", true], ["[Monster Girl Quest! Online] World Overview", true],
-       ["[Monster Girl Quest! Online] Accept Notification", true], ["[Monster Girl Quest! Online] Decline Notification", true],
-       ["[Monster Girl Quest! Online] Emote Wheel", true], ["[Monster Girl Quest! Online] Party Box Size", true],
-       ["[Monster Girl Quest! Online] Join Battle", true], ["[Monster Girl Quest! Online] Report a Bug", true]])
+check("one key binding per key in the hotkeys' group, before Return", rows.map { |row| [row[:name], row[:keybind]] },
+      [["[MGQ Online Hotkeys] Action Wheel", true], ["[MGQ Online Hotkeys] Chat", true], ["[MGQ Online Hotkeys] World Overview", true],
+       ["[MGQ Online Hotkeys] Accept Notification", true], ["[MGQ Online Hotkeys] Decline Notification", true],
+       ["[MGQ Online Hotkeys] Emote Wheel", true], ["[MGQ Online Hotkeys] Party Box Size", true],
+       ["[MGQ Online Hotkeys] Join Battle", true], ["[MGQ Online Hotkeys] Report a Bug", true]])
 check("Return stays last", NWConst::Config::MOD_CONTENTS.last[:key], :return)
 check("each reads its key from Player.ini", rows.map { |row| row[:value].call }, [0x4B, 0x54, 0x7A, 0x59, 0x4E, 0x45, 0x09, 0x4A, 0x72])
 rows[2][:on_change].call(0x4C)

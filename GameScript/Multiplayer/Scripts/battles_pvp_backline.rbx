@@ -2,6 +2,7 @@
 #  battles_pvp_backline.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Listed the option among the settings of the Mod Config
 #      Paulinchen  2026-10-07: Registered the option through coop.rbx and named characters through battles_sync.rbx instead of copies of their helpers
 #                            - Logged the Backline's start, both sides' swaps and the commands they take away
 #      Paulinchen  2026-10-04: Renamed from mp_battles_pvp_backline.rbx
@@ -49,7 +50,7 @@ module MGQ_MpBattlesPvp
 
     # Adds the option to the Mod Config, or to the game's options without it.
     def self.register
-      MGQ_MpCoop.register_option(OPTION, "[Monster Girl Quest! Online] PvP Backline",
+      MGQ_MpCoop.register_option(OPTION, "#{MGQ_MpUi::OPTION_PREFIX}PvP Backline",
                                  "Whether the PvP battles you host and the duels you challenge to have the Backline.", OPTION_VALUES)
     end
 

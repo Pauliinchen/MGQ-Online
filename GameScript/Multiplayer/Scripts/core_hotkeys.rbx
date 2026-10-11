@@ -2,6 +2,7 @@
 #  core_hotkeys.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Listed the hotkeys in their own group of the Mod Config, MGQ Online Hotkeys, apart from the settings
 #      Paulinchen  2026-10-11: Added the hotkey that opens the bug report, F3 unless bound
 #                            - Held every hotkey while a confirm box of the mod is open, which takes the press
 #      Paulinchen  2026-10-10: Told that the party box size hotkey also shows the battle's raid boss bar with or without its title and name
@@ -21,12 +22,16 @@
 # The hotkeys the player binds: what opens the action wheel, the emote wheel, the chat and the World
 # overview, what accepts and declines the first invite of the notification box, what makes the
 # party box small, what joins the battle of a player nearby in a Raid World, and what opens the bug
-# report. Each is a key
-# binding in Mod Config Remake when it is installed, and keeps its key in
-# Patch/Multiplayer/Player.ini, so it holds in every save and every world.
+# report. Each is a key binding in Mod Config Remake when it is installed, listed in the group
+# GROUP, and keeps its key in Patch/Multiplayer/Player.ini, so it holds in every save and every
+# world.
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpHotkeys
+  # The first words of every hotkey's row in the Mod Config, which list the hotkeys in a group of
+  # their own, apart from the settings (see MGQ_MpUi::OPTION_PREFIX).
+  GROUP = "[MGQ Online Hotkeys] "
+
   # A hotkey the player binds.
   #
   # @!attribute setting [String] Its setting in Player.ini.
@@ -168,7 +173,7 @@ module MGQ_MpHotkeys
 
     menu = NWConst::Config::MOD_CONTENTS
     BINDINGS.each do |action, binding|
-      menu.insert(-2, :key => binding.option, :name => "[Monster Girl Quest! Online] #{binding.name}", :keybind => true,
+      menu.insert(-2, :key => binding.option, :name => "#{GROUP}#{binding.name}", :keybind => true,
                       :help => binding.help, :value => lambda { code(action) }, :on_change => lambda { |key| bind(action, key) })
     end
     log("added #{BINDINGS.size} key bindings to Mod Config Remake")

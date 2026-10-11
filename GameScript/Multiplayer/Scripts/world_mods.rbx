@@ -2,6 +2,7 @@
 #  world_mods.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Listed the Shared Mod Settings row among the settings of the Mod Config, and left both groups of the mod, its settings and its hotkeys, out of the options dump
 #      Paulinchen  2026-10-09: Read the catalog's personal mods, which a world that turns other mods off leaves on
 #                            - Took the mods the relay tells the open world names now
 #                            - Waited with entering a world again while the title screen starts the game again for the parked mods, and put them
@@ -89,17 +90,14 @@ module MGQ_MpWorldMods
   # The row of Mod Config that tells whether the world shares its creator's settings.
   SHARED_OPTION = :mgq_mp_shared_mod_settings
 
-  # The row's name, in Monster Girl Quest! Online's group.
-  ROW_NAME = "[Monster Girl Quest! Online] Shared Mod Settings"
+  # The row's name, in the group of the mod's settings.
+  ROW_NAME = "#{MGQ_MpUi::OPTION_PREFIX}Shared Mod Settings"
 
   # What the row says while On.
   ROW_ON_HELP = "Every player here plays with the creator's mod options."
 
   # What the row says while Off.
   ROW_OFF_HELP = "Each player here sets their own mod options."
-
-  # Monster Girl Quest! Online's own group in Mod Config, which the options dump leaves out.
-  ONLINE_GROUP = "Monster Girl Quest! Online"
 
   # The pair that starts the settings of a world that shares them. Released games skip it, since
   # they cannot read its type.
@@ -891,7 +889,16 @@ module MGQ_MpWorldMods
     path
   end
 
-  # Writes the dump's lines of every mod's group but Monster Girl Quest! Online's own: a "mod" line,
+  # Tells whether a group of Mod Config is one of the mod's own two, its settings and its hotkeys,
+  # which the options dump leaves out.
+  #
+  # @param name [String] The group's name.
+  # @return [Boolean] Whether it is.
+  def self.online_group?(name)
+    [MGQ_MpUi::OPTION_PREFIX, MGQ_MpHotkeys::GROUP].any? { |prefix| MGQ_MpWorld.mod_key(prefix[/\[(.+)\]/, 1]) == MGQ_MpWorld.mod_key(name) }
+  end
+
+  # Writes the dump's lines of every mod's group but Monster Girl Quest! Online's own two: a "mod" line,
   # then an "opt" line per option a world may set and a "skip" line with why per other option.
   #
   # A game without Mod Config raises, so the tool never takes its empty groups for mods without
@@ -903,7 +910,7 @@ module MGQ_MpWorldMods
 
     lines = []
     menu_groups.each do |name, entries|
-      next if MGQ_MpWorld.mod_key(name) == MGQ_MpWorld.mod_key(ONLINE_GROUP)
+      next if online_group?(name)
 
       lines << "mod\t#{dump_field(MGQ_MpWorld.mod_key(name))}\t#{dump_field(name)}"
       entries.each do |entry|

@@ -2,6 +2,7 @@
 #  pvp_backline_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Stood in for the settings' group of the Mod Config, which ui.rbx names
 #      Paulinchen  2026-10-07: Loaded coop.rbx, which registers the option now, and stood in for the live battle's list of names
 #      Paulinchen  2026-10-04: Followed the scripts to their new names, without mp_
 #      Paulinchen  2026-10-03: Created
@@ -110,6 +111,8 @@ $posted = []
 
 load File.join(SCRIPTS_DIR, "core_log.rbx")
 module MGQ_MpBattlesPvp; extend MGQ_MpLog; LOG_TAG = "pvp battle"; end
+# The first words of the mod's settings in the Mod Config, as ui.rbx names them.
+module MGQ_MpUi; OPTION_PREFIX = "[MGQ Online Settings] " unless const_defined?(:OPTION_PREFIX); end
 load_script "coop"
 load_script "battles_pvp_backline"
 SceneManager.run

@@ -2,6 +2,7 @@
 #  ui_layout_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Followed the settings to their own group of the Mod Config
 #      Paulinchen  2026-10-11: Created
 #
 #----------------------------------------------------------------
@@ -126,7 +127,7 @@ look = rows.find { |row| row[:key] == theme::OPTION }
 positions = rows.find { |row| row[:key] == layout::OPTION }
 check("both rows are added before Return, named for the mod, kept by the mod and the player's own",
       [rows.last[:key], look[:name], look[:mod_stored], look[:personal], positions[:name], positions[:sub]],
-      [:return, "[Monster Girl Quest! Online] Interface Look", true, true, "[Monster Girl Quest! Online] Interface Positions", true])
+      [:return, "[MGQ Online Settings] Interface Look", true, true, "[MGQ Online Settings] Interface Positions", true])
 look[:on_change].call("Monarch")
 check("the look row lists the presets, reads the one in use and picks one", [look[:values].call, look[:value].call, $player_ini["ui_preset"]], [["Monarch", "Legacy"], "Monarch", "Monarch"])
 

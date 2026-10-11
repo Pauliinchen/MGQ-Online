@@ -2,6 +2,7 @@
 #  world_mods_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Followed the settings to their own group of the Mod Config, and checked that the dump leaves the hotkeys' group out too
 #      Paulinchen  2026-10-11: Stood in for the game's frame, whose update the shared boxes follow the layout after
 #      Paulinchen  2026-10-09: Loaded world_mods_parking.rbx, which the world screen calls, its DLL's stand-in finding no parked mods at the start
 #      Paulinchen  2026-10-08: Covered the marker and settings from before it, the row of Shared Mod Settings for the creator and another player, the creator's
@@ -87,7 +88,8 @@ module NWConst
       { :key => :mod_party_sheet_write, :name => "     -> Write Party Sheet", :sub => false },
       { :key => :mod_party_sheet_size, :name => "     -> Size", :sub => true, :values => lambda { [2, 4] } },
       { :key => :tab_opt, :name => "[Tab\tMod] Opt\tion", :sub => true, :values => [1, 2] },
-      { :key => :mod_mp_backline, :name => "[Monster Girl Quest! Online] PvP Backline", :sub => true },
+      { :key => :mod_mp_backline, :name => "[MGQ Online Settings] PvP Backline", :sub => true },
+      { :key => :mp_key_chat, :name => "[MGQ Online Hotkeys] Chat", :keybind => true },
       { :key => :global_thing, :name => "Global Thing", :sub => true },
       { :key => :return, :name => "Return", :sub => false },
     ]
@@ -198,6 +200,7 @@ module MGQ_Multiplayer
 end
 
 load_script "world_save_distribution"
+load_script "core_hotkeys"
 load_script "ui"
 load_script "ui_text_box"
 load_script "world"
@@ -440,9 +443,9 @@ Scene_Title.new.start
 $world_open = true
 check("outside a world Mod Config has no row of Shared Mod Settings", row.call, nil)
 mods.enter_world(world.call("creator", "@shared=o:1;mod_level_cap=i:0;mod_party_sheet_theme=y:dark;mod_missing=i:7"), "me")
-check("entering a world adds the row to Monster Girl Quest! Online's group, personal, with On and Off",
+check("entering a world adds the row to the group of Monster Girl Quest! Online's settings, personal, with On and Off",
       [row.call[:name], row.call[:sub], row.call[:personal], NWConst::Config::DATA[row_key], NWConst::Config::DATA_TEXT[row_key].map { |value, text| [value, text[:name]] }, NWConst::Config::MOD_CONTENTS.last[:key]],
-      ["[Monster Girl Quest! Online] Shared Mod Settings", true, true, [1, 0], [[1, "On"], [0, "Off"]], :return])
+      ["[MGQ Online Settings] Shared Mod Settings", true, true, [1, 0], [[1, "On"], [0, "Off"]], :return])
 check("another player sees it greyed out, chosen by the world's creator", [row.call[:enable].call, row.call[:help].call],
       [false, "Creator created this world and chose this. While On, the world's mod options are set for you here."])
 $game_system.conf = { :mod_level_cap => 1 }
@@ -792,7 +795,7 @@ Dir.mktmpdir do |folder|
   $ini["rejoin"] = "w9"
   $exited = false
   mods.on_title_update(Scene_Title.new)
-  check("a game started for the dump writes every mod's options, without Global ones and Monster Girl Quest! Online's own, ends with end and quits at once",
+  check("a game started for the dump writes every mod's options, without Global ones and Monster Girl Quest! Online's own settings and hotkeys, ends with end and quits at once",
         [File.open(target, "rb") { |file| file.read }.force_encoding("UTF-8").split("\n"), $exited, $ini["rejoin"], File.exist?("#{target}.tmp")],
         [["mgqmp-options\t1",
           "mod\tlevelcap\tLevel Cap", "opt\tmod_level_cap\tLevel Cap\ti\t1\t1\tOn\t0\tOff", "opt\tmod_level_cap_limits\tJob and Race Limits\ti\t1", "skip\tmod_level_cap_look\tpersonal",

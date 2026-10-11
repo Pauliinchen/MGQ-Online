@@ -2,6 +2,7 @@
 #  ui.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Listed the settings in their own group of the Mod Config, MGQ Online Settings, apart from the hotkeys
 #      Paulinchen  2026-10-11: Let the player move and resize the list box with Alt, and move the message box and the confirm box and change their width, each kept in Player.ini and never smaller than its title, columns, choices and whole hint need
 #                            - Drew the list box, the message box and the confirm box in their frame, anew once the interface look changes
 #                            - Dressed the lines across the top of a screen in the interface look
@@ -81,8 +82,9 @@ module MGQ_MpUi
   # them, and the outlines of the boxes being moved or resized above everything.
   Z = { :arrows => 190, :lines => 200, :labels => 250, :bubbles => 260, :wheels => 300, :overview => 400, :boxes => 1000, :confirm => 1050, :typing => 1100, :layout => 1200 }
 
-  # The first words of every row the mod adds to the Mod Config, which list them under the mod.
-  OPTION_PREFIX = "[Monster Girl Quest! Online] "
+  # The first words of every setting's row in the Mod Config, which list the settings in a group of
+  # their own, apart from the hotkeys (see MGQ_MpHotkeys::GROUP).
+  OPTION_PREFIX = "[MGQ Online Settings] "
 
   # What every flat box of the mod draws with: one background in one frame, one plate behind a line
   # on a busy picture, one picked row, one set of text colors, one set of font sizes, one padding,

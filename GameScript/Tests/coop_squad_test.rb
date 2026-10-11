@@ -2,6 +2,7 @@
 #  coop_squad_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Stood in for the settings' group of the Mod Config, which ui.rbx names
 #      Paulinchen  2026-10-11: Stood in for the shared style's bad color, which the line past a squad takes
 #      Paulinchen  2026-10-10: Checked that a hidden squad member never brings the cut fourth into a duel or a co-op battle
 #                            - Checked that a Raid World offers the teleport to the story whenever its endpoint is known
@@ -183,6 +184,8 @@ module MGQ_MpActions
   def self.own_doing_from; end
 end
 module MGQ_MpUi; module Style; BAD = Color.new(255, 96, 96); end; end
+# The first words of the mod's settings in the Mod Config, as ui.rbx names them.
+module MGQ_MpUi; OPTION_PREFIX = "[MGQ Online Settings] " unless const_defined?(:OPTION_PREFIX); end
 load_script "coop"
 load_script "coop_scope"
 load_script "coop_squad"

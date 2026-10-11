@@ -2,6 +2,7 @@
 #  coop_squad.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Listed the option among the settings of the Mod Config
 #      Paulinchen  2026-10-11: Drew the line past a squad in the shared style's bad color
 #      Paulinchen  2026-10-10: Took a Raid World's squad for duels and co-op battles from the team's first three places, so a hidden squad member never brings the cut fourth along
 #      Paulinchen  2026-10-08: Gave every player one place on the Frontline and two on the Backline in a Raid World, in a party or not, the fourth place cut
@@ -479,7 +480,7 @@ module MGQ_MpCoopSquad
   # Adds the followers' option to the Mod Config, or to the game's options without it, which only
   # the party's leader may change.
   def self.register
-    MGQ_MpCoop.register_option(FOLLOWERS, "[Monster Girl Quest! Online] Party Followers",
+    MGQ_MpCoop.register_option(FOLLOWERS, "#{MGQ_MpUi::OPTION_PREFIX}Party Followers",
                                "Who walks behind the players of a party. The party's leader decides for everyone.", FOLLOWER_VALUES,
                                :enable => lambda { !MGQ_MpCoop.in_party? || MGQ_MpCoop.party_leader == :me })
   end
