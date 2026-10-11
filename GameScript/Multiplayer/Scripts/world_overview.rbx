@@ -2,7 +2,8 @@
 #  world_overview.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Told the others the highest level of the player's formation, Luka included, instead of every companion's, keeping the last one read during a co-op battle
+#      Paulinchen  2026-10-11: Added the Levels page of a Raid World: the level the catch-up counts and, under a heading per level, what it hands out that the world already unlocked, moving on from a part, companions and Makina, each marked Done or Due
+#                            - Told the others the highest level of the player's formation, Luka included, instead of every companion's, keeping the last one read during a co-op battle
 #                            - Showed a Raid World's objective on the World page under the story, as Amira tells it asked for information, wrapped over as many lines as it needs
 #                            - Listed a Raid World's party for the party box with each member's Frontline level, wherever they are
 #                            - Made the box movable and resizable with the left Alt held as the World overview, starting at the list box's place, never smaller than what shows every column, the tabs, the hint and three lines or the longest menu
@@ -50,15 +51,16 @@
 
 # The World overview: a large box over the map, opened with its key (F11 unless the player binds
 # another, see core_hotkeys.rbx) or the action wheel's middle, moved and resized with the left Alt
-# held (see ui_layout.rbx), with two pages turned with Left and Right or a click on their tabs.
+# held (see ui_layout.rbx), with pages turned with Left and Right or a click on their tabs.
 # The Players page
 # lists every player of the world online, grouped by where they are, with their formation's highest
 # level, their place in the story and their ping. A player picked with the arrows and confirm, or
 # with the mouse, opens a menu of what the scripts offer, such as party invites, duels and trades;
 # a player's row shows their invite, challenge or offer that reaches the player. The World page
 # shows the world itself: its name, type, difficulty, players, story and in a Raid World the
-# story's objective and every raid boss with how much of its HP the world left it. The map keeps
-# running behind it.
+# story's objective and every raid boss with how much of its HP the world left it. A Raid World's
+# Levels page shows by level what the catch-up hands out that the world already unlocked (see
+# world_catchup.rbx). The map keeps running behind it.
 #
 # It also lists the player's party for the party box of ui_party_box.rbx, and in a Raid World
 # everyone on the player's map for the map box that replaces it.
@@ -105,8 +107,28 @@ module MGQ_MpWorldOverview
   }
 
   # The overview's pages in the order Left and Right pass through them, each with its tab's title:
-  # the players online, and the world itself.
-  PAGES = [[:players, "Players"], [:world, "World"]]
+  # the players online, the world itself, and in a Raid World what the catch-up hands out by level.
+  PAGES = [[:players, "Players"], [:world, "World"], [:levels, "Levels"]]
+
+  # The pages only a Raid World shows.
+  RAID_PAGES = [:levels]
+
+  # The label of the Levels page's first row, the level the catch-up counts.
+  YOUR_LEVEL = "Your level"
+
+  # How the Levels page heads what comes at a level.
+  LEVEL_HEADING = "Level %d"
+
+  # What the Levels page says while the world unlocked nothing yet.
+  NOTHING_UNLOCKED = "Nothing to catch up with yet."
+
+  # What the Levels page calls each kind of unlock, see MGQ_MpWorldCatchup::Unlock.
+  UNLOCK_KINDS = { :story => "Story", :companion => "Companion", :makina => "Makina" }
+
+  # What the Levels page says of an unlock the player has, and of one whose level they reached,
+  # which comes at the catch-up's next check.
+  DONE = "Done"
+  DUE = "Due"
 
   # What the overview calls each kind of world, by whether it is a Raid World.
   WORLD_TYPES = { true => "Raid", false => "Classic" }
@@ -335,22 +357,31 @@ module MGQ_MpWorldOverview
 
   # The page shown.
   #
-  # @return [Symbol] :players or :world, see PAGES.
+  # @return [Symbol] :players, :world or :levels, see PAGES.
   def self.page
     @page
   end
 
-  # Turns to a page, closing the menu, which belongs to the Players page. Nothing for the page
-  # shown already.
+  # Lists the pages the world shows: every page in a Raid World, else those of RAID_PAGES left out.
   #
-  # @param page [Symbol] The page, see PAGES.
+  # @return [Array<Array>] The pages with their tabs' titles, see PAGES.
+  def self.pages
+    MGQ_MpCoop::Scope.raid? ? PAGES : PAGES.reject { |key, _| RAID_PAGES.include?(key) }
+  end
+
+  # Turns to a page, closing the menu, which belongs to the Players page, and showing the new
+  # page from its top. Nothing for the page shown already or one the world does not show.
+  #
+  # @param page [Symbol] The page, see pages.
   # @param via [String] What turned it, for the log.
   def self.turn_to(page, via)
-    title = PAGES.assoc(page)
+    title = pages.assoc(page)
     return unless title && page != @page
 
     @page = page
     @menu = nil
+    @world_scroll = 0
+    @level_lines_at = nil
     Sound.play_cursor
     log("turned to the #{title[1]} page through #{via}")
   end
@@ -360,8 +391,9 @@ module MGQ_MpWorldOverview
   # @param step [Integer] 1 for the next page, -1 for the one before.
   # @param via [String] What turned it, for the log.
   def self.turn(step, via)
-    index = PAGES.index { |page, _| page == @page }.to_i
-    turn_to(PAGES[(index + step) % PAGES.size][0], via)
+    shown = pages
+    index = shown.index { |page, _| page == @page }.to_i
+    turn_to(shown[(index + step) % shown.size][0], via)
   end
 
   # Turns the page with Left and Right.
@@ -584,6 +616,29 @@ module MGQ_MpWorldOverview
     text = text.gsub(/\\V\[(\d+)\]/i) { $game_variables[$1.to_i].to_s }
     text = text.gsub(/\\N\[(\d+)\]/i) { (actor = $game_actors[$1.to_i]) ? actor.name.to_s : "" }
     TEXT_CODES.inject(text) { |plain, code| plain.gsub(code, "") }.gsub(/\s+/, " ").strip
+  end
+
+  # Lays the Levels page out: the level the catch-up counts, then by level what it hands out that
+  # the world already unlocked, under a heading per level (see MGQ_MpWorldCatchup.unlocks). Read
+  # every READ_FRAMES.
+  #
+  # @return [Array<Array>] Each line: [:info, label, value], [:place, heading] or [:unlock, unlock].
+  def self.level_lines
+    return @level_lines if @level_lines_at && Graphics.frame_count - @level_lines_at < READ_FRAMES && Graphics.frame_count >= @level_lines_at
+
+    @level_lines_at = Graphics.frame_count
+    level = MGQ_MpWorldCatchup.counted_level
+    lines = [[:info, YOUR_LEVEL, level ? level.to_s : ""]]
+    unlocks = MGQ_MpWorldCatchup.unlocks
+    lines << [:info, "", NOTHING_UNLOCKED] if unlocks.empty?
+    unlocks.chunk { |unlock| unlock.level }.each do |at, group|
+      lines << [:place, LEVEL_HEADING % at]
+      lines.concat(group.map { |unlock| [:unlock, unlock] })
+    end
+    @level_lines = lines
+  rescue => e
+    log_once(:level_lines, "laying out the Levels page failed: #{e.class}: #{e.message}")
+    @level_lines = []
   end
 
   # Lists the raid bosses for the World page by the story's sections in story order: each section
@@ -955,7 +1010,12 @@ module MGQ_MpWorldOverview
   # @param rows [Array<Row>] The players, see rows.
   # @return [Array<Array>] The lines, see world_lines and lines.
   def self.page_lines(rows)
-    @page == :world ? world_lines(rows.size) : lines(rows)
+    @page = :players unless pages.assoc(@page)
+    case @page
+    when :world then world_lines(rows.size)
+    when :levels then level_lines
+    else lines(rows)
+    end
   end
 
   # What the overview shows on its page: the World page, or the Players page's list.
@@ -964,19 +1024,19 @@ module MGQ_MpWorldOverview
   # @param rows [Array<Row>] The players, see rows.
   # @return [Hash] The view, see view.
   def self.page_view(lines, rows)
-    @page == :world ? world_view(lines, rows.any? { |row| row.call }) : view_of(lines)
+    @page == :players ? view_of(lines) : world_view(lines, rows.any? { |row| row.call })
   end
 
-  # The World page's view: its lines from its scroll, kept within the lines as the box's height
-  # changes, nothing picked and no menu, and whether a player's call waits on the Players page,
-  # which the notification box hides behind the overview.
+  # The view of the World or the Levels page: its lines from its scroll, kept within the lines as
+  # the box's height changes, nothing picked and no menu, and whether a player's call waits on the
+  # Players page, which the notification box hides behind the overview.
   #
-  # @param lines [Array<Array>] The World page's lines, see world_lines.
+  # @param lines [Array<Array>] The page's lines, see world_lines and level_lines.
   # @param calls [Boolean] Whether a player's invite, challenge or offer reaches the player.
   # @return [Hash] The view, see view.
   def self.world_view(lines, calls)
     @world_scroll = MGQ_MpUi.within(@world_scroll, 0, most_scroll(lines))
-    { :page => :world, :lines => lines, :selected => nil, :scroll => @world_scroll, :menu => nil, :menu_index => nil, :calls => calls }
+    { :page => @page, :lines => lines, :selected => nil, :scroll => @world_scroll, :menu => nil, :menu_index => nil, :calls => calls }
   end
 
   # What the overview shows, as update last saw it, which its picture draws.
@@ -1019,7 +1079,7 @@ module MGQ_MpWorldOverview
     # The press that opened the overview from the wheel is still down this frame.
     if @fresh
       @fresh = false
-    elsif page == :world
+    elsif page != :players
       update_world(lines)
     else
       update_players(lines)
@@ -1042,10 +1102,10 @@ module MGQ_MpWorldOverview
     keep_in_sight(lines, players)
   end
 
-  # Scrolls the World page with the arrows, turns the page, follows the mouse, or closes the
-  # overview.
+  # Scrolls the World or the Levels page with the arrows, turns the page, follows the mouse, or
+  # closes the overview.
   #
-  # @param lines [Array<Array>] The World page's lines, see world_lines.
+  # @param lines [Array<Array>] The page's lines, see world_lines and level_lines.
   def self.update_world(lines)
     mouse_world
     return unless @open
@@ -1176,8 +1236,8 @@ module MGQ_MpWorldOverview
     end
   end
 
-  # Follows the mouse on the World page: a click on a tab turns the page, a click outside the box
-  # closes the overview.
+  # Follows the mouse on the World and the Levels page: a click on a tab turns the page, a click
+  # outside the box closes the overview.
   def self.mouse_world
     position = MGQ_Multiplayer::Mouse.position
     clicked = MGQ_Multiplayer::Mouse.clicked?
@@ -1273,6 +1333,12 @@ class Sprite_MpWorldOverview < Sprite
   # Least room of who last hurt a raid boss.
   BY_WIDTH = 152
 
+  # Left edge of each column of the Levels page: a Makina's icon and the unlock's name; its kind and
+  # whether the player has it take the right edge, KIND_WIDTH and STATUS_WIDTH wide.
+  LEVEL_COLUMNS = { :icon => 8, :name => 36 }
+  KIND_WIDTH = 90
+  STATUS_WIDTH = 50
+
   # Width and height of a raid boss's gauge, and the pixels its frame takes on each side.
   GAUGE_WIDTH = 90
   GAUGE_HEIGHT = 6
@@ -1301,6 +1367,7 @@ class Sprite_MpWorldOverview < Sprite
   HINTS = {
     :players => ["Left or right: page", "Enter: invite, duel or trade", MGQ_MpUi::Style.close_hint("%s")].join(MGQ_MpUi::Style::HINT_GAP),
     :world => ["Left or right: page", "Up or down: scroll", MGQ_MpUi::Style.close_hint("%s")].join(MGQ_MpUi::Style::HINT_GAP),
+    :levels => ["Left or right: page", "Up or down: scroll", MGQ_MpUi::Style.close_hint("%s")].join(MGQ_MpUi::Style::HINT_GAP),
   }
 
   # Tells where the box starts on the screen: the list box's place.
@@ -1384,14 +1451,14 @@ class Sprite_MpWorldOverview < Sprite
   #
   # @param x [Integer] The point's x.
   # @param y [Integer] The point's y.
-  # @return [Symbol, nil] The page, see MGQ_MpWorldOverview::PAGES; nil outside the tabs.
+  # @return [Symbol, nil] The page, see MGQ_MpWorldOverview.pages; nil outside the tabs.
   def self.tab_at(x, y)
     box = self.box
     return nil unless y >= box.y + TITLE && y < box.y + LIST_TOP && x >= box.x + MARGIN
 
     across = x - box.x - MARGIN
     step = TAB_WIDTH + MGQ_MpUi::Style::GAP
-    page = MGQ_MpWorldOverview::PAGES[across / step]
+    page = MGQ_MpWorldOverview.pages[across / step]
     page && across % step < TAB_WIDTH ? page[0] : nil
   end
 
@@ -1445,6 +1512,7 @@ class Sprite_MpWorldOverview < Sprite
       case kind
       when :player then [row.name, row.level, row.story, row.ping && row.ping[0], row.icon, row.member, row.badge, row.call && row.call[0]]
       when :boss then [row.name, row.tier, overview.share_text(row.left), (row.left * GAUGE_WIDTH).round, row.defeated, row.by]
+      when :unlock then row.to_a
       when :info then [row, value]
       else row
       end
@@ -1515,7 +1583,7 @@ class Sprite_MpWorldOverview < Sprite
   # @param calls [Boolean] Whether a player's call waits on the Players page.
   def draw_tabs(page, calls = false)
     style = MGQ_MpUi::Style
-    MGQ_MpWorldOverview::PAGES.each_with_index do |(key, title), index|
+    MGQ_MpWorldOverview.pages.each_with_index do |(key, title), index|
       x = MARGIN + index * (TAB_WIDTH + style::GAP)
       shown = key == page
       bitmap.fill_rect(x, TITLE, TAB_WIDTH, TABS, shown ? style::PICKED : style::TAB)
@@ -1525,9 +1593,11 @@ class Sprite_MpWorldOverview < Sprite
     end
   end
 
-  # Draws one line of a page: a heading, a player, a row of the World page or a raid boss.
+  # Draws one line of a page: a heading, a player, a row of the World page, a raid boss or what
+  # the catch-up hands out.
   #
-  # @param line [Array] [:place, name], [:player, row], [:info, label, value] or [:boss, boss].
+  # @param line [Array] [:place, name], [:player, row], [:info, label, value], [:boss, boss] or
+  #   [:unlock, unlock].
   # @param y [Integer] The line's top.
   # @param picked [Boolean] Whether it is the player picked.
   def draw_line(line, y, picked)
@@ -1536,6 +1606,7 @@ class Sprite_MpWorldOverview < Sprite
     when :place then draw_heading(value, y)
     when :info then draw_info(value, extra, y)
     when :boss then draw_boss(value, y)
+    when :unlock then draw_unlock(value, y)
     else draw_player(value, y, picked)
     end
   end
@@ -1616,6 +1687,29 @@ class Sprite_MpWorldOverview < Sprite
     style.use_font(bitmap, style::TINY_SIZE, style::DIM)
     by_width = bitmap.width - MARGIN - columns[:by]
     bitmap.draw_text(columns[:by], y, by_width, ROW, MGQ_MpUi.cut(bitmap, overview::LAST_HURT_BY % boss.by, by_width))
+  end
+
+  # Draws what the catch-up hands out at a level: a Makina's icon, its name, dimmed once the player
+  # has it, its kind, and Done or, once the player's level reached it, Due at the right edge.
+  #
+  # @param unlock [MGQ_MpWorldCatchup::Unlock] What it hands out.
+  # @param y [Integer] The line's top.
+  def draw_unlock(unlock, y)
+    style = MGQ_MpUi::Style
+    overview = MGQ_MpWorldOverview
+    MGQ_MpUi.draw_icon(bitmap, unlock.icon, LEVEL_COLUMNS[:icon], y) if unlock.icon
+    status_left = bitmap.width - MARGIN - STATUS_WIDTH
+    kind_left = status_left - style::GAP - KIND_WIDTH
+    style.use_font(bitmap, style::TEXT_SIZE, unlock.got ? style::DIM : style::TEXT)
+    name_width = kind_left - style::GAP - LEVEL_COLUMNS[:name]
+    bitmap.draw_text(LEVEL_COLUMNS[:name], y, name_width, ROW, MGQ_MpUi.cut(bitmap, unlock.name, name_width))
+    style.use_font(bitmap, style::SMALL_SIZE, style::DIM)
+    bitmap.draw_text(kind_left, y, KIND_WIDTH, ROW, overview::UNLOCK_KINDS[unlock.kind].to_s)
+    status = unlock.got ? overview::DONE : (unlock.due ? overview::DUE : nil)
+    return unless status
+
+    style.use_font(bitmap, style::SMALL_SIZE, unlock.got ? style::DIM : style::GOLD)
+    bitmap.draw_text(status_left, y, STATUS_WIDTH, ROW, status, 2)
   end
 
   # Draws a thin gauge of a raid boss's HP: its frame in the edge color, its empty part in the well

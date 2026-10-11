@@ -2,7 +2,8 @@
 #  world_overview_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Checked that the level told is the formation's highest, Luka included, and kept during a co-op battle
+#      Paulinchen  2026-10-11: Checked the Levels page of a Raid World, its rows drawn and its absence in a Classic world, and counted its tab among the tabs
+#                            - Checked that the level told is the formation's highest, Luka included, and kept during a co-op battle
 #                            - Checked a Raid World's objective on the World page: Amira's first words in a branch, plain, past her network's branch, read every few seconds and wrapped
 #                            - Expected Part 2 to start with Bonnie and Ashel and end with Sonya Mazda, Sonya Mainyu and Sonya Chaos
 #                            - Checked that a Raid World's box lists the party wherever its members are, with Frontline levels, and the others on the map below it, and stays with the party alone on the map
@@ -66,6 +67,14 @@ module MGQ_MpWorldStory
   def self.world; $world_story; end
   def self.part_of(counters); counters["part"]; end
 end
+# The catch-up's list of what it hands out by level, and the level it counts.
+module MGQ_MpWorldCatchup
+  Unlock = Struct.new(:level, :kind, :name, :icon, :got, :due)
+  def self.unlocks; $unlocks; end
+  def self.counted_level; $counted_level; end
+end
+$unlocks = []
+$counted_level = nil
 $pools = {}
 module MGQ_MpRaidPool
   Pool = Struct.new(:left, :max, :defeated, :by, :at)
@@ -435,6 +444,33 @@ $difficulty = 1
 $world_story = { "part" => "2" }
 overview.on_map
 lines = overview.view[:lines]
+
+# The Levels page of a Raid World: the level the catch-up counts, then by level what it hands out.
+unlock = MGQ_MpWorldCatchup::Unlock
+$unlocks = [unlock.new(25, :story, "Part 1", nil, true, false), unlock.new(25, :companion, "Lime", nil, false, true),
+            unlock.new(40, :makina, "Super Vibro Blade", 183, false, false)]
+$counted_level = 30
+$buttons << :RIGHT
+overview.on_map
+check("in a Raid World Right turns on to the Levels page: the level the catch-up counts, then under a heading per level what it hands out",
+      [overview.page, overview.view[:lines]],
+      [:levels, [[:info, "Your level", "30"], [:place, "Level 25"], [:unlock, $unlocks[0]], [:unlock, $unlocks[1]], [:place, "Level 40"], [:unlock, $unlocks[2]]]])
+level_sprite = Sprite_MpWorldOverview.allocate
+level_sprite.bitmap = Bitmap.new(Sprite_MpWorldOverview.box.width, Sprite_MpWorldOverview.box.height)
+level_sprite.draw(overview.view)
+check("each row draws its name and kind, Done once the player has it and Due once their level reached it",
+      ["Part 1", "Story", "Done", "Lime", "Companion", "Due", "Super Vibro Blade", "Makina"].map { |text| level_sprite.bitmap.texts.include?(text) }, [true] * 8)
+$unlocks = []
+overview.turn_to(:world, "the test")
+overview.turn_to(:levels, "the test")
+overview.on_map
+check("with nothing unlocked yet it says so", overview.view[:lines], [[:info, "Your level", "30"], [:info, "", "Nothing to catch up with yet."]])
+$raid = false
+overview.on_map
+check("a Classic world has no Levels page, which turns back to the Players page", [overview.page, overview.pages.map(&:first)], [:players, [:players, :world]])
+$raid = true
+overview.turn_to(:world, "the test")
+overview.on_map
 check("a Raid World tells its difficulty and its story, then heads its raid bosses by the story's section",
       lines[2..5], [[:info, "Difficulty", "Hard"], [:info, "Players", "#{online} / 8"], [:info, "Story", "Part 2"], [:place, "Raid bosses: Part 1"]])
 sections = MGQ_MpRaidBosses.sections
@@ -611,7 +647,7 @@ end
 place_box.call(nil)
 check("the overview is a box the player moves and resizes both ways, never smaller than what its columns, tabs, lines and menu need",
       [layout.instance_variable_get(:@boxes)[:overview].to_a, [sprite_class::PLAYERS_WIDTH, sprite_class::WORLD_WIDTH, sprite_class::TABS_WIDTH]],
-      [["World overview", 560, 166, :both], [560, 560, 220]])
+      [["World overview", 560, 166, :both], [560, 560, 324]])
 check("it starts at the list box's place with its lines", [sprite_class.box.to_a, sprite_class.list_rows], [[40, 32, 560, 404], 13])
 place_box.call("20,150,600,300")
 check("a placement Player.ini keeps is honoured, the lines following its height", [sprite_class.box.to_a, sprite_class.list_rows], [[20, 150, 600, 300], 9])
@@ -646,7 +682,7 @@ check("and in a taller one no room is left below the last line", overview.view[:
 overview.turn_to(:world, "the test")
 place_box.call("0,0,560,166")
 overview.on_map
-100.times { $buttons << :DOWN; overview.on_map }
+200.times { $buttons << :DOWN; overview.on_map }
 low_scroll = overview.view[:scroll]
 place_box.call(nil)
 overview.on_map
@@ -678,9 +714,9 @@ overview_sprite.update
 check("so does another preset", draws, 3)
 fills = overview_sprite.bitmap.drawn.select { |kind, _| kind == :fill }.map { |_, args| args }
 tab_fills = fills.select { |args| args[1] == sprite_class::TITLE && args[2] == sprite_class::TAB_WIDTH }.map { |args| args[4] }
-check("the box is framed in the preset's colors, the page shown on the picked tab and the other on the tab color",
+check("the box is framed in the preset's colors, the page shown on the picked tab and the others, the Levels page of a Raid World too, on the tab color",
       [fills.first, fills.count { |args| args[4].equal?(style::EDGE) } >= 4, fills.any? { |args| args[4].equal?(style::RIM) }, tab_fills.map { |color| [color.equal?(style::PICKED), color.equal?(style::TAB)] }],
-      [[0, 0, 610, 320, style::BACK], true, true, [[false, true], [true, false]]])
+      [[0, 0, 610, 320, style::BACK], true, true, [[false, true], [true, false], [false, true]]])
 check("the world's name in the title color", overview_sprite.bitmap.drawn.find { |kind, text, _| kind == :text && text.start_with?("Test World") }[2].equal?(style::TITLE), true)
 MGQ_MpUi::Theme.apply("Legacy", "the test")
 overview_sprite.dispose
@@ -706,9 +742,9 @@ overview.turn_to(:world, "the test")
 overview.instance_variable_set(:@world_scroll, 0)
 overview.on_map
 narrow.draw(overview.view)
-check("narrowest, the World page draws the title, both tabs, its first lines and the whole hint smaller",
+check("narrowest, the World page draws the title, every tab, its first lines and the whole hint smaller",
       [narrow.bitmap.texts, narrow.bitmap.font.size, inside_box.call(narrow.bitmap)],
-      [["Party 2 / 4", "Test World | Raid | Hard", "Players", "World", "World", "Test World", "Type", "Raid", "Difficulty", "Hard",
+      [["Party 2 / 4", "Test World | Raid | Hard", "Players", "World", "Levels", "World", "Test World", "Type", "Raid", "Difficulty", "Hard",
         "Left or right: page   Up or down: scroll   Esc, Numpad 0 or F11: close"], style::TINY_SIZE, true])
 narrow.bitmap.clear
 narrow.draw_boss(boss_named.call("Queen Harpy"), 0)

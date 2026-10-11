@@ -2,7 +2,8 @@
 #  world_catchup_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Checked that a Makina comes at its area level and that copies beyond the first go
+#      Paulinchen  2026-10-11: Checked the list of what the catch-up hands out by level for the Levels page, and the level it counts
+#                            - Checked that a Makina comes at its area level and that copies beyond the first go
 #                            - Checked that a telling the player watched takes the key items its scene took, and that a key item taken at the step that gave it does not come back
 #                            - Checked that Amira in the roster raises her information network to 2
 #                            - Checked one look at everything on entering and on a level up: the story's own values moved on from an earlier step's but not a player's own, encounters left to a map that sets them, the warp ban lifted where warping is free, a missing skill and a missing companion
@@ -863,6 +864,27 @@ check("a chest giving one held already leaves one", $game_party.items[700], 1)
 $game_party.lose_item($data_items[701], 1)
 frames(40)
 check("one above the player's level does not come", $game_party.items[701], 0)
+
+# What the catch-up hands out by level that the world unlocked, for the World overview's Levels page.
+tables(:JOINS => [join.new(77, 77, "map:6:30:2", "1", 7, nil, [[:v, 1001, 7]], 7, :start, 1, true),
+                  join.new(16, 16, "map:9:1:1", "1", 15, nil, [[:v, 1001, 15]], 20, :floor, 1, true)],
+       :MAKINA => [makina.new(700, 6, "map:215:23:1"), makina.new(701, 30, "map:218:21:1")])
+$sharing = :all
+new_game({ 1001 => 9 }, [], 10)
+frames(1)
+relay({ "rev" => 31, "wrev" => 31, "p" => 9, "part" => "1", "comps" => "80" }, packed({ 1001 => 9 }))
+frames(40)
+check("the Levels page lists by level the Makina, the companions of joins the world's story got past and those it shares, never a join it has not reached",
+      catchup.unlocks.map { |unlock| [unlock.level, unlock.kind, unlock.name, unlock.got, unlock.due] },
+      [[6, :makina, "Auto Crossbow", true, false], [7, :companion, "Slime", true, false], [9, :companion, "Harpy", true, false], [30, :makina, "Bio Blaster", false, false]])
+check("with the level the catch-up counts", catchup.counted_level, 10)
+new_game({ 1001 => 9 }, [], 10)
+frames(1)
+relay({ "rev" => 32, "wrev" => 32, "p" => 25, "part" => "2", "comps" => "80" }, packed({ 1001 => 25 }))
+frames(40)
+check("a world past the player's part lists moving on from it at its gate",
+      catchup.unlocks.select { |unlock| unlock.kind == :story }.map { |unlock| [unlock.level, unlock.name, unlock.got, unlock.due] }, [[25, "Part 1", false, false]])
+$sharing = :off
 
 # Classic worlds have no catch-up.
 $raid = false

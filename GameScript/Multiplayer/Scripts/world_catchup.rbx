@@ -2,7 +2,8 @@
 #  world_catchup.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Gave every Makina once the player's level reaches the area level of its easiest place, and took back copies beyond the first, as a chest another player's story closed again gave one twice
+#      Paulinchen  2026-10-11: Listed what the catch-up hands out by level that the world already unlocked, for the World overview's Levels page
+#                            - Gave every Makina once the player's level reaches the area level of its easiest place, and took back copies beyond the first, as a chest another player's story closed again gave one twice
 #                            - Followed the story values of a telling the player watched as a story laid over theirs once they are free, so a viewer gets what the scene gave and loses the key items it took
 #                            - Took a key item as taken since a row of the same step gave it when the taking row's marks lie further, so the Yggdrasil Fruit the Queen Harpy event took no longer comes back
 #                            - Raised Amira's information network to 2 for a player who has her, as a companion the world shares comes without it and her information stayed shut
@@ -111,6 +112,20 @@ module MGQ_MpWorldCatchup
   # The rule of a join whose gate is the companion's start level, which a companion new to the
   # player has anyway.
   START_RULE = :start
+
+  # The kinds of what the catch-up hands out by level, in the order the World overview lists them
+  # within a level.
+  UNLOCK_KINDS = [:story, :companion, :makina]
+
+  # What the catch-up hands out at a level, for the World overview's Levels page.
+  #
+  # @!attribute level [Integer] The level.
+  # @!attribute kind [Symbol] :story (moving on from a part), :companion or :makina.
+  # @!attribute name [String] What it is: the part moved on from, the companion's or the Makina's name.
+  # @!attribute icon [Integer, nil] The Makina's icon, nil for the others.
+  # @!attribute got [Boolean] Whether the player has it already.
+  # @!attribute due [Boolean] Whether the player's level reached it, so it comes at the next check.
+  Unlock = Struct.new(:level, :kind, :name, :icon, :got, :due)
 
   # The story values a companion's own join stands for, by companion: each variable with the least
   # it holds once they joined. A companion the world shared, or the catch-up brought, comes without
@@ -1100,6 +1115,105 @@ module MGQ_MpWorldCatchup
     MGQ_MpCoopEvents.granting { $game_party.gain_item(item, amount) }
     log("gave #{item.name} x#{amount} (#{key})")
     amount > 1 ? "#{item.name} x#{amount}" : item.name
+  end
+
+  # Lists what the catch-up hands out by level that the world already unlocked, for the World
+  # overview's Levels page: moving on from each part the world is past, the companions the world's
+  # story got past or the world shares, and every Makina, which only a level unlocks.
+  #
+  # @return [Array<Unlock>] By level, then kind and name; none outside a Raid World.
+  def self.unlocks
+    return [] unless active?
+
+    list = []
+    looking do
+      new_look
+      story = story_now
+      list.concat(story_unlocks)
+      list.concat(companion_unlocks(story, @world_told))
+      list.concat(makina_unlocks)
+    end
+    list.sort_by { |unlock| [unlock.level, UNLOCK_KINDS.index(unlock.kind), unlock.name] }
+  rescue => e
+    log_once(:unlocks, "listing what the catch-up hands out failed: #{e.class}: #{e.message}")
+    []
+  end
+
+  # Reads the level the catch-up counts: the highest base level among the player's characters.
+  #
+  # @return [Integer, nil] The level, nil without characters.
+  def self.counted_level
+    roster_view[:best]
+  rescue
+    nil
+  end
+
+  # Lists moving on from the parts before the world's, at each part's gate, and from a route the
+  # world finished while the player is on it.
+  #
+  # @return [Array<Unlock>] The unlocks.
+  def self.story_unlocks
+    world = MGQ_MpWorldStory.world
+    return [] unless world
+
+    order = world_parts(world)
+    current = world["part"].to_s
+    own = own_part
+    own_at = order.index(own)
+    parts = order.take_while { |part| part != current }
+    parts.select { |part| !MGQ_MpWorldStory::ROUTES.include?(part) || part == own }.map do |part|
+      got = own_at.nil? || own_at > order.index(part)
+      Unlock.new(gate_of(part), :story, part_name(part), nil, got, !got && reached?(gate_of(part)))
+    end
+  end
+
+  # Lists the companions the catch-up brings at their gate: those of the joins the world's story
+  # got past, at their earliest gate, unless it took them away for good since, and those the world
+  # shares (see share_in).
+  #
+  # @param story [Array] The player's story.
+  # @param told [Array, nil] The world's story, nil before it came.
+  # @return [Array<Unlock>] The unlocks.
+  def self.companion_unlocks(story, told)
+    gates = {}
+    if told
+      last = {}
+      DATA::JOINS.each do |row|
+        next unless row.part && carries?(row) && passed?(row, told, story)
+
+        gates[row.actor] = [gates[row.actor], row.gate].compact.min
+        last[row.actor] = row if last[row.actor].nil? || after?(row, last[row.actor])
+      end
+      DATA::REMOVALS.each do |row|
+        gates.delete(row.actor) if row.first && last[row.actor] && after?(row, last[row.actor]) && passed?(row, told, story)
+      end
+    end
+    sharing = MGQ_MpWorld.companion_sharing
+    world = MGQ_MpWorldStory.world
+    if sharing != :off && world
+      world["comps"].to_a.each do |id|
+        first = joins_of(id).first
+        gate = first ? first.gate : (sharing == :all ? start_level(id) : nil)
+        gates[id] = [gates[id], gate].compact.min if gate && id != HERO
+      end
+    end
+    gates.map do |id, gate|
+      got = in_roster?(id)
+      Unlock.new(gate, :companion, actor_name(id), nil, got, !got && reached?(gate))
+    end
+  end
+
+  # Lists every Makina at its level, see check_makina.
+  #
+  # @return [Array<Unlock>] The unlocks.
+  def self.makina_unlocks
+    DATA::MAKINA.map do |row|
+      item = MGQ_MpGame.item("i", row.item)
+      next unless item
+
+      got = $game_party.item_number(item) > 0
+      Unlock.new(row.level, :makina, item.name, item.respond_to?(:icon_index) ? item.icon_index : nil, got, !got && reached?(row.level))
+    end.compact
   end
 
   # Hands out every Makina whose level the player reached and they lack (DATA::MAKINA), and takes
