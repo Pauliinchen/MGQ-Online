@@ -2,7 +2,8 @@
 #  world_opening.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Created
+#      Paulinchen  2026-10-11: Turned random encounters on again as the world's story is laid over, where it is past the talk that turns them on and the map does not turn them off itself
+#                            - Created
 #
 #----------------------------------------------------------------
 
@@ -29,6 +30,14 @@ module MGQ_MpWorldOpening
 
   # The trigger of an event that runs by itself.
   AUTORUN = 3
+
+  # The event command that turns random encounters off (its parameter 0) or on.
+  ENCOUNTER_CODE = 136
+
+  # The story's progress (variable 1001) once the game turned random encounters on for good: the
+  # opening turns them off, and Luka's talk at home after Hans's rescue (map 6, events 30 and 31)
+  # turns them on as it moves the story to 7.
+  ENCOUNTERS_PROGRESS = 7
 
   @state = nil
 
@@ -141,6 +150,33 @@ module MGQ_MpWorldOpening
     log("ran the opening's setup: the player is on map #{$game_map.map_id} #{$game_player.x},#{$game_player.y}")
   rescue => e
     give_up("running the opening's setup failed: #{e.class}: #{e.message}")
+  end
+
+  # Turns random encounters on again where the opening left them off and the world's story is past
+  # the talk that turns them on (ENCOUNTERS_PROGRESS), unless the player's map turns them off
+  # itself. The game keeps them in $game_system, which no world's story carries, so a player
+  # whose opening setup ran here, or whose save came from one, never met enemies again. Called by
+  # world_story.rbx once it laid the world's story over the player's.
+  #
+  # @param world [Hash] The world's counters, see MGQ_MpWorldStory.counters_of.
+  def self.allow_encounters(world)
+    return unless $game_system.encounter_disabled && world["p"].to_i >= ENCOUNTERS_PROGRESS
+    return log_once([:own_off, $game_map.map_id], "random encounters stay off: map #{$game_map.map_id} turns them off itself") if map_turns_encounters_off?
+
+    $game_system.encounter_disabled = false
+    log("turned random encounters on: the world's story (progress #{world['p']}) is past the talk that turns them on")
+  rescue => e
+    log("turning random encounters on failed: #{e.class}: #{e.message}")
+  end
+
+  # Reports whether an event of the player's map turns random encounters off, as Hans's rescue on
+  # Iliasville Mountain does, whose map turns them on again on the way out.
+  #
+  # @return [Boolean] Whether one does.
+  def self.map_turns_encounters_off?
+    $game_map.events.values.any? do |event|
+      event.mgq_mp_pages.any? { |page| (page.list || []).any? { |command| command.code == ENCOUNTER_CODE && command.parameters[0] == 0 } }
+    end
   end
 
   # Gives up on leaving the opening out after a failure: the game plays it as it has it.
