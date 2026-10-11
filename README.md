@@ -12,14 +12,16 @@ Play Monster Girl Quest! Paradox RPG together with friends over the internet, wi
   <img src="docs/images/world-list.png" alt="The world screen, with the list of worlds and a world's details" width="32%">
 </p>
 
-- **Worlds:** up to 32 players on the same maps, with emotes and an overview of everyone online.
+- **Worlds:** up to 32 players on the same maps, with emotes and an overview of everyone online. A world is *Classic*, where each party plays its own story, or a *Raid World*.
+- **Raid Worlds:** the whole world plays one story together. Everyone on a map sees the story's scenes together, party or not, and battles pull in the nearest players, up to four, each with one Frontline and two Backline characters. Stand next to a player in a battle and press **J** to join it, or to fight a story boss alongside a full boss battle. Whoever is furthest pushes the story on for everyone; a player behind sees the world as it was at the end of their part and catches up as they level, and companions join on reaching their level. Each story boss is one fight the whole world shares: every battle against it wears down the same HP, with a bar above the boss on the map and across the top in battle, and it falls for everyone once that HP runs out. Everyone starts from the beginning on the difficulty the creator sets, which they can change later; the Labyrinth of Chaos and the Colosseum keep their own. Raid Worlds are red and at the top of the list.
 - **Chat:** global, party, say and whisper chats in tabs, a glow on tabs with unread lines, and speech bubbles over the players on your map.
-- **Parties:** up to four players play the leader's story together and share one team's worth of companions.
+- **Turn off other mods:** a world can be played with its own mods and nothing else. Entering it restarts the game with your other mods parked, and they come back when you leave the world or the game closes.
+- **Parties:** up to four players play the leader's story together and share one team's worth of companions. Teleport to any party member once they allow it, or to the leader at once.
 - **Co-op battles:** party members on the same map join each other's battles, each commanding their own characters.
 - **Duels and PvP battles:** your team against a friend's, live, inside a world or outside one.
 - **Trading:** swap items, equipment, stones and gold with a player on your map; the relay sees to it that a disconnect never loses or copies anything.
 
-Worlds, parties and co-op battles are a **prototype**: expect bugs, and please [report them](https://github.com/Pauliinchen/MGQ-Online/issues/new?template=bug_report.yml).
+Worlds, parties and co-op battles are a **prototype**, and Raid Worlds are **experimental**: expect bugs, and please [report them](https://github.com/Pauliinchen/MGQ-Online/issues/new?template=bug_report.yml).
 
 ## Requirements
 
@@ -44,14 +46,14 @@ While the mod is installed, the game keeps running when its window is in the bac
 
 **Update:** when a new release is out, *Multiplayer* on the title screen says so and offers to *update and install*, since everyone needs the same version; until then F11's PvP battles stay off too. The game closes, `Patch\Multiplayer\Update.bat` shows what's new, installs the release and removes files an older version left behind, and the game starts again in the Multiplayer menu. You can also close the game and double-click `Update.bat` yourself. Your name, hotkeys, favourites and worlds are kept.
 
-**Uninstall:** close the game and delete `Multiplayer.rb` and the `Multiplayer` folder in `Patch`. Keep `Patch\Multiplayer\Worlds` if you want to play your worlds again later.
+**Uninstall:** close the game and delete `Multiplayer.rb` and the `Multiplayer` folder in `Patch`. A `Parked mods` folder in your game folder only exists while mods are turned off for a world; if you see one, start the game once before uninstalling so your mods come back. Keep `Patch\Multiplayer\Worlds` if you want to play your worlds again later.
 
 ## Quick start
 
 1. Pick **Multiplayer** below *Continue* on the title screen and type the name the others see.
-2. One of you picks *Create new world*, gives it a name and, if you like, a password.
+2. One of you picks *Create new world*, gives it a name, picks *Classic* or *Raid* (fixed once created) and, if you like, a password.
 3. Everyone confirms on that world and picks *Enter the world*.
-4. On the map, stand next to a friend, press **B** and pick *Invite to a party*; they accept in their own wheel. You now play the leader's story together and fight co-op battles.
+4. On the map, stand next to a friend, press **B** and pick *Invite to a party*; they accept in their own wheel. You now play the leader's story together and fight co-op battles. In a Raid World a party only gets the first places in battles, since everyone plays the world's story.
 
 For a PvP battle without a world, press **F11** on the map and host; your friend joins with the join code you send them.
 
@@ -59,12 +61,13 @@ For a PvP battle without a world, press **F11** on the map and host; your friend
 
 | Hotkey | What it does |
 |---|---|
-| **B** | Action wheel: invite, duel, trade, chat, teleport to the leader |
+| **B** | Action wheel: invite, duel, trade, chat, teleport to the leader (other members from the World overview) |
 | **T** | Chat: **/g** everyone, **/p** your party, **/s** your map, **/w** one player, **/help** |
 | **E** | Emote wheel |
 | **F11** | World overview, or the PvP battle screen outside a world |
-| **Y** / **N** | Accept / decline the first invite at the top left |
-| **Tab** | Make the party box small or full |
+| **Y** / **N** | Accept / decline the first invite at the top left, or answer a question box |
+| **Tab** | Make the party box small or full; in a raid boss battle, slide the boss's HP bar up to the bar alone or back |
+| **J** | Join the battle of a player next to you in a Raid World, or fight a raid boss alongside a full boss battle |
 
 Rebind them in *Mod Config → Monster Girl Quest! Online*.
 
