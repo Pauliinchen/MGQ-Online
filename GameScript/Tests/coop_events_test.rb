@@ -2,7 +2,8 @@
 #  coop_events_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Checked that a common event the story calls tells its pages and a parallel one does not, that a page the leader moved past stays to read, confirm reads on, and that only the oldest pages past CATCH_UP_PAGES are left out
+#      Paulinchen  2026-10-11: Checked the generator's rules only where the event checker repository lies next to this one, as on this PC and not in the workflow
+#                            - Checked that a common event the story calls tells its pages and a parallel one does not, that a page the leader moved past stays to read, confirm reads on, and that only the oldest pages past CATCH_UP_PAGES are left out
 #                            - Checked that holding the game's skip passes a page the leader moved past
 #                            - Checked that no page starts while the story brings the player over, so the follow goes first
 #                            - Checked that a page whose transfer and story lie behind a choice is travel the leader tells as story from the choice on
@@ -1716,23 +1717,25 @@ end
 class ToolCommand
   def initialize(code, parameters, indent = 0); @code = code; @parameters = parameters; @indent = indent; end
 end
-tool = Object.new.extend(generator)
-check("the generator counts a chest of gold alone as a chest", tool.send(:chest?, [ToolCommand.new(125, [0, 0, 50]), ToolCommand.new(123, ["A", 0])]), true)
-found = []
-tool.send(:rewards, [ToolCommand.new(121, [1005, 1005, 0]), ToolCommand.new(121, [1001, 1001, 0]), ToolCommand.new(121, [1006, 1006, 1])], nil) { |*reward| found << reward }
-check("and a companion who joins by their switch as joining, never Luka nor one whose switch turns off", found, [[:actor, 5, 1, nil]])
-found = []
-tool.send(:rewards, [ToolCommand.new(355, ["set_actors(1,6,26,35)"])], nil) { |*reward| found << reward }
-check("and every companion a script sets the party with, never Luka", found.map { |reward| reward[1] }, [6, 26, 35])
-require "tmpdir"
-require "fileutils"
-Dir.mktmpdir do |data|
-  ["", "Map/Data", "Map2/Data"].each do |folder|
-    FileUtils.mkdir_p(File.join(data, folder))
-    File.write(File.join(data, folder, "MapInfos.rvdata2"), "")
+tool = File.exist?(generator_file) ? Object.new.extend(generator) : nil
+if tool
+  check("the generator counts a chest of gold alone as a chest", tool.send(:chest?, [ToolCommand.new(125, [0, 0, 50]), ToolCommand.new(123, ["A", 0])]), true)
+  found = []
+  tool.send(:rewards, [ToolCommand.new(121, [1005, 1005, 0]), ToolCommand.new(121, [1001, 1001, 0]), ToolCommand.new(121, [1006, 1006, 1])], nil) { |*reward| found << reward }
+  check("and a companion who joins by their switch as joining, never Luka nor one whose switch turns off", found, [[:actor, 5, 1, nil]])
+  found = []
+  tool.send(:rewards, [ToolCommand.new(355, ["set_actors(1,6,26,35)"])], nil) { |*reward| found << reward }
+  check("and every companion a script sets the party with, never Luka", found.map { |reward| reward[1] }, [6, 26, 35])
+  require "tmpdir"
+  require "fileutils"
+  Dir.mktmpdir do |data|
+    ["", "Map/Data", "Map2/Data"].each do |folder|
+      FileUtils.mkdir_p(File.join(data, folder))
+      File.write(File.join(data, folder, "MapInfos.rvdata2"), "")
+    end
+    check("the generator reads the maps from 1000 on in the folders the game keeps them in",
+          tool.send(:map_folders, data), [[data, 0], [File.join(data, "Map", "Data"), 1000], [File.join(data, "Map2", "Data"), 2000]])
   end
-  check("the generator reads the maps from 1000 on in the folders the game keeps them in",
-        tool.send(:map_folders, data), [[data, 0], [File.join(data, "Map", "Data"), 1000], [File.join(data, "Map2", "Data"), 2000]])
 end
 
 # The table the generator wrote holds what the maps from 1000 on give, such as Puruel and Inuel at
@@ -1755,11 +1758,13 @@ switch_names = Array.new(5600, "")
 switch_names[2922] = "Library Door"
 switch_names[5249] = "Library Flag: Magical Academy"
 switch_names[5588] = [0x56f3, 0x9451, 0x30d5, 0x30e9, 0x30b0, 0xff1a, 0x521d, 0x671f, 0x88c5, 0x5099].pack("U*")
-check("the generator leaves a Library Flag out by its English or its untranslated name, unlike a switch named after the library",
-      [2922, 5249, 5588].map { |id| tool.send(:unmarked?, :s, id, switch_names) }, [false, true, true])
-check("so a list that turns one on is marked by its other switches",
-      tool.send(:marks, [ToolCommand.new(121, [5091, 5091, 0]), ToolCommand.new(121, [5249, 5249, 0]), ToolCommand.new(121, [5588, 5588, 0])], nil, [switch_names, []]),
-      [[:s, 5091]])
+if tool
+  check("the generator leaves a Library Flag out by its English or its untranslated name, unlike a switch named after the library",
+        [2922, 5249, 5588].map { |id| tool.send(:unmarked?, :s, id, switch_names) }, [false, true, true])
+  check("so a list that turns one on is marked by its other switches",
+        tool.send(:marks, [ToolCommand.new(121, [5091, 5091, 0]), ToolCommand.new(121, [5249, 5249, 0]), ToolCommand.new(121, [5588, 5588, 0])], nil, [switch_names, []]),
+        [[:s, 5091]])
+end
 
 # The story's choices a member makes for themselves, coop_choices.rbx: what is asked, each outcome
 # applied, the leader's offer to sync the story, and the Great Decision's other route.
