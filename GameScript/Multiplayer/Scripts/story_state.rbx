@@ -2,7 +2,8 @@
 #  story_state.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Kept the switches that only stay on while a scene runs each Raid World player's own, so a story written mid-scene no longer leaves the scene's characters standing for everyone
+#      Paulinchen  2026-10-11: Kept the escape spell's ban (94) each player's own, so changing jobs at Ilias Temple no longer counts as story
+#                            - Kept the switches that only stay on while a scene runs each Raid World player's own, so a story written mid-scene no longer leaves the scene's characters standing for everyone
 #                            - Kept the flags the game toggles around its fights (22, 73, 97) each player's own, so a battle page no longer counts as story and the story's deltas no longer carry them
 #                            - Kept the variant of an event the game picks before calling it (129) each player's own, so a trader's talk no longer counts as story for it
 #      Paulinchen  2026-10-10: Joined the self switches of only the chests the player's own story holds, so a take no longer fills the save with empty keys
@@ -22,6 +23,11 @@ module MGQ_MpStoryState
   # player stands in, not of the story.
   WARP_BAN = defined?(NWConst::Sw::WARP_BAN) ? NWConst::Sw::WARP_BAN : 100
 
+  # The switch that bans the escape spell ("Riremito OFF Switch"), which a few scenes turn on and
+  # the Head Priest of Ilias Temple turns off as he changes jobs: like the warp ban, it tells of
+  # the player's place, and the job change counted as story for it.
+  ESCAPE_BAN = 94
+
   # The switch that tells the player took Alice along.
   ALICE_CHOSEN = 4
 
@@ -35,9 +41,9 @@ module MGQ_MpStoryState
   # Switches that are the player's own: the flags the game toggles around its fights (22
   # "Seduction During Boss Decision", 73 "Chaos Enemy Pause", 97 "Hades Rematch", which every
   # battle page clears and the Chaos cave's events set), configuration mirrored in switches (95,
-  # 445-447, 502), the warp ban of the place they stand in, and the switches that tell whether a
-  # companion is in the party (1001-2000).
-  PERSONAL_SWITCHES = [22, 73, 95, 97, WARP_BAN, 445, 446, 447, 502, 1001..2000]
+  # 445-447, 502), the warp and escape bans of the place they stand in, and the switches that tell
+  # whether a companion is in the party (1001-2000).
+  PERSONAL_SWITCHES = [22, 73, ESCAPE_BAN, 95, 97, WARP_BAN, 445, 446, 447, 502, 1001..2000]
 
   # Switches that are each Raid World player's own, as the game sets them for the fights with values
   # of their own: a special boss's NORMAL (23), the Colosseum and its match under way (28, 87), the
