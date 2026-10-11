@@ -2,7 +2,8 @@
 #  ui_chat_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Expected the chat to start in the global chat, and to return to it once the world closes
+#      Paulinchen  2026-10-11: Checked that the dimmed tabs go with the closed log's last line, though a chat holds unread lines
+#                            - Expected the chat to start in the global chat, and to return to it once the world closes
 #                            - Checked the chat log's places in the layout: its default from chat_size, a kept place honored, its least size, its rows from its height, the battle's box apart, and every hint and tab fitting the least width
 #                            - Checked the open chat drawn in the preset's frame, open under the picked tab, anew once the preset changes, and no resizing of its own left
 #                            - Checked the map chat chosen with /m, /s sent as text, the global chat untagged in white, a line marked say landing in the map chat, and the Whisper tab hidden until a whisper and again once the world closes
@@ -230,6 +231,11 @@ whisper = log_sprite.instance_variable_get(:@tab_spots).find { |tab, _, _| tab =
 check("a whisper makes the Whisper tab glow too, although the closed log shows it",
       [chat.unread_tabs, events.select { |kind, _| kind == :glow }.map(&:last).include?(whisper[1] + whisper[2]), chat.log_lines.last],
       [[:global, :whisper], true, "[Whisper] Friend: you there?"])
+lasting = chat.instance_variable_get(:@log).map { |line| [line, line.left] }
+lasting.each { |line, _| line.left = 0 }
+log_sprite.update
+check("once the closed log's lines ran out, it draws no tabs, though chats hold unread lines", [chat.unread_tabs, tab_names.call], [[:global, :whisper], []])
+lasting.each { |line, left| line.left = left }
 chat.start_typing
 log_sprite.update
 check("the open box draws the tabs without the shade, the glow still on", [tab_names.call.empty?, shades.call, events.count { |kind, _| kind == :glow }], [false, [], 2])

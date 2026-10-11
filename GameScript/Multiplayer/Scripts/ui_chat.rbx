@@ -2,7 +2,8 @@
 #  ui_chat.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Started the chat in the global chat instead of the map chat, also in every world after the first
+#      Paulinchen  2026-10-11: Showed the dimmed tabs above the closed log only while it shows lines, so a chat's unread mark no longer leaves them on the screen for good
+#                            - Started the chat in the global chat instead of the map chat, also in every world after the first
 #                            - Moved and resized the chat log with Alt and the mouse through MGQ_MpUi::Layout, the map's as Chat and the battle's as Battle chat, each starting where it lay before at the size chat_size keeps
 #                            - Dropped the log's own resizing with Alt and the mouse, which kept its size in chat_size
 #                            - Snapped the log's height to whole rows below its tabs and above the chat box
@@ -1518,8 +1519,9 @@ class Sprite_MpChatLog < Sprite
   # Draws the log and the chat box where the layout places them, if they changed: the rows the log
   # is scrolled to, with an arrow at the top while older rows lie above and one at the bottom while
   # newer ones lie below, a line of the closed log fading away over its last frames. Above the
-  # closed log the tabs show dimmed while one holds unread lines, so its glow is seen. While it
-  # shows anything, it offers its place to the layout.
+  # closed log the tabs show dimmed while one holds unread lines and the log shows lines, so its
+  # glow is seen and goes with the last line. While it shows anything, it offers its place to the
+  # layout.
   def update
     super
     chat = MGQ_MpChat
@@ -1541,7 +1543,7 @@ class Sprite_MpChatLog < Sprite
     alt = typing && MGQ_Multiplayer::Key.down?(MGQ_MpChat::ALT_KEY)
     # A line of the closed log fades over its last frames, so those count as a change.
     fades = shown.map { |_row, line, _first| typing ? nil : [line.left, MGQ_MpUi::Style::FADE_FRAMES].min }
-    offer_place if typing || !shown.empty? || !chat.unread_tabs.empty?
+    offer_place if typing || !shown.empty?
     drawn = [shown.map { |row, line, first| [row, line.who, line.channel, first] }, fades, older, scroll, chat.typed, chat.cursor,
              typing && chat.cursor_shown?, chat.tab, chat.channel, chat.whisper_to, chat.suggestions, chat.pick, alt, @size, chat.unread_tabs, chat.tabs,
              MGQ_MpUi::Theme.serial]
@@ -1552,7 +1554,7 @@ class Sprite_MpChatLog < Sprite
     if typing
       bitmap.fill_rect(0, TAB_ROW, @width, bitmap.height - TAB_ROW, MGQ_MpUi::Style::BACK)
       draw_tabs(chat)
-    elsif !chat.unread_tabs.empty?
+    elsif !shown.empty? && !chat.unread_tabs.empty?
       draw_tabs(chat, true)
     end
     @name_spots = []
