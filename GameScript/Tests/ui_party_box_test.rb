@@ -2,14 +2,16 @@
 #  ui_party_box_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Checked that a stranger is named in plain white
+#      Paulinchen  2026-10-11: Checked the box's place in the layout: its default below a strip at the top, a place the player left it in with the extra width for the names and places, its least width with every column, the small box at the right of its place, and drawing anew after a preset change
+#                            - Checked that a stranger is named in plain white
 #                            - Created
 #
 #----------------------------------------------------------------
 
 # Covers the party box and the map box, ui_party_box.rbx: the columns that never meet, the icon
 # before each name, the colors of the player's own line, a party member's and anyone else's, a
-# long name cut to its column, a member whose connection is down, and the log of who is listed.
+# long name cut to its column, a member whose connection is down, the log of who is listed, and the
+# box's place and width in the layout.
 
 require_relative "world_support"
 
@@ -22,14 +24,15 @@ end
 # duels, which the overview names.
 class Bitmap
   Font = Struct.new(:size, :color, :bold, :outline, :out_color)
-  attr_reader :texts, :fills, :icons, :font
-  def initialize(*); @texts = []; @fills = []; @icons = []; @font = Font.new; end
+  attr_reader :texts, :fills, :icons, :font, :width, :height
+  def initialize(width = 1, height = 1); @width = width; @height = height; @texts = []; @fills = []; @icons = []; @font = Font.new; end
+  def disposed?; @disposed ? true : false; end
   def clear; @texts.clear; @fills.clear; @icons.clear; end
   def fill_rect(x, y, width, height, color); @fills << [x, y, width, height, color]; end
   def text_size(text); Rect.new(0, 0, text.to_s.size * 8, 16); end
   def draw_text(x, _y, width, _height, text, align = 0); @texts << Text.new(text, x, width, font.color, font.size, align); end
   def stretch_blt(dest, _set, rect, *_); @icons << [rect.y / MGQ_MpUi::ICON_SIZE * MGQ_MpUi::ICONS_PER_ROW + rect.x / MGQ_MpUi::ICON_SIZE, dest.x, dest.width]; end
-  def dispose; end
+  def dispose; @disposed = true; end
 end
 class Sprite
   attr_accessor :bitmap, :x, :y, :z, :visible, :opacity
@@ -186,3 +189,61 @@ box_class::READ_FRAMES.times { box.update; break unless motion.shown? }
 check("outside a party the box fades out once it reads the party again, its picture kept meanwhile", [box.visible, box.opacity < 255, texts.call.first], [true, true, "Party"])
 (style::FADE_FRAMES - 1).times { box.update }
 check("until it is gone", [box.visible, box.opacity], [false, 0])
+
+# Where the box lies: its default, a place the player left it in, its least width and the preset.
+layout = MGQ_MpUi::Layout
+stored = layout.instance_variable_get(:@stored)
+offered = lambda { offer = layout.instance_variable_get(:@offers).find { |each| each.id == :party_box }; offer && offer.rect.to_a }
+read = lambda { box_class::READ_FRAMES.times { box.update } }
+width = box_class::WIDTH
+edge = box_class::EDGE
+check("the box is movable as Party box, widened only, never narrower than its columns nor lower than a line",
+      layout.instance_variable_get(:@boxes)[:party_box].to_a, ["Party box", width, box_class::ROW + 4, :width])
+MGQ_MpWorldOverview.define_singleton_method(:party_rows) { party }
+read.call
+party_height = box_class::ROW + box_class::PLAYER_ROW * 2 + 4
+check("at its default it lies at the top right, as tall as the party, offered to the layout where it lies",
+      [box.x, box.y, offered.call], [640 - width - box_class::MARGIN, 8, [640 - width - box_class::MARGIN, 8, width, party_height]])
+MGQ_MpUi.top_room = 30
+box.update
+check("a strip at the top moves its default down", [box.y, offered.call[1]], [38, 38])
+
+$player_ini["ui_party_box"] = "100,50,400,10"
+stored.clear
+box.update
+level = text.call("Lv 100")
+ping_text = text.call("999 ms")
+name = text.call(MGQ_MpUi.cut(box.bitmap, long_name, box.name_width(400, true)))
+check("a place the player left it in holds whatever the strip, as wide as it was left, as tall as the party",
+      [box.x, box.y, offered.call, box.bitmap.width, box.bitmap.fills.first[2]], [100, 50, [100, 50, 400, party_height], 400, 400])
+check("the extra width goes to the names and the places, the level staying beside the ping at the right edge",
+      [name.nil?, name && name.width - box.name_width(width, true), level.x, ping_text.right, text.call("Forest").width], [false, 400 - width, columns[:level] + 400 - width, 400 - edge, 400 - columns[:name] - edge])
+box.draw_map(map_rows)
+check("the map box takes the width too", [box.bitmap.fills.first[2], text.call("Lv 20").x, text.call("80 ms").right], [400, columns[:level] + 400 - width, 400 - edge])
+
+$player_ini["ui_party_box"] = "300,50,100,10"
+stored.clear
+box.update
+level = text.call("Lv 100")
+ping_text = text.call("999 ms")
+name = named.call(long_name)
+check("made narrower than its least, it keeps its columns' width, where the name, the level and the ping still never meet",
+      [offered.call[2], name.right <= level.x, level.right <= ping_text.x, ping_text.right], [width, true, true, width - edge])
+
+$player_ini["ui_party_box"] = "100,50,400,10"
+stored.clear
+MGQ_MpPartyBox.instance_variable_set(:@small, true)
+box.update
+check("small, it keeps its own width at the right edge of the box's place, which the layout still takes whole",
+      [box.x, box.bitmap.fills.first[2], offered.call], [100 + 400 - box_class::SMALL_WIDTH, box_class::SMALL_WIDTH, [100, 50, 400, box_class::ROW * 2 + 4]])
+MGQ_MpPartyBox.instance_variable_set(:@small, false)
+
+MGQ_MpUi::Theme.apply("Monarch", "a test")
+read.call
+check("a preset change draws the box anew once it reads the party, its frame with the preset's rim", box.bitmap.fills.size, 9)
+MGQ_MpUi::Theme.apply("Legacy", "a test")
+read.call
+check("and back without it", box.bitmap.fills.size, 5)
+$player_ini.delete("ui_party_box")
+stored.clear
+MGQ_MpUi.top_room = 0

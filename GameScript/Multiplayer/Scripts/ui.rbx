@@ -2,7 +2,13 @@
 #  ui.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Turned the font's own outline off while drawing a text in its solid outline, which it doubled to two pixels
+#      Paulinchen  2026-10-11: Let the player move and resize the list box with Alt, and move the message box and the confirm box and change their width, each kept in Player.ini and never smaller than its title, columns, choices and whole hint need
+#                            - Drew the list box, the message box and the confirm box in their frame, anew once the interface look changes
+#                            - Dressed the lines across the top of a screen in the interface look
+#                            - Made the style's box colors the interface preset's, set in place by ui_theme.rbx, and added the edge, rim, title, gauge well and tab colors
+#                            - Added the framed box every flat box draws, its frame alone and the rows of the Mod Config the interface options share
+#                            - Added the depth of the layout's outlines, above everything
+#                            - Turned the font's own outline off while drawing a text in its solid outline, which it doubled to two pixels
 #                            - Kept a copy of the font's color while drawing an outline, since setting the outline's color overwrote it and drew every outlined text black
 #                            - Named every player outside the party in plain white, dropping the eight colors picked by their id
 #                            - Drew the list box and the message box in the shared style, dropping their own colors and font sizes, and faded the list box in and out
@@ -71,14 +77,19 @@ module MGQ_MpUi
   # The depths of the mod's sprites and windows above the game's, by layer: the arrows at the
   # screen's edges under everything, the lines at the screen's edges, the labels on the map, the
   # bubbles and notices over them, the wheels and what lies above a screen's windows, the World
-  # overview, the boxes, the confirm box above every box, and the chat while the player types above
-  # everything.
-  Z = { :arrows => 190, :lines => 200, :labels => 250, :bubbles => 260, :wheels => 300, :overview => 400, :boxes => 1000, :confirm => 1050, :typing => 1100 }
+  # overview, the boxes, the confirm box above every box, the chat while the player types above
+  # them, and the outlines of the boxes being moved or resized above everything.
+  Z = { :arrows => 190, :lines => 200, :labels => 250, :bubbles => 260, :wheels => 300, :overview => 400, :boxes => 1000, :confirm => 1050, :typing => 1100, :layout => 1200 }
 
-  # What every flat box of the mod draws with: one background, one plate behind a line on a busy
-  # picture, one picked row, one set of text colors, one set of font sizes, one padding, one solid
-  # outline and the timings of the fades and slides. The World screen's windows keep the game's
-  # window skin; the style is the sprite boxes'.
+  # The first words of every row the mod adds to the Mod Config, which list them under the mod.
+  OPTION_PREFIX = "[Monster Girl Quest! Online] "
+
+  # What every flat box of the mod draws with: one background in one frame, one plate behind a line
+  # on a busy picture, one picked row, one set of text colors, one set of font sizes, one padding,
+  # one solid outline and the timings of the fades and slides.
+  #
+  # The colors from BACK to TAB are the interface preset's: ui_theme.rbx sets them in place, so a
+  # constant elsewhere that names one of them follows the preset too, and a copy of one would not.
   module Style
     # Background of every flat box: wheels, list and message box, notices, party box, chat log,
     # overview and confirm box.
@@ -92,6 +103,25 @@ module MGQ_MpUi
 
     # Opaque background of a text field being typed into inside a flat box.
     FIELD = Color.new(12, 16, 28)
+
+    # Headings, places' headings and key hints.
+    HEADING = Color.new(160, 200, 255)
+
+    # Thin frame of every flat box, of the chat's tabs and of a gauge.
+    EDGE = Color.new(140, 140, 140, 220)
+
+    # Line around the edge, see draw_frame; fully see-through for a preset whose frame is the edge
+    # alone.
+    RIM = Color.new(0, 0, 0, 0)
+
+    # A box's title and a raid boss's name above its bar.
+    TITLE = Color.new(255, 255, 255)
+
+    # Empty part of a gauge.
+    WELL = Color.new(0, 0, 0, 220)
+
+    # Background of a tab that is not picked.
+    TAB = Color.new(0, 0, 0, 120)
 
     # Solid black outline of every text and gauge frame; the game's own outline is half see-through.
     OUTLINE = Color.new(0, 0, 0, 255)
@@ -116,9 +146,6 @@ module MGQ_MpUi
 
     # Stands out: an essential mod, an admin, a featured world.
     GOLD = Color.new(255, 200, 64)
-
-    # Headings, places' headings and key hints.
-    HEADING = Color.new(160, 200, 255)
 
     # The player themself: their own name, the line above their head, their characters in battle.
     OWN = Color.new(255, 225, 110)
@@ -252,6 +279,61 @@ module MGQ_MpUi
       plate
     end
 
+    # Draws a flat box: BACK inside its frame, see draw_frame.
+    #
+    # @param bitmap [Bitmap] The bitmap.
+    # @param x [Integer] The box's left.
+    # @param y [Integer] The box's top.
+    # @param width [Integer] The box's width.
+    # @param height [Integer] The box's height.
+    def self.draw_box(bitmap, x, y, width, height)
+      bitmap.fill_rect(x, y, width, height, BACK)
+      draw_frame(bitmap, x, y, width, height)
+    end
+
+    # Draws a box's frame along its inside: the RIM outermost and the EDGE within it, or the EDGE
+    # alone while the RIM is see-through.
+    #
+    # @param bitmap [Bitmap] The bitmap.
+    # @param x [Integer] The box's left.
+    # @param y [Integer] The box's top.
+    # @param width [Integer] The box's width.
+    # @param height [Integer] The box's height.
+    # @param edge [Color] The edge's color, another than EDGE for a box that stands out, such as one
+    #   being moved.
+    def self.draw_frame(bitmap, x, y, width, height, edge = EDGE)
+      inset = 0
+      if RIM.alpha.to_i > 0
+        draw_line_box(bitmap, x, y, width, height, RIM)
+        inset = 1
+      end
+      draw_line_box(bitmap, x + inset, y + inset, width - 2 * inset, height - 2 * inset, edge)
+    end
+
+    # Tells how many pixels a box's frame takes on each side, which its content stays inside.
+    #
+    # @return [Integer] 2 with a RIM, else 1.
+    def self.frame_width
+      RIM.alpha.to_i > 0 ? 2 : 1
+    end
+
+    # Draws a rectangle's outline, one pixel thick, inside the rectangle.
+    #
+    # @param bitmap [Bitmap] The bitmap.
+    # @param x [Integer] Its left.
+    # @param y [Integer] Its top.
+    # @param width [Integer] Its width.
+    # @param height [Integer] Its height.
+    # @param color [Color] The line's color.
+    def self.draw_line_box(bitmap, x, y, width, height, color)
+      return if width <= 0 || height <= 0
+
+      bitmap.fill_rect(x, y, width, 1, color)
+      bitmap.fill_rect(x, y + height - 1, width, 1, color)
+      bitmap.fill_rect(x, y + 1, 1, height - 2, color)
+      bitmap.fill_rect(x + width - 1, y + 1, 1, height - 2, color)
+    end
+
     # Draws a hint whole, centered in its box: a hint names its keys at its end, so it is never
     # cut; one wider than the box is drawn in TINY_SIZE instead, and the game squeezes what still
     # overflows into the box.
@@ -317,6 +399,27 @@ module MGQ_MpUi
   # @return [Boolean] Whether it did.
   def self.cancel?
     MGQ_Multiplayer::Capture.trigger?(:B) | numpad_cancel?
+  end
+
+  # Adds a row with values to the Mod Config whose value the mod keeps itself, in Player.ini, so it
+  # holds in every save and stays the player's own in a world that sets everyone's options.
+  #
+  # Only a Mod Config Remake that knows :mod_stored rows reads such a row's value from the mod; an
+  # older menu would store it in the save, so it gets none.
+  #
+  # @param key [Symbol] The row's key.
+  # @param name [String] Its name after OPTION_PREFIX.
+  # @param help [String] Its help.
+  # @param values [Proc] Lists its values, as texts the menu shows.
+  # @param read [Proc] Reads its value.
+  # @param write [Proc] Takes the value picked.
+  # @return [Boolean] Whether the row was added.
+  def self.add_option(key, name, help, values, read, write)
+    return false unless defined?(ModConfigRemake) && ModConfigRemake.respond_to?(:mod_stored?)
+
+    NWConst::Config::MOD_CONTENTS.insert(-2, :key => key, :name => OPTION_PREFIX + name, :sub => true, :help => help, :values => values,
+                                             :mod_stored => true, :value => read, :on_change => write, :personal => true)
+    true
   end
 
   # Finds an icon in the game's iconset.
@@ -829,8 +932,21 @@ module MGQ_MpUi
   end
 end
 
+module MGQ_MpUi
+  module Theme
+    # The preset's window skin worn by the mod's windows, which ui_theme.rbx fills in as it loads.
+    #
+    # Declared here, since Window_MpInfo includes it as it is defined, before ui_theme.rbx loads,
+    # and an included module takes the methods added to it later.
+    module Skinned
+    end
+  end
+end
+
 # The lines across the top of a screen of the mod, such as the world screen's.
 class Window_MpInfo < Window_Base
+  include MGQ_MpUi::Theme::Skinned
+
   # Lines the window has room for unless told otherwise.
   LINES = 3
 
@@ -859,15 +975,16 @@ end
 
 # A large box over a screen that lists lines under a title, as the World overview does: headings
 # and items, one of which is picked, with a hint at the bottom. Whoever opens it moves the pick and
-# closes it; the box only draws.
+# closes it; the box only draws. The player moves and resizes it with Alt (MGQ_MpUi::Layout): the
+# items take the width the fixed columns at their right leave, and the list as many lines as fit.
 class Sprite_MpListBox < Sprite
-  # Room between the box and either side of the screen.
+  # Room between the box and either side of the screen where it starts.
   SIDE = 40
 
-  # Room between the box and the top of the screen.
+  # Room between the box and the top of the screen where it starts.
   TOP = 32
 
-  # Room between the box and the bottom of the screen.
+  # Room between the box and the bottom of the screen where it starts.
   BOTTOM = 44
 
   # How far above the screen's windows the box lies.
@@ -921,19 +1038,84 @@ class Sprite_MpListBox < Sprite
   # What the hint says unless the list says another.
   HINT = ["Up and down: move", MGQ_MpUi::Style.close_hint("a click outside")].join(MGQ_MpUi::Style::HINT_GAP)
 
-  # Tells where the box sits on the screen: SIDE from either side, TOP from the top and BOTTOM from
-  # the bottom, read from the screen once it is first asked.
+  # The box's place in the layout and its name in the outlines.
+  LAYOUT_ID = :list_box
+  LAYOUT_NAME = "List box"
+
+  # Least width of an item's text and of the title's start, so a name stays readable.
+  ITEM_MIN = 144
+
+  # Most columns of buttons an item has, the mod picker's two.
+  MOST_BUTTONS = 2
+
+  # Fewest lines of the list the box shows.
+  MIN_ROWS = 3
+
+  # Least width of the box: an item's text at ITEM_MIN with what its right end says and the most
+  # buttons beside it.
+  MIN_WIDTH = ITEM_LEFT + ITEM_MIN + ITEM_GAP + RIGHT_WIDTH + EDGE + MOST_BUTTONS * BUTTON_COLUMN + BUTTON_MARGIN
+
+  # Least height of the box: the title, MIN_ROWS lines and the hint.
+  MIN_HEIGHT = TITLE + MIN_ROWS * ROW + LIST_ROOM + HINT_HEIGHT
+
+  # Tells where the box starts on the screen: SIDE from either side, TOP from the top and BOTTOM
+  # from the bottom, read from the screen once it is first asked.
   #
   # @return [Rect] The box.
   def self.box
     @box ||= Rect.new(SIDE, TOP, Graphics.width - 2 * SIDE, Graphics.height - TOP - BOTTOM)
   end
 
+  # Tells where the box lies now: where the player left it, else where it starts.
+  #
+  # @return [Rect] The box.
+  def self.rect
+    register_layout
+    MGQ_MpUi::Layout.rect(LAYOUT_ID, box)
+  end
+
+  # Makes the box movable with its least size, or another least width once a list needs more;
+  # nothing while the least width stays.
+  #
+  # @param min_width [Integer, nil] The least width, nil for the one registered, MIN_WIDTH at first.
+  def self.register_layout(min_width = nil)
+    least = min_width || @least || MIN_WIDTH
+    return if least == @least
+
+    @least = least
+    MGQ_MpUi::Layout.register(LAYOUT_ID, LAYOUT_NAME, least, MIN_HEIGHT)
+  end
+
+  # Tells the least width a list needs: MIN_WIDTH, its note whole after ITEM_MIN of the title, and
+  # its hint whole at the smaller size, as far as the box's width where it starts gives it, since a
+  # longer hint is squeezed there already.
+  #
+  # @param view [View] What the box lists.
+  # @return [Integer] The width.
+  def self.least_width(view)
+    style = MGQ_MpUi::Style
+    title = 2 * EDGE + ITEM_MIN + (view.note ? measure(view.note, style::TITLE_SIZE) + style::PAD : 0)
+    hint = [measure(view.hint || HINT, style::TINY_SIZE) + 2 * EDGE, box.width].min
+    [MIN_WIDTH, title, hint].max
+  end
+
+  # Measures a text in the style's font at a size, which the boxes of this script share.
+  #
+  # @param text [String] The text.
+  # @param size [Integer] The font's size.
+  # @return [Integer] Its width in pixels.
+  def self.measure(text, size)
+    @measure = Bitmap.new(1, 1) if @measure.nil? || @measure.disposed?
+    MGQ_MpUi::Style.use_font(@measure, size, MGQ_MpUi::Style::TEXT)
+    @measure.text_size(text.to_s).width
+  end
+
   # Tells how many lines of the list the box shows at once.
   #
+  # @param height [Integer] The box's height, the height it has now by default.
   # @return [Integer] The lines.
-  def self.list_rows
-    (box.height - TITLE - HINT_HEIGHT - LIST_ROOM) / ROW
+  def self.list_rows(height = rect.height)
+    (height - TITLE - HINT_HEIGHT - LIST_ROOM) / ROW
   end
 
   # What the box lists.
@@ -982,27 +1164,37 @@ class Sprite_MpListBox < Sprite
       self.scroll = top if top < scroll
       self.scroll = line - rows + 1 if line >= scroll + rows
     end
+
+    # Tells whether the item picked lies outside the lines in sight.
+    #
+    # @param rows [Integer] The lines the box shows.
+    # @return [Boolean] Whether it does; false without an item picked.
+    def out_of_sight?(rows)
+      !selected.nil? && (selected < scroll || selected >= scroll + rows)
+    end
   end
 
-  # Creates the box, hidden, above every window.
+  # Creates the box, hidden, above every window, where it lies now.
   def initialize
     super(nil)
-    box = self.class.box
-    self.bitmap = Bitmap.new(box.width, box.height)
-    self.x = box.x
-    self.y = box.y
+    rect = self.class.rect
+    self.bitmap = Bitmap.new(rect.width, rect.height)
+    self.x = rect.x
+    self.y = rect.y
     self.z = Z
     @motion = MGQ_MpUi::Motion.new(self)
     @shown = nil
+    @view = nil
   end
 
   # Reports whether a point of the screen lies in the box.
   #
   # @param x [Integer] The point's x.
   # @param y [Integer] The point's y.
+  # @param place [Rect] The box, where it lies now by default.
   # @return [Boolean] Whether it does.
-  def self.inside?(x, y)
-    x >= box.x && x < box.x + box.width && y >= box.y && y < box.y + box.height
+  def self.inside?(x, y, place = rect)
+    x >= place.x && x < place.x + place.width && y >= place.y && y < place.y + place.height
   end
 
   # Finds the button of an item under a point of the screen.
@@ -1011,8 +1203,9 @@ class Sprite_MpListBox < Sprite
   # @param count [Integer] How many buttons the item has.
   # @return [Integer, nil] The button, from 1 at the left; nil outside them.
   def self.button_at(x, count)
+    place = rect
     (1..count).find do |button|
-      left = box.x + column_left(button, count)
+      left = place.x + column_left(button, count, place.width)
       x >= left && x < left + BUTTON_COLUMN
     end
   end
@@ -1021,18 +1214,20 @@ class Sprite_MpListBox < Sprite
   #
   # @param button [Integer] The column, from 1 at the left.
   # @param count [Integer] How many columns there are.
+  # @param width [Integer] The box's width, the width it has now by default.
   # @return [Integer] Its left edge.
-  def self.column_left(button, count)
-    box.width - BUTTON_MARGIN - (count - button + 1) * BUTTON_COLUMN
+  def self.column_left(button, count, width = rect.width)
+    width - BUTTON_MARGIN - (count - button + 1) * BUTTON_COLUMN
   end
 
   # Tells where a button of an item starts, inside the box: in the middle of its column.
   #
   # @param button [Integer] The button, from 1 at the left.
   # @param count [Integer] How many buttons the item has.
+  # @param width [Integer] The box's width, the width it has now by default.
   # @return [Integer] Its left edge.
-  def self.button_left(button, count)
-    column_left(button, count) + (BUTTON_COLUMN - BUTTON_SIZE) / 2
+  def self.button_left(button, count, width = rect.width)
+    column_left(button, count, width) + (BUTTON_COLUMN - BUTTON_SIZE) / 2
   end
 
   # Finds the line of the list under a point of the screen.
@@ -1042,19 +1237,29 @@ class Sprite_MpListBox < Sprite
   # @param view [View] What the box lists.
   # @return [Integer, nil] The line, nil outside the list.
   def self.line_at(x, y, view)
-    return nil unless inside?(x, y) && y >= box.y + TITLE
+    place = rect
+    return nil unless inside?(x, y, place) && y >= place.y + TITLE
 
-    row = (y - box.y - TITLE) / ROW
+    row = (y - place.y - TITLE) / ROW
     line = view.scroll + row
-    row < list_rows && line < view.lines.size ? line : nil
+    row < list_rows(place.height) && line < view.lines.size ? line : nil
   end
 
-  # Shows a list, fading it in, drawing it if it changed.
+  # Shows a list, fading it in, drawing it if it, the box's size or the interface look changed;
+  # the item picked is scrolled into sight once a smaller box hides it.
   #
   # @param view [View] What the box lists.
   def show(view)
     @motion.show
-    drawn = view.to_a
+    needs = [view.note, view.hint]
+    if needs != @needs
+      @needs = needs
+      self.class.register_layout(self.class.least_width(view))
+    end
+    @view = view
+    follow_layout
+    view.pick(view.selected) if view.out_of_sight?(self.class.list_rows(bitmap.height))
+    drawn = view.to_a + [bitmap.width, bitmap.height, MGQ_MpUi::Theme.serial]
     return if drawn == @shown
 
     @shown = drawn.map { |part| part.is_a?(Array) ? part.dup : part }
@@ -1067,26 +1272,43 @@ class Sprite_MpListBox < Sprite
     @shown = nil
   end
 
-  # Moves the fade a frame on. Called every frame by the screen that owns the box.
+  # Follows the layout and moves the fade a frame on, and offers the box to the layout while it
+  # shows. Called every frame by the screen that owns the box.
   def update
     super
+    follow_layout
     @motion.update
+    MGQ_MpUi::Layout.offer(LAYOUT_ID, x, y, bitmap.width, bitmap.height, z) if @motion.shown?
   end
 
-  # Draws the whole box: the title with its note at the right, the lines in sight, the hint.
+  # Takes the place the layout gives: a picture of the new size, with the list drawn anew, once the
+  # size changed, and the place without a slide.
+  def follow_layout
+    rect = self.class.rect
+    if rect.width != bitmap.width || rect.height != bitmap.height
+      bitmap.dispose
+      self.bitmap = Bitmap.new(rect.width, rect.height)
+      @shown = nil
+      draw(@view) if @view
+    end
+    @motion.place(rect.x, rect.y)
+  end
+
+  # Draws the whole box: its back in its frame, the title with its note at the right, the lines in
+  # sight, the hint.
   #
   # @param view [View] What the box lists.
   def draw(view)
     style = MGQ_MpUi::Style
     width = bitmap.width
     bitmap.clear
-    bitmap.fill_rect(bitmap.rect, style::BACK)
+    style.draw_box(bitmap, 0, 0, width, bitmap.height)
     style.use_font(bitmap, style::TITLE_SIZE, style::GOOD)
     note_width = view.note ? bitmap.text_size(view.note).width + style::PAD : 0
     bitmap.draw_text(EDGE, TITLE_INSET, width - 2 * EDGE, TITLE - 2 * TITLE_INSET, view.note, 2) if view.note
     style.use_font(bitmap, style::TITLE_SIZE, style::TEXT)
     bitmap.draw_text(EDGE, TITLE_INSET, width - 2 * EDGE, TITLE - 2 * TITLE_INSET, MGQ_MpUi.cut(bitmap, view.title, width - 2 * EDGE - note_width))
-    lines = view.lines[view.scroll, self.class.list_rows] || []
+    lines = view.lines[view.scroll, self.class.list_rows(bitmap.height)] || []
     lines.each_with_index { |line, index| draw_line(line, TITLE + index * ROW, view.scroll + index == view.selected, view.column.to_i) }
     style.draw_hint(bitmap, EDGE, bitmap.height - HINT_HEIGHT, width - 2 * EDGE, HINT_HEIGHT, view.hint || HINT)
   end
@@ -1122,7 +1344,7 @@ class Sprite_MpListBox < Sprite
     end
 
     (buttons || []).each_with_index do |(glyph, tint, on), index|
-      x = self.class.button_left(index + 1, buttons.size)
+      x = self.class.button_left(index + 1, buttons.size, width)
       draw_button(glyph, BUTTON_COLORS[tint] || style::DIM, on, x, y + (ROW - BUTTON_SIZE) / 2, picked && column == index + 1)
     end
   end
@@ -1153,7 +1375,7 @@ class Sprite_MpListBox < Sprite
     bitmap.font.size = style::TINY_SIZE
 
     (titles || []).each_with_index do |title, index|
-      left = self.class.column_left(index + 1, titles.size)
+      left = self.class.column_left(index + 1, titles.size, bitmap.width)
       bitmap.draw_text(left, y, BUTTON_COLUMN, ROW, title, 1)
     end
   end
@@ -1194,6 +1416,7 @@ class Sprite_MpListBox < Sprite
     bitmap.fill_rect(x, y, 1, size, color)
     bitmap.fill_rect(x + size - 1, y, 1, size, color)
   end
+
   # Frees the box's picture.
   def dispose
     bitmap.dispose
@@ -1203,8 +1426,10 @@ end
 
 # A box in the middle of the screen that tells the player something, drawn like the list box: a
 # title, the text broken into lines that fit, and a hint at the bottom. Whoever shows it closes it.
+# The player moves it and changes its width with Alt (MGQ_MpUi::Layout); its height follows the
+# lines the text breaks into.
 class Sprite_MpMessageBox < Sprite
-  # Room between the box and either side of the screen.
+  # Room between the box and either side of the screen where it starts.
   SIDE = 80
 
   # Room between the box's edges and its text.
@@ -1213,38 +1438,128 @@ class Sprite_MpMessageBox < Sprite
   # Height of one line of the text.
   ROW = 24
 
+  # The box's place in the layout and its name in the outlines.
+  LAYOUT_ID = :message_box
+  LAYOUT_NAME = "Message box"
+
+  # Least width of the box: the text's room as wide as the list box's least item.
+  MIN_WIDTH = Sprite_MpListBox::ITEM_MIN + 2 * PADDING
+
+  # Least height of the box: the title, a line and the hint.
+  MIN_HEIGHT = Sprite_MpListBox::TITLE + ROW + Sprite_MpListBox::HINT_HEIGHT + PADDING
+
+  @boxes = []
+
+  # Lists the boxes made and not freed, which follow the layout once a frame.
+  #
+  # @return [Array<Sprite_MpMessageBox>] The boxes.
+  def self.boxes
+    @boxes
+  end
+
+  # Has every box that shows follow the layout. Called after every scene's update, since whoever
+  # shows a box only closes it.
+  def self.follow_layouts
+    @boxes.each { |box| box.follow_layout if box.visible && !box.disposed? }
+  end
+
+  # Makes the box movable with its least size, or another least width once a hint needs more;
+  # nothing while the least width stays.
+  #
+  # @param min_width [Integer, nil] The least width, nil for the one registered, MIN_WIDTH at first.
+  def self.register_layout(min_width = nil)
+    least = min_width || @least || MIN_WIDTH
+    return if least == @least
+
+    @least = least
+    MGQ_MpUi::Layout.register(LAYOUT_ID, LAYOUT_NAME, least, MIN_HEIGHT, :width)
+  end
+
+  # Tells the least width a hint needs: MIN_WIDTH, and the hint whole at the smaller size, as far as
+  # the box's width where it starts gives it.
+  #
+  # @param hint [String] The hint.
+  # @return [Integer] The width.
+  def self.least_width(hint)
+    hint_width = Sprite_MpListBox.measure(hint, MGQ_MpUi::Style::TINY_SIZE) + 2 * PADDING
+    [MIN_WIDTH, [hint_width, Graphics.width - 2 * SIDE].min].max
+  end
+
   # Creates the box, hidden, above every window.
   def initialize
     super(nil)
     self.z = MGQ_MpUi::Z[:boxes]
     self.visible = false
+    self.class.boxes.push(self)
   end
 
-  # Shows a message in the middle of the screen, as wide as the screen leaves between SIDE on
-  # either side and as high as its lines need.
+  # Shows a message, as wide as the screen leaves between SIDE on either side and as high as its
+  # lines need, in the middle of the screen unless the player moved it.
   #
   # @param title [String] The title at the top.
   # @param text [String] The text.
   # @param hint [String] What the hint at the bottom says.
   def show(title, text, hint)
-    style = MGQ_MpUi::Style
+    @title = title.to_s
+    @text = text.to_s
+    @hint = hint.to_s
+    @lines = nil
+    @drawn = nil
+    self.class.register_layout(self.class.least_width(@hint))
     width = Graphics.width - 2 * SIDE
-    measure = Bitmap.new(1, 1)
-    style.use_font(measure, style::TEXT_SIZE, style::TEXT)
-    lines = MGQ_MpUi.wrap(measure, text, width - 2 * PADDING)
-    measure.dispose
-
-    height = Sprite_MpListBox::TITLE + lines.size * ROW + Sprite_MpListBox::HINT_HEIGHT + PADDING
-    bitmap.dispose if bitmap
-    self.bitmap = Bitmap.new(width, height)
-    self.x = (Graphics.width - width) / 2
-    self.y = (Graphics.height - height) / 2
-    draw(title, lines, hint)
+    height = height_of(lines_at(width))
+    @default = Rect.new((Graphics.width - width) / 2, (Graphics.height - height) / 2, width, height)
+    follow_layout
     self.visible = true
     MGQ_MpUi.log("message box: #{title}: #{MGQ_MpLog.short(text, 160)}")
   end
 
-  # Draws the whole box, the title cut to its width and the hint drawn whole.
+  # Takes the place the layout gives: the text broken anew and the box drawn anew once its width or
+  # the interface look changed, as high as the lines need and wholly on the screen, and offers the
+  # box to the layout.
+  def follow_layout
+    return unless @default
+
+    rect = MGQ_MpUi::Layout.rect(LAYOUT_ID, @default)
+    lines = lines_at(rect.width)
+    height = height_of(lines)
+    drawn = [rect.width, height, MGQ_MpUi::Theme.serial]
+    if drawn != @drawn
+      @drawn = drawn
+      bitmap.dispose if bitmap
+      self.bitmap = Bitmap.new(rect.width, height)
+      draw(@title, lines, @hint)
+    end
+    self.x = rect.x
+    self.y = MGQ_MpUi.within(rect.y, 0, [Graphics.height - height, 0].max)
+    MGQ_MpUi::Layout.offer(LAYOUT_ID, x, y, rect.width, height, z)
+  end
+
+  # Breaks the text into the lines that fit a width, kept for the last width asked.
+  #
+  # @param width [Integer] The box's width.
+  # @return [Array<String>] The lines.
+  def lines_at(width)
+    return @lines if @lines && @lines_width == width
+
+    style = MGQ_MpUi::Style
+    measure = Bitmap.new(1, 1)
+    style.use_font(measure, style::TEXT_SIZE, style::TEXT)
+    @lines = MGQ_MpUi.wrap(measure, @text, width - 2 * PADDING)
+    @lines_width = width
+    measure.dispose
+    @lines
+  end
+
+  # Tells how high the box is with a number of lines.
+  #
+  # @param lines [Array<String>] The lines.
+  # @return [Integer] The height.
+  def height_of(lines)
+    Sprite_MpListBox::TITLE + lines.size * ROW + Sprite_MpListBox::HINT_HEIGHT + PADDING
+  end
+
+  # Draws the whole box, its back in its frame, the title cut to its width and the hint drawn whole.
   #
   # @param title [String] The title.
   # @param lines [Array<String>] The text's lines.
@@ -1252,7 +1567,7 @@ class Sprite_MpMessageBox < Sprite
   def draw(title, lines, hint)
     style = MGQ_MpUi::Style
     text_width = bitmap.width - 2 * PADDING
-    bitmap.fill_rect(bitmap.rect, style::BACK)
+    style.draw_box(bitmap, 0, 0, bitmap.width, bitmap.height)
     style.use_font(bitmap, style::TITLE_SIZE, style::TEXT)
     inset = Sprite_MpListBox::TITLE_INSET
     bitmap.draw_text(PADDING, inset, text_width, Sprite_MpListBox::TITLE - 2 * inset, MGQ_MpUi.cut(bitmap, title, text_width))
@@ -1263,6 +1578,7 @@ class Sprite_MpMessageBox < Sprite
 
   # Frees the box's picture.
   def dispose
+    self.class.boxes.delete(self)
     bitmap.dispose if bitmap
     super
   end
@@ -1270,72 +1586,180 @@ end
 
 # The confirm box in the middle of the screen, see MGQ_MpUi::Confirm: the question's lines, the
 # two choices side by side with the picked one on its plate, and the hint with their keys. Drawn
-# in the shared style, above every box of the mod and across scenes.
+# in the shared style, above every box of the mod and across scenes. The player moves it and
+# changes its width with Alt (MGQ_MpUi::Layout); its height follows the question's lines.
 class Sprite_MpConfirmBox < Sprite
-  # Width of the box.
+  # Width of the box where it starts.
   WIDTH = 400
 
   # Height of a text line and of the choice row.
   ROW = 24
 
-  # Width of each choice's box, the two side by side with the style's padding between and around
-  # them.
-  CHOICE_WIDTH = WIDTH / 2 - 2 * MGQ_MpUi::Style::PAD
+  # The box's place in the layout and its name in the outlines.
+  LAYOUT_ID = :confirm_box
+  LAYOUT_NAME = "Confirm box"
+
+  # Least width of the box: the question's room as wide as the list box's least item.
+  MIN_WIDTH = Sprite_MpListBox::ITEM_MIN + 2 * MGQ_MpUi::Style::PAD
+
+  # Least height of the box: a line of the question, the choices and the hint.
+  MIN_HEIGHT = 3 * ROW + 3 * MGQ_MpUi::Style::PAD
+
+  @boxes = []
+
+  # Lists the boxes made and not freed, which follow the layout once a frame.
+  #
+  # @return [Array<Sprite_MpConfirmBox>] The boxes.
+  def self.boxes
+    @boxes
+  end
+
+  # Has every box that shows follow the layout. Called after every scene's update.
+  def self.follow_layouts
+    @boxes.each { |box| box.follow_layout if box.visible && !box.disposed? }
+  end
+
+  # Makes the box movable with its least size, or another least width once its choices need more;
+  # nothing while the least width stays.
+  #
+  # @param min_width [Integer, nil] The least width, nil for the one registered, MIN_WIDTH at first.
+  def self.register_layout(min_width = nil)
+    least = min_width || @least || MIN_WIDTH
+    return if least == @least
+
+    @least = least
+    MGQ_MpUi::Layout.register(LAYOUT_ID, LAYOUT_NAME, least, MIN_HEIGHT, :width)
+  end
+
+  # Tells the least width two choices and their hint need: MIN_WIDTH, each label whole on its
+  # choice's plate, and the hint whole at the smaller size, as far as WIDTH gives it.
+  #
+  # @param yes [String] The yes choice's label.
+  # @param no [String] The no choice's label.
+  # @param hint [String] The hint.
+  # @return [Integer] The width.
+  def self.least_width(yes, no, hint)
+    style = MGQ_MpUi::Style
+    label = [yes, no].map { |text| Sprite_MpListBox.measure(text, style::TEXT_SIZE) }.max
+    # A choice's plate is half the box less the padding around it, and its label keeps the padding
+    # inside the plate.
+    choices = 2 * (label + 4 * style::PAD)
+    hint_width = Sprite_MpListBox.measure(hint, style::TINY_SIZE) + 2 * style::PAD
+    [MIN_WIDTH, choices, [hint_width, WIDTH].min].max
+  end
 
   # Creates the box, empty, above every box of the mod.
   def initialize
     super(nil)
     self.z = MGQ_MpUi::Z[:confirm]
-    @lines = []
+    self.class.boxes.push(self)
   end
 
-  # Shows a question in the middle of the screen, as high as its lines need.
+  # Shows a question, as high as its lines need, in the middle of the screen unless the player
+  # moved the box.
   #
   # @param question [String] The question.
   # @param yes [String] The yes choice's label.
   # @param no [String] The no choice's label.
   # @param picked [Boolean] Whether yes is picked.
   def show(question, yes, no, picked)
-    style = MGQ_MpUi::Style
-    measure = Bitmap.new(1, 1)
-    style.use_font(measure, style::TEXT_SIZE, style::TEXT)
-    @lines = MGQ_MpUi.wrap(measure, question, WIDTH - 2 * style::PAD)
-    measure.dispose
+    @question = question.to_s
     @yes = yes
     @no = no
-
-    height = style::PAD + @lines.size * ROW + style::PAD + ROW + ROW + style::PAD
-    bitmap.dispose if bitmap
-    self.bitmap = Bitmap.new(WIDTH, height)
-    self.x = (Graphics.width - WIDTH) / 2
-    self.y = (Graphics.height - height) / 2
-    draw(picked)
+    @picked = picked
+    @lines = nil
+    @drawn = nil
+    self.class.register_layout(self.class.least_width(yes, no, hint))
+    height = height_of(lines_at(WIDTH))
+    @default = Rect.new((Graphics.width - WIDTH) / 2, (Graphics.height - height) / 2, WIDTH, height)
+    follow_layout
   end
 
   # Draws the box anew with the other choice picked.
   #
   # @param picked [Boolean] Whether yes is picked.
   def repick(picked)
+    @picked = picked
     draw(picked) if bitmap
   end
 
-  # Draws the whole box, the hint drawn whole, smaller once the labels make it wider than the box.
+  # Takes the place the layout gives: the question broken anew and the box drawn anew once its
+  # width or the interface look changed, as high as the lines need and wholly on the screen, and
+  # offers the box to the layout.
+  def follow_layout
+    return unless @default
+
+    rect = MGQ_MpUi::Layout.rect(LAYOUT_ID, @default)
+    height = height_of(lines_at(rect.width))
+    drawn = [rect.width, height, MGQ_MpUi::Theme.serial]
+    if drawn != @drawn
+      @drawn = drawn
+      bitmap.dispose if bitmap
+      self.bitmap = Bitmap.new(rect.width, height)
+      draw(@picked)
+    end
+    self.x = rect.x
+    self.y = MGQ_MpUi.within(rect.y, 0, [Graphics.height - height, 0].max)
+    MGQ_MpUi::Layout.offer(LAYOUT_ID, x, y, rect.width, height, z)
+  end
+
+  # Breaks the question into the lines that fit a width, kept for the last width asked.
+  #
+  # @param width [Integer] The box's width.
+  # @return [Array<String>] The lines.
+  def lines_at(width)
+    return @lines if @lines && @lines_width == width
+
+    style = MGQ_MpUi::Style
+    measure = Bitmap.new(1, 1)
+    style.use_font(measure, style::TEXT_SIZE, style::TEXT)
+    @lines = MGQ_MpUi.wrap(measure, @question, width - 2 * style::PAD)
+    @lines_width = width
+    measure.dispose
+    @lines
+  end
+
+  # Tells how high the box is with a number of question lines.
+  #
+  # @param lines [Array<String>] The lines.
+  # @return [Integer] The height.
+  def height_of(lines)
+    pad = MGQ_MpUi::Style::PAD
+    pad + lines.size * ROW + pad + ROW + ROW + pad
+  end
+
+  # Writes the hint with the choices' labels and their hotkeys.
+  #
+  # @return [String] The hint.
+  def hint
+    MGQ_MpUi::Confirm::HINT % [@yes, MGQ_MpHotkeys.label(:accept), @no, MGQ_MpHotkeys.label(:decline)]
+  end
+
+  # Tells how wide each choice's plate is in the box as wide as it is now.
+  #
+  # @return [Integer] The width.
+  def choice_width
+    bitmap.width / 2 - 2 * MGQ_MpUi::Style::PAD
+  end
+
+  # Draws the whole box, its back in its frame, the hint drawn whole, smaller once the labels make
+  # it wider than the box.
   #
   # @param picked [Boolean] Whether yes is picked.
   def draw(picked)
     style = MGQ_MpUi::Style
     pad = style::PAD
-    text_width = WIDTH - 2 * pad
+    width = bitmap.width
+    text_width = width - 2 * pad
+    lines = lines_at(width)
     bitmap.clear
-    bitmap.fill_rect(bitmap.rect, style::BACK)
+    style.draw_box(bitmap, 0, 0, width, bitmap.height)
     style.use_font(bitmap, style::TEXT_SIZE, style::TEXT)
-    @lines.each_with_index { |line, index| style.draw_outlined(bitmap, pad, pad + index * ROW, text_width, ROW, line, 1) }
+    lines.each_with_index { |line, index| style.draw_outlined(bitmap, pad, pad + index * ROW, text_width, ROW, line, 1) }
 
-    choices_y = pad + @lines.size * ROW + pad
+    choices_y = pad + lines.size * ROW + pad
     draw_choice(@yes, pad, choices_y, picked)
-    draw_choice(@no, WIDTH / 2 + pad, choices_y, !picked)
-
-    hint = MGQ_MpUi::Confirm::HINT % [@yes, MGQ_MpHotkeys.label(:accept), @no, MGQ_MpHotkeys.label(:decline)]
+    draw_choice(@no, width / 2 + pad, choices_y, !picked)
     style.draw_hint(bitmap, pad, choices_y + ROW, text_width, ROW, hint)
   end
 
@@ -1347,13 +1771,14 @@ class Sprite_MpConfirmBox < Sprite
   # @param picked [Boolean] Whether it is picked.
   def draw_choice(label, x, y, picked)
     style = MGQ_MpUi::Style
-    bitmap.fill_rect(x, y, CHOICE_WIDTH, ROW, style::PICKED) if picked
+    bitmap.fill_rect(x, y, choice_width, ROW, style::PICKED) if picked
     style.use_font(bitmap, style::TEXT_SIZE, style::TEXT)
-    style.draw_outlined(bitmap, x, y, CHOICE_WIDTH, ROW, label, 1)
+    style.draw_outlined(bitmap, x, y, choice_width, ROW, label, 1)
   end
 
   # Frees the box's picture.
   def dispose
+    self.class.boxes.delete(self)
     bitmap.dispose if bitmap
     super
   end
@@ -1362,12 +1787,25 @@ end
 # Game hooks, through core_hooks.rbx.
 
 begin
-  # After every scene's update, the confirm box: every scene's update calls Scene_Base's.
+  # After every scene's update, the confirm box takes its keys.
   MGQ_MpHooks.after(Scene_Base, :update, "ui") { MGQ_MpUi::Confirm.tick }
 
+  # After every frame, the message boxes and the confirm box follow the layout, which the player
+  # changes with Alt, before the layout's tick reads their places: the title screen's update never
+  # calls Scene_Base's.
+  MGQ_MpHooks.after(Graphics.singleton_class, :update, "ui") do
+    Sprite_MpMessageBox.follow_layouts
+    Sprite_MpConfirmBox.follow_layouts
+  end
+
   # After every scene's start, a confirm box still open answers no, before a start that waits in
-  # a loop of its own, such as a co-op battle's, would leave it hanging over the scene.
-  MGQ_MpHooks.after(Scene_Base, :start, "ui") { MGQ_MpUi::Confirm.leave_scene }
+  # a loop of its own, such as a co-op battle's, would leave it hanging over the scene. The boxes
+  # of this script become known to the layout then, which loads after this script, so putting
+  # every box back in the Mod Config reaches them before they first show.
+  MGQ_MpHooks.after(Scene_Base, :start, "ui") do
+    MGQ_MpUi::Confirm.leave_scene
+    [Sprite_MpListBox, Sprite_MpMessageBox, Sprite_MpConfirmBox].each { |box| box.register_layout }
+  end
 rescue => e
   MGQ_MpUi.log("hooks FAILED: #{e.class}: #{e.message}")
 end

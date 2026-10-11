@@ -2,7 +2,8 @@
 #  ui_edge_arrows.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Created
+#      Paulinchen  2026-10-11: Drew an arrow's plate anew once the preset changes
+#                            - Created
 #
 #----------------------------------------------------------------
 
@@ -348,7 +349,7 @@ end
 
 # One arrow: a triangle pointing along its angle, its center at the sprite's place, and the plate
 # with the name and the tiles on the side away from the edge. Drawn anew only when the name, the
-# tiles, the color or the stepped angle changed.
+# tiles, the color, the stepped angle or the preset changed.
 class Sprite_MpEdgeArrow < Sprite
   # The player the arrow points at.
   #
@@ -378,7 +379,7 @@ class Sprite_MpEdgeArrow < Sprite
     @id = target.id
     angle = MGQ_MpEdgeArrows.step_angle(point[2])
     color = MGQ_MpUi::PlayerColor.of(target.peer)
-    key = [@id, target.name, target.tiles, angle, color]
+    key = [@id, target.name, target.tiles, angle, color, MGQ_MpUi::Theme.serial]
     unless key == @drawn
       @drawn = key
       draw(target, angle, color)

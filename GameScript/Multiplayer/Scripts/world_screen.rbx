@@ -2,7 +2,9 @@
 #  world_screen.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Moved the list box's fade on every frame, and measured a description with the shared style's text size and the box's lazy rectangle
+#      Paulinchen  2026-10-11: Dressed the screen's windows in the interface look and drew the worlds' scrollbar in its edge color
+#                            - Broke a description in the list box anew once the player resized the box, and fitted it to the box's width as it is now
+#                            - Moved the list box's fade on every frame, and measured a description with the shared style's text size and the box's lazy rectangle
 #                            - Named the numpad's 0 in the mod picker's hint, which closes it too, and said how many more mods a row holds as every box does
 #                            - Put the cursor on the world just created or added once the list shows it, inside the worlds box, and said
 #                              to confirm to enter it, and logged the ask
@@ -823,6 +825,7 @@ class Scene_MpWorlds < Scene_MenuBase
             else description_lines(listed.description.to_s)
             end
     @box = Sprite_MpListBox::View.of(@entry.name, { :players => "Players", :mods => "Mods" }[kind] || "Description", lines)
+    @box_kind = kind
     @box_pointed = nil
   end
 
@@ -868,19 +871,34 @@ class Scene_MpWorlds < Scene_MenuBase
     lines + [[:head, "Your mods turned off here (#{off.size})"]] + off
   end
 
-  # Writes the list box's lines for a world's description, broken to the box's width.
+  # Writes the list box's lines for a world's description, broken to the box's width as it is now.
   #
   # @param text [String] The description.
   # @return [Array<Array>] The lines, see Sprite_MpListBox::View.
   def description_lines(text)
     measure = @list_box.bitmap
     measure.font.size = MGQ_MpUi::Style::TEXT_SIZE
-    width = Sprite_MpListBox.box.width - Sprite_MpListBox::ITEM_LEFT - Sprite_MpListBox::ITEM_GAP
+    @description_width = Sprite_MpListBox.rect.width
+    width = @description_width - Sprite_MpListBox::ITEM_LEFT - Sprite_MpListBox::ITEM_GAP
     MGQ_MpUi.wrap(measure, text, width).map { |line| [:item, line, :plain, nil] }
   end
 
-  # Follows the arrows, cancel and the mouse while the list box is open.
+  # Breaks the description in the list box anew once the player resized the box, keeping the line
+  # picked as far as the description still reaches.
+  def rewrap_description
+    return unless @box_kind == :description && Sprite_MpListBox.rect.width != @description_width
+
+    listed = @entry && @entry.listed
+    return unless listed
+
+    @box.lines = description_lines(listed.description.to_s)
+    @box.selected = @box.lines.empty? ? nil : [@box.selected.to_i, @box.lines.size - 1].min
+    @box.scroll = [@box.scroll, [@box.lines.size - 1, 0].max].min
+  end
+
+  # Follows the arrows, cancel and the mouse while the list box is open, and the box's width.
   def update_box
+    rewrap_description
     @box.move(1) if Input.repeat?(:DOWN)
     @box.move(-1) if Input.repeat?(:UP)
     position = mouse_position
@@ -2453,11 +2471,14 @@ class Window_MpWorldList < Window_Command
   # Width of the scrollbar.
   BAR_WIDTH = 4
 
-  # Colors of the scrollbar's track and of its thumb.
+  # Color of the scrollbar's track.
   TRACK_COLOR = Color.new(0, 0, 0, 96)
-  THUMB_COLOR = Color.new(255, 255, 255, 160)
+
+  # Color of the scrollbar's thumb, the edge of the interface look.
+  THUMB_COLOR = MGQ_MpUi::Style::EDGE
 
   include MGQ_MpBoxCursor
+  include MGQ_MpUi::Theme::Skinned
 
   # Creates the list below the lines.
   #
@@ -2535,13 +2556,13 @@ class Window_MpWorldList < Window_Command
     update_bar if @bar
   end
 
-  # Draws the scrollbar if the list moved or changed its length: a thumb as long as the share of
-  # the worlds in sight, hidden while all of them fit.
+  # Draws the scrollbar if the list moved or changed its length, or the interface look changed: a
+  # thumb as long as the share of the worlds in sight, hidden while all of them fit.
   def update_bar
     rows = item_max
     page = page_row_max
     @bar.visible = visible && rows > page
-    state = [rows, page, top_row]
+    state = [rows, page, top_row, MGQ_MpUi::Theme.serial]
     return if state == @bar_drawn || !@bar.visible
 
     @bar_drawn = state
@@ -2565,6 +2586,7 @@ end
 # in place while the worlds scroll.
 class Window_MpWorldCommands < Window_Command
   include MGQ_MpBoxCursor
+  include MGQ_MpUi::Theme::Skinned
 
   # Creates the window at the bottom left of the screen.
   def initialize
@@ -2652,6 +2674,7 @@ end
 # player's game compares with its creator's, its players, and its description at the bottom.
 class Window_MpWorldDetail < Window_Base
   include MGQ_MpWorldPanels
+  include MGQ_MpUi::Theme::Skinned
 
   # A group of rows under a heading.
   #
@@ -3110,6 +3133,8 @@ end
 # A small command window in the middle of the screen, closed until needed, whose commands are
 # set as it opens.
 class Window_MpChoice < Window_Command
+  include MGQ_MpUi::Theme::Skinned
+
   # Width of the window.
   WIDTH = 360
 
@@ -3171,6 +3196,7 @@ end
 # right between two fields on one row, and turn a switch.
 class Window_MpWorldForm < Window_Selectable
   include MGQ_MpWorldPanels
+  include MGQ_MpUi::Theme::Skinned
 
   # Width of the labels in front of the text boxes.
   LABEL_WIDTH = 84

@@ -2,6 +2,7 @@
 //  AltMenuGuard.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-11: Kept the menu closed for Alt pressed alone, which moves and resizes the mod's boxes with the mouse
 //      Paulinchen  2026-10-08: Created
 //
 //----------------------------------------------------------------
@@ -9,8 +10,8 @@
 namespace MGQParadox.Multiplayer.Windows;
 
 /// <summary>
-/// Decides when Alt may not open the game window's menu: while a text screen wants the keyboard,
-/// and for an Alt press that began while one did.
+/// Decides when Alt may not open the game window's menu: for Alt pressed alone, while a text screen
+/// wants the keyboard, and for an Alt press that began while one did.
 /// </summary>
 /// <remarks>
 /// The menu opens as Alt is released, and the game waits in it, so a chat that closes while Alt is
@@ -52,10 +53,11 @@ internal sealed class AltMenuGuard
     /// Tells whether the window's menu that Alt asks for must stay closed, and forgets the Alt press it answered.
     /// </summary>
     /// <param name="typing">Whether a text screen wants the keyboard.</param>
-    /// <returns><see langword="true"/> while typing, or for an Alt press that began while typing.</returns>
-    public bool SwallowsKeyMenu(bool typing)
+    /// <param name="character">The character pressed with Alt, 0 for Alt alone.</param>
+    /// <returns><see langword="true"/> for Alt alone, while typing, or for an Alt press that began while typing.</returns>
+    public bool SwallowsKeyMenu(bool typing, nint character)
     {
-        var swallowed = typing || _pressedWhileTyping;
+        var swallowed = character == 0 || typing || _pressedWhileTyping;
         _pressedWhileTyping = false;
         return swallowed;
     }

@@ -2,7 +2,8 @@
 #  emotes_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Checked the wheel's picture: its hint under the ring, the name of the emote pointed at and the fade in and out
+#      Paulinchen  2026-10-11: Checked each of the wheel's boxes in its frame, the picked one lit, and the wheel drawn anew after a preset change
+#                            - Checked the wheel's picture: its hint under the ring, the name of the emote pointed at and the fade in and out
 #                            - Checked the hint drawn whole with a rebound key's longer name
 #      Paulinchen  2026-10-06: Checked that the World overview keeps the wheel shut, and that a loaded save with fewer frames ends the cooldown
 #                            - Left loading ui_wheel.rbx to world_support.rb, which loads it already
@@ -166,14 +167,24 @@ module Cache; def self.system(_name); :balloons; end; end
 style = MGQ_MpUi::Style
 wheel = Sprite_MpEmoteWheel.new(nil)
 player = Struct.new(:x, :y).new(100, 120)
+# The frames below are Legacy's, one pixel of edge.
+MGQ_MpUi::Theme.apply("Legacy", "a test")
 emotes.open
 wheel.show(player)
 hint = wheel.bitmap.texts.last
 check("open, the wheel draws around the player, None named below the ring and the hint under it, fading in",
       [wheel.visible, wheel.opacity.between?(1, 254), wheel.x, wheel.y, wheel.bitmap.texts[-2][1], hint[1], hint[2], hint[3].equal?(style::HEADING)],
       [true, true, 100, 120, "None", "Esc, Numpad 0 or E: close", style::TINY_SIZE, true])
-check("the hint lies under the name's line, and the boxes fill with the style's colors",
-      [hint[0], wheel.bitmap.fills.all? { |color| color.equal?(style::BACK) || color.equal?(style::PICKED) }], [Sprite_MpEmoteWheel::SIZE + Sprite_MpEmoteWheel::NAME_HEIGHT, true])
+boxes = MGQ_MpEmotes::EMOTES.size + 1
+check("the hint lies under the name's line, and the boxes fill with the style's colors, None picked, each in its frame",
+      [hint[0], wheel.bitmap.fills.all? { |color| [style::BACK, style::PICKED, style::EDGE].any? { |known| color.equal?(known) } },
+       wheel.bitmap.fills.count { |color| color.equal?(style::PICKED) }, wheel.bitmap.fills.count { |color| color.equal?(style::EDGE) }],
+      [Sprite_MpEmoteWheel::SIZE + Sprite_MpEmoteWheel::NAME_HEIGHT, true, 1, 4 * boxes])
+MGQ_MpUi::Theme.apply("Monarch", "a test")
+wheel.show(player)
+check("a preset change draws the wheel anew, each box's frame with the preset's rim", wheel.bitmap.fills.count { |color| color.equal?(style::RIM) }, 4 * boxes)
+MGQ_MpUi::Theme.apply("Legacy", "a test")
+wheel.show(player)
 (style::FADE_FRAMES - 1).times { wheel.show(player) }
 check("opaque after FADE_FRAMES", wheel.opacity, 255)
 MGQ_MpHotkeys.bind(:emotes, 0xBA)

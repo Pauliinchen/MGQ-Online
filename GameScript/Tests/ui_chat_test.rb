@@ -2,7 +2,9 @@
 #  ui_chat_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Checked the map chat chosen with /m, /s sent as text, the global chat untagged in white, a line marked say landing in the map chat, and the Whisper tab hidden until a whisper and again once the world closes
+#      Paulinchen  2026-10-11: Checked the chat log's places in the layout: its default from chat_size, a kept place honored, its least size, its rows from its height, the battle's box apart, and every hint and tab fitting the least width
+#                            - Checked the open chat drawn in the preset's frame, open under the picked tab, anew once the preset changes, and no resizing of its own left
+#                            - Checked the map chat chosen with /m, /s sent as text, the global chat untagged in white, a line marked say landing in the map chat, and the Whisper tab hidden until a whisper and again once the world closes
 #                            - Created
 #
 #----------------------------------------------------------------
@@ -10,9 +12,10 @@
 # Covers ui_chat.rbx: the lines sent that Alt with up and down bring back, /r answering the last
 # player who whispered, the sound of a whisper that arrives while the chat box is closed, a paste,
 # which the DLL hands over as typed text, the tabs drawn dimmed above the closed log while one
-# holds unread lines, the Whisper tab shown only once a whisper happened, and the chats' commands,
-# tags and colors. The rest of the chat is covered by overworld_test.rb, whose stand-in for the
-# chat log's sprite and canvas the one below mirrors.
+# holds unread lines, the Whisper tab shown only once a whisper happened, the chats' commands,
+# tags and colors, and the log's places in the layout and its frame in the preset. The rest of the
+# chat is covered by overworld_test.rb, whose stand-in for the chat log's sprite and canvas the one
+# below mirrors.
 
 require_relative "world_support"
 
@@ -200,7 +203,7 @@ log_sprite.define_singleton_method(:x) { 8 }
 log_sprite.define_singleton_method(:y) { 200 }
 log_sprite.define_singleton_method(:y=) { |_| }
 log_sprite.define_singleton_method(:draw_unread_glow) { |right| events << [:glow, right] }
-{ :@wrapped => {}, :@tab_spots => [], :@name_spots => [], :@size => [400, 6], :@width => 400, :@rows => 6, :@bottom_room => 96, :@resting_z => 100,
+{ :@layout_id => :chat, :@wrapped => {}, :@tab_spots => [], :@name_spots => [], :@size => [400, 6], :@width => 400, :@rows => 6, :@bottom_room => 96, :@resting_z => 100,
   :@menu_sprite => Struct.new(:visible, :bitmap, :x, :y, :z).new(false) }.each { |name, value| log_sprite.instance_variable_set(name, value) }
 tab_names = lambda { parts.map { |_, text, _| text } & MGQ_MpChat::TAB_NAMES.values }
 shades = lambda { events.select { |kind, args| kind == :fill && args[4].equal?(Sprite_MpChatLog::CLOSED_SHADE) } }
@@ -260,8 +263,10 @@ going.left = MGQ_MpChat::LOG_FRAMES
 # The hints and the help name the new controls.
 check("the empty box's hint points at Alt and fits the row, no longer than the Alt hint",
       [Sprite_MpChatLog::BOX_HINT.include?("Alt"), Sprite_MpChatLog::BOX_HINT.size <= Sprite_MpChatLog::ALT_HINT.size], [true, true])
-check("the Alt hint names up and down", Sprite_MpChatLog::ALT_HINT.include?("↑↓: sent lines"), true)
+check("the Alt hint names up and down, and that a drag moves or resizes", [Sprite_MpChatLog::ALT_HINT.include?("↑↓: sent"), Sprite_MpChatLog::ALT_HINT.include?("Drag: move, resize")], [true, true])
 check("the help names /r, the sent lines and the paste", [MGQ_MpChat::HELP.any? { |line| line.start_with?("/r") }, MGQ_MpChat::HELP.any? { |line| line.include?("Ctrl+V") }], [true, true])
+check("the help says Alt and a drag move or resize the chat and a double click puts it back",
+      MGQ_MpChat::HELP.any? { |line| line.include?("move or resize the chat") && line.include?("double click put it back") }, true)
 
 # Closing the world forgets the lines sent and whom /r answers.
 $open = false
@@ -308,3 +313,174 @@ $inbox << entry("message", friend_seat, told(friend))
 MGQ_MpOverworldSync.tick
 chat.whisper("Friend")
 check("as does a whisper chosen from a player's menu", [chat.tabs.last, chat.channel, chat.whisper_to], [:whisper, :whisper, "Friend"])
+
+# The log's places in the layout and its frame in the preset, drawn on pictures that keep their
+# size and measure as the game's VL Gothic does: half the font's size for an ASCII character, the
+# whole size for any other, such as an arrow.
+layout = MGQ_MpUi::Layout
+style = MGQ_MpUi::Style
+log_class = Sprite_MpChatLog
+class Viewport; attr_accessor :z; def dispose; end; end
+class Sprite
+  attr_accessor :bitmap, :x, :y, :z, :visible
+  attr_reader :viewport
+  def initialize(viewport = nil); @viewport = viewport; @x = @y = @z = 0; @visible = true; end
+  def dispose; end
+end
+# A picture that keeps its size and records its fills and texts.
+class Picture
+  Font = Struct.new(:size, :color, :bold, :outline, :out_color)
+  attr_reader :width, :height, :font, :fills, :texts
+  def initialize(width, height); @width, @height = width, height; @font = Font.new(16); @fills = []; @texts = []; end
+  def self.measure(text, size); text.to_s.each_char.inject(0) { |sum, char| sum + (char.ord < 128 ? size / 2 : size) }; end
+  def rect; Rect.new(0, 0, @width, @height); end
+  def text_size(text); Rect.new(0, 0, Picture.measure(text, font.size), font.size); end
+  def draw_text(x, y, width, height, text, _align = 0); @texts << [x, y, width, height, text.to_s, font.size]; end
+  def fill_rect(*args)
+    x, y, width, height, color = args[0].is_a?(Rect) ? [args[0].x, args[0].y, args[0].width, args[0].height, args[1]] : args
+    @fills << [x, y, width, height, color]
+  end
+  def clear; @fills.clear; @texts.clear; end
+  def dispose; end
+end
+Bitmap.define_singleton_method(:new) { |width, height| Picture.new(width, height) }
+offered = lambda do |id|
+  offer = layout.instance_variable_get(:@offers).find { |each| each.id == id }
+  offer && offer.rect.to_a
+end
+forget_places = lambda { layout.instance_variable_get(:@stored).clear; layout.instance_variable_set(:@offers, []) }
+high = lambda { |rows| log_class::TAB_ROW + log_class::ROW * (rows + 1) }
+
+check("the map's and the battle's log are boxes of their own, resized both ways, no smaller than the tabs, the hints and the list of names need",
+      [:chat, :battle_chat].map { |id| box = layout.instance_variable_get(:@boxes)[id]; box && [box.name, box.min_width, box.min_height, box.resize] },
+      [["Chat", 400, high.call(MGQ_MpChat::SUGGESTIONS), :both], ["Battle chat", 400, high.call(MGQ_MpChat::SUGGESTIONS), :both]])
+check("the chat keeps no resizing of its own", [chat.respond_to?(:resize), chat.respond_to?(:keep_size)], [false, false])
+check("the chat's Alt is the layout's", MGQ_MpChat::ALT_KEY, layout::ALT_KEY)
+
+$player_ini.delete("chat_size")
+chat.instance_variable_set(:@size, nil)
+forget_places.call
+map_log = log_class.new(:chat, log_class::STATUS_ROOM, 100)
+chat.start_typing
+map_log.update
+check("the map's log starts where it lay before: at the left, standing on the status line's room, at the default size",
+      [offered.call(:chat), map_log.bitmap.width, map_log.bitmap.height, map_log.x, map_log.y], [[8, 480 - 96 - high.call(6), 400, high.call(6)], 400, high.call(6), 8, 480 - 96 - high.call(6)])
+$player_ini["chat_size"] = "450x8"
+chat.instance_variable_set(:@size, nil)
+map_log.update
+check("a size kept in chat_size by earlier builds is its default", offered.call(:chat), [8, 480 - 96 - high.call(8), 450, high.call(8)])
+$player_ini["chat_size"] = "250x2"
+chat.instance_variable_set(:@size, nil)
+map_log.update
+check("one smaller than the least size starts at the least", offered.call(:chat), [8, 480 - 96 - high.call(5), 400, high.call(5)])
+$player_ini["chat_size"] = "450x8"
+chat.instance_variable_set(:@size, nil)
+
+$player_ini["ui_chat"] = "100,40,520,200"
+forget_places.call
+map_log.update
+check("a place kept as ui_chat is honored, with the whole rows that fit its height, the picture standing on its bottom",
+      [offered.call(:chat), map_log.instance_variable_get(:@rows), map_log.x, map_log.y], [[100, 51, 520, high.call(8)], 8, 100, 51])
+$player_ini["ui_chat"] = "100,40,520,#{high.call(9) - 1}"
+forget_places.call
+map_log.update
+check("a pixel short of another row keeps the rows", map_log.instance_variable_get(:@rows), 8)
+$player_ini["ui_chat"] = "100,40,520,#{high.call(9)}"
+forget_places.call
+map_log.update
+check("a whole row more adds one", [map_log.instance_variable_get(:@rows), offered.call(:chat)], [9, [100, 40, 520, high.call(9)]])
+$player_ini["ui_chat"] = "0,0,50,20"
+forget_places.call
+map_log.update
+check("a kept place smaller than the least is drawn at the least", [offered.call(:chat), map_log.instance_variable_get(:@rows)], [[0, 0, 400, high.call(5)], 5])
+
+# At the least size every tab and hint fits.
+hint_fits = lambda do |hint|
+  row = map_log.bitmap.texts.find { |text| text[4] == hint }
+  row && Picture.measure(hint, row[5]) <= row[2] && row[0] + row[2] <= map_log.bitmap.width ? row[5] : nil
+end
+chat.choose(:global)
+map_log.update
+check("the empty box's hint fits the least width in the small font", hint_fits.call(log_class::BOX_HINT), style::SMALL_SIZE)
+chat.choose(:whisper)
+whisper_to = chat.whisper_to
+chat.instance_variable_set(:@whisper_to, nil)
+$down = [MGQ_MpChat::ALT_KEY]
+map_log.update
+check("the Alt hint fits after the longest chat's label, in the tiny font", [hint_fits.call(log_class::ALT_HINT), map_log.bitmap.texts.any? { |text| text[4] == "Whisper:" }], [style::TINY_SIZE, true])
+check("while Alt is held the open chat's outline is white", map_log.bitmap.fills.any? { |fill| fill[4].equal?(log_class::RESIZE_OUTLINE) }, true)
+$down = []
+chat.instance_variable_set(:@whisper_to, whisper_to)
+chat.open_help
+map_log.update
+spots = map_log.instance_variable_get(:@tab_spots)
+check("the help tab's hint fits too, and every tab, the help tab at the far right, without overlapping",
+      [hint_fits.call(log_class::HELP_HINT), spots.map(&:first), spots.each_cons(2).all? { |(_, left, width), (_, right, _)| left + width <= right }, spots.last[1] + spots.last[2]],
+      [style::TINY_SIZE, MGQ_MpChat::TABS + [:help], true, 400])
+chat.select_tab(:all, "in the test")
+
+# The open chat in the preset's frame, open under the picked tab, Legacy's one pixel of edge.
+MGQ_MpUi::Theme.apply("Legacy", "in the test")
+map_log.update
+picture = map_log.bitmap
+_, at, width = map_log.instance_variable_get(:@tab_spots).find { |tab, _, _| tab == :all }
+top_edge = picture.fills.index { |fill| fill[0..3] == [0, log_class::TAB_ROW, 400, 1] && fill[4].equal?(style::EDGE) }
+gap = picture.fills.index { |fill| fill[0..3] == [at + 1, log_class::TAB_ROW, width - 2, 1] && fill[4].equal?(style::BACK) }
+check("the open chat is framed in the preset's edge, opened under the picked tab", [!top_edge.nil?, !gap.nil? && gap > top_edge], [true, true])
+picture.clear
+map_log.update
+check("an unchanged log is not drawn again", picture.fills, [])
+MGQ_MpUi::Theme.apply("Monarch", "in the test")
+map_log.update
+gap = picture.fills.index { |fill| fill[0..3] == [at + 2, log_class::TAB_ROW, width - 4, 2] && fill[4].equal?(style::BACK) }
+check("a change of the preset draws it anew, its rim outermost and the gap as deep as the frame",
+      [picture.fills.any? { |fill| fill[4].equal?(style::RIM) }, !gap.nil?], [true, true])
+MGQ_MpUi::Theme.apply("Legacy", "in the test")
+chat.open_menu(MGQ_MpChat::Line.new("Friend", "hi", :other, :global, 0, nil, "friend"), [50, 300])
+map_log.update
+menu = map_log.instance_variable_get(:@menu_sprite).bitmap
+check("a player's menu lies in the preset's box",
+      [menu.fills.first[0..3] == [0, 0, menu.width, menu.height] && menu.fills.first[4].equal?(style::BACK), menu.fills.any? { |fill| fill[4].equal?(style::EDGE) }], [true, true])
+chat.close_menu("in the test")
+
+# The layout alone moves and resizes the log.
+$player_ini["ui_chat"] = "100,40,520,200"
+forget_places.call
+map_log.update
+before = offered.call(:chat)
+$down = [MGQ_MpChat::ALT_KEY]
+$mouse_held = true
+$mouse = [map_log.x + 20, map_log.y + map_log.bitmap.height - 4]
+map_log.update
+$mouse = [map_log.x + 80, map_log.y - 40]
+map_log.update
+$mouse_held = false
+map_log.update
+$down = []
+check("Alt and a drag on the open log leave its size and place to the layout", [$player_ini["chat_size"], offered.call(:chat)], ["450x8", before])
+
+battle_log = log_class.new(:battle_chat, log_class::BATTLE_ROOM, 200)
+battle_log.update
+check("the battle's log starts above the battle's windows at chat_size's size, apart from the map's place",
+      [offered.call(:battle_chat), offered.call(:chat)], [[8, 480 - 200 - high.call(8), 450, high.call(8)], before])
+$player_ini["chat_size"] = "450x14"
+chat.instance_variable_set(:@size, nil)
+battle_log.update
+check("its default draws only the rows that fit above the battle's windows", offered.call(:battle_chat), [8, 480 - 200 - high.call(12), 450, high.call(12)])
+$player_ini["ui_battle_chat"] = "200,10,420,150"
+forget_places.call
+battle_log.update
+map_log.update
+check("a place kept as ui_battle_chat moves the battle's log alone", [offered.call(:battle_chat), offered.call(:chat)], [[200, 10 + 150 - high.call(5), 420, high.call(5)], before])
+
+chat.stop_typing
+$inbox << entry("message", friend_seat, "chat=still here\nname=Friend\n\n")
+MGQ_MpOverworldSync.tick
+layout.instance_variable_set(:@offers, [])
+map_log.update
+check("the closed log is offered while it shows lines, so it moves without opening the box", offered.call(:chat), before)
+$open = false
+MGQ_MpOverworldSync.tick
+layout.instance_variable_set(:@offers, [])
+map_log.update
+check("and not once it shows nothing", offered.call(:chat), nil)

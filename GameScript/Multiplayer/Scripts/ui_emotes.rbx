@@ -2,7 +2,8 @@
 #  ui_emotes.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Drew the wheel in the shared style, fading it in and out, with the hint under the ring the wheels share, which names Esc, the numpad's 0 and its hotkey
+#      Paulinchen  2026-10-11: Framed the wheel's boxes in the preset's colors, the picked one lit inside its frame, drawn anew once the preset changes
+#                            - Drew the wheel in the shared style, fading it in and out, with the hint under the ring the wheels share, which names Esc, the numpad's 0 and its hotkey
 #                            - Drew the hint whole through the shared style, so a rebound key's longer name never cuts it
 #      Paulinchen  2026-10-08: Closed with the numpad's 0 through MGQ_MpUi.cancel?, also with Num Lock off
 #      Paulinchen  2026-10-07: Named players through MGQ_MpOverworldSync.who and took the wheel's depth from MGQ_MpUi
@@ -248,11 +249,11 @@ class Sprite_MpEmoteWheel < Sprite
     self.z = MGQ_MpUi::Z[:wheels]
     @motion = MGQ_MpUi::Motion.new(self)
     @shown = nil
-    @drawn = false
+    @drawn = nil
   end
 
-  # Draws the wheel around the player's sprite while it is open, if the picked emote changed, and
-  # fades it in; fades it out once it closed, keeping its picture until it is gone.
+  # Draws the wheel around the player's sprite while it is open, if the picked emote or the preset
+  # changed, and fades it in; fades it out once it closed, keeping its picture until it is gone.
   #
   # @param sprite [Sprite_Character, nil] The player's sprite.
   def show(sprite)
@@ -264,19 +265,19 @@ class Sprite_MpEmoteWheel < Sprite
 
     @motion.place(sprite.x, sprite.y)
     @motion.show
-    draw unless @drawn && @shown == MGQ_MpEmotes.selected
+    draw unless @drawn == MGQ_MpUi::Theme.serial && @shown == MGQ_MpEmotes.selected
     @motion.update
   end
 
   # Draws the ring, the box in the middle, the name of the picked emote and the hint.
   def draw
     style = MGQ_MpUi::Style
-    @drawn = true
+    @drawn = MGQ_MpUi::Theme.serial
     @shown = MGQ_MpEmotes.selected
     bitmap.clear
     MGQ_MpEmotes::EMOTES.each_with_index { |emote, index| draw_box(emote, index) }
     middle = (SIZE - NONE_BOX) / 2
-    bitmap.fill_rect(middle, middle, NONE_BOX, NONE_BOX, @shown ? style::BACK : style::PICKED)
+    draw_square(middle, middle, NONE_BOX, @shown.nil?)
     style.use_font(bitmap, style::TEXT_SIZE, style::TEXT)
     bitmap.draw_text(0, SIZE, SIZE, NAME_HEIGHT, MGQ_MpUi.cut(bitmap, @shown ? MGQ_MpEmotes::EMOTES[@shown].name : NONE_NAME, SIZE), 1)
     MGQ_MpWheel.draw_hint(bitmap, 0, SIZE + NAME_HEIGHT, SIZE, :emotes)
@@ -292,7 +293,7 @@ class Sprite_MpEmoteWheel < Sprite
     angle = Math::PI * 2 * directions.index(MGQ_MpWheel.places(MGQ_MpEmotes::EMOTES.size)[index]) / directions.size
     x = (SIZE / 2 + Math.sin(angle) * RADIUS - BOX / 2).round
     y = (SIZE / 2 - Math.cos(angle) * RADIUS - BOX / 2).round
-    bitmap.fill_rect(x, y, BOX, BOX, index == @shown ? style::PICKED : style::BACK)
+    draw_square(x, y, BOX, index == @shown)
     if emote.balloon
       source = Rect.new(BALLOON_FRAME * BALLOON, (emote.balloon - 1) * BALLOON, BALLOON, BALLOON)
       bitmap.blt(x + (BOX - BALLOON) / 2, y + (BOX - BALLOON) / 2, Cache.system("Balloon"), source)
@@ -300,6 +301,20 @@ class Sprite_MpEmoteWheel < Sprite
       style.use_font(bitmap, style::TINY_SIZE, style::TEXT)
       bitmap.draw_text(x, y, BOX, BOX, MGQ_MpUi.cut(bitmap, emote.name, BOX), 1)
     end
+  end
+
+  # Draws a square box of the wheel in its frame, lit while picked.
+  #
+  # @param x [Integer] Its left.
+  # @param y [Integer] Its top.
+  # @param side [Integer] Its side.
+  # @param picked [Boolean] Whether the arrows point at it.
+  def draw_square(x, y, side, picked)
+    style = MGQ_MpUi::Style
+    return style.draw_box(bitmap, x, y, side, side) unless picked
+
+    bitmap.fill_rect(x, y, side, side, style::PICKED)
+    style.draw_frame(bitmap, x, y, side, side)
   end
 
   # Frees the wheel's picture.

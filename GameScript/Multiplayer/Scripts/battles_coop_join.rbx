@@ -2,7 +2,8 @@
 #  battles_coop_join.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Drew the prompt in the color every request and offer shares
+#      Paulinchen  2026-10-11: Drew the prompt in the shared style's small font and solid outline, as the other labels, instead of the game's half-transparent one
+#                            - Drew the prompt in the color every request and offer shares
 #                            - Kept the prompt on the screen through MGQ_MpUi.within instead of a copy of it
 #      Paulinchen  2026-10-10: Offered a side battle against the same raid boss near a boss battle that takes the player in no more, on the same hotkey
 #                            - Kept the prompt whole on the screen at the map's edges
@@ -408,7 +409,7 @@ module MGQ_MpBattlesJoin
 end
 
 # The prompt below the player's character while a battle near them takes them in, naming the
-# hotkey that joins it.
+# hotkey that joins it, in the style's small font and solid outline.
 class Sprite_MpJoinPrompt < Sprite
   # Width of the prompt.
   WIDTH = 240
@@ -419,8 +420,8 @@ class Sprite_MpJoinPrompt < Sprite
   # Pixels between the character's feet and the prompt.
   GAP = 2
 
-  # Size of the prompt's font.
-  FONT_SIZE = 16
+  # Size of the prompt's font, the style's small one.
+  FONT_SIZE = MGQ_MpUi::Style::SMALL_SIZE
 
   # Color of the prompt, the one every request and offer shares.
   COLOR = MGQ_MpActions::LINE_COLOR
@@ -451,9 +452,7 @@ class Sprite_MpJoinPrompt < Sprite
 
     @shown = text
     bitmap.clear
-    bitmap.font.size = FONT_SIZE
-    bitmap.font.outline = true
-    bitmap.font.color = COLOR
+    MGQ_MpUi::Style.use_font(bitmap, FONT_SIZE, COLOR)
     bitmap.draw_text(0, 0, WIDTH, HEIGHT, text, 1)
   end
 

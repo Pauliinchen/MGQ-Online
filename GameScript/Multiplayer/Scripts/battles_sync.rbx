@@ -2,7 +2,8 @@
 #  battles_sync.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Let the waiting box name the players still waited for and count the seconds, written as the line above the player's head writes them, drawn once a second, before the leave offer takes the last line
+#      Paulinchen  2026-10-11: Let the player move the waiting box and change its width with Alt, kept in Player.ini and never narrower than its text and the leave offer need, and dressed it in the interface look
+#                            - Let the waiting box name the players still waited for and count the seconds, written as the line above the player's head writes them, drawn once a second, before the leave offer takes the last line
 #                            - Named the wait for a player once, which the live battle and the playback share
 #                            - Named a player of the world by their seat for the waiting box, "you" for the player, through the peer's name the log's naming shares
 #                            - Told of a player who joined the running battle the way a departure is told, once per battle apart from their leaving
@@ -1048,9 +1049,10 @@ module MGQ_MpBattlesSync
   end
 
   # The box that says what the game waits for, whom it still waits for and for how long, and offers
-  # to leave the battle when the wait drags on.
+  # to leave the battle when the wait drags on. The player moves it and changes its width with Alt
+  # (MGQ_MpUi::Layout); its three lines keep their height.
   module Waiting
-    # Width of the box.
+    # Width of the box where it starts.
     WIDTH = 360
 
     # Lines of the box: the text, the names, and the seconds or the leave offer.
@@ -1066,11 +1068,15 @@ module MGQ_MpBattlesSync
     # Height of the box. The contents are made once with the window, so the height is set at open.
     HEIGHT = LINE_HEIGHT * LINES + 2 * PADDING
 
-    # Top of the box on the screen.
+    # Top of the box on the screen where it starts.
     TOP = 120
 
     # How far above the battle's windows the box lies.
     Z = 250
+
+    # The box's place in the layout and its name in the outlines.
+    LAYOUT_ID = :waiting_box
+    LAYOUT_NAME = "Waiting box"
 
     # Frames a wait lasts before the box offers to leave the battle, ten seconds. Offered later, the
     # key that moved the last message on never leaves by chance.
@@ -1098,15 +1104,17 @@ module MGQ_MpBattlesSync
 
     # An open box.
     #
-    # @!attribute window [Window_Base] The window.
+    # @!attribute window [Window_MpWaiting] The window.
     # @!attribute text [String] What the game waits for.
     # @!attribute details [Proc, nil] Names the players still waited for.
     # @!attribute prefix [String] What starts the names line.
     # @!attribute names [Array<String>, nil] The names last drawn, nil before the first drawing.
     # @!attribute seconds [Integer, nil] The seconds last drawn, nil before the first drawing.
-    Box = Struct.new(:window, :text, :details, :prefix, :names, :seconds)
+    # @!attribute time [String] What the last line says, the seconds or the leave offer, "" before
+    #   the first drawing.
+    Box = Struct.new(:window, :text, :details, :prefix, :names, :seconds, :time)
 
-    # Opens the box with its first line drawn, the others empty.
+    # Opens the box with its first line drawn, the others empty, where the player left it.
     #
     # @param text [String] What the game waits for.
     # @param details [Proc, nil] Returns an Array<String> of the names still waited for, or nil or
@@ -1115,11 +1123,69 @@ module MGQ_MpBattlesSync
     # @param prefix [String] What starts the names line, such as "Still choosing: ".
     # @return [Box] The box.
     def self.open(text, details = nil, prefix = WAITING_PREFIX)
-      window = Window_Base.new((Graphics.width - WIDTH) / 2, TOP, WIDTH, HEIGHT)
+      rect = MGQ_MpUi::Layout.rect(LAYOUT_ID, default_rect)
+      window = Window_MpWaiting.new(rect.x, rect.y, rect.width, HEIGHT)
       window.z = Z
-      box = Box.new(window, text, details, prefix, nil, nil)
+      box = Box.new(window, text, details, prefix, nil, nil, "")
+      register_layout(least_width(window.contents, [text, LEAVE_TEXT]))
       draw_line(box, TEXT_LINE, text)
+      place(box)
       box
+    end
+
+    # Tells where the box starts: centered, TOP from the top of the screen.
+    #
+    # @return [Rect] The place.
+    def self.default_rect
+      Rect.new((Graphics.width - WIDTH) / 2, TOP, WIDTH, HEIGHT)
+    end
+
+    # Makes the box movable with a least width, or another; nothing while the least width stays.
+    #
+    # @param min_width [Integer] The least width.
+    def self.register_layout(min_width)
+      return if min_width == @least
+
+      @least = min_width
+      MGQ_MpUi::Layout.register(LAYOUT_ID, LAYOUT_NAME, min_width, HEIGHT, :width)
+    end
+
+    # Tells the least width lines need to show whole, as far as WIDTH gives it, since a longer line
+    # is squeezed there already. The names line is left out: it is cut to the box's width.
+    #
+    # @param measure [Bitmap] What measures a text in the box's font.
+    # @param texts [Array<String>] The lines, such as what the game waits for and the leave offer.
+    # @return [Integer] The width.
+    def self.least_width(measure, texts)
+      [texts.map { |text| measure.text_size(text.to_s).width }.max + 2 * PADDING, WIDTH].min
+    end
+
+    # Makes the box movable before any box opens, with the least width its leave offer needs.
+    def self.register_at_load
+      measure = Bitmap.new(1, 1)
+      register_layout(least_width(measure, [LEAVE_TEXT]))
+      measure.dispose
+    end
+
+    # Takes the place the layout gives: new contents with every line drawn anew once the width
+    # changed, the interface look, and the box offered to the layout.
+    #
+    # @param box [Box] The box.
+    def self.place(box)
+      window = box.window
+      rect = MGQ_MpUi::Layout.rect(LAYOUT_ID, default_rect)
+      if rect.width != window.width
+        window.width = rect.width
+        window.create_contents
+        draw_line(box, TEXT_LINE, box.text)
+        draw_line(box, NAMES_LINE, names_line(box))
+        draw_line(box, TIME_LINE, box.time)
+      end
+      window.x = rect.x
+      window.y = rect.y
+      # The battle updates only its own windows, so the box follows a new interface look here.
+      window.update
+      MGQ_MpUi::Layout.offer(LAYOUT_ID, rect.x, rect.y, rect.width, HEIGHT, Z)
     end
 
     # Draws a line of the box anew, cleared first.
@@ -1134,24 +1200,36 @@ module MGQ_MpBattlesSync
       contents.draw_text(0, line * height, contents.width, height, text, 1) unless text.empty?
     end
 
-    # Draws what changed: the names line when the names differ from those drawn, the seconds once
-    # every REDRAW_FRAMES, or the leave offer at LEAVE_FRAMES, which stays. Frames below 0 draw no
-    # seconds.
+    # Writes the names line: the prefix and the names last drawn, cut to the box's width.
+    #
+    # @param box [Box] The box.
+    # @return [String] The line, "" for no names.
+    def self.names_line(box)
+      names = box.names || []
+      contents = box.window.contents
+      names.empty? ? "" : MGQ_MpUi.cut(contents, "#{box.prefix}#{names.join(', ')}", contents.width)
+    end
+
+    # Follows the layout, then draws what changed: the names line when the names differ from those
+    # drawn, the seconds once every REDRAW_FRAMES, or the leave offer at LEAVE_FRAMES, which stays.
+    # Frames below 0 draw no seconds.
     #
     # @param box [Box] The box.
     # @param frames [Integer] Frames the box has been open, 0 in the frame it opened.
     def self.refresh(box, frames)
+      place(box)
       names = names_of(box)
       if names != box.names
         box.names = names
-        contents = box.window.contents
-        draw_line(box, NAMES_LINE, names.empty? ? "" : MGQ_MpUi.cut(contents, "#{box.prefix}#{names.join(', ')}", contents.width))
+        draw_line(box, NAMES_LINE, names_line(box))
       end
       if frames == LEAVE_FRAMES
-        draw_line(box, TIME_LINE, LEAVE_TEXT)
+        box.time = LEAVE_TEXT
+        draw_line(box, TIME_LINE, box.time)
       elsif frames >= 0 && frames < LEAVE_FRAMES && frames % REDRAW_FRAMES == 0
         box.seconds = frames / REDRAW_FRAMES
-        draw_line(box, TIME_LINE, MGQ_MpUi::SECONDS_TEXT % box.seconds)
+        box.time = MGQ_MpUi::SECONDS_TEXT % box.seconds
+        draw_line(box, TIME_LINE, box.time)
       end
     end
 
@@ -1249,6 +1327,19 @@ module MGQ_MpBattlesSync
     end
   end
 
+end
+
+# The waiting box's window, see MGQ_MpBattlesSync::Waiting, dressed in the interface look.
+class Window_MpWaiting < Window_Base
+  include MGQ_MpUi::Theme::Skinned
+end
+
+# The waiting box in the layout, through ui_layout.rbx.
+
+begin
+  MGQ_MpBattlesSync::Waiting.register_at_load
+rescue => e
+  MGQ_MpBattlesSync.log("layout FAILED: #{e.class}: #{e.message}")
 end
 
 # What this script takes part in of the world's messages, through overworld_sync.rbx.

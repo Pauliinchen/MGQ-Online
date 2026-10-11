@@ -2,7 +2,8 @@
 #  ui_edge_arrows_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Checked that a player outside the party gets a plain white arrow
+#      Paulinchen  2026-10-11: Checked that a preset change draws an arrow anew
+#                            - Checked that a player outside the party gets a plain white arrow
 #                            - Created
 #
 #----------------------------------------------------------------
@@ -234,6 +235,12 @@ walk(member, 40, 40)
 spriteset.update
 check("a ghost that moves turns the arrow, now on the bottom edge, and draws it anew", [arrow.bitmap.equal?(picture), arrow.bitmap.texts.map { |text| text[3] }, [arrow.x, arrow.y]], [false, ["Member 73"], [443, 466]])
 check("drawing anew makes the one picture, measuring on the sprite's own bitmap kept for it", Bitmap.made - made, 1)
+made = Bitmap.made
+MGQ_MpUi::Theme.apply("Monarch", "a test")
+spriteset.update
+check("a preset change draws the arrow anew, its plate in the preset's plate color", [Bitmap.made - made, arrow.bitmap.fills.any? { |fill| fill[4].equal?(Style::PLATE) }], [1, true])
+MGQ_MpUi::Theme.apply("Legacy", "a test")
+spriteset.update
 check("its plate lies up and left of the triangle", [arrow.bitmap.fills.find { |fill| fill[4].equal?(Style::PLATE) }[1] + Arrows::LABEL_HEIGHT <= arrow.oy, arrow.bitmap.fills.find { |fill| fill[4].equal?(Style::PLATE) }[0] < arrow.ox], [true, true])
 walk(member, 3, 40)
 spriteset.update

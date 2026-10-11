@@ -2,7 +2,8 @@
 #  notices_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Checked the box fading in and out, an answered invite and a message that runs out fading away, the last row saying how many more wait, a long notification cut to its row and the three spaces between what the keys do
+#      Paulinchen  2026-10-11: Checked the box's place in the layout: its default below a strip at the top, a place the player left it in with its width and rows, its least size with the keys whole, and drawing anew after a preset change
+#                            - Checked the box fading in and out, an answered invite and a message that runs out fading away, the last row saying how many more wait, a long notification cut to its row and the three spaces between what the keys do
 #                            - Checked the keys drawn whole with a rebound key's longer name
 #      Paulinchen  2026-10-08: Checked that an accepted invite shows again after a moment while it still stands, and a declined one stays away
 #                            - Checked that an accepted invite stays away for the whole hold, and shows again at once when the inviter turns the accept down
@@ -15,29 +16,32 @@
 #----------------------------------------------------------------
 
 # Covers the notification box, ui_notices.rbx: the invites it lists from anywhere in the world while
-# they stand, the messages it shows for a moment, the scenes it shows in, its keys, its fades and
-# the row that says how many more wait. Pictures measure each character at 7 pixels.
+# they stand, the messages it shows for a moment, the scenes it shows in, its keys, its fades, the
+# row that says how many more wait, and its place and size in the layout. Pictures measure each
+# character at 7 pixels.
 
 require_relative "world_support"
 
 # Stand-ins for the game's pictures, which record the texts drawn whole and those drawn fading,
-# the colors, the World overview and duels.
+# where each text went and the fills, the colors, the World overview and duels.
 class Color
   attr_reader :red, :green, :blue, :alpha
   def initialize(red = nil, green = nil, blue = nil, alpha = nil); @red, @green, @blue, @alpha = red, green, blue, alpha; end
 end
 class Bitmap
   Font = Struct.new(:outline, :size, :color, :bold, :out_color)
-  attr_reader :texts, :fading, :font
-  def initialize(*); @texts = []; @fading = []; @font = Font.new; end
-  def clear; @texts = []; @fading = []; end
-  def fill_rect(*); end
+  attr_reader :texts, :fading, :font, :width, :height, :fills, :places
+  def initialize(width = 1, height = 1); @width = width; @height = height; @texts = []; @fading = []; @fills = []; @places = []; @font = Font.new; end
+  def clear; @texts = []; @fading = []; @fills = []; @places = []; end
+  def fill_rect(x, y, width, height, color); @fills << [x, y, width, height, color]; end
   def text_size(text); Rect.new(0, 0, text.to_s.size * 7, 16); end
-  def draw_text(_x, _y, _width, _height, text, _align = 0)
+  def draw_text(x, y, width, _height, text, _align = 0)
     color = font.color
     (color.is_a?(Color) && color.alpha && color.alpha < 255 ? @fading : @texts) << text
+    @places << [text, x, y, width]
   end
-  def dispose; end
+  def dispose; @disposed = true; end
+  def disposed?; @disposed ? true : false; end
 end
 class Sprite
   attr_accessor :bitmap, :x, :y, :z, :visible, :opacity
@@ -229,3 +233,59 @@ check("the long message is cut to its row", box.call.bitmap.text_size(shown.call
 (1..7).each { |n| notices.drop([:many, n]) }
 notices.tick(true)
 check("dropped, they are gone at once", notices.notices, [])
+
+# Where the box lies: its default, a place the player left it in, its least size and the preset.
+layout = MGQ_MpUi::Layout
+stored = layout.instance_variable_get(:@stored)
+offered = lambda { offer = layout.instance_variable_get(:@offers).find { |each| each.id == :notices }; offer && offer.rect.to_a }
+size = lambda { [box.call.bitmap.width, box.call.bitmap.height] }
+many = lambda { |count| (1..count).each { |n| notices.message([:many, n], "Message #{n}") } }
+drop_many = lambda { (1..12).each { |n| notices.drop([:many, n]) } }
+registered = layout.instance_variable_get(:@boxes)[:notices]
+check("the box is movable as Notifications, resizable both ways, never narrower than the keys beside a readable name nor lower than two rows",
+      registered.to_a, ["Notifications", Sprite_MpNoticeBox::ACTION_WIDTH + Sprite_MpNoticeBox::MIN_TEXT_WIDTH + 2 * Sprite_MpNoticeBox::EDGE, 2 * Sprite_MpNoticeBox::ROW + 4, :both])
+many.call(2)
+notices.tick(true)
+check("at its default it lies at the top left, WIDTH wide and MAX_ROWS high, offered to the layout where it lies",
+      [box.call.x, box.call.y, size.call, offered.call], [8, 8, [390, 114], [8, 8, 390, 114]])
+MGQ_MpUi.top_room = 30
+notices.tick(true)
+check("a strip at the top moves its default down", [box.call.y, offered.call[1]], [38, 38])
+
+$player_ini["ui_notices"] = "100,200,500,160"
+stored.clear
+drop_many.call
+many.call(9)
+notices.tick(true)
+check("a place the player left it in holds whatever the strip, its picture as large", [box.call.x, box.call.y, size.call, offered.call], [100, 200, [500, 160], [100, 200, 500, 160]])
+check("its height decides the rows, seven here, the last saying how many more wait", [shown.call.size, shown.call.first, shown.call.last], [7, "Message 9", "+3 more"])
+wide = "A message too long for the box at its default width, whole when wider"
+notices.message([:many, 10], wide)
+notices.tick(true)
+check("its width gives a long notification more room, whole here though the default would cut it",
+      [box.call.bitmap.places.first[3], shown.call.first, box.call.bitmap.text_size(wide).width > Sprite_MpNoticeBox::WIDTH - 2 * Sprite_MpNoticeBox::EDGE], [500 - 2 * Sprite_MpNoticeBox::EDGE, wide, true])
+
+$player_ini["ui_notices"] = "0,0,10,10"
+stored.clear
+$inbox << entry("message", 3, told(cid))
+MGQ_MpOverworldSync.tick
+places = box.call.bitmap.places
+keys = places.find { |text, _, _, _| text == "Y: Accept   N: Decline" }
+challenge = places.first
+min_width = registered.min_width
+check("made smaller than its least, it keeps its least size", [size.call, offered.call], [[min_width, 48], [0, 0, min_width, 48]])
+check("where the keys stay whole at the right and the challenge, cut beside them, still names its sender",
+      [keys.nil?, keys && keys[1] + keys[3], challenge[0].start_with?("Cid "), challenge[0].end_with?(MGQ_MpUi::ELLIPSIS), box.call.bitmap.text_size(challenge[0]).width <= challenge[3],
+       keys && challenge[1] + challenge[3] <= keys[1]], [false, min_width - Sprite_MpNoticeBox::EDGE, true, true, true, true])
+check("and its two rows show the challenge and how many more wait", [shown.call.size, shown.call.last], [3, "+10 more"])
+
+MGQ_MpUi::Theme.apply("Monarch", "a test")
+notices.tick(true)
+check("a preset change draws the box anew, its frame with the preset's rim", box.call.bitmap.fills.size, 9)
+MGQ_MpUi::Theme.apply("Legacy", "a test")
+notices.tick(true)
+check("and back without it", box.call.bitmap.fills.size, 5)
+$player_ini.delete("ui_notices")
+stored.clear
+MGQ_MpUi.top_room = 0
+drop_many.call

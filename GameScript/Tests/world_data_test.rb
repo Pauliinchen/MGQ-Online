@@ -2,7 +2,8 @@
 #  world_data_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Read the list box's rows from its lazy rectangle, and gave the screen its size
+#      Paulinchen  2026-10-11: Checked that a description in the list box breaks anew once the box is wider, and loaded ui_layout.rbx, which places the list box
+#                            - Read the list box's rows from its lazy rectangle, and gave the screen its size
 #                            - Expected the added world's name followed by the screen's hint to confirm to enter it, and let the list stand-in take the world to put the cursor on
 #      Paulinchen  2026-10-10: Expected a release's Raid World form without a Save, and a development build's with its Save beside the Difficulty on one row
 #                            - Checked that an update of the data to enter with that was refused or could not start enters nothing after a later update
@@ -80,7 +81,7 @@ module MGQ_Multiplayer
   def self.clean(text); text; end
   def self.path(name); name; end
   module Log; def self.write(_message); end; end
-  module Player; def self.share; end; def self.name; "Me"; end; end
+  module Player; def self.share; end; def self.name; "Me"; end; def self.setting(_key); nil; end; end
   module Ini; def self.read(_path); {}; end; end
   module Link
     Function = Struct.new(:name, :signature) do
@@ -102,6 +103,7 @@ end
 
 load_script "world_save_distribution"
 load_script "ui"
+load_script "ui_layout"
 load_script "ui_text_box"
 load_script "world"
 load_script "world_mods"
@@ -833,6 +835,14 @@ scene.instance_variable_set(:@list_box, Struct.new(:bitmap).new(measure))
 scene.open_box(:description)
 box = scene.instance_variable_get(:@box)
 check("the whole description opens in the list box, broken into lines", [box.note, box.lines.map { |line| line[1] }.join(" "), box.lines.size > 1], ["Description", "A slow run through part one of the story with friends.", true])
+kept = MGQ_MpUi::Layout.instance_variable_get(:@stored)
+before = box.lines.size
+box.selected = before - 1
+kept[:list_box] = Rect.new(0, 0, 640, 300)
+scene.rewrap_description
+check("a list box the player widened breaks the description anew to its width, the pick kept on a line",
+      [box.lines.map { |line| line[1] }.join(" "), [before, box.lines.size], box.selected], ["A slow run through part one of the story with friends.", [3, 2], 1])
+kept.delete(:list_box)
 
 # The left side: the worlds above the commands.
 

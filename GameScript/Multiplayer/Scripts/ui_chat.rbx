@@ -2,7 +2,15 @@
 #  ui_chat.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Renamed the say chat to the map chat, chosen with /m or /map instead of /s or /say, its lines still marked say for the games of earlier releases
+#      Paulinchen  2026-10-11: Moved and resized the chat log with Alt and the mouse through MGQ_MpUi::Layout, the map's as Chat and the battle's as Battle chat, each starting where it lay before at the size chat_size keeps
+#                            - Dropped the log's own resizing with Alt and the mouse, which kept its size in chat_size
+#                            - Snapped the log's height to whole rows below its tabs and above the chat box
+#                            - Raised the log's narrowest width to what its tabs and hints need, and its fewest rows to the list of fitting names
+#                            - Drew a hint of the empty chat box in the tiny font while it is wider than its room
+#                            - Offered the log to the layout whenever it shows, also while the chat box is closed
+#                            - Drew the open chat, its tabs and a player's menu in the interface preset's colors and frames, anew once the preset changes
+#                            - Took the left Alt from MGQ_MpUi::Layout and named moving, resizing and putting back the chat in the Alt hint and the help
+#                            - Renamed the say chat to the map chat, chosen with /m or /map instead of /s or /say, its lines still marked say for the games of earlier releases
 #                            - Drew the chats in the colors of World of Warcraft: the global chat plain white without a tag, the map chat in its zone pink, the party chat in its party blue and whispers in its whisper pink
 #                            - Showed the Whisper tab only once the player whispered, got a whisper or chose the whisper chat, until the world closes
 #                            - Named every player outside the party in plain white in the log
@@ -123,9 +131,11 @@ module MGQ_MpChat
   # Rows Page Up and Page Down scroll the chat log by.
   PAGE_ROWS = 5
 
-  # Windows' codes of the left Alt, which with left or right picks the log's tab and with the mouse
-  # resizes the log, and of left, right and Tab. The right Alt is AltGr, which types characters.
-  ALT_KEY = 0xA4
+  # Windows' code of the left Alt, the layout's: with left or right it picks the log's tab, with up
+  # or down it brings back the lines sent, and with the mouse the layout moves and resizes the log.
+  ALT_KEY = MGQ_MpUi::Layout::ALT_KEY
+
+  # Windows' codes of left, right and Tab.
   LEFT_KEY = 0x25
   RIGHT_KEY = 0x27
   TAB_KEY = 0x09
@@ -190,7 +200,7 @@ module MGQ_MpChat
           "/w <name> <text>   Whisper: one player. Up and Down pick a name from the list, Enter or Tab takes it.",
           "/r <text>   Whisper back to the last player who whispered to you.",
           "Tabs: click one, or Alt with Left or Right. All shows every chat.",
-          "Alt and a drag with the mouse resize the chat.",
+          "Alt and a drag with the mouse move or resize the chat, Alt and a double click put it back.",
           "Alt with Up or Down brings back the lines you sent. Ctrl+V pastes.",
           "Up, Down, Page Up and Page Down scroll. Enter sends, Esc or the numpad's 0 closes."]
 
@@ -201,10 +211,13 @@ module MGQ_MpChat
   # What the log shows before a line an admin said from outside the game, through the relay.
   ADMIN_TAG = "[Admin] "
 
-  # The setting in Player.ini that keeps the log's size, as width x rows.
+  # The setting in Player.ini that holds the log's size as width x rows, the size the layout starts
+  # it at.
+  #
+  # Builds before the layout resized the log by themselves and kept its size here.
   SIZE_SETTING = "chat_size"
 
-  # The log's size until the player resizes it: its width and its rows of lines.
+  # The log's size without SIZE_SETTING: its width and its rows of lines.
   DEFAULT_SIZE = [400, 6]
 
   # A line of the chat log.
@@ -598,7 +611,8 @@ module MGQ_MpChat
     text[match[0].size..-1]
   end
 
-  # Tells the log's size, as the player last left it.
+  # Tells the log's size until the player resizes it through the layout: SIZE_SETTING's, else
+  # DEFAULT_SIZE.
   #
   # @return [Array<Integer>] Its width and its rows of lines.
   def self.size
@@ -606,20 +620,6 @@ module MGQ_MpChat
       stored = MGQ_Multiplayer::Player.setting(SIZE_SETTING).to_s.split("x").map(&:to_i)
       stored.size == 2 && stored.all? { |value| value > 0 } ? stored : DEFAULT_SIZE
     end
-  end
-
-  # Changes the log's size while it is dragged. The log's sprite keeps it on the screen.
-  #
-  # @param width [Integer] Its width.
-  # @param rows [Integer] Its rows of lines.
-  def self.resize(width, rows)
-    @size = [width, rows]
-  end
-
-  # Keeps the log's size in Player.ini once the drag ends.
-  def self.keep_size
-    MGQ_Multiplayer::Player.store(SIZE_SETTING, size.join("x"))
-    log("resized the chat log to #{size[0]} pixels and #{size[1]} rows")
   end
 
   # Reports whether the keyboard reaches the game, which only happens once its window is hooked.
@@ -1400,9 +1400,9 @@ class Sprite_MpChatBubble < Sprite
   end
 end
 
-# The chat log at the bottom left, above the world's status line, with its tabs above it and the chat
-# box below it while the player types. It lies on a viewport of its own, which comes above
-# everything while the player types.
+# The chat log, at the bottom left above the world's status line until the player moves it through
+# the layout, with its tabs above it and the chat box below it while the player types. It lies on a
+# viewport of its own, which comes above everything while the player types.
 class Sprite_MpChatLog < Sprite
   # Height of one row.
   ROW = 19
@@ -1413,11 +1413,23 @@ class Sprite_MpChatLog < Sprite
   # Room left and right of a tab's name.
   TAB_PAD = 6
 
-  # Narrowest the log gets.
-  MIN_WIDTH = 200
+  # Narrowest the log gets: the tabs with the help tab need 306 pixels, and the widest hint,
+  # HELP_HINT in the tiny font after the help tab's label, 392.
+  MIN_WIDTH = 400
 
-  # Fewest rows of lines the log keeps.
-  MIN_ROWS = 3
+  # Fewest rows of lines the log keeps: as many as the list of fitting names, which lies on the rows
+  # above the chat box.
+  MIN_ROWS = MGQ_MpChat::SUGGESTIONS
+
+  # Lowest the log gets: the tabs, MIN_ROWS rows and the chat box's row.
+  MIN_HEIGHT = TAB_ROW + ROW * (MIN_ROWS + 1)
+
+  # The log's boxes in the layout, by their id: the map's and the battle's, each placed on its own.
+  BOXES = { :chat => "Chat", :battle_chat => "Battle chat" }
+
+  # Room between the screen's edges and the log at its default place: on the left, and on the right
+  # at its widest.
+  SCREEN_MARGIN = 8
 
   # Room the world's status line keeps at the bottom of the screen.
   STATUS_ROOM = 96
@@ -1438,15 +1450,13 @@ class Sprite_MpChatLog < Sprite
   # The chats whose text is in their color too, not only their tag.
   COLORED_TEXT = [:map, :whisper]
 
-  # How opaque a tab's background is.
-  TAB_ALPHA = 120
-
-  # Background of a tab. The picked one is filled with its chat's color instead, under TAB_INK.
-  TAB_BACK = Color.new(0, 0, 0, TAB_ALPHA)
+  # Background of a tab, the preset's. The picked one is filled with its chat's color instead, under
+  # TAB_INK.
+  TAB_BACK = MGQ_MpUi::Style::TAB
 
   # The yellow a tab with unread lines glows in at its top right corner, red, green and blue, over
-  # TAB_BACK's black. It grows from the tab's opacity to fully opaque toward the corner, since at the
-  # tab's own it barely stood out.
+  # TAB_BACK. It grows from the tab's opacity to fully opaque toward the corner, since at the tab's
+  # own it barely stood out.
   UNREAD_GLOW = [255, 220, 60]
 
   # How far from the top right corner the glow reaches, in pixels.
@@ -1465,7 +1475,7 @@ class Sprite_MpChatLog < Sprite
   BOX_HINT = "↑↓: scroll   Alt: more   /help: help"
 
   # What the empty chat box says while Alt is held.
-  ALT_HINT = "←→: change tab   ↑↓: sent lines   Drag: resize"
+  ALT_HINT = "←→: tab   ↑↓: sent   Drag: move, resize"
 
   # What the chat box says on the help tab, where nobody types.
   HELP_HINT = "Pick another tab to chat. #{MGQ_MpUi::Style.close_hint}"
@@ -1476,10 +1486,10 @@ class Sprite_MpChatLog < Sprite
   # Room at the right of the rows for the arrows that show the log scrolls on.
   ARROW_ROOM = 14
 
-  # Color of the thin outline of the tabs and of the open chat.
-  OUTLINE = Color.new(140, 140, 140, 220)
+  # Color of the thin outline of the tabs and of the open chat, the preset's.
+  OUTLINE = MGQ_MpUi::Style::EDGE
 
-  # Color of the open chat's outline while Alt is held, which shows that a drag resizes it.
+  # Color of the open chat's outline while Alt is held, which shows that a drag moves or resizes it.
   RESIZE_OUTLINE = MGQ_MpUi::Style::TEXT
 
   # Lines whose rows the log remembers before it forgets them all, since each new line breaks once.
@@ -1487,13 +1497,15 @@ class Sprite_MpChatLog < Sprite
 
   # Creates the log, empty, on a viewport of its own.
   #
-  # @param bottom_room [Integer] Room kept free below it: STATUS_ROOM on the map, BATTLE_ROOM in battle.
+  # @param layout_id [Symbol] Its box in the layout, one of BOXES.
+  # @param bottom_room [Integer] Room its default place keeps free below it: STATUS_ROOM on the map,
+  #   BATTLE_ROOM in battle.
   # @param resting_z [Integer] Its viewport's depth while the player does not type.
-  def initialize(bottom_room, resting_z)
+  def initialize(layout_id, bottom_room, resting_z)
     super(Viewport.new.tap { |viewport| viewport.z = resting_z })
+    @layout_id = layout_id
     @bottom_room = bottom_room
     @resting_z = resting_z
-    self.x = 8
     @shown = nil
     @wrapped = {}
     @tab_spots = []
@@ -1502,15 +1514,16 @@ class Sprite_MpChatLog < Sprite
     @menu_sprite.z = 1
   end
 
-  # Draws the log and the chat box, if they changed: the rows the log is scrolled to, with an
-  # arrow at the top while older rows lie above and one at the bottom while newer ones lie below,
-  # a line of the closed log fading away over its last frames. Above the closed log the tabs show
-  # dimmed while one holds unread lines, so its glow is seen.
+  # Draws the log and the chat box where the layout places them, if they changed: the rows the log
+  # is scrolled to, with an arrow at the top while older rows lie above and one at the bottom while
+  # newer ones lie below, a line of the closed log fading away over its last frames. Above the
+  # closed log the tabs show dimmed while one holds unread lines, so its glow is seen. While it
+  # shows anything, it offers its place to the layout.
   def update
     super
     chat = MGQ_MpChat
-    fit(chat)
-    chat.typing? ? follow_mouse(chat) : finish_drag(chat)
+    place(chat)
+    follow_mouse(chat) if chat.typing?
     # Read after the mouse, whose click on a menu's choice may close the chat box.
     typing = chat.typing?
     depth = typing ? MGQ_MpUi::Z[:typing] : @resting_z
@@ -1527,8 +1540,10 @@ class Sprite_MpChatLog < Sprite
     alt = typing && MGQ_Multiplayer::Key.down?(MGQ_MpChat::ALT_KEY)
     # A line of the closed log fades over its last frames, so those count as a change.
     fades = shown.map { |_row, line, _first| typing ? nil : [line.left, MGQ_MpUi::Style::FADE_FRAMES].min }
+    offer_place if typing || !shown.empty? || !chat.unread_tabs.empty?
     drawn = [shown.map { |row, line, first| [row, line.who, line.channel, first] }, fades, older, scroll, chat.typed, chat.cursor,
-             typing && chat.cursor_shown?, chat.tab, chat.channel, chat.whisper_to, chat.suggestions, chat.pick, alt, @size, chat.unread_tabs, chat.tabs]
+             typing && chat.cursor_shown?, chat.tab, chat.channel, chat.whisper_to, chat.suggestions, chat.pick, alt, @size, chat.unread_tabs, chat.tabs,
+             MGQ_MpUi::Theme.serial]
     return if drawn == @shown
 
     @shown = drawn
@@ -1544,41 +1559,76 @@ class Sprite_MpChatLog < Sprite
     draw_arrow(TAB_ROW, true) if typing && older
     draw_arrow(TAB_ROW + (@rows - 1) * ROW, false) if typing && scroll > 0
     draw_box(chat, alt) if typing
-    draw_frame(0, TAB_ROW, @width, bitmap.height - TAB_ROW, alt ? RESIZE_OUTLINE : OUTLINE, @picked_gap) if typing
+    draw_chat_frame(alt ? RESIZE_OUTLINE : OUTLINE) if typing
     draw_names(chat) if typing
   end
 
-  # Makes the log as large as the chat says, within the screen, see within_screen.
-  #
-  # The chat keeps its own size, so a battle's smaller room never shrinks the map's log.
+  # Places the log where the layout says, its picture as wide as the place and as high as the
+  # whole rows that fit it, standing on the place's bottom.
   #
   # @param chat [Module] MGQ_MpChat.
-  def fit(chat)
-    width, rows = within_screen(chat.size)
-    return if [width, rows] == @size
+  def place(chat)
+    rect = MGQ_MpUi::Layout.rect(@layout_id, default_rect(chat))
+    rows = [rows_in(rect.height), MIN_ROWS].max
+    rebuild(rect.width, rows) unless [rect.width, rows] == @size
+    left = rect.x
+    top = rect.y + rect.height - bitmap.height
+    self.x = left unless x == left
+    self.y = top unless y == top
+  end
 
+  # Tells where the log lies until the player moves it: at the screen's left, standing on the room
+  # kept below it, at the chat's size within the screen.
+  #
+  # The rows stop above the room kept below, so a battle's smaller room draws fewer of them.
+  #
+  # @param chat [Module] MGQ_MpChat.
+  # @return [Rect] The place.
+  def default_rect(chat)
+    width, rows = chat.size
+    most_rows = [rows_in(Graphics.height - @bottom_room), MIN_ROWS].max
+    width = MGQ_MpUi.within(width, MIN_WIDTH, [Graphics.width - SCREEN_MARGIN * 2, MIN_WIDTH].max)
+    height = height_of(MGQ_MpUi.within(rows, MIN_ROWS, most_rows))
+    Rect.new(SCREEN_MARGIN, Graphics.height - @bottom_room - height, width, height)
+  end
+
+  # Tells how many rows of lines fit a height below the tabs and above the chat box.
+  #
+  # @param height [Integer] The height.
+  # @return [Integer] The rows.
+  def rows_in(height)
+    (height - TAB_ROW) / ROW - 1
+  end
+
+  # Tells how high the log is with a number of rows of lines.
+  #
+  # @param rows [Integer] The rows.
+  # @return [Integer] Its height: the tabs, the rows and the chat box's row.
+  def height_of(rows)
+    TAB_ROW + ROW * (rows + 1)
+  end
+
+  # Makes the log's picture anew at a size.
+  #
+  # @param width [Integer] Its width.
+  # @param rows [Integer] Its rows of lines.
+  def rebuild(width, rows)
     @size = [width, rows]
     @width, @rows = width, rows
     bitmap.dispose if bitmap
-    self.bitmap = Bitmap.new(width, TAB_ROW + ROW * (rows + 1))
+    self.bitmap = Bitmap.new(width, height_of(rows))
     MGQ_MpUi::Style.use_font(bitmap, MGQ_MpUi::Style::SMALL_SIZE, MGQ_MpUi::Style::TEXT)
-    self.y = Graphics.height - @bottom_room - bitmap.height
     @shown = nil
     @wrapped.clear
   end
 
-  # Keeps a size of the log within the screen: as wide as MIN_WIDTH up to the screen's right edge,
-  # and as many rows as MIN_ROWS up to as many as fit above the room kept below it.
-  #
-  # @param size [Array<Integer>] The width and the rows of lines.
-  # @return [Array<Integer>] The width and the rows that fit.
-  def within_screen(size)
-    most_rows = (Graphics.height - @bottom_room - TAB_ROW) / ROW - 1
-    [[[size[0], MIN_WIDTH].max, Graphics.width - x - 8].min, [[size[1], MIN_ROWS].max, most_rows].min]
+  # Tells the layout where the log shows, so Alt and the mouse move and resize it.
+  def offer_place
+    MGQ_MpUi::Layout.offer(@layout_id, x, y, bitmap.width, bitmap.height, viewport.z)
   end
 
-  # Follows the mouse while the chat box is open: a click on a tab picks it, and Alt held while the
-  # left button goes down on the log resizes it as the mouse is dragged, its bottom left staying put.
+  # Follows the mouse while the chat box is open: a click on another player's name opens their
+  # menu, a click on a tab picks it.
   #
   # @param chat [Module] MGQ_MpChat.
   def follow_mouse(chat)
@@ -1586,12 +1636,9 @@ class Sprite_MpChatLog < Sprite
     held = mouse.held?
     went_down = held && !@held
     @held = held
-    return drag(chat, mouse.position, held) if @drag
-
     position = mouse.position
     return follow_menu(chat, position, went_down) if chat.menu
     return unless went_down && position && inside?(position)
-    return @drag = [position, @size] if MGQ_Multiplayer::Key.down?(MGQ_MpChat::ALT_KEY)
 
     name = @name_spots.find { |_, left, right, top| position[0] >= x + left && position[0] < x + right && position[1] >= y + top && position[1] < y + top + ROW }
     return chat.open_menu(name[0], [x + name[1], y + name[3]]) if name
@@ -1628,15 +1675,15 @@ class Sprite_MpChatLog < Sprite
     left >= 0 && left < sprite.bitmap.width && position[1] >= sprite.y && row >= 0 && row < @menu_choices ? row : nil
   end
 
-  # Draws the menu of the player whose name was clicked, if it changed: their name as its title,
-  # bold on a strip of its own, then the choices, refused ones grey, the picked one lighter, and
-  # how to close it. It opens above the name, kept on the screen.
+  # Draws the menu of the player whose name was clicked in a box of the preset, if it changed: their
+  # name as its title, bold on a strip of its own, then the choices, refused ones grey, the picked
+  # one lighter, and how to close it. It opens above the name, kept on the screen.
   #
   # @param chat [Module] MGQ_MpChat.
   def draw_menu(chat)
     menu = chat.typing? ? chat.menu : nil
     options = menu ? chat.menu_options : []
-    shown = menu && !options.empty? ? [menu[:name], options.map { |option| [option.text, !option.run.nil?] }, menu[:pick], menu[:at]] : nil
+    shown = menu && !options.empty? ? [menu[:name], options.map { |option| [option.text, !option.run.nil?] }, menu[:pick], menu[:at], MGQ_MpUi::Theme.serial] : nil
     return if shown == @menu_shown
 
     @menu_shown = shown
@@ -1653,15 +1700,16 @@ class Sprite_MpChatLog < Sprite
     picture = @menu_sprite.bitmap = Bitmap.new(width, ROW * (options.size + 2))
     style = MGQ_MpUi::Style
     style.use_font(picture, style::SMALL_SIZE, style::TEXT)
-    picture.fill_rect(picture.rect, style::BACK)
-    picture.fill_rect(0, 0, width, ROW, style::PICKED)
-    picture.fill_rect(0, ROW - 1, width, 1, style::DIM)
+    style.draw_box(picture, 0, 0, width, picture.height)
+    inner = style.frame_width
+    picture.fill_rect(inner, inner, width - inner * 2, ROW - inner, style::PICKED)
+    picture.fill_rect(inner, ROW - 1, width - inner * 2, 1, style::DIM)
     picture.font.bold = true
     picture.draw_text(TAB_PAD, 0, width - TAB_PAD * 2, ROW, menu[:name])
     picture.font.bold = false
     options.each_with_index do |option, index|
       top = ROW * (index + 1)
-      picture.fill_rect(0, top, width, ROW, style::PICKED) if index == menu[:pick]
+      picture.fill_rect(inner, top, width - inner * 2, ROW, style::PICKED) if index == menu[:pick]
       picture.font.color = option.run ? style::TEXT : style::DIM
       picture.draw_text(TAB_PAD, top, width - TAB_PAD * 2, ROW, option.text)
     end
@@ -1669,30 +1717,6 @@ class Sprite_MpChatLog < Sprite
     picture.draw_text(TAB_PAD, ROW * (options.size + 1), width - TAB_PAD * 2, ROW, MENU_HINT)
     @menu_sprite.x = [[menu[:at][0], Graphics.width - width].min, 0].max
     @menu_sprite.y = [menu[:at][1] - picture.height, 0].max
-  end
-
-  # Resizes the log by how far the mouse moved since the drag started, rows by whole rows, within
-  # the screen.
-  #
-  # @param chat [Module] MGQ_MpChat.
-  # @param position [Array<Integer>, nil] Where the mouse points, nil outside the window.
-  # @param held [Boolean] Whether the left button is still held, else the drag ends.
-  def drag(chat, position, held)
-    start, size = @drag
-    chat.resize(*within_screen([size[0] + position[0] - start[0], size[1] + ((start[1] - position[1]) / ROW.to_f).round])) if position
-    fit(chat)
-    finish_drag(chat) unless held
-  end
-
-  # Ends a drag, if one runs, keeping the log's size.
-  #
-  # @param chat [Module] MGQ_MpChat.
-  def finish_drag(chat)
-    return unless @drag
-
-    @drag = nil
-    fit(chat)
-    chat.keep_size
   end
 
   # Reports whether a point of the screen lies on the log.
@@ -1755,12 +1779,12 @@ class Sprite_MpChatLog < Sprite
       bitmap.font.outline = !picked
       draw_part(at + TAB_PAD, 0, name, picked ? TAB_INK : color, TAB_ROW)
       bitmap.font.outline = true
-      draw_frame(at, 0, width, TAB_ROW, OUTLINE, nil, !picked || dim)
+      draw_tab_frame(at, width, !picked || dim)
       if dim
         bitmap.fill_rect(at, 0, width, TAB_ROW, CLOSED_SHADE)
         draw_unread_glow(at + width) if unread
       end
-      @picked_gap = [at + 1, at + width - 1] if picked
+      @picked_gap = [at, width] if picked
       @tab_spots.push([tab, at, width])
       left += width + 2
     end
@@ -1771,6 +1795,7 @@ class Sprite_MpChatLog < Sprite
   #
   # @param right [Integer] The tab's right edge.
   def draw_unread_glow(right)
+    base = TAB_BACK.alpha.to_i
     UNREAD_REACH.times do |down|
       break if down >= TAB_ROW
 
@@ -1779,7 +1804,7 @@ class Sprite_MpChatLog < Sprite
         next if strength <= 0
 
         red, green, blue = UNREAD_GLOW.map { |part| (part * strength).round }
-        alpha = (TAB_ALPHA + (255 - TAB_ALPHA) * strength).round
+        alpha = (base + (255 - base) * strength).round
         bitmap.fill_rect(right - 1 - left, down, 1, 1, Color.new(red, green, blue, alpha))
       end
     end
@@ -1797,23 +1822,31 @@ class Sprite_MpChatLog < Sprite
     end
   end
 
-  # Draws a one-pixel outline around a part of the log.
+  # Draws a tab's frame in the preset's colors, closed at the bottom or open into the chat below.
   #
-  # @param left [Integer] Its left.
-  # @param top [Integer] Its top.
-  # @param width [Integer] Its width.
-  # @param height [Integer] Its height.
-  # @param color [Color] The outline's color.
-  # @param gap [Array<Integer>, nil] Where the top line leaves out, from and to across the log,
-  #   under the picked tab; nil for none.
-  # @param bottom [Boolean] Whether the bottom line is drawn, which the picked tab leaves out.
-  def draw_frame(left, top, width, height, color, gap = nil, bottom = true)
-    from, to = gap || [left + width, left + width]
-    bitmap.fill_rect(left, top, from - left, 1, color)
-    bitmap.fill_rect(to, top, left + width - to, 1, color)
-    bitmap.fill_rect(left, top + height - 1, width, 1, color) if bottom
-    bitmap.fill_rect(left, top, 1, height, color)
-    bitmap.fill_rect(left + width - 1, top, 1, height, color)
+  # @param left [Integer] The tab's left.
+  # @param width [Integer] The tab's width.
+  # @param closed [Boolean] Whether its bottom is drawn, which the picked tab of the open chat
+  #   leaves out.
+  def draw_tab_frame(left, width, closed)
+    style = MGQ_MpUi::Style
+    # An open tab's frame reaches down onto the chat's top edge, which draw_chat_frame opens under it.
+    height = closed ? TAB_ROW : TAB_ROW + style.frame_width
+    style.draw_frame(bitmap, left, 0, width, height, OUTLINE)
+  end
+
+  # Draws the open chat's frame below the tabs in the preset's colors, open under the picked tab,
+  # whose inside meets the chat's.
+  #
+  # @param edge [Color] The edge's color: OUTLINE, RESIZE_OUTLINE while Alt is held.
+  def draw_chat_frame(edge)
+    style = MGQ_MpUi::Style
+    style.draw_frame(bitmap, 0, TAB_ROW, @width, bitmap.height - TAB_ROW, edge)
+    return unless @picked_gap
+
+    inner = style.frame_width
+    left, width = @picked_gap
+    bitmap.fill_rect(left + inner, TAB_ROW, width - inner * 2, inner, style::BACK)
   end
 
   # Draws one row of the log; a line's first row with its head in the sender's colors, keeping where
@@ -1885,13 +1918,25 @@ class Sprite_MpChatLog < Sprite
     @box_left = draw_part(TEXT_LEFT, y, label, help ? style::TEXT : CHANNEL_COLORS.fetch(channel, style::TEXT)) + 4
     editor = chat.editor
 
-    if editor.text.empty?
-      bitmap.font.color = style::DIM
-      bitmap.draw_text(@box_left + MGQ_MpUi::TextBox::CURSOR_WIDTH + 2, y, @width - @box_left - TEXT_LEFT, ROW, help ? HELP_HINT : alt ? ALT_HINT : BOX_HINT)
-      bitmap.font.color = style::TEXT
-    end
+    draw_hint(help ? HELP_HINT : alt ? ALT_HINT : BOX_HINT, y) if editor.text.empty?
 
     MGQ_MpUi::TextBox.draw_line(bitmap, Rect.new(@box_left, y, @width - @box_left - TEXT_LEFT, ROW), editor) unless help
+  end
+
+  # Draws a hint of the empty chat box behind the cursor, dim, in the tiny font while it is wider
+  # than the room left of the box's right edge.
+  #
+  # @param hint [String] The hint.
+  # @param y [Integer] The chat box's top.
+  def draw_hint(hint, y)
+    style = MGQ_MpUi::Style
+    left = @box_left + MGQ_MpUi::TextBox::CURSOR_WIDTH + 2
+    room = @width - left - TEXT_LEFT
+    bitmap.font.size = style::TINY_SIZE if bitmap.text_size(hint).width > room
+    bitmap.font.color = style::DIM
+    bitmap.draw_text(left, y, room, ROW, hint)
+    bitmap.font.color = style::TEXT
+    bitmap.font.size = style::SMALL_SIZE
   end
 
   # Draws the list of the names that fit the whisper command above the chat box, where the name
@@ -1925,6 +1970,16 @@ class Sprite_MpChatLog < Sprite
   end
 end
 
+# The chat log's boxes, which Alt and the mouse move and resize, through ui_layout.rbx.
+
+begin
+  Sprite_MpChatLog::BOXES.each do |id, name|
+    MGQ_MpUi::Layout.register(id, name, Sprite_MpChatLog::MIN_WIDTH, Sprite_MpChatLog::MIN_HEIGHT, :both)
+  end
+rescue => e
+  MGQ_MpChat.log("layout FAILED: #{e.class}: #{e.message}")
+end
+
 # What this script takes part in of the world's messages, through overworld_sync.rbx.
 
 begin
@@ -1956,7 +2011,7 @@ begin
   # them while they are on this map.
   MGQ_MpHooks.after(Spriteset_Map, :update, "ui_chat") do
     # Just under the topmost viewport, whose wheels and World overview lie above the log.
-    @mgq_mp_chat_log ||= Sprite_MpChatLog.new(Sprite_MpChatLog::STATUS_ROOM, @viewport3.z - 1)
+    @mgq_mp_chat_log ||= Sprite_MpChatLog.new(:chat, Sprite_MpChatLog::STATUS_ROOM, @viewport3.z - 1)
     @mgq_mp_chat_log.update
     @mgq_mp_bubbles ||= {}
     chat = MGQ_MpChat
@@ -2002,7 +2057,7 @@ begin
   MGQ_MpHooks.after(Spriteset_Battle, :update, "ui_chat") do
     if @mgq_mp_chat_log || MGQ_MpOverworldSync.in_world?
       # The battle's windows lie above every viewport of the spriteset, so the log rests above them.
-      @mgq_mp_chat_log ||= Sprite_MpChatLog.new(Sprite_MpChatLog::BATTLE_ROOM, MGQ_MpUi::Z[:wheels])
+      @mgq_mp_chat_log ||= Sprite_MpChatLog.new(:battle_chat, Sprite_MpChatLog::BATTLE_ROOM, MGQ_MpUi::Z[:wheels])
       @mgq_mp_chat_log.update
     end
   end

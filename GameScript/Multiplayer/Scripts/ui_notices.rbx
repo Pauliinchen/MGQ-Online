@@ -2,7 +2,9 @@
 #  ui_notices.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Drew the box in the shared style, fading it in and out, a message that runs out and an invite just answered fading away where it stood
+#      Paulinchen  2026-10-11: Made the box movable and resizable with the left Alt held, as "Notifications": its width gives the notifications room and its height the rows it shows, never below the first invite's keys beside a readable name and two rows
+#                            - Framed the box in the preset's colors, drawn anew once the preset changes
+#                            - Drew the box in the shared style, fading it in and out, a message that runs out and an invite just answered fading away where it stood
 #                            - Said how many more notifications wait in a last row once more than the box's rows do, through MGQ_MpUi.capped, and cut a long one to its row
 #                            - Logged an accept or decline key pressed where the box is hidden, such as on the overview's World page
 #                            - Put three spaces between what the keys do, as the chat's hints do
@@ -22,18 +24,19 @@
 #
 #----------------------------------------------------------------
 
-# The notification box at the top left of the screen, on the map and in menus. It holds two kinds:
-# invites, the party invites and duel challenges that reach the player in a world from wherever
-# they were sent, which stay as long as they stand; and messages, which other scripts show for a
-# moment, such as a party member meeting enemies, or a Discord invite taken outside a world. The
-# invites come first, and the box's keys (Y and N unless the player binds others, see
-# core_hotkeys.rbx) accept or decline the first one; messages take no key. A message that runs out
-# and an invite just answered fade away; past the box's rows a last row says how many more wait.
+# The notification box, at the top left of the screen until the player moves it, on the map and in
+# menus. It holds two kinds: invites, the party invites and duel challenges that reach the player
+# in a world from wherever they were sent, which stay as long as they stand; and messages, which
+# other scripts show for a moment, such as a party member meeting enemies, or a Discord invite
+# taken outside a world. The invites come first, and the box's keys (Y and N unless the player
+# binds others, see core_hotkeys.rbx) accept or decline the first one; messages take no key. A
+# message that runs out and an invite just answered fade away; past the box's rows a last row says
+# how many more wait.
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpNotices
-  # Rows the box shows at most; messages fill what the invites leave, and the last row says how
-  # many more wait once there are more than the rows.
+  # Rows the box shows at its default height; a taller box shows more. Messages fill what the
+  # invites leave, and the last row says how many more wait once there are more than the rows.
   MAX_ROWS = 5
 
   # Scenes the box stays hidden in, by their class's name: battles, which have their own chat log,
@@ -191,12 +194,13 @@ module MGQ_MpNotices
     false
   end
 
-  # Draws the box, making it the first time it shows anything, and fades it out once it has
-  # nothing to show.
+  # Draws the box where the layout puts it, making it the first time it shows anything, with as
+  # many notifications as its rows hold, and fades it out once it has nothing to show.
   #
   # @param list [Array<MGQ_MpActions::Notice>] The notifications.
   def self.show(list)
-    shown, more = MGQ_MpUi.capped(list, MAX_ROWS)
+    rect = Sprite_MpNoticeBox.rect
+    shown, more = MGQ_MpUi.capped(list, Sprite_MpNoticeBox.rows_in(rect.height))
     texts = shown.map { |notice| notice.text }
     texts << MGQ_MpUi::MORE_TEXT % more if more > 0
     if texts != @logged
@@ -207,54 +211,94 @@ module MGQ_MpNotices
     if shown.empty?
       @box.hide if @box
     else
-      (@box ||= Sprite_MpNoticeBox.new).show(shown, more)
+      (@box ||= Sprite_MpNoticeBox.new).show(shown, more, rect)
     end
     @box.update if @box
   end
 end
 
-# The notification box at the top left of the screen, over every window of the map and the menus,
-# drawn in the shared style and fading in and out. It has no viewport, so it lasts from scene to
-# scene.
+# The notification box, at the top left of the screen until the player moves it, over every window
+# of the map and the menus, drawn in the shared style and fading in and out. It has no viewport, so
+# it lasts from scene to scene.
 class Sprite_MpNoticeBox < Sprite
-  # Width of the box, which leaves room for the party box at the top right.
+  # The box's id in the layout, which names its setting in Player.ini.
+  LAYOUT = :notices
+
+  # The box's name while the player arranges the boxes.
+  LAYOUT_NAME = "Notifications"
+
+  # Width of the box at its default, which leaves room for the party box at the top right.
   WIDTH = 390
 
   # Height of one notification.
   ROW = 22
 
-  # Room between the box and the top and left edges of the screen, below a strip of the mod at the
-  # top (see MGQ_MpUi.top_room).
+  # Room between the box and the top and left edges of the screen at its default, below a strip of
+  # the mod at the top (see MGQ_MpUi.top_room).
   MARGIN = 8
 
   # Room between the box's edges and its rows.
   EDGE = 6
 
+  # Room above the first row and below the last, inside the box's frame.
+  SPACING = 2
+
   # Least width of what the keys do to the first invite, such as "Y: Accept   N: Decline", see
   # keys_width.
   ACTION_WIDTH = 170
 
+  # Least room of the first invite before its keys, about 14 letters of the small font, so the
+  # sender's name stays readable.
+  MIN_TEXT_WIDTH = 116
+
+  # Fewest rows the box has: one notification and the row that says how many more wait.
+  MIN_ROWS = 2
+
+  # Least size of the box: the first invite's keys beside a readable notification, and MIN_ROWS.
+  MIN_WIDTH = ACTION_WIDTH + MIN_TEXT_WIDTH + 2 * EDGE
+  MIN_HEIGHT = ROW * MIN_ROWS + 2 * SPACING
+
+  # Tells where the box draws: where the player left it, else at the top left below a strip of the
+  # mod, as tall as MGQ_MpNotices::MAX_ROWS.
+  #
+  # @return [Rect] The place, see MGQ_MpUi::Layout.rect.
+  def self.rect
+    default = Rect.new(MARGIN, MARGIN + MGQ_MpUi.top_room, WIDTH, ROW * MGQ_MpNotices::MAX_ROWS + 2 * SPACING)
+    MGQ_MpUi::Layout.rect(LAYOUT, default)
+  end
+
+  # Tells how many rows a box of a height shows.
+  #
+  # @param height [Integer] The box's height.
+  # @return [Integer] The rows, MIN_ROWS at least.
+  def self.rows_in(height)
+    [(height - 2 * SPACING) / ROW, MIN_ROWS].max
+  end
+
   # Creates the box, hidden.
   def initialize
     super(nil)
-    self.bitmap = Bitmap.new(WIDTH, ROW * MGQ_MpNotices::MAX_ROWS + 4)
-    self.x = MARGIN
-    self.y = MARGIN
+    rect = self.class.rect
+    fit(rect)
+    self.x = rect.x
+    self.y = rect.y
     self.z = MGQ_MpUi::Z[:bubbles]
     @motion = MGQ_MpUi::Motion.new(self)
     @shown = nil
   end
 
-  # Shows the notifications, fading the box in, drawing them again only when they changed; a
-  # fading one changes every frame.
+  # Shows the notifications where the layout puts the box, fading it in, drawing them again only
+  # when they, the box's size or the preset changed; a fading one changes every frame.
   #
   # @param list [Array<MGQ_MpActions::Notice>] The notifications, at least one.
   # @param more [Integer] How many more wait than the box lists, see MGQ_MpUi.capped.
-  def show(list, more)
-    @motion.place(MARGIN, MARGIN + MGQ_MpUi.top_room)
+  # @param rect [Rect] Where the box draws, see rect.
+  def show(list, more, rect)
+    fit(rect)
+    @motion.place(rect.x, rect.y)
     @motion.show
     keys = keys_text(list.first)
-    drawn = list.map { |notice| [notice.text, notice.color] } << keys << more
+    drawn = list.map { |notice| [notice.text, notice.color] } << keys << more << MGQ_MpUi::Theme.serial
     return if drawn == @shown
 
     @shown = drawn
@@ -266,10 +310,24 @@ class Sprite_MpNoticeBox < Sprite
     @motion.hide
   end
 
-  # Moves the fade a frame on. Called every frame, also while the box fades out.
+  # Moves the fade a frame on, and offers the box to the layout while it shows. Called every frame,
+  # also while the box fades out.
   def update
     super
     @motion.update
+    MGQ_MpUi::Layout.offer(LAYOUT, @rect.x, @rect.y, @rect.width, @rect.height, z) if @motion.shown?
+  end
+
+  # Sizes the picture to the box's place, making it anew once the size changed.
+  #
+  # @param rect [Rect] Where the box draws.
+  def fit(rect)
+    @rect = rect
+    return if bitmap && !bitmap.disposed? && bitmap.width == rect.width && bitmap.height == rect.height
+
+    bitmap.dispose if bitmap && !bitmap.disposed?
+    self.bitmap = Bitmap.new(rect.width, rect.height)
+    @shown = nil
   end
 
   # Tells what the keys do to the first notification: accept and decline an invite, or only decline
@@ -284,33 +342,35 @@ class Sprite_MpNoticeBox < Sprite
     notice.take ? "#{MGQ_MpHotkeys.label(:accept)}: #{notice.action}   #{decline}" : decline
   end
 
-  # Draws the notifications, the first invite cut before its keys, the others cut to their row, and
-  # the last row with how many more wait.
+  # Draws the notifications in a framed box as wide as the picture and as tall as its rows, the
+  # first invite cut before its keys, the others cut to their row, and the last row with how many
+  # more wait.
   #
   # @param list [Array<MGQ_MpActions::Notice>] The notifications.
   # @param keys [String, nil] What the keys do to the first one, see keys_text.
   # @param more [Integer] How many more wait, 0 for none.
   def draw(list, keys, more)
     style = MGQ_MpUi::Style
+    box_width = bitmap.width
     rows = list.size + (more > 0 ? 1 : 0)
     bitmap.clear
-    bitmap.fill_rect(0, 0, WIDTH, ROW * rows + 4, style::BACK)
+    style.draw_box(bitmap, 0, 0, box_width, ROW * rows + 2 * SPACING)
     width = keys ? keys_width(keys) : 0
     list.each_with_index do |notice, index|
-      y = 2 + ROW * index
+      y = SPACING + ROW * index
       keyed = index == 0 && keys
-      room = WIDTH - 2 * EDGE - (keyed ? width : 0)
+      room = [box_width - 2 * EDGE - (keyed ? width : 0), 0].max
       style.use_font(bitmap, style::SMALL_SIZE, notice.color)
       bitmap.draw_text(EDGE, y, room, ROW, MGQ_MpUi.cut(bitmap, notice.text, room))
       next unless keyed
 
       style.use_font(bitmap, style::SMALL_SIZE, style::HEADING)
-      bitmap.draw_text(WIDTH - EDGE - width, y, width, ROW, keys, 2)
+      bitmap.draw_text(box_width - EDGE - width, y, width, ROW, keys, 2)
     end
     return unless more > 0
 
     style.use_font(bitmap, style::SMALL_SIZE, style::DIM)
-    bitmap.draw_text(EDGE, 2 + ROW * list.size, WIDTH - 2 * EDGE, ROW, MGQ_MpUi::MORE_TEXT % more)
+    bitmap.draw_text(EDGE, SPACING + ROW * list.size, box_width - 2 * EDGE, ROW, MGQ_MpUi::MORE_TEXT % more)
   end
 
   # Tells how wide the keys' column is: ACTION_WIDTH, or what the keys need with the style's
@@ -329,6 +389,14 @@ class Sprite_MpNoticeBox < Sprite
     bitmap.dispose
     super
   end
+end
+
+# Where the box lies, which the player changes with the left Alt held, through ui_layout.rbx.
+
+begin
+  MGQ_MpUi::Layout.register(Sprite_MpNoticeBox::LAYOUT, Sprite_MpNoticeBox::LAYOUT_NAME, Sprite_MpNoticeBox::MIN_WIDTH, Sprite_MpNoticeBox::MIN_HEIGHT, :both)
+rescue => e
+  MGQ_MpNotices.log("layout FAILED: #{e.class}: #{e.message}")
 end
 
 # What the box takes part in of the world, through overworld_sync.rbx.

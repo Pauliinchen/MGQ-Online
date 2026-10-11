@@ -2,6 +2,7 @@
 #  world_mods_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-11: Stood in for the game's frame, whose update the shared boxes follow the layout after
 #      Paulinchen  2026-10-09: Loaded world_mods_parking.rbx, which the world screen calls, its DLL's stand-in finding no parked mods at the start
 #      Paulinchen  2026-10-08: Covered the marker and settings from before it, the row of Shared Mod Settings for the creator and another player, the creator's
 #                              options sent only on a change and keeping those their game does not know, turning sharing off and on, live changes and
@@ -50,6 +51,7 @@ class Window_NameEdit < Window_Base; end
 class Window_NameInput < Window_Selectable; end
 class Color; def initialize(*); end; end
 class Sprite; def initialize(*); end; end
+module Graphics; def self.update; end; end
 Rect = Struct.new(:x, :y, :width, :height)
 class Scene_Title; def start; end; def create_command_window; end; def update; end; def terminate; end; def scene_changing?; false; end; end
 class Window_TitleCommand; def make_command_list; end; end

@@ -2,7 +2,10 @@
 #  world_overview_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Checked the raid bosses grouped by the story's sections, only those the world's story reached or holding a pool, a fight's own pool in its section and an unknown one under Other
+#      Paulinchen  2026-10-11: Checked the overview as a box the player moves and resizes: its default, a placement Player.ini keeps, its least size, the lines, the scroll, the menu and the clicks following it, the sprite placed, offered and drawn anew on a new size or preset, and a box at its least size still drawing every column, the title, the tabs and the whole hint on both pages
+#                            - Expected the raid bosses' gauges in the edge and well colors, and the box, its tabs and its title in the preset's colors
+#                            - Loaded ui_theme.rbx and ui_layout.rbx, which the overview draws and lies by
+#                            - Checked the raid bosses grouped by the story's sections, only those the world's story reached or holding a pool, a fight's own pool in its section and an unknown one under Other
 #                            - Left the map box's size hint out of the texts read, as the pings are
 #                            - Read the small party box's left, which its motion places, instead of its x, and compared its green against the shared style's member color
 #                            - Checked the World page: turning with the arrows and the tabs, a cancel held with a click on a tab, its rows in a Classic and a Raid World, the raid bosses from their pools, a share rounded, scrolling, the title with the type and difficulty, the hint, a boss's row and the Players tab's mark while a call waits
@@ -31,7 +34,8 @@
 # highest companion level, place in the story), the list by place, opening with F11 and the
 # wheel, the arrows, the menu of a player, the mouse, the places the party box shortens, the
 # map box that replaces the party box in a Raid World, the World page with the world's rows and
-# its raid bosses, and the confirm box before leaving the party or removing a member.
+# its raid bosses, the box the player moves and resizes, and the confirm box before leaving the
+# party or removing a member.
 
 require_relative "world_support"
 
@@ -102,6 +106,8 @@ module MGQ_MpBattlesDuel
   def self.call_of(_peer); nil; end
 end
 MGQ_MpActions.offer(MGQ_MpBattlesDuel)
+load_script "ui_theme" unless defined?(MGQ_MpUi::Theme)
+load_script "ui_layout" unless defined?(MGQ_MpUi::Layout)
 load_script "world_overview"
 module MGQ_MpEmotes; def self.open?; false; end; end
 load_script "ui_party_box"
@@ -214,7 +220,7 @@ check("outside a party the player's own row is white", [overview.rows.first.memb
 $pressed = 0x7A
 overview.on_map
 overview.on_map
-box = Sprite_MpWorldOverview::BOX
+box = Sprite_MpWorldOverview.box
 $mouse = [box.x + 100, box.y + Sprite_MpWorldOverview::LIST_TOP + Sprite_MpWorldOverview::ROW * 4 + 5]
 overview.on_map
 check("pointing picks a player", overview.view[:selected], 4)
@@ -472,13 +478,13 @@ overview.on_map
 $buttons << :DOWN
 overview.on_map
 check("Down scrolls the World page", overview.view[:scroll], 1)
-most = overview.view[:lines].size - Sprite_MpWorldOverview::LIST_ROWS
+most = overview.view[:lines].size - Sprite_MpWorldOverview.list_rows
 100.times { $buttons << :DOWN; overview.on_map }
 check("no further than the last line in sight", overview.view[:scroll], most)
 $buttons << :UP
 overview.on_map
 check("and Up scrolls back", overview.view[:scroll], most - 1)
-box = Sprite_MpWorldOverview::BOX
+box = Sprite_MpWorldOverview.box
 tab_y = box.y + Sprite_MpWorldOverview::TITLE + 5
 tab_step = Sprite_MpWorldOverview::TAB_WIDTH + MGQ_MpUi::Style::GAP
 $mouse = [box.x + Sprite_MpWorldOverview::MARGIN + 10, tab_y]
@@ -523,12 +529,142 @@ gauge = sprite.bitmap.drawn.select { |kind, _| kind == :fill }.map { |_, args| a
 columns = Sprite_MpWorldOverview::WORLD_COLUMNS
 check("a raid boss's row: its name, tier, share and who last hurt it", sprite.bitmap.texts, ["Queen Harpy", "Tier 9", "40%", "last hurt by Player A"])
 check("over a thin gauge: its frame, its empty part and the share left in the bad color",
-      gauge, [[columns[:gauge], 9, 90, 6, style::OUTLINE], [columns[:gauge] + 1, 10, 88, 4, style::PLATE], [columns[:gauge] + 1, 10, 35, 4, style::BAD]])
+      gauge, [[columns[:gauge], 9, 90, 6, style::EDGE], [columns[:gauge] + 1, 10, 88, 4, style::WELL], [columns[:gauge] + 1, 10, 35, 4, style::BAD]])
 sprite.bitmap.clear
 sprite.draw_boss(boss_named.call("Four bandits"), 0)
 check("a defeated boss says so in place of its share, dimmed, with an empty gauge",
       [sprite.bitmap.texts, sprite.bitmap.drawn.find { |kind, _| kind == :text }[2].equal?(style::DIM), sprite.bitmap.drawn.count { |kind, _| kind == :fill }],
       [["Four bandits", "Tier 9", "Defeated", "last hurt by Player B"], true, 2])
+
+# The box among those the player moves and resizes: its default, a placement Player.ini keeps, its
+# least size, the lines, the menu and the clicks following it, and a box at its least size still
+# drawing every column, tab and hint.
+layout = MGQ_MpUi::Layout
+sprite_class = Sprite_MpWorldOverview
+# Keeps a placement in Player.ini as the layout stores it, nil for none, and forgets the one read.
+place_box = lambda do |text|
+  text ? $player_ini["ui_overview"] = text : $player_ini.delete("ui_overview")
+  layout.instance_variable_get(:@stored).delete(:overview)
+end
+place_box.call(nil)
+check("the overview is a box the player moves and resizes both ways, never smaller than what its columns, tabs, lines and menu need",
+      [layout.instance_variable_get(:@boxes)[:overview].to_a, [sprite_class::PLAYERS_WIDTH, sprite_class::WORLD_WIDTH, sprite_class::TABS_WIDTH]],
+      [["World overview", 560, 166, :both], [560, 560, 220]])
+check("it starts at the list box's place with its lines", [sprite_class.box.to_a, sprite_class.list_rows], [[40, 32, 560, 404], 13])
+place_box.call("20,150,600,300")
+check("a placement Player.ini keeps is honoured, the lines following its height", [sprite_class.box.to_a, sprite_class.list_rows], [[20, 150, 600, 300], 9])
+check("the clicks follow the box: its tabs and inside it where it lies now, not where it starts",
+      [sprite_class.tab_at(20 + sprite_class::MARGIN + 10, 150 + sprite_class::TITLE + 5), sprite_class.tab_at(40 + sprite_class::MARGIN + 10, 32 + sprite_class::TITLE + 5),
+       sprite_class.inside?(25, 155), sprite_class.inside?(45, 40)], [:players, nil, true, false])
+check("a line under the mouse is read from the box's top", sprite_class.line_at(100, 150 + sprite_class::LIST_TOP + sprite_class::ROW * 2 + 3, overview.view), overview.view[:scroll] + 2)
+place_box.call("0,0,100,50")
+check("a placement smaller than the least size grows to it", sprite_class.box.to_a, [0, 0, 560, 166])
+check("which still shows three lines", sprite_class.list_rows, 3)
+menu_left = 560 - sprite_class::MENU_WIDTH - sprite_class::MARGIN
+menu_view = { :selected => 2, :scroll => 0, :menu => [MGQ_MpActions::Option.new("Choice", nil, nil)] * sprite_class::MENU_ROWS }
+check("the longest menu stays whole above the hint in the lowest box, below or above the player picked once there is room",
+      [sprite_class.menu_origin(menu_view, 560, 166), sprite_class.menu_origin(menu_view, 560, 404), sprite_class.menu_origin(menu_view.merge(:selected => 9), 560, 404)],
+      [[menu_left, 0], [menu_left, sprite_class::LIST_TOP + 3 * sprite_class::ROW], [menu_left, sprite_class::LIST_TOP + 9 * sprite_class::ROW - 6 * sprite_class::ROW]])
+
+# The picked player kept in sight and the World page's scroll kept within its lines as the box's
+# height changes.
+place_box.call(nil)
+overview.turn_to(:players, "the test")
+overview.on_map
+players = (0...overview.view[:lines].size).select { |line| overview.view[:lines][line][0] == :player }
+overview.instance_variable_set(:@selected, overview.key_of(overview.view[:lines][players.last][1]))
+overview.on_map
+place_box.call("0,0,560,166")
+overview.on_map
+view = overview.view
+check("in a lower box the picked player stays in sight", [view[:selected] >= view[:scroll], view[:selected] < view[:scroll] + 3], [true, true])
+place_box.call(nil)
+overview.on_map
+check("and in a taller one no room is left below the last line", overview.view[:scroll], [overview.view[:lines].size - 13, 0].max)
+overview.turn_to(:world, "the test")
+place_box.call("0,0,560,166")
+overview.on_map
+100.times { $buttons << :DOWN; overview.on_map }
+low_scroll = overview.view[:scroll]
+place_box.call(nil)
+overview.on_map
+check("the World page scrolls further in a lower box, and back within its lines in a taller one",
+      [low_scroll, overview.view[:scroll]], [overview.view[:lines].size - 3, [overview.view[:lines].size - 13, 0].max])
+
+# The sprite: placed where the box lies, its picture as large, offered to the layout, drawn anew
+# once the box's size or the preset changed.
+class Sprite; def update; end; end unless Sprite.method_defined?(:update)
+place_box.call("20,150,600,300")
+overview_sprite = Sprite_MpWorldOverview.new(nil)
+draws = 0
+overview_sprite.define_singleton_method(:draw) { |shown| draws += 1; super(shown) }
+overview_sprite.update
+offers = layout.instance_variable_get(:@offers).select { |offer| offer.id == :overview }
+check("the sprite lies where the box lies, its picture as large, and offers its place to the layout",
+      [overview_sprite.x, overview_sprite.y, overview_sprite.bitmap.width, overview_sprite.bitmap.height, offers.map { |offer| offer.rect.to_a }, draws],
+      [20, 150, 600, 300, [[20, 150, 600, 300]], 1])
+overview_sprite.update
+place_box.call("30,150,600,300")
+overview_sprite.update
+check("moving it draws nothing anew", [overview_sprite.x, draws], [30, 1])
+old_bitmap = overview_sprite.bitmap
+place_box.call("30,150,610,320")
+overview_sprite.update
+check("resizing it makes its picture anew and draws it", [overview_sprite.bitmap.width, overview_sprite.bitmap.height, old_bitmap.disposed?, draws], [610, 320, true, 2])
+MGQ_MpUi::Theme.apply("Monarch", "the test")
+overview_sprite.update
+check("so does another preset", draws, 3)
+fills = overview_sprite.bitmap.drawn.select { |kind, _| kind == :fill }.map { |_, args| args }
+tab_fills = fills.select { |args| args[1] == sprite_class::TITLE && args[2] == sprite_class::TAB_WIDTH }.map { |args| args[4] }
+check("the box is framed in the preset's colors, the page shown on the picked tab and the other on the tab color",
+      [fills.first, fills.count { |args| args[4].equal?(style::EDGE) } >= 4, fills.any? { |args| args[4].equal?(style::RIM) }, tab_fills.map { |color| [color.equal?(style::PICKED), color.equal?(style::TAB)] }],
+      [[0, 0, 610, 320, style::BACK], true, true, [[false, true], [true, false]]])
+check("the world's name in the title color", overview_sprite.bitmap.drawn.find { |kind, text, _| kind == :text && text.start_with?("Test World") }[2].equal?(style::TITLE), true)
+MGQ_MpUi::Theme.apply("Legacy", "the test")
+overview_sprite.dispose
+
+# A box at its least size still draws every column, the title, the tabs and the whole hint.
+# Reports whether every text drawn lies inside the picture.
+inside_box = lambda { |bitmap| bitmap.drawn.select { |kind, _| kind == :text }.all? { |_, _, _, x, width, _| x >= 0 && x + width <= bitmap.width } }
+narrow = Sprite_MpWorldOverview.allocate
+narrow.bitmap = Bitmap.new(sprite_class::MIN_WIDTH, sprite_class::MIN_HEIGHT)
+place_box.call("0,0,1,1")
+overview.turn_to(:players, "the test")
+overview.instance_variable_set(:@selected, :me)
+overview.on_map
+narrow.draw(overview.view)
+texts = narrow.bitmap.texts
+ping_left = sprite_class::MIN_WIDTH - sprite_class::PING_INSET - MGQ_MpOverworld::PING_WIDTH
+story = narrow.bitmap.drawn.find { |kind, text, _| kind == :text && text == "Part 3: Destroyer route" }
+check("narrowest, the Players page draws the title, both tabs, its lines with the story column at its least before the ping, and the whole hint smaller",
+      [texts.first(4), texts.include?("Me (you)"), story && story[3..4], narrow.bitmap.drawn.count { |kind, _, _, x| kind == :text && x == ping_left } > 0, texts.last, narrow.bitmap.font.size, inside_box.call(narrow.bitmap)],
+      [["Party 2 / 4", "Test World | Raid | Hard", "Players", "World"], true, [sprite_class::COLUMNS[:story], sprite_class::STORY_WIDTH], true,
+       "Left or right: page   Enter: invite, duel or trade   Esc, Numpad 0 or F11: close", style::TINY_SIZE, true])
+overview.turn_to(:world, "the test")
+overview.instance_variable_set(:@world_scroll, 0)
+overview.on_map
+narrow.draw(overview.view)
+check("narrowest, the World page draws the title, both tabs, its first lines and the whole hint smaller",
+      [narrow.bitmap.texts, narrow.bitmap.font.size, inside_box.call(narrow.bitmap)],
+      [["Party 2 / 4", "Test World | Raid | Hard", "Players", "World", "World", "Test World", "Type", "Raid", "Difficulty", "Hard",
+        "Left or right: page   Up or down: scroll   Esc, Numpad 0 or F11: close"], style::TINY_SIZE, true])
+narrow.bitmap.clear
+narrow.draw_boss(boss_named.call("Queen Harpy"), 0)
+check("and a raid boss's every column at the World page's columns", [narrow.bitmap.texts, narrow.bitmap.drawn.select { |kind, _| kind == :text }.map { |entry| entry[3] }, inside_box.call(narrow.bitmap)],
+      [["Queen Harpy", "Tier 9", "40%", "last hurt by Player A"], [columns[:label], columns[:tier], columns[:share], columns[:by]], true])
+wide = Sprite_MpWorldOverview.allocate
+wide.bitmap = Bitmap.new(sprite_class::MIN_WIDTH + 100, sprite_class::MIN_HEIGHT)
+wide.draw_boss(boss_named.call("Queen Harpy"), 0)
+check("wider, the boss's name takes the extra room, the columns right of it moving along",
+      [wide.bitmap.drawn.select { |kind, _| kind == :text }.map { |entry| [entry[3], entry[4]] }, wide.bitmap.drawn.find { |kind, _| kind == :fill }[1][0]],
+      [[[columns[:label], columns[:tier] + 100 - columns[:label] - style::GAP], [columns[:tier] + 100, columns[:gauge] - columns[:tier] - style::GAP],
+        [columns[:share] + 100, columns[:share_right] - columns[:share]], [columns[:by] + 100, sprite_class::BY_WIDTH]], columns[:gauge] + 100])
+wide.bitmap.clear
+wide.draw_player(overview.rows.find { |row| row.ping }, 0, false)
+check("and on the Players page the story takes it, the ping keeping the right edge",
+      wide.bitmap.drawn.select { |kind, _, _, x| kind == :text && x >= sprite_class::COLUMNS[:story] }.map { |entry| [entry[3], entry[4]] },
+      [[sprite_class::COLUMNS[:story], sprite_class::STORY_WIDTH + 100], [ping_left + 100, MGQ_MpOverworld::PING_WIDTH]])
+place_box.call(nil)
 $pools = {}
 $raid = false
 

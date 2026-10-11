@@ -2,7 +2,8 @@
 #  overworld.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Drew the outline standing in for a follower in the shared style's member and text colors
+#      Paulinchen  2026-10-11: Made the line at the bottom left movable and widenable with the left Alt held, as "World status", its four rows kept, breaking the notices to its width and never narrower than two thirds of its default
+#                            - Drew the outline standing in for a follower in the shared style's member and text colors
 #                            - Named a ghost above its head in its player's color, through MGQ_MpUi::PlayerColor
 #                            - Showed a keyboard above a ghost whose player types, apart from the event's bubble
 #                            - Took the ping's colors, the dim party size and the font sizes from the shared style, and drew the icons of the labels and the status line through MGQ_MpUi.draw_icon
@@ -684,9 +685,17 @@ class Sprite_MpOwnPing < Sprite
   end
 end
 
-# The line at the bottom left of the map.
+# The line at the bottom left of the map, until the player moves it: the connection's problem and
+# the notices, each broken into rows that fit, the newest at the bottom. A wider line breaks them
+# into fewer rows.
 class Sprite_MpWorldStatus < Sprite
-  # Width of the line.
+  # The line's id in the layout, which names its setting in Player.ini.
+  LAYOUT = :world_status
+
+  # The line's name while the player arranges the boxes.
+  LAYOUT_NAME = "World status"
+
+  # Width of the line at its default.
   WIDTH = 400
 
   # Height of one row.
@@ -695,46 +704,82 @@ class Sprite_MpWorldStatus < Sprite
   # Rows the line has room for.
   ROWS = 4
 
+  # Room between the line and the left and bottom edges of the screen at its default.
+  MARGIN = 8
+
+  # Least width of the line: two thirds of WIDTH, so the notices still break into few rows.
+  MIN_WIDTH = WIDTH * 2 / 3
+
   # Creates the line, empty.
   #
   # @param viewport [Viewport] The map's topmost viewport.
   def initialize(viewport)
     super(viewport)
-    self.bitmap = Bitmap.new(WIDTH, ROW * ROWS)
-    self.x = 8
-    self.y = Graphics.height - ROW * ROWS - 8
+    rect = layout_rect
+    fit(rect)
+    self.x = rect.x
+    self.y = rect.y
     self.z = MGQ_MpUi::Z[:lines]
     @shown = []
   end
 
-  # Draws what the line shows now, if it changed: each notice broken into rows that fit, with its
-  # icon before its first row, the newest rows at the bottom.
+  # Tells where the line draws: where the player left it, else at the bottom left.
+  #
+  # @return [Rect] The place, see MGQ_MpUi::Layout.rect.
+  def layout_rect
+    MGQ_MpUi::Layout.rect(LAYOUT, Rect.new(MARGIN, Graphics.height - ROW * ROWS - MARGIN, WIDTH, ROW * ROWS))
+  end
+
+  # Draws what the line shows now where the layout puts it, if it, the line's width or the preset
+  # changed: each notice broken into rows that fit, with its icon before its first row, the newest
+  # rows at the bottom. Offers the line to the layout while a world is open, also while it is
+  # empty, since its notices show only for a moment.
   def update
     super
-    notices = MGQ_MpOverworldSync.in_world? ? MGQ_MpOverworldSync::Status.shown.last(ROWS) : []
-    return if notices == @shown
+    rect = layout_rect
+    fit(rect)
+    self.x = rect.x
+    self.y = rect.y
+    in_world = MGQ_MpOverworldSync.in_world?
+    MGQ_MpUi::Layout.offer(LAYOUT, rect.x, rect.y, rect.width, rect.height, z) if in_world
+    notices = in_world ? MGQ_MpOverworldSync::Status.shown.last(ROWS) : []
+    drawn = [notices, rect.width, MGQ_MpUi::Theme.serial]
+    return if drawn == @shown
 
-    @shown = notices
+    @shown = drawn
     bitmap.clear
     MGQ_MpUi::Style.use_font(bitmap, MGQ_MpUi::Style::TEXT_SIZE, MGQ_MpUi::Style::TEXT)
-    rows = rows_of(notices)
+    rows = rows_of(notices, rect.width)
     rows.each_with_index do |(text, icon, left), row|
       y = (ROWS - rows.size + row) * ROW
       MGQ_MpUi.draw_icon(bitmap, icon, 0, y, ROW)
-      bitmap.draw_text(left, y, WIDTH - left, ROW, text)
+      bitmap.draw_text(left, y, rect.width - left, ROW, text)
     end
+  end
+
+  # Sizes the picture to the line's place, making it anew once its width changed.
+  #
+  # @param rect [Rect] Where the line draws.
+  def fit(rect)
+    @width = rect.width
+    return if bitmap && !bitmap.disposed? && bitmap.width == rect.width && bitmap.height == rect.height
+
+    bitmap.dispose if bitmap && !bitmap.disposed?
+    self.bitmap = Bitmap.new(rect.width, rect.height)
+    @shown = []
   end
 
   # Breaks notices into the rows the line shows, measured in the font set.
   #
   # @param notices [Array<Array>] Each notice's text and icon, the icon nil for none.
+  # @param width [Integer] The line's width, the one it draws at unless told otherwise.
   # @return [Array<Array>] The last ROWS rows: each one's text, the icon before it (on a notice's
   #   first row only) and its left edge.
-  def rows_of(notices)
+  def rows_of(notices, width = @width || WIDTH)
     rows = []
     notices.each do |text, icon|
       left = icon ? ROW + 2 : 0
-      MGQ_MpUi.wrap(bitmap, text.to_s, WIDTH - left).each_with_index { |part, index| rows << [part, index == 0 ? icon : nil, left] }
+      MGQ_MpUi.wrap(bitmap, text.to_s, width - left).each_with_index { |part, index| rows << [part, index == 0 ? icon : nil, left] }
     end
     rows.last(ROWS)
   end
@@ -744,6 +789,15 @@ class Sprite_MpWorldStatus < Sprite
     bitmap.dispose
     super
   end
+end
+
+# Where the line at the bottom left lies, which the player changes with the left Alt held, through
+# ui_layout.rbx.
+
+begin
+  MGQ_MpUi::Layout.register(Sprite_MpWorldStatus::LAYOUT, Sprite_MpWorldStatus::LAYOUT_NAME, Sprite_MpWorldStatus::MIN_WIDTH, Sprite_MpWorldStatus::ROW * Sprite_MpWorldStatus::ROWS, :width)
+rescue => e
+  MGQ_MpOverworld.log("layout FAILED: #{e.class}: #{e.message}")
 end
 
 # Game hooks, through core_hooks.rbx.

@@ -2,7 +2,10 @@
 #  overworld_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Checked the map chat, chosen with /m, its lines tagged and drawn in its color, the global chat untagged in white, and the Whisper tab hidden until a whisper
+#      Paulinchen  2026-10-11: Checked the status line's place in the layout: its default at the bottom left, a place the player left it in with its notices broken to its width, and its least width
+#                            - Left the chat log's resizing and its smaller room in a battle to ui_chat_test.rb, since the layout sizes the log
+#                            - Checked each of the action wheel's boxes in its frame, the picked one lit, and the wheel drawn anew after a preset change
+#                            -Checked the map chat, chosen with /m, its lines tagged and drawn in its color, the global chat untagged in white, and the Whisper tab hidden until a whisper
 #                            - Checked that a player outside the party is named in plain white
 #                            - Checked the line above the player's head half the screen wide and cut to it, the action wheel's hint under its boxes, and both fading in and out with their pictures kept
 #                            - Compared the chat log's text against the shared style's text color, and gave the log's font stand-in an outline color
@@ -406,6 +409,15 @@ check("a choice's text is in the text's color while it can be taken, dim while n
       ring.map { |choice| choice.run ? :text : :dim }.sort)
 (MGQ_MpUi::Style::FADE_FRAMES - 1).times { wheel_sprite.show(head) }
 check("opaque after FADE_FRAMES", wheel_sprite.opacity, 255)
+wheel_fills = []
+wheel_sprite.bitmap.define_singleton_method(:fill_rect) { |*args| wheel_fills << args.last }
+MGQ_MpUi::Theme.apply("Monarch", "a test")
+wheel_sprite.show(head)
+wheel_boxes = MGQ_MpActions.wheel_options.keys.count { |direction| wheel_sprite.instance_variable_get(:@boxes).key?(direction) }
+check("a preset change draws the wheel anew, each box in its frame with the preset's rim, the picked one lit",
+      [wheel_fills.count { |color| color.equal?(MGQ_MpUi::Style::RIM) }, wheel_fills.count { |color| color.equal?(MGQ_MpUi::Style::EDGE) }, wheel_fills.count { |color| color.equal?(MGQ_MpUi::Style::PICKED) }],
+      [4 * wheel_boxes, 4 * wheel_boxes, 1])
+MGQ_MpUi::Theme.apply("Legacy", "a test")
 MGQ_MpActions::Wheel.close("the test closed it")
 wheel_sprite.show(head)
 check("closed, the wheel fades out with its picture kept", [wheel_sprite.visible, wheel_sprite.opacity < 255, wheel_sprite.bitmap.texts.empty?], [true, true, false])
@@ -948,49 +960,12 @@ chat.stop_typing
 check("closing the box shows the newest rows again", [chat.scroll, last_row.call], [0, "line 13"])
 check("and puts the log back to its depth", depth.z, 100)
 
-# The log's tabs, and its size.
+# The log's tabs.
 chat.start_typing
 log_sprite.update
 names = parts.map { |_, text, _| text }
 check("the open box shows the tabs and the chosen chat, the Whisper tab not before a whisper",
       [chat.tabs.map { |tab| MGQ_MpChat::TAB_NAMES[tab] }.all? { |name| names.include?(name) } && names.include?("Party:"), names.include?("Whisper"), chat.tabs], [true, false, [:all, :global, :map, :party]])
-$down = [MGQ_MpChat::ALT_KEY]
-$pressed = MGQ_MpChat::LEFT_KEY
-map_frame
-check("Alt and left pick the tab before, round the tabs, and choose its chat", [chat.tab, chat.channel, chat.typed], [:party, :party, ""])
-$pressed = MGQ_MpChat::RIGHT_KEY
-map_frame
-check("Alt and right pick the next tab, which keeps the chat", [chat.tab, chat.channel], [:all, :party])
-$down = []
-chat.add(2, "Friend", "global line", :global)
-chat.add(2, "Friend", "map line", :map)
-log_sprite.update
-global_spot = log_sprite.instance_variable_get(:@tab_spots).find { |tab, _, _| tab == :global }
-$mouse = [8 + global_spot[1] + 2, 202]
-$mouse_held = true
-log_sprite.update
-check("a click on a tab picks it and chooses its chat", [chat.tab, chat.channel], [:global, :global])
-check("a tab shows its chat's lines and the game's own", chat.log_entries.map(&:channel).uniq.sort_by(&:to_s), [nil, :global].sort_by(&:to_s))
-$mouse_held = false
-log_sprite.update
-map_frame
-$typed = "/m "
-map_frame
-check("a command on a chat's tab follows to the chat's tab", [chat.tab, chat.channel], [:map, :map])
-$down = [MGQ_MpChat::ALT_KEY]
-$mouse = [300, 300]
-$mouse_held = true
-log_sprite.update
-$mouse = [300 + 60, 300 - Sprite_MpChatLog::ROW * 2]
-log_sprite.update
-check("Alt and a drag resize the log, its bottom left staying put", chat.size, [460, 8])
-$mouse = [9999, -9999]
-log_sprite.update
-check("within the screen", chat.size, [624, (480 - 96 - Sprite_MpChatLog::TAB_ROW) / Sprite_MpChatLog::ROW - 1])
-$mouse = [310, 300]
-$mouse_held = false
-log_sprite.update
-check("letting go keeps the size in Player.ini", $player_ini[MGQ_MpChat::SIZE_SETTING], "410x6")
 $down = []
 chat.select_tab(:all, "in the test")
 chat.stop_typing
@@ -1232,15 +1207,7 @@ check("a global line coming too fast is turned down and goes to nobody",
       [$sent, MGQ_MpOverworldSync::Status.lines.last, chat.log_lines.include?("Me: spam")], [[], "You are sending too fast. Wait a moment, then send the line again.", false])
 $say_result = nil
 
-# The log in a battle's smaller room, and a line broken right after the name.
-kept_size = chat.size.dup
-chat.resize(400, 14)
-log_sprite.instance_variable_set(:@bottom_room, Sprite_MpChatLog::BATTLE_ROOM)
-log_sprite.fit(chat)
-check("a battle's smaller room draws fewer rows but keeps the chat's size", [log_sprite.instance_variable_get(:@rows) < 14, chat.size], [true, [400, 14]])
-log_sprite.instance_variable_set(:@bottom_room, Sprite_MpChatLog::STATUS_ROOM)
-chat.resize(*kept_size)
-log_sprite.fit(chat)
+# A line broken right after the name.
 parts.clear
 log_sprite.instance_variable_set(:@name_spots, [])
 log_sprite.draw_row("[Party] Friend:", MGQ_MpChat::Line.new("Friend", "on my way", :member, :party, 0, nil, friend_id), true, 0)
@@ -1448,6 +1415,43 @@ check("a long notice takes as many rows as it needs, each fitting the line", [ro
       [4, true, long])
 check("a notice's icon stands before its first row only", rows.map { |_, icon, _| icon }, [4, nil, nil, nil])
 check("the line keeps its newest rows", [status.rows_of([[long, nil], [long, nil]]).size, status.rows_of([[long, nil], [long, nil]]).last[0]], [4, "what you play together."])
+
+# The status line's place in the layout: its default at the bottom left, a place the player left it
+# in with its notices broken to its width, and its least width; its four rows always.
+class Bitmap; def disposed?; false; end; end
+# The chat's checks hand out their canvas for every new picture; the line gets pictures of its own.
+handed_out = Bitmap.method(:new)
+Bitmap.define_singleton_method(:new) { |*args| picture = allocate; picture.send(:initialize, *args); picture }
+layout = MGQ_MpUi::Layout
+stored = layout.instance_variable_get(:@stored)
+status_class = Sprite_MpWorldStatus
+status_height = status_class::ROW * status_class::ROWS
+check("the status line is movable as World status, widened only, never narrower than two thirds of its default nor lower than its rows",
+      layout.instance_variable_get(:@boxes)[:world_status].to_a, ["World status", status_class::WIDTH * 2 / 3, status_height, :width])
+kept_notices = MGQ_MpOverworldSync::Status.instance_variable_get(:@notices).dup
+MGQ_MpOverworldSync::Status.instance_variable_set(:@notices, [])
+MGQ_MpOverworldSync::Status.notice(long)
+line = status_class.new(nil)
+line.update
+line_offer = lambda { offer = layout.instance_variable_get(:@offers).find { |each| each.id == :world_status }; offer && offer.rect.to_a }
+line_rows = lambda { line.bitmap.texts.map { |_, _, _, text, *| text } }
+fitting = lambda { line.bitmap.texts.all? { |x, _, width, text, *| text.size * 9 <= width && x + width <= line.bitmap.width } }
+check("at its default it lies at the bottom left, offered to the layout where it lies, its rows fitting it",
+      [line.x, line.y, line.bitmap.width, line_offer.call, line_rows.call.size, fitting.call], [8, 480 - status_height - 8, 400, [8, 480 - status_height - 8, 400, status_height], 3, true])
+$player_ini["ui_world_status"] = "20,10,600,30"
+stored.clear
+line.update
+check("a place the player left it in holds, kept on the screen, its rows as they were, a wider line breaking the notice into fewer rows",
+      [line.x, line.y, line.bitmap.width, line.bitmap.height, line_rows.call.size, fitting.call, line_rows.call.join(" ")], [20, 10, 600, status_height, 2, true, long])
+$player_ini["ui_world_status"] = "0,10,100,30"
+stored.clear
+line.update
+check("made narrower than its least, it keeps its least width, where the newest rows still fit",
+      [line.bitmap.width, line_offer.call[2], fitting.call, line_rows.call.size], [status_class::WIDTH * 2 / 3, status_class::WIDTH * 2 / 3, true, 4])
+$player_ini.delete("ui_world_status")
+stored.clear
+MGQ_MpOverworldSync::Status.instance_variable_set(:@notices, kept_notices)
+Bitmap.define_singleton_method(:new, handed_out)
 
 # The player's seat: asked of the DLL only while none was told, kept from the inbox and the
 # status, and forgotten once the world closes.

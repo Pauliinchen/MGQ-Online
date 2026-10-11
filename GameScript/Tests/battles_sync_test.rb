@@ -2,7 +2,8 @@
 #  battles_sync_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Checked the waiting box: its lines, the names still waited for, the seconds drawn once a second, the leave offer, a battle's ending, a details that fails, the seat names and the playback's path
+#      Paulinchen  2026-10-11: Checked the waiting box in the layout: kept in Player.ini, its lines drawn anew at a new width and its least width
+#                            - Checked the waiting box: its lines, the names still waited for, the seconds drawn once a second, the leave offer, a battle's ending, a details that fails, the seat names and the playback's path
 #                            - Checked that the host's wait for the commands names who still chooses and tells the guests, and that a guest's box names them while the host's stream stalls
 #                            - Read the windows opened from battle_support.rb instead of keeping them itself
 #      Paulinchen  2026-10-08: Checked that a command phase the battle ended in closes as the live battle finishes
@@ -322,6 +323,41 @@ waiting.refresh(box, -1)
 check("the three-argument open draws the text and names, and frames below 0 draw no seconds", box.window.contents.lines, { 0 => "Waiting for Host...", 1 => "Still choosing: A" })
 check("leave? before the offer says no", waiting.leave?(box, 5), false)
 check("close disposes the box and returns nil, also for none", [waiting.close(box), box.window.disposed?, waiting.close(nil)], [nil, true, nil])
+
+# The waiting box in the layout: where the player left it, at its width, never narrower than its
+# lines need.
+layout = MGQ_MpUi::Layout
+stored = layout.instance_variable_get(:@stored)
+registered = lambda { layout.instance_variable_get(:@boxes)[:waiting_box].to_a }
+offered = lambda { (offer = layout.instance_variable_get(:@offers).find { |o| o.id == :waiting_box }) && offer.rect.to_a }
+place = lambda { |text| $player_ini = text ? { "ui_waiting_box" => text } : {}; stored.delete(:waiting_box) }
+leave_width = waiting::LEAVE_TEXT.size * 8 + 2 * waiting::PADDING
+box = waiting.open("Now")
+check("the waiting box is known to the layout by its name, resized in width alone, as wide at least as its leave offer needs",
+      [registered.call, offered.call], [["Waiting box", leave_width, waiting::HEIGHT, :width], [140, 120, 360, 96]])
+waiting.close(box)
+long = "Waiting for the party's commands..."
+box = waiting.open(long)
+check("and as its text needs, as far as its width where it starts", [registered.call[1], waiting.least_width(box.window.contents, ["x" * 100])], [long.size * 8 + 24, waiting::WIDTH])
+waiting.close(box)
+
+place.call("10,300,500,0")
+box = waiting.open("Waiting for Host...", lambda { ["Player A", "Player B"] }, "Still choosing: ")
+waiting.refresh(box, 0)
+window = box.window
+check("a waiting box kept in Player.ini opens there at its width, draws its lines and offers itself to the layout",
+      [[window.x, window.y, window.width, window.height], window.contents.lines, offered.call],
+      [[10, 300, 500, 96], { 0 => "Waiting for Host...", 1 => "Still choosing: Player A, Player B", 2 => "0 s" }, [10, 300, 500, 96]])
+place.call("10,300,250,0")
+waiting.refresh(box, 1)
+lines = window.contents.lines
+check("a new width makes new contents with every line drawn anew, the names cut to it",
+      [window.width, window.contents.width, lines[0], lines[1].start_with?("Still choosing: ") && lines[1].end_with?(MGQ_MpUi::ELLIPSIS), lines[2]], [250, 226, "Waiting for Host...", true, "0 s"])
+place.call("10,300,100,0")
+waiting.refresh(box, 2)
+check("never narrower than its text and the leave offer need whole", [window.width, window.contents.lines[2]], [leave_width, "0 s"])
+waiting.close(box)
+place.call(nil)
 
 # The host's wait for the commands names who still chooses, and tells the guests, whose boxes
 # name them too.

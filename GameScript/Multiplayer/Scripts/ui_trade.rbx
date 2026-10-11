@@ -2,7 +2,8 @@
 #  ui_trade.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Asked through the confirm box before cancelling the trade, since both offers are lost
+#      Paulinchen  2026-10-11: Dressed the trade screen's windows in the interface look, the game's help window too
+#                            - Asked through the confirm box before cancelling the trade, since both offers are lost
 #                            - Left the commands alone once the trade ended under the box, whose windows are disposed by then
 #                            - Took the marks' colors from the shared style
 #      Paulinchen  2026-10-08: Closed with the numpad's 0 through MGQ_MpUi.cancel?, also with Num Lock off
@@ -77,6 +78,8 @@ end
 # items. The Offers command moves the cursor in, where up and down scroll through a long offer and
 # left and right switch to the other side.
 class Window_MpTradeOffer < Window_Selectable
+  include MGQ_MpUi::Theme::Skinned
+
   # Creates the window, inactive.
   #
   # @param x [Integer] Its left edge.
@@ -218,6 +221,8 @@ end
 # The commands of the trade screen: the bag's categories, the gold, looking through both offers,
 # confirming and cancelling.
 class Window_MpTradeCommand < Window_HorzCommand
+  include MGQ_MpUi::Theme::Skinned
+
   # Creates the commands.
   #
   # @param y [Integer] Its top edge.
@@ -265,6 +270,8 @@ end
 # The player's bag, one category at a time, with how many of each item the offer holds. Right and
 # left change the amount by one, R and L by ten, confirm offers all or none.
 class Window_MpTradeBag < Window_Selectable
+  include MGQ_MpUi::Theme::Skinned
+
   # Creates the list, inactive.
   #
   # @param y [Integer] Its top edge.
@@ -390,6 +397,8 @@ end
 
 # The gold the player offers, digit by digit: left and right pick a digit, up and down change it.
 class Window_MpTradeGold < Window_Base
+  include MGQ_MpUi::Theme::Skinned
+
   # Digits of the largest amount.
   DIGITS = 9
 
@@ -480,6 +489,7 @@ class Scene_MpTrade < Scene_MenuBase
   def start
     super
     create_help_window
+    wear_theme(@help_window)
     half = Graphics.width / 2
     offer_height = @help_window.height + @help_window.fitting_height(6)
     @mine_window = Window_MpTradeOffer.new(0, @help_window.height, half, offer_height - @help_window.height, true)
@@ -528,6 +538,15 @@ class Scene_MpTrade < Scene_MenuBase
     MGQ_MpTrade.log("trade screen failed: #{MGQ_MpLog.failure(e)} at #{Array(e.backtrace).first}")
     MGQ_MpTrade.cancel
     return_scene
+  end
+
+  # Dresses a window of the game's own class in the interface look, now and whenever the look
+  # changes, as the trade screen's own windows are.
+  #
+  # @param window [Window_Base] The window.
+  def wear_theme(window)
+    MGQ_MpUi::Theme.dress(window)
+    window.extend(MGQ_MpUi::Theme::Skinned)
   end
 
   # Moves the cursor into the other player's offer, to look through it.

@@ -2,7 +2,8 @@
 #  ui_style_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Checked that an outlined text is drawn without the font's own outline, which doubled it
+#      Paulinchen  2026-10-11: Checked the list box, the message box and the confirm box in the layout: kept in Player.ini, their least sizes with every column and hint still drawn, their mouse tests, and their frames drawn anew in a new interface look
+#                            - Checked that an outlined text is drawn without the font's own outline, which doubled it
 #                            - Checked that an outlined text keeps its color, with a font that copies a color into its own as the game does, and that a player outside the party is plain white
 #                            - Created
 #
@@ -11,7 +12,8 @@
 # Covers what the mod's boxes share in ui.rbx: the style's colors, sizes and drawing helpers, the
 # motion of a sprite, the color of a player, the confirm box with its keys, its two ticks, its
 # guards and its hook, and the list box and the message box placed by the screen's size, cut to
-# their room but for their hints, which stay whole, the list box fading in and out.
+# their room but for their hints, which stay whole, the list box fading in and out; and the list,
+# message and confirm boxes in the layout, moved and resized but never below their least sizes.
 
 require_relative "support"
 
@@ -29,7 +31,9 @@ module MGQ_Multiplayer
     def self.watch(*codes); $watched.concat(codes); end
     def self.triggered?(code); $keys_down.include?(code); end
     def self.pressed?(code); $keys_down.include?(code); end
+    def self.down?(code); $keys_down.include?(code); end
   end
+  module Mouse; def self.position; nil; end; end
   module Capture
     @owners = []
     def self.start(owner); @owners.push(owner) unless @owners.include?(owner); end
@@ -41,6 +45,7 @@ module MGQ_Multiplayer
   module Player
     def self.setting(key); $player_ini[key]; end
     def self.store(key, value); $player_ini[key] = value.to_s; true; end
+    def self.forget(key); $player_ini.delete(key); true; end
   end
 end
 module NWConst; module Config; MOD_CONTENTS = [{ :key => :return }]; end; end
@@ -83,7 +88,7 @@ class Sprite
   def dispose; @disposed = true; end
   def disposed?; @disposed ? true : false; end
 end
-module Graphics; def self.width; 640; end; def self.height; 480; end; def self.frame_count; $frame; end; end
+module Graphics; def self.width; 640; end; def self.height; 480; end; def self.frame_count; $frame; end; def self.update; end; end
 module Sound; %w[cursor ok cancel buzzer].each { |s| define_singleton_method("play_#{s}") { $sounds << s } }; end
 module SceneManager; def self.scene; $scene; end; end
 class Scene_Base; def update; end; def start; end; end
@@ -94,6 +99,8 @@ $scene = Scene_Base.new
 
 load_script "core_hotkeys"
 load_script "ui"
+load_script "ui_theme"
+load_script "ui_layout"
 
 style = MGQ_MpUi::Style
 
@@ -221,7 +228,8 @@ sprite = confirm.instance_variable_get(:@sprite)
 check("which takes the buttons and watches the accept and decline keys", [confirm.open?, capture.on?, $watched.include?(0x59), $watched.include?(0x4E)], [true, true, true, true])
 check("and draws the question, both labels and the hint with the keys, above every box",
       [sprite.bitmap.texts.map { |t| t[2] }, sprite.z], [["Leave the party?", "Leave", "Stay", "Leave: Y   Stay: N, Esc or Numpad 0   Enter: the picked one"], MGQ_MpUi::Z[:confirm]])
-check("with no picked first, on its plate at the right", sprite.bitmap.fills.map { |f| f[0, 2] }, [[0, 0], [Sprite_MpConfirmBox::WIDTH / 2 + style::PAD, 6 + 24 + 6]])
+check("with its back in its frame first and no picked, on its plate at the right",
+      [sprite.bitmap.fills.first[0, 2], sprite.bitmap.fills.select { |f| f[4] == style::PICKED }.map { |f| f[0, 2] }], [[0, 0], [[Sprite_MpConfirmBox::WIDTH / 2 + style::PAD, 6 + 24 + 6]]])
 check("centred on the screen", [sprite.x, sprite.y], [120, (480 - sprite.bitmap.height) / 2])
 check("a second ask while one is open is refused and logged", [confirm.ask("Again?", ["Yes", "No"]), $log.last], [false, "ui: confirm box refused: one is open (Leave the party?)"])
 
@@ -313,7 +321,8 @@ check("which the next tick hands over, giving the buttons back", [answers, confi
 # The hook after every scene's update.
 $log.clear
 MGQ_MpHooks.report
-check("the box ticks after every scene's update, and leaves after every scene's start", $log.grep(/hooks: ui: follows 2, wraps 0 game method\(s\): follows Scene_Base#update, Scene_Base#start\z/).size, 1)
+check("the box ticks after every scene's update, the boxes follow the layout after every frame, and the box leaves after every scene's start",
+      $log.grep(/hooks: ui: follows 3, wraps 0 game method\(s\): follows Scene_Base#update, #<Class:Graphics>#update, Scene_Base#start\z/).size, 1)
 answers = ask_box(confirm)
 $keys_down = [0x59]
 $scene.update
@@ -330,6 +339,10 @@ check("a scene's start answers no at once, giving the buttons back without a sou
       [[false], false, false, nil, [], "ui: confirm box answered Stay (the scene changed): Leave the party?"])
 $scene.start
 check("and a start with no box open does nothing", [answers, confirm.open?], [[false], false])
+boxes = MGQ_MpUi::Layout.instance_variable_get(:@boxes)
+check("a scene's start makes the boxes known to the layout, the list box and the message box not shown yet at their least sizes",
+      [[:list_box, :message_box, :confirm_box].map { |id| boxes[id] && [boxes[id].name, boxes[id].resize] }, boxes[:list_box].to_a[1, 2], boxes[:message_box].to_a[1, 2]],
+      [[["List box", :both], ["Message box", :width], ["Confirm box", :width]], [460, 132], [168, 88]])
 
 # The list box: placed by the screen's size, its title cut before its note, an item before what
 # lies at its right, the hint naming the numpad's 0, fading in on show and out on hide.
@@ -373,3 +386,82 @@ check("the message box is as wide as the screen leaves, centred", [message.bitma
 title, hint = message.bitmap.texts.values_at(0, -1)
 check("its title is cut to its width, its hint drawn whole and smaller", [title[2].end_with?(MGQ_MpUi::ELLIPSIS), hint[2], hint[3], hint[4] == style::DIM],
       [true, long_hint, style::TINY_SIZE, true])
+
+# The list box in the layout: where the player left it, at its size, its mouse tests following it.
+layout = MGQ_MpUi::Layout
+stored = layout.instance_variable_get(:@stored)
+offered = lambda { |id| (offer = layout.instance_variable_get(:@offers).find { |o| o.id == id }) && offer.rect.to_a }
+place = lambda { |id, text| text ? $player_ini["ui_#{id}"] = text : $player_ini.delete("ui_#{id}"); stored.delete(id) }
+place.call(:list_box, "100,60,480,200")
+box = list.new
+mods = (1..8).map { |n| [:item, "Mod number #{n} with a long name", :plain, "listed", [["!", :red, false], ["?", :orange, n == 1]]] }
+view = list::View.of("Mods of the world", nil, [[:head, "Mods", ["Required", "Essential"]]] + mods)
+box.show(view)
+box.update
+check("a list box kept in Player.ini draws there at its size, with the lines that fit, and offers itself to the layout",
+      [list.rect.to_a, [box.x, box.y, box.bitmap.width, box.bitmap.height], list.list_rows, offered.call(:list_box)], [[100, 60, 480, 200], [100, 60, 480, 200], 5, [100, 60, 480, 200]])
+check("its mouse tests follow it", [list.inside?(120, 70), list.inside?(50, 40), list.line_at(150, 60 + 30 + 24 + 3, view), list.button_at(100 + 480 - 6 - 70 + 5, 2)], [true, false, 1, 2])
+
+# At its least size the list box still shows every column, three lines and the whole hint.
+place.call(:list_box, "0,0,100,50")
+box.show(view)
+texts = box.bitmap.texts.map { |t| t[2] }
+check("a list box squeezed below its least size keeps it: the title, three lines and the hint", [list.rect.to_a, list.list_rows, [box.bitmap.width, box.bitmap.height]], [[0, 0, 460, 132], 3, [460, 132]])
+check("and draws every column: the item cut before what its right end says, both buttons and their titles, and the hint whole",
+      [texts.count("listed"), texts.count("!"), texts.count("?"), texts.include?("Required") && texts.include?("Essential"), texts.last, texts.any? { |t| t.start_with?("Mod number 1") && t.end_with?(MGQ_MpUi::ELLIPSIS) }],
+      [2, 2, 2, true, list::HINT, true])
+view.selected = view.items.last
+box.show(view)
+check("a box too low for the item picked scrolls it into sight", [view.scroll, box.bitmap.texts.any? { |t| t[2].start_with?("Mod number 8") }], [6, true])
+place.call(:list_box, "0,0,640,300")
+view.pick(1)
+box.show(view)
+check("a wider box gives the items the room the fixed columns leave", box.bitmap.texts.map { |t| t[2] }.include?("Mod number 1 with a long name"), true)
+MGQ_MpUi::Theme.apply("Monarch", "a test")
+box.show(view)
+check("a new interface look draws the box anew in its colors", box.bitmap.fills.first[4].to_a, [36, 10, 14, 235])
+MGQ_MpUi::Theme.apply("Legacy", "a test")
+
+# A list whose note or hint needs more takes a larger least width, never more than where it starts.
+check("a list's least width takes its note beside the title's start and its hint, up to the box's width where it starts",
+      [list.least_width(list::View.of("T", nil, [])), list.least_width(list::View.of("T", "x" * 40, [])), list.least_width(list::View.of("T", nil, [], "x" * 100))], [460, 2 * 10 + 144 + 40 * 10 + 6, 560])
+place.call(:list_box, "0,0,470,200")
+box.show(list::View.of("T", nil, [], "x" * 100))
+check("which the layout then holds the box to", [MGQ_MpUi::Layout.instance_variable_get(:@boxes)[:list_box].min_width, box.bitmap.width], [560, 560])
+place.call(:list_box, nil)
+box.dispose
+
+# The message box in the layout: its width kept in Player.ini, its height following the lines.
+place.call(:message_box, "20,400,240,10")
+message.show("Title", "Some words that need more than one line in a narrower box.", "Esc: close")
+lines = message.bitmap.texts.size - 2
+check("a message box kept in Player.ini takes its width, as high as its lines need, wholly on the screen, and offers itself",
+      [message.bitmap.width, lines, message.bitmap.height, message.x, message.y, offered.call(:message_box)],
+      [240, 3, 30 + 3 * 24 + 22 + 12, 20, 480 - 136, [20, 344, 240, 136]])
+place.call(:message_box, "20,400,100,10")
+Sprite_MpMessageBox.follow_layouts
+check("a narrower one keeps its least width, followed every frame without another show", [message.bitmap.width, Sprite_MpMessageBox.least_width("Esc: close")], [168, 168])
+check("a hint takes the least width it needs whole, up to the box's width where it starts",
+      [Sprite_MpMessageBox.least_width("x" * 30), Sprite_MpMessageBox.least_width("x" * 100)], [30 * 7 + 24, 480])
+place.call(:message_box, nil)
+message.dispose
+check("a freed message box no longer follows the layout", Sprite_MpMessageBox.boxes.include?(message), false)
+
+# The confirm box in the layout: its width kept in Player.ini, its choices and hint following it.
+place.call(:confirm_box, "10,20,500,0")
+answers = ask_box(confirm)
+sprite = confirm.instance_variable_get(:@sprite)
+check("a confirm box kept in Player.ini takes its width and place, its no choice on its plate at the right",
+      [[sprite.x, sprite.y, sprite.bitmap.width], sprite.bitmap.fills.select { |f| f[4] == style::PICKED }.map { |f| f[0, 3] }, offered.call(:confirm_box)],
+      [[10, 20, 500], [[500 / 2 + style::PAD, 6 + 24 + 6, 500 / 2 - 2 * style::PAD]], [10, 20, 500, sprite.bitmap.height]])
+check("its least width keeps both labels on their plates and the hint as whole as where it starts",
+      [Sprite_MpConfirmBox.least_width("Leave", "Stay", "x"), Sprite_MpConfirmBox.least_width("A" * 30, "No", "x"), Sprite_MpConfirmBox.least_width("Leave", "Stay", "x" * 100)],
+      [Sprite_MpConfirmBox::MIN_WIDTH, 2 * (30 * 9 + 4 * style::PAD), 400])
+confirm.close("test")
+confirm.tick
+place.call(:confirm_box, "10,20,100,0")
+ask_box(confirm)
+check("a narrower one keeps the least width its labels and hint need", confirm.instance_variable_get(:@sprite).bitmap.width, 400)
+confirm.close("test")
+confirm.tick
+place.call(:confirm_box, nil)

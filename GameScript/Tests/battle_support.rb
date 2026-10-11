@@ -2,7 +2,8 @@
 #  battle_support.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Let the real waiting box run: stood in for the screen, the windows' contents, the cancel button and the scenes' base, loaded ui.rbx, and stopped a wait that never ends
+#      Paulinchen  2026-10-11: Loaded ui_layout.rbx and stood in for Player.ini, the screen's update and a window's new width, which the waiting box follows
+#                            - Let the real waiting box run: stood in for the screen, the windows' contents, the cancel button and the scenes' base, loaded ui.rbx, and stopped a wait that never ends
 #                            - Gave the rebuilt character stand-in its owner and its own name
 #                            - Let the battle status window stand-in draw a character's name, which battles_coop.rbx wraps
 #                            - Kept every window opened, which the tests of the waiting box read
@@ -44,7 +45,7 @@ $sent = []
 $log = []
 module MGQ_Multiplayer
   module Log; def self.write(m); $log << m; end; end
-  module Player; def self.name; "Me"; end; end
+  module Player; def self.name; "Me"; end; def self.setting(key); ($player_ini ||= {})[key]; end; end
   module Link; def self.cancel; $cancelled = true; end; end
 end
 # The graphics this game has, of which it lacks only one face.
@@ -282,7 +283,7 @@ class Scene_Map; def update_scene; end; def scene_changing?; false; end; def upd
 class Scene_Base; def update; end; def start; end; end
 # Frames a wait may last in a test before it fails.
 WAIT_LIMIT = 10_000
-module Graphics; def self.width; 640; end; def self.height; 480; end; def self.frame_count; $frames.to_i; end; end
+module Graphics; def self.width; 640; end; def self.height; 480; end; def self.frame_count; $frames.to_i; end; def self.update; end; end
 Rect = Struct.new(:x, :y, :width, :height)
 class Sprite; def initialize(*); end; end
 # A window's contents: the texts drawn by line, each line's drawings counted. The records are made
@@ -300,11 +301,14 @@ class Bitmap
   def disposed?; @disposed ? true : false; end
 end
 class Window_Base
-  attr_reader :x, :y, :width, :height, :contents
-  attr_accessor :z
+  attr_reader :width, :height, :contents
+  attr_accessor :x, :y, :z
   # Every window opened, newest last, for a test that reads the waiting box's lines.
   def initialize(x = 0, y = 0, width = 0, height = 0); @x, @y, @width, @height = x, y, width, height; @contents = Bitmap.new(width - 24, height - 24); ($windows ||= []) << self; end
   def line_height; 24; end
+  def width=(width); @width = width; end
+  def create_contents; @contents = Bitmap.new(@width - 24, @height - 24); end
+  def update; end
   def dispose; @disposed = true; end
   def disposed?; @disposed ? true : false; end
 end
@@ -327,6 +331,7 @@ module MGQ_MpOverworldSync
   def self.label_line(*); end
 end
 load_script "ui"
+load_script "ui_layout"
 load_script "coop_scope"
 load_script "coop_squad"
 load_script "battles"

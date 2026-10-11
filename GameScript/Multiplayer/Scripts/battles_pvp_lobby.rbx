@@ -2,6 +2,7 @@
 #  battles_pvp_lobby.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-11: Dressed the screen's commands in the interface look
 #      Paulinchen  2026-10-07: Logged where the screen failed and the pictures in memory
 #                            - Logged the player's choices on the PvP battle screen and the exchange's stages
 #      Paulinchen  2026-10-04: Renamed from mp_battles_pvp_lobby.rbx
@@ -175,6 +176,8 @@ end
 
 # The PvP battle screen's commands, which follow how the exchange stands.
 class Window_PvpLobbyCommand < Window_Command
+  include MGQ_MpUi::Theme::Skinned
+
   # Width of the window.
   WIDTH = 360
 

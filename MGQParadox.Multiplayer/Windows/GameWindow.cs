@@ -2,6 +2,7 @@
 //  GameWindow.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-11: Told the Alt guard which character came with Alt, so Alt pressed alone never opens the window's menu
 //      Paulinchen  2026-10-08: Kept Alt from opening the window's menu while a text screen wants the keyboard, which stopped the game
 //                            - Kept the window's menu closed for an Alt press that began while a text screen wanted the keyboard, too
 //      Paulinchen  2026-10-07: Logged why the game cannot keep running in the background
@@ -168,9 +169,9 @@ internal static unsafe partial class GameWindow
             }
             else if (message == SystemCommand && (wParam & 0xFFF0) == KeyMenu)
             {
-                // The chat picks its tabs and resizes with Alt held, whose release would open the
-                // window's menu, in which the game waits.
-                if (altMenu.SwallowsKeyMenu(typing))
+                // The chat picks its tabs and the mod's boxes move with Alt held, whose release
+                // would open the window's menu, in which the game waits.
+                if (altMenu.SwallowsKeyMenu(typing, lParam))
                 {
                     return 0;
                 }

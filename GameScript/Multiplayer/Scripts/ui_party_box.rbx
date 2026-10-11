@@ -2,7 +2,9 @@
 #  ui_party_box.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Drew the box's background and titles in the shared style, faded the box in and out, and named the hotkey that changes its size at the right of its title
+#      Paulinchen  2026-10-11: Made the box movable and widenable with the left Alt held, as "Party box", the map box too: the extra width goes to the names, levels and places, the ping stays at the right edge, the small box at the right of the box's place, never narrower than the full box's columns
+#                            - Framed the box in the preset's colors, drawn anew once the preset changes
+#                            - Drew the box's background and titles in the shared style, faded the box in and out, and named the hotkey that changes its size at the right of its title
 #                            - Kept the level and the ping apart in their own columns, with room for "Lv 100" and "999+ ms" (the ping column and the party's title are MGQ_MpOverworld's), the name column 116 pixels wide, and cut a long name to its column
 #                            - Left placing the box to its motion, which puts it at its left every frame, instead of each drawing placing it too
 #                            - Drew the icon of what each player does before their name, through MGQ_MpUi.draw_icon, in the small box too
@@ -160,18 +162,25 @@ module MGQ_MpPartyBox
   end
 end
 
-# The box at the top right of the map that lists the player's party: the leader first with a crown,
-# then the others by name, each with the icon of what they do, their highest companion level and
-# ping, and where they are on a smaller line below. The player's own line, a party member's and
-# anyone else's are named in the colors MGQ_MpUi::PlayerColor gives, a member whose connection is
-# down dim with the away icon. Small, it lists only each player's icon, name and ping. The title
-# names the hotkey that changes the size at its right. Drawn in the shared style, the box fades in
-# and out.
+# The box at the top right of the map, until the player moves it, that lists the player's party:
+# the leader first with a crown, then the others by name, each with the icon of what they do, their
+# highest companion level and ping, and where they are on a smaller line below. The player's own
+# line, a party member's and anyone else's are named in the colors MGQ_MpUi::PlayerColor gives, a
+# member whose connection is down dim with the away icon. Small, it lists only each player's icon,
+# name and ping, at the right edge of the box's place. The title names the hotkey that changes the
+# size at its right. Drawn in the shared style, the box fades in and out. A wider box gives the
+# names, the levels and the places more room; its height follows the players.
 #
 # In a Raid World it is the map box instead: everyone on the player's map, the party's members
 # first, each with their Frontline's highest level and ping, and no place, since all share the
 # player's.
 class Sprite_MpPartyBox < Sprite
+  # The box's id in the layout, which names its setting in Player.ini; the map box shares it.
+  LAYOUT = :party_box
+
+  # The box's name while the player arranges the boxes.
+  LAYOUT_NAME = "Party box"
+
   # Height of one line.
   ROW = 22
 
@@ -181,12 +190,15 @@ class Sprite_MpPartyBox < Sprite
   # Height of one player: their line and where they are.
   PLAYER_ROW = ROW + PLACE_ROW
 
-  # Room between the box and the top and right edges of the screen, below a strip of the mod at the
-  # top (see MGQ_MpUi.top_room).
+  # Room between the box and the top and right edges of the screen at its default, below a strip
+  # of the mod at the top (see MGQ_MpUi.top_room).
   MARGIN = 8
 
   # Room between the box's side edges and its columns.
   EDGE = 6
+
+  # Room above the first line and below the last, inside the box's frame.
+  SPACING = 2
 
   # Side of the crown and the state icon, which fit a line.
   ICON_SIDE = ROW - 2
@@ -194,18 +206,23 @@ class Sprite_MpPartyBox < Sprite
   # Width of the level column, which "Lv 100" fits.
   LEVEL_WIDTH = 52
 
-  # Left edge of each column: the crown, the state icon, the name the style's gap after the icon,
-  # and the level. The name runs up to the level less the gap, 116 pixels, about 14 letters of the
-  # small font; the ping lies right of the level, see ping_left.
+  # Left edge of each column at the box's default width: the crown, the state icon, the name the
+  # style's gap after the icon, and the level. The name runs up to the level less the gap, 116
+  # pixels, about 14 letters of the small font; the ping lies right of the level, see ping_left.
+  # In a wider box the level keeps its distance to the right edge, see level_left.
   COLUMNS = { :crown => 4, :icon => 26, :name => 50, :level => 170 }
 
-  # Width of the box: the columns up to the level, the level, the ping (MGQ_MpOverworld::PING_WIDTH,
-  # which "999+ ms" fits) and the edge, so the level and the ping never meet.
+  # Width of the box at its default, and the least: the columns up to the level, the level, the
+  # ping (MGQ_MpOverworld::PING_WIDTH, which "999+ ms" fits) and the edge, so the level and the ping
+  # never meet.
   WIDTH = COLUMNS[:level] + LEVEL_WIDTH + MGQ_MpUi::Style::GAP + MGQ_MpOverworld::PING_WIDTH + EDGE
 
   # Width of the small box, which has no level column: what lies between the name and the ping
   # is the name's, 74 pixels.
   SMALL_WIDTH = 198
+
+  # Least height of the box: one line.
+  MIN_HEIGHT = ROW + 2 * SPACING
 
   # Frames between two readings of the party, a quarter of a second.
   READ_FRAMES = 15
@@ -218,8 +235,13 @@ class Sprite_MpPartyBox < Sprite
   # @param viewport [Viewport] The map's topmost viewport.
   def initialize(viewport)
     super(viewport)
-    self.bitmap = Bitmap.new(WIDTH, [ROW + PLAYER_ROW * MGQ_MpCoop::MAX_PLAYERS, ROW + ROW * MGQ_MpPartyBox::MAP_LINES].max + 4)
-    self.x = @left = Graphics.width - WIDTH - MARGIN
+    @width = WIDTH
+    @height = 0
+    @small = false
+    fit_bitmap(WIDTH)
+    rect = layout_rect
+    self.x = @left = rect.x
+    self.y = rect.y
     self.z = MGQ_MpUi::Z[:labels]
     @motion = MGQ_MpUi::Motion.new(self)
     @shown = nil
@@ -227,27 +249,70 @@ class Sprite_MpPartyBox < Sprite
     @overview = nil
   end
 
-  # Reads the players every READ_FRAMES, and at once when the World overview opens or closes, and
-  # moves the fade a frame on, the box at its left below the strip at the top.
+  # Reads the players every READ_FRAMES, at once when the World overview opens or closes, and
+  # when the box's width changes, and moves the fade a frame on, the box where the layout puts it.
   def update
     super
     overview = MGQ_MpWorldOverview.open?
+    width = layout_rect.width
     @frames -= 1
-    refresh(overview) if @frames <= 0 || overview != @overview
-    @motion.place(@left, MARGIN + MGQ_MpUi.top_room)
+    refresh(overview, width) if @frames <= 0 || overview != @overview || width != @width
+    rect = layout_rect
+    @left = left_of(rect)
+    @motion.place(@left, rect.y)
     @motion.update
+    MGQ_MpUi::Layout.offer(LAYOUT, rect.x, rect.y, rect.width, @height, z) if @motion.shown?
   rescue => e
     MGQ_MpPartyBox.log_once(:draw, "drawing the party box failed: #{e.class}: #{e.message}")
   end
 
+  # Tells where the box draws: where the player left it, else at the top right below a strip of
+  # the mod, as tall as it was last drawn.
+  #
+  # @return [Rect] The place, see MGQ_MpUi::Layout.rect.
+  def layout_rect
+    default = Rect.new(Graphics.width - WIDTH - MARGIN, MARGIN + MGQ_MpUi.top_room, WIDTH, @height.to_i)
+    MGQ_MpUi::Layout.rect(LAYOUT, default)
+  end
+
+  # Tells where the box's picture starts on the screen: at the place's left, or SMALL_WIDTH before
+  # its right edge for the small box.
+  #
+  # @param rect [Rect] The box's place, see layout_rect.
+  # @return [Integer] The left.
+  def left_of(rect)
+    @small ? rect.x + rect.width - SMALL_WIDTH : rect.x
+  end
+
+  # Tells how wide the full box draws: as the layout last said, WIDTH before.
+  #
+  # @return [Integer] The width.
+  def box_width
+    @width || WIDTH
+  end
+
+  # Sizes the picture to a width, as tall as the most players or lines the box lists, making it
+  # anew once the width changed.
+  #
+  # @param width [Integer] The box's width.
+  def fit_bitmap(width)
+    return if bitmap && !bitmap.disposed? && bitmap.width == width
+
+    bitmap.dispose if bitmap && !bitmap.disposed?
+    self.bitmap = Bitmap.new(width, [ROW + PLAYER_ROW * MGQ_MpCoop::MAX_PLAYERS, ROW + ROW * MGQ_MpPartyBox::MAP_LINES].max + 2 * SPACING)
+  end
+
   # Draws the party while the player is in one, or in a Raid World everyone on the map while
-  # someone else is on it, and the World overview is closed, if it changed, fading the box in;
-  # fades it out once there is nobody to list, keeping its picture until it is gone.
+  # someone else is on it, and the World overview is closed, if it, the width or the preset
+  # changed, fading the box in; fades it out once there is nobody to list, keeping its picture
+  # until it is gone.
   #
   # @param overview [Boolean] Whether the World overview is open.
-  def refresh(overview)
+  # @param width [Integer] The box's width, see layout_rect.
+  def refresh(overview, width = box_width)
     @frames = READ_FRAMES
     @overview = overview
+    @width = width
     map = MGQ_MpPartyBox.map_box?
     rows = overview ? [] : map ? MGQ_MpWorldOverview.map_rows : MGQ_MpWorldOverview.party_rows
     MGQ_MpPartyBox.note_rows(rows, map) unless overview
@@ -255,10 +320,12 @@ class Sprite_MpPartyBox < Sprite
 
     @motion.show
     small = MGQ_MpPartyBox.small?
-    drawn = [small, map] + rows.map { |row| [row.name, row.level, row.ping && row.ping[0], row.badge, row.place, row.member, row.icon, MGQ_MpPartyBox.away?(row)] }
+    drawn = [small, map, width, MGQ_MpUi::Theme.serial] +
+            rows.map { |row| [row.name, row.level, row.ping && row.ping[0], row.badge, row.place, row.member, row.icon, MGQ_MpPartyBox.away?(row)] }
     return if drawn == @shown
 
     @shown = drawn
+    fit_bitmap(width)
     if small
       draw_small(rows, map)
     else
@@ -266,46 +333,55 @@ class Sprite_MpPartyBox < Sprite
     end
   end
 
-  # Draws the box, as tall as the party needs, in the top right corner.
+  # Draws the box, as wide as the layout says and as tall as the party needs.
   #
   # @param rows [Array<MGQ_MpWorldOverview::Row>] The party, see MGQ_MpWorldOverview.party_rows.
   def draw(rows)
-    height = ROW + PLAYER_ROW * rows.size + 4
-    @left = Graphics.width - WIDTH - MARGIN
-    bitmap.clear
-    bitmap.fill_rect(0, 0, WIDTH, height, MGQ_MpUi::Style::BACK)
-    draw_title(MGQ_MpOverworld.party_title(MGQ_MpOverworld.party_badge(:me)), MGQ_MpUi::Style::MEMBER)
-    rows.each_with_index { |row, index| draw_row(row, ROW + PLAYER_ROW * index + 2) }
+    width = box_width
+    start(width, ROW + PLAYER_ROW * rows.size + 2 * SPACING, false)
+    draw_title(MGQ_MpOverworld.party_title(MGQ_MpOverworld.party_badge(:me)), MGQ_MpUi::Style::MEMBER, width)
+    rows.each_with_index { |row, index| draw_row(row, ROW + PLAYER_ROW * index + SPACING, width) }
   end
 
-  # Draws the map box, as tall as its players need up to MGQ_MpPartyBox::MAP_LINES, in the top right
-  # corner: how many are on the map, then a line per player with no place below.
+  # Draws the map box, as wide as the layout says and as tall as its players need up to
+  # MGQ_MpPartyBox::MAP_LINES: how many are on the map, then a line per player with no place below.
   #
   # @param rows [Array<MGQ_MpWorldOverview::Row>] The players, see MGQ_MpWorldOverview.map_rows.
   def draw_map(rows)
     shown, more = MGQ_MpPartyBox.capped(rows)
     lines = shown.size + (more > 0 ? 1 : 0)
-    @left = Graphics.width - WIDTH - MARGIN
-    bitmap.clear
-    bitmap.fill_rect(0, 0, WIDTH, ROW + ROW * lines + 4, MGQ_MpUi::Style::BACK)
-    draw_title("Map #{rows.size}", MGQ_MpUi::Style::TEXT)
-    shown.each_with_index { |row, index| draw_line(row, ROW * (index + 1) + 2) }
-    draw_more(more, ROW * (shown.size + 1) + 2, WIDTH) if more > 0
+    width = box_width
+    start(width, ROW + ROW * lines + 2 * SPACING, false)
+    draw_title("Map #{rows.size}", MGQ_MpUi::Style::TEXT, width)
+    shown.each_with_index { |row, index| draw_line(row, ROW * (index + 1) + SPACING, width) }
+    draw_more(more, ROW * (shown.size + 1) + SPACING, width) if more > 0
   end
 
-  # Draws the small box: a row per player with the crown, the icon, the name and the ping, and no
-  # title.
+  # Draws the small box, SMALL_WIDTH wide at the right edge of the box's place: a row per player
+  # with the crown, the icon, the name and the ping, and no title.
   #
   # @param rows [Array<MGQ_MpWorldOverview::Row>] The players, see MGQ_MpWorldOverview.party_rows
   #   and map_rows.
   # @param map [Boolean] Whether it is the map box, which lists only as many as fit.
   def draw_small(rows, map = false)
     shown, more = map ? MGQ_MpPartyBox.capped(rows) : [rows, 0]
-    @left = Graphics.width - SMALL_WIDTH - MARGIN
+    start(SMALL_WIDTH, ROW * (shown.size + (more > 0 ? 1 : 0)) + 2 * SPACING, true)
+    shown.each_with_index { |row, index| draw_line(row, ROW * index + SPACING, SMALL_WIDTH, false) }
+    draw_more(more, ROW * shown.size + SPACING, SMALL_WIDTH) if more > 0
+  end
+
+  # Starts a drawing: keeps the box's height and whether it is small, places its left, clears the
+  # picture and draws the framed box.
+  #
+  # @param width [Integer] The box's width.
+  # @param height [Integer] The box's height.
+  # @param small [Boolean] Whether it is the small box.
+  def start(width, height, small)
+    @height = height
+    @small = small
+    @left = left_of(layout_rect)
     bitmap.clear
-    bitmap.fill_rect(0, 0, SMALL_WIDTH, ROW * (shown.size + (more > 0 ? 1 : 0)) + 4, MGQ_MpUi::Style::BACK)
-    shown.each_with_index { |row, index| draw_line(row, ROW * index + 2, SMALL_WIDTH, false) }
-    draw_more(more, ROW * shown.size + 2, SMALL_WIDTH) if more > 0
+    MGQ_MpUi::Style.draw_box(bitmap, 0, 0, width, height)
   end
 
   # Draws the title line of the full box: the title at the left, cut to the room before the hint,
@@ -313,14 +389,15 @@ class Sprite_MpPartyBox < Sprite
   #
   # @param title [String] The title.
   # @param color [Color] The title's color.
-  def draw_title(title, color)
+  # @param width [Integer] The box's width.
+  def draw_title(title, color, width = box_width)
     style = MGQ_MpUi::Style
     hint = SIZE_HINT % MGQ_MpHotkeys.label(:party_box)
     style.use_font(bitmap, style::SMALL_SIZE, color)
-    room = WIDTH - 2 * EDGE - bitmap.text_size(hint).width - style::GAP
-    bitmap.draw_text(EDGE, 2, room, ROW, MGQ_MpUi.cut(bitmap, title, room))
+    room = width - 2 * EDGE - bitmap.text_size(hint).width - style::GAP
+    bitmap.draw_text(EDGE, SPACING, room, ROW, MGQ_MpUi.cut(bitmap, title, room))
     style.use_font(bitmap, style::SMALL_SIZE, style::DIM)
-    bitmap.draw_text(EDGE, 2, WIDTH - 2 * EDGE, ROW, hint, 2)
+    bitmap.draw_text(EDGE, SPACING, width - 2 * EDGE, ROW, hint, 2)
   end
 
   # Tells where the ping column starts in a box: MGQ_MpOverworld::PING_WIDTH before its right edge.
@@ -331,6 +408,15 @@ class Sprite_MpPartyBox < Sprite
     width - EDGE - MGQ_MpOverworld::PING_WIDTH
   end
 
+  # Tells where the level column starts in a box: as far from its right edge as at WIDTH, so a
+  # wider box gives the extra room to the name.
+  #
+  # @param width [Integer] The box's width.
+  # @return [Integer] The column's left.
+  def level_left(width)
+    COLUMNS[:level] + width - WIDTH
+  end
+
   # Tells how wide the name column is in a box: up to the level, or up to the ping in a box
   # without levels, less the style's gap.
   #
@@ -338,7 +424,7 @@ class Sprite_MpPartyBox < Sprite
   # @param level [Boolean] Whether the box shows levels.
   # @return [Integer] The width.
   def name_width(width, level)
-    (level ? COLUMNS[:level] : ping_left(width)) - COLUMNS[:name] - MGQ_MpUi::Style::GAP
+    (level ? level_left(width) : ping_left(width)) - COLUMNS[:name] - MGQ_MpUi::Style::GAP
   end
 
   # Draws the line that says how many more players are on the map than the box lists.
@@ -371,9 +457,10 @@ class Sprite_MpPartyBox < Sprite
   #
   # @param row [MGQ_MpWorldOverview::Row] The player.
   # @param y [Integer] The player's top.
-  def draw_row(row, y)
-    draw_line(row, y)
-    draw_place(row.place, y + ROW - 3)
+  # @param width [Integer] The box's width.
+  def draw_row(row, y, width = box_width)
+    draw_line(row, y, width)
+    draw_place(row.place, y + ROW - 3, width)
   end
 
   # Draws a player's line: the crown, the icon of what they do (the away icon while their
@@ -383,7 +470,7 @@ class Sprite_MpPartyBox < Sprite
   # @param y [Integer] The line's top.
   # @param width [Integer] The box's width.
   # @param level [Boolean] Whether the line shows the level.
-  def draw_line(row, y, width = WIDTH, level = true)
+  def draw_line(row, y, width = box_width, level = true)
     style = MGQ_MpUi::Style
     draw_crown(y) if row.badge && row.badge[1]
     draw_icon(MGQ_MpPartyBox.away?(row) ? MGQ_MpPartyBox::AWAY_ICON : row.icon, COLUMNS[:icon], y)
@@ -392,7 +479,7 @@ class Sprite_MpPartyBox < Sprite
     bitmap.draw_text(COLUMNS[:name], y, names, ROW, MGQ_MpUi.cut(bitmap, row.name, names))
     if level
       style.use_font(bitmap, style::SMALL_SIZE, style::TEXT)
-      bitmap.draw_text(COLUMNS[:level], y, LEVEL_WIDTH, ROW, row.level)
+      bitmap.draw_text(level_left(width), y, LEVEL_WIDTH, ROW, row.level)
     end
     MGQ_MpOverworld.draw_ping(bitmap, row.ping, ping_left(width), y, ROW) if row.ping
   end
@@ -401,11 +488,12 @@ class Sprite_MpPartyBox < Sprite
   #
   # @param place [String] Where they are.
   # @param y [Integer] The line's top.
-  def draw_place(place, y)
-    width = WIDTH - COLUMNS[:name] - EDGE
+  # @param width [Integer] The box's width.
+  def draw_place(place, y, width = box_width)
+    room = width - COLUMNS[:name] - EDGE
     MGQ_MpUi::Style.use_font(bitmap, MGQ_MpUi::Style::TINY_SIZE, MGQ_MpUi::Style::HEADING)
-    text = MGQ_MpWorldOverview.fit_place(place, width, bitmap)
-    bitmap.draw_text(COLUMNS[:name], y, width, PLACE_ROW, text)
+    text = MGQ_MpWorldOverview.fit_place(place, room, bitmap)
+    bitmap.draw_text(COLUMNS[:name], y, room, PLACE_ROW, text)
   end
 
   # Frees the box's picture.
@@ -413,6 +501,14 @@ class Sprite_MpPartyBox < Sprite
     bitmap.dispose
     super
   end
+end
+
+# Where the box lies, which the player changes with the left Alt held, through ui_layout.rbx.
+
+begin
+  MGQ_MpUi::Layout.register(Sprite_MpPartyBox::LAYOUT, Sprite_MpPartyBox::LAYOUT_NAME, Sprite_MpPartyBox::WIDTH, Sprite_MpPartyBox::MIN_HEIGHT, :width)
+rescue => e
+  MGQ_MpPartyBox.log("layout FAILED: #{e.class}: #{e.message}")
 end
 
 # Game hooks, through core_hooks.rbx.

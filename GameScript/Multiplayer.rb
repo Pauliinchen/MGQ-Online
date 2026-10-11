@@ -2,7 +2,9 @@
 #  Multiplayer.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Loaded ui_edge_arrows.rbx, the arrows toward the players off the screen, after ui_party_box.rbx
+#      Paulinchen  2026-10-11: Loaded ui_theme.rbx and ui_layout.rbx after ui.rbx, the interface presets and the boxes the player moves and resizes
+#                            - Kept the mouse's clicks from the mod's screens while the left Alt is held, which moves and resizes the boxes instead
+#                            - Loaded ui_edge_arrows.rbx, the arrows toward the players off the screen, after ui_party_box.rbx
 #      Paulinchen  2026-10-10: Named mp_dev_build, which tells a development build from a release
 #                            - Loaded ui_raid_bar.rbx, the raid bosses' HP bars, after ui_party_box.rbx
 #                            - Loaded coop_teleport.rbx after coop_gather.rbx, the teleports between a party's members
@@ -119,7 +121,7 @@ module MGQ_Multiplayer
   # coop.rbx, which the scripts after them register with. The battle scripts install their battle hooks once the game runs, the last
   # loaded first, so their order decides how those hooks wrap each other.
   SCRIPTS = %w[
-    core_log core_hooks core_game_access core_hotkeys ui ui_text_box core_actors core_async overworld_sync ui_wheel ui_actions ui_chat ui_emotes overworld
+    core_log core_hooks core_game_access core_hotkeys ui ui_theme ui_layout ui_text_box core_actors core_async overworld_sync ui_wheel ui_actions ui_chat ui_emotes overworld
     coop coop_scope coop_squad coop_events coop_gather coop_teleport coop_scene coop_npcs coop_story_rewards story_state coop_story coop_castle
     world world_mods world_mods_parking world_catchup_data world_story world_catchup world_difficulty world_save_distribution world_text world_screen world_save_export coop_choices
     battles battles_raid_bosses battles_coop battles_coop_hotjoin battles_coop_join battles_raid_pool battles_coop_level_sync
@@ -1190,18 +1192,30 @@ module MGQ_Multiplayer
       nil
     end
 
-    # Reports whether the left button went down since the last call, while the game window is in front.
+    # Reports whether the left button went down since the last call, while the game window is in
+    # front and the player does not arrange the mod's boxes.
     #
     # @return [Boolean] Whether it went down.
     def self.clicked?
-      Key.pressed?(LEFT_BUTTON)
+      # Asked even while arranging, so a press held over the end of it is not taken as a new one.
+      pressed = Key.pressed?(LEFT_BUTTON)
+      pressed && !arranging?
     end
 
-    # Reports whether the left button is held, while the game window is in front.
+    # Reports whether the left button is held, while the game window is in front and the player does
+    # not arrange the mod's boxes.
     #
     # @return [Boolean] Whether it is.
     def self.held?
-      Key.down?(LEFT_BUTTON)
+      Key.down?(LEFT_BUTTON) && !arranging?
+    end
+
+    # Tells whether the mouse moves and resizes the mod's boxes instead of clicking, see
+    # ui_layout.rbx.
+    #
+    # @return [Boolean] Whether it does.
+    def self.arranging?
+      defined?(MGQ_MpUi::Layout) && MGQ_MpUi::Layout.arranging? ? true : false
     end
   end
 

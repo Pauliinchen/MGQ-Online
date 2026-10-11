@@ -2,7 +2,8 @@
 #  ui_actions.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Drew the wheel and the line above the player's own head in the shared style, fading them in and out, with the hint under the ring the wheels share, which names Esc, the numpad's 0 and the wheel's hotkey
+#      Paulinchen  2026-10-11: Framed the wheel's boxes in the preset's colors, the picked one lit inside its frame, drawn anew once the preset changes
+#                            - Drew the wheel and the line above the player's own head in the shared style, fading them in and out, with the hint under the ring the wheels share, which names Esc, the numpad's 0 and the wheel's hotkey
 #                            - Made the line half the screen wide and cut it and a choice's text to their room, the line without its seconds once they make it too wide
 #                            - Drew the wheel's hint whole through the shared style, so a rebound key's longer name never cuts it, and its icons through MGQ_MpUi.draw_icon
 #                            - Showed the seconds left after a doing in the line above the player's own head, which a script names with the moment it lapses, also counted from a moment in frames
@@ -577,7 +578,7 @@ class Sprite_MpActionWheel < Sprite
     @motion.place(sprite.x, sprite.y)
     @motion.show
     options = MGQ_MpActions.wheel_options
-    drawn = [MGQ_MpActions::Wheel.selected] + options.map { |direction, option| [direction, option.text, option.icon, !option.run.nil?] }
+    drawn = [MGQ_MpActions::Wheel.selected, MGQ_MpUi::Theme.serial] + options.map { |direction, option| [direction, option.text, option.icon, !option.run.nil?] }
     draw(options, drawn) unless drawn == @shown
     @motion.update
   end
@@ -619,7 +620,7 @@ class Sprite_MpActionWheel < Sprite
     @shown = nil
   end
 
-  # Draws one choice's box, its text cut to the box.
+  # Draws one choice's box in its frame, lit while picked, its text cut to the box.
   #
   # @param direction [Symbol] The direction that picks it.
   # @param option [MGQ_MpActions::Option] The choice.
@@ -628,8 +629,12 @@ class Sprite_MpActionWheel < Sprite
     return unless box
 
     style = MGQ_MpUi::Style
-    picked = direction == MGQ_MpActions::Wheel.selected
-    bitmap.fill_rect(box.x, box.y, box.width, box.height, picked ? style::PICKED : style::BACK)
+    if direction == MGQ_MpActions::Wheel.selected
+      bitmap.fill_rect(box.x, box.y, box.width, box.height, style::PICKED)
+      style.draw_frame(bitmap, box.x, box.y, box.width, box.height)
+    else
+      style.draw_box(bitmap, box.x, box.y, box.width, box.height)
+    end
     return draw_icon(option, box.x + (box.width - ICON_SIZE) / 2, box.y + (box.height - ICON_SIZE) / 2) if option.icon
 
     style.use_font(bitmap, style::TEXT_SIZE, option.run ? style::TEXT : style::DIM)

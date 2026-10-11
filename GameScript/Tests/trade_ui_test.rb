@@ -2,7 +2,8 @@
 #  trade_ui_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Checked the confirm box before cancelling the trade, with a stand-in that records the question and answers
+#      Paulinchen  2026-10-11: Checked that the game's help window on the trade screen wears the interface look without the game's tint, loading ui_theme.rbx
+#                            - Checked the confirm box before cancelling the trade, with a stand-in that records the question and answers
 #                            - Checked that a no after the trade ended under the box leaves the disposed commands alone
 #      Paulinchen  2026-10-07: Cut names through MGQ_MpUi.cut, loading ui.rbx first
 #                            - Created
@@ -45,7 +46,9 @@ module MGQ_MpTrade
 end
 
 class Sprite; def initialize(*); end; end
+module MGQ_Multiplayer; module Player; def self.setting(_key); nil; end; end; end
 load_script "ui"
+load_script "ui_theme"
 load_script "ui_trade"
 
 # Draws an offer's first row in a window as wide as one half of the trade screen.
@@ -120,3 +123,24 @@ MGQ_MpTrade.session = nil
 scene.on_cancel_trade
 check("without a trade nothing is asked", [asked.size, cancelled, activated], [4, 1, 3])
 
+# A window of the game's own class on the trade screen wears the interface look, now and after a
+# change of it, without the game's tint.
+class Tone; attr_reader :values; def set(*values); @values = values; end; end
+# The game's help window: its update tints it in the game's window color, as the game's does.
+class HelpWindow < Window_Base
+  attr_accessor :windowskin, :back_opacity
+  def tone; @tone ||= Tone.new; end
+  def disposed?; false; end
+  def update; update_tone; end
+  def update_tone; tone.set(9, 9, 9, 0); end
+end
+MGQ_MpUi::Theme.define_singleton_method(:skin) { :preset_skin }
+help = HelpWindow.new
+help.update
+scene.wear_theme(help)
+check("the help window wears the look at once: the preset's skin, the back's opacity and no tint", [help.windowskin, help.back_opacity, help.tone.values], [:preset_skin, MGQ_MpUi::Style::BACK.alpha, [0, 0, 0, 0]])
+help.update
+check("and keeps no tint as it updates", help.tone.values, [0, 0, 0, 0])
+MGQ_MpUi::Theme.apply("Monarch", "a test")
+help.update
+check("a new look dresses it anew as it updates", help.back_opacity, 235)

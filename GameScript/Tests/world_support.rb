@@ -2,7 +2,8 @@
 #  world_support.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Kept a color's values, which an outlined text copies the font's color by
+#      Paulinchen  2026-10-11: Loaded ui_theme.rbx and ui_layout.rbx after ui.rbx, as Multiplayer.rb does, which the boxes take their look and place from
+#                            - Kept a color's values, which an outlined text copies the font's color by
 #                            - Gave the screen its size and frame count and stood in for the scenes' base, which the confirm box centres on and ticks after
 #      Paulinchen  2026-10-10: Loaded coop_gather.rbx and coop_teleport.rbx, which offer the teleport to a party's members
 #      Paulinchen  2026-10-08: Loaded coop_scope.rbx after coop.rbx, which the party's choices ask whether a Raid World is open
@@ -134,6 +135,8 @@ $player_ini = {}
 
 load_script "core_hotkeys"
 load_script "ui"
+load_script "ui_theme"
+load_script "ui_layout"
 load_script "ui_text_box"
 load_script "overworld_sync"
 load_script "ui_wheel"
