@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-11: Named whether a forced move route moves a character
+#                            - Named the event's answer a battle ends with, which tells a story's battle
 #      Paulinchen  2026-10-10: Dropped the party's team, its temporary party with the personas it changed and the split party played, which only the raid boss's fall back read
 #                            - Named the game's HP bar of an enemy's sprite, which the raid boss's bar moves down
 #      Paulinchen  2026-10-09: Named the party's team, its temporary party with the personas it changed, and the split party played
@@ -110,6 +111,7 @@ module MGQ_MpGame
     :surprise => :@surprise,
     :can_escape => :@can_escape,
     :can_lose => :@can_lose,
+    :event_proc => :@event_proc,
     :phase => :@phase,
     :stack => :@stack,
     :system_save_count => :@system_save_count,

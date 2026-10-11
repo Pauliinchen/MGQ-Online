@@ -6,6 +6,7 @@
 #                            - Let the waiting box name the players still waited for and count the seconds, written as the line above the player's head writes them, drawn once a second, before the leave offer takes the last line
 #                            - Named the wait for a player once, which the live battle and the playback share
 #                            - Named a player of the world by their seat for the waiting box, "you" for the player, through the peer's name the log's naming shares
+#                            - Told in the waiting box's leave offer that leaving a story's battle loses it
 #                            - Told of a player who joined the running battle the way a departure is told, once per battle apart from their leaving
 #      Paulinchen  2026-10-08: Closed a command phase the live battle ended in as it finishes, such as after a reset
 #                            - Took the messages of the players a running co-op battle expects to join it, before they are among its guests
@@ -1085,6 +1086,9 @@ module MGQ_MpBattlesSync
     # What the box says once it offers to leave.
     LEAVE_TEXT = "Cancel leaves the battle."
 
+    # What the box says once it offers to leave a story's battle, which the player then loses.
+    LEAVE_LOSES_TEXT = "Cancel leaves and loses."
+
     # What starts the names line unless the caller passes another.
     WAITING_PREFIX = "Waiting for: "
 
@@ -1127,7 +1131,7 @@ module MGQ_MpBattlesSync
       window = Window_MpWaiting.new(rect.x, rect.y, rect.width, HEIGHT)
       window.z = Z
       box = Box.new(window, text, details, prefix, nil, nil, "")
-      register_layout(least_width(window.contents, [text, LEAVE_TEXT]))
+      register_layout(least_width(window.contents, [text, LEAVE_TEXT, LEAVE_LOSES_TEXT]))
       draw_line(box, TEXT_LINE, text)
       place(box)
       box
@@ -1163,7 +1167,7 @@ module MGQ_MpBattlesSync
     # Makes the box movable before any box opens, with the least width its leave offer needs.
     def self.register_at_load
       measure = Bitmap.new(1, 1)
-      register_layout(least_width(measure, [LEAVE_TEXT]))
+      register_layout(least_width(measure, [LEAVE_TEXT, LEAVE_LOSES_TEXT]))
       measure.dispose
     end
 
@@ -1224,7 +1228,7 @@ module MGQ_MpBattlesSync
         draw_line(box, NAMES_LINE, names_line(box))
       end
       if frames == LEAVE_FRAMES
-        box.time = LEAVE_TEXT
+        box.time = Live.leaving_loses? ? LEAVE_LOSES_TEXT : LEAVE_TEXT
         draw_line(box, TIME_LINE, box.time)
       elsif frames >= 0 && frames < LEAVE_FRAMES && frames % REDRAW_FRAMES == 0
         box.seconds = frames / REDRAW_FRAMES

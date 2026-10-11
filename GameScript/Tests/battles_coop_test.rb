@@ -2,7 +2,8 @@
 #  battles_coop_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Checked that the steps to the next random encounter stretch by half while another player stands near, in a party and in a Raid World, and that a Raid World's battle invites only the players near
+#      Paulinchen  2026-10-11: Checked that leaving a story's battle without escape loses it for the player alone, and that any other battle is left as an escape
+#                            - Checked that the steps to the next random encounter stretch by half while another player stands near, in a party and in a Raid World, and that a Raid World's battle invites only the players near
 #                            - Checked that the party takes commands while the player's Frontline is down and their Backline may swap in, and not once it may not
 #                            - Checked that the status window names each character in its player's color, leaving a character in crisis to the game
 #                            - Checked that a guest reads in the chat log who joined the host's party, and nothing when a player leaves it
@@ -399,6 +400,25 @@ $sent.clear
 MGQ_MpBattlesSync::Live.escaped(scene)
 check("one whose escape failed stays", $sent.size, 0)
 check("in co-op every player tries to escape as in any battle", MGQ_MpBattlesSync::Live.escape_leaves?, false)
+
+# Leaving a story's battle without escape loses it for the player alone, since its event has no
+# branch for an escape; any other battle is left as an escape.
+def BattleManager.process_defeat; $defeated = true; end
+scene.instance_variable_set(:@info_viewport, Struct.new(:visible).new(true))
+leave = lambda do |event_proc, can_escape|
+  MGQ_MpGame.set(BattleManager, :event_proc, event_proc)
+  MGQ_MpGame.set(BattleManager, :can_escape, can_escape)
+  $sent.clear
+  $aborted = $defeated = false
+  offer = MGQ_MpBattlesSync::Live.leaving_loses?
+  MGQ_MpBattlesSync::Live.forfeit(scene)
+  [offer, $aborted, $defeated, $sent.map { |_, text| fields_of(text)["battle"] }]
+end
+check("leaving a story's battle without escape loses it here, the others told the player left",
+      leave.call(proc {}, false), [true, false, true, ["leave"]])
+check("leaving one the party may escape, or a battle no event started, is an escape",
+      [leave.call(proc {}, true), leave.call(nil, false)], [[false, true, false, ["leave"]], [false, true, false, ["leave"]]])
+MGQ_MpGame.set(BattleManager, :event_proc, nil)
 
 $turn_ends = 0
 $commands_phase = false

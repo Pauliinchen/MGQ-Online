@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-11: Named in the waiting box the guests whose commands or ready word the host still waits for, with the seconds waited, the wait for a player worded as the waiting box words it
+#                            - Lost a story's battle without escape for the co-op player who leaves it, while the others fight on, since the abort let the story play on as won
 #                            - Told the guests whom the host still waits for, as that changes and as a command phase opens, so their own waiting boxes name them too
 #                            - Told the guests who chooses again after a swap, the host itself included
 #      Paulinchen  2026-10-08: Closed a command phase the battle ended in, and forgot the guests who answered in it, as the battle ends instead of as the next one begins
@@ -822,17 +823,43 @@ module MGQ_MpBattlesSync
     end
 
     # Leaves a live battle at once: a PvP battle is lost, without the chance of failing; a co-op
-    # player leaves the battle, which the others fight on.
+    # player leaves the battle, which the others fight on, and loses a story's battle they cannot
+    # escape (see story_battle?).
     #
     # @param scene [Scene_Battle] The battle.
     def self.forfeit(scene)
       MGQ_MpGame.get(scene, :info_viewport).visible = false
       # A team duel's guest leaves it, and another player of their side takes their characters over.
       kind = MGQ_MpBattlesSync.coop? || (MGQ_MpBattlesSync.team? && MGQ_MpBattlesSync.guest?) ? "leave" : "forfeit"
-      outcome = kind == "leave" ? "the others fight on" : "the battle is lost"
+      lost = leaving_loses?
+      outcome = kind == "leave" ? "the others fight on#{lost ? ', the story counts it as lost here' : ''}" : "the battle is lost"
       MGQ_MpBattlesSync.log("this player leaves the live battle in turn #{MGQ_MpBattlesSync.turn}: #{outcome}")
       Channel.post(kind)
-      BattleManager.process_abort
+      return BattleManager.process_abort unless lost
+
+      # The guests fight on, so the stream ends as an abort for them; the defeat is this game's alone.
+      if Recorder.active?
+        Recorder.event("end", "process_abort", $game_temp.lose_event_id, $game_temp.lose_event_enemy_id)
+        Recorder.finish(1)
+      end
+      BattleManager.process_defeat
+    end
+
+    # Reports whether the battle is one a story event started and the player cannot escape. Ended
+    # by an abort, the game counts it as an escape, which such an event has no branch for, so the
+    # story would play on as if the battle was won.
+    #
+    # @return [Boolean] Whether it is.
+    def self.story_battle?
+      !MGQ_MpGame.get(BattleManager, :event_proc).nil? && !MGQ_MpGame.get(BattleManager, :can_escape)
+    end
+
+    # Reports whether leaving the live battle now loses it for the player though the others fight
+    # on, see forfeit.
+    #
+    # @return [Boolean] Whether it does.
+    def self.leaving_loses?
+      MGQ_MpBattlesSync.coop? && story_battle?
     end
 
     # Reports whether Escape leaves the live battle at once: in a PvP battle. In a co-op battle each
