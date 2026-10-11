@@ -68,13 +68,15 @@ For a PvP battle without a world, press **F11** on the map and host; your friend
 | **F11** | World overview, or the PvP battle screen outside a world |
 | **Y** / **N** | Accept / decline the first invite at the top left, or answer a question box |
 | **Tab** | Make the party box small or full; in a raid boss battle, shrink the boss's HP bar to the bars alone or back |
+| **H** | Make the Leader HUD at the top left small or large |
 | **J** | Join the battle of a player next to you in a Raid World, or fight a raid boss alongside a full boss battle |
 
-Rebind them in *Mod Config → Monster Girl Quest! Online*.
+Rebind them in *Mod Config → MGQ Online Hotkeys*; the mod's other options are in *MGQ Online Settings*.
 
 ## Documentation
 
-- [Player guide](docs/GUIDE.md): worlds, Raid Worlds, parties, co-op battles, duels, trading and PvP battles in full, and [troubleshooting](docs/GUIDE.md#troubleshooting).
+- [Player guide](docs/GUIDE.md): worlds, parties, co-op battles, duels, trading and PvP battles in full, and [troubleshooting](docs/GUIDE.md#troubleshooting).
+- World types: [Classic Worlds](docs/CLASSIC_WORLDS.md), where each party plays its leader's story, and [Raid Worlds](docs/RAID_WORLDS.md), with the world's story, catching up and every raid boss.
 - [Developer notes](docs/DEVELOPER.md): building, testing and how the mod works inside.
 - [Relay](Relay/README.md): the server the games meet at, and its protocol.
 
