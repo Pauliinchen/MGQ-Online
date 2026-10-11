@@ -13,7 +13,7 @@ Play Monster Girl Quest! Paradox RPG together with friends over the internet, wi
 </p>
 
 - **Worlds:** up to 32 players on the same maps, with emotes and an overview of everyone online. A world is *Classic*, where each party plays its own story, or a *Raid World*.
-- **Raid Worlds:** the whole world plays one story together. Everyone on a map sees the story's scenes together, party or not, and battles pull in the nearest players, up to four, each with one Frontline and two Backline characters. Stand next to a player in a battle and press **J** to join it, or to fight a story boss alongside a full boss battle. Whoever is furthest pushes the story on for everyone; a player behind sees the world as it was at the end of their part and catches up as they level, and companions join on reaching their level. Each story boss is one fight the whole world shares: every battle against it wears down the same HP, with a bar above the boss on the map and across the top in battle, and it falls for everyone once that HP runs out. Everyone starts from the beginning on the difficulty the creator sets, which the creator can change later; the Labyrinth of Chaos and the Colosseum keep their own. Raid Worlds are red and at the top of the list.
+- **Raid Worlds:** the whole world plays one story together, party or not. Everyone on a map watches its scenes, battles pull in the nearest players, and each story boss is one fight the whole world wears down. A player behind catches up as they level.
 - **Chat:** global, map, party and whisper chats in tabs, a glow on tabs with unread lines, and speech bubbles over the players on your map.
 - **Turn off other mods:** a world can be played with its own mods and nothing else. Entering it restarts the game with your other mods parked, and they come back when you leave the world or the game closes.
 - **Parties:** up to four players play the leader's story together and share one team's worth of companions. Teleport to any party member once they allow it, or to the leader at once.
@@ -22,7 +22,7 @@ Play Monster Girl Quest! Paradox RPG together with friends over the internet, wi
 - **Trading:** swap items, equipment, stones and gold with a player on your map; the relay sees to it that a disconnect never loses or copies anything.
 - **Your interface:** two looks, Monarch and Legacy, and every box of the mod moves and resizes while you hold the left **Alt**.
 
-Worlds, parties and co-op battles are a **prototype**, and Raid Worlds are **experimental**: expect bugs, and please [report them](https://github.com/Pauliinchen/MGQ-Online/issues/new?template=bug_report.yml).
+Worlds, Raid Worlds, parties and co-op battles are a **prototype**: expect bugs, and please [report them](https://github.com/Pauliinchen/MGQ-Online/issues/new?template=bug_report.yml).
 
 ## Requirements
 
