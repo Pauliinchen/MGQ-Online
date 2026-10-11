@@ -2,6 +2,8 @@
 #  world.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-11: Told whether a world's password is known, which this PC's folder of it answers for the world screen's
+#                              entry and details
 #      Paulinchen  2026-10-10: Let a development build give a Raid World a shared save, for testing: a Save beside the Difficulty in the new world's
 #                              form, optional, sent as a Classic world's starting save
 #                            - Put the parked mods back only once the updater started, so a failed updater leaves the session as it was
@@ -697,6 +699,17 @@ module MGQ_MpWorld
     # @return [Boolean] Whether it does.
     def open?
       !listed.nil? && listed.open
+    end
+
+    # Tells whether the world's password is known: this PC's folder of the world holds the world
+    # code the relay handed out when the password was typed once, which entering reads instead
+    # of asking for the password again. True for a world without a password too, once entered.
+    #
+    # World.read drops a folder without its code, so a folder listed here holds it.
+    #
+    # @return [Boolean] Whether it is.
+    def password_known?
+      !local.nil?
     end
 
     # Tells everything the world screen shows of the world, by value. Every reading of the list

@@ -2,6 +2,14 @@
 #  world_screen.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-11: Moved the list box's fade on every frame, and measured a description with the shared style's text size and the box's lazy rectangle
+#                            - Named the numpad's 0 in the mod picker's hint, which closes it too, and said how many more mods a row holds as every box does
+#                            - Put the cursor on the world just created or added once the list shows it, inside the worlds box, and said
+#                              to confirm to enter it, and logged the ask
+#                            - Sent the hidden world's id with Enter, as the password form is, and only from a form with one text box
+#                            - Held the form's cursor while the action a form sent runs, so its button cannot send the form a second time
+#                            - Said in the details that a world's password is known once this PC's folder of it holds the world code,
+#                              which entering reads through the same check
 #      Paulinchen  2026-10-10: Took leaving the save screen without a save as no shared save for a development build's Raid World, drew a save's
 #                              label at its field's width, and said in a Raid World's details when its new players start from the creator's save
 #                            - Forgot to enter the world after its data update when the update was refused or could not start
@@ -132,8 +140,12 @@ class Scene_MpWorlds < Scene_MenuBase
   # The kinds of text boxes that take only digits, where the numpad's 0 types a 0.
   NUMBER_KINDS = [:number, :id]
 
-  # The forms whose one text box sends them with Enter, since they have nothing else to fill in.
-  SEND_ON_ENTER = [:rename, :password]
+  # The forms whose one text box sends them with Enter, since they have nothing else to fill in;
+  # see sends_on_enter?.
+  SEND_ON_ENTER = [:rename, :password, :join_hidden]
+
+  # What follows the name of a world just created or added, once the cursor is on it.
+  ENTER_HINT = "Confirm to enter it."
 
   # The forms of the chosen world, which no command of the list stands for.
   WORLD_FORMS = [:edit_world, :password]
@@ -158,10 +170,10 @@ class Scene_MpWorlds < Scene_MenuBase
   }
 
   # What the bottom of the mod picker says.
-  MOD_PICK_HINT = "Enter: list or unlist    →: ! required, ? essential    Esc: done"
+  MOD_PICK_HINT = "Enter: list or unlist    →: ! required, ? essential    Esc or Numpad 0: done"
 
   # What the bottom of the mod picker says while a mod added by name is picked.
-  MOD_PICK_ADDED_HINT = "Enter: list or unlist    →: ! required, ? essential    Del: remove    Esc: done"
+  MOD_PICK_ADDED_HINT = "Enter: list or unlist    →: ! required, ? essential    Del: remove    Esc or Numpad 0: done"
 
   # The titles of the mod picker's button columns.
   MOD_PICK_COLUMNS = ["Required", "Essential"]
@@ -242,6 +254,7 @@ class Scene_MpWorlds < Scene_MenuBase
     # The game's frame counter raises on the title screen, so the pane is told of each new frame.
     @list_window.settle
     timed(:windows) { super }
+    @list_box.update if @list_box
 
     if @ask_name
       @ask_name = false
@@ -468,7 +481,7 @@ class Scene_MpWorlds < Scene_MenuBase
   # @param text [String, nil] The text, nil when the player left the text screen.
   def take_field_text(key, text)
     if text
-      send_form if fill_field(key, text) && SEND_ON_ENTER.include?(@form_symbol)
+      send_form if fill_field(key, text) && sends_on_enter?
     elsif @form_symbol == :rename && MGQ_Multiplayer::Player.name.nil?
       log_screen("closing: the first name prompt was left without a name")
       return_scene
@@ -523,7 +536,7 @@ class Scene_MpWorlds < Scene_MenuBase
       # which mods and game data the world asks for.
       refuse(@entry.gone ? "#{@entry.name} is no longer in the list: it was deleted, or you were removed." : "#{@entry.name} is not in the list right now. Try again once the list has loaded.")
       back_to_list
-    elsif @entry.local
+    elsif @entry.password_known?
       listed = @entry.listed
       log_screen("entering #{entry_text} from its folder #{@entry.local.id}#{listed ? '' : ' (deleted from the list, saves kept)'}")
       @entry.local.describe(listed.name, listed.id, listed.seats, listed.type, listed.share, listed.difficulty) if listed
@@ -861,8 +874,8 @@ class Scene_MpWorlds < Scene_MenuBase
   # @return [Array<Array>] The lines, see Sprite_MpListBox::View.
   def description_lines(text)
     measure = @list_box.bitmap
-    measure.font.size = Sprite_MpListBox::ITEM_SIZE
-    width = Sprite_MpListBox::BOX.width - Sprite_MpListBox::ITEM_LEFT - 16
+    measure.font.size = MGQ_MpUi::Style::TEXT_SIZE
+    width = Sprite_MpListBox.box.width - Sprite_MpListBox::ITEM_LEFT - Sprite_MpListBox::ITEM_GAP
     MGQ_MpUi.wrap(measure, text, width).map { |line| [:item, line, :plain, nil] }
   end
 
@@ -1247,7 +1260,7 @@ class Scene_MpWorlds < Scene_MenuBase
       form[field.key] = text
       Sound.play_ok
       stop_typing
-      return SEND_ON_ENTER.include?(@form_symbol) ? send_form : nil
+      return sends_on_enter? ? send_form : nil
     when :escape
       form[field.key] = @typed_before
       Sound.play_cancel
@@ -1259,6 +1272,19 @@ class Scene_MpWorlds < Scene_MenuBase
     end
     form[field.key] = form.edit.text
     @form_window.redraw_current_item
+  end
+
+  # Tells whether Enter in the form's text box sends the form: one of SEND_ON_ENTER, as long as
+  # that box is its only one, so a form that gains another text box is sent from its button once
+  # both are filled in, never half filled in.
+  #
+  # @return [Boolean] Whether it does.
+  def sends_on_enter?
+    return false unless form && SEND_ON_ENTER.include?(@form_symbol)
+
+    boxes = form.fields.count { |field| field.typed? }
+    log_screen("Enter keeps the text instead of sending the form #{@form_symbol}: it has #{boxes} text boxes, so its button sends it") if boxes != 1
+    boxes == 1
   end
 
   # Stops typing into the text box and hands the cursor back to the form.
@@ -1740,6 +1766,10 @@ class Scene_MpWorlds < Scene_MenuBase
     @busy_ticket = MGQ_MpWorld::Directory.claim
     @list_window.deactivate
     @form_window.deactivate
+    # The typing that sent the form asked for the form's cursor back; the action holds the input
+    # instead, or the form's button could send it a second time, and back_to_list asks again once
+    # the action ended with the form still open.
+    @resume_form = false
     # What the action ends with must not give way to the hint of the field it was sent from.
     @hinted = @form_window.index
     say(BUSY_TEXTS[kind])
@@ -1779,7 +1809,8 @@ class Scene_MpWorlds < Scene_MenuBase
         # A fresh form keeps the next world from starting as a copy of this one.
         @forms[:new_world] = MGQ_MpWorld::Form.create
         leave_form
-        say("#{@creating} was created. Enter it from the list.")
+        @list_window.select_world(action["world"])
+        say("#{@creating} was created. #{ENTER_HINT}")
       else
         log_screen(world ? "the starting save could not be copied into #{@creating}" : "the folder of #{@creating} could not be made")
         say(world ? "Your save could not be copied into #{@creating}." : "The world's folder could not be created.")
@@ -1805,7 +1836,8 @@ class Scene_MpWorlds < Scene_MenuBase
       MGQ_MpWorld::Added.add(@adding)
       @forms[:join_hidden] = MGQ_MpWorld::Form.join
       leave_form
-      say("#{action['name']} was added to your list.")
+      @list_window.select_world(@adding)
+      say("#{action['name']} was added to your list. #{ENTER_HINT}")
     when "data"
       log_screen("the data of #{entry_text} is this game's now")
       say("The data scan of #{@entry.name} was updated to your game.")
@@ -2124,6 +2156,7 @@ class MpWorldListPane
     @left_at = {}
     @arrived = false
     @restore = nil
+    @select = nil
     [@worlds, @commands].each do |window|
       window.unselect
       window.deactivate
@@ -2238,9 +2271,19 @@ class MpWorldListPane
     @restore = id
   end
 
+  # Puts the cursor on a world as soon as the list shows it, as on the world just created or
+  # added, which the list may show only once it was fetched again. One world at a time: a world
+  # asked for before and not shown yet gives way.
+  #
+  # @param id [String] The world's directory id.
+  def select_world(id)
+    MGQ_MpWorld.log("world screen: the cursor goes onto world #{MGQ_MpWorld.short(id)} once the list shows it#{@select ? ", instead of world #{MGQ_MpWorld.short(@select)}" : ''}")
+    @select = id
+  end
+
   # Shows other worlds. The first worlds to arrive are picked if the pick still rests where it
-  # started, or the cursor goes onto the world to restore, and the commands are picked when the
-  # last world went.
+  # started, or the cursor goes onto the world to restore, the commands are picked when the last
+  # world went, and the cursor moves onto the world asked for once it is among them.
   #
   # @param entries [Array<MGQ_MpWorld::Entry>] The worlds.
   def entries=(entries)
@@ -2255,6 +2298,33 @@ class MpWorldListPane
       pick(:commands)
       @picking = was_active
     end
+    select_asked(entries)
+  end
+
+  # Moves the cursor into the worlds, onto the world asked for with select_world, once the list
+  # shows it; the ask is over then. The cursor stays where it is when the pane no longer takes the
+  # input, since the player moved on to a form or a window meanwhile and the cursor would jump
+  # under them.
+  #
+  # @param entries [Array<MGQ_MpWorld::Entry>] The worlds, in the list's order.
+  # @return [Boolean] Whether the cursor moved onto it.
+  def select_asked(entries)
+    id = @select
+    at = id ? entries.index { |entry| entry.id == id } : nil
+    return false unless at
+
+    @select = nil
+    unless active
+      MGQ_MpWorld.log("world screen: the cursor stays off world #{MGQ_MpWorld.short(id)}, which the list shows now: the player moved on")
+      return false
+    end
+
+    back_out if @inside
+    @focus = :worlds
+    @left_at[:worlds] = at
+    enter
+    MGQ_MpWorld.log("world screen: the cursor is on world #{MGQ_MpWorld.short(id)} now, row #{at + 1} of the list")
+    true
   end
 
   # Moves the cursor onto the world to restore, if the pick still rests where it started and the
@@ -2660,7 +2730,7 @@ class Window_MpWorldDetail < Window_Base
     listed = entry.listed
     return [Panel.new("World", nil, [[Cell.new("Status", entry.gone ? "Only on this PC: deleted, or you were removed" : "Not in the list right now", :normal)]])] unless listed
 
-    [world_panel(listed, me), data_panel(entry, me), players_panel(listed, me)]
+    [world_panel(entry, me), data_panel(entry, me), players_panel(listed, me)]
   end
 
   # Tells who made a world, how full it is, how it is entered, where its new players start, and for a
@@ -2668,17 +2738,30 @@ class Window_MpWorldDetail < Window_Base
   #
   # A Classic world gets no type row, since every row takes a line from the description below.
   #
-  # @param listed [MGQ_MpWorld::Directory::ListedWorld] The world in the directory.
+  # @param entry [MGQ_MpWorld::Entry] The world, which the directory lists.
   # @param me [String] The player's id.
   # @return [Panel] The panel.
-  def world_panel(listed, me)
+  def world_panel(entry, me)
+    listed = entry.listed
     rows = [
       [Cell.new("Creator", listed.creator_id == me ? "You" : listed.creator_name, :normal), Cell.new("Players", "#{listed.online} / #{listed.seats} online", :normal)],
-      [Cell.new("Password", listed.open ? "None" : "Needed", :normal), Cell.new("Listed", listed.hidden ? "Hidden" : "Public", :normal)],
+      [Cell.new("Password", password_text(entry), :normal), Cell.new("Listed", listed.hidden ? "Hidden" : "Public", :normal)],
     ]
     rows << type_row(listed) if listed.raid?
     rows << (listed.raid? ? start_row(listed) : [Cell.new("Start", start_text(listed), :normal)])
     Panel.new("World", listed.featured ? "featured: one of the relay's own" : nil, rows)
+  end
+
+  # Tells how a world's password stands for the player: none, known since this PC entered the
+  # world once, or needed.
+  #
+  # @param entry [MGQ_MpWorld::Entry] The world, which the directory lists.
+  # @return [String] "None", "Known" or "Needed".
+  def password_text(entry)
+    if entry.open? then "None"
+    elsif entry.password_known? then "Known"
+    else "Needed"
+    end
   end
 
   # Tells the mods a world needs, its mod settings, whether it turns other mods off, whether the
@@ -2782,7 +2865,7 @@ class Window_MpWorldDetail < Window_Base
 
     loop do
       rest = texts.size - named
-      labels = texts.first(named) + (rest > 0 ? ["+#{rest} more"] : [])
+      labels = texts.first(named) + (rest > 0 ? [MGQ_MpUi::MORE_TEXT % rest] : [])
       widths = labels.map { |label| size.call(label) }
       needed = widths.inject(0) { |sum, chip| sum + chip } + CHIP_GAP * (labels.size - 1)
 

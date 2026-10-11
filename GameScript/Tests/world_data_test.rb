@@ -2,6 +2,8 @@
 #  world_data_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-11: Read the list box's rows from its lazy rectangle, and gave the screen its size
+#                            - Expected the added world's name followed by the screen's hint to confirm to enter it, and let the list stand-in take the world to put the cursor on
 #      Paulinchen  2026-10-10: Expected a release's Raid World form without a Save, and a development build's with its Save beside the Difficulty on one row
 #                            - Checked that an update of the data to enter with that was refused or could not start enters nothing after a later update
 #      Paulinchen  2026-10-09: Expected Sharing companions in place of the starting point in a Raid World's new world form, Turn off other mods in the
@@ -130,6 +132,11 @@ class FakeChoice
   #
   # @return [Integer] -1, no cursor.
   def index; -1; end
+
+  # Keeps the world to put the cursor on.
+  #
+  # @param _id [String] The world's directory id.
+  def select_world(_id); end
 
   # The row picked last with select.
   attr_reader :selected
@@ -392,7 +399,7 @@ check("the form looks the world up by its id", [$calls.last[0], $calls.last[2], 
 $dll["mp_dir_action"] = "state=done\nkind=find\nname=Hidden Base\n\n"
 $calls.clear
 scene.follow_action
-check("a world that exists is added to the list, not entered", [added, said(scene), scene.form, $calls.map { |call| call[0] }.include?("mp_dir_unlock")], [["ab" * 16], "Hidden Base was added to your list.", nil, false])
+check("a world that exists is added to the list, not entered", [added, said(scene), scene.form, $calls.map { |call| call[0] }.include?("mp_dir_unlock")], [["ab" * 16], "Hidden Base was added to your list. #{Scene_MpWorlds::ENTER_HINT}", nil, false])
 check("the list is then asked for it too", $calls.map { |call| [call[0], call[2]] }.select { |call| %w[mp_dir_watch mp_dir_refresh].include?(call[0]) }, [["mp_dir_watch", ["#{'ab' * 16}\0"]], ["mp_dir_refresh", []]])
 check("and the form is empty again", scene.instance_variable_get(:@forms)[:join_hidden][:id], "")
 scene = new_scene
@@ -785,9 +792,10 @@ tight = detail.chips(["A Very Long Mod Name That Fills The Whole Row", "B"], 304
 check("a first mod too long for the row is cut beside the count", [tight.map { |chip| chip[0] }, tight.last[1] + tight.last[2] <= 304], [["A Very Long Mod Name...", "+1 more"], true])
 check("a world that names no mod shows the plain text", cell_of(detail.panels(entries[3], "me"), "Mods").chips, nil)
 
-# The list box's pick.
+# The list box's pick, on a screen of the game's size.
+module Graphics; def self.width; 640; end; def self.height; 480; end; end
 long = Sprite_MpListBox::View.of("W", "Players", [[:head, "Online (20)"]] + (1..20).map { |n| [:item, "P#{n}", :good, "online"] })
-check("the list box picks its first item and shows from the top", [long.selected, long.scroll, Sprite_MpListBox::LIST_ROWS], [1, 0, 14])
+check("the list box picks its first item and shows from the top", [long.selected, long.scroll, Sprite_MpListBox.list_rows], [1, 0, 14])
 long.move(-1)
 check("it stops at the first item", long.selected, 1)
 16.times { long.move(1) }

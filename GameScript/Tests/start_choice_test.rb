@@ -2,6 +2,7 @@
 #  start_choice_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-11: Expected the created world's name followed by the screen's hint to confirm to enter it, and let the list stand-in take the world to put the cursor on
 #      Paulinchen  2026-10-09: Expected the longer call of mp_dir_create, which takes a Raid World's difficulty
 #                            - Expected Player's choice on the row Sharing companions takes in a Raid World's form, the call of mp_dir_create with
 #                              Turn off other mods, and loaded world_mods_parking.rbx, which the world screen calls
@@ -120,6 +121,11 @@ class FakeChoice
   #
   # @return [Integer] -1, no cursor.
   def index; -1; end
+
+  # Keeps the world to put the cursor on.
+  #
+  # @param _id [String] The world's directory id.
+  def select_world(_id); end
 end
 
 # The lines at the top of the world screen: keeps what they show.
@@ -211,7 +217,7 @@ Dir.mktmpdir do |root|
     scene.follow_action
     check("making a world fetches the list again", $calls.map { |call| call[0] }.include?("mp_dir_refresh"), true)
     check("and empties the form, which no longer has the cursor", [scene.instance_variable_get(:@forms)[:new_world][:name], scene.form], ["", nil])
-    check("marks the world as a favourite and says where to enter it", [favourites, said(scene), start_choices(scene)], [["w"], "Free was created. Enter it from the list.", nil])
+    check("marks the world as a favourite and says where to enter it", [favourites, said(scene), start_choices(scene)], [["w"], "Free was created. #{Scene_MpWorlds::ENTER_HINT}", nil])
     scene.enter(world, "none", true)
     check("entering it asks the creator where to start", start_choices(scene), [:from_beginning, :from_own, :cancel])
 

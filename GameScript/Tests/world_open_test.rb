@@ -2,6 +2,8 @@
 #  world_open_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-11: Checked the cursor moving onto the world just created or added once the list shows it, Enter sending the hidden world's id,
+#                              a form with two text boxes kept from sending, and the details' Password row saying Known once this PC holds the world code
 #      Paulinchen  2026-10-10: Checked where a Raid World with a shared save starts in the details, by build, and a save's label drawn at its field's width
 #                            - Checked that a Raid World the directory no longer lists comes after the listed worlds
 #      Paulinchen  2026-10-09: Expected Sharing companions left out of a Classic world's form instead of greyed out, the call of mp_dir_create with
@@ -129,6 +131,14 @@ class FakeChoice
   #
   # @return [Integer] -1, no cursor.
   def index; -1; end
+
+  # The world asked for with select_world.
+  attr_reader :asked
+
+  # Keeps the world to put the cursor on.
+  #
+  # @param id [String] The world's directory id.
+  def select_world(id); @asked = id; end
 end
 
 # The lines at the top of the world screen: keeps what they show.
@@ -723,3 +733,160 @@ check("so does an outdated game started again to enter a world, which it then no
       [$called, offer.shown?, MGQ_MpWorldMods.rejoining, $player_ini["rejoin"]], [nil, true, nil, ""])
 offer.hide
 $outdated = false
+
+# What the lines at the top say.
+#
+# @param scene [Scene_MpWorlds] The screen.
+# @return [String] The message.
+def said(scene)
+  scene.instance_variable_get(:@message)
+end
+
+# The world just created gets the cursor, and the screen says to confirm to enter it.
+found_was = MGQ_MpWorld::World.method(:found)
+made = MGQ_MpWorld::World.new("abcdef012345", "code" => "code", "name" => "Free")
+MGQ_MpWorld::World.define_singleton_method(:found) { |*| made }
+scene = form_scene
+scene.instance_variable_set(:@forms, { :new_world => MGQ_MpWorld::Form.create })
+scene.instance_variable_set(:@form_symbol, :new_world)
+scene.instance_variable_set(:@busy, "create")
+scene.instance_variable_set(:@creating, "Free")
+scene.instance_variable_set(:@creating_kind, ["classic", "off", nil])
+scene.instance_variable_set(:@start_files, [])
+$dll["mp_dir_action"] = "state=done\nkind=create\ncode=code\nworld=w7\n\n"
+scene.follow_action
+check("a world created is the one the list puts the cursor on, and the screen says to confirm to enter it",
+      [scene.instance_variable_get(:@list_window).asked, said(scene), scene.form], ["w7", "Free was created. #{Scene_MpWorlds::ENTER_HINT}", nil])
+check("the hint says to confirm to enter it, as the guide does", Scene_MpWorlds::ENTER_HINT, "Confirm to enter it.")
+MGQ_MpWorld::World.define_singleton_method(:found, found_was)
+MGQ_MpWorld::Favourites.forget
+
+# So does a hidden world added by its id.
+scene = form_scene
+scene.instance_variable_set(:@forms, { :join_hidden => MGQ_MpWorld::Form.join })
+scene.instance_variable_set(:@form_symbol, :join_hidden)
+scene.instance_variable_set(:@busy, "find")
+scene.instance_variable_set(:@adding, "ab" * 16)
+$dll["mp_dir_action"] = "state=done\nkind=find\nname=Hidden Base\n\n"
+scene.follow_action
+check("a hidden world added is the one the list puts the cursor on once it shows it",
+      [scene.instance_variable_get(:@list_window).asked, said(scene), scene.form], ["ab" * 16, "Hidden Base was added to your list. #{Scene_MpWorlds::ENTER_HINT}", nil])
+$dll["mp_dir_action"] = nil
+
+# The pane moves the cursor onto the world asked for once the list shows it.
+
+# A window of the left side of the world screen: keeps its rows, its cursor and whether it takes input.
+class PaneList
+  attr_accessor :index, :active, :boxed
+  attr_reader :rows
+
+  # Creates the window with its rows, each [symbol, ext], the cursor on the first.
+  #
+  # @param rows [Array<Array>] The rows.
+  def initialize(rows); @rows = rows; @index = 0; @active = true; end
+  def item_max; @rows.size; end
+  def select(index); @index = index; end
+  def unselect; @index = -1; end
+  def activate; @active = true; end
+  def deactivate; @active = false; end
+  def width; 230; end
+  def height; 100; end
+  def current_symbol; @index >= 0 && @rows[@index] ? @rows[@index][0] : nil; end
+  def current_ext; @index >= 0 && @rows[@index] ? @rows[@index][1] : nil; end
+  def select_symbol(symbol); @index = @rows.index { |row| row[0] == symbol }; end
+  def entries=(entries); @rows = entries.map { |entry| [:world, entry] }; @index = [@index, @rows.size - 1].min if @index >= 0; end
+  def set_handler(_symbol, _method); end
+end
+
+Shown = Struct.new(:id)
+worlds = PaneList.new([])
+commands = PaneList.new([[:new_world, nil], [:join_hidden, nil], [:back, nil]])
+pane = MpWorldListPane.new(worlds, commands)
+pane.entries = [Shown.new("w1"), Shown.new("w2")]
+pane.pick(:commands)
+pane.enter
+commands.select(1)
+pane.select_world("w7")
+pane.entries = [Shown.new("w1"), Shown.new("w2")]
+check("a world asked for that the list does not show yet leaves the cursor on the command", [pane.inside?, pane.current_symbol, commands.index], [true, :join_hidden, 1])
+pane.entries = [Shown.new("w1"), Shown.new("w7"), Shown.new("w2")]
+check("once the list shows it, the cursor is on it inside the worlds, which take the input", [pane.inside?, pane.current_ext, worlds.index, worlds.active, commands.active, commands.index], [true, Shown.new("w7"), 1, true, false, -1])
+worlds.deactivate
+pane.back_out
+pane.select_world("w1")
+pane.entries = [Shown.new("w7"), Shown.new("w1")]
+check("a pane picking between its windows moves into the worlds too", [pane.inside?, pane.current_ext, worlds.active], [true, Shown.new("w1"), true])
+worlds.deactivate
+pane.back_out
+pane.pick(:commands)
+pane.enter
+commands.select(0)
+pane.select_world("w2")
+pane.deactivate
+pane.entries = [Shown.new("w2"), Shown.new("w7")]
+check("but not once the player moved on to a form, which takes the input", [pane.inside?, pane.current_symbol, commands.index], [true, :new_world, 0])
+pane.activate
+pane.entries = [Shown.new("w2"), Shown.new("w7")]
+check("and the ask is over then", pane.current_symbol, :new_world)
+
+# The ask is logged, a world asked for before and not shown yet named as the one giving way.
+logged = []
+write_was = MGQ_Multiplayer::Log.method(:write)
+MGQ_Multiplayer::Log.define_singleton_method(:write) { |line| logged << line }
+pane.select_world("w1")
+pane.select_world("w2")
+MGQ_Multiplayer::Log.define_singleton_method(:write, write_was)
+check("the ask is logged, and a world asked for before gives way", [logged.map { |line| line[/the cursor goes onto .*/] }, pane.instance_variable_get(:@select)],
+      [["the cursor goes onto world w1 once the list shows it", "the cursor goes onto world w2 once the list shows it, instead of world w1"], "w2"])
+pane.entries = [Shown.new("w2"), Shown.new("w7")]
+check("until the list shows the one asked for last", [pane.current_ext, pane.instance_variable_get(:@select)], [Shown.new("w2"), nil])
+
+# Enter in the hidden world's id sends the form, as in the password form.
+scene = form_scene
+scene.instance_variable_set(:@forms, { :join_hidden => MGQ_MpWorld::Form.join })
+scene.instance_variable_set(:@form_symbol, :join_hidden)
+form_window = scene.instance_variable_get(:@form_window)
+form_window.form = scene.form
+form_window.select(0)
+scene.start_typing(scene.form.fields.first)
+$calls.clear
+$typed = "#{'ab' * 16}\r"
+scene.update_typing
+check("Enter in the world id looks the world up", [scene.sends_on_enter?, $calls.last[0], $calls.last[2], scene.instance_variable_get(:@busy), $typing], [true, "mp_dir_find", ["#{'ab' * 16}\0"], "find", false])
+check("and the action holds the form's cursor, so its button cannot send it again meanwhile", [scene.instance_variable_get(:@resume_form), form_window.active], [false, false])
+scene.instance_variable_set(:@busy, nil)
+two = MGQ_MpWorld::Form.new("Two", [
+  MGQ_MpWorld::Form::Field.new(:first, :text, "First", 0, "One.", :max_chars => 10),
+  MGQ_MpWorld::Form::Field.new(:second, :text, "Second", 1, "Two.", :max_chars => 10),
+  MGQ_MpWorld::Form::Field.new(:confirm, :button, "Send", 2, "Sends."),
+], :first => "", :second => "")
+scene.instance_variable_set(:@forms, { :password => two })
+scene.instance_variable_set(:@form_symbol, :password)
+form_window.form = two
+form_window.select(0)
+scene.start_typing(two.fields.first)
+$calls.clear
+$typed = "x\r"
+scene.update_typing
+check("a form with two text boxes keeps the text with Enter and is sent from its button", [scene.sends_on_enter?, two[:first], two.editing, $calls, scene.instance_variable_get(:@busy)], [false, "x", nil, [], nil])
+scene.instance_variable_set(:@forms, {})
+check("without a form Enter sends nothing", scene.sends_on_enter?, false)
+
+# The details say Known once this PC's folder holds the world code, which entering reads.
+plain = entries[2]
+held = MGQ_MpWorld::World.new("abcdef012345", "code" => "x", "name" => "Plain")
+known = MGQ_MpWorld::Entry.new("w1", "Plain", plain.listed, held, false, false)
+check("a world's password is known with its folder on this PC, which holds the world code, not without", [known.password_known?, plain.password_known?], [true, false])
+detail, = new_detail(386, 336)
+check("the details say so", [cell_of(detail.panels(known, "me"), "Password").text, cell_of(detail.panels(plain, "me"), "Password").text], ["Known", "Needed"])
+open_known = MGQ_MpWorld::Entry.new("w2", "Golden", entries[1].listed, held, false, false)
+check("while a world without a password needs none, entered or not", cell_of(detail.panels(open_known, "me"), "Password").text, "None")
+scene = new_scene
+scene.instance_variable_set(:@me, "me")
+scene.instance_variable_set(:@entry, known)
+%w[mods_allow? parking_allows? data_allows?].each { |gate| scene.define_singleton_method(gate) { |*| true } }
+entered = []
+scene.define_singleton_method(:enter) { |*args| entered << args }
+$calls.clear
+scene.on_enter
+check("entering a world whose password is known asks for none", [entered, $calls.map(&:first).include?("mp_dir_unlock"), scene.form], [[[held, "none", false]], false, nil])
