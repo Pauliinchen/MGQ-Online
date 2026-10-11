@@ -2,6 +2,12 @@
 #  overworld_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-11: Checked the line above the player's head half the screen wide and cut to it, the action wheel's hint under its boxes, and both fading in and out with their pictures kept
+#                            - Compared the chat log's text against the shared style's text color, and gave the log's font stand-in an outline color
+#                            - Checked the seconds left after a doing in the line above the player's head, a lapse that is no Time, a doing that fails, and that the log leaves the seconds out
+#                            - Checked the frames a party invite stands for still, and none once it stopped
+#                            - Checked that a ghost's name is in its player's color, green once they are a party member, and that a player typing shows the keyboard, not the event's bubble
+#                            - Read a label's colors by text, since the party's size follows the name, and checked that a ping past 999 ms shows as 999+ ms
 #      Paulinchen  2026-10-10: Checked that the relay's push of a Raid World's boss pool goes to its route with the share left, the max HP and whether it is defeated
 #                            - Expected the teleport to the party's leader on the wheel of a member who stands near them, in place of the invite
 #      Paulinchen  2026-10-09: Checked that the relay's push of a Raid World's boss pool goes to its route with the key and kills, marked as the relay's
@@ -126,7 +132,7 @@ $inbox << entry("message", 9, told(friend.merge("id" => "aa-other")))
 MGQ_MpOverworldSync.tick
 other = MGQ_MpOverworldSync::Peers.at(9)
 written = []
-font = Struct.new(:size, :outline, :color).new
+font = Struct.new(:size, :outline, :color, :bold, :out_color).new
 canvas = Object.new
 canvas.define_singleton_method(:font) { font }
 canvas.define_singleton_method(:clear) { written.clear }
@@ -142,6 +148,29 @@ check("a name two players share is numbered for the second by id, as in the chat
 MGQ_MpOverworldSync::Peers.remove(9)
 tag.show(shown, peer)
 check("and the tag is drawn anew with the plain name once the other left", written, ["Friend"])
+
+# The name is in its player's color, and a player typing shows the keyboard, apart from the
+# event's bubble. The colors are read by text, since the party's size follows the name in its own.
+colors = []
+icons_drawn = []
+color_of = lambda { |text| colors.reverse.find { |drawn, _| drawn == text }[1] }
+module Cache; def self.system(_name); :iconset; end; end
+canvas.define_singleton_method(:draw_text) { |*args| written << args[4]; colors << [args[4], font.color] }
+canvas.define_singleton_method(:stretch_blt) { |_dest, _set, rect, *_| icons_drawn << rect.y / MGQ_MpUi::ICON_SIZE * MGQ_MpUi::ICONS_PER_ROW + rect.x / MGQ_MpUi::ICON_SIZE }
+$inbox << entry("message", 2, told(friend.merge("scene" => "typing")))
+MGQ_MpOverworldSync.tick
+tag.show(shown, peer)
+check("a player typing shows the keyboard, which is no bubble of an event, the one the party box takes from the row",
+      [icons_drawn, MGQ_MpOverworld::TYPING_ICON == MGQ_MpOverworld::STATE_ICONS["event"], MGQ_MpOverworld::STATE_ICONS["typing"]],
+      [[MGQ_MpOverworld::TYPING_ICON], false, MGQ_MpOverworld::TYPING_ICON])
+check("a player outside the party is named in the color of their id", [color_of.call("Friend").equal?(MGQ_MpUi::PlayerColor.of(peer)), MGQ_MpUi::PlayerColor::PALETTE.any? { |color| color.equal?(color_of.call("Friend")) }], [true, true])
+icons_drawn.clear
+$inbox << entry("message", 2, told(friend.merge("scene" => "event")))
+MGQ_MpOverworldSync.tick
+tag.show(shown, peer)
+check("an event shows its own bubble", icons_drawn, [MGQ_MpOverworld::STATE_ICONS["event"]])
+$inbox << entry("message", 2, told(friend))
+MGQ_MpOverworldSync.tick
 
 # The graphics checked stay few however many names the others send, the longest unused forgotten.
 100.times { |n| MGQ_MpOverworld.graphic?(:character, "$missing") if n % 10 == 0; MGQ_MpOverworld.graphic?(:character, "Other#{n}") }
@@ -281,19 +310,118 @@ check("someone near: invite first", option(PARTY), ["Invite to a party", true])
 $sent.clear
 wheel(:UP, :C)
 check("inviting", [MGQ_MpCoop::Party.inviting?, MGQ_MpActions::Wheel.open?], [true, false])
+check("the invite tells the frames it stands for still, one counted down by the tick that took the choice", MGQ_MpCoop::Party.instance_variable_get(:@invite).frames_left, MGQ_MpCoop::INVITE_FRAMES - 1)
 my_party = MGQ_MpCoop::Party.id
 check("the invite is told", $sent.last[1].include?("invite=1") && $sent.last[1].include?("party=#{my_party}"), true)
-check("line above the own head", MGQ_MpActions.own_line, "Inviting to a party . . .")
+check("line above the own head, with the invite's seconds left", MGQ_MpActions.own_line, "Inviting to a party (15 s) . . .")
+
+# The doings join with their seconds left; a lapse that is no Time counts as none, and a doing
+# that fails is left out, logged once. The log says the line without the seconds, once.
+doings = MGQ_MpActions.instance_variable_get(:@doings)
+kept = doings.dup
+MGQ_MpActions.own_doing_from { ["Asking Player A to teleport", Time.now + 3600] }
+MGQ_MpActions.own_doing_from { "Offering a trade" }
+MGQ_MpActions.own_doing_from { ["Broken", 600] }
+MGQ_MpActions.own_doing_from { raise "boom" }
+logged = []
+writer = MGQ_Multiplayer::Log.method(:write)
+MGQ_Multiplayer::Log.define_singleton_method(:write) { |message| logged << message }
+line = MGQ_MpActions.own_line
+again = MGQ_MpActions.own_line
+MGQ_Multiplayer::Log.define_singleton_method(:write, writer)
+check("the doings join with their seconds left, a lapse that is no Time counting as none, a failing one left out",
+      [line, again], ["Inviting to a party (15 s), Asking Player A to teleport (3600 s), Offering a trade, Broken . . ."] * 2)
+check("the failing doing is logged once, and the line once without the seconds", logged,
+      ["actions: a line or doing failed: RuntimeError: boom", "actions: the line above the player's head says: Inviting to a party, Asking Player A to teleport, Offering a trade, Broken . . ."])
+doings.replace(kept)
+moment = Time.at(1_000_000)
+check("the seconds left are written after the doing, rounded up, and left out once lapsed",
+      [MGQ_MpActions.doing_text(["x", moment + 45], moment), MGQ_MpActions.doing_text(["x", moment + 0.5], moment)[1], MGQ_MpActions.doing_text(["x", moment], moment)[1], MGQ_MpActions.doing_text(["x", moment - 1], moment)[1]],
+      [["x", "x (45 s)"], "x (1 s)", "x", "x"])
+check("a doing without a time, with nil or with a frame count by mistake stays the text", [MGQ_MpActions.doing_text("x"), MGQ_MpActions.doing_text(["x", nil]), MGQ_MpActions.doing_text(["x", 600])], [["x", "x"]] * 3)
+check("a lapse in frames lies as many seconds ahead", (MGQ_MpActions.lapse_in(600) - Time.now - 10).abs < 1, true)
+
+# The line above the player's own head: half the screen wide, cut to that, in the style's own
+# color, fading in and out with its picture kept. Pictures measure each character at 9 pixels.
+class Sprite
+  attr_accessor :bitmap, :x, :y, :z, :ox, :oy, :opacity, :visible
+  def disposed?; false; end
+  def dispose; end
+end
+class Bitmap
+  Font = Struct.new(:size, :color, :bold, :outline, :out_color)
+  attr_reader :texts, :width, :height, :font
+  def initialize(width = 1, height = 1); @width, @height = width, height; @texts = []; @font = Font.new; end
+  def clear; @texts.clear; end
+  def fill_rect(*); end
+  def text_size(text); Rect.new(0, 0, text.to_s.size * 9, 18); end
+  def draw_text(x, y, w, _h, text, align = 0); @texts << [x, y, w, text, font.size, font.color, align]; end
+  def stretch_blt(*); end
+  def dispose; end
+end
+own_lines = MGQ_MpActions.method(:own_lines)
+MGQ_MpActions.define_singleton_method(:own_lines) { $own_line && [$own_line, $own_line.gsub(/ \(\d+ s\)/, "")] }
+$own_line = "Inviting to a party (15 s) . . ."
+own = Sprite_MpOwnLine.new(nil)
+head = Struct.new(:x, :y, :height).new(200, 300, 48)
+own.show(head)
+check("the line is half the screen wide, above the player's head, in the style's own color, fading in",
+      [own.bitmap.width, own.ox, own.x, own.y, own.visible, own.opacity.between?(1, 254), own.bitmap.texts.map { |_, _, _, text, size, color, align| [text, size, color.equal?(MGQ_MpUi::Style::OWN), align] }],
+      [320, 160, 200, 300 - 48 - MGQ_MpActions::HEAD_ROOM - Sprite_MpOwnLine::HEIGHT, true, true, [["Inviting to a party (15 s) . . .", MGQ_MpUi::Style::TEXT_SIZE, true, 1]]])
+(MGQ_MpUi::Style::FADE_FRAMES - 1).times { own.show(head) }
+check("opaque after FADE_FRAMES", own.opacity, 255)
+$own_line = "A doing that goes on and on and on and on and on far past half the screen . . ."
+own.show(head)
+cut = own.bitmap.texts.last[3]
+check("a long line is cut to the picture", [cut.end_with?(MGQ_MpUi::ELLIPSIS), own.bitmap.text_size(cut).width <= 320], [true, true])
+$own_line = "Asking Player A to teleport (45 s), Offering a trade (30 s) . . ."
+own.show(head)
+check("two doings whose seconds overflow the picture are drawn without the seconds, cut, so no countdown that fits is lost",
+      own.bitmap.texts.last[3], "Asking Player A to teleport, Off...")
+$own_line = "Asking A (45 s), Trade (30 s) . . ."
+own.show(head)
+check("while a line that fits keeps every countdown", own.bitmap.texts.last[3], "Asking A (45 s), Trade (30 s) . . .")
+$own_line = nil
+own.show(head)
+check("gone, the line fades out with its picture kept", [own.visible, own.opacity < 255, own.bitmap.texts.empty?], [true, true, false])
+(MGQ_MpUi::Style::FADE_FRAMES - 1).times { own.show(head) }
+check("until it is invisible", [own.visible, own.opacity], [false, 0])
+MGQ_MpActions.define_singleton_method(:own_lines, own_lines)
+
+# The action wheel's picture: the boxes in the shared style, the hint under them naming the
+# wheel's hotkey, Esc and the numpad's 0, fading in on open and out on close with the picture kept.
+wheel_sprite = Sprite_MpActionWheel.new(nil)
+MGQ_MpActions::Wheel.open
+wheel_sprite.show(head)
+hint = wheel_sprite.bitmap.texts.last
+check("open, the wheel draws around the player with the hint under its boxes, fading in",
+      [wheel_sprite.visible, wheel_sprite.opacity.between?(1, 254), wheel_sprite.x, wheel_sprite.y, hint[3], hint[4], hint[5].equal?(MGQ_MpUi::Style::HEADING), hint[6]],
+      [true, true, 200, 300, "Esc, Numpad 0 or B: close", MGQ_MpUi::Style::TINY_SIZE, true, 1])
+check("the hint takes the last rows of the picture, as wide as it", [hint[1], hint[2]], [wheel_sprite.bitmap.height - MGQ_MpWheel::HINT_HEIGHT, wheel_sprite.bitmap.width])
+ring = MGQ_MpActions.wheel_options.values.reject { |choice| choice.icon }
+check("a choice's text is in the text's color while it can be taken, dim while not, the choices without an icon all drawn",
+      wheel_sprite.bitmap.texts[0...-1].map { |_, _, _, _, _, color, _| color.equal?(MGQ_MpUi::Style::TEXT) ? :text : color.equal?(MGQ_MpUi::Style::DIM) ? :dim : :other }.sort,
+      ring.map { |choice| choice.run ? :text : :dim }.sort)
+(MGQ_MpUi::Style::FADE_FRAMES - 1).times { wheel_sprite.show(head) }
+check("opaque after FADE_FRAMES", wheel_sprite.opacity, 255)
+MGQ_MpActions::Wheel.close("the test closed it")
+wheel_sprite.show(head)
+check("closed, the wheel fades out with its picture kept", [wheel_sprite.visible, wheel_sprite.opacity < 255, wheel_sprite.bitmap.texts.empty?], [true, true, false])
+(MGQ_MpUi::Style::FADE_FRAMES - 1).times { wheel_sprite.show(head) }
+check("until it is gone", [wheel_sprite.visible, wheel_sprite.opacity], [false, 0])
 check("an invite can be stopped", option(LEAVE), ["Stop inviting", true])
 
 $inbox << entry("message", 2, told(friend.merge("map" => 5, "x" => 21, "y" => 22, "party" => my_party)))
 MGQ_MpOverworldSync.tick
 check("the friend joined", MGQ_MpOverworldSync::Status.lines.last, "Friend joined your party.")
 check("inviting stops once one joined", MGQ_MpCoop::Party.inviting?, false)
+check("and the invite has no frames left", MGQ_MpCoop::Party.instance_variable_get(:@invite).frames_left, 0)
 check("members", MGQ_MpCoop::Party.members.map { |peer| peer.state["name"] }, ["Friend"])
 MGQ_MpOverworld.update_ghosts
 check("a member is solid", ghost.opacity, 255)
 check("the label knows the member", MGQ_MpOverworld.ghosts.first.member, true)
+tag.show(shown, peer)
+check("and names them green, with the party's size after the name in green too", [color_of.call("Friend").equal?(MGQ_MpUi::Style::MEMBER), colors.last], [true, ["2 / 4", MGQ_MpUi::Style::MEMBER]])
 # The test's short ids make Friend the party's leader, whom the player stands near already.
 check("a member is not invited again, the wheel offers the teleport to the leader instead", option(PARTY), ["Teleport to Friend", false])
 
@@ -594,6 +722,7 @@ check("the step grows with the ping", ping.told, "300")
 check("colors by quality", [MGQ_MpOverworld.ping_label(50)[0], MGQ_MpOverworld.ping_label(50)[1].equal?(MGQ_MpOverworld::PING_COLORS[0][1]),
                             MGQ_MpOverworld.ping_label(150)[1].equal?(MGQ_MpOverworld::PING_COLORS[1][1]), MGQ_MpOverworld.ping_label(999)[1].equal?(MGQ_MpOverworld::PING_COLORS[2][1])],
       ["50 ms", true, true, true])
+check("a ping past 999 ms shows as 999+ ms, red", [MGQ_MpOverworld.ping_label(1234)[0], MGQ_MpOverworld.ping_label(1234)[1].equal?(MGQ_MpUi::Style::BAD), MGQ_MpOverworld.ping_label(999)[0]], ["999+ ms", true, "999 ms"])
 status_ping(nil)
 check("no connection, no ping shown", ping.measured, nil)
 
@@ -727,7 +856,7 @@ $inbox << entry("message", 4, "pchat=sneaky\nname=Friend\nparty=other\n\n")
 MGQ_MpOverworldSync.tick
 check("another party's line is never heard", chat.log_lines.last, "[Global] Friend: hello all")
 parts = []
-font = Struct.new(:color, :size, :outline, :bold).new
+font = Struct.new(:color, :size, :outline, :bold, :out_color).new
 canvas = Object.new
 canvas.define_singleton_method(:font) { font }
 canvas.define_singleton_method(:text_size) { |text| Struct.new(:width).new(text.size * 10) }
@@ -736,7 +865,7 @@ log_sprite = Sprite_MpChatLog.allocate
 log_sprite.instance_variable_set(:@name_spots, [])
 log_sprite.define_singleton_method(:bitmap) { canvas }
 colors = { Sprite_MpChatLog::CHANNEL_COLORS[:party] => :party, Sprite_MpChatLog::CHANNEL_COLORS[:global] => :global,
-           Sprite_MpChatLog::NAME_COLORS[:member] => :member, Sprite_MpChatLog::TEXT_COLOR => :text }
+           Sprite_MpChatLog::NAME_COLORS[:member] => :member, MGQ_MpUi::Style::TEXT => :text }
 log_sprite.draw_row("[Party] Friend: on my way", chat.log_entries[-2], true, 0)
 check("the log draws the tag, then the name in its color, then the line", parts.map { |x, text, color| [x, text, colors[color]] },
       [[4, "[Party] ", :party], [84, "Friend: ", :member], [164, "on my way", :text]])
@@ -776,7 +905,6 @@ log_sprite.define_singleton_method(:y) { 200 }
 log_sprite.define_singleton_method(:y=) { |_| }
 log_sprite.define_singleton_method(:bitmap=) { |_| }
 canvas.define_singleton_method(:dispose) {}
-Bitmap = Struct.new(:width, :height)
 Bitmap.define_singleton_method(:new) { |*_| canvas }
 { :@wrapped => {}, :@tab_spots => [], :@size => [400, 6], :@width => 400, :@rows => 6, :@bottom_room => 96, :@resting_z => 100 }.each do |name, value|
   log_sprite.instance_variable_set(name, value)
@@ -1052,7 +1180,7 @@ check("the closed log shows whispers whatever its tab, another chat's lines only
 $inbox << entry("message", friend_seat, "chat=one two three\nname=Friend\n\n")
 MGQ_MpOverworldSync.tick
 check("a line loses its line and paragraph separators", chat.log_lines.last, "[Global] Friend: onetwothree")
-check("a say line that came on the Global tab marks the Say tab unread, the whisper and the global line none", chat.unread_tabs, [:say])
+check("a say line and a whisper that came on the Global tab mark the Say and the Whisper tabs unread, the global line none", chat.unread_tabs, [:say, :whisper])
 chat.select_tab(:all, "in the test")
 MGQ_MpOverworldSync.tick
 check("the All tab takes every line as seen", chat.unread_tabs, [])

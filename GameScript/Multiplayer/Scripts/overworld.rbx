@@ -2,6 +2,11 @@
 #  overworld.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-11: Named a ghost above its head in its player's color, through MGQ_MpUi::PlayerColor
+#                            - Showed a keyboard above a ghost whose player types, apart from the event's bubble
+#                            - Took the ping's colors, the dim party size and the font sizes from the shared style, and drew the icons of the labels and the status line through MGQ_MpUi.draw_icon
+#                            - Showed a ping past 999 ms as "999+ ms", and sized and drew the ping column of the party box and the World overview here, which it fits
+#                            - Wrote a party's title with its size here, which the party box and the World overview share
 #      Paulinchen  2026-10-09: Drew every other player's ghost solid in a Raid World, through ghost_opacity and SOLID_OPACITY
 #      Paulinchen  2026-10-08: Found the players on this map through MGQ_MpOverworldSync::Peers.on_this_map?, which the chat shares
 #                            - Showed a follower whose sprite this game lacks as the outline of Luka's sprite alone, instead of Luka, green while its player is in the player's party and white otherwise
@@ -46,11 +51,16 @@
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpOverworld
+  # Icon of the game's icon set next to the name of a ghost whose player types in the chat: a
+  # keyboard. The icon set's only speech-like icons are the "..." bubbles 4, the event's, and 20,
+  # the same bubble on a state tile, which would not tell typing from an event at a glance.
+  TYPING_ICON = 3930
+
   # Icons of the game's icon set next to a ghost's name, by what its player does. Walking the map shows none.
   STATE_ICONS = {
     "battle" => 451,
     "event" => 4,
-    "typing" => 4,
+    "typing" => TYPING_ICON,
     "menu" => 183,
     "items" => 3059,
     "equip" => 3905,
@@ -72,7 +82,21 @@ module MGQ_MpOverworld
   SOLID_OPACITY = 255
 
   # Colors of a ping, by the most milliseconds each stands for; above them all, the last.
-  PING_COLORS = [[100, Color.new(128, 255, 128)], [200, Color.new(255, 224, 96)], [nil, Color.new(255, 112, 96)]]
+  PING_COLORS = [[100, MGQ_MpUi::Style::GOOD], [200, MGQ_MpUi::Style::WARN], [nil, MGQ_MpUi::Style::BAD]]
+
+  # Most milliseconds a ping shows; past them it shows as these with PING_PAST, which every ping
+  # column fits.
+  PING_MOST = 999
+
+  # What follows a ping past PING_MOST.
+  PING_PAST = "+"
+
+  # Width of a ping column, which the widest ping, "999+ ms", fits in the style's small font,
+  # drawn right-aligned; see draw_ping.
+  PING_WIDTH = 64
+
+  # What a party's title starts with in a box, see party_title.
+  PARTY_TITLE = "Party"
 
   # Icon of the game's icon set before the name of a party's leader: a crown.
   CROWN_ICON = 226
@@ -117,12 +141,21 @@ module MGQ_MpOverworld
     size >= 2 ? ["#{size} / #{MGQ_MpCoop::MAX_PLAYERS}", MGQ_MpCoop.leads?(player)] : nil
   end
 
+  # Writes a party's title for a box, with its size, which the party box and the World overview
+  # share.
+  #
+  # @param badge [Array, nil] The party's size and whether the player leads it, see party_badge.
+  # @return [String] Such as "Party 2 / 4", PARTY_TITLE alone without a badge.
+  def self.party_title(badge)
+    badge ? "#{PARTY_TITLE} #{badge[0]}" : PARTY_TITLE
+  end
+
   extend MGQ_MpLog
 
   # What starts this script's lines in Multiplayer InGame.log.
   LOG_TAG = "overworld"
 
-  # Writes a ping as it shows, with the color that says how good it is.
+  # Writes a ping as it shows, such as "80 ms" or "999+ ms", with the color that says how good it is.
   #
   # @param ping [String, Integer, nil] The milliseconds.
   # @return [Array, nil] The text and its color, nil for no ping.
@@ -130,7 +163,21 @@ module MGQ_MpOverworld
     return nil if ping.to_s.empty?
 
     milliseconds = ping.to_i
-    ["#{milliseconds} ms", PING_COLORS.find { |most, _| most.nil? || milliseconds <= most }[1]]
+    text = "#{[milliseconds, PING_MOST].min}#{milliseconds > PING_MOST ? PING_PAST : ''} ms"
+    [text, PING_COLORS.find { |most, _| most.nil? || milliseconds <= most }[1]]
+  end
+
+  # Draws a ping at the right end of its column, PING_WIDTH wide, in the style's small font and
+  # the ping's color, which the party box and the World overview share.
+  #
+  # @param bitmap [Bitmap] The box's picture.
+  # @param ping [Array] The ping's text and color, see ping_label.
+  # @param x [Integer] The column's left.
+  # @param y [Integer] The line's top.
+  # @param height [Integer] The line's height.
+  def self.draw_ping(bitmap, ping, x, y, height)
+    MGQ_MpUi::Style.use_font(bitmap, MGQ_MpUi::Style::SMALL_SIZE, ping[1])
+    bitmap.draw_text(x, y, PING_WIDTH, height, ping[0], 2)
   end
 
   # Moves the ghosts of the players on this map. Called by the map every frame.
@@ -465,8 +512,9 @@ class Sprite_MpGhostFollower < Sprite_Character
   end
 end
 
-# A ghost's name above its head, with an icon for what its player does, green for a party member,
-# and above it the line a script gives through overworld_sync.rbx, such as an invite.
+# A ghost's name above its head in its player's color (see MGQ_MpUi::PlayerColor), with an icon
+# for what its player does, and above it the line a script gives through overworld_sync.rbx, such
+# as an invite.
 class Sprite_MpGhostLabel < Sprite
   # Width of the label.
   WIDTH = 240
@@ -474,17 +522,17 @@ class Sprite_MpGhostLabel < Sprite
   # Height of one line.
   LINE = 24
 
-  # Color of a party member's name.
-  MEMBER_COLOR = Color.new(128, 255, 128)
+  # Pixels an icon before the name takes with the room after it.
+  ICON_STEP = 26
 
   # Font size of the ping after the name.
-  PING_SIZE = 14
+  PING_SIZE = MGQ_MpUi::Style::TINY_SIZE
 
   # Room between the name and each small text after it.
   PING_GAP = 6
 
   # Color of the size of a party the player is not in.
-  SIZE_COLOR = Color.new(220, 220, 220)
+  SIZE_COLOR = MGQ_MpUi::Style::DIM
 
   # Creates the label, empty.
   #
@@ -518,12 +566,11 @@ class Sprite_MpGhostLabel < Sprite
 
     @shown = drawn
     bitmap.clear
-    bitmap.font.size = 18
-    bitmap.font.outline = true
+    MGQ_MpUi::Style.use_font(bitmap, MGQ_MpUi::Style::TEXT_SIZE, MGQ_MpUi::Style::TEXT)
     line(0, above[0], above[1]) if above
     icons = [MGQ_MpOverworld::STATE_ICONS[state["scene"]], badge && badge[1] ? MGQ_MpOverworld::CROWN_ICON : nil].compact
-    extras = [badge && [badge[0], peer.member ? MEMBER_COLOR : SIZE_COLOR], MGQ_MpOverworld.ping_label(state["ping"])].compact
-    draw_name(name, icons, peer.member ? MEMBER_COLOR : MGQ_MpUi::WHITE, extras)
+    extras = [badge && [badge[0], peer.member ? MGQ_MpUi::Style::MEMBER : SIZE_COLOR], MGQ_MpOverworld.ping_label(state["ping"])].compact
+    draw_name(name, icons, MGQ_MpUi::PlayerColor.of(peer), extras)
     taken
   end
 
@@ -547,15 +594,14 @@ class Sprite_MpGhostLabel < Sprite
   def draw_name(name, icons, color, extras)
     bitmap.font.size = PING_SIZE
     widths = extras.map { |text, _| bitmap.text_size(text).width }
-    bitmap.font.size = 18
+    bitmap.font.size = MGQ_MpUi::Style::TEXT_SIZE
     after = widths.inject(0) { |sum, extra| sum + PING_GAP + extra }
-    width = [bitmap.text_size(name).width, WIDTH - 26 * icons.size - 2 - after].min
-    left = (WIDTH - width - 26 * icons.size - after) / 2
+    width = [bitmap.text_size(name).width, WIDTH - ICON_STEP * icons.size - 2 - after].min
+    left = (WIDTH - width - ICON_STEP * icons.size - after) / 2
 
-    iconset = Cache.system("Iconset") unless icons.empty?
     icons.each do |icon|
-      bitmap.blt(left, LINE, iconset, MGQ_MpUi.icon_rect(icon))
-      left += 26
+      MGQ_MpUi.draw_icon(bitmap, icon, left, LINE)
+      left += ICON_STEP
     end
 
     bitmap.font.color = color
@@ -614,15 +660,13 @@ class Sprite_MpOwnPing < Sprite
 
     @shown = drawn
     bitmap.clear
-    bitmap.font.size = Sprite_MpGhostLabel::PING_SIZE
-    bitmap.font.outline = true
-    parts = [badge && [badge[0], Sprite_MpGhostLabel::MEMBER_COLOR], ping].compact
+    MGQ_MpUi::Style.use_font(bitmap, Sprite_MpGhostLabel::PING_SIZE, MGQ_MpUi::Style::TEXT)
+    parts = [badge && [badge[0], MGQ_MpUi::Style::MEMBER], ping].compact
     widths = parts.map { |text, _| bitmap.text_size(text).width }
     crown = badge && badge[1] ? HEIGHT : 0
     left = (WIDTH - crown - widths.inject(0) { |sum, width| sum + width } - Sprite_MpGhostLabel::PING_GAP * (parts.size - 1)) / 2
     if crown > 0
-      icon = MGQ_MpOverworld::CROWN_ICON
-      bitmap.stretch_blt(Rect.new(left, 0, HEIGHT, HEIGHT), Cache.system("Iconset"), MGQ_MpUi.icon_rect(icon))
+      MGQ_MpUi.draw_icon(bitmap, MGQ_MpOverworld::CROWN_ICON, left, 0, HEIGHT)
       left += crown
     end
     parts.each_with_index do |(text, color), index|
@@ -671,12 +715,11 @@ class Sprite_MpWorldStatus < Sprite
 
     @shown = notices
     bitmap.clear
-    bitmap.font.size = 18
-    bitmap.font.outline = true
+    MGQ_MpUi::Style.use_font(bitmap, MGQ_MpUi::Style::TEXT_SIZE, MGQ_MpUi::Style::TEXT)
     rows = rows_of(notices)
     rows.each_with_index do |(text, icon, left), row|
       y = (ROWS - rows.size + row) * ROW
-      bitmap.stretch_blt(Rect.new(0, y, ROW, ROW), Cache.system("Iconset"), MGQ_MpUi.icon_rect(icon)) if icon
+      MGQ_MpUi.draw_icon(bitmap, icon, 0, y, ROW)
       bitmap.draw_text(left, y, WIDTH - left, ROW, text)
     end
   end
