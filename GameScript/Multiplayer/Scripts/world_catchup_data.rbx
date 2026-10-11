@@ -16,7 +16,7 @@
 # route's marks no longer hold once the world returned from the route to the Great Decision,
 # which clears its variables and self switches. A row's ran tells whether its marks show that
 # its event ran; false where they only show that the event is there to play, as for a town's
-# companion who joins on a talk.
+# companion who joins on a talk, unless a story page after it needs the companion in the party.
 module MGQ_MpWorldCatchupData
   # A part of the story: its id as the relay names it, its name, the marks that hold right
   # before its ending starts, and its level gate.
@@ -45,7 +45,7 @@ module MGQ_MpWorldCatchupData
   # Every story join, in the story's order.
   JOINS = [
     [525, 525, "map:7:60:1", "1", 5, nil, [[:v, 1001, 6], [:s, 2010]], 2, :start, 25, true],
-    [53, 53, "map:7:63:1", "1", 5, nil, [[:v, 1001, 6]], 1, :start, 33, false],
+    [53, 53, "map:7:63:1", "1", 5, nil, [[:v, 1001, 7], [:s, 5001]], 1, :start, 33, true],
     [563, 563, "map:5:27:1", "1", 6, nil, [[:v, 1001, 6], [:s, 2005], [:s, 2018], [:s, 5002]], 1, :start, 32, false],
     [5, 5, "map:6:30:2", "1", 6, nil, [[:v, 1001, 7]], 2, :start, 169, true],
     [26, 26, "map:6:31:2", "1", 6, nil, [[:v, 1001, 7]], 2, :start, 203, true],

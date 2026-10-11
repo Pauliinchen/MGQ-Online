@@ -2,7 +2,8 @@
 #  catchup_data_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Read the generator from MGQ-Paradox-Event-Checker next to the repository, and left its rules unchecked without it
+#      Paulinchen  2026-10-11: Checked that a talk join counts once a story page that needs the companion in the party ran
+#                            - Read the generator from MGQ-Paradox-Event-Checker next to the repository, and left its rules unchecked without it
 #      Paulinchen  2026-10-10: Checked that no row needs a Library Flag and that an event only a Library Flag told ran is marked by the scene after it
 #                            - Checked that the joins of Monte Carlo's evacuation count once it ended
 #      Paulinchen  2026-10-09: Checked that a story variable named after a temple is no scratch and that the Silver Orb comes to every player of the world
@@ -88,6 +89,8 @@ check("every join and removal names its command, and every row with a place whet
        (DATA::KEY_ITEMS + DATA::REWARDS).all? { |row| [true, false].include?(row.ran) }], [true, true, true])
 check("a town's companion who joins on a talk only shows the event there to play, a story join that it ran",
       [joins_at(553, "map:140:25:1")[0].ran, sonya[0].ran, DATA::REWARDS.find { |row| row.id == 930 && row.site =~ /\Amap:406:/ }.ran], [false, true, true])
+check("a talk join counts once a story page after it that needs the companion in the party ran, as Lime's by Alice handing over the Pocket Castle, at her start level",
+      joins_at(53, "map:7:63:1").map { |join| [join.ran, join.marks, join.gate, join.rule] }, [[true, [[:v, 1001, 7], [:s, 5001]], 1, :start]])
 granberia = [DATA::JOINS, DATA::REMOVALS].map { |rows| rows.find { |row| row.actor == 19 && row.site == "map:483:86:1" }.index }
 check("Granberia joins and then leaves in one event at Part 2's step 24, in that order", granberia[0] < granberia[1], true)
 orb = DATA::KEY_ITEMS.select { |row| row.item == 596 && row.part.nil? }.map(&:amount)
