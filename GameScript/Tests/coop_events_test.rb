@@ -2,7 +2,8 @@
 #  coop_events_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Checked that a page with story behind a choice is no chest, as Amira's paid tip in Iliasburg
+#      Paulinchen  2026-10-11: Stood in for the player's followers, which a move to another map shows
+#                            - Checked that a page with story behind a choice is no chest, as Amira's paid tip in Iliasburg
 #                            - Checked that Amira in Iliasburg is no choice any more
 #                            - Checked the generator's rules only where the event checker repository lies next to this one, as on this PC and not in the workflow
 #                            - Checked that a common event the story calls tells its pages and a parallel one does not, that a page the leader moved past stays to read, confirm reads on, and that only the oldest pages past CATCH_UP_PAGES are left out
@@ -215,6 +216,8 @@ class Game_Player
   def encounter; return false if @encounter_count > 0; make_encounter_count; true; end
   def movable?; true; end
   def initialize; @x = 1; @y = 1; @direction = 2; end
+  def followers; @followers ||= Struct.new(:visible).new(true); end
+  def refresh; end
   def moveto(x, y); @x, @y = x, y; end
   def set_direction(d); @direction = d; end
   def reserve_transfer(map_id, x, y, d = 2); @reserved = [map_id, x, y, d]; end

@@ -2,7 +2,8 @@
 #  coop_gather.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Told whether a call, a follow or a teleport is ready to bring the player over, and had the pages of the teller's story give way to it
+#      Paulinchen  2026-10-11: Showed the player's followers again when a call, a follow or a teleport takes them to another map, since the events that show them again on leaving a place such as Hades never ran and Formation stayed shut
+#                            - Told whether a call, a follow or a teleport is ready to bring the player over, and had the pages of the teller's story give way to it
 #                            - Looked for a map from 1000 on in the folder the game keeps it in, through the game's own file name, so a follow or teleport there is no longer dropped as a map this game lacks
 #                            - Named the leader's wait and a member's time left before coming over as doings of the line above the player's head, which writes the seconds, and named the members still missing in the leader's doing, two at most and how many more
 #                            - Counted the frames a moment has left in one place, which within? and a member's doing share
@@ -821,15 +822,31 @@ module MGQ_MpCoopGather
     @taken_follow = { :id => gather[:id], :name => gather[:name], :place => place, :since => Graphics.frame_count } if gather[:follow] && MGQ_MpCoop::Scope.raid?
     MGQ_MpCoopCastle.arriving(map_id) if defined?(MGQ_MpCoopCastle)
     warp_ban = gather[:warp_ban]
-    if map_id == $game_map.map_id
+    elsewhere = map_id != $game_map.map_id
+    if elsewhere
+      $game_player.reserve_transfer(map_id, x, y, direction > 0 ? direction : 2)
+    else
       $game_player.moveto(x, y)
       $game_player.set_direction(direction) if direction > 0
-    else
-      $game_player.reserve_transfer(map_id, x, y, direction > 0 ? direction : 2)
     end
     take_warp_ban(warp_ban)
+    show_followers if elsewhere
   rescue => e
     log("coming to the leader failed: #{e.class}: #{e.message}")
+  end
+
+  # Shows the player's followers again as they leave for another map.
+  #
+  # The game shows them again only in the events a player walks through to leave a place that hid
+  # them, such as Hades after a defeat, which a player brought over never touches, and the menu's
+  # Formation stays shut while they are hidden.
+  def self.show_followers
+    followers = $game_player.followers
+    return if followers.visible
+
+    followers.visible = true
+    $game_player.refresh
+    log("showed the player's followers again, which the map they left had hidden")
   end
 
   # Reports whether this game has a map, reading its file once per map.

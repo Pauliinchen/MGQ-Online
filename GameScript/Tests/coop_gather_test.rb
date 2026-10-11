@@ -2,7 +2,9 @@
 #  coop_gather_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Checked that a map from 1000 on is found in the folder the game keeps it in
+#      Paulinchen  2026-10-11: Checked that a follow to another map shows the followers the map left behind hidden
+#                            - Stood in for the player's followers
+#                            - Checked that a map from 1000 on is found in the folder the game keeps it in
 #                            - Checked that the line above a member's head counts the seconds down before they come over, then names that they come once free, and that the leader's names the members still missing with the time the story holds
 #                            - Stood in for the line above the player's head with its doings and lapses, and for the members synced with the leader's story
 #      Paulinchen  2026-10-10: Checked that a Raid World's follow taken at once waits a minute for a busy player
@@ -36,8 +38,11 @@ module Graphics; def self.frame_count; $frame_count; end; def self.brightness; 2
 class Game_Interpreter; def execute_command; end; end
 class Game_Map; attr_accessor :map_id; def initialize; @map_id = 3; end; def update(main = false); end; end
 class Game_Player
+  Followers = Struct.new(:visible)
   attr_accessor :x, :y
-  def initialize; @x = 0; @y = 0; end
+  attr_reader :followers
+  def initialize; @x = 0; @y = 0; @followers = Followers.new(true); end
+  def refresh; end
   def direction; 2; end
   def encounter; true; end
   def movable?; true; end
@@ -227,9 +232,11 @@ $offers.notice_of(teller).take.call
 check("following brings the player there as a follow of that teller",
       [gather.coming?, gather.pending_call[:place], gather.followed_id, $offers.notice_of(teller)], [true, [8, 1, 2, 2], "t", nil])
 $map_free = true
+$game_player.followers.visible = false
 gather.update
 check("taken, the follow still names its teller and map while the player is on the way and after they arrived",
       [$game_player.reserved, gather.coming?, gather.followed_id, gather.story_map?(8)], [[8, 1, 2, 2], false, "t", true])
+check("and shows the followers the map left behind hidden, such as Hades after a defeat", $game_player.followers.visible, true)
 $frame_count += MGQ_MpCoopGather::CALL_LAPSE_FRAMES
 check("until CALL_LAPSE_FRAMES passed", [gather.followed_id, gather.story_map?(8)], [nil, false])
 $game_player.reserved = nil
