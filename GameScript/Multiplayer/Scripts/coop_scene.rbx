@@ -2,7 +2,8 @@
 #  coop_scene.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Told the viewers the switches that only stay on while a scene runs, which are each player's own, and put them back once the viewer no longer sees the scene
+#      Paulinchen  2026-10-11: Let the catch-up follow the teller's story values as a story laid over the viewer's, so a viewer gets what the watched scene gave and loses the key items it took
+#                            - Told the viewers the switches that only stay on while a scene runs, which are each player's own, and put them back once the viewer no longer sees the scene
 #                            - Let the teller's move routes skip a blocked step and ended the one the player's character walks once the viewer no longer sees the scene, so it never holds the player for good
 #                            - Kept the character shown or hidden as the story left it once it brought the viewer to another map, so a new game's hidden start no longer hides them again
 #                            - Told the viewers the story's music, background sounds, fanfares and sound effects, played, stopped and faded with the game's defaults for what the story left out, which a viewer plays on the teller's map screen alone, holding the music for when they are there, and its changes of the map's tileset, battle backgrounds and parallax
@@ -490,14 +491,18 @@ module MGQ_MpCoopScene
   # Lays the teller's story values over the player's while they watch, see story_value: what is
   # the player's own stays, and the world's story takes each as the world's
   # (MGQ_MpWorldStory.mirrored), so none is written as the player's own change. A scene switch is
-  # taken too, with its value before noted for restore. A Classic party's members get the leader's
-  # values through coop_story.rbx instead.
+  # taken too, with its value before noted for restore. The catch-up keeps the player's story from
+  # before (MGQ_MpWorldCatchup.watched) to follow the values as a story laid over theirs. A Classic
+  # party's members get the leader's values through coop_story.rbx instead.
   #
   # @param entries [Array<Array>] Each value's kind, key and value.
   def self.apply_values(entries)
     return log_once(:classic_values, "ignored story values: only a Raid World's teller tells them") unless MGQ_MpCoop::Scope.raid?
 
     taken = entries.select { |entry| value_known?(entry) && (!MGQ_MpWorldStory.personal?(entry[0], entry[1]) || scene_value?(entry[0], entry[1])) }
+    if defined?(MGQ_MpWorldCatchup) && taken.any? { |kind, key, _value| !scene_value?(kind, key) }
+      MGQ_MpWorldCatchup.watched { MGQ_MpStoryState.deep_copy(MGQ_MpWorldCatchup.story_now) }
+    end
     taken.each do |kind, key, value|
       value = kind == 1 ? value : (value ? true : false)
       if scene_value?(kind, key)

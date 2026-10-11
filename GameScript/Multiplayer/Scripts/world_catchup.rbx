@@ -2,7 +2,9 @@
 #  world_catchup.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Checked everything once on entering the world, after a load and on every level up: the story's skills, key items and companions the player lacks, and the player's own values the story sets
+#      Paulinchen  2026-10-11: Followed the story values of a telling the player watched as a story laid over theirs once they are free, so a viewer gets what the scene gave and loses the key items it took
+#                            - Took a key item as taken since a row of the same step gave it when the taking row's marks lie further, so the Yggdrasil Fruit the Queen Harpy event took no longer comes back
+#                            - Checked everything once on entering the world, after a load and on every level up: the story's skills, key items and companions the player lacks, and the player's own values the story sets
 #                            - Moved the player's own values the story's events set, the game over's return point and the random encounters, on to the latest step their story passed where they still hold an earlier step's, and lifted a warp ban left on where the game lets the player warp
 #                            - Handed out every key item the story's place owes the player and they lack, whoever's game played its event, so a key item a newer table lists or a laid-over story skipped still comes
 #      Paulinchen  2026-10-10: Kept what a player behind changed when a checkpoint is laid over their story, and took the checkpoint as the story they stand on
@@ -132,6 +134,7 @@ module MGQ_MpWorldCatchup
     @orbs_due = false
     @orbs_played = false
     @audit_due = true
+    @watched = nil
     @clock ||= 0
     @checked = @clock
     @state_read = @clock
@@ -224,6 +227,7 @@ module MGQ_MpWorldCatchup
     return (MGQ_MpWorldStory.queued? ? nil : take_checkpoint) if @ready
     return if MGQ_MpWorldStory.mode.nil?
 
+    carry_watched
     looking do
       audit(story_now) if @audit_due
       review(story_now, false)
@@ -479,6 +483,10 @@ module MGQ_MpWorldCatchup
   def self.carried(before)
     return unless active?
 
+    # The story before a telling the player watched is older, and the telling's values count as laid
+    # over too, see watched.
+    before = @watched || before
+    @watched = nil
     looking do
       review(before, false)
       review(story_now, true)
@@ -490,6 +498,25 @@ module MGQ_MpWorldCatchup
     log("the player plays the world's story now")
   rescue => e
     log("following a story laid over the player's failed: #{e.class}: #{e.message}")
+  end
+
+  # Keeps the player's story from before a teller's story values first moved it while they watch a
+  # telling, until the player is free again (see carry_watched). Called before the values are
+  # written, see MGQ_MpCoopScene.apply_values.
+  #
+  # @yieldreturn [Array] A copy of the player's story now.
+  def self.watched
+    @watched ||= yield if active?
+  end
+
+  # Follows the story values a watched telling laid over the player's as a story laid over theirs,
+  # since only the teller's game ran the scene's commands: what the scene gave comes, and the key
+  # items it took go. Its rows would otherwise count as played by the player's own game.
+  def self.carry_watched
+    return unless @watched
+
+    log("following the story values of a telling the player watched")
+    carried(@watched)
   end
 
   # Reports whether the player's highest base level reaches their part's gate, or the cap another
@@ -984,8 +1011,9 @@ module MGQ_MpWorldCatchup
     end
   end
 
-  # Reports whether a story took a key item after a row gave it: a later row of the same part, or a
-  # row of a later part, that takes it.
+  # Reports whether a story took a key item after a row gave it: a later row of the same part, one
+  # of the same step whose marks lie further (see marks_beyond?), or a row of a later part, that
+  # takes it.
   #
   # @param row [MGQ_MpWorldCatchupData::KeyItem] The row that gives it.
   # @param told [Array] The story.
@@ -994,8 +1022,26 @@ module MGQ_MpWorldCatchup
   def self.taken_since?(row, told, story)
     DATA::KEY_ITEMS.any? do |other|
       next false unless other.item == row.item && other.amount < 0 && other.part && row.part
-      later = other.part == row.part ? after?(other, row) : RANKS[other.part] > RANKS[row.part]
+      later = if other.part != row.part then RANKS[other.part] > RANKS[row.part]
+              elsif place_of(other) == place_of(row) && other.site != row.site then marks_beyond?(other, row)
+              else after?(other, row)
+              end
       later && passed?(other, told, story)
+    end
+  end
+
+  # Reports whether a row's marks lie further than another's of the same step: each of the other's
+  # marks is the row's too, a variable's at least as high, and they differ. Rows of one step, as
+  # the Yggdrasil Fruit Nero gives and the Queen Harpy event takes, tell their order by them alone.
+  #
+  # @param row [Struct] The one.
+  # @param other [Struct] The other.
+  # @return [Boolean] Whether they do.
+  def self.marks_beyond?(row, other)
+    return false if row.marks.sort_by(&:inspect) == other.marks.sort_by(&:inspect)
+
+    other.marks.all? do |mark|
+      row.marks.any? { |own| own == mark || (own[0] == :v && mark[0] == :v && own[1] == mark[1] && own[2] >= mark[2]) }
     end
   end
 

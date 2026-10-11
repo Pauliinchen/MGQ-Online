@@ -2,7 +2,8 @@
 #  world_catchup_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Checked one look at everything on entering and on a level up: the story's own values moved on from an earlier step's but not a player's own, encounters left to a map that sets them, the warp ban lifted where warping is free, a missing skill and a missing companion
+#      Paulinchen  2026-10-11: Checked that a telling the player watched takes the key items its scene took, and that a key item taken at the step that gave it does not come back
+#                            - Checked one look at everything on entering and on a level up: the story's own values moved on from an earlier step's but not a player's own, encounters left to a map that sets them, the warp ban lifted where warping is free, a missing skill and a missing companion
 #                            - Stood in for whether random encounters are on and for the map's events
 #                            - Checked that a key item the story's place owes comes to a player who lacks it, also after the row was marked done, but not one taken since or of the other side
 #      Paulinchen  2026-10-10: Stood in for MGQ_MpCoopEvents.telling_or_moved?, which world_story.rbx asks now
@@ -806,6 +807,27 @@ relay({ "rev" => 1, "wrev" => 1, "p" => 25, "part" => "2" }, packed({ 1001 => 25
 frames(40)
 check("the next player from the save plays the world's story at once, the save's rows still theirs",
       [story.mode, catchup.holds_story?, $game_party.items[600].to_i, roster, $messages.grep(/The story gave you/)], [:world, false, 0, [1, 77, 80], []])
+
+# A telling the player watched takes the key items its scene took, which only the teller's game
+# ran, and one the player's own event took stays taken.
+tables(:KEY_ITEMS => [key_item.new(600, 1, "map:340:23:1", "2", 29, nil, [[:v, 1001, 29], [:v, 1011, 2]], true),
+                      key_item.new(600, -1, "map:88:4:1", "2", 29, nil, [[:v, 1001, 29], [:v, 1011, 4]], true)])
+watch = lambda do |value, before = nil|
+  new_game({ 1001 => 29, 1011 => 3 }, [], 40)
+  $game_party.gain_item($data_items[600], 1)
+  frames(1)
+  relay({ "rev" => 22, "wrev" => 22, "p" => 29, "part" => "2" }, packed({ 1001 => 29, 1011 => 3 }))
+  frames(40)
+  before.call if before
+  $game_variables[1011] = value
+  story.mirrored(1, 1011, value)
+  frames(40)
+  $game_party.items[600].to_i
+end
+check("a telling the player watched takes the key item its scene took, once the player is free",
+      watch.call(4, lambda { catchup.watched { MGQ_MpStoryState.deep_copy(catchup.story_now) } }), 0)
+check("the player's own event taking it gets nothing back from the catch-up, though the same step gave it",
+      watch.call(4, lambda { $game_party.lose_item($data_items[600], 1) }), 0)
 
 # Classic worlds have no catch-up.
 $raid = false
