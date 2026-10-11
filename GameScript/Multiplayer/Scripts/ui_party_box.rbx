@@ -181,7 +181,7 @@ end
 
 # The box at the top right of the map, until the player moves it, that lists the player's party:
 # the leader first with a crown, then the others by name, each with the icon of what they do, their
-# highest companion level and ping, and where they are on a smaller line below. The player's own
+# formation's highest level and ping, and where they are on a smaller line below. The player's own
 # line, a party member's and anyone else's are named in the colors MGQ_MpUi::PlayerColor gives, a
 # member whose connection is down dim with the away icon. Small, it lists only each player's icon,
 # name and ping, at the right edge of the box's place. The title names the hotkey that changes the

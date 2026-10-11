@@ -2,7 +2,8 @@
 #  world_overview.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Showed a Raid World's objective on the World page under the story, as Amira tells it asked for information, wrapped over as many lines as it needs
+#      Paulinchen  2026-10-11: Told the others the highest level of the player's formation, Luka included, instead of every companion's, keeping the last one read during a co-op battle
+#                            - Showed a Raid World's objective on the World page under the story, as Amira tells it asked for information, wrapped over as many lines as it needs
 #                            - Listed a Raid World's party for the party box with each member's Frontline level, wherever they are
 #                            - Made the box movable and resizable with the left Alt held as the World overview, starting at the list box's place, never smaller than what shows every column, the tabs, the hint and three lines or the longest menu
 #                            - Gave the extra width to the story, the World page's values and the raid bosses' names, the ping keeping the right edge, and the extra height to more lines, the picked player kept in sight
@@ -51,7 +52,7 @@
 # another, see core_hotkeys.rbx) or the action wheel's middle, moved and resized with the left Alt
 # held (see ui_layout.rbx), with two pages turned with Left and Right or a click on their tabs.
 # The Players page
-# lists every player of the world online, grouped by where they are, with their highest companion
+# lists every player of the world online, grouped by where they are, with their formation's highest
 # level, their place in the story and their ping. A player picked with the arrows and confirm, or
 # with the mouse, opens a menu of what the scripts offer, such as party invites, duels and trades;
 # a player's row shows their invite, challenge or offer that reaches the player. The World page
@@ -62,13 +63,13 @@
 # It also lists the player's party for the party box of ui_party_box.rbx, and in a Raid World
 # everyone on the player's map for the map box that replaces it.
 #
-# It also tells the others where the player is, their highest companion level and their place in
+# It also tells the others where the player is, their formation's highest level and their place in
 # the story, in the state overworld_sync.rbx sends, and in a Raid World their Frontline's highest
 # level, which the map box shows.
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpWorldOverview
-  # Frames between two readings of the highest companion level and the place in the story, three
+  # Frames between two readings of the formation's highest level and the place in the story, three
   # seconds, since the state is compared every frame.
   READ_FRAMES = 180
 
@@ -212,7 +213,7 @@ module MGQ_MpWorldOverview
   # @!attribute player [MGQ_MpOverworldSync::Peers::Peer, Symbol] The player, :me for the player.
   # @!attribute name [String] Their name.
   # @!attribute place [String] Where they are.
-  # @!attribute level [String] Their highest companion level, in the map box their Frontline's, empty
+  # @!attribute level [String] Their formation's highest level, in the map box their Frontline's, empty
   #   while unknown.
   # @!attribute story [String] Their place in the story.
   # @!attribute ping [Array, nil] Their ping's text and color.
@@ -663,7 +664,7 @@ module MGQ_MpWorldOverview
   end
 
   # Closes the overview once the map is left. Called by overworld_sync.rbx every frame in every
-  # scene; reads the player's highest companion level and place in the story every READ_FRAMES.
+  # scene; reads the player's formation's highest level and place in the story every READ_FRAMES.
   #
   # @param in_world [Boolean] Whether a world is open.
   def self.tick(in_world)
@@ -674,7 +675,7 @@ module MGQ_MpWorldOverview
     return if @frames > 0
 
     @frames = READ_FRAMES
-    level = top_level
+    level = formation_level
     story = story_code
     front = MGQ_MpCoop::Scope.raid? ? front_level : nil
     if [level, story, front] != [@level, @story, @front]
@@ -694,7 +695,7 @@ module MGQ_MpWorldOverview
 
   # The fields the overview adds to the state the player's game tells the others.
   #
-  # @return [Hash] Where the player is, their highest companion level and their place in the story,
+  # @return [Hash] Where the player is, their formation's highest level and their place in the story,
   #   and in a Raid World their Frontline's highest level.
   def self.state_fields
     fields = { "place" => place, "lv" => @level.to_i, "progress" => @story.to_s }
@@ -728,14 +729,16 @@ module MGQ_MpWorldOverview
     MGQ_MpUi.cut(measure, text[0, text.length - floor.length], width, floor)
   end
 
-  # Reads the highest base level of the player's companions, in the party and waiting, Luka left out.
+  # Reads the highest base level of the player's formation, Luka included.
   #
-  # @return [Integer] The level, 0 without companions.
-  def self.top_level
-    companions = $game_party.all_members.dup
-    companions.concat($game_party.stand_members) if $game_party.respond_to?(:stand_members)
-    companions = companions.compact.reject { |actor| actor.respond_to?(:luca?) && actor.luca? }
-    companions.map { |actor| base_level_of(actor) }.max.to_i
+  # During a co-op battle it keeps the last level read, since the battle's party and its level sync
+  # stand in for the player's own characters then.
+  #
+  # @return [Integer] The level, 0 without characters.
+  def self.formation_level
+    return @level.to_i if defined?(MGQ_MpBattlesCoop) && MGQ_MpBattlesCoop.active?
+
+    $game_party.battle_members.map { |actor| base_level_of(actor) }.max.to_i
   rescue => e
     log("reading the level failed: #{e.class}: #{e.message}")
     0

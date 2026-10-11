@@ -2,7 +2,8 @@
 #  world_overview_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Checked a Raid World's objective on the World page: Amira's first words in a branch, plain, past her network's branch, read every few seconds and wrapped
+#      Paulinchen  2026-10-11: Checked that the level told is the formation's highest, Luka included, and kept during a co-op battle
+#                            - Checked a Raid World's objective on the World page: Amira's first words in a branch, plain, past her network's branch, read every few seconds and wrapped
 #                            - Expected Part 2 to start with Bonnie and Ashel and end with Sonya Mazda, Sonya Mainyu and Sonya Chaos
 #                            - Checked that a Raid World's box lists the party wherever its members are, with Frontline levels, and the others on the map below it, and stays with the party alone on the map
 #                            - Checked the overview as a box the player moves and resizes: its default, a placement Player.ini keeps, its least size, the lines, the scroll, the menu and the clicks following it, the sprite placed, offered and drawn anew on a new size or preset, and a box at its least size still drawing every column, the title, the tabs and the whole hint on both pages
@@ -34,7 +35,7 @@
 #----------------------------------------------------------------
 
 # Covers the World overview, world_overview.rbx: what the player tells the others (place,
-# highest companion level, place in the story), the list by place, opening with F11 and the
+# formation's highest level, place in the story), the list by place, opening with F11 and the
 # wheel, the arrows, the menu of a player, the mouse, the places the party box shortens, the
 # map box that replaces the party box in a Raid World, the World page with the world's rows and
 # its raid bosses, the box the player moves and resizes, and the confirm box before leaving the
@@ -140,10 +141,14 @@ check("a name the game lacks reads 0 or off, logged once", [overview.variable(["
       [0, 0, false, ["overview: no variable of the game is named No Such, reading 0", "overview: no switch of the game is named Nor This, reading off"]])
 MGQ_Multiplayer::Log.define_singleton_method(:write, write)
 
-# The highest companion level and the place.
-$game_party.all_members = [Actor.new(99, true), Actor.new(40, false)]
-$game_party.stand_members = [Actor.new(55, false)]
-check("the highest companion, waiting ones too, Luka left out", overview.top_level, 55)
+# The formation's highest level and the place.
+$game_party.all_members = [Actor.new(30, true), Actor.new(55, false), Actor.new(99, false)]
+$game_party.stand_members = [Actor.new(80, false)]
+def $game_party.battle_members; all_members.first(2); end
+check("the formation's highest, Luka included, the reserve and waiting ones left out", overview.formation_level, 55)
+$game_party.all_members = [Actor.new(60, true), Actor.new(55, false), Actor.new(99, false)]
+check("Luka counts like everyone in the formation", overview.formation_level, 60)
+$game_party.all_members = [Actor.new(30, true), Actor.new(55, false), Actor.new(99, false)]
 check("a map the game names nowhere has no place, never its untranslated name in the editor", overview.place, "")
 check("which the list heads Unnamed place", overview.lines([overview.own_row("Me (you)")]).first, [:place, "Unnamed place"])
 $game_map.display_name = "Ilias Village"
@@ -334,6 +339,7 @@ module MGQ_MpBattlesCoop; def self.active?; $coop_battle; end; end
 $coop_battle = true
 $front = [Actor.new(5, true)]
 check("during a co-op battle it keeps the level read before", overview.front_level, 40)
+check("the formation's level too", overview.formation_level, 55)
 $coop_battle = false
 $front = [Actor.new(40, true), Actor.new(70, false), Actor.new(90, false)]
 
