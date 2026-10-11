@@ -2,6 +2,14 @@
 #  ui_chat.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-11: Drew the log, its tabs, its menu, the bubbles and the hints in the shared style, dropping the log's own colors and font size, and another player's name in their own color
+#                            - Faded a line of the closed log away over its last frames instead of dropping it at once
+#                            - Brought back the last 20 lines sent with Alt and up or down, kept only for the session
+#                            - Answered the last player who whispered with /r, which chooses them for the whisper chat as /w does and is refused as /w is once they left
+#                            - Played the recovery sound once a frame for whispers that arrive while the chat box is closed
+#                            - Drew the tabs dimmed above the closed log while one holds unread lines, the Whisper tab glowing too
+#                            - Buzzed once a frame for a paste longer than the box takes, not once per character
+#                            - Named the sent lines, /r and Ctrl+V in the hints and the help
 #      Paulinchen  2026-10-08: Split the chat into the global chat, the say chat that only the players on the same map hear, and the party chat, each kept by /g, /s or /p until another is chosen
 #                            - Showed the log in tabs, all lines or one chat's, picked with the mouse or Alt with left and right
 #                            - Resized the chat log with Alt and the mouse dragged, keeping its size in Player.ini
@@ -118,6 +126,18 @@ module MGQ_MpChat
   RIGHT_KEY = 0x27
   TAB_KEY = 0x09
 
+  # Windows' codes of up and down, which with the left Alt bring back the lines sent.
+  UP_KEY = 0x26
+  DOWN_KEY = 0x28
+
+  # Lines sent that Alt with up and down bring back, kept for the session alone.
+  HISTORY_SIZE = 20
+
+  # The sound a whisper plays when it arrives while the chat box is closed: the game's recovery
+  # chime, short and clearly heard, which nothing on the map plays by itself, unlike the cursor,
+  # the ok and the cancel sounds of the menus; in a battle the game plays it for a heal too.
+  WHISPER_SOUND = :play_recovery
+
   # Frames after Alt was let go in which what arrives is dropped: Alt with the numpad's digits, as
   # its arrows are with Num Lock off, types an Alt code once Alt is let go.
   ALT_CODE_FRAMES = 2
@@ -129,8 +149,9 @@ module MGQ_MpChat
   # right while it is open.
   TABS = [:all] + CHANNELS
 
-  # The chats whose tab marks lines the player has not seen yet.
-  UNREAD_CHATS = [:global, :party, :say]
+  # The chats whose tab marks lines the player has not seen yet: every chat, the whispers too,
+  # although the closed log shows them whatever the tab, so their tab glows as the others do.
+  UNREAD_CHATS = CHANNELS
 
   # What the tabs say.
   TAB_NAMES = { :all => "All", :global => "Global", :party => "Party", :say => "Say", :whisper => "Whisper", :help => "Help" }
@@ -147,6 +168,9 @@ module MGQ_MpChat
   # The whisper command with the start of a name typed, which offers the names that fit.
   WHISPER_TYPED = /\A\/(?:w|whisper) +(\S.*)\z/i
 
+  # The command that answers the last player who whispered to the player, see reply_to.
+  REPLY_COMMAND = /\A\/r(\s+|\z)/i
+
   # The command that opens the help tab.
   HELP_COMMAND = /\A\/help(\s|\z)/i
 
@@ -159,8 +183,10 @@ module MGQ_MpChat
           "/p <text>   Party: your party only",
           "/s <text>   Say: the players on your map",
           "/w <name> <text>   Whisper: one player. Up and Down pick a name from the list, Enter or Tab takes it.",
+          "/r <text>   Whisper back to the last player who whispered to you.",
           "Tabs: click one, or Alt with Left or Right. All shows every chat.",
           "Alt and a drag with the mouse resize the chat.",
+          "Alt with Up or Down brings back the lines you sent. Ctrl+V pastes.",
           "Up, Down, Page Up and Page Down scroll. Enter sends, Esc or the numpad's 0 closes."]
 
   # What the log shows before a line of a chat, the say chat showing none. A whisper the player
@@ -241,6 +267,12 @@ module MGQ_MpChat
   @alt_frames = 0
   @menu = nil
   @frame = 0
+  @history = []
+  @history_at = nil
+  @draft = nil
+  @reply_to = nil
+  @buzzed = nil
+  @chimed = nil
 
   # The help tab's lines, which no other tab shows.
   HELP_LINES = HELP.map { |text| Line.new(nil, text, :help, :help, 0) }
@@ -257,6 +289,52 @@ module MGQ_MpChat
   # @return [String, nil] Their name, nil before the player chose anyone.
   def self.whisper_to
     @whisper_to
+  end
+
+  # Tells the last player who whispered to the player, whom /r answers.
+  #
+  # @return [String, nil] Their name as the log showed it, nil before anyone whispered.
+  def self.reply_to
+    @reply_to && @reply_to[0]
+  end
+
+  # Lists the lines the player sent, which Alt with up and down bring back.
+  #
+  # @return [Array<String>] The lines as typed, commands included, oldest first, HISTORY_SIZE at most.
+  def self.history
+    @history
+  end
+
+  # Keeps a line the player sent for Alt with up and down, unless it repeats the last one, and
+  # forgets the oldest beyond HISTORY_SIZE. Also ends a walk through the lines.
+  #
+  # @param text [String] The line as typed, commands included.
+  def self.remember_sent(text)
+    @history_at = nil
+    @draft = nil
+    return if text.empty? || @history.last == text
+
+    @history.push(text)
+    @history.shift while @history.size > HISTORY_SIZE
+  end
+
+  # Brings a line sent back into the chat box: up the one before, down the one after, and past the
+  # newest what the box held before the walk began. It stays at the oldest and at the draft.
+  #
+  # @param step [Integer] -1 for the line before, 1 for the one after.
+  def self.walk_history(step)
+    return log("no line sent to bring back") if @history.empty?
+
+    at = @history_at || @history.size
+    to = MGQ_MpUi.within(at + step, 0, @history.size)
+    return if to == at
+
+    @draft = @edit.text if @history_at.nil?
+    @history_at = to == @history.size ? nil : to
+    text = @history_at ? @history[to] : @draft.to_s
+    @edit.edit(text, text.size)
+    Sound.play_cursor
+    log(@history_at ? "brought back sent line #{to + 1} of #{@history.size}" : "back at the line being typed")
   end
 
   # Tells the log's tab.
@@ -584,6 +662,8 @@ module MGQ_MpChat
     @edit = MGQ_MpUi::TextEdit.new("", :max_chars => MAX_LENGTH)
     @echo = key ? { :key => key, :frames => KEY_ECHO_FRAMES } : nil
     @scroll = 0
+    @history_at = nil
+    @draft = nil
     MGQ_Multiplayer::Link.typing(true)
     MGQ_Multiplayer::Capture.start(:chat)
     log("chat box opened #{key ? 'with its key' : 'from the action wheel'} in #{SceneManager.scene.class.name}")
@@ -659,7 +739,7 @@ module MGQ_MpChat
       return unless typing?
     end
     take_suggestion if tab_key
-    return if switch_tabs
+    return if alt_keys
 
     @edit.update_keys unless @tab == :help
     return update_menu_pick if @menu
@@ -701,18 +781,21 @@ module MGQ_MpChat
     @edit.edit(rest, @edit.cursor - (@edit.text.size - rest.size)) if rest
   end
 
-  # Picks the next tab with Alt and right, the one before with Alt and left, round the tabs.
+  # Follows the arrows with the left Alt: right picks the next tab and left the one before, round
+  # the tabs; up and down bring back the lines sent, see walk_history, except on the help tab.
   #
-  # Both arrows are read every frame, so a press Alt was let go during never counts later.
+  # Every arrow is read every frame, so a press Alt was let go during never counts later.
   #
-  # @return [Boolean] Whether Alt is held, which leaves the arrows to the tabs.
-  def self.switch_tabs
+  # @return [Boolean] Whether Alt is held, which leaves the arrows to the tabs and the lines sent.
+  def self.alt_keys
     keys = MGQ_Multiplayer::Key
-    step = (keys.pressed?(RIGHT_KEY) ? 1 : 0) - (keys.pressed?(LEFT_KEY) ? 1 : 0)
+    tab_step = (keys.pressed?(RIGHT_KEY) ? 1 : 0) - (keys.pressed?(LEFT_KEY) ? 1 : 0)
+    line_step = (keys.pressed?(DOWN_KEY) ? 1 : 0) - (keys.pressed?(UP_KEY) ? 1 : 0)
     return false unless keys.down?(ALT_KEY)
 
     shown = tabs
-    select_tab(shown[(shown.index(@tab) + step) % shown.size], "with Alt and the arrows") unless step == 0
+    select_tab(shown[(shown.index(@tab) + tab_step) % shown.size], "with Alt and the arrows") unless tab_step == 0
+    walk_history(line_step) unless line_step == 0 || @tab == :help
     true
   end
 
@@ -766,7 +849,8 @@ module MGQ_MpChat
   end
 
   # Types one character at the cursor: Enter takes the picked name of the list, opens the help
-  # tab or sends, Escape closes. The help tab only reads, so nothing but Escape types there.
+  # tab or sends, Escape closes. The help tab only reads, so nothing but Escape types there. A
+  # character the box refuses buzzes once a frame, so a paste longer than the box takes buzzes once.
   #
   # @param char [String] The character.
   def self.type(char)
@@ -782,16 +866,21 @@ module MGQ_MpChat
       stop_typing("Escape")
       Sound.play_cancel
     when :refused
-      Sound.play_buzzer
+      Sound.play_buzzer unless @buzzed == @frame
+      @buzzed = @frame
     end
   end
 
   # Sends the chat box's text to the chosen chat, closing the box; an empty box just closes. A
-  # command at its start chooses the chat first, for this line and the ones after it.
+  # command at its start chooses the chat first, for this line and the ones after it, /r the
+  # whisper chat to the last player who whispered, refused once they left as /w is. The line is
+  # kept for Alt with up and down.
   def self.send_typed
     text = @edit.text.strip
+    remember_sent(text)
     stop_typing("Enter")
     command = text.match(WHISPER_COMMAND)
+    reply = text.match(REPLY_COMMAND)
     if command
       rest = text[command[0].size..-1]
       name = named_in(rest)
@@ -799,6 +888,15 @@ module MGQ_MpChat
 
       whisper(name)
       text = rest[name.size..-1]
+    elsif reply
+      return refuse("Nobody has whispered to you yet.") unless @reply_to
+
+      peer = player_of(@reply_to[0], @reply_to[1])
+      return refuse("#{@reply_to[0]} is not in the world.") unless peer
+
+      log("/r answers #{@reply_to[0]}")
+      whisper(MGQ_MpOverworldSync::Peers.label_of(peer) || @reply_to[0], peer)
+      text = text[reply[0].size..-1]
     else
       text = take_command(text, true) || text
     end
@@ -857,12 +955,22 @@ module MGQ_MpChat
   # @param fields [Hash] The message's fields.
   # @return [Boolean] Whether it went out, false when they are not in the world.
   def self.tell_whisper(fields)
-    peers = MGQ_MpOverworldSync::Peers
-    peer = @whisper_id.to_s.empty? ? peers.named(@whisper_to) : peers.with_id(@whisper_id)
+    peer = player_of(@whisper_to, @whisper_id)
     return false unless peer
 
-    @whisper_to = peers.label_of(peer) || @whisper_to
+    @whisper_to = MGQ_MpOverworldSync::Peers.label_of(peer) || @whisper_to
     MGQ_MpOverworldSync.tell(peer.seat, fields)
+  end
+
+  # Finds a player by their id, or by their name for one who had no state yet when they were
+  # seen. A known id never falls back to the name, which another player may bear by now.
+  #
+  # @param name [String] Their name as the log shows it.
+  # @param id [String, nil] Their player id, nil or empty for none.
+  # @return [MGQ_MpOverworldSync::Peers::Peer, nil] The player, nil once they left the world.
+  def self.player_of(name, id)
+    peers = MGQ_MpOverworldSync::Peers
+    id.to_s.empty? ? peers.named(name) : peers.with_id(id)
   end
 
   # Tells every other game a line of the say chat, with the player's map, on which the others hear
@@ -939,6 +1047,22 @@ module MGQ_MpChat
     id = peer && !peer.state["id"].to_s.empty? ? peer.state["id"] : nil
     shown = peer ? MGQ_MpOverworldSync::Peers.label_of(peer) || peer.state["name"] : name
     add(peer ? peer.seat : nil, shown, text, channel, peer && member?(peer), admin, nil, id)
+    whispered(shown.to_s, id) if channel == :whisper
+  end
+
+  # Takes note of a whisper that arrived: its sender is whom /r answers, and while the chat box is
+  # closed, in which the log alone shows the line, WHISPER_SOUND calls the player's attention,
+  # once a frame, so whispers that arrive together chime once.
+  #
+  # @param name [String] The sender's name as the log shows it.
+  # @param id [String, nil] The sender's player id, nil without a state yet.
+  def self.whispered(name, id)
+    @reply_to = [name, id] unless name.empty?
+    return if typing? || @chimed == @frame
+
+    @chimed = @frame
+    Sound.__send__(WHISPER_SOUND)
+    log("played #{WHISPER_SOUND} for the whisper, the chat box being closed")
   end
 
   # Reports whether another player is in the player's party, whose name the log shows green.
@@ -998,8 +1122,10 @@ module MGQ_MpChat
     @log.clear
     @bubbles.clear
     @unread.clear
+    @history.clear
     @whisper_to = nil
     @whisper_id = nil
+    @reply_to = nil
     @sent = 0
     @received = 0
   end
@@ -1226,7 +1352,8 @@ class Sprite_MpChatBubble < Sprite
   # @param fill [Color] The bubble's fill.
   def draw(text, fill)
     bitmap.clear
-    bitmap.font.size = 16
+    # The bubble's dark ink on its light fill takes no outline, unlike the style's texts.
+    bitmap.font.size = MGQ_MpUi::Style::SMALL_SIZE
     bitmap.font.outline = false
     bitmap.font.color = INK
     lines = MGQ_MpUi.wrap(bitmap, text, WIDTH - PAD * 2)
@@ -1257,9 +1384,6 @@ class Sprite_MpChatLog < Sprite
   # Height of one row.
   ROW = 19
 
-  # Size of the font.
-  FONT_SIZE = 16
-
   # Height of the tabs' row.
   TAB_ROW = 18
 
@@ -1278,17 +1402,10 @@ class Sprite_MpChatLog < Sprite
   # Room a battle's command and status windows keep at the bottom of the screen.
   BATTLE_ROOM = 200
 
-  # Background while the chat box is open.
-  BACK = Color.new(0, 0, 0, 120)
-
-  # Color of the lines' text.
-  TEXT_COLOR = MGQ_MpUi::WHITE
-
-  # Colors of the senders' names: the player's own yellow, the party's members green as their
-  # labels on the map, everyone else's white, an admin's gold as the featured worlds, and the
-  # game's own lines grey.
-  NAME_COLORS = { :me => Color.new(255, 225, 110), :member => Color.new(128, 255, 128), :other => TEXT_COLOR,
-                  :admin => Color.new(255, 200, 64), :system => Color.new(200, 200, 200) }
+  # Colors of the senders' names, the style's: the player's own, a member of the player's party as
+  # their label on the map, an admin's gold as the featured worlds, and the game's own lines dim.
+  # Anyone else's is their own, see name_color.
+  NAME_COLORS = { :me => MGQ_MpUi::Style::OWN, :member => MGQ_MpUi::Style::MEMBER, :admin => MGQ_MpUi::Style::GOLD, :system => MGQ_MpUi::Style::DIM }
 
   # Colors of the chats, for their tags, their tabs, the chat box's name of them and their bubbles:
   # the global chat orange, the party chat violet and the whispers pale pink. The say chat is white.
@@ -1296,10 +1413,6 @@ class Sprite_MpChatLog < Sprite
 
   # The chats whose text is in their color too, not only their tag.
   COLORED_TEXT = [:global, :whisper]
-
-  # Background of the list of fitting names, and of the name picked in it.
-  LIST_BACK = Color.new(20, 20, 20, 230)
-  LIST_PICKED = Color.new(255, 255, 255, 80)
 
   # How opaque a tab's background is.
   TAB_ALPHA = 120
@@ -1318,42 +1431,32 @@ class Sprite_MpChatLog < Sprite
   # Color of the picked tab's name, dark on its chat's color.
   TAB_INK = Color.new(20, 20, 20)
 
-  # Background of a menu's title, the player's name, and of the line below it.
-  MENU_TITLE_BACK = Color.new(60, 60, 90, 240)
-  MENU_TITLE_LINE = Color.new(200, 200, 200)
-
-  # Color of the chat box's hint.
-  HINT = Color.new(180, 180, 180)
-
-  # Background of the chat box's row, over the log's.
-  BOX_BACK = Color.new(0, 0, 0, 110)
+  # Shade over the tabs while the chat box is closed, which dims them under the unread glow.
+  CLOSED_SHADE = MGQ_MpUi::Style::PLATE
 
   # Room left of the rows' and the chat box's text.
   TEXT_LEFT = 4
 
   # What the chat box says while it is empty.
-  BOX_HINT = "↑↓: scroll   Alt: tabs, size   /help: more"
+  BOX_HINT = "↑↓: scroll   Alt: more   /help: help"
 
   # What the empty chat box says while Alt is held.
-  ALT_HINT = "←→: change tab   Drag: resize"
+  ALT_HINT = "←→: change tab   ↑↓: sent lines   Drag: resize"
 
   # What the chat box says on the help tab, where nobody types.
-  HELP_HINT = "Pick another tab to chat. Esc or Numpad 0: close"
+  HELP_HINT = "Pick another tab to chat. #{MGQ_MpUi::Style.close_hint}"
 
   # What a player's menu says below its choices.
-  MENU_HINT = "Esc or Numpad 0: close"
+  MENU_HINT = MGQ_MpUi::Style.close_hint
 
   # Room at the right of the rows for the arrows that show the log scrolls on.
   ARROW_ROOM = 14
-
-  # Color of the arrows that show the log scrolls on.
-  ARROW_COLOR = Color.new(200, 200, 200)
 
   # Color of the thin outline of the tabs and of the open chat.
   OUTLINE = Color.new(140, 140, 140, 220)
 
   # Color of the open chat's outline while Alt is held, which shows that a drag resizes it.
-  RESIZE_OUTLINE = MGQ_MpUi::WHITE
+  RESIZE_OUTLINE = MGQ_MpUi::Style::TEXT
 
   # Lines whose rows the log remembers before it forgets them all, since each new line breaks once.
   WRAP_CACHE = 200
@@ -1376,7 +1479,9 @@ class Sprite_MpChatLog < Sprite
   end
 
   # Draws the log and the chat box, if they changed: the rows the log is scrolled to, with an
-  # arrow at the top while older rows lie above and one at the bottom while newer ones lie below.
+  # arrow at the top while older rows lie above and one at the bottom while newer ones lie below,
+  # a line of the closed log fading away over its last frames. Above the closed log the tabs show
+  # dimmed while one holds unread lines, so its glow is seen.
   def update
     super
     chat = MGQ_MpChat
@@ -1396,18 +1501,22 @@ class Sprite_MpChatLog < Sprite
     shown = rows[0, rows.size - scroll].last(@rows)
     older = lines.size < entries.size || rows.size - scroll > @rows
     alt = typing && MGQ_Multiplayer::Key.down?(MGQ_MpChat::ALT_KEY)
-    drawn = [shown.map { |row, line, first| [row, line.who, line.channel, first] }, older, scroll, chat.typed, chat.cursor,
+    # A line of the closed log fades over its last frames, so those count as a change.
+    fades = shown.map { |_row, line, _first| typing ? nil : [line.left, MGQ_MpUi::Style::FADE_FRAMES].min }
+    drawn = [shown.map { |row, line, first| [row, line.who, line.channel, first] }, fades, older, scroll, chat.typed, chat.cursor,
              typing && chat.cursor_shown?, chat.tab, chat.channel, chat.whisper_to, chat.suggestions, chat.pick, alt, @size, chat.unread_tabs]
     return if drawn == @shown
 
     @shown = drawn
     bitmap.clear
     if typing
-      bitmap.fill_rect(0, TAB_ROW, @width, bitmap.height - TAB_ROW, BACK)
+      bitmap.fill_rect(0, TAB_ROW, @width, bitmap.height - TAB_ROW, MGQ_MpUi::Style::BACK)
       draw_tabs(chat)
+    elsif !chat.unread_tabs.empty?
+      draw_tabs(chat, true)
     end
     @name_spots = []
-    shown.each_with_index { |(row, line, first), index| draw_row(row, line, first, TAB_ROW + (@rows - shown.size + index) * ROW) }
+    shown.each_with_index { |(row, line, first), index| draw_row(row, line, first, TAB_ROW + (@rows - shown.size + index) * ROW, fades[index]) }
     draw_arrow(TAB_ROW, true) if typing && older
     draw_arrow(TAB_ROW + (@rows - 1) * ROW, false) if typing && scroll > 0
     draw_box(chat, alt) if typing
@@ -1428,8 +1537,7 @@ class Sprite_MpChatLog < Sprite
     @width, @rows = width, rows
     bitmap.dispose if bitmap
     self.bitmap = Bitmap.new(width, TAB_ROW + ROW * (rows + 1))
-    bitmap.font.size = FONT_SIZE
-    bitmap.font.outline = true
+    MGQ_MpUi::Style.use_font(bitmap, MGQ_MpUi::Style::SMALL_SIZE, MGQ_MpUi::Style::TEXT)
     self.y = Graphics.height - @bottom_room - bitmap.height
     @shown = nil
     @wrapped.clear
@@ -1519,22 +1627,21 @@ class Sprite_MpChatLog < Sprite
     @menu_choices = options.size
     @menu_sprite.bitmap.dispose if @menu_sprite.bitmap
     picture = @menu_sprite.bitmap = Bitmap.new(width, ROW * (options.size + 2))
-    picture.font.size = FONT_SIZE
-    picture.font.outline = true
-    picture.fill_rect(picture.rect, LIST_BACK)
-    picture.fill_rect(0, 0, width, ROW, MENU_TITLE_BACK)
-    picture.fill_rect(0, ROW - 1, width, 1, MENU_TITLE_LINE)
+    style = MGQ_MpUi::Style
+    style.use_font(picture, style::SMALL_SIZE, style::TEXT)
+    picture.fill_rect(picture.rect, style::BACK)
+    picture.fill_rect(0, 0, width, ROW, style::PICKED)
+    picture.fill_rect(0, ROW - 1, width, 1, style::DIM)
     picture.font.bold = true
-    picture.font.color = NAME_COLORS[:other]
     picture.draw_text(TAB_PAD, 0, width - TAB_PAD * 2, ROW, menu[:name])
     picture.font.bold = false
     options.each_with_index do |option, index|
       top = ROW * (index + 1)
-      picture.fill_rect(0, top, width, ROW, LIST_PICKED) if index == menu[:pick]
-      picture.font.color = option.run ? TEXT_COLOR : HINT
+      picture.fill_rect(0, top, width, ROW, style::PICKED) if index == menu[:pick]
+      picture.font.color = option.run ? style::TEXT : style::DIM
       picture.draw_text(TAB_PAD, top, width - TAB_PAD * 2, ROW, option.text)
     end
-    picture.font.color = HINT
+    picture.font.color = style::DIM
     picture.draw_text(TAB_PAD, ROW * (options.size + 1), width - TAB_PAD * 2, ROW, MENU_HINT)
     @menu_sprite.x = [[menu[:at][0], Graphics.width - width].min, 0].max
     @menu_sprite.y = [menu[:at][1] - picture.height, 0].max
@@ -1600,10 +1707,12 @@ class Sprite_MpChatLog < Sprite
 
   # Draws the tabs at the top, each name in its chat's color, the picked one filled with that color
   # under dark text and open into the chat below, the help tab at the far right, and keeps where
-  # each lies for the mouse.
+  # each lies for the mouse. Dimmed, each tab lies under CLOSED_SHADE, closed at the bottom, with
+  # its glow over the shade.
   #
   # @param chat [Module] MGQ_MpChat.
-  def draw_tabs(chat)
+  # @param dim [Boolean] Whether the tabs show dimmed above the closed log.
+  def draw_tabs(chat, dim = false)
     @tab_spots = []
     @picked_gap = nil
     left = 0
@@ -1611,15 +1720,22 @@ class Sprite_MpChatLog < Sprite
       name = MGQ_MpChat::TAB_NAMES[tab]
       width = bitmap.text_size(name).width + TAB_PAD * 2
       at = tab == :help ? @width - width : left
-      color = CHANNEL_COLORS.fetch(tab, TEXT_COLOR)
+      color = CHANNEL_COLORS.fetch(tab, MGQ_MpUi::Style::TEXT)
       picked = tab == chat.tab
+      unread = !picked && chat.unread_tabs.include?(tab)
       bitmap.fill_rect(at, 0, width, TAB_ROW, picked ? color : TAB_BACK)
-      draw_unread_glow(at + width) if !picked && chat.unread_tabs.include?(tab)
+      # The glow lies under the name, which it would blot out at the corner, except dimmed, where
+      # the shade would dim it away, so it goes over the shade instead.
+      draw_unread_glow(at + width) if unread && !dim
       # The outline would smear dark text on a light tab.
       bitmap.font.outline = !picked
       draw_part(at + TAB_PAD, 0, name, picked ? TAB_INK : color, TAB_ROW)
       bitmap.font.outline = true
-      draw_frame(at, 0, width, TAB_ROW, OUTLINE, nil, !picked)
+      draw_frame(at, 0, width, TAB_ROW, OUTLINE, nil, !picked || dim)
+      if dim
+        bitmap.fill_rect(at, 0, width, TAB_ROW, CLOSED_SHADE)
+        draw_unread_glow(at + width) if unread
+      end
       @picked_gap = [at + 1, at + width - 1] if picked
       @tab_spots.push([tab, at, width])
       left += width + 2
@@ -1653,7 +1769,7 @@ class Sprite_MpChatLog < Sprite
     left = @width - ARROW_ROOM + 2
     5.times do |step|
       width = up ? step * 2 + 1 : (4 - step) * 2 + 1
-      bitmap.fill_rect(left + 4 - width / 2, y + ROW / 2 - 2 + step, width, 1, ARROW_COLOR)
+      bitmap.fill_rect(left + 4 - width / 2, y + ROW / 2 - 2 + step, width, 1, MGQ_MpUi::Style::DIM)
     end
   end
 
@@ -1683,19 +1799,35 @@ class Sprite_MpChatLog < Sprite
   # @param line [MGQ_MpChat::Line] The line the row belongs to.
   # @param first [Boolean] Whether it is the line's first row, which starts with its head.
   # @param y [Integer] The row's top.
-  def draw_row(row, line, first, y)
+  # @param left [Integer, nil] Frames the line has left in the closed log, which fade its colors
+  #   over the last of them; nil for the open log, where nothing fades.
+  def draw_row(row, line, first, y, left = nil)
+    style = MGQ_MpUi::Style
     x = TEXT_LEFT
     # A line broken right after the name loses the space after it to the break.
     head = row.start_with?(line.head) ? line.head : line.head.rstrip
     if first && row.start_with?(head)
       tag = line.tag
-      x = draw_part(x, y, tag, line.who == :admin ? NAME_COLORS[:admin] : CHANNEL_COLORS[line.channel]) unless tag.empty?
+      x = draw_part(x, y, tag, line.who == :admin ? NAME_COLORS[:admin] : CHANNEL_COLORS[line.channel], ROW, left) unless tag.empty?
       start = x
-      x = draw_part(x, y, head[tag.size..-1], NAME_COLORS.fetch(line.who, TEXT_COLOR))
+      x = draw_part(x, y, head[tag.size..-1], name_color(line), ROW, left)
       @name_spots.push([line, start, x, y]) if line.id
       row = row[head.size..-1]
     end
-    draw_part(x, y, row, COLORED_TEXT.include?(line.channel) ? CHANNEL_COLORS[line.channel] : TEXT_COLOR)
+    draw_part(x, y, row, COLORED_TEXT.include?(line.channel) ? CHANNEL_COLORS[line.channel] : style::TEXT, ROW, left)
+  end
+
+  # Picks the color of a line's sender's name: NAME_COLORS by whose it is, another player's their
+  # own by their id (see MGQ_MpUi::PlayerColor), by their name for a sender without an id, such as
+  # one who left the world.
+  #
+  # @param line [MGQ_MpChat::Line] The line.
+  # @return [Color] The color.
+  def name_color(line)
+    return NAME_COLORS[line.who] if NAME_COLORS.key?(line.who)
+    return MGQ_MpUi::Style::TEXT unless line.who == :other
+
+    MGQ_MpUi::PlayerColor.of(line.id.to_s.empty? ? line.name.to_s : { "id" => line.id }, false)
   end
 
   # Draws a part of a row in a color.
@@ -1705,12 +1837,14 @@ class Sprite_MpChatLog < Sprite
   # @param text [String] The part.
   # @param color [Color] Its color.
   # @param height [Integer] The row's height.
+  # @param left [Integer, nil] Frames the part's line has left, which fade the color over the last
+  #   of them; nil for no fade.
   # @return [Integer] Where the next part starts.
-  def draw_part(x, y, text, color, height = ROW)
+  def draw_part(x, y, text, color, height = ROW, left = nil)
     width = bitmap.text_size(text).width
-    bitmap.font.color = color
+    bitmap.font.color = left ? MGQ_MpUi::Style.faded(color, left) : color
     bitmap.draw_text(x, y, width + 2, height, text)
-    bitmap.font.color = TEXT_COLOR
+    bitmap.font.color = MGQ_MpUi::Style::TEXT
     x + width
   end
 
@@ -1722,18 +1856,19 @@ class Sprite_MpChatLog < Sprite
   # @param chat [Module] MGQ_MpChat.
   # @param alt [Boolean] Whether Alt is held.
   def draw_box(chat, alt)
+    style = MGQ_MpUi::Style
     y = TAB_ROW + @rows * ROW
-    bitmap.fill_rect(0, y, @width, ROW, BOX_BACK)
+    bitmap.fill_rect(0, y, @width, ROW, style::BACK)
     help = chat.tab == :help
     channel = chat.channel
     label = help ? "Help:" : channel == :whisper && chat.whisper_to ? "To #{chat.whisper_to}:" : "#{MGQ_MpChat::TAB_NAMES[channel]}:"
-    @box_left = draw_part(TEXT_LEFT, y, label, help ? TEXT_COLOR : CHANNEL_COLORS.fetch(channel, TEXT_COLOR)) + 4
+    @box_left = draw_part(TEXT_LEFT, y, label, help ? style::TEXT : CHANNEL_COLORS.fetch(channel, style::TEXT)) + 4
     editor = chat.editor
 
     if editor.text.empty?
-      bitmap.font.color = HINT
+      bitmap.font.color = style::DIM
       bitmap.draw_text(@box_left + MGQ_MpUi::TextBox::CURSOR_WIDTH + 2, y, @width - @box_left - TEXT_LEFT, ROW, help ? HELP_HINT : alt ? ALT_HINT : BOX_HINT)
-      bitmap.font.color = TEXT_COLOR
+      bitmap.font.color = style::TEXT
     end
 
     MGQ_MpUi::TextBox.draw_line(bitmap, Rect.new(@box_left, y, @width - @box_left - TEXT_LEFT, ROW), editor) unless help
@@ -1753,8 +1888,8 @@ class Sprite_MpChatLog < Sprite
     top = TAB_ROW + (@rows - names.size) * ROW
     names.each_with_index do |name, index|
       y = top + index * ROW
-      bitmap.fill_rect(left, y, width, ROW, LIST_BACK)
-      bitmap.fill_rect(left, y, width, ROW, LIST_PICKED) if index == chat.pick
+      bitmap.fill_rect(left, y, width, ROW, MGQ_MpUi::Style::BACK)
+      bitmap.fill_rect(left, y, width, ROW, MGQ_MpUi::Style::PICKED) if index == chat.pick
       draw_part(left + TAB_PAD, y, name, CHANNEL_COLORS[:whisper])
     end
   end
