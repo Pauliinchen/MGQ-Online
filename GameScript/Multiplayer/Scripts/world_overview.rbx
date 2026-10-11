@@ -2,7 +2,8 @@
 #  world_overview.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Listed a Raid World's party for the party box with each member's Frontline level, wherever they are
+#      Paulinchen  2026-10-11: Showed a Raid World's objective on the World page under the story, as Amira tells it asked for information, wrapped over as many lines as it needs
+#                            - Listed a Raid World's party for the party box with each member's Frontline level, wherever they are
 #                            - Made the box movable and resizable with the left Alt held as the World overview, starting at the list box's place, never smaller than what shows every column, the tabs, the hint and three lines or the longest menu
 #                            - Gave the extra width to the story, the World page's values and the raid bosses' names, the ping keeping the right edge, and the extra height to more lines, the picked player kept in sight
 #                            - Read the box's place for the clicks on its lines, tabs and menu and for a click outside it
@@ -54,8 +55,9 @@
 # level, their place in the story and their ping. A player picked with the arrows and confirm, or
 # with the mouse, opens a menu of what the scripts offer, such as party invites, duels and trades;
 # a player's row shows their invite, challenge or offer that reaches the player. The World page
-# shows the world itself: its name, type, difficulty, players, story and in a Raid World every
-# raid boss with how much of its HP the world left it. The map keeps running behind it.
+# shows the world itself: its name, type, difficulty, players, story and in a Raid World the
+# story's objective and every raid boss with how much of its HP the world left it. The map keeps
+# running behind it.
 #
 # It also lists the player's party for the party box of ui_party_box.rbx, and in a Raid World
 # everyone on the player's map for the map box that replaces it.
@@ -121,7 +123,30 @@ module MGQ_MpWorldOverview
   STORY_UNTOLD = "Not told yet"
 
   # The labels of the World page's rows.
-  WORLD_LABELS = { :name => "World", :type => "Type", :difficulty => "Difficulty", :players => "Players", :story => "Story" }
+  WORLD_LABELS = { :name => "World", :type => "Type", :difficulty => "Difficulty", :players => "Players", :story => "Story", :objective => "Objective" }
+
+  # The common event of Amira the Informant, whose first words on the information asked for name
+  # the story's current objective (see objective_text).
+  OBJECTIVE_EVENT = 108
+
+  # The variable of Amira's information network ("Pornof Rabbit Events"), whose branch at the top
+  # of her event keeps every hint back until the rabbit side quest moved on; the World page passes
+  # it, since it shows the story's objective, not whether Amira would tell it.
+  NETWORK_VARIABLE = 1009
+
+  # Common events deep the objective follows the calls of Amira's event.
+  OBJECTIVE_DEPTH = 3
+
+  # Jumps to a label the objective follows at most, so labels that jump in a circle end.
+  OBJECTIVE_JUMPS = 50
+
+  # A speaker's name at a message's start: the translation's "\n<Name>" and the untranslated
+  # game's "【Name】".
+  SPEAKER = /\\n<[^>]*>|\A\s*【[^】]*】/
+
+  # The text codes of a message, which the World page leaves out: a code with its argument, such as
+  # "\C[3]", one of letters, such as "\fb", and one of a sign, such as "\*".
+  TEXT_CODES = [/\\[A-Za-z]+\[[^\]]*\]/, /\\[A-Za-z]+/, /\\./]
 
   # How the World page writes the players online and the world's seats.
   PLAYERS_OF = "%d / %d"
@@ -426,7 +451,7 @@ module MGQ_MpWorldOverview
   end
 
   # Lays the World page out: the world's name, type, difficulty and players, then in a Raid World
-  # its story and its raid bosses under a heading per section of the story.
+  # its story, the story's objective and its raid bosses under a heading per section of the story.
   #
   # @param online [Integer] The players online, the player included.
   # @return [Array<Array>] Each line: [:info, label, value], [:place, heading] or [:boss, boss].
@@ -440,11 +465,124 @@ module MGQ_MpWorldOverview
     return lines unless raid
 
     lines << [:info, WORLD_LABELS[:story], world_story_text]
+    lines.concat(objective_lines)
     boss_sections.each do |section, bosses|
       lines << [:place, BOSSES_HEADING % section]
       lines.concat(bosses.map { |boss| [:boss, boss] })
     end
     lines
+  end
+
+  # Lays the story's objective out under its label, wrapped to the World page's value column; none
+  # while no objective is known.
+  #
+  # @return [Array<Array>] The lines, [:info, label, value], the label on the first alone.
+  def self.objective_lines
+    text = objective_text
+    return [] unless text
+
+    Sprite_MpWorldOverview.value_lines(text).each_with_index.map { |row, index| [:info, index == 0 ? WORLD_LABELS[:objective] : "", row] }
+  end
+
+  # Reads the story's current objective as Amira tells it asked for information (OBJECTIVE_EVENT):
+  # the first message her event shows in a branch, as the game would run it with the player's
+  # story now, a Raid World's laid over it. Her own opening words stand at the event's top, and
+  # her network's branch is passed (see NETWORK_VARIABLE). Read every READ_FRAMES.
+  #
+  # @return [String, nil] The objective, as plain text; nil when her event or a message is missing.
+  def self.objective_text
+    return @objective if @objective_at && Graphics.frame_count - @objective_at < READ_FRAMES && Graphics.frame_count >= @objective_at
+
+    @objective_at = Graphics.frame_count
+    event = $data_common_events && $data_common_events[OBJECTIVE_EVENT]
+    @objective = event ? first_message(event.list || [], 0) : nil
+  rescue => e
+    log_once(:objective, "reading the story's objective failed: #{e.class}: #{e.message}")
+    @objective = nil
+  end
+
+  # Finds the first message a list of commands shows as the game would run it now: inside a branch
+  # of Amira's own event, anywhere in the common events it calls. Branches go by the switches, the
+  # variables and the party; a choice by its first answer; a jump to its label.
+  #
+  # @param list [Array<RPG::EventCommand>] The commands.
+  # @param depth [Integer] How many calls deep the list is, 0 for Amira's event.
+  # @return [String, nil] The message, as plain text; nil when it shows none.
+  def self.first_message(list, depth)
+    index = 0
+    jumps = 0
+    skip = nil
+    held = {}
+    while index < list.size
+      command = list[index]
+      index += 1
+      indent = command.indent
+      next if skip && indent > skip
+
+      skip = nil
+      params = command.parameters
+      case command.code
+      when 111
+        held[indent] = branch_holds?(params)
+        skip = indent unless held[indent]
+      when 411 then skip = indent if held[indent]
+      when 402 then skip = indent unless params[0] == 0
+      when 403 then skip = indent
+      when 101
+        text = plain_message(list, index)
+        return text if !text.empty? && (indent > 0 || depth > 0)
+      when 117
+        called = depth < OBJECTIVE_DEPTH ? $data_common_events[params[0]] : nil
+        text = called ? first_message(called.list || [], depth + 1) : nil
+        return text if text
+      when 119
+        jumps += 1
+        label = jumps <= OBJECTIVE_JUMPS ? list.index { |other| other.code == 118 && other.parameters[0] == params[0] } : nil
+        return nil unless label
+
+        index = label + 1
+      when 115 then return nil
+      end
+    end
+    nil
+  end
+
+  # Reports whether a branch of Amira's event holds now: on a switch or a variable as the game
+  # compares them, on whether a companion is in the party; any other branch does not, nor her
+  # network's (see NETWORK_VARIABLE).
+  #
+  # @param params [Array] The branch's parameters.
+  # @return [Boolean] Whether it holds.
+  def self.branch_holds?(params)
+    case params[0]
+    when 0 then $game_switches[params[1]] == (params[2] == 0)
+    when 1
+      return false if params[1] == NETWORK_VARIABLE
+
+      value = $game_variables[params[1]].to_i
+      other = params[2] == 0 ? params[3].to_i : $game_variables[params[3]].to_i
+      [value == other, value >= other, value <= other, value > other, value < other, value != other][params[4]] ? true : false
+    when 4 then params[2] == 0 && $game_party.all_members.any? { |actor| actor.id == params[1] }
+    else false
+    end
+  end
+
+  # Reads the message whose lines follow a command as plain text: one line, without the speaker's
+  # name and the text codes, a variable's and a companion's code replaced by its value and name.
+  #
+  # @param list [Array<RPG::EventCommand>] The commands.
+  # @param index [Integer] The place of the message's first line.
+  # @return [String] The text.
+  def self.plain_message(list, index)
+    lines = []
+    while list[index] && list[index].code == 401
+      lines << list[index].parameters[0].to_s
+      index += 1
+    end
+    text = lines.join(" ").gsub(SPEAKER, "")
+    text = text.gsub(/\\V\[(\d+)\]/i) { $game_variables[$1.to_i].to_s }
+    text = text.gsub(/\\N\[(\d+)\]/i) { (actor = $game_actors[$1.to_i]) ? actor.name.to_s : "" }
+    TEXT_CODES.inject(text) { |plain, code| plain.gsub(code, "") }.gsub(/\s+/, " ").strip
   end
 
   # Lists the raid bosses for the World page by the story's sections in story order: each section
@@ -1184,6 +1322,18 @@ class Sprite_MpWorldOverview < Sprite
   # @return [Integer] The lines, at least one.
   def self.list_rows(height = box.height)
     [(height - LIST_TOP - HINT_HEIGHT - MARGIN) / ROW, 1].max
+  end
+
+  # Breaks a long value of the World page into the lines its value column holds, in the font
+  # draw_info writes it in.
+  #
+  # @param text [String] The value.
+  # @return [Array<String>] The lines.
+  def self.value_lines(text)
+    style = MGQ_MpUi::Style
+    @measure = Bitmap.new(1, 1) if @measure.nil? || @measure.disposed?
+    style.use_font(@measure, style::TEXT_SIZE, style::TEXT)
+    MGQ_MpUi.wrap(@measure, text, box.width - MARGIN - WORLD_COLUMNS[:value])
   end
 
   # Creates the box, hidden.

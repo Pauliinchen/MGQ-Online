@@ -2,7 +2,8 @@
 #  world_overview_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Expected Part 2 to start with Bonnie and Ashel and end with Sonya Mazda, Sonya Mainyu and Sonya Chaos
+#      Paulinchen  2026-10-11: Checked a Raid World's objective on the World page: Amira's first words in a branch, plain, past her network's branch, read every few seconds and wrapped
+#                            - Expected Part 2 to start with Bonnie and Ashel and end with Sonya Mazda, Sonya Mainyu and Sonya Chaos
 #                            - Checked that a Raid World's box lists the party wherever its members are, with Frontline levels, and the others on the map below it, and stays with the party alone on the map
 #                            - Checked the overview as a box the player moves and resizes: its default, a placement Player.ini keeps, its least size, the lines, the scroll, the menu and the clicks following it, the sprite placed, offered and drawn anew on a new size or preset, and a box at its least size still drawing every column, the title, the tabs and the whole hint on both pages
 #                            - Expected the raid bosses' gauges in the edge and well colors, and the box, its tabs and its title in the preset's colors
@@ -465,6 +466,47 @@ $world_story = { "part" => "chaos" }
 check("so is the Chaos route", overview.world_story_text, "Part 3: Chaos route")
 $world_story = nil
 check("before the relay told the story", overview.world_story_text, "Not told yet")
+
+# The story's objective, as Amira's event tells it asked for information.
+ObjectiveCommand = Struct.new(:code, :indent, :parameters)
+ObjectiveEvent = Struct.new(:list)
+command = lambda { |code, indent, *params| ObjectiveCommand.new(code, indent, params) }
+message = lambda { |indent, *lines| [command.call(101, indent, "amira_fc1", 0, 0, 2)] + lines.map { |line| command.call(401, indent, line) } }
+amira = message.call(0, "\\n<Amira>", "Let's see, your current primary objective is...") +
+        [command.call(111, 0, 1, 1009, 0, 1, 2)] + message.call(1, "\\n<Amira>Give me some time until my information network is developed.") + [command.call(115, 1), command.call(412, 0)] +
+        [command.call(111, 0, 1, 1001, 0, 9, 2)] + message.call(1, "\\n<Amira>Head to the \\C[17]Tartarus rift\\C[0] south", "of Iliasville.") + [command.call(412, 0)] +
+        [command.call(111, 0, 1, 1001, 0, 10, 0), command.call(117, 1, 120), command.call(412, 0)] +
+        [command.call(111, 0, 1, 1001, 0, 11, 0), command.call(119, 1, "tip"), command.call(412, 0)] +
+        [command.call(111, 0, 0, 5, 0), command.call(118, 1, "tip")] + message.call(1, "Your party has \\V[7] members.") + [command.call(412, 0)]
+$data_common_events = []
+$data_common_events[overview::OBJECTIVE_EVENT] = ObjectiveEvent.new(amira)
+$data_common_events[120] = ObjectiveEvent.new(message.call(0, "\\n<Amira>Cross the eastern mountains."))
+objective = lambda do |progress|
+  $frame = $frame.to_i + overview::READ_FRAMES
+  $game_variables[1001] = progress
+  overview.objective_text
+end
+$game_variables[1009] = 0
+$game_variables[7] = 3
+check("the objective is Amira's first words in a branch, plain, past her network's branch",
+      [objective.call(5), objective.call(10), objective.call(11), objective.call(12)],
+      ["Head to the Tartarus rift south of Iliasville.", "Cross the eastern mountains.", "Your party has 3 members.", nil])
+$game_variables[1001] = 5
+check("and read again only every few seconds", overview.objective_text, nil)
+$world_story = { "part" => "1" }
+objective.call(5)
+$data_common_events[120] = ObjectiveEvent.new(message.call(0, "Cross " + "the eastern mountains " * 6))
+rows = overview.world_lines(1).select { |kind, label, _| kind == :info && (label == "Objective" || label == "") }
+check("the World page shows it under Story, wrapped over lines that only the first labels",
+      [overview.world_lines(1)[5][1], rows.size > 1 || rows.empty?, rows.map(&:last).join(" ")], ["Objective", true, "Head to the Tartarus rift south of Iliasville."])
+objective.call(10)
+rows = overview.world_lines(1).select { |kind, label, _| kind == :info && (label == "Objective" || label == "") }
+check("a long one over several lines", [rows.size > 1, rows.map { |_, label, _| label }.uniq, rows.map(&:last).join(" ")],
+      [true, ["Objective", ""], ("Cross " + "the eastern mountains " * 6).strip])
+$data_common_events = nil
+objective.call(5)
+check("without Amira's event the page shows no objective", overview.world_lines(1).any? { |_, label, _| label == "Objective" }, false)
+$world_story = nil
 $world_story = { "part" => "2" }
 told = Time.at(1_000_000)
 pool = MGQ_MpRaidPool::Pool
