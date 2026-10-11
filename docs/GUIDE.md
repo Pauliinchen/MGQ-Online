@@ -216,8 +216,8 @@ The empty box names the controls, and shows the **Alt** ones while you hold it.
 | Tab | Who reads it | Command |
 |---|---|---|
 | **All** | Every line you can see | |
-| **Global** | Everyone in the world, in white | **/g** |
-| **Map** | The players on your map, "[Map]" in light pink; where you start | **/m** |
+| **Global** | Everyone in the world, in white; where you start | **/g** |
+| **Map** | The players on your map, "[Map]" in light pink | **/m** |
 | **Party** | Your party only, "[Party]" in blue | **/p** |
 | **Whisper** | One player, in magenta; the tab shows once you whisper or get a whisper | **/w** and a name, or **/r** |
 
