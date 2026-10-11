@@ -2,7 +2,8 @@
 #  raid_pool_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Covered the readers the World overview uses: the pools as a copy, the share left now, a troop's label and a pool's boss key
+#      Paulinchen  2026-10-11: Checked a boss outside the Level Cap milestones and Carmilla and Elizabeth counting only in the Vampire Castle
+#                            - Covered the readers the World overview uses: the pools as a copy, the share left now, a troop's label and a pool's boss key
 #      Paulinchen  2026-10-10: Checked that the keys of the Three Nobles of Black carry their caps
 #                            - Covered a takeover the co-op battles tell as it happens, which reports the damage of the battle's start that follows
 #                            - Covered a guest that takes the battle over after the host reported an action, and a guest that never kills the boss by its own view of the pool
@@ -370,6 +371,15 @@ check("each boss has the tier its list names, tier 0 the strongest",
       [9, 7, 3, 4, 1, 0, 1, nil])
 check("a shared name tells the milestones apart by their cap", [bosses.milestone_key(1502), bosses.milestone_key(71), bosses.milestone_key(3127)],
       ["Tamamo (cap 61)", "Queen Harpy", "Void Image of Paradise"])
+check("a boss outside the Level Cap milestones is one of its own with its tier",
+      [bosses.milestone_key(212), bosses.tier(212), bosses.milestone_key(1461), bosses.tier(1461), bosses.tier(868), bosses.tier(327)],
+      ["Sylph", 7, "Erubetie (cap 60)", 5, 5, 5])
+$game_map.map_id = 723
+check("Carmilla and Elizabeth withdraw from the Sabasa Attack as from an earlier phase", [bosses.last_phase?(812), bosses.last_phase?(813), pool.pooled_troop?(812)],
+      [false, false, false])
+$game_map.map_id = 295
+check("and are fought for their pools in the Vampire Castle", [bosses.last_phase?(812), pool.pooled_troop?(812)], [true, true])
+$game_map.map_id = 5
 check("a boss's title is the group the game names it in, else its tier",
       [bosses.title(1599), bosses.title(3127), bosses.title(2219), bosses.title(71), bosses.title(31)],
       ["Archangel", "Chaos' Phantom", "Tier 0 Raid Boss", "Tier 9 Raid Boss", nil])

@@ -2,7 +2,8 @@
 #  battles_raid_pool.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Listed the pools the game knows, which the World overview reads
+#      Paulinchen  2026-10-11: Told the story bosses newly counted as raid bosses, such as the four spirits and the Part 2 queens' own fights, beaten by what their events set after the fight
+#                            - Listed the pools the game knows, which the World overview reads
 #      Paulinchen  2026-10-10: Told the Three Nobles of Black beaten by the castle quest's progress in Part 2 and the treasure gallery's switch in Part 3
 #                            - Added taken_over, which the co-op battles call as a guest takes a battle over, so the damage of a battle that starts then is reported
 #                            - Started a guest's reports from the enemies' HP as it takes the battle over, so the host's reported damage is not reported again, and kept a guest from killing enemies by its own view of the pools
@@ -138,18 +139,40 @@ module MGQ_MpRaidPool
     ["Four bandits", 10] => "v1003>=8",
     ["Queen Harpy", 15] => "v1011>=4",
     ["Morrigan", 18] => "v1019>=6",
+    ["Chrome and Frederica", 20] => "v1023>=2",
+    ["Sylph", 20] => "v1001>=17",
+    ["Sphinx", 20] => "s2090",
+    ["Sara", 20] => "v1028>=6",
+    ["Astaroth", 20] => "v1028>=7",
+    ["Gnome", 20] => "v1001>=18",
     ["Adramelech", 25] => "v1032>=7",
+    ["Bonnie and Ashel", 25] => "s7001",
     ["Alma Elma, then Granberia", 30] => "v1052>=6",
+    ["Mephisto", 30] => "s2268",
+    ["Tezcatlipoca", 30] => "v1056>=4",
+    ["Gnosis", 30] => "s7005",
+    ["Zion", 30] => "s7006",
+    ["Undine", 30] => "v1001>=25",
+    ["Queen Ant", 30] => "s7011",
     ["Lilith", 35] => "v1063>=13",
     ["Salamander", 40] => "v1001>=28",
+    ["Queen Fairy", 40] => "s2161",
     ["Queen Elf", 43] => "v1070>=3",
+    ["Queen Alraune, then Aži Dahāka", 43] => "v1074>=2",
     ["Queen Mermaid", 45] => "v1071>=3",
     ["Spider Princess", 47] => "v1072>=3",
+    ["Carmilla", 47] => "s2252",
+    ["Elizabeth", 47] => "s2253",
     ["Queen Vampire", 50] => "v1073>=3",
+    ["La Croix's zombies", 50] => "s2266",
     ["Black Dahlia, Black Mamba and Black Rose", 55] => "v1069>=9",
     ["Black Alice", 65] => "s2261",
+    ["Eden", 55] => "s7015",
+    ["Sonya Mazda", 55] => "s7009",
+    ["Sonya Mainyu", 55] => "s7010",
     ["Sonya Chaos", 55] => "v1001>=34",
     ["Garuda", 60] => "v1001>=37",
+    ["Erubetie", 60] => "v1136>=3",
     ["Black Dahlia, Black Mamba and Black Rose", 60] => "s2435",
     ["Tamamo", 61] => "s2485",
     ["Erubetie", 62] => "s2486",

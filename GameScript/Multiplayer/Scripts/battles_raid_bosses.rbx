@@ -2,7 +2,9 @@
 #  battles_raid_bosses.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Moved Adramelech from tier 8 to tier 6 and Morrigan to tier 7
+#      Paulinchen  2026-10-11: Counted 22 more story bosses as raid bosses, among them the four spirits, the Erubetie of the Forgotten Tower, and Queen Fairy, Queen Ant, Carmilla, Elizabeth, Sonya Mazda and Sonya Mainyu apart from the milestones they belonged to; Carmilla and Elizabeth only in the Vampire Castle
+#                            - Moved Adramelech to tier 5 and Sonya Chaos to tier 4
+#                            - Moved Adramelech from tier 8 to tier 6 and Morrigan to tier 7
 #                            - Grouped the raid bosses by the story's sections, Part 1 to the Chaos route and the Chaos Domain, and found the section and the tier of a boss by its name
 #      Paulinchen  2026-10-10: Counted the Three Nobles of Black, fought before Black Alice and again before the Heavenly Knights of Part 3, as raid bosses
 #                            - Gave each raid boss a title for its HP bar, the group the game names it in
@@ -20,7 +22,8 @@
 # The game keeps no list of its own: its events turn switch 22 on right before every story boss
 # battle and off right after it (see BOSS_SWITCH), and no story boss battle allows escaping or
 # losing. The table holds every phase of a fight with several, and the bosses a milestone's quest
-# fights before it.
+# fights before it. A boss outside the Level Cap mod's milestones is a milestone of its own, with
+# the cap the milestone before it set.
 module MGQ_MpRaidBosses
   # The switch the game's events turn on right before every story boss battle and off right after
   # it, the one the game's ero offer in boss battles reads, which also covers the bosses outside the
@@ -42,42 +45,62 @@ module MGQ_MpRaidBosses
   # Monster Realm milestone of that name. The page-trailing fights without a boss (789 Walraune,
   # 1546 Giriel, 2680 Mind Ant) are left out.
   TROOPS = {
-    # Part 1 and Part 2.
+    # Part 1. The Sphinx may be challenged from Sabasa's quest on.
     26 => ["Four bandits", 10, false],
     27 => ["Four bandits", 10, false],
     28 => ["Four bandits", 10, false],
     29 => ["Four bandits", 10, true],
     71 => ["Queen Harpy", 15, true],
     126 => ["Morrigan", 18, true],
+    196 => ["Chrome and Frederica", 20, true],
+    212 => ["Sylph", 20, true],
+    247 => ["Sphinx", 20, true],
+    248 => ["Sara", 20, true],
+    249 => ["Astaroth", 20, true],
+    299 => ["Gnome", 20, true],
     327 => ["Adramelech", 25, true],
+
+    # Part 2. Gnosis and Zion are one choice, Sonya Mazda and Sonya Mainyu one fight per side.
+    588 => ["Bonnie and Ashel", 25, true],
     607 => ["Alma Elma, then Granberia", 30, false],
     608 => ["Alma Elma, then Granberia", 30, false],
     609 => ["Alma Elma, then Granberia", 30, false],
     610 => ["Alma Elma, then Granberia", 30, true],
+    655 => ["Mephisto", 30, true],
+    670 => ["Tezcatlipoca", 30, true],
+    672 => ["Gnosis", 30, true],
+    673 => ["Zion", 30, true],
+    678 => ["Undine", 30, true],
     705 => ["Lilith", 35, false],
-    718 => ["Lilith", 35, false],
+    718 => ["Queen Ant", 30, true],
     874 => ["Lilith", 35, false],
     719 => ["Lilith", 35, true],
     751 => ["Salamander", 40, 4],
     752 => ["Salamander", 40, true],
-    784 => ["Queen Elf", 43, false],
+    784 => ["Queen Fairy", 40, true],
     785 => ["Queen Elf", 43, true],
+    793 => ["Queen Alraune, then Aži Dahāka", 43, false],
+    794 => ["Queen Alraune, then Aži Dahāka", 43, true],
     801 => ["Queen Mermaid", 45, false],
     802 => ["Queen Mermaid", 45, true],
     807 => ["Spider Princess", 47, true],
-    812 => ["Queen Vampire", 50, false],
-    813 => ["Queen Vampire", 50, false],
+    812 => ["Carmilla", 47, true],
+    813 => ["Elizabeth", 47, true],
     814 => ["Queen Vampire", 50, true],
+    871 => ["La Croix's zombies", 50, false],
+    872 => ["La Croix's zombies", 50, true],
     836 => ["Black Dahlia, Black Mamba and Black Rose", 55, true],
     837 => ["Black Alice", 65, false],
     838 => ["Black Alice", 65, false],
     839 => ["Black Alice", 65, true],
-    868 => ["Sonya Chaos", 55, false],
-    869 => ["Sonya Chaos", 55, false],
+    854 => ["Eden", 55, true],
+    868 => ["Sonya Mazda", 55, true],
+    869 => ["Sonya Mainyu", 55, true],
     870 => ["Sonya Chaos", 55, true],
 
     # Part 3 before the Great Decision, and the Great Decision on either route.
     1451 => ["Garuda", 60, true],
+    1461 => ["Erubetie", 60, true],
     1501 => ["Black Dahlia, Black Mamba and Black Rose", 60, true],
     1502 => ["Tamamo", 61, true],
     1503 => ["Erubetie", 62, true],
@@ -199,6 +222,11 @@ module MGQ_MpRaidBosses
     2219 => ["Chaos", nil, true],
   }
 
+  # Maps where the story fights a boss troop before the fight that defeats it, by troop: Carmilla
+  # and Elizabeth withdraw from the Sabasa Attack. There the troop counts as an earlier phase, since
+  # a pool emptied once stays empty and the Vampire Castle's fights would be won at once.
+  SKIRMISHES = { 812 => 723, 813 => 723 }
+
   # The one-time bosses outside the story that count as raid bosses too, by troop: each its own
   # fight of one phase under its name, without a cap, and its tier (see TIERS).
   #
@@ -227,7 +255,7 @@ module MGQ_MpRaidBosses
   # The story's sections in story order, each with the troop of TROOPS it starts at in TROOPS' order,
   # running to the next one's start; the troops' ids interleave on the Chaos route, so the order
   # counts, not the ids. The bosses of OPTIONAL make a section of their own, OPTIONAL_SECTION.
-  SECTIONS = [["Part 1", 26], ["Part 2", 607], ["Part 3", 1451], ["Angelic Dominion", 1517], ["Monster Realm", 1745], ["Chaos route", 1959]]
+  SECTIONS = [["Part 1", 26], ["Part 2", 588],["Part 3", 1451], ["Angelic Dominion", 1517], ["Monster Realm", 1745], ["Chaos route", 1959]]
 
   # The section of the one-time bosses of OPTIONAL, after the story's.
   OPTIONAL_SECTION = "Chaos Domain"
@@ -244,23 +272,25 @@ module MGQ_MpRaidBosses
           "Uriela", "Kanade (cap 140)", "Hiruko (cap 140)", "Magatsu-Omikami", "Apiro Lagos", "Zion and Laplace", "Sigrdrifa",
           "Metatronne and Sandalphone, then Singularity", "Sisel, EX-Kyubi, Frere and Bloody Dragon", "Saja (cap 168)", "World Drown"],
     3 => ["Ilias", "Chaos Ilias", "Alipheese", "Chaos Alipheese"],
-    4 => ["Heaven's Gate", "Gabriela", "Uriela, Sabiriel and Fernandez", "Sariela", "Laplace", "Metatronne and Sandalphone",
+    4 => ["Sonya Chaos", "Heaven's Gate", "Gabriela", "Uriela, Sabiriel and Fernandez", "Sariela", "Laplace", "Metatronne and Sandalphone",
           "Zion (three fights)", "Cosmos (cap 90)", "Aži Dahāka", "Marcellus and Black Alice", "Doppel Lukas and Lucifina", "Micaela",
           "Queen Eva", "Malboro Girl, then Kanon", "Kanade (cap 75)", "Tamamo (cap 80)", "Tamamo (cap 83)", "Minagi and Alipheese the 10th",
           "Kagetsumugi and her dolls (cap 90)", "Hiruko (cap 95)", "Kagetsumugi and Magatsu-Karura, then Black Alice", "Saja (cap 105)"],
-    5 => ["Sonya Chaos", "Black Dahlia, Black Mamba and Black Rose (cap 55)", "Black Alice (cap 65)", "Garuda", "Black Dahlia, Black Mamba and Black Rose (cap 60)", "Tamamo (cap 61)",
-          "Erubetie", "Granberia", "Great Decision"],
-    6 => ["Adramelech", "Queen Elf", "Queen Mermaid", "Spider Princess", "Queen Vampire"],
-    7 => ["Morrigan", "Alma Elma, then Granberia", "Lilith", "Salamander"],
-    8 => [],
-    9 => ["Four bandits", "Queen Harpy"],
+    5 => ["Sphinx", "Adramelech", "Black Dahlia, Black Mamba and Black Rose (cap 55)", "Black Alice (cap 65)", "Eden", "Sonya Mazda", "Sonya Mainyu", "Garuda",
+          "Erubetie (cap 60)", "Black Dahlia, Black Mamba and Black Rose (cap 60)", "Tamamo (cap 61)", "Erubetie (cap 62)", "Granberia",
+          "Great Decision"],
+    6 => ["Gnosis", "Zion", "Queen Fairy", "Queen Elf", "Queen Mermaid", "Spider Princess", "Queen Vampire"],
+    7 => ["Morrigan", "Sylph", "Astaroth", "Gnome", "Alma Elma, then Granberia", "Tezcatlipoca", "Undine", "Queen Ant", "Lilith", "Salamander",
+          "Queen Alraune, then Aži Dahāka", "Carmilla", "Elizabeth"],
+    8 => ["Chrome and Frederica", "Sara", "Mephisto", "La Croix's zombies"],
+    9 => ["Four bandits", "Queen Harpy", "Bonnie and Ashel"],
   }
 
   # The title above a raid boss's name on its HP bar, by the group the game's enemy library names it
   # in: each title with its bosses' milestone names (see milestone_key) or OPTIONAL names. A boss
   # outside them reads as a raid boss of its tier.
   TITLES = {
-    "Heavenly Knight" => ["Alma Elma, then Granberia", "Tamamo (cap 61)", "Erubetie", "Granberia"],
+    "Heavenly Knight" => ["Alma Elma, then Granberia", "Tamamo (cap 61)", "Erubetie (cap 62)", "Granberia"],
     "Archangel" => ["Gabriela", "Uriela, Sabiriel and Fernandez", "Sariela", "Metatronne and Sandalphone", "Zion (three fights)"],
     "Six Ancestors" => ["Malboro Girl, then Kanon", "Kanade (cap 75)", "Tamamo (cap 80)", "Tamamo (cap 83)", "Minagi and Alipheese the 10th",
                         "Hiruko (cap 95)", "Saja (cap 105)", "Hiruko, Kanon and Kanade"],
@@ -382,13 +412,14 @@ module MGQ_MpRaidBosses
   end
 
   # Reports whether a troop is the last phase of its boss fight, reading the side's switch where
-  # that decides it.
+  # that decides it, and never on a map of SKIRMISHES.
   #
   # @param troop_id [Integer, String] The troop.
   # @return [Boolean] Whether it is, false for a troop that is no story boss.
   def self.last_phase?(troop_id)
     boss = at(troop_id)
     return false unless boss
+    return false if $game_map && SKIRMISHES[troop_id.to_i] == $game_map.map_id
     return boss.last if boss.last == true || boss.last == false
 
     $game_switches[boss.last] ? true : false

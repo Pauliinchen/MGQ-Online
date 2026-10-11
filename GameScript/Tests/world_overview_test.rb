@@ -2,7 +2,8 @@
 #  world_overview_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Checked that a Raid World's box lists the party wherever its members are, with Frontline levels, and the others on the map below it, and stays with the party alone on the map
+#      Paulinchen  2026-10-11: Expected Part 2 to start with Bonnie and Ashel and end with Sonya Mazda, Sonya Mainyu and Sonya Chaos
+#                            - Checked that a Raid World's box lists the party wherever its members are, with Frontline levels, and the others on the map below it, and stays with the party alone on the map
 #                            - Checked the overview as a box the player moves and resizes: its default, a placement Player.ini keeps, its least size, the lines, the scroll, the menu and the clicks following it, the sprite placed, offered and drawn anew on a new size or preset, and a box at its least size still drawing every column, the title, the tabs and the whole hint on both pages
 #                            - Expected the raid bosses' gauges in the edge and well colors, and the box, its tabs and its title in the preset's colors
 #                            - Loaded ui_theme.rbx and ui_layout.rbx, which the overview draws and lies by
@@ -434,11 +435,11 @@ headings = lambda { |all| all.select { |kind, _| kind == :place }.map { |_, text
 bosses = lines.select { |kind, _| kind == :boss }.map(&:last)
 check("at Part 2 only Part 1 and Part 2 follow, each boss once in the order the story meets them, with its tier, untouched while the relay told no pool",
       [headings.call(lines), bosses.map(&:name), lines[6].last.to_a, bosses.last.to_a],
-      [["Part 1", "Part 2"], sections[0][1] + sections[1][1], ["Four bandits", 9, 1.0, false, nil], ["Sonya Chaos", 5, 1.0, false, nil]])
+      [["Part 1", "Part 2"], sections[0][1] + sections[1][1], ["Four bandits", 9, 1.0, false, nil], ["Sonya Chaos", 4, 1.0, false, nil]])
 check("the sections run in story order, the Chaos route's by the order of the troops, the one-time bosses last",
       [sections.map(&:first), sections[1][1].first, sections[1][1].last(3), sections[2][1].last, sections[5][1].first, sections[5][1].last, sections[6][1].size],
-      [["Part 1", "Part 2", "Part 3", "Angelic Dominion", "Monster Realm", "Chaos route", "Chaos Domain"], "Alma Elma, then Granberia",
-       ["Black Dahlia, Black Mamba and Black Rose (cap 55)", "Black Alice (cap 65)", "Sonya Chaos"], "Great Decision", "Kagetsumugi and her dolls (cap 125)", "Chaos", 6])
+      [["Part 1", "Part 2", "Part 3", "Angelic Dominion", "Monster Realm", "Chaos route", "Chaos Domain"], "Bonnie and Ashel",
+       ["Sonya Mazda", "Sonya Mainyu", "Sonya Chaos"], "Great Decision", "Kagetsumugi and her dolls (cap 125)", "Chaos", 6])
 check("a boss's section is found by its troop or its name",
       [MGQ_MpRaidBosses.section(838), MGQ_MpRaidBosses.section("1509"), MGQ_MpRaidBosses.section("Tamamo (cap 83)"), MGQ_MpRaidBosses.section(2221), MGQ_MpRaidBosses.section("Chaos Maria"), MGQ_MpRaidBosses.section("Nobody")],
       ["Part 2", "Part 3", "Monster Realm", "Chaos route", "Chaos Domain", nil])
