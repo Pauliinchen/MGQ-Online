@@ -2,7 +2,8 @@
 //  ReportFilesTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-11: Created
+//      Paulinchen  2026-10-11: Checked that mods.txt skips a file gone by the time it is read
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -264,6 +265,22 @@ public sealed class ReportFilesTests : IDisposable
         var longName = ReportFiles.LogName($@"C:\Game\Logs\{new string('x', 200)}.log", taken);
         Assert.Equal(120, longName.Length);
         Assert.EndsWith("x.log", longName, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Asserts that mods.txt lists a file with its size and leaves one out that is gone by the time it is read, as a world autosave's SaveTemp.rvdata2 renamed into place.
+    /// </summary>
+    [Fact]
+    public void ModsLine_ListsAFileAndSkipsOneGone()
+    {
+        var patch = Path.Combine(_game, "Patch");
+        var save = Path.Combine(patch, "Multiplayer", "Worlds", "w", "Save");
+        Directory.CreateDirectory(save);
+        File.WriteAllText(Path.Combine(save, "Save01.rvdata2"), "abc");
+
+        Assert.StartsWith($"Multiplayer{Path.DirectorySeparatorChar}Worlds{Path.DirectorySeparatorChar}w{Path.DirectorySeparatorChar}Save{Path.DirectorySeparatorChar}Save01.rvdata2\t3\t",
+            ReportFiles.ModsLine(patch, Path.Combine(save, "Save01.rvdata2")), StringComparison.Ordinal);
+        Assert.Equal("", ReportFiles.ModsLine(patch, Path.Combine(save, "SaveTemp.rvdata2")));
     }
 
     /// <summary>

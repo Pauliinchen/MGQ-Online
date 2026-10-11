@@ -2,7 +2,8 @@
 //  ReportFiles.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-11: Created
+//      Paulinchen  2026-10-11: Left a file out of mods.txt that is gone by the time it is read, such as a world autosave's SaveTemp.rvdata2, instead of failing the report
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -219,13 +220,31 @@ internal static class ReportFiles
 
         foreach (var file in Directory.EnumerateFiles(patch, "*", options).Order(StringComparer.OrdinalIgnoreCase))
         {
-            var info = new FileInfo(file);
-            text.Append(Path.GetRelativePath(patch, file)).Append('\t')
-                .Append(info.Length.ToString(CultureInfo.InvariantCulture)).Append('\t')
-                .Append(info.LastWriteTimeUtc.ToString(TimeFormat, CultureInfo.InvariantCulture)).Append("\r\n");
+            text.Append(ModsLine(patch, file));
         }
 
         return text.ToString();
+    }
+
+    /// <summary>
+    /// Writes one file's line of <c>mods.txt</c>.
+    /// </summary>
+    /// <remarks>A file listed may be gone when it is read, as the world autosave's SaveTemp.rvdata2, which the game renames into place.</remarks>
+    /// <param name="patch">The Patch folder.</param>
+    /// <param name="file">The file.</param>
+    /// <returns>Its path relative to the Patch folder, its size in bytes and its last write in UTC, separated by tabs; empty for a file gone or out of reach.</returns>
+    public static string ModsLine(string patch, string file)
+    {
+        try
+        {
+            var info = new FileInfo(file);
+            return $"{Path.GetRelativePath(patch, file)}\t{info.Length.ToString(CultureInfo.InvariantCulture)}\t" +
+                   $"{info.LastWriteTimeUtc.ToString(TimeFormat, CultureInfo.InvariantCulture)}\r\n";
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return "";
+        }
     }
 
     /// <summary>
