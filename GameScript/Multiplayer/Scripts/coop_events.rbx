@@ -2,7 +2,12 @@
 #  coop_events.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Counted a branch on the variable an unlimited_choices script writes the choice into as a choice's branches, since the choice is not made yet when the page is sorted, so the story behind it is caught at the choice as any other
+#      Paulinchen  2026-10-11: Told the party the dialogue of the common events the story calls, which the game runs in a child interpreter, such as the companions' lines
+#                            - Left a page of the leader's story a moment to read once the leader moved past it, confirm or the game's skip held reading on sooner, and left out only the oldest pages past three waiting, instead of every page the leader moved past, and gave way to whatever waits for the player to be free and lapses meanwhile, the story's follow and a battle's invite, which the pages kept from happening
+#                            - Kept a page of the leader's story the game's own transfer process starts under instead of cutting it short
+#                            - Watched a page sorted as travel whose story lies behind a choice as a talk is watched, so the Great Decision tells its story from the choice on and takes the players on the map along
+#                            - Kept a Raid World's story events from starting until the world's story came after the world opened or a save loaded
+#                            - Counted a branch on the variable an unlimited_choices script writes the choice into as a choice's branches, since the choice is not made yet when the page is sorted, so the story behind it is caught at the choice as any other
 #                            - Sorted a scene that runs by itself and hides its story behind such a choice as story, so a member's copy of it does not start over and over
 #                            - Sorted a page of dialogue and its own self switch alone as a talk, so a signpost or a villager who speaks once no longer waits for the leader
 #                            - Let a talk run the cosmetic scripts: custom move routes, waits, character zooms and angles, map zooms, key input and picture checks
@@ -119,6 +124,10 @@ module MGQ_MpCoopEvents
   # Scripts that travel.
   TRAVEL_SCRIPTS = /\A\s*(forced_transfer|forced_get_off_vehicle|forced_get_on_airship)/
 
+  # Kinds of page that may turn into story behind one of their choices, which guard watches: a
+  # talk, and travel whose transfer lies behind the choice with the story, as the Great Decision's.
+  WATCHED_KINDS = [:talk, :travel]
+
   # Names of switches and variables the game uses as scratch while an event runs.
   TEMPORARY_NAMES = /general|temp|system only|汎用|一時/i
 
@@ -154,6 +163,20 @@ module MGQ_MpCoopEvents
   # seconds, before a member's game ends it anyway.
   STALE_FRAMES = 120
 
+  # Pages of the leader's story a member's game may fall behind by: past them, the oldest pages the
+  # leader moved past are left out, so the member never lags far behind the scene.
+  CATCH_UP_PAGES = 3
+
+  # Frames a page of the leader's story stays at least once the leader moved past it, a second and
+  # two frames more per character, three seconds at most; confirm moves on sooner.
+  READ_FRAMES = 60
+  READ_FRAMES_PER_CHARACTER = 2
+  MOST_READ_FRAMES = 180
+
+  # The game's message skip, held: its message window passes every page while it is down (the
+  # keyboard's A key).
+  SKIP_BUTTON = :X
+
   # Frames a member's game shows the part of a long page that fits the window before it shows the
   # rest, two and a half seconds, as the leader's game shows the whole page at once.
   OVERFLOW_FRAMES = 150
@@ -186,6 +209,7 @@ module MGQ_MpCoopEvents
   LIBRARY_REPLAY_SWITCH = 443
 
   @common_kinds = {}
+  @waits = []
   @chest = nil
   @granting = false
   @page_end = false
@@ -303,7 +327,8 @@ module MGQ_MpCoopEvents
   # Sorts a list of event commands by what of it can run now.
   #
   # Story only behind a choice, such as a trader's "Talk" that moves a side quest on, leaves a page a
-  # talk, which may turn into story once that choice is taken (see may_tell? and guard).
+  # talk, or travel when a transfer lies behind the choice too, which may turn into story once that
+  # choice is taken (see may_tell? and guard).
   #
   # @param list [Array<RPG::EventCommand>] The commands.
   # @return [Symbol] :talk, :travel, :chest, :battle or :story.
@@ -528,11 +553,14 @@ module MGQ_MpCoopEvents
 
     MGQ_MpCoopGather.drop_hold
     @tie_hold = nil
-    # A page of the leader's story that a scene change cut short must not hold the player's own.
-    log("the page #{@mirrored[:page]} of the leader's story was cut short by an event starting") if @mirrored
-    @mirrored = nil
     event = event_id > 0 ? $game_map.events[event_id] : nil
     sorted = own?(event ? nil : list) ? :own : (event ? kind(event) : kind_of(list || []))
+    # A page of the leader's story that a scene change cut short must not hold the player's own; the
+    # game's transfer process after a battle or a transfer shows nothing and leaves it.
+    unless sorted == :own
+      log("the page #{@mirrored[:page]} of the leader's story was cut short by an event starting") if @mirrored
+      @mirrored = nil
+    end
     @telling = leading_story? && sorted == :story
     if @telling && @told_last_frame
       log("the story's next event goes on with the telling that started on map #{@telling_map}")
@@ -543,7 +571,7 @@ module MGQ_MpCoopEvents
       hold_for_tie(interpreter)
     end
     @moved_by_story_at = nil if @telling
-    @may_tell = sorted == :talk && (following? || leading_story?) && may_tell?(list || [])
+    @may_tell = WATCHED_KINDS.include?(sorted) && (following? || leading_story?) && may_tell?(list || [])
     hold = @telling && scene?(list) && !MGQ_MpCoopGather.gathered?
     MGQ_MpCoopGather.hold(interpreter) if hold
     @chest = event && sorted == :chest && shares_chests? ? { :interpreter => interpreter, :key => chest_key(event), :gains => [] } : nil
@@ -682,16 +710,17 @@ module MGQ_MpCoopEvents
     notes << "the leader tells the party this story" if @telling
     notes << "the player plays their own story, not synced with the leader or leading no member who follows it" unless following? || leading_story?
     notes << "held until the party gathers" if hold
-    notes << "a talk that may turn into story, watched" if @may_tell
+    notes << "may turn into story behind a choice, watched" if @may_tell
     notes << "a chest, #{@chest[:key] ? "self switch #{@chest[:key].join('.')}" : 'without a self switch'}" if @chest
     log("#{what} starts as #{sorted}#{notes.empty? ? '' : ": #{notes.join(', ')}"}")
   rescue => e
     log("logging an event's start failed: #{e.class}: #{e.message}")
   end
 
-  # Watches a talk that may turn into story, before each of its commands: once it reaches a command
-  # that moves the story on, a member's game ends the talk there, since only the leader moves the
-  # story on, and the leader's game tells the party the story from there.
+  # Watches a talk or travel that may turn into story (see WATCHED_KINDS), before each of its
+  # commands: once it reaches a command that moves the story on, a member's game ends it there,
+  # since only the leader moves the story on, and the leader's game tells the party the story from
+  # there.
   #
   # @param interpreter [Game_Interpreter] The interpreter about to run a command.
   def self.guard(interpreter)
@@ -903,14 +932,16 @@ module MGQ_MpCoopEvents
 
   # Keeps a member's story event from starting: only the leader starts story, in their own game.
   # In a Raid World only while another player tells the story on the map, while the player follows
-  # a teller's story to where it moved them (held_following), or while the player's story is behind
-  # the world's (held_behind). Called when the map's main event would start it.
+  # a teller's story to where it moved them (held_following), while the player's story is behind
+  # the world's (held_behind), or until the world's story came (awaits_world_story). Called when the
+  # map's main event would start it.
   #
   # An event that runs by itself is left to the teller's own game, which runs it on its map.
   #
   # @param event [Game_Event] The event.
   # @return [Boolean] Whether it is the teller's, so it must not run here.
   def self.hand_over(event)
+    return awaits_world_story(event) if defined?(MGQ_MpWorldStory) && MGQ_MpWorldStory.awaits_world? && !own? && kind(event) == :story
     return held_behind(event) if behind? && !own? && kind(event) == :story
 
     follow = MGQ_MpCoopGather.follow_taken
@@ -963,6 +994,17 @@ module MGQ_MpCoopEvents
     @refused_at = Graphics.frame_count
     log("kept story event #{event.id} on map #{$game_map.map_id} from starting: the player's story is behind the world's")
     MGQ_MpOverworldSync.notice(MGQ_MpWorldCatchup.refusal_text)
+    true
+  end
+
+  # Keeps a story event from starting in a Raid World while the world's story has not come since
+  # the world opened or a save loaded, see MGQ_MpWorldStory.awaits_world?. Logged once per event and
+  # never noticed, since it lasts a moment.
+  #
+  # @param event [Game_Event] The story event.
+  # @return [Boolean] Always true: it must not run yet.
+  def self.awaits_world_story(event)
+    log_once([:await_world, $game_map.map_id, event.id], "kept event #{event.id} on map #{$game_map.map_id} from starting: the world's story has not come yet")
     true
   end
 
@@ -1069,6 +1111,10 @@ module MGQ_MpCoopEvents
   # @param common [RPG::CommonEvent] The common event.
   # @return [Boolean] Whether it is.
   def self.leave_to_leader?(common)
+    if defined?(MGQ_MpWorldStory) && MGQ_MpWorldStory.awaits_world? && !own?(common.list) && kind_of(common.list || []) == :story
+      log_once([:await_world_common, common.respond_to?(:id) ? common.id : "?"], "kept common event #{common.respond_to?(:id) ? common.id : '?'} that runs by itself from starting: the world's story has not come yet")
+      return true
+    end
     if behind? && !own?(common.list) && kind_of(common.list || []) == :story
       log_once([:behind_common, common.respond_to?(:id) ? common.id : "?"], "kept common event #{common.respond_to?(:id) ? common.id : '?'} that runs by itself from starting: it is story, and the player's story is behind the world's")
       return true
@@ -1090,7 +1136,7 @@ module MGQ_MpCoopEvents
   #
   # @param interpreter [Game_Interpreter] The interpreter.
   def self.show(interpreter)
-    return unless @telling && interpreter.equal?($game_map.interpreter)
+    return unless @telling && main_event?(interpreter)
 
     message = $game_message
     page = [message.texts.dup, message.choices.dup]
@@ -1109,12 +1155,22 @@ module MGQ_MpCoopEvents
     log("telling a message failed: #{e.class}: #{e.message}")
   end
 
+  # Reports whether an interpreter runs the map's main event: the map's own, or a common event it
+  # calls, which the game runs in a child interpreter (command 117), so the dialogue of the common
+  # events a story calls, such as the companions' lines, reaches the party too.
+  #
+  # @param interpreter [Game_Interpreter] The interpreter.
+  # @return [Boolean] Whether it does.
+  def self.main_event?(interpreter)
+    interpreter.equal?($game_map.interpreter) || (defined?(MGQ_MpCoopScene) && MGQ_MpCoopScene.map_turn?) ? true : false
+  end
+
   # As leader, tells the members on the map that the player moved past the message their story
   # showed, which moves the members' window on. Called once an interpreter waited for a message.
   #
   # @param interpreter [Game_Interpreter] The interpreter.
   def self.shown(interpreter)
-    return unless @shown && interpreter.equal?($game_map.interpreter)
+    return unless @shown && main_event?(interpreter)
 
     @shown = nil
     log("the leader moved past page #{page_id}, telling the party")
@@ -1182,7 +1238,8 @@ module MGQ_MpCoopEvents
   end
 
   # Reports whether the page of the teller's story the window shows is over: the teller moved past
-  # it, is no longer the player's leader or gone, or stopped telling the story a while ago.
+  # it and the player had the time to read it (see read?), the teller is no longer the player's
+  # leader or gone, or stopped telling the story a while ago.
   #
   # The teller's state and their pages travel apart, so a page may arrive before the state that
   # says the story plays.
@@ -1190,12 +1247,37 @@ module MGQ_MpCoopEvents
   # @return [Boolean] Whether it is over.
   def self.page_done?
     return true unless @mirrored
-    return page_over("the leader moved past it") if done?(@mirrored[:page])
+    return read? if done?(@mirrored[:page])
 
     lead = page_teller
     return page_over("#{MGQ_MpOverworldSync.who(lead)} is no longer the player's leader") unless lead.is_a?(MGQ_MpOverworldSync::Peers::Peer)
 
     lead.state["telling"] != "1" && past?(@mirrored[:since], STALE_FRAMES) ? page_over("the leader stopped telling the story #{STALE_FRAMES} frames ago") : false
+  end
+
+  # Reports whether a page the leader moved past is over for the player: the story is about to
+  # take the player elsewhere (giving_way?), its reading time passed (see reading_frames),
+  # the player pressed confirm or holds the game's skip (SKIP_BUTTON), or more than CATCH_UP_PAGES
+  # wait behind it.
+  #
+  # @return [Boolean] Whether it is.
+  def self.read?
+    waiting = giving_way?
+    return page_over("the leader moved past it and #{waiting} waits for the player") if waiting
+    return page_over("the leader moved past it and #{@heard.size} more pages wait") if @heard.size > CATCH_UP_PAGES
+    return page_over("the leader moved past it and the player read it") if past?(@mirrored[:since], @mirrored[:read].to_i)
+    return page_over("the leader moved past it and the player read on") if Input.trigger?(:C)
+    return page_over("the leader moved past it and the player skips") if Input.press?(SKIP_BUTTON)
+
+    false
+  end
+
+  # Tells how long a page of the leader's story stays at least once the leader moved past it.
+  #
+  # @param lines [Array<String>] The page's lines.
+  # @return [Integer] The frames, see READ_FRAMES.
+  def self.reading_frames(lines)
+    [READ_FRAMES + lines.join.size * READ_FRAMES_PER_CHARACTER, MOST_READ_FRAMES].min
   end
 
   # Finds who told the pages the player follows: the party's leader, or in a Raid World the player
@@ -1241,8 +1323,8 @@ module MGQ_MpCoopEvents
   end
 
   # Holds a page of the leader's story in the message window for the leader: the player can
-  # neither move it on nor close it, nor skip it with the game's skip key. A page too long for the
-  # window shows its rest after OVERFLOW_FRAMES.
+  # neither move it on nor close it, nor skip it with the game's skip key, until the leader moved
+  # past it, see read?. A page too long for the window shows its rest after OVERFLOW_FRAMES.
   #
   # @param window [Window_Message] The message window.
   def self.hold_page(window)
@@ -1270,18 +1352,21 @@ module MGQ_MpCoopEvents
     text.unpack('m0')[0].to_s.force_encoding("UTF-8")
   end
 
-  # Shows the page of the leader's story the leader is on, once the player is free, leaving out the
-  # pages the leader moved past meanwhile.
+  # Shows the next page of the leader's story once the player is free, leaving out the oldest pages
+  # the leader moved past while more than CATCH_UP_PAGES wait. While something waits for the player
+  # to be free (see give_way_to), no page starts and those the leader moved past are left out, so
+  # the player is free for it; the others show after.
   def self.show_heard
     return if @heard.nil? || @heard.empty? || !MGQ_MpOverworldSync.map_free?
+    return give_way if giving_way?
     unless MGQ_MpCoop::Scope.sharing?
       log("dropped #{@heard.size} waiting pages of the leader's story: no longer in a party")
       return @heard.clear
     end
 
     skipped = []
-    skipped << @heard.shift[:page] while !@heard.empty? && done?(@heard.first[:page])
-    log("skipped pages #{skipped.join(', ')} of the leader's story: the leader moved past them while the player was busy") unless skipped.empty?
+    skipped << @heard.shift[:page] while @heard.size > CATCH_UP_PAGES && done?(@heard.first[:page])
+    log("skipped pages #{skipped.join(', ')} of the leader's story: the leader moved past them while the player was busy, #{CATCH_UP_PAGES} pages behind at most") unless skipped.empty?
     return if @heard.empty?
 
     page = @heard.shift
@@ -1291,7 +1376,37 @@ module MGQ_MpCoopEvents
     $game_message.background = page[:background]
     $game_message.position = page[:position]
     page[:lines].each { |line| $game_message.add(line) }
-    @mirrored = { :page => page[:page], :since => Graphics.frame_count }
+    @mirrored = { :page => page[:page], :since => Graphics.frame_count, :read => reading_frames(page[:lines]) }
+  end
+
+  # Registers something that waits for the player to be free on the map and lapses meanwhile, such
+  # as the story's follow or a battle's invite, which the pages of the leader's story give way to: a
+  # member kept busy reading them would miss it, and the story would go on without them.
+  #
+  # @yieldreturn [String, nil] What waits, for the log, nil while nothing does.
+  def self.give_way_to(&wait)
+    @waits.push(wait)
+  end
+
+  # Names what waits for the player to be free, see give_way_to.
+  #
+  # @return [String, nil] What waits, nil while nothing does.
+  def self.giving_way?
+    @waits.each do |wait|
+      what = (wait.call rescue nil)
+      return what if what
+    end
+    nil
+  end
+
+  # Leaves out the waiting pages the leader moved past while something waits for the player to be
+  # free, see show_heard.
+  def self.give_way
+    passed = @heard.select { |page| done?(page[:page]) }.map { |page| page[:page] }
+    return if passed.empty?
+
+    @heard.reject! { |page| passed.include?(page[:page]) }
+    log("skipped pages #{passed.join(', ')} of the leader's story: #{giving_way?} waits for the player, #{@heard.size} still to show after")
   end
 
   # Forgets the pages of the story a former teller told and moved past, once the teller changed,

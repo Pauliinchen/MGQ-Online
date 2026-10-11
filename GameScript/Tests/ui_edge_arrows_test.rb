@@ -2,7 +2,8 @@
 #  ui_edge_arrows_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Created
+#      Paulinchen  2026-10-11: Checked that a player outside the party gets a plain white arrow
+#                            - Created
 #
 #----------------------------------------------------------------
 
@@ -248,9 +249,9 @@ check("once faded the sprite is invisible, kept for the next player", [arrow.hid
 $raid = true
 stranger = arrive(3, "bb-stranger", "Long Name Player Seven", 3, 40)
 spriteset.update
-check("the next player takes the kept sprite, in their own color from the palette",
-      [pool.arrows.size, arrow.id, arrow.shown?, arrow.bitmap.fills.count { |fill| fill[4].equal?(MGQ_MpUi::PlayerColor.of(stranger)) }, MGQ_MpUi::PlayerColor::NAMES.include?(MGQ_MpUi::PlayerColor.label(stranger))],
-      [1, "bb-stranger", true, Arrows::LENGTH + 1, true])
+check("the next player takes the kept sprite, in plain white as a player outside the party",
+      [pool.arrows.size, arrow.id, arrow.shown?, arrow.bitmap.fills.count { |fill| fill[4].equal?(MGQ_MpUi::PlayerColor.of(stranger)) }, MGQ_MpUi::PlayerColor.of(stranger).equal?(MGQ_MpUi::Style::TEXT), MGQ_MpUi::PlayerColor.label(stranger)],
+      [1, "bb-stranger", true, Arrows::LENGTH + 1, true, "plain"])
 check("a long name is cut to its width before the tiles", arrow.bitmap.texts.map { |text| text[3] }, ["Long Nam#{MGQ_MpUi::ELLIPSIS} 36"])
 walk(member, 40, 4)
 spriteset.update

@@ -2,7 +2,8 @@
 #  battles_duel.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Named the wait for an accepted duel's start, the challenger's gathering of a team duel's sides and the called side's readiness in the line above the player's head, each with its seconds left, and gave the challenge its seconds left
+#      Paulinchen  2026-10-11: Drew the challenge in the color every request and offer shares
+#                            - Named the wait for an accepted duel's start, the challenger's gathering of a team duel's sides and the called side's readiness in the line above the player's head, each with its seconds left, and gave the challenge its seconds left
 #                            - Stopped the player's own challenge once they accept another player's duel, so nobody accepts a challenge whose player waits for a duel already
 #      Paulinchen  2026-10-07: Named players through overworld_sync.rbx and battles_sync.rbx instead of copies of their helpers
 #                            - Logged every duel message sent and taken, and each challenge, answer, call, side, start and call-off with its reason
@@ -47,8 +48,9 @@ module MGQ_MpBattlesDuel
   # Frames a team duel waits for its players to get ready, ten seconds.
   READY_FRAMES = 600
 
-  # Color of the challenge line above a ghost's name and above the player's own head.
-  CHALLENGE_COLOR = Color.new(255, 160, 128)
+  # Color of the challenge line above a ghost's name and above the player's own head, the one every
+  # request and offer shares.
+  CHALLENGE_COLOR = MGQ_MpActions::LINE_COLOR
 
   # Why a duel could not start, by the reason a decline carries.
   REASONS = {

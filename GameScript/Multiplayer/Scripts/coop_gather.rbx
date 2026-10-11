@@ -2,7 +2,9 @@
 #  coop_gather.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Named the leader's wait and a member's time left before coming over as doings of the line above the player's head, which writes the seconds, and named the members still missing in the leader's doing, two at most and how many more
+#      Paulinchen  2026-10-11: Told whether a call, a follow or a teleport is ready to bring the player over, and had the pages of the teller's story give way to it
+#                            - Looked for a map from 1000 on in the folder the game keeps it in, through the game's own file name, so a follow or teleport there is no longer dropped as a map this game lacks
+#                            - Named the leader's wait and a member's time left before coming over as doings of the line above the player's head, which writes the seconds, and named the members still missing in the leader's doing, two at most and how many more
 #                            - Counted the frames a moment has left in one place, which within? and a member's doing share
 #      Paulinchen  2026-10-10: Let a Raid World's follow wait a minute for the player to be free instead of six seconds, since the story calls once and a follower kept busy longer, by the teller's pages, a battle or a menu, lost the follow and started their own copy of the story
 #                            - Kept the follow of a teller's story the player took while they are on the way and for CALL_LAPSE_FRAMES after they arrived, which names that teller and takes their pages from the new map meanwhile
@@ -640,6 +642,15 @@ module MGQ_MpCoopGather
     gather[:lapse] || CALL_LAPSE_FRAMES
   end
 
+  # Reports whether a call, a follow or a teleport is ready to bring the player over once they are
+  # free, which the pages of the teller's story give way to (see MGQ_MpCoopEvents.read?): read on
+  # the old map, they kept the player busy while the story went on without them.
+  #
+  # @return [Boolean] Whether one is.
+  def self.due?
+    come? ? true : false
+  end
+
   # Reports whether the leader's story scene is about to bring the player over, which keeps random
   # encounters and co-op battles away so no battle holds the player up.
   #
@@ -835,11 +846,22 @@ module MGQ_MpCoopGather
     return @known_maps[map_id] if @known_maps.key?(map_id)
 
     @known_maps[map_id] = begin
-      load_data(sprintf("Data/Map%03d.rvdata2", map_id))
+      load_data(map_file(map_id))
       true
     rescue StandardError, Errno::ENOENT
       false
     end
+  end
+
+  # Names a map's data file as the game loads it.
+  #
+  # The game keeps the maps from 1000 on in folders of their own (Map/Data, Map2/Data, ...), which
+  # only its own DataManager.map_file_name knows.
+  #
+  # @param map_id [Integer] The map.
+  # @return [String] The file, such as "Data/Map407.rvdata2" or "Map/Data/Map650.rvdata2".
+  def self.map_file(map_id)
+    DataManager.respond_to?(:map_file_name) ? DataManager.map_file_name(map_id) : sprintf("Data/Map%03d.rvdata2", map_id)
   end
 
   # Logs once per call why the player does not come to the leader yet, once its five seconds passed.
@@ -930,6 +952,14 @@ class Game_Player
     make_encounter_count
     true
   end
+end
+
+# What the pages of the teller's story give way to, through coop_events.rbx.
+
+begin
+  MGQ_MpCoopEvents.give_way_to { MGQ_MpCoopGather.due? ? "the story's call to come over" : nil }
+rescue => e
+  MGQ_MpCoopGather.log("giving way FAILED: #{e.class}: #{e.message}")
 end
 
 # Game hooks of this script alone, through core_hooks.rbx.

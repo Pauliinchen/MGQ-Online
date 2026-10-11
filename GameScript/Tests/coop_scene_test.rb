@@ -2,6 +2,9 @@
 #  coop_scene_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-11: Checked that the player's route, the camera's place and the map's zoom reach the viewers, whose own character walks the route without starting what it touches
+#                            - Checked that a viewer the story values moved on keeps watching the telling, on the teller's side and their own, also with values between the story's events on two maps
+#                            - Checked that a Raid World teller tells the story values, move routes without scripts, balloons and erasures, and that a viewer takes the values as the world, the routes without what this game lacks and the effects on the right characters
 #      Paulinchen  2026-10-09: Checked that a Raid World's scene goes to several viewers in one message
 #                            - Stood in for MGQ_MpOverworldSync::Peers.all, among whom the teller is found now
 #      Paulinchen  2026-10-08: Checked a Raid World: the player telling the story shows its scene to the players on the map whose story matches, through the map's gate, and sees only the teller's whose story matches theirs
@@ -32,6 +35,21 @@ module RPG
   class Weapon < BaseItem; end
   class Armor < BaseItem; end
   EventCommand = Struct.new(:code, :indent, :parameters)
+  # A move route, with the game's defaults.
+  class MoveRoute
+    attr_accessor :repeat, :skippable, :wait, :list
+    def initialize; @repeat = true; @skippable = false; @wait = false; @list = [MoveCommand.new]; end
+  end
+  # A move route's command.
+  class MoveCommand
+    attr_accessor :code, :parameters
+    def initialize(code = 0, parameters = []); @code = code; @parameters = parameters; end
+  end
+  # A sound.
+  class SE
+    attr_reader :name, :volume, :pitch
+    def initialize(name = "", volume = 100, pitch = 100); @name = name; @volume = volume; @pitch = pitch; end
+  end
 end
 Tone = Struct.new(:red, :green, :blue, :gray)
 Color = Struct.new(:red, :green, :blue, :alpha)
@@ -67,13 +85,36 @@ class Game_Interpreter
   def initialize(depth = 0); @depth = depth; @list = []; @index = 0; end
   def update; @work.call if @work; end
   attr_accessor :list, :index, :work
+  def map_zoom(rate = 100); $game_system.zoom_mode = rate; end
 end
-class Game_Player; attr_accessor :transparent; end
+# The story's switches, variables and self switches.
+class Game_Switches; def initialize; @data = []; end; def [](id); @data[id]; end; def []=(id, value); @data[id] = value; end; end
+class Game_Variables; def initialize; @data = []; end; def [](id); @data[id]; end; def []=(id, value); @data[id] = value; end; end
+class Game_SelfSwitches; def initialize; @data = {}; end; def [](key); @data[key]; end; def []=(key, value); @data[key] = value; end; end
+# Characters that note their routes, animations, balloons and erasure.
+class Game_CharacterBase; attr_accessor :animation_id, :balloon_id; end
+class Game_Character < Game_CharacterBase; attr_reader :route; def force_move_route(route); @route = route; end; end
+class Game_Event < Game_Character; attr_reader :id, :erased; def initialize(id); @id = id; end; def erase; @erased = true; end; end
+class Game_Player < Game_Character
+  attr_accessor :transparent
+  def move_route_forcing; $forcing; end
+  def update_nonmoving(_last_moving); $nonmoving = true; end
+  def check_event_trigger_touch(_x, _y); $touched = true; end
+  def x; 3; end
+  def y; 4; end
+  def center(x, y); $game_map.set_display_pos(x - 8.5, y - 6.5); end
+  def update; end
+end
+# The game's map zoom.
+class Game_System; attr_accessor :zoom_mode; def initialize; @zoom_mode = 100; end; end
 class Game_Map
-  attr_accessor :map_id, :interpreter
+  attr_accessor :map_id, :interpreter, :events
   attr_reader :screen
-  def initialize; @map_id = 7; @screen = Game_Screen.new; @interpreter = Game_Interpreter.new; end
+  def initialize; @map_id = 7; @screen = Game_Screen.new; @interpreter = Game_Interpreter.new; @events = {}; end
   def update(main = false); end
+  def display_x; @display_x || 0.0; end
+  def display_y; @display_y || 0.0; end
+  def set_display_pos(x, y); @display_x = x; @display_y = y; end
 end
 class Scene_Map; end
 module SceneManager; class << self; attr_accessor :scene; end; end
@@ -273,4 +314,146 @@ check("but none from a player who does not tell it", $game_map.screen.pictures[4
 $own_markers = [8, 0, 0, 0]
 show.call(teller, 5)
 check("a player whose story does not match sees none of it", [$game_map.screen.pictures[5].done, MGQ_MpCoopScene.watching?], [[], false])
+$raid = false
+
+# In a Raid World the teller's story values, the move routes it gives the map's events and the
+# effects it shows on them reach the viewers, and the viewers' games take the values as the world's.
+module MGQ_MpWorldStory
+  def self.personal?(kind, key); kind == 0 && key == 4; end
+  def self.mirrored(kind, key, value); ($mirrored ||= []) << [kind, key, value]; end
+end
+module MGQ_MpStoryState; def self.known_id?(_kind, id); id < 5000; end; end
+module MGQ_MpOverworld; def self.graphic?(_folder, name); name == "Actor1"; end; end
+$data_animations = Array.new(10)
+$raid = true
+$playing = true
+$own_markers = [12, 0, 0, 0]
+$game_map = Game_Map.new
+$game_player = Game_Player.new
+$game_switches = Game_Switches.new
+$game_variables = Game_Variables.new
+$game_self_switches = Game_SelfSwitches.new
+main = $game_map.interpreter
+mover = Game_Event.new(12)
+$game_map.events = { 12 => mover }
+$peers = [matching]
+$told.clear
+route = RPG::MoveRoute.new
+route.repeat = false
+route.list = [RPG::MoveCommand.new(1), RPG::MoveCommand.new(45, ["$game_switches[1] = true"]), RPG::MoveCommand.new(41, ["Actor1", 2]),
+              RPG::MoveCommand.new(44, [RPG::SE.new("Door", 80, 100)]), RPG::MoveCommand.new(0)]
+run.call(main, lambda do
+  $game_switches[40] = true
+  $game_switches[4] = true
+  $game_switches[40] = true
+  $game_variables[1001] = 41
+  $game_variables[1002] = [1, 2]
+  $game_self_switches[[7, 12, "A"]] = true
+  mover.force_move_route(route)
+  mover.balloon_id = 1
+  mover.erase
+end)
+$game_map.update
+told = lambda { |kind| $told.select { |_, fields| fields["map_pscene"] == kind }.map { |_, fields| wire.parse(fields["args"]) } }
+check("the teller's story values go out once at the frame's end, what is each player's own and a list left out",
+      told.call("story.values"), [[[0, 40, true], [1, 1001, 41], [2, [7, 12, "A"], true]]])
+check("the move route goes out without its script, its sound by its file",
+      told.call("event.route"), [[12, false, false, [[1], [41, "Actor1", 2], [44, "Door", 80, 100], [0]]]])
+check("so do the balloon and the erasure", [told.call("event.balloon"), told.call("event.erase")], [[[12, 1]], [[12]]])
+$told.clear
+$playing = false
+$game_switches[41] = true
+$game_map.update
+check("outside the story nothing goes out", $told, [])
+$playing = true
+$game_system = Game_System.new
+walk = RPG::MoveRoute.new
+walk.list = [RPG::MoveCommand.new(4), RPG::MoveCommand.new(0)]
+run.call(main, lambda do
+  $game_player.force_move_route(walk)
+  main.map_zoom(150)
+end)
+$game_map.set_display_pos(12.5, 3.0)
+$game_map.update
+$game_map.set_display_pos(12.75, 3.0)
+$game_map.update
+$frame_count += MGQ_MpCoopScene::CAMERA_FRAMES
+$game_map.update
+check("the player's route, the map's zoom and the camera's place go out, the place once it moved and no sooner than CAMERA_FRAMES after the last",
+      [told.call("event.route").last, told.call("map.zoom"), told.call("map.camera")], [[-1, true, false, [[4], [0]]], [[150]], [[12.5, 3.0], [12.75, 3.0]]])
+$told.clear
+$playing = false
+$playing = true
+matching.state["sm"] = "13,0,0,0"
+stranger = MGQ_MpOverworldSync::Peers::Peer.new(8, { "name" => "Stranger", "id" => "x", "map" => "7", "sm" => "13,0,0,0", "since" => "3000" })
+$peers = [matching, stranger]
+check("a viewer the values moved past where the telling started stays a viewer, one they never reached does not",
+      MGQ_MpCoop::Scope.viewers.map { |peer| peer.state["name"] }, ["Match"])
+matching.state["sm"] = "12,0,0,0"
+$peers = [matching]
+$playing = false
+
+$game_map = Game_Map.new
+viewed = Game_Event.new(12)
+$game_map.events = { 12 => viewed }
+$game_switches = Game_Switches.new
+$game_variables = Game_Variables.new
+$game_self_switches = Game_SelfSwitches.new
+$mirrored = []
+scene = lambda do |kind, args, map = "7"|
+  MGQ_MpCoop.take_map("pscene", teller, { "map_pscene" => kind, "mmap" => "7", "map" => map, "args" => wire.line(args) })
+end
+scene.call("story.values", [[0, 40, true], [0, 4, true], [1, 1001, 41], [2, [7, 12, "A"], true], [1, 9999, 3], [2, [7, 12, "Z"], true]])
+check("a viewer takes the teller's story values, never what is their own or names nothing of this game",
+      [$game_switches[40], $game_switches[4], $game_variables[1001], $game_self_switches[[7, 12, "A"]], $game_variables[9999], $game_self_switches[[7, 12, "Z"]]],
+      [true, nil, 41, true, nil, nil])
+check("as the world's, so they are not written as the viewer's own", $mirrored, [[0, 40, true], [1, 1001, 41], [2, [7, 12, "A"], true]])
+$own_markers = [13, 0, 0, 0]
+other = MGQ_MpOverworldSync::Peers::Peer.new(9, { "name" => "Other", "id" => "o", "map" => "7", "telling" => "1", "tsm" => "12,0,0,0", "since" => "1000" })
+check("the values moved the viewer's story past where the telling started, and they keep watching it, but no other teller's",
+      [MGQ_MpCoop::Scope.watches?(teller), MGQ_MpCoop::Scope.watches?(other)], [true, false])
+teller.state["tsm"] = "13,0,0,0"
+check("and the teller's next telling, which starts where they are now", MGQ_MpCoop::Scope.watches?(teller), true)
+teller.state["tsm"] = "12,0,0,0"
+# Values that come between the story's events on two maps, while the teller's state names no telling
+# start but their progress now, leave the start the viewer keeps.
+teller.state.delete("tsm")
+teller.state["sm"] = "13,0,0,0"
+scene.call("story.values", [[0, 41, true]])
+teller.state["tsm"] = "12,0,0,0"
+check("values between the story's events on two maps keep the viewer watching the telling", MGQ_MpCoop::Scope.watches?(teller), true)
+scene.call("event.route", [12, true, false, [[1], [41, "Actor1", 2], [41, "Missing", 0], [41, "../evil", 0], [44, "Door", 80, 100], [45, "exit"], [2, "x"]]])
+check("the event walks the teller's route, without a graphic or sound this game lacks, a script or a broken command",
+      [viewed.route.list.map(&:code), viewed.route.list[1].parameters, viewed.route.repeat, viewed.route.wait], [[1, 41, 0], ["Actor1", 2], true, false])
+scene.call("event.balloon", [12, 3])
+scene.call("event.animation", [-1, 4])
+scene.call("event.animation", [12, 99])
+scene.call("event.erase", [12])
+check("and shows the balloon, the player's character the animation, and is erased; an animation the game lacks is left out",
+      [viewed.balloon_id, $game_player.animation_id, viewed.animation_id, viewed.erased], [3, 4, nil, true])
+viewed.instance_variable_set(:@route, nil)
+scene.call("event.route", [12, false, false, [[1]]], "8")
+check("an event change on another map, which the viewer is still on the way to, is left out", viewed.route, nil)
+$peers = [teller]
+scene.call("map.zoom", [5000])
+scene.call("map.camera", [20.0, 10.0])
+$game_player.update
+far = [$game_map.display_x, $game_map.display_y]
+scene.call("map.camera", [21.0, 10.0])
+$game_player.update
+check("the viewer's camera jumps to the teller's far away and eases toward it near, and zooms as the teller's, the zoom kept within the game's",
+      [far, [$game_map.display_x, $game_map.display_y], $game_system.zoom_mode], [[20.0, 10.0], [20.25, 10.0], 2000])
+scene.call("map.camera", [30.0, 10.0], "8")
+$game_player.update
+check("a camera place of another map is left out", $game_map.display_x, 20.4375)
+scene.call("event.route", [-1, false, false, [[4], [0]]])
+$forcing = true
+$nonmoving = $touched = nil
+$game_player.update_nonmoving(true)
+$game_player.check_event_trigger_touch(1, 1)
+check("the viewer's own character walks the teller's route, starting nothing it touches and meeting no enemies",
+      [$game_player.route.list.map(&:code), $nonmoving, $touched], [[4, 0], nil, nil])
+$forcing = false
+$game_player.update_nonmoving(true)
+check("once the route ended, it does again", $nonmoving, true)
 $raid = false

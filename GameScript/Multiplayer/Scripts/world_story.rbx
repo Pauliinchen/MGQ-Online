@@ -2,6 +2,10 @@
 #  world_story.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-11: Took a route the player chose at the Great Decision the world stands at as further than the decision, which a world that finished every route ranked below it and so pulled the player back to the decision
+#                            - Opened every route at the Great Decision again once the world finished all of them, as the relay does
+#                            - Kept the player's story events waiting for the world's story for ten seconds at most after the world opened or a save loaded, so their own story no longer plays before the world's is laid over it
+#                            - Took the story values a teller's scene laid over the player's as the world's, so they are not written as the player's own
 #      Paulinchen  2026-10-10: Held the write between the story's events on another map while its next event may go on with the telling, so the viewers no longer take the scene's state half done and drop out of it
 #                            - Took the world's story as a return to the Great Decision only once it left the route the story this game built on was on, since a starting save that cleared every route names every route as done from the first write on
 #                            - Kept the player's own writes from ending the wait for the story of a telling they watched
@@ -59,6 +63,10 @@ module MGQ_MpWorldStory
   # the world's story they wrote, ten seconds.
   AWAIT_TELLER_FRAMES = 600
 
+  # Frames the player's story events wait at most for the world's story after the world opened, a
+  # save loaded or a new game started, ten seconds, in case the relay does not answer.
+  AWAIT_WORLD_FRAMES = 600
+
   # Frames a write waits after the story's progress moved, so the changes of one step go together.
   SETTLE_FRAMES = 30
 
@@ -113,6 +121,9 @@ module MGQ_MpWorldStory
 
   # The main story's progress the Great Decision sets.
   GREAT_DECISION = 40
+
+  # The part the Great Decision lies in, as part_of names it.
+  DECISION_PART = "3"
 
   # The main story's progress a return to the Great Decision sets.
   BEFORE_DECISION = 39
@@ -201,6 +212,7 @@ module MGQ_MpWorldStory
     @retry_at = 0
     @fetch_at = 0
     @clock ||= 0
+    @awaited_since = reason ? @clock : nil
     @polled = @clock
     @checked = @clock
     @scanned = @clock
@@ -244,6 +256,20 @@ module MGQ_MpWorldStory
     ""
   end
 
+  # Reports whether the player's story events wait for the world's story, which has not come since
+  # the world opened, a save loaded or a new game started: the player's own story would play
+  # before the world's was laid over it. AWAIT_WORLD_FRAMES at most. Called by coop_events.rbx.
+  #
+  # @return [Boolean] Whether they wait.
+  def self.awaits_world?
+    return false unless @awaited_since && @mode.nil? && active?
+    return true if @clock - @awaited_since < AWAIT_WORLD_FRAMES
+
+    log("the world's story did not come within #{AWAIT_WORLD_FRAMES / 60} s: the player's story events start without it")
+    @awaited_since = nil
+    false
+  end
+
   # How the player plays the world's story.
   #
   # @return [Symbol, nil] :world while they play it, :behind while their story is in an earlier
@@ -269,21 +295,58 @@ module MGQ_MpWorldStory
     map && map > 0 ? [map, x.to_i, y.to_i, 2] : nil
   end
 
-  # Lists the routes the world may still take at the Great Decision: the locked one alone while
-  # the world has not finished it, else those not finished, the third way once both others are.
+  # Lists the routes the world may still take at the Great Decision, see open_routes.
   #
-  # @return [Array<Integer>, nil] The routes' places in ROUTES, nil outside a Raid World or before
-  #   the relay told the world's story.
+  # @return [Array<Integer>, nil] The routes' places in ROUTES, nil outside a Raid World, before
+  #   the relay told the world's story or when none is open.
   def self.decision_routes
     return nil unless active? && @world
 
-    done = @world["done"]
-    locked = ROUTES.index(@world["route"])
-    return [locked] if locked && !done.include?(ROUTES[locked])
+    routes = open_routes(@world)
+    routes.empty? ? nil : routes
+  end
+
+  # Lists the routes a world may take at the Great Decision, as the relay's lock allows them: the
+  # locked one alone while the world has not returned from it, else those not finished, the third
+  # way once both others are, and every route once the world finished all of them.
+  #
+  # @param world [Hash] The world's counters.
+  # @return [Array<Integer>] The routes' places in ROUTES.
+  def self.open_routes(world)
+    done = world["done"]
+    every = every_route_done?(done)
+    locked = ROUTES.index(world["route"])
+    return [locked] if locked && (every || !done.include?(ROUTES[locked]))
+    return (0...ROUTES.size).to_a if every
 
     routes = [0, 1].reject { |index| done.include?(ROUTES[index]) }
     routes << 2 if done.include?(ROUTES[0]) && done.include?(ROUTES[1]) && !done.include?(ROUTES[2])
-    routes.empty? ? nil : routes
+    routes
+  end
+
+  # Reports whether a world finished every route, which opens each of them again (as everyRouteDone
+  # in Relay/core/story.js).
+  #
+  # A starting save that cleared every route names them all as finished from the first write on.
+  #
+  # @param done [Array<String>] The routes the world finished.
+  # @return [Boolean] Whether it finished all of them.
+  def self.every_route_done?(done)
+    (ROUTES - done).empty?
+  end
+
+  # Reports whether the player's story took a route at the Great Decision the world's story stands
+  # at, one the world may take: that first step is further than the decision, though its key ranks
+  # below it once the world finished every route (see key_of), as the relay takes it too.
+  #
+  # @param own [Hash] The player's counters.
+  # @param world [Hash] The world's.
+  # @return [Boolean] Whether it did.
+  def self.decision_step?(own, world)
+    route = route_index(own)
+    return false unless route && route_index(world).nil? && part_of(world) == DECISION_PART
+
+    world["route"] == ROUTES[route] || (world["route"] == "none" && open_routes(world).include?(route)) ? true : false
   end
 
   # Takes the relay's push that the world's story changed: fetches it when its revision is newer
@@ -518,6 +581,7 @@ module MGQ_MpWorldStory
   # Lays the world's story that waits over the player's, or keeps the player's own, see the module.
   # A step the relay refused (pending[:drop]) is never written again as it was.
   def self.take_pending
+    @awaited_since = nil
     pending = @pending
     state = pending[:state]
     world = counters_of(state)
@@ -545,7 +609,7 @@ module MGQ_MpWorldStory
     end
     # A player the catch-up moves on into the world's story takes it whatever their part.
     if (@mode != :world || @base.nil?) && !(defined?(MGQ_MpWorldCatchup) && MGQ_MpWorldCatchup.joins_world?)
-      order = compare(key_of(own), key_of(world))
+      order = decision_step?(own, world) ? 1 : compare(key_of(own), key_of(world))
       return start_ahead(world, own) if order > 0 && !pending[:drop] && continues?(own, world)
       return fall_behind(world, own, text) if order < 0 && (part_of(own) != part_of(world) || kept_behind?)
     end
@@ -925,7 +989,7 @@ module MGQ_MpWorldStory
     switches = MGQ_MpStoryState.data_of($game_switches)
     if @mode == :behind
       own = local_counters([switches, variables, {}])
-      if @world && ((part_of(own) == part_of(@world) && !kept_behind?) || compare(key_of(own), key_of(@world)) >= 0)
+      if @world && ((part_of(own) == part_of(@world) && !kept_behind?) || compare(key_of(own), key_of(@world)) >= 0 || decision_step?(own, @world))
         log("the player's story reached the world's part (#{counters_text(own)}): fetching the world's")
         @seen_wrev = nil
         @mode = nil
@@ -995,18 +1059,14 @@ module MGQ_MpWorldStory
   end
 
   # Finds the route the player's story took at the Great Decision that the world has not taken yet
-  # and the relay would lock: not finished, and the third way only once both others are.
+  # and the relay would lock, see open_routes.
   #
   # @return [String, nil] The route, see ROUTES; nil for none.
   def self.lock_route
     route = route_index(local_counters([MGQ_MpStoryState.data_of($game_switches), MGQ_MpStoryState.data_of($game_variables)]))
     return nil unless route && @world && @world["route"] == "none"
 
-    done = @world["done"]
-    return nil if done.include?(ROUTES[route])
-    return nil if route == ROUTES.size - 1 && !(done.include?(ROUTES[0]) && done.include?(ROUTES[1]))
-
-    ROUTES[route]
+    open_routes(@world).include?(route) ? ROUTES[route] : nil
   end
 
   # Writes the player's story as the world's, with the revision it built on; a route the world has
@@ -1206,6 +1266,17 @@ module MGQ_MpWorldStory
     when 1 then MGQ_MpStoryState.personal_variable?(key)
     else chest?(key)
     end
+  end
+
+  # Takes a story value a teller's scene laid over the player's while they watched as the world's
+  # (see MGQ_MpCoopScene.apply_values), so it is no change of the player's own to write: the
+  # teller writes it once their telling ended.
+  #
+  # @param kind [Integer] 0 for a switch, 1 for a variable, 2 for a self switch.
+  # @param key [Integer, Array] Its id or key.
+  # @param value [Object] Its value.
+  def self.mirrored(kind, key, value)
+    @base[kind][key] = value if @mode == :world && @base
   end
 
   # Reports whether a switch or variable tells how far the story is, see PROGRESS_VARIABLES.

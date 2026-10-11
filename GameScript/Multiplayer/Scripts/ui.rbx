@@ -2,7 +2,10 @@
 #  ui.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Drew the list box and the message box in the shared style, dropping their own colors and font sizes, and faded the list box in and out
+#      Paulinchen  2026-10-11: Turned the font's own outline off while drawing a text in its solid outline, which it doubled to two pixels
+#                            - Kept a copy of the font's color while drawing an outline, since setting the outline's color overwrote it and drew every outlined text black
+#                            - Named every player outside the party in plain white, dropping the eight colors picked by their id
+#                            - Drew the list box and the message box in the shared style, dropping their own colors and font sizes, and faded the list box in and out
 #                            - Placed the list box and the message box by the screen's size, cut a title and an item to its room, and named the numpad's 0 in the list box's hint
 #                            - Drew a hint whole, smaller once it is wider than its room, since a cut would drop the keys it names at its end; the list box, the message box and the wheels share it
 #                            - Added the fading of a text's color for a line about to go, which the notices and the chat log share, and dropped WHITE for the style's text
@@ -96,7 +99,7 @@ module MGQ_MpUi
     # Pixels the outline's copies reach around a text, see draw_outlined.
     OUTLINE_REACH = 1
 
-    # Plain text.
+    # Plain text, also the name of a player outside the party.
     TEXT = Color.new(255, 255, 255)
 
     # Secondary text: hints, places, system lines, a choice that cannot be taken, a player away.
@@ -181,6 +184,9 @@ module MGQ_MpUi
     # far as OUTLINE_REACH, the corners left out, then the text in the font's color, which stays
     # as it was.
     #
+    # The font's own outline is off meanwhile: on each copy it would reach a pixel further, twice
+    # as thick as OUTLINE_REACH.
+    #
     # @param bitmap [Bitmap] The bitmap.
     # @param x [Integer] The box's left.
     # @param y [Integer] The box's top.
@@ -189,7 +195,11 @@ module MGQ_MpUi
     # @param text [String] The text.
     # @param align [Integer] 0 for left, 1 for centered, 2 for right, as Bitmap#draw_text takes it.
     def self.draw_outlined(bitmap, x, y, width, height, text, align = 0)
-      color = bitmap.font.color
+      # Font#color returns the font's own color, which Font#color= overwrites, so only a copy keeps it.
+      font_color = bitmap.font.color
+      color = Color.new(font_color.red, font_color.green, font_color.blue, font_color.alpha)
+      outline = bitmap.font.outline
+      bitmap.font.outline = false
       reach = OUTLINE_REACH
       bitmap.font.color = OUTLINE
       (-reach..reach).each do |dx|
@@ -201,6 +211,7 @@ module MGQ_MpUi
       end
       bitmap.font.color = color
       bitmap.draw_text(x, y, width, height, text, align)
+      bitmap.font.outline = outline
     end
 
     # Fills the plate behind a text: as wide as the text with PAD on either side, capped by the
@@ -563,44 +574,12 @@ module MGQ_MpUi
   end
 
   # The color a player is named in everywhere: Style::OWN for the player themself, Style::MEMBER
-  # for a party member, and for anyone else one of eight colors by a stable hash of their id, so a
-  # player keeps their color across maps and sessions.
+  # for a party member and Style::TEXT for anyone else.
   module PlayerColor
-    # Eight colors that read on a dark plate and, outlined, over a bright map: no green, yellow,
-    # red, grey or white, which mean party, self, bad, dim and plain.
-    PALETTE = [
-      Color.new(120, 200, 255),
-      Color.new(255, 150, 60),
-      Color.new(255, 140, 190),
-      Color.new(190, 130, 255),
-      Color.new(80, 220, 200),
-      Color.new(255, 190, 150),
-      Color.new(170, 170, 255),
-      Color.new(210, 170, 120),
-    ]
-
-    # The palette's names in its order, for the log and the tests.
-    NAMES = %w[sky orange pink violet teal peach lavender tan]
-
-    # What a player's own color and a party member's are called in the log.
+    # What a player's own color, a party member's and anyone else's are called in the log.
     OWN_NAME = "own"
     MEMBER_NAME = "member"
-
-    # What an unknown player's color is called in the log.
     PLAIN_NAME = "plain"
-
-    # Multiplier and modulus of an id's hash, see index.
-    HASH_STEP = 31
-    HASH_MOD = 65_521
-
-    # Hashes a player's id to a place in PALETTE, the same in every session and game: a byte sum,
-    # since String#hash differs per process from Ruby 1.9 on.
-    #
-    # @param id [String] The id.
-    # @return [Integer] 0 to 7.
-    def self.index(id)
-      id.to_s.each_byte.inject(0) { |sum, byte| (sum * HASH_STEP + byte) % HASH_MOD } % PALETTE.size
-    end
 
     # Finds a player's id.
     #
@@ -624,8 +603,7 @@ module MGQ_MpUi
     end
 
     # Picks a player's color: Style::OWN for the player themself, Style::MEMBER for a party
-    # member, else the palette's by their id; Style::TEXT for one without an id or one it cannot
-    # read.
+    # member, else Style::TEXT, also for one it cannot read.
     #
     # @param who [Peer, Hash, String, Symbol] See id_of.
     # @param member [Boolean, nil] Whether they are in the player's party; nil derives it from a
@@ -635,51 +613,33 @@ module MGQ_MpUi
     #   to MGQ_MpOverworldSync::Me.id once overworld_sync loaded.
     # @return [Color] The color.
     def self.of(who, member = nil, own = nil)
-      from(pick(who, member, own), Style::OWN, Style::MEMBER, Style::TEXT, PALETTE)
+      { :own => Style::OWN, :member => Style::MEMBER }.fetch(pick(who, member, own), Style::TEXT)
     end
 
-    # Names a player's color for the log, such as "sky", "own" or "member".
+    # Names a player's color for the log: "own", "member" or "plain".
     #
     # @param who [Peer, Hash, String, Symbol] See id_of.
     # @param member [Boolean, nil] See of.
     # @param own [Boolean, nil] See of.
     # @return [String] The name.
     def self.label(who, member = nil, own = nil)
-      from(pick(who, member, own), OWN_NAME, MEMBER_NAME, PLAIN_NAME, NAMES)
+      { :own => OWN_NAME, :member => MEMBER_NAME }.fetch(pick(who, member, own), PLAIN_NAME)
     end
 
-    # Picks a player's place among the colors, which of and label read in their own set.
+    # Tells which of the three a player is, which of and label name in their own way.
     #
     # @param who [Peer, Hash, String, Symbol] See id_of.
     # @param member [Boolean, nil] See of.
     # @param own [Boolean, nil] See of.
-    # @return [Symbol, Integer, nil] :own for the player themself, :member for a party member, a
-    #   place in the palette for anyone else, nil for one without an id or one it cannot read.
+    # @return [Symbol] :own for the player themself, :member for a party member, :plain for anyone
+    #   else or one it cannot read.
     def self.pick(who, member = nil, own = nil)
       return :own if own.nil? ? own?(who) : own
       return :member if member.nil? ? member?(who) : member
 
-      id = id_of(who)
-      id.empty? ? nil : index(id)
+      :plain
     rescue
-      nil
-    end
-
-    # Reads a place picked in one set of values.
-    #
-    # @param place [Symbol, Integer, nil] The place, see pick.
-    # @param own [Object] The value for the player themself.
-    # @param member [Object] The value for a party member.
-    # @param plain [Object] The value for a player without a place.
-    # @param palette [Array] The values by their place in PALETTE.
-    # @return [Object] The value.
-    def self.from(place, own, member, plain, palette)
-      case place
-      when :own then own
-      when :member then member
-      when nil then plain
-      else palette[place]
-      end
+      :plain
     end
 
     # Reports whether a player is the player themself.

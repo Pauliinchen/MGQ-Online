@@ -2,7 +2,11 @@
 #  ui_chat.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Drew the log, its tabs, its menu, the bubbles and the hints in the shared style, dropping the log's own colors and font size, and another player's name in their own color
+#      Paulinchen  2026-10-11: Renamed the say chat to the map chat, chosen with /m or /map instead of /s or /say, its lines still marked say for the games of earlier releases
+#                            - Drew the chats in the colors of World of Warcraft: the global chat plain white without a tag, the map chat in its zone pink, the party chat in its party blue and whispers in its whisper pink
+#                            - Showed the Whisper tab only once the player whispered, got a whisper or chose the whisper chat, until the world closes
+#                            - Named every player outside the party in plain white in the log
+#                            - Drew the log, its tabs, its menu, the bubbles and the hints in the shared style, dropping the log's own colors and font size, and another player's name in their own color
 #                            - Faded a line of the closed log away over its last frames instead of dropping it at once
 #                            - Brought back the last 20 lines sent with Alt and up or down, kept only for the session
 #                            - Answered the last player who whispered with /r, which chooses them for the whisper chat as /w does and is refused as /w is once they left
@@ -142,11 +146,12 @@ module MGQ_MpChat
   # its arrows are with Num Lock off, types an Alt code once Alt is let go.
   ALT_CODE_FRAMES = 2
 
-  # The chats a line goes to.
-  CHANNELS = [:global, :party, :say, :whisper]
+  # The chats a line goes to, in the order of their tabs.
+  CHANNELS = [:global, :map, :party, :whisper]
 
-  # The log's tabs, in their order: all lines, then each chat's. The help tab joins at the far
-  # right while it is open.
+  # The log's tabs, in their order: all lines, then each chat's. The Whisper tab shows only once the
+  # player whispered or was whispered to, see whisper_tab?, and the help tab joins at the far right
+  # while it is open.
   TABS = [:all] + CHANNELS
 
   # The chats whose tab marks lines the player has not seen yet: every chat, the whispers too,
@@ -154,10 +159,10 @@ module MGQ_MpChat
   UNREAD_CHATS = CHANNELS
 
   # What the tabs say.
-  TAB_NAMES = { :all => "All", :global => "Global", :party => "Party", :say => "Say", :whisper => "Whisper", :help => "Help" }
+  TAB_NAMES = { :all => "All", :global => "Global", :map => "Map", :party => "Party", :whisper => "Whisper", :help => "Help" }
 
   # The commands that choose a chat, which holds for the lines after it until another is chosen.
-  COMMANDS = { "g" => :global, "global" => :global, "s" => :say, "say" => :say, "p" => :party, "party" => :party }
+  COMMANDS = { "g" => :global, "global" => :global, "m" => :map, "map" => :map, "p" => :party, "party" => :party }
 
   # A command at the start of a line, its name in the first group.
   COMMAND = /\A\/([a-z]+)(\s+|\z)/i
@@ -180,8 +185,8 @@ module MGQ_MpChat
   # What the help tab says.
   HELP = ["A chat stays chosen until you choose another, by a command or a tab.",
           "/g <text>   Global: everyone in the world",
+          "/m <text>   Map: the players on your map",
           "/p <text>   Party: your party only",
-          "/s <text>   Say: the players on your map",
           "/w <name> <text>   Whisper: one player. Up and Down pick a name from the list, Enter or Tab takes it.",
           "/r <text>   Whisper back to the last player who whispered to you.",
           "Tabs: click one, or Alt with Left or Right. All shows every chat.",
@@ -189,9 +194,9 @@ module MGQ_MpChat
           "Alt with Up or Down brings back the lines you sent. Ctrl+V pastes.",
           "Up, Down, Page Up and Page Down scroll. Enter sends, Esc or the numpad's 0 closes."]
 
-  # What the log shows before a line of a chat, the say chat showing none. A whisper the player
+  # What the log shows before a line of a chat, the global chat showing none. A whisper the player
   # sent shows whom it went to instead.
-  TAGS = { :global => "[Global] ", :party => "[Party] ", :whisper => "[Whisper] " }
+  TAGS = { :map => "[Map] ", :party => "[Party] ", :whisper => "[Whisper] " }
 
   # What the log shows before a line an admin said from outside the game, through the relay.
   ADMIN_TAG = "[Admin] "
@@ -217,7 +222,7 @@ module MGQ_MpChat
   Line = Struct.new(:name, :text, :who, :channel, :left, :to, :id) do
     # Writes the tag before the sender's name: the admin's, whom the player whispered to, or the chat's.
     #
-    # @return [String] The tag, empty for the say chat and the game's own lines.
+    # @return [String] The tag, empty for the global chat and the game's own lines.
     def tag
       return MGQ_MpChat::ADMIN_TAG if who == :admin
       return "[To #{to}] " if to
@@ -258,7 +263,7 @@ module MGQ_MpChat
   @sent = 0
   @received = 0
   @scroll = 0
-  @channel = :say
+  @channel = :map
   @tab = :all
   @unread = {}
   @whisper_to = nil
@@ -273,6 +278,7 @@ module MGQ_MpChat
   @reply_to = nil
   @buzzed = nil
   @chimed = nil
+  @whisper_tab = false
 
   # The help tab's lines, which no other tab shows.
   HELP_LINES = HELP.map { |text| Line.new(nil, text, :help, :help, 0) }
@@ -344,11 +350,21 @@ module MGQ_MpChat
     @tab
   end
 
-  # Lists the log's tabs, the help tab at the end while it is open.
+  # Lists the log's tabs: the Whisper tab once whisper_tab? tells so, the help tab at the end while
+  # it is open.
   #
   # @return [Array<Symbol>] The tabs, in their order.
   def self.tabs
-    @tab == :help ? TABS + [:help] : TABS
+    shown = @whisper_tab ? TABS : TABS - [:whisper]
+    @tab == :help ? shown + [:help] : shown
+  end
+
+  # Reports whether the Whisper tab shows: once the player whispered, got a whisper or chose the
+  # whisper chat, until the world closes.
+  #
+  # @return [Boolean] Whether it does.
+  def self.whisper_tab?
+    @whisper_tab
   end
 
   # Lists the tabs with lines the player has not seen yet: lines of a chat in UNREAD_CHATS that
@@ -398,6 +414,7 @@ module MGQ_MpChat
   #
   # @param channel [Symbol] One of CHANNELS.
   def self.choose(channel)
+    @whisper_tab = true if channel == :whisper
     @channel = channel
     @scroll = 0 unless @tab == :all || @tab == channel
     @tab = channel unless @tab == :all
@@ -915,6 +932,7 @@ module MGQ_MpChat
            when :party then MGQ_MpCoop.tell(-1, "pchat", text, "name" => name)
            when :global then tell("chat" => text, "name" => name)
            when :whisper then tell_whisper("whisper" => text, "name" => name)
+           # A map line goes out marked say, the map chat's name before, which released games read.
            else tell_map("chat" => text, "name" => name, "ch" => "say")
            end
     return refuse(channel == :whisper ? "#{@whisper_to} is not in the world." : "The message could not be sent.") unless sent
@@ -973,7 +991,7 @@ module MGQ_MpChat
     id.to_s.empty? ? peers.named(name) : peers.with_id(id)
   end
 
-  # Tells every other game a line of the say chat, with the player's map, on which the others hear
+  # Tells every other game a line of the map chat, with the player's map, on which the others hear
   # it, through overworld_sync.rbx.
   #
   # One message to all, since one to each player on the map could fail for some of them only.
@@ -982,7 +1000,7 @@ module MGQ_MpChat
   # @return [Boolean] Whether it went out.
   def self.tell_map(fields)
     here = MGQ_MpOverworldSync::Peers.all.count { |peer| MGQ_MpOverworldSync::Peers.on_this_map?(peer) }
-    log("#{here} other players on map #{$game_map.map_id} hear the say chat")
+    log("#{here} other players on map #{$game_map.map_id} hear the map chat")
     tell(fields.merge("map" => $game_map.map_id))
   end
 
@@ -995,19 +1013,19 @@ module MGQ_MpChat
     MGQ_MpOverworldSync.notice(text)
   end
 
-  # Takes another player's line of the global or the say chat, or an admin's that the relay said,
-  # marked :relay. A line of the say chat said on another map is dropped.
+  # Takes another player's line of the global or the map chat, or an admin's that the relay said,
+  # marked :relay. A line of the map chat said on another map is dropped.
   #
   # The sender's map comes with the line, since their last state may lag behind or run ahead of it.
   #
   # @param peer [MGQ_MpOverworldSync::Peers::Peer, nil] Who sent it, nil before their first state
   #   or for the relay.
-  # @param message [Hash] The message, the line under "chat", "ch" "say" for the say chat with the
+  # @param message [Hash] The message, the line under "chat", "ch" "say" for the map chat with the
   #   sender's map under "map".
   def self.receive(peer, message)
-    channel = message["ch"] == "say" ? :say : :global
-    if channel == :say && !($game_map && !message["map"].to_s.empty? && message["map"].to_i == $game_map.map_id)
-      return log("dropped a say line from #{peer ? MGQ_MpOverworldSync.who(peer) : message['name']}, said on map #{message['map'] || '?'}")
+    channel = message["ch"] == "say" ? :map : :global
+    if channel == :map && !($game_map && !message["map"].to_s.empty? && message["map"].to_i == $game_map.map_id)
+      return log("dropped a map line from #{peer ? MGQ_MpOverworldSync.who(peer) : message['name']}, said on map #{message['map'] || '?'}")
     end
 
     take_line(peer, message["chat"], message["name"], channel, message[:relay] == true)
@@ -1073,7 +1091,7 @@ module MGQ_MpChat
     defined?(MGQ_MpCoop) && MGQ_MpCoop.in_party? && MGQ_MpCoop::Party.member?(peer.state) ? true : false
   end
 
-  # Adds a chat line to the log, and to the sender's bubble.
+  # Adds a chat line to the log, and to the sender's bubble. A whisper shows the Whisper tab.
   #
   # @param sender [Integer, Symbol, nil] The sender's seat, :me for the player, nil for no bubble.
   # @param name [String] The sender's name.
@@ -1085,6 +1103,7 @@ module MGQ_MpChat
   # @param id [String, nil] Another sender's player id, for their menu.
   def self.add(sender, name, text, channel, member = false, admin = false, to = nil, id = nil)
     who = sender == :me ? :me : admin ? :admin : (member ? :member : :other)
+    @whisper_tab = true if channel == :whisper
     push(Line.new(name.to_s, text, who, channel, 0, to, id))
     @bubbles[sender] = [text, BUBBLE_FRAMES, channel] unless sender.nil?
     @unread[channel] = true if sender != :me && UNREAD_CHATS.include?(channel) && @tab != channel && @tab != :all
@@ -1115,7 +1134,8 @@ module MGQ_MpChat
     @bubbles.reject! { |_, bubble| bubble[1] <= 0 }
   end
 
-  # Forgets the log and the bubbles and closes the box, as when the world closes.
+  # Forgets the log and the bubbles and closes the box, as when the world closes. The Whisper tab
+  # goes too, and with it the whisper chat for the map chat.
   def self.reset
     stop_typing("no world is open")
     log("forgot #{@log.size} chat lines as the world closed (#{@sent} sent, #{@received} received)") unless @log.empty?
@@ -1126,6 +1146,9 @@ module MGQ_MpChat
     @whisper_to = nil
     @whisper_id = nil
     @reply_to = nil
+    @whisper_tab = false
+    @channel = :map if @channel == :whisper
+    @tab = :all if @tab == :whisper
     @sent = 0
     @received = 0
   end
@@ -1302,7 +1325,7 @@ class Sprite_MpChatBubble < Sprite
   # Height of the tail below the bubble.
   TAIL = 5
 
-  # The bubble's fill for the say chat; the other chats fill it with their color.
+  # The bubble's fill for a chat without a color of its own; the chats fill it with theirs.
   FILL = Color.new(255, 255, 255)
 
   # The bubble's edge.
@@ -1404,15 +1427,16 @@ class Sprite_MpChatLog < Sprite
 
   # Colors of the senders' names, the style's: the player's own, a member of the player's party as
   # their label on the map, an admin's gold as the featured worlds, and the game's own lines dim.
-  # Anyone else's is their own, see name_color.
+  # Anyone else's is plain text, see name_color.
   NAME_COLORS = { :me => MGQ_MpUi::Style::OWN, :member => MGQ_MpUi::Style::MEMBER, :admin => MGQ_MpUi::Style::GOLD, :system => MGQ_MpUi::Style::DIM }
 
-  # Colors of the chats, for their tags, their tabs, the chat box's name of them and their bubbles:
-  # the global chat orange, the party chat violet and the whispers pale pink. The say chat is white.
-  CHANNEL_COLORS = { :global => Color.new(255, 160, 64), :party => Color.new(190, 170, 255), :whisper => Color.new(255, 190, 220) }
+  # Colors of the chats, for their tags, their tabs, the chat box's name of them and their bubbles,
+  # the ones World of Warcraft gives its chats: the global chat plain white as its say chat, the map
+  # chat its zone pink, the party chat its party blue and whispers its whisper pink.
+  CHANNEL_COLORS = { :global => MGQ_MpUi::Style::TEXT, :map => Color.new(255, 192, 192), :party => Color.new(170, 170, 255), :whisper => Color.new(255, 128, 255) }
 
   # The chats whose text is in their color too, not only their tag.
-  COLORED_TEXT = [:global, :whisper]
+  COLORED_TEXT = [:map, :whisper]
 
   # How opaque a tab's background is.
   TAB_ALPHA = 120
@@ -1504,7 +1528,7 @@ class Sprite_MpChatLog < Sprite
     # A line of the closed log fades over its last frames, so those count as a change.
     fades = shown.map { |_row, line, _first| typing ? nil : [line.left, MGQ_MpUi::Style::FADE_FRAMES].min }
     drawn = [shown.map { |row, line, first| [row, line.who, line.channel, first] }, fades, older, scroll, chat.typed, chat.cursor,
-             typing && chat.cursor_shown?, chat.tab, chat.channel, chat.whisper_to, chat.suggestions, chat.pick, alt, @size, chat.unread_tabs]
+             typing && chat.cursor_shown?, chat.tab, chat.channel, chat.whisper_to, chat.suggestions, chat.pick, alt, @size, chat.unread_tabs, chat.tabs]
     return if drawn == @shown
 
     @shown = drawn
@@ -1817,17 +1841,13 @@ class Sprite_MpChatLog < Sprite
     draw_part(x, y, row, COLORED_TEXT.include?(line.channel) ? CHANNEL_COLORS[line.channel] : style::TEXT, ROW, left)
   end
 
-  # Picks the color of a line's sender's name: NAME_COLORS by whose it is, another player's their
-  # own by their id (see MGQ_MpUi::PlayerColor), by their name for a sender without an id, such as
-  # one who left the world.
+  # Picks the color of a line's sender's name: NAME_COLORS by whose it is, plain text for anyone
+  # else, as MGQ_MpUi::PlayerColor names a player outside the party.
   #
   # @param line [MGQ_MpChat::Line] The line.
   # @return [Color] The color.
   def name_color(line)
-    return NAME_COLORS[line.who] if NAME_COLORS.key?(line.who)
-    return MGQ_MpUi::Style::TEXT unless line.who == :other
-
-    MGQ_MpUi::PlayerColor.of(line.id.to_s.empty? ? line.name.to_s : { "id" => line.id }, false)
+    NAME_COLORS.fetch(line.who, MGQ_MpUi::Style::TEXT)
   end
 
   # Draws a part of a row in a color.

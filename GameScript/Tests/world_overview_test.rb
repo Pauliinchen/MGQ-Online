@@ -2,7 +2,8 @@
 #  world_overview_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Left the map box's size hint out of the texts read, as the pings are
+#      Paulinchen  2026-10-11: Checked the raid bosses grouped by the story's sections, only those the world's story reached or holding a pool, a fight's own pool in its section and an unknown one under Other
+#                            - Left the map box's size hint out of the texts read, as the pings are
 #                            - Read the small party box's left, which its motion places, instead of its x, and compared its green against the shared style's member color
 #                            - Checked the World page: turning with the arrows and the tabs, a cancel held with a click on a tab, its rows in a Classic and a Raid World, the raid bosses from their pools, a share rounded, scrolling, the title with the type and difficulty, the hint, a boss's row and the Players tab's mark while a call waits
 #                            - Checked the confirm box before leaving the party and removing a member, that the overview waits while it asks, and that yes leaves no party that dissolved under the box
@@ -62,6 +63,7 @@ module MGQ_MpRaidPool
   Pool = Struct.new(:left, :max, :defeated, :by, :at)
   def self.pools; $pools.dup; end
   def self.boss_key(key); key.sub(/#\d+\z/, ""); end
+  def self.troop_of_key(key); key == "Sisel" ? 2016 : nil; end
   def self.left_now(pool, _now = Time.now); pool.defeated ? 0.0 : pool.left; end
 end
 load_script "battles_raid_bosses"
@@ -406,12 +408,32 @@ $difficulty = 1
 $world_story = { "part" => "2" }
 overview.on_map
 lines = overview.view[:lines]
-check("a Raid World tells its difficulty and its story, then heads its raid bosses",
-      lines[2..5], [[:info, "Difficulty", "Hard"], [:info, "Players", "#{online} / 8"], [:info, "Story", "Part 2"], [:place, "Raid bosses"]])
-bosses = lines[6..-1].map { |_, boss| boss }
-all_bosses = MGQ_MpRaidBosses::TIER_BOSSES.keys.sort.map { |tier| MGQ_MpRaidBosses::TIER_BOSSES[tier] }.flatten
-check("every raid boss of the story follows, the strongest tier first in the story's order, untouched while the relay told no pool",
-      [bosses.map(&:name), bosses.first.to_a, bosses.last.to_a], [all_bosses, ["Chaos", 0, 1.0, false, nil], ["Queen Harpy", 9, 1.0, false, nil]])
+check("a Raid World tells its difficulty and its story, then heads its raid bosses by the story's section",
+      lines[2..5], [[:info, "Difficulty", "Hard"], [:info, "Players", "#{online} / 8"], [:info, "Story", "Part 2"], [:place, "Raid bosses: Part 1"]])
+sections = MGQ_MpRaidBosses.sections
+headings = lambda { |all| all.select { |kind, _| kind == :place }.map { |_, text| text.sub("Raid bosses: ", "") } }
+bosses = lines.select { |kind, _| kind == :boss }.map(&:last)
+check("at Part 2 only Part 1 and Part 2 follow, each boss once in the order the story meets them, with its tier, untouched while the relay told no pool",
+      [headings.call(lines), bosses.map(&:name), lines[6].last.to_a, bosses.last.to_a],
+      [["Part 1", "Part 2"], sections[0][1] + sections[1][1], ["Four bandits", 9, 1.0, false, nil], ["Sonya Chaos", 5, 1.0, false, nil]])
+check("the sections run in story order, the Chaos route's by the order of the troops, the one-time bosses last",
+      [sections.map(&:first), sections[1][1].first, sections[1][1].last(3), sections[2][1].last, sections[5][1].first, sections[5][1].last, sections[6][1].size],
+      [["Part 1", "Part 2", "Part 3", "Angelic Dominion", "Monster Realm", "Chaos route", "Chaos Domain"], "Alma Elma, then Granberia",
+       ["Black Dahlia, Black Mamba and Black Rose (cap 55)", "Black Alice (cap 65)", "Sonya Chaos"], "Great Decision", "Kagetsumugi and her dolls (cap 125)", "Chaos", 6])
+check("a boss's section is found by its troop or its name",
+      [MGQ_MpRaidBosses.section(838), MGQ_MpRaidBosses.section("1509"), MGQ_MpRaidBosses.section("Tamamo (cap 83)"), MGQ_MpRaidBosses.section(2221), MGQ_MpRaidBosses.section("Chaos Maria"), MGQ_MpRaidBosses.section("Nobody")],
+      ["Part 2", "Part 3", "Monster Realm", "Chaos route", "Chaos Domain", nil])
+reached = lambda do |story|
+  $world_story = story
+  headings.call(overview.world_lines(1))
+end
+every = sections.map(&:first)
+check("the sections shown follow the world's story: Part 1 from the start, Part 3 on every route, a route once under way or finished, the Chaos route with all",
+      [reached.call("part" => "1"), reached.call("part" => "3"), reached.call("part" => "ad"), reached.call("part" => "mr", "done" => ["ad"]),
+       reached.call("part" => "chaos", "done" => ["ad", "mr"]), reached.call("part" => "3", "done" => ["chaos"])],
+      [every[0, 1], every[0, 3], every[0, 4], every[0, 5], every, every])
+check("before the relay told the story no section shows without a pool", reached.call(nil), [])
+$world_story = { "part" => "2" }
 check("the title says the type and the difficulty after the world's name", [overview.world_name, overview.title_tail], ["Test World", " | Raid | Hard"])
 $difficulty = nil
 check("without a difficulty the type alone", overview.title_tail, " | Raid")
@@ -428,14 +450,21 @@ told = Time.at(1_000_000)
 pool = MGQ_MpRaidPool::Pool
 $pools = { "Queen Harpy" => pool.new(0.4, 6000, false, "Player A", told), "Four bandits" => pool.new(0.0, 6000, true, "Player B", told),
            "Metatronne and Sandalphone#0" => pool.new(0.5, 9000, false, "Player C", told), "Metatronne and Sandalphone#1" => pool.new(1.0, 9000, false, "Player D", told + 1),
-           "Fourth Law" => pool.new(0.25, 1, false, "", told) }
-bosses = overview.bosses
+           "Fourth Law" => pool.new(0.25, 1, false, "", told), "Sisel" => pool.new(0.9, 1, false, "Player E", told),
+           "Unknown Boss" => pool.new(0.5, 1, false, "Player F", told) }
+pooled = overview.boss_sections
+bosses = pooled.map(&:last).flatten(1)
 boss_named = lambda { |name| bosses.find { |boss| boss.name == name } }
 check("a pool tells a boss's share left and who last hurt it", boss_named.call("Queen Harpy").to_a, ["Queen Harpy", 9, 0.4, false, "Player A"])
 check("an empty pool tells it defeated", boss_named.call("Four bandits").to_a[2..4], [0.0, true, "Player B"])
 check("a boss of several enemies shares its pools' HP, hurt last by whoever hurt the pool told of last", boss_named.call("Metatronne and Sandalphone").to_a[2..4], [0.75, false, "Player D"])
-check("a one-time boss the relay told a pool of follows the story's, with its own tier and nobody known to have hurt it",
-      [bosses.last.to_a, bosses.size], [["Fourth Law", 1, 0.25, false, nil], all_bosses.size + 1])
+check("a section the story did not reach shows once a boss of it has a pool, a fight's own pool in its section after its bosses, an unknown boss under Other last",
+      [pooled.map(&:first), pooled[3][1].last.to_a, pooled[5][1].to_a.map(&:to_a)],
+      [["Part 1", "Part 2", "Angelic Dominion", "Chaos route", "Chaos Domain", "Other"], ["Sisel", 2, 0.9, false, "Player E"], [["Unknown Boss", nil, 0.5, false, "Player F"]]])
+check("a one-time boss the relay told a pool of shows in the Chaos Domain with its own tier and nobody known to have hurt it", pooled[4][1].first.to_a, ["Fourth Law", 1, 0.25, false, nil])
+$world_story = nil
+check("before the relay told the story only the sections with a pool show", overview.boss_sections.map(&:first), ["Part 1", "Angelic Dominion", "Chaos route", "Chaos Domain", "Other"])
+$world_story = { "part" => "2" }
 check("the share is written in percent, rounded, never 0% while any is left", %w[1.0 0.4 0.55 0.07 0.001 0.0].map { |left| overview.share_text(left.to_f) }, ["100%", "40%", "55%", "7%", "1%", "0%"])
 
 # Scrolling the World page, and its tabs.

@@ -2,7 +2,8 @@
 #  ui_party_box_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Created
+#      Paulinchen  2026-10-11: Checked that a stranger is named in plain white
+#                            - Created
 #
 #----------------------------------------------------------------
 
@@ -130,13 +131,13 @@ check("an away member is dim, with the away icon in place of the battle's", [awa
 check("the player's own line is never away", [MGQ_MpPartyBox.away?(own_row), MGQ_MpPartyBox.away?(leader_row)], [false, true])
 leader.away = nil
 
-# The map box of a Raid World: a stranger in the color of their id.
+# The map box of a Raid World: a stranger in plain white.
 map_rows = [own_row, leader_row, stranger_row]
 box.draw_map(map_rows)
 stranger_name = text.call("Stranger")
 check("the map box is titled with how many are on the map, the size hint at the right too", [texts.call.first, texts.call.include?("Tab: size")], ["Map 3", true])
-check("a stranger is named in the color of their id, which the keyboard of their typing precedes",
-      [stranger_name.color.equal?(MGQ_MpUi::PlayerColor.of(stranger)), MGQ_MpUi::PlayerColor::PALETTE.any? { |color| color.equal?(stranger_name.color) }, box.bitmap.icons.map(&:first).include?(MGQ_MpOverworld::TYPING_ICON)],
+check("a stranger is named in plain white, which the keyboard of their typing precedes",
+      [stranger_name.color.equal?(MGQ_MpUi::PlayerColor.of(stranger)), stranger_name.color.equal?(style::TEXT), box.bitmap.icons.map(&:first).include?(MGQ_MpOverworld::TYPING_ICON)],
       [true, true, true])
 check("the member stays green and the player's own line yellow", [named.call(long_name).color.equal?(style::MEMBER), text.call("Me").color.equal?(style::OWN)], [true, true])
 

@@ -2,7 +2,8 @@
 #  trade.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Named the wait for an accepted trade to open in the line above the player's head, with its seconds left, and gave the offer its seconds left
+#      Paulinchen  2026-10-11: Drew the trade offer in the color every request and offer shares
+#                            - Named the wait for an accepted trade to open in the line above the player's head, with its seconds left, and gave the offer its seconds left
 #                            - Stopped the player's own trade offer once they accept another player's, so nobody accepts an offer whose player waits for a trade already
 #      Paulinchen  2026-10-08: Told the player only that a trade with an id that is not valid could not open, instead of to finish what they are doing
 #                            - Showed an accepted trade offer again in the notification box once its player turned the accept down
@@ -45,8 +46,9 @@
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpTrade
-  # Color of the trade line above a ghost's name and of the trade's notices.
-  TRADE_COLOR = Color.new(160, 224, 255)
+  # Color of the trade line above a ghost's name and of the trade's notices, the one every request
+  # and offer shares.
+  TRADE_COLOR = MGQ_MpActions::LINE_COLOR
 
   # Frames an accepted trade waits for the other player's game to open it, six seconds.
   ANSWER_FRAMES = 360

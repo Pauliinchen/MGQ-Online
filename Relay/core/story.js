@@ -2,6 +2,9 @@
 //  story.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-11: Opened every route again once the world finished all of them, as a starting save that cleared every route names them all as finished
+//                            - Took the locked route's first step from the Great Decision even though its key ranks below the decision once every route was finished
+//                            - Kept the lock of a route finished before until the world returned from it, instead of dropping it with the next write without a route under way
 //      Paulinchen  2026-10-10: Refused taking back the route lock while the world's story is on that route, and a route lock while the story is on another route
 //      Paulinchen  2026-10-09: Let an admin take back the route locked at the Great Decision
 //                            - Kept only the first end of a part as its checkpoint, so leaving Part 3 again no longer replaces the story before the first Great Decision
@@ -152,6 +155,19 @@ export function storyKey(counters) {
   const returned = counters.clear.filter((cleared) => cleared !== route).length;
   const step = route === ROUTE.none ? 0 : counters[ROUTE_COUNTERS[route]];
   return [returned, counters.p, step, counters.clear.length];
+}
+
+/**
+ * Reports whether the world finished every route, which opens each of them again.
+ *
+ * A starting save that cleared every route names them all as finished from the first write on, so
+ * without this no route could ever be chosen in its world.
+ *
+ * @param {string[]} done The routes the world finished.
+ * @returns {boolean} Whether it finished all of them.
+ */
+export function everyRouteDone(done) {
+  return Object.keys(ROUTE_COUNTERS).every((route) => done.includes(route));
 }
 
 /**
@@ -337,6 +353,9 @@ export class WorldStory {
       }
 
       const locked = story?.route ?? ROUTE.none;
+      // Once every route was finished the locked one is finished from the start, so the lock ends
+      // only with the return from it, not with the first write that has no route under way.
+      const returned = done.includes(locked) && (!(story?.done ?? []).includes(locked) || activeRoute(story?.counters ?? FIRST_COUNTERS) === locked);
       const part = partOf(read.counters);
       // Only a part's first end is its checkpoint: the world leaves Part 3 once for every route,
       // and a later end would hand a player behind a story that already finished a route.
@@ -349,7 +368,7 @@ export class WorldStory {
         wrev: rev,
         counters: read.counters,
         part,
-        route: route !== ROUTE.none ? route : done.includes(locked) ? ROUTE.none : locked,
+        route: route !== ROUTE.none ? route : returned ? ROUTE.none : locked,
         done,
         end: read.end === undefined ? (story?.end ?? null) : read.end,
         comps: story?.comps ?? [],
@@ -378,13 +397,17 @@ export class WorldStory {
       return { error: "the story moved on since the revision the write built on", code: STORY_REFUSAL.rev };
     }
 
-    if (story && compareKeys(storyKey(counters), storyKey(story.counters)) < 0) {
-      return { error: "the write is behind the world's story", code: STORY_REFUSAL.behind };
-    }
-
     const route = activeRoute(counters);
     const locked = story?.route ?? ROUTE.none;
     const done = story?.done ?? [];
+    // The locked route's first step from the Great Decision is taken whatever its key: once every
+    // route was finished, a route under way no longer counts as returned from, so it ranks below
+    // the decision.
+    const firstStep = story && locked !== ROUTE.none && route === locked && activeRoute(story.counters) === ROUTE.none;
+
+    if (story && !firstStep && compareKeys(storyKey(counters), storyKey(story.counters)) < 0) {
+      return { error: "the write is behind the world's story", code: STORY_REFUSAL.behind };
+    }
 
     if (locked === ROUTE.none) {
       return null;
@@ -407,10 +430,11 @@ export class WorldStory {
 
   /**
    * Locks the route the world takes at the Great Decision: the first route chosen wins, until the
-   * world finished it and returned to the Great Decision.
+   * world finished it and returned to the Great Decision. Once the world finished every route, each
+   * may be chosen again.
    *
    * @param {any} route The route, one of ROUTE but none.
-   * @returns {Promise<{status: number, body: object, push?: number}>} The state with `locked` (the same route again answers the same), and the revision to tell every game when it changed; or 409 with the state and code `route` when another route is locked or the world's story is on another route, `finished` for a route the world finished, `closed` for Chaos before both other routes are finished.
+   * @returns {Promise<{status: number, body: object, push?: number}>} The state with `locked` (the same route again answers the same), and the revision to tell every game when it changed; or 409 with the state and code `route` when another route is locked or the world's story is on another route, `finished` for a route the world finished while another is not, `closed` for Chaos before both other routes are finished.
    */
   async lockRoute(route) {
     if (!Object.keys(ROUTE_COUNTERS).includes(route)) {
@@ -433,11 +457,11 @@ export class WorldStory {
         return refuse("another route was chosen first", STORY_REFUSAL.route);
       }
 
-      if (done.includes(route)) {
+      if (!everyRouteDone(done) && done.includes(route)) {
         return refuse("the world finished this route", STORY_REFUSAL.finished);
       }
 
-      if (route === ROUTE.chaos && !(done.includes(ROUTE.ad) && done.includes(ROUTE.mr))) {
+      if (route === ROUTE.chaos &&!(done.includes(ROUTE.ad) && done.includes(ROUTE.mr))) {
         return refuse("the third way opens once both other routes are finished", STORY_REFUSAL.closed);
       }
 

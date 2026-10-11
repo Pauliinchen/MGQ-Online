@@ -2,7 +2,8 @@
 #  battles_coop.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Drew each character's name in the battle's status window in its player's color, another player's character by its own name
+#      Paulinchen  2026-10-11: Named the battle invite or lead request waiting for the player to be free, which the pages of a teller's story give way to, so a viewer reading them no longer turns the invite down
+#                            - Drew each character's name in the battle's status window in its player's color, another player's character by its own name
 #                            - Told the player in the battle's chat log of the players who joined the running battle, as the host takes them in or its new party names them
 #                            - Showed the notice of a member's battle as long as the player stands still for it, and took it away once they walk on early
 #                            - Told a player who joins a running battle at its next turn how long the wait may last, written as the shared seconds are, with the seconds waited
@@ -1383,6 +1384,17 @@ module MGQ_MpBattlesCoop
   def self.asked?(peer, message)
     asking = @asking
     !asking.nil? && peer.seat == asking[:seat] && message["bid"] == asking[:bid]
+  end
+
+  # Names the invite or request that waits for the player to be free on the map, which lapses
+  # after ACCEPT_FRAMES, so the pages of a teller's story give way to it (see
+  # MGQ_MpCoopEvents.give_way_to).
+  #
+  # @return [String, nil] What waits, nil while nothing does.
+  def self.waiting_for_player
+    return "#{MGQ_MpOverworldSync.who(@invite[:peer])}'s battle invite" if @invite && MGQ_MpBattlesSync.role.nil?
+
+    @request ? "#{MGQ_MpOverworldSync.who(@request[:peer])}'s request to lead a battle" : nil
   end
 
   # Leads a member's battle once the player is free on the map, refuses it otherwise, then joins an
@@ -2809,4 +2821,12 @@ begin
   MGQ_MpHooks.around(Game_Player, :encounter, "battles_coop") { |_player, _args, original| MGQ_MpBattlesCoop.encounter { original.call } }
 rescue => e
   MGQ_MpBattlesCoop.log("encounter hook FAILED: #{e.class}: #{e.message}")
+end
+
+# What the pages of a teller's story give way to, through coop_events.rbx.
+
+begin
+  MGQ_MpCoopEvents.give_way_to { MGQ_MpBattlesCoop.waiting_for_player }
+rescue => e
+  MGQ_MpBattlesCoop.log("giving way FAILED: #{e.class}: #{e.message}")
 end

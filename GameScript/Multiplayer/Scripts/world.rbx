@@ -2,7 +2,8 @@
 #  world.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Told whether a world's password is known, which this PC's folder of it answers for the world screen's
+#      Paulinchen  2026-10-11: Took the featured worlds' gold and the Raid Worlds' red from the shared style
+#                            - Told whether a world's password is known, which this PC's folder of it answers for the world screen's
 #                              entry and details
 #      Paulinchen  2026-10-10: Let a development build give a Raid World a shared save, for testing: a Save beside the Difficulty in the new world's
 #                              form, optional, sent as a Classic world's starting save
@@ -161,11 +162,11 @@ module MGQ_MpWorld
   # A world's id, which joins a hidden world.
   WORLD_ID = /\A[0-9a-f]{32}\z/
 
-  # Colour of the featured worlds, which the relay's admins make.
-  FEATURED_COLOR = Color.new(255, 200, 64)
+  # Colour of the featured worlds, which the relay's admins make, the style's gold.
+  FEATURED_COLOR = MGQ_MpUi::Style::GOLD
 
-  # Colour of the Raid Worlds, which wins over the featured worlds' gold.
-  RAID_COLOR = Color.new(255, 64, 64)
+  # Colour of the Raid Worlds, the style's bad color, which wins over the featured worlds' gold.
+  RAID_COLOR = MGQ_MpUi::Style::BAD
 
   # A world's types as the directory and world.ini name them, in the order the new world's form
   # offers them: Classic, where each party plays its own story, and Raid, where the whole world plays one.

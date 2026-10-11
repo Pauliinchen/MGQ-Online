@@ -2,7 +2,8 @@
 #  world_support.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Gave the screen its size and frame count and stood in for the scenes' base, which the confirm box centres on and ticks after
+#      Paulinchen  2026-10-11: Kept a color's values, which an outlined text copies the font's color by
+#                            - Gave the screen its size and frame count and stood in for the scenes' base, which the confirm box centres on and ticks after
 #      Paulinchen  2026-10-10: Loaded coop_gather.rbx and coop_teleport.rbx, which offer the teleport to a party's members
 #      Paulinchen  2026-10-08: Loaded coop_scope.rbx after coop.rbx, which the party's choices ask whether a Raid World is open
 #                            - Told the keys held from $down, and the mouse from $mouse
@@ -88,7 +89,11 @@ $buttons = []
 $typed = ""
 $sounds = []
 module Sound; %w[cursor ok cancel buzzer].each { |s| define_singleton_method("play_#{s}") { $sounds << s } }; end
-class Color; def initialize(*); end; end
+# A color that keeps its values, which draw_outlined copies the font's color by.
+class Color
+  attr_accessor :red, :green, :blue, :alpha
+  def initialize(red = nil, green = nil, blue = nil, alpha = nil); @red = red; @green = green; @blue = blue; @alpha = alpha; end
+end
 module MGQ_Multiplayer
   module Background; def self.in_front?; $in_front; end; def self.running?; true; end; end
   module Key

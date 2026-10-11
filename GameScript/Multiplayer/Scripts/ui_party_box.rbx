@@ -142,8 +142,8 @@ module MGQ_MpPartyBox
   end
 
   # Picks the color of a player's name in the box: MGQ_MpUi::Style::DIM while their connection is
-  # down, else their own, see MGQ_MpUi::PlayerColor: the player's own, a party member's, and in
-  # the map box anyone else's by their id.
+  # down, else the one MGQ_MpUi::PlayerColor gives: the player's own, a party member's, and in the
+  # map box plain text for anyone else.
   #
   # @param row [MGQ_MpWorldOverview::Row] The player.
   # @return [Color] The color.
@@ -154,7 +154,7 @@ module MGQ_MpPartyBox
   # Names the color of a player's name for the log, see color_of.
   #
   # @param row [MGQ_MpWorldOverview::Row] The player.
-  # @return [String] The name, such as "own", "member", "sky" or AWAY_LABEL.
+  # @return [String] The name: "own", "member", "plain" or AWAY_LABEL.
   def self.color_label(row)
     away?(row) ? AWAY_LABEL : MGQ_MpUi::PlayerColor.label(row.player, row.member)
   end
@@ -163,7 +163,7 @@ end
 # The box at the top right of the map that lists the player's party: the leader first with a crown,
 # then the others by name, each with the icon of what they do, their highest companion level and
 # ping, and where they are on a smaller line below. The player's own line, a party member's and
-# anyone else's are named in their colors (see MGQ_MpUi::PlayerColor), a member whose connection is
+# anyone else's are named in the colors MGQ_MpUi::PlayerColor gives, a member whose connection is
 # down dim with the away icon. Small, it lists only each player's icon, name and ping. The title
 # names the hotkey that changes the size at its right. Drawn in the shared style, the box fades in
 # and out.

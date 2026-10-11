@@ -2,7 +2,12 @@
 #  coop_events_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Read the generator from MGQ-Paradox-Event-Checker next to the repository, and left its lists unchecked without it
+#      Paulinchen  2026-10-11: Checked that a common event the story calls tells its pages and a parallel one does not, that a page the leader moved past stays to read, confirm reads on, and that only the oldest pages past CATCH_UP_PAGES are left out
+#                            - Checked that holding the game's skip passes a page the leader moved past
+#                            - Checked that no page starts while the story brings the player over, so the follow goes first
+#                            - Checked that a page whose transfer and story lie behind a choice is travel the leader tells as story from the choice on
+#                            - Checked that story events wait for the world's story after the world opened, and talks run meanwhile
+#                            - Read the generator from MGQ-Paradox-Event-Checker next to the repository, and left its lists unchecked without it
 #                            - Read the line above the player's head as a doing with its seconds left, the leader's naming the member missing
 #                            - Checked that a branch on a choice script's variable counts as the choice's, that such a scene running by itself is story, that a signpost with its own self switch, the cosmetic scripts and the game's battle flags keep a talk
 #      Paulinchen  2026-10-10: Checked that a transfer outside a telling goes on with none, and that only a story eventthat runs by itself goes on with the telling that moved the player, while one the player starts is a new telling
@@ -175,6 +180,8 @@ class Game_Party
   def party_member_full?; @actors.size >= 2; end
 end
 module Graphics; def self.frame_count; $frame_count; end; def self.brightness; $brightness || 255; end; end
+# The buttons, confirm pressed while $confirm is set.
+module Input; def self.trigger?(button); button == :C && $confirm ? true : false; end; def self.press?(button); button == :X && $skipping ? true : false; end; end
 $frame_count = 0
 class Game_Interpreter
   attr_accessor :busy
@@ -857,6 +864,24 @@ says = $sent.select { |_, f| f["pevent"] == "say" }
 check("the leader's story message goes to the party once", says.size, 1)
 say = says.first[1]
 check("and once the leader moved on, that it is done", $sent.map { |_, f| [f["pevent"], f["page"]] }.select { |kind, _| %w[say done].include?(kind) }, [["say", say["page"]], ["done", say["page"]]])
+# A common event the story calls runs in a child interpreter inside the main one's turn, and its
+# dialogue, such as a companion's lines, goes to the party too; a parallel one's does not.
+module MGQ_MpCoopScene; def self.map_turn?; $map_turn; end; end
+child = Game_Interpreter.new
+$sent.clear
+$map_turn = true
+$game_message.add("A companion's line")
+child.wait_for_message
+$game_message.clear
+child.wait_for_message
+$map_turn = false
+$game_message.add("A parallel line")
+Game_Interpreter.new.wait_for_message
+$game_message.clear
+Game_Interpreter.new.wait_for_message
+check("a common event the story calls tells its page, a parallel one does not",
+      $sent.select { |_, f| f["pevent"] == "say" }.map { |_, f| MGQ_MpCoopEvents.decode(f["lines"]) }, ["A companion's line"])
+Object.send(:remove_const, :MGQ_MpCoopScene)
 $game_message.add("Hello, \\N[1]!")
 $game_message.choices.push("Yes", "No")
 check("with its face and text", [say["face"], say["index"], say["map"], MGQ_MpCoopEvents.decode(say["lines"].split(",")[0]), say["choices"].split(",").map { |t| MGQ_MpCoopEvents.decode(t) }], ["Alice", "2", "7", "Hello, \\N[1]!", ["Yes", "No"]])
@@ -879,6 +904,20 @@ check("the leader's talk stays a talk while its choice moves nothing on", [MGQ_M
 interpreter.instance_variable_set(:@index, 7)
 MGQ_MpCoopEvents.guard(interpreter)
 check("once its quest step runs, the party hears it as story", [MGQ_MpCoopEvents.telling?, interpreter.instance_variable_get(:@index)], [true, 7])
+
+# A page whose transfer and story lie behind a choice, as the Great Decision's, is travel watched
+# as a talk is: the leader tells the story from the choice on, so the transfer takes the others along.
+decision = [c(101, "", 0, 0, 2), Command.new(102, 0, [["Not yet", "Decided"], 2]), Command.new(402, 0, [0, "Not yet"]), Command.new(0, 1, []),
+            Command.new(402, 0, [1, "Decided"]), Command.new(122, 1, [1007, 1007, 0, 0, 40]), Command.new(201, 1, [0, 430, 25, 20, 8, 0]), Command.new(0, 1, []),
+            Command.new(404, 0, []), Command.new(0, 0, [])]
+check("a page whose transfer and story lie behind a choice is travel that may turn into story", [kind(decision), MGQ_MpCoopEvents.may_tell?(decision)], [:travel, true])
+interpreter.setup(decision, 0)
+interpreter.instance_variable_set(:@index, 2)
+MGQ_MpCoopEvents.guard(interpreter)
+check("it stays travel while its choice moves nothing on", MGQ_MpCoopEvents.telling?, false)
+interpreter.instance_variable_set(:@index, 5)
+MGQ_MpCoopEvents.guard(interpreter)
+check("once the choice moves the story on, the party hears it as story", MGQ_MpCoopEvents.telling?, true)
 $leader = leader
 $members = [leader]
 interpreter.setup(trader, 0)
@@ -909,17 +948,35 @@ pause.resume
 pause.resume
 check("the member cannot move the leader's page on or close it", [pause.alive?, $own_pause, window.pause], [true, nil, true])
 MGQ_MpCoopEvents.take(leader, { "pevent" => "done", "party" => "p1", "map" => "7", "x" => "0", "y" => "0", "d" => "2", "page" => say["page"] })
-check("the leader moving on ends it", [pause.resume, window.pause], [:closed, false])
+check("the leader moving on leaves the page a moment to read", [pause.resume, window.pause], [nil, true])
+$frame_count += MGQ_MpCoopEvents.reading_frames(["Hello, \\N[1]!", "Leader chooses: Yes / No"])
+check("then it ends", [pause.resume, window.pause], [:closed, false])
 Fiber.new { window.process_input }.resume
 check("then the member's own messages wait for their buttons again", $own_pause, true)
 $game_message.clear
 $game_message.busy = true
-MGQ_MpCoopEvents.take(leader, say.merge("page" => "s.1", "lines" => ["Old page"].pack('m0')))
-MGQ_MpCoopEvents.take(leader, { "pevent" => "done", "party" => "p1", "map" => "7", "page" => "s.1" })
-MGQ_MpCoopEvents.take(leader, say.merge("page" => "s.2", "lines" => ["Current page"].pack('m0'), "choices" => ""))
+(1..5).each do |number|
+  MGQ_MpCoopEvents.take(leader, say.merge("page" => "s.#{number}", "lines" => ["Old page #{number}"].pack('m0'), "choices" => ""))
+  MGQ_MpCoopEvents.take(leader, { "pevent" => "done", "party" => "p1", "map" => "7", "page" => "s.#{number}" })
+end
+MGQ_MpCoopEvents.take(leader, say.merge("page" => "s.6", "lines" => ["Current page"].pack('m0'), "choices" => ""))
 $game_message.busy = false
 $game_map.update
-check("a member busy meanwhile skips the pages the leader moved past", $game_message.texts, ["Current page"])
+check("a member busy meanwhile shows the pages the leader moved past, the oldest left out past CATCH_UP_PAGES", $game_message.texts, ["Old page 4"])
+$confirm = true
+check("confirm reads on through a page the leader moved past", MGQ_MpCoopEvents.page_done?, true)
+$confirm = nil
+MGQ_MpCoopEvents.page_ended
+$game_message.clear
+$game_map.update
+check("then the next page shows, held while it is new", [$game_message.texts, MGQ_MpCoopEvents.page_done?], [["Old page 5"], false])
+$skipping = true
+check("holding the game's skip passes a page the leader moved past", MGQ_MpCoopEvents.page_done?, true)
+$skipping = nil
+MGQ_MpCoopEvents.page_ended
+$game_message.clear
+$game_map.update
+check("and the one the leader is on", $game_message.texts, ["Current page"])
 leader.state["telling"] = "0"
 $frame_count += MGQ_MpCoopEvents::STALE_FRAMES
 check("a page ends anyway once the leader stopped telling the story a while ago", MGQ_MpCoopEvents.page_done?, true)
@@ -2058,6 +2115,19 @@ raw($game_switches)[70] = true
 check("as does a story common event that runs by itself", $game_map.setup_autorun_common_event, nil)
 $behind = false
 check("caught up, the player's story events start again", [MGQ_MpCoopEvents.hand_over(behind_story), $game_map.setup_autorun_common_event], [false, behind_common])
+
+# Until the world's story came after the world opened or a save loaded, story events wait, the
+# player's and those that run by themselves, without a word; talks run.
+module MGQ_MpWorldStory
+  def self.awaits_world?; true; end
+  def self.awaits_teller?; false; end
+end
+$notices.clear
+check("story events wait for the world's story, without a word",
+      [MGQ_MpCoopEvents.hand_over(behind_story), MGQ_MpCoopEvents.hand_over(behind_auto), $game_map.setup_autorun_common_event, $notices], [true, true, nil, []])
+check("talks run meanwhile", MGQ_MpCoopEvents.hand_over(behind_talk), false)
+Object.send(:remove_const, :MGQ_MpWorldStory)
+check("once it came, they start", [MGQ_MpCoopEvents.hand_over(behind_story), $game_map.setup_autorun_common_event], [false, behind_common])
 $data_common_events[4] = nil
 raw($game_switches)[70] = false
 
@@ -2178,9 +2248,26 @@ teller.state["map"] = "432"
 MGQ_MpCoopEvents.take(teller, { "pevent" => "say", "map" => "432", "page" => "m.1", "lines" => ["Moved line"].pack("m0") })
 check("and their pages from the new map wait for the player", MGQ_MpCoopEvents.instance_variable_get(:@heard).map { |page| page[:page] }, ["m.1"])
 $game_map.update
-check("the player follows as soon as they are free, and the pages heard show", [$game_player.reserved, $game_message.texts], [[432, 0, 0, 2], ["Moved line"]])
+check("the player follows as soon as they are free, no page of the story starting before", [$game_player.reserved, $game_message.texts], [[432, 0, 0, 2], []])
 check("and starts no story event on the way either", [MGQ_MpCoopEvents.hand_over(own_copy), MGQ_MpCoop::Scope.teller], [true, teller])
 $game_player.perform_transfer
+$game_map.update
+check("arrived, the pages heard show", $game_message.texts, ["Moved line"])
+MGQ_MpCoopEvents.page_ended
+$game_message.clear
+MGQ_MpCoopEvents.take(teller, { "pevent" => "say", "map" => "432", "page" => "m.2", "lines" => ["Long line"].pack("m0") })
+MGQ_MpCoopEvents.take(teller, { "pevent" => "done", "map" => "432", "page" => "m.2" })
+MGQ_MpCoopEvents.take(teller, { "pevent" => "say", "map" => "432", "page" => "m.3", "lines" => ["Passed line"].pack("m0") })
+MGQ_MpCoopEvents.take(teller, { "pevent" => "done", "map" => "432", "page" => "m.3" })
+$game_map.update
+check("a page the teller moved past stays to read", [$game_message.texts, MGQ_MpCoopEvents.page_done?], [["Long line"], false])
+class << MGQ_MpCoopGather; alias_method :due_before_check, :due?; def due?; true; end; end
+check("but ends at once while the story brings the player over", MGQ_MpCoopEvents.page_done?, true)
+MGQ_MpCoopEvents.page_ended
+$game_message.clear
+$game_map.update
+check("and the pages the teller moved past are left out, so the player is free to go", [$game_message.texts, MGQ_MpCoopEvents.instance_variable_get(:@heard)], [[], []])
+class << MGQ_MpCoopGather; alias_method :due?, :due_before_check; end
 next_copy = Game_Event.new(2, [story_page], 3)
 check("arrived, their copy of the story's next event waits too while the teller's state still says they tell nothing",
       [MGQ_MpCoopEvents.hand_over(next_copy), $log.grep(/kept event 2 on map 432 from starting: the player follows Teller's story to map 432/).size, MGQ_MpCoop::Scope.teller],

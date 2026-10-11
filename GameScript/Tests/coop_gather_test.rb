@@ -2,7 +2,8 @@
 #  coop_gather_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Checked that the line above a member's head counts the seconds down before they come over, then names that they come once free, and that the leader's names the members still missing with the time the story holds
+#      Paulinchen  2026-10-11: Checked that a map from 1000 on is found in the folder the game keeps it in
+#                            - Checked that the line above a member's head counts the seconds down before they come over, then names that they come once free, and that the leader's names the members still missing with the time the story holds
 #                            - Stood in for the line above the player's head with its doings and lapses, and for the members synced with the leader's story
 #      Paulinchen  2026-10-10: Checked that a Raid World's follow taken at once waits a minute for a busy player
 #                            - Checked that a follow taken in a Raid World names its teller and map while the player is on the way and after they arrived, until CALL_LAPSE_FRAMES passed
@@ -338,4 +339,10 @@ gather.come_to("Friend", [77, 1, 1, 2], false)
 gather.update
 check("a teleport to a map this game lacks tells the player so", [gather.coming?, $notices.last, $game_player.reserved],
       [false, "Cannot teleport to Friend: this game has no map 77.", nil])
+
+# A map from 1000 on lies in a folder of its own, which only the game's own file name finds.
+def DataManager.map_file_name(map_id); "Data/Map/Data/Map#{format('%03d', map_id % 1000)}.rvdata2"; end
+def load_data(path); raise Errno::ENOENT, path unless path == "Data/Map/Data/Map650.rvdata2"; end
+check("a map from 1000 on is found where the game keeps it", [gather.map_file(1650), gather.map_known?(1650)], ["Data/Map/Data/Map650.rvdata2", true])
+class << DataManager; remove_method :map_file_name; end
 $raid = false

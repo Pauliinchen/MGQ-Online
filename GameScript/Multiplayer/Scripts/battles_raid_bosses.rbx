@@ -2,6 +2,7 @@
 #  battles_raid_bosses.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-11: Grouped the raid bosses by the story's sections, Part 1 to the Chaos route and the Chaos Domain, and found the section and the tier of a boss by its name
 #      Paulinchen  2026-10-10: Counted the Three Nobles of Black, fought before Black Alice and again before the Heavenly Knights of Part 3, as raid bosses
 #                            - Gave each raid boss a title for its HP bar, the group the game names it in
 #                            - Ranked the raid bosses in tiers 0 to 9, each with the factors it gives their stats: 50 times the max HP and 5 times the defense and magic defense at tier 0, down to 5 times the max HP and the game's defenses at tier 9
@@ -222,6 +223,14 @@ module MGQ_MpRaidBosses
     9 => { :mhp => 5 },
   }
 
+  # The story's sections in story order, each with the troop of TROOPS it starts at in TROOPS' order,
+  # running to the next one's start; the troops' ids interleave on the Chaos route, so the order
+  # counts, not the ids. The bosses of OPTIONAL make a section of their own, OPTIONAL_SECTION.
+  SECTIONS = [["Part 1", 26], ["Part 2", 607], ["Part 3", 1451], ["Angelic Dominion", 1517], ["Monster Realm", 1745], ["Chaos route", 1959]]
+
+  # The section of the one-time bosses of OPTIONAL, after the story's.
+  OPTIONAL_SECTION = "Chaos Domain"
+
   # The story's bosses of each tier, by their milestone's name (see milestone_key), in the order the
   # story meets them. The bosses of OPTIONAL carry their tier themselves.
   TIER_BOSSES = {
@@ -293,9 +302,44 @@ module MGQ_MpRaidBosses
     optional = OPTIONAL[troop_id.to_i]
     return optional[1] if optional
 
-    key = milestone_key(troop_id)
+    key_tier(milestone_key(troop_id))
+  end
+
+  # Finds the tier of a boss by its name: its milestone's (see milestone_key) or its own in OPTIONAL.
+  #
+  # @param key [String, nil] The name.
+  # @return [Integer, nil] The tier, nil for a name the tables lack.
+  def self.key_tier(key)
     @tiers ||= TIER_BOSSES.each_with_object({}) { |(tier, names), tiers| names.each { |name| tiers[name] = tier } }
-    key && @tiers[key]
+    @optional_tiers ||= Hash[OPTIONAL.values]
+    @tiers[key] || @optional_tiers[key]
+  end
+
+  # Lists the story's sections in story order with their bosses' milestone names (see
+  # milestone_key), each once, in the order the story meets them; the bosses of OPTIONAL last under
+  # OPTIONAL_SECTION. Walks TROOPS once and keeps what it found.
+  #
+  # @return [Array<Array(String, Array<String>)>] Each section's name with its bosses' names.
+  def self.sections
+    @sections ||= begin
+      starts = Hash[SECTIONS.map { |name, troop| [troop, name] }]
+      found = TROOPS.keys.each_with_object([]) do |troop_id, list|
+        list << [starts[troop_id], []] if starts.key?(troop_id)
+        key = milestone_key(troop_id)
+        list.last[1] << key unless list.last[1].include?(key)
+      end
+      found << [OPTIONAL_SECTION, OPTIONAL.values.map(&:first)]
+    end
+  end
+
+  # Finds the section a boss belongs to, see sections.
+  #
+  # @param boss [Integer, String, nil] Its troop, or its milestone's name (see milestone_key) or its
+  #   own in OPTIONAL.
+  # @return [String, nil] The section's name, nil for a boss the tables lack.
+  def self.section(boss)
+    @section_of ||= sections.each_with_object({}) { |(name, keys), found| keys.each { |key| found[key] = name } }
+    @section_of[boss.to_s] || @section_of[milestone_key(boss).to_s]
   end
 
   # Finds the name of a boss troop's milestone, with its cap where several milestones share the

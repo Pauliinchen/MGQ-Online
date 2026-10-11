@@ -2,7 +2,8 @@
 #  world_overview.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Took the box's place, the title's insets and the picked row's from the list box, whose lazy rectangle reads the screen's size once asked
+#      Paulinchen  2026-10-11: Grouped the World page's raid bosses by the story's sections under a heading each, showing only the sections the world's story reached and those holding a boss someone fought
+#                            - Took the box's place, the title's insets and the picked row's from the list box, whose lazy rectangle reads the screen's size once asked
 #                            - Added the World page, turned with Left and Right or a click on its tab, with the page's lines laid out once a frame: the world's name, type, difficulty, players, story and in a Raid World every raid boss with a thin gauge, its share left rounded, Defeated and who last hurt it
 #                            - Marked the Players tab in gold while a player's call waits there and the World page shows, where the notification box hides
 #                            - Showed the world's type and difficulty after its name in the title, joined with a bar, and cut a long name before the party's size
@@ -117,8 +118,20 @@ module MGQ_MpWorldOverview
   # How the World page writes the players online and the world's seats.
   PLAYERS_OF = "%d / %d"
 
-  # The World page's heading over the raid bosses.
-  BOSSES_HEADING = "Raid bosses"
+  # How the World page heads the raid bosses of a section of the story, see
+  # MGQ_MpRaidBosses.sections.
+  BOSSES_HEADING = "Raid bosses: %s"
+
+  # The section the World page lists the pools under whose bosses the tables lack.
+  OTHER_SECTION = "Other"
+
+  # The parts and routes of the world's story (see MGQ_MpWorldStory.part_of) from which on the
+  # World page lists a section's raid bosses, by the section's name; a route the world finished
+  # counts too. A section left out, Part 1, shows once the story is told.
+  SECTION_REACH = {
+    "Part 2" => %w(2 3 ad mr chaos), "Part 3" => %w(3 ad mr chaos), "Angelic Dominion" => %w(ad chaos),
+    "Monster Realm" => %w(mr chaos), "Chaos route" => %w(chaos), "Chaos Domain" => %w(chaos),
+  }
 
   # What the World page says of a raid boss the world defeated.
   DEFEATED = "Defeated"
@@ -405,7 +418,7 @@ module MGQ_MpWorldOverview
   end
 
   # Lays the World page out: the world's name, type, difficulty and players, then in a Raid World
-  # its story and its raid bosses under a heading.
+  # its story and its raid bosses under a heading per section of the story.
   #
   # @param online [Integer] The players online, the player included.
   # @return [Array<Array>] Each line: [:info, label, value], [:place, heading] or [:boss, boss].
@@ -419,19 +432,63 @@ module MGQ_MpWorldOverview
     return lines unless raid
 
     lines << [:info, WORLD_LABELS[:story], world_story_text]
-    lines << [:place, BOSSES_HEADING]
-    lines + bosses.map { |boss| [:boss, boss] }
+    boss_sections.each do |section, bosses|
+      lines << [:place, BOSSES_HEADING % section]
+      lines.concat(bosses.map { |boss| [:boss, boss] })
+    end
+    lines
   end
 
-  # Lists the raid bosses for the World page: the story's by tier, the strongest first, in the
-  # order the story meets them, then any other boss the relay told a pool of, by name.
+  # Lists the raid bosses for the World page by the story's sections in story order: each section
+  # the world's story reached (see reached?) or holding a boss the relay told a pool of, its bosses
+  # in the order the story meets them, then the pools of its fights that take their own name, such
+  # as Sisel's; last, under OTHER_SECTION, the pools whose bosses the tables lack, by name.
   #
-  # @return [Array<Boss>] The bosses.
-  def self.bosses
+  # @return [Array<Array(String, Array<Boss>)>] Each section's name with its bosses.
+  def self.boss_sections
     pools = MGQ_MpRaidPool.pools.group_by { |key, _| MGQ_MpRaidPool.boss_key(key) }
-    tiers = MGQ_MpRaidBosses::TIER_BOSSES
-    listed = tiers.keys.sort.map { |tier| tiers[tier].map { |name| boss_of(name, tier, pools.delete(name)) } }.flatten(1)
-    listed + pools.keys.sort.map { |name| boss_of(name, optional_tier(name), pools[name]) }
+    counters = MGQ_MpWorldStory.world
+    listed = MGQ_MpRaidBosses.sections.map do |section, keys|
+      names = keys + pools.keys.select { |name| !keys.include?(name) && section_of(name) == section }.sort
+      next unless reached?(section, counters) || names.any? { |name| pools.key?(name) }
+
+      [section, names.map { |name| boss_of(name, tier_of(name), pools.delete(name)) }]
+    end
+    others = pools.keys.sort.map { |name| boss_of(name, nil, pools[name]) }
+    listed.compact + (others.empty? ? [] : [[OTHER_SECTION, others]])
+  end
+
+  # Reports whether the world's story reached a section of raid bosses, see SECTION_REACH.
+  #
+  # @param section [String] The section's name.
+  # @param counters [Hash, nil] The world's story, see MGQ_MpWorldStory.world; nil before the relay
+  #   told it, which reaches no section.
+  # @return [Boolean] Whether it did.
+  def self.reached?(section, counters)
+    return false unless counters
+
+    reach = SECTION_REACH[section]
+    reach.nil? || !(reach & ([MGQ_MpWorldStory.part_of(counters).to_s] + Array(counters["done"]))).empty?
+  rescue => e
+    log_once(:boss_sections, "reading the world's story for the raid bosses failed: #{e.class}: #{e.message}")
+    false
+  end
+
+  # Finds the section of a pool's boss: its milestone's or OPTIONAL's, else that of the troop a
+  # fight with its own name belongs to.
+  #
+  # @param name [String] The pool's boss, see MGQ_MpRaidPool.boss_key.
+  # @return [String, nil] The section, nil for a boss the tables lack.
+  def self.section_of(name)
+    MGQ_MpRaidBosses.section(name) || MGQ_MpRaidBosses.section(MGQ_MpRaidPool.troop_of_key(name))
+  end
+
+  # Finds the tier of a raid boss by its name, as section_of finds its section.
+  #
+  # @param name [String] The boss's name.
+  # @return [Integer, nil] Its tier, nil for a name the tables lack.
+  def self.tier_of(name)
+    MGQ_MpRaidBosses.key_tier(name) || MGQ_MpRaidBosses.tier(MGQ_MpRaidPool.troop_of_key(name))
   end
 
   # Sums a raid boss up from its pools: the share left over them, whether every one is empty for
@@ -449,16 +506,6 @@ module MGQ_MpWorldOverview
     left = pools.inject(0.0) { |sum, pool| sum + MGQ_MpRaidPool.left_now(pool, now) } / pools.size
     hurt = pools.select { |pool| !pool.by.to_s.empty? }.max_by { |pool| pool.at.to_f }
     Boss.new(name, tier, left, pools.all? { |pool| pool.defeated }, hurt && hurt.by.to_s)
-  end
-
-  # Finds the tier of a boss outside the story's tiers: one of the one-time bosses, which carry
-  # their tier themselves.
-  #
-  # @param name [String] The boss's name.
-  # @return [Integer, nil] Its tier, nil for a name the tables lack.
-  def self.optional_tier(name)
-    row = MGQ_MpRaidBosses::OPTIONAL.values.find { |boss, _| boss == name }
-    row && row[1]
   end
 
   # Writes the share of a raid boss's HP left, never 0% while any is.

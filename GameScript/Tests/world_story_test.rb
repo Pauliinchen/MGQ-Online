@@ -812,7 +812,46 @@ check("a world story before a route the player started themselves is no return t
 check("the story is taken, and the player's own step since the story they built on stays, as the world's story did not change it",
       [$game_variables[1001], $game_variables[1141]], [40, 2])
 frames(80)
+check("the route, finished before as every route was, is locked again first", [calls_of("mp_raid_route_lock"), calls_of("mp_raid_story_post")], [[["w1\0", "ad\0"]], []])
+relay("rev" => 65, "wrev" => 64, "p" => 39, "part" => "3", "clear" => "ad,mr,chaos", "done" => "ad,mr,chaos", "route" => "ad", "lock" => "locked")
+frames(20)
 check("and goes out on the world's revision", calls_of("mp_raid_story_post").map { |args| [args[1], args[2]] }, [[64, "p=40;r1141=2;r1142=0;r1143=0;clear=ad,mr,chaos\0"]])
+relay("rev" => 66, "wrev" => 66, "p" => 40, "r1141" => 2, "clear" => "ad,mr,chaos", "done" => "ad,mr,chaos", "part" => "ad", "route" => "ad", "post" => "accepted", "post_rev" => 66)
+frames(16)
+choices.forget("test")
+
+# A player who chose a route at the Great Decision before the world's story came, as their save
+# from an earlier session holds, is further than the world, though their key ranks below the
+# decision once the world finished every route: their story becomes the world's, never behind.
+$calls.clear
+$notices.clear
+new_story({ 1001 => 40, 1141 => 1 }, [4, 7096, 7097, 7039])
+story.loaded(:load)
+frames(1)
+check("the player's story events wait for the world's story after a load", story.awaits_world?, true)
+relay({ "rev" => 67, "wrev" => 67, "p" => 40, "part" => "3", "clear" => "ad,mr,chaos", "done" => "ad,mr,chaos", "fetch" => "done" }, packed({ 1001 => 40 }, [7096, 7097, 7039]))
+frames(16)
+check("a route chosen at the decision the world stands at is further, not behind", [story.mode, $game_variables[1141], story.awaits_world?], [:world, 1, false])
+check("which opens every route in a world that finished them all", story.open_routes(story.world), [0, 1, 2])
+frames(80)
+check("and is locked for the world", calls_of("mp_raid_route_lock"), [["w1\0", "ad\0"]])
+relay("rev" => 68, "wrev" => 67, "p" => 40, "part" => "3", "clear" => "ad,mr,chaos", "done" => "ad,mr,chaos", "route" => "ad", "lock" => "locked")
+frames(20)
+check("then written", calls_of("mp_raid_story_post").map { |args| args[2] }, ["p=40;r1141=1;r1142=0;r1143=0;clear=ad,mr,chaos\0"])
+relay("rev" => 69, "wrev" => 69, "p" => 40, "r1141" => 1, "clear" => "ad,mr,chaos", "done" => "ad,mr,chaos", "part" => "ad", "route" => "ad", "post" => "accepted", "post_rev" => 69)
+frames(16)
+check("a route locked in such a world is the only one offered", story.open_routes(story.world), [0])
+choices.forget("test")
+
+# The world's story that does not come keeps the story events waiting AWAIT_WORLD_FRAMES at most.
+new_story({ 1001 => 12 })
+story.loaded(:load)
+frames(1)
+relay("fetch" => "failed", "fetch_error" => "offline")
+frames(MGQ_MpWorldStory::AWAIT_WORLD_FRAMES - 2)
+check("the story events wait while the world's story has not come", story.awaits_world?, true)
+frames(2)
+check("but no longer than AWAIT_WORLD_FRAMES", story.awaits_world?, false)
 choices.forget("test")
 
 # Progress made before the world's story first came stays where the world's did not change it.

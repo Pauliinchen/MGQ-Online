@@ -2,7 +2,8 @@
 #  battles_coop_join.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Kept the prompt on the screen through MGQ_MpUi.within instead of a copy of it
+#      Paulinchen  2026-10-11: Drew the prompt in the color every request and offer shares
+#                            - Kept the prompt on the screen through MGQ_MpUi.within instead of a copy of it
 #      Paulinchen  2026-10-10: Offered a side battle against the same raid boss near a boss battle that takes the player in no more, on the same hotkey
 #                            - Kept the prompt whole on the screen at the map's edges
 #                            - Offered a battle that waits under the Library or Config while its player's window is in the background, whose state tells "away"
@@ -421,8 +422,8 @@ class Sprite_MpJoinPrompt < Sprite
   # Size of the prompt's font.
   FONT_SIZE = 16
 
-  # Color of the prompt, gold, which stands out from the names on the map.
-  COLOR = Color.new(255, 230, 140)
+  # Color of the prompt, the one every request and offer shares.
+  COLOR = MGQ_MpActions::LINE_COLOR
 
   # Creates the prompt, empty.
   #

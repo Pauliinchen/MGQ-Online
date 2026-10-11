@@ -153,7 +153,7 @@ A script in a folder inside `Patch` belongs to the mod that folder is named afte
 ![The action wheel, with a chat bubble and the party box](images/action-wheel.png)
 
 - **Other players** on your map walk around with their name above them and an icon for what they're doing: fighting, talking or watching an event, typing (a keyboard), in a menu, the inventory or their equipment, shopping, at the casino, in the Library, sailing, flying, or away. They walk through everything and trigger nothing.
-- **Player colors:** your own name is yellow, your party's members are green, and everyone else has one of eight colors of their own, the same for that player in every world and session. The party box, the World overview, the chat and co-op battles use the same colors. A companion following them whose picture your game lacks, such as one from a hero pack you don't have, shows as an outline: green for your party's members, white for anyone else.
+- **Player colors:** your own name is yellow, your party's members are green, and everyone else is white. The party box, the World overview, the chat and co-op battles use the same colors. A companion following them whose picture your game lacks, such as one from a hero pack you don't have, shows as an outline: green for your party's members, white for anyone else.
 - **Ping** shows after each player's name, and yours above your head: green up to 100 ms, yellow up to 200 ms, red beyond; past 999 ms it says "999+ ms".
 - **Above your own head** the mod says what you're waiting for, with the seconds it still stands: "Inviting to a party (12 s) . . .", "Asking \<name> to teleport (45 s) . . .", "Challenging to a duel (9 s) . . ." and the like.
 - **The bottom left** tells who joined and left, and when the connection is being restored. A player whose connection drops stays in the world and in their party for 15 seconds, so a short break changes nothing.
@@ -192,10 +192,12 @@ The empty box names the controls, and shows the **Alt** ones while you hold it.
 | Tab | Who reads it | Command |
 |---|---|---|
 | **All** | Every line you can see | |
-| **Global** | Everyone in the world, "[Global]" in orange | **/g** |
-| **Party** | Your party only, "[Party]" | **/p** |
-| **Say** | The players on your map; where you start | **/s** |
-| **Whisper** | One player, in pale pink | **/w** and a name, or **/r** |
+| **Global** | Everyone in the world, in white | **/g** |
+| **Map** | The players on your map, "[Map]" in light pink; where you start | **/m** |
+| **Party** | Your party only, "[Party]" in blue | **/p** |
+| **Whisper** | One player, in magenta; the tab shows once you whisper or get a whisper | **/w** and a name, or **/r** |
+
+The chats take the colors World of Warcraft gives its chats.
 
 - A command, or a click on a chat's tab, picks the chat your next lines go to; the box shows which. It stays until you pick another.
 - For **/w**, a list of matching players shows above the box after the first letter of the name: **Up** and **Down** pick one, **Enter** or **Tab** takes it.
@@ -208,7 +210,7 @@ The empty box names the controls, and shows the **Alt** ones while you hold it.
 #### Players in the chat
 
 - Your line shows in a speech bubble in its chat's color just above your name, for the players on your map.
-- Names are yellow for you, green for your party's members and for everyone else their own color, the one above their head.
+- Names are yellow for you, green for your party's members and white for everyone else.
 - When several players share a name, the later ones show as "Name (2)", "Name (3)" in the log, above their head and in the whisper list.
 - Click a player's name in the open chat to invite them to your party, challenge them to a duel, offer a trade or whisper to them. In a battle only the whisper is offered. **Esc** closes the menu.
 
@@ -233,7 +235,7 @@ Press **F11** or pick the middle of the action wheel; **F11**, **B**, cancel, nu
 **The World page:**
 
 - The world's name, its type (*Classic* or *Raid*), its difficulty (*Per player* in a Classic world), and its players online of its seats ("3 / 8").
-- In a Raid World also where the world's story stands ("Part 2: Alice side", *Not told yet* before anyone moved it) and every **raid boss**: its name, its tier, a thin gauge of the HP the world has left of it with the share ("68%"), *Defeated* once it fell, and who last hurt it. A boss nobody has fought yet is full.
+- In a Raid World also where the world's story stands ("Part 2: Alice side", *Not told yet* before anyone moved it) and its **raid bosses**, grouped under a heading per part of the story in the order the story meets them: *Part 1*, *Part 2*, *Part 3*, *Angelic Dominion*, *Monster Realm*, *Chaos route* and *Chaos Domain*. Only the parts the world's story has reached show, and any part with a boss someone has fought already. Each boss shows its name, its tier, a thin gauge of the HP the world has left of it with the share ("68%"), *Defeated* once it fell, and who last hurt it. A boss nobody has fought yet is full.
 - While you look at the World page, a gold corner on the *Players* tab tells you an invite, challenge or trade offer waits there; **Y** and **N** answer it once you're back on the Players page or have closed the overview.
 - **Up** and **Down** scroll the page.
 
@@ -257,10 +259,10 @@ Stand next to another player, open the wheel and pick *Invite to a party*. "Invi
 
 ### Seeing your party
 
-- Party members are fully visible with green names; everyone else is slightly see-through, in their own color, except in a Raid World, where everyone on the map is fully visible.
+- Party members are fully visible with green names; everyone else is slightly see-through, in white, except in a Raid World, where everyone on the map is fully visible.
 - A party's size shows after its players' names and above your head ("2 / 4"), and its leader has a crown. Discord shows it as "(2 of 4)".
 - **The party box** at the top right lists your party, its leader first and then by name: the crown, the icon of what they're doing, their name (yours in yellow, the others in green, a long one cut with "..."), their highest companion level, their ping in its own column ("999+ ms" at most) and where they are on a smaller line. A member whose connection dropped shows dimmed with the away icon until they're back. The title names the hotkey that resizes the box: **Tab** makes it small, with only icons, names and pings, and full again; it stays as you left it. The box fades in and out.
-- **The map box:** in a Raid World the party box lists everyone on your map instead, while anyone else is on it: your party first, in green, with its leader's crown, then the other players by name in their own colors, each with their icon, the level of their Frontline character and their ping, without a place. Its title says how many are on the map ("Map 4"). It grows up to 10 lines; with more players the last line says "+3 more". **Tab** makes it small too.
+- **The map box:** in a Raid World the party box lists everyone on your map instead, while anyone else is on it: your party first, in green, with its leader's crown, then the other players by name in white, each with their icon, the level of their Frontline character and their ping, without a place. Its title says how many are on the map ("Map 4"). It grows up to 10 lines; with more players the last line says "+3 more". **Tab** makes it small too.
 
 ### Your squad
 
@@ -406,7 +408,7 @@ In a Raid World each story boss is one fight the whole world shares, and so are 
 - **HP just lost** stays visible for 2 seconds as a darker part of the bar behind the HP left, then drains away, so you see each hit, yours and the other battles'.
 - **On the map**, the boss's title and name with a thin bar above its event show its HP as the world has it right now, full while nobody has fought it yet; a boss of several enemies gets a wider bar with a name and a thin bar for each of them. When the boss's event can't be seen, the battle's bar runs across the top of the screen instead, and the notification box and the party box move down below it.
 - **Hades rematches** fight the bosses as the game has them, never their raid HP, and the rematch hall shows no boss bars.
-- **The World overview's World page** lists every raid boss of the world with its tier, a thin gauge of the HP left, its share or *Defeated*, and who last hurt it, see [World overview](#world-overview).
+- **The World overview's World page** lists the world's raid bosses by part of the story, each with its tier, a thin gauge of the HP left, its share or *Defeated*, and who last hurt it, see [World overview](#world-overview).
 
 ## Duels
 

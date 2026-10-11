@@ -2,7 +2,8 @@
 #  overworld.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Named a ghost above its head in its player's color, through MGQ_MpUi::PlayerColor
+#      Paulinchen  2026-10-11: Drew the outline standing in for a follower in the shared style's member and text colors
+#                            - Named a ghost above its head in its player's color, through MGQ_MpUi::PlayerColor
 #                            - Showed a keyboard above a ghost whose player types, apart from the event's bubble
 #                            - Took the ping's colors, the dim party size and the font sizes from the shared style, and drew the icons of the labels and the status line through MGQ_MpUi.draw_icon
 #                            - Showed a ping past 999 ms as "999+ ms", and sized and drew the ping column of the party box and the World overview here, which it fits
@@ -105,9 +106,9 @@ module MGQ_MpOverworld
   # longest unused forgotten first, so a game naming ever new files cannot grow the list.
   MOST_GRAPHICS_KEPT = 64
 
-  # Colors of the outline that stands in for a follower whose sprite this game lacks: green while
-  # its player is in the player's party, white otherwise.
-  OUTLINE_COLORS = { :member => Color.new(0, 255, 0), :stranger => Color.new(255, 255, 255) }
+  # Colors of the outline that stands in for a follower whose sprite this game lacks: the style's
+  # member color while its player is in the player's party, its plain text color otherwise.
+  OUTLINE_COLORS = { :member => MGQ_MpUi::Style::MEMBER, :stranger => MGQ_MpUi::Style::TEXT }
 
   # Whether this game has each graphic another player's game named, by its folder and file, the
   # longest unused first.

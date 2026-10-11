@@ -2,7 +2,9 @@
 #  ui_style_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Created
+#      Paulinchen  2026-10-11: Checked that an outlined text is drawn without the font's own outline, which doubled it
+#                            - Checked that an outlined text keeps its color, with a font that copies a color into its own as the game does, and that a player outside the party is plain white
+#                            - Created
 #
 #----------------------------------------------------------------
 
@@ -44,18 +46,26 @@ end
 module NWConst; module Config; MOD_CONTENTS = [{ :key => :return }]; end; end
 Color = Struct.new(:red, :green, :blue, :alpha)
 Rect = Struct.new(:x, :y, :width, :height)
-Font = Struct.new(:size, :color, :bold, :outline, :out_color)
+# A font that keeps one color of its own, as RGSS does: color hands out that color and color=
+# copies a color's values into it.
+class Font < Struct.new(:size, :color, :bold, :outline, :out_color)
+  def color=(value)
+    self[:color] ||= Color.new
+    self[:color].red, self[:color].green, self[:color].blue, self[:color].alpha = value.red, value.green, value.blue, value.alpha
+  end
+end
 # A picture that records its texts, its fills and how many outline copies it drew.
 class Bitmap
-  attr_reader :width, :height, :font, :texts, :fills, :outlines
-  def initialize(width, height); @width = width; @height = height; @font = Font.new(24, nil, false, false, nil); @texts = []; @fills = []; @outlines = 0; end
+  attr_reader :width, :height, :font, :texts, :fills, :outlines, :outlined_twice
+  def initialize(width, height); @width = width; @height = height; @font = Font.new(24, Color.new(255, 255, 255, 255), false, false, nil); @texts = []; @fills = []; @outlines = 0; end
   def rect; Rect.new(0, 0, @width, @height); end
   def text_size(text); Rect.new(0, 0, text.to_s.size * @font.size / 2, @font.size); end
   def draw_text(x, y, width, height, text, align = 0)
+    @outlined_twice = true if @font.outline
     if @font.color == MGQ_MpUi::Style::OUTLINE
       @outlines += 1
     else
-      @texts << [x, y, text, @font.size, @font.color, align]
+      @texts << [x, y, text, @font.size, @font.color.dup, align]
     end
   end
   def fill_rect(*args)
@@ -100,6 +110,13 @@ check("use_font sets the size and color, never bold, with the solid outline", bi
 style.draw_outlined(bitmap, 0, 0, 100, 24, "Hi", 2)
 check("draw_outlined draws four copies straight around the text, then the text in its color, aligned",
       [bitmap.outlines, bitmap.texts, bitmap.font.color], [4, [[0, 0, "Hi", 18, style::GOOD, 2]], style::GOOD])
+bitmap.clear
+style.use_font(bitmap, 18, style::OWN)
+style.draw_outlined(bitmap, 0, 0, 100, 24, "Name")
+check("draw_outlined leaves the text in its color though setting the outline's color overwrites the font's own",
+      [bitmap.texts.map { |t| t[4] }, bitmap.font.color, bitmap.outlines], [[style::OWN], style::OWN, 4])
+check("draw_outlined draws without the font's own outline, which would double the solid one, and turns it back on after",
+      [bitmap.outlined_twice, bitmap.font.outline], [nil, true])
 bitmap.clear
 plate = style.draw_plate(bitmap, 10, 5, 200, 20, "abcd")
 check("draw_plate fills the text's width with the padding on either side, centered", [plate.to_a, bitmap.fills], [[86, 5, 48, 20], [[86, 5, 48, 20, style::PLATE]]])
@@ -170,16 +187,13 @@ check("nor do show, place and slide_to", [other.x, other.y, other.visible], [0, 
 
 # The color of a player.
 colors = MGQ_MpUi::PlayerColor
-check("an id hashes to a fixed place in the palette", [colors.index("a"), colors.index("b"), colors.index("ab"), colors.index(""), colors.index("ab") == colors.index("ab")], [1, 2, 1, 0, true])
-check("ids spread over the palette", (0..7).map { |n| colors.index("player-#{n}") }.uniq.size > 2, true)
 Peer = Struct.new(:seat, :state, :member)
 peer = Peer.new(2, { "id" => "p-other", "name" => "Player A" }, false)
 mate = Peer.new(3, { "id" => "p-mate" }, true)
 check("the player themself is OWN", [colors.of(:me), colors.of("me"), colors.of(peer, nil, true), colors.label(:me)], [style::OWN, style::OWN, style::OWN, "own"])
 check("a party member is MEMBER", [colors.of(mate), colors.of(peer, true), colors.of({ "id" => "x", "party" => "p1" }), colors.label(mate)], [style::MEMBER, style::MEMBER, style::MEMBER, "member"])
-expected = colors::PALETTE[colors.index("p-other")]
-check("anyone else gets the palette's color by their id", [colors.of(peer), colors.of("p-other"), colors.of({ "id" => "p-other", "party" => "p2" }), colors.label(peer)],
-      [expected, expected, expected, colors::NAMES[colors.index("p-other")]])
+check("anyone else is plain text, whatever their id", [colors.of(peer), colors.of("p-other"), colors.of({ "id" => "p-other", "party" => "p2" }), colors.label(peer), colors.const_defined?(:PALETTE)],
+      [style::TEXT, style::TEXT, style::TEXT, "plain", false])
 check("nobody reads as plain text, without raising", [colors.of(""), colors.of(Object.new), colors.of(nil), colors.label("")], [style::TEXT, style::TEXT, style::TEXT, "plain"])
 
 # The confirm box.
@@ -328,22 +342,22 @@ view = list::View.of(long, "Players", [[:head, "Online"], [:item, long, :good, "
 box.show(view)
 drawn = lambda { |size| box.bitmap.texts.select { |t| t[3] == size } }
 title, note = drawn.call(style::TITLE_SIZE).partition { |t| t[5] == 0 }.map(&:first)
-item = drawn.call(style::TEXT_SIZE).find { |t| t[4].equal?(style::GOOD) }
+item = drawn.call(style::TEXT_SIZE).find { |t| t[4] == style::GOOD }
 hint = drawn.call(style::SMALL_SIZE).last
 check("it fades in on show, hidden until then", [box.visible, box.opacity, box.x, box.y], [true, 0, 40, 32])
 style::FADE_FRAMES.times { box.update }
 check("and is opaque after FADE_FRAMES", box.opacity, 255)
 check("the title is cut before its note, which is in GOOD at the right",
-      [title[2].end_with?(MGQ_MpUi::ELLIPSIS), box.bitmap.text_size(title[2]).width <= 540 - box.bitmap.text_size("Players").width - style::PAD, note[2], note[4].equal?(style::GOOD), note[5]],
+      [title[2].end_with?(MGQ_MpUi::ELLIPSIS), box.bitmap.text_size(title[2]).width <= 540 - box.bitmap.text_size("Players").width - style::PAD, note[2], note[4] == style::GOOD, note[5]],
       [true, true, "Players", true, 2])
 check("an item is cut before its right-hand text, in its color", [item[2].end_with?(MGQ_MpUi::ELLIPSIS), box.bitmap.text_size(item[2]).width <= item[0] + 560 - 24 - 16 - 120 - 24], [true, true])
-check("the hint names the numpad's 0, in DIM, and the box fills with BACK", [hint[2], hint[4].equal?(style::DIM), box.bitmap.fills.first[4].equal?(style::BACK)],
+check("the hint names the numpad's 0, in DIM, and the box fills with BACK", [hint[2], hint[4] == style::DIM, box.bitmap.fills.first[4] == style::BACK],
       ["Up and down: move   Esc, Numpad 0 or a click outside: close", true, true])
 long_hint = "A hint that goes on and on and on and on and on and on far past the box's width, Esc or Numpad 0: close"
 box.show(list::View.of("Title", nil, [[:item, "An item", :plain, nil]], long_hint))
 hint = drawn.call(style::TINY_SIZE).last
 check("a hint wider than the box is drawn whole and smaller, never cut, since its end names the keys",
-      [hint && hint[2], hint && hint[4].equal?(style::DIM), box.bitmap.texts.any? { |t| t[2].end_with?(MGQ_MpUi::ELLIPSIS) }], [long_hint, true, false])
+      [hint && hint[2], hint && hint[4] == style::DIM, box.bitmap.texts.any? { |t| t[2].end_with?(MGQ_MpUi::ELLIPSIS) }], [long_hint, true, false])
 box.hide
 box.update
 check("hide fades it out, the picture kept meanwhile", [box.visible, box.opacity < 255, box.bitmap.texts.empty?], [true, true, false])
@@ -357,5 +371,5 @@ long_hint = "A hint that goes on and on and on and on and on and on far past the
 message.show("A title that goes on and on and on and on far past the box's width", "Some text.", long_hint)
 check("the message box is as wide as the screen leaves, centred", [message.bitmap.width, message.x, message.y], [480, 80, (480 - message.bitmap.height) / 2])
 title, hint = message.bitmap.texts.values_at(0, -1)
-check("its title is cut to its width, its hint drawn whole and smaller", [title[2].end_with?(MGQ_MpUi::ELLIPSIS), hint[2], hint[3], hint[4].equal?(style::DIM)],
+check("its title is cut to its width, its hint drawn whole and smaller", [title[2].end_with?(MGQ_MpUi::ELLIPSIS), hint[2], hint[3], hint[4] == style::DIM],
       [true, long_hint, style::TINY_SIZE, true])

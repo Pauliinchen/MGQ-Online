@@ -2,6 +2,7 @@
 #  coop_squad_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-11: Stood in for the shared style's bad color, which the line past a squad takes
 #      Paulinchen  2026-10-10: Checked that a hidden squad member never brings the cut fourth into a duel or a co-op battle
 #                            - Checked that a Raid World offers the teleport to the story whenever its endpoint is known
 #      Paulinchen  2026-10-08: Checked a Raid World's squads: one and two for every player, the team of four with the rest on standby, no followers, the line after the third place and the battles of the player's own
@@ -181,6 +182,7 @@ module MGQ_MpActions
   def self.wheel_choice(*); end
   def self.own_doing_from; end
 end
+module MGQ_MpUi; module Style; BAD = Color.new(255, 96, 96); end; end
 load_script "coop"
 load_script "coop_scope"
 load_script "coop_squad"

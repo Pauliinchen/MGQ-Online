@@ -2,6 +2,7 @@
 #  coop_squad.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-11: Drew the line past a squad in the shared style's bad color
 #      Paulinchen  2026-10-10: Took a Raid World's squad for duels and co-op battles from the team's first three places, so a hidden squad member never brings the cut fourth along
 #      Paulinchen  2026-10-08: Gave every player one place on the Frontline and two on the Backline in a Raid World, in a party or not, the fourth place cut
 #                            - Capped party_member_max at 4 in a Raid World, once the companions past the fourth wait on standby, never for a story's temporary party
@@ -64,8 +65,9 @@ module MGQ_MpCoopSquad
     LEADERS_ONLY => ["Leaders Only", "The players walk alone."],
   }
 
-  # Color of the line above the first character past a squad in the formation screens.
-  CUT_COLOR = Color.new(255, 128, 96)
+  # Color of the line above the first character past a squad in the formation screens, the style's
+  # bad color.
+  CUT_COLOR = MGQ_MpUi::Style::BAD
 
   # Shares of red, green and blue in a color's brightness, which a monochrome picture keeps.
   LUMA = [0.299, 0.587, 0.114]

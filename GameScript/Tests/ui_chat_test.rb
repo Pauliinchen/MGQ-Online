@@ -2,14 +2,16 @@
 #  ui_chat_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Created
+#      Paulinchen  2026-10-11: Checked the map chat chosen with /m, /s sent as text, the global chat untagged in white, a line marked say landing in the map chat, and the Whisper tab hidden until a whisper and again once the world closes
+#                            - Created
 #
 #----------------------------------------------------------------
 
 # Covers ui_chat.rbx: the lines sent that Alt with up and down bring back, /r answering the last
 # player who whispered, the sound of a whisper that arrives while the chat box is closed, a paste,
-# which the DLL hands over as typed text, and the tabs drawn dimmed above the closed log while one
-# holds unread lines. The rest of the chat is covered by overworld_test.rb, whose stand-in for the
+# which the DLL hands over as typed text, the tabs drawn dimmed above the closed log while one
+# holds unread lines, the Whisper tab shown only once a whisper happened, and the chats' commands,
+# tags and colors. The rest of the chat is covered by overworld_test.rb, whose stand-in for the
 # chat log's sprite and canvas the one below mirrors.
 
 require_relative "world_support"
@@ -86,7 +88,18 @@ chat.start_typing
 alt_press(MGQ_MpChat::UP_KEY)
 $typed = "\r"
 map_frame
-check("a line brought back and sent again is sent once more and kept once", [chat.log_lines.last, chat.history.last(2)], ["Me: line 25", ["line 24", "line 25"]])
+check("a line brought back and sent again is sent once more and kept once", [chat.log_lines.last, chat.history.last(2)], ["[Map] Me: line 25", ["line 24", "line 25"]])
+
+check("the map chat is the one chosen first, and a /w naming nobody shows no Whisper tab", [chat.channel, chat.whisper_tab?, chat.tabs], [:map, false, [:all, :global, :map, :party]])
+chat.start_typing
+$down = [MGQ_MpChat::ALT_KEY]
+$pressed = MGQ_MpChat::LEFT_KEY
+chat.alt_keys
+$down = []
+check("nor do Alt and the arrows reach it", chat.tab, :party)
+chat.select_tab(:all, "in the test")
+chat.choose(:map)
+chat.stop_typing
 
 # /r answers the last player who whispered, whose whisper sounds while the box is closed.
 $sounds.clear
@@ -97,19 +110,20 @@ $inbox << entry("message", friend_seat, "whisper=psst\nname=Friend\n\n")
 MGQ_MpOverworldSync.tick
 check("a whisper that arrives while the box is closed plays the recovery sound once and is whom /r answers",
       [$sounds, chat.reply_to, chat.log_lines.last], [["recovery"], "Friend", "[Whisper] Friend: psst"])
+check("and shows the Whisper tab, last of the chats' tabs, for the rest of the session", [chat.whisper_tab?, chat.tabs], [true, [:all, :global, :map, :party, :whisper]])
 chat.start_typing
 $sounds.clear
 $inbox << entry("message", friend_seat, "whisper=again\nname=Friend\n\n")
 MGQ_MpOverworldSync.tick
 check("one that arrives while the box is open plays nothing", $sounds, [])
 chat.stop_typing
-chat.choose(:say)
+chat.choose(:map)
 $sent.clear
 send_line("/r back at you")
 check("/r whispers to them and chooses the whisper chat to them for the lines after it",
       [$sent.map(&:first), $sent.last[1].include?("whisper=back at you"), chat.channel, chat.whisper_to, chat.log_lines.last],
       [[friend_seat], true, :whisper, "Friend", "[To Friend] Me: back at you"])
-chat.choose(:say)
+chat.choose(:map)
 send_line("/r")
 check("/r alone chooses the whisper chat to them", [chat.channel, chat.whisper_to, chat.typing?], [:whisper, "Friend", false])
 $sounds.clear
@@ -117,20 +131,20 @@ $inbox << entry("message", friend_seat, "whisper=one\nname=Friend\n\n")
 $inbox << entry("message", friend_seat, "whisper=two\nname=Friend\n\n")
 MGQ_MpOverworldSync.tick
 check("whispers that arrive in one frame chime once", [$sounds, chat.log_lines.last(2)], [["recovery"], ["[Whisper] Friend: one", "[Whisper] Friend: two"]])
-chat.choose(:say)
+chat.choose(:map)
 $inbox << entry("out", friend_seat)
 MGQ_MpOverworldSync.tick
 send_line("/r")
-check("/r alone once they left is refused and leaves the chat as it was", [MGQ_MpOverworldSync::Status.lines.last, chat.channel], ["Friend is not in the world.", :say])
+check("/r alone once they left is refused and leaves the chat as it was", [MGQ_MpOverworldSync::Status.lines.last, chat.channel], ["Friend is not in the world.", :map])
 $sent.clear
 send_line("/r still there?")
-check("/r with a line once they left is refused too, nothing sent", [MGQ_MpOverworldSync::Status.lines.last, $sent, chat.channel], ["Friend is not in the world.", [], :say])
+check("/r with a line once they left is refused too, nothing sent", [MGQ_MpOverworldSync::Status.lines.last, $sent, chat.channel], ["Friend is not in the world.", [], :map])
 newcomer_seat = 3
 $inbox << entry("message", newcomer_seat, told(friend.merge("id" => "other")))
 MGQ_MpOverworldSync.tick
 send_line("/r secret")
 check("/r never goes to another player who took the name of the one who whispered", [MGQ_MpOverworldSync::Status.lines.last, $sent, chat.channel],
-      ["Friend is not in the world.", [], :say])
+      ["Friend is not in the world.", [], :map])
 $inbox << entry("message", friend_seat, told(friend))
 $inbox << entry("message", newcomer_seat, "whisper=from the second\nname=Friend\n\n")
 MGQ_MpOverworldSync.tick
@@ -192,7 +206,7 @@ tab_names = lambda { parts.map { |_, text, _| text } & MGQ_MpChat::TAB_NAMES.val
 shades = lambda { events.select { |kind, args| kind == :fill && args[4].equal?(Sprite_MpChatLog::CLOSED_SHADE) } }
 
 chat.start_typing
-chat.select_tab(:say, "in the test")
+chat.select_tab(:map, "in the test")
 chat.stop_typing
 log_sprite.update
 check("the closed log draws no tabs while none holds unread lines", [tab_names.call, shades.call, events.count { |kind, _| kind == :glow }], [[], [], 0])
@@ -202,7 +216,7 @@ log_sprite.update
 global = log_sprite.instance_variable_get(:@tab_spots).find { |tab, _, _| tab == :global }
 shade = events.index { |kind, args| kind == :fill && args[4].equal?(Sprite_MpChatLog::CLOSED_SHADE) && args[0] == global[1] }
 glow = events.index { |kind, right| kind == :glow && right == global[1] + global[2] }
-check("a global line that came on the Say tab draws the tabs above the closed log, each under the shade, the Global tab glowing over its shade",
+check("a global line that came on the Map tab draws the tabs above the closed log, each under the shade, the Global tab glowing over its shade",
       [tab_names.call, shades.call.size, events.count { |kind, _| kind == :glow }, !shade.nil? && !glow.nil? && shade < glow],
       [MGQ_MpChat::TABS.map { |tab| MGQ_MpChat::TAB_NAMES[tab] }, MGQ_MpChat::TABS.size, 1, true])
 $inbox << entry("message", friend_seat, "whisper=you there?\nname=Friend\n\n")
@@ -253,4 +267,44 @@ check("the help names /r, the sent lines and the paste", [MGQ_MpChat::HELP.any? 
 $open = false
 MGQ_MpOverworldSync.tick
 check("closing the world forgets the lines sent and whom /r answers", [chat.history, chat.reply_to], [[], nil])
+check("and the Whisper tab with the whisper chat, for the map chat", [chat.whisper_tab?, chat.tabs.include?(:whisper), chat.channel, chat.tab], [false, false, :map, :all])
 $open = true
+$inbox << entry("message", friend_seat, told(friend))
+MGQ_MpOverworldSync.tick
+
+# The chats' commands, tags and colors, and the Whisper tab coming back.
+$sent.clear
+chat.choose(:global)
+send_line("/m over here")
+check("/m chooses the map chat, whose line is tagged and goes out marked say, as released games read it",
+      [chat.channel, chat.log_lines.last, $sent.last[1].include?("ch=say"), $sent.last[1].include?("map=5")], [:map, "[Map] Me: over here", true, true])
+send_line("/map still here")
+check("as does /map", [chat.channel, chat.log_lines.last], [:map, "[Map] Me: still here"])
+chat.choose(:global)
+$sent.clear
+send_line("/s hi")
+check("/s is no command any more, just text in the chat chosen", [chat.channel, chat.log_lines.last, $sent.last[1].include?("ch=")], [:global, "Me: /s hi", false])
+send_line("/say hi")
+check("nor is /say", [chat.channel, chat.log_lines.last], [:global, "Me: /say hi"])
+$inbox << entry("message", friend_seat, "chat=hello world\nname=Friend\n\n")
+MGQ_MpOverworldSync.tick
+check("a global line has no tag, its tab, text and bubble plain white",
+      [chat.log_lines.last, chat.log_entries.last.tag, Sprite_MpChatLog::CHANNEL_COLORS[:global].equal?(MGQ_MpUi::Style::TEXT), Sprite_MpChatLog::COLORED_TEXT.include?(:global)],
+      ["Friend: hello world", "", true, false])
+$inbox << entry("message", friend_seat, "chat=on your map\nch=say\nmap=5\nname=Friend\n\n")
+MGQ_MpOverworldSync.tick
+check("a line marked say lands in the map chat, its text in the map chat's color",
+      [chat.log_entries.last.channel, chat.log_lines.last, chat.bubble_channel(friend_seat), Sprite_MpChatLog::COLORED_TEXT.include?(:map)], [:map, "[Map] Friend: on your map", :map, true])
+check("the chats take the colors of World of Warcraft", [:map, :party, :whisper].map { |channel| Sprite_MpChatLog::CHANNEL_COLORS[channel].instance_eval { [red, green, blue] } },
+      [[255, 192, 192], [170, 170, 255], [255, 128, 255]])
+check("the help names /m for the map chat and no /s", [MGQ_MpChat::HELP.any? { |line| line.start_with?("/m ") }, MGQ_MpChat::HELP.any? { |line| line.start_with?("/s ") }], [true, false])
+check("no whisper since the world opened again shows no Whisper tab", chat.tabs.include?(:whisper), false)
+chat.choose(:whisper)
+check("choosing the whisper chat shows it and lands on it", [chat.tabs.last, chat.channel], [:whisper, :whisper])
+$open = false
+MGQ_MpOverworldSync.tick
+$open = true
+$inbox << entry("message", friend_seat, told(friend))
+MGQ_MpOverworldSync.tick
+chat.whisper("Friend")
+check("as does a whisper chosen from a player's menu", [chat.tabs.last, chat.channel, chat.whisper_to], [:whisper, :whisper, "Friend"])

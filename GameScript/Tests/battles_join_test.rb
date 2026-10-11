@@ -2,7 +2,8 @@
 #  battles_join_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Took the depths and the screen from ui.rbx, which battle_support.rb loads now
+#      Paulinchen  2026-10-11: Stood in for the color every request and offer shares, which the prompt takes
+#                            - Took the depths and the screen from ui.rbx, which battle_support.rb loads now
 #                            - Kept the bitmap stand-in's width, which the waiting box's names line of a late join is cut to
 #      Paulinchen  2026-10-10: Covered the side battle the prompt offers near a raid boss battle that takes the player in no more
 #                            - Checked that a side battle starts as the player's own, inviting and holding nobody, which another player then joins by choice
@@ -55,7 +56,7 @@ module BattleManager; def self.battle_end?; $ending ? true : false; end; end
 module MGQ_MpWorld; def self.raid?; $raid; end; end
 module MGQ_MpTrade; def self.session; $trading; end; end
 module MGQ_MpChat; def self.typing?; $typing ? true : false; end; end
-module MGQ_MpActions; module Wheel; def self.open?; $wheel ? true : false; end; end; end
+module MGQ_MpActions; LINE_COLOR = MGQ_MpUi::Style::OWN; module Wheel; def self.open?; $wheel ? true : false; end; end; end
 module MGQ_MpEmotes; def self.open?; false; end; end
 module MGQ_MpNotices
   def self.message(_key, text, _frames = 180); ($messages ||= []) << text; end

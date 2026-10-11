@@ -2,7 +2,9 @@
 #  overworld_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Checked the line above the player's head half the screen wide and cut to it, the action wheel's hint under its boxes, and both fading in and out with their pictures kept
+#      Paulinchen  2026-10-11: Checked the map chat, chosen with /m, its lines tagged and drawn in its color, the global chat untagged in white, and the Whisper tab hidden until a whisper
+#                            - Checked that a player outside the party is named in plain white
+#                            - Checked the line above the player's head half the screen wide and cut to it, the action wheel's hint under its boxes, and both fading in and out with their pictures kept
 #                            - Compared the chat log's text against the shared style's text color, and gave the log's font stand-in an outline color
 #                            - Checked the seconds left after a doing in the line above the player's head, a lapse that is no Time, a doing that fails, and that the log leaves the seconds out
 #                            - Checked the frames a party invite stands for still, and none once it stopped
@@ -163,7 +165,7 @@ tag.show(shown, peer)
 check("a player typing shows the keyboard, which is no bubble of an event, the one the party box takes from the row",
       [icons_drawn, MGQ_MpOverworld::TYPING_ICON == MGQ_MpOverworld::STATE_ICONS["event"], MGQ_MpOverworld::STATE_ICONS["typing"]],
       [[MGQ_MpOverworld::TYPING_ICON], false, MGQ_MpOverworld::TYPING_ICON])
-check("a player outside the party is named in the color of their id", [color_of.call("Friend").equal?(MGQ_MpUi::PlayerColor.of(peer)), MGQ_MpUi::PlayerColor::PALETTE.any? { |color| color.equal?(color_of.call("Friend")) }], [true, true])
+check("a player outside the party is named in plain white", [color_of.call("Friend").equal?(MGQ_MpUi::PlayerColor.of(peer)), color_of.call("Friend").equal?(MGQ_MpUi::Style::TEXT)], [true, true])
 icons_drawn.clear
 $inbox << entry("message", 2, told(friend.merge("scene" => "event")))
 MGQ_MpOverworldSync.tick
@@ -539,25 +541,25 @@ $sent.clear
 $typed = "\r"
 map_frame
 check("enter sends and closes", [chat.typing?, $typing_on, MGQ_Multiplayer::Capture.on?], [false, false, false])
-check("the line goes to the say chat, told once to everyone with the player's map", [$sent.map(&:first), $sent.last[1].include?("chat=hi there"), $sent.last[1].include?("ch=say"), $sent.last[1].include?("map=5")],
+check("the line goes to the map chat, told once to everyone with the player's map, marked say for earlier releases", [$sent.map(&:first), $sent.last[1].include?("chat=hi there"), $sent.last[1].include?("ch=say"), $sent.last[1].include?("map=5")],
       [[-1], true, true, true])
-check("own line in the log and bubble", [chat.log_lines.last, chat.bubble(:me)], ["Me: hi there", "hi there"])
-check("the say chat is not mirrored to the relay", $said, [])
+check("own line in the log and bubble", [chat.log_lines.last, chat.bubble(:me)], ["[Map] Me: hi there", "hi there"])
+check("the map chat is not mirrored to the relay", $said, [])
 
 $sent.clear
 chat.start_typing
 $typed = "/g hi all\r"
 map_frame
-check("/g sends to everyone, tagged, and mirrors the line to the relay for the world's admins",
-      [$sent.map(&:first), $sent.last[1].include?("ch="), chat.log_lines.last, $said, chat.channel], [[-1], false, "[Global] Me: hi all", ["hi all"], :global])
+check("/g sends to everyone, untagged, and mirrors the line to the relay for the world's admins",
+      [$sent.map(&:first), $sent.last[1].include?("ch="), chat.log_lines.last, $said, chat.channel], [[-1], false, "Me: hi all", ["hi all"], :global])
 chat.start_typing
 $typed = "/gx still global\r"
 map_frame
-check("the chosen chat holds for the lines after it, and an unknown command is just text", [$sent.last[0], chat.log_lines.last], [-1, "[Global] Me: /gx still global"])
+check("the chosen chat holds for the lines after it, and an unknown command is just text", [$sent.last[0], chat.log_lines.last], [-1, "Me: /gx still global"])
 chat.start_typing
-$typed = "/s "
+$typed = "/m "
 map_frame
-check("a command and a space choose the chat at once, leaving the box empty", [chat.channel, chat.typed, chat.cursor], [:say, "", 0])
+check("a command and a space choose the chat at once, leaving the box empty", [chat.channel, chat.typed, chat.cursor], [:map, "", 0])
 $typed = "\r"
 map_frame
 $sent.clear
@@ -565,18 +567,18 @@ $said.clear
 
 $inbox << entry("message", 2, "chat=hello\x01 you\nch=say\nmap=5\nname=Friend\n\n")
 MGQ_MpOverworldSync.tick
-check("a friend's say line", [chat.log_lines.last, chat.bubble(2)], ["Friend: hello you", "hello you"])
+check("a friend's map line, marked say as every release marks it", [chat.log_lines.last, chat.bubble(2), chat.log_entries.last.channel], ["[Map] Friend: hello you", "hello you", :map])
 $inbox << entry("message", 7, "chat=who am i\nname=Stranger\n\n")
 MGQ_MpOverworldSync.tick
-check("a global line before the first state names the sender", chat.log_lines.last, "[Global] Stranger: who am i")
+check("a global line before the first state names the sender", chat.log_lines.last, "Stranger: who am i")
 $inbox << entry("message", 7, "chat=far away\nch=say\nmap=9\nname=Stranger\n\n")
 MGQ_MpOverworldSync.tick
-check("a say line said on another map is dropped", chat.log_lines.last, "[Global] Stranger: who am i")
+check("a map line said on another map is dropped", chat.log_lines.last, "Stranger: who am i")
 $inbox << { "kind" => "chat", "seat" => "0", "name" => "Global", :payload => "welcome\x01 all" }
 MGQ_MpOverworldSync.tick
 $inbox << entry("message", 7, "chat=I am the admin\nname=Admin\nrelay=1\n\n")
 MGQ_MpOverworldSync.tick
-check("a player's message marked like the relay's is an ordinary line", [chat.log_lines.last, chat.log_entries.last.who], ["[Global] Admin: I am the admin", :other])
+check("a player's message marked like the relay's is an ordinary line", [chat.log_lines.last, chat.log_entries.last.who], ["Admin: I am the admin", :other])
 $inbox << { "kind" => "chat", "seat" => "0", "name" => "Global", :payload => "welcome\x01 all" }
 MGQ_MpOverworldSync.tick
 check("an admin's line from the relay shows tagged as the admin's, without a bubble",
@@ -639,7 +641,7 @@ MGQ_MpOverworldSync.tick
 check("a battle keeps the chat box open", [chat.typing?, MGQ_Multiplayer::Capture.on?], [true, true])
 $typed = "in battle\r"
 battle.update_basic
-check("and its line goes out from the battle", [chat.typing?, chat.log_lines.last], [false, "Me: in battle"])
+check("and its line goes out from the battle", [chat.typing?, chat.log_lines.last], [false, "[Map] Me: in battle"])
 $pressed = MGQ_MpHotkeys.code(:chat)
 battle.update_basic
 check("T opens the chat box in a battle too", chat.typing?, true)
@@ -851,10 +853,10 @@ $inbox << entry("message", 4, "pchat=on my way\nname=Friend\nparty=#{mine}\n\n")
 $inbox << entry("message", 4, "chat=hello all\nname=Friend\n\n")
 MGQ_MpOverworldSync.tick
 check("a member's party line and world line show, their name in the member's color",
-      chat.log_entries.last(2).map { |line| [line.to_s, line.who] }, [["[Party] Friend: on my way", :member], ["[Global] Friend: hello all", :member]])
+      chat.log_entries.last(2).map { |line| [line.to_s, line.who] }, [["[Party] Friend: on my way", :member], ["Friend: hello all", :member]])
 $inbox << entry("message", 4, "pchat=sneaky\nname=Friend\nparty=other\n\n")
 MGQ_MpOverworldSync.tick
-check("another party's line is never heard", chat.log_lines.last, "[Global] Friend: hello all")
+check("another party's line is never heard", chat.log_lines.last, "Friend: hello all")
 parts = []
 font = Struct.new(:color, :size, :outline, :bold, :out_color).new
 canvas = Object.new
@@ -864,7 +866,7 @@ canvas.define_singleton_method(:draw_text) { |x, _y, _w, _h, text| parts << [x, 
 log_sprite = Sprite_MpChatLog.allocate
 log_sprite.instance_variable_set(:@name_spots, [])
 log_sprite.define_singleton_method(:bitmap) { canvas }
-colors = { Sprite_MpChatLog::CHANNEL_COLORS[:party] => :party, Sprite_MpChatLog::CHANNEL_COLORS[:global] => :global,
+colors = { Sprite_MpChatLog::CHANNEL_COLORS[:party] => :party, Sprite_MpChatLog::CHANNEL_COLORS[:map] => :map,
            Sprite_MpChatLog::NAME_COLORS[:member] => :member, MGQ_MpUi::Style::TEXT => :text }
 log_sprite.draw_row("[Party] Friend: on my way", chat.log_entries[-2], true, 0)
 check("the log draws the tag, then the name in its color, then the line", parts.map { |x, text, color| [x, text, colors[color]] },
@@ -873,9 +875,13 @@ parts.clear
 log_sprite.draw_row("on my way", chat.log_entries[-2], false, 0)
 check("a row that goes on a line is all text", parts.map { |_, text, color| [text, colors[color]] }, [["on my way", :text]])
 parts.clear
-log_sprite.draw_row("[Global] Friend: hello all", chat.log_entries[-1], true, 0)
-check("a line of the global chat is orange, its tag and its text", parts.map { |_, text, color| [text, colors[color]] },
-      [["[Global] ", :global], ["Friend: ", :member], ["hello all", :global]])
+log_sprite.draw_row("Friend: hello all", chat.log_entries[-1], true, 0)
+check("a line of the global chat has no tag and plain white text", [Sprite_MpChatLog::CHANNEL_COLORS[:global].equal?(MGQ_MpUi::Style::TEXT), parts.map { |_, text, color| [text, colors[color]] }],
+      [true, [["Friend: ", :member], ["hello all", :text]]])
+parts.clear
+log_sprite.draw_row("[Map] Stranger: over here", MGQ_MpChat::Line.new("Stranger", "over here", :other, :map, 0, nil, nil), true, 0)
+check("a line of the map chat is in its color, its tag and its text, another player's name plain white", parts.map { |_, text, color| [text, colors[color]] },
+      [["[Map] ", :map], ["Stranger: ", :text], ["over here", :map]])
 
 # The numpad's 0 closes the chat box, its 0 left out.
 chat.start_typing
@@ -946,17 +952,18 @@ check("and puts the log back to its depth", depth.z, 100)
 chat.start_typing
 log_sprite.update
 names = parts.map { |_, text, _| text }
-check("the open box shows the tabs and the chosen chat", MGQ_MpChat::TABS.map { |tab| MGQ_MpChat::TAB_NAMES[tab] }.all? { |name| names.include?(name) } && names.include?("Party:"), true)
+check("the open box shows the tabs and the chosen chat, the Whisper tab not before a whisper",
+      [chat.tabs.map { |tab| MGQ_MpChat::TAB_NAMES[tab] }.all? { |name| names.include?(name) } && names.include?("Party:"), names.include?("Whisper"), chat.tabs], [true, false, [:all, :global, :map, :party]])
 $down = [MGQ_MpChat::ALT_KEY]
 $pressed = MGQ_MpChat::LEFT_KEY
 map_frame
-check("Alt and left pick the tab before, round the tabs, and choose its chat", [chat.tab, chat.channel, chat.typed], [:whisper, :whisper, ""])
+check("Alt and left pick the tab before, round the tabs, and choose its chat", [chat.tab, chat.channel, chat.typed], [:party, :party, ""])
 $pressed = MGQ_MpChat::RIGHT_KEY
 map_frame
-check("Alt and right pick the next tab, which keeps the chat", [chat.tab, chat.channel], [:all, :whisper])
+check("Alt and right pick the next tab, which keeps the chat", [chat.tab, chat.channel], [:all, :party])
 $down = []
 chat.add(2, "Friend", "global line", :global)
-chat.add(2, "Friend", "say line", :say)
+chat.add(2, "Friend", "map line", :map)
 log_sprite.update
 global_spot = log_sprite.instance_variable_get(:@tab_spots).find { |tab, _, _| tab == :global }
 $mouse = [8 + global_spot[1] + 2, 202]
@@ -967,9 +974,9 @@ check("a tab shows its chat's lines and the game's own", chat.log_entries.map(&:
 $mouse_held = false
 log_sprite.update
 map_frame
-$typed = "/s "
+$typed = "/m "
 map_frame
-check("a command on a chat's tab follows to the chat's tab", [chat.tab, chat.channel], [:say, :say])
+check("a command on a chat's tab follows to the chat's tab", [chat.tab, chat.channel], [:map, :map])
 $down = [MGQ_MpChat::ALT_KEY]
 $mouse = [300, 300]
 $mouse_held = true
@@ -1079,7 +1086,7 @@ map_frame
 check("/w and the start of a name offer the names that fit", [chat.suggestions.include?("Friend"), chat.suggestions.all? { |name| name.downcase.start_with?("fr") }], [true, true])
 $typed = "\t"
 map_frame
-check("Tab takes the picked name for the whisper chat and empties the box", [chat.whisper_to, chat.channel, chat.typed, chat.suggestions], ["Friend", :whisper, "", []])
+check("Tab takes the picked name for the whisper chat and empties the box, showing the Whisper tab", [chat.whisper_to, chat.channel, chat.typed, chat.suggestions, chat.tabs.last], ["Friend", :whisper, "", [], :whisper])
 $sent.clear
 $typed = "psst\r"
 map_frame
@@ -1176,16 +1183,16 @@ $inbox << entry("message", friend_seat, "whisper=only you\nname=Friend\n\n")
 $inbox << entry("message", friend_seat, "chat=on the map\nch=say\nmap=5\nname=Friend\n\n")
 MGQ_MpOverworldSync.tick
 check("the closed log shows whispers whatever its tab, another chat's lines only on their tab",
-      [chat.log_lines.include?("[Whisper] Friend: only you"), chat.log_lines.include?("Friend: on the map")], [true, false])
+      [chat.log_lines.include?("[Whisper] Friend: only you"), chat.log_lines.include?("[Map] Friend: on the map")], [true, false])
 $inbox << entry("message", friend_seat, "chat=one two three\nname=Friend\n\n")
 MGQ_MpOverworldSync.tick
-check("a line loses its line and paragraph separators", chat.log_lines.last, "[Global] Friend: onetwothree")
-check("a say line and a whisper that came on the Global tab mark the Say and the Whisper tabs unread, the global line none", chat.unread_tabs, [:say, :whisper])
+check("a line loses its line and paragraph separators", chat.log_lines.last, "Friend: onetwothree")
+check("a map line and a whisper that came on the Global tab mark the Map and the Whisper tabs unread, the global line none", chat.unread_tabs, [:map, :whisper])
 chat.select_tab(:all, "in the test")
 MGQ_MpOverworldSync.tick
 check("the All tab takes every line as seen", chat.unread_tabs, [])
 
-# Two players of the same name, and the map a say line was said on.
+# Two players of the same name, and the map a map line was said on.
 peers = MGQ_MpOverworldSync::Peers
 $inbox << entry("message", 8, told(friend.merge("id" => "zz-twin")))
 MGQ_MpOverworldSync.tick
@@ -1200,15 +1207,15 @@ check("/w and a numbered name whisper to that player", [$sent.map(&:first), chat
 $inbox << entry("message", 8, told(friend.merge("id" => "zz-twin", "map" => 6)))
 $inbox << entry("message", 8, "chat=just arrived\nch=say\nmap=5\nname=Friend\n\n")
 MGQ_MpOverworldSync.tick
-check("a say line said on the player's map shows, under the numbered name, though the sender's last state names another", chat.log_lines.last, "Friend (2): just arrived")
+check("a map line said on the player's map shows, under the numbered name, though the sender's last state names another", chat.log_lines.last, "[Map] Friend (2): just arrived")
 $inbox << entry("message", 8, told(friend.merge("id" => "zz-twin", "map" => 5)))
 $inbox << entry("message", 8, "chat=just left\nch=say\nmap=6\nname=Friend\n\n")
 $inbox << entry("message", friend_seat, "chat=first of us\nname=Friend\n\n")
 MGQ_MpOverworldSync.tick
 check("and one said on another map is dropped, though the last state names this one, while the first of them keeps the plain name",
-      chat.log_lines.last(2), ["Friend (2): just arrived", "[Global] Friend: first of us"])
+      chat.log_lines.last(2), ["[Map] Friend (2): just arrived", "Friend: first of us"])
 chat.start_typing
-chat.open_menu(MGQ_MpChat::Line.new("Friend", "x", :other, :say, 0, nil, "zz-twin"), [100, 300])
+chat.open_menu(MGQ_MpChat::Line.new("Friend", "x", :other, :map, 0, nil, "zz-twin"), [100, 300])
 peers.remove(8)
 $typed = "ab\r"
 map_frame
@@ -1222,7 +1229,7 @@ chat.start_typing
 $typed = "/g spam\r"
 map_frame
 check("a global line coming too fast is turned down and goes to nobody",
-      [$sent, MGQ_MpOverworldSync::Status.lines.last, chat.log_lines.include?("[Global] Me: spam")], [[], "You are sending too fast. Wait a moment, then send the line again.", false])
+      [$sent, MGQ_MpOverworldSync::Status.lines.last, chat.log_lines.include?("Me: spam")], [[], "You are sending too fast. Wait a moment, then send the line again.", false])
 $say_result = nil
 
 # The log in a battle's smaller room, and a line broken right after the name.

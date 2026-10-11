@@ -2,6 +2,7 @@
 //  story.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-11: Covered a world that finished every route choosing and playing a route again
 //      Paulinchen  2026-10-10: Covered taking back the route lock refused while the route is under way, and a route lock refused while the story is on another route
 //                            - Covered the Worker refusing a story write by its Content-Length before reading the body, and by its length read for a body without one
 //      Paulinchen  2026-10-09: Covered an admin taking back the route lock
@@ -294,6 +295,29 @@ test("the third way opens once both other routes are finished", async () => {
   const locked = await story.lockRoute("chaos");
   assert.equal(locked.status, 200);
   assert.equal(locked.body.route, "chaos");
+});
+
+test("a world that finished every route, as a starting save that cleared them makes it, lets each route be chosen and played again", async () => {
+  const { story } = makeStory();
+  const all = ["ad", "mr", "chaos"];
+  const decision = await accepted(story, 0, { p: 40, clear: all });
+  assert.deepEqual(decision.done, all);
+
+  assert.equal((await story.lockRoute("ad")).status, 200);
+  const sideEvent = await accepted(story, 2, { p: 40, clear: all }, OTHER_BLOB);
+  assert.equal(sideEvent.route, "ad", "the lock stays through a write at the decision");
+
+  const otherRoute = await story.write(BOB, { base: 3, counters: counters({ p: 40, r1142: 1, clear: all }), blob: BLOB });
+  assert.equal(otherRoute.status, 409, "another route's first step");
+  const started = await accepted(story, 3, { p: 40, r1141: 1, clear: all });
+  assert.equal(started.route, "ad", "the first step ranks below the decision, and is taken");
+  assert.equal(started.part, "ad");
+  const later = await accepted(story, 4, { p: 40, r1141: 30, clear: all });
+  assert.equal(later.route, "ad");
+
+  const returned = await accepted(story, 5, { p: 39, clear: all });
+  assert.equal(returned.route, "none", "the return ends the lock");
+  assert.equal((await story.lockRoute("ad")).status, 200, "the same route again");
 });
 
 test("a route lock before any write keeps revision 0 for the first write", async () => {
