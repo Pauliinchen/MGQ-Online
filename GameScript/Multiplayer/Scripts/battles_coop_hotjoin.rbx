@@ -2,7 +2,8 @@
 #  battles_coop_hotjoin.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Told the host in the battle's chat log of the players it took into its battle
+#      Paulinchen  2026-10-11: Let a random encounter join only a running battle whose host stands near, as a Raid World invites only the players near
+#                            - Told the host in the battle's chat log of the players it took into its battle
 #      Paulinchen  2026-10-10: Named the raid boss's pools in the invite of players who join a battle that fights them late, and handed the pools an invite names to battles_raid_pool.rbx
 #                            - Told the battle the player fights, and its scene as a battle, also while its party command called the Library or Config
 #                            - Let an encounter join a battle that waits under the Library or Config while its player's window is in the background, whose state tells "away"
@@ -234,7 +235,8 @@ module MGQ_MpBattlesHotjoin
 
   # Finds the co-op battle running on the player's map that an encounter would join: of the other
   # players on the map who fight one, as their states tell (see MGQ_MpBattlesCoop.fights?), the
-  # battle whose host entered the map first.
+  # battle whose host entered the map first, among those whose host stands near
+  # (MGQ_MpBattlesCoop.near?).
   #
   # @return [Array, nil] The battle's host and its id, nil when none runs.
   def self.target_battle
@@ -244,7 +246,7 @@ module MGQ_MpBattlesHotjoin
       next if !MGQ_MpBattlesCoop.fights?(peer) || peer.state["rbh"].to_s !~ /\A\d+\z/
 
       host = MGQ_MpOverworldSync::Peers.at(peer.state["rbh"].to_i)
-      next unless host && host.state["map"].to_i == map && host.state["rb"].to_s == bid
+      next unless host && host.state["map"].to_i == map && host.state["rb"].to_s == bid && MGQ_MpBattlesCoop.near?(host)
 
       [host, bid]
     end

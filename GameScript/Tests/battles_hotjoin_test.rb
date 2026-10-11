@@ -2,7 +2,8 @@
 #  battles_hotjoin_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Checked that the host reads in the chat log who joined its battle, that it tells the guests whom it waits for as a command phase opens, and that a late guest's box tells how long the wait may last
+#      Paulinchen  2026-10-11: Checked that an encounter joins no running battle whose host stands farther than NEARBY_TILES
+#                            - Checked that the host reads in the chat log who joined its battle, that it tells the guests whom it waits for as a command phase opens, and that a late guest's box tells how long the wait may last
 #                            - Read the windows opened from battle_support.rb instead of keeping them itself
 #      Paulinchen  2026-10-10: Checked that a requester whose running battle broke off before the roster fights its encounter from its start with its own enemy rates, and that a guest has its own rates back as the battle ends, before the game's autosave
 #                            - Checked that the players a refused, silent or taken back request brought along walk on unless the encounter invites them anew
@@ -293,6 +294,9 @@ reset
 early_host = player(8, { "scene" => "battle", "rb" => "hb2", "rbh" => "8", "since" => "50" })
 MGQ_MpOverworldSync::Peers.all.replace([host, guest, early_host])
 check("of two running battles it asks the one whose host entered the map first", hotjoin.target_battle, [early_host, "hb2"])
+early_host.state.merge!("x" => "30", "y" => "0")
+check("among those whose host stands near", hotjoin.target_battle, [host, "hb1"])
+early_host.state.merge!("x" => "0", "y" => "0")
 host.state.merge!("scene" => "map", "rb" => "")
 MGQ_MpOverworldSync::Peers.all.replace([host, guest])
 check("and none whose host left it", hotjoin.target_battle, nil)

@@ -2,7 +2,8 @@
 #  battles_coop_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Checked that the party takes commands while the player's Frontline is down and their Backline may swap in, and not once it may not
+#      Paulinchen  2026-10-11: Checked that the steps to the next random encounter stretch by half while another player stands near, in a party and in a Raid World, and that a Raid World's battle invites only the players near
+#                            - Checked that the party takes commands while the player's Frontline is down and their Backline may swap in, and not once it may not
 #                            - Checked that the status window names each character in its player's color, leaving a character in crisis to the game
 #                            - Checked that a guest reads in the chat log who joined the host's party, and nothing when a player leaves it
 #                            - Checked that the notice of a member's battle lasts as long as the player stands still and goes when they walk on early
@@ -889,14 +890,24 @@ check("a second request to lead refuses the one that waits",
       [$sent.map { |seat, text| [seat, fields_of(text)["coop"], fields_of(text)["bid"]] }, MGQ_MpBattlesCoop.instance_variable_get(:@request)[:message]["bid"]], [[[2, "no_lead", "r1"]], "r2"])
 MGQ_MpBattlesCoop.drop
 
-# A party of a Classic world stretches the steps to the next random encounter.
+# A party of a Classic world stretches the steps to the next random encounter by half while a
+# member stands near.
+stretched = lambda { |draws| [draws.min >= 112.5, draws.max <= 187.5, draws.min < 125, draws.max > 175] }
 $log.clear
 draws = (1..200).map { $game_player.make_encounter_count; $game_player.encounter_count }
-check("three party members on the map draw three times the game's steps, within half either way", [draws.min >= 150, draws.max < 450, draws.min < 225, draws.max > 375], [true, true, true, true])
-check("and the log says why", $log.grep(/steps to the next random encounter instead of 100: 3 party members on the map/).size, 200)
+check("party members near draw half again the game's steps, a quarter either way, however many", stretched.call(draws), [true, true, true, true])
+check("and the log says why", $log.grep(/steps to the next random encounter instead of 100: 3 party members near on the map/).size, 200)
 pal.state["map"] = "6"
+$log.clear
 draws = (1..200).map { $game_player.make_encounter_count; $game_player.encounter_count }
-check("a member on another map does not count", [draws.min >= 100, draws.max < 300], [true, true])
+check("a member on another map does not count", [stretched.call(draws), $log.grep(/2 party members near/).size], [[true, true, true, true], 200])
+mate.state.merge!("x" => "21", "y" => "0")
+$game_player.make_encounter_count
+check("nor one farther than NEARBY_TILES", $game_player.encounter_count, 100.0)
+mate.state.merge!("x" => "20", "y" => "20")
+$game_player.make_encounter_count
+check("but one NEARBY_TILES away, diagonal steps counted as one", $game_player.encounter_count > 100.0, true)
+mate.state.merge!("x" => "0", "y" => "0")
 mate.state["map"] = "6"
 $game_player.make_encounter_count
 check("alone on the map the game's draw stands", $game_player.encounter_count, 100.0)
@@ -908,12 +919,13 @@ module MGQ_MpWorld; def self.raid?; $raid; end; end
 $raid = true
 $log.clear
 draws = (1..200).map { $game_player.make_encounter_count; $game_player.encounter_count }
-check("a Raid World stretches the steps by half a draw per other player on the map, three on it here", [draws.min >= 100, draws.max < 300, draws.min < 150, draws.max > 250], [true, true, true, true])
-check("and the log counts the players", $log.grep(/instead of 100: 3 players on the map/).size, 200)
+check("a Raid World stretches the steps by half too while players stand near, party or not", stretched.call(draws), [true, true, true, true])
+check("and the log counts the players", $log.grep(/instead of 100: 3 players near on the map/).size, 200)
 crowd = (10..14).map { |seat| MGQ_MpOverworldSync::Peers::Peer.new(seat, { "id" => "id-#{seat}", "name" => "Player #{seat}", "map" => "5", "scene" => "map" }, nil, false) }
 MGQ_MpOverworldSync::Peers.all.push(*crowd)
+$log.clear
 draws = (1..200).map { $game_player.make_encounter_count; $game_player.encounter_count }
-check("and counts no more players than a battle holds", [draws.min >= 125, draws.max < 375], [true, true])
+check("and counts no more players than a battle holds, the stretch the same", [stretched.call(draws), $log.grep(/4 players near/).size], [[true, true, true, true], 200])
 MGQ_MpOverworldSync::Peers.all.reject! { |peer| crowd.any? { |extra| extra.equal?(peer) } }
 $leader = :me
 $my_seat = 0
@@ -1013,6 +1025,14 @@ $viewers = [others[0], others[1]]
 check("a boss battle takes those reading the story the player tells too, unless busy", MGQ_MpBattlesCoop.raid_candidates(true).map(&:seat), [3, 9, 6])
 check("but no other battle", MGQ_MpBattlesCoop.raid_candidates(false).map(&:seat), [3, 6, 7])
 check("nor a player reading another story", MGQ_MpBattlesCoop.watching?(others[0], [others[1]]), false)
+distant = raid_peer(14, { "x" => "21", "y" => "3" })
+pool = MGQ_MpOverworldSync::Peers.all.dup
+MGQ_MpOverworldSync::Peers.all.replace([comrade, distant])
+check("a battle invites nobody farther than NEARBY_TILES from the player", MGQ_MpBattlesCoop.raid_candidates.map(&:seat), [3])
+distant.state["scene"] = "event"
+$viewers = [distant]
+check("but a boss battle takes one reading its story from afar", MGQ_MpBattlesCoop.raid_candidates(true).map(&:seat), [3, 14])
+MGQ_MpOverworldSync::Peers.all.replace(pool)
 $viewers = nil
 $leader = comrade
 

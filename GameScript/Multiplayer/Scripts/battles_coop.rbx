@@ -2,7 +2,8 @@
 #  battles_coop.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Opened the player's command phase while their own Frontline is down but their Backline may swap in, so they can still change the formation
+#      Paulinchen  2026-10-11: Stretched the steps to the next random encounter by half once another player who would fight it stands within NEARBY_TILES, a party member in a Classic world, instead of once per member or by half a draw per player on the map, and invited only the players that near to a Raid World's battle, so players across a large map no longer keep each other from meeting enemies or pull each other into fights
+#                            - Opened the player's command phase while their own Frontline is down but their Backline may swap in, so they can still change the formation
 #                            - Named the battle invite or lead request waiting for the player to be free, which the pages of a teller's story give way to, so a viewer reading them no longer turns the invite down
 #                            - Drew each character's name in the battle's status window in its player's color, another player's character by its own name
 #                            - Told the player in the battle's chat log of the players who joined the running battle, as the host takes them in or its new party names them
@@ -166,13 +167,17 @@ module MGQ_MpBattlesCoop
   UP_TO_PREFIX = "Up to "
 
   # The share either way by which the steps to a party's next random encounter vary around the
-  # game's draw, wider than the game's own margin, so the members' steps never fall into step.
-  ENCOUNTER_MARGIN = 0.5
+  # stretched draw, so the players' steps never fall into step.
+  ENCOUNTER_MARGIN = 0.25
 
-  # The share of a draw each other player on the map adds to the steps in a Raid World, where the
-  # players on a map fight together only as far as invites and hot-joins bring them, less than a
-  # party does.
-  RAID_ENCOUNTER_SHARE = 0.5
+  # How much longer the steps to the next random encounter are while another player who would
+  # fight it stands near (see encounter_players): their encounters bring the player into battles
+  # too, but each player still meets enemies of their own.
+  ENCOUNTER_STRETCH = 1.5
+
+  # Tiles within which another player on the map counts as near: they stretch the player's steps
+  # to the next random encounter, and a Raid World's battle invites them.
+  NEARBY_TILES = 20
 
   # What another player does, by their state's scene, while they may be invited: walking the map,
   # reading an event's messages, such as the leader's story, or on the map with their window in the
@@ -599,9 +604,10 @@ module MGQ_MpBattlesCoop
   end
 
   # Lists the players a battle in a Raid World invites: of those on the player's map who are free
-  # (see raid_free?), and for a boss battle those reading the story the player tells there (see
-  # watching?), the party members first, then the nearest to the party's leader, or to the player
-  # outside a party, by their states; at most RAID_PLAYERS with the player.
+  # (see raid_free?) and near (see near?), and for a boss battle those reading the story the player
+  # tells there wherever they stand (see watching?), the party members first, then the nearest to
+  # the party's leader, or to the player outside a party, by their states; at most RAID_PLAYERS
+  # with the player.
   #
   # @param boss [Boolean] Whether it is a boss battle.
   # @return [Array<MGQ_MpOverworldSync::Peers::Peer>] The players.
@@ -609,7 +615,7 @@ module MGQ_MpBattlesCoop
     members = MGQ_MpCoop::Party.members
     x, y = raid_center
     viewers = boss ? MGQ_MpCoop::Scope.viewers : []
-    free = MGQ_MpCoop::Scope.peers_on($game_map.map_id).select { |peer| raid_free?(peer) || watching?(peer, viewers) }
+    free = MGQ_MpCoop::Scope.peers_on($game_map.map_id).select { |peer| (raid_free?(peer) && near?(peer)) || watching?(peer, viewers) }
     ranked = free.sort_by do |peer|
       [members.any? { |member| member.equal?(peer) } ? 0 : 1, distance(peer, x, y), peer.state["id"].to_s]
     end
@@ -682,6 +688,14 @@ module MGQ_MpBattlesCoop
     [$game_player.x, $game_player.y]
   end
 
+  # Reports whether another player stands within NEARBY_TILES of the player, as their state tells.
+  #
+  # @param peer [MGQ_MpOverworldSync::Peers::Peer] The player.
+  # @return [Boolean] Whether they do.
+  def self.near?(peer)
+    peer.state["map"].to_i == $game_map.map_id && distance(peer, $game_player.x, $game_player.y) <= NEARBY_TILES
+  end
+
   # Counts the steps between another player and a tile, diagonal steps counted as one.
   #
   # @param peer [MGQ_MpOverworldSync::Peers::Peer] The player.
@@ -702,12 +716,12 @@ module MGQ_MpBattlesCoop
     end
   end
 
-  # Stretches the steps the game drew to the next random encounter for the players who fight it
-  # together (see encounter_players), by a wider random margin than the game's (ENCOUNTER_MARGIN).
-  # In a party of a Classic world once per member on the map, since any member's encounter is the
-  # whole party's battle, so the party meets encounters about as often as one player would; in a
-  # Raid World by RAID_ENCOUNTER_SHARE of a draw per other player on the map. A player alone on
-  # their map keeps the game's draw.
+  # Stretches the steps the game drew to the next random encounter by ENCOUNTER_STRETCH, varied by
+  # ENCOUNTER_MARGIN, while another player who would fight it stands near (see
+  # encounter_players). A player with nobody near keeps the game's draw.
+  #
+  # Stretching once per player kept a party of four from meeting enemies at all, and counting the
+  # whole map kept players far apart on the field from meeting any.
   #
   # @param steps [Numeric] The steps the game drew.
   # @return [Numeric] The steps the player takes.
@@ -717,9 +731,8 @@ module MGQ_MpBattlesCoop
     players = encounter_players
     return steps if players < 2
 
-    stretch = raid? ? 1 + (players - 1) * RAID_ENCOUNTER_SHARE : players
-    stretched = steps * stretch * (1 - ENCOUNTER_MARGIN + rand * 2 * ENCOUNTER_MARGIN)
-    log("drew #{stretched.round} steps to the next random encounter instead of #{steps.round}: #{players} #{raid? ? 'players' : 'party members'} on the map")
+    stretched = steps * ENCOUNTER_STRETCH * (1 - ENCOUNTER_MARGIN + rand * 2 * ENCOUNTER_MARGIN)
+    log("drew #{stretched.round} steps to the next random encounter instead of #{steps.round}: #{players} #{raid? ? 'players' : 'party members'} near on the map")
     stretched
   rescue => e
     log("stretching the steps to the next random encounter failed: #{e.class}: #{e.message}")
@@ -727,14 +740,14 @@ module MGQ_MpBattlesCoop
   end
 
   # Counts the players who fight the player's next random encounter together, the player included:
-  # in a Raid World everyone on the map whose connection stands, up to the RAID_PLAYERS a battle
-  # holds, in a Classic world the party members on the map.
+  # in a Raid World everyone near on the map (see near?) whose connection stands, up to the
+  # RAID_PLAYERS a battle holds, in a Classic world the party members near on the map.
   #
   # @return [Integer] The players, 1 for the player alone.
   def self.encounter_players
-    return [MGQ_MpCoop::Scope.peers_on($game_map.map_id).size + 1, RAID_PLAYERS].min if raid?
+    return [MGQ_MpCoop::Scope.peers_on($game_map.map_id).count { |peer| near?(peer) } + 1, RAID_PLAYERS].min if raid?
 
-    MGQ_MpCoop::Party.members.count { |peer| peer.state["map"].to_i == $game_map.map_id } + 1
+    MGQ_MpCoop::Party.members.count { |peer| near?(peer) } + 1
   end
 
   # Runs the game's random encounter, which holds its battle while party members on the map are
