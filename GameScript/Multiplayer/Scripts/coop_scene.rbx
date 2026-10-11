@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-11: Let the teller's move routes skip a blocked step and ended the one the player's character walks once the viewer no longer sees the scene, so it never holds the player for good
+#                            - Kept the character shown or hidden as the story left it once it brought the viewer to another map, so a new game's hidden start no longer hides them again
 #                            - Told the viewers the story's music, background sounds, fanfares and sound effects, played, stopped and faded with the game's defaults for what the story left out, which a viewer plays on the teller's map screen alone, holding the music for when they are there, and its changes of the map's tileset, battle backgrounds and parallax
 #                            - Told a Raid World's viewers the switches, variables and self switches the story changes once a frame, so their games show the scene's characters on the pages the story turns on and keep watching the telling, without writing them as their own story
 #                            - Told the move routes the story gives the map's events and the player's character, without their scripts, and the animations, balloons and erasures it shows on them, so the viewers see the characters move and react, their own character walking the teller's route without starting what it touches
@@ -447,7 +448,10 @@ module MGQ_MpCoopScene
     when "player"
       return log_once([:unknown, kind], "ignored #{kind}: no such change") unless method == "transparent"
 
-      @transparent = $game_player.transparent if @transparent.nil?
+      if @transparent.nil?
+        @transparent = $game_player.transparent
+        @transparent_map = $game_map.map_id
+      end
       $game_player.transparent = args[0] ? true : false
       log("applied the leader's #{kind}: the player's character is #{args[0] ? 'hidden' : 'shown'}")
     when "story"
@@ -811,8 +815,8 @@ module MGQ_MpCoopScene
   end
 
   # Erases the pictures the leader's story showed, brings the screen back, the map's zoom and the
-  # player's own character as they were: the tint the player's map had, or the story's last on a
-  # map the story brought them to.
+  # player's own character as they were: the tint and the character's visibility the player's map
+  # had, or the story's last on a map the story brought them to.
   #
   # @param reason [String] Why, for the log.
   def self.restore(reason = "the story ended")
@@ -842,8 +846,12 @@ module MGQ_MpCoopScene
       done << "camera on the player's character again"
     end
     unless @transparent.nil?
-      $game_player.transparent = @transparent
-      done << "character #{@transparent ? 'hidden' : 'shown'} again"
+      if @transparent_map == $game_map.map_id
+        $game_player.transparent = @transparent
+        done << "character #{@transparent ? 'hidden' : 'shown'} again"
+      else
+        done << "kept the story's #{$game_player.transparent ? 'hidden' : 'shown'} character, on map #{$game_map.map_id} instead of #{@transparent_map}"
+      end
     end
     if walks_player?
       end_player_route
@@ -878,6 +886,7 @@ module MGQ_MpCoopScene
     @values = {}
     @screen = nil
     @transparent = nil
+    @transparent_map = nil
     @zoom = nil
     @camera_target = nil
     @camera = nil

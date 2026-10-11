@@ -2,7 +2,8 @@
 #  coop_scene_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Checked that the viewer's character skips a blocked step of the teller's route and walks none of it once the viewer no longer sees the scene
+#      Paulinchen  2026-10-11: Checked that a viewer the story brought to another map keeps the character the story showed
+#                            - Checked that the viewer's character skips a blocked step of the teller's route and walks none of it once the viewer no longer sees the scene
 #                            - Checked that the story's music, sounds and fades and the map's tileset, battle backgrounds and parallax reach the viewers, never a path, a file or a tileset the game lacks, the game's defaults filled in, and that a viewer away from the teller's map screen hears the music once there and none of the sound effects
 #                            - Checked that the player's route, the camera's place and the map's zoom reach the viewers, whose own character walks the route without starting what it touches
 #                            - Checked that a viewer the story values moved on keeps watching the telling, on the teller's side and their own, also with values between the story's events on two maps
@@ -263,14 +264,18 @@ done = $game_map.screen.done.size
 $game_map.update
 check("only once", $game_map.screen.done.size, done)
 
-# A member the story brought to another map keeps the story's last tint.
+# A member the story brought to another map keeps the story's last tint and shown character, as a
+# new game's hidden start the story ended.
 leader.state["telling"] = "1"
+$game_player.transparent = true
 take.call("screen.start_tone_change", [Tone.new(-68, -68, 0, 0), 30])
+take.call("player.transparent", [false])
 $game_map.map_id = 8
 leader.state["telling"] = "0"
 $frame_count += MGQ_MpCoopScene::STATE_GRACE_FRAMES
 $game_map.update
 check("on another map the story's tint stays", $game_map.screen.done.last(3), [[:tone, [-68, -68, 0, 0], 30], [:clear_flash], [:clear_shake]])
+check("and the character the story showed stays shown", $game_player.transparent, false)
 
 # In a Raid World the player telling the story on the map shows it to everyone there whose story matches.
 module MGQ_MpWorld; def self.raid?; $raid; end; end
