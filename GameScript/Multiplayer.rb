@@ -2,6 +2,7 @@
 #  Multiplayer.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-11: Loaded ui_edge_arrows.rbx, the arrows toward the players off the screen, after ui_party_box.rbx
 #      Paulinchen  2026-10-10: Named mp_dev_build, which tells a development build from a release
 #                            - Loaded ui_raid_bar.rbx, the raid bosses' HP bars, after ui_party_box.rbx
 #                            - Loaded coop_teleport.rbx after coop_gather.rbx, the teleports between a party's members
@@ -125,7 +126,7 @@ module MGQ_Multiplayer
     battles_sync battles_sync_wire battles_sync_recorder battles_sync_playback battles_sync_live
     battles_balance_pvp battles_pvp battles_pvp_backline battles_pvp_mirror battles_pvp_lobby battles_duel battles_team
     trade ui_trade
-    world_overview ui_party_box ui_raid_bar ui_notices
+    world_overview ui_party_box ui_edge_arrows ui_raid_bar ui_notices
   ]
 
   # Extension of the scripts, which the mod loader skips, since only this script may load them.
