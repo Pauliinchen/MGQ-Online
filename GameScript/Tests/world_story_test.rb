@@ -2,7 +2,8 @@
 #  world_story_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Checked that a take lets the opening turn random encounters on again
+#      Paulinchen  2026-10-11: Dropped the check of the opening's random encounters, which world_catchup.rbx settles now
+#                            - Checked that a take lets the opening turn random encounters on again
 #                            - Checked that a scene switch is each Raid World player's own and that a take turns one left on off, unless the player watches a scene
 #                            - Checked that the world's story waits for a new game's opening setup and is laid over the story it made
 #      Paulinchen  2026-10-10: Checked that no write goes out between the story's events on another map while its next event may go on with the telling
@@ -972,7 +973,7 @@ check("a new game in a world started from a save is behind its story and writes 
 
 # A new game in a world past the opening: the world's story waits while the opening's setup runs
 # (world_opening.rbx), then is laid over the story the setup made.
-module MGQ_MpWorldOpening; def self.before_take(_world); $opening.shift; end; def self.allow_encounters(world); ($allowed ||= []) << world["p"]; end; end
+module MGQ_MpWorldOpening; def self.before_take(_world); $opening.shift; end; end
 $opening = [:wait, :wait, :opened]
 $calls.clear
 new_story({ 1001 => 0 })
@@ -987,7 +988,6 @@ frames(16)
 frames(400)
 check("then it is laid over the story the setup made, whose values are no own change of the player's",
       [story.mode, $game_variables[1001], $game_variables[152], calls_of("mp_raid_story_post")], [:world, 7, 0, []])
-check("and the opening may turn random encounters on again for the world's progress", $allowed, [7])
 $opening = []
 
 # A scene switch a world's story written mid-scene left on is the player's own now, and a take turns

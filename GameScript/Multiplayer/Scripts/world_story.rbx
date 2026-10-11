@@ -2,7 +2,8 @@
 #  world_story.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Turned random encounters on again as the world's story is laid over, where it is past the talk that turns them on
+#      Paulinchen  2026-10-11: Left the random encounters to world_catchup.rbx, which moves every value of the player's own that the story sets on to the story's place
+#                            - Turned random encounters on again as the world's story is laid over, where it is past the talk that turns them on
 #                            - Turned off the scene switches left on while no scene runs as the world's story is laid over, which a story written mid-scene left on for everyone
 #                            - Laid the world's story over a new game only after its opening's setup ran without its scene, which put the story back to its start when it ran afterwards, and counted the player's own changes from the story it set up
 #                            - Took a route the player chose at the Great Decision the world stands at as further than the decision, which a world that finished every route ranked below it and so pulled the player back to the decision
@@ -783,7 +784,6 @@ module MGQ_MpWorldStory
     kept.concat(opened.map { |key| [2, key] })
     MGQ_MpStoryState.set_raw(*applied)
     end_left_scenes
-    MGQ_MpWorldOpening.allow_encounters(world) if defined?(MGQ_MpWorldOpening)
     if defined?(MGQ_MpWorldCatchup)
       MGQ_MpWorldCatchup.world_told(told)
       MGQ_MpWorldCatchup.carried(local)

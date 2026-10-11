@@ -1214,6 +1214,71 @@ module MGQ_MpWorldCatchupData
     [:skill, 866, 1, "map:935:9:1", nil, nil, nil, [[:v, 1216, 2], [:ss, 935, 9, "A"]], true]
   ].map { |row| Reward.new(*row) }
 
+  # A value of the player's own that follows the story, which no Raid World's story carries:
+  # :v for a variable, :s for a switch, :encounters for whether random encounters are on; its
+  # id, the value an event of the story sets, the event's site, its place and ran.
+  Setting = Struct.new(:kind, :id, :value, :site, :part, :step, :side, :marks, :ran)
+
+  # Every setting of those values by the story's events, in the story's order, the new game's
+  # setup first: the game over's return point (1002) and the random encounters.
+  SETTINGS = [
+    [:encounters, 0, false, "map:545:1:1", "1", 0, nil, [[:v, 1001, 0]], true],
+    [:v, 1002, 1, "map:545:1:1", "1", 0, nil, [[:v, 1001, 0]], true],
+    [:encounters, 0, false, "map:12:37:1", "1", 4, nil, [[:v, 1001, 4]], true],
+    [:encounters, 0, true, "map:6:30:2", "1", 7, nil, [[:v, 1001, 7]], true],
+    [:encounters, 0, true, "map:6:31:2", "1", 7, nil, [[:v, 1001, 7]], true],
+    [:v, 1002, 2, "map:6:30:2", "1", 7, nil, [[:v, 1001, 7]], true],
+    [:v, 1002, 2, "map:6:31:2", "1", 7, nil, [[:v, 1001, 7]], true],
+    [:v, 1002, 2, "map:634:1:1", "2", 19, nil, [[:v, 1001, 19]], true],
+    [:v, 1002, 20, "map:233:14:1", "2", 22, nil, [[:v, 1001, 22], [:v, 1050, 9]], true],
+    [:v, 1002, 20, "map:709:6:1", "2", 22, nil, [[:v, 1001, 22], [:v, 1051, 5]], true],
+    [:v, 1002, 31, "map:177:24:1", "2", 26, nil, [[:v, 1001, 26], [:v, 1063, 13]], true],
+    [:v, 1002, 3, "ce:346", "2", 29, nil, [[:v, 1001, 29], [:v, 1069, 4]], true],
+    [:v, 1002, 112, "ce:380", "mr", 0, nil, [[:v, 1142, 1]], true],
+    [:v, 1002, 72, "map:1025:9:1", "mr", 4, nil, [[:v, 1142, 4]], true],
+    [:v, 1002, 73, "map:1099:4:1", "mr", 8, nil, [[:v, 1142, 8], [:v, 1157, 14]], true],
+    [:v, 1002, 76, "ce:488", "mr", 17, nil, [[:v, 1142, 17]], true],
+    [:v, 1002, 77, "map:1044:8:1", "mr", 18, nil, [[:v, 1142, 18]], true],
+    [:v, 1002, 49, "map:1870:7:1", "ad", 18, nil, [[:v, 1141, 18]], true],
+    [:v, 1002, 79, "map:1001:5:1", "mr", 19, nil, [[:v, 1142, 19]], true],
+    [:v, 1002, 52, "map:1662:32:1", "ad", 22, nil, [[:v, 1141, 23]], true],
+    [:v, 1002, 81, "map:1617:2:1", "mr", 23, nil, [[:v, 1142, 23]], true],
+    [:v, 1002, 82, "ce:432", "mr", 24, nil, [[:v, 1142, 24]], true],
+    [:v, 1002, 83, "map:1001:21:1", "mr", 27, nil, [[:v, 1142, 27], [:s, 2744]], true],
+    [:v, 1002, 85, "ce:435", "mr", 31, nil, [[:v, 1142, 31]], true],
+    [:v, 1002, 57, "map:1603:13:1", "ad", 31, nil, [[:v, 1141, 31]], true],
+    [:v, 1002, 89, "map:1093:1:1", "mr", 36, nil, [[:v, 1142, 36]], true],
+    [:v, 1002, 99, "map:1904:108:1", "mr", 43, nil, [[:v, 1142, 44], [:v, 1152, 1], [:v, 1153, 1], [:v, 1154, 1]], true],
+    [:v, 1002, 101, "map:1277:15:1", "mr", 52, nil, [[:v, 1142, 53]], true],
+    [:v, 1002, 102, "ce:459", "mr", 54, nil, [[:v, 1142, 54]], true],
+    [:v, 1002, 103, "map:1911:19:1", "mr", 55, nil, [[:v, 1142, 55], [:v, 1149, 5]], true],
+    [:v, 1002, 65, "map:1003:7:1", "ad", 56, nil, [[:v, 1141, 56]], true],
+    [:v, 1002, 66, "map:1669:8:1", "ad", 58, nil, [[:v, 1141, 58], [:v, 1155, 1], [:v, 1156, 1]], true],
+    [:v, 1002, 105, "ce:461", "mr", 62, nil, [[:v, 1142, 62]], true],
+    [:v, 1002, 106, "map:1658:3:1", "mr", 64, nil, [[:v, 1142, 65]], true],
+    [:v, 1002, 67, "map:1005:3:1", "ad", 66, nil, [[:v, 1141, 66]], true],
+    [:v, 1002, 67, "map:1005:3:3", "ad", 66, nil, [[:v, 1141, 66], [:v, 1142, 70]], true],
+    [:v, 1002, 69, "map:1695:1:1", "ad", 69, nil, [[:v, 1141, 70]], true],
+    [:v, 1002, 75, "map:1206:5:1", "mr", 76, nil, [[:v, 1142, 76], [:s, 2746]], true],
+    [:v, 1002, 141, "map:455:15:1", "chaos", 7, nil, [[:v, 1143, 7]], true],
+    [:v, 1002, 138, "map:1688:2:1", "chaos", 9, nil, [[:v, 1143, 9]], true],
+    [:v, 1002, 139, "map:1435:13:1", "chaos", 10, nil, [[:v, 1143, 10]], true],
+    [:v, 1002, 119, "map:1765:36:1", "chaos", 12, nil, [[:v, 1143, 13]], true]
+  ].map { |row| Setting.new(*row) }
+
+  # The maps the game sends the player to with the warp ban (switch 100) lifted more often than
+  # set, as the field: a ban left on there while no event runs is left over.
+  WARP_FREE_MAPS = [
+    1, 2, 19, 20, 33, 37, 50, 51, 75, 76, 124, 126, 131, 142, 143, 151,
+    154, 159, 162, 191, 193, 194, 197, 199, 212, 217, 220, 224, 228, 252, 253, 254,
+    257, 264, 276, 279, 287, 303, 308, 312, 315, 329, 355, 356, 358, 374, 382, 384,
+    404, 405, 416, 421, 423, 427, 430, 435, 439, 441, 444, 445, 461, 462, 466, 469,
+    476, 481, 501, 511, 519, 534, 544, 555, 557, 559, 561, 585, 605, 606, 623, 638,
+    642, 655, 713, 714, 731, 738, 741, 745, 750, 758, 762, 778, 780, 791, 805, 809,
+    831, 832, 840, 844, 847, 851, 855, 882, 890, 899, 900, 908, 922, 923, 924, 926,
+    927, 928, 929, 930, 973
+  ]
+
   # The story switches that only stay on while a scene runs, such as "White Rabbit Emerged"
   # (2029): every event that turns one on turns it off again, so they tell nothing of the story.
   SCENE_SWITCHES = [

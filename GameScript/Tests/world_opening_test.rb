@@ -2,7 +2,8 @@
 #  world_opening_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Checked that random encounters come on again once the world's story is past the talk that turns them on, but not on a map that turns them off itself
+#      Paulinchen  2026-10-11: Dropped the checks of the random encounters, which world_catchup_test.rb covers with every value the story sets
+#                            - Checked that random encounters come on again once the world's story is past the talk that turns them on, but not on a map that turns them off itself
 #                            - Created
 #
 #----------------------------------------------------------------
@@ -29,10 +30,7 @@ class Game_Player
   def x; 48; end
   def y; 44; end
 end
-Game_Event = Struct.new(:id, :trigger, :list) do
-  def mgq_mp_pages; [Struct.new(:list).new(list)]; end
-end
-class Game_System; attr_accessor :encounter_disabled; end
+Game_Event = Struct.new(:id, :trigger, :list)
 class Game_Map; attr_accessor :map_id, :events; def update(_main = false); end; end
 class Scene_Map; end
 class Scene_Menu; end
@@ -170,16 +168,3 @@ class Game_Interpreter; def command_355; raise "boom"; end; end
 MGQ_MpWorldOpening.before_take(world.call(7))
 frames.call(1)
 check("a setup that fails leaves the opening to the game", [MGQ_MpWorldOpening.holds?(opening_event.call), MGQ_MpWorldOpening.before_take(world.call(7))], [false, nil])
-
-# Random encounters the opening turned off.
-fresh.call(6)
-$game_system = Game_System.new
-$game_system.encounter_disabled = true
-MGQ_MpWorldOpening.allow_encounters(world.call(6))
-check("stay off while the world's story has not reached the talk that turns them on", $game_system.encounter_disabled, true)
-MGQ_MpWorldOpening.allow_encounters(world.call(9))
-check("come on once it is past it", $game_system.encounter_disabled, false)
-$game_system.encounter_disabled = true
-$game_map.events[3] = Game_Event.new(3, 0, [command(136, 0), command(0)])
-MGQ_MpWorldOpening.allow_encounters(world.call(9))
-check("but stay off on a map that turns them off itself", $game_system.encounter_disabled, true)

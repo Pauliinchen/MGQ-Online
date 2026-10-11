@@ -2,6 +2,9 @@
 #  world_catchup.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-11: Checked everything once on entering the world, after a load and on every level up: the story's skills, key items and companions the player lacks, and the player's own values the story sets
+#                            - Moved the player's own values the story's events set, the game over's return point and the random encounters, on to the latest step their story passed where they still hold an earlier step's, and lifted a warp ban left on where the game lets the player warp
+#                            - Handed out every key item the story's place owes the player and they lack, whoever's game played its event, so a key item a newer table lists or a laid-over story skipped still comes
 #      Paulinchen  2026-10-10: Kept what a player behind changed when a checkpoint is laid over their story, and took the checkpoint as the story they stand on
 #                            - Moved a player behind past the routes the world finished on to the world's story instead of a finished route's checkpoint
 #      Paulinchen  2026-10-09: Read and wrote the story and granted its skills and companions through the state model of story_state.rbx instead of coop_story.rbx
@@ -44,6 +47,12 @@
 module MGQ_MpWorldCatchup
   # The tables this catch-up follows.
   DATA = MGQ_MpWorldCatchupData
+
+  # The event command that turns random encounters off (its parameter 0) or on.
+  ENCOUNTER_CODE = 136
+
+  # The switch that bans warping, as Harpy Feathers do, each player's own.
+  WARP_BAN = defined?(NWConst::Sw::WARP_BAN) ? NWConst::Sw::WARP_BAN : 100
 
   # Frames between two looks at the player's story, half a second.
   CHECK_FRAMES = 30
@@ -122,6 +131,7 @@ module MGQ_MpWorldCatchup
     @share_at = 0
     @orbs_due = false
     @orbs_played = false
+    @audit_due = true
     @clock ||= 0
     @checked = @clock
     @state_read = @clock
@@ -215,6 +225,7 @@ module MGQ_MpWorldCatchup
     return if MGQ_MpWorldStory.mode.nil?
 
     looking do
+      audit(story_now) if @audit_due
       review(story_now, false)
       move_on if MGQ_MpWorldStory.mode == :behind && !@want && !@joins_world && gate_reached?
       note_roster
@@ -766,6 +777,128 @@ module MGQ_MpWorldCatchup
                        end
   end
 
+  # Asks for one look at everything once the player is free again, see audit: as their level rose.
+  def self.level_up
+    @audit_due = true if active?
+  end
+
+  # Looks at everything the player's story owes them once, whatever the rows' notes say, as on
+  # entering the world, after a load and on a level up: the story's skills Luka lacks, the key
+  # items (restock_key_items), the story's companions missing from the roster, who join at their
+  # gate, and the player's own values the story sets (settle), with a warp ban left where warping
+  # is free (lift_warp_ban).
+  #
+  # @param story [Array] The player's story.
+  def self.audit(story)
+    @audit_due = false
+    told = @world_told
+    done = ledger["done"]
+    gifts = missing_skills(story, told)
+    gifts.concat(restock_key_items(story, told))
+    missing_companions(story, told, done)
+    settle(story, told)
+    lift_warp_ban
+    log("looked at everything the story owes the player once")
+    tell_gifts(gifts.compact)
+  end
+
+  # Teaches Luka the story's skills he lacks, of the rows the player's story or the world's is past.
+  #
+  # @param story [Array] The player's story.
+  # @param told [Array, nil] The world's story, nil before it came.
+  # @return [Array<String>] What was given, as shown.
+  def self.missing_skills(story, told)
+    hero = $game_actors[MGQ_MpStoryState::HERO]
+    DATA::REWARDS.map do |row|
+      next unless row.kind == :skill && carries?(row) && !MGQ_MpStoryState.knows?(hero, row.id)
+      next unless passed?(row, story) || (told && passed?(row, told, story))
+
+      give(:skill, row.id, 1, key_of("g", row))
+    end
+  end
+
+  # Lets the story's companions the roster lacks join at their gate: of the joins the player's
+  # story or the world's is past and whose event the rows tell ran, those no later removal of the
+  # story took away, which the notes took as done.
+  #
+  # @param story [Array] The player's story.
+  # @param told [Array, nil] The world's story, nil before it came.
+  # @param done [Hash] The rows done.
+  def self.missing_companions(story, told, done)
+    passes = lambda { |row| passed?(row, story) || (told && passed?(row, told, story)) }
+    DATA::JOINS.each do |row|
+      key = key_of("j", row)
+      next unless done[key] == true && row.part && carries?(row) && !in_roster?(row.actor) && passes.call(row)
+      next if DATA::REMOVALS.any? { |removal| removal.actor == row.actor && after?(removal, row) && passes.call(removal) }
+
+      done[key] = "c"
+      log("#{actor_label(row.persona)} of #{row.site} is missing from the roster: joins at level #{row.gate}")
+    end
+    bring_waiting(done)
+  end
+
+  # Moves the player's own values the story's events set (DATA::SETTINGS: the game over's return
+  # point, the random encounters) to what the latest step their story or the world's passed set,
+  # where they still hold what an earlier step set: a story laid over theirs, or the opening's
+  # setup, skipped the events. A value of their own making, such as a church they prayed at, stays,
+  # and so do the encounters on a map whose events turn them on or off themselves.
+  #
+  # @param story [Array] The player's story.
+  # @param told [Array, nil] The world's story, nil before it came.
+  def self.settle(story, told)
+    latest = {}
+    earlier = Hash.new { |hash, key| hash[key] = [] }
+    DATA::SETTINGS.each do |row|
+      next unless passed?(row, story) || (told && passed?(row, told, story))
+
+      key = [row.kind, row.id]
+      earlier[key] << latest[key].value if latest[key]
+      latest[key] = row
+    end
+    latest.each do |key, row|
+      now = setting_now(row)
+      next if now == row.value || !earlier[key].include?(now)
+      next log_once([:own_encounters, $game_map.map_id], "left the random encounters to map #{$game_map.map_id}, whose events turn them on or off") if row.kind == :encounters && map_sets_encounters?
+
+      row.kind == :encounters ? $game_system.encounter_disabled = !row.value : $game_variables[row.id] = row.value
+      log("set #{setting_label(row)} from #{now.inspect} to #{row.value.inspect}, as #{row.site} of the story left it")
+    end
+  end
+
+  # Reads a value of the player's own that the story sets, see settle.
+  #
+  # @param row [Struct] A row of DATA::SETTINGS.
+  # @return [Object] Its value now: whether random encounters are on, or the variable's.
+  def self.setting_now(row)
+    row.kind == :encounters ? !$game_system.encounter_disabled : $game_variables[row.id]
+  end
+
+  # Names a value of the player's own that the story sets, for the log.
+  #
+  # @param row [Struct] A row of DATA::SETTINGS.
+  # @return [String] Its name.
+  def self.setting_label(row)
+    row.kind == :encounters ? "the random encounters" : "variable #{row.id}"
+  end
+
+  # Reports whether an event of the player's map turns random encounters on or off.
+  #
+  # @return [Boolean] Whether one does.
+  def self.map_sets_encounters?
+    $game_map.events.values.any? do |event|
+      event.mgq_mp_pages.any? { |page| (page.list || []).any? { |command| command.code == ENCOUNTER_CODE } }
+    end
+  end
+
+  # Lifts the warp ban left on where the game lets the player warp (DATA::WARP_FREE_MAPS, as the
+  # field), as a skipped event or a game over under an earlier return point left it.
+  def self.lift_warp_ban
+    return unless $game_switches[WARP_BAN] && DATA::WARP_FREE_MAPS.include?($game_map.map_id)
+
+    $game_switches[WARP_BAN] = false
+    log("lifted the warp ban: map #{$game_map.map_id} lets the player warp")
+  end
+
   # Looks at every row of the tables against the player's story, see the module: rows the
   # player's own game played are noted done, those a story carried them past give their rewards
   # and take their companions, the world's key items and chests come to everyone, and companions
@@ -787,10 +920,13 @@ module MGQ_MpWorldCatchup
     end
     gifts.concat(world_items(story, carried, done))
     companions(story, carried, done)
+    settle(story, @world_told) if carried
     tell_gifts(gifts.compact)
   end
 
-  # Gives the world's key items and the items of its story chests, see the module.
+  # Gives the world's key items and the items of its story chests, see the module. A key item row
+  # the story passed only takes what it takes; what the rows give comes through
+  # restock_key_items, which gives only what the player lacks, so nothing comes twice.
   #
   # @param story [Array] The player's story.
   # @param carried [Boolean] Whether a story laid over theirs just carried them past what is new.
@@ -802,13 +938,11 @@ module MGQ_MpWorldCatchup
     DATA::KEY_ITEMS.each do |row|
       key = key_of("k", row)
       next if done[key]
-      next gifts << top_up(row, story, told, done, key) unless carries?(row)
-
       mine = passed?(row, story)
       next unless mine || (told && passed?(row, told, story))
 
       done[key] = true
-      gifts << give("i", row.item, row.amount, key) if carried || !mine
+      give("i", row.item, row.amount, key) if row.amount < 0 && carries?(row) && (carried || !mine)
     end
     DATA::CHESTS.each do |row|
       key = key_of("c", row)
@@ -823,29 +957,31 @@ module MGQ_MpWorldCatchup
       row.items.each { |id| gifts << give("i", id, 1, key) }
       open_chest(row.key) unless mine
     end
-    gifts
+    gifts.concat(restock_key_items(story, told))
   end
 
-  # Gives a key item whose row's marks only tell that its event is there to play, once the world's
-  # story is past the row: what the player lacks of its amount, unless the world's story took the
-  # item since.
+  # Hands out every key item the story owes the player by now and they hold fewer of: one a key
+  # item row gives that the player's story or the world's is past, on the player's side, and that
+  # no later row took back, up to the most such a row gives. Unlike the rows' ledger it goes by the
+  # story's place alone, so a row added after the player's story passed it, or an event a story
+  # laid over theirs skipped, as the Pocket Castle's handover, still gives the item.
   #
-  # A global flag often uses such an event up for the whole world, as switch 2039 the Key to Hades,
-  # so only the player whose game played it would hold the item otherwise.
-  #
-  # @param row [MGQ_MpWorldCatchupData::KeyItem] The row.
   # @param story [Array] The player's story.
   # @param told [Array, nil] The world's story, nil before it came.
-  # @param done [Hash] The rows done.
-  # @param key [String] The row's key.
-  # @return [String, nil] What was given, as shown, nil for nothing.
-  def self.top_up(row, story, told, done, key)
-    return nil unless row.amount > 0 && told && passed?(row, told, story)
+  # @return [Array<String>] What was given, as shown.
+  def self.restock_key_items(story, told)
+    owed = Hash.new(0)
+    DATA::KEY_ITEMS.each do |row|
+      next unless row.amount > 0 && (passed?(row, story) || (told && passed?(row, told, story)))
+      next if taken_since?(row, story, story) || (told && taken_since?(row, told, story))
 
-    done[key] = true
-    item = MGQ_MpGame.item("i", row.item)
-    missing = item && !taken_since?(row, told, story) ? row.amount - $game_party.item_number(item) : 0
-    missing > 0 ? give("i", row.item, missing, key) : nil
+      owed[row.item] = [owed[row.item], row.amount].max
+    end
+    owed.map do |id, amount|
+      item = MGQ_MpGame.item("i", id)
+      missing = item ? amount - $game_party.item_number(item) : 0
+      missing > 0 ? give("i", id, missing, "k:owed:#{id}") : nil
+    end
   end
 
   # Reports whether a story took a key item after a row gave it: a later row of the same part, or a
@@ -1325,6 +1461,9 @@ begin
   # which a duel's end calls too to put the game back.
   MGQ_MpHooks.after(DataManager.singleton_class, :load_game_without_rescue, "world_catchup") { |_index| MGQ_MpWorldCatchup.loaded }
   MGQ_MpHooks.after(DataManager.singleton_class, :setup_new_game, "world_catchup") { MGQ_MpWorldCatchup.loaded }
+
+  # A level up may reach a gate: the catch-up looks at everything once.
+  MGQ_MpHooks.after(Game_Actor, :level_up, "world_catchup") { MGQ_MpWorldCatchup.level_up }
 rescue => e
   MGQ_MpWorldCatchup.log("hooks FAILED: #{e.class}: #{e.message}")
 end

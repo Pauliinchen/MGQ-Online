@@ -2,6 +2,9 @@
 #  world_catchup_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-11: Checked one look at everything on entering and on a level up: the story's own values moved on from an earlier step's but not a player's own, encounters left to a map that sets them, the warp ban lifted where warping is free, a missing skill and a missing companion
+#                            - Stood in for whether random encounters are on and for the map's events
+#                            - Checked that a key item the story's place owes comes to a player who lacks it, also after the row was marked done, but not one taken since or of the other side
 #      Paulinchen  2026-10-10: Stood in for MGQ_MpCoopEvents.telling_or_moved?, which world_story.rbx asks now
 #                            - Checked that a shared save's own story counts as the player's in a Raid World started from it: no gifts, no companion
 #                              taken or brought, nothing held, also once the world's story from the same save is laid over it
@@ -209,6 +212,7 @@ end
 class Game_Map
   attr_accessor :map_id, :interpreter, :need_refresh
   def initialize; @map_id = 3; @interpreter = Game_Interpreter.new; end
+  def events; @events ||= {}; end
   def update(main = false); end
 end
 class Game_Player
@@ -217,7 +221,7 @@ class Game_Player
   def transfer?; false; end
   def perform_transfer; end
 end
-class Game_System; end
+class Game_System; attr_accessor :encounter_disabled; end
 module DataManager
   def self.make_save_contents; {}; end
   def self.extract_save_contents(contents); end
@@ -241,7 +245,7 @@ REAL_JOINS = DATA::JOINS
 #
 # @param tables [Hash{Symbol => Array}] The rows by table, the others empty.
 def tables(tables = {})
-  [:JOINS, :REMOVALS, :KEY_ITEMS, :CHESTS, :REWARDS].each do |name|
+  [:JOINS, :REMOVALS, :KEY_ITEMS, :CHESTS, :REWARDS, :SETTINGS, :WARP_FREE_MAPS].each do |name|
     DATA.send(:remove_const, name)
     DATA.const_set(name, tables[name] || [])
   end
@@ -610,6 +614,57 @@ relay({ "rev" => 21, "wrev" => 21, "p" => 10, "part" => "1" }, packed({ 1001 => 
 frames(40)
 check("a key item only there to play comes up to its amount, never one the world's story took since",
       [$game_party.items[505], $game_party.items[503]], [1, 0])
+
+# A key item the story's place owes comes to a player who lacks it, whatever gave it before.
+tables(:KEY_ITEMS => [key_item.new(501, 1, "map:2:5:1", "1", 7, :alice, [[:v, 1001, 7], [:s, 5001]], true),
+                      key_item.new(501, 1, "map:2:5:2", "1", 7, :ilias, [[:v, 1001, 7], [:s, 5001]], true),
+                      key_item.new(505, 1, "map:29:35:2", "1", 7, nil, [[:v, 1001, 7]], true),
+                      key_item.new(505, -1, "map:30:1:1", "1", 8, nil, [[:v, 1001, 8]], true)])
+new_game({ 1001 => 9 }, [5001, 5], 40)
+frames(1)
+relay({ "rev" => 23, "wrev" => 23, "p" => 9, "part" => "1" }, packed({ 1001 => 9 }, [5001]))
+frames(40)
+check("a player whose own story is past a key item's row but who never got it gets it, on their side once",
+      [$game_party.items[501], $game_party.items[505]], [1, 0])
+$game_party.items[501] = 0
+frames(40)
+story.pushed(MGQ_MpOverworldSync::STORY_FIELD => "24", :relay => true)
+frames(1)
+relay({ "rev" => 24, "wrev" => 24, "p" => 9, "part" => "1" }, packed({ 1001 => 9 }, [5001]))
+frames(40)
+check("and gets it again once it is gone, its row long done", $game_party.items[501], 1)
+
+# One look at everything on entering and on a level up: the player's own values the story sets,
+# the warp ban, the story's skills and its companions.
+setting = DATA::Setting
+tables(:SETTINGS => [setting.new(:encounters, 0, false, "map:545:1:1", "1", 0, nil, [[:v, 1001, 0]], true),
+                     setting.new(:v, 1002, 1, "map:545:1:1", "1", 0, nil, [[:v, 1001, 0]], true),
+                     setting.new(:encounters, 0, true, "map:6:30:2", "1", 7, nil, [[:v, 1001, 7]], true),
+                     setting.new(:v, 1002, 2, "map:6:30:2", "1", 7, nil, [[:v, 1001, 7]], true)],
+       :WARP_FREE_MAPS => [3],
+       :REWARDS => [reward.new(:skill, 930, 1, "map:6:30:2", "1", 7, nil, [[:v, 1001, 7]], true)],
+       :JOINS => [join.new(77, 77, "map:6:30:2", "1", 7, nil, [[:v, 1001, 7]], 1, :start, 1, true)])
+new_game({ 1001 => 9, 1002 => 1 }, [100], 40)
+$game_system.encounter_disabled = true
+frames(1)
+relay({ "rev" => 25, "wrev" => 25, "p" => 9, "part" => "1" }, packed({ 1001 => 9 }))
+frames(40)
+check("on entering, the player's own values the story sets move on from an earlier step's to the latest step's, the warp ban lifts where warping is free, and Luka learns the skill he lacks",
+      [$game_system.encounter_disabled, $game_variables[1002], $game_switches[100], $game_actors[1].instance_variable_get(:@skills).include?(930)], [false, 2, false, true])
+check("and a story companion missing from the roster joins at their gate", $game_party.all_members.map(&:id).include?(77), true)
+$game_party.remove_actor(77)
+$game_variables[1002] = 9
+$game_system.encounter_disabled = true
+$game_map.events[1] = Struct.new(:mgq_mp_pages).new([Struct.new(:list).new([RPG::EventCommand.new(136, 0, [0])])])
+$game_switches[100] = true
+$game_map.map_id = 4
+MGQ_MpWorldCatchup.level_up
+frames(40)
+check("a level up looks again: a value of the player's own making stays, the encounters stay with a map that sets them, a warp ban off the free maps stays",
+      [$game_variables[1002], $game_system.encounter_disabled, $game_switches[100]], [9, true, true])
+check("and one gone from the roster joins again", $game_party.all_members.map(&:id).include?(77), true)
+$game_map.events.clear
+$game_map.map_id = 3
 
 # The catch-up completing the orbs plays the event that moves the story on, which only the orbs' events call.
 tables(:KEY_ITEMS => [key_item.new(542, 1, "map:149:107:1", "2", 30, nil, [[:v, 1001, 30], [:v, 1068, 3]], true)])
