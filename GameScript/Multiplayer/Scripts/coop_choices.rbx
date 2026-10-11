@@ -2,6 +2,7 @@
 #  coop_choices.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-11: Dropped Amira's choice in Iliasburg, whose outcomes both end with her joining later, so her switches and her join follow the story
 #      Paulinchen  2026-10-10: Forgot the choices waiting to be picked and a Raid World's route waiting to be confirmed once the world closes
 #      Paulinchen  2026-10-09: Read the story and the roster and brought companions through the state model of story_state.rbx instead of coop_story.rbx
 #                            - Forgot the choices waiting to be picked when a new game starts, so a Raid World's route waiting to be confirmed never plays on a fresh game
@@ -13,7 +14,7 @@
 #
 #----------------------------------------------------------------
 
-# The story's choices a member makes for themselves: who Luka takes along, Amira, Magistea Village,
+# The story's choices a member makes for themselves: who Luka takes along, Magistea Village,
 # Plansect, Succubus Village, the Spider Princess, the Sphinx and the Great Decision. Each is the
 # member's own, whatever the leader chose: their outcome's switches and variables stay out of the
 # leader's story the member plays, and the companions it brings join them, never the leader's.
@@ -47,10 +48,6 @@ module MGQ_MpCoopChoices
     Branch.new(:side, "Alice or Ilias", 7, "Iliasville: whom Luka takes along on his journey, his side until the Great Decision.", [
       { :label => "Take Alice along", :switches => { 4 => true, 5 => false }, :joins => [5], :note => "Alice joins." },
       { :label => "Take Ilias along", :switches => { 4 => false, 5 => true }, :joins => [26], :note => "Ilias joins." },
-    ]),
-    Branch.new(:amira, "Amira in Iliasburg", 9, "Iliasburg: what Luka does with Amira. Killed, she comes back later.", [
-      { :label => "Ask her name", :switches => { 2127 => true }, :joins => [540], :note => "Amira joins." },
-      { :label => "Kill her", :switches => { 2108 => true }, :joins => [], :note => "She comes back later, and can join you then." },
     ]),
     Branch.new(:magistea, "Magistea Village", 17, "Magistea Village: whom Luka defeats, Lily or Lucia. The other joins.", [
       { :label => "Defeat Lily", :switches => { 2096 => true, 7017 => true, 2095 => true, 2097 => false, 7016 => false, 2094 => false, 2138 => true, 2137 => false },
@@ -96,9 +93,9 @@ module MGQ_MpCoopChoices
   SUCCUBUS_SWITCHES = [2210, 2211, 2212, 2213, 7007, 7008]
 
   # The companions the choices bring, which come only with the member's own outcome, never as the
-  # leader holds them: Lily, Lucia, Natasha, the mayor, Amira, the Sphinx, the Priestess, Miria and
-  # the Spider Princess.
-  CHOICE_COMPANIONS = [163, 167, 288, 287, 540, 153, 241, 245, 334]
+  # leader holds them: Lily, Lucia, Natasha, the mayor, the Sphinx, the Priestess, Miria and the
+  # Spider Princess.
+  CHOICE_COMPANIONS = [163, 167, 288, 287, 153, 241, 245, 334]
 
   # The main story's progress the Great Decision sets.
   GREAT_DECISION = 40
@@ -152,8 +149,7 @@ module MGQ_MpCoopChoices
      branch.outcomes.map { |outcome| (outcome[:variables] || {}).keys }.flatten.uniq]
   end
 
-  # Reports whether a story made a choice already: Amira only once she joined, since killed she
-  # comes back.
+  # Reports whether a story made a choice already.
   #
   # @param key [Symbol] The choice.
   # @param switches [Array] The story's switches.
@@ -163,7 +159,6 @@ module MGQ_MpCoopChoices
   def self.made?(key, switches, variables, roster)
     case key
     when :side then switches[4] || switches[5] ? true : false
-    when :amira then switches[2127] ? true : false
     when :magistea then switches[2096] || switches[2097] ? true : false
     when :plansect then variables[1061].to_i >= 1
     when :succubus then SUCCUBUS_SWITCHES.first(4).any? { |id| switches[id] }
@@ -182,12 +177,10 @@ module MGQ_MpCoopChoices
   # @param switches [Array] The player's own switches.
   # @param variables [Array] The player's own variables.
   # @param roster [Array<Integer>] The player's companions.
-  # @param always [Array<Symbol>] The choices asked whenever the player has not made them and is
-  #   brought past them, though their own story is past them too.
   # @return [Array<Symbol>] The choices, in story order.
-  def self.passed(from, to, switches, variables, roster, always = [])
+  def self.passed(from, to, switches, variables, roster)
     BRANCHES.select do |branch|
-      (from < branch.point || always.include?(branch.key)) && to >= branch.point && !made?(branch.key, switches, variables, roster)
+      from < branch.point && to >= branch.point && !made?(branch.key, switches, variables, roster)
     end.map { |branch| branch.key }
   end
 
@@ -509,8 +502,7 @@ module MGQ_MpCoopChoices
 
     switches = MGQ_MpStoryState.data_of($game_switches)
     variables = MGQ_MpStoryState.data_of($game_variables)
-    # Amira killed comes back, so she is asked of every member who never had her join.
-    keys = passed(own[0], theirs[0], switches, variables, MGQ_MpStoryState.roster_ids, [:amira])
+    keys = passed(own[0], theirs[0], switches, variables, MGQ_MpStoryState.roster_ids)
     log("accepted #{MGQ_MpOverworldSync.who(peer)}'s offer: own #{MGQ_MpCoopStory.markers_text(own)}, theirs #{MGQ_MpCoopStory.markers_text(theirs)}; " \
         "choices to make: #{keys.empty? ? 'none' : keys.join(', ')}")
     route = theirs[0] >= GREAT_DECISION ? MGQ_MpCoopStory.route_of(theirs) : nil

@@ -2,7 +2,8 @@
 #  world_story_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Dropped the check of the opening's random encounters, which world_catchup.rbx settles now
+#      Paulinchen  2026-10-11: Asked no Amira choice of a player the world's story carries past Iliasburg
+#                            - Dropped the check of the opening's random encounters, which world_catchup.rbx settles now
 #                            - Checked that a take lets the opening turn random encounters on again
 #                            - Checked that a scene switch is each Raid World player's own and that a take turns one left on off, unless the player watches a scene
 #                            - Checked that the world's story waits for a new game's opening setup and is laid over the story it made
@@ -721,7 +722,7 @@ story.pushed(MGQ_MpOverworldSync::STORY_FIELD => "41", :relay => true)
 frames(1)
 relay({ "rev" => 41, "wrev" => 41, "p" => 10, "part" => "1", "fetch" => "done" }, packed({ 1001 => 10 }))
 frames(16)
-check("the world's story passing Iliasville and Iliasburg asks the side and Amira", choices.instance_variable_get(:@prompts), [:side, :amira])
+check("the world's story passing Iliasville and Iliasburg asks the side", choices.instance_variable_get(:@prompts), [:side])
 choices.forget("test")
 story.followed({ "p" => 25, "r1141" => 0, "r1142" => 0, "r1143" => 0, "clear" => [] }, { "p" => 40, "r1141" => 3, "r1142" => 0, "r1143" => 0, "clear" => [] })
 check("a story carrying the player past choices onto a route asks those choices, then the route",

@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-11: Checked that a page with story behind a choice is no chest, as Amira's paid tip in Iliasburg
+#                            - Checked that Amira in Iliasburg is no choice any more
 #                            - Checked the generator's rules only where the event checker repository lies next to this one, as on this PC and not in the workflow
 #                            - Checked that a common event the story calls tells its pages and a parallel one does not, that a page the leader moved past stays to read, confirm reads on, and that only the oldest pages past CATCH_UP_PAGES are left out
 #                            - Checked that holding the game's skip passes a page the leader moved past
@@ -1805,12 +1806,11 @@ choices = MGQ_MpCoopChoices
   245 => "Miria", 334 => "Spider Princess" }.each { |id, name| $data_actors[id] = Actor.new(name) }
 
 check("a catch-up from the start to the Great Decision asks every choice, in story order",
-      choices.passed(5, 40, [], [], []), [:side, :amira, :magistea, :plansect, :succubus, :spider, :sphinx, :decision])
+      choices.passed(5, 40, [], [], []), [:side, :magistea, :plansect, :succubus, :spider, :sphinx, :decision])
 check("one from 20 to 32 asks those between, and not one the player made",
       choices.passed(20, 32, Array.new(3000).tap { |s| s[2096] = true }, [], []), [:plansect, :succubus, :spider, :sphinx])
-check("Amira is asked of every member who never had her join, though killed or long past her",
-      [choices.passed(20, 32, Array.new(3000).tap { |s| s[2108] = true }, [], [], [:amira]).include?(:amira),
-       choices.passed(20, 32, Array.new(3000).tap { |s| s[2127] = true }, [], [], [:amira]).include?(:amira)], [true, false])
+check("Amira in Iliasburg is no choice: both her outcomes end with her joining, so the story brings her",
+      [choices.passed(5, 40, [], [], []).include?(:amira), choices.skip_reason(:actors, 540)], [false, nil])
 check("the Great Decision is not asked before the leader is past it", choices.passed(30, 39, [], [], []).include?(:decision), false)
 $game_system_switches = {}
 check("the third way only with both endings cleared", choices.labels(:decision).size, 2)
@@ -1842,13 +1842,12 @@ member_game(20, 5)
 choices.apply(:succubus, 1, :magistea => 0)
 check("allying with the mayor while Lucia is with the player brings the mayor", [$game_switches[2212], $game_party.include_actors.include?(287)], [true, true])
 member_game(20, 5)
-choices.apply(:amira, 1)
 choices.apply(:plansect, 1)
 choices.apply(:spider, 0)
 choices.apply(:sphinx, 1)
-check("Amira killed, the Queen Bee's side, the Spider Princess and the Sphinx invited",
-      [$game_switches[2108], $game_variables[1061], $game_switches[2154], $game_switches[2280], [245, 334, 153].map { |id| $game_party.include_actors.include?(id) }],
-      [true, 2, true, true, [true, true, true]])
+check("the Queen Bee's side, the Spider Princess and the Sphinx invited",
+      [$game_variables[1061], $game_switches[2154], $game_switches[2280], [245, 334, 153].map { |id| $game_party.include_actors.include?(id) }],
+      [2, true, true, [true, true, true]])
 
 # The outcomes the member made stay theirs in the leader's story, and the leader's choices'
 # companions never come with it.
@@ -1909,8 +1908,8 @@ check("the member sees the leader's offer", choices::Offers.notice_of(leader).te
 $scenes = []
 choices.accept(leader)
 screen = choices.take_screen
-check("accepting shows the choices the catch-up carries them past, Amira always",
-      [$scenes, screen[:keys], screen[:buttons]], [[Scene_MpStoryChoices], [:amira, :plansect, :succubus, :spider, :sphinx, :decision], ["Bring me there", "Cancel"]])
+check("accepting shows the choices the catch-up carries them past",
+      [$scenes, screen[:keys], screen[:buttons]], [[Scene_MpStoryChoices], [:plansect, :succubus, :spider, :sphinx, :decision], ["Bring me there", "Cancel"]])
 leader.state["ssoffer"] = ""
 check("which closes once the leader takes the offer back", choices.valid_offer?(leader), "Leader took the offer back.")
 $leader = nil
@@ -1924,9 +1923,9 @@ decision = [RPG::EventCommand.new(102, 0, [["a", "b"], 0]), RPG::EventCommand.ne
 $data_common_events[380] = RPG::CommonEvent.new(decision)
 $real_sync = true
 $sent.clear
-choices.confirm_offer(leader, [40, 3, 0, 1], 0, :amira => 0, :plansect => 0, :succubus => 0, :spider => 1, :sphinx => 0, :decision => 1)
+choices.confirm_offer(leader, [40, 3, 0, 1], 0, :plansect => 0, :succubus => 0, :spider => 1, :sphinx => 0, :decision => 1)
 check("the member's outcomes are theirs before the leader's story comes",
-      [$game_switches[2127], $game_variables[1061], $game_switches[2281], $game_party.include_actors.include?(540)], [true, 1, true, true])
+      [$game_variables[1061], $game_switches[2281]], [1, true])
 MGQ_MpCoopStory.update
 check("the member then follows the leader's story, by the offer", MGQ_MpCoopStory.follows_leader?, true)
 MGQ_MpCoopStory.take(leader, behind_story.merge("v" => "1001:n40,1141:n3", "ac" => "4,163"))
