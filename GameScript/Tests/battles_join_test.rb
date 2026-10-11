@@ -2,7 +2,8 @@
 #  battles_join_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Checked the prompt in the style's small font and solid outline
+#      Paulinchen  2026-10-11: Checked that a running battle takes an encounter with as many of the players it brings as it has room for, and that an encounter brings no more
+#                            - Checked the prompt in the style's small font and solid outline
 #                            - Stood in for the color every request and offer shares, which the prompt takes
 #                            - Took the depths and the screen from ui.rbx, which battle_support.rb loads now
 #                            - Kept the bitmap stand-in's width, which the waiting box's names line of a late join is cut to
@@ -458,7 +459,8 @@ $mgq_text_input = nil
 check("a press while the player types logs nothing", $log[before..-1].grep(/join battle hotkey/), [])
 reset
 
-# An encounter that would bring along more players than the running battle takes starts its own.
+# An encounter that would bring along more players than the running battle takes joins with as many
+# as it has room for.
 companions = [player(7, { "x" => "1" }), player(9, { "x" => "2" }), player(10, { "x" => "3" })]
 $scene_now = scene
 $game_troop.setup(31)
@@ -466,15 +468,16 @@ hotjoin.fight_alone("own7")
 asker7 = player(8, { "scene" => "battle", "rb" => "own7", "rbh" => "0" })
 MGQ_MpOverworldSync::Peers.all.replace([asker7] + companions)
 coop.take_map(asker7, { "coop" => "hot", "bid" => "own7", "troop" => "50", "enemies" => "50:320:300:0", "seats" => "7,9,10", "map" => "5" })
-check("a running battle refuses an encounter that brings along more players than it takes", map_sent("hot_no").map(&:first), [8])
+check("a running battle takes an encounter that brings along more players than it takes, with those that fit",
+      [map_sent("hot_no"), map_sent("hot_ok").map { |seat, f| [seat, f["seats"]] }, map_sent("invite").map(&:first)], [[], [[8, "8,7,9"]], [7, 9]])
 reset
 running = player(5, { "scene" => "battle", "rb" => "hb7", "rbh" => "5", "rbn" => "1" })
 MGQ_MpOverworldSync::Peers.all.replace([running] + companions)
 $scene_now = Scene_Map.new
 $encounter_troop = 50
 $game_player.encounter
-check("an encounter near a running battle asks its host, bringing along the free players",
-      map_sent("hot").map { |seat, f| [seat, f["seats"]] }, [[5, "7,9,10"]])
+check("an encounter near a running battle asks its host, bringing along as many free players as it has room for",
+      map_sent("hot").map { |seat, f| [seat, f["seats"]] }, [[5, "7,9"]])
 coop.take_map(running, { "coop" => "hot_no", "bid" => "hb7" })
 $sent.clear
 $scene_now = scene
@@ -482,6 +485,42 @@ coop::Mode.before_start(scene)
 check("refused, the requester starts a battle of their own, inviting the players it brought along",
       [sync.role, sync.battle_id == "hb7", map_sent("invite").map(&:first), map_sent("off")], [:host, false, [7, 9, 10], []])
 reset
+
+# A party member's offer to come along to a battle outside the party.
+$scene_now = Scene_Map.new
+map_frame
+fellow = player(8, { "scene" => "battle", "rb" => "hb9", "rbh" => "5" })
+outsider = player(5, { "scene" => "battle", "rb" => "hb9", "rbh" => "5", "rbn" => "2", "x" => "1" })
+MGQ_MpOverworldSync::Peers.all.replace([fellow, outsider])
+coop.take_map(fellow, { "coop" => "party_hot", "mode" => "join", "host" => "5", "bid" => "hb9", "map" => "5" })
+check("a member's offer to join a battle along stands", hotjoin.party_offer_text(fellow, hotjoin.party_offer(fellow)), "Join battle with P8?")
+hotjoin.accept_party(fellow)
+check("taken up, the player asks the battle's host to join by choice, asking no party along",
+      [map_sent("pick").map { |seat, f| [seat, f["bid"]] }, map_sent("party_hot")], [[[5, "hb9"]], []])
+reset
+coop.take_map(fellow, { "coop" => "party_hot", "mode" => "start", "host" => "5", "bid" => "hb9", "map" => "5" })
+check("a member's offer to start a battle instead reads so", hotjoin.party_offer_text(fellow, hotjoin.party_offer(fellow)), "Start battle with P8?")
+hotjoin.decline_party(fellow)
+check("declined, the member hears no", map_sent("party_ans").map { |seat, f| [seat, f["bid"], f["ok"]] }, [[8, "hb9", "0"]])
+check("and the offer is gone", hotjoin.party_offer(fellow), nil)
+coop.take_map(fellow, { "coop" => "party_hot", "mode" => "join", "host" => "5", "bid" => "hb9", "map" => "5" })
+outsider.state["rb"] = ""
+check("an offer lapses once the battle is over", hotjoin.party_offer(fellow), nil)
+reset
+
+# Joining by choice asks the party member near along where the battle has room for them both.
+outsider.state["rb"] = "hb9"
+mate = player(9, { "x" => "2" })
+mate.member = true
+MGQ_MpOverworldSync::Peers.all.replace([outsider, mate])
+MGQ_MpBattlesJoin.request(outsider, "hb9")
+check("asking to join by choice asks the party member near along", map_sent("party_hot").map { |seat, f| [seat, f["mode"]] }, [[9, "join"]])
+reset
+outsider.state["rbn"] = "3"
+MGQ_MpBattlesJoin.request(outsider, "hb9")
+check("not where the battle has room for the player alone", [map_sent("pick").map(&:first), map_sent("party_hot")], [[5], []])
+reset
+MGQ_MpOverworldSync::Peers.all.clear
 
 # A side battle near a raid boss battle that takes the player in no more, through
 # battles_raid_pool.rbx and ui_raid_bar.rbx, which stand in here.

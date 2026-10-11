@@ -2,7 +2,8 @@
 #  battles_coop_join.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Drew the prompt in the shared style's small font and solid outline, as the other labels, instead of the game's half-transparent one
+#      Paulinchen  2026-10-11: Asked the party members near along when the player asks to join a battle outside the party, unless they come along themselves
+#                            - Drew the prompt in the shared style's small font and solid outline, as the other labels, instead of the game's half-transparent one
 #                            - Drew the prompt in the color every request and offer shares
 #                            - Kept the prompt on the screen through MGQ_MpUi.within instead of a copy of it
 #      Paulinchen  2026-10-10: Offered a side battle against the same raid boss near a boss battle that takes the player in no more, on the same hotkey
@@ -305,11 +306,13 @@ module MGQ_MpBattlesJoin
   end
 
   # Asks the host of a battle near the player to take them in, through the map's gate. The player
-  # stands still until the host's invite or refusal comes, ANSWER_SECONDS at most.
+  # stands still until the host's invite or refusal comes, ANSWER_SECONDS at most. The player's
+  # party members near are asked along, see MGQ_MpBattlesHotjoin.offer_party_join.
   #
   # @param host [MGQ_MpOverworldSync::Peers::Peer] The battle's host.
   # @param bid [String] The battle's id.
-  def self.request(host, bid)
+  # @param along [Boolean] Whether to ask the party along, false for a member who comes along.
+  def self.request(host, bid, along = true)
     name = host.state["name"].to_s
     @asking = { :seat => host.seat, :bid => bid, :name => name, :at => Time.now }
     @gave_up = nil
@@ -317,6 +320,7 @@ module MGQ_MpBattlesJoin
     MGQ_MpBattlesCoop.tell_map([host.seat], "pick", "bid" => bid, "map" => $game_map.map_id)
     notice("Asking #{name} to join their battle...", ANSWER_SECONDS * 60)
     log("asked #{who(host)} to join battle #{bid}, waiting up to #{ANSWER_SECONDS} s")
+    MGQ_MpBattlesHotjoin.offer_party_join(host, bid) if along
   end
 
   # Reports whether the player waits for the answer of a battle's host they asked to join, standing

@@ -2,7 +2,8 @@
 #  battles_coop.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Stretched the steps to the next random encounter by half once another player who would fight it stands within NEARBY_TILES, a party member in a Classic world, instead of once per member or by half a draw per player on the map, and invited only the players that near to a Raid World's battle, so players across a large map no longer keep each other from meeting enemies or pull each other into fights
+#      Paulinchen  2026-10-11: Left the party members who said no to starting a battle with the player out of its invites, and took the party members' offers and answers about a battle outside the party
+#                            - Stretched the steps to the next random encounter by half once another player who would fight it stands within NEARBY_TILES, a party member in a Classic world, instead of once per member or by half a draw per player on the map, and invited only the players that near to a Raid World's battle, so players across a large map no longer keep each other from meeting enemies or pull each other into fights
 #                            - Opened the player's command phase while their own Frontline is down but their Backline may swap in, so they can still change the formation
 #                            - Named the battle invite or lead request waiting for the player to be free, which the pages of a teller's story give way to, so a viewer reading them no longer turns the invite down
 #                            - Drew each character's name in the battle's status window in its player's color, another player's character by its own name
@@ -607,7 +608,8 @@ module MGQ_MpBattlesCoop
   # (see raid_free?) and near (see near?), and for a boss battle those reading the story the player
   # tells there wherever they stand (see watching?), the party members first, then the nearest to
   # the party's leader, or to the player outside a party, by their states; at most RAID_PLAYERS
-  # with the player.
+  # with the player. Party members who said no to starting a battle with the player stay out (see
+  # MGQ_MpBattlesHotjoin.stays_out?).
   #
   # @param boss [Boolean] Whether it is a boss battle.
   # @return [Array<MGQ_MpOverworldSync::Peers::Peer>] The players.
@@ -616,6 +618,7 @@ module MGQ_MpBattlesCoop
     x, y = raid_center
     viewers = boss ? MGQ_MpCoop::Scope.viewers : []
     free = MGQ_MpCoop::Scope.peers_on($game_map.map_id).select { |peer| (raid_free?(peer) && near?(peer)) || watching?(peer, viewers) }
+    free.reject! { |peer| MGQ_MpBattlesHotjoin.stays_out?(peer.seat) }
     ranked = free.sort_by do |peer|
       [members.any? { |member| member.equal?(peer) } ? 0 : 1, distance(peer, x, y), peer.state["id"].to_s]
     end
@@ -1263,6 +1266,8 @@ module MGQ_MpBattlesCoop
     when "hot" then MGQ_MpBattlesHotjoin.take_request(peer, message)
     when "hot_ok" then MGQ_MpBattlesHotjoin.take_answer(peer, message, :accepted)
     when "hot_no" then MGQ_MpBattlesHotjoin.take_answer(peer, message, :refused)
+    when "party_hot" then MGQ_MpBattlesHotjoin.take_party_offer(peer, message)
+    when "party_ans" then MGQ_MpBattlesHotjoin.take_party_answer(peer, message)
     when "pick" then MGQ_MpBattlesJoin.take_request(peer, message)
     when "pick_no" then MGQ_MpBattlesJoin.take_refusal(peer, message)
     end
