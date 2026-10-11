@@ -2,7 +2,8 @@
 #  coop_scene_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Checked that the player's route, the camera's place and the map's zoom reach the viewers, whose own character walks the route without starting what it touches
+#      Paulinchen  2026-10-11: Checked that the story's music, sounds and fades and the map's tileset, battle backgrounds and parallax reach the viewers, never a path, a file or a tileset the game lacks, the game's defaults filled in, and that a viewer away from the teller's map screen hears the music once there and none of the sound effects
+#                            - Checked that the player's route, the camera's place and the map's zoom reach the viewers, whose own character walks the route without starting what it touches
 #                            - Checked that a viewer the story values moved on keeps watching the telling, on the teller's side and their own, also with values between the story's events on two maps
 #                            - Checked that a Raid World teller tells the story values, move routes without scripts, balloons and erasures, and that a viewer takes the values as the world, the routes without what this game lacks and the effects on the right characters
 #      Paulinchen  2026-10-09: Checked that a Raid World's scene goes to several viewers in one message
@@ -45,11 +46,17 @@ module RPG
     attr_accessor :code, :parameters
     def initialize(code = 0, parameters = []); @code = code; @parameters = parameters; end
   end
-  # A sound.
+  # A sound, which notes what is played, stopped and faded.
   class SE
     attr_reader :name, :volume, :pitch
     def initialize(name = "", volume = 100, pitch = 100); @name = name; @volume = volume; @pitch = pitch; end
+    def play(*pos); ($played ||= []) << [self.class.name.split("::").last, @name, @volume, @pitch, *pos]; end
+    def self.stop; ($played ||= []) << [name.split("::").last, :stop]; end
+    def self.fade(time); ($played ||= []) << [name.split("::").last, :fade, time]; end
   end
+  class BGM < SE; end
+  class BGS < SE; end
+  class ME < SE; end
 end
 Tone = Struct.new(:red, :green, :blue, :gray)
 Color = Struct.new(:red, :green, :blue, :alpha)
@@ -112,11 +119,21 @@ class Game_Map
   attr_reader :screen
   def initialize; @map_id = 7; @screen = Game_Screen.new; @interpreter = Game_Interpreter.new; @events = {}; end
   def update(main = false); end
+  def change_tileset(id); (@looks ||= []) << [:tileset, id]; end
+  def change_battleback(one, two); (@looks ||= []) << [:battleback, one, two]; end
+  def change_parallax(*args); (@looks ||= []) << [:parallax, *args]; end
+  attr_reader :looks
   def display_x; @display_x || 0.0; end
   def display_y; @display_y || 0.0; end
   def set_display_pos(x, y); @display_x = x; @display_y = y; end
 end
 class Scene_Map; end
+# The game's Audio, which notes its calls.
+module Audio
+  %w(bgm_play bgm_stop bgm_fade bgs_play bgs_stop bgs_fade me_play me_stop me_fade se_play se_stop).each do |call|
+    define_singleton_method(call) { |*args| ($audio ||= []) << [call, *args] }
+  end
+end
 module SceneManager; class << self; attr_accessor :scene; end; end
 module DataManager; def self.extract_save_contents(contents); end; end
 module MGQ_MpOverworldSync; module Peers; Peer = Struct.new(:seat, :state); end; end
@@ -364,6 +381,24 @@ $told.clear
 $playing = false
 $game_switches[41] = true
 $game_map.update
+$told.clear
+$playing = true
+run.call(main, lambda do
+  Audio.bgm_play("Audio/BGM/Story", 90, 100, 0)
+  Audio.se_play("Audio/SE/Door", 80, 110)
+  Audio.se_play("Audio/SE/Knock")
+  Audio.bgs_play("Audio/BGS/Rain", 70)
+  Audio.bgm_fade(1000)
+  $game_map.change_tileset(5)
+  $game_map.change_parallax("Sky", true, false, 2, 0)
+end)
+$playing = false
+Audio.bgm_play("Audio/BGM/Field", 100, 100, 0)
+check("the story's music, sounds and fades and the map's look go out, the game's defaults for what the story left out; a sound outside the story does not",
+      $told.map { |_, fields| [fields["map_pscene"], wire.parse(fields["args"])] },
+      [["audio.bgm_play", ["Story", 90, 100, 0]], ["audio.se_play", ["Door", 80, 110]], ["audio.se_play", ["Knock", 100, 100]], ["audio.bgs_play", ["Rain", 70, 100, 0]],
+       ["audio.bgm_fade", [1000]], ["map.tileset", [5]], ["map.parallax", ["Sky", true, false, 2, 0]]])
+$told.clear
 check("outside the story nothing goes out", $told, [])
 $playing = true
 $game_system = Game_System.new
@@ -446,6 +481,47 @@ check("the viewer's camera jumps to the teller's far away and eases toward it ne
 scene.call("map.camera", [30.0, 10.0], "8")
 $game_player.update
 check("a camera place of another map is left out", $game_map.display_x, 20.4375)
+$played = []
+scene.call("audio.bgm_play", ["Story", 90, 100, 0])
+scene.call("audio.se_play", ["../evil", 80, 100])
+scene.call("audio.bgm_fade", [1000])
+scene.call("audio.exit", [])
+check("the viewer plays the teller's music, sounds and fades, never a path or an unknown call", $played, [["BGM", "Story", 90, 100, 0], ["BGM", :fade, 1000]])
+$played = []
+scene.call("audio.se_play", ["Door"])
+check("a sound sent without volume and pitch plays at the game's defaults", $played, [["SE", "Door", 100, 100]])
+$played = []
+SceneManager.scene = Object.new
+scene.call("audio.bgm_play", ["Theme", 90, 100, 0])
+scene.call("audio.se_play", ["Hit", 80, 100])
+away = $played.dup
+SceneManager.scene = Scene_Map.new
+$game_map.update
+$game_map.update
+check("away from the map's screen, as in a battle, the viewer hears none of the story's sounds, and its music once back on the map",
+      [away, $played], [[], [["BGM", "Theme", 90, 100, 0]]])
+$played = []
+$following = 8
+scene.call("audio.bgs_play", ["Rain", 70, 100, 0], "8")
+scene.call("audio.se_play", ["Step", 80, 100], "8")
+$game_map.update
+on_the_way = $played.dup
+$game_map.map_id = 8
+$game_map.update
+check("a viewer on the way to the teller's map hears its background sound once there, after the map's own, and none of its sound effects",
+      [on_the_way, $played], [[], [["BGS", "Rain", 70, 100, 0]]])
+$game_map.map_id = 7
+$following = nil
+$data_tilesets = [nil, 1, 2, 3, 4, 5]
+module MGQ_MpOverworld; def self.graphic?(_folder, name); %w(Actor1 Sky).include?(name); end; end
+scene.call("map.tileset", [5])
+scene.call("map.tileset", [99])
+scene.call("map.parallax", ["Sky", true, false, 2, 0])
+scene.call("map.parallax", ["Missing", true, false, 2, 0])
+scene.call("map.battleback", ["", ""])
+scene.call("map.tileset", [4], "8")
+check("and changes the map's look on the teller's map, never a tileset or picture the game lacks",
+      $game_map.looks, [[:tileset, 5], [:parallax, "Sky", true, false, 2, 0], [:battleback, "", ""]])
 scene.call("event.route", [-1, false, false, [[4], [0]]])
 $forcing = true
 $nonmoving = $touched = nil

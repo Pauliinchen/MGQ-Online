@@ -2,7 +2,8 @@
 #  coop_scene.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Told a Raid World's viewers the switches, variables and self switches the story changes once a frame, so their games show the scene's characters on the pages the story turns on and keep watching the telling, without writing them as their own story
+#      Paulinchen  2026-10-11: Told the viewers the story's music, background sounds, fanfares and sound effects, played, stopped and faded with the game's defaults for what the story left out, which a viewer plays on the teller's map screen alone, holding the music for when they are there, and its changes of the map's tileset, battle backgrounds and parallax
+#                            - Told a Raid World's viewers the switches, variables and self switches the story changes once a frame, so their games show the scene's characters on the pages the story turns on and keep watching the telling, without writing them as their own story
 #                            - Told the move routes the story gives the map's events and the player's character, without their scripts, and the animations, balloons and erasures it shows on them, so the viewers see the characters move and react, their own character walking the teller's route without starting what it touches
 #                            - Told where the teller's camera stands while the story plays, which the viewers' cameras ease to, and the game's map zoom, putting both back once the viewer no longer sees the scene
 #                            - Told whether the commands running now are the map's main event's, a common event it calls included
@@ -21,7 +22,8 @@
 
 # What the leader's story shows besides its dialogue: its pictures, such as a story's CG, the
 # screen's fades, tints, flashes and shakes, whether the leader's character is hidden, as on a
-# theater show's stage, the move routes, animations, balloons and erasures of the map's events, and
+# theater show's stage, the move routes, animations, balloons and erasures of the map's events, its
+# music and sounds, the map's tileset, battle backgrounds and parallax, and
 # in a Raid World the story's switches and variables as they change, which turn the scene's
 # characters' pages on. While the story plays, the leader's game tells the party each change the
 # story makes, and every member on the leader's map sees it in their own game. Once the story ends,
@@ -72,6 +74,23 @@ module MGQ_MpCoopScene
   # The character a story's command names for the player, rather than an event.
   PLAYER_CHARACTER = -1
 
+  # The game's audio folders by the kind of sound, which the teller's Audio calls name and a
+  # viewer's game plays from.
+  AUDIO_FOLDERS = { "bgm" => "Audio/BGM/", "bgs" => "Audio/BGS/", "me" => "Audio/ME/", "se" => "Audio/SE/" }
+
+  # What a viewer's game does with each of the teller's Audio calls: play, stop or fade a kind.
+  AUDIO_CALLS = %w(bgm_play bgm_stop bgm_fade bgs_play bgs_stop bgs_fade me_play me_stop me_fade se_play se_stop)
+
+  # The volume, pitch and for music the position the game's Audio calls take by each kind of sound
+  # when the story names none, which the viewers are told along.
+  AUDIO_DEFAULTS = { "bgm" => [100, 100, 0], "bgs" => [100, 100, 0], "me" => [100, 100], "se" => [100, 100] }
+
+  # The kinds of sound that last, which a viewer away from the teller's map screen hears once there.
+  LASTING_SOUNDS = %w(bgm bgs)
+
+  # Changes of the map's look a story makes, which a viewer makes on the teller's map alone.
+  MAP_LOOKS = %w(tileset battleback parallax)
+
   # Frames between two places of the teller's camera told at most, a tenth of a second.
   CAMERA_FRAMES = 6
 
@@ -92,6 +111,7 @@ module MGQ_MpCoopScene
   @screen = nil
   @transparent = nil
   @updating = []
+  @held_audio = {}
 
   extend MGQ_MpLog
 
@@ -247,6 +267,44 @@ module MGQ_MpCoopScene
     elapsed < 0 || elapsed >= frames
   end
 
+  # As teller, tells the viewers a sound the story plays, stops or fades: its music (BGM), its
+  # background sound (BGS), its fanfares (ME) and its sound effects (SE), whichever way the story
+  # reaches the game's Audio. A sound is named by its file without the folder, and goes with every
+  # argument, the game's defaults for those the story left out.
+  #
+  # @param call [String] The Audio call, one of AUDIO_CALLS.
+  # @param args [Array] Its arguments: the file, volume, pitch and for music the position; the time
+  #   of a fade; none for a stop.
+  def self.audio(call, args)
+    return unless story_change?
+
+    if call.end_with?("_play")
+      kind = call.split("_")[0]
+      folder = AUDIO_FOLDERS[kind]
+      name = args[0].to_s
+      return unless name.start_with?(folder)
+
+      given = args[1..-1].map(&:to_i)
+      args = [name[folder.size..-1]] + given + AUDIO_DEFAULTS[kind][given.size..-1].to_a
+    end
+    send_change("audio.#{call}", args.map { |arg| arg.is_a?(Numeric) ? arg.to_i : arg }, !call.start_with?("se_"))
+  rescue => e
+    log_once([:audio, call], "telling a sound failed: #{e.class}: #{e.message}")
+  end
+
+  # As teller, tells the viewers a change of the map's look the story makes: its tileset, its battle
+  # backgrounds or its parallax.
+  #
+  # @param map [Game_Map] The map.
+  # @param look [String] What changes, one of MAP_LOOKS.
+  # @param args [Array] The change's arguments, as the game's change_tileset, change_battleback and
+  #   change_parallax take them.
+  def self.map_look(map, look, args)
+    send_change("map.#{look}", args) if map.equal?($game_map) && story_change?
+  rescue => e
+    log_once([:map_look, look], "telling the map's #{look} failed: #{e.class}: #{e.message}")
+  end
+
   # As teller, tells the viewers the story's zoom of the map (the game's map_zoom script).
   #
   # @param rate [Integer] The zoom in percent, 100 for none.
@@ -343,9 +401,11 @@ module MGQ_MpCoopScene
     unless MGQ_MpCoopGather.story_map?(message["map"].to_i)
       return log("ignored #{kind} on map #{message['map']}: the player is on map #{$game_map.map_id}")
     end
-    # An event is named by its id on the teller's map, which another map's event may share, and the
-    # camera's place is the teller's map's.
-    if (kind.start_with?("event.") || kind == "map.camera") && message["map"].to_i != $game_map.map_id
+    # An event is named by its id on the teller's map, which another map's event may share, the
+    # camera's place is the teller's map's, and a fanfare or sound effect is over before the player
+    # arrives.
+    if (kind.start_with?("event.") || kind == "map.camera" || MAP_LOOKS.include?(kind.sub("map.", "")) || kind =~ /\Aaudio\.(me|se)_/) &&
+       message["map"].to_i != $game_map.map_id
       return log("ignored #{kind} on map #{message['map']}: the player is still on the way, on map #{$game_map.map_id}")
     end
 
@@ -354,7 +414,7 @@ module MGQ_MpCoopScene
 
     # The values move the player's story past where the telling started, which ended their watching.
     MGQ_MpCoop::Scope::Raid.takes_values(peer) if kind == "story.values" && MGQ_MpCoop::Scope.raid?
-    apply(kind, Array(args))
+    apply(kind, Array(args), message["map"].to_i)
   rescue => e
     log_once(:take, "showing the leader's scene failed: #{e.class}: #{e.message}")
   end
@@ -366,7 +426,8 @@ module MGQ_MpCoopScene
   #
   # @param kind [String] What changes, such as "picture.show".
   # @param args [Array] Its arguments.
-  def self.apply(kind, args)
+  # @param map [Integer] The teller's map it happened on.
+  def self.apply(kind, args, map = $game_map.map_id)
     @changed_at = Graphics.frame_count
     target, method = kind.split(".", 2)
     case target
@@ -394,6 +455,8 @@ module MGQ_MpCoopScene
       apply_values(args)
     when "event"
       apply_event(method, args)
+    when "audio"
+      apply_audio(method, args, map)
     when "map"
       apply_map(method, args)
     else
@@ -498,6 +561,8 @@ module MGQ_MpCoopScene
 
       log("follows the teller's camera on map #{$game_map.map_id}, from #{describe(args)}") unless @camera_target
       @camera_target = [args[0].to_f, args[1].to_f, $game_map.map_id]
+    when *MAP_LOOKS
+      apply_map_look(method, args)
     when "zoom"
       return log_once([:no_zoom], "ignored map.zoom: this game has no map zoom") unless $game_system.respond_to?(:zoom_mode=)
 
@@ -507,6 +572,100 @@ module MGQ_MpCoopScene
     else
       log_once([:unknown, method], "ignored map.#{method}: no such change")
     end
+  end
+
+  # Plays, stops or fades a sound as the teller's story did, see audio, on the teller's map screen
+  # alone: a battle or menu brings its own music back as it ends, and a transfer's autoplay replaces
+  # what played on the way, so music and background sounds wait there (see hold_audio). A file
+  # this game cannot play is left out, which the game would otherwise stop at.
+  #
+  # @param call [String] The Audio call, one of AUDIO_CALLS.
+  # @param args [Array] Its arguments, see audio.
+  # @param map [Integer] The teller's map it happened on.
+  def self.apply_audio(call, args, map = $game_map.map_id)
+    return log_once([:unknown, call], "ignored audio.#{call}: no such call") unless AUDIO_CALLS.include?(call)
+
+    kind, action = call.split("_")
+    return hold_audio(kind, call, args, map) unless map == $game_map.map_id && SceneManager.scene.is_a?(Scene_Map)
+
+    sound = { "bgm" => RPG::BGM, "bgs" => RPG::BGS, "me" => RPG::ME, "se" => RPG::SE }[kind]
+    case action
+    when "play"
+      name = args[0].to_s
+      return log("ignored audio.#{call}: '#{name[0, 40]}' is no sound's file name") unless name =~ FILE_NAME
+
+      volume, pitch = AUDIO_DEFAULTS[kind]
+      file = sound.new(name, args.fetch(1, volume).to_i, args.fetch(2, pitch).to_i)
+      kind == "bgm" || kind == "bgs" ? file.play(args[3].to_i) : file.play
+    when "stop" then sound.stop
+    else sound.fade(args[0].to_i)
+    end
+    log("applied the teller's audio.#{call} #{describe(args)}") unless kind == "se"
+  rescue => e
+    log_once([:apply_audio, call, args[0]], "playing the teller's audio.#{call} #{describe(args)} failed: #{e.class}: #{e.message}")
+  end
+
+  # Keeps the teller's last music or background sound for when the player is on the teller's map
+  # screen, see play_held; a fanfare or sound effect is over by then and is left out.
+  #
+  # @param kind [String] The kind of sound, see AUDIO_FOLDERS.
+  # @param call [String] The Audio call, one of AUDIO_CALLS.
+  # @param args [Array] Its arguments, see audio.
+  # @param map [Integer] The teller's map it happened on.
+  def self.hold_audio(kind, call, args, map)
+    return unless LASTING_SOUNDS.include?(kind)
+
+    @held_audio[kind] = [call, args, map]
+    log("held the teller's audio.#{call} #{describe(args)} until the player is on map #{map}'s screen")
+  end
+
+  # Plays the teller's music and background sound held for the player's map screen, see hold_audio,
+  # once the player is there.
+  def self.play_held
+    return if @held_audio.empty? || !SceneManager.scene.is_a?(Scene_Map)
+
+    @held_audio.keys.each do |kind|
+      call, args, map = @held_audio[kind]
+      next unless map == $game_map.map_id
+
+      @held_audio.delete(kind)
+      apply_audio(call, args, map)
+    end
+  end
+
+  # Changes the map's look as the teller's story did, see map_look: a tileset of the game's, battle
+  # backgrounds and a parallax this game has.
+  #
+  # @param look [String] What changes, one of MAP_LOOKS.
+  # @param args [Array] The change's arguments.
+  def self.apply_map_look(look, args)
+    case look
+    when "tileset"
+      id = args[0]
+      return log("ignored map.tileset #{id.inspect}: no such tileset") unless id.is_a?(Integer) && id > 0 && id < $data_tilesets.size && $data_tilesets[id]
+
+      $game_map.change_tileset(id)
+    when "battleback"
+      names = args[0, 2].map(&:to_s)
+      return log("ignored map.battleback #{describe(args)}: no such pictures") unless map_graphics?([:battleback1, :battleback2].zip(names))
+
+      $game_map.change_battleback(*names)
+    else
+      name = args[0].to_s
+      return log("ignored map.parallax #{describe(args)}: no such picture") unless map_graphics?([[:parallax, name]]) && args[1, 4].all? { |value| value.is_a?(Integer) || value == true || value == false }
+
+      $game_map.change_parallax(name, *args[1, 4])
+    end
+    log("applied the teller's map.#{look} #{describe(args)}")
+  end
+
+  # Reports whether this game has the map's pictures another game named: none for an empty name,
+  # else a file name without a path that this game has.
+  #
+  # @param graphics [Array<Array>] Each picture's Cache folder and file name.
+  # @return [Boolean] Whether it has them all.
+  def self.map_graphics?(graphics)
+    graphics.all? { |folder, name| name.empty? || (name =~ FILE_NAME && MGQ_MpOverworld.graphic?(folder, name)) }
   end
 
   # Moves the player's map camera toward the teller's (see apply_map) while the player sees the
@@ -602,12 +761,14 @@ module MGQ_MpCoopScene
       MGQ_MpCoop::Scope.watches?(lead)
   end
 
-  # As teller, tells the viewers the story values of the frame; as viewer, puts the player's screen
-  # back once they no longer see the leader's story scene. Called after the map's update.
+  # As teller, tells the viewers the story values of the frame; as viewer, plays the story's sounds
+  # held for the map's screen while they see the leader's story scene, and puts the player's screen
+  # back once they no longer do. Called after the map's update.
   def self.update
     send_values
     send_camera
-    return if !pending? || watching? || just_changed?
+    return unless pending?
+    return play_held if watching? || just_changed?
 
     restore(why_not_watching)
   rescue => e
@@ -680,6 +841,7 @@ module MGQ_MpCoopScene
       $game_player.transparent = @transparent
       done << "character #{@transparent ? 'hidden' : 'shown'} again"
     end
+    done << "dropped the held #{@held_audio.keys.sort.join(' and ')}" unless @held_audio.empty?
     log("put the screen back, since #{reason}: #{done.join(', ')}")
     forget
   end
@@ -688,7 +850,7 @@ module MGQ_MpCoopScene
   #
   # @return [Boolean] Whether it does.
   def self.pending?
-    !(@pictures.empty? && @screen.nil? && @transparent.nil? && @zoom.nil? && @camera_target.nil?)
+    !(@pictures.empty? && @screen.nil? && @transparent.nil? && @zoom.nil? && @camera_target.nil? && @held_audio.empty?)
   end
 
   # Forgets what to put back, as when a save is loaded, which brings its own screen.
@@ -704,6 +866,7 @@ module MGQ_MpCoopScene
     @camera_target = nil
     @camera = nil
     @changed_at = nil
+    @held_audio = {}
   end
 end
 
@@ -766,4 +929,16 @@ begin
   MGQ_MpHooks.around(Game_Player, :check_event_trigger_touch, "coop_scene") { |_player, _args, original| MGQ_MpCoopScene.walks_player? ? false : original.call }
 rescue => e
   MGQ_MpCoopScene.log("camera hooks FAILED: #{e.class}: #{e.message}")
+end
+
+begin
+  # The story's sounds, whichever way they reach the game's Audio, and the map's look, for the viewers.
+  MGQ_MpCoopScene::AUDIO_CALLS.each do |call|
+    MGQ_MpHooks.before(Audio.singleton_class, call.to_sym, "coop_scene") { |*args| MGQ_MpCoopScene.audio(call, args) }
+  end
+  MGQ_MpCoopScene::MAP_LOOKS.each do |look|
+    MGQ_MpHooks.before(Game_Map, :"change_#{look}", "coop_scene") { |*args| MGQ_MpCoopScene.map_look(self, look, args) }
+  end
+rescue => e
+  MGQ_MpCoopScene.log("sound and map hooks FAILED: #{e.class}: #{e.message}")
 end
