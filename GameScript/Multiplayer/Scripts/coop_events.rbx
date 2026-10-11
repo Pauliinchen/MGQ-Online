@@ -2,7 +2,8 @@
 #  coop_events.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Kept a new game's opening from starting while its setup runs without its scene in a Raid World past it
+#      Paulinchen  2026-10-11: Sorted a page with story behind a choice as no chest, so the story it moves on reaches the world's, as Amira's paid tip in Iliasburg, which a chest kept from it and so hid the rabbit in Pornof
+#                            - Kept a new game's opening from starting while its setup runs without its scene in a Raid World past it
 #                            - Told the party the dialogue of the common events the story calls, which the game runs in a child interpreter, such as the companions' lines
 #                            - Left a page of the leader's story a moment to read once the leader moved past it, confirm or the game's skip held reading on sooner, and left out only the oldest pages past three waiting, instead of every page the leader moved past, and gave way to whatever waits for the player to be free and lapses meanwhile, the story's follow and a battle's invite, which the pages kept from happening
 #                            - Kept a page of the leader's story the game's own transfer process starts under instead of cutting it short
@@ -254,13 +255,43 @@ module MGQ_MpCoopEvents
   # Exits hold the story's warnings in such branches, as Iliasville's do ("I need to be on time for
   # my baptism"), which would make every exit story long after the warnings passed.
   #
+  # A jump that can run makes the commands after its label run too, up to the end of the label's
+  # block, also inside a branch that does not hold, as Amira's tip in Iliasburg jumps back into her
+  # first meeting once its self switch is on.
+  #
   # @param list [Array<RPG::EventCommand>] The commands.
   # @return [Array<RPG::EventCommand>] Those that can run.
   def self.runnable(list)
+    variables = choice_variables(list)
+    kept = {}.compare_by_identity
+    starts = [0]
+    jumped = {}
+    until starts.empty?
+      start = starts.shift
+      runnable_from(list, start, variables).each do |command|
+        kept[command] = true
+        next unless command.code == 119 && !jumped[command.parameters[0]]
+
+        name = jumped[command.parameters[0]] = command.parameters[0]
+        label = list.index { |other| other.code == 118 && other.parameters[0] == name }
+        starts << label if label
+      end
+    end
+    list.select { |command| kept[command] }
+  end
+
+  # Lists the commands that can run from a place in a list, see runnable: to its end from the
+  # list's start, else to the end of the block the place stands in.
+  #
+  # @param list [Array<RPG::EventCommand>] The commands.
+  # @param start [Integer] The place.
+  # @param variables [Array<Integer>] The choice scripts' variables, see choice_variables.
+  # @return [Array<RPG::EventCommand>] Those that can run.
+  def self.runnable_from(list, start, variables)
     held = {}
     skip = nil
-    variables = choice_variables(list)
-    list.select do |command|
+    floor = start > 0 ? list[start].indent : nil
+    list[start..-1].take_while { |command| floor.nil? || command.indent >= floor }.select do |command|
       indent = command.indent
       next false if skip && indent > skip
 
@@ -343,7 +374,7 @@ module MGQ_MpCoopEvents
 
     marks = marks_of(list, 0)
     return :story if story_marks?(marks)
-    return :chest if marks[:gives] && marks[:own_switch]
+    return :chest if marks[:gives] && marks[:own_switch] && !marks[:choice_story]
     return :talk if one_time_talk?(marks)
     return :story if marks[:own_switch] || marks[:battle]
 
@@ -396,8 +427,10 @@ module MGQ_MpCoopEvents
 
       mark_command(branches.empty? ? marks : choice, list, index, depth)
     end
-    # A chest asks first whether to open it, so its own switch with items behind a choice keeps it a chest.
-    chest = choice[:gives] && choice[:own_switch]
+    # A chest asks first whether to open it, so its own switch with items behind a choice keeps it a
+    # chest, unless story lies behind the choice too, as behind Amira's paid tip in Iliasburg, whose
+    # story value a chest kept from the world's story.
+    chest = choice[:gives] && choice[:own_switch] && !story_marks?(choice) && !choice[:battle] && !choice[:choice_story]
     marks[:choice_story] = true if story_marks?(choice) || choice[:battle] || choice[:choice_story] || (choice[:own_switch] && !chest)
     [:says, :gives, :travel].each { |key| marks[key] ||= choice[key] if choice[key] }
     marks[:own_switch] ||= true if chest

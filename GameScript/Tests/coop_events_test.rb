@@ -2,7 +2,8 @@
 #  coop_events_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Checked the generator's rules only where the event checker repository lies next to this one, as on this PC and not in the workflow
+#      Paulinchen  2026-10-11: Checked that a page with story behind a choice is no chest, as Amira's paid tip in Iliasburg
+#                            - Checked the generator's rules only where the event checker repository lies next to this one, as on this PC and not in the workflow
 #                            - Checked that a common event the story calls tells its pages and a parallel one does not, that a page the leader moved past stays to read, confirm reads on, and that only the oldest pages past CATCH_UP_PAGES are left out
 #                            - Checked that holding the game's skip passes a page the leader moved past
 #                            - Checked that no page starts while the story brings the player over, so the follow goes first
@@ -467,6 +468,12 @@ boxed_chest = [c(101, "", 0, 0, 2), Command.new(102, 0, [["Open it", "Leave it"]
                Command.new(123, 1, ["A", 0]), Command.new(126, 1, [1, 0, 0, 1]), Command.new(0, 1, []), Command.new(402, 0, [1, "Leave it"]), Command.new(0, 1, []),
                Command.new(404, 0, [])]
 check("a chest that asks first stays a chest", [kind(boxed_chest), MGQ_MpCoopEvents.may_tell?(boxed_chest)], [:chest, false])
+paid_tip = [c(101, "", 0, 0, 2), Command.new(102, 0, [["Ask her name", "Leave"], 2]), Command.new(402, 0, [0, "Ask her name"]),
+            Command.new(123, 1, ["A", 0]), Command.new(125, 1, [1, 0, 1500]), Command.new(122, 1, [1009, 1009, 0, 0, 1]), Command.new(0, 1, []),
+            Command.new(402, 0, [1, "Leave"]), Command.new(0, 1, []), Command.new(404, 0, [])]
+check("an informant who sells a story tip behind a choice is a talk that may turn into story, no chest",
+      [kind(paid_tip), MGQ_MpCoopEvents.may_tell?(paid_tip)], [:talk, true])
+check("and one who sets her own switch before it is story", kind([c(123, "A", 0)] + paid_tip), :story)
 story_choice = [c(101, "", 0, 0, 2), c(121, 60, 60, 0), Command.new(102, 0, [["Yes", "No"], 2]), Command.new(402, 0, [0, "Yes"]), Command.new(121, 1, [61, 61, 0])]
 check("story outside a choice stays story", kind(story_choice), :story)
 
