@@ -3,12 +3,14 @@
 Everything Monster Girl Quest! Online does, for players. To install the mod, see the [README](../README.md).
 
 - [Hotkeys](#hotkeys)
+- [Interface](#interface)
 - [Worlds](#worlds)
 - [On the map](#on-the-map)
 - [Parties](#parties)
 - [Raid Worlds](#raid-worlds)
 - [Co-op battles](#co-op-battles)
 - [Duels](#duels)
+- [Trading](#trading)
 - [PvP battles](#pvp-battles)
 - [Rules of every multiplayer battle](#rules-of-every-multiplayer-battle)
 - [Connection and privacy](#connection-and-privacy)
@@ -23,13 +25,35 @@ Everything Monster Girl Quest! Online does, for players. To install the mod, see
 | **E** | Opens the emote wheel. |
 | **F11** | Opens the World overview, or the PvP battle screen outside a world. |
 | **Y** / **N** | Accepts / declines the first invite in the notification box, and answers a question box (see [Notifications](#notifications)). |
-| **Tab** | Makes the party box small or full. In a raid boss battle, slides the boss's HP bar up to the bars alone, without its title and the names, or back. |
+| **Tab** | Makes the party box small or full. In a raid boss battle, shrinks the boss's HP bar to the bars alone, without its title and the names, or back. |
 | **J** | Joins the battle of a player next to you in a Raid World, or fights a raid boss alongside a full boss battle, while the prompt below your character shows. |
 
 This guide names the default hotkeys. To bind others, open *Mod Config → Monster Girl Quest! Online*, confirm the hotkey's row (*Action Wheel*, *Chat*, *World Overview*, *Accept Notification*, *Decline Notification*, *Emote Wheel*, *Party Box Size* or *Join Battle*) and press the new key; **Esc** keeps the old one.
 
-- Keys the game uses itself can't be bound: the arrows, Enter, Esc, Z, X, Shift, A, S, D, Q and W. Neither can a key another hotkey already uses.
+- Keys the game uses itself can't be bound: the arrows, Enter, Space, Esc, Z, X, Shift, Ctrl, A, S, D, Q, W, Page Up, Page Down, numpad 0, 2, 4, 6 and 8, F1, F2, F5 to F9 and F12. Neither can a key another hotkey already uses.
 - Your hotkeys are kept in `Patch\Multiplayer\Player.ini`, so they hold in every save and every world, and the texts in the game name the hotkeys you bound.
+
+## Interface
+
+**Look.** *Mod Config → Monster Girl Quest! Online → Interface Look* sets the colors of every box, frame and window of the mod:
+
+- **Monarch** (the default): dark maroon with a gold edge in a black rim and gold titles, the look of the raid boss bar.
+- **Legacy**: black glass with a thin grey edge, the look the mod had before.
+
+The raid boss bar's red HP stays red in both.
+
+**Moving and resizing.** Hold the left **Alt** and every box of the mod you can move gets a white outline with its name, and the screen names the controls at its bottom:
+
+- Drag inside a box to move it.
+- Drag its edge or corner to resize it. Some boxes only change their width, since their height follows what they show.
+- Double-click a box to put it back where it starts.
+
+The boxes you can move: the chat (on the map and in battles, each its own place), the notification box, the party box, the world status lines, the World overview, the raid boss bar, the waiting box of a co-op battle, the question and message boxes, and the list box of the world screen. Things that follow a character (names, bubbles, wheels, the bar above a raid boss) stay with it.
+
+- A box never gets smaller than it needs to show everything it holds, and never leaves the screen.
+- While **Alt** is held, the mouse only moves and resizes; clicks don't reach the boxes.
+- *Mod Config → Monster Girl Quest! Online → Interface Positions* says *Moved* while any box is moved; pick *Default* to put every box back.
+- The look and the places are kept in `Patch\Multiplayer\Player.ini`, so they hold in every save and every world, and a world that sets its mods' options never changes them.
 
 ## Worlds
 
@@ -79,13 +103,14 @@ Confirm on a world and pick *Enter the world*.
 | Sharing companions | Raid World only. *Off*: everyone recruits their own companions. *Story companions*: once any player has a companion the story brings, every other player gets them on reaching that companion's level. *Story + battle recruits*: the same, also for companions recruited after a battle. Nobody gets back a companion they had, or one their own story took away for good. Fixed once created. |
 | Shared save | Every new player starts from one of your saves, with your party, items, story and Library, instead of the opening. Choose the save after ticking it. Not in a Raid World, which starts from the beginning. |
 | Player's choice | Each new player chooses when they first enter: the beginning, one of their own saves, or yours if *Shared save* is ticked. Their own save is copied into the world; the original stays untouched. Not in a Raid World. |
-| Difficulty | Raid World only: the difficulty every player plays on. The game's own difficulty choice and the Reaper's change set it instead. The Labyrinth of Chaos, the Colosseum and the bosses with their own difficulty keep theirs, and a battle you join fights with its host's. |
+| Difficulty | Raid World only: the difficulty every player plays on. The game's own difficulty choice and the Reaper's change set this one instead of the one picked. The Labyrinth of Chaos, the Colosseum and the bosses with their own difficulty keep theirs, and a battle you join fights with its host's. |
 | Mods | The mods of the world, picked from a list of yours. See [Mods of a world](#mods-of-a-world). |
 | Allow data mismatch | Unticked at first: a game whose data differs from yours can't enter. Ticked, it is warned and may enter anyway. See [Game data](#game-data). |
+| Shared Mod Settings | Ticked: every player in the world plays with your options of its mods. Unticked: each keeps their own. See [Mods of a world](#mods-of-a-world). |
 | Turn off other mods | While a player is in the world, their mods the world doesn't name are off. Ticked at first for a Raid World, unticked for a Classic one, until you tick or untick it yourself. See [Turning off other mods](#turning-off-other-mods). |
 | Description | What the world is about, up to 1000 characters. |
 
-The creator can change Max Players, Mods, *Turn off other mods*, the Description and a Raid World's Difficulty later with *Edit the world*; a new difficulty reaches the players in the world at once. A Raid World made without one shows *Per player* there until a difficulty is picked. Everything else is fixed once the world exists.
+The creator can change Max Players, Mods, *Shared Mod Settings*, *Turn off other mods*, the Description and a Raid World's Difficulty later with *Edit the world*; a new difficulty reaches the players in the world at once. A Raid World made without one shows *Per player* there until a difficulty is picked. Everything else is fixed once the world exists.
 
 ### Managing worlds
 
@@ -102,15 +127,14 @@ The creator can change Max Players, Mods, *Turn off other mods*, the Description
 - **Enter** or a click on a mod lists or unlists it. *List all your mods* at the top lists every one at once, and then *Unlist all your mods* unlists them again.
 - Each mod has two buttons at the right, under the columns *Required* and *Essential*, reached with the right arrow or a click: the red **!** makes it required, the orange **?** essential. A filled button shows how a mod is named; pressing it again makes the mod only listed.
 
-
 | Mod is | Meaning |
 |---|---|
 | Listed | Only tells the players; keeps nobody out. |
 | Required | A game needs a script `Name.rb` in its `Patch` folder, in the world's version, to enter. Case, spaces, underscores and hyphens don't matter. Shows first: green when you have the world's version, gold when yours is another, red when you don't have it. |
 | Essential | For mods that are data files without a script. Keeps nobody out by itself; green while your game data matches the world's, gold otherwise. |
 
-- *Add a mod by name* names a mod you don't have yourself, such as a mod of data files: its row becomes a text box, **Enter** adds the name you typed, **Esc** goes back. Such a mod stays in the list when unlisted; **Del** removes it.
-- The mods take 300 characters at most; the top right of the list says when a change would pass that. **Esc** goes back to the form, which shows them as the world keeps them: `!` in front of a required mod, `?` in front of an essential one.
+- *Add a mod by name* names a mod you don't have yourself, such as a mod of data files: its row becomes a text box, **Enter** adds the name you typed, **Esc** or numpad **0** goes back. Such a mod stays in the list when unlisted; **Del** removes it.
+- The mods take 300 characters at most; the top right of the list says when a change would pass that. **Esc** or numpad **0** goes back to the form, which shows them as the world keeps them: `!` in front of a required mod, `?` in front of an essential one.
 
 The details show each mod in a box of its own, as many as fit the row, and count the rest in a last box.
 
@@ -120,7 +144,7 @@ The details show each mod in a box of its own, as many as fit the row, and count
 - A required mod the catalog doesn't know is compared with the creator's copy. If yours differs, get the creator's version from the mod's author; nothing downloads it for you.
 - A new version only reaches players the next time they enter.
 
-**The creator's settings.** While the creator plays in their world, they set the options of its mods, required or listed, in the Mod Config Remake menu as they like, then press **Use My Settings for This World** in the menu's *Monster Girl Quest! Online* section. Every player gets those settings the next time they load a save in the world, and the menu shows them greyed out as set by the world. Hotkeys and other personal options stay yours, and your own saves keep your own settings. The relay's admins can see and change a world's settings too; the creator's game then takes the admin's settings and tells the creator what changed.
+**The creator's settings.** With *Shared Mod Settings* ticked in the create or edit form, or switched *On* in *Mod Config → Monster Girl Quest! Online → Shared Mod Settings* while the creator plays in the world, the creator's options of the world's mods, required or listed, are the world's settings. Every player in the world gets them at once, and again whenever the creator changes an option; the notification box says what the world sets, and the menu shows those options greyed out as set by the world. Every player sees the row, but only the creator can switch it. Hotkeys and other personal options stay yours, and your own saves keep your own settings. The relay's admins can see and change a world's settings too; the creator's game then takes the admin's settings and tells the creator what changed.
 
 ### Turning off other mods
 
@@ -181,7 +205,7 @@ Press **T**, or pick *Chat* in the wheel. The chat works on the map, in battles 
 | **Up** / **Down** | Scroll the log; **Page Up** / **Page Down** a page at a time |
 | **Alt** + **Left** / **Right** | Switch tabs (left Alt) |
 | **Alt** + **Up** / **Down** | Bring back the lines you sent, the last 20, until you leave the world |
-| **Alt** + drag | Resize the log with the mouse; the size is kept (experimental) |
+| **Alt** + drag | Move the chat, or resize it by an edge or corner (see [Interface](#interface)) |
 | **Ctrl** + **V** | Paste |
 | **Left**, **Right**, **Home**, **End**, **Delete** | Move the cursor and delete in the line |
 
@@ -212,7 +236,7 @@ The chats take the colors World of Warcraft gives its chats.
 - Your line shows in a speech bubble in its chat's color just above your name, for the players on your map.
 - Names are yellow for you, green for your party's members and white for everyone else.
 - When several players share a name, the later ones show as "Name (2)", "Name (3)" in the log, above their head and in the whisper list.
-- Click a player's name in the open chat to invite them to your party, challenge them to a duel, offer a trade or whisper to them. In a battle only the whisper is offered. **Esc** closes the menu.
+- Click a player's name in the open chat to invite them to your party, challenge them to a duel, offer a trade or whisper to them. In a battle only the whisper is offered. **Esc** or numpad **0** closes the menu.
 
 ### Emotes
 
@@ -241,9 +265,9 @@ Press **F11** or pick the middle of the action wheel; **F11**, **B**, cancel, nu
 
 ### Notifications
 
-The box at the top left, on the map and in menus, lists the party invites and duel challenges that reach you, from anywhere in the world, for as long as they stand. Below them, messages show for a moment, such as a party member meeting enemies; "Enemies! \<name> is in a battle." stays as long as you stand still for that battle, and goes as soon as you may walk on. The box shows at most five rows; past that, the fifth counts the rest ("+2 more"). Messages fade away, and the box fades in and out.
+The box at the top left, on the map and in menus, lists the invites that reach you, such as party invites, duel challenges, trade offers and teleport requests, from anywhere in the world, for as long as they stand. Below them, messages show for a moment, such as a party member meeting enemies; "Enemies! \<name> is in a battle." stays as long as you stand still for that battle, and goes as soon as you may walk on. The box shows five rows, more or fewer once you resize it (see [Interface](#interface)); past them, the last counts the rest ("+2 more"). Messages fade away, and the box fades in and out.
 
-**Y** accepts the first invite or challenge (a challenge only on the map), **N** declines it: the other player reads that you declined, and it stays away until they invite you anew.
+**Y** accepts the first of them (a challenge only on the map), **N** declines it: the other player reads that you declined, and it stays away until they invite you anew.
 
 **Questions.** Some choices ask first, in a box in the middle of the screen: leaving your party, removing a member, cancelling a trade. The box names its two answers; the safe one starts picked. **Y** takes the first answer, **N**, **Esc** or numpad **0** the second; **Left** and **Right** move the pick and confirm takes the picked one; a hint under the answers says so. While the box is open, the hotkeys below it do nothing, so a **Y** never answers an invite by mistake.
 
@@ -404,9 +428,9 @@ In a Raid World each story boss is one fight the whole world shares, and so are 
 
 **The HP bars:**
 
-- **In battle**, the top of the screen shows the boss's title (such as *Archangel*, *Phenomenon of Ruin* or *Tier 6 Raid Boss*), its name, and a big bar with its HP and the share left inside ("3,412,880 / 5,000,000  (68.3%)"). Very large HP is shortened, keeping at least 7 digits, such as "236,167 B / 1,009,500 B". A boss of several enemies, such as the Three Nobles of Black, gets a name and a bar for each of them, side by side under the one title, the three sharing the width. The bar hides while a message shows at the top of the screen. **Tab** slides it up to the bars alone, without the title and the names, and back; a hint on the strip names the hotkey, and the game remembers your choice.
+- **In battle**, the top of the screen shows the boss's title (such as *Archangel*, *Phenomenon of Ruin* or *Tier 6 Raid Boss*), its name, and a big bar with its HP and the share left inside ("3,412,880 / 5,000,000  (68.3%)"). Very large HP is shortened, keeping at least 7 digits, such as "236,167 B / 1,009,500 B". A boss of several enemies, such as the Three Nobles of Black, gets a name and a bar for each of them, side by side under the one title, the three sharing the width. The bar hides while a message shows at the top of the screen. **Tab** shrinks it to the bars alone, without the title and the names, and back; a hint on the strip names the hotkey, and the game remembers your choice.
 - **HP just lost** stays visible for 2 seconds as a darker part of the bar behind the HP left, then drains away, so you see each hit, yours and the other battles'.
-- **On the map**, the boss's title and name with a thin bar above its event show its HP as the world has it right now, full while nobody has fought it yet; a boss of several enemies gets a wider bar with a name and a thin bar for each of them. When the boss's event can't be seen, the battle's bar runs across the top of the screen instead, and the notification box and the party box move down below it.
+- **On the map**, the boss's title and name with a thin bar above its event show its HP as the world has it right now, full while nobody has fought it yet; a boss of several enemies gets a wider bar with a name and a thin bar for each of them. When the boss's event can't be seen, the battle's bar runs across the top of the screen instead, and the notification box and the party box move down below it, unless you moved the bar or them elsewhere (see [Interface](#interface)).
 - **Hades rematches** fight the bosses as the game has them, never their raid HP, and the rematch hall shows no boss bars.
 - **The World overview's World page** lists the world's raid bosses by part of the story, each with its tier, a thin gauge of the HP left, its share or *Defeated*, and who last hurt it, see [World overview](#world-overview).
 
@@ -425,7 +449,7 @@ Trade items and gold with another player on your map. Nothing changes hands unti
 - **Put your offer together:** pick *Items*, *Weapons*, *Armor* or *Stones* for your bag. **Right** and **Left** offer one more or one fewer, **R** and **L** ten, and confirm offers all or none. *Gold* sets the gold digit by digit: **Left** and **Right** pick a digit, **Up** and **Down** change it. The other player's offer shows on the right as they change it. *Offers* moves into the offers to look through a long one: **Up** and **Down** scroll, **Left** and **Right** switch between yours and theirs, cancel goes back.
 - **What can be traded:** everything in your bag but key items, also enchanted and socketed equipment, which arrives with all its enchantments and stones. Equipped items and items in the storehouse aren't offered; unequip or take them out first.
 - **Confirm** once both offers are right. Any change to either offer takes both confirmations back. Once you both confirmed, the relay completes the trade, both games save, and the screen closes: "Trade with \<player> complete, game saved". The save goes into the slot you last saved or loaded in the world, or the first free one.
-- **Cancel**, or **Esc**, asks first ("Cancel the trade with \<player>? Both offers are lost."): *Cancel trade* ends the trade for both of you, *Keep trading* goes back to it. It also ends when the other player leaves the world for longer than 15 seconds.
+- **Cancel**, **Esc** or numpad **0** asks first ("Cancel the trade with \<player>? Both offers are lost."): *Cancel trade* ends the trade for both of you, *Keep trading* goes back to it. It also ends when the other player leaves the world for longer than 15 seconds.
 - **A cut-off trade:** if your game or connection drops right as the trade completes, the relay keeps it, and your game finishes it the next time you enter the world.
 
 ## PvP battles
@@ -468,7 +492,8 @@ So that no team falls to the first hit, PvP battles and duels change a few rules
 Your games meet at the mod's **relay**, a small server that passes their data on. Every game only connects out to it, which works on any internet connection: nobody has to open a port, change a router setting or install anything.
 
 - **Private:** everything your games send each other is encrypted with a key only the players have. The relay never gets it and passes on data it can't read.
-- **What the relay keeps:** the list of worlds, with each world's name, description and mods, what tells its creator's game data from another's, its players' names and who is online. Hidden worlds are listed only for their players and for whoever names their id. A world's password never reaches the relay, and a starting save arrives encrypted.
+- **The Global chat is the exception:** every line of a world's Global chat also goes to the relay as plain text, which keeps the last 200 lines of each world for its creator and the relay's admins to read. The Map, Party and Whisper chats stay between the players.
+- **What the relay keeps:** the list of worlds, with each world's name, description, mods and shared mod settings, what tells its creator's game data from another's, its players' names and who is online; a Raid World's story progress and its raid bosses' HP; and a trade's encrypted offers until both games completed it. Hidden worlds are listed only for their players and for whoever names their id. A world's password never reaches the relay, and a starting save arrives encrypted.
 - **No addresses:** a join code holds a random token and the relay's name, so your friend's game never learns your IP address.
 
 ## Troubleshooting
