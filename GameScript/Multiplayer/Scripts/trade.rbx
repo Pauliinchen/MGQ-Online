@@ -2,6 +2,8 @@
 #  trade.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-11: Named the wait for an accepted trade to open in the line above the player's head, with its seconds left, and gave the offer its seconds left
+#                            - Stopped the player's own trade offer once they accept another player's, so nobody accepts an offer whose player waits for a trade already
 #      Paulinchen  2026-10-08: Told the player only that a trade with an id that is not valid could not open, instead of to finish what they are doing
 #                            - Showed an accepted trade offer again in the notification box once its player turned the accept down
 #                            - Declined a trade with an id that is not valid with the reason invalid, for which the other player sees that the trade could not open
@@ -349,6 +351,17 @@ module MGQ_MpTrade
     offered_by?(peer) ? ["Wants to trade (#{MGQ_MpHotkeys.label(:wheel)})", TRADE_COLOR] : nil
   end
 
+  # Names what the player is doing for the line above their own head, with the moment it lapses:
+  # waiting for an accepted trade to open, or offering one.
+  #
+  # @return [Array, nil] The doing and when it lapses, nil while nothing waits.
+  def self.own_doing
+    return ["Waiting for #{@accepted[:name]}'s trade", MGQ_MpActions.lapse_in(ANSWER_FRAMES - @accepted[:frames])] if @accepted
+    return ["Offering a trade", MGQ_MpActions.lapse_in(@invite.frames_left)] if inviting?
+
+    nil
+  end
+
   # Lets the offer run out, follows the trade and recovers trades the relay committed. Called every
   # frame in every scene.
   #
@@ -403,7 +416,8 @@ module MGQ_MpTrade
     send_message(peer, { "trade" => kind, "tid" => @session.id }.merge(fields), body)
   end
 
-  # Accepts another player's trade offer: tells them, and waits for their game to open the trade.
+  # Accepts another player's trade offer: tells them, and waits for their game to open the trade. An
+  # offer of the player's own stops, since they cannot take two trades.
   #
   # @param peer [MGQ_MpOverworldSync::Peers::Peer] The player who offered it.
   def self.accept(peer)
@@ -413,6 +427,10 @@ module MGQ_MpTrade
       return MGQ_MpOverworldSync.notice("Finish what you are doing first.")
     end
 
+    if inviting?
+      log("stopped offering a trade: accepted #{peer.state['name']}'s")
+      @invite.stop
+    end
     send_message(peer, { "trade" => "accept" })
     @accepted = { :id => peer.state["id"].to_s, :name => peer.state["name"].to_s, :frames => 0 }
     log("accepted #{peer.state['name']}'s trade, waiting up to #{ANSWER_FRAMES / 60} s for their game to open it")
@@ -1511,13 +1529,6 @@ module MGQ_MpTrade
       MGQ_MpActions::Notice.new([:trade, peer.seat], "#{peer.state['name']} wants to trade", TRADE_COLOR, on_map ? "Accept" : nil,
                                 on_map ? lambda { trade.accept(peer) } : nil, lambda { trade.decline(peer, "no") }, peer.state["id"])
     end
-
-    # Names what the player is doing for the line above their own head.
-    #
-    # @return [String, nil] That they offer a trade, nil while they do not.
-    def self.own_doing
-      MGQ_MpTrade.inviting? ? "Offering a trade" : nil
-    end
   end
 end
 
@@ -1538,7 +1549,7 @@ end
 begin
   MGQ_MpActions.offer(MGQ_MpTrade::Offers)
   MGQ_MpActions.wheel_choice(30) { MGQ_MpTrade::Offers.wheel_option }
-  MGQ_MpActions.own_doing_from { MGQ_MpTrade::Offers.own_doing }
+  MGQ_MpActions.own_doing_from { MGQ_MpTrade.own_doing }
 rescue => e
   MGQ_MpTrade.log("actions FAILED: #{e.class}: #{e.message}")
 end

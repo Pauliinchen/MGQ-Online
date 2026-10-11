@@ -2,6 +2,7 @@
 #  coop_teleport.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-11: Named a request that waits for its member in the line above the player's head, with the seconds it stands for still
 #      Paulinchen  2026-10-10: Created
 #
 #----------------------------------------------------------------
@@ -272,11 +273,22 @@ module MGQ_MpCoopTeleport
   def self.asking_name
     @ask ? @ask[:name] : nil
   end
+
+  # Names what the player is doing for the line above their own head: asking a member to let them
+  # teleport, with the time the request stands for still. A request to the party's leader is
+  # answered at once, so it names nothing.
+  #
+  # @return [Array, nil] The doing and when it lapses, nil while no request waits.
+  def self.own_doing
+    return nil unless @ask && !@ask[:leader]
+
+    ["Asking #{@ask[:name]} to teleport", MGQ_MpActions.lapse_at(@ask[:since], ASK_FRAMES)]
+  end
 end
 
 # What this script takes part in of the party's messages and states, through coop.rbx and
-# overworld_sync.rbx, and what it adds to the World overview and the notification box, through
-# ui_actions.rbx.
+# overworld_sync.rbx, and what it adds to the World overview, the notification box and the line
+# above the player's own head, through ui_actions.rbx.
 
 begin
   MGQ_MpCoop.route(MGQ_MpCoopTeleport::FIELD) { |peer, message| MGQ_MpCoopTeleport.take(peer, message) }
@@ -284,6 +296,7 @@ begin
   MGQ_MpOverworldSync.on_observe { |peer| MGQ_MpCoopTeleport.observe(peer) }
   MGQ_MpOverworldSync.on_tick { |in_world| MGQ_MpCoopTeleport.tick(in_world) }
   MGQ_MpActions.offer(MGQ_MpCoopTeleport::Offers)
+  MGQ_MpActions.own_doing_from { MGQ_MpCoopTeleport.own_doing }
 rescue => e
   MGQ_MpCoopTeleport.log("co-op FAILED: #{e.class}: #{e.message}")
 end

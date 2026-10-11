@@ -2,6 +2,8 @@
 #  coop_gather.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-11: Named the leader's wait and a member's time left before coming over as doings of the line above the player's head, which writes the seconds, and named the members still missing in the leader's doing, two at most and how many more
+#                            - Counted the frames a moment has left in one place, which within? and a member's doing share
 #      Paulinchen  2026-10-10: Let a Raid World's follow wait a minute for the player to be free instead of six seconds, since the story calls once and a follower kept busy longer, by the teller's pages, a battle or a menu, lost the follow and started their own copy of the story
 #                            - Kept the follow of a teller's story the player took while they are on the way and for CALL_LAPSE_FRAMES after they arrived, which names that teller and takes their pages from the new map meanwhile
 #                            - Let a player in a Raid World move while the teller fights the story's battle, so one who came late may join it
@@ -57,6 +59,10 @@ module MGQ_MpCoopGather
   # Frames between two calls of the members while the leader's story scene waits, three seconds.
   CALL_FRAMES = 180
 
+  # Members the leader's doing names as still missing at most; the rest are counted, so the line
+  # above the leader's head stays within its width.
+  NAMED_MISSING = 2
+
   # Frames the leader's story scene waits for the party at most before it starts without the
   # members who did not come, thirty seconds.
   HOLD_FRAMES = 1800
@@ -86,6 +92,16 @@ module MGQ_MpCoopGather
   # What starts this script's lines in Multiplayer InGame.log.
   LOG_TAG = "co-op gather"
 
+  # Counts the frames left until some frames after a moment have passed.
+  #
+  # @param since [Integer] The moment's Graphics.frame_count.
+  # @param frames [Integer] The frames.
+  # @return [Integer] The frames left, 0 or less once they passed, more than frames for a moment
+  #   that lies ahead.
+  def self.frames_left(since, frames)
+    since + frames - Graphics.frame_count
+  end
+
   # Reports whether a moment lies less than some frames back.
   #
   # Loading a save sets the frame count back to the save's, so a moment noted before the load counts
@@ -95,8 +111,8 @@ module MGQ_MpCoopGather
   # @param frames [Integer] The frames.
   # @return [Boolean] Whether it does.
   def self.within?(since, frames)
-    elapsed = Graphics.frame_count - since
-    elapsed >= 0 && elapsed < frames
+    left = frames_left(since, frames)
+    left > 0 && left <= frames
   end
 
   # Forgets the leader's story scene the player holds and the leader's call, as when the world
@@ -697,18 +713,27 @@ module MGQ_MpCoopGather
     "#{gather[:name]}'s story started without you."
   end
 
-  # Tells what the line above the player's own head says about the party's story, if anything:
-  # the leader's wait, or a member's time left before coming over.
+  # Names what the player is doing for the line above their own head, if anything: as leader the
+  # members the story still waits for, NAMED_MISSING at most and how many more, and how long it
+  # holds, as member the time left before coming over, or that they come once free.
   #
-  # @return [String, nil] The line.
-  def self.own_line
-    return "Gathering the party . . ." if @hold && MGQ_MpCoop.party_leading?
+  # The leader's doing says "Gathering" as the notice of the story's call does, not "Waiting for"
+  # as a battle's waiting box, since it names the same wait as that notice.
+  #
+  # @return [String, Array, nil] The doing, with the moment it lapses while one is known, nil for none.
+  def self.own_doing
+    if @hold && MGQ_MpCoop.party_leading?
+      names = missing
+      more = names.size - NAMED_MISSING
+      text = names.empty? ? "Gathering the party" : "Gathering: #{names.first(NAMED_MISSING).join(', ')}#{" +#{more}" if more > 0}"
+      return [text, MGQ_MpActions.lapse_at(@hold[:since], HOLD_FRAMES)]
+    end
 
     gather = pending_call
     return nil unless gather
 
-    seconds = (GATHER_FRAMES - (Graphics.frame_count - gather[:since]) + 59) / 60
-    seconds > 0 ? "Joining #{gather[:name]} in #{seconds} s . . ." : "Joining #{gather[:name]} once free . . ."
+    left = frames_left(gather[:since], GATHER_FRAMES)
+    left > 0 ? ["Joining #{gather[:name]}", MGQ_MpActions.lapse_in(left)] : "Joining #{gather[:name]} once free"
   end
 
   # Reports whether the player has to stand still: while the story scene they see plays on the
@@ -837,11 +862,11 @@ module MGQ_MpCoopGather
   end
 end
 
-# The line above the player's own head while the leader's story calls them, and the offers to follow
-# a Raid World's teller in the notification box, through ui_actions.rbx.
+# The line above the player's own head while the leader's story gathers or calls them, and the
+# offers to follow a Raid World's teller in the notification box, through ui_actions.rbx.
 
 begin
-  MGQ_MpActions.own_line_from { MGQ_MpCoopGather.own_line }
+  MGQ_MpActions.own_doing_from { MGQ_MpCoopGather.own_doing }
   MGQ_MpActions.offer(MGQ_MpCoopGather::Offers)
 rescue => e
   MGQ_MpCoopGather.log("actions FAILED: #{e.class}: #{e.message}")

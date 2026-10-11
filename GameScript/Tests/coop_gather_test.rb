@@ -2,6 +2,8 @@
 #  coop_gather_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-11: Checked that the line above a member's head counts the seconds down before they come over, then names that they come once free, and that the leader's names the members still missing with the time the story holds
+#                            - Stood in for the line above the player's head with its doings and lapses, and for the members synced with the leader's story
 #      Paulinchen  2026-10-10: Checked that a Raid World's follow taken at once waits a minute for a busy player
 #                            - Checked that a follow taken in a Raid World names its teller and map while the player is on the way and after they arrived, until CALL_LAPSE_FRAMES passed
 #                            - Checked that a Raid World's teller in the story's battle holds nobody
@@ -44,9 +46,12 @@ class Game_Player
 end
 class Scene_Map; def update_call_menu; end; end
 module DataManager; def self.extract_save_contents(contents); end; end
+# The line above the player's head, whose lapse stands in as the seconds left, which the checks read.
 module MGQ_MpActions
   Notice = Struct.new(:key, :text, :color, :action, :take, :decline, :mark)
-  def self.own_line_from(&line); end
+  def self.own_doing_from(&doing); ($doings ||= []) << doing; end
+  def self.lapse_in(frames); frames / 60.0; end
+  def self.lapse_at(since, frames); lapse_in(since + frames - Graphics.frame_count); end
   def self.offer(offers); $offers = offers; end
 end
 module MGQ_MpOverworldSync
@@ -78,8 +83,13 @@ $frame_count = 5000
 
 gather.called($leader, place)
 check("a member the leader calls is coming", gather.coming?, true)
+check("and the line above their head counts the seconds down before they come over", gather.own_doing, ["Joining Leader", 5.0])
+$frame_count += 2 * 60
+check("as the frames pass", gather.own_doing, ["Joining Leader", 3.0])
+$frame_count += MGQ_MpCoopGather::GATHER_FRAMES - 2 * 60
+check("then names that they come once free, without a time", gather.own_doing, "Joining Leader once free")
 $frame_count += MGQ_MpCoopGather::CALL_LAPSE_FRAMES
-check("until the calls stop", gather.coming?, false)
+check("until the calls stop", [gather.coming?, gather.own_doing], [false, nil])
 
 gather.called($leader, place)
 $frame_count = 100
@@ -106,12 +116,29 @@ $frame_count += MGQ_MpCoopGather::CALL_LAPSE_FRAMES
 check("a leader's call that takes over a teleport the player asked for lapses as a call does",
       [gather.pending_call, $notices.last], [nil, "Leader's story started without you."])
 
+# The members synced with the leader's story, whom the leader's story waits for.
+module MGQ_MpCoopStory; def self.synced_members; MGQ_MpCoop::Party.members; end; end
 $member = $leader
 $leader = :me
 gather.hold(Game_Interpreter.new)
 check("the leader's story waits for the party", gather.holding_story?, true)
+check("and the line above the leader's head names who is still missing, with the time the story holds, through the doing the script registered",
+      [gather.own_doing, $doings.map { |doing| doing.call }], [["Gathering: Leader", 30.0], [["Gathering: Leader", 30.0]]])
+$frame_count += 10 * 60
+check("counting it down", gather.own_doing, ["Gathering: Leader", 20.0])
+module MGQ_MpCoop::Party
+  def self.members
+    (1..4).map { |n| MGQ_MpOverworldSync::Peers::Peer.new(n + 1, { "name" => "Player #{n}", "map" => "9", "x" => "10", "y" => "10" }) }
+  end
+end
+check("naming two missing members at most and how many more", gather.own_doing, ["Gathering: Player 1, Player 2 +2", 20.0])
+module MGQ_MpCoop::Party; def self.members; [$member]; end; end
 DataManager.extract_save_contents({})
 check("until a save is loaded", gather.holding_story?, false)
+check("the frames a moment has left count down from the frames given, into the past, which within? reads",
+      [gather.frames_left($frame_count - 100, 300), gather.frames_left($frame_count - 400, 300), gather.frames_left($frame_count + 50, 300),
+       gather.within?($frame_count - 100, 300), gather.within?($frame_count - 400, 300), gather.within?($frame_count + 50, 300)],
+      [200, -100, 350, true, false, false])
 
 # A Raid World gathers nobody: whoever is on the map watches.
 module MGQ_MpWorld; def self.raid?; $raid; end; end
@@ -275,7 +302,7 @@ check("it goes to where the story was told last", gather.story_endpoint, [6, 5, 
 teller.state["telling"] = "0"
 gather.note_story_place
 gather.join_story
-check("even once the telling ended", [gather.coming?, gather.own_line], [true, "Joining the story once free . . ."])
+check("even once the telling ended", [gather.coming?, gather.own_doing], [true, "Joining the story once free"])
 check("keeping the player's warp ban while the teller's is unknown", gather.pending_call[:warp_ban], nil)
 gather.forget
 teller.state.merge!("telling" => "1", "twb" => "1")

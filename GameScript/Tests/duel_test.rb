@@ -2,6 +2,7 @@
 #  duel_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-11: Checked the line above the player's head while challenging, waiting for an accepted duel, getting a team duel's sides ready and ready for one, each with its seconds left
 #      Paulinchen  2026-10-07: Gave the live battle stand-in who, which the duel names players by their seat with
 #                            - Checked that the log says why a duel's start was refused
 #      Paulinchen  2026-10-06: Checked that a duel whose battle could not start is called off, and that a call-off of a duel that started tells why
@@ -102,6 +103,14 @@ def duel_sent
 end
 # Lets the map run a frame: the wheel's keys, the chat's, and a duel waiting to start.
 def frame; map_frame; MGQ_MpBattlesDuel.on_map; end
+# Writes the duel's doing for the line above the player's head as of now: the lapse was built from
+# the clock a moment before, so the seconds shown are the frames left, rounded up.
+#
+# @return [String, nil] The doing as shown, nil for none.
+def doing_shown
+  doing = MGQ_MpBattlesDuel.own_doing
+  doing ? MGQ_MpActions.doing_text(doing)[1] : nil
+end
 
 friend = { "id" => "friend", "name" => "Friend", "sprite" => "Actor2", "index" => 0, "map" => 5, "x" => 4, "y" => 4, "d" => 2, "speed" => 4, "hidden" => 0, "scene" => "map" }
 $inbox << entry("seat", 0) << entry("in", 2) << entry("message", 2, told(friend))
@@ -112,10 +121,12 @@ peer = MGQ_MpOverworldSync::Peers.at(2)
 check("someone near: challenge on the wheel's right", [MGQ_MpActions.wheel_options[:RIGHT].text, !MGQ_MpActions.wheel_options[:RIGHT].run.nil?], ["Challenge to a duel", true])
 check("the state never names a field duel, which marks duel messages", MGQ_MpOverworldSync::Me.current.keys.include?("duel"), false)
 duel.invite
-check("a challenge is told", [MGQ_MpOverworldSync::Me.current["challenge"], MGQ_MpActions.own_line], [1, "Challenging to a duel . . ."])
+check("a challenge is told", [MGQ_MpOverworldSync::Me.current["challenge"], MGQ_MpActions.own_line =~ /\AChallenging to a duel \(\d+ s\) \. \. \.\z/ ? true : false], [1, true])
+check("and the line above the player's head names it with the seconds it stands for", [doing_shown, (duel.own_doing[1] - MGQ_MpActions.lapse_in(MGQ_MpCoop::INVITE_FRAMES)).abs < 1],
+      ["Challenging to a duel (15 s)", true])
 check("it can be stopped", MGQ_MpActions.wheel_options[:RIGHT].text, "Stop challenging")
 (MGQ_MpCoop::INVITE_FRAMES + 1).times { duel.tick(true) }
-check("it runs out", duel.inviting?, false)
+check("it runs out", [duel.inviting?, duel.own_doing], [false, nil])
 
 # Accepting a challenge nearby.
 $inbox << entry("message", 2, told(friend.merge("challenge" => 1)))
@@ -126,10 +137,14 @@ $sent.clear
 MGQ_MpActions.wheel_options[:RIGHT].run.call
 accept = duel_sent.last
 check("accepting sends the player's game and team to the challenger", [accept[0], accept[1]["duel"], accept[1][:payload]], [2, "accept", "game-1\tteam-me"])
+check("and the line above the player's head waits for the duel, six seconds at most", doing_shown, "Waiting for Friend's duel (6 s)")
+120.times { duel.tick(true) }
+check("counting them down", doing_shown, "Waiting for Friend's duel (4 s)")
 $inbox << entry("message", 2, "duel=start\nbid=b1\n\ngame-1\tteam-friend")
 MGQ_MpOverworldSync.tick
 frame
 check("the challenger's answer starts the duel as guest", [$joined.last, $started.last], [[:guest, "b1", [2], "Friend", :pvp], ["Friend", ["team-friend"], false, nil]])
+check("which ends the wait above the player's head", duel.own_doing, nil)
 
 # Challenged from afar, through the World overview.
 $inbox << entry("message", 2, told(friend.merge("x" => 40, "challenge" => 1, "challenge_to" => "someone")))
@@ -200,7 +215,9 @@ MGQ_MpOverworldSync.tick
 MGQ_MpActions.wheel_options[:RIGHT].run.call
 check("a player in another battle cannot accept", MGQ_MpOverworldSync::Status.lines.last, "Finish what you are doing first.")
 $role = nil
+duel.invite
 duel.accept(peer)
+check("accepting a duel stops the player's own challenge, so the line waits for the duel alone", [duel.inviting?, doing_shown], [false, "Waiting for Friend's duel (6 s)"])
 (MGQ_MpBattlesDuel::ANSWER_FRAMES + 1).times { duel.tick(true) }
 check("an unanswered accept runs out", MGQ_MpOverworldSync::Status.lines.last, "Friend did not answer the duel.")
 duel.invite
@@ -226,6 +243,7 @@ MGQ_MpOverworldSync.tick
 calls = duel_sent.select { |_, f| f["duel"] == "team" }
 bid = calls.first[1]["bid"]
 check("an accepted duel of a party's leader calls both sides", calls.map(&:first).sort, [2, 3])
+check("and the line above the challenger's head gets the sides ready, ten seconds at most", doing_shown, "Getting the sides ready (10 s)")
 $inbox << entry("message", 3, "duel=ready\nbid=#{bid}\n\ngame-1\tbuilds-pal\t8")
 MGQ_MpOverworldSync.tick
 check("it waits while a player is not ready", duel_sent.select { |_, f| f["duel"] == "start" }, [])
@@ -235,6 +253,7 @@ starts = duel_sent.select { |_, f| f["duel"] == "start" }
 own, other = MGQ_MpBattlesSync::Wire.parse(starts.first[1][:payload])
 check("once all are ready, everyone hears both sides", [starts.map(&:first).sort, starts.map { |_, f| f["team"] }.uniq, own.map(&:first), other.map(&:first)],
       [[2, 3], ["1"], [0, 3], [2]])
+check("and the challenger's line gets nothing ready any more", duel.own_doing, nil)
 check("with no share of the Backline", $arranged.last(2), [false, false])
 frame
 check("then the host starts the team duel", [$joined.last, $prepared[2], $started.last.values_at(0, 3)], [[:host, bid, [3, 2], "the duel", :pvp, true], true, ["Side leader", [:opponents]]])
@@ -296,6 +315,7 @@ $inbox << entry("message", 2, "duel=team\nbid=g9\n\n")
 MGQ_MpOverworldSync.tick
 ready = duel_sent.find { |_, f| f["duel"] == "ready" }
 check("a player called answers once free, with their Frontline", [ready[0], ready[1]["bid"], ready[1][:payload]], [2, "g9", "game-1\tbuilds-me\t8"])
+check("and the line above their head says they are ready, for as long as the duel may take to start", doing_shown, "Ready for the duel (16 s)")
 side = duel_sent.find { |_, f| f["duel"] == "side" }
 check("as their party's leader, the player passes the call on and tells the challenger whom",
       [$sent.select { |_, text| text.include?("duel_call=g9") }.map { |seat, text| [seat, text.include?("seat=2")] }, side[0], side[1].values_at("bid", "seats")],
@@ -307,6 +327,7 @@ MGQ_MpOverworldSync.tick
 frame
 check("then joins the challenger's duel on the other side", [$joined.last, $prepared.map { |side| side.is_a?(Array) ? side.map(&:first) : side }],
       [[:guest, "g9", [2], "Friend", :pvp, true], [[0, 3], [2], false]])
+check("and is ready no more above their head", duel.own_doing, nil)
 duel.accept(MGQ_MpOverworldSync::Peers.at(2))
 $sent.clear
 $inbox << entry("message", 2, "duel=team\nbid=g10\n\n")

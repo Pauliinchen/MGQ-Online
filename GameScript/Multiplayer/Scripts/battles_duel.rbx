@@ -2,6 +2,8 @@
 #  battles_duel.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-11: Named the wait for an accepted duel's start, the challenger's gathering of a team duel's sides and the called side's readiness in the line above the player's head, each with its seconds left, and gave the challenge its seconds left
+#                            - Stopped the player's own challenge once they accept another player's duel, so nobody accepts a challenge whose player waits for a duel already
 #      Paulinchen  2026-10-07: Named players through overworld_sync.rbx and battles_sync.rbx instead of copies of their helpers
 #                            - Logged every duel message sent and taken, and each challenge, answer, call, side, start and call-off with its reason
 #      Paulinchen  2026-10-06: Called a duel off whose battle could not start, so the other players never wait for it
@@ -209,7 +211,8 @@ module MGQ_MpBattlesDuel
     challenged_by?(peer) ? ["Challenges you to a duel (#{MGQ_MpHotkeys.label(:wheel)})", CHALLENGE_COLOR] : nil
   end
 
-  # Accepts a challenge: sends the challenger the player's team, and waits for theirs.
+  # Accepts a challenge: sends the challenger the player's team, and waits for theirs. A challenge
+  # of the player's own stops, since they cannot take two duels.
   #
   # @param peer [MGQ_MpOverworldSync::Peers::Peer] The challenger.
   def self.accept(peer)
@@ -218,6 +221,10 @@ module MGQ_MpBattlesDuel
       return MGQ_MpOverworldSync.notice("Finish what you are doing first.")
     end
 
+    if inviting?
+      log("stopped challenging: accepted #{MGQ_MpOverworldSync.who(peer)}'s duel")
+      @challenge.stop
+    end
     tell(peer.seat, { "duel" => "accept" }, team_line)
     log("accepted #{MGQ_MpOverworldSync.who(peer)}'s duel, waiting up to #{ANSWER_FRAMES / 60} s for their answer")
     @accepted = { :seat => peer.seat, :name => peer.state["name"].to_s, :frames => 0 }
@@ -696,6 +703,20 @@ module MGQ_MpBattlesDuel
     log("duel #{battle_id} with #{name} as #{role}#{' with the Backline' if pending.backline}")
   end
 
+  # Names what the player is doing for the line above their own head, with the moment it lapses:
+  # as challenger getting a team duel's sides ready, as a called player being ready for it, waiting
+  # for an accepted duel's start, or challenging.
+  #
+  # @return [Array, nil] The doing and when it lapses, nil while nothing waits.
+  def self.own_doing
+    return ["Getting the sides ready", MGQ_MpActions.lapse_in(READY_FRAMES - @gathering[:frames])] if @gathering
+    return ["Ready for the duel", MGQ_MpActions.lapse_in(READY_FRAMES + ANSWER_FRAMES - @called[:frames])] if @called && @called[:sent]
+    return ["Waiting for #{@accepted[:name]}'s duel", MGQ_MpActions.lapse_in(ANSWER_FRAMES - @accepted[:frames])] if @accepted
+    return ["Challenging to a duel", MGQ_MpActions.lapse_in(@challenge.frames_left)] if inviting?
+
+    nil
+  end
+
   # What duels offer between two players, through ui_actions.rbx: their choices on the action wheel
   # and in the World overview, and challenges in the overview and the notification box.
   module Offers
@@ -764,13 +785,6 @@ module MGQ_MpBattlesDuel
       MGQ_MpActions::Notice.new([:duel, peer.seat], duel.challenge_text(peer, "#{peer.state['name']} challenges you"), CHALLENGE_COLOR, on_map ? "Accept" : nil,
                                 on_map ? lambda { duel.accept(peer) } : nil, lambda { duel.decline(peer, "no") }, peer.state["id"])
     end
-
-    # Names what the player is doing for the line above their own head.
-    #
-    # @return [String, nil] That they challenge, nil while they do not.
-    def self.own_doing
-      MGQ_MpBattlesDuel.inviting? ? "Challenging to a duel" : nil
-    end
   end
 end
 
@@ -792,7 +806,7 @@ end
 begin
   MGQ_MpActions.offer(MGQ_MpBattlesDuel::Offers)
   MGQ_MpActions.wheel_choice(20) { MGQ_MpBattlesDuel::Offers.wheel_option }
-  MGQ_MpActions.own_doing_from { MGQ_MpBattlesDuel::Offers.own_doing }
+  MGQ_MpActions.own_doing_from { MGQ_MpBattlesDuel.own_doing }
 rescue => e
   MGQ_MpBattlesDuel.log("actions FAILED: #{e.class}: #{e.message}")
 end

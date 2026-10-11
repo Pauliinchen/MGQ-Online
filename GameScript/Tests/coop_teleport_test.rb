@@ -2,6 +2,8 @@
 #  coop_teleport_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-11: Checked that a request to another member is named in the line above the player's head with the seconds it stands for still, and one to the leader not
+#                            - Stood in for the line above the player's head with its doings and lapses
 #      Paulinchen  2026-10-10: Checked that an allowed teleport waits a minute for a busy player, as long as the request stood
 #                            - Created
 #
@@ -32,10 +34,13 @@ end
 module MGQ_MpCoopEvents; def self.pvp_running?; false; end; end
 class Scene_Map; def update_call_menu; end; end
 module DataManager; def self.extract_save_contents(contents); end; end
+# The line above the player's head, whose lapse stands in as the seconds left, which the checks read.
 module MGQ_MpActions
   Option = Struct.new(:text, :run, :refusal, :icon, :leaves)
   Notice = Struct.new(:key, :text, :color, :action, :take, :decline, :mark)
-  def self.own_line_from(&line); end
+  def self.own_doing_from(&doing); ($doings ||= []) << doing; end
+  def self.lapse_in(frames); frames / 60.0; end
+  def self.lapse_at(since, frames); lapse_in(since + frames - Graphics.frame_count); end
   def self.offer(offers); $offers = offers; end
 end
 module MGQ_MpOverworldSync
@@ -96,6 +101,7 @@ check("each closes the World overview", $offers.peer_option(friend).leaves, true
 $offers.peer_option(leader).run.call
 check("the request names the leader in the player's state", own_state.call, "l:n1")
 check("and says the player teleports", $notices.last, "Teleporting to Leader . . .")
+check("without a line above the player's head, since the leader answers at once", teleport.own_doing, nil)
 check("asking again while it stands is refused", $offers.peer_option(leader).refusal, "Your request to Leader stands.")
 take.call(friend, { "kind" => "allow", "nonce" => "n1", "map" => "5", "x" => "1", "y" => "1", "d" => "2" })
 check("an answer from another member is ignored", own_state.call, "l:n1")
@@ -161,6 +167,8 @@ friend.state["tpask"] = ""
 $offers.peer_option(friend).run.call
 check("asking another member names them in the state", own_state.call, "f:n2")
 check("and says they have to allow it", $notices.last, "You asked Friend to let you teleport to them.")
+check("the line above the player's head names the request with the minute it stands for, through the doings of every script here",
+      $doings.map { |doing| doing.call }, [nil, ["Asking Friend to teleport", 60.0]])
 check("the player's own row may take it back", $offers.own_options.map(&:text), ["Stop asking to teleport"])
 take.call(friend, { "kind" => "deny", "nonce" => "n2" })
 check("a declined request ends with a notice", [own_state.call, $notices.last, MGQ_MpCoopGather.coming?], ["", "Friend declined your teleport.", false])
@@ -176,9 +184,12 @@ $offers.own_options.first.run.call
 check("taking it back clears the state", [own_state.call, $offers.own_options], ["", []])
 
 $offers.peer_option(friend).run.call
-$frame_count += MGQ_MpCoopTeleport::ASK_FRAMES
+$frame_count += MGQ_MpCoopTeleport::ASK_FRAMES / 2
+check("the line counts the request down", teleport.own_doing, ["Asking Friend to teleport", 30.0])
+$frame_count += MGQ_MpCoopTeleport::ASK_FRAMES / 2
 $ticks.each { |tick| tick.call(true) }
 check("a request nobody answers runs out with a notice", [own_state.call, $notices.last], ["", "Friend did not answer your teleport."])
+check("and leaves the line", teleport.own_doing, nil)
 $offers.peer_option(friend).run.call
 friend.state["party"] = "p2"
 $ticks.each { |tick| tick.call(true) }

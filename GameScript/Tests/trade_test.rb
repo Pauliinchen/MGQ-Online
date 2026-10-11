@@ -2,6 +2,7 @@
 #  trade_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-11: Checked the line above the player's head while offering a trade and waiting for an accepted one to open, each with its seconds left
 #      Paulinchen  2026-10-08: Checked that a trade id that is not valid is turned down with its own notice
 #                            - Checked the invalid reason the player who offered the trade sees, and a reason of another build
 #      Paulinchen  2026-10-07: Checked that a trade the player accepted but cannot open is turned down with a notice
@@ -147,6 +148,14 @@ end
 #
 # @param frames [Integer] How many.
 def ticks(frames = 1); frames.times { MGQ_MpTrade.tick(true) }; end
+# Writes the trade's doing for the line above the player's head as of now: the lapse was built from
+# the clock a moment before, so the seconds shown are the frames left, rounded up.
+#
+# @return [String, nil] The doing as shown, nil for none.
+def doing_shown
+  doing = MGQ_MpTrade.own_doing
+  doing ? MGQ_MpActions.doing_text(doing)[1] : nil
+end
 
 friend = { "id" => "friend", "name" => "Friend", "sprite" => "Actor2", "index" => 0, "map" => 5, "x" => 4, "y" => 4, "d" => 2, "speed" => 4, "hidden" => 0, "scene" => "map" }
 $inbox << entry("seat", 0) << entry("in", 2) << entry("message", 2, told(friend))
@@ -158,7 +167,12 @@ DataManager.load_game_without_rescue(2)
 check("the wheel's ring holds the trade after the duel's place, here the right", MGQ_MpActions.wheel_places, [:UP, :RIGHT, :DOWN, :LEFT])
 check("someone near: trade offered", [MGQ_MpActions.wheel_options[:RIGHT].text, !MGQ_MpActions.wheel_options[:RIGHT].run.nil?], ["Trade", true])
 MGQ_MpActions.wheel_options[:RIGHT].run.call
-check("an offer is told, never as a field named trade, which marks trade messages", [MGQ_MpOverworldSync::Me.current["trading"], MGQ_MpOverworldSync::Me.current.key?("trade"), MGQ_MpActions.own_line], [1, false, "Offering a trade . . ."])
+check("an offer is told, never as a field named trade, which marks trade messages",
+      [MGQ_MpOverworldSync::Me.current["trading"], MGQ_MpOverworldSync::Me.current.key?("trade"), MGQ_MpActions.own_line =~ /\AOffering a trade \(\d+ s\) \. \. \.\z/ ? true : false], [1, false, true])
+check("and the line above the player's head names the offer with the seconds it stands for", [doing_shown, (trade.own_doing[1] - MGQ_MpActions.lapse_in(MGQ_MpCoop::INVITE_FRAMES)).abs < 1],
+      ["Offering a trade (15 s)", true])
+ticks(5 * 60)
+check("counting them down", doing_shown, "Offering a trade (10 s)")
 $inbox << entry("message", 2, told(friend.merge("map" => 6)))
 MGQ_MpOverworldSync.tick
 check("the overview offers no trade with a player on another map", MGQ_MpTrade::Offers.peer_option(peer).run, nil)
@@ -170,7 +184,7 @@ $sent.clear
 $inbox << entry("message", 2, "trade=accept\n\n")
 MGQ_MpOverworldSync.tick
 opened = trade_sent.last
-check("an accepted offer opens the trade with an id", [opened[1]["trade"], opened[1]["tid"].to_s =~ /\A[0-9a-f]{24}\z/ ? true : false, trade.inviting?], ["open", true, false])
+check("an accepted offer opens the trade with an id", [opened[1]["trade"], opened[1]["tid"].to_s =~ /\A[0-9a-f]{24}\z/ ? true : false, trade.inviting?, trade.own_doing], ["open", true, false, nil])
 tid = opened[1]["tid"]
 trade.on_map
 check("the map opens the trade screen", $called, [Scene_MpTrade])
@@ -260,7 +274,12 @@ tid = trade_sent.last[1]["tid"]
 $inbox << entry("message", 2, "trade=cancel\ntid=#{tid}\nreason=off\n\n")
 MGQ_MpOverworldSync.tick
 check("the other player cancels", [trade.session, MGQ_MpOverworldSync::Status.lines.last], [nil, "Friend cancelled the trade."])
+trade.invite
 trade.accept(peer)
+check("accepting a trade stops the player's own offer and waits for the trade above the player's head, six seconds at most",
+      [trade.inviting?, doing_shown], [false, "Waiting for Friend's trade (6 s)"])
+ticks(2 * 60)
+check("counting them down", doing_shown, "Waiting for Friend's trade (4 s)")
 SceneManager.scene = Scene_Item.new
 $sent.clear
 $inbox << entry("message", 2, "trade=open\ntid=#{'b' * 24}\n\n")
@@ -268,6 +287,7 @@ MGQ_MpOverworldSync.tick
 check("a trade the player accepted but cannot open now, here in the menu, is turned down with a notice",
       [trade.session, trade_sent.map { |_, f| [f["trade"], f["reason"]] }, MGQ_MpOverworldSync::Status.lines.last],
       [nil, [["decline", "busy"]], "The trade with Friend could not open: finish what you are doing first."])
+check("which ends the wait above the player's head", trade.own_doing, nil)
 SceneManager.scene = Scene_Map.new
 trade.accept(peer)
 $sent.clear

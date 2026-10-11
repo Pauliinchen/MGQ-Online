@@ -3,12 +3,13 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-11: Read the generator from MGQ-Paradox-Event-Checker next to the repository, and left its lists unchecked without it
-#      Paulinchen  2026-10-11: Checked that a branch on a choice script's variable counts as the choice's, that such a scene running by itself is story, that a signpost with its own self switch, the cosmetic scripts and the game's battle flags keep a talk
-#      Paulinchen  2026-10-10: Checked that the game's map display, Pocket Castle call and post-battle processing are the player's own, never story
-#                            - Checked that a transfer outside a telling goes on with none, and that only a story eventthat runs by itself goes on with the telling that moved the player, while one the player starts is a new telling
+#                            - Read the line above the player's head as a doing with its seconds left, the leader's naming the member missing
+#                            - Checked that a branch on a choice script's variable counts as the choice's, that such a scene running by itself is story, that a signpost with its own self switch, the cosmetic scripts and the game's battle flags keep a talk
+#      Paulinchen  2026-10-10: Checked that a transfer outside a telling goes on with none, and that only a story eventthat runs by itself goes on with the telling that moved the player, while one the player starts is a new telling
 #                            - Checked that a Raid World's telling that moved the player goes on at the story's next event on the new map, through the game's transfer process, with no tie there, and starts anew after CONTINUE_FRAMES
 #                            - Checked that a follower on the way to where the teller's story moved them starts no story event of their own, on the way or just arrived, keeps that teller while their state says they tell nothing, hears their pages from the new map, and that the follow ends by itself
 #                            - Kept the log's lines, which the checks read
+#                            - Checked that the game's map display, Pocket Castle call and post-battle processing are the player's own, never story
 #                            - Checked that a teleport coop_teleport.rbx asks for brings the member over at once, in place of the leader's answer where they stand
 #                            - Checked that an event calling the game's map display, Pocket Castle call, post-battle processing or transfer process is sorted by the rest of its list
 #                            - Moved the common events that call each other to 6 and 7, since 2 and 3 are the player's own
@@ -301,6 +302,11 @@ end
 # A character, who learns skills.
 class Game_Actor
   def learn_skill(id); (@skills ||= []) << id; end
+end
+# The line above the player's head, whose lapse stands in as the seconds left, which the checks read.
+module MGQ_MpActions
+  def self.lapse_in(frames); frames / 60.0; end
+  def self.lapse_at(since, frames); lapse_in(since + frames - Graphics.frame_count); end
 end
 load_script "coop_scope"
 load_script "story_state"
@@ -610,7 +616,7 @@ $game_map.update
 $game_map.update
 check("a member stays when the leader goes to another map", $game_player.reserved, nil)
 MGQ_MpCoopEvents.take(friend, { "pevent" => "gather", "party" => "p1", "map" => "7", "x" => "2", "y" => "2", "d" => "4" })
-check("only the leader calls the party to a story scene", MGQ_MpCoopGather.own_line, nil)
+check("only the leader calls the party to a story scene", MGQ_MpCoopGather.own_doing, nil)
 $game_map.map_id = 7
 $game_player.moveto(2, 2)
 
@@ -619,7 +625,7 @@ $notices.clear
 leader.state.merge!("map" => "8")
 MGQ_MpCoopEvents.take(leader, { "pevent" => "gather", "party" => "p1", "map" => "8", "x" => "9", "y" => "3", "d" => "6" })
 $game_map.update
-check("a member called to the story hears when they come over", [$notices.last, MGQ_MpCoopGather.own_line], ["Leader's story is starting. You join them in 5 seconds.", "Joining Leader in 5 s . . ."])
+check("a member called to the story hears when they come over", [$notices.last, MGQ_MpCoopGather.own_doing], ["Leader's story is starting. You join them in 5 seconds.", ["Joining Leader", 5.0]])
 check("and is not moved before five seconds", [$game_player.reserved, $game_map.map_id], [nil, 7])
 $game_player.encounter_count = 5
 check("a member about to come over meets no random encounter while steps are left", $game_player.encounter, false)
@@ -628,11 +634,11 @@ check("nor once they ran out, which draws new steps", [$game_player.encounter, $
 $frame_count = 150
 $game_switches[MGQ_MpStoryState::WARP_BAN] = true
 MGQ_MpCoopEvents.take(leader, { "pevent" => "gather", "party" => "p1", "map" => "8", "x" => "9", "y" => "3", "d" => "6", "warp_ban" => "0" })
-check("calls again do not start the time anew", MGQ_MpCoopGather.own_line, "Joining Leader in 3 s . . .")
+check("calls again do not start the time anew", MGQ_MpCoopGather.own_doing, ["Joining Leader", 2.5])
 $frame_count = 300
 SceneManager.scene = Scene_Battle.new
 $game_map.update
-check("a member in battle comes once it is over", [$game_player.reserved, MGQ_MpCoopGather.own_line], [nil, "Joining Leader once free . . ."])
+check("a member in battle comes once it is over", [$game_player.reserved, MGQ_MpCoopGather.own_doing], [nil, "Joining Leader once free"])
 SceneManager.scene = Scene_Map.new
 $brightness = 0
 $game_map.update
@@ -644,25 +650,25 @@ check("where warping is allowed again, though they never walked out of the cave 
 check("a leader tells whether warping is banned where they stand", MGQ_MpCoopGather.place_fields["warp_ban"], 0)
 check("the warp ban is each player's own, not the leader's story", MGQ_MpStoryState.personal_switch?(MGQ_MpStoryState::WARP_BAN), true)
 $game_player.perform_transfer
-check("and wait no more", MGQ_MpCoopGather.own_line, nil)
+check("and wait no more", MGQ_MpCoopGather.own_doing, nil)
 $game_player.encounter_count = 0
 check("then random encounters come again", $game_player.encounter, true)
 MGQ_MpCoopEvents.take(leader, { "pevent" => "gather", "party" => "p1", "map" => "8", "x" => "11", "y" => "4", "d" => "6" })
-check("a member standing near already is not moved", [MGQ_MpCoopGather.own_line, $game_player.x], [nil, 9])
+check("a member standing near already is not moved", [MGQ_MpCoopGather.own_doing, $game_player.x], [nil, 9])
 $frame_count = 2000
 MGQ_MpCoopEvents.take(leader, { "pevent" => "gather", "party" => "p1", "map" => "5", "x" => "1", "y" => "1", "d" => "2" })
 $frame_count = 2359
-check("a call stands while the leader still calls", MGQ_MpCoopGather.own_line, "Joining Leader once free . . .")
+check("a call stands while the leader still calls", MGQ_MpCoopGather.own_doing, "Joining Leader once free")
 $frame_count = 2360
 $notices.clear
 check("asking whether the member is coming once the calls stopped only says no", [MGQ_MpCoopGather.coming?, $notices], [false, []])
 $game_map.update
-check("once the calls stop, the story started without the member, who stays", [MGQ_MpCoopGather.own_line, $notices.last, $game_player.reserved],
+check("once the calls stop, the story started without the member, who stays", [MGQ_MpCoopGather.own_doing, $notices.last, $game_player.reserved],
       [nil, "Leader's story started without you.", nil])
 
 # A member teleports to another member through coop_teleport.rbx, which brings them over here.
 MGQ_MpCoopGather.come_to("Leader", [5, 1, 1, 2], true)
-check("a member who teleports waits only to be free", MGQ_MpCoopGather.own_line, "Joining Leader once free . . .")
+check("a member who teleports waits only to be free", MGQ_MpCoopGather.own_doing, "Joining Leader once free")
 $game_map.update
 check("and comes at once, taking over the place's warp ban", [$game_player.reserved, $game_switches[MGQ_MpStoryState::WARP_BAN]], [[5, 1, 1, 2], true])
 $game_player.instance_variable_set(:@reserved, nil)
@@ -694,7 +700,7 @@ interpreter = $game_map.interpreter
 interpreter.setup([c(101, "", 0, 0, 2), c(121, 60, 60, 0)], 1)
 check("a story scene calls the members", [$sent.map { |seat, f| [seat, f["pevent"], f["map"], f["x"]] }, $notices.last], [[[-1, "gather", "3", "5"]], "Gathering the party for the story . . ."])
 interpreter.busy = true
-check("and waits while one is away", [MGQ_MpCoopGather.holding?(interpreter), MGQ_MpCoopGather.own_line, MGQ_MpCoopEvents.state_fields["telling"]], [true, "Gathering the party . . .", 0])
+check("and waits while one is away", [MGQ_MpCoopGather.holding?(interpreter), MGQ_MpCoopGather.own_doing, MGQ_MpCoopEvents.state_fields["telling"]], [true, ["Gathering: Friend", 30.0], 0])
 check("the leader only waits for the party then, so the chat may open", MGQ_MpCoopGather.waiting?, true)
 $sent.clear
 $frame_count = 1100
@@ -747,7 +753,7 @@ check("a member following hears the leader's pages of the new map before arrivin
 $game_map.update
 check("and comes along at once", $game_player.reserved, [624, 63, 27, 2])
 $game_player.instance_variable_set(:@reserved, nil)
-check("then waits for nothing more", MGQ_MpCoopGather.own_line, nil)
+check("then waits for nothing more", MGQ_MpCoopGather.own_doing, nil)
 
 # The Pocket Castle's way out returns each player where they came from.
 check("where the castle's way out returns is each player's own", (21..23).map { |id| MGQ_MpStoryState.personal_variable?(id) }, [true, true, true])
