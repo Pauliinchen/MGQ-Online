@@ -2,6 +2,7 @@
 //  server.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-11: Tested a bug report over HTTP: its unpacked files committed to GitHub in one commit, refused without a player key, too long or without a token
 //      Paulinchen  2026-10-10: Tested that only a game naming the dev feature in X-MGQ-Features makes a Raid World with a starting save and uploads it over HTTP
 //                            - Tested boss pools that keep the share of a raid max HP left over HTTP: turn reports, a kill named by its player, the frame every game hears and the admin view
 //      Paulinchen  2026-10-09: Tested that every game of a world hears that it turns other mods off, with its mods, once its creator changes either over HTTP
@@ -31,11 +32,13 @@
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
+import { gzipSync } from "node:zlib";
 import WebSocketClient from "ws";
 import { BOSS_LIMITS } from "../core/bosses.js";
 import { DIRECTORY_LIMITS, Directory, playerIdOf, sha256Hex } from "../core/directory.js";
 import { ModCatalog, zipHashes } from "../core/mods.js";
 import { AUTH_HEADER, CHAT_LIMITS, CHAT_SLOW, CLOSE, EVERYONE, FEATURES_HEADER, LIMITS, PAIRED, PING, PLAYER_HEADER, PONG, REFUSAL_HEADER, REPLACED } from "../core/relay.js";
+import { REPORT_LIMITS, ReportDesk } from "../core/reports.js";
 import { STORY_LIMITS } from "../core/story.js";
 import { TRADE_LIMITS } from "../core/trades.js";
 import { makeUpload, makeZip } from "../core/test_zip.js";
@@ -1098,4 +1101,52 @@ test("addressOf trusts X-Forwarded-For from this machine only, and takes the add
   assert.equal(addressOf(request("127.0.0.1")), "127.0.0.1");
   assert.equal(addressOf(request("203.0.113.5", "198.51.100.7")), "203.0.113.5", "a client cannot name another address");
   assert.equal(addressOf(request(undefined)), null);
+});
+
+test("a game sends a bug report over HTTP, which the relay hands to GitHub, and a relay without a GitHub token takes none", async () => {
+  const requests = [];
+  const github = async (url, init) => {
+    requests.push({ url, method: init.method, body: init.body });
+    const path = url.split("/git/")[1];
+
+    if (path === "ref/heads/main") return Response.json({ object: { sha: "head" } });
+    if (path === "commits/head") return Response.json({ tree: { sha: "tree" } });
+    if (path === "refs/heads/main") return Response.json({});
+    return Response.json({ sha: "made", number: 7, html_url: "https://github.com/Owner/Issues/issues/7" }, { status: 201 });
+  };
+  const settings = { issuesToken: "token", filesToken: "token", issuesRepo: "Owner/Issues", filesRepo: "Owner/Files", branch: "main" };
+  const reports = new ReportDesk(settings, { clock: () => now, fetch: github, limits: { ...REPORT_LIMITS, maxBodyBytes: 4096 }, log: LOG });
+  const reportRelay = createRelay({ clock: () => now, checkEveryMs: 3_600_000, reports, log: LOG });
+  await new Promise((resolve) => reportRelay.server.listen(0, "127.0.0.1", resolve));
+  const reportsUrl = `http://127.0.0.1:${reportRelay.server.address().port}/v1/reports`;
+  const index = gzipSync(Buffer.from("# Stuck\n")).toString("base64");
+  const header = { title: "Stuck", text: "The door stays shut.", version: "0.6.3", facts: [["Mod", "0.6.3"]], files: [{ name: "report.md", length: index.length, gzip: true }, { name: "screenshot.png", length: 8, gzip: false }] };
+  const body = `${JSON.stringify(header)}\n${index}iVBORw0K`;
+  const send = (headers, text = body, url = reportsUrl) => fetch(url, { method: "POST", headers: { "Content-Type": "text/plain; charset=utf-8", ...headers }, body: text });
+
+  const sent = await send({ [PLAYER_HEADER]: playerKey(70) });
+  assert.equal(sent.status, 201);
+  const answer = await sent.json();
+  assert.equal(answer.issue, 7);
+  assert.match(answer.id, /^\d{4}-\d\d-\d\d-[0-9a-f]{8}$/);
+  assert.deepEqual(requests.map((request) => `${request.method} ${request.url.split("/repos/")[1]}`), [
+    "GET Owner/Files/git/ref/heads/main",
+    "GET Owner/Files/git/commits/head",
+    "POST Owner/Files/git/blobs",
+    "POST Owner/Files/git/trees",
+    "POST Owner/Files/git/commits",
+    "PATCH Owner/Files/git/refs/heads/main",
+    "POST Owner/Issues/issues",
+  ]);
+  assert.equal(JSON.parse(requests[2].body).content, "iVBORw0K");
+  assert.deepEqual(JSON.parse(requests[3].body).tree.map((entry) => [entry.path, entry.content ?? entry.sha]), [[`reports/${answer.id}/report.md`, "# Stuck\n"], [`reports/${answer.id}/screenshot.png`, "made"]]);
+
+  const keyless = await send({});
+  assert.deepEqual([keyless.status, (await keyless.json()).code], [401, "player"]);
+  assert.equal((await send({ [PLAYER_HEADER]: playerKey(70) }, "x".repeat(5000))).status, 413);
+  assert.equal(requests.length, 7);
+  await reportRelay.stop();
+
+  const off = await send({ [PLAYER_HEADER]: playerKey(70) }, body, directoryBase.replace("/worlds", "/reports"));
+  assert.deepEqual([off.status, (await off.json()).code], [503, "off"]);
 });

@@ -2,6 +2,7 @@
 //  ExportsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-11: Covered the bug report exports, with their arguments
 //      Paulinchen  2026-10-10: Covered mp_dev_build, exported without arguments
 //      Paulinchen  2026-10-09: Covered the parked mods' exports and the world exports that take whether a world turns other mods off, with their arguments
 //      Paulinchen  2026-10-07: Created
@@ -107,5 +108,23 @@ public sealed unsafe class ExportsTests
         Assert.Equal("pplllpppplppppll", exported["mp_dir_create"]);
         Assert.Equal("plppplllll", exported["mp_dir_edit"]);
         Assert.Equal(string.Empty, exported["mp_dev_build"]);
+    }
+
+    /// <summary>
+    /// Asserts that the bug report's functions are exported under the names the game script calls,
+    /// each taking what GameScript/Multiplayer.rb names for it.
+    /// </summary>
+    [Fact]
+    public void ReportExports_AreRegistered()
+    {
+        var exported = typeof(Exports).GetMethods(BindingFlags.Public | BindingFlags.Static)
+            .Select(method => (Method: method, Attribute: method.GetCustomAttribute<UnmanagedCallersOnlyAttribute>()))
+            .Where(export => export.Attribute?.EntryPoint != null)
+            .ToDictionary(export => export.Attribute!.EntryPoint!, export => string.Concat(export.Method.GetParameters().Select(parameter => parameter.ParameterType == typeof(int) ? 'l' : 'p')));
+
+        Assert.Equal("pll", exported["mp_report_snap"]);
+        Assert.Equal(string.Empty, exported["mp_report_drop_snap"]);
+        Assert.Equal("ppppl", exported["mp_report_send"]);
+        Assert.Equal("pl", exported["mp_report_state"]);
     }
 }

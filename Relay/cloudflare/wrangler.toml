@@ -2,6 +2,7 @@
 #  wrangler.toml
 #
 #  Changelog:
+#      Paulinchen  2026-10-11: Added the repositories and the branch the bug reports go to
 #      Paulinchen  2026-10-06: Checked the mod catalog's links every half hour
 #      Paulinchen  2026-09-29: Added the world directory's Durable Object
 #                            - Added the world rooms' Durable Object
@@ -19,6 +20,15 @@ preview_urls = false
 # Checks the mod catalog's links for new releases every half hour.
 [triggers]
 crons = ["*/30 * * * *"]
+
+# Where the bug reports go: a public issue in the issues repository, linking the report's files
+# committed to the private files repository's branch. The relay takes reports only once both
+# secrets are set (wrangler secret put <name>): GITHUB_ISSUES_TOKEN may write issues in the issues
+# repository, GITHUB_BUG_FILES_TOKEN contents in the files repository, and neither more.
+[vars]
+REPORT_ISSUES_REPO = "Pauliinchen/MGQ-Online"
+REPORT_FILES_REPO = "Pauliinchen/MGQ-Online-Bug-Reports"
+REPORT_FILES_BRANCH = "main"
 
 # One Durable Object per room and per world room, and one for the world directory, SQLite backed,
 # the only kind the free plan offers.

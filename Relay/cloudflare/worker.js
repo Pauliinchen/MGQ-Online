@@ -2,6 +2,7 @@
 //  worker.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-11: Took the bug reports games send in the directory object and handed them to GitHub with the GITHUB_ISSUES_TOKEN and GITHUB_BUG_FILES_TOKEN secrets
 //      Paulinchen  2026-10-10: Passed what a game names in the X-MGQ-Features header on to the directory's public routes too, for a development build's Raid World starting save
 //                            - Refused a Raid World request whose Content-Length is above the longest body these routes take before reading its body
 //                            - Told every game of a Raid World a boss pool's share of HP left, raid max HP and defeat when a report or an admin changed it, and handed a boss report the reporting player's name
@@ -49,6 +50,7 @@ import { badRequest, notFound, routeIs } from "../core/http.js";
 import { isHash, isId } from "../core/ids.js";
 import { ModCatalog, handleModRequest } from "../core/mods.js";
 import { handleRaidAdminRequest, raidAdminRouteOf } from "../core/raid_admin.js";
+import { ReportDesk, handleReportRequest, reportSettingsOf } from "../core/reports.js";
 import { STORY_LIMITS, WorldStory, handleStoryRequest, noRaidWorld, storyRouteOf, storyText } from "../core/story.js";
 import { TradeBook, handleTradeRequest } from "../core/trades.js";
 import {
@@ -134,7 +136,7 @@ export default {
       return forwardWhole(request, worldOf(env, world.id));
     }
 
-    if (["worlds", "mods", "trades"].some((route) => routeIs(url, route))) {
+    if (["worlds", "mods", "trades", "reports"].some((route) => routeIs(url, route))) {
       return directoryOf(env).fetch(request);
     }
 
@@ -391,15 +393,16 @@ async function readSmallText(request, limit) {
  * The world directory: every world with its players, bans and locked token, one entry per world
  * in the object's storage, and each world's starting save in pieces beside it. It also keeps the
  * mod catalog, one entry per mod and each uploaded mod's zip in pieces, and the trades, one entry
- * per trade.
+ * per trade, and takes the bug reports, whose rate limits it counts in memory.
  */
 export class Directory extends DurableObject {
   /**
    * Creates the directory, the mod catalog and the trades over the object's storage, with the
-   * admins the ADMINS secret names.
+   * admins the ADMINS secret names, and the bug report desk with the GITHUB_ISSUES_TOKEN and
+   * GITHUB_BUG_FILES_TOKEN secrets and the REPORT_* variables.
    *
    * @param {DurableObjectState} ctx The object's state.
-   * @param {{ADMINS?: string}} env The Worker's bindings.
+   * @param {{ADMINS?: string, GITHUB_ISSUES_TOKEN?: string, GITHUB_BUG_FILES_TOKEN?: string, REPORT_ISSUES_REPO?: string, REPORT_FILES_REPO?: string, REPORT_FILES_BRANCH?: string}} env The Worker's bindings.
    */
   constructor(ctx, env) {
     super(ctx, env);
@@ -438,11 +441,13 @@ export class Directory extends DurableObject {
       removeTrade: (id) => storage.delete(`trade:${id}`),
       allTrades: async () => [...(await storage.list({ prefix: "trade:" })).values()],
     }, (id) => storage.get(`world:${id}`));
+
+    this.reports = new ReportDesk(reportSettingsOf(env));
   }
 
   /**
-   * Answers the directory's, the mod catalog's and the trades' routes, the world rooms' questions
-   * under /internal, and the schedule's check of the catalog's links.
+   * Answers the directory's, the mod catalog's, the trades' and the bug reports' routes, the world
+   * rooms' questions under /internal, and the schedule's check of the catalog's links.
    *
    * @param {Request} request The request.
    * @returns {Promise<Response>} The answer.
@@ -460,6 +465,11 @@ export class Directory extends DurableObject {
 
     if (routeIs(url, "trades")) {
       return respond(await handleTradeRequest(this.trades, request.method, url, () => readText(request), request.headers.get(PLAYER_HEADER)));
+    }
+
+    if (routeIs(url, "reports")) {
+      const client = { player: request.headers.get(PLAYER_HEADER), address: request.headers.get(ADDRESS_HEADER) };
+      return respond(await handleReportRequest(this.reports, request.method, url, () => readSmallText(request, this.reports.limits.maxBodyBytes), client));
     }
 
     if (url.pathname === "/internal/admit") {

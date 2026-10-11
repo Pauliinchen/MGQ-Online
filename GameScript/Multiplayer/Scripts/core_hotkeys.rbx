@@ -2,7 +2,8 @@
 #  core_hotkeys.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Held every hotkey while a confirm box of the mod is open, which takes the press
+#      Paulinchen  2026-10-11: Added the hotkey that opens the bug report, F3 unless bound
+#                            - Held every hotkey while a confirm box of the mod is open, which takes the press
 #      Paulinchen  2026-10-10: Told that the party box size hotkey also shows the battle's raid boss bar with or without its title and name
 #                            - Called every binding a hotkey in its help, and split the Party Box Size help into two lines
 #      Paulinchen  2026-10-09: Added the hotkey that joins the battle of a player nearby in a Raid World, J unless bound
@@ -19,7 +20,8 @@
 
 # The hotkeys the player binds: what opens the action wheel, the emote wheel, the chat and the World
 # overview, what accepts and declines the first invite of the notification box, what makes the
-# party box small, and what joins the battle of a player nearby in a Raid World. Each is a key
+# party box small, what joins the battle of a player nearby in a Raid World, and what opens the bug
+# report. Each is a key
 # binding in Mod Config Remake when it is installed, and keeps its key in
 # Patch/Multiplayer/Player.ini, so it holds in every save and every world.
 #
@@ -54,6 +56,8 @@ module MGQ_MpHotkeys
                               "In a raid boss battle, it shows the boss's HP bar with or without its title and name."),
     :join_battle => Binding.new("key_join_battle", 0x4A, :mp_key_join_battle, "Join Battle",
                                 "The hotkey that joins the battle of a player near you in a Raid World, while the prompt below your character shows."),
+    :bug_report => Binding.new("key_bug_report", 0x72, :mp_key_bug_report, "Report a Bug",
+                               "The hotkey that opens the bug report. Its screenshot is taken at the press."),
   }
 
   # Highest Windows key code.

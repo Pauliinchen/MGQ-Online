@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-11: Cut the session's log to its newest 2 MB once it passes 4 MB, so it never grows without end and a bug report still sends where the trouble is
+#                            - Loaded ui_bug_report.rbx last, the in-game bug report, and named the mp_report_* exports it calls
 #                            - Loaded world_opening.rbx after world_catchup.rbx, which runs a new game's opening setup without its scene in a Raid World past it
 #                            - Loaded ui_theme.rbx and ui_layout.rbx after ui.rbx, the interface presets and the boxes the player moves and resizes
 #                            - Kept the mouse's clicks from the mod's screens while the left Alt is held, which moves and resizes the boxes instead
@@ -130,7 +131,7 @@ module MGQ_Multiplayer
     battles_sync battles_sync_wire battles_sync_recorder battles_sync_playback battles_sync_live
     battles_balance_pvp battles_pvp battles_pvp_backline battles_pvp_mirror battles_pvp_lobby battles_duel battles_team
     trade ui_trade
-    world_overview ui_party_box ui_edge_arrows ui_raid_bar ui_notices
+    world_overview ui_party_box ui_edge_arrows ui_raid_bar ui_notices ui_bug_report
   ]
 
   # Extension of the scripts, which the mod loader skips, since only this script may load them.
@@ -696,6 +697,12 @@ module MGQ_Multiplayer
       'mp_raid_bosses_fetch' => 'p',
       'mp_raid_boss_report' => 'pppp',
       'mp_raid_boss_state' => READ_ARGUMENTS,
+
+      # Bug reports.
+      'mp_report_snap' => 'pll',
+      'mp_report_drop_snap' => 'v',
+      'mp_report_send' => 'ppppl',
+      'mp_report_state' => READ_ARGUMENTS,
     }
 
     # Finds the mod folder and starts the DLL's log.

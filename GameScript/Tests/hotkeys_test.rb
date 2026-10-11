@@ -2,7 +2,8 @@
 #  hotkeys_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Checked that a hotkey pressed while a confirm box is open goes to the box
+#      Paulinchen  2026-10-11: Checked the hotkey that opens the bug report
+#                            - Checked that a hotkey pressed while a confirm box is open goes to the box
 #      Paulinchen  2026-10-10: Checked that every help says hotkey and keeps its lines short
 #      Paulinchen  2026-10-09: Checked the hotkey that joins a battle nearby
 #      Paulinchen  2026-10-04: Checked the party box size key and the name of Tab
@@ -39,10 +40,10 @@ load_script "core_hotkeys"
 keys = MGQ_MpHotkeys
 
 # The defaults.
-check("the defaults: B, T, F11, Y, N, E, Tab and J",
+check("the defaults: B, T, F11, Y, N, E, Tab, J and F3",
       [keys.code(:wheel), keys.code(:chat), keys.code(:overview), keys.code(:accept), keys.code(:decline), keys.code(:emotes), keys.code(:party_box),
-       keys.code(:join_battle)],
-      [0x42, 0x54, 0x7A, 0x59, 0x4E, 0x45, 0x09, 0x4A])
+       keys.code(:join_battle), keys.code(:bug_report)],
+      [0x42, 0x54, 0x7A, 0x59, 0x4E, 0x45, 0x09, 0x4A, 0x72])
 check("a key is read by its code", [($down = [0x54]) && keys.pressed?(:chat), keys.pressed?(:wheel)], [true, false])
 
 # A confirm box of the mod takes every hotkey while it is open.
@@ -69,15 +70,16 @@ check("one key binding per key, before Return", rows.map { |row| [row[:name], ro
       [["[Monster Girl Quest! Online] Action Wheel", true], ["[Monster Girl Quest! Online] Chat", true], ["[Monster Girl Quest! Online] World Overview", true],
        ["[Monster Girl Quest! Online] Accept Notification", true], ["[Monster Girl Quest! Online] Decline Notification", true],
        ["[Monster Girl Quest! Online] Emote Wheel", true], ["[Monster Girl Quest! Online] Party Box Size", true],
-       ["[Monster Girl Quest! Online] Join Battle", true]])
+       ["[Monster Girl Quest! Online] Join Battle", true], ["[Monster Girl Quest! Online] Report a Bug", true]])
 check("Return stays last", NWConst::Config::MOD_CONTENTS.last[:key], :return)
-check("each reads its key from Player.ini", rows.map { |row| row[:value].call }, [0x4B, 0x54, 0x7A, 0x59, 0x4E, 0x45, 0x09, 0x4A])
+check("each reads its key from Player.ini", rows.map { |row| row[:value].call }, [0x4B, 0x54, 0x7A, 0x59, 0x4E, 0x45, 0x09, 0x4A, 0x72])
 rows[2][:on_change].call(0x4C)
 check("and keeps a new key there", [$player_ini["key_overview"], keys.code(:overview)], ["76", 0x4C])
 
 # Without Mod Config Remake 1.3.0, such as with an older version.
 ModConfigRemake.send(:remove_const, :Keys)
-check("a bound key is still named", [keys.label(:wheel), keys.label(:overview), keys.plain_name(0xBA), keys.plain_name(0x09)], ["K", "L", "key 186", "Tab"])
+check("a bound key is still named", [keys.label(:wheel), keys.label(:overview), keys.plain_name(0xBA), keys.plain_name(0x09), keys.label(:bug_report)],
+      ["K", "L", "key 186", "Tab", "F3"])
 before = NWConst::Config::MOD_CONTENTS.size
 keys.register
 check("and no key bindings are added", NWConst::Config::MOD_CONTENTS.size, before)

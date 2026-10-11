@@ -2,6 +2,7 @@
 //  server.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-11: Took the bug reports games send and handed them to GitHub with the GITHUB_ISSUES_TOKEN and GITHUB_BUG_FILES_TOKEN environment variables
 //      Paulinchen  2026-10-10: Passed what a game names in the X-MGQ-Features header on to the directory's public routes too, for a development build's Raid World starting save
 //                            - Told every game of a Raid World a boss pool's share of HP left, raid max HP and defeat when a report or an admin changed it, and handed a boss report the reporting player's name
 //      Paulinchen  2026-10-09: Told every game of a world whether it turns other mods off and which mods it names, once its creator or an admin changed either
@@ -45,6 +46,7 @@ import { Directory, WORLD_TYPE, difficultyText, handleDirectoryRequest, modsRule
 import { routeIs } from "../core/http.js";
 import { ModCatalog, handleModRequest } from "../core/mods.js";
 import { handleRaidAdminRequest, raidAdminRouteOf } from "../core/raid_admin.js";
+import { ReportDesk, handleReportRequest, reportSettingsOf } from "../core/reports.js";
 import { STORY_LIMITS, WorldStory, handleStoryRequest, noRaidWorld, storyRouteOf, storyText } from "../core/story.js";
 import { TradeBook, handleTradeRequest } from "../core/trades.js";
 import {
@@ -119,6 +121,16 @@ export function requestLine(time, method, path, status, durationMs, address) {
  */
 export function errorLine(time, where, error) {
   return `${time.toISOString()} error ${where}: ${error?.stack ?? error}`;
+}
+
+/**
+ * Puts the time in front of every line a log is given, as the server's own lines have it.
+ *
+ * @param {typeof consoleLog} log The log.
+ * @returns {typeof consoleLog} The log with the time in front.
+ */
+function stamped(log) {
+  return { info: (line) => log.info(`${new Date().toISOString()} ${line}`), error: (line) => log.error(`${new Date().toISOString()} ${line}`) };
 }
 
 /**
@@ -327,13 +339,13 @@ function headerOf(request, name) {
 /**
  * Creates a relay server, not yet listening.
  *
- * @param {{limits?: typeof LIMITS, clock?: () => number, checkEveryMs?: number, sweepEveryMs?: number, directory?: Directory, mods?: ModCatalog, trades?: TradeBook, stories?: (id: string) => import("../core/story.js").StoryStore, storyLimits?: typeof STORY_LIMITS, bosses?: (id: string) => import("../core/bosses.js").BossStore, bossLimits?: typeof BOSS_LIMITS, log?: typeof consoleLog}} [options] Limits, clock, check and sweep intervals, directory, mod catalog, trades, the Raid Worlds' story stores, the stories' limits, the Raid Worlds' boss pool stores, the pools' limits and log, which tests change.
+ * @param {{limits?: typeof LIMITS, clock?: () => number, checkEveryMs?: number, sweepEveryMs?: number, directory?: Directory, mods?: ModCatalog, trades?: TradeBook, stories?: (id: string) => import("../core/story.js").StoryStore, storyLimits?: typeof STORY_LIMITS, bosses?: (id: string) => import("../core/bosses.js").BossStore, bossLimits?: typeof BOSS_LIMITS, log?: typeof consoleLog, reports?: ReportDesk}} [options] Limits, clock, check and sweep intervals, directory, mod catalog, trades, the Raid Worlds' story stores, the stories' limits, the Raid Worlds' boss pool stores, the pools' limits, log and the bug report desk, off unless given, which tests change.
  * @returns {{server: http.Server, directory: Directory, mods: ModCatalog, trades: TradeBook, storyOf: (id: string) => WorldStory, bossesOf: (id: string) => WorldBosses, check: () => void, sweep: () => Promise<void>, stop: () => Promise<void>}} The HTTP server to listen with, what it serves, a world's story, a world's boss pools, a look at the deadlines, a sweep of what is kept too long, and a way to stop everything.
  */
 export function createRelay({
   limits = LIMITS, clock = Date.now, checkEveryMs = CHECK_EVERY_MS, sweepEveryMs = SWEEP_EVERY_MS, directory = new Directory(memoryStore(), { clock }),
   mods = new ModCatalog(memoryModStore(), { clock }), trades = new TradeBook(memoryTradeStore(), (id) => directory.store.get(id), { clock }), stories = memoryStoryStores(),
-  storyLimits = STORY_LIMITS, bosses = memoryBossStores(), bossLimits = BOSS_LIMITS, log = consoleLog,
+  storyLimits = STORY_LIMITS, bosses = memoryBossStores(), bossLimits = BOSS_LIMITS, log = consoleLog, reports = new ReportDesk(reportSettingsOf({}), { clock, log: stamped(log) }),
 } = {}) {
   /** @type {Map<string, WorldStory>} */
   const worldStories = new Map();
@@ -424,8 +436,8 @@ export function createRelay({
   });
 
   /**
-   * Answers a request to the directory, the mod catalog or the trades, and carries out what it asks
-   * beyond answering.
+   * Answers a request to the directory, the mod catalog, the trades or the bug reports, and carries
+   * out what it asks beyond answering.
    *
    * @param {http.IncomingMessage} request The request.
    * @param {http.ServerResponse} response The response.
@@ -439,6 +451,14 @@ export function createRelay({
 
     if (storyRoute || bossRoute || adminRoute) {
       const answer = storyRoute ? await answerStory(request, storyRoute) : bossRoute ? await answerBosses(request, bossRoute) : await answerRaidAdmin(request, url, adminRoute);
+      response.writeHead(answer.status, { "Content-Type": "application/json" });
+      response.end(JSON.stringify(answer.body));
+      return;
+    }
+
+    if (routeIs(url, "reports")) {
+      const client = { player: headerOf(request, PLAYER_HEADER), address: addressOf(request) };
+      const answer = await handleReportRequest(reports, request.method, url, () => readText(request, reports.limits.maxBodyBytes), client);
       response.writeHead(answer.status, { "Content-Type": "application/json" });
       response.end(JSON.stringify(answer.body));
       return;
@@ -989,7 +1009,8 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   const directory = new Directory(stores.directory, { admins });
   const mods = new ModCatalog(stores.mods, { admins });
   const trades = new TradeBook(stores.trades, (id) => directory.store.get(id));
-  const relay = createRelay({ directory, mods, trades, stories: stores.stories, bosses: stores.bosses });
+  const reports = new ReportDesk(reportSettingsOf(process.env), { log: stamped(consoleLog) });
+  const relay = createRelay({ directory, mods, trades, stories: stores.stories, bosses: stores.bosses, reports });
 
   relay.server.listen(port, host, () => console.log(`${new Date().toISOString()} relay listening on ${host}:${port}, ${database ? `database ${database}` : "everything in memory"}`));
 
