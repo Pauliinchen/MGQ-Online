@@ -2,6 +2,7 @@
 #  catchup_data_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Checked the vehicle rows, Galda's first at Mt. Saint Amos and none for the Escape spell
 #      Paulinchen  2026-10-11: Checked that a talk join counts once a story page that needs the companion in the party ran
 #                            - Read the generator from MGQ-Paradox-Event-Checker next to the repository, and left its rules unchecked without it
 #      Paulinchen  2026-10-10: Checked that no row needs a Library Flag and that an event only a Library Flag told ran is marked by the scene after it
@@ -107,6 +108,14 @@ camps = skills.select { |row| row.site =~ /\Amap:(406|523|604|711|736|741):7:/ }
 check("the six camps' skills have explicit marks", [camps.map { |row| row.site[/\Amap:\d+/] }.uniq.size, camps.all? { |row| !row.marks.empty? }], [6, true])
 check("such as the first camp's Angel Dance for Ilias's side",
       camps.find { |row| row.id == 930 }.values_at(4, 6, 7), ["1", :ilias, [[:v, 1001, 8], [:s, 2023]]])
+
+check("every vehicle row names the boat, the ship or Galda, at a place with marks",
+      DATA::VEHICLES.all? { |row| [0, 1, 2].include?(row.vehicle) && (row.part.nil? || parts.include?(row.part)) && !row.marks.empty? && marks_shaped?(row.marks) }, true)
+galda = DATA::VEHICLES.select { |row| row.vehicle == 2 }
+first = galda.map { |row| [parts.index(row.part), row.step] }.min
+check("Galda comes first in Part 3 once the main story reached step 37, with Mt. Saint Amos among the events there",
+      [first, galda.select { |row| [parts.index(row.part), row.step] == first }.map(&:site).include?("map:645:33:1")], [[2, 37], true])
+check("and the Escape spell's way out of the Chaos Domain onto Galda gives it nowhere", DATA::VEHICLES.none? { |row| row.site == "ce:31" }, true)
 
 # The generator's rules, read without the game's data. The generator lives in
 # MGQ-Paradox-Event-Checker next to this repository; without it, its rules go unchecked here.

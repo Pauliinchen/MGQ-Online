@@ -2,6 +2,7 @@
 #  world_catchup.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Took a vehicle off its map while no event that gives it is behind the player's story or the world's, as a new game whose setup never ran left the ship and Galda on the field
 #      Paulinchen  2026-10-11: Listed what the catch-up hands out by level that the world already unlocked, for the World overview's Levels page
 #                            - Gave every Makina once the player's level reaches the area level of its easiest place, and took back copies beyond the first, as a chest another player's story closed again gave one twice
 #                            - Followed the story values of a telling the player watched as a story laid over theirs once they are free, so a viewer gets what the scene gave and loses the key items it took
@@ -59,6 +60,9 @@ module MGQ_MpWorldCatchup
 
   # The switch that bans warping, as Harpy Feathers do, each player's own.
   WARP_BAN = defined?(NWConst::Sw::WARP_BAN) ? NWConst::Sw::WARP_BAN : 100
+
+  # The game's vehicles by the number its events and DATA::VEHICLES name them.
+  VEHICLE_TYPES = [:boat, :ship, :airship]
 
   # Frames between two looks at the player's story, half a second.
   CHECK_FRAMES = 30
@@ -158,6 +162,7 @@ module MGQ_MpWorldCatchup
     @orbs_due = false
     @orbs_played = false
     @audit_due = true
+    @riding_early = false
     @watched = nil
     @clock ||= 0
     @checked = @clock
@@ -252,6 +257,7 @@ module MGQ_MpWorldCatchup
     return if MGQ_MpWorldStory.mode.nil?
 
     carry_watched
+    @audit_due = true if got_off_early?
     looking do
       audit(story_now) if @audit_due
       review(story_now, false)
@@ -837,8 +843,8 @@ module MGQ_MpWorldCatchup
   # Looks at everything the player's story owes them once, whatever the rows' notes say, as on
   # entering the world, after a load and on a level up: the story's skills Luka lacks, the key
   # items (restock_key_items), the story's companions missing from the roster, who join at their
-  # gate, and the player's own values the story sets (settle), with a warp ban left where warping
-  # is free (lift_warp_ban).
+  # gate, the player's own values the story sets (settle), with a warp ban left where warping is
+  # free (lift_warp_ban), and the vehicles the story has not given yet (park_vehicles).
   #
   # @param story [Array] The player's story.
   def self.audit(story)
@@ -851,6 +857,7 @@ module MGQ_MpWorldCatchup
     companion_values
     settle(story, told)
     lift_warp_ban
+    park_vehicles(story, told)
     log("looked at everything the story owes the player once")
     tell_gifts(gifts.compact)
   end
@@ -967,6 +974,39 @@ module MGQ_MpWorldCatchup
 
     $game_switches[WARP_BAN] = false
     log("lifted the warp ban: map #{$game_map.map_id} lets the player warp")
+  end
+
+  # Takes a vehicle off its map while no event that puts it there (DATA::VEHICLES) is behind the
+  # player's story or the world's. A new game whose setup never ran keeps the ship and Galda where
+  # the database parks them, on the field, and Galda flies anywhere. A vehicle the player rides
+  # stays until they got off (got_off_early?), since taking it away midair strands them.
+  #
+  # @param story [Array] The player's story.
+  # @param told [Array, nil] The world's story, nil before it came.
+  def self.park_vehicles(story, told)
+    VEHICLE_TYPES.each_with_index do |type, id|
+      vehicle = $game_map.vehicle(type)
+      map_id = vehicle ? MGQ_MpGame.get(vehicle, :map_id).to_i : 0
+      next if map_id == 0 || DATA::VEHICLES.any? { |row| row.vehicle == id && (passed?(row, story) || (told && passed?(row, told, story))) }
+
+      if $game_player.vehicle.equal?(vehicle)
+        @riding_early = true
+        next log_once([:riding_early, type], "left the #{type} the story has not given yet while the player rides it")
+      end
+      vehicle.set_location(0, 0, 0)
+      log("took the #{type} off map #{map_id}: no event that gives it is behind the story")
+    end
+  end
+
+  # Reports whether the player got off a vehicle that park_vehicles left while they rode it, which
+  # it then takes away at the next look.
+  #
+  # @return [Boolean] Whether they did.
+  def self.got_off_early?
+    return false unless @riding_early && !$game_player.vehicle
+
+    @riding_early = false
+    true
   end
 
   # Looks at every row of the tables against the player's story, see the module: rows the

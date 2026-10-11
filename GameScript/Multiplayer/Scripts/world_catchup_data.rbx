@@ -6,7 +6,8 @@
 # What a Raid World needs to carry a player who falls behind along with the world's story: the
 # story's parts with their level gates, every story join of a companion with the level that
 # brings it, the companions the story takes away, the key items the story gives, the chests that
-# hold them, and the skills and items the story gives.
+# hold them, the skills and items the story gives, the player's own values it sets and the
+# vehicles it puts on a map.
 #
 # A row's place in the story is its part ("1", "2", "3", "ad", "mr" or "chaos"; nil for side
 # content outside the story's order), its step there (the main story's progress, variable 1001,
@@ -1265,6 +1266,39 @@ module MGQ_MpWorldCatchupData
     [:v, 1002, 139, "map:1435:13:1", "chaos", 10, nil, [[:v, 1143, 10]], true],
     [:v, 1002, 119, "map:1765:36:1", "chaos", 12, nil, [[:v, 1143, 13]], true]
   ].map { |row| Setting.new(*row) }
+
+  # An event that puts a vehicle on a map for the player: the vehicle (0 the boat, 1 the ship, 2
+  # the airship Galda), the event's site, its place and ran.
+  Vehicle = Struct.new(:vehicle, :site, :part, :step, :side, :marks, :ran)
+
+  # Every event placed in the story that puts a vehicle on a map, in the story's order. The
+  # Escape spell's way out of the Chaos Domain onto Galda has no place of its own and is left
+  # out.
+  VEHICLES = [
+    [1, "ce:7354", "1", 13, nil, [[:v, 1001, 13], [:v, 1089, 2]], true],
+    [1, "map:753:67:1", "1", 13, nil, [[:v, 1001, 13], [:v, 1089, 1], [:s, 2149]], false],
+    [1, "map:753:67:2", "1", 13, nil, [[:v, 1001, 13], [:v, 1089, 1], [:s, 2148]], false],
+    [1, "map:233:14:1", "2", 22, nil, [[:v, 1001, 22], [:v, 1050, 9]], true],
+    [1, "map:709:6:1", "2", 22, nil, [[:v, 1001, 22], [:v, 1051, 5]], true],
+    [0, "map:33:39:1", "2", 24, nil, [[:v, 1001, 24], [:v, 1062, 2]], false],
+    [0, "map:33:50:1", "2", 24, nil, [[:v, 1001, 24], [:v, 1062, 5]], true],
+    [1, "map:725:6:1", "2", 29, nil, [[:v, 1001, 30], [:v, 1070, 1], [:v, 1071, 1], [:v, 1072, 1], [:v, 1073, 1]], true],
+    [1, "map:306:12:1", "2", 30, nil, [[:v, 1001, 30], [:v, 1084, 3]], true],
+    [1, "map:514:72:1", "2", 30, nil, [[:v, 1001, 30], [:v, 1069, 8]], false],
+    [2, "map:2:286:1", "3", 37, nil, [[:v, 1001, 37], [:ss, 2, 286, "A"]], true],
+    [2, "map:645:33:1", "3", 37, nil, [[:v, 1001, 37]], true],
+    [2, "map:445:5:1", "chaos", 4, nil, [[:v, 1143, 5]], true],
+    [2, "map:1432:3:1", "chaos", 20, nil, [[:v, 1143, 21]], true],
+    [1, "map:1832:2:1", "chaos", 21, nil, [[:v, 1143, 21]], false],
+    [2, "ce:9101", "chaos", 21, nil, [[:v, 1143, 21]], true],
+    [2, "ce:9102", "chaos", 21, nil, [[:v, 1143, 21]], true],
+    [2, "ce:9103", "chaos", 21, nil, [[:v, 1143, 21]], true],
+    [2, "map:1276:9:1", "chaos", 21, nil, [[:v, 1143, 21], [:v, 1302, 8], [:v, 1303, 1], [:v, 1317, 2]], false],
+    [2, "map:1461:9:1", "chaos", 21, nil, [[:v, 1143, 21], [:v, 1302, 8], [:v, 1303, 1], [:v, 1338, 2]], false],
+    [2, "map:1836:3:2", "chaos", 21, nil, [[:v, 1143, 21], [:v, 1301, 8], [:v, 1348, 2], [:s, 3228], [:s, 3229]], true],
+    [2, "map:1951:48:1", "chaos", 21, nil, [[:v, 1143, 21], [:v, 1348, 5]], false],
+    [2, "map:1994:101:1", "chaos", 21, nil, [[:v, 1143, 21], [:v, 1301, 8], [:v, 1348, 2], [:s, 3228], [:s, 3229], [:s, 3491]], true]
+  ].map { |row| Vehicle.new(*row) }
 
   # The maps the game sends the player to with the warp ban (switch 100) lifted more often than
   # set, as the field: a ban left on there while no event runs is left over.

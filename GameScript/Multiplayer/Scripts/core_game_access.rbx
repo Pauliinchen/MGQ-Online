@@ -2,6 +2,7 @@
 #  core_game_access.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Named the map a vehicle stands on
 #      Paulinchen  2026-10-11: Named whether a forced move route moves a character
 #                            - Named the event's answer a battle ends with, which tells a story's battle
 #      Paulinchen  2026-10-10: Dropped the party's team, its temporary party with the personas it changed and the split party played, which only the raid boss's fall back read
@@ -116,7 +117,8 @@ module MGQ_MpGame
     :stack => :@stack,
     :system_save_count => :@system_save_count,
 
-    # Window_Command, and Game_Interpreter with the command it runs, the event and the map it runs for.
+    # Window_Command, and Game_Interpreter with the command it runs, the event and the map it runs for;
+    # the map is also the one a Game_Vehicle stands on.
     :list => :@list,
     :index => :@index,
     :depth => :@depth,

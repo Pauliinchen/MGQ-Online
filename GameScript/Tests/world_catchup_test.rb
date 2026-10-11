@@ -2,6 +2,8 @@
 #  world_catchup_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Checked that a vehicle no event of the story gave yet leaves its map, one the player rides once they got off, and that Galda stays past its event
+#                            - Stood in for the map's vehicles and the one the player rides
 #      Paulinchen  2026-10-11: Checked the list of what the catch-up hands out by level for the Levels page, and the level it counts
 #                            - Checked that a Makina comes at its area level and that copies beyond the first go
 #                            - Checked that a telling the player watched takes the key items its scene took, and that a key item taken at the step that gave it does not come back
@@ -213,14 +215,21 @@ class Game_Interpreter
   def execute_command; end
   def ssw(key); false; end
 end
+# A vehicle: the map it stands on, 0 for none.
+class Game_Vehicle
+  def initialize; @map_id = 0; end
+  def set_location(map_id, _x, _y); @map_id = map_id; end
+end
 class Game_Map
   attr_accessor :map_id, :interpreter, :need_refresh
   def initialize; @map_id = 3; @interpreter = Game_Interpreter.new; end
   def events; @events ||= {}; end
+  def vehicle(type); (@vehicles ||= {})[type] ||= Game_Vehicle.new; end
   def update(main = false); end
 end
 class Game_Player
   attr_reader :x, :y
+  attr_accessor :vehicle
   def initialize; @x = 1; @y = 1; end
   def transfer?; false; end
   def perform_transfer; end
@@ -249,7 +258,7 @@ REAL_JOINS = DATA::JOINS
 #
 # @param tables [Hash{Symbol => Array}] The rows by table, the others empty.
 def tables(tables = {})
-  [:JOINS, :REMOVALS, :KEY_ITEMS, :CHESTS, :REWARDS, :SETTINGS, :WARP_FREE_MAPS, :MAKINA].each do |name|
+  [:JOINS, :REMOVALS, :KEY_ITEMS, :CHESTS, :REWARDS, :SETTINGS, :VEHICLES, :WARP_FREE_MAPS, :MAKINA].each do |name|
     DATA.send(:remove_const, name)
     DATA.const_set(name, tables[name] || [])
   end
@@ -669,6 +678,29 @@ check("a level up looks again: a value of the player's own making stays, the enc
 check("and one gone from the roster joins again", $game_party.all_members.map(&:id).include?(77), true)
 $game_map.events.clear
 $game_map.map_id = 3
+
+# A vehicle no event of the story gave yet leaves its map, as Galda and the ship parked on the
+# field by a new game whose setup never ran; one the player rides stays until they got off.
+vehicle_map = lambda { |type| $game_map.vehicle(type).instance_variable_get(:@map_id) }
+tables(:VEHICLES => [DATA::Vehicle.new(2, "map:645:33:1", "3", 37, nil, [[:v, 1001, 37]], true)])
+new_game({ 1001 => 9 }, [], 40)
+$game_map.vehicle(:airship).set_location(2, 186, 1)
+$game_map.vehicle(:ship).set_location(2, 306, 2)
+$game_player.vehicle = $game_map.vehicle(:ship)
+frames(1)
+relay({ "rev" => 26, "wrev" => 26, "p" => 9, "part" => "1" }, packed({ 1001 => 9 }))
+frames(40)
+check("on entering, Galda parked on the field before the story gave it leaves, the ship the player rides stays",
+      [vehicle_map.call(:airship), vehicle_map.call(:ship)], [0, 2])
+$game_player.vehicle = nil
+frames(40)
+check("and the ship leaves once the player got off", vehicle_map.call(:ship), 0)
+new_game({ 1001 => 9 }, [], 40)
+$game_map.vehicle(:airship).set_location(2, 237, 239)
+frames(1)
+relay({ "rev" => 27, "wrev" => 27, "p" => 37, "part" => "3" }, packed({ 1001 => 37 }))
+frames(40)
+check("Galda stays once the world's story is past the event that gives it", vehicle_map.call(:airship), 2)
 
 # A companion the world shared comes with the story values their own join stands for.
 $data_actors[540] = ActorData.new(540, "Amira", 6)
