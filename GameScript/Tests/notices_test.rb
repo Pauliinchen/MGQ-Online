@@ -2,6 +2,7 @@
 #  notices_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Checked that the box at its default moves below the Leader HUD
 #      Paulinchen  2026-10-11: Checked the box's place in the layout: its default below a strip at the top, a place the player left it in with its width and rows, its least size with the keys whole, and drawing anew after a preset change
 #                            - Checked the box fading in and out, an answered invite and a message that runs out fading away, the last row saying how many more wait, a long notification cut to its row and the three spaces between what the keys do
 #                            - Checked the keys drawn whole with a rebound key's longer name
@@ -70,6 +71,7 @@ module MGQ_MpBattlesDuel
   end
 end
 MGQ_MpActions.offer(MGQ_MpBattlesDuel::Offers)
+module MGQ_MpLeaderHud; def self.room; $leader_hud_room.to_i; end; end
 
 load_script "ui_notices"
 
@@ -251,6 +253,10 @@ check("at its default it lies at the top left, WIDTH wide and MAX_ROWS high, off
 MGQ_MpUi.top_room = 30
 notices.tick(true)
 check("a strip at the top moves its default down", [box.call.y, offered.call[1]], [38, 38])
+$leader_hud_room = 100
+notices.tick(true)
+check("and the Leader HUD at the top left moves it below itself", [box.call.y, offered.call[1]], [138, 138])
+$leader_hud_room = 0
 
 $player_ini["ui_notices"] = "100,200,500,160"
 stored.clear

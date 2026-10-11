@@ -2,6 +2,7 @@
 #  ui_notices.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Moved the box at its default below the Leader HUD while it shows at the top left
 #      Paulinchen  2026-10-11: Made the box movable and resizable with the left Alt held, as "Notifications": its width gives the notifications room and its height the rows it shows, never below the first invite's keys beside a readable name and two rows
 #                            - Framed the box in the preset's colors, drawn anew once the preset changes
 #                            - Drew the box in the shared style, fading it in and out, a message that runs out and an invite just answered fading away where it stood
@@ -259,11 +260,11 @@ class Sprite_MpNoticeBox < Sprite
   MIN_HEIGHT = ROW * MIN_ROWS + 2 * SPACING
 
   # Tells where the box draws: where the player left it, else at the top left below a strip of the
-  # mod, as tall as MGQ_MpNotices::MAX_ROWS.
+  # mod and the Leader HUD, as tall as MGQ_MpNotices::MAX_ROWS.
   #
   # @return [Rect] The place, see MGQ_MpUi::Layout.rect.
   def self.rect
-    default = Rect.new(MARGIN, MARGIN + MGQ_MpUi.top_room, WIDTH, ROW * MGQ_MpNotices::MAX_ROWS + 2 * SPACING)
+    default = Rect.new(MARGIN, MARGIN + MGQ_MpUi.top_room + MGQ_MpLeaderHud.room, WIDTH, ROW * MGQ_MpNotices::MAX_ROWS + 2 * SPACING)
     MGQ_MpUi::Layout.rect(LAYOUT, default)
   end
 

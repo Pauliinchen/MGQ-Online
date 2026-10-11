@@ -2,7 +2,7 @@
 #  hotkeys_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Checked the hotkeys' own group in the Mod Config
+#      Paulinchen  2026-10-12: Checked the hotkey that makes the Leader HUD small, and the hotkeys' own group in the Mod Config
 #      Paulinchen  2026-10-11: Checked the hotkey that opens the bug report
 #                            - Checked that a hotkey pressed while a confirm box is open goes to the box
 #      Paulinchen  2026-10-10: Checked that every help says hotkey and keeps its lines short
@@ -41,10 +41,10 @@ load_script "core_hotkeys"
 keys = MGQ_MpHotkeys
 
 # The defaults.
-check("the defaults: B, T, F11, Y, N, E, Tab, J and F3",
+check("the defaults: B, T, F11, Y, N, E, Tab, H, J and F3",
       [keys.code(:wheel), keys.code(:chat), keys.code(:overview), keys.code(:accept), keys.code(:decline), keys.code(:emotes), keys.code(:party_box),
-       keys.code(:join_battle), keys.code(:bug_report)],
-      [0x42, 0x54, 0x7A, 0x59, 0x4E, 0x45, 0x09, 0x4A, 0x72])
+       keys.code(:leader_hud), keys.code(:join_battle), keys.code(:bug_report)],
+      [0x42, 0x54, 0x7A, 0x59, 0x4E, 0x45, 0x09, 0x48, 0x4A, 0x72])
 check("a key is read by its code", [($down = [0x54]) && keys.pressed?(:chat), keys.pressed?(:wheel)], [true, false])
 
 # A confirm box of the mod takes every hotkey while it is open.
@@ -70,10 +70,10 @@ rows = NWConst::Config::MOD_CONTENTS[0..-2]
 check("one key binding per key in the hotkeys' group, before Return", rows.map { |row| [row[:name], row[:keybind]] },
       [["[MGQ Online Hotkeys] Action Wheel", true], ["[MGQ Online Hotkeys] Chat", true], ["[MGQ Online Hotkeys] World Overview", true],
        ["[MGQ Online Hotkeys] Accept Notification", true], ["[MGQ Online Hotkeys] Decline Notification", true],
-       ["[MGQ Online Hotkeys] Emote Wheel", true], ["[MGQ Online Hotkeys] Party Box Size", true],
+       ["[MGQ Online Hotkeys] Emote Wheel", true], ["[MGQ Online Hotkeys] Party Box Size", true], ["[MGQ Online Hotkeys] Leader HUD Size", true],
        ["[MGQ Online Hotkeys] Join Battle", true], ["[MGQ Online Hotkeys] Report a Bug", true]])
 check("Return stays last", NWConst::Config::MOD_CONTENTS.last[:key], :return)
-check("each reads its key from Player.ini", rows.map { |row| row[:value].call }, [0x4B, 0x54, 0x7A, 0x59, 0x4E, 0x45, 0x09, 0x4A, 0x72])
+check("each reads its key from Player.ini", rows.map { |row| row[:value].call }, [0x4B, 0x54, 0x7A, 0x59, 0x4E, 0x45, 0x09, 0x48, 0x4A, 0x72])
 rows[2][:on_change].call(0x4C)
 check("and keeps a new key there", [$player_ini["key_overview"], keys.code(:overview)], ["76", 0x4C])
 

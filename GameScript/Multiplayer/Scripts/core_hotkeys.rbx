@@ -2,7 +2,8 @@
 #  core_hotkeys.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Listed the hotkeys in their own group of the Mod Config, MGQ Online Hotkeys, apart from the settings
+#      Paulinchen  2026-10-12: Added the hotkey that makes the Leader HUD small and large again, H unless bound
+#                            - Listed the hotkeys in their own group of the Mod Config, MGQ Online Hotkeys, apart from the settings
 #      Paulinchen  2026-10-11: Added the hotkey that opens the bug report, F3 unless bound
 #                            - Held every hotkey while a confirm box of the mod is open, which takes the press
 #      Paulinchen  2026-10-10: Told that the party box size hotkey also shows the battle's raid boss bar with or without its title and name
@@ -21,10 +22,10 @@
 
 # The hotkeys the player binds: what opens the action wheel, the emote wheel, the chat and the World
 # overview, what accepts and declines the first invite of the notification box, what makes the
-# party box small, what joins the battle of a player nearby in a Raid World, and what opens the bug
-# report. Each is a key binding in Mod Config Remake when it is installed, listed in the group
-# GROUP, and keeps its key in Patch/Multiplayer/Player.ini, so it holds in every save and every
-# world.
+# party box small, what makes the Leader HUD small, what joins the battle of a player nearby in a
+# Raid World, and what opens the bug report. Each is a key binding in Mod Config Remake when it is
+# installed, listed in the group GROUP, and keeps its key in
+# Patch/Multiplayer/Player.ini, so it holds in every save and every world.
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpHotkeys
@@ -59,6 +60,9 @@ module MGQ_MpHotkeys
     :party_box => Binding.new("key_party_box", 0x09, :mp_key_party_box, "Party Box Size",
                               "The hotkey that makes the party box at the top right small, with only names and pings, and full again.\n" \
                               "In a raid boss battle, it shows the boss's HP bar with or without its title and name."),
+    :leader_hud => Binding.new("key_leader_hud", 0x48, :mp_key_leader_hud, "Leader HUD Size",
+                               "The hotkey that makes the Leader HUD at the top left of the map small, with the map sprite and the bars alone,\n" \
+                               "and large again."),
     :join_battle => Binding.new("key_join_battle", 0x4A, :mp_key_join_battle, "Join Battle",
                                 "The hotkey that joins the battle of a player near you in a Raid World, while the prompt below your character shows."),
     :bug_report => Binding.new("key_bug_report", 0x72, :mp_key_bug_report, "Report a Bug",

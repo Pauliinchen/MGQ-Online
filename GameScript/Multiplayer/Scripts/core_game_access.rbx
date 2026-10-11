@@ -2,7 +2,8 @@
 #  core_game_access.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Named the map a vehicle stands on
+#      Paulinchen  2026-10-12: Named the map scene's map name and medal windows, which the Leader HUD moves below itself
+#                            - Named the map a vehicle stands on
 #      Paulinchen  2026-10-11: Named whether a forced move route moves a character
 #                            - Named the event's answer a battle ends with, which tells a story's battle
 #      Paulinchen  2026-10-10: Dropped the party's team, its temporary party with the personas it changed and the split party played, which only the raid boss's fall back read
@@ -130,6 +131,10 @@ module MGQ_MpGame
 
     # Scene_Map: whether the game's menu was asked for.
     :menu_calling => :@menu_calling,
+
+    # Scene_Map: the windows that open at the top left, which the Leader HUD moves below itself.
+    :map_name_window => :@map_name_window,
+    :gain_medal_window => :@gain_medal_window,
 
     # Game_Character: whether a forced move route moves the character instead of its own.
     :move_route_forcing => :@move_route_forcing,

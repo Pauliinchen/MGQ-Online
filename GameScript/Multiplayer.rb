@@ -2,6 +2,7 @@
 #  Multiplayer.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Loaded ui_leader_hud.rbx after ui_raid_bar.rbx, before the notification box that makes room for it
 #      Paulinchen  2026-10-11: Cut the session's log to its newest 2 MB once it passes 4 MB, so it never grows without end and a bug report still sends where the trouble is
 #                            - Loaded ui_bug_report.rbx last, the in-game bug report, and named the mp_report_* exports it calls
 #                            - Loaded world_opening.rbx after world_catchup.rbx, which runs a new game's opening setup without its scene in a Raid World past it
@@ -131,7 +132,7 @@ module MGQ_Multiplayer
     battles_sync battles_sync_wire battles_sync_recorder battles_sync_playback battles_sync_live
     battles_balance_pvp battles_pvp battles_pvp_backline battles_pvp_mirror battles_pvp_lobby battles_duel battles_team
     trade ui_trade
-    world_overview ui_party_box ui_edge_arrows ui_raid_bar ui_notices ui_bug_report
+    world_overview ui_party_box ui_edge_arrows ui_raid_bar ui_leader_hud ui_notices ui_bug_report
   ]
 
   # Extension of the scripts, which the mod loader skips, since only this script may load them.
