@@ -43,6 +43,8 @@ This guide names the default hotkeys. To bind others, open *Mod Config → MGQ O
 
 The raid boss bar's red HP stays red in both.
 
+**Scrolling.** The mouse wheel scrolls the list or text it points at: the world list and its choices, the players, mods and description boxes, the mod picker, the trade offers and your bag, the open chat log (three rows a notch), a description you type, and every page of the World overview. A thin scrollbar shows beside each of them while it holds more than fits.
+
 **Moving and resizing.** Hold the left **Alt** and every box of the mod you can move gets a white outline with its name, and the screen names the controls at its bottom:
 
 - Drag inside a box to move it.
@@ -266,7 +268,7 @@ Press **E** on the map for a ring of eight emotes around your character: a jump,
 
 ![The World overview](images/world-overview.png)
 
-Press **F11** or pick the middle of the action wheel; **F11**, **B**, cancel, numpad **0** or a click outside closes it. The world keeps running behind it. The title names the world, its type and a Raid World's difficulty ("World | Raid | Hard") and your party's size, and the tabs below it hold the pages **Players**, **World**, **Quests** and in a Raid World **Levels**: **Left** and **Right**, or a click on a tab, switch between them.
+Press **F11** or pick the middle of the action wheel; **F11**, **B**, cancel, numpad **0** or a click outside closes it. The world keeps running behind it. The title names the world, its type and a Raid World's difficulty ("World | Raid | Hard") and your party's size, and the tabs below it hold the pages **Players**, **World**, **Quests** and in a Raid World **Unlocks**: **Left** and **Right**, or a click on a tab, switch between them. The mouse wheel scrolls whatever it points at, and a scrollbar shows wherever there is more than fits.
 
 **The Players page:**
 
@@ -274,12 +276,13 @@ Press **F11** or pick the middle of the action wheel; **F11**, **B**, cancel, nu
 - Party leaders have a crown, a party's size shows as "2 / 4", and your party's members are green, you yellow. A player whose invite or challenge reaches you shows "Invites you to a party" or "Challenges you to a duel" in their row.
 - **Pick a player** with the arrow keys and confirm, or click them, to invite them to your party or accept their invite, and to challenge them to a duel or accept theirs, wherever in the world they are. A party invite from afar stands for a minute; "Inviting to a party (58 s) . . ." above your head counts it down. As your party's leader you also remove members here, after a question ("Remove \<name> from the party?"). On your own row you can leave your party, after a question too, or stop inviting.
 
+**The World, Quests and Unlocks pages** share one layout: a head at the top with a picture, a list at the left and a reading pane at the right that shows all of what you picked. **Up** and **Down** or a click pick from the list, **Page Up** and **Page Down** read on in the pane, and the mouse wheel scrolls the list or the pane it points at.
+
 **The World page:**
 
-- The world's name, its type (*Classic* or *Raid*), its difficulty (*Per player* in a Classic world), and its players online of its seats ("3 / 8").
-- In a Raid World also where the world's story stands, what to do next and its raid bosses, see [World overview](RAID_WORLDS.md#world-overview) of the Raid World page.
-- While you look at the World page, a gold corner on the *Players* tab tells you an invite, challenge or trade offer waits there; **Y** and **N** answer it once you're back on the Players page or have closed the overview.
-- **Up** and **Down** scroll the page.
+- **The head:** the world's name, its type and difficulty ("Raid | Hard", *Per player* in a Classic world), its players online of its seats ("Players online: 3 / 8") and where the world's story stands.
+- **The list:** the **objective**, what to do next in the story, then in a Raid World every **raid boss** under a heading per part of the story, each with a thin gauge of the HP the world left it. The pane shows a boss's part, its tier and what the tier gives its enemies, a larger gauge and who last hurt it. See [World overview](RAID_WORLDS.md#world-overview) of the Raid World page.
+- While you look at another page, a gold corner on the *Players* tab tells you an invite, challenge or trade offer waits there; **Y** and **N** answer it once you're back on the Players page or have closed the overview.
 
 **The Quests page** shows the quests under way in your game, in every world:
 
@@ -290,9 +293,9 @@ Press **F11** or pick the middle of the action wheel; **F11**, **B**, cancel, nu
 - **The reading pane** at the right: the whole text of the quest you picked, each message as its own paragraph, under a companion quest the companion asking for help.
 - *Mod Config → MGQ Online Settings → Quest Portraits* shows Amira and the companions by their map **Sprites** (the default) or their **Faces**. A companion whose name the translation hasn't reached yet has no portrait.
 
-**Up** and **Down** or a click pick a quest, the main quest included; **Page Up** and **Page Down** scroll a long text. The page shows the quests whether or not Amira's information network or the Pocket Castle is ready yet, and in the game's language, so parts the translation hasn't reached show in Japanese.
+The main quest at the top can be picked too. On the World, Quests and Unlocks pages every group in the list folds: confirm or a click on its title (▾ open, ▸ folded) hides or shows its rows. The page shows the quests whether or not Amira's information network or the Pocket Castle is ready yet, and in the game's language, so parts the translation hasn't reached show in Japanese.
 
-**The Levels page** (Raid Worlds only) shows what catching up gives you by level, see [World overview](RAID_WORLDS.md#world-overview) of the Raid World page.
+**The Unlocks page** (Raid Worlds only) shows Luka with your formation's catch-up experience at the top, and what catching up gives you by level: the levels you passed fold away under *Passed*, the others follow under *Coming up*, and the pane lists everything a level brings, in groups of as many columns as their names fit. See [World overview](RAID_WORLDS.md#world-overview) of the Raid World page.
 
 ### Notifications
 
