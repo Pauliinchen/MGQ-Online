@@ -2,7 +2,8 @@
 #  world_catchup_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Checked that a job or race item any player got comes to every other player, once
+#      Paulinchen  2026-10-12: Checked that a job or race item the player held before is noted on entering
+#                            - Checked that a job or race item any player got comes to every other player, once
 #                            - Read the catch-up's gifts from its log, as it tells none
 #                            - Checked that only a page that applies now and sets the encounters the other way keeps them with the map
 #                            - Checked that a move on at a level cap whose checkpoint is dropped makes only the next story's rewards wait, and that a gate noted while the player plays the world's story holds nothing back
@@ -1132,6 +1133,13 @@ check("another player gets it with the world's story, whatever their level, with
 $game_party.gain_item($data_items[616], 1)
 frames(40)
 check("its chest opened afterwards leaves one", $game_party.items[616], 1)
+new_game({ 1001 => 9 }, [], 10)
+$game_party.items[616] = 1
+MGQ_MpWorldCatchup.instance_variable_set(:@unlock_items, nil)
+frames(1)
+relay({ "rev" => 32, "wrev" => 32, "p" => 9, "part" => "1" }, packed({ 1001 => 9 }))
+frames(40)
+check("one the player held before, as from an earlier version, is noted for the world on entering", $game_self_switches[[0, 616, "F"]], true)
 
 # What the catch-up hands out by level that the world unlocked, for the World overview's Levels page.
 tables(:JOINS => [join.new(77, 77, "map:6:30:2", "1", 7, nil, [[:v, 1001, 7]], 7, :start, 1, true),

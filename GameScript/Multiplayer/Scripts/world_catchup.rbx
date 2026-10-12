@@ -2,7 +2,8 @@
 #  world_catchup.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Gave every item unlocking a job or a race any player of the world got to every other player
+#      Paulinchen  2026-10-12: Noted the items unlocking a job or a race a player holds on every look, so those got before the update reach the others too
+#                            - Gave every item unlocking a job or a race any player of the world got to every other player
 #                            - Logged what the catch-up gave instead of telling it, which the World overview's Unlocks page shows
 #                            - Listed what moving on from a part brings along, and each companion's and Makina's id
 #                            - Left the random encounters to a map only while a page of it that applies now sets them the other way
@@ -1013,6 +1014,7 @@ module MGQ_MpWorldCatchup
     settle(story, world)
     lift_warp_ban
     check_vehicles(story, world)
+    note_held_items
     log("looked at everything the story owes the player once")
     tell_gifts(gifts.compact)
   end
@@ -1580,6 +1582,14 @@ module MGQ_MpWorldCatchup
     log("noted #{item.name} as found for the world")
   rescue => e
     log_once(:found, "noting a found item failed: #{e.class}: #{e.message}")
+  end
+
+  # Notes every item unlocking a job or a race the player holds as found for the world, as gained
+  # does for one they get: one got before the world noted them, or in a version before, still
+  # reaches the other players.
+  def self.note_held_items
+    @unlock_items ||= ($data_items || []).select { |item| unlock_item?(item) }
+    @unlock_items.each { |item| gained(item, 1) if $game_party.item_number(item) > 0 }
   end
 
   # Reports whether an item unlocks a job or a race.
