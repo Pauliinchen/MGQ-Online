@@ -2,7 +2,8 @@
 //  gate.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-12: Tested the update code on the 400 of a world room and the World Admin tool passing with 0.0.0-dev
+//      Paulinchen  2026-10-12: Tested that the world directory, the mod catalog and the Raid World admin routes ask for X-MGQ-Features
+//                            - Tested the update code on the 400 of a world room and the World Admin tool passing with 0.0.0-dev
 //                            - Tested 400 without a code for a world room, a request without X-MGQ-Version as 0.6.4, the version gate on the world directory's and the mod catalog's routes and only 0.0.0-dev as a development build
 //                            - Created
 //
@@ -27,14 +28,15 @@ function at(path) {
   return new URL(`https://relay.test${path}`);
 }
 
-test("the routes only games use and the world rooms ask for X-MGQ-Features, the PvP rooms and the admin tool's routes only for a version", () => {
-  for (const path of [`/v1/worlds/${WORLD}/story`, `/v1/worlds/${WORLD}/bosses/Lilith`, "/v1/trades", `/v1/trades/${WORLD}/commit`, "/v1/reports", `/v1/world/${WORLD}`]) {
+test("the routes games and the World Admin tool use and the world rooms ask for X-MGQ-Features, the PvP rooms only for a version", () => {
+  for (const path of [
+    `/v1/worlds/${WORLD}/story`, `/v1/worlds/${WORLD}/bosses/Lilith`, "/v1/trades", `/v1/trades/${WORLD}/commit`, "/v1/reports", `/v1/world/${WORLD}`,
+    "/v1/worlds", `/v1/worlds/${WORLD}/edit`, `/v1/worlds/${WORLD}/start`, `/v1/worlds/${WORLD}/chat`, `/v1/worlds/${WORLD}/raid`, `/v1/worlds/${WORLD}/raid/route/clear`, "/v1/mods", "/v1/mods/levelcap/file",
+  ]) {
     assert.equal(gateOf(at(path)), GATE.features, path);
   }
 
-  for (const path of [`/v1/room/${WORLD}`, "/v1/worlds", `/v1/worlds/${WORLD}/edit`, `/v1/worlds/${WORLD}/start`, `/v1/worlds/${WORLD}/chat`, `/v1/worlds/${WORLD}/raid`, `/v1/worlds/${WORLD}/raid/route/clear`, "/v1/mods", "/v1/mods/levelcap/file"]) {
-    assert.equal(gateOf(at(path)), GATE.version, path);
-  }
+  assert.equal(gateOf(at(`/v1/room/${WORLD}`)), GATE.version);
 
   for (const path of ["/internal/admit", "/v1/worldsx", "/"]) {
     assert.equal(gateOf(at(path)), null, path);
@@ -109,7 +111,15 @@ test("a world room refuses with 400 and the update code, a PvP room with 426 and
   assert.deepEqual(updateRefusal(at("/v1/worlds"), null, "0.5.3"), { status: 426, reason: UPDATE_NEEDED, socket: false, code: null });
   assert.deepEqual(updateRefusal(at("/v1/mods"), null, null, "0.7.0"), { status: 426, reason: UPDATE_NEEDED, socket: false, code: null });
   assert.equal(updateRefusal(at("/v1/trades"), "raid", null), null);
-  assert.equal(updateRefusal(at("/v1/worlds"), null, null), null, "the directory asks no features");
+  assert.deepEqual(updateRefusal(at("/v1/worlds"), null, null), { status: 426, reason: UPDATE_NEEDED, socket: false, code: null }, "a game before 0.6.0 or an older World Admin tool build");
+  assert.deepEqual(updateRefusal(at(`/v1/worlds/${WORLD}/raid`), null, "0.0.0-dev"), { status: 426, reason: UPDATE_NEEDED, socket: false, code: null }, "the version alone is not enough");
   assert.equal(updateRefusal(at("/v1/mods"), "admin", "0.0.0-dev", "0.9.0"), null, "the World Admin tool");
+  assert.equal(updateRefusal(at(`/v1/worlds/${WORLD}/raid/route/clear`), "admin", "0.0.0-dev", "0.7.0"), null, "the World Admin tool on a Raid World admin route");
+
+  for (const path of ["/v1/worlds", `/v1/worlds/${WORLD}/raid`, "/v1/mods"]) {
+    assert.equal(updateRefusal(at(path), "raid", null, "0.6.4"), null, `${path}: a released 0.6.x game`);
+    assert.notEqual(updateRefusal(at(path), "raid", null, "0.6.5"), null, `${path}: a released 0.6.x game once the lowest is above 0.6.4`);
+  }
+
   assert.equal(updateRefusal(at(`/v1/world/${WORLD}`), "raid", null, "0.6.4"), null, "a released 0.6.4 game");
 });

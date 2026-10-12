@@ -2,7 +2,8 @@
 //  gate.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-12: Named the update code in X-MGQ-Refusal on the 400 of a world room refused to a game too old
+//      Paulinchen  2026-10-12: Held the world directory's and the mod catalog's routes, the Raid World admin routes included, to X-MGQ-Features as well
+//                            - Named the update code in X-MGQ-Refusal on the 400 of a world room refused to a game too old
 //                            - Refused a world room of a game too old with 400 and no X-MGQ-Refusal code, counted a request without X-MGQ-Version as 0.6.4, held the world directory's and the mod catalog's routes to the lowest version and passed only the 0.0.0-dev stamp as a development build
 //                            - Created
 //
@@ -86,18 +87,15 @@ const VERSION_PATTERN = /^(\d+(?:\.\d+)*)(-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?
 /**
  * Tells what a route asks of a game's version.
  *
- * The world directory's and the mod catalog's other routes ask no X-MGQ-Features, since builds of the
- * World Admin tool before it named `admin` use them without it.
- *
  * @param {URL} url The request's address.
- * @returns {string | null} GATE.features for the routes only games use and the world rooms; GATE.version for the PvP rooms, which released games open without X-MGQ-Features, and for the world directory's and the mod catalog's other routes, the Raid World admin routes included; null for every other route.
+ * @returns {string | null} GATE.features for the world directory's and the mod catalog's routes, the Raid World admin, story and boss routes included, the trades, the bug reports and the world rooms; GATE.version for the PvP rooms, which released games open without X-MGQ-Features; null for every other route.
  */
 export function gateOf(url) {
-  if (storyRouteOf(url) || bossRouteOf(url) || routeIs(url, "trades") || routeIs(url, "reports") || routeIs(url, "world")) {
+  if (storyRouteOf(url) || bossRouteOf(url) || routeIs(url, "trades") || routeIs(url, "reports") || routeIs(url, "world") || routeIs(url, "worlds") || routeIs(url, "mods")) {
     return GATE.features;
   }
 
-  return routeIs(url, "room") || routeIs(url, "worlds") || routeIs(url, "mods") ? GATE.version : null;
+  return routeIs(url, "room") ? GATE.version : null;
 }
 
 /**
