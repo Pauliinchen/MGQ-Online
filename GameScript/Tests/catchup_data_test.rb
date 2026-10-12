@@ -2,7 +2,8 @@
 #  catchup_data_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Checked the vehicle rows, Galda's first at Mt. Saint Amos and none for the Escape spell
+#      Paulinchen  2026-10-12: Checked that the chests of the job items Amira's side quests ask for are world chests
+#                            - Checked the vehicle rows, Galda's first at Mt. Saint Amos and none for the Escape spell
 #                            - Checked that every ore comes from a world-wide chest or a key item row, and the chest flags of the Chaos forge's ores
 #      Paulinchen  2026-10-11: Checked that a talk join counts once a story page that needs the companion in the party ran
 #                            - Read the generator from MGQ-Paradox-Event-Checker next to the repository, and left its rules unchecked without it
@@ -98,7 +99,7 @@ check("Granberia joins and then leaves in one event at Part 2's step 24, in that
 orb = DATA::KEY_ITEMS.select { |row| row.item == 596 && row.part.nil? }.map(&:amount)
 check("an item given and taken with no step between comes first, then goes", orb, [1, -1])
 
-check("the chests that hold key items are the story's 25 and 11 of ore", DATA::CHESTS.size, 36)
+check("the chests that hold key items are the story's 25, 11 of ore and 57 of items that unlock a job or a race", DATA::CHESTS.size, 93)
 check("the Ghost Ship's Purple Orb chest is one of them", DATA::CHESTS.find { |chest| chest.key == [371, 12, "A"] }.items, [541])
 ores = (151..158).to_a + (943..947).to_a
 check("every ore the blacksmiths ask for comes from a chest or a key item row",
@@ -151,6 +152,9 @@ check("a story variable named after a temple is no scratch, unlike a temporary o
       [tool.story_variable?(1022), tool.story_variable?(1068), tool.story_variable?(1075), tool.story_variable?(908)], [true, true, true, false])
 check("so the Silver Orb, given once the temple's event ran, comes to every player of the world",
       DATA::KEY_ITEMS.find { |row| row.item == 542 }.values_at(2, 6, 7), ["map:149:107:1", [[:v, 1001, 30], [:v, 1068, 3]], true])
+
+check("the chests of the job items Amira's side quests ask for are the world's, as those of key items",
+      [[[57, 31, "A"], 616], [[588, 9, "A"], 606], [[348, 4, "A"], 614]].map { |key, item| DATA::CHESTS.any? { |row| row.key == key && row.items.include?(item) } }, [true] * 3)
 
 # The ids of the reference install's Library Flags, "Library Flag: ..." and the untranslated rest.
 library = [201..420, 5201..5600]

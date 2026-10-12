@@ -2,7 +2,8 @@
 #  world_catchup.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Listed what moving on from a part brings along, and each companion's and Makina's id
+#      Paulinchen  2026-10-12: Gave every item unlocking a job or a race any player of the world got to every other player
+#                            - Listed what moving on from a part brings along, and each companion's and Makina's id
 #                            - Left the random encounters to a map only while a page of it that applies now sets them the other way
 #                            - Let the story's rewards wait after a move on at a level cap only for the first story laid over the player no longer behind, and never once they play the world's story, as a dropped checkpoint kept them waiting for every later story
 #                            - Put a vehicle the story gave that stands on no map back at the start the game names for it, on entering, after a load, a level up and every story laid over the player's, as a checkpoint or the world's story past Mt. Saint Amos left Galda nowhere
@@ -52,7 +53,8 @@
 # The world's key items and the chests that hold them are the whole world's: once the world's story
 # is past one, every player gets it, whatever their part, and a key item whose event is only there
 # to play up to its amount. A player who then holds every orb of Part 2 plays the event that moves
-# the story on, which only an orb's own event calls. Every Makina comes once the player's level
+# the story on, which only an orb's own event calls. Every item unlocking a job or a race that any
+# player of the world got comes to every other player. Every Makina comes once the player's level
 # reaches the area level of its easiest place, one of each.
 #
 # Companions, Makina and the story's skills and items go by the player's real level alone: a cap
@@ -313,6 +315,7 @@ module MGQ_MpWorldCatchup
       note_roster
       check_orbs
       check_makina
+      check_found_items
       check_counts
     end
     send_shared
@@ -1535,20 +1538,72 @@ module MGQ_MpWorldCatchup
   def self.check_makina
     gifts = DATA::MAKINA.map do |row|
       item = MGQ_MpGame.item("i", row.item)
-      next unless item
+      next unless item && !trim_copies(item)
 
-      held = $game_party.item_number(item)
-      if held > 1
-        $game_party.lose_item(item, held - 1)
-        log("took #{item.name} x#{held - 1}: a Makina counts once")
-        next
-      end
-      held == 0 && reached?(row.level) ? give("i", row.item, 1, "makina:#{row.item} at level #{row.level}") : nil
+      $game_party.item_number(item) == 0 && reached?(row.level) ? give("i", row.item, 1, "makina:#{row.item} at level #{row.level}") : nil
     end.compact
     return if gifts.empty?
 
     shown = gifts.first(4).join(", ")
     notice(:makina, "Your level brought you Makina: #{shown}#{gifts.size > 4 ? " and #{gifts.size - 4} more" : ''}.")
+  end
+
+  # Takes back every copy of an item beyond the first, as a Makina or an item unlocking a job or a
+  # race counts once.
+  #
+  # @param item [RPG::Item] The item.
+  # @return [Boolean] Whether there were more.
+  def self.trim_copies(item)
+    held = $game_party.item_number(item)
+    return false unless held > 1
+
+    $game_party.lose_item(item, held - 1)
+    log("took #{item.name} x#{held - 1}: it counts once")
+    true
+  end
+
+  # The self switches that tell which items unlocking a job or a race a player of the world got,
+  # [FOUND_MAP, item, FOUND_LETTER]: no map has the id 0, so no event reads them, and they go with
+  # the world's story as any other self switch.
+  FOUND_MAP = 0
+  FOUND_LETTER = "F"
+
+  # Notes an item unlocking a job or a race the player gained as found for the world, so every other
+  # player gets it too.
+  #
+  # @param item [RPG::BaseItem, nil] The item.
+  # @param amount [Integer] How many.
+  def self.gained(item, amount)
+    return unless amount.to_i > 0 && active? && unlock_item?(item)
+
+    key = [FOUND_MAP, item.id, FOUND_LETTER]
+    return if $game_self_switches[key]
+
+    $game_self_switches[key] = true
+    log("noted #{item.name} as found for the world")
+  rescue => e
+    log_once(:found, "noting a found item failed: #{e.class}: #{e.message}")
+  end
+
+  # Reports whether an item unlocks a job or a race.
+  #
+  # @param item [RPG::BaseItem, nil] The item.
+  # @return [Boolean] Whether it does.
+  def self.unlock_item?(item)
+    item.is_a?(RPG::Item) && item.description.to_s =~ UNLOCK_ITEM_TAG ? true : false
+  end
+
+  # Hands out every item unlocking a job or a race the world found that the player lacks, and takes
+  # back copies beyond the first, as a chest of one gives a second.
+  def self.check_found_items
+    MGQ_MpStoryState.data_of($game_self_switches).each do |key, on|
+      next unless on && key[0] == FOUND_MAP && key[2] == FOUND_LETTER
+
+      item = MGQ_MpGame.item("i", key[1])
+      next unless item && !trim_copies(item)
+
+      give("i", key[1], 1, "found:#{key[1]}") if $game_party.item_number(item) == 0
+    end
   end
 
   # Turns on the chest flags a world-wide chest turns on, which are each player's own: the Chaos
@@ -2020,6 +2075,9 @@ end
 # Game hooks of this script alone, through core_hooks.rbx.
 
 begin
+  # An item unlocking a job or a race the player gets is the world's.
+  MGQ_MpHooks.after(Game_Party, :gain_item, "world_catchup") { |item, amount, *_| MGQ_MpWorldCatchup.gained(item, amount) }
+
   # A companion a story event of the player's own hands out before the join's gate waits for it.
   MGQ_MpHooks.around(Game_Party, :add_actor, "world_catchup") do |_party, args, original|
     MGQ_MpWorldCatchup.hold_join?(args[0]) ? nil : original.call

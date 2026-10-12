@@ -2,7 +2,8 @@
 #  world_catchup_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Checked that only a page that applies now and sets the encounters the other way keeps them with the map
+#      Paulinchen  2026-10-12: Checked that a job or race item any player got comes to every other player, once
+#                            - Checked that only a page that applies now and sets the encounters the other way keeps them with the map
 #                            - Checked that a move on at a level cap whose checkpoint is dropped makes only the next story's rewards wait, and that a gate noted while the player plays the world's story holds nothing back
 #                            - Checked that Galda the story gave comes back to its start once a checkpoint or the world's story past its event is laid over, and that a vehicle on a map or one the player rides is never moved
 #                            - Stood in for the vehicles' start positions and a vehicle's tile
@@ -158,8 +159,8 @@ module RPG
   CommonEvent = Struct.new(:list)
   # An item of the database.
   class Item
-    attr_reader :id, :name
-    def initialize(id, name); @id = id; @name = name; end
+    attr_reader :id, :name, :description
+    def initialize(id, name, description = ""); @id = id; @name = name; @description = description; end
     def key_item?; true; end
   end
   Skill = Struct.new(:id, :name)
@@ -177,6 +178,7 @@ end
 $data_items = Array.new(730)
 [[501, "Purple Orb"], [502, "Pass"], [503, "Key"], [504, "Medal"], [505, "Key to Hades"], [537, "Red Orb"], [538, "Blue Orb"], [540, "Yellow Orb"],
  [541, "Green Orb"], [542, "Silver Orb"], [600, "Herb"], [700, "Auto Crossbow"], [701, "Bio Blaster"]].each { |id, name| $data_items[id] = RPG::Item.new(id, name) }
+$data_items[616] = RPG::Item.new(616, "Chef's License", "[Job] Allows access to the Cook job.")
 $data_weapons = Array.new(10)
 $data_armors = Array.new(10)
 $data_skills = Array.new(3000)
@@ -1106,6 +1108,26 @@ $game_actors[1].cap = 10
 frames(40)
 check("nor one above a cap of another mod the player is held at", $game_party.items[701], 0)
 $game_actors[1].cap = 9999
+
+# An item unlocking a job or a race any player got is the whole world's.
+new_game({ 1001 => 9 }, [], 10)
+frames(1)
+relay({ "rev" => 30, "wrev" => 30, "p" => 9, "part" => "1" }, packed({ 1001 => 9 }))
+frames(40)
+$game_party.gain_item($data_items[600], 1)
+$game_party.gain_item($data_items[616], 1)
+check("a job item the player gains is noted for the world's story, another item not",
+      [$game_self_switches[[0, 616, "F"]], $game_self_switches[[0, 600, "F"]], MGQ_MpStoryState.story_lists([[], [], MGQ_MpStoryState.data_of($game_self_switches)], false)["ss"]],
+      [true, false, "0.616.F"])
+new_game({ 1001 => 9 }, [], 1)
+frames(1)
+relay({ "rev" => 31, "wrev" => 31, "p" => 9, "part" => "1" }, packed({ 1001 => 9 }, [], { [0, 616, "F"] => true }))
+frames(40)
+check("another player gets it with the world's story, whatever their level, without a notice",
+      [$game_party.items[616], $messages], [1, []])
+$game_party.gain_item($data_items[616], 1)
+frames(40)
+check("its chest opened afterwards leaves one", $game_party.items[616], 1)
 
 # What the catch-up hands out by level that the world unlocked, for the World overview's Levels page.
 tables(:JOINS => [join.new(77, 77, "map:6:30:2", "1", 7, nil, [[:v, 1001, 7]], 7, :start, 1, true),
