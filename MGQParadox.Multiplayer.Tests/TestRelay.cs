@@ -2,7 +2,8 @@
 //  TestRelay.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-12: Kept the address and the X-MGQ-Version header of every request, for the tests
+//      Paulinchen  2026-10-12: Kept the level caps of story writes
+//                            - Kept the address and the X-MGQ-Version header of every request, for the tests
 //                            - Turned world room and PvP room requests away with 426 once a test says so, with or without a text in X-MGQ-Refusal, as the relay does for a game too old for it
 //                            - Turned world room requests of a game too old away with 400 and the code "update" instead, as the relay does
 //                            - Turned world room requests away with a status and code a test sets, as an older or self-hosted relay may
@@ -2138,6 +2139,11 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
         private readonly SortedSet<int> _comps = [];
 
         /// <summary>
+        /// The level caps the story unlocked.
+        /// </summary>
+        private readonly SortedSet<int> _caps = [];
+
+        /// <summary>
         /// Each part's checkpoint, its state with the sealed story.
         /// </summary>
         private readonly Dictionary<string, JsonObject> _checkpoints = [];
@@ -2188,6 +2194,7 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
                 ["done"] = new JsonArray(_done.Select(route => (JsonNode)route).ToArray()),
                 ["end"] = _end?.DeepClone(),
                 ["comps"] = new JsonArray(_comps.Select(id => (JsonNode)id).ToArray()),
+                ["caps"] = new JsonArray(_caps.Select(cap => (JsonNode)cap).ToArray()),
                 ["checkpoints"] = new JsonArray(_checkpoints.Keys.Select(part => (JsonNode)part).ToArray()),
             };
 
@@ -2249,6 +2256,8 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
             {
                 _end = counters["end"]?.DeepClone();
             }
+
+            _caps.UnionWith(counters["caps"]?.AsArray().Select(node => node!.GetValue<int>()) ?? []);
 
             _counters = new JsonObject { ["p"] = counters["p"]!.GetValue<int>(), ["r1141"] = counters["r1141"]!.GetValue<int>(), ["r1142"] = counters["r1142"]!.GetValue<int>(), ["r1143"] = counters["r1143"]!.GetValue<int>(), ["clear"] = (counters["clear"] ?? new JsonArray()).DeepClone() };
             _blob = body["blob"]!.GetValue<string>();

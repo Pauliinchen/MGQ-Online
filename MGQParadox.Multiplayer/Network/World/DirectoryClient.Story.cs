@@ -2,6 +2,7 @@
 //  DirectoryClient.Story.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-12: Carried the level caps of the world's story
 //      Paulinchen  2026-10-09: Logged the fetch of a world's story only when its outcome changed or it was slow, and let a boss route's request name the client it is sent with
 //      Paulinchen  2026-10-08: Created
 //
@@ -215,10 +216,11 @@ internal sealed record StoryEnd(int Map, int X, int Y)
 /// <param name="Done">The routes the world finished, in the order it did.</param>
 /// <param name="End">Where the last story teleport went, <see langword="null"/> for nowhere.</param>
 /// <param name="Comps">The companions the world shares, by actor id.</param>
+/// <param name="Caps">The level caps the world's story unlocked, lowest first.</param>
 /// <param name="Checkpoints">The parts the world keeps a checkpoint of.</param>
 /// <param name="Blob">The sealed story, empty before the first write.</param>
 /// <param name="Code">The code a refusal named why with, empty otherwise.</param>
-internal sealed record StoryState(long Rev, long WRev, int P, int R1141, int R1142, int R1143, IReadOnlyList<string> Clear, string Part, string Route, IReadOnlyList<string> Done, StoryEnd? End, IReadOnlyList<int> Comps, IReadOnlyList<string> Checkpoints, string Blob, string Code)
+internal sealed record StoryState(long Rev, long WRev, int P, int R1141, int R1142, int R1143, IReadOnlyList<string> Clear, string Part, string Route, IReadOnlyList<string> Done, StoryEnd? End, IReadOnlyList<int> Comps, IReadOnlyList<int> Caps, IReadOnlyList<string> Checkpoints, string Blob, string Code)
 {
     /// <summary>
     /// The code of a 404 for a part the world keeps no checkpoint of.
@@ -243,6 +245,7 @@ internal sealed record StoryState(long Rev, long WRev, int P, int R1141, int R11
         Texts(element, "done"),
         EndOf(element),
         Numbers(element, "comps"),
+        Numbers(element, "caps"),
         Texts(element, "checkpoints"),
         Text(element, "blob"),
         Text(element, "code"));
@@ -308,7 +311,8 @@ internal sealed record StoryState(long Rev, long WRev, int P, int R1141, int R11
 /// <param name="Clear">The finished routes, by their clear switches 7096 (ad), 7097 (mr) and 7039 (chaos).</param>
 /// <param name="End">Where the last story teleport went, <see langword="null"/> to forget it.</param>
 /// <param name="KeepEnd">Whether to keep the endpoint the relay has, leaving <paramref name="End"/> out.</param>
-internal sealed record StoryCounters(int P, int R1141, int R1142, int R1143, IReadOnlyList<string> Clear, StoryEnd? End, bool KeepEnd)
+/// <param name="Caps">The level caps the story unlocked, each once, lowest first.</param>
+internal sealed record StoryCounters(int P, int R1141, int R1142, int R1143, IReadOnlyList<string> Clear, StoryEnd? End, bool KeepEnd, IReadOnlyList<int> Caps)
 {
     /// <summary>
     /// The routes, by the names the relay and the game script use.
@@ -316,9 +320,19 @@ internal sealed record StoryCounters(int P, int R1141, int R1142, int R1143, IRe
     public static readonly string[] Routes = ["ad", "mr", "chaos"];
 
     /// <summary>
+    /// The most level caps a write names, as the relay takes them.
+    /// </summary>
+    public const int MaxCaps = 200;
+
+    /// <summary>
+    /// The highest level cap the relay takes.
+    /// </summary>
+    public const int MaxCap = 9999;
+
+    /// <summary>
     /// Reads the counters the game script hands over.
     /// </summary>
-    /// <param name="text"><c>key=value</c> pairs separated by semicolons: <c>p</c>, <c>r1141</c>, <c>r1142</c> and <c>r1143</c> as whole numbers of 0 or more, <c>clear</c> the finished routes separated by commas, and <c>end</c> as <c>map,x,y</c>, empty to forget the endpoint, left out to keep it.</param>
+    /// <param name="text"><c>key=value</c> pairs separated by semicolons: <c>p</c>, <c>r1141</c>, <c>r1142</c> and <c>r1143</c> as whole numbers of 0 or more, <c>clear</c> the finished routes separated by commas, <c>end</c> as <c>map,x,y</c>, empty to forget the endpoint, left out to keep it, and <c>caps</c> the level caps the story unlocked separated by commas.</param>
     /// <returns>The counters, or <see langword="null"/> when the text is not as it should be.</returns>
     public static StoryCounters? Parse(string text)
     {
@@ -334,7 +348,7 @@ internal sealed record StoryCounters(int P, int R1141, int R1142, int R1143, IRe
             }
         }
 
-        if (values.Keys.Any(key => key is not ("p" or "r1141" or "r1142" or "r1143" or "clear" or "end")))
+        if (values.Keys.Any(key => key is not ("p" or "r1141" or "r1142" or "r1143" or "clear" or "end" or "caps")))
         {
             return null;
         }
@@ -372,7 +386,26 @@ internal sealed record StoryCounters(int P, int R1141, int R1142, int R1143, IRe
             end = new StoryEnd(parsed[0], parsed[1], parsed[2]);
         }
 
-        return new StoryCounters(numbers[0], numbers[1], numbers[2], numbers[3], Routes.Where(clear.Contains).ToList(), end, !values.ContainsKey("end"));
+        var caps = values.TryGetValue("caps", out var capsText) ? CapsOf(capsText) : [];
+
+        if (caps is null)
+        {
+            return null;
+        }
+
+        return new StoryCounters(numbers[0], numbers[1], numbers[2], numbers[3], Routes.Where(clear.Contains).ToList(), end, !values.ContainsKey("end"), caps);
+    }
+
+    /// <summary>
+    /// Reads the level caps of the counters.
+    /// </summary>
+    /// <param name="text">The caps separated by commas.</param>
+    /// <returns>Each cap once, lowest first; or <see langword="null"/> for too many caps or one outside 1 to <see cref="MaxCap"/>.</returns>
+    private static List<int>? CapsOf(string text)
+    {
+        var parts = text.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var caps = parts.Select(part => int.TryParse(part, NumberStyles.None, CultureInfo.InvariantCulture, out var cap) ? cap : 0).ToList();
+        return caps.Count > MaxCaps || caps.Any(cap => cap is < 1 or > MaxCap) ? null : caps.Distinct().Order().ToList();
     }
 
     /// <summary>
@@ -393,6 +426,18 @@ internal sealed record StoryCounters(int P, int R1141, int R1142, int R1143, IRe
         }
 
         writer.WriteEndArray();
+
+        if (Caps.Count > 0)
+        {
+            writer.WriteStartArray("caps");
+
+            foreach (var cap in Caps)
+            {
+                writer.WriteNumberValue(cap);
+            }
+
+            writer.WriteEndArray();
+        }
 
         if (KeepEnd)
         {

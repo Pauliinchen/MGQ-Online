@@ -2,6 +2,7 @@
 #  world_story.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Sent and read the level caps the world's story unlocked
 #      Paulinchen  2026-10-11: Left the random encounters to world_catchup.rbx, which moves every value of the player's own that the story sets on to the story's place
 #                            - Turned random encounters on again as the world's story is laid over, where it is past the talk that turns them on
 #                            - Turned off the scene switches left on while no scene runs as the world's story is laid over, which a story written mid-scene left on for everyone
@@ -1101,7 +1102,7 @@ module MGQ_MpWorldStory
     return lock(route) if route
 
     story = MGQ_MpStoryState.deep_copy(MGQ_MpStoryState.raw_state)
-    counters = counters_text(local_counters(story), true)
+    counters = counters_text(local_counters(story), true) + caps_text(story)
     text = story_text(story)
     @force_post = false
     @marker_at = @change_at = @first_change_at = @change_signature = nil
@@ -1166,6 +1167,19 @@ module MGQ_MpWorldStory
     text
   end
 
+  # Writes the level caps a story unlocked for the relay, which keeps them for the catch-up
+  # experience (see world_catchup_exp.rbx).
+  #
+  # @param story [Array] The switches and variables.
+  # @return [String] Such as ";caps=10,15,18", empty without caps.
+  def self.caps_text(story)
+    caps = defined?(MGQ_MpRaidPool) ? MGQ_MpRaidPool.beaten_caps(story) : []
+    caps.empty? ? "" : ";caps=#{caps.join(',')}"
+  rescue => e
+    log_once(:caps, "listing the level caps the story unlocked failed: #{e.class}: #{e.message}")
+    ""
+  end
+
   # Reports whether the story's endpoint moved from the one the relay keeps.
   #
   # @return [Boolean] Whether it did.
@@ -1199,8 +1213,8 @@ module MGQ_MpWorldStory
   #
   # @param state [Hash] The state's headers.
   # @return [Hash] As local_counters, with "rev", "wrev", "route", "done", "end", "part",
-  #   "checkpoints" (the parts the relay keeps a checkpoint of) and "comps" (the shared companions'
-  #   actor ids).
+  #   "checkpoints" (the parts the relay keeps a checkpoint of), "comps" (the shared companions'
+  #   actor ids) and "caps" (the level caps the world's story unlocked, lowest first).
   def self.counters_of(state)
     counters = { "rev" => state["rev"].to_i, "wrev" => state["wrev"].to_i, "p" => state["p"].to_i }
     ROUTE_VARIABLES.each { |id| counters["r#{id}"] = state["r#{id}"].to_i }
@@ -1211,6 +1225,7 @@ module MGQ_MpWorldStory
     counters["part"] = state["part"].to_s
     counters["checkpoints"] = state["checkpoints"].to_s.split(",")
     counters["comps"] = state["comps"].to_s.split(",").map { |id| id.to_i }
+    counters["caps"] = state["caps"].to_s.split(",").map { |cap| cap.to_i }
     counters
   end
 

@@ -2,7 +2,8 @@
 #  world_overview_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Checked that a refused overview hotkey is logged under the hotkeys, and not while the player types
+#      Paulinchen  2026-10-12: Checked the catch-up experience on the Levels page
+#                            - Checked that a refused overview hotkey is logged under the hotkeys, and not while the player types
 #                            - Checked that Part 2 starts at progress 19 and Part 3 at 34, with a route shown before the Great Decision
 #      Paulinchen  2026-10-11: Checked the Levels page of a Raid World, its rows drawn and its absence in a Classic world, and counted its tab among the tabs
 #                            - Checked that the level told is the formation's highest, Luka included, and kept during a co-op battle
@@ -69,6 +70,7 @@ module MGQ_MpWorldStory
   ROUTES = %w(ad mr chaos)
   ROUTE_VARIABLES = [1141, 1142, 1143]
   def self.world; $world_story; end
+  def self.active?; $raid; end
   def self.part_of(counters); counters["part"]; end
 end
 # The catch-up's list of what it hands out by level, and the level it counts.
@@ -111,6 +113,7 @@ end
 # A character, whose levels the game keeps as a Hash of base, class and race level.
 Actor = Struct.new(:base_level, :luca) do
   def luca?; luca; end
+  def name; luca ? "Luka" : "Lv#{base_level}"; end
   def level; { :base => base_level, :class => 1, :tribe => 1 }; end
 end
 MapInfo = Struct.new(:name)
@@ -125,6 +128,7 @@ end
 MGQ_MpActions.offer(MGQ_MpBattlesDuel)
 load_script "ui_theme" unless defined?(MGQ_MpUi::Theme)
 load_script "ui_layout" unless defined?(MGQ_MpUi::Layout)
+load_script "world_catchup_exp"
 load_script "world_overview"
 module MGQ_MpEmotes; def self.open?; false; end; end
 load_script "ui_party_box"
@@ -477,7 +481,8 @@ $buttons << :RIGHT
 overview.on_map
 check("in a Raid World Right turns on to the Levels page: the level the catch-up counts, then under a heading per level what it hands out",
       [overview.page, overview.view[:lines]],
-      [:levels, [[:info, "Your level", "30"], [:place, "Level 25"], [:unlock, $unlocks[0]], [:unlock, $unlocks[1]], [:place, "Level 40"], [:unlock, $unlocks[2]]]])
+      [:levels, [[:info, "Your level", "30"], [:place, "Catch-up EXP"], [:info, "", "Starts once the world's story raises the level cap."],
+                 [:place, "Level 25"], [:unlock, $unlocks[0]], [:unlock, $unlocks[1]], [:place, "Level 40"], [:unlock, $unlocks[2]]]])
 level_sprite = Sprite_MpWorldOverview.allocate
 level_sprite.bitmap = Bitmap.new(Sprite_MpWorldOverview.box.width, Sprite_MpWorldOverview.box.height)
 level_sprite.draw(overview.view)
@@ -487,7 +492,17 @@ $unlocks = []
 overview.turn_to(:world, "the test")
 overview.turn_to(:levels, "the test")
 overview.on_map
-check("with nothing unlocked yet it says so", overview.view[:lines], [[:info, "Your level", "30"], [:info, "", "Nothing to catch up with yet."]])
+check("with nothing unlocked yet it says so", overview.view[:lines].values_at(0, 3), [[:info, "Your level", "30"], [:info, "", "Nothing to catch up with yet."]])
+members = $game_party.all_members
+$game_party.all_members = [Actor.new(30, true), Actor.new(20, false), Actor.new(99, false)]
+$world_story = $world_story.merge("caps" => [10, 40, 65])
+overview.turn_to(:world, "the test")
+overview.turn_to(:levels, "the test")
+overview.on_map
+check("once the world's story raised the level cap, each formation member's catch-up experience shows under the level it holds up to",
+      overview.view[:lines][1..3], [[:place, "Catch-up EXP until level 40"], [:info, "Luka", "Level 30, x4 EXP"], [:info, "Lv20", "Level 20, x7 EXP"]])
+$game_party.all_members = members
+$world_story = $world_story.reject { |key, _| key == "caps" }
 $raid = false
 overview.on_map
 check("a Classic world has no Levels page, which turns back to the Players page", [overview.page, overview.pages.map(&:first)], [:players, [:players, :world]])

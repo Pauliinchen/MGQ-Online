@@ -2,7 +2,8 @@
 #  world_overview.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Logged a refused hotkey through MGQ_MpHotkeys.log_refusal, not while the player types
+#      Paulinchen  2026-10-12: Showed the catch-up experience on the Levels page
+#                            - Logged a refused hotkey through MGQ_MpHotkeys.log_refusal, not while the player types
 #                            - Counted Part 2 from progress 19 and Part 3 from 34, as the world's story and the relay do, instead of from 20 and 40
 #                            - Read the map's viewport through MGQ_MpGame
 #      Paulinchen  2026-10-11: Added the Levels page of a Raid World: the level the catch-up counts and, under a heading per level, what it hands out that the world already unlocked, moving on from a part, companions and Makina, each marked Done or Due
@@ -122,6 +123,16 @@ module MGQ_MpWorldOverview
 
   # How the Levels page heads what comes at a level.
   LEVEL_HEADING = "Level %d"
+
+  # How the Levels page heads the formation's catch-up experience, with and without a level it
+  # holds up to.
+  EXP_HEADING = "Catch-up EXP until level %d"
+  EXP_HEADING_NONE = "Catch-up EXP"
+
+  # What the Levels page says of a formation member's catch-up experience, and while the world's
+  # story has not raised the level cap yet.
+  EXP_VALUE = "Level %d, %s EXP"
+  NO_CATCH_UP = "Starts once the world's story raises the level cap."
 
   # What the Levels page says while the world unlocked nothing yet.
   NOTHING_UNLOCKED = "Nothing to catch up with yet."
@@ -622,6 +633,21 @@ module MGQ_MpWorldOverview
     TEXT_CODES.inject(text) { |plain, code| plain.gsub(code, "") }.gsub(/\s+/, " ").strip
   end
 
+  # Lays out the formation's catch-up experience: the level it holds up to, then each member's
+  # level and factor (see MGQ_MpWorldCatchupExp).
+  #
+  # @return [Array<Array>] Each line: [:place, heading] or [:info, label, value].
+  def self.exp_lines
+    target = MGQ_MpWorldCatchupExp.target
+    return [[:place, EXP_HEADING_NONE], [:info, "", NO_CATCH_UP]] unless target
+
+    members = $game_party.battle_members.map do |actor|
+      factor = MGQ_MpWorldCatchupExp.factor_for(actor.base_level, target)
+      [:info, actor.name, EXP_VALUE % [actor.base_level, MGQ_MpWorldCatchupExp.factor_text(factor)]]
+    end
+    [[:place, EXP_HEADING % target]] + members
+  end
+
   # Lays the Levels page out: the level the catch-up counts, then by level what it hands out that
   # the world already unlocked, under a heading per level (see MGQ_MpWorldCatchup.unlocks). Read
   # every READ_FRAMES.
@@ -633,6 +659,7 @@ module MGQ_MpWorldOverview
     @level_lines_at = Graphics.frame_count
     level = MGQ_MpWorldCatchup.counted_level
     lines = [[:info, YOUR_LEVEL, level ? level.to_s : ""]]
+    lines.concat(exp_lines)
     unlocks = MGQ_MpWorldCatchup.unlocks
     lines << [:info, "", NOTHING_UNLOCKED] if unlocks.empty?
     unlocks.chunk { |unlock| unlock.level }.each do |at, group|

@@ -2,7 +2,8 @@
 #  raid_pool_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Checked that a pool emptied while a live battle's host waits for commands fells the boss and leaves the victory to the wait
+#      Paulinchen  2026-10-12: Checked the level caps of the milestones a story beat
+#                            - Checked that a pool emptied while a live battle's host waits for commands fells the boss and leaves the victory to the wait
 #      Paulinchen  2026-10-11: Checked a boss outside the Level Cap milestones and Carmilla and Elizabeth counting only in the Vampire Castle
 #                            - Checked that a side battle's defeat is the game's
 #                            - Covered the readers the World overview uses: the pools as a copy, the share left now, a troop's label and a pool's boss key
@@ -338,6 +339,12 @@ end
 rows = MGQ_MpRaidBosses::TROOPS.values.map { |row| [row[0], row[1]] }.uniq
 check("every milestone has the markers that tell it beaten", rows - pool::BEATEN.keys, [])
 check("and no markers name a milestone the boss table lacks", pool::BEATEN.keys - rows, [])
+story_switches = []
+story_variables = []
+story_variables[1003] = 8
+story_variables[1011] = 4
+check("the caps of the milestones a story beat come from its own values, each once and lowest first",
+      [pool.beaten_caps([story_switches, story_variables]), pool.beaten_caps([[], []])], [[10, 15], []])
 check("every fight of its own and every troop left out is a last phase",
       (pool::FIGHTS.keys + pool::UNPOOLED.keys).reject { |troop| MGQ_MpRaidBosses.at(troop).last }, [])
 keys = MGQ_MpRaidBosses::TROOPS.keys.select { |troop| MGQ_MpRaidBosses.at(troop).last }.map { |troop| [pool.key_of(troop), MGQ_MpRaidBosses.at(troop).milestone, MGQ_MpRaidBosses.at(troop).cap] }

@@ -2,7 +2,8 @@
 #  battles_raid_pool.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Left the victory over enemies whose pools empty during a live battle's wait for commands to the wait, which won it a second time as the turn started
+#      Paulinchen  2026-10-12: Listed the level caps of the milestones a story beat
+#                            - Left the victory over enemies whose pools empty during a live battle's wait for commands to the wait, which won it a second time as the turn started
 #      Paulinchen  2026-10-11: Told the story bosses newly counted as raid bosses, such as the four spirits and the Part 2 queens' own fights, beaten by what their events set after the fight
 #                            - Made losing a side battle the game's defeat, as losing the boss's own battle is, instead of a return to the map at 1 HP that let the player fight again at once
 #                            - Listed the pools the game knows, which the World overview reads
@@ -520,22 +521,34 @@ module MGQ_MpRaidPool
     test ? met?(test) : false
   end
 
-  # Reports whether the game's values meet a test of BEATEN.
+  # Lists the level caps of the milestones a story beat, which a story write names for the world's
+  # catch-up experience (see world_catchup_exp.rbx).
   #
-  # @param test [String] The test.
-  # @return [Boolean] Whether they do.
-  def self.met?(test)
-    test.split("|").any? { |all| all.split("&").all? { |condition| condition_met?(condition) } }
+  # @param story [Array] The story's switches and variables, as MGQ_MpStoryState.raw_state.
+  # @return [Array<Integer>] Each cap once, lowest first.
+  def self.beaten_caps(story)
+    BEATEN.select { |_, test| met?(test, story) }.map { |(_, cap), _| cap }.uniq.sort
   end
 
-  # Reports whether the game's values meet one condition of a test of BEATEN.
+  # Reports whether the game's values, or a story's, meet a test of BEATEN.
+  #
+  # @param test [String] The test.
+  # @param story [Array, nil] The story's switches and variables; nil for the game's.
+  # @return [Boolean] Whether they do.
+  def self.met?(test, story = nil)
+    test.split("|").any? { |all| all.split("&").all? { |condition| condition_met?(condition, story) } }
+  end
+
+  # Reports whether the game's values, or a story's, meet one condition of a test of BEATEN.
   #
   # @param condition [String] Such as "s2261" or "v1003>=8".
+  # @param story [Array, nil] The story's switches and variables; nil for the game's.
   # @return [Boolean] Whether they do; false for a condition that is none.
-  def self.condition_met?(condition)
+  def self.condition_met?(condition, story = nil)
+    switches, variables = story || [$game_switches, $game_variables]
     case condition
-    when /\As(\d+)\z/ then $game_switches[$1.to_i] ? true : false
-    when /\Av(\d+)>=(-?\d+)\z/ then $game_variables[$1.to_i].to_i >= $2.to_i
+    when /\As(\d+)\z/ then switches[$1.to_i] ? true : false
+    when /\Av(\d+)>=(-?\d+)\z/ then variables[$1.to_i].to_i >= $2.to_i
     else false
     end
   end

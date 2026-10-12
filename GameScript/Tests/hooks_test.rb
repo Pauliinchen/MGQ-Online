@@ -2,6 +2,7 @@
 #  hooks_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Checked around with other arguments
 #      Paulinchen  2026-10-08: Checked that the hook report counts each method once and names it, and that a wrap of a method not defined yet is made at the next try
 #                            - Checked that the hooks are logged as one line per script, once
 #      Paulinchen  2026-10-07: Checked that who holds the player is logged when it changes
@@ -90,6 +91,11 @@ check("a private method stays private around too", Scene_Around.private_method_d
 MGQ_MpHooks.around(Scene_Around, :double, "two") { |_scene, _args, original| [original.call, :again] }
 check("a script registering again replaces its wrap instead of wrapping once more", Scene_Around.new.double(2), [5, :again])
 check("and the replacement is logged", $log.grep(/two wrapped Scene_Around#double again/).size, 1)
+class Scene_Arguments
+  def add(a, b); a + b; end
+end
+MGQ_MpHooks.around(Scene_Arguments, :add, "args") { |_scene, args, original| args[0] > 5 ? original.call(args[0] * 10, args[1]) : original.call }
+check("a wrap runs the original with arguments of its own, or with the method's", [Scene_Arguments.new.add(9, 1), Scene_Arguments.new.add(2, 1)], [91, 3])
 $log.clear
 MGQ_MpHooks.report
 check("the hooks are logged as one line per script with how many methods it follows and wraps, not one per method",

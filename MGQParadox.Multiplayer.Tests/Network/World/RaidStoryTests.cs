@@ -2,13 +2,17 @@
 //  RaidStoryTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-12: Covered a write sent again after a route lock, found already accepted with its own revision
+//      Paulinchen  2026-10-12: Covered the level caps of story writes
+//                            - Covered a write sent again after a route lock, found already accepted with its own revision
 //      Paulinchen  2026-10-08: Created
 //
 //----------------------------------------------------------------
 
 using System;
 using System.IO;
+using System.Linq;
+using System.Text;
+using System.Text.Json;
 using System.Threading;
 using MGQParadox.Multiplayer.Network.Relay;
 using MGQParadox.Multiplayer.Network.Transport;
@@ -259,6 +263,25 @@ public sealed class RaidStoryTests
     }
 
     /// <summary>
+    /// Asserts that the level caps a write names reach the relay and come back with the story, never lost by a later write without them.
+    /// </summary>
+    [Fact]
+    public void Post_TellsTheLevelCaps()
+    {
+        using var relay = new TestRelay();
+        var code = MakeWorld(relay, WorldType.Raid);
+        var story = NewStory(relay, CreatorKey, code);
+
+        Assert.True(story.Post(IdOf(code), 0, "p=7;r1141=0;r1142=0;r1143=0;caps=15,10", Story));
+        Assert.Equal("10,15", Await(story, "post", "accepted")["caps"]);
+
+        Assert.True(story.Post(IdOf(code), 1, "p=8;r1141=0;r1142=0;r1143=0", Story));
+        Await(story, "post", "accepted");
+        Assert.True(story.Fetch(IdOf(code)));
+        Assert.Equal("10,15", Await(story, "fetch", "done")["caps"]);
+    }
+
+    /// <summary>
     /// Asserts that a Classic world keeps no story, which the fetch fails with.
     /// </summary>
     [Fact]
@@ -313,6 +336,43 @@ public sealed class RaidStoryTests
         Assert.Null(StoryCounters.Parse("p=1;r1141=0;r1142=0;r1143=0;end=0,1,2"));
         Assert.Null(StoryCounters.Parse("p=1;r1141=0;r1142=0;r1143=0;mood=1"));
         Assert.Null(StoryCounters.Parse("p=1;p=2;r1141=0;r1142=0;r1143=0"));
+    }
+
+    /// <summary>
+    /// Asserts that the level caps are read each once and lowest first, written only when there are any, and refused when not as they should be.
+    /// </summary>
+    [Fact]
+    public void StoryCounters_Caps_ReadsWritesAndRefuses()
+    {
+        Assert.Equal([10, 15, 18], StoryCounters.Parse("p=7;r1141=0;r1142=0;r1143=0;caps=18,10,15,10")!.Caps);
+        Assert.Empty(StoryCounters.Parse("p=7;r1141=0;r1142=0;r1143=0;caps=")!.Caps);
+        Assert.Contains("\"caps\":[10,15]", JsonOf(StoryCounters.Parse("p=7;r1141=0;r1142=0;r1143=0;caps=15,10")!), StringComparison.Ordinal);
+        Assert.DoesNotContain("caps", JsonOf(StoryCounters.Parse("p=7;r1141=0;r1142=0;r1143=0")!), StringComparison.Ordinal);
+
+        Assert.Null(StoryCounters.Parse("p=7;r1141=0;r1142=0;r1143=0;caps=0"));
+        Assert.Null(StoryCounters.Parse("p=7;r1141=0;r1142=0;r1143=0;caps=10000"));
+        Assert.Null(StoryCounters.Parse("p=7;r1141=0;r1142=0;r1143=0;caps=-5"));
+        Assert.Null(StoryCounters.Parse("p=7;r1141=0;r1142=0;r1143=0;caps=ten"));
+        Assert.Null(StoryCounters.Parse("p=7;r1141=0;r1142=0;r1143=0;caps=" + string.Join(',', Enumerable.Range(1, StoryCounters.MaxCaps + 1))));
+    }
+
+    /// <summary>
+    /// Writes counters as the JSON object the relay reads.
+    /// </summary>
+    /// <param name="counters">The counters.</param>
+    /// <returns>The JSON.</returns>
+    private static string JsonOf(StoryCounters counters)
+    {
+        using var stream = new MemoryStream();
+
+        using (var writer = new Utf8JsonWriter(stream))
+        {
+            writer.WriteStartObject();
+            counters.Write(writer);
+            writer.WriteEndObject();
+        }
+
+        return Encoding.UTF8.GetString(stream.ToArray());
     }
 
     /// <summary>

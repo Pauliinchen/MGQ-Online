@@ -2,6 +2,7 @@
 //  story.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-12: Kept the level caps the world's story unlocked
 //      Paulinchen  2026-10-11: Opened every route again once the world finished all of them, as a starting save that cleared every route names them all as finished
 //                            - Took the locked route's first step from the Great Decision even though its key ranks below the decision once every route was finished
 //                            - Kept the lock of a route finished before until the world returned from it, instead of dropping it with the next write without a route under way
@@ -46,6 +47,8 @@ export const STORY_LIMITS = Object.freeze({
   maxCounter: 1_000_000,
   maxMapId: 9999,
   maxTile: 9999,
+  maxCaps: 200,
+  maxCap: 9999,
   // Story writes per player: a burst, then one more every few seconds, so a game stuck in a loop
   // cannot spend the free plan's daily writes.
   writes: Object.freeze({ burst: 20, refillMs: 3 * 1000 }),
@@ -190,9 +193,9 @@ export function compareKeys(a, b) {
 /**
  * Reads the counters of a write.
  *
- * @param {any} counters The counters as sent: `p`, `r1141`, `r1142`, `r1143`, `clear` and maybe `end`.
+ * @param {any} counters The counters as sent: `p`, `r1141`, `r1142`, `r1143`, `clear`, and maybe `end` and `caps`.
  * @param {typeof STORY_LIMITS} [limits] The limits.
- * @returns {{counters: {p: number, r1141: number, r1142: number, r1143: number, clear: string[]}, end: object | null | undefined} | {error: string}} The counters, and the endpoint (null to clear it, undefined to keep it); or what is wrong.
+ * @returns {{counters: {p: number, r1141: number, r1142: number, r1143: number, clear: string[]}, end: object | null | undefined, caps: number[]} | {error: string}} The counters, the endpoint (null to clear it, undefined to keep it) and the level caps the story unlocked; or what is wrong.
  */
 export function readCounters(counters, limits = STORY_LIMITS) {
   if (!counters || typeof counters !== "object") {
@@ -222,8 +225,25 @@ export function readCounters(counters, limits = STORY_LIMITS) {
     return { error: `end must be null or map, x and y as whole numbers, the map 1 to ${limits.maxMapId}` };
   }
 
+  const caps = counters.caps ?? [];
+
+  if (!Array.isArray(caps) || caps.length > limits.maxCaps || !caps.every((cap) => Number.isInteger(cap) && cap >= 1 && cap <= limits.maxCap)) {
+    return { error: `caps must list at most ${limits.maxCaps} level caps of 1 to ${limits.maxCap}` };
+  }
+
   // Kept in the routes' own order, so the same finished routes always read the same.
-  return { counters: { p: counters.p, r1141: counters.r1141, r1142: counters.r1142, r1143: counters.r1143, clear: routes.filter((route) => clear.includes(route)) }, end };
+  return { counters: { p: counters.p, r1141: counters.r1141, r1142: counters.r1142, r1143: counters.r1143, clear: routes.filter((route) => clear.includes(route)) }, end, caps };
+}
+
+/**
+ * Adds level caps to those a world's story unlocked.
+ *
+ * @param {number[]} kept The caps kept so far.
+ * @param {number[]} added The caps a write names.
+ * @returns {number[]} Every cap once, lowest first.
+ */
+export function mergeCaps(kept, added) {
+  return [...new Set([...kept, ...added])].sort((a, b) => a - b);
 }
 
 /**
@@ -372,6 +392,7 @@ export class WorldStory {
         done,
         end: read.end === undefined ? (story?.end ?? null) : read.end,
         comps: story?.comps ?? [],
+        caps: mergeCaps(story?.caps ?? [], read.caps).slice(-this.limits.maxCaps),
         checkpoints,
         blob: request.blob,
         at: now,
@@ -548,7 +569,7 @@ export class WorldStory {
    * @returns {object} The story, at revision 0 without a sealed story.
    */
   first() {
-    return { rev: 0, wrev: 0, counters: { ...FIRST_COUNTERS, clear: [] }, part: PART.one, route: ROUTE.none, done: [], end: null, comps: [], checkpoints: [], blob: "", at: this.clock(), by: null };
+    return { rev: 0, wrev: 0, counters: { ...FIRST_COUNTERS, clear: [] }, part: PART.one, route: ROUTE.none, done: [], end: null, comps: [], caps: [], checkpoints: [], blob: "", at: this.clock(), by: null };
   }
 
   /**
@@ -581,7 +602,7 @@ function checkpointOf(story) {
  *
  * @param {object | undefined} story The story as kept, undefined before the first write.
  * @param {boolean} withBlob Whether to add the sealed story.
- * @returns {object} `rev` (every change counts it up), `wrev` (the revision of the last write, whose sealed story this is), `p`, `r1141`, `r1142`, `r1143`, `clear`, `part`, `route`, `done`, `end`, `comps`, `checkpoints` and `at`, and `blob` when asked for (empty before the first write).
+ * @returns {object} `rev` (every change counts it up), `wrev` (the revision of the last write, whose sealed story this is), `p`, `r1141`, `r1142`, `r1143`, `clear`, `part`, `route`, `done`, `end`, `comps`, `caps` (the level caps the story unlocked, lowest first), `checkpoints` and `at`, and `blob` when asked for (empty before the first write).
  */
 export function stateOf(story, withBlob) {
   const counters = story?.counters ?? FIRST_COUNTERS;
@@ -598,6 +619,7 @@ export function stateOf(story, withBlob) {
     done: [...(story?.done ?? [])],
     end: story?.end ?? null,
     comps: [...(story?.comps ?? [])],
+    caps: [...(story?.caps ?? [])],
     checkpoints: [...(story?.checkpoints ?? [])],
     at: story?.at ?? 0,
   };

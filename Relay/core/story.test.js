@@ -2,7 +2,8 @@
 //  story.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-12: Moved the test of the Worker refusing a story write too long to cloudflare/worker.test.js
+//      Paulinchen  2026-10-12: Covered the level caps of story writes
+//                            - Moved the test of the Worker refusing a story write too long to cloudflare/worker.test.js
 //      Paulinchen  2026-10-11: Covered a world that finished every route choosing and playing a route again
 //      Paulinchen  2026-10-10: Covered taking back the route lock refused while the route is under way, and a route lock refused while the story is on another route
 //                            - Covered the Worker refusing a story write by its Content-Length before reading the body, and by its length read for a body without one
@@ -14,7 +15,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { PART, ROUTE, STORY_LIMITS, WorldStory, compareKeys, handleStoryRequest, partOf, readCounters, storyKey, storyRouteOf, storyText } from "./story.js";
+import { PART, ROUTE, STORY_LIMITS, WorldStory, compareKeys, handleStoryRequest, mergeCaps, partOf, readCounters, storyKey, storyRouteOf, storyText } from "./story.js";
 
 /**
  * A player's id.
@@ -141,11 +142,39 @@ test("counters are read with their finished routes in order, and wrong ones are 
   assert.ok(readCounters({ p: 40, r1141: 0, r1142: 0, r1143: 0, end: { map: 0, x: 1, y: 1 } }).error);
 });
 
+test("the level caps a write names are read, and wrong ones are refused", () => {
+  assert.deepEqual(readCounters({ p: 1, r1141: 0, r1142: 0, r1143: 0 }).caps, []);
+  assert.deepEqual(readCounters({ p: 1, r1141: 0, r1142: 0, r1143: 0, caps: [15, 10] }).caps, [15, 10]);
+
+  assert.ok(readCounters({ p: 1, r1141: 0, r1142: 0, r1143: 0, caps: "10" }).error);
+  assert.ok(readCounters({ p: 1, r1141: 0, r1142: 0, r1143: 0, caps: [0] }).error);
+  assert.ok(readCounters({ p: 1, r1141: 0, r1142: 0, r1143: 0, caps: [10.5] }).error);
+  assert.ok(readCounters({ p: 1, r1141: 0, r1142: 0, r1143: 0, caps: [STORY_LIMITS.maxCap + 1] }).error);
+  assert.ok(readCounters({ p: 1, r1141: 0, r1142: 0, r1143: 0, caps: Array.from({ length: STORY_LIMITS.maxCaps + 1 }, (_, index) => index + 1) }).error);
+});
+
+test("the world keeps every level cap a write named, lowest first, and a write naming fewer loses none", async () => {
+  assert.deepEqual(mergeCaps([10, 18], [15, 10]), [10, 15, 18]);
+
+  const { story } = makeStory();
+  assert.deepEqual((await accepted(story, 0, { p: 7, caps: [10] })).caps, [10]);
+  assert.deepEqual((await accepted(story, 1, { p: 8, caps: [15, 10] })).caps, [10, 15]);
+  assert.deepEqual((await accepted(story, 2, { p: 9 })).caps, [10, 15], "a write without caps, as from an older game, keeps them");
+  assert.deepEqual((await story.lockRoute("ad")).body.caps, [10, 15], "a route lock keeps them");
+  assert.deepEqual((await story.get()).body.caps, [10, 15]);
+});
+
+test("the world keeps only the highest level caps once more than the limit came together", async () => {
+  const { story } = makeStory({ ...STORY_LIMITS, maxCaps: 3 });
+  await accepted(story, 0, { p: 7, caps: [10, 15, 18] });
+  assert.deepEqual((await accepted(story, 1, { p: 8, caps: [20] })).caps, [15, 18, 20]);
+});
+
 test("a world nobody wrote a story for answers revision 0 without a sealed story", async () => {
   const { story } = makeStory();
   const answer = await story.get();
   assert.equal(answer.status, 200);
-  assert.deepEqual(answer.body, { rev: 0, wrev: 0, p: 0, r1141: 0, r1142: 0, r1143: 0, clear: [], part: "1", route: "none", done: [], end: null, comps: [], checkpoints: [], at: 0, blob: "" });
+  assert.deepEqual(answer.body, { rev: 0, wrev: 0, p: 0, r1141: 0, r1142: 0, r1143: 0, clear: [], part: "1", route: "none", done: [], end: null, comps: [], caps: [], checkpoints: [], at: 0, blob: "" });
 });
 
 test("a write on the current revision is accepted and counts the revision up, with the same counters too", async () => {

@@ -2,7 +2,8 @@
 #  Multiplayer.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Loaded ui_leader_hud.rbx after ui_raid_bar.rbx, before the notification box that makes room for it
+#      Paulinchen  2026-10-12: Loaded world_catchup_exp.rbx after world_catchup.rbx
+#                            - Loaded ui_leader_hud.rbx after ui_raid_bar.rbx, before the notification box that makes room for it
 #                            - Kept a Player.ini that exists but could not be read: no new player key and no settings written over it, read
 #                              again at most once a second, logged once and told once a session in the notification box
 #                            - Read an ini file with a byte order mark, saved as UTF-16 or with bytes that are no UTF-8, which counts as Latin-1
@@ -132,7 +133,7 @@ module MGQ_Multiplayer
   SCRIPTS = %w[
     core_log core_hooks core_game_access core_hotkeys ui ui_theme ui_layout ui_text_box core_actors core_async overworld_sync ui_wheel ui_actions ui_chat ui_emotes overworld
     coop coop_scope coop_squad coop_events coop_gather coop_teleport coop_scene coop_npcs coop_story_rewards story_state coop_story coop_castle
-    world world_mods world_mods_parking world_catchup_data world_story world_catchup world_opening world_difficulty world_save_distribution world_text world_screen world_save_export coop_choices
+    world world_mods world_mods_parking world_catchup_data world_story world_catchup world_catchup_exp world_opening world_difficulty world_save_distribution world_text world_screen world_save_export coop_choices
     battles battles_raid_bosses battles_coop battles_coop_hotjoin battles_coop_join battles_raid_pool battles_coop_level_sync
     battles_sync battles_sync_wire battles_sync_recorder battles_sync_playback battles_sync_live
     battles_balance_pvp battles_pvp battles_pvp_backline battles_pvp_mirror battles_pvp_lobby battles_duel battles_team

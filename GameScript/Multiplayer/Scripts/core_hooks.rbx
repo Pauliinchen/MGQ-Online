@@ -2,6 +2,7 @@
 #  core_hooks.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Let around run the original with other arguments
 #      Paulinchen  2026-10-08: Counted the distinct methods each script follows and wraps, and named them in its line of report
 #                            - Kept a wrap of around only once the method was wrapped, so a script registering again wraps a method that was not defined at its first try
 #                            - Counted the methods each script follows and wraps and logged them as one line per script through report, instead of a line per method
@@ -137,7 +138,8 @@ module MGQ_MpHooks
   # @param script [String] Who registers, which a second registration of replaces.
   # @yieldparam object [Object] The object the method runs on.
   # @yieldparam args [Array] The method's arguments.
-  # @yieldparam original [Proc] Runs the original with the arguments and returns its result.
+  # @yieldparam original [Proc] Runs the original with the arguments, or with those it is given,
+  #   and returns its result.
   # @yieldreturn [Object] What the method returns.
   def self.around(owner, name, script, &body)
     key = [owner, name, script]
@@ -153,7 +155,7 @@ module MGQ_MpHooks
     @arounds += 1
     cell = [body]
     owner.send(:define_method, name) do |*args, &block|
-      cell[0].call(self, args, lambda { send(original, *args, &block) })
+      cell[0].call(self, args, lambda { |*given| send(original, *(given.empty? ? args : given), &block) })
     end
     owner.send(:private, name) if was_private
     @bodies[key] = cell
