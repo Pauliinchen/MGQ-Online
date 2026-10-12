@@ -46,10 +46,10 @@ A **room** pairs two games for a PvP battle. A **world room** seats up to 32 gam
 
 ### Versions
 
-Every game from 0.6.0 names its features in the header `X-MGQ-Features` on its directory requests and world rooms, and newer ones name their version in `X-MGQ-Version`, such as `0.6.5+<commit>` (`0.0.0-dev` for a development build). Before routing a request, the relay turns a game too old for it away with HTTP 426 and the error `Update MGQ Online to play online.`:
+Every game from 0.6.0 names its features in the header `X-MGQ-Features` on its directory requests and world rooms, and newer ones name their version in `X-MGQ-Version` on these and on PvP rooms, such as `0.6.5` (`0.0.0-dev` for a development build). Before routing a request, the relay turns a game too old for it away with HTTP 426 and the error `Update MGQ Online to play online.`:
 - the trades, the bug reports, a Raid World's story and boss routes and the world rooms need `X-MGQ-Features`, so games before 0.6.0 cannot play online;
 - these routes and the rooms also hold a version named in `X-MGQ-Version` against the setting `MIN_VERSION` (`0.6.0` unless set): an older version or one that is no version is refused, a development version always passes, and a game that names none passes, as released games up to 0.6.4 do;
-- the world directory's and the mod catalog's routes, the Raid World admin routes included, ask nothing, since the World Admin tool sends neither header; a room needs no `X-MGQ-Features`, since released games open rooms without it.
+- the world directory's and the mod catalog's routes, the Raid World admin routes included, ask nothing, since the World Admin tool sends neither header; a PvP room needs no `X-MGQ-Features`, since released games open PvP rooms without any header.
 
 A refused WebSocket names the same text in the response header `X-MGQ-Refusal`; any other refused request gets it as `error` once its body is read and dropped, up to 15 MB or 60 seconds.
 

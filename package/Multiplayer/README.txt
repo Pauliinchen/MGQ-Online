@@ -104,15 +104,19 @@ friend joins with the join code you send them.
 
 HOTKEYS
 -------
-   B        action wheel: invite, duel, trade, chat, teleport to the leader
-   T        chat: /g everyone, /p your party, /s your map, /w one player, /help
+   B        action wheel: invite, duel, trade, chat, report a bug,
+            teleport to the leader
+   T        chat: /g everyone, /m your map, /p your party, /w one player, /help
             (Alt + Left/Right switches tabs, Alt + drag resizes the chat)
    E        emote wheel
    F11      World overview, or the PvP battle screen outside a world
    Y / N    accept / decline the first invite at the top left
    Tab      make the party box small or full
+   H        make the Leader HUD at the top left small or large
+   J        join the battle of a player next to you in a Raid World
+   F3       report a bug, with a screenshot and your logs
 
-Rebind them in "Mod Config > Monster Girl Quest! Online".
+Rebind them in "Mod Config > MGQ Online Hotkeys".
 
 
 TROUBLE?
@@ -126,7 +130,9 @@ you played, named after when the game started, such as
 "Multiplayer InGame 2026-10-07 18-30-05.log" and
 "Multiplayer 2026-10-07 18-30-05.log". The Multiplayer InGame log tells
 what the mod did inside the game; the Multiplayer log tells what the
-connection did. Please attach both of the session that went wrong to a
+connection did. The quickest way to report a bug is F3 in the game,
+which sends the logs of this session and a screenshot to the developer.
+Otherwise please attach both logs of the session that went wrong to a
 bug report.
 
 The folder keeps the logs of your last five game starts and deletes

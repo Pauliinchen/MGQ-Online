@@ -62,7 +62,7 @@ For a PvP battle without a world, press **F11** on the map and host; your friend
 
 | Hotkey | What it does |
 |---|---|
-| **B** | Action wheel: invite, duel, trade, chat, teleport to the leader (other members from the World overview) |
+| **B** | Action wheel: invite, duel, trade, chat, report a bug, teleport to the leader (other members from the World overview) |
 | **T** | Chat: **/g** everyone, **/m** your map, **/p** your party, **/w** one player, **/help** |
 | **E** | Emote wheel |
 | **F11** | World overview, or the PvP battle screen outside a world |
@@ -70,6 +70,7 @@ For a PvP battle without a world, press **F11** on the map and host; your friend
 | **Tab** | Make the party box small or full; in a raid boss battle, shrink the boss's HP bar to the bars alone or back |
 | **H** | Make the Leader HUD at the top left small or large |
 | **J** | Join the battle of a player next to you in a Raid World, or fight a raid boss alongside a full boss battle |
+| **F3** | Report a bug, with a screenshot and your logs, anywhere but the title and game over screens |
 
 Rebind them in *Mod Config → MGQ Online Hotkeys*; the mod's other options are in *MGQ Online Settings*.
 

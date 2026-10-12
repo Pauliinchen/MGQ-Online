@@ -16,7 +16,7 @@ import { REPORT_LIMITS } from "./reports.js";
 import { storyRouteOf } from "./story.js";
 
 /**
- * The request header in which a game names its version, such as `0.6.5+<commit>`, or `0.0.0-dev`
+ * The request header in which a game names its version, such as `0.6.5`, or `0.0.0-dev`
  * for a development build; released games up to 0.6.4 send none.
  */
 export const VERSION_HEADER = "X-MGQ-Version";

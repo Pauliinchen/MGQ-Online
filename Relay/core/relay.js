@@ -156,7 +156,7 @@ export const AUTH_HEADER = "X-MGQ-Auth";
 
 /**
  * The request header in which a game names what it can play, such as FEATURE.raid, separated by
- * commas; released games send none.
+ * commas; games before 0.6.0 send none.
  */
 export const FEATURES_HEADER = "X-MGQ-Features";
 
