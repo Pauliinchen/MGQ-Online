@@ -2,7 +2,8 @@
 //  worker.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-12: Took the bug reports in a Durable Object of their own, so a large report can no longer reset the world directory
+//      Paulinchen  2026-10-12: Ignored what a game or peer the relay already closed sends while its connection closes, which reached a newcomer on its seat and the world's chat
+//                            - Took the bug reports in a Durable Object of their own, so a large report can no longer reset the world directory
 //      Paulinchen  2026-10-11: Took the bug reports games send in the directory object and handed them to GitHub with the GITHUB_ISSUES_TOKEN and GITHUB_BUG_FILES_TOKEN secrets
 //      Paulinchen  2026-10-10: Passed what a game names in the X-MGQ-Features header on to the directory's public routes too, for a development build's Raid World starting save
 //                            - Refused a Raid World request whose Content-Length is above the longest body these routes take before reading its body
@@ -663,13 +664,20 @@ export class Room extends DurableObject {
    * @param {ArrayBuffer | string} message The message.
    */
   async webSocketMessage(socket, message) {
+    const record = socket.deserializeAttachment();
+
+    // A peer the relay closed passes nothing on while its connection closes.
+    if (!record || record.left) {
+      return;
+    }
+
     if (typeof message === "string") {
       // Keep-alives are answered by Cloudflare before they get here, so any other text is wrong.
       this.leave(socket, CLOSE.badRequest, "only binary messages are passed on");
       return;
     }
 
-    const { peer, refusal } = takeMessage(socket.deserializeAttachment(), message.byteLength, Date.now());
+    const { peer, refusal } = takeMessage(record, message.byteLength, Date.now());
     socket.serializeAttachment(peer);
 
     if (refusal) {
@@ -895,8 +903,15 @@ export class World extends DurableObject {
    * @param {ArrayBuffer | string} message The message.
    */
   async webSocketMessage(socket, message) {
+    const record = socket.deserializeAttachment();
+
+    // A game the relay unseated passes nothing on while its connection closes.
+    if (!record || record.left) {
+      return;
+    }
+
     const size = typeof message === "string" ? message.length : message.byteLength;
-    const { peer, refusal } = takeMessage(socket.deserializeAttachment(), size, Date.now());
+    const { peer, refusal } = takeMessage(record, size, Date.now());
     socket.serializeAttachment(peer);
 
     if (typeof message === "string") {

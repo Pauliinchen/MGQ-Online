@@ -2,7 +2,8 @@
 //  worker.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-12: Created
+//      Paulinchen  2026-10-12: Tested that a game or peer the relay closed passes nothing on while its connection closes
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -546,6 +547,72 @@ test("a game that leaves moves the alarm to the next deadline and the directory 
   await finishClose(world, second);
   assert.equal(await world.ctx.storage.getAlarm(), null);
   assert.deepEqual(lastPresence(directory), []);
+});
+
+test("a game the relay removed passes nothing on while its connection closes, to the newcomer on its seat or the chat", async () => {
+  const { world, directory } = newWorld();
+  const removed = await joinWorld(world, playerKey(1), "Player 1");
+  const other = await joinWorld(world, playerKey(2), "Player 2");
+  await internalTo(world, "kick", { player: playerIdFor(playerKey(1)) });
+  assert.ok(world.ctx.getWebSockets().includes(removed), "Cloudflare still lists the socket while it closes");
+
+  const newcomer = await joinWorld(world, playerKey(3), "Player 3");
+  assert.deepEqual(takeSent(newcomer), ["seat 0 1"]);
+  takeSent(other);
+  const record = removed.deserializeAttachment();
+
+  await world.webSocketMessage(removed, binary([EVERYONE, 1, 2]));
+  await world.webSocketMessage(removed, binary([1, 3]));
+  await world.webSocketMessage(removed, "chat hi");
+  assert.deepEqual([takeSent(other), takeSent(newcomer)], [[], []]);
+  assert.equal(directory.calls.filter((call) => call.route === "say").length, 0);
+  assert.deepEqual(removed.deserializeAttachment(), record);
+});
+
+test("a game the relay closed for sending too fast passes nothing on while its connection closes", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: START });
+  const { world, directory } = newWorld();
+  const fast = await joinWorld(world, playerKey(1), "Player 1");
+  const other = await joinWorld(world, playerKey(2), "Player 2");
+
+  for (let index = 0; index <= LIMITS.burst; index++) {
+    await world.webSocketMessage(fast, binary([EVERYONE, 1]));
+  }
+
+  assert.equal(fast.closed.code, CLOSE.tooFast);
+  const newcomer = await joinWorld(world, playerKey(3), "Player 3");
+  assert.deepEqual(takeSent(newcomer), ["seat 0 1"]);
+  takeSent(other);
+  const record = fast.deserializeAttachment();
+
+  // Long enough for the allowance to refill, so only the closing itself keeps the frames back.
+  t.mock.timers.tick(1000);
+  await world.webSocketMessage(fast, binary([EVERYONE, 1, 2]));
+  await world.webSocketMessage(fast, "chat hi");
+  assert.deepEqual([takeSent(other), takeSent(newcomer)], [[], []]);
+  assert.equal(directory.calls.filter((call) => call.route === "say").length, 0);
+  assert.deepEqual(fast.deserializeAttachment(), record);
+});
+
+test("peers of a room the relay ended pass nothing on to the peers who joined the room since", async () => {
+  const room = new Room(objectState(), {});
+  const host = await joinRoom(room, "host");
+  const guest = await joinRoom(room, "guest");
+
+  await room.webSocketMessage(host, new ArrayBuffer(LIMITS.maxMessageBytes + 1));
+  assert.deepEqual([host.closed.code, guest.closed.code], [CLOSE.tooLarge, CLOSE.peerLeft]);
+
+  const newHost = await joinRoom(room, "host");
+  const newGuest = await joinRoom(room, "guest");
+  takeSent(newHost);
+  takeSent(newGuest);
+
+  await room.webSocketMessage(guest, binary([1]));
+  await room.webSocketMessage(host, binary([2]));
+  assert.deepEqual([takeSent(newHost), takeSent(newGuest)], [[], []]);
+
+  await room.webSocketMessage(newGuest, binary([3]));
+  assert.deepEqual(takeSent(newHost), [[3]], "the new peers still reach each other");
 });
 
 test("the Worker refuses a story write whose Content-Length is too long before reading it, and reads one without the header to tell", async () => {
