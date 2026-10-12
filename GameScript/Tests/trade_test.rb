@@ -2,6 +2,7 @@
 #  trade_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Checked that trades to recover wait for the map's own frame with the player free, in a battle, behind a message and after a reset, and are asked for again once another save was loaded
 #      Paulinchen  2026-10-11: Checked the line above the player's head while offering a trade and waiting for an accepted one to open, each with its seconds left
 #      Paulinchen  2026-10-08: Checked that a trade id that is not valid is turned down with its own notice
 #                            - Checked the invalid reason the player who offered the trade sees, and a reason of another build
@@ -345,11 +346,71 @@ ticks
 check("the map asks the relay for trades to recover once per save", $dll.map(&:first), ["mp_trade_pending"])
 $pending_list = "state=done\n\ntrade=#{'a' * 32}\tfriend=g5;i1*1|me=g0;i1*1\ntrade=#{relay_id}\tfriend=g60;w2*1|me=g0;i1*3"
 ticks
-check("a trade the save lacks is applied, one it has only told the relay",
+check("the relay's answer waits for the map's own frame",
+      [[$game_party.item_number(potion), $game_party.gold], $dll.map(&:first), $saved], [before, ["mp_trade_pending"], []])
+trade.on_map
+check("where a trade the save lacks is applied, one it has only told the relay",
       [[$game_party.item_number(potion), $game_party.gold], $dll.map(&:first), $saved],
       [[before[0], before[1] + 5], ["mp_trade_pending", "mp_trade_done", "mp_trade_done"], [2]])
 ticks
+trade.on_map
 check("and the relay is not asked again for the same save", $dll.size, 3)
+
+# Trades to recover wait until the player is free on the map.
+$game_system = Game_System.new
+$dll.clear
+$saved.clear
+before = $game_party.gold
+$pending_list = "state=busy\n\n"
+ticks
+SceneManager.scene = Scene_Battle.new
+$pending_list = "state=done\n\ntrade=#{'d' * 32}\tfriend=g7|me=g0"
+ticks(3)
+trade.on_map
+check("an answer that comes in a battle applies and saves nothing there", [$game_party.gold, $dll.map(&:first), $saved], [before, ["mp_trade_pending"], []])
+SceneManager.scene = Scene_Map.new
+$game_message.busy = true
+ticks
+trade.on_map
+check("nor on the map while a message shows", [$game_party.gold, $dll.map(&:first), $saved], [before, ["mp_trade_pending"], []])
+$game_message.busy = false
+trade.on_map
+check("but on the next frame the player is free on the map, saved once",
+      [$game_party.gold, $dll.map(&:first), $saved], [before + 7, ["mp_trade_pending", "mp_trade_done"], [2]])
+trade.on_map
+check("and only once", [$game_party.gold, $dll.size, $saved], [before + 7, 2, [2]])
+
+# Trades to recover that wait while another save is loaded.
+$game_system = Game_System.new
+$dll.clear
+$saved.clear
+$pending_list = "state=done\n\ntrade=#{'e' * 32}\tfriend=g9|me=g0"
+$game_message.busy = true
+ticks(2)
+trade.on_map
+$game_system = Game_System.new
+$game_message.busy = false
+trade.on_map
+check("are dropped once another save was loaded", [$game_party.gold, $dll.map(&:first), $saved], [before + 7, ["mp_trade_pending"], []])
+ticks(2)
+trade.on_map
+check("and the relay is asked again for the new save, whose trades then apply",
+      [$game_party.gold, $dll.map(&:first), $saved], [before + 16, ["mp_trade_pending", "mp_trade_pending", "mp_trade_done"], [2]])
+
+# Trades to recover that wait as the world closes.
+$game_system = Game_System.new
+$dll.clear
+$pending_list = "state=done\n\ntrade=#{'f' * 32}\tfriend=g4|me=g0"
+$game_message.busy = true
+ticks(2)
+trade.on_map
+trade.tick(false)
+$game_message.busy = false
+trade.on_map
+check("are forgotten once the world closed", [$game_party.gold, $dll.map(&:first), MGQ_MpTrade::Recovery.instance_variable_get(:@recovered)], [before + 16, ["mp_trade_pending"], nil])
+DataManager.load_game_without_rescue(2)
+$pending_list = "state=done\n\n"
+ticks(2)
 
 # Opens a trade the other player accepted, offers a potion, and has both confirm it, which commits it.
 #

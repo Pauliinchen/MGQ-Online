@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-12: Stood in for the notice that Player.ini could not be read
+#                            - Stood in for the title screen and told from $new_game_pending whether a world's new game waits there
 #      Paulinchen  2026-10-11: Loaded ui_theme.rbx and ui_layout.rbx after ui.rbx, as Multiplayer.rb does, which the boxes take their look and place from
 #                            - Kept a color's values, which an outlined text copies the font's color by
 #                            - Gave the screen its size and frame count and stood in for the scenes' base, which the confirm box centres on and ticks after
@@ -37,6 +38,7 @@ class Sprite_Character < Sprite; end
 module Graphics; def self.update; end; def self.width; 640; end; def self.height; 480; end; def self.frame_count; $frame.to_i; end; end
 class Spriteset_Map; def update; end; def dispose; end; end
 class Scene_Base; def update; end; def start; end; end
+class Scene_Title < Scene_Base; end
 Rect = Struct.new(:x, :y, :width, :height)
 class Game_Map
   attr_accessor :map_id, :interpreter, :display_name
@@ -132,7 +134,7 @@ module MGQ_Multiplayer
     end
   end
 end
-module MGQ_MpWorld; def self.open?; $open; end; end
+module MGQ_MpWorld; def self.open?; $open; end; def self.new_game_pending?; $new_game_pending; end; end
 $player_ini = {}
 
 load_script "core_hotkeys"

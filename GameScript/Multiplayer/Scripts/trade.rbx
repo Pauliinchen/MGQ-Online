@@ -2,6 +2,7 @@
 #  trade.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Applied and saved the trades the relay lists to recover only once the player is free on the map, instead of in the battle, menu or trade the answer came in
 #      Paulinchen  2026-10-11: Drew the trade offer in the color every request and offer shares
 #                            - Named the wait for an accepted trade to open in the line above the player's head, with its seconds left, and gave the offer its seconds left
 #                            - Stopped the player's own trade offer once they accept another player's, so nobody accepts an offer whose player waits for a trade already
@@ -885,8 +886,10 @@ module MGQ_MpTrade
     close(saved ? "Trade with #{session.name} complete, game saved." : "Trade with #{session.name} complete. Save your game, the trade could not.")
   end
 
-  # Opens the trade screen from the map once a trade began. Called by the map every frame.
+  # Applies the trades waiting to be recovered, and opens the trade screen from the map once a
+  # trade began. Called by the map every frame.
   def self.on_map
+    Recovery.apply_waiting
     return unless @open_screen && @session
 
     @open_screen = false
@@ -1215,8 +1218,9 @@ module MGQ_MpTrade
   end
 
   # Trades the relay committed that the player's game has not applied: after a crash, a lost
-  # connection, or a save loaded from before the trade. Each is noted in the save, applied once per
-  # save, and saved; the relay hears that it is done only once a save holds it.
+  # connection, or a save loaded from before the trade. The relay's answer waits until the player is
+  # free on the map; then each is noted in the save, applied once per save, and saved; the relay
+  # hears that it is done only once a save holds it.
   module Recovery
     # Notes a trade in the save and applies it, unless the save has it, and keeps it unsaved until
     # the next save in the world.
@@ -1301,18 +1305,20 @@ module MGQ_MpTrade
     def self.reset
       @checked = nil
       @fetching = false
+      @recovered = nil
       @wait = 0
       @unsaved = []
     end
 
-    # Asks the relay once per save loaded in the world, from the map, and applies what it answers.
-    # Called every frame in every scene.
+    # Asks the relay once per save loaded in the world, from the map, and keeps what it answers for
+    # apply_waiting. Called every frame in every scene.
     def self.tick
       return poll if @fetching
+      return if @recovered
       return unless SceneManager.scene.is_a?(Scene_Map) && MGQ_MpTrade.session.nil?
       return log_unavailable unless MGQ_MpTrade.available?
 
-      key = [MGQ_MpTrade.world_id, $game_system.object_id]
+      key = save_key
       return if @checked == key
       return if (@wait = @wait.to_i - 1) > 0
 
@@ -1332,7 +1338,36 @@ module MGQ_MpTrade
       MGQ_MpTrade.log_once([:unavailable, ready], ready ? "no trades: this world was made before the world list" : "no trades: the mod's DLL is missing or out of date")
     end
 
-    # Takes the relay's answer once it came, and asks again later when it failed.
+    # Tells which save in which world the relay is asked for.
+    #
+    # @return [Array] The world's id and the object id of the loaded save's Game_System.
+    def self.save_key
+      [MGQ_MpTrade.world_id, $game_system.object_id]
+    end
+
+    # Applies the trades the relay listed once the player is free on the map, and drops them when
+    # another save was loaded meanwhile. Called by the map every frame.
+    def self.apply_waiting
+      return unless @recovered
+
+      key, trades = @recovered
+      unless key == save_key
+        MGQ_MpTrade.log("dropped #{trades.size} trade(s) to recover: another save was loaded meanwhile, asking the relay again")
+        @recovered = nil
+        @checked = nil
+        return
+      end
+
+      reason = MGQ_MpTrade.busy_reason
+      return MGQ_MpTrade.log_once([:recovery_waits, key], "#{trades.size} trade(s) to recover wait until the player is free on the map (#{reason})") if reason
+
+      @recovered = nil
+      trades.each { |id, text| recover(id, text) }
+    rescue => e
+      MGQ_MpTrade.log("recovering trades failed: #{MGQ_MpLog.failure(e)} at #{Array(e.backtrace).first}")
+    end
+
+    # Keeps the relay's answer once it came, and asks again later when it failed.
     def self.poll
       state, trades = Relay.pending
       return if state == "busy"
@@ -1345,7 +1380,7 @@ module MGQ_MpTrade
       end
 
       MGQ_MpTrade.log("the relay lists #{trades.size} trade(s) to recover#{trades.empty? ? '' : ': ' + trades.map { |id, _| MGQ_MpTrade.short(id) }.join(', ')}")
-      trades.each { |id, text| recover(id, text) }
+      @recovered = [@checked, trades] unless trades.empty?
     end
 
     # Applies a trade the relay committed, unless the save has it, and saves; the relay hears of a

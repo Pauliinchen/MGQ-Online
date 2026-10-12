@@ -2,6 +2,8 @@
 #  overworld_sync.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Set the time the player entered their map anew once they left the world, loaded a save or started a new game, which let a returning player take Map Owner at once
+#                            - Told nobody a state while the player is on the title screen or a world's new game waits there, which told the previous game's map
 #      Paulinchen  2026-10-10: Handed on the share left, the max HP and whether a Raid World's boss pool is defeated with the relay's push of it, instead of its kills
 #      Paulinchen  2026-10-09: Handed the relay's push that a Raid World's boss pool changed to the script registered for it, marked as the relay's
 #                            - Handed the relay's push that a Raid World's difficulty changed to the script registered for it, marked as the relay's
@@ -137,6 +139,20 @@ module MGQ_MpOverworldSync
   # @return [Boolean] Whether world.rbx has a world open.
   def self.in_world?
     defined?(MGQ_MpWorld) && MGQ_MpWorld.open? ? true : false
+  end
+
+  # Reports whether the player is on no map yet: the title screen shows, or a world's new game
+  # waits there, also through the world screen's fade-out.
+  #
+  # The title screen keeps the previous game's objects, so $game_map still names its map.
+  #
+  # @return [Boolean] Whether they are.
+  def self.before_map?
+    return true if SceneManager.scene.is_a?(Scene_Title)
+
+    defined?(MGQ_MpWorld) && MGQ_MpWorld.respond_to?(:new_game_pending?) && MGQ_MpWorld.new_game_pending? ? true : false
+  rescue
+    false
   end
 
   # Reports whether the map is quiet: no event runs and no message shows.
@@ -278,6 +294,7 @@ module MGQ_MpOverworldSync
     unless in_world?
       Peers.clear unless Peers.empty?
       Me.forget_seat
+      Me.reset_map_since
       Status.look_closed
       ask(:tick, false)
       return
@@ -387,15 +404,16 @@ module MGQ_MpOverworldSync
       @identity = nil if seat < 0
       state = current
       sent = state ? Link.send_to(seat, encode(state)) : false
-      MGQ_MpOverworldSync.log("told #{seat < 0 ? 'everyone' : "seat #{seat}"} everything#{state ? " (map #{state['map']})" : ', but the map does not exist yet'}#{sent || !state ? '' : ', which failed'}")
+      MGQ_MpOverworldSync.log("told #{seat < 0 ? 'everyone' : "seat #{seat}"} everything#{state ? " (map #{state['map']})" : ', but the player is on no map yet'}#{sent || !state ? '' : ', which failed'}")
       @told = state if seat < 0
     end
 
     # Reads what the others need to know about the player.
     #
-    # @return [Hash, nil] The player's state, nil before the map exists.
+    # @return [Hash, nil] The player's state, nil while the player is on no map yet.
     def self.current
       return nil unless $game_player && $game_map && $game_map.map_id > 0
+      return nil if MGQ_MpOverworldSync.before_map?
 
       looks = $game_player.vehicle || $game_player
       state = {
@@ -452,6 +470,13 @@ module MGQ_MpOverworldSync
     # Forgets the seat, as the world closes.
     def self.forget_seat
       @seat = nil
+    end
+
+    # Forgets when the player entered their map, so a returning player or a loaded save enters it
+    # anew. A reconnect keeps it.
+    def self.reset_map_since
+      @since_map = nil
+      @since = nil
     end
 
     # Tells when the player entered the map they are on, which decides who of a party on a map is
@@ -880,6 +905,15 @@ begin
   MGQ_MpHooks.after(Graphics.singleton_class, :update, "overworld_sync") { MGQ_MpOverworldSync.tick }
 rescue => e
   MGQ_MpOverworldSync.log("Graphics hook FAILED: #{e.class}: #{e.message}")
+end
+
+begin
+  # A loaded save or a new game enter their map anew. Not after extract_save_contents, which a
+  # duel's end calls too to put the game back.
+  MGQ_MpHooks.after(DataManager.singleton_class, :load_game_without_rescue, "overworld_sync") { |_index| MGQ_MpOverworldSync::Me.reset_map_since }
+  MGQ_MpHooks.after(DataManager.singleton_class, :setup_new_game, "overworld_sync") { MGQ_MpOverworldSync::Me.reset_map_since }
+rescue => e
+  MGQ_MpOverworldSync.log("save hooks FAILED: #{e.class}: #{e.message}")
 end
 
 # Discord shows the world and its players, through the Discord mod's bridge when it is installed.

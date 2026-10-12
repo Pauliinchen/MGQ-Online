@@ -2,6 +2,8 @@
 #  overworld_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Checked that the time the player entered their map is set anew once they left the world, loaded a save or started a new game, and kept across a reconnect
+#                            - Checked that nobody is told a state on the title screen or while a world's new game waits there
 #      Paulinchen  2026-10-11: Chose the map chat before sending its line, since the chat starts in the global chat
 #                            - Checked the status line's place in the layout: its default at the bottom left, a place the player left it in with its notices broken to its width, and its least width
 #                            - Left the chat log's resizing and its smaller room in a battle to ui_chat_test.rb, since the layout sizes the log
@@ -75,6 +77,9 @@
 # Covers the open world as overworld_sync.rbx, ui_actions.rbx, ui_chat.rbx, overworld.rbx,
 # coop.rbx and coop_squad.rbx play it together: states, other players, their ghosts and their
 # followers, the action wheel and parties, chat, pings, and the gate of the party's messages.
+
+# The save calls overworld_sync.rbx follows.
+module DataManager; def self.load_game_without_rescue(index); true; end; def self.setup_new_game; end; end
 
 require_relative "world_support"
 
@@ -1482,3 +1487,38 @@ MGQ_MpOverworldSync.tick
 $status_calls = 0
 check("the world closing forgets the seat", [me.seat, $status_calls], [7, 1])
 $open = true
+
+# The time the player entered their map, which decides the Map Owner: kept across a reconnect, set
+# anew once they left the world, loaded a save or started a new game.
+me.map_since
+me.instance_variable_set(:@since, 1)
+$inbox << entry("seat", 0)
+MGQ_MpOverworldSync.tick
+check("a reconnect keeps the time the player entered their map", me.map_since, 1)
+$open = false
+MGQ_MpOverworldSync.tick
+$open = true
+check("leaving the world sets it anew on the same map", [$game_map.map_id, me.map_since == 1], [5, false])
+me.instance_variable_set(:@since, 1)
+DataManager.load_game_without_rescue(0)
+check("so does a loaded save", me.map_since == 1, false)
+me.instance_variable_set(:@since, 1)
+DataManager.setup_new_game
+check("and a new game", me.map_since == 1, false)
+
+# The title screen keeps the previous game's map, which nobody is told.
+MGQ_MpOverworldSync.tick
+$sent.clear
+SceneManager.scene = Scene_Title.new
+$game_player.x += 1
+$inbox << entry("in", 3)
+MGQ_MpOverworldSync.tick
+check("on the title screen nobody is told a state, nor a newcomer", [$sent, me.current], [[], nil])
+SceneManager.scene = Scene_Base.new
+$new_game_pending = true
+MGQ_MpOverworldSync.tick
+check("nor while a world's new game waits there, as through the world screen's fade-out", [$sent, me.current], [[], nil])
+$new_game_pending = false
+SceneManager.scene = Scene_Map.new
+MGQ_MpOverworldSync.tick
+check("once the map starts everyone is told the state", [$sent.map(&:first), $sent.last[1].include?("x=#{$game_player.x}")], [[-1], true])
