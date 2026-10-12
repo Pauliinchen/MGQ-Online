@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-12: Checked that the Worker sends bug reports to an object of their own, never to the world directory
+//                            - Checked that a report past its rate limit is refused before it is unpacked, that at most two reports are handled at once, and that a report refused after its turn was taken gives it back
 //      Paulinchen  2026-10-11: Created
 //
 //----------------------------------------------------------------
@@ -165,6 +166,20 @@ function newDesk({ answer, settings = SETTINGS, limits = REPORT_LIMITS } = {}) {
  */
 function post(desk, body, client = { player: PLAYER, address: ADDRESS }) {
   return handleReportRequest(desk, "POST", ROUTE, async () => body, client);
+}
+
+/**
+ * Holds every request of a desk to GitHub until it is opened.
+ *
+ * @param {ReportDesk} desk The desk.
+ * @returns {{open: () => void}} What opens it.
+ */
+function holdGitHub(desk) {
+  let open;
+  const gate = new Promise((resolve) => (open = resolve));
+  const fetcher = desk.fetch;
+  desk.fetch = async (...args) => (await gate, fetcher(...args));
+  return { open };
 }
 
 /**
@@ -409,7 +424,41 @@ test("a refused report counts against no rate limit", async () => {
     assert.equal((await post(desk, bodyOf({}, [{ name: "report.md", content: "AAAA", gzip: true }]))).status, 400);
   }
 
-  assert.equal((await post(desk, bodyOf())).status, 201);
+  for (let count = 0; count < 3; count++) {
+    assert.equal((await post(desk, bodyOf())).status, 201);
+  }
+
+  assert.equal((await post(desk, bodyOf())).status, 429, "a gzip refused after the turn was taken gave it back");
+});
+
+test("a report past its rate limit is refused before its files are unpacked", async () => {
+  const { desk } = newDesk();
+
+  for (let count = 0; count < 3; count++) {
+    assert.equal((await post(desk, bodyOf())).status, 201);
+  }
+
+  const broken = await post(desk, bodyOf({}, [{ name: "report.md", content: "AAAA", gzip: true }]));
+  assert.deepEqual([broken.status, broken.body.code], [429, "rate"]);
+});
+
+test("at most two reports are handled at once, also when GitHub fails them", async () => {
+  const { desk } = newDesk();
+  const held = holdGitHub(desk);
+  const players = Array.from({ length: 4 }, (_, index) => (index + 16).toString(16).repeat(16));
+  const first = [post(desk, bodyOf(), { player: players[0], address: null }), post(desk, bodyOf(), { player: players[1], address: null })];
+
+  const third = post(desk, bodyOf(), { player: players[2], address: null });
+  held.open();
+  assert.deepEqual(await third, { status: 503, body: { error: "the relay is handling other bug reports, try again in a minute", code: "busy" } });
+  assert.deepEqual((await Promise.all(first)).map((answer) => answer.status), [201, 201]);
+  assert.equal((await post(desk, bodyOf(), { player: players[3], address: null })).status, 201);
+
+  const failing = newDesk({ answer: () => new Response("", { status: 500 }) }).desk;
+
+  for (const player of players.slice(0, 3)) {
+    assert.equal((await post(failing, bodyOf(), { player, address: null })).status, 502);
+  }
 });
 
 test("every rule of the header is checked", () => {
@@ -552,6 +601,12 @@ test("the window limiter forgets turns older than its window and the least recen
   limiter.take("b");
   limiter.take("c");
   assert.deepEqual([...limiter.turns.keys()], ["b", "c"]);
+
+  limiter.take("c");
+  limiter.giveBack("c");
+  limiter.giveBack(null);
+  limiter.giveBack("unknown");
+  assert.deepEqual(limiter.recent("c"), [100]);
 });
 
 test("the settings fall back to the default repositories and branch", () => {

@@ -2,6 +2,7 @@
 #  ui_bug_report.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Told the player in friendly words when the relay is busy with other bug reports
 #      Paulinchen  2026-10-11: Created
 #
 #----------------------------------------------------------------
@@ -76,6 +77,7 @@ module MGQ_MpBugReport
   FRIENDLY_REASONS = {
     "rate" => "you sent several reports in a short time. Try again in an hour.",
     "off" => "the relay takes no bug reports right now.",
+    "busy" => "the relay is busy with other bug reports. Try again in a minute.",
   }
 
   # What the player is told when the report waits: in a battle, and while the map is busy.
@@ -440,8 +442,8 @@ module MGQ_MpBugReport
     log("the report #{logged}")
   end
 
-  # Tells why a report failed, in friendly words for the relay's rate limit and for a relay that
-  # takes no reports.
+  # Tells why a report failed, in friendly words for the relay's rate limit, a relay that takes no
+  # reports and one busy with others.
   #
   # @param code [String, nil] The relay's code, or "http<status>" or "unreachable".
   # @param reason [String, nil] The DLL's reason.

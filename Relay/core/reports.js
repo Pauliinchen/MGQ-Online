@@ -2,6 +2,7 @@
 //  reports.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-12: Counted a report against the rate limits before unpacking it, so reports sent at once no longer pass together, and handled at most two at a time
 //      Paulinchen  2026-10-11: Created
 //
 //----------------------------------------------------------------
@@ -39,6 +40,7 @@ export const REPORT_LIMITS = Object.freeze({
   maxTextBytesTotal: 24 * 1024 * 1024,
   commitTries: 3,
   githubTimeoutMs: 60 * 1000,
+  maxPending: 2,
 });
 
 /**
@@ -68,7 +70,7 @@ export const REPORT_DEFAULTS = Object.freeze({
 /**
  * The codes a refusal names why with, which games tell their players apart.
  */
-export const REPORT_REFUSAL = Object.freeze({ player: "player", rate: "rate", off: "off", github: "github" });
+export const REPORT_REFUSAL = Object.freeze({ player: "player", rate: "rate", off: "off", github: "github", busy: "busy" });
 
 /**
  * The label every issue of a report gets.
@@ -198,6 +200,20 @@ export class WindowLimiter {
       }
 
       this.turns.delete(oldest);
+    }
+  }
+
+  /**
+   * Gives back the last turn a player or address took, as for a report refused after its turn was
+   * taken.
+   *
+   * @param {string | null | undefined} key The player or address; without one nothing is given back.
+   */
+  giveBack(key) {
+    const times = key ? this.turns.get(key) : undefined;
+
+    if (times?.length) {
+      times.pop();
     }
   }
 
@@ -571,6 +587,7 @@ export class ReportDesk {
     this.limits = limits;
     this.log = log;
     this.rates = rates.map((rate) => ({ of: rate.of, limiter: new WindowLimiter(rate, clock) }));
+    this.pending = 0;
   }
 
   /**
@@ -583,8 +600,8 @@ export class ReportDesk {
   }
 
   /**
-   * Takes a report: checks it, unpacks its text files, counts it against the rate limits and
-   * hands it to GitHub.
+   * Takes a report: checks it, counts it against the rate limits, unpacks its text files and hands
+   * it to GitHub, at most limits.maxPending at a time.
    *
    * @param {unknown} key The player's key.
    * @param {string | null} address The address the report came from, null when unknown.
@@ -612,26 +629,30 @@ export class ReportDesk {
 
     const counted = { player: await playerIdOf(key), address };
 
-    // Asked before the unpacking too, which costs the most of a report before GitHub.
     if (!this.allows(counted)) {
       return tooMany();
     }
 
-    const unpacked = await unpackFiles(parsed.report.files, this.limits);
-
-    if (unpacked.refusal) {
-      return unpacked.refusal;
+    if (this.pending >= this.limits.maxPending) {
+      return busy();
     }
 
-    if (!this.allows(counted)) {
-      return tooMany();
-    }
+    // Taken with no await since the questions, so reports sent at once cannot all pass them.
+    this.take(counted);
+    this.pending++;
 
-    for (const { of, limiter } of this.rates) {
-      limiter.take(counted[of]);
-    }
+    try {
+      const unpacked = await unpackFiles(parsed.report.files, this.limits);
 
-    return this.deliver({ ...parsed.report, files: unpacked.files });
+      if (unpacked.refusal) {
+        this.giveBack(counted);
+        return unpacked.refusal;
+      }
+
+      return await this.deliver({ ...parsed.report, files: unpacked.files });
+    } finally {
+      this.pending--;
+    }
   }
 
   /**
@@ -642,6 +663,28 @@ export class ReportDesk {
    */
   allows(counted) {
     return this.rates.every(({ of, limiter }) => limiter.allows(counted[of]));
+  }
+
+  /**
+   * Takes a turn for a player and an address under every rate limit.
+   *
+   * @param {{player: string, address: string | null}} counted The player's id and the address.
+   */
+  take(counted) {
+    for (const { of, limiter } of this.rates) {
+      limiter.take(counted[of]);
+    }
+  }
+
+  /**
+   * Gives back the turn take took for a player and an address.
+   *
+   * @param {{player: string, address: string | null}} counted The player's id and the address.
+   */
+  giveBack(counted) {
+    for (const { of, limiter } of this.rates) {
+      limiter.giveBack(counted[of]);
+    }
   }
 
   /**
@@ -815,6 +858,15 @@ export class ReportDesk {
  */
 function tooMany() {
   return { status: 429, body: { error: "too many bug reports, try again later", code: REPORT_REFUSAL.rate } };
+}
+
+/**
+ * The answer while the relay already handles limits.maxPending reports.
+ *
+ * @returns {{status: number, body: object}} The answer.
+ */
+function busy() {
+  return { status: 503, body: { error: "the relay is handling other bug reports, try again in a minute", code: REPORT_REFUSAL.busy } };
 }
 
 /**

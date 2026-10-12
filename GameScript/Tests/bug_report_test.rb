@@ -2,6 +2,7 @@
 #  bug_report_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Checked the friendly words for a relay busy with other bug reports
 #      Paulinchen  2026-10-11: Created
 #
 #----------------------------------------------------------------
@@ -462,15 +463,16 @@ $shown = true
 frame
 check("then the box thanks the player with the issue's number", $notices.last[1], "Bug report sent as issue #42. Thank you!")
 report.instance_variable_set(:@sending, true)
-outcomes = [["rate", "too many"], ["off", "off"], ["http500", "GitHub refused the report"], ["unreachable", ""]].map do |code, reason|
+outcomes = [["rate", "too many"], ["off", "off"], ["busy", "busy"], ["http500", "GitHub refused the report"], ["unreachable", ""]].map do |code, reason|
   report.instance_variable_set(:@sending, true)
   $state = "failed\t#{code}\t#{reason}"
   report::POLL_FRAMES.times { frame }
   $notices.last[1]
 end
-check("a failure says why, in friendly words for the rate limit and a relay without reports", outcomes,
+check("a failure says why, in friendly words for the rate limit, a relay without reports and a busy one", outcomes,
       ["The bug report failed: you sent several reports in a short time. Try again in an hour.",
        "The bug report failed: the relay takes no bug reports right now.",
+       "The bug report failed: the relay is busy with other bug reports. Try again in a minute.",
        "The bug report failed: GitHub refused the report", "The bug report failed: unreachable"])
 reset
 
