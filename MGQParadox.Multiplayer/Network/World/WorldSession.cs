@@ -5,6 +5,7 @@
 //      Paulinchen  2026-10-12: Paced the frames, chat texts and pings it sends to at most 50 a second after a burst of 200, below the relay's limit, and logged each spell of pacing and a close for sending too fast
 //                            - Cut a connect still running once the world is left or entered anew, and connected again instead of failing when the connect it cut still took the new connection's place
 //                            - Took a "replaced" close as the cut connect's only while that connect could still take a seat, and stopped for good once the relay turns the game away as too old
+//                            - Told the player to update MGQ Online once a world room turns the game away with 400 and the code "update", and counted a cut connect's seat window from the cut, not from when that connect started
 //      Paulinchen  2026-10-10: Handed the relay's word that a Raid World's boss pool changed to the game script as a boss entry with its key, the share left, the raid max HP and whether it is defeated, and to the boss pools the game script reads
 //      Paulinchen  2026-10-09: Handed the relay's word that a world changed whether it turns other mods off, or its mods, to the game script as a mods_rule entry with both
 //                            - Handed the relay's word that a Raid World's boss pool changed to the game script as a boss entry with its key and hit points
@@ -288,6 +289,11 @@ internal sealed class WorldSession
     private const string RaidCode = "raid_unsupported";
 
     /// <summary>
+    /// The refusal code of a world room turning a game away as too old for the relay.
+    /// </summary>
+    private const string UpdateCode = "update";
+
+    /// <summary>
     /// The close code of a connection whose player the creator removed.
     /// </summary>
     private const int RemovedClose = 4009;
@@ -356,8 +362,8 @@ internal sealed class WorldSession
     /// <see cref="Stopwatch"/> timestamp.
     /// </summary>
     /// <remarks>
-    /// The relay may still let in a connect this game already cut, so it counts until its timeout
-    /// would have run out.
+    /// The relay may still let in a connect this game already cut, even one it held past that
+    /// connect's own timeout, so it counts a whole connect timeout from the cut.
     /// </remarks>
     private long _supersededUntil;
 
@@ -453,7 +459,7 @@ internal sealed class WorldSession
     public TimeSpan SilenceTimeout { get; init; } = TimeSpan.FromSeconds(60);
 
     /// <summary>
-    /// How long reaching the relay may take, which also bounds how long a cut connect may still take a seat.
+    /// How long reaching the relay may take, which also bounds how long after the cut a cut connect may still take a seat.
     /// </summary>
     public TimeSpan ConnectTimeout { get; init; } = TimeSpan.FromSeconds(6);
 
@@ -808,7 +814,7 @@ internal sealed class WorldSession
     /// Tells why the relay refused the game for good, as opposed to for now.
     /// </summary>
     /// <param name="refusal">The HTTP status the relay refused the game with.</param>
-    /// <param name="code">The code the relay named why with, or for 426 the text to show; <see langword="null"/> for none.</param>
+    /// <param name="code">The code the relay named why with, such as "update" for a game too old for it, or for 426 the text to show; <see langword="null"/> for none.</param>
     /// <returns>The reason, or <see langword="null"/> when trying again may help.</returns>
     private static string? FinalReasonFor(HttpStatusCode? refusal, string? code) => refusal switch
     {
@@ -817,6 +823,7 @@ internal sealed class WorldSession
         HttpStatusCode.Forbidden => Removed,
         HttpStatusCode.Unauthorized => TokenMismatch,
         HttpStatusCode.BadRequest when code == RaidCode => RaidUnsupported,
+        HttpStatusCode.BadRequest when code == UpdateCode => Relays.UpdateNeeded,
         HttpStatusCode.BadRequest => "The relay turned the request down. Update the mod.",
         HttpStatusCode.UpgradeRequired => string.IsNullOrWhiteSpace(code) ? Relays.UpdateNeeded : code,
         _ => null,
@@ -1320,7 +1327,7 @@ internal sealed class WorldSession
 
         if (_connectingSince != 0)
         {
-            _supersededUntil = Math.Max(_supersededUntil, _connectingSince + (long)(ConnectTimeout.TotalSeconds * Stopwatch.Frequency));
+            _supersededUntil = Math.Max(_supersededUntil, Stopwatch.GetTimestamp() + (long)(ConnectTimeout.TotalSeconds * Stopwatch.Frequency));
             _connectingSince = 0;
         }
 

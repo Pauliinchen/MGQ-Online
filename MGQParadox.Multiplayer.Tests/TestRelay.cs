@@ -4,6 +4,7 @@
 //  Changelog:
 //      Paulinchen  2026-10-12: Kept the address and the X-MGQ-Version header of every request, for the tests
 //                            - Turned world room and PvP room requests away with 426 once a test says so, with or without a text in X-MGQ-Refusal, as the relay does for a game too old for it
+//                            - Turned world room requests of a game too old away with 400 and the code "update" instead, as the relay does
 //                            - Closed a peer that sends more than 60 messages a second after a burst of 240 with 4003, as the relay does, and counted those closes for the tests
 //                            - Refused a create past a player's world limit and a ban past a world's removed players with 429, as the relay does, once a test sets the limits
 //                            - Closed the earlier connection of a player once the new one is let in, before its handshake, freed the seat of a handshake that fails, and let tests hold back the next world room request
@@ -198,8 +199,9 @@ internal sealed class TestRelay : IDisposable
     public TaskCompletionSource? WorldUpgradeHold { get; set; }
 
     /// <summary>
-    /// Turns every world room and PvP room request away with 426 once set, as the relay does a game
-    /// too old for it, naming this text in X-MGQ-Refusal unless it is empty.
+    /// Turns every world room and PvP room request away once set, as the relay does a game too old
+    /// for it: a world room with 400 and the code "update" in X-MGQ-Refusal, a PvP room with 426,
+    /// naming this text in X-MGQ-Refusal unless it is empty.
     /// </summary>
     public string? UpdateRefusal { get; set; }
 
@@ -486,7 +488,14 @@ internal sealed class TestRelay : IDisposable
             Interlocked.Increment(ref _worldRoomRequests);
         }
 
-        if (context.Request.IsWebSocketRequest && parts is [_, "world" or "room", _] && UpdateRefusal is { } outdated)
+        if (context.Request.IsWebSocketRequest && parts is [_, "world", _] && UpdateRefusal != null)
+        {
+            context.Response.Headers["X-MGQ-Refusal"] = "update";
+            Refuse(context, 400);
+            return;
+        }
+
+        if (context.Request.IsWebSocketRequest && parts is [_, "room", _] && UpdateRefusal is { } outdated)
         {
             if (outdated.Length > 0)
             {

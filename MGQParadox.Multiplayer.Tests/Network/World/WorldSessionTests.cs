@@ -5,6 +5,7 @@
 //      Paulinchen  2026-10-12: Covered a burst of messages paced below the relay limit, and the test relay closing a connection that sends too fast
 //                            - Covered entering a world again while the first connect still waits at the relay, which the relay lets in after the new one
 //                            - Covered a "replaced" close after the cut connect could no longer take a seat, which ends the session as a real replace, and the relay turning the game away as too old for good, with or without its text
+//                            - Covered a cut connect the relay holds past its own timeout, whose late "replaced" close still connects again, and the world room turning the game away as too old with 400 and the code "update", which tells to update MGQ Online
 //      Paulinchen  2026-10-09: Covered the relay's word that a world now turns other mods off handed to the game script with its mods, and a value that is neither 0 nor 1 ignored
 //                            - Covered the relay's word of a Raid World's new difficulty handed to the game script, and a value that is no difficulty ignored
 //      Paulinchen  2026-10-08: Covered entering a Raid World, which the relay lets in only games that name it in the features header
@@ -20,6 +21,7 @@
 //----------------------------------------------------------------
 
 using System;
+using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using MGQParadox.Multiplayer.Network.Pvp;
@@ -400,32 +402,57 @@ public sealed class WorldSessionTests
     }
 
     /// <summary>
-    /// Asserts that a world room turning the game away as too old ends the session for good with the
-    /// text the relay names, without trying again.
+    /// Asserts that a "replaced" close from a connect cut by entering again, which the relay held
+    /// past the window counted from when that connect started, still connects again, since the
+    /// window counts from the cut.
     /// </summary>
     [Fact]
-    public void OutdatedGame_EndsForGoodWithTheRelayText()
+    public void CutConnectHeldPastItsOwnTimeout_OutlastsItsReplace()
     {
         using var relay = new TestRelay();
         var code = MakeWorld(relay, 2);
-        var session = NewSession(relay.Address);
-        const string text = "This relay serves MGQ Online 0.7.0 and newer.";
+        var connectTimeout = TimeSpan.FromSeconds(2);
+        var session = NewSession(relay.Address, connectTimeout: connectTimeout);
+        var hold = new TaskCompletionSource();
 
-        relay.UpdateRefusal = text;
-        session.Open(code);
+        try
+        {
+            relay.WorldUpgradeHold = hold;
+            session.Open(code);
+            Assert.True(SpinWait.SpinUntil(() => relay.WorldUpgradeHold == null, Patience), "The first connect never reached the relay.");
+            var held = Stopwatch.StartNew();
 
-        var ended = AwaitError(session);
-        Assert.Equal(("failed", text), (ended["state"], ended["error"]));
-        Thread.Sleep(500);
-        Assert.Equal(1, relay.WorldRoomRequests);
+            Thread.Sleep(TimeSpan.FromSeconds(1.5));
+            session.Open(code);
+            NextEntry(session, kind: "seat");
+
+            // Past when the cut connect started plus its timeout, still within the timeout after the cut.
+            var pastItsOwnTimeout = connectTimeout + TimeSpan.FromSeconds(0.5) - held.Elapsed;
+
+            if (pastItsOwnTimeout > TimeSpan.Zero)
+            {
+                Thread.Sleep(pastItsOwnTimeout);
+            }
+
+            hold.SetResult();
+
+            NextEntry(session, kind: "seat");
+            var state = Await(session, described => described["state"] == "open", "the state open after the cut connect took its place");
+            Assert.Equal(string.Empty, state["error"]);
+        }
+        finally
+        {
+            hold.TrySetResult();
+            session.Close();
+        }
     }
 
     /// <summary>
-    /// Asserts that a world room turning the game away as too old without a text ends the session
-    /// for good, telling the player to update.
+    /// Asserts that a world room turning the game away as too old, with 400 and the code "update" as
+    /// the relay does, ends the session for good telling the player to update, without trying again.
     /// </summary>
     [Fact]
-    public void OutdatedGame_WithoutText_TellsToUpdate()
+    public void OutdatedGame_EndsForGoodTellingToUpdate()
     {
         using var relay = new TestRelay();
         var code = MakeWorld(relay, 2);
@@ -436,6 +463,8 @@ public sealed class WorldSessionTests
 
         var ended = AwaitError(session);
         Assert.Equal(("failed", "Update MGQ Online to play online."), (ended["state"], ended["error"]));
+        Thread.Sleep(500);
+        Assert.Equal(1, relay.WorldRoomRequests);
     }
 
     /// <summary>
