@@ -3,6 +3,8 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-12: Checked that a page of the leader's story that fails to hold waits for the member as the game's own pages do
+#                            - Checked that a leader holding the game's skip tells one page every ten frames and the end only of the pages told, and the last page once the skip is let go, the event ended or a battle was called
+#                            - Checked that a party of four hears each page in one message, which a member who plays their own story ignores, saying so once
 #      Paulinchen  2026-10-11: Checked that a chest turning on a chest flag stays a chest, in the game and in the generator, and stood in for the chest flags
 #                            - Stood in for the player's followers, which a move to another map shows
 #                            - Checked that a page with story behind a choice is no chest, as Amira's paid tip in Iliasburg
@@ -905,6 +907,75 @@ Object.send(:remove_const, :MGQ_MpCoopScene)
 $game_message.add("Hello, \\N[1]!")
 $game_message.choices.push("Yes", "No")
 check("with its face and text", [say["face"], say["index"], say["map"], MGQ_MpCoopEvents.decode(say["lines"].split(",")[0]), say["choices"].split(",").map { |t| MGQ_MpCoopEvents.decode(t) }], ["Alice", "2", "7", "Hello, \\N[1]!", ["Yes", "No"]])
+
+# Holding the game's skip, the leader passes a page every frame: the members hear one page every
+# SKIP_SEND_FRAMES, always the last, and that the leader moved past only the pages told.
+pass_page = lambda do |text|
+  $frame_count += 1
+  $game_message.add(text)
+  $game_map.interpreter.wait_for_message
+  $game_message.clear
+  $game_map.update
+end
+told_pages = lambda { $sent.select { |_, f| %w[say done].include?(f["pevent"]) }.map { |seat, f| [seat, f["pevent"], f["page"], f["lines"] && MGQ_MpCoopEvents.decode(f["lines"])] } }
+SceneManager.scene = Scene_Map.new
+$game_message.clear
+$game_map.interpreter.setup(story_page.list, 11)
+$sent.clear
+$skipping = true
+(1..100).each { |number| pass_page.call("Skipped page #{number}") }
+skipped = told_pages.call
+check("holding the game's skip, the leader tells one page every SKIP_SEND_FRAMES and that they moved past it",
+      [skipped.size, skipped.select { |_, kind, _, _| kind == "say" }.map { |_, _, _, line| line }],
+      [20, (0..9).map { |tens| "Skipped page #{tens * 10 + 1}" }])
+$skipping = false
+$game_map.update
+told = told_pages.call
+check("letting the skip go tells the last page and that the leader moved past it",
+      told.last(2).map { |_, kind, page, line| [kind, page == told.last[2], line] }, [["say", true, "Skipped page 100"], ["done", true, nil]])
+check("and so at most two messages every SKIP_SEND_FRAMES went out, each end of a page told",
+      [told.size <= 2 * (100 / MGQ_MpCoopEvents::SKIP_SEND_FRAMES) + 2, told.select { |_, kind, _, _| kind == "done" }.all? { |_, _, page, _| told.any? { |_, kind, said, _| kind == "say" && said == page } }],
+      [true, true])
+$sent.clear
+$skipping = true
+pass_page.call("Kept page")
+check("a page kept while skipping waits", told_pages.call, [])
+MGQ_MpCoopEvents.finished($game_map.interpreter)
+$game_map.update
+check("and goes out once the story's event ended", told_pages.call.map { |_, kind, _, line| [kind, line] }, [["say", "Kept page"], ["done", nil]])
+$game_map.interpreter.setup(story_page.list, 11)
+$sent.clear
+pass_page.call("First page of the next event")
+pass_page.call("Page before a battle")
+SceneManager.scene = Scene_Battle.new
+$game_map.update
+check("a new telling tells its first page at once, and a page kept goes out once a battle is called",
+      told_pages.call.map { |_, kind, _, line| [kind, line] }, [["say", "First page of the next event"], ["done", nil], ["say", "Page before a battle"], ["done", nil]])
+SceneManager.scene = Scene_Map.new
+$skipping = nil
+
+# Members who follow the story hear each page in one message for the whole party; a member who
+# plays their own story ignores it.
+third = MGQ_MpOverworldSync::Peers::Peer.new(3, { "id" => "t", "name" => "Third", "party" => "p1" }, nil, true)
+fourth = MGQ_MpOverworldSync::Peers::Peer.new(6, { "id" => "v", "name" => "Fourth", "party" => "p1" }, nil, true)
+$members = [friend, third, fourth]
+$sent.clear
+pass_page.call("A page for everyone")
+check("a party of four hears each page and its end in one message for all", told_pages.call.map { |seat, kind, _, _| [seat, kind] }, [[-1, "say"], [-1, "done"]])
+all_say = $sent.find { |_, f| f["pevent"] == "say" }[1]
+$members = [friend]
+$leader = MGQ_MpOverworldSync::Peers::Peer.new(4, { "id" => "l", "name" => "Leader", "party" => "p1", "map" => "7" }, nil, true)
+$real_sync = true
+synced = MGQ_MpCoopStory.instance_variable_get(:@synced)
+MGQ_MpCoopStory.instance_variable_set(:@synced, false)
+heard = MGQ_MpCoopEvents.instance_variable_get(:@heard).dup
+$log.clear
+2.times { MGQ_MpCoopEvents.take($leader, all_say) }
+check("a member who plays their own story ignores it, saying so once",
+      [MGQ_MpCoopEvents.instance_variable_get(:@heard), $log.grep(/ignored say from Leader: not synced with the leader/).size], [heard, 1])
+MGQ_MpCoopStory.instance_variable_set(:@synced, synced)
+$real_sync = nil
+$leader = :me
 $sent.clear
 $game_message.clear
 $game_map.interpreter.setup(talk_page.list, 12)

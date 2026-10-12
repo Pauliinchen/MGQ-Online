@@ -3,6 +3,8 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-12: Let a page of the leader's story that fails to hold wait for the player as the game's own pages do instead of ending the game
+#                            - Told the viewers at most one page every ten frames while the teller holds the game's skip, always the last one, and that the teller moved past only the pages told, so a skipped dialogue no longer runs past the relay's limit and closes the connection
+#                            - Told a Classic party's members the story's pages in one message instead of one per member, and logged only once that a member who plays their own story ignores them
 #      Paulinchen  2026-10-11: Sorted a page with story behind a choice as no chest, so the story it moves on reaches the world's, as Amira's paid tip in Iliasburg, which a chest kept from it and so hid the rabbit in Pornof
 #                            - Kept a new game's opening from starting while its setup runs without its scene in a Raid World past it
 #                            - Told the party the dialogue of the common events the story calls, which the game runs in a child interpreter, such as the companions' lines
@@ -179,6 +181,11 @@ module MGQ_MpCoopEvents
   # The game's message skip, held: its message window passes every page while it is down (the
   # keyboard's A key).
   SKIP_BUTTON = :X
+
+  # Frames between two pages of the player's story told while they hold the game's skip, which
+  # passes a page every frame: the pages between are left out, so the sends stay far below the
+  # relay's limit per connection. coop_scene.rbx sends the scene's changes as seldom meanwhile.
+  SKIP_SEND_FRAMES = 10
 
   # Frames a member's game shows the part of a long page that fits the window before it shows the
   # rest, two and a half seconds, as the leader's game shows the whole page at once.
@@ -624,6 +631,7 @@ module MGQ_MpCoopEvents
     @telling_at = Graphics.frame_count
     @telling_map = $game_map ? $game_map.map_id : nil
     @telling_moved = false
+    @told_at = @told_page = nil unless @pending_say
     @told_markers = MGQ_MpCoop::Scope.raid? && defined?(MGQ_MpCoopStory) ? MGQ_MpCoopStory.own_markers : nil
     MGQ_MpCoopGather.forget_taken_along if defined?(MGQ_MpCoopGather)
   rescue => e
@@ -876,14 +884,14 @@ module MGQ_MpCoopEvents
     sent
   end
 
-  # As teller, sends a message about the story to those who see it, see MGQ_MpCoop::Scope.viewers.
+  # As teller, sends a message about the story to those who see it, in one message.
   #
   # @param kind [String] What it is about.
   # @param fields [Hash] Its other fields.
-  def self.tell_followers(kind, fields)
-    followers = MGQ_MpCoop::Scope.viewers
+  # @param followers [Array<MGQ_MpOverworldSync::Peers::Peer>] Those who see it, see
+  #   MGQ_MpCoop::Scope.viewers.
+  def self.tell_followers(kind, fields, followers = MGQ_MpCoop::Scope.viewers)
     return log("told nobody #{kind}: nobody follows the player's story") if followers.empty?
-    return followers.each { |peer| tell(peer.seat, kind, fields) } unless MGQ_MpCoop::Scope.raid?
 
     tell_each(followers, kind, fields)
   end
@@ -948,7 +956,7 @@ module MGQ_MpCoopEvents
       return log("ignored #{kind} from #{MGQ_MpOverworldSync.who(peer)}: not from #{scope.raid? ? 'the player telling the story here' : "the party's leader"} (#{MGQ_MpOverworldSync.who(scope.teller)})")
     end
     unless scope.watches?(peer)
-      return log("ignored #{kind} from #{MGQ_MpOverworldSync.who(peer)}: #{scope.raid? ? "the player's story is not where theirs is" : 'not synced with the leader, the player plays their own story'}")
+      return log_once([:not_watching, kind, peer ? peer.state["id"].to_s : nil], "ignored #{kind} from #{MGQ_MpOverworldSync.who(peer)}: #{scope.raid? ? "the player's story is not where theirs is" : 'not synced with the leader, the player plays their own story'}")
     end
 
     case kind
@@ -1168,8 +1176,10 @@ module MGQ_MpCoopEvents
     false
   end
 
-  # As leader, tells the members on the map the message the player's story shows now. Called
-  # before an interpreter waits for a message.
+  # As leader, tells the members on the map the message the player's story shows now. While the
+  # player holds the game's skip, a page within SKIP_SEND_FRAMES of the last one told is kept
+  # instead, replacing the one kept before, which is never told; flush_say tells it. Called before
+  # an interpreter waits for a message.
   #
   # @param interpreter [Game_Interpreter] The interpreter.
   def self.show(interpreter)
@@ -1186,10 +1196,70 @@ module MGQ_MpCoopEvents
       "background" => message.background.to_i, "position" => message.position.to_i,
       "lines" => page[0].map { |line| [line.to_s].pack('m0') }.join(","),
       "choices" => page[1].map { |choice| [choice.to_s].pack('m0') }.join(","))
-    log("telling the party page #{page_id} of the story: #{page[0].size} lines, #{page[1].size} choices, face #{message.face_name}, first line #{page[0].first.to_s[0, 60].inspect}")
-    tell_followers("say", fields)
+    note = "#{page[0].size} lines, #{page[1].size} choices, face #{message.face_name}, first line #{page[0].first.to_s[0, 60].inspect}"
+    @skipped_pages = @skipped_pages.to_i + 1 if @pending_say
+    @pending_say = nil
+    if skip_held? && @told_at && !past?(@told_at, SKIP_SEND_FRAMES)
+      @pending_say = { :id => page_id, :fields => fields, :note => note, :viewers => MGQ_MpCoop::Scope.viewers, :passed => false }
+    else
+      tell_say(page_id, fields, note, MGQ_MpCoop::Scope.viewers)
+    end
   rescue => e
     log("telling a message failed: #{e.class}: #{e.message}")
+  end
+
+  # Reports whether the player holds the game's message skip (SKIP_BUTTON).
+  #
+  # @return [Boolean] Whether they do.
+  def self.skip_held?
+    Input.press?(SKIP_BUTTON) ? true : false
+  rescue
+    false
+  end
+
+  # As teller, tells a page of the player's story to those who see it.
+  #
+  # @param id [String] The page's id, see page_id.
+  # @param fields [Hash] The page's fields.
+  # @param note [String] What the log says of the page.
+  # @param viewers [Array<MGQ_MpOverworldSync::Peers::Peer>] Those who see the story, as the page
+  #   showed.
+  def self.tell_say(id, fields, note, viewers)
+    skipped = @skipped_pages.to_i
+    @skipped_pages = 0
+    @told_at = Graphics.frame_count
+    @told_page = id
+    log("telling the party page #{id} of the story: #{note}#{skipped > 0 ? ", left out the #{skipped} page(s) before it the player skipped past" : ''}")
+    tell_followers("say", fields, viewers)
+  end
+
+  # As teller, tells those who see the story that the player moved past a page told.
+  #
+  # @param id [String] The page's id, see page_id.
+  # @param viewers [Array<MGQ_MpOverworldSync::Peers::Peer>] Those who see the story.
+  def self.tell_done(id, viewers = MGQ_MpCoop::Scope.viewers)
+    @told_page = nil
+    log("the leader moved past page #{id}, telling the party")
+    tell_followers("done", MGQ_MpCoopGather.place_fields.merge("page" => id), viewers)
+  end
+
+  # As teller, tells the page show kept while the player holds the game's skip, and that the player
+  # moved past it if they did, once SKIP_SEND_FRAMES passed since the last page told, the skip is
+  # let go, the telling ended or another scene was called, so the viewers end on the last page.
+  # Called after the map's update, after the frame's pages.
+  #
+  # It goes to those who saw the story as the page showed, since a Raid World's viewers are nobody
+  # once its telling ended.
+  def self.flush_say
+    pending = @pending_say
+    return unless pending
+    return if skip_held? && @telling && !past?(@told_at, SKIP_SEND_FRAMES) && SceneManager.scene.is_a?(Scene_Map)
+
+    @pending_say = nil
+    tell_say(pending[:id], pending[:fields], pending[:note], pending[:viewers])
+    tell_done(pending[:id], pending[:viewers]) if pending[:passed]
+  rescue => e
+    log_once(:flush_say, "telling a page kept while the player skips failed: #{e.class}: #{e.message}")
   end
 
   # Reports whether an interpreter runs the map's main event: the map's own, or a common event it
@@ -1203,15 +1273,20 @@ module MGQ_MpCoopEvents
   end
 
   # As leader, tells the members on the map that the player moved past the message their story
-  # showed, which moves the members' window on. Called once an interpreter waited for a message.
+  # showed, which moves the members' window on, only for a page told: the page kept while the
+  # player skips is noted as passed, which flush_say tells with it. Called once an interpreter
+  # waited for a message.
   #
   # @param interpreter [Game_Interpreter] The interpreter.
   def self.shown(interpreter)
     return unless @shown && main_event?(interpreter)
 
     @shown = nil
-    log("the leader moved past page #{page_id}, telling the party")
-    tell_followers("done", MGQ_MpCoopGather.place_fields.merge("page" => page_id))
+    if @pending_say && @pending_say[:id] == page_id
+      @pending_say[:passed] = true
+    elsif @told_page == page_id
+      tell_done(page_id)
+    end
   rescue => e
     log("telling a message's end failed: #{e.class}: #{e.message}")
   end
@@ -1485,9 +1560,10 @@ module MGQ_MpCoopEvents
     raid && lead.nil? ? @heard_from : nil
   end
 
-  # Shows the leader's messages once the player is free, and chests other members opened. Called
-  # after the map's update.
+  # Tells the page kept while the player skips once it is due, shows the leader's messages once the
+  # player is free, and chests other members opened. Called after the map's update.
   def self.update
+    flush_say
     note_told_frame
     forget_former_leader
     show_heard

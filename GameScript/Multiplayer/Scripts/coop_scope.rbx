@@ -2,6 +2,7 @@
 #  coop_scope.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Sent a Classic world's message for several members as one message for the whole party, which those it is not for ignore, instead of one per member
 #      Paulinchen  2026-10-11: Kept a viewer watching a Raid World's telling once its story values moved their story past where the telling started, on both the teller's and the viewer's side, since the values alone dropped them out of the scene
 #      Paulinchen  2026-10-10: Kept the teller whose story the player follows to where it moved them as the teller while their state says they tell nothing for a moment, as it does between the story's events
 #      Paulinchen  2026-10-09: Sent a message for everyone on the map, or for several players, as one message the map's gate sorts on arrival instead of one per player, which ran past the relay's limit per connection on a busy map
@@ -336,15 +337,20 @@ module MGQ_MpCoop
         MGQ_MpCoop.tell(seat, field, value, fields)
       end
 
-      # Sends a message through the party's gate to each of several members.
+      # Sends a message through the party's gate to several members: to a lone one by their seat,
+      # to more as one message for the whole party, which those it is not for ignore, see
+      # story_from? and watches?.
       #
       # @param peers [Array<MGQ_MpOverworldSync::Peers::Peer>] The members.
       # @param field [String] The field that marks it.
       # @param value [Object] The field's value.
       # @param fields [Hash] Its other fields.
-      # @return [Boolean] Whether it went out to every one.
+      # @return [Boolean] Whether it went out, true for nobody.
       def self.tell_each(peers, field, value, fields)
-        peers.map { |peer| tell(peer.seat, field, value, fields) }.all?
+        return true if peers.empty?
+        return tell(peers[0].seat, field, value, fields) if peers.size == 1
+
+        tell(-1, field, value, fields)
       end
     end
 

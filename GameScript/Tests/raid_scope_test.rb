@@ -2,6 +2,7 @@
 #  raid_scope_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Checked that a Classic world sends several members one message through the party's gate and a lone member one to their seat
 #      Paulinchen  2026-10-09: Checked that a message for everyone on the map or for several players goes out once, and that the gate drops one naming others
 #                            - Checked that a teller whose connection is down still tells, and that the teller who took the player along is kept
 #      Paulinchen  2026-10-08: Created
@@ -138,7 +139,11 @@ check("one for a single player goes to their seat", $told.map { |seat, fields| [
 $told.clear
 $raid = false
 scope.tell_each([member, stranger], "pevent", "say", "page" => "x")
-check("a Classic world still sends one to each member through the party's gate", $told.map { |seat, fields| seat }, [2, 3])
+check("a Classic world sends several members one message through the party's gate, which those it is not for ignore",
+      $told.map { |seat, fields| [seat, fields["pevent"], fields.key?("mto")] }, [[-1, "say", false]])
+$told.clear
+scope.tell_each([member], "pevent", "say", "page" => "x")
+check("and a lone member one to their seat", $told.map { |seat, _fields| seat }, [2])
 $raid = true
 $told.clear
 scope.tell(4, "pevent", "follow", "mmap" => 8)
