@@ -2,7 +2,8 @@
 #  world_catchup.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Gave companions and Makina only once the player's real level reaches theirs, as a character at another mod's level cap got every Makina above it at once
+#      Paulinchen  2026-10-12: Let the story's rewards wait after a move on at a level cap only for the first story laid over the player no longer behind, and never once they play the world's story, as a dropped checkpoint kept them waiting for every later story
+#                            - Gave companions and Makina only once the player's real level reaches theirs, as a character at another mod's level cap got every Makina above it at once
 #                            - Held the story's skills and items a move on at another mod's level cap carried the player past until their real level reaches the gate
 #                            - Taught a player behind the world's story no skill of it before they move on
 #                            - Took a vehicle off its map while no event that gives it is behind the player's story or the world's, as a new game whose setup never ran left the ship and Galda on the field
@@ -537,10 +538,15 @@ module MGQ_MpWorldCatchup
   # then what the story carried them past gives what it gives. Called by world_story.rbx and after
   # a checkpoint.
   #
+  # The first story laid over a player no longer behind is the one a move on at a level cap led to,
+  # even when its checkpoint was dropped, so its rewards still wait (see note_capped); later ones
+  # give as usual.
+  #
   # @param before [Array] The player's story before: switches, variables and self switches.
   def self.carried(before)
     return unless active?
 
+    drop_capped("the player plays the world's story already") if MGQ_MpWorldStory.mode == :world
     # The story before a telling the player watched is older, and the telling's values count as laid
     # over too, see watched.
     before = @watched || before
@@ -549,6 +555,7 @@ module MGQ_MpWorldCatchup
       review(before, false)
       review(story_now, true)
     end
+    drop_capped("the story the move led to is laid over the player's") unless MGQ_MpWorldStory.mode == :behind
     return unless @joins_world
 
     @joins_world = false
@@ -675,13 +682,24 @@ module MGQ_MpWorldCatchup
 
   # Notes the gate the player moves on at while only a cap of another mod opened it, so the story's
   # rewards the move carries them past wait for their real level (see rewards_wait?). The story the
-  # move lays over theirs clears it, see carried and take_checkpoint.
+  # move lays over theirs clears it, see carried, drop_capped and take_checkpoint.
   #
   # @param gate [Integer] The gate.
   def self.note_capped(gate)
     notes = ledger
     notes["capped"] = reached?(gate) ? nil : gate
     log("moved on at a level cap below #{gate}: the story's rewards wait for level #{gate}") if notes["capped"]
+  end
+
+  # Forgets the gate a move on at a level cap noted, so the story's rewards give as usual again.
+  #
+  # @param reason [String] Why, for the log.
+  def self.drop_capped(reason)
+    gate = ledger["capped"]
+    return unless gate
+
+    ledger["capped"] = nil
+    log("the story's rewards no longer wait for level #{gate}: #{reason}")
   end
 
   # Reports whether the story's rewards a story laid over the player's carries them past wait: it is

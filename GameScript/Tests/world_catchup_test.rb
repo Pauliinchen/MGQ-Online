@@ -2,7 +2,8 @@
 #  world_catchup_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Checked that a cap of another mod brings no Makina nor waiting companion above the real level
+#      Paulinchen  2026-10-12: Checked that a move on at a level cap whose checkpoint is dropped makes only the next story's rewards wait, and that a gate noted while the player plays the world's story holds nothing back
+#                            - Checked that a cap of another mod brings no Makina nor waiting companion above the real level
 #                            - Checked that a player behind learns no skill of the world's story, and that a move on at a cap holds the story's skills and items until the real level
 #                            - Checked that a vehicle no event of the story gave yet leaves its map, one the player rides once they got off, and that Galda stays past its event
 #                            - Stood in for the map's vehicles and the one the player rides
@@ -462,6 +463,49 @@ check("and come once a load finds the real level at the gate",
       [MGQ_MpStoryState.knows?($game_actors[1], 930), $game_party.items[600].to_i, $messages.grep(/The story gave you/).size], [true, 1, 1])
 frames(40)
 check("once", [$game_party.items[600].to_i, $messages.grep(/The story gave you/).size], [1, 1])
+
+# A move on at a level cap whose checkpoint is dropped, as the player's story reached the world's part
+# before it came: the story laid over next still makes its rewards wait, later ones give as usual.
+tables(:REWARDS => [reward.new(:i, 600, 1, "map:62:1:1", "1", 16, nil, [[:v, 1001, 16]], true),
+                    reward.new(:i, 600, 2, "map:62:2:1", "1", 17, nil, [[:v, 1001, 17]], true),
+                    reward.new(:i, 600, 4, "map:62:3:1", "1", 18, nil, [[:v, 1001, 18]], true)])
+notes = lambda { $game_system.instance_variable_get(:@mgq_mp_catchup) }
+new_game({ 1001 => 9 }, [], 10)
+frames(1)
+relay({ "rev" => 60, "wrev" => 60, "p" => 36, "part" => "3", "checkpoints" => "1,2" }, packed({ 1001 => 36 }))
+frames(16)
+checkpoint("1", packed({ 1001 => 15 }))
+frames(70)
+$game_actors[1].cap = 20
+$game_actors[1].level = 20
+frames(40)
+check("moved on at a cap below the gate, the catch-up asks for the next part's checkpoint and notes the gate",
+      [calls_of("mp_raid_checkpoint_fetch").map { |args| args[1] }, notes.call["capped"]], [["1\0", "2\0"], 25])
+# The player's story reached the world's part, as check_progress finds it.
+story.instance_variable_set(:@mode, nil)
+story.refetch(:caught_up)
+frames(1)
+relay({ "rev" => 61, "wrev" => 61, "p" => 16, "part" => "1", "checkpoints" => "1,2" }, packed({ 1001 => 16 }))
+checkpoint("2", packed({ 1001 => 33 }))
+frames(80)
+check("the world's story is laid over theirs and the checkpoint dropped", [story.mode, $game_variables[1001]], [:world, 16])
+check("the rewards that story carried them past still wait for the gate, which then clears",
+      [$game_party.items[600].to_i, notes.call["waits"].size, notes.call["capped"]], [0, 1, nil])
+story.pushed(MGQ_MpOverworldSync::STORY_FIELD => "62", :relay => true)
+frames(1)
+relay({ "rev" => 62, "wrev" => 62, "p" => 17, "part" => "1", "checkpoints" => "1,2" }, packed({ 1001 => 17 }))
+frames(40)
+check("a later story gives its rewards as usual, the first still waiting", [$game_party.items[600].to_i, notes.call["waits"].size], [2, 1])
+catchup.note_capped(99)
+story.pushed(MGQ_MpOverworldSync::STORY_FIELD => "63", :relay => true)
+frames(1)
+relay({ "rev" => 63, "wrev" => 63, "p" => 18, "part" => "1", "checkpoints" => "1,2" }, packed({ 1001 => 18 }))
+frames(40)
+check("and a gate noted while the player plays the world's story holds nothing back", [$game_party.items[600].to_i, notes.call["capped"]], [6, nil])
+$game_actors[1].cap = 9999
+$game_actors[1].level = 25
+frames(40)
+check("what waited comes once the real level reaches the gate", [$game_party.items[600].to_i, notes.call["waits"].size], [7, 0])
 
 # Key items for everyone, and the chests that hold them, opened once for the world.
 tables(:KEY_ITEMS => [key_item.new(502, 1, "map:6:33:1", "1", 5, nil, [[:v, 1001, 6]]),
