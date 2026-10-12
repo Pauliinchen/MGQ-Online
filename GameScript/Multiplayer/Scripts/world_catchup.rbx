@@ -2,7 +2,8 @@
 #  world_catchup.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Left the random encounters to a map only while a page of it that applies now sets them the other way
+#      Paulinchen  2026-10-12: Listed what moving on from a part brings along, and each companion's and Makina's id
+#                            - Left the random encounters to a map only while a page of it that applies now sets them the other way
 #                            - Let the story's rewards wait after a move on at a level cap only for the first story laid over the player no longer behind, and never once they play the world's story, as a dropped checkpoint kept them waiting for every later story
 #                            - Put a vehicle the story gave that stands on no map back at the start the game names for it, on entering, after a load, a level up and every story laid over the player's, as a checkpoint or the world's story past Mt. Saint Amos left Galda nowhere
 #                            - Gave companions and Makina only once the player's real level reaches theirs, as a character at another mod's level cap got every Makina above it at once
@@ -144,7 +145,7 @@ module MGQ_MpWorldCatchup
   # within a level.
   UNLOCK_KINDS = [:story, :companion, :makina]
 
-  # What the catch-up hands out at a level, for the World overview's Levels page.
+  # What the catch-up hands out at a level, for the World overview's Unlocks page.
   #
   # @!attribute level [Integer] The level.
   # @!attribute kind [Symbol] :story (moving on from a part), :companion or :makina.
@@ -152,7 +153,24 @@ module MGQ_MpWorldCatchup
   # @!attribute icon [Integer, nil] The Makina's icon, nil for the others.
   # @!attribute got [Boolean] Whether the player has it already.
   # @!attribute due [Boolean] Whether the player's level reached it, so it comes at the next check.
-  Unlock = Struct.new(:level, :kind, :name, :icon, :got, :due)
+  # @!attribute id [Integer, nil] The companion's actor or the Makina's item.
+  # @!attribute gains [Array<Gain>] What moving on from a part brings along.
+  Unlock = Struct.new(:level, :kind, :name, :icon, :got, :due, :id, :gains)
+
+  # Something moving on from a part brings along.
+  #
+  # @!attribute kind [Symbol] :key (a key item), :unlock (an item that unlocks a job or race),
+  #   :skill or :item.
+  # @!attribute id [Integer] The item or skill.
+  # @!attribute item_kind [String, nil] "i", "w" or "a" for an item, nil for a skill.
+  # @!attribute amount [Integer] How many.
+  # @!attribute name [String] Its name.
+  # @!attribute icon [Integer] Its icon.
+  Gain = Struct.new(:kind, :id, :item_kind, :amount, :name, :icon)
+
+  # The tag at the start of an item's description that tells it unlocks a job or a race, in the
+  # translation and the untranslated game.
+  UNLOCK_ITEM_TAG = /\A\s*[\[［](Job|Race|職業|種族)/
 
   # The story values a companion's own join stands for, by companion: each variable with the least
   # it holds once they joined. A companion the world shared, or the catch-up brought, comes without
@@ -1400,8 +1418,66 @@ module MGQ_MpWorldCatchup
     parts = order.take_while { |part| part != current }
     parts.select { |part| !MGQ_MpWorldStory::ROUTES.include?(part) || part == own }.map do |part|
       got = own_at.nil? || own_at > order.index(part)
-      Unlock.new(gate_of(part), :story, part_name(part), nil, got, !got && gate_open?(gate_of(part)))
+      into = next_part(part, world)
+      gains = gains_of(part, into == :world ? current : into, part == own)
+      Unlock.new(gate_of(part), :story, part_name(part), nil, got, !got && gate_open?(gate_of(part)), nil, gains)
     end
+  end
+
+  # Lists what moving on from a part brings along: the key items and the story's and side quests'
+  # rewards of the next part the world's story passed, and of the player's own part those their
+  # story has not passed yet.
+  #
+  # @param part [String] The part moved on from.
+  # @param into [String, nil] The part moved on to.
+  # @param own [Boolean] Whether it is the player's part.
+  # @return [Array<Gain>] Key items and unlocks first, then skills and items, each once with its amount.
+  def self.gains_of(part, into, own)
+    story = story_now
+    told = @world_told
+    carried = lambda do |row|
+      next false unless carries?(row) && told
+
+      (row.part == into && passed?(row, told, story)) || (own && row.part == part && passed?(row, told, story) && !passed?(row, story))
+    end
+    gains = {}
+    add = lambda do |kind, id, amount|
+      return if amount.to_i <= 0
+
+      gain = gain_of(kind, id)
+      return unless gain
+
+      key = [gain.kind, gain.item_kind, id]
+      gains[key] ? gains[key].amount += amount : gains[key] = gain.tap { |found| found.amount = amount }
+    end
+    DATA::KEY_ITEMS.each { |row| add.call("i", row.item, row.amount) if carried.call(row) }
+    DATA::REWARDS.each { |row| add.call(row.kind == :skill ? :skill : row.kind.to_s, row.id, row.amount) if carried.call(row) }
+    order = [:key, :unlock, :skill, :item]
+    gains.values.sort_by { |gain| [order.index(gain.kind), gain.name] }
+  end
+
+  # Reads what an item or skill is, for gains_of.
+  #
+  # @param kind [Symbol, String] :skill, or the item's kind "i", "w" or "a".
+  # @param id [Integer] The item or skill.
+  # @return [Gain, nil] Without its amount; nil for one the game lacks.
+  def self.gain_of(kind, id)
+    if kind == :skill
+      skill = $data_skills && $data_skills[id]
+      return skill ? Gain.new(:skill, id, nil, 0, skill.name.to_s, skill.icon_index.to_i) : nil
+    end
+
+    item = MGQ_MpGame.item(kind, id)
+    return nil unless item
+
+    sort = if kind == "i" && item.respond_to?(:key_item?) && item.key_item?
+             :key
+           elsif item.description.to_s =~ UNLOCK_ITEM_TAG
+             :unlock
+           else
+             :item
+           end
+    Gain.new(sort, id, kind, 0, item.name.to_s, item.icon_index.to_i)
   end
 
   # Lists the companions the catch-up brings at their gate: those of the joins the world's story
@@ -1436,7 +1512,7 @@ module MGQ_MpWorldCatchup
     end
     gates.map do |id, gate|
       got = in_roster?(id)
-      Unlock.new(gate, :companion, actor_name(id), nil, got, !got && reached?(gate))
+      Unlock.new(gate, :companion, actor_name(id), nil, got, !got && reached?(gate), id, [])
     end
   end
 
@@ -1449,7 +1525,7 @@ module MGQ_MpWorldCatchup
       next unless item
 
       got = $game_party.item_number(item) > 0
-      Unlock.new(row.level, :makina, item.name, item.respond_to?(:icon_index) ? item.icon_index : nil, got, !got && reached?(row.level))
+      Unlock.new(row.level, :makina, item.name, item.respond_to?(:icon_index) ? item.icon_index : nil, got, !got && reached?(row.level), row.item, [])
     end.compact
   end
 

@@ -2,7 +2,8 @@
 #  Multiplayer.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Read the mouse wheel's notches once a frame through mp_mouse_wheel
+#      Paulinchen  2026-10-12: Loaded world_overview_pages.rbx after world_overview.rbx
+#                            - Read the mouse wheel's notches once a frame through mp_mouse_wheel
 #                            - Loaded world_catchup_exp.rbx after world_catchup.rbx
 #                            - Loaded ui_leader_hud.rbx after ui_raid_bar.rbx, before the notification box that makes room for it
 #                            - Kept a Player.ini that exists but could not be read: no new player key and no settings written over it, read
@@ -139,7 +140,7 @@ module MGQ_Multiplayer
     battles_sync battles_sync_wire battles_sync_recorder battles_sync_playback battles_sync_live
     battles_balance_pvp battles_pvp battles_pvp_backline battles_pvp_mirror battles_pvp_lobby battles_duel battles_team
     trade ui_trade
-    world_overview ui_party_box ui_edge_arrows ui_raid_bar ui_leader_hud ui_notices ui_bug_report
+    world_overview world_overview_pages ui_party_box ui_edge_arrows ui_raid_bar ui_leader_hud ui_notices ui_bug_report
   ]
 
   # Extension of the scripts, which the mod loader skips, since only this script may load them.

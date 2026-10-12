@@ -2,7 +2,10 @@
 #  world_overview.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Added the Quests page with a Quest Portraits setting
+#      Paulinchen  2026-10-12: Moved the World, Quests and Unlocks pages into world_overview_pages.rbx
+#                            - Renamed the Levels page Unlocks
+#                            - Drew the Players page's scrollbar and moved its pick with the mouse wheel
+#                            - Added the Quests page with a Quest Portraits setting
 #                            - Kept Amira's side quests out of the objective
 #                            - Narrowed the tabs
 #                            - Showed the catch-up experience on the Levels page
@@ -63,12 +66,9 @@
 # lists every player of the world online, grouped by where they are, with their formation's highest
 # level, their place in the story and their ping. A player picked with the arrows and confirm, or
 # with the mouse, opens a menu of what the scripts offer, such as party invites, duels and trades;
-# a player's row shows their invite, challenge or offer that reaches the player. The World page
-# shows the world itself: its name, type, difficulty, players, story and in a Raid World the
-# story's objective and every raid boss with how much of its HP the world left it. The Quests page
-# shows the main, side and companion quests under way. A Raid World's
-# Levels page shows by level what the catch-up hands out that the world already unlocked (see
-# world_catchup.rbx). The map keeps running behind it.
+# a player's row shows their invite, challenge or offer that reaches the player. The World page,
+# the Quests page and a Raid World's Unlocks page are laid out with a head, a list and a reading
+# pane (see world_overview_pages.rbx). The map keeps running behind it.
 #
 # It also lists the player's party for the party box of ui_party_box.rbx, and in a Raid World
 # everyone on the player's map for the map box that replaces it.
@@ -118,10 +118,10 @@ module MGQ_MpWorldOverview
   # The overview's pages in the order Left and Right pass through them, each with its tab's title:
   # the players online, the world itself, the quests under way, and in a Raid World what the
   # catch-up hands out by level.
-  PAGES = [[:players, "Players"], [:world, "World"], [:quests, "Quests"], [:levels, "Levels"]]
+  PAGES = [[:players, "Players"], [:world, "World"], [:quests, "Quests"], [:unlocks, "Unlocks"]]
 
   # The pages only a Raid World shows.
-  RAID_PAGES = [:levels]
+  RAID_PAGES = [:unlocks]
 
   # The label of the Levels page's first row, the level the catch-up counts.
   YOUR_LEVEL = "Your level"
@@ -141,9 +141,6 @@ module MGQ_MpWorldOverview
 
   # What the Levels page says while the world unlocked nothing yet.
   NOTHING_UNLOCKED = "Nothing to catch up with yet."
-
-  # What the Levels page calls each kind of unlock, see MGQ_MpWorldCatchup::Unlock.
-  UNLOCK_KINDS = { :story => "Story", :companion => "Companion", :makina => "Makina" }
 
   # What the Levels page says of an unlock the player has, and of one whose level they reached,
   # which comes at the catch-up's next check.
@@ -168,8 +165,8 @@ module MGQ_MpWorldOverview
   # The labels of the World page's rows.
   WORLD_LABELS = { :name => "World", :type => "Type", :difficulty => "Difficulty", :players => "Players", :story => "Story", :objective => "Objective" }
 
-  # The common event of Amira the Informant, whose first words on the information asked for name
-  # the story's current objective (see objective_text).
+  # The common event of Amira the Informant, whose words on the information asked for name the
+  # story's current objective (see main_quest).
   OBJECTIVE_EVENT = 108
 
   # The variable of Amira's information network ("Pornof Rabbit Events"), whose branch at the top
@@ -279,15 +276,6 @@ module MGQ_MpWorldOverview
     "Monster Realm" => %w(mr chaos), "Chaos route" => %w(chaos), "Chaos Domain" => %w(chaos),
   }
 
-  # What the World page says of a raid boss the world defeated.
-  DEFEATED = "Defeated"
-
-  # How the World page names who last hurt a raid boss.
-  LAST_HURT_BY = "last hurt by %s"
-
-  # How the World page writes a raid boss's tier.
-  TIER = "Tier %d"
-
   # How the World page writes the share of a raid boss's HP left, in percent.
   SHARE_LEFT = "%d%%"
 
@@ -343,7 +331,6 @@ module MGQ_MpWorldOverview
   @scroll = 0
   @frames = 0
   @page = :players
-  @world_scroll = 0
 
   # The game's globe icon, which stands for the overview in the action wheel's middle.
   WORLD_ICON = 3988
@@ -389,7 +376,6 @@ module MGQ_MpWorldOverview
     @selected = :me
     @scroll = 0
     @page = :players
-    @world_scroll = 0
     @mouse = nil
     @view = view
     log("opened through #{via}, #{@view[:lines].count { |kind, _| kind == :player }} player(s) online")
@@ -447,7 +433,7 @@ module MGQ_MpWorldOverview
 
   # The page shown.
   #
-  # @return [Symbol] :players, :world or :levels, see PAGES.
+  # @return [Symbol] :players, :world, :quests or :unlocks, see PAGES.
   def self.page
     @page
   end
@@ -470,12 +456,7 @@ module MGQ_MpWorldOverview
 
     @page = page
     @menu = nil
-    @world_scroll = 0
-    @level_lines_at = nil
-    @quests_at = nil
-    @quest_pick = 0
-    @quest_scroll = 0
-    @pane_scroll = 0
+    forget_model(page) if split_page?(page)
     Sound.play_cursor
     log("turned to the #{title[1]} page through #{via}")
   end
@@ -575,531 +556,6 @@ module MGQ_MpWorldOverview
   def self.world_story_text
     code = world_story_code
     code.empty? ? STORY_UNTOLD : story_text(code)
-  end
-
-  # Lays the World page out: the world's name, type, difficulty and players, then in a Raid World
-  # its story, the story's objective and its raid bosses under a heading per section of the story.
-  #
-  # @param online [Integer] The players online, the player included.
-  # @return [Array<Array>] Each line: [:info, label, value], [:place, heading] or [:boss, boss].
-  def self.world_lines(online)
-    world = MGQ_MpWorld.world
-    raid = MGQ_MpCoop::Scope.raid?
-    seats = world ? world.seats.to_i : 0
-    lines = [[:info, WORLD_LABELS[:name], world_name], [:info, WORLD_LABELS[:type], WORLD_TYPES[raid]],
-             [:info, WORLD_LABELS[:difficulty], difficulty_name || PER_PLAYER],
-             [:info, WORLD_LABELS[:players], seats > 0 ? PLAYERS_OF % [online, seats] : online.to_s]]
-    return lines unless raid
-
-    lines << [:info, WORLD_LABELS[:story], world_story_text]
-    lines.concat(objective_lines)
-    boss_sections.each do |section, bosses|
-      lines << [:place, BOSSES_HEADING % section]
-      lines.concat(bosses.map { |boss| [:boss, boss] })
-    end
-    lines
-  end
-
-  # Lays the story's objective out under its label, wrapped to the World page's value column; none
-  # while no objective is known.
-  #
-  # @return [Array<Array>] The lines, [:info, label, value], the label on the first alone.
-  def self.objective_lines
-    text = objective_text
-    return [] unless text
-
-    Sprite_MpWorldOverview.value_lines(text).each_with_index.map { |row, index| [:info, index == 0 ? WORLD_LABELS[:objective] : "", row] }
-  end
-
-  # Reads the story's current objective as Amira tells it asked for information (OBJECTIVE_EVENT):
-  # the first message her event shows in a branch, as the game would run it with the player's
-  # story now, a Raid World's laid over it. Her own opening words stand at the event's top, and
-  # her network's branch is passed (see NETWORK_VARIABLE). Read every READ_FRAMES.
-  #
-  # @return [String, nil] The objective, as plain text; nil when her event or a message is missing.
-  def self.objective_text
-    return @objective if @objective_at && Graphics.frame_count - @objective_at < READ_FRAMES && Graphics.frame_count >= @objective_at
-
-    @objective_at = Graphics.frame_count
-    event = $data_common_events && $data_common_events[OBJECTIVE_EVENT]
-    @objective = event ? first_message(event.list || [], 0) : nil
-  rescue => e
-    log_once(:objective, "reading the story's objective failed: #{e.class}: #{e.message}")
-    @objective = nil
-  end
-
-  # Finds the first message a list of commands shows as the game would run it now: inside a branch
-  # of Amira's own event, anywhere in the common events it calls but her side quests' lists (see
-  # walk).
-  #
-  # @param list [Array<RPG::EventCommand>] The commands.
-  # @param depth [Integer] How many calls deep the list is, 0 for Amira's event.
-  # @return [String, nil] The message, as plain text; nil when it shows none.
-  def self.first_message(list, depth)
-    found = nil
-    walk(list, depth, false) do |kind, text, indent, level, _speaker|
-      next SIDE_EVENTS.include?(text) ? :skip : nil if kind == :call
-      next unless kind == :message && !text.empty? && (indent > 0 || level > 0)
-
-      found = text
-      :stop
-    end
-    found
-  end
-
-  # Runs through a list of commands as the game would run it now, without running any.
-  #
-  # @param list [Array<RPG::EventCommand>] The commands.
-  # @param depth [Integer] How many calls deep the list is.
-  # @param network [Boolean] Whether the branches on Amira's network hold as the game compares
-  #   them, see branch_holds?.
-  # @yieldparam kind [Symbol] :message (a message shown), :mark (the start of a quest, see
-  #   QUEST_COUNT) or :call (a common event about to be called).
-  # @yieldparam value [String, Integer, nil] The message as plain text, or the common event.
-  # @yieldparam indent [Integer] The command's indent.
-  # @yieldparam level [Integer] How many calls deep it is.
-  # @yieldparam speaker [String, nil] The message's speaker.
-  # @yieldreturn [Symbol, nil] :stop ends the walk, :skip leaves a call out.
-  # @return [Symbol, nil] :stop when a block ended the walk.
-  def self.walk(list, depth, network, &block)
-    index = 0
-    jumps = 0
-    skip = nil
-    held = {}
-    while index < list.size
-      command = list[index]
-      index += 1
-      indent = command.indent
-      next if skip && indent > skip
-
-      skip = nil
-      params = command.parameters
-      case command.code
-      when 111
-        held[indent] = branch_holds?(params, network)
-        skip = indent unless held[indent]
-      when 411 then skip = indent if held[indent]
-      when 402 then skip = indent unless params[0] == 0
-      when 403 then skip = indent
-      when 101
-        return :stop if block.call(:message, plain_message(list, index), indent, depth, speaker_of(list, index)) == :stop
-      when 122
-        return :stop if quest_mark?(params) && block.call(:mark, nil, indent, depth, nil) == :stop
-      when 117
-        called = depth < OBJECTIVE_DEPTH ? $data_common_events[params[0]] : nil
-        next unless called
-
-        answer = block.call(:call, params[0], indent, depth, nil)
-        return :stop if answer == :stop
-        return :stop if answer != :skip && walk(called.list || [], depth + 1, network, &block) == :stop
-      when 119
-        jumps += 1
-        label = jumps <= OBJECTIVE_JUMPS ? list.index { |other| other.code == 118 && other.parameters[0] == params[0] } : nil
-        return nil unless label
-
-        index = label + 1
-      when 115 then return :stop
-      end
-    end
-    nil
-  end
-
-  # Reports whether a command marks the start of a quest (see QUEST_COUNT).
-  #
-  # @param params [Array] The parameters of a variable's command.
-  # @return [Boolean] Whether it does.
-  def self.quest_mark?(params)
-    params[0] == QUEST_COUNT && params[1] == QUEST_COUNT && params[2] == 0 && params[3] == 0 && params[4] == 1
-  end
-
-  # Reports whether a branch holds now: on a switch, a variable, a party member, an item or one of
-  # the game's own checks; any other branch does not.
-  #
-  # Amira's network counts only where asked, since the objective shows whether she would tell it or
-  # not.
-  #
-  # @param params [Array] The branch's parameters.
-  # @param network [Boolean] Whether a branch on Amira's network compares as the game does.
-  # @return [Boolean] Whether it holds.
-  def self.branch_holds?(params, network = false)
-    case params[0]
-    when 0 then $game_switches[params[1]] == (params[2] == 0)
-    when 1
-      return false if params[1] == NETWORK_VARIABLE && !network
-
-      value = $game_variables[params[1]].to_i
-      other = params[2] == 0 ? params[3].to_i : $game_variables[params[3]].to_i
-      [value == other, value >= other, value <= other, value > other, value < other, value != other][params[4]] ? true : false
-    when 4 then params[2] == 0 && $game_party.all_members.any? { |actor| actor.id == params[1] }
-    when 8
-      item = $data_items[params[1]]
-      item ? $game_party.has_item?(item) : false
-    when 12 then check_holds?(params[1].to_s)
-    else false
-    end
-  end
-
-  # Reports whether one of the game's own checks holds, such as "actor_class_level_over?(1, 151, 10)".
-  #
-  # Only question methods with whole numbers run, since any other script might change the game.
-  #
-  # @param script [String] The branch's script.
-  # @return [Boolean] Whether it holds; false for any other script.
-  def self.check_holds?(script)
-    match = script.strip.match(/\A(\w+\?)\(([\d,\s]*)\)\z/)
-    return false unless match && Game_Interpreter.method_defined?(match[1])
-
-    Game_Interpreter.new.send(match[1], *match[2].split(",").map { |number| number.to_i }) ? true : false
-  rescue => e
-    log_once([:check, script], "a quest's check \"#{script}\" failed: #{e.class}: #{e.message}")
-    false
-  end
-
-  # Reads the message whose lines follow a command as plain text: one line, without the speaker's
-  # name and the text codes, a variable's and a companion's code replaced by its value and name.
-  #
-  # @param list [Array<RPG::EventCommand>] The commands.
-  # @param index [Integer] The place of the message's first line.
-  # @return [String] The text.
-  def self.plain_message(list, index)
-    lines = []
-    while list[index] && list[index].code == 401
-      lines << list[index].parameters[0].to_s
-      index += 1
-    end
-    text = lines.join(" ").gsub(SPEAKER, "")
-    text = text.gsub(/\\V\[(\d+)\]/i) { $game_variables[$1.to_i].to_s }
-    text = text.gsub(/\\N\[(\d+)\]/i) { (actor = $game_actors[$1.to_i]) ? actor.name.to_s : "" }
-    TEXT_CODES.inject(text) { |plain, code| plain.gsub(code, "") }.gsub(/\s+/, " ").strip
-  end
-
-  # Reads the speaker's name at a message's start.
-  #
-  # @param list [Array<RPG::EventCommand>] The commands.
-  # @param index [Integer] The place of the message's first line.
-  # @return [String, nil] The name, without text codes; nil for a message without a speaker.
-  def self.speaker_of(list, index)
-    line = list[index] && list[index].code == 401 ? list[index].parameters[0].to_s : ""
-    name = line[/\\n<([^>]*)>/, 1] || line[/\A\s*【([^】]*)】/, 1]
-    name = TEXT_CODES.inject(name) { |plain, code| plain.gsub(code, "") }.strip if name
-    name && !name.empty? ? name : nil
-  end
-
-  # Reads the quests under way: the main quest, and the list of side and companion quests under a
-  # heading each with how many there are. Read every READ_FRAMES.
-  #
-  # @return [Hash] :main (a Quest or nil), :rows (each [:head, text], [:quest, quest] or [:none,
-  #   text]) and :picks (the main quest, if any, then every quest of the rows).
-  def self.quests
-    return @quests if @quests_at && Graphics.frame_count - @quests_at < READ_FRAMES && Graphics.frame_count >= @quests_at
-
-    @quests_at = Graphics.frame_count
-    main = main_quest
-    rows = []
-    [[:side, side_quests], [:companion, companion_quests]].each do |kind, list|
-      rows << [:head, QUEST_HEADINGS[kind] % list.size]
-      rows << [:none, NO_QUESTS] if list.empty?
-      list.each { |quest| rows << [:quest, quest] }
-    end
-    picks = (main ? [main] : []) + rows.select { |kind, _| kind == :quest }.map { |_, quest| quest }
-    # The same quests read again stay the same objects, which the drawing goes by.
-    return @quests if @quests && @quests[:rows] == rows && @quests[:main] == main
-
-    @quests = { :main => main, :rows => rows, :picks => picks }
-  rescue => e
-    log_once(:quests, "reading the quests failed: #{e.class}: #{e.message}")
-    @quests = { :main => nil, :rows => [], :picks => [] }
-  end
-
-  # Finds a text's first sentence: up to the first end of a sentence followed by a space or the
-  # text's end, or a Japanese one.
-  #
-  # Abbreviations such as "Mt." end no sentence, so "Mt. Saint Amos" stays whole.
-  #
-  # @param text [String] The text.
-  # @return [String] The sentence; the whole text without an end.
-  def self.first_sentence(text)
-    text = text.to_s.strip
-    offset = 0
-    while (match = SENTENCE_END.match(text, offset))
-      word = text[0, match.begin(0)][/\S+\z/].to_s
-      return text[0, match.end(0)].strip unless ABBREVIATIONS.include?(word)
-
-      offset = match.end(0)
-    end
-    text
-  end
-
-  # Reads the main quest: every message Amira's objective shows now, her side quests left out.
-  #
-  # @return [Quest, nil] The quest; nil when she tells none.
-  def self.main_quest
-    event = $data_common_events && $data_common_events[OBJECTIVE_EVENT]
-    return nil unless event
-
-    texts = []
-    speaker = nil
-    walk(event.list || [], 0, false) do |kind, value, indent, level, who|
-      if kind == :call
-        SIDE_EVENTS.include?(value) ? :skip : nil
-      elsif kind == :message && !value.empty? && (indent > 0 || level > 0)
-        speaker ||= who
-        texts << value
-        nil
-      end
-    end
-    texts.empty? ? nil : Quest.new(:main, speaker, texts, nil)
-  end
-
-  # Reads the side quests Amira tells now, from her list for the story's place (see SIDE_EVENTS).
-  #
-  # @return [Array<Quest>] The quests.
-  def self.side_quests
-    id = SIDE_EVENTS[$game_variables[CHAOS_ROUTE].to_i >= CHAOS_SIDE_STEP ? 1 : 0]
-    event = $data_common_events && $data_common_events[id]
-    event ? quests_of(event.list || [], :side) : []
-  end
-
-  # Reads the companions' requests on the Pocket Castle's board now.
-  #
-  # @return [Array<Quest>] The requests, each by the companion who left it.
-  def self.companion_quests
-    quests_of(board_list, :companion)
-  end
-
-  # Reads the board's list of commands, once a session.
-  #
-  # @return [Array<RPG::EventCommand>] The commands; none when the map or the event is missing.
-  def self.board_list
-    return @board_list if @board_list
-
-    map = load_data(format("Data/Map%03d.rvdata2", BOARD_MAP))
-    event = map.events[BOARD_EVENT]
-    page = event && event.pages.find { |candidate| candidate.list.any? { |command| command.code == 122 && quest_mark?(command.parameters) } }
-    log("the Pocket Castle's board (map #{BOARD_MAP}, event #{BOARD_EVENT}) has no entries to read") unless page
-    @board_list = page ? page.list : []
-  rescue => e
-    log_once(:board, "reading the Pocket Castle's board failed: #{e.class}: #{e.message}")
-    @board_list = []
-  end
-
-  # Reads the quests a list tells now, each from its mark (see quest_mark?) to the end of its block.
-  #
-  # Only the first speaker's messages count, so the others' remarks in between stay out.
-  #
-  # @param list [Array<RPG::EventCommand>] The commands.
-  # @param kind [Symbol] The quests' kind, :side (numbered) or :companion.
-  # @return [Array<Quest>] The entries that say anything.
-  def self.quests_of(list, kind)
-    entries = []
-    entry = nil
-    walk(list, 0, true) do |kind, value, indent, level, speaker|
-      if kind == :mark
-        entry = { :indent => indent, :level => level, :speaker => nil, :texts => [] }
-        entries << entry
-      elsif kind == :message && entry
-        if level < entry[:level] || (level == entry[:level] && indent < entry[:indent])
-          entry = nil
-        elsif !value.empty?
-          entry[:speaker] ||= speaker
-          entry[:texts] << value if speaker == entry[:speaker]
-        end
-      end
-      nil
-    end
-    told = entries.reject { |found| found[:texts].empty? }
-    told.each_with_index.map do |found, index|
-      Quest.new(kind, found[:speaker], found[:texts], kind == :side ? index + 1 : nil, kind == :companion ? looks_of(found[:speaker]) : nil)
-    end
-  end
-
-  # Finds how a companion looks by their name: the one of that name in the party, else the first
-  # character of the game with that name and a map sprite.
-  #
-  # Companions with several forms share a name, so the party's form comes first.
-  #
-  # @param name [String, nil] The companion's name.
-  # @return [Looks, nil] How they look; nil for a name no character has.
-  def self.looks_of(name)
-    return nil if name.to_s.empty?
-
-    members = $game_party.all_members + ($game_party.respond_to?(:stand_members) ? $game_party.stand_members.to_a : [])
-    member = members.find { |actor| actor && actor.name.to_s == name && !actor.character_name.to_s.empty? }
-    return looks(member) if member
-
-    @looks_by_name ||= ($data_actors || []).compact.reverse.each_with_object({}) do |actor, found|
-      found[actor.name.to_s] = actor unless actor.character_name.to_s.empty?
-    end
-    actor = @looks_by_name[name]
-    actor ? looks(actor) : nil
-  rescue => e
-    log_once([:looks, name], "finding how #{name} looks failed: #{e.class}: #{e.message}")
-    nil
-  end
-
-  # Reads how a character looks.
-  #
-  # @param actor [Game_Actor, RPG::Actor] The character.
-  # @return [Looks] How they look.
-  def self.looks(actor)
-    Looks.new(actor.character_name.to_s, actor.character_index.to_i, actor.face_name.to_s, actor.face_index.to_i)
-  end
-
-  # Tells how the Quests page shows Amira and the companions, as Player.ini keeps it.
-  #
-  # @return [String] SPRITES or FACES.
-  def self.portraits
-    @portraits ||= PORTRAITS.find { |choice| choice.downcase == MGQ_Multiplayer::Player.setting(PORTRAIT_SETTING).to_s.strip.downcase } || PORTRAITS.first
-  end
-
-  # Picks how the Quests page shows Amira and the companions and keeps it in Player.ini.
-  #
-  # @param choice [String] SPRITES or FACES; another keeps the first.
-  def self.choose_portraits(choice)
-    @portraits = PORTRAITS.include?(choice) ? choice : PORTRAITS.first
-    MGQ_Multiplayer::Player.store(PORTRAIT_SETTING, @portraits)
-    log("the Quests page shows #{@portraits.downcase}")
-  rescue => e
-    log("keeping the Quests page's portraits FAILED: #{e.class}: #{e.message}")
-  end
-
-  # Offers the Quests page's portraits as a row of the Mod Config, kept in Player.ini.
-  def self.add_options
-    added = MGQ_MpUi.add_option(PORTRAIT_OPTION, PORTRAIT_OPTION_NAME, PORTRAIT_OPTION_HELP, lambda { PORTRAITS }, lambda { portraits },
-                                lambda { |choice| choose_portraits(choice) })
-    log(added ? "added the Quest Portraits to the Mod Config" : "no Quest Portraits in the Mod Config: it needs a Mod Config Remake that knows rows the mod keeps")
-  end
-
-  # Finds the picture that shows faintly behind the Quests page: Amira's in the Library.
-  #
-  # @return [Bitmap, nil] The picture; nil when the game has none.
-  def self.backdrop
-    return @backdrop if @backdrop && !@backdrop.disposed?
-    return nil if @backdrop_missing
-
-    image = defined?(NWConst::Library::ACTOR_IMAGE) ? NWConst::Library::ACTOR_IMAGE[AMIRA] : nil
-    @backdrop_missing = !image.is_a?(Array)
-    @backdrop = @backdrop_missing ? nil : Cache.load_bitmap(image[0].to_s, image[1].to_s)
-  rescue => e
-    log_once(:backdrop, "loading Amira's picture failed: #{e.class}: #{e.message}")
-    @backdrop_missing = true
-    @backdrop = nil
-  end
-
-  # Lays out the formation's catch-up experience: the level it holds up to, then each member's
-  # level and factor (see MGQ_MpWorldCatchupExp).
-  #
-  # @return [Array<Array>] Each line: [:place, heading] or [:info, label, value].
-  def self.exp_lines
-    target = MGQ_MpWorldCatchupExp.target
-    return [[:place, EXP_HEADING_NONE], [:info, "", NO_CATCH_UP]] unless target
-
-    members = $game_party.battle_members.map do |actor|
-      factor = MGQ_MpWorldCatchupExp.factor_for(actor.base_level, target)
-      [:info, actor.name, EXP_VALUE % [actor.base_level, MGQ_MpWorldCatchupExp.factor_text(factor)]]
-    end
-    [[:place, EXP_HEADING % target]] + members
-  end
-
-  # Lays the Levels page out: the level the catch-up counts, then by level what it hands out that
-  # the world already unlocked, under a heading per level (see MGQ_MpWorldCatchup.unlocks). Read
-  # every READ_FRAMES.
-  #
-  # @return [Array<Array>] Each line: [:info, label, value], [:place, heading] or [:unlock, unlock].
-  def self.level_lines
-    return @level_lines if @level_lines_at && Graphics.frame_count - @level_lines_at < READ_FRAMES && Graphics.frame_count >= @level_lines_at
-
-    @level_lines_at = Graphics.frame_count
-    level = MGQ_MpWorldCatchup.counted_level
-    lines = [[:info, YOUR_LEVEL, level ? level.to_s : ""]]
-    lines.concat(exp_lines)
-    unlocks = MGQ_MpWorldCatchup.unlocks
-    lines << [:info, "", NOTHING_UNLOCKED] if unlocks.empty?
-    unlocks.chunk { |unlock| unlock.level }.each do |at, group|
-      lines << [:place, LEVEL_HEADING % at]
-      lines.concat(group.map { |unlock| [:unlock, unlock] })
-    end
-    @level_lines = lines
-  rescue => e
-    log_once(:level_lines, "laying out the Levels page failed: #{e.class}: #{e.message}")
-    @level_lines = []
-  end
-
-  # Lists the raid bosses for the World page by the story's sections in story order: each section
-  # the world's story reached (see reached?) or holding a boss the relay told a pool of, its bosses
-  # in the order the story meets them, then the pools of its fights that take their own name, such
-  # as Sisel's; last, under OTHER_SECTION, the pools whose bosses the tables lack, by name.
-  #
-  # @return [Array<Array(String, Array<Boss>)>] Each section's name with its bosses.
-  def self.boss_sections
-    pools = MGQ_MpRaidPool.pools.group_by { |key, _| MGQ_MpRaidPool.boss_key(key) }
-    counters = MGQ_MpWorldStory.world
-    listed = MGQ_MpRaidBosses.sections.map do |section, keys|
-      names = keys + pools.keys.select { |name| !keys.include?(name) && section_of(name) == section }.sort
-      next unless reached?(section, counters) || names.any? { |name| pools.key?(name) }
-
-      [section, names.map { |name| boss_of(name, tier_of(name), pools.delete(name)) }]
-    end
-    others = pools.keys.sort.map { |name| boss_of(name, nil, pools[name]) }
-    listed.compact + (others.empty? ? [] : [[OTHER_SECTION, others]])
-  end
-
-  # Reports whether the world's story reached a section of raid bosses, see SECTION_REACH.
-  #
-  # @param section [String] The section's name.
-  # @param counters [Hash, nil] The world's story, see MGQ_MpWorldStory.world; nil before the relay
-  #   told it, which reaches no section.
-  # @return [Boolean] Whether it did.
-  def self.reached?(section, counters)
-    return false unless counters
-
-    reach = SECTION_REACH[section]
-    reach.nil? || !(reach & ([MGQ_MpWorldStory.part_of(counters).to_s] + Array(counters["done"]))).empty?
-  rescue => e
-    log_once(:boss_sections, "reading the world's story for the raid bosses failed: #{e.class}: #{e.message}")
-    false
-  end
-
-  # Finds the section of a pool's boss: its milestone's or OPTIONAL's, else that of the troop a
-  # fight with its own name belongs to.
-  #
-  # @param name [String] The pool's boss, see MGQ_MpRaidPool.boss_key.
-  # @return [String, nil] The section, nil for a boss the tables lack.
-  def self.section_of(name)
-    MGQ_MpRaidBosses.section(name) || MGQ_MpRaidBosses.section(MGQ_MpRaidPool.troop_of_key(name))
-  end
-
-  # Finds the tier of a raid boss by its name, as section_of finds its section.
-  #
-  # @param name [String] The boss's name.
-  # @return [Integer, nil] Its tier, nil for a name the tables lack.
-  def self.tier_of(name)
-    MGQ_MpRaidBosses.key_tier(name) || MGQ_MpRaidBosses.tier(MGQ_MpRaidPool.troop_of_key(name))
-  end
-
-  # Sums a raid boss up from its pools: the share left over them, whether every one is empty for
-  # good, and who hurt the one last told of.
-  #
-  # @param name [String] The boss's name, see Boss.
-  # @param tier [Integer, nil] Its tier.
-  # @param entries [Array<Array>, nil] Its pools, each with its key; nil while the relay told none.
-  # @return [Boss] The boss.
-  def self.boss_of(name, tier, entries)
-    pools = (entries || []).map { |_, pool| pool }
-    return Boss.new(name, tier, UNTOUCHED, false, nil) if pools.empty?
-
-    now = Time.now
-    left = pools.inject(0.0) { |sum, pool| sum + MGQ_MpRaidPool.left_now(pool, now) } / pools.size
-    hurt = pools.select { |pool| !pool.by.to_s.empty? }.max_by { |pool| pool.at.to_f }
-    Boss.new(name, tier, left, pools.all? { |pool| pool.defeated }, hurt && hurt.by.to_s)
-  end
-
-  # Writes the share of a raid boss's HP left, never 0% while any is.
-  #
-  # @param left [Float] The share, 0 to 1.
-  # @return [String] Such as "68%".
-  def self.share_text(left)
-    SHARE_LEFT % [(left * PERCENT).round, left > 0 ? 1 : 0].max
   end
 
   # Closes the overview once the map is left. Called by overworld_sync.rbx every frame in every
@@ -1396,9 +852,7 @@ module MGQ_MpWorldOverview
   def self.page_lines(rows)
     @page = :players unless pages.assoc(@page)
     case @page
-    when :world then world_lines(rows.size)
-    when :quests then []
-    when :levels then level_lines
+    when *SPLIT_PAGES then []
     else lines(rows)
     end
   end
@@ -1412,19 +866,7 @@ module MGQ_MpWorldOverview
     return view_of(lines) if @page == :players
 
     calls = rows.any? { |row| row.call }
-    @page == :quests ? quest_view(calls) : world_view(lines, calls)
-  end
-
-  # The view of the World or the Levels page: its lines from its scroll, kept within the lines as
-  # the box's height changes, nothing picked and no menu, and whether a player's call waits on the
-  # Players page, which the notification box hides behind the overview.
-  #
-  # @param lines [Array<Array>] The page's lines, see world_lines and level_lines.
-  # @param calls [Boolean] Whether a player's invite, challenge or offer reaches the player.
-  # @return [Hash] The view, see view.
-  def self.world_view(lines, calls)
-    @world_scroll = MGQ_MpUi.within(@world_scroll, 0, most_scroll(lines))
-    { :page => @page, :lines => lines, :selected => nil, :scroll => @world_scroll, :menu => nil, :menu_index => nil, :calls => calls }
+    split_view(@page, calls)
   end
 
   # What the overview shows, as update last saw it, which its picture draws.
@@ -1467,10 +909,8 @@ module MGQ_MpWorldOverview
     # The press that opened the overview from the wheel is still down this frame.
     if @fresh
       @fresh = false
-    elsif page == :quests
-      update_quests
-    elsif page != :players
-      update_world(lines)
+    elsif split_page?(page)
+      update_split(page)
     else
       update_players(lines)
     end
@@ -1492,25 +932,6 @@ module MGQ_MpWorldOverview
     keep_in_sight(lines, players)
   end
 
-  # Scrolls the World or the Levels page with the arrows, turns the page, follows the mouse, or
-  # closes the overview.
-  #
-  # @param lines [Array<Array>] The page's lines, see world_lines and level_lines.
-  def self.update_world(lines)
-    mouse_world
-    return unless @open
-    return if closed_by_cancel? || turn_by_keys
-
-    step = axis_step(:UP, :DOWN)
-    return if step == 0
-
-    scroll = MGQ_MpUi.within(@world_scroll + step, 0, most_scroll(lines))
-    return if scroll == @world_scroll
-
-    @world_scroll = scroll
-    Sound.play_cursor
-  end
-
   # Tells the furthest a page scrolls: until its last line is the last in sight.
   #
   # @param lines [Array<Array>] The page's lines, see page_lines.
@@ -1530,6 +951,7 @@ module MGQ_MpWorldOverview
     return if turn_by_keys
 
     step = axis_step(:UP, :DOWN)
+    step = -wheel if step == 0
     return if step == 0
 
     at = players.index(view[:selected]).to_i
@@ -1626,114 +1048,6 @@ module MGQ_MpWorldOverview
     end
   end
 
-  # Follows the mouse on the World and the Levels page: a click on a tab turns the page, a click
-  # outside the box closes the overview.
-  def self.mouse_world
-    position = MGQ_Multiplayer::Mouse.position
-    clicked = MGQ_Multiplayer::Mouse.clicked?
-    @mouse = position
-    return unless position && clicked
-
-    x, y = position
-    tab = Sprite_MpWorldOverview.tab_at(x, y)
-    return turn_to(tab, "a click on its tab") if tab
-    return if Sprite_MpWorldOverview.inside?(x, y)
-
-    Sound.play_cancel
-    close("a click outside the box")
-  end
-
-  # The view of the Quests page: the quests, the one picked, the list's and the reading pane's
-  # scroll.
-  #
-  # @param calls [Boolean] Whether a player's invite, challenge or offer reaches the player.
-  # @return [Hash] The view, see view, with :quests (see quests), :pick, :list_scroll and
-  #   :pane_scroll.
-  def self.quest_view(calls)
-    data = quests
-    @quest_pick = MGQ_MpUi.within(@quest_pick.to_i, 0, [data[:picks].size - 1, 0].max)
-    { :page => :quests, :lines => [], :selected => nil, :scroll => 0, :menu => nil, :menu_index => nil, :calls => calls,
-      :quests => data, :pick => @quest_pick, :list_scroll => @quest_scroll.to_i, :pane_scroll => @pane_scroll.to_i }
-  end
-
-  # Picks a quest with Up and Down, scrolls its text with Page Up and Page Down, turns the page,
-  # follows the mouse, or closes the overview.
-  def self.update_quests
-    view = quest_view(false)
-    mouse_quests(view)
-    return unless @open && @page == :quests
-    return if closed_by_cancel? || turn_by_keys
-
-    picks = view[:quests][:picks]
-    step = axis_step(:UP, :DOWN)
-    return pick_quest((view[:pick] + step) % picks.size) if step != 0 && picks.size > 1
-
-    page = axis_step(:L, :R)
-    scroll_pane(view, page) if page != 0
-  end
-
-  # Picks a quest, showing its text from the top and keeping its row in sight.
-  #
-  # @param index [Integer] Its place among the quests that can be picked, see quests.
-  def self.pick_quest(index)
-    return if index == @quest_pick
-
-    @quest_pick = index
-    @pane_scroll = 0
-    data = quests
-    row = Sprite_MpWorldOverview.quest_row(data, index)
-    rows = Sprite_MpWorldOverview.quest_list_rows
-    if row
-      # The heading above a section's first quest shows with it.
-      top = row > 0 && data[:rows][row - 1][0] == :head ? row - 1 : row
-      @quest_scroll = top if top < @quest_scroll.to_i
-      @quest_scroll = row - rows + 1 if row >= @quest_scroll.to_i + rows
-    else
-      @quest_scroll = 0
-    end
-    Sound.play_cursor
-  end
-
-  # Scrolls the reading pane by a page of its lines, never past its last line.
-  #
-  # @param view [Hash] The Quests page's view, see quest_view.
-  # @param step [Integer] 1 down, -1 up.
-  def self.scroll_pane(view, step)
-    quest = view[:quests][:picks][view[:pick]]
-    return unless quest
-
-    rows = Sprite_MpWorldOverview.pane_rows(Sprite_MpWorldOverview.box.height, quest)
-    most = [Sprite_MpWorldOverview.pane_lines(quest).size - rows, 0].max
-    scroll = MGQ_MpUi.within(@pane_scroll.to_i + step * [rows - 1, 1].max, 0, most)
-    return if scroll == @pane_scroll.to_i
-
-    @pane_scroll = scroll
-    Sound.play_cursor
-  end
-
-  # Follows the mouse on the Quests page: pointing at a quest or a click picks it, a click on a tab
-  # turns the page, a click outside the box closes the overview.
-  #
-  # @param view [Hash] The Quests page's view, see quest_view.
-  def self.mouse_quests(view)
-    position = MGQ_Multiplayer::Mouse.position
-    clicked = MGQ_Multiplayer::Mouse.clicked?
-    moved = position && position != @mouse
-    @mouse = position
-    return unless position && (moved || clicked)
-
-    x, y = position
-    tab = Sprite_MpWorldOverview.tab_at(x, y)
-    return turn_to(tab, "a click on its tab") if tab && clicked
-
-    pick = Sprite_MpWorldOverview.quest_at(x, y, view)
-    return pick_quest(pick) if pick && clicked
-    return unless clicked && !Sprite_MpWorldOverview.inside?(x, y)
-
-    Sound.play_cancel
-    close("a click outside the box")
-  end
-
   # Scrolls so the player picked stays in sight and no room is left below the last line, also once
   # the box's height changed.
   #
@@ -1788,21 +1102,24 @@ class Sprite_MpWorldOverview < Sprite
   # Width of a page's tab; the style's gap lies between two tabs.
   TAB_WIDTH = 76
 
-  # The Quests page: the side of Amira's portrait and of a companion's, the gap under and beside a
-  # portrait, the gap between the list and the reading pane, the list's share of the width, the
-  # height of a line of text, the lines the main quest takes at most, a quest's indent under its
-  # heading, and the marks of more above and below with their width.
+  # The pages with a head, a list and a pane: the side of the head's box and of the pane's portrait,
+  # the gap under and beside a box, the gap between the list and the pane, the list's share of the
+  # width, the height of a line of text, the lines under the head's title at most, an entry's indent
+  # under its heading, the side of the World page's icon, the room a scrollbar takes, the widths of
+  # a row's gauge and of the pane's, and the least rows of the list.
   PORTRAIT = 64
   PANE_PORTRAIT = 48
-  QUEST_GAP = 8
-  QUEST_SPLIT = 16
+  SPLIT_GAP = 8
+  SPLIT_DIVIDE = 16
   LIST_SHARE = 0.45
   PANE_LINE = 20
   MAIN_LINES = 2
-  QUEST_INDENT = 8
-  MORE_WIDTH = 16
-  MORE_UP = "▲"
-  MORE_DOWN = "▼"
+  ROW_INDENT = 8
+  HEAD_ICON = 48
+  BAR_ROOM = MGQ_MpUi::Style::SCROLLBAR_WIDTH + 4
+  ROW_GAUGE = 40
+  PANE_GAUGE = 160
+  SPLIT_ROWS = 3
 
   # The most fitted texts kept at once, see fitted.
   FITTED_MOST = 500
@@ -1825,22 +1142,7 @@ class Sprite_MpWorldOverview < Sprite
   # call.
   STORY_WIDTH = 142
 
-  # Left edge of each column of the World page: a row's label and value; a raid boss's name
-  # (at the label's), tier, gauge, share with its right edge, and who last hurt it. The boss's name
-  # takes the room the box has past its least width, which moves the columns right of it along.
-  WORLD_COLUMNS = { :label => 8, :value => 140, :tier => 192, :gauge => 240, :share => 334, :share_right => 394, :by => 400 }
-
-  # Least room of who last hurt a raid boss.
-  BY_WIDTH = 152
-
-  # Left edge of each column of the Levels page: a Makina's icon and the unlock's name; its kind and
-  # whether the player has it take the right edge, KIND_WIDTH and STATUS_WIDTH wide.
-  LEVEL_COLUMNS = { :icon => 8, :name => 36 }
-  KIND_WIDTH = 90
-  STATUS_WIDTH = 50
-
-  # Width and height of a raid boss's gauge, and the pixels its frame takes on each side.
-  GAUGE_WIDTH = 90
+  # Height of a raid boss's gauge in the list, and the pixels a gauge's frame takes on each side.
   GAUGE_HEIGHT = 6
   GAUGE_FRAME = 1
 
@@ -1850,25 +1152,24 @@ class Sprite_MpWorldOverview < Sprite
   # Width the Players page's columns need, the story column at its least.
   PLAYERS_WIDTH = COLUMNS[:story] + STORY_WIDTH + MGQ_MpUi::Style::GAP + MGQ_MpOverworld::PING_WIDTH + PING_INSET
 
-  # Width the World page's columns need, who last hurt a raid boss at its least.
-  WORLD_WIDTH = WORLD_COLUMNS[:by] + BY_WIDTH + MARGIN
-
   # Width the pages' tabs need.
   TABS_WIDTH = 2 * MARGIN + MGQ_MpWorldOverview::PAGES.size * (TAB_WIDTH + MGQ_MpUi::Style::GAP) - MGQ_MpUi::Style::GAP
 
-  # Narrowest the box gets: what both pages' columns, the tabs and the menu need.
-  MIN_WIDTH = [PLAYERS_WIDTH, WORLD_WIDTH, TABS_WIDTH, MENU_WIDTH + 2 * MARGIN].max
+  # Narrowest the box gets: what the Players page's columns, the tabs and the menu need.
+  MIN_WIDTH = [PLAYERS_WIDTH, TABS_WIDTH, MENU_WIDTH + 2 * MARGIN].max
 
-  # Lowest the box gets: the title, the tabs, MIN_ROWS lines and the hint, or the longest menu over
-  # the hint, which may cover the title then.
-  MIN_HEIGHT = [LIST_TOP + MIN_ROWS * ROW + MARGIN + HINT_HEIGHT, MENU_ROWS * ROW + HINT_HEIGHT].max
+  # Lowest the box gets: the title, the tabs, MIN_ROWS lines and the hint, the head of the pages
+  # with a head, a list and a pane over SPLIT_ROWS rows, or the longest menu over the hint, which
+  # may cover the title then.
+  MIN_HEIGHT = [LIST_TOP + MIN_ROWS * ROW + MARGIN + HINT_HEIGHT, LIST_TOP + MGQ_MpUi::Style::GAP + PORTRAIT + SPLIT_GAP + SPLIT_ROWS * ROW + MARGIN + HINT_HEIGHT,
+                MENU_ROWS * ROW + HINT_HEIGHT].max
 
   # The hint at the bottom of each page, with the overview's hotkey.
   HINTS = {
     :players => ["Left or right: page", "Enter: invite, duel or trade", MGQ_MpUi::Style.close_hint("%s")].join(MGQ_MpUi::Style::HINT_GAP),
-    :world => ["Left or right: page", "Up or down: scroll", MGQ_MpUi::Style.close_hint("%s")].join(MGQ_MpUi::Style::HINT_GAP),
+    :world => ["Left or right: page", "Up or down: pick", "Page Up or Down: read on", MGQ_MpUi::Style.close_hint("%s")].join(MGQ_MpUi::Style::HINT_GAP),
     :quests => ["Left or right: page", "Up or down: pick", "Page Up or Down: read on", MGQ_MpUi::Style.close_hint("%s")].join(MGQ_MpUi::Style::HINT_GAP),
-    :levels => ["Left or right: page", "Up or down: scroll", MGQ_MpUi::Style.close_hint("%s")].join(MGQ_MpUi::Style::HINT_GAP),
+    :unlocks => ["Left or right: page", "Up or down: pick", "Page Up or Down: read on", MGQ_MpUi::Style.close_hint("%s")].join(MGQ_MpUi::Style::HINT_GAP),
   }
 
   # Tells where the box starts on the screen: the list box's place.
@@ -1893,18 +1194,6 @@ class Sprite_MpWorldOverview < Sprite
   # @return [Integer] The lines, at least one.
   def self.list_rows(height = box.height)
     [(height - LIST_TOP - HINT_HEIGHT - MARGIN) / ROW, 1].max
-  end
-
-  # Breaks a long value of the World page into the lines its value column holds, in the font
-  # draw_info writes it in.
-  #
-  # @param text [String] The value.
-  # @return [Array<String>] The lines.
-  def self.value_lines(text)
-    style = MGQ_MpUi::Style
-    @measure = Bitmap.new(1, 1) if @measure.nil? || @measure.disposed?
-    style.use_font(@measure, style::TEXT_SIZE, style::TEXT)
-    MGQ_MpUi.wrap(@measure, text, box.width - MARGIN - WORLD_COLUMNS[:value])
   end
 
   # Creates the box, hidden.
@@ -2009,18 +1298,15 @@ class Sprite_MpWorldOverview < Sprite
     place(box)
     MGQ_MpUi::Layout.offer(LAYOUT_ID, box.x, box.y, box.width, box.height, z)
     overview = MGQ_MpWorldOverview
-    rows = view[:lines].map do |kind, row, value|
+    rows = view[:lines].map do |kind, row|
       case kind
       when :player then [row.name, row.level, row.story, row.ping && row.ping[0], row.icon, row.member, row.badge, row.call && row.call[0]]
-      when :boss then [row.name, row.tier, overview.share_text(row.left), (row.left * GAUGE_WIDTH).round, row.defeated, row.by]
-      when :unlock then row.to_a
-      when :info then [row, value]
       else row
       end
     end
     drawn = [view[:page], view[:calls], overview.world_name, overview.title_tail, MGQ_MpOverworld.party_badge(:me), rows, view[:selected], view[:scroll],
              view[:menu] && view[:menu].map { |option| [option.text, !option.run.nil?] }, view[:menu_index], box.width, box.height, MGQ_MpUi::Theme.serial,
-             view[:pick], view[:list_scroll], view[:pane_scroll], view[:quests] && view[:quests].object_id,
+             view[:pick], view[:list_scroll], view[:pane_scroll], view[:model] && view[:model].object_id,
              MGQ_MpWorldOverview.portraits]
     return if drawn == @shown
 
@@ -2054,281 +1340,16 @@ class Sprite_MpWorldOverview < Sprite
     draw_backdrop if view[:page] == :quests
     draw_title
     draw_tabs(view[:page], view[:calls])
-    if view[:page] == :quests
-      draw_quests(view)
+    if MGQ_MpWorldOverview.split_page?(view[:page])
+      draw_split(view)
     else
-      lines = view[:lines][view[:scroll], self.class.list_rows(height)] || []
+      rows = self.class.list_rows(height)
+      lines = view[:lines][view[:scroll], rows] || []
       lines.each_with_index { |line, index| draw_line(line, LIST_TOP + index * ROW, view[:scroll] + index == view[:selected]) }
+      style.draw_scrollbar(bitmap, width - MARGIN + (MARGIN - style::SCROLLBAR_WIDTH) / 2, LIST_TOP, rows * ROW, view[:scroll], rows, view[:lines].size)
     end
     style.draw_hint(bitmap, MARGIN, height - HINT_HEIGHT, width - 2 * MARGIN, HINT_HEIGHT, HINTS[view[:page]] % MGQ_MpHotkeys.label(:overview))
     draw_menu(view) if view[:menu]
-  end
-
-  # Draws the Quests page: Amira's figure with the main quest at the top, the list of quests at the
-  # left and the picked quest's whole text at the right.
-  #
-  # @param view [Hash] The Quests page's view, see MGQ_MpWorldOverview.quest_view.
-  def draw_quests(view)
-    data = view[:quests]
-    layout = self.class.quest_layout(bitmap.width, bitmap.height)
-    picked = data[:picks][view[:pick]]
-    draw_quest_head(data[:main], !picked.nil? && picked.equal?(data[:main]), layout)
-    draw_quest_list(view, picked, layout)
-    bitmap.fill_rect(layout[:pane_x] - QUEST_SPLIT / 2, layout[:body_y], 1, layout[:body_h], MGQ_MpUi::Style::EDGE)
-    draw_quest_pane(picked, view[:pane_scroll], layout)
-  end
-
-  # Draws Amira's figure in its box and the main quest's first sentence to its right.
-  #
-  # @param main [MGQ_MpWorldOverview::Quest, nil] The main quest.
-  # @param picked [Boolean] Whether it is the quest picked.
-  # @param layout [Hash] See quest_layout.
-  def draw_quest_head(main, picked, layout)
-    style = MGQ_MpUi::Style
-    actor = $data_actors && $data_actors[MGQ_MpWorldOverview::AMIRA]
-    top = layout[:head_y]
-    draw_portrait(MGQ_MpWorldOverview.looks(actor), MARGIN, top, PORTRAIT) if actor
-    x = layout[:text_x]
-    width = bitmap.width - MARGIN - x
-    bitmap.fill_rect(x - style::GAP, top, width + style::GAP, PORTRAIT, style::PICKED) if picked
-    style.use_font(bitmap, style::SMALL_SIZE, style::HEADING)
-    bitmap.draw_text(x, top, width, PANE_LINE, MGQ_MpWorldOverview::QUEST_TITLES[:main])
-    style.use_font(bitmap, style::TEXT_SIZE, main ? style::TEXT : style::DIM)
-    text = main ? main.first : MGQ_MpWorldOverview::NO_QUESTS
-    shown = self.class.fitted([:main, text, width]) do
-      lines = MGQ_MpUi.wrap(bitmap, text, width)
-      head = lines.first(MAIN_LINES)
-      head[-1] = MGQ_MpUi.cut(bitmap, "#{head[-1]} #{lines[MAIN_LINES]}", width) if lines.size > MAIN_LINES
-      head
-    end
-    shown.each_with_index { |line, index| bitmap.draw_text(x, top + PANE_LINE + index * PANE_LINE, width, PANE_LINE, line) }
-  end
-
-  # Draws the list of side and companion quests from its scroll: each quest's first sentence in
-  # one line under its section's heading, the picked one on the picked color.
-  #
-  # @param view [Hash] The Quests page's view.
-  # @param picked [MGQ_MpWorldOverview::Quest, nil] The quest picked.
-  # @param layout [Hash] See quest_layout.
-  def draw_quest_list(view, picked, layout)
-    style = MGQ_MpUi::Style
-    rows = view[:quests][:rows]
-    count = self.class.quest_list_rows(bitmap.height)
-    width = layout[:list_w]
-    rows[view[:list_scroll], count].to_a.each_with_index do |(kind, value), index|
-      y = layout[:body_y] + index * ROW
-      case kind
-      when :head
-        style.use_font(bitmap, style::SMALL_SIZE, style::HEADING)
-        bitmap.draw_text(MARGIN, y, width, ROW, value)
-      when :none
-        style.use_font(bitmap, style::SMALL_SIZE, style::DIM)
-        bitmap.draw_text(MARGIN + QUEST_INDENT, y, width - QUEST_INDENT, ROW, value)
-      else
-        bitmap.fill_rect(MARGIN, y, width, ROW, style::PICKED) if value.equal?(picked)
-        draw_quest_row(value, MARGIN + QUEST_INDENT, y, width - QUEST_INDENT - style::GAP)
-      end
-    end
-    draw_more(MARGIN + width - MORE_WIDTH, layout[:body_y], view[:list_scroll] > 0, view[:list_scroll] + count < rows.size, count * ROW)
-  end
-
-  # Draws one quest of the list: a side quest's number or a companion's name, then the first
-  # sentence cut to the room left.
-  #
-  # @param quest [MGQ_MpWorldOverview::Quest] The quest.
-  # @param x [Integer] The row's left.
-  # @param y [Integer] The row's top.
-  # @param width [Integer] The row's width.
-  def draw_quest_row(quest, x, y, width)
-    style = MGQ_MpUi::Style
-    label = quest.kind == :side ? "#{quest.number}." : quest.speaker.to_s
-    style.use_font(bitmap, style::SMALL_SIZE, quest.kind == :side ? style::DIM : style::HEADING)
-    label, used = self.class.fitted([:label, label, width]) do
-      cut = MGQ_MpUi.cut(bitmap, label, width / 3)
-      [cut, bitmap.text_size(cut).width + style::GAP * 2]
-    end
-    bitmap.draw_text(x, y, used, ROW, label)
-    style.use_font(bitmap, style::SMALL_SIZE, style::TEXT)
-    sentence = quest.first
-    bitmap.draw_text(x + used, y, width - used, ROW, self.class.fitted([:row, sentence, width - used]) { MGQ_MpUi.cut(bitmap, sentence, width - used) })
-  end
-
-  # Draws the picked quest's title and its whole text from the pane's scroll, a paragraph for
-  # each message.
-  #
-  # @param quest [MGQ_MpWorldOverview::Quest, nil] The quest.
-  # @param scroll [Integer] The first of its lines in sight.
-  # @param layout [Hash] See quest_layout.
-  def draw_quest_pane(quest, scroll, layout)
-    return unless quest
-
-    style = MGQ_MpUi::Style
-    x = layout[:pane_x]
-    width = layout[:pane_w]
-    top = layout[:body_y]
-    head = self.class.pane_head(quest)
-    title_x = x
-    if quest.looks
-      draw_portrait(quest.looks, x, top, PANE_PORTRAIT)
-      title_x += PANE_PORTRAIT + QUEST_GAP
-    end
-    title_width = x + width - MORE_WIDTH - title_x
-    style.use_font(bitmap, style::SMALL_SIZE, style::HEADING)
-    bitmap.draw_text(title_x, top + (head - ROW) / 2, title_width, ROW, MGQ_MpUi.cut(bitmap, quest.title, title_width))
-    lines = self.class.pane_lines(quest)
-    rows = self.class.pane_rows(bitmap.height, quest)
-    style.use_font(bitmap, style::TEXT_SIZE, style::TEXT)
-    lines[scroll, rows].to_a.each_with_index { |line, index| bitmap.draw_text(x, top + head + index * PANE_LINE, width, PANE_LINE, line) }
-    draw_more(x + width - MORE_WIDTH, layout[:body_y], scroll > 0, scroll + rows < lines.size, layout[:body_h])
-  end
-
-  # Draws how a character looks in a framed square on the box's background, by the player's choice
-  # of portraits: their map sprite or their face.
-  #
-  # @param looks [MGQ_MpWorldOverview::Looks] How they look.
-  # @param x [Integer] The square's left.
-  # @param y [Integer] The square's top.
-  # @param side [Integer] The square's side.
-  def draw_portrait(looks, x, y, side)
-    return unless defined?(Sprite_MpLeaderHud)
-
-    if MGQ_MpWorldOverview.portraits == MGQ_MpWorldOverview::FACES
-      Sprite_MpLeaderHud.draw_face(bitmap, looks.face_name, looks.face_index, x, y, side, MGQ_MpUi::Style::BACK)
-    else
-      Sprite_MpLeaderHud.draw_figure(bitmap, looks.character_name, looks.character_index, x, y, side, MGQ_MpUi::Style::BACK)
-    end
-  end
-
-  # Draws the marks that tell more lies above or below, at the top and the bottom of a column.
-  #
-  # @param x [Integer] The marks' left.
-  # @param y [Integer] The column's top.
-  # @param above [Boolean] Whether more lies above.
-  # @param below [Boolean] Whether more lies below.
-  # @param height [Integer] The column's height.
-  def draw_more(x, y, above, below, height)
-    style = MGQ_MpUi::Style
-    style.use_font(bitmap, style::TINY_SIZE, style::DIM)
-    bitmap.draw_text(x, y, MORE_WIDTH, ROW, MORE_UP, 1) if above
-    bitmap.draw_text(x, y + height - ROW, MORE_WIDTH, ROW, MORE_DOWN, 1) if below
-  end
-
-  # Lays the Quests page out in a box of a size.
-  #
-  # @param width [Integer] The box's width.
-  # @param height [Integer] The box's height.
-  # @return [Hash] :head_y (the figure's and the main quest's top), :text_x (the main quest's left),
-  #   :body_y and :body_h (the list's and the pane's top and height), :list_w, :pane_x and :pane_w.
-  def self.quest_layout(width = box.width, height = box.height)
-    head_y = LIST_TOP + MGQ_MpUi::Style::GAP
-    body_y = head_y + PORTRAIT + QUEST_GAP
-    list_w = ((width - 2 * MARGIN - QUEST_SPLIT) * LIST_SHARE).to_i
-    pane_x = MARGIN + list_w + QUEST_SPLIT
-    { :head_y => head_y, :text_x => MARGIN + PORTRAIT + QUEST_GAP, :body_y => body_y, :body_h => [height - HINT_HEIGHT - MARGIN - body_y, ROW].max,
-      :list_w => list_w, :pane_x => pane_x, :pane_w => width - MARGIN - pane_x }
-  end
-
-  # Tells how many rows of the list show at once.
-  #
-  # @param height [Integer] The box's height.
-  # @return [Integer] The rows, at least one.
-  def self.quest_list_rows(height = box.height)
-    [quest_layout(box.width, height)[:body_h] / ROW, 1].max
-  end
-
-  # Tells how many lines of the reading pane show at once, under its title.
-  #
-  # @param height [Integer] The box's height.
-  # @param quest [MGQ_MpWorldOverview::Quest, nil] The quest shown.
-  # @return [Integer] The lines, at least one.
-  def self.pane_rows(height = box.height, quest = nil)
-    [(quest_layout(box.width, height)[:body_h] - pane_head(quest)) / PANE_LINE, 1].max
-  end
-
-  # Tells how tall the reading pane's head is: the title, beside the companion's portrait if any.
-  #
-  # @param quest [MGQ_MpWorldOverview::Quest, nil] The quest shown.
-  # @return [Integer] The height.
-  def self.pane_head(quest)
-    quest && quest.looks ? PANE_PORTRAIT + MGQ_MpUi::Style::GAP : ROW
-  end
-
-  # Breaks a quest's messages into the reading pane's lines, an empty line between two messages.
-  #
-  # @param quest [MGQ_MpWorldOverview::Quest] The quest.
-  # @return [Array<String>] The lines.
-  def self.pane_lines(quest)
-    width = quest_layout[:pane_w]
-    fitted([:pane, quest.texts, width]) do
-      style = MGQ_MpUi::Style
-      @measure = Bitmap.new(1, 1) if @measure.nil? || @measure.disposed?
-      style.use_font(@measure, style::TEXT_SIZE, style::TEXT)
-      quest.texts.each_with_index.inject([]) do |lines, (text, index)|
-        lines << "" if index > 0
-        lines.concat(MGQ_MpUi.wrap(@measure, text, width))
-      end
-    end
-  end
-
-  # Keeps what fitting a text to a width gave, since measuring texts is slow in the game.
-  #
-  # @param key [Array] What the result goes by: its use, the text and the width.
-  # @yieldreturn [Object] The result, worked out once.
-  # @return [Object] The result.
-  def self.fitted(key)
-    @fitted ||= {}
-    @fitted.clear if @fitted.size > FITTED_MOST
-    @fitted.key?(key) ? @fitted[key] : @fitted[key] = yield
-  end
-
-  # Finds the list's row of a quest.
-  #
-  # @param data [Hash] The quests, see MGQ_MpWorldOverview.quests.
-  # @param pick [Integer] The quest's place among those that can be picked.
-  # @return [Integer, nil] Its row; nil for the main quest, which the list leaves out.
-  def self.quest_row(data, pick)
-    first = data[:main] ? 1 : 0
-    return nil if pick < first
-
-    (0...data[:rows].size).select { |row| data[:rows][row][0] == :quest }[pick - first]
-  end
-
-  # Finds the quest under a point of the screen: the main quest at the top, or a quest of the list.
-  #
-  # @param x [Integer] The point's x.
-  # @param y [Integer] The point's y.
-  # @param view [Hash] The Quests page's view.
-  # @return [Integer, nil] Its place among the quests that can be picked; nil for none.
-  def self.quest_at(x, y, view)
-    return nil unless inside?(x, y)
-
-    box = self.box
-    layout = quest_layout(box.width, box.height)
-    data = view[:quests]
-    left = x - box.x
-    top = y - box.y
-    return (data[:main] ? 0 : nil) if top >= layout[:head_y] && top < layout[:head_y] + PORTRAIT
-    return nil if left < MARGIN || left >= MARGIN + layout[:list_w] || top < layout[:body_y]
-
-    row = view[:list_scroll] + (top - layout[:body_y]) / ROW
-    return nil unless row < view[:list_scroll] + quest_list_rows(box.height) && data[:rows][row] && data[:rows][row][0] == :quest
-
-    (data[:main] ? 1 : 0) + data[:rows][0...row].count { |kind, _| kind == :quest }
-  end
-
-  # Draws Amira's picture faintly at the right behind the Quests page's lines.
-  def draw_backdrop
-    picture = MGQ_MpWorldOverview.backdrop
-    return unless picture
-
-    room = bitmap.height - LIST_TOP - HINT_HEIGHT - MARGIN
-    scale = [room.to_f / picture.height, 1.0].min
-    width = (picture.width * scale).to_i
-    height = (picture.height * scale).to_i
-    return if width <= 0 || height <= 0
-
-    target = Rect.new(bitmap.width - MARGIN - width, LIST_TOP + room - height, width, height)
-    bitmap.stretch_blt(target, picture, picture.rect, MGQ_MpWorldOverview::BACKDROP_OPACITY)
   end
 
   # Draws the world's name with its type and difficulty, the name cut before the player's party,
@@ -2368,25 +1389,17 @@ class Sprite_MpWorldOverview < Sprite
     end
   end
 
-  # Draws one line of a page: a heading, a player, a row of the World page, a raid boss or what
-  # the catch-up hands out.
+  # Draws one line of the Players page: a place's heading or a player.
   #
-  # @param line [Array] [:place, name], [:player, row], [:info, label, value], [:boss, boss] or
-  #   [:unlock, unlock].
+  # @param line [Array] [:place, name] or [:player, row].
   # @param y [Integer] The line's top.
   # @param picked [Boolean] Whether it is the player picked.
   def draw_line(line, y, picked)
-    kind, value, extra = line
-    case kind
-    when :place then draw_heading(value, y)
-    when :info then draw_info(value, extra, y)
-    when :boss then draw_boss(value, y)
-    when :unlock then draw_unlock(value, y)
-    else draw_player(value, y, picked)
-    end
+    kind, value = line
+    kind == :place ? draw_heading(value, y) : draw_player(value, y, picked)
   end
 
-  # Draws a heading: a place's, or the raid bosses'.
+  # Draws a place's heading.
   #
   # @param text [String] The heading.
   # @param y [Integer] The line's top.
@@ -2421,86 +1434,6 @@ class Sprite_MpWorldOverview < Sprite
     ping_left = bitmap.width - PING_INSET - MGQ_MpOverworld::PING_WIDTH
     bitmap.draw_text(COLUMNS[:story], y, ping_left - style::GAP - COLUMNS[:story], ROW, text)
     MGQ_MpOverworld.draw_ping(bitmap, row.ping, ping_left, y, ROW) if row.ping
-  end
-
-  # Draws a row of the World page: its label and its value, which takes the room up to the right
-  # edge.
-  #
-  # @param label [String] The label.
-  # @param value [String] The value.
-  # @param y [Integer] The line's top.
-  def draw_info(label, value, y)
-    style = MGQ_MpUi::Style
-    columns = WORLD_COLUMNS
-    style.use_font(bitmap, style::TEXT_SIZE, style::HEADING)
-    bitmap.draw_text(columns[:label], y, columns[:value] - columns[:label] - style::GAP, ROW, label)
-    style.use_font(bitmap, style::TEXT_SIZE, style::TEXT)
-    width = bitmap.width - MARGIN - columns[:value]
-    bitmap.draw_text(columns[:value], y, width, ROW, MGQ_MpUi.cut(bitmap, value, width))
-  end
-
-  # Draws a raid boss: its name, dimmed once defeated, its tier, its gauge, its share left or
-  # Defeated, and who last hurt it; the name takes the room the box has past WORLD_WIDTH.
-  #
-  # @param boss [MGQ_MpWorldOverview::Boss] The boss.
-  # @param y [Integer] The line's top.
-  def draw_boss(boss, y)
-    style = MGQ_MpUi::Style
-    overview = MGQ_MpWorldOverview
-    extra = [bitmap.width - WORLD_WIDTH, 0].max
-    columns = Hash[WORLD_COLUMNS.map { |key, left| [key, key == :label ? left : left + extra] }]
-    style.use_font(bitmap, style::TEXT_SIZE, boss.defeated ? style::DIM : style::TEXT)
-    name_width = columns[:tier] - columns[:label] - style::GAP
-    bitmap.draw_text(columns[:label], y, name_width, ROW, MGQ_MpUi.cut(bitmap, boss.name, name_width))
-    style.use_font(bitmap, style::TINY_SIZE, style::DIM)
-    bitmap.draw_text(columns[:tier], y, columns[:gauge] - columns[:tier] - style::GAP, ROW, overview::TIER % boss.tier) if boss.tier
-    draw_gauge(columns[:gauge], y + (ROW - GAUGE_HEIGHT) / 2, boss.defeated ? 0.0 : boss.left)
-    style.use_font(bitmap, style::TINY_SIZE, boss.defeated ? style::BAD : style::TEXT)
-    bitmap.draw_text(columns[:share], y, columns[:share_right] - columns[:share], ROW, boss.defeated ? overview::DEFEATED : overview.share_text(boss.left), 2)
-    return unless boss.by
-
-    style.use_font(bitmap, style::TINY_SIZE, style::DIM)
-    by_width = bitmap.width - MARGIN - columns[:by]
-    bitmap.draw_text(columns[:by], y, by_width, ROW, MGQ_MpUi.cut(bitmap, overview::LAST_HURT_BY % boss.by, by_width))
-  end
-
-  # Draws what the catch-up hands out at a level: a Makina's icon, its name, dimmed once the player
-  # has it, its kind, and Done or, once the player's level reached it, Due at the right edge.
-  #
-  # @param unlock [MGQ_MpWorldCatchup::Unlock] What it hands out.
-  # @param y [Integer] The line's top.
-  def draw_unlock(unlock, y)
-    style = MGQ_MpUi::Style
-    overview = MGQ_MpWorldOverview
-    MGQ_MpUi.draw_icon(bitmap, unlock.icon, LEVEL_COLUMNS[:icon], y) if unlock.icon
-    status_left = bitmap.width - MARGIN - STATUS_WIDTH
-    kind_left = status_left - style::GAP - KIND_WIDTH
-    style.use_font(bitmap, style::TEXT_SIZE, unlock.got ? style::DIM : style::TEXT)
-    name_width = kind_left - style::GAP - LEVEL_COLUMNS[:name]
-    bitmap.draw_text(LEVEL_COLUMNS[:name], y, name_width, ROW, MGQ_MpUi.cut(bitmap, unlock.name, name_width))
-    style.use_font(bitmap, style::SMALL_SIZE, style::DIM)
-    bitmap.draw_text(kind_left, y, KIND_WIDTH, ROW, overview::UNLOCK_KINDS[unlock.kind].to_s)
-    status = unlock.got ? overview::DONE : (unlock.due ? overview::DUE : nil)
-    return unless status
-
-    style.use_font(bitmap, style::SMALL_SIZE, unlock.got ? style::DIM : style::GOLD)
-    bitmap.draw_text(status_left, y, STATUS_WIDTH, ROW, status, 2)
-  end
-
-  # Draws a thin gauge of a raid boss's HP: its frame in the edge color, its empty part in the well
-  # color, the share left in the bad color.
-  #
-  # @param x [Integer] Its left.
-  # @param y [Integer] Its top.
-  # @param left [Float] The share of the HP left, 0 to 1.
-  def draw_gauge(x, y, left)
-    style = MGQ_MpUi::Style
-    inner_width = GAUGE_WIDTH - 2 * GAUGE_FRAME
-    inner_height = GAUGE_HEIGHT - 2 * GAUGE_FRAME
-    bitmap.fill_rect(x, y, GAUGE_WIDTH, GAUGE_HEIGHT, style::EDGE)
-    bitmap.fill_rect(x + GAUGE_FRAME, y + GAUGE_FRAME, inner_width, inner_height, style::WELL)
-    filled = (inner_width * MGQ_MpUi.within(left.to_f, 0.0, 1.0)).round
-    bitmap.fill_rect(x + GAUGE_FRAME, y + GAUGE_FRAME, filled, inner_height, style::BAD) if filled > 0
   end
 
   # Draws the icon of what a player does and the crown of a party's leader.
@@ -2565,14 +1498,6 @@ begin
                             Sprite_MpWorldOverview::MIN_HEIGHT, :both)
 rescue => e
   MGQ_MpWorldOverview.log("layout FAILED: #{e.class}: #{e.message}")
-end
-
-# The Quests page's portraits, a row of the Mod Config.
-
-begin
-  MGQ_MpWorldOverview.add_options
-rescue => e
-  MGQ_MpWorldOverview.log("options FAILED: #{e.class}: #{e.message}")
 end
 
 # Game hooks, through core_hooks.rbx.
