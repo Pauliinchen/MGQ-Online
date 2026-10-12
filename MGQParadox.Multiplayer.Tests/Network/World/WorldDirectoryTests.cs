@@ -2,6 +2,7 @@
 //  WorldDirectoryTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-12: Covered a 429 without a code told as the creator limit for a create, and in the relay's own words for a ban
 //      Paulinchen  2026-10-10: Covered a Raid World made with a starting save by a development build, which names the dev feature, and expected the dev feature in its requests
 //      Paulinchen  2026-10-09: Covered whether a world turns other mods off, made, changed and listed at the end of its line, by its type when the relay names none
 //                            - Expected whether a world turns other mods off at the end of its line
@@ -421,6 +422,25 @@ public sealed class WorldDirectoryTests
 
         Assert.Contains("who plays", Act(nobody, directory => directory.Create("World", "secret", 4, false, false, []))["error"]);
         Assert.Contains("does not know", Act(lost, directory => directory.Create("World", "secret", 4, false, false, []))["error"]);
+    }
+
+    /// <summary>
+    /// Asserts that a create past the player's world limit tells that limit, while a ban past the
+    /// removed players a world keeps, also refused with 429 and no code, tells the relay's own words.
+    /// </summary>
+    [Fact]
+    public void TooManyRequests_TellsTheCreatorLimitForACreateOnly()
+    {
+        using var relay = new TestRelay { MaxWorldsPerCreator = 1, MaxBans = 1 };
+        var creator = NewDirectory(relay, CreatorKey, "Creator");
+        var made = Act(creator, directory => directory.Create("World", "secret", 4, false, false, []));
+
+        var second = Act(creator, directory => directory.Create("Second World", "secret", 4, false, false, []));
+        Assert.Equal(("failed", "You have created as many worlds as you may. Delete one first."), (second["state"], second["error"]));
+
+        Assert.Equal("done", Act(creator, directory => directory.Ban(made["world"], WorldKeys.PlayerIdOf(PlayerKey(2))))["state"]);
+        var banned = Act(creator, directory => directory.Ban(made["world"], WorldKeys.PlayerIdOf(PlayerKey(3))));
+        Assert.Equal(("failed", "The relay refused: a world may keep at most 1 removed players"), (banned["state"], banned["error"]));
     }
 
     /// <summary>

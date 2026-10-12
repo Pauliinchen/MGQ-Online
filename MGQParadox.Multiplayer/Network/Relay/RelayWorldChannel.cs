@@ -2,6 +2,7 @@
 //  RelayWorldChannel.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-12: Gave up connecting at once when told to stop, so a world left meanwhile no longer takes a seat afterwards
 //      Paulinchen  2026-10-08: Named the Raid Worlds this game plays in the X-MGQ-Features header
 //      Paulinchen  2026-10-07: Sent any text frame, such as a chat line the relay keeps, not only the ping
 //                            - Sent the world's auth key in the X-MGQ-Auth header instead of the address, and closed the WebSocket through the shared helper
@@ -98,11 +99,13 @@ internal sealed class RelayWorldChannel : IDisposable
     /// <param name="playerName">The player's name, which the directory lists.</param>
     /// <param name="authKey">The key that proves the game holds the world's token, see <see cref="WorldKeys.AuthKeyOf"/>.</param>
     /// <param name="timeout">How long connecting may take.</param>
+    /// <param name="stop">Gives up connecting at once, as when the world was left meanwhile.</param>
     /// <param name="refusal">The HTTP status the relay refused the game with, such as 409 when every seat is taken.</param>
     /// <param name="refusalCode">The code the relay named why with, such as "members", "pending" or "raid_unsupported", <see langword="null"/> for none.</param>
     /// <returns>The channel, or <see langword="null"/> when the relay refused the game.</returns>
     /// <exception cref="WebSocketException">The relay could not be reached.</exception>
-    public static RelayWorldChannel? Connect(Uri relay, string room, string playerKey, string playerName, string authKey, TimeSpan timeout, out HttpStatusCode? refusal, out string? refusalCode)
+    /// <exception cref="OperationCanceledException">Connecting took too long, or was stopped.</exception>
+    public static RelayWorldChannel? Connect(Uri relay, string room, string playerKey, string playerName, string authKey, TimeSpan timeout, CancellationToken stop, out HttpStatusCode? refusal, out string? refusalCode)
     {
         var socket = new ClientWebSocket();
         socket.Options.CollectHttpResponseDetails = true;
@@ -115,7 +118,8 @@ internal sealed class RelayWorldChannel : IDisposable
 
         try
         {
-            using var cancel = new CancellationTokenSource(timeout);
+            using var cancel = CancellationTokenSource.CreateLinkedTokenSource(stop);
+            cancel.CancelAfter(timeout);
             socket.ConnectAsync(address, cancel.Token).GetAwaiter().GetResult();
             return new RelayWorldChannel(socket);
         }

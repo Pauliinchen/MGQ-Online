@@ -2,6 +2,7 @@
 //  RaidStoryTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-12: Covered a write sent again after a route lock, found already accepted with its own revision
 //      Paulinchen  2026-10-08: Created
 //
 //----------------------------------------------------------------
@@ -137,6 +138,28 @@ public sealed class RaidStoryTests
         Assert.True(other.Post(IdOf(code), 0, "p=6;r1141=0;r1142=0;r1143=0", "mine"));
         var refused = Await(other, "post", "conflict");
         Assert.Equal(("rev", "1", "5", Story), (refused["post_code"], refused["rev"], refused["p"], refused.Team));
+    }
+
+    /// <summary>
+    /// Asserts that a write sent again after a route lock moved the story on is found already
+    /// accepted with the revision of the write itself, not the revision of the lock.
+    /// </summary>
+    [Fact]
+    public void Post_SentAgainAfterALock_IsFoundWithItsOwnRevision()
+    {
+        using var relay = new TestRelay();
+        var code = MakeWorld(relay, WorldType.Raid);
+        var creator = NewStory(relay, CreatorKey, code);
+        var id = IdOf(code);
+
+        Assert.True(creator.Post(id, 0, "p=39;r1141=0;r1142=0;r1143=0", Story));
+        Assert.Equal("1", Await(creator, "post", "accepted")["post_rev"]);
+        Assert.True(creator.LockRoute(id, "ad"));
+        Assert.Equal("2", Await(creator, "lock", "locked")["rev"]);
+
+        Assert.True(creator.Post(id, 0, "p=39;r1141=0;r1142=0;r1143=0", Story));
+        var found = Await(creator, "post", "accepted");
+        Assert.Equal(("1", "2", "1"), (found["post_rev"], found["rev"], found["wrev"]));
     }
 
     /// <summary>

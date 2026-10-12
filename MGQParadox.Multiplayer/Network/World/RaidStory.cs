@@ -2,6 +2,7 @@
 //  RaidStory.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-12: Told a write found already accepted on a retry with the revision of that write, not the revision of a later route lock or companion
 //      Paulinchen  2026-10-09: Logged a fetch of the world's story only when its outcome changed, since the game script fetches it once a minute
 //      Paulinchen  2026-10-08: Created
 //
@@ -152,7 +153,7 @@ internal sealed class RaidStory
             // retry, and is the write's own.
             if (text == story && answer.State.Code == "rev")
             {
-                return new Outcome(Kind.Accepted, Rev: answer.State.Rev, Detail: $"found already accepted as rev {answer.State.WRev}");
+                return new Outcome(Kind.Accepted, Rev: answer.State.WRev, Detail: $"found already accepted as rev {answer.State.WRev}");
             }
 
             return new Outcome(Kind.Conflict, Rev: answer.State.Rev, Code: answer.State.Code, Detail: $"refused ({answer.State.Code}), the world's story is rev {answer.State.Rev}");

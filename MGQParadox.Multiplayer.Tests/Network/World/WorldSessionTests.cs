@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-12: Covered a burst of messages paced below the relay limit, and the test relay closing a connection that sends too fast
+//                            - Covered entering a world again while the first connect still waits at the relay, which the relay lets in after the new one
 //      Paulinchen  2026-10-09: Covered the relay's word that a world now turns other mods off handed to the game script with its mods, and a value that is neither 0 nor 1 ignored
 //                            - Covered the relay's word of a Raid World's new difficulty handed to the game script, and a value that is no difficulty ignored
 //      Paulinchen  2026-10-08: Covered entering a Raid World, which the relay lets in only games that name it in the features header
@@ -19,6 +20,7 @@
 
 using System;
 using System.Threading;
+using System.Threading.Tasks;
 using MGQParadox.Multiplayer.Network.Pvp;
 using MGQParadox.Multiplayer.Network.Relay;
 using MGQParadox.Multiplayer.Network.Transport;
@@ -329,6 +331,34 @@ public sealed class WorldSessionTests
     }
 
     /// <summary>
+    /// Asserts that entering a world again cuts the connect still waiting at the relay, and that the
+    /// game connects again instead of failing once the relay still lets that cut connect in and it
+    /// takes the new connection's place.
+    /// </summary>
+    [Fact]
+    public void EnteringAgain_OutlastsTheConnectItCut()
+    {
+        using var relay = new TestRelay();
+        var code = MakeWorld(relay, 2);
+        var session = NewSession(relay.Address);
+        var hold = new TaskCompletionSource();
+
+        relay.WorldUpgradeHold = hold;
+        session.Open(code);
+        Assert.True(SpinWait.SpinUntil(() => relay.WorldUpgradeHold == null, Patience), "The first connect never reached the relay.");
+
+        session.Open(code);
+        NextEntry(session, kind: "seat");
+        hold.SetResult();
+
+        NextEntry(session, kind: "seat");
+        var state = Await(session, described => described["state"] == "open", "the state open after the cut connect took its place");
+        Assert.Equal(string.Empty, state["error"]);
+
+        session.Close();
+    }
+
+    /// <summary>
     /// Asserts that a session without a player cannot open a world.
     /// </summary>
     [Fact]
@@ -513,7 +543,7 @@ public sealed class WorldSessionTests
     {
         using var relay = new TestRelay();
         var token = WorldCode.Parse(MakeWorld(relay, 4))!.Token;
-        using var channel = RelayWorldChannel.Connect(relay.Address, Relays.WorldRoomOf(token), WorldDirectoryTests.PlayerKey(7), "Flooder", WorldKeys.AuthKeyOf(token), Patience, out _, out _)!;
+        using var channel = RelayWorldChannel.Connect(relay.Address, Relays.WorldRoomOf(token), WorldDirectoryTests.PlayerKey(7), "Flooder", WorldKeys.AuthKeyOf(token), Patience, CancellationToken.None, out _, out _)!;
         var frame = new byte[] { 1, 2, 3 };
 
         try

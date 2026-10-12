@@ -3,6 +3,8 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-12: Closed a peer that sends more than 60 messages a second after a burst of 240 with 4003, as the relay does, and counted those closes for the tests
+//                            - Refused a create past a player's world limit and a ban past a world's removed players with 429, as the relay does, once a test sets the limits
+//                            - Closed the earlier connection of a player once the new one is let in, before its handshake, freed the seat of a handshake that fails, and let tests hold back the next world room request
 //      Paulinchen  2026-10-10: Refused a Raid World with a player's choice, and with a starting save unless the game names the dev feature, as the relay does
 //                            - Kept a Raid World's boss pools as the relay does now: the share of the raid max HP left, filled up by 3 % of it a minute, reports taken once per sequence number of a battle and the boss a kill or an emptying report defeats, telling every game of each change; and let tests drop the answers of reports the relay took
 //                            - Told a boss pool's change before answering, defeated a pool whose HP shows as 0 and left a report that takes nothing off unwritten, as the relay does, and let tests hold back the next boss answer or refuse the next reports as busy
@@ -173,6 +175,24 @@ internal sealed class TestRelay : IDisposable
     /// Whether the list names whether each world turns other mods off; tests clear it to stand in for a relay from before.
     /// </summary>
     public bool ListsOtherModsOff { get; set; } = true;
+
+    /// <summary>
+    /// How many worlds a player who is no admin may make, as maxWorldsPerCreator in
+    /// Relay/core/directory.js; no limit unless a test sets one.
+    /// </summary>
+    public int MaxWorldsPerCreator { get; set; } = int.MaxValue;
+
+    /// <summary>
+    /// How many removed players a world keeps at most, as maxBans in Relay/core/directory.js; no
+    /// limit unless a test sets one.
+    /// </summary>
+    public int MaxBans { get; set; } = int.MaxValue;
+
+    /// <summary>
+    /// Holds back the next world room request, before the relay looks at it, until it completes; the
+    /// relay sets it back to <see langword="null"/> once a request waits for it.
+    /// </summary>
+    public TaskCompletionSource? WorldUpgradeHold { get; set; }
 
     /// <summary>
     /// The zips of uploaded mods by key, which the tests fill.
@@ -1082,6 +1102,12 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
 
         var creator = PlayerIdOf(body["player"]!.GetValue<string>());
         var creatorName = body["playerName"]!.GetValue<string>();
+
+        if (!Admins.Contains(creator) && _directory.Values.Count(world => world.CreatorId == creator) >= MaxWorldsPerCreator)
+        {
+            return (429, Error($"a player may make at most {MaxWorldsPerCreator} worlds"));
+        }
+
         _directory[id] = new DirectoryWorld(
             body["name"]!.GetValue<string>(), body["seats"]!.GetValue<int>(), creator, creatorName, body["authHash"]!.GetValue<string>(), body["lock"]!.DeepClone())
         {
@@ -1213,10 +1239,16 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
     /// <returns>The answer.</returns>
     private (int, JsonNode) Ban(string id, DirectoryWorld world, string target, List<Peer> toClose, out int closeCode)
     {
+        closeCode = Removed;
+
+        if (!world.Bans.Contains(target) && world.Bans.Count >= MaxBans)
+        {
+            return (429, Error($"a world may keep at most {MaxBans} removed players"));
+        }
+
         world.Members.Remove(target);
         world.Bans.Add(target);
         toClose.AddRange(_worlds.TryGetValue(id, out var seats) ? seats.Values.OfType<Peer>().Where(peer => peer.PlayerId == target) : []);
-        closeCode = Removed;
         return (200, new JsonObject { ["removed"] = target });
     }
 
@@ -1305,6 +1337,18 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
         int seat;
         int[] others;
         Peer[] replaced;
+        Task? hold;
+
+        lock (_gate)
+        {
+            hold = WorldUpgradeHold?.Task;
+            WorldUpgradeHold = null;
+        }
+
+        if (hold != null)
+        {
+            await hold;
+        }
 
         lock (_gate)
         {
@@ -1355,17 +1399,33 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
             world.Members[playerId] = query["name"] ?? "?";
         }
 
-        var peer = new Peer((await context.AcceptWebSocketAsync(null)).WebSocket) { PlayerId = playerId };
+        // As the relay does, the earlier connection is closed once the new one is let in, even if the
+        // new one never completes its handshake. Unlike the relay, which frees the earlier
+        // connection's seat at once, the earlier game gives it up as it leaves.
+        foreach (var earlier in replaced)
+        {
+            await earlier.CloseAsync(Removed, "replaced");
+        }
+
+        Peer peer;
+
+        try
+        {
+            peer = new Peer((await context.AcceptWebSocketAsync(null)).WebSocket) { PlayerId = playerId };
+        }
+        catch
+        {
+            lock (_gate)
+            {
+                FreeSeat(roomId, seat);
+            }
+
+            return;
+        }
 
         lock (_gate)
         {
             _worlds[roomId][seat] = peer;
-        }
-
-        // Unlike the relay, which frees the earlier connection's seat at once, the earlier game gives it up as it leaves.
-        foreach (var earlier in replaced)
-        {
-            await earlier.CloseAsync(Removed, "replaced");
         }
 
         await peer.SendAsync(Encoding.UTF8.GetBytes(string.Join(' ', new[] { "seat", seat.ToString() }.Concat(others.Select(other => other.ToString())))), WebSocketMessageType.Text);
@@ -1419,20 +1479,30 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
         {
             lock (_gate)
             {
-                if (_worlds.TryGetValue(roomId, out var seats))
-                {
-                    seats.Remove(seat);
-
-                    if (seats.Count == 0)
-                    {
-                        _worlds.Remove(roomId);
-                    }
-                }
+                FreeSeat(roomId, seat);
             }
 
             foreach (var other in WorldPeers(roomId, seat))
             {
                 await other.Peer.SendAsync(Encoding.UTF8.GetBytes($"out {seat}"), WebSocketMessageType.Text);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Frees a seat of a world room, and forgets the room once it is empty. Called with the gate held.
+    /// </summary>
+    /// <param name="roomId">The world room.</param>
+    /// <param name="seat">The seat.</param>
+    private void FreeSeat(string roomId, int seat)
+    {
+        if (_worlds.TryGetValue(roomId, out var seats))
+        {
+            seats.Remove(seat);
+
+            if (seats.Count == 0)
+            {
+                _worlds.Remove(roomId);
             }
         }
     }

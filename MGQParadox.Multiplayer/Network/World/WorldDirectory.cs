@@ -2,6 +2,7 @@
 //  WorldDirectory.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-12: Told the creator limit only for a create refused with 429, and the relay's own words for any other 429 without a code, such as a ban past the removed players a world keeps
 //      Paulinchen  2026-10-09: Made and changed a world with whether it turns other mods off, and told the game script so at the end of each world's line
 //                            - Told the game script every mod the catalog marks personal
 //                            - Made and changed a Raid World with its difficulty, and told the game script the difficulty at the end of each world's line
@@ -258,7 +259,7 @@ internal sealed class WorldDirectory
             }
             catch (Exception ex)
             {
-                error = ReasonFor(ex);
+                error = ReasonFor("list", ex);
             }
 
             try
@@ -268,7 +269,7 @@ internal sealed class WorldDirectory
             catch (Exception ex)
             {
                 // The worlds are listed all the same; the game script then checks only whether required mods are installed.
-                catalogError = ReasonFor(ex);
+                catalogError = ReasonFor("catalog", ex);
             }
 
             var listSummary = listing != null ? ListSummary(listing) : $"world list failed: {error}";
@@ -824,7 +825,7 @@ internal sealed class WorldDirectory
             }
             catch (Exception ex)
             {
-                error = ReasonFor(ex);
+                error = ReasonFor(kind, ex);
                 Log.Write($"world {kind} failed: {ex.GetBaseException().Message}{(ex is DirectoryException directory ? $" (status {(directory.Status is { } status ? ((int)status).ToString(CultureInfo.InvariantCulture) : "none")}{(directory.Code != null ? $", code {directory.Code}" : string.Empty)})" : string.Empty)}, the player reads: {error}{(ex is ActionException or DirectoryException ? string.Empty : $"; {ex}")}");
             }
 
@@ -859,9 +860,14 @@ internal sealed class WorldDirectory
     /// <summary>
     /// Tells the player why a request failed.
     /// </summary>
+    /// <remarks>
+    /// The relay names no code for its creator limit, so a 429 without one reads as that limit only
+    /// for a create, since a ban past the removed players a world keeps answers 429 as well.
+    /// </remarks>
+    /// <param name="kind">The request's kind, such as "create", "ban", "list" or "catalog".</param>
     /// <param name="ex">What went wrong.</param>
     /// <returns>The reason.</returns>
-    private static string ReasonFor(Exception ex) => ex switch
+    private static string ReasonFor(string kind, Exception ex) => ex switch
     {
         ActionException action => action.Message,
         DirectoryException { Status: null } => Unreachable,
@@ -870,7 +876,7 @@ internal sealed class WorldDirectory
         DirectoryException { Status: HttpStatusCode.Forbidden, Code: "members" } => "The world has as many players as it may.",
         DirectoryException { Status: HttpStatusCode.Forbidden } => "Only the world's creator may do this.",
         DirectoryException { Status: HttpStatusCode.TooManyRequests, Code: "rate" } => "Too many requests from your connection. Try again in a few minutes.",
-        DirectoryException { Status: HttpStatusCode.TooManyRequests } => "You have created as many worlds as you may. Delete one first.",
+        DirectoryException { Status: HttpStatusCode.TooManyRequests } when kind == "create" => "You have created as many worlds as you may. Delete one first.",
         DirectoryException directory => $"The relay refused: {directory.Message}",
         _ => $"Something went wrong: {ex.GetBaseException().Message}",
     };

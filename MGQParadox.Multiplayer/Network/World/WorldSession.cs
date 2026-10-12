@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-12: Paced the frames, chat texts and pings it sends to at most 50 a second after a burst of 200, below the relay's limit, and logged each spell of pacing and a close for sending too fast
+//                            - Cut a connect still running once the world is left or entered anew, and connected again instead of failing when the connect it cut still took the new connection's place
 //      Paulinchen  2026-10-10: Handed the relay's word that a Raid World's boss pool changed to the game script as a boss entry with its key, the share left, the raid max HP and whether it is defeated, and to the boss pools the game script reads
 //      Paulinchen  2026-10-09: Handed the relay's word that a world changed whether it turns other mods off, or its mods, to the game script as a mods_rule entry with both
 //                            - Handed the relay's word that a Raid World's boss pool changed to the game script as a boss entry with its key and hit points
@@ -341,6 +342,30 @@ internal sealed class WorldSession
     private int _generation;
 
     /// <summary>
+    /// Cuts the connects of the current generation once it ends.
+    /// </summary>
+    /// <remarks>
+    /// An ended generation's source is never disposed, since its thread may still link to its token.
+    /// </remarks>
+    private CancellationTokenSource _stop = new();
+
+    /// <summary>
+    /// When the current generation's connect in flight started, as a <see cref="Stopwatch"/>
+    /// timestamp; 0 while none is.
+    /// </summary>
+    private long _connectingSince;
+
+    /// <summary>
+    /// Until when a connect of an ended generation may still take a seat at the relay, as a
+    /// <see cref="Stopwatch"/> timestamp.
+    /// </summary>
+    /// <remarks>
+    /// The relay may still let in a connect this game already cut, so it counts until its timeout
+    /// would have run out.
+    /// </remarks>
+    private long _supersededUntil;
+
+    /// <summary>
     /// Where the connection stands.
     /// </summary>
     private WorldState _state;
@@ -453,13 +478,14 @@ internal sealed class WorldSession
     /// <returns><see langword="false"/> when the text is no world code.</returns>
     public bool Open(string? code)
     {
-        Connection? previous;
+        Superseded previous;
         bool opened;
 
         lock (_gate)
         {
             previous = Restart(WorldState.Connecting);
             var generation = _generation;
+            var stop = _stop.Token;
             _traffic.Flush();
 
             if (WorldCode.Parse(code) is not { } world)
@@ -480,12 +506,12 @@ internal sealed class WorldSession
             {
                 _world = world;
                 Log.Write($"entering world {Log.Short(Relays.WorldRoomOf(world.Token))} at relay {world.Relay} as {player.Name}, {world.Seats} seats");
-                Threads.Start("MultiplayerWorld", () => Run(generation, world, player.Key, player.Name));
+                Threads.Start("MultiplayerWorld", () => Run(generation, stop, world, player.Key, player.Name));
                 opened = true;
             }
         }
 
-        previous?.Stop();
+        previous.End();
         return opened;
     }
 
@@ -494,7 +520,7 @@ internal sealed class WorldSession
     /// </summary>
     public void Close()
     {
-        Connection? previous;
+        Superseded previous;
         WorldCode? left;
 
         lock (_gate)
@@ -510,7 +536,7 @@ internal sealed class WorldSession
             Log.Write($"left world {Log.Short(Relays.WorldRoomOf(left.Token))}");
         }
 
-        previous?.Stop();
+        previous.End();
     }
 
     /// <summary>
@@ -660,10 +686,11 @@ internal sealed class WorldSession
     /// Takes seats in the world room, again whenever the connection breaks, until the generation ends.
     /// </summary>
     /// <param name="generation">The open this thread belongs to.</param>
+    /// <param name="stop">Cuts a connect once the generation ends.</param>
     /// <param name="world">The world.</param>
     /// <param name="playerKey">The player's key.</param>
     /// <param name="playerName">The player's name.</param>
-    private void Run(int generation, WorldCode world, string playerKey, string playerName)
+    private void Run(int generation, CancellationToken stop, WorldCode world, string playerKey, string playerName)
     {
         if (RelayAddress(world.Relay) is not { } relay)
         {
@@ -686,7 +713,19 @@ internal sealed class WorldSession
             {
                 tries++;
                 var started = Stopwatch.GetTimestamp();
-                channel = RelayWorldChannel.Connect(relay, room, playerKey, playerName, authKey, ConnectTimeout, out var refusal, out var refusalCode);
+                HttpStatusCode? refusal;
+                string? refusalCode;
+                Connecting(generation, started);
+
+                try
+                {
+                    channel = RelayWorldChannel.Connect(relay, room, playerKey, playerName, authKey, ConnectTimeout, stop, out refusal, out refusalCode);
+                }
+                finally
+                {
+                    Connecting(generation, 0);
+                }
+
                 var took = Stopwatch.GetElapsedTime(started).TotalMilliseconds.ToString("0", CultureInfo.InvariantCulture);
 
                 if (channel == null)
@@ -725,7 +764,11 @@ internal sealed class WorldSession
                         Log.Write("the relay closed the world connection: this game sent too fast");
                     }
 
-                    if (channel.CloseCode is RemovedClose or DeletedClose)
+                    if (channel.CloseCode == RemovedClose && channel.CloseReason == ReplacedReason && connection.SupersededConnectPending)
+                    {
+                        Log.Write("world connection replaced by a connect of this game that was cut, connecting again");
+                    }
+                    else if (channel.CloseCode is RemovedClose or DeletedClose)
                     {
                         Fail(generation, channel.CloseCode == DeletedClose ? Deleted : channel.CloseReason == ReplacedReason ? Replaced : Removed);
                         return;
@@ -1122,7 +1165,24 @@ internal sealed class WorldSession
             }
 
             _connection = connection;
+            connection.SupersededConnectPending = Stopwatch.GetTimestamp() < _supersededUntil;
             return true;
+        }
+    }
+
+    /// <summary>
+    /// Notes when the generation's connect started, or that it ended, unless the generation ended meanwhile.
+    /// </summary>
+    /// <param name="generation">The open the connect belongs to.</param>
+    /// <param name="since">When the connect started, as a <see cref="Stopwatch"/> timestamp; 0 once it ended.</param>
+    private void Connecting(int generation, long since)
+    {
+        lock (_gate)
+        {
+            if (generation == _generation)
+            {
+                _connectingSince = since;
+            }
         }
     }
 
@@ -1251,11 +1311,18 @@ internal sealed class WorldSession
     /// Starts a new generation in a state, forgetting everything of the last one. Called with the gate held.
     /// </summary>
     /// <param name="state">The new state.</param>
-    /// <returns>The last generation's connection, which the caller stops once it let go of the gate.</returns>
-    private Connection? Restart(WorldState state)
+    /// <returns>The last generation's connection and connects, which the caller ends once it let go of the gate.</returns>
+    private Superseded Restart(WorldState state)
     {
-        var previous = _connection;
+        var previous = new Superseded(_connection, _stop);
 
+        if (_connectingSince != 0)
+        {
+            _supersededUntil = Math.Max(_supersededUntil, _connectingSince + (long)(ConnectTimeout.TotalSeconds * Stopwatch.Frequency));
+            _connectingSince = 0;
+        }
+
+        _stop = new();
         _generation++;
         _state = state;
         _error = null;
@@ -1327,6 +1394,23 @@ internal sealed class WorldSession
     /// <param name="Text">The text frame; <see langword="null"/> for a frame.</param>
     /// <param name="QueuedAt">When it was queued, as a <see cref="Stopwatch"/> timestamp.</param>
     private sealed record Outgoing(int Target, byte[]? Plain, string? Text, long QueuedAt);
+
+    /// <summary>
+    /// What an ended generation leaves to end once the gate is let go: its connection and its connects.
+    /// </summary>
+    /// <param name="Connection">The generation's connection, <see langword="null"/> for none.</param>
+    /// <param name="Stop">Cuts the generation's connects.</param>
+    private readonly record struct Superseded(Connection? Connection, CancellationTokenSource Stop)
+    {
+        /// <summary>
+        /// Stops the connection and cuts a connect still running.
+        /// </summary>
+        public void End()
+        {
+            Connection?.Stop();
+            Stop.Cancel();
+        }
+    }
 
     /// <summary>
     /// One connection to the world room: its channel, its cipher and the writer that sends the game
@@ -1410,6 +1494,12 @@ internal sealed class WorldSession
         /// Encrypts this game's frames and checks the others'.
         /// </summary>
         public WorldCipher Cipher { get; }
+
+        /// <summary>
+        /// Whether a connect of an ended generation of this game might still take a seat at the relay
+        /// as this connection was made, so a "replaced" close may come from this game itself.
+        /// </summary>
+        public bool SupersededConnectPending { get; set; }
 
         /// <summary>
         /// This game's seat on this connection, which its frames are sealed with.
