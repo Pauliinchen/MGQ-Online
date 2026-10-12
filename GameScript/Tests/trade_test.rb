@@ -2,7 +2,8 @@
 #  trade_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Checked that the offer and the confirmation state go out again once the other player is back, never while the relay decides, and that a message that cannot go out is logged so
+#      Paulinchen  2026-10-12: Checked that the offer and the confirmation state go out again once a message that could not go out does, quietly after the first try, never while the relay decides, and once only
+#                            - Checked that the offer and the confirmation state go out again once the other player is back, never while the relay decides, and that a message that cannot go out is logged so
 #                            - Checked that a message of a trade the game does not have is answered with a cancel, never a cancel itself
 #                            - Checked that offers too long for the relay cannot be confirmed, and offers just short of it still commit
 #                            - Checked that trades to recover wait for the map's own frame with the player free, in a battle, behind a message and after a reset, and are asked for again once another save was loaded
@@ -549,6 +550,50 @@ trade.cancel
 id = committed_trade
 away_and_back(friend)
 check("nothing goes out again while the relay decides", trade_sent, [])
+$relay_state = "trade=#{id}\nstate=cancelled\nreason=cancelled"
+trade.cancel
+ticks(MGQ_MpTrade::POLL_FRAMES)
+
+# Messages that could not go out go out again once messages do.
+tid = opened_trade
+trade.set_amount(potion, 1)
+trade.instance_variable_set(:@poll, 0)
+$send_fails = true
+lines = logged_lines { trade.toggle_confirm; ticks(MGQ_MpTrade::POLL_FRAMES * 3) }
+check("a confirm that cannot go out marks the trade, whose tries to send again log their messages only the first time",
+      [trade.session.unsent, lines.grep(/go out again once messages to Friend do/).size, lines.grep(/could not send confirm/).size], [3, 1, 2])
+$send_fails = false
+$sent.clear
+ticks(MGQ_MpTrade::POLL_FRAMES - 1)
+check("the next try waits for the relay's beat", trade_sent, [])
+lines = logged_lines { ticks }
+check("then the last offer and the confirmation go out again and the mark is cleared",
+      [resent.call, trade.session.unsent, lines.grep(/again: messages to Friend go out again after 4 tries/).size],
+      [[["offer", "1", nil, nil, "g0;i1*1"], ["confirm", nil, "1", "0", ""]], nil, 1])
+$sent.clear
+ticks(MGQ_MpTrade::POLL_FRAMES * 2)
+check("and nothing more goes out once they did", trade_sent, [])
+$send_fails = true
+trade.toggle_confirm
+$send_fails = false
+$sent.clear
+ticks(MGQ_MpTrade::POLL_FRAMES)
+check("a lost unconfirm goes out again, at the first try that works", [resent.call, trade.session.unsent],
+      [[["offer", "1", nil, nil, "g0;i1*1"], ["unconfirm", nil, nil, nil, ""]], nil])
+$send_fails = true
+trade.set_amount(potion, 0)
+$send_fails = false
+away_and_back(friend)
+check("the other player back clears the mark once the offer and confirmation state went out",
+      [resent.call, trade.session.unsent], [[["offer", "2", nil, nil, "g0"], ["unconfirm", nil, nil, nil, ""]], nil])
+trade.cancel
+$send_fails = true
+id = committed_trade
+check("a confirm that could not go out while the relay decides on it", [trade.session.stage, trade.session.unsent], [:committing, 0])
+$send_fails = false
+$sent.clear
+ticks(MGQ_MpTrade::POLL_FRAMES * 2)
+check("is not tried again before the relay answers", trade_sent, [])
 $relay_state = "trade=#{id}\nstate=cancelled\nreason=cancelled"
 trade.cancel
 ticks(MGQ_MpTrade::POLL_FRAMES)

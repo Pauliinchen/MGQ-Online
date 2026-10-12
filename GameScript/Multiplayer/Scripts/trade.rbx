@@ -2,7 +2,8 @@
 #  trade.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Sent the offer and the confirmation state again once the other player is back, and logged a message that could not be sent instead of as sent
+#      Paulinchen  2026-10-12: Sent the offer and the confirmation state again on the relay's beat once a message to the other player could not go out, until they go out
+#                            - Sent the offer and the confirmation state again once the other player is back, and logged a message that could not be sent instead of as sent
 #                            - Answered an offer, confirm or unconfirm of a trade the game no longer has with a cancel, so the other trade screen closes
 #                            - Refused to confirm offers too long for the relay with a message to take some items out, instead of failing to reach the relay
 #                            - Applied and saved the trades the relay lists to recover only once the player is free on the map, instead of in the battle, menu or trade the answer came in
@@ -157,8 +158,10 @@ module MGQ_MpTrade
   # @!attribute relay_id [String, nil] The id the relay knows the confirmed offers by.
   # @!attribute leaving [String, nil] The notice the trade closes with once the relay cancelled the
   #   commit, set when a player cancelled while the relay decided; nil while nobody did.
+  # @!attribute unsent [Integer, nil] Failed tries to send the player's offer and confirmation state
+  #   again since a message to the other player could not go out; nil while every message went out.
   Session = Struct.new(:id, :partner, :name, :mine, :theirs, :their_text, :my_rev, :their_rev, :confirmed,
-                       :their_confirm, :stage, :away, :relay_id, :leaving) do
+                       :their_confirm, :stage, :away, :relay_id, :leaving, :unsent) do
     # Reports whether the other player confirmed the offers as they stand now.
     #
     # @return [Boolean] Whether they did.
@@ -307,7 +310,7 @@ module MGQ_MpTrade
     if sent
       log_message("sent", peer, fields, body)
     else
-      log("could not send #{fields['trade']} to #{MGQ_MpOverworldSync.who(peer)}: the world's connection is down")
+      log("could not send #{fields['trade']} to #{MGQ_MpOverworldSync.who(peer)}: the world's connection is down") unless @quiet
     end
     sent
   end
@@ -415,25 +418,63 @@ module MGQ_MpTrade
       log("#{session.name} is away, waiting up to #{AWAY_FRAMES / 60} s") if away == 0 && session.away > 0
       if away > 0 && session.away == 0
         log("#{session.name} is back after #{away} frames")
-        resend_state(session)
+        resend_state(session, "#{session.name} is back")
+      elsif session.away == 0
+        retry_unsent(session)
       end
       close("#{session.name} left.") if session.away > AWAY_FRAMES
     end
   end
 
-  # Sends the other player the player's offer and confirmation again once they are back, since what
-  # was sent while they were away may be lost.
+  # Sends the other player the player's offer and confirmation again, since what was sent while
+  # they were away or while messages could not go out may be lost. The other game ignores an offer
+  # revision it has and a confirmation state it holds.
   #
   # A lost "unconfirm" would let the other game commit on the player's old confirmation alone and
   # wait for the relay to time it out.
   #
   # @param session [Session] The trade.
-  def self.resend_state(session)
-    return unless session.stage == :open
+  # @param why [String] Why they go out again, for the log.
+  # @return [Boolean] Whether every message went out, which clears the trade's mark of a message
+  #   that could not.
+  def self.resend_state(session, why)
+    return false unless session.stage == :open
 
-    tell("offer", { "rev" => session.my_rev }, Items.write_offer(session.mine)) if session.my_rev > 0
-    session.confirmed ? tell("confirm", { "mine" => session.my_rev, "yours" => session.their_rev }) : tell("unconfirm")
-    log("sent my offer r#{session.my_rev} and my confirmation state (#{session.confirmed ? 'confirmed' : 'not confirmed'}) again: #{session.name} is back")
+    sent = [session.my_rev > 0 ? tell("offer", { "rev" => session.my_rev }, Items.write_offer(session.mine)) : true,
+            session.confirmed ? tell("confirm", { "mine" => session.my_rev, "yours" => session.their_rev }) : tell("unconfirm")]
+    return false unless sent.all? { |one| one == true }
+
+    session.unsent = nil
+    log("sent my offer r#{session.my_rev} and my confirmation state (#{session.confirmed ? 'confirmed' : 'not confirmed'}) again: #{why}")
+    true
+  end
+
+  # Marks the trade once a message to the other player could not go out, so the player's offer and
+  # confirmation state go out again once messages do (retry_unsent).
+  #
+  # @param session [Session] The trade.
+  def self.mark_unsent(session)
+    return if session.unsent
+
+    session.unsent = 0
+    log("trade #{short(session.id)}: my offer and confirmation state go out again once messages to #{session.name} do")
+  end
+
+  # Tries to send the player's offer and confirmation state again on the relay's beat while the
+  # trade is marked for a message that could not go out, until they go out.
+  #
+  # Only the first failed try logs its messages, since the world's connection may stay down for long.
+  #
+  # @param session [Session] The trade, open and with the other player in the world.
+  def self.retry_unsent(session)
+    return unless session.unsent && (@poll += 1) >= POLL_FRAMES
+
+    @poll = 0
+    tries = session.unsent + 1
+    @quiet = tries > 1
+    session.unsent = tries unless resend_state(session, "messages to #{session.name} go out again after #{tries} #{tries == 1 ? 'try' : 'tries'}")
+  ensure
+    @quiet = false
   end
 
   # Finds the other player of the trade, who may have come back on another seat.
@@ -455,7 +496,9 @@ module MGQ_MpTrade
     peer = partner_peer
     return log("not sent #{kind}: #{@session ? @session.name + ' is not in the world' : 'there is no trade'}") unless peer && @session
 
-    send_message(peer, { "trade" => kind, "tid" => @session.id }.merge(fields), body)
+    sent = send_message(peer, { "trade" => kind, "tid" => @session.id }.merge(fields), body)
+    mark_unsent(@session) unless sent
+    sent
   end
 
   # Accepts another player's trade offer: tells them, and waits for their game to open the trade. An
@@ -599,7 +642,7 @@ module MGQ_MpTrade
   # @param peer [MGQ_MpOverworldSync::Peers::Peer] The other player.
   def self.begin_session(id, peer)
     @session = Session.new(id, peer.state["id"].to_s, peer.state["name"].to_s, Offer.new(0, []), Offer.new(0, []), "",
-                           0, 0, false, nil, :open, 0, nil, nil)
+                           0, 0, false, nil, :open, 0, nil, nil, nil)
     @open_screen = true
     log("trade #{short(id)} opened with #{@session.name} (seat #{peer.seat})")
   end
