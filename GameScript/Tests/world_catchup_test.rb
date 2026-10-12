@@ -7,6 +7,9 @@
 #                            - Checked that a vehicle no event of the story gave yet leaves its map, one the player rides once they got off, and that Galda stays past its event
 #                            - Stood in for the map's vehicles and the one the player rides
 #                            - Checked that a world-wide chest turns on its chest flags with its items, and that the Randolphs found follow the Randolph switches
+#                            - Checked that the game over's return point follows the route under way, never a cleared route's rows, and that a player behind gets none of the world's later part
+#                            - Checked that a vehicle leaves for a player behind whose own story has not given it, and that Galda stays for a player in the world's part
+#                            - Checked that an audit reads the part of a story anew and keeps the parts by the story itself
 #      Paulinchen  2026-10-11: Checked the list of what the catch-up hands out by level for the Levels page, and the level it counts
 #                            - Checked that a Makina comes at its area level and that copies beyond the first go
 #                            - Checked that a telling the player watched takes the key items its scene took, and that a key item taken at the step that gave it does not come back
@@ -257,6 +260,7 @@ story = MGQ_MpWorldStory
 catchup = MGQ_MpWorldCatchup
 DATA = MGQ_MpWorldCatchupData
 REAL_JOINS = DATA::JOINS
+REAL_SETTINGS = DATA::SETTINGS
 
 # Puts tables of rows in place of the generated ones.
 #
@@ -734,6 +738,46 @@ check("and one gone from the roster joins again", $game_party.all_members.map(&:
 $game_map.events.clear
 $game_map.map_id = 3
 
+# The game over's return point goes by the route under way, never a finished route's rows.
+settled = lambda do |variables, switches, told = nil|
+  new_game(variables, switches, 40)
+  catchup.new_look
+  catchup.settle(catchup.story_now, told)
+  $game_variables[1002]
+end
+tables(:SETTINGS => REAL_SETTINGS)
+check("a player on Monster Lord after clearing Angel Destruction keeps the return point of their route",
+      settled.call({ 1001 => 40, 1142 => 1, 1002 => 112 }, [7096]), 112)
+check("also further along it", settled.call({ 1001 => 40, 1142 => 23, 1002 => 81 }, [7096]), 81)
+check("as without the cleared route", settled.call({ 1001 => 40, 1142 => 1, 1002 => 112 }, []), 112)
+check("back at the Great Decision after a route the return point the decision set stays",
+      settled.call({ 1001 => 39, 1069 => 4, 1002 => 3 }, [7096]), 3)
+told_on_route = []
+told_on_route[1001] = 40
+told_on_route[1141] = 70
+check("a world's story on another route sets none of its return points",
+      settled.call({ 1001 => 40, 1142 => 1, 1002 => 112 }, [7096], [[], told_on_route, {}]), 112)
+
+# A player behind keeps the return point of their own part.
+new_game({ 1001 => 7, 1002 => 2 }, [], 12)
+frames(1)
+relay({ "rev" => 60, "wrev" => 60, "p" => 25, "part" => "2", "checkpoints" => "1" }, packed({ 1001 => 25, 1050 => 9 }))
+frames(40)
+check("a player behind gets no return point of the world's later part", [story.mode, $game_variables[1002]], [:behind, 2])
+checkpoint("1", packed({ 1001 => 18 }))
+frames(70)
+check("nor once their part's checkpoint is laid over their story", [$game_variables[1001], $game_variables[1002]], [18, 2])
+
+# The parts of one look are kept by the story itself, and every audit looks anew.
+new_game({ 1001 => 10 }, [], 40)
+looked = catchup.story_now
+catchup.new_look
+catchup.story_part(looked)
+$game_variables[1001] = 25
+catchup.audit(looked)
+check("an audit reads the part of a story anew", catchup.story_part(looked), "2")
+check("and keeps the parts by the story itself", catchup.instance_variable_get(:@story_parts).compare_by_identity?, true)
+
 # A vehicle no event of the story gave yet leaves its map, as Galda and the ship parked on the
 # field by a new game whose setup never ran; one the player rides stays until they got off.
 vehicle_map = lambda { |type| $game_map.vehicle(type).instance_variable_get(:@map_id) }
@@ -750,12 +794,18 @@ check("on entering, Galda parked on the field before the story gave it leaves, t
 $game_player.vehicle = nil
 frames(40)
 check("and the ship leaves once the player got off", vehicle_map.call(:ship), 0)
-new_game({ 1001 => 9 }, [], 40)
+new_game({ 1001 => 34 }, [], 40)
 $game_map.vehicle(:airship).set_location(2, 237, 239)
 frames(1)
 relay({ "rev" => 27, "wrev" => 27, "p" => 37, "part" => "3" }, packed({ 1001 => 37 }))
 frames(40)
 check("Galda stays once the world's story is past the event that gives it", vehicle_map.call(:airship), 2)
+new_game({ 1001 => 9 }, [], 12)
+$game_map.vehicle(:airship).set_location(2, 237, 239)
+frames(1)
+relay({ "rev" => 61, "wrev" => 61, "p" => 37, "part" => "3", "checkpoints" => "1,2" }, packed({ 1001 => 37 }))
+frames(40)
+check("but leaves for a player behind whose own story has not given it", [story.mode, vehicle_map.call(:airship)], [:behind, 0])
 
 # A companion the world shared comes with the story values their own join stands for.
 $data_actors[540] = ActorData.new(540, "Amira", 6)

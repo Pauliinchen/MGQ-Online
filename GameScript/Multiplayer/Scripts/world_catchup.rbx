@@ -8,6 +8,9 @@
 #                            - Took a vehicle off its map while no event that gives it is behind the player's story or the world's, as a new game whose setup never ran left the ship and Galda on the field
 #                            - Turned on the chest flags of a world-wide chest with its items, so the Chaos forge works its ores for every player
 #                            - Kept the Randolphs found at the number of Randolph switches on, as two players finding one each at once counted one
+#                            - Settled the game over's return point by the route under way, and by the world's story only while the player plays it, as a finished route's last return point and a later part's took over
+#                            - Took a vehicle off its map for a player behind the world's story whose own story has not given it yet
+#                            - Kept the parts of one look by the story itself and looked anew at every audit
 #      Paulinchen  2026-10-11: Listed what the catch-up hands out by level that the world already unlocked, for the World overview's Levels page
 #                            - Gave every Makina once the player's level reaches the area level of its easiest place, and took back copies beyond the first, as a chest another player's story closed again gave one twice
 #                            - Followed the story values of a telling the player watched as a story laid over theirs once they are free, so a viewer gets what the scene gave and loses the key items it took
@@ -828,16 +831,19 @@ module MGQ_MpWorldCatchup
 
   # The part a story is in, kept for the look at the rows under way, see review.
   #
+  # The part is kept by the story itself, as an object id comes back once its story is collected
+  # and would hand a later story the part of an earlier one.
+  #
   # @param story [Array] The switches, variables and self switches.
   # @return [String] See MGQ_MpWorldStory.part_of.
   def self.story_part(story)
-    @story_parts ||= {}
-    @story_parts[story.object_id] ||= part_of(story)
+    @story_parts ||= {}.compare_by_identity
+    @story_parts[story] ||= part_of(story)
   end
 
   # Forgets what one look at the rows kept, as the stories it read change.
   def self.new_look
-    @story_parts = {}
+    @story_parts = {}.compare_by_identity
     @noted_side = nil
     @choice_marks = {}
   end
@@ -865,6 +871,16 @@ module MGQ_MpWorldCatchup
     return true if finished
 
     !row.marks.empty? && row.marks.all? { |mark| mark_holds?(mark, choice_mark?(mark) ? own : story) }
+  end
+
+  # Reports whether the player's story or the world's is past a row, see passed?.
+  #
+  # @param row [Struct] A row of the tables.
+  # @param story [Array] The player's story.
+  # @param told [Array, nil] The world's story, nil when it does not count.
+  # @return [Boolean] Whether one is.
+  def self.passed_any?(row, story, told)
+    passed?(row, story) || (told && passed?(row, told, story)) ? true : false
   end
 
   # Reports whether a story laid over the player's gives what a row gives: only when its marks tell
@@ -931,22 +947,33 @@ module MGQ_MpWorldCatchup
   # entering the world, after a load and on a level up: the story's skills Luka lacks, the key
   # items (restock_key_items), the story's companions missing from the roster, who join at their
   # gate, the player's own values the story sets (settle), with a warp ban left where warping is
-  # free (lift_warp_ban), and the vehicles the story has not given yet (park_vehicles).
+  # free (lift_warp_ban), and the vehicles the story has not given yet (park_vehicles). The world's
+  # story counts for the skills, the values and the vehicles only while the player plays it, never
+  # while they are behind it.
   #
   # @param story [Array] The player's story.
   def self.audit(story)
     @audit_due = false
+    new_look
     told = @world_told
+    world = played_world_story
     done = ledger["done"]
-    gifts = missing_skills(story, MGQ_MpWorldStory.mode == :world ? told : nil)
+    gifts = missing_skills(story, world)
     gifts.concat(restock_key_items(story, told))
     missing_companions(story, told, done)
     companion_values
-    settle(story, told)
+    settle(story, world)
     lift_warp_ban
-    park_vehicles(story, told)
+    park_vehicles(story, world)
     log("looked at everything the story owes the player once")
     tell_gifts(gifts.compact)
+  end
+
+  # The world's story while the player plays it, see audit.
+  #
+  # @return [Array, nil] The world's story, nil before it came or while the player is behind it.
+  def self.played_world_story
+    MGQ_MpWorldStory.mode == :world ? @world_told : nil
   end
 
   # Teaches Luka the story's skills he lacks, of the rows the player's story or the world's is past,
@@ -962,7 +989,7 @@ module MGQ_MpWorldCatchup
     DATA::REWARDS.map do |row|
       next unless row.kind == :skill && carries?(row) && !MGQ_MpStoryState.knows?(hero, row.id)
       next if waits[key_of("g", row)]
-      next unless passed?(row, story) || (told && passed?(row, told, story))
+      next unless passed_any?(row, story, told)
 
       give(:skill, row.id, 1, key_of("g", row))
     end
@@ -976,7 +1003,7 @@ module MGQ_MpWorldCatchup
   # @param told [Array, nil] The world's story, nil before it came.
   # @param done [Hash] The rows done.
   def self.missing_companions(story, told, done)
-    passes = lambda { |row| passed?(row, story) || (told && passed?(row, told, story)) }
+    passes = lambda { |row| passed_any?(row, story, told) }
     DATA::JOINS.each do |row|
       key = key_of("j", row)
       next unless done[key] == true && row.part && carries?(row) && !in_roster?(row.actor) && passes.call(row)
@@ -1009,15 +1036,19 @@ module MGQ_MpWorldCatchup
   # point, the random encounters) to what the latest step their story or the world's passed set,
   # where they still hold what an earlier step set: a story laid over theirs, or the opening's
   # setup, skipped the events. A value of their own making, such as a church they prayed at, stays,
-  # and so do the encounters on a map whose events turn them on or off themselves.
+  # and so do the encounters on a map whose events turn them on or off themselves. Of the routes
+  # only the rows of the route under way count, none at the Great Decision: a finished route's
+  # rows, which passed? counts for its rewards, would set its last return point.
   #
   # @param story [Array] The player's story.
-  # @param told [Array, nil] The world's story, nil before it came.
+  # @param told [Array, nil] The world's story, nil before it came or while the player is behind it.
   def self.settle(story, told)
+    part = story_part(story)
     latest = {}
     earlier = Hash.new { |hash, key| hash[key] = [] }
     DATA::SETTINGS.each do |row|
-      next unless passed?(row, story) || (told && passed?(row, told, story))
+      next if MGQ_MpWorldStory::ROUTES.include?(row.part) && row.part != part
+      next unless passed_any?(row, story, told)
 
       key = [row.kind, row.id]
       earlier[key] << latest[key].value if latest[key]
@@ -1073,12 +1104,12 @@ module MGQ_MpWorldCatchup
   # stays until they got off (got_off_early?), since taking it away midair strands them.
   #
   # @param story [Array] The player's story.
-  # @param told [Array, nil] The world's story, nil before it came.
+  # @param told [Array, nil] The world's story, nil before it came or while the player is behind it.
   def self.park_vehicles(story, told)
     VEHICLE_TYPES.each_with_index do |type, id|
       vehicle = $game_map.vehicle(type)
       map_id = vehicle ? MGQ_MpGame.get(vehicle, :map_id).to_i : 0
-      next if map_id == 0 || DATA::VEHICLES.any? { |row| row.vehicle == id && (passed?(row, story) || (told && passed?(row, told, story))) }
+      next if map_id == 0 || DATA::VEHICLES.any? { |row| row.vehicle == id && passed_any?(row, story, told) }
 
       if $game_player.vehicle.equal?(vehicle)
         @riding_early = true
@@ -1129,7 +1160,7 @@ module MGQ_MpWorldCatchup
     end
     gifts.concat(world_items(story, carried, done))
     companions(story, carried, done)
-    settle(story, @world_told) if carried
+    settle(story, played_world_story) if carried
     tell_gifts(gifts.compact)
   end
 
@@ -1182,7 +1213,7 @@ module MGQ_MpWorldCatchup
   def self.restock_key_items(story, told)
     owed = Hash.new(0)
     DATA::KEY_ITEMS.each do |row|
-      next unless row.amount > 0 && (passed?(row, story) || (told && passed?(row, told, story)))
+      next unless row.amount > 0 && passed_any?(row, story, told)
       next if taken_since?(row, story, story) || (told && taken_since?(row, told, story))
 
       owed[row.item] = [owed[row.item], row.amount].max
