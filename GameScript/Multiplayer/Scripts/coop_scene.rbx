@@ -5,6 +5,7 @@
 #      Paulinchen  2026-10-12: Left out the teller's picture and screen changes whose arguments this game cannot take, and erased the picture's place instead of showing a picture this game lacks, either of which ended the viewer's game
 #                            - Told the viewers the scene's changes of a frame in one message, and only every ten frames while the teller holds the game's skip, keeping only the last move of a picture, the camera's last place and while skipping the last sound effect, so a skipped scene no longer runs past the relay's limit
 #                            - Took a message of several changes, each through the gates of a single one, and dropped one of more than 256 changes or of anything but changes
+#                            - Kept the changes of one message within 240 KB, below the largest world message the DLL sends, so a long batch is no longer dropped whole
 #      Paulinchen  2026-10-11: Let the catch-up follow the teller's story values as a story laid over the viewer's, so a viewer gets what the watched scene gave and loses the key items it took
 #                            - Told the viewers the switches that only stay on while a scene runs, which are each player's own, and put them back once the viewer no longer sees the scene
 #                            - Let the teller's move routes skip a blocked step and ended the one the player's character walks once the viewer no longer sees the scene, so it never holds the player for good
@@ -149,6 +150,10 @@ module MGQ_MpCoopScene
 
   # Most changes one message holds; a viewer drops a message with more.
   MAX_BATCH = 256
+
+  # Most bytes the changes of one message take together. The DLL sends a world message of at most
+  # 262,103 bytes (its 256 KB frame less the cipher), so this leaves room for the other fields.
+  MAX_BATCH_BYTES = 240 * 1024
 
   @pictures = []
   @values = {}
@@ -459,8 +464,7 @@ module MGQ_MpCoopScene
 
   # As teller, tells those who see the story the changes waiting, see send_change, in their order
   # and by the map they happened on: a lone change as itself, which earlier builds take, several
-  # as messages of BATCH_KIND, each within MAX_BATCH changes and the line a viewer reads
-  # (MGQ_MpBattlesSync::Wire::MAX_LINE_BYTES).
+  # as messages of BATCH_KIND, each within MAX_BATCH changes and MAX_BATCH_BYTES.
   def self.flush_changes
     return if @outgoing.empty?
 
@@ -487,7 +491,7 @@ module MGQ_MpCoopScene
     entries.each do |entry|
       line = MGQ_MpBattlesSync::Wire.line([[entry[0], entry[1]]])
       batch = batches.last
-      if batch.size >= MAX_BATCH || (!batch.empty? && bytes + 1 + line.bytesize > MGQ_MpBattlesSync::Wire::MAX_LINE_BYTES)
+      if batch.size >= MAX_BATCH || (!batch.empty? && bytes + 1 + line.bytesize > MAX_BATCH_BYTES)
         batches << (batch = [])
         bytes = -1
       end

@@ -5,6 +5,7 @@
 #      Paulinchen  2026-10-12: Checked that a picture this game lacks erases its place, and that picture and screen changes with arguments of the wrong kind, too many or past the limits are left out
 #                            - Checked that the changes of a frame go out at its end in one message, a lone change as earlier builds take it, and while the teller skips those of ten frames, only the last move of a picture, camera place and sound effect kept and the story values merged, and at once once the skip is let go or the story stopped
 #                            - Checked that a viewer makes the changes of one message in their order, each through its own gate, and drops one of too many changes or of anything but changes
+#                            - Checked that the changes of one message stay within MAX_BATCH_BYTES, below the largest world message the DLL sends, and that a longer change goes out alone
 #      Paulinchen  2026-10-11: Checked that a scene switch, though each player's own, reaches the viewers, is not taken as the world's and goes back once the viewer no longer sees the scene
 #                            - Checked that a viewer the story brought to another map keeps the character the story showed
 #                            - Checked that the viewer's character skips a blocked step of the teller's route and walks none of it once the viewer no longer sees the scene
@@ -299,6 +300,18 @@ $playing = true
 $game_map.set_display_pos(0.0, 0.0)
 $game_map.update
 $sent.clear
+
+# The DLL sends a world message of at most its 256 KB frame less the cipher's 41 bytes.
+dll_message_bytes = 256 * 1024 - 41
+long_changes = Array.new(5) { |n| ["audio.se_play", ["x" * 100_000, 80, n], 7, false] }
+batches = MGQ_MpCoopScene.split_batches(long_changes)
+batch_bytes = batches.map { |batch| batch.map { |_entry, line| line }.join("\t").bytesize }
+check("changes past MAX_BATCH_BYTES go out in several messages, in their order",
+      [batches.map(&:size), batches.flatten(1).map { |entry, _line| entry[1][2] }], [[2, 2, 1], [0, 1, 2, 3, 4]])
+check("each within MAX_BATCH_BYTES, which leaves room below the largest world message the DLL sends",
+      [batch_bytes.max <= MGQ_MpCoopScene::MAX_BATCH_BYTES, MGQ_MpCoopScene::MAX_BATCH_BYTES + 16_000 <= dll_message_bytes], [true, true])
+check("a change longer than MAX_BATCH_BYTES goes out alone",
+      MGQ_MpCoopScene.split_batches([long_changes[0], ["audio.se_play", ["x" * 300_000, 80, 100], 7, false], long_changes[1]]).map(&:size), [1, 1, 1])
 
 # A member sees them on the leader's map.
 leader = MGQ_MpOverworldSync::Peers::Peer.new(2, { "map" => "7", "telling" => "1" })
