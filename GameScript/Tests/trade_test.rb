@@ -2,7 +2,10 @@
 #  trade_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Checked that trades to recover wait for the map's own frame with the player free, in a battle, behind a message and after a reset, and are asked for again once another save was loaded
+#      Paulinchen  2026-10-12: Checked that the offer and the confirmation state go out again once the other player is back, never while the relay decides, and that a message that cannot go out is logged so
+#                            - Checked that a message of a trade the game does not have is answered with a cancel, never a cancel itself
+#                            - Checked that offers too long for the relay cannot be confirmed, and offers just short of it still commit
+#                            - Checked that trades to recover wait for the map's own frame with the player free, in a battle, behind a message and after a reset, and are asked for again once another save was loaded
 #      Paulinchen  2026-10-11: Checked the line above the player's head while offering a trade and waiting for an accepted one to open, each with its seconds left
 #      Paulinchen  2026-10-08: Checked that a trade id that is not valid is turned down with its own notice
 #                            - Checked the invalid reason the player who offered the trade sees, and a reason of another build
@@ -501,6 +504,93 @@ check("for a few seconds", trade.note, nil)
 trade.toggle_confirm
 trade.cancel
 check("and forgotten once the trade ends", trade.note, nil)
+
+# The other player away and back while the trade is open: what may have been lost goes out again.
+# Opens a trade the other player accepted.
+#
+# @return [String] The trade's id.
+def opened_trade
+  MGQ_MpTrade.invite
+  $sent.clear
+  $inbox << entry("message", 2, "trade=accept\n\n")
+  MGQ_MpOverworldSync.tick
+  trade_sent.last[1]["tid"]
+end
+# Has the other player's connection drop for a moment, then come back.
+#
+# @param state [Hash] Their state as they tell it once back.
+def away_and_back(state)
+  $inbox << entry("out", 2)
+  MGQ_MpOverworldSync.tick
+  ticks(30)
+  $sent.clear
+  $inbox << entry("in", 2) << entry("message", 2, told(state))
+  MGQ_MpOverworldSync.tick
+  ticks
+end
+resent = lambda { trade_sent.map { |_, f| f.values_at("trade", "rev", "mine", "yours", :payload) } }
+$game_party.gain_item(potion, 1)
+tid = opened_trade
+trade.set_amount(potion, 1)
+trade.toggle_confirm
+away_and_back(friend)
+check("the other player back, the last offer and the confirmation go out again",
+      resent.call, [["offer", "1", nil, nil, "g0;i1*1"], ["confirm", nil, "1", "0", ""]])
+trade.toggle_confirm
+away_and_back(friend)
+check("unconfirmed, the confirmation taken back goes out again", resent.call, [["offer", "1", nil, nil, "g0;i1*1"], ["unconfirm", nil, nil, nil, ""]])
+module MGQ_MpOverworldSync::Link; def self.send_to(target, text); $sent << [target, text]; !$send_fails; end; end
+$send_fails = true
+lines = logged_lines { trade.set_amount(potion, 0) }
+check("a message that cannot go out is logged so, not as sent",
+      [lines.grep(/could not send offer to Friend/).size, lines.grep(/sent offer/).size], [1, 0])
+$send_fails = false
+trade.cancel
+id = committed_trade
+away_and_back(friend)
+check("nothing goes out again while the relay decides", trade_sent, [])
+$relay_state = "trade=#{id}\nstate=cancelled\nreason=cancelled"
+trade.cancel
+ticks(MGQ_MpTrade::POLL_FRAMES)
+
+# Messages of a trade the game no longer has.
+$sent.clear
+$inbox << entry("message", 2, "trade=offer\ntid=#{'c' * 24}\nrev=3\n\ng10")
+MGQ_MpOverworldSync.tick
+check("an offer of a trade the game does not have is answered with a cancel",
+      trade_sent.map { |seat, f| [seat, f.values_at("trade", "tid", "reason")] }, [[2, ["cancel", "c" * 24, "off"]]])
+$sent.clear
+$inbox << entry("message", 2, "trade=cancel\ntid=#{'c' * 24}\nreason=off\n\n")
+MGQ_MpOverworldSync.tick
+check("but a cancel is never answered, so two games never answer each other", trade_sent, [])
+tid = opened_trade
+$sent.clear
+$inbox << entry("message", 2, "trade=confirm\ntid=#{'d' * 24}\nmine=1\nyours=0\n\n")
+MGQ_MpOverworldSync.tick
+check("as is a confirm of an older trade while another runs, which stays open",
+      [trade_sent.map { |_, f| f.values_at("trade", "tid") }, trade.session.id], [[["cancel", "d" * 24]], tid])
+
+# Offers too long for the relay.
+many = lambda { |count| "g0" + ";w2*1" * count }
+$sent.clear
+trade.set_amount(potion, 1)
+$inbox << entry("message", 2, "trade=offer\ntid=#{tid}\nrev=1\n\n#{many.call(6550)}")
+MGQ_MpOverworldSync.tick
+$dll.clear
+trade.toggle_confirm
+check("offers longer than the relay takes cannot be confirmed, the player told to take some out",
+      [trade.agreed_text(trade.session).bytesize > MGQ_MpTrade::MAX_OFFERS_BYTES, trade.session.confirmed, trade.note, $dll],
+      [true, false, "The offers hold too many items for one trade. Take some out.", []])
+$inbox << entry("message", 2, "trade=offer\ntid=#{tid}\nrev=2\n\n#{many.call(6549)}")
+MGQ_MpOverworldSync.tick
+trade.toggle_confirm
+$inbox << entry("message", 2, "trade=confirm\ntid=#{tid}\nmine=2\nyours=1\n\n")
+MGQ_MpOverworldSync.tick
+check("offers just short of it still go to the relay",
+      [trade.agreed_text(trade.session).bytesize, trade.session.stage, $dll.map(&:first)], [MGQ_MpTrade::MAX_OFFERS_BYTES - 3, :committing, ["mp_trade_commit"]])
+$relay_state = "trade=#{trade.session.relay_id}\nstate=cancelled\nreason=cancelled"
+trade.cancel
+ticks(MGQ_MpTrade::POLL_FRAMES)
 
 # A world made before the world list.
 module MGQ_MpWorld; def self.world; World.new("f1", nil); end; end

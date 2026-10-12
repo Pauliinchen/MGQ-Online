@@ -2,7 +2,10 @@
 #  trade.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Applied and saved the trades the relay lists to recover only once the player is free on the map, instead of in the battle, menu or trade the answer came in
+#      Paulinchen  2026-10-12: Sent the offer and the confirmation state again once the other player is back, and logged a message that could not be sent instead of as sent
+#                            - Answered an offer, confirm or unconfirm of a trade the game no longer has with a cancel, so the other trade screen closes
+#                            - Refused to confirm offers too long for the relay with a message to take some items out, instead of failing to reach the relay
+#                            - Applied and saved the trades the relay lists to recover only once the player is free on the map, instead of in the battle, menu or trade the answer came in
 #      Paulinchen  2026-10-11: Drew the trade offer in the color every request and offer shares
 #                            - Named the wait for an accepted trade to open in the line above the player's head, with its seconds left, and gave the offer its seconds left
 #                            - Stopped the player's own trade offer once they accept another player's, so nobody accepts an offer whose player waits for a trade already
@@ -75,6 +78,17 @@ module MGQ_MpTrade
 
   # Bytes the DLL may write the list of trades to recover into at first.
   PENDING_SIZE = 16384
+
+  # Most bytes of both offers as the relay compares them (see agreed_text); mirrors
+  # TradeSeal.MaxOffersBytes in the DLL, which refuses longer offers.
+  MAX_OFFERS_BYTES = 32 * 1024
+
+  # What the player sees when both offers together are too long for the relay.
+  TOO_LARGE_TEXT = "The offers hold too many items for one trade. Take some out."
+
+  # The kinds of trade message a game answers with a cancel when it has no such trade, never a
+  # cancel itself, so two games never answer each other's cancels.
+  ANSWERED_STRAYS = ["offer", "confirm", "unconfirm"]
 
   # Why a trade could not open or ended, by the reason a message carries.
   REASONS = {
@@ -287,9 +301,15 @@ module MGQ_MpTrade
   # @param peer [MGQ_MpOverworldSync::Peers::Peer] The other player.
   # @param fields [Hash] The message's fields.
   # @param body [String] What follows the fields.
+  # @return [Boolean] Whether it went out.
   def self.send_message(peer, fields, body = "")
-    MGQ_MpOverworldSync.tell(peer.seat, fields, body)
-    log_message("sent", peer, fields, body)
+    sent = MGQ_MpOverworldSync.tell(peer.seat, fields, body)
+    if sent
+      log_message("sent", peer, fields, body)
+    else
+      log("could not send #{fields['trade']} to #{MGQ_MpOverworldSync.who(peer)}: the world's connection is down")
+    end
+    sent
   end
 
   # Offers a trade to the players nearby, and to a player anywhere on the map when named.
@@ -393,9 +413,27 @@ module MGQ_MpTrade
       away = session.away
       session.away = peer && !peer.away ? 0 : session.away + 1
       log("#{session.name} is away, waiting up to #{AWAY_FRAMES / 60} s") if away == 0 && session.away > 0
-      log("#{session.name} is back after #{away} frames") if away > 0 && session.away == 0
+      if away > 0 && session.away == 0
+        log("#{session.name} is back after #{away} frames")
+        resend_state(session)
+      end
       close("#{session.name} left.") if session.away > AWAY_FRAMES
     end
+  end
+
+  # Sends the other player the player's offer and confirmation again once they are back, since what
+  # was sent while they were away may be lost.
+  #
+  # A lost "unconfirm" would let the other game commit on the player's old confirmation alone and
+  # wait for the relay to time it out.
+  #
+  # @param session [Session] The trade.
+  def self.resend_state(session)
+    return unless session.stage == :open
+
+    tell("offer", { "rev" => session.my_rev }, Items.write_offer(session.mine)) if session.my_rev > 0
+    session.confirmed ? tell("confirm", { "mine" => session.my_rev, "yours" => session.their_rev }) : tell("unconfirm")
+    log("sent my offer r#{session.my_rev} and my confirmation state (#{session.confirmed ? 'confirmed' : 'not confirmed'}) again: #{session.name} is back")
   end
 
   # Finds the other player of the trade, who may have come back on another seat.
@@ -412,6 +450,7 @@ module MGQ_MpTrade
   # @param fields [Hash] The message's fields besides "trade" and "tid".
   # @param kind [String] What the message is.
   # @param body [String] What follows the fields.
+  # @return [Boolean, nil] Whether it went out, nil when the other player is not in the world.
   def self.tell(kind, fields = {}, body = "")
     peer = partner_peer
     return log("not sent #{kind}: #{@session ? @session.name + ' is not in the world' : 'there is no trade'}") unless peer && @session
@@ -479,11 +518,16 @@ module MGQ_MpTrade
   # @param message [Hash] The message's fields, its body under :payload.
   def self.take_in_session(peer, message)
     session = @session
+    other = session.nil? || session.id != message["tid"].to_s
     stray = if session.nil? then "there is no trade"
             elsif session.id != message["tid"].to_s then "it names trade #{short(message['tid'])}, not #{short(session.id)}"
             elsif session.partner != peer.state["id"].to_s then "#{peer.state['name']} is not the other player of the trade"
             end
-    return log("ignored #{peer.state['name']}'s trade #{message['trade']}: #{stray}") if stray
+    if stray
+      log("ignored #{peer.state['name']}'s trade #{message['trade']}: #{stray}")
+      return answer_stray(peer, message) if other
+      return
+    end
 
     case message["trade"]
     when "offer" then take_offer(session, message["rev"].to_i, message[:payload].to_s)
@@ -492,6 +536,19 @@ module MGQ_MpTrade
     when "cancel" then take_cancel(session, message["reason"].to_s)
     else log("ignored #{peer.state['name']}'s trade #{message['trade']}: unknown kind")
     end
+  end
+
+  # Answers a message of a trade the player's game no longer has with a cancel, so the other
+  # player's trade closes instead of waiting for an answer that never comes.
+  #
+  # @param peer [MGQ_MpOverworldSync::Peers::Peer] Who sent it.
+  # @param message [Hash] The message's fields.
+  def self.answer_stray(peer, message)
+    id = message["tid"].to_s
+    return if id.empty? || !ANSWERED_STRAYS.include?(message["trade"].to_s)
+
+    log("answered #{peer.state['name']}'s #{message['trade']} of trade #{short(id)} with a cancel: the player has no such trade")
+    send_message(peer, { "trade" => "cancel", "tid" => id, "reason" => "off" })
   end
 
   # As the player who offered the trade, opens it with the player who accepted.
@@ -693,6 +750,7 @@ module MGQ_MpTrade
     return "There is no trade." unless session
     return "The relay is deciding the trade." if session.stage != :open
     return "Both offers are empty." if session.mine.empty? && session.theirs.empty?
+    return TOO_LARGE_TEXT if agreed_text(session).bytesize > MAX_OFFERS_BYTES
 
     Items.receive_refusal(session.theirs, session.name, session.mine)
   end
