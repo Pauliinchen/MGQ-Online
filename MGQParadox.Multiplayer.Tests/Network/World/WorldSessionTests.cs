@@ -4,6 +4,7 @@
 //  Changelog:
 //      Paulinchen  2026-10-12: Covered a burst of messages paced below the relay limit, and the test relay closing a connection that sends too fast
 //                            - Covered entering a world again while the first connect still waits at the relay, which the relay lets in after the new one
+//                            - Covered a "replaced" close after the cut connect could no longer take a seat, which ends the session as a real replace, and the relay turning the game away as too old for good, with or without its text
 //      Paulinchen  2026-10-09: Covered the relay's word that a world now turns other mods off handed to the game script with its mods, and a value that is neither 0 nor 1 ignored
 //                            - Covered the relay's word of a Raid World's new difficulty handed to the game script, and a value that is no difficulty ignored
 //      Paulinchen  2026-10-08: Covered entering a Raid World, which the relay lets in only games that name it in the features header
@@ -359,6 +360,85 @@ public sealed class WorldSessionTests
     }
 
     /// <summary>
+    /// Asserts that a "replaced" close arriving once the connect cut by entering again could no longer
+    /// take a seat ends the session for good, as another game of the same player took its place.
+    /// </summary>
+    [Fact]
+    public void ReplacedAfterTheCutConnectWindow_EndsForGood()
+    {
+        using var relay = new TestRelay();
+        var code = MakeWorld(relay, 2);
+        var key = WorldDirectoryTests.PlayerKey(9);
+        var connectTimeout = TimeSpan.FromSeconds(1);
+        var session = NewSession(relay.Address, key, connectTimeout: connectTimeout);
+        var later = NewSession(relay.Address, key);
+        var hold = new TaskCompletionSource();
+
+        try
+        {
+            relay.WorldUpgradeHold = hold;
+            session.Open(code);
+            Assert.True(SpinWait.SpinUntil(() => relay.WorldUpgradeHold == null, Patience), "The first connect never reached the relay.");
+
+            session.Open(code);
+            NextEntry(session, kind: "seat");
+            Thread.Sleep(connectTimeout + TimeSpan.FromMilliseconds(500));
+
+            later.Open(code);
+            AwaitState(later, "open");
+
+            var ended = AwaitError(session);
+            Assert.Equal("failed", ended["state"]);
+            Assert.Contains("another game", ended["error"]);
+        }
+        finally
+        {
+            hold.TrySetResult();
+            later.Close();
+            session.Close();
+        }
+    }
+
+    /// <summary>
+    /// Asserts that a world room turning the game away as too old ends the session for good with the
+    /// text the relay names, without trying again.
+    /// </summary>
+    [Fact]
+    public void OutdatedGame_EndsForGoodWithTheRelayText()
+    {
+        using var relay = new TestRelay();
+        var code = MakeWorld(relay, 2);
+        var session = NewSession(relay.Address);
+        const string text = "This relay serves MGQ Online 0.7.0 and newer.";
+
+        relay.UpdateRefusal = text;
+        session.Open(code);
+
+        var ended = AwaitError(session);
+        Assert.Equal(("failed", text), (ended["state"], ended["error"]));
+        Thread.Sleep(500);
+        Assert.Equal(1, relay.WorldRoomRequests);
+    }
+
+    /// <summary>
+    /// Asserts that a world room turning the game away as too old without a text ends the session
+    /// for good, telling the player to update.
+    /// </summary>
+    [Fact]
+    public void OutdatedGame_WithoutText_TellsToUpdate()
+    {
+        using var relay = new TestRelay();
+        var code = MakeWorld(relay, 2);
+        var session = NewSession(relay.Address);
+
+        relay.UpdateRefusal = string.Empty;
+        session.Open(code);
+
+        var ended = AwaitError(session);
+        Assert.Equal(("failed", "Update MGQ Online to play online."), (ended["state"], ended["error"]));
+    }
+
+    /// <summary>
     /// Asserts that a session without a player cannot open a world.
     /// </summary>
     [Fact]
@@ -577,8 +657,9 @@ public sealed class WorldSessionTests
     /// <param name="relay">The relay every id leads to, or <see langword="null"/> for none.</param>
     /// <param name="key">The player's key, a new player's unless given.</param>
     /// <param name="now">The clock the chat's allowance refills by, the real one unless given.</param>
+    /// <param name="connectTimeout">How long reaching the relay may take, the session's own unless given.</param>
     /// <returns>The session.</returns>
-    private static WorldSession NewSession(Uri? relay, string? key = null, Func<DateTime>? now = null)
+    private static WorldSession NewSession(Uri? relay, string? key = null, Func<DateTime>? now = null, TimeSpan? connectTimeout = null)
     {
         var player = key ?? WorldDirectoryTests.PlayerKey(100 + Interlocked.Increment(ref players));
 
@@ -590,6 +671,7 @@ public sealed class WorldSessionTests
             PingInterval = TimeSpan.FromSeconds(1),
             SilenceTimeout = TimeSpan.FromSeconds(5),
             Now = now ?? (() => DateTime.UtcNow),
+            ConnectTimeout = connectTimeout ?? TimeSpan.FromSeconds(6),
         };
     }
 

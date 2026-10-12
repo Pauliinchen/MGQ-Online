@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-12: Kept the address and the X-MGQ-Version header of every request, for the tests
+//                            - Turned world room and PvP room requests away with 426 once a test says so, with or without a text in X-MGQ-Refusal, as the relay does for a game too old for it
 //                            - Closed a peer that sends more than 60 messages a second after a burst of 240 with 4003, as the relay does, and counted those closes for the tests
 //                            - Refused a create past a player's world limit and a ban past a world's removed players with 429, as the relay does, once a test sets the limits
 //                            - Closed the earlier connection of a player once the new one is let in, before its handshake, freed the seat of a handshake that fails, and let tests hold back the next world room request
@@ -197,6 +198,17 @@ internal sealed class TestRelay : IDisposable
     public TaskCompletionSource? WorldUpgradeHold { get; set; }
 
     /// <summary>
+    /// Turns every world room and PvP room request away with 426 once set, as the relay does a game
+    /// too old for it, naming this text in X-MGQ-Refusal unless it is empty.
+    /// </summary>
+    public string? UpdateRefusal { get; set; }
+
+    /// <summary>
+    /// How many world room requests the relay took in, refused or not.
+    /// </summary>
+    public int WorldRoomRequests => Volatile.Read(ref _worldRoomRequests);
+
+    /// <summary>
     /// The zips of uploaded mods by key, which the tests fill.
     /// </summary>
     public Dictionary<string, byte[]> ModFiles { get; } = [];
@@ -267,6 +279,11 @@ internal sealed class TestRelay : IDisposable
     /// How many peers the relay closed with 4003 for sending too many messages. Guarded by <see cref="_gate"/>.
     /// </summary>
     private int _tooFastCloses;
+
+    /// <summary>
+    /// How many world room requests the relay took in, counted with <see cref="Interlocked"/>.
+    /// </summary>
+    private int _worldRoomRequests;
 
     /// <summary>
     /// How many peers the relay closed with 4003 for sending too many messages so far.
@@ -461,6 +478,22 @@ internal sealed class TestRelay : IDisposable
         if (!context.Request.IsWebSocketRequest && parts is ["v1", "trades", ..])
         {
             await ServeTradesAsync(context, parts);
+            return;
+        }
+
+        if (context.Request.IsWebSocketRequest && parts is [_, "world", _])
+        {
+            Interlocked.Increment(ref _worldRoomRequests);
+        }
+
+        if (context.Request.IsWebSocketRequest && parts is [_, "world" or "room", _] && UpdateRefusal is { } outdated)
+        {
+            if (outdated.Length > 0)
+            {
+                context.Response.Headers["X-MGQ-Refusal"] = outdated;
+            }
+
+            Refuse(context, 426);
             return;
         }
 

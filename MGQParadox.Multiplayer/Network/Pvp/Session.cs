@@ -2,6 +2,7 @@
 //  Session.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-12: Stopped hosting or joining at once with the relay's text once it turns the game away as too old, instead of telling a relay out of reach
 //      Paulinchen  2026-10-07: Logged hosting, joining and cancelling with where the session stood, each step of the team swap, the player's name once it changes, and failures marked as PvP
 //                            - Woke the host's waits at once when hosting ends, read the role and the player's name under the gate, took only the message the game script read, and cleaned names through PlayerName
 //      Paulinchen  2026-10-06: Started its threads through Threads, shared with the other connections, and wrote the room in lowercase hexadecimal at once
@@ -618,6 +619,17 @@ internal sealed class Session
                     Log.Write("pvp host's wait in the relay room ended without a guest, entering the room again");
                 }
             }
+            catch (RelayUpdateNeededException ex)
+            {
+                Log.Write($"relay {Relays.Current} turned this game away as too old: {ex.Message}");
+
+                if (IsHosting(generation))
+                {
+                    Fail(generation, ex.Message);
+                }
+
+                return;
+            }
             catch (Exception ex)
             {
                 if (!advertised)
@@ -815,6 +827,12 @@ internal sealed class Session
             channel.Dispose();
             Log.Write($"pvp no host came into the relay room within {RelayPairTimeout.TotalSeconds.ToString("0", CultureInfo.InvariantCulture)} s");
             failure = NotHosting;
+            return null;
+        }
+        catch (RelayUpdateNeededException ex)
+        {
+            Log.Write($"relay {code.Relay} turned this game away as too old: {ex.Message}");
+            failure = ex.Message;
             return null;
         }
         catch (Exception ex)

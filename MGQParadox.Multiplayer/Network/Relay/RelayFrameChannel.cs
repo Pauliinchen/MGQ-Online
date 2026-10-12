@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-12: Named the version of this game in the X-MGQ-Version header
+//                            - Told the relay turning the game away as too old apart from a relay out of reach, with the text the relay names
 //      Paulinchen  2026-10-07: Closed the WebSocket through the shared helper
 //      Paulinchen  2026-10-06: Told when the relay ended a host's lone wait
 //                            - Took the failures of the reads a timeout leaves behind
@@ -14,6 +15,7 @@
 
 using System;
 using System.IO;
+using System.Net;
 using System.Net.WebSockets;
 using System.Text;
 using System.Threading;
@@ -85,10 +87,12 @@ internal sealed class RelayFrameChannel : IFrameChannel
     /// <param name="host">Whether this game hosts.</param>
     /// <param name="timeout">How long connecting may take.</param>
     /// <returns>The channel, connected but not yet paired.</returns>
+    /// <exception cref="RelayUpdateNeededException">The relay turned the game away as too old for it.</exception>
     /// <exception cref="WebSocketException">The relay could not be reached or turned the connection down.</exception>
     public static RelayFrameChannel Connect(Uri relay, string room, bool host, TimeSpan timeout)
     {
         var socket = new ClientWebSocket();
+        socket.Options.CollectHttpResponseDetails = true;
         socket.Options.SetRequestHeader(DirectoryClient.VersionHeader, UpdateCheck.ModVersion);
         var address = new Uri(relay, $"/v1/room/{room}?role={(host ? "host" : "guest")}");
 
@@ -97,6 +101,12 @@ internal sealed class RelayFrameChannel : IFrameChannel
             using var cancel = new CancellationTokenSource(timeout);
             socket.ConnectAsync(address, cancel.Token).GetAwaiter().GetResult();
             return new RelayFrameChannel(socket);
+        }
+        catch (WebSocketException) when (socket.HttpStatusCode == HttpStatusCode.UpgradeRequired)
+        {
+            var reason = Relays.RefusalOf(socket);
+            socket.Dispose();
+            throw new RelayUpdateNeededException(string.IsNullOrWhiteSpace(reason) ? Relays.UpdateNeeded : reason);
         }
         catch
         {
@@ -235,3 +245,9 @@ internal sealed class RelayFrameChannel : IFrameChannel
         return left < TimeSpan.Zero ? TimeSpan.Zero : left < step ? left : step;
     }
 }
+
+/// <summary>
+/// The relay turned a game away as too old for it, which trying again cannot change.
+/// </summary>
+/// <param name="reason">What the game tells the player.</param>
+internal sealed class RelayUpdateNeededException(string reason) : Exception(reason);

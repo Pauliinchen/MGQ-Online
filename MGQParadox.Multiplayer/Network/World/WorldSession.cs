@@ -4,6 +4,7 @@
 //  Changelog:
 //      Paulinchen  2026-10-12: Paced the frames, chat texts and pings it sends to at most 50 a second after a burst of 200, below the relay's limit, and logged each spell of pacing and a close for sending too fast
 //                            - Cut a connect still running once the world is left or entered anew, and connected again instead of failing when the connect it cut still took the new connection's place
+//                            - Took a "replaced" close as the cut connect's only while that connect could still take a seat, and stopped for good once the relay turns the game away as too old
 //      Paulinchen  2026-10-10: Handed the relay's word that a Raid World's boss pool changed to the game script as a boss entry with its key, the share left, the raid max HP and whether it is defeated, and to the boss pools the game script reads
 //      Paulinchen  2026-10-09: Handed the relay's word that a world changed whether it turns other mods off, or its mods, to the game script as a mods_rule entry with both
 //                            - Handed the relay's word that a Raid World's boss pool changed to the game script as a boss entry with its key and hit points
@@ -307,11 +308,6 @@ internal sealed class WorldSession
     private const int MaxInbox = 10_000;
 
     /// <summary>
-    /// How long reaching the relay may take.
-    /// </summary>
-    private static readonly TimeSpan ConnectTimeout = TimeSpan.FromSeconds(6);
-
-    /// <summary>
     /// How long sending one frame may take.
     /// </summary>
     private static readonly TimeSpan SendTimeout = TimeSpan.FromSeconds(10);
@@ -455,6 +451,11 @@ internal sealed class WorldSession
     /// How long the relay may stay silent before the connection counts as broken.
     /// </summary>
     public TimeSpan SilenceTimeout { get; init; } = TimeSpan.FromSeconds(60);
+
+    /// <summary>
+    /// How long reaching the relay may take, which also bounds how long a cut connect may still take a seat.
+    /// </summary>
+    public TimeSpan ConnectTimeout { get; init; } = TimeSpan.FromSeconds(6);
 
     /// <summary>
     /// How long to wait before each try to connect again, the last one repeated.
@@ -764,7 +765,7 @@ internal sealed class WorldSession
                         Log.Write("the relay closed the world connection: this game sent too fast");
                     }
 
-                    if (channel.CloseCode == RemovedClose && channel.CloseReason == ReplacedReason && connection.SupersededConnectPending)
+                    if (channel.CloseCode == RemovedClose && channel.CloseReason == ReplacedReason && Stopwatch.GetTimestamp() < connection.SupersededUntil)
                     {
                         Log.Write("world connection replaced by a connect of this game that was cut, connecting again");
                     }
@@ -807,7 +808,7 @@ internal sealed class WorldSession
     /// Tells why the relay refused the game for good, as opposed to for now.
     /// </summary>
     /// <param name="refusal">The HTTP status the relay refused the game with.</param>
-    /// <param name="code">The code the relay named why with, <see langword="null"/> for none.</param>
+    /// <param name="code">The code the relay named why with, or for 426 the text to show; <see langword="null"/> for none.</param>
     /// <returns>The reason, or <see langword="null"/> when trying again may help.</returns>
     private static string? FinalReasonFor(HttpStatusCode? refusal, string? code) => refusal switch
     {
@@ -817,6 +818,7 @@ internal sealed class WorldSession
         HttpStatusCode.Unauthorized => TokenMismatch,
         HttpStatusCode.BadRequest when code == RaidCode => RaidUnsupported,
         HttpStatusCode.BadRequest => "The relay turned the request down. Update the mod.",
+        HttpStatusCode.UpgradeRequired => string.IsNullOrWhiteSpace(code) ? Relays.UpdateNeeded : code,
         _ => null,
     };
 
@@ -1165,7 +1167,7 @@ internal sealed class WorldSession
             }
 
             _connection = connection;
-            connection.SupersededConnectPending = Stopwatch.GetTimestamp() < _supersededUntil;
+            connection.SupersededUntil = _supersededUntil;
             return true;
         }
     }
@@ -1496,10 +1498,11 @@ internal sealed class WorldSession
         public WorldCipher Cipher { get; }
 
         /// <summary>
-        /// Whether a connect of an ended generation of this game might still take a seat at the relay
-        /// as this connection was made, so a "replaced" close may come from this game itself.
+        /// Until when a connect of an ended generation of this game may still take this connection's
+        /// seat at the relay, as a <see cref="Stopwatch"/> timestamp, so a "replaced" close before it
+        /// may come from this game itself.
         /// </summary>
-        public bool SupersededConnectPending { get; set; }
+        public long SupersededUntil { get; set; }
 
         /// <summary>
         /// This game's seat on this connection, which its frames are sealed with.

@@ -2,6 +2,7 @@
 //  Relays.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-12: Named the text a game too old for the relay shows, and read why the relay turned a WebSocket away for both kinds of room
 //      Paulinchen  2026-10-06: Pointed every relay at the address in MGQMP_RELAY when it is set, for testing against a relay on this PC
 //                            - Wrote hexadecimal in lowercase at once
 //      Paulinchen  2026-09-29: Named the world room of a world's token
@@ -11,6 +12,8 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
+using System.Net.WebSockets;
 using System.Security.Cryptography;
 using System.Text;
 
@@ -29,6 +32,16 @@ internal static class Relays
     /// The relay this version hosts on.
     /// </summary>
     public const string Current = "r1";
+
+    /// <summary>
+    /// What the game tells once the relay turns it away as too old, unless the relay names a text of its own.
+    /// </summary>
+    public const string UpdateNeeded = "Update MGQ Online to play online.";
+
+    /// <summary>
+    /// The response header the relay names why it turned a game away in.
+    /// </summary>
+    private const string RefusalHeader = "X-MGQ-Refusal";
 
     /// <summary>
     /// Separates the room id from anything else ever derived from the same token.
@@ -82,6 +95,14 @@ internal static class Relays
 
         return Uri.TryCreate(replacement, UriKind.Absolute, out var local) && local.Scheme is "ws" or "wss" ? local : address;
     }
+
+    /// <summary>
+    /// Reads why the relay turned a WebSocket away, as it names it in its response header.
+    /// </summary>
+    /// <param name="socket">The refused WebSocket, which collected the response's headers.</param>
+    /// <returns>The code or text, <see langword="null"/> for none.</returns>
+    public static string? RefusalOf(ClientWebSocket socket) =>
+        socket.HttpResponseHeaders?.FirstOrDefault(header => string.Equals(header.Key, RefusalHeader, StringComparison.OrdinalIgnoreCase)).Value?.FirstOrDefault();
 
     /// <summary>
     /// Names the relay room of a join code.

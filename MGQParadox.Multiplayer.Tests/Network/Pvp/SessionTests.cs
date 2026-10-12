@@ -2,6 +2,7 @@
 //  SessionTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-12: Covered the relay turning a host or a guest away as too old, with or without its text
 //      Paulinchen  2026-10-07: Took the message the session handed out
 //      Paulinchen  2026-10-06: Covered an invite kept past the link's end, hosting that stops when nobody joins, and a team too large to send
 //      Paulinchen  2026-09-29: Covered joining with a world code
@@ -211,6 +212,41 @@ public sealed class SessionTests
         Assert.Contains("relay could not be reached", hostSide["error"]);
         Assert.Equal(string.Empty, hostSide["code"]);
         Assert.Equal(string.Empty, hostSide["party"]);
+    }
+
+    /// <summary>
+    /// Asserts that a guest the relay turns away as too old is told the relay's text.
+    /// </summary>
+    [Fact]
+    public void OutdatedGame_FailsJoiningWithTheRelayText()
+    {
+        using var relay = new TestRelay();
+        var guest = NewSession("Guest", relay.Address);
+        const string text = "This relay serves MGQ Online 0.7.0 and newer.";
+
+        relay.UpdateRefusal = text;
+        guest.Join(CodeWithoutHost, "3.06", "guest team");
+
+        var guestSide = AwaitSettled(guest);
+        Assert.Equal(("failed", text), (guestSide["state"], guestSide["error"]));
+    }
+
+    /// <summary>
+    /// Asserts that a host the relay turns away as too old without a text is told to update and
+    /// never offers a join code.
+    /// </summary>
+    [Fact]
+    public void OutdatedGame_FailsHostingWithoutText()
+    {
+        using var relay = new TestRelay();
+        var host = NewSession("Host", relay.Address);
+
+        relay.UpdateRefusal = string.Empty;
+        host.Host("3.06", "host team");
+
+        var hostSide = AwaitSettled(host);
+        Assert.Equal(("failed", "Update MGQ Online to play online."), (hostSide["state"], hostSide["error"]));
+        Assert.Equal(string.Empty, hostSide["code"]);
     }
 
     /// <summary>
