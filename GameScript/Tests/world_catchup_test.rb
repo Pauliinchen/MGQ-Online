@@ -2,7 +2,8 @@
 #  world_catchup_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Checked that a move on at a level cap whose checkpoint is dropped makes only the next story's rewards wait, and that a gate noted while the player plays the world's story holds nothing back
+#      Paulinchen  2026-10-12: Checked that only a page that applies now and sets the encounters the other way keeps them with the map
+#                            - Checked that a move on at a level cap whose checkpoint is dropped makes only the next story's rewards wait, and that a gate noted while the player plays the world's story holds nothing back
 #                            - Checked that Galda the story gave comes back to its start once a checkpoint or the world's story past its event is laid over, and that a vehicle on a map or one the player rides is never moved
 #                            - Stood in for the vehicles' start positions and a vehicle's tile
 #                            - Checked that a cap of another mod brings no Makina nor waiting companion above the real level
@@ -777,7 +778,9 @@ check("and a story companion missing from the roster joins at their gate", $game
 $game_party.remove_actor(77)
 $game_variables[1002] = 9
 $game_system.encounter_disabled = true
-$game_map.events[1] = Struct.new(:mgq_mp_pages).new([Struct.new(:list).new([RPG::EventCommand.new(136, 0, [0])])])
+encounter_page = Struct.new(:list)
+map_event = Struct.new(:proper) { def find_proper_page; proper; end }
+$game_map.events[1] = map_event.new(encounter_page.new([RPG::EventCommand.new(136, 0, [0])]))
 $game_switches[100] = true
 $game_map.map_id = 4
 MGQ_MpWorldCatchup.level_up
@@ -785,6 +788,14 @@ frames(40)
 check("a level up looks again: a value of the player's own making stays, the encounters stay with a map that sets them, a warp ban off the free maps stays",
       [$game_variables[1002], $game_system.encounter_disabled, $game_switches[100]], [9, true, true])
 check("and one gone from the roster joins again", $game_party.all_members.map(&:id).include?(77), true)
+[[nil, "no page applies now"], [encounter_page.new([RPG::EventCommand.new(136, 0, [1])]), "the page that applies now turns them on too"],
+ [encounter_page.new([RPG::EventCommand.new(101, 0, [])]), "the page that applies now leaves them alone, as an opening's page of an earlier step"]].each do |page, why|
+  $game_map.events[1] = map_event.new(page)
+  $game_system.encounter_disabled = true
+  MGQ_MpWorldCatchup.level_up
+  frames(40)
+  check("the story turns the encounters on where #{why}", $game_system.encounter_disabled, false)
+end
 $game_map.events.clear
 $game_map.map_id = 3
 

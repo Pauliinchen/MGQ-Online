@@ -2,7 +2,8 @@
 #  core_game_access.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Named the map's viewports and character sprites, which the map's sprites of the mod are made in and follow
+#      Paulinchen  2026-10-12: Named an event's page that applies now
+#                            - Named the map's viewports and character sprites, which the map's sprites of the mod are made in and follow
 #                            - Named the map scene's map name and medal windows, which the Leader HUD moves below itself
 #                            - Named the map a vehicle stands on
 #      Paulinchen  2026-10-11: Named whether a forced move route moves a character
@@ -162,7 +163,7 @@ module MGQ_MpGame
   # The game's private methods the mod calls.
   METHODS = [
     :auto_state_with_switch, :make_unique_names, :refresh_status, :update_for_wait, :wait_for_message,
-    :battle_show_skip?, :close_command_window,
+    :battle_show_skip?, :close_command_window, :find_proper_page,
   ]
 
   # Reads a private field of one of the game's objects, logging once when the game has no such

@@ -2,7 +2,8 @@
 #  world_catchup.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Let the story's rewards wait after a move on at a level cap only for the first story laid over the player no longer behind, and never once they play the world's story, as a dropped checkpoint kept them waiting for every later story
+#      Paulinchen  2026-10-12: Left the random encounters to a map only while a page of it that applies now sets them the other way
+#                            - Let the story's rewards wait after a move on at a level cap only for the first story laid over the player no longer behind, and never once they play the world's story, as a dropped checkpoint kept them waiting for every later story
 #                            - Put a vehicle the story gave that stands on no map back at the start the game names for it, on entering, after a load, a level up and every story laid over the player's, as a checkpoint or the world's story past Mt. Saint Amos left Galda nowhere
 #                            - Gave companions and Makina only once the player's real level reaches theirs, as a character at another mod's level cap got every Makina above it at once
 #                            - Held the story's skills and items a move on at another mod's level cap carried the player past until their real level reaches the gate
@@ -1061,7 +1062,7 @@ module MGQ_MpWorldCatchup
   # point, the random encounters) to what the latest step their story or the world's passed set,
   # where they still hold what an earlier step set: a story laid over theirs, or the opening's
   # setup, skipped the events. A value of their own making, such as a church they prayed at, stays,
-  # and so do the encounters on a map whose events turn them on or off themselves. Of the routes
+  # and so do the encounters on a map whose events set them the other way now. Of the routes
   # only the rows of the route under way count, none at the Great Decision: a finished route's
   # rows, which passed? counts for its rewards, would set its last return point.
   #
@@ -1082,7 +1083,7 @@ module MGQ_MpWorldCatchup
     latest.each do |key, row|
       now = setting_now(row)
       next if now == row.value || !earlier[key].include?(now)
-      next log_once([:own_encounters, $game_map.map_id], "left the random encounters to map #{$game_map.map_id}, whose events turn them on or off") if row.kind == :encounters && map_sets_encounters?
+      next log_once([:own_encounters, $game_map.map_id], "left the random encounters to map #{$game_map.map_id}, whose event sets them the other way now") if row.kind == :encounters && map_sets_encounters?(row.value)
 
       row.kind == :encounters ? $game_system.encounter_disabled = !row.value : $game_variables[row.id] = row.value
       log("set #{setting_label(row)} from #{now.inspect} to #{row.value.inspect}, as #{row.site} of the story left it")
@@ -1105,12 +1106,18 @@ module MGQ_MpWorldCatchup
     row.kind == :encounters ? "the random encounters" : "variable #{row.id}"
   end
 
-  # Reports whether an event of the player's map turns random encounters on or off.
+  # Reports whether an event of the player's map sets random encounters the other way: on the page
+  # that applies now, as the story's values stand.
   #
+  # Pages of an earlier step, such as the opening's, would otherwise keep the story's value away
+  # for good.
+  #
+  # @param on [Boolean] Whether the story turns them on.
   # @return [Boolean] Whether one does.
-  def self.map_sets_encounters?
+  def self.map_sets_encounters?(on)
     $game_map.events.values.any? do |event|
-      event.mgq_mp_pages.any? { |page| (page.list || []).any? { |command| command.code == ENCOUNTER_CODE } }
+      page = MGQ_MpGame.call(event, :find_proper_page)
+      page && (page.list || []).any? { |command| command.code == ENCOUNTER_CODE && (command.parameters[0] != 0) != on }
     end
   end
 
