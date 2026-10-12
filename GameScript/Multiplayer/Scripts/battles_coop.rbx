@@ -2,7 +2,8 @@
 #  battles_coop.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Took a joining player's party_member_max only as a number, 0 for anything else, instead of failing the battle's start
+#      Paulinchen  2026-10-12: Joined the battle of the story whose call is about to bring the player over instead of turning it down, dropping the call, since its teller holds a member who missed the invite still until the battle ends
+#                            - Took a joining player's party_member_max only as a number, 0 for anything else, instead of failing the battle's start
 #                            - Picked a defeat scene of the troop for a guest who takes the battle over, even when it kept one of a former battle
 #                            - Read a player another game sent only with numbers for its seat, party_member_max, places and shares and a list for its HP and MP, dropping a field of another kind, logged once, and the player whose seat is no number
 #                            - Dropped an enemy of the host's troop whose id, place or mark is no number, logged once, instead of failing on every such troop
@@ -1476,11 +1477,13 @@ module MGQ_MpBattlesCoop
     return decline(peer, message, "the player is on map #{$game_map.map_id}, not #{message['map']}") unless message["map"].to_i == $game_map.map_id
     return decline(peer, message, "the player is in a multiplayer battle (#{MGQ_MpBattlesSync.role})") unless MGQ_MpBattlesSync.role.nil?
     return decline(peer, message, "the player stayed busy for #{ACCEPT_FRAMES / 60} s") if expired?(invite)
-    return decline(peer, message, "the leader's story is about to bring the player over") if MGQ_MpCoopGather.coming?
+    story_battle = MGQ_MpCoopGather.calling_battle?(peer, message["map"].to_i)
+    return decline(peer, message, "the leader's story is about to bring the player over") if MGQ_MpCoopGather.coming? && !story_battle
     return decline(peer, message, "the player trades") if raid? && trading?
     return unless free?
 
     @invite = nil
+    MGQ_MpCoopGather.drop_call("the player joins the battle of the story that called them") if story_battle
     accept(peer, message)
   rescue => e
     @invite = nil

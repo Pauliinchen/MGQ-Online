@@ -2,6 +2,7 @@
 #  coop_gather_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Checked that only a battle of the calling leader on the map the call leads to belongs to the call, while it stands
 #      Paulinchen  2026-10-11: Checked that a follow to another map shows the followers the map left behind hidden
 #                            - Stood in for the player's followers
 #                            - Checked that a map from 1000 on is found in the folder the game keeps it in
@@ -96,6 +97,14 @@ $frame_count += MGQ_MpCoopGather::GATHER_FRAMES - 2 * 60
 check("then names that they come once free, without a time", gather.own_doing, "Joining Leader once free")
 $frame_count += MGQ_MpCoopGather::CALL_LAPSE_FRAMES
 check("until the calls stop", [gather.coming?, gather.own_doing], [false, nil])
+
+$leader.state["id"] = "leader"
+other = MGQ_MpOverworldSync::Peers::Peer.new(3, { "name" => "Other", "id" => "other" })
+gather.called($leader, place)
+check("a battle of the calling leader on the map the call leads to belongs to the call, one elsewhere or of another player does not",
+      [gather.calling_battle?($leader, 9), gather.calling_battle?($leader, 4), gather.calling_battle?(other, 9)], [true, false, false])
+$frame_count += MGQ_MpCoopGather::CALL_LAPSE_FRAMES + 1
+check("nor once the call lapsed", gather.calling_battle?($leader, 9), false)
 
 gather.called($leader, place)
 $frame_count = 100

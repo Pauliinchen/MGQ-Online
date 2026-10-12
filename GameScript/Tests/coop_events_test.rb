@@ -2,7 +2,8 @@
 #  coop_events_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Checked that a page of the leader's story that fails to hold waits for the member as the game's own pages do
+#      Paulinchen  2026-10-12: Checked that a member stands free while the leader fights the story's battle, and still again once the story goes on
+#                            - Checked that a page of the leader's story that fails to hold waits for the member as the game's own pages do
 #                            - Checked that a leader holding the game's skip tells one page every ten frames and the end only of the pages told, and the last page once the skip is let go, the event ended or a battle was called
 #                            - Checked that a party of four hears each page in one message, which a member who plays their own story ignores, saying so once
 #      Paulinchen  2026-10-11: Checked that a chest turning on a chest flag stays a chest, in the game and in the generator, and stood in for the chest flags
@@ -709,6 +710,10 @@ leader.state["telling"] = "1"
 scene = Scene_Map.new
 scene.update_call_menu
 check("blocked while it plays: no moving, no menu", [$game_player.movable?, scene.menu_calling], [false, false])
+leader.state["scene"] = "battle"
+check("free while the leader fights the story's battle, which a member who missed its invite would stand through", [$game_player.movable?, MGQ_MpCoopGather.blocked?], [true, false])
+leader.state.delete("scene")
+check("and blocked again once the story goes on", MGQ_MpCoopGather.blocked?, true)
 leader.state["map"] = "5"
 check("a member on another map, whom the story started without, plays on", [$game_player.movable?, MGQ_MpCoopGather.blocked?], [true, false])
 leader.state["map"] = "8"

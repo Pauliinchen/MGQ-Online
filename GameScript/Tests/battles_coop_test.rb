@@ -2,7 +2,8 @@
 #  battles_coop_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Checked that a leave from a player outside the battle tells nothing
+#      Paulinchen  2026-10-12: Checked that the battle of the story that calls the player over is joined and drops the call, while another player's invite is turned down
+#                            - Checked that a leave from a player outside the battle tells nothing
 #                            - Checked that the host keeps the actions there when a guest's commands name an id or a target too large or fail to apply
 #                            - Checked that a defeat scene id too large for the game or an enemy that is no id is replaced by one here
 #                            - Checked that a join whose party_member_max is no number still forms the party
@@ -761,6 +762,21 @@ MGQ_MpBattlesCoop.instance_variable_get(:@invite)[:at] -= 60
 MGQ_MpBattlesCoop.on_map
 check("an invite that waited past three seconds is turned down, not joined", [$sent.map { |_, text| fields_of(text)["battle"] }, MGQ_MpBattlesSync.role], [["decline"], nil])
 check("and the log says why", $log.grep(/declined Friend \(seat 2\)'s invite to battle i2: the player stayed busy for 3 s/).size, 1)
+
+# Invites while the leader's story calls the player over.
+$sent.clear
+$gather_call = [7, 5]
+MGQ_MpBattlesCoop.take(mate, invite_of.call("s1"))
+MGQ_MpBattlesCoop.on_map
+check("an invite of another player while the story calls is turned down", [$sent.map { |_, text| fields_of(text)["battle"] }, $gather_call], [["decline"], [7, 5]])
+$sent.clear
+$gather_call = [mate.seat, 5]
+MGQ_MpBattlesCoop.take(mate, invite_of.call("s2"))
+MGQ_MpBattlesCoop.on_map
+check("the battle of the story that calls is joined, which drops the call",
+      [$sent.map { |_, text| fields_of(text)["battle"] }.include?("decline"), MGQ_MpBattlesSync.role, MGQ_MpBattlesSync.battle_id, $gather_call, !$gather_dropped.nil?],
+      [false, :guest, "s2", nil, true])
+MGQ_MpBattlesCoop.ended
 
 # A random encounter waits for the party members on the map who are busy.
 $setup.clear

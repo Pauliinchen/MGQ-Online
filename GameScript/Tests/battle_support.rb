@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-12: Stood in for a troop whose enemies all fell and for a battle that ended, as the game tells them
+#                            - Stood in for the leader's call standing, the battle of its story and dropping it
 #      Paulinchen  2026-10-11: Stood in for whether a character stands and whether the party takes commands, as the game tells them
 #                            - Loaded ui_layout.rbx and stood in for Player.ini, the screen's update and a window's new width, which the waiting box follows
 #                            - Let the real waiting box run: stood in for the screen, the windows' contents, the cancel button and the scenes' base, loaded ui.rbx, and stopped a wait that never ends
@@ -78,7 +79,13 @@ module MGQ_MpOverworldSync
     def self.status; { "seat" => $my_seat.to_s }; end
   end
 end
-module MGQ_MpCoopGather; def self.coming?; false; end; end
+# The leader's call, which coop_gather_test.rb covers: $gather_call is the calling player's seat and
+# the map the call leads to while one stands, and the reason it was dropped is kept.
+module MGQ_MpCoopGather
+  def self.coming?; !$gather_call.nil?; end
+  def self.calling_battle?(peer, map_id); $gather_call == [peer.seat, map_id]; end
+  def self.drop_call(reason); $gather_dropped = reason; $gather_call = nil; end
+end
 module MGQ_MpCoopScene; MAX_PICTURE = 100; end
 # The level sync, which level_sync_test.rb covers: the battle's level is $sync_level, and what the
 # co-op battle asks of it is kept.

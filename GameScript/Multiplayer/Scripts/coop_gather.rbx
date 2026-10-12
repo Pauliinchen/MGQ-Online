@@ -2,6 +2,8 @@
 #  coop_gather.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Let a player in a Classic world move while the teller fights the story's battle too, which held a member who missed its invite still until it ended
+#                            - Told whether a battle invite comes from the player whose story calls the player over, on the map the call leads to
 #      Paulinchen  2026-10-11: Showed the player's followers again when a call, a follow or a teleport takes them to another map, since the events that show them again on leaving a place such as Hades never ran and Formation stayed shut
 #                            - Told whether a call, a follow or a teleport is ready to bring the player over, and had the pages of the teller's story give way to it
 #                            - Looked for a map from 1000 on in the folder the game keeps it in, through the game's own file name, so a follow or teleport there is no longer dropped as a map this game lacks
@@ -443,6 +445,7 @@ module MGQ_MpCoopGather
       @gather.delete(:lapse)
       @gather[:name] = peer.state["name"].to_s
     end
+    @gather[:id] = peer.state["id"].to_s
     @gather[:place] = place
     @gather[:warp_ban] = warp_ban
     @gather[:called] = Graphics.frame_count
@@ -660,6 +663,17 @@ module MGQ_MpCoopGather
     !@gather.nil? && within?(@gather[:called], lapse_of(@gather))
   end
 
+  # Reports whether a battle another player invites to belongs to the story that calls the player
+  # over: its host is the player whose call stands, and it runs on the map the call leads to.
+  #
+  # @param peer [MGQ_MpOverworldSync::Peers::Peer] The battle's host.
+  # @param map_id [Integer] The battle's map.
+  # @return [Boolean] Whether it does.
+  def self.calling_battle?(peer, map_id)
+    gather = @gather
+    coming? && gather[:id] == peer.state["id"].to_s && !gather[:place].nil? && gather[:place][0] == map_id
+  end
+
   # Keeps a random encounter away while the leader's call brings the player over, drawing new
   # steps for ones that ran out, which would start a battle the moment the player arrives.
   #
@@ -752,8 +766,8 @@ module MGQ_MpCoopGather
   # player's map, their leader's or in a Raid World the teller's there. A member it started
   # without plays on elsewhere, and so does a player whose story does not match the teller's.
   #
-  # A Raid World's teller in the story's battle holds nobody: a player who came after its invites
-  # could otherwise neither move nor join it until it ended.
+  # A teller in the story's battle holds nobody: a player who came after its invites could
+  # otherwise neither move nor join it until it ended.
   #
   # @return [Boolean] Whether they do.
   def self.blocked?
@@ -761,7 +775,7 @@ module MGQ_MpCoopGather
     return false unless lead.is_a?(MGQ_MpOverworldSync::Peers::Peer) && lead.state["telling"] == "1"
     return false unless lead.state["map"].to_i == $game_map.map_id && MGQ_MpCoop::Scope.watches?(lead)
 
-    !(MGQ_MpCoop::Scope.raid? && lead.state["scene"] == "battle")
+    lead.state["scene"] != "battle"
   end
 
   # Reports whether the player only waits for the party's story: as leader while it gathers, as
