@@ -2,6 +2,7 @@
 //  DirectoryClient.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-12: Named the version of this game in the X-MGQ-Version header of every request, which lets the relay turn away outdated games
 //      Paulinchen  2026-10-10: Named the dev feature in the X-MGQ-Features header of a development build, which lets it give a Raid World a starting save
 //      Paulinchen  2026-10-09: Made and changed a world with whether it turns other mods off, and read it from the list, by the world's type where the relay names none
 //                            - Read the mods the catalog marks personal, those of a name alone among them
@@ -74,6 +75,11 @@ internal sealed partial class DirectoryClient
     /// The request header that names what this game plays, which the relay keeps games without it out of Raid Worlds by.
     /// </summary>
     public const string FeaturesHeader = "X-MGQ-Features";
+
+    /// <summary>
+    /// The request header that names the version of this game, which the relay turns outdated games away by.
+    /// </summary>
+    public const string VersionHeader = "X-MGQ-Version";
 
     /// <summary>
     /// The feature a development build names besides Raid Worlds, which the relay lets give a Raid World a starting save.
@@ -756,6 +762,7 @@ internal sealed partial class DirectoryClient
     {
         var started = Stopwatch.GetTimestamp();
         request.Headers.Add(FeaturesHeader, Features);
+        request.Headers.Add(VersionHeader, UpdateCheck.ModVersion);
 
         try
         {

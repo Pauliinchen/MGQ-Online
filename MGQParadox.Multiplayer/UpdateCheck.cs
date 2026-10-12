@@ -2,6 +2,7 @@
 //  UpdateCheck.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-12: Told the version this DLL names to the relay, without the commit
 //      Paulinchen  2026-10-10: Told whether this DLL is a development build, which may give a Raid World a starting save
 //      Paulinchen  2026-10-07: Started its thread through Threads, shared with the connections
 //      Paulinchen  2026-09-30: Asked the repository under its new name, MGQ-Online
@@ -70,6 +71,11 @@ internal static class UpdateCheck
     public static bool DevelopmentBuild { get; } = IsDevelopmentVersion(InformationalVersion);
 
     /// <summary>
+    /// The version this DLL names to the relay, like <c>0.6.4</c>, or <c>0.0.0-dev</c> for a development build.
+    /// </summary>
+    public static string ModVersion { get; } = VersionOf(InformationalVersion);
+
+    /// <summary>
     /// The version the build stamped, like <c>0.1.0+&lt;commit&gt;</c>, empty when it stamped none.
     /// </summary>
     private static string InformationalVersion =>
@@ -109,6 +115,13 @@ internal static class UpdateCheck
         var version = informationalVersion.Split('+')[0];
         return !version.Contains('-') && Version.TryParse(version, out var parsed) ? parsed : null;
     }
+
+    /// <summary>
+    /// Reads the version from the DLL's informational version, leaving out the commit.
+    /// </summary>
+    /// <param name="informationalVersion">The version the build stamped, like <c>0.1.0+&lt;commit&gt;</c>.</param>
+    /// <returns>The version, like <c>0.1.0</c> or <c>0.0.0-dev</c>; empty when the build stamped none.</returns>
+    internal static string VersionOf(string informationalVersion) => informationalVersion.Split('+')[0];
 
     /// <summary>
     /// Tells whether the DLL's informational version is the development stamp.

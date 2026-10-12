@@ -2,6 +2,7 @@
 //  UpdateCheckTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-12: Covered the version named to the relay, which leaves out the commit
 //      Paulinchen  2026-10-10: Covered that only the 0.0.0-dev stamp counts as a development build
 //      Paulinchen  2026-09-30: Created
 //
@@ -28,6 +29,20 @@ public sealed class UpdateCheckTests
     [InlineData("", null)]
     public void ReleaseVersionOf_SkipsDevelopmentBuilds(string informationalVersion, string? expected) =>
         Assert.Equal(expected, UpdateCheck.ReleaseVersionOf(informationalVersion)?.ToString());
+
+    /// <summary>
+    /// Asserts that the version named to the relay leaves out the commit and keeps a development stamp.
+    /// </summary>
+    /// <param name="informationalVersion">The version the build stamped.</param>
+    /// <param name="expected">The version named to the relay.</param>
+    [Theory]
+    [InlineData("0.6.4+4357977", "0.6.4")]
+    [InlineData("0.6.4", "0.6.4")]
+    [InlineData("0.0.0-dev+9611cfb", "0.0.0-dev")]
+    [InlineData("0.6.0-beta+9611cfb", "0.6.0-beta")]
+    [InlineData("", "")]
+    public void VersionOf_LeavesOutTheCommit(string informationalVersion, string expected) =>
+        Assert.Equal(expected, UpdateCheck.VersionOf(informationalVersion));
 
     /// <summary>
     /// Asserts that only the development stamp counts as a development build, never a pre-release.

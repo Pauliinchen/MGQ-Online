@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-12: Gave up connecting at once when told to stop, so a world left meanwhile no longer takes a seat afterwards
+//                            - Named the version of this game in the X-MGQ-Version header
 //      Paulinchen  2026-10-08: Named the Raid Worlds this game plays in the X-MGQ-Features header
 //      Paulinchen  2026-10-07: Sent any text frame, such as a chat line the relay keeps, not only the ping
 //                            - Sent the world's auth key in the X-MGQ-Auth header instead of the address, and closed the WebSocket through the shared helper
@@ -112,6 +113,7 @@ internal sealed class RelayWorldChannel : IDisposable
         socket.Options.SetRequestHeader(DirectoryClient.PlayerHeader, playerKey);
         socket.Options.SetRequestHeader(DirectoryClient.AuthHeader, authKey);
         socket.Options.SetRequestHeader(DirectoryClient.FeaturesHeader, DirectoryClient.Features);
+        socket.Options.SetRequestHeader(DirectoryClient.VersionHeader, UpdateCheck.ModVersion);
         var address = new Uri(relay, $"/v1/world/{room}?name={Uri.EscapeDataString(playerName)}");
         refusal = null;
         refusalCode = null;

@@ -2,7 +2,8 @@
 //  TestRelay.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-12: Closed a peer that sends more than 60 messages a second after a burst of 240 with 4003, as the relay does, and counted those closes for the tests
+//      Paulinchen  2026-10-12: Kept the address and the X-MGQ-Version header of every request, for the tests
+//                            - Closed a peer that sends more than 60 messages a second after a burst of 240 with 4003, as the relay does, and counted those closes for the tests
 //                            - Refused a create past a player's world limit and a ban past a world's removed players with 429, as the relay does, once a test sets the limits
 //                            - Closed the earlier connection of a player once the new one is let in, before its handshake, freed the seat of a handshake that fails, and let tests hold back the next world room request
 //      Paulinchen  2026-10-10: Refused a Raid World with a player's choice, and with a starting save unless the game names the dev feature, as the relay does
@@ -45,6 +46,7 @@
 //----------------------------------------------------------------
 
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -213,6 +215,11 @@ internal sealed class TestRelay : IDisposable
     /// What the last request named in the features header, <see langword="null"/> before one named any.
     /// </summary>
     public string? LastFeatures { get; private set; }
+
+    /// <summary>
+    /// The address path and the version header of every request, in the order they arrived.
+    /// </summary>
+    public ConcurrentQueue<(string Path, string? Version)> Versions { get; } = new();
 
     /// <summary>
     /// How many peers the relay holds in all its rooms.
@@ -425,6 +432,7 @@ internal sealed class TestRelay : IDisposable
     {
         var parts = context.Request.Url!.AbsolutePath.Trim('/').Split('/');
         LastFeatures = context.Request.Headers[DirectoryClient.FeaturesHeader] ?? LastFeatures;
+        Versions.Enqueue((context.Request.Url!.AbsolutePath, context.Request.Headers[DirectoryClient.VersionHeader]));
 
         if (!context.Request.IsWebSocketRequest && parts is ["v1", "worlds", _, "story", ..])
         {

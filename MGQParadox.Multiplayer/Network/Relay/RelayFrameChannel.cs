@@ -2,6 +2,7 @@
 //  RelayFrameChannel.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-12: Named the version of this game in the X-MGQ-Version header
 //      Paulinchen  2026-10-07: Closed the WebSocket through the shared helper
 //      Paulinchen  2026-10-06: Told when the relay ended a host's lone wait
 //                            - Took the failures of the reads a timeout leaves behind
@@ -18,6 +19,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using MGQParadox.Multiplayer.Network.Transport;
+using MGQParadox.Multiplayer.Network.World;
 
 namespace MGQParadox.Multiplayer.Network.Relay;
 
@@ -87,6 +89,7 @@ internal sealed class RelayFrameChannel : IFrameChannel
     public static RelayFrameChannel Connect(Uri relay, string room, bool host, TimeSpan timeout)
     {
         var socket = new ClientWebSocket();
+        socket.Options.SetRequestHeader(DirectoryClient.VersionHeader, UpdateCheck.ModVersion);
         var address = new Uri(relay, $"/v1/room/{room}?role={(host ? "host" : "guest")}");
 
         try
