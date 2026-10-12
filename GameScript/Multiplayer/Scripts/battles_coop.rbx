@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-12: Took a joining player's party_member_max only as a number, 0 for anything else, instead of failing the battle's start
+#                            - Picked a defeat scene of the troop for a guest who takes the battle over, even when it kept one of a former battle
 #      Paulinchen  2026-10-11: Left the party members who said no to starting a battle with the player out of its invites, and took the party members' offers and answers about a battle outside the party
 #                            - Stretched the steps to the next random encounter by half once another player who would fight it stands within NEARBY_TILES, a party member in a Classic world, instead of once per member or by half a draw per player on the map, and invited only the players that near to a Raid World's battle, so players across a large map no longer keep each other from meeting enemies or pull each other into fights
 #                            - Opened the player's command phase while their own Frontline is down but their Backline may swap in, so they can still change the formation
@@ -2085,8 +2086,8 @@ module MGQ_MpBattlesCoop
   end
 
   # Readies the battle a guest takes over from the host's stream: the counters the game sets for
-  # every battler at a battle's start, keeping the barriers the stream gave, and a defeat scene,
-  # which the game picks at the start and with each enemy's action.
+  # every battler at a battle's start, keeping the barriers the stream gave, and a defeat scene of
+  # its enemies, which the game picks at the start and with each enemy's action.
   def self.resume_alone
     ($game_party.battle_members + $game_troop.members).each do |battler|
       next unless battler.respond_to?(:set_counter)
@@ -2095,14 +2096,7 @@ module MGQ_MpBattlesCoop
       battler.set_counter
       MGQ_MpBattlesSync::Playback.set_walls(battler, walls) if walls
     end
-    return unless $game_temp.respond_to?(:lose_event_id) && $game_temp.lose_event_id.to_i <= 0
-
-    enemy = $game_troop.members.sample
-    return unless enemy && enemy.respond_to?(:lose_event_id)
-
-    $game_temp.lose_event_id = enemy.lose_event_id
-    $game_temp.lose_event_enemy_id = enemy.id
-    log("picked the defeat scene of enemy #{enemy.enemy_id rescue '?'} #{enemy.name rescue '?'} (event #{enemy.lose_event_id})")
+    MGQ_MpBattlesSync::Live.pick_defeat_scene(false)
   end
 
   # Ends the co-op side of the battle, which goes on as the player's own: their own full team, the

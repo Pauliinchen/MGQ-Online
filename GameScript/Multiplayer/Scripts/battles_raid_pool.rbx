@@ -2,6 +2,7 @@
 #  battles_raid_pool.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Left the victory over enemies whose pools empty during a live battle's wait for commands to the wait, which won it a second time as the turn started
 #      Paulinchen  2026-10-11: Told the story bosses newly counted as raid bosses, such as the four spirits and the Part 2 queens' own fights, beaten by what their events set after the fight
 #                            - Made losing a side battle the game's defeat, as losing the boss's own battle is, instead of a return to the map at 1 HP that let the player fight again at once
 #                            - Listed the pools the game knows, which the World overview reads
@@ -810,8 +811,12 @@ module MGQ_MpRaidPool
   # Takes the pools' HP every INPUT_SYNC_SECONDS while the battle waits for its players' commands,
   # so its bar and enemies show the other battles' blows and the regeneration meanwhile. Nothing
   # of the battle's own runs then, so the HP undoes none of its damage. A battle whose enemies all
-  # fall wins, as at the command phase; a guest's keeps its host's HP and falls with its host's.
+  # fall wins, as at the command phase, or by the answer of a live battle's wait for the other
+  # players' commands while one is open; a guest's keeps its host's HP and falls with its host's.
   # Called after Scene_Battle#update_basic, every frame.
+  #
+  # The host's wait runs inside Scene_Battle#turn_start, which would start the turn on a battle
+  # already won here.
   def self.waiting_for_commands
     fight = @fight
     return unless fight && reporting?(fight) && MGQ_MpGame.get(BattleManager, :phase) == :input
@@ -821,9 +826,20 @@ module MGQ_MpRaidPool
     return if now - @synced_at < INPUT_SYNC_SECONDS
 
     @synced_at = now
-    BattleManager.judge_win_loss if sync(fight) && $game_troop.all_dead?
+    return unless sync(fight) && $game_troop.all_dead?
+    return log("every enemy fell while the live battle waits for commands: the wait wins the battle") if waiting?
+
+    BattleManager.judge_win_loss
   rescue => e
     log_once(:waiting_for_commands, "taking the pools' HP while waiting for commands failed: #{e.class}: #{e.message}")
+  end
+
+  # Reports whether a live battle's wait for its players is open, see
+  # MGQ_MpBattlesSync::Waiting.active?.
+  #
+  # @return [Boolean] Whether one is.
+  def self.waiting?
+    defined?(MGQ_MpBattlesSync::Waiting) && MGQ_MpBattlesSync::Waiting.respond_to?(:active?) && MGQ_MpBattlesSync::Waiting.active? ? true : false
   end
 
   # Reports what the battle dealt as one of its actions ends, at most every REPORT_SECONDS, so the

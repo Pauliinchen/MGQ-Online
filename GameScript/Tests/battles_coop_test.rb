@@ -5,6 +5,7 @@
 #      Paulinchen  2026-10-12: Checked that the host keeps the actions there when a guest's commands name an id or a target too large or fail to apply
 #                            - Checked that a defeat scene id too large for the game or an enemy that is no id is replaced by one here
 #                            - Checked that a join whose party_member_max is no number still forms the party
+#                            - Checked that a guest leaving a story battle or taking a battle over picks a defeat scene of its enemies instead of none or a former battle's, that a host keeps its own, and that a battle without one is left as an escape
 #      Paulinchen  2026-10-11: Checked that leaving a story's battle without escape loses it for the player alone, and that any other battle is left as an escape
 #                            - Checked that the steps to the next random encounter stretch by half while another player stands near, in a party and in a Raid World, and that a Raid World's battle invites only the players near
 #                            - Checked that the party takes commands while the player's Frontline is down and their Backline may swap in, and not once it may not
@@ -433,6 +434,12 @@ check("in co-op every player tries to escape as in any battle", MGQ_MpBattlesSyn
 
 # Leaving a story's battle without escape loses it for the player alone, since its event has no
 # branch for an escape; any other battle is left as an escape.
+class Game_Temp; attr_accessor :lose_event_id, :lose_event_enemy_id; end
+class Game_Enemy; def lose_event_id; 6000 + @enemy_id; end; def id; @enemy_id; end; end
+known_events = $data_common_events
+$data_common_events = []
+$data_common_events[6031] = $data_common_events[6032] = $data_common_events[6099] = :scene
+$game_temp.lose_event_id = 6031
 def BattleManager.process_defeat; $defeated = true; end
 scene.instance_variable_set(:@info_viewport, Struct.new(:visible).new(true))
 leave = lambda do |event_proc, can_escape|
@@ -448,6 +455,25 @@ check("leaving a story's battle without escape loses it here, the others told th
       leave.call(proc {}, false), [true, false, true, ["leave"]])
 check("leaving one the party may escape, or a battle no event started, is an escape",
       [leave.call(proc {}, true), leave.call(nil, false)], [[false, true, false, ["leave"]], [false, true, false, ["leave"]]])
+picked = [nil, 9999, 6099].map do |stale|
+  $game_temp.lose_event_id = stale
+  $game_temp.lose_event_enemy_id = nil
+  left = leave.call(proc {}, false)
+  [left[2], [6031, 6032].include?($game_temp.lose_event_id), $game_temp.lose_event_enemy_id == $game_temp.lose_event_id - 6000]
+end
+check("a guest leaving it takes a defeat scene of this battle's enemies, whether it had none or a former battle's",
+      picked, [[true, true, true]] * 3)
+$data_common_events[6031] = $data_common_events[6032] = nil
+$game_temp.lose_event_id = nil
+$log.clear
+check("and leaves it as an escape when none of them has a scene this game knows", [leave.call(proc {}, false)[1, 2], $log.grep(/leaves it as an escape/).size], [[true, false], 1])
+$data_common_events[6031] = $data_common_events[6032] = :scene
+role = MGQ_MpBattlesSync.instance_variable_get(:@role)
+MGQ_MpBattlesSync.instance_variable_set(:@role, :host)
+$game_temp.lose_event_id = 6031
+$game_temp.lose_event_enemy_id = 31
+check("a host leaving it keeps the defeat scene its battle picked", [leave.call(proc {}, false)[2], $game_temp.lose_event_id, $game_temp.lose_event_enemy_id], [true, 6031, 31])
+MGQ_MpBattlesSync.instance_variable_set(:@role, role)
 MGQ_MpGame.set(BattleManager, :event_proc, nil)
 
 $turn_ends = 0
@@ -458,10 +484,7 @@ check("when the host gets away, the guest fights on alone", [MGQ_MpBattlesCoop.a
 check("from a new command phase", [$turn_ends, $commands_phase, $aborted], [1, true, false])
 
 # The defeat scene of a lost battle, which the guest's own battle never picks.
-class Game_Temp; attr_accessor :lose_event_id, :lose_event_enemy_id; end
-class Game_Enemy; def lose_event_id; 6000 + @enemy_id; end; def id; @enemy_id; end; end
-known_events = $data_common_events
-$data_common_events = []
+$data_common_events[6031] = $data_common_events[6032] = nil
 $data_common_events[6040] = :scene
 $game_temp.lose_event_id = nil
 MGQ_MpBattlesSync::Live.take_defeat_scene(["end", "process_defeat", 6040, 40])
@@ -892,11 +915,15 @@ check("a guest whose host left before the party came starts the battle as its ow
       [$battle_started, $turn_ends, $commands_phase, MGQ_MpBattlesSync.role, MGQ_MpBattles.running?], [true, 0, true, nil, false])
 form_guest_battle(scene, "g33")
 $battle_started = false
-$game_temp.lose_event_id = 0
+$data_common_events = [nil] * 6000
+$data_common_events[6031] = $data_common_events[6032] = $data_common_events[6099] = :scene
+$game_temp.lose_event_id = 6099
 MGQ_MpBattlesCoop.take_over(scene)
 check("one whose host left later goes on with the counters the start sets",
       [$battle_started, $turn_ends, ($game_party.battle_members + $game_troop.members).all?(&:counters_set)], [false, 1, true])
-check("and a defeat scene of its enemies", $game_troop.members.map(&:lose_event_id).include?($game_temp.lose_event_id), true)
+check("and a defeat scene of its enemies instead of a former battle's",
+      [[6031, 6032].include?($game_temp.lose_event_id), $game_temp.lose_event_enemy_id == $game_temp.lose_event_id - 6000], [true, true])
+$data_common_events = known_events
 
 # A guest the host's party leaves out, since it joined after the host stopped waiting.
 $my_seat = 7

@@ -3,6 +3,8 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-12: Took the host's defeat scene only within this game's common events, and its enemy only as an id, else an enemy's here
+#                            - Won the battle at once when its enemies fall while the host waits for the commands, and never started a turn on a battle that ended meanwhile
+#                            - Picked a defeat scene of this battle's enemies for a guest who leaves a story's battle, and left it as an escape when none has one, instead of failing on a missing or former battle's scene
 #      Paulinchen  2026-10-11: Named in the waiting box the guests whose commands or ready word the host still waits for, with the seconds waited, the wait for a player worded as the waiting box words it
 #                            - Lost a story's battle without escape for the co-op player who leaves it, while the others fight on, since the abort let the story play on as won
 #                            - Told the guests whom the host still waits for, as that changes and as a command phase opens, so their own waiting boxes name them too
@@ -268,7 +270,7 @@ module MGQ_MpBattlesSync
           Live.guest_turn(scene)
         elsif MGQ_MpBattlesSync.host?
           # Alone, the host closes the phase too, so the next one settles who fights on.
-          if MGQ_MpBattlesSync.solo? || Live.host_commands(scene)
+          if (MGQ_MpBattlesSync.solo? || Live.host_commands(scene)) && !Live.ended_in_wait?(scene)
             Live.close_phase
             original.call
           end
@@ -354,6 +356,7 @@ module MGQ_MpBattlesSync
       :forfeit => "the other side forfeited",
       :broken => "it broke off",
       :gone => "the other side is gone",
+      :won => "its enemies fell while it waited for commands",
     }
 
     # What starts the waiting box's names line while the host waits for the players' commands.
@@ -596,14 +599,9 @@ module MGQ_MpBattlesSync
     #   and its enemy.
     def self.take_defeat_scene(event)
       scene_id, enemy_id = event[2], event[3]
-      unless scene_id.is_a?(Integer) && scene_id > 0 && scene_id < $data_common_events.size && $data_common_events[scene_id]
-        enemy = $game_troop.members.sample
-        unless enemy
-          return MGQ_MpBattlesSync.log("no defeat scene: the host's (#{scene_id.inspect[0, 40]}) is unknown here and no enemy is left to pick one")
-        end
-
-        MGQ_MpBattlesSync.log("the host's defeat scene #{scene_id.inspect[0, 40]} is unknown here, took #{MGQ_MpBattlesSync.named(enemy)}'s instead")
-        scene_id, enemy_id = enemy.lose_event_id, enemy.id
+      unless defeat_scene?(scene_id)
+        MGQ_MpBattlesSync.log("the host's defeat scene #{scene_id.inspect[0, 40]} is unknown here, picking one of an enemy here")
+        return pick_defeat_scene(false)
       end
       unless enemy_id.is_a?(Integer)
         enemy = $game_troop.members.sample
@@ -613,6 +611,42 @@ module MGQ_MpBattlesSync
       MGQ_MpBattlesSync.log("defeat scene: common event #{scene_id}, enemy #{enemy_id.inspect}")
       $game_temp.lose_event_id = scene_id
       $game_temp.lose_event_enemy_id = enemy_id
+    end
+
+    # Sets the defeat scene of a battle this game did not pick one for: the one it has, when kept
+    # and known to this game, else one of a random enemy of the troop whose scene this game knows,
+    # else of any enemy, as the game picks one at the battle's start.
+    #
+    # A guest's own scene is nil or a former battle's, since its battle never ran the game's picks.
+    #
+    # @param keep_own [Boolean] Whether a scene this game already set stays, as on the host.
+    # @return [Boolean] Whether a scene this game knows is set.
+    def self.pick_defeat_scene(keep_own)
+      return false unless $game_temp.respond_to?(:lose_event_id)
+      return true if keep_own && defeat_scene?($game_temp.lose_event_id)
+
+      enemies = $game_troop.members.select { |enemy| enemy.respond_to?(:lose_event_id) }
+      enemy = enemies.select { |member| defeat_scene?(member.lose_event_id) }.sample || enemies.sample
+      unless enemy
+        MGQ_MpBattlesSync.log("no defeat scene: no enemy is left to pick one")
+        return false
+      end
+
+      $game_temp.lose_event_id = enemy.lose_event_id
+      $game_temp.lose_event_enemy_id = enemy.id
+      MGQ_MpBattlesSync.log("picked the defeat scene of #{MGQ_MpBattlesSync.named(enemy)}: common event #{enemy.lose_event_id.inspect[0, 40]}")
+      defeat_scene?(enemy.lose_event_id)
+    rescue => e
+      MGQ_MpBattlesSync.log_once(:pick_defeat_scene, "picking a defeat scene failed: #{e.class}: #{e.message}")
+      false
+    end
+
+    # Reports whether a defeat scene is a common event this game has.
+    #
+    # @param scene_id [Object] The scene's common event id, as a peer or the game set it.
+    # @return [Boolean] Whether it is.
+    def self.defeat_scene?(scene_id)
+      scene_id.is_a?(Integer) && scene_id > 0 && scene_id < $data_common_events.size && $data_common_events[scene_id] ? true : false
     end
 
     # Ends the guest's battle the way the host's ended: as it ended in a co-op battle and on the
@@ -658,14 +692,17 @@ module MGQ_MpBattlesSync
       end
     end
 
-    # The host waits for the guests' commands and gives them to their characters.
+    # The host waits for the guests' commands and gives them to their characters. The wait ends as
+    # won once every enemy fell meanwhile, as a Raid World's pools kill them.
     #
     # @param scene [Scene_Battle] The battle.
     # @return [Boolean] Whether the turn goes on.
     def self.host_commands(scene)
       return host_guests_commands(scene) if MGQ_MpBattlesSync.several?
 
-      commands = Waiting.wait_for(scene, "Waiting for #{MGQ_MpBattlesSync.player}'s commands...") { Channel.take("commands") }
+      commands = Waiting.wait_for(scene, "Waiting for #{MGQ_MpBattlesSync.player}'s commands...") do
+        $game_troop.all_dead? ? :won : Channel.take("commands")
+      end
       return end_early(scene, commands) if commands.is_a?(Symbol)
 
       Commands.apply(commands)
@@ -688,6 +725,18 @@ module MGQ_MpBattlesSync
       MGQ_MpBattlesSync.mode.settle(scene)
       # Everyone chooses now, the host too, which a guest done choosing sees while its turn waits.
       tell_waiting(MGQ_MpBattlesSync.guests_in + [MGQ_MpOverworldSync::Me.seat])
+    end
+
+    # As host, reports whether the battle ended while the turn waited to start, such as by an
+    # ending its wait for commands answered, and logs it; the turn then never starts.
+    #
+    # @param scene [Scene_Battle] The battle.
+    # @return [Boolean] Whether it ended.
+    def self.ended_in_wait?(scene)
+      return false unless BattleManager.battle_end? || scene.scene_changing?
+
+      MGQ_MpBattlesSync.log("the battle ended before turn #{MGQ_MpBattlesSync.turn + 1} started: the turn is left out")
+      true
     end
 
     # As host, closes the command phase as the turn starts.
@@ -722,7 +771,8 @@ module MGQ_MpBattlesSync
     # The host of a co-op battle or a team duel waits for the commands of every guest still in the
     # battle who has not sent theirs this phase, and gives them to their characters as they come. A
     # guest who left is answered without commands, see MGQ_MpBattles::Mode#left. The players whose
-    # commands lost their target to another player's swap choose again.
+    # commands lost their target to another player's swap choose again. The wait ends as won once
+    # every enemy fell meanwhile, as a Raid World's pools kill them.
     #
     # @param scene [Scene_Battle] The battle.
     # @return [Boolean] Whether the turn goes on.
@@ -733,6 +783,8 @@ module MGQ_MpBattlesSync
         MGQ_MpBattlesSync.log("waiting for the commands of #{waiting.map { |seat| MGQ_MpBattlesSync.who(seat) }.join(', ')}")
       end
       answer = wait_telling(scene, "Waiting for the party's commands...", STILL_CHOOSING, lambda { waiting }) do
+        next :won if $game_troop.all_dead?
+
         waiting.dup.each do |seat|
           staying = MGQ_MpBattlesSync.guests_in.include?(seat)
           commands = Channel.take_from("commands", seat)
@@ -808,11 +860,15 @@ module MGQ_MpBattlesSync
     # Ends the battle before its course did.
     #
     # @param scene [Scene_Battle] The battle.
-    # @param reason [Symbol] :left when this player left, or an ending of Channel.ending.
-    # @return [Boolean] true when the battle goes on with the computer, see MGQ_MpBattlesSync.friend_gone.
+    # @param reason [Symbol] :left when this player left, :won when the enemies fell during the
+    #   host's wait for commands, or an ending of Channel.ending.
+    # @return [Boolean] true when the battle goes on, with the computer (see
+    #   MGQ_MpBattlesSync.friend_gone) or as the game holds its victory back.
     def self.end_early(scene, reason)
       MGQ_MpBattlesSync.log("the live battle ends early in turn #{MGQ_MpBattlesSync.turn}: #{END_REASONS.fetch(reason, reason.to_s)}")
       case reason
+      when :won
+        return win(scene)
       when :left
         forfeit(scene)
       when :forfeit
@@ -828,9 +884,27 @@ module MGQ_MpBattlesSync
       false
     end
 
+    # As host, wins the battle whose enemies all fell while it waited for the players' commands,
+    # once their collapse played, as the game judges after an action.
+    #
+    # The game holds its judgement back while one of its own battle actions is still due, and the
+    # turn must then start so the battle reaches it instead of standing still.
+    #
+    # @param scene [Scene_Battle] The battle.
+    # @return [Boolean] Whether the battle goes on: true when the game held its judgement back.
+    def self.win(scene)
+      scene.wait_for_effect if scene.respond_to?(:wait_for_effect)
+      BattleManager.judge_win_loss
+      return false if BattleManager.battle_end? || scene.scene_changing?
+
+      MGQ_MpBattlesSync.log("the game holds the victory back, the turn starts on the fallen enemies")
+      true
+    end
+
     # Leaves a live battle at once: a PvP battle is lost, without the chance of failing; a co-op
     # player leaves the battle, which the others fight on, and loses a story's battle they cannot
-    # escape (see story_battle?).
+    # escape (see story_battle?) with a defeat scene of its enemies, or leaves it as an escape when
+    # none of them has one this game knows.
     #
     # @param scene [Scene_Battle] The battle.
     def self.forfeit(scene)
@@ -848,6 +922,11 @@ module MGQ_MpBattlesSync
         Recorder.event("end", "process_abort", $game_temp.lose_event_id, $game_temp.lose_event_enemy_id)
         Recorder.finish(1)
       end
+      unless pick_defeat_scene(!MGQ_MpBattlesSync.guest?)
+        MGQ_MpBattlesSync.log("no enemy of the battle has a defeat scene here: the player leaves it as an escape")
+        return BattleManager.process_abort
+      end
+
       BattleManager.process_defeat
     end
 

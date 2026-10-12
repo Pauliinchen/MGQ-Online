@@ -4,6 +4,7 @@
 #  Changelog:
 #      Paulinchen  2026-10-12: Kept the computer's actions when a guest's commands fail to read or to apply, and took a command's skill or item only within its database and its target only as a place of the battle
 #                            - Showed the host's names unswapped when they fail to read
+#                            - Told whether a wait for the players is open, so the raid pool leaves a victory meanwhile to the wait
 #      Paulinchen  2026-10-11: Let the player move the waiting box and change its width with Alt, kept in Player.ini and never narrower than its text and the leave offer need, and dressed it in the interface look
 #                            - Let the waiting box name the players still waited for and count the seconds, written as the line above the player's head writes them, drawn once a second, before the leave offer takes the last line
 #                            - Named the wait for a player once, which the live battle and the playback share
@@ -1298,6 +1299,8 @@ module MGQ_MpBattlesSync
     def self.wait_for(scene, text, details = nil, prefix = WAITING_PREFIX)
       box = nil
       frames = 0
+      was_active = @active
+      @active = true
       held = hold_input(scene)
       loop do
         answer = yield
@@ -1316,8 +1319,20 @@ module MGQ_MpBattlesSync
         MGQ_MpGame.call(scene, :update_for_wait)
       end
     ensure
+      @active = was_active
       close(box)
       release_input(held)
+    end
+
+    # Reports whether a wait of wait_for is open, during which the battle updates without its course
+    # going on.
+    #
+    # The raid pool leaves the victory over enemies it kills meanwhile to the wait's answer, since
+    # the turn the host waits in would start on the finished battle.
+    #
+    # @return [Boolean] Whether one is.
+    def self.active?
+      @active ? true : false
     end
 
     # Deactivates the battle's windows that take input for a wait, since the battle keeps updating

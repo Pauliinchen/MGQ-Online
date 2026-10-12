@@ -2,6 +2,7 @@
 #  battle_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Stood in for a troop whose enemies all fell and for a battle that ended, as the game tells them
 #      Paulinchen  2026-10-11: Stood in for whether a character stands and whether the party takes commands, as the game tells them
 #                            - Loaded ui_layout.rbx and stood in for Player.ini, the screen's update and a window's new width, which the waiting box follows
 #                            - Let the real waiting box run: stood in for the screen, the windows' contents, the cancel button and the scenes' base, loaded ui.rbx, and stopped a wait that never ends
@@ -193,6 +194,7 @@ class Game_Troop
   def members; @enemies; end
   def members=(enemies); @enemies = enemies; end
   def make_actions; $troop_actions = ($troop_actions || 0) + 1; end
+  def all_dead?; Array(members).all? { |enemy| enemy.hidden? || enemy.dead? }; end
   def setup(troop_id); @troop_id = troop_id; @enemies = [Game_Enemy.new(0, troop_id)]; end
   attr_reader :troop_id
   # The enemies whose EXP, gold and drops a victory pays out, as the game counts them.
@@ -247,6 +249,7 @@ module BattleManager
   def self.shift_change?; $shift; end
   def self.bind?; false; end
   def self.battle_start; $battle_started = true; end
+  def self.battle_end?; $ending ? true : false; end
   def self.battle_end(_result); $game_party.battle_members.each { |actor| $game_library.count_up_actor_data(actor.id, :battle) }; end
 end
 $setup = []

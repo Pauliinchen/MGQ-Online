@@ -5,6 +5,7 @@
 #      Paulinchen  2026-10-12: Checked that the wire reads hostile lines as nil or unknown values without raising or making a symbol, and only fields an action result has
 #                            - Checked that the host's names, a stream line or a mode's message that fail are left out, and that a time stop without a battler ends
 #                            - Checked that a host's cut-in whose name holds a dot plays, one this game lacks erases its place, and that picture and screen calls with arguments this game cannot take are left out
+#                            - Checked that enemies falling while the host waits for one or several guests' commands win the battle once without starting the turn, and that a turn whose battle ended is left out
 #      Paulinchen  2026-10-11: Checked the waiting box in the layout: kept in Player.ini, its lines drawn anew at a new width and its least width
 #                            - Checked the waiting box: its lines, the names still waited for, the seconds drawn once a second, the leave offer, a battle's ending, a details that fails, the seat names and the playback's path
 #                            - Checked that the host's wait for the commands names who still chooses and tells the guests, and that a guest's box names them while the host's stream stalls
@@ -74,7 +75,8 @@ class Scene_Battle
   def command_escape; end
   def wait_for_message; end
 end
-module BattleManager; def self.judge_win_loss; true; end; end
+# A judgement ends the battle once every enemy fell, as the game's victory does.
+module BattleManager; def self.judge_win_loss; $judged = $judged.to_i + 1; $ending = true if $game_troop.all_dead?; true; end; end
 module Vocab
   Emerge = "%s appears!"
   Preemptive = "%s struck first!"
@@ -387,6 +389,43 @@ check("the host's wait for the commands names who still chooses", [answer, seen]
 check("and tells the guests whom it waits for as that changes, nobody once answered",
       $sent.map { |seat, text| [seat, fields_of(text)] }.select { |_, f| f["battle"] == "waiting" }.map { |seat, f| [seat, f[:payload]] },
       [[2, "2,3"], [3, "2,3"], [2, "3"], [3, "3"], [2, ""], [3, ""]])
+sync.finish
+
+# Enemies that fall while the host waits for the commands, as a Raid World's pools kill them, win
+# the battle at once, and the turn the host waited in never starts.
+fall_in_wait = lambda do |bid, seats|
+  sync.join_world(:host, bid, seats, "the party")
+  sync.battle_started
+  live.instance_variable_set(:@answered, [])
+  $frames = 0
+  $judged = 0
+  $turns_started = 0
+  $ending = false
+  open = []
+  $inject = lambda do |frame|
+    open << waiting.active?
+    $game_troop.members.each { |enemy| enemy.dead = true } if frame == 3
+  end
+  scene.turn_start
+  $inject = nil
+  result = [$turns_started, $judged, $frames, open.uniq, waiting.active?]
+  $game_troop.members.each { |enemy| enemy.dead = false }
+  $ending = false
+  sync.finish
+  result
+end
+check("enemies that fall while the host waits for the party's commands win once, the turn never starting",
+      fall_in_wait.call("w4b", [2, 3]), [0, 1, 3, [true], false])
+check("as while it waits for one guest's commands", fall_in_wait.call("w4c", [2]), [0, 1, 3, [true], false])
+check("and the wait ends as won", $log.grep(/ends early in turn \d+: its enemies fell while it waited for commands/).size, 2)
+sync.join_world(:host, "w4d", [2], "the party")
+sync.battle_started
+sync.instance_variable_set(:@solo, true)
+$turns_started = 0
+$ending = true
+scene.turn_start
+$ending = false
+check("a turn whose battle ended before it starts is left out", [$turns_started, $log.grep(/the battle ended before turn \d+ started/).size], [0, 1])
 sync.finish
 
 # A guest names whom the host waits for, as the host last told, itself left out.

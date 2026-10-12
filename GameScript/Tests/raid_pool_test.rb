@@ -2,6 +2,7 @@
 #  raid_pool_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Checked that a pool emptied while a live battle's host waits for commands fells the boss and leaves the victory to the wait
 #      Paulinchen  2026-10-11: Checked a boss outside the Level Cap milestones and Carmilla and Elizabeth counting only in the Vampire Castle
 #                            - Checked that a side battle's defeat is the game's
 #                            - Covered the readers the World overview uses: the pools as a copy, the share left now, a troop's label and a pool's boss key
@@ -92,7 +93,10 @@ module MGQ_MpWorldStory
 end
 module MGQ_MpChat; def self.system(text); $chat << text; end; end
 module MGQ_MpNotices; def self.message(_key, text, _frames); $notices << text; end; end
-module MGQ_MpBattlesSync; def self.role; $role; end; end
+module MGQ_MpBattlesSync
+  def self.role; $role; end
+  module Waiting; def self.active?; $waiting; end; end
+end
 module MGQ_MpBattlesCoop
   def self.rates_text; "100,100,0"; end
   def self.borrow_rates(message); $borrowed << message["rates"]; end
@@ -819,6 +823,20 @@ push("Queen Harpy", "0", "6000", true)
 pass(MGQ_MpRaidPool::INPUT_SYNC_SECONDS)
 $scene.update_basic
 check("a pool emptied meanwhile fells the boss and wins the battle", [enemy.dead?, $won], [true, [71]])
+BattleManager.instance_variable_set(:@phase, nil)
+
+# While a live battle's host waits for the other players' commands, a pool emptied meanwhile fells
+# the boss, and the wait wins the battle.
+reset
+start([[:var, 1001, 40], [:battle, 71], [:mark, :after]])
+$scene.start_party_command_selection
+BattleManager.instance_variable_set(:@phase, :input)
+$waiting = true
+push("Queen Harpy", "0", "6000", true)
+pass(MGQ_MpRaidPool::INPUT_SYNC_SECONDS)
+$scene.update_basic
+check("a pool emptied while the host waits for commands fells the boss, the wait winning the battle", [enemy.dead?, $won], [true, []])
+$waiting = false
 BattleManager.instance_variable_set(:@phase, nil)
 
 # A change of the boss's max HP, such as a state that lowers it, is no damage.
