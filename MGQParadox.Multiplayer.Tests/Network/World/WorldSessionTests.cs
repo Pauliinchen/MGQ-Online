@@ -6,6 +6,7 @@
 //                            - Covered entering a world again while the first connect still waits at the relay, which the relay lets in after the new one
 //                            - Covered a "replaced" close after the cut connect could no longer take a seat, which ends the session as a real replace, and the relay turning the game away as too old for good, with or without its text
 //                            - Covered a cut connect the relay holds past its own timeout, whose late "replaced" close still connects again, and the world room turning the game away as too old with 400 and the code "update", which tells to update MGQ Online
+//                            - Covered an older or self-hosted relay turning the world room down with 426, with or without its text, and with 400 naming no code or an unknown one
 //      Paulinchen  2026-10-09: Covered the relay's word that a world now turns other mods off handed to the game script with its mods, and a value that is neither 0 nor 1 ignored
 //                            - Covered the relay's word of a Raid World's new difficulty handed to the game script, and a value that is no difficulty ignored
 //      Paulinchen  2026-10-08: Covered entering a Raid World, which the relay lets in only games that name it in the features header
@@ -468,6 +469,42 @@ public sealed class WorldSessionTests
     }
 
     /// <summary>
+    /// Asserts that a world room turned down with 426 and a text, as an older or self-hosted relay
+    /// may, ends the session for good with that text, without trying again.
+    /// </summary>
+    [Fact]
+    public void UpgradeRequiredWithText_EndsForGoodWithTheRelayText()
+    {
+        const string text = "This relay serves MGQ Online 0.7.0 and newer.";
+
+        AssertWorldRoomRefusalEndsForGood((426, text), text);
+    }
+
+    /// <summary>
+    /// Asserts that a world room turned down with 426 and no text ends the session for good telling
+    /// the player to update, without trying again.
+    /// </summary>
+    [Fact]
+    public void UpgradeRequiredWithoutText_EndsForGoodTellingToUpdate() =>
+        AssertWorldRoomRefusalEndsForGood((426, null), "Update MGQ Online to play online.");
+
+    /// <summary>
+    /// Asserts that a world room turned down with 400 and no code ends the session for good telling
+    /// the player to update the mod, without trying again.
+    /// </summary>
+    [Fact]
+    public void BadRequestWithoutCode_EndsForGoodTellingToUpdateTheMod() =>
+        AssertWorldRoomRefusalEndsForGood((400, null), "The relay turned the request down. Update the mod.");
+
+    /// <summary>
+    /// Asserts that a world room turned down with 400 and a code this game does not know ends the
+    /// session for good telling the player to update the mod, without trying again.
+    /// </summary>
+    [Fact]
+    public void BadRequestWithUnknownCode_EndsForGoodTellingToUpdateTheMod() =>
+        AssertWorldRoomRefusalEndsForGood((400, "something_new"), "The relay turned the request down. Update the mod.");
+
+    /// <summary>
     /// Asserts that a session without a player cannot open a world.
     /// </summary>
     [Fact]
@@ -799,6 +836,27 @@ public sealed class WorldSessionTests
     /// <param name="others">The seats, separated by commas.</param>
     private static void AwaitOthers(WorldSession session, string others) =>
         Await(session, described => described["others"] == others, $"the others {others}");
+
+    /// <summary>
+    /// Asserts that the relay turning every world room request down with a status and code ends a
+    /// session for good with a reason, after a single request.
+    /// </summary>
+    /// <param name="refusal">The status, and the code in X-MGQ-Refusal or <see langword="null"/> for none.</param>
+    /// <param name="reason">The reason the session ends with.</param>
+    private static void AssertWorldRoomRefusalEndsForGood((int Status, string? Code) refusal, string reason)
+    {
+        using var relay = new TestRelay();
+        var code = MakeWorld(relay, 2);
+        var session = NewSession(relay.Address);
+
+        relay.WorldRoomRefusal = refusal;
+        session.Open(code);
+
+        var ended = AwaitError(session);
+        Assert.Equal(("failed", reason), (ended["state"], ended["error"]));
+        Thread.Sleep(500);
+        Assert.Equal(1, relay.WorldRoomRequests);
+    }
 
     /// <summary>
     /// Waits until a session tells an error.
