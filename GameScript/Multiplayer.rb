@@ -3,6 +3,11 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-12: Loaded ui_leader_hud.rbx after ui_raid_bar.rbx, before the notification box that makes room for it
+#                            - Kept a Player.ini that exists but could not be read: no new player key and no settings written over it, read
+#                              again at most once a second, logged once and told once a session in the notification box
+#                            - Read an ini file with a byte order mark, saved as UTF-16 or with bytes that are no UTF-8, which counts as Latin-1
+#                            - Wrote an ini file to a file next to it first, put on the disk, which then replaces it in one step
+#                            - Kept and removed several settings of Player.ini in one write and listed the settings under a prefix
 #      Paulinchen  2026-10-11: Cut the session's log to its newest 2 MB once it passes 4 MB, so it never grows without end and a bug report still sends where the trouble is
 #                            - Loaded ui_bug_report.rbx last, the in-game bug report, and named the mp_report_* exports it calls
 #                            - Loaded world_opening.rbx after world_catchup.rbx, which runs a new game's opening setup without its scene in a Raid World past it
@@ -443,36 +448,112 @@ module MGQ_Multiplayer
 
   # Files of key=value lines, such as Patch/Multiplayer/Player.ini.
   module Ini
+    # The bytes a file saved as UTF-8 by Notepad starts with.
+    UTF8_BOM = [0xEF, 0xBB, 0xBF]
+
+    # The bytes a file saved as UTF-16, little-endian, starts with.
+    UTF16LE_BOM = [0xFF, 0xFE]
+
+    # The bytes a file saved as UTF-16, big-endian, starts with.
+    UTF16BE_BOM = [0xFE, 0xFF]
+
+    # What a file is written to first, next to it, before it replaces the file.
+    TEMP_SUFFIX = ".tmp"
+
     # Reads a file.
     #
     # @param path [String] The file.
     # @return [Hash] The values by key, empty when the file is missing or unreadable.
     def self.read(path)
-      values = {}
-      return values unless File.exist?(path)
+      load(path) || {}
+    end
 
-      File.open(path, "rb") { |file| file.read }.force_encoding("UTF-8").split(/\r?\n/).each do |line|
+    # Reads a file, telling one that could not be read from one that is missing.
+    #
+    # @param path [String] The file.
+    # @param quiet [Boolean] Whether a file that could not be read goes unlogged, as when it failed just before.
+    # @return [Hash, nil] The values by key, empty when the file is missing; nil when it exists but could not be read.
+    def self.load(path, quiet = false)
+      return {} unless File.exist?(path)
+
+      values = {}
+      text_of(File.open(path, "rb") { |file| file.read }).split(/\r?\n/).each do |line|
         key, value = line.split("=", 2)
         values[key.strip] = value.strip if value
       end
       values
     rescue => e
-      Log.write("could not read #{path}: #{e.class}: #{e.message}")
-      {}
+      Log.write("could not read #{path}: #{e.class}: #{e.message}") unless quiet
+      nil
     end
 
-    # Writes a file, replacing it.
+    # Turns a file's bytes into UTF-8 text: UTF-16 by its byte order mark, UTF-8 without its byte
+    # order mark, and anything else as Latin-1, such as a file Notepad saved as ANSI.
+    #
+    # @param bytes [String] The bytes.
+    # @return [String] The text.
+    def self.text_of(bytes)
+      head = bytes.unpack("C3")
+      return utf16(bytes[2..-1].unpack("v*")) if head[0, 2] == UTF16LE_BOM
+      return utf16(bytes[2..-1].unpack("n*")) if head[0, 2] == UTF16BE_BOM
+
+      bytes = bytes[3..-1] if head == UTF8_BOM
+      text = bytes.dup.force_encoding("UTF-8")
+      text.valid_encoding? ? text : bytes.unpack("C*").pack("U*")
+    end
+
+    # Turns UTF-16 code units into UTF-8 text, joining surrogate pairs.
+    #
+    # @param units [Array<Integer>] The code units.
+    # @return [String] The text, a lone surrogate replaced by U+FFFD.
+    def self.utf16(units)
+      points = []
+      units.each do |unit|
+        if unit.between?(0xDC00, 0xDFFF) && points.last.to_i.between?(0xD800, 0xDBFF)
+          points[-1] = 0x10000 + ((points.last - 0xD800) << 10) + (unit - 0xDC00)
+        else
+          points << unit
+        end
+      end
+      points.map { |point| point.between?(0xD800, 0xDFFF) ? 0xFFFD : point }.pack("U*")
+    end
+
+    # Writes a file, replacing it in one step: the values go to a file next to it first, which then
+    # takes its place, so a crash or a full disk never leaves it half written.
     #
     # @param path [String] The file.
     # @param values [Hash] The values by key, each kept on its line.
     # @return [Boolean] Whether the file was written.
     def self.write(path, values)
       lines = values.map { |key, value| "#{key}=#{value.to_s.gsub(/[\r\n]/, ' ')}\n" }
-      File.open(path, "wb") { |file| file.write(lines.join) }
+      temp = "#{path}#{TEMP_SUFFIX}"
+      File.open(temp, "wb") do |file|
+        file.write(lines.join)
+        file.flush
+        sync(file)
+      end
+      # Deleting the file first would leave none behind a crash between the two steps, so the
+      # rename replaces it.
+      File.rename(temp, path)
       true
     rescue => e
+      begin
+        File.delete(temp) if temp && File.exist?(temp)
+      rescue
+        nil
+      end
       Log.write("could not write #{path}: #{e.class}: #{e.message}")
       false
+    end
+
+    # Puts a file written onto the disk, so it survives a power loss right after.
+    #
+    # @param file [File] The file.
+    def self.sync(file)
+      file.fsync
+    rescue NotImplementedError
+      # A Ruby without fsync raises an error that a plain rescue lets through.
+      nil
     end
   end
 
@@ -485,11 +566,23 @@ module MGQ_Multiplayer
     # Setting that keeps the last name Discord told.
     DISCORD_NAME = "discord_name"
 
+    # Seconds before a Player.ini that could not be read is read again, which a lock by an
+    # antivirus or a cloud sync is usually gone after.
+    RETRY_SECONDS = 1
+
+    # What the settings read while Player.ini exists but cannot be read: none.
+    UNREADABLE = {}.freeze
+
+    # What the notification box tells once a session while Player.ini exists but cannot be read.
+    UNREADABLE_NOTICE = "Player.ini could not be read; close programs that hold it. Settings are not saved until then."
+
     # Reads the player's id, making one the first time.
     #
-    # @return [String] The id, "" when none could be made.
+    # @return [String] The id, "" when none could be made or Player.ini cannot be read.
     def self.id
-      values = load
+      values = writable
+      return "" unless values
+
       if values["id"].to_s.empty?
         values["id"] = Link.new_id
         Ini.write(MGQ_Multiplayer.path(FILE), values) unless values["id"].empty?
@@ -510,8 +603,7 @@ module MGQ_Multiplayer
       if discord.empty?
         discord = load[DISCORD_NAME].to_s
       elsif load[DISCORD_NAME] != discord
-        store(DISCORD_NAME, discord)
-        Log.write("kept the name Discord told: #{discord}")
+        Log.write("kept the name Discord told: #{discord}") if store(DISCORD_NAME, discord)
       end
       discord.empty? ? nil : MGQ_Multiplayer.clean(discord)
     end
@@ -535,15 +627,21 @@ module MGQ_Multiplayer
       load[key]
     end
 
+    # Lists the settings whose keys start with a prefix, such as the favourite worlds.
+    #
+    # @param prefix [String] What their keys start with.
+    # @return [Array<String>] The rest of each key after the prefix, in the order Player.ini keeps them.
+    def self.keys_under(prefix)
+      load.keys.select { |key| key.start_with?(prefix) }.map { |key| key[prefix.size..-1] }
+    end
+
     # Keeps a setting in Player.ini.
     #
     # @param key [String] The setting.
     # @param value [Object] Its value.
     # @return [Boolean] Whether Player.ini was written.
     def self.store(key, value)
-      values = load
-      values[key] = value.to_s
-      Ini.write(MGQ_Multiplayer.path(FILE), values)
+      change(key => value.to_s)
     end
 
     # Removes a setting from Player.ini.
@@ -551,9 +649,45 @@ module MGQ_Multiplayer
     # @param key [String] The setting.
     # @return [Boolean] Whether Player.ini was written.
     def self.forget(key)
-      values = load
-      values.delete(key)
+      change(key => nil)
+    end
+
+    # Keeps and removes settings of Player.ini in one write. A setting kept moves to the end of the
+    # file, so a list such as the hidden worlds added reads back the oldest first.
+    #
+    # A setting that could not be written still holds for the session, unless Player.ini could not
+    # be read.
+    #
+    # @param changes [Hash] The values by setting, nil for one to remove.
+    # @return [Boolean] Whether Player.ini was written.
+    def self.change(changes)
+      values = writable
+      return false unless values
+
+      changes.each do |key, value|
+        values.delete(key)
+        values[key] = value.to_s unless value.nil?
+      end
       Ini.write(MGQ_Multiplayer.path(FILE), values)
+    end
+
+    # Tells whether Player.ini was read, or is missing, so its settings are known.
+    #
+    # @return [Boolean] Whether they are.
+    def self.readable?
+      load
+      !@values.nil?
+    end
+
+    # Takes the notice that Player.ini cannot be read, once a session and only while a write was
+    # turned down for it.
+    #
+    # @return [String, nil] The notice, nil when there is none to show.
+    def self.take_notice
+      return nil if @noticed || !@refused
+
+      @noticed = true
+      UNREADABLE_NOTICE
     end
 
     # Tells the DLL who plays, once the player has a name.
@@ -574,11 +708,38 @@ module MGQ_Multiplayer
       false
     end
 
-    # Reads Player.ini once.
+    # Reads Player.ini once, and again at most every RETRY_SECONDS while it cannot be read.
     #
-    # @return [Hash] The values by key.
+    # @return [Hash] The values by key, UNREADABLE while Player.ini exists but cannot be read.
     def self.load
-      @values ||= Ini.read(MGQ_Multiplayer.path(FILE))
+      return @values if @values
+      return UNREADABLE if @unreadable_at && Time.now - @unreadable_at < RETRY_SECONDS
+
+      values = Ini.load(MGQ_Multiplayer.path(FILE), !@unreadable_at.nil?)
+      unless values
+        @unreadable_at = Time.now
+        return UNREADABLE
+      end
+
+      Log.write("read #{FILE} again") if @unreadable_at
+      @unreadable_at = nil
+      @refused = false
+      @values = values
+    end
+
+    # Gives the settings to change, unless Player.ini exists but cannot be read: writing it then
+    # would lose the player key and every setting.
+    #
+    # @return [Hash, nil] The values by key, nil while Player.ini cannot be read.
+    def self.writable
+      values = load
+      return values if @values
+
+      unless @refused
+        @refused = true
+        Log.write("#{FILE} exists but could not be read; not writing it, so the player key and settings are kept")
+      end
+      nil
     end
   end
 

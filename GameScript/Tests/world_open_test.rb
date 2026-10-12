@@ -3,6 +3,8 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-12: Checked that the title screen's Multiplayer command gets its handler
+#                            - Checked the favourites kept in Player.ini, a world staying as it was while Player.ini cannot be read, and a
+#                              world.ini that cannot be read left as it is
 #      Paulinchen  2026-10-11: Checked the cursor moving onto the world just created or added once the list shows it, Enter sending the hidden world's id,
 #                              a form with two text boxes kept from sending, and the details' Password row saying Known once this PC holds the world code
 #      Paulinchen  2026-10-10: Checked where a Raid World with a shared save starts in the details, by build, and a save's label drawn at its field's width
@@ -77,8 +79,20 @@ module MGQ_Multiplayer
   def self.clean(text); text; end
   def self.path(name); name; end
   module Log; def self.write(_message); end; end
-  module Player; def self.share; end; def self.name; "Me"; end; end
-  module Ini; def self.read(_path); {}; end; end
+  module Player
+    def self.share; end
+    def self.name; "Me"; end
+    def self.setting(key); ($player_ini ||= {})[key]; end
+    def self.keys_under(prefix); ($player_ini ||= {}).keys.select { |key| key.start_with?(prefix) }.map { |key| key[prefix.size..-1] }; end
+    def self.readable?; !$player_ini_unreadable; end
+    def self.change(changes)
+      return false if $player_ini_unreadable
+
+      changes.each { |key, value| ($player_ini ||= {}).delete(key); $player_ini[key] = value unless value.nil? }
+      true
+    end
+  end
+  module Ini; def self.read(_path); {}; end; def self.load(_path, _quiet = false); {}; end; end
   module Capture
     def self.start(owner); $capture = owner; end
     def self.stop(owner); $capture = nil if $capture == owner; end
@@ -184,11 +198,12 @@ _, _, listed, = MGQ_MpWorld::Directory.list
 check("the list reads which worlds have no password", listed.map { |world| world.open }, [false, true, false])
 check("and which are featured", listed.map { |world| world.featured }, [false, true, false])
 
-# The worlds on this PC and the favourites are read once, until one is made, written, deleted or
-# marked.
+# The worlds on this PC are read once, until one is made, written or deleted; the favourites are
+# kept in Player.ini.
 ini = {}
 reads = [0]
 MGQ_Multiplayer::Ini.define_singleton_method(:read) { |path| reads[0] += 1; (ini[path] || {}).dup }
+MGQ_Multiplayer::Ini.define_singleton_method(:load) { |path, _quiet = false| ini[path] == :unreadable ? nil : (ini[path] || {}).dup }
 MGQ_Multiplayer::Ini.define_singleton_method(:write) { |path, values| ini[path] = values.dup; true }
 dll_id_of = MGQ_MpWorld::Link.method(:id_of)
 MGQ_MpWorld::Link.define_singleton_method(:id_of) { |code| code[/\A[0-9a-f]{12}/] }
@@ -205,16 +220,21 @@ Dir.mktmpdir do |root|
     check("a world written is read again", [MGQ_MpWorld::World.all[0].played_at.nil?, reads[0] > before], [false, true])
     made.delete
     check("a world deleted is gone from the list", MGQ_MpWorld::World.all, [])
-    before = reads[0]
-    favourites = [MGQ_MpWorld::Favourites.all, MGQ_MpWorld::Favourites.all]
-    check("the favourites are read once too", [favourites, reads[0] - before], [[[], []], 1])
-    check("a world marked is a favourite at once", [MGQ_MpWorld::Favourites.toggle("w1"), MGQ_MpWorld::Favourites.all], [true, ["w1"]])
-    check("and no longer once unmarked", [MGQ_MpWorld::Favourites.toggle("w1"), MGQ_MpWorld::Favourites.all], [false, []])
+    ini["Patch/Multiplayer/Worlds/0123456789ab/world.ini"] = :unreadable
+    check("a world.ini that cannot be read is left as it is, and no world is found",
+          [MGQ_MpWorld::World.found("0123456789ab;token;relay;4", "First", "w1"), ini["Patch/Multiplayer/Worlds/0123456789ab/world.ini"]], [nil, :unreadable])
+    ini.delete("Patch/Multiplayer/Worlds/0123456789ab/world.ini")
+    $player_ini = {}
+    check("a world marked is a favourite at once, kept in Player.ini",
+          [MGQ_MpWorld::Favourites.toggle("w1"), MGQ_MpWorld::Favourites.all, $player_ini], [true, ["w1"], { "favourite.w1" => "1" }])
+    check("and no longer once unmarked", [MGQ_MpWorld::Favourites.toggle("w1"), MGQ_MpWorld::Favourites.all, $player_ini], [false, [], {}])
+    $player_ini_unreadable = true
+    check("a world stays as it was while Player.ini cannot be read", [MGQ_MpWorld::Favourites.toggle("w1"), $player_ini], [nil, {}])
+    $player_ini_unreadable = false
   end
 end
 MGQ_MpWorld::Link.define_singleton_method(:id_of, dll_id_of)
 MGQ_MpWorld::World.forget
-MGQ_MpWorld::Favourites.forget
 
 # The list's order.
 MGQ_MpWorld::Favourites.define_singleton_method(:all) { ["w3"] }
@@ -764,7 +784,6 @@ check("a world created is the one the list puts the cursor on, and the screen sa
       [scene.instance_variable_get(:@list_window).asked, said(scene), scene.form], ["w7", "Free was created. #{Scene_MpWorlds::ENTER_HINT}", nil])
 check("the hint says to confirm to enter it, as the guide does", Scene_MpWorlds::ENTER_HINT, "Confirm to enter it.")
 MGQ_MpWorld::World.define_singleton_method(:found, found_was)
-MGQ_MpWorld::Favourites.forget
 
 # So does a hidden world added by its id.
 scene = form_scene

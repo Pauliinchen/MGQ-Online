@@ -2,6 +2,7 @@
 #  world_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Stood in for the notice that Player.ini could not be read
 #      Paulinchen  2026-10-11: Loaded ui_theme.rbx and ui_layout.rbx after ui.rbx, as Multiplayer.rb does, which the boxes take their look and place from
 #                            - Kept a color's values, which an outlined text copies the font's color by
 #                            - Gave the screen its size and frame count and stood in for the scenes' base, which the confirm box centres on and ticks after
@@ -117,6 +118,7 @@ module MGQ_Multiplayer
     def self.name; "Me"; end
     def self.setting(key); $player_ini[key]; end
     def self.store(key, value); $player_ini[key] = value.to_s; true; end
+    def self.take_notice; notice = $player_ini_notice; $player_ini_notice = nil; notice; end
   end
   module Link
     def self.player_id; "me"; end

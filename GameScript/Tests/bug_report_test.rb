@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-12: Checked the friendly words for a relay busy with other bug reports
+#                            - Stood in for Ini.load, which a world's folder reads world.ini through
 #      Paulinchen  2026-10-11: Created
 #
 #----------------------------------------------------------------
@@ -109,7 +110,7 @@ module MGQ_Multiplayer
   def self.clean(text, _fallback = nil); text; end
   def self.path(name); "Patch\\Multiplayer\\#{name}"; end
   module Log; def self.write(message); $log << message; end; end
-  module Ini; def self.read(_path); {}; end; end
+  module Ini; def self.read(_path); {}; end; def self.load(_path, _quiet = false); {}; end; end
   module Player
     def self.name; $name; end
     def self.share; $share; end

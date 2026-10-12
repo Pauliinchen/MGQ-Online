@@ -2,6 +2,7 @@
 #  loader_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Stood in for Ini.load, which Player reads Player.ini through
 #      Paulinchen  2026-10-11: Checked that a log past MAX_BYTES keeps its newest lines from a whole line on, behind a line that says so
 #      Paulinchen  2026-10-10: Checked that a text read from the DLL that grew again between asking its size and copying it is asked for again, three more times at most
 #      Paulinchen  2026-10-09: Checked that story_state.rbx loads before the story scripts that build on it
@@ -302,6 +303,7 @@ module MGQ_Multiplayer
   def self.path(name); name; end
   module Ini
     def self.read(_path); {}; end
+    def self.load(_path, _quiet = false); {}; end
     def self.write(_path, values); $player_ini_written = values.dup; true; end
   end
   module Discord; def self.player_name; $discord_name; end; end

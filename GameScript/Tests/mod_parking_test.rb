@@ -2,6 +2,7 @@
 #  mod_parking_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Stood in for Ini.load, which a world's folder reads world.ini through, and for the favourites and hidden worlds in Player.ini
 #      Paulinchen  2026-10-10: Checked that the restart for downloaded mods keeps the game open while mods stay parked, and starts again alone with none parked
 #                            - Checked the new start asked for when the restart keeping mods parked fails, the text for parked mods that could not
 #                              come back on, and the refusal before a download offer for scripts behind a link to another drive
@@ -105,8 +106,9 @@ module MGQ_Multiplayer
     def self.name; "Me"; end
     def self.setting(key); $ini[key]; end
     def self.store(key, value); $ini[key] = value.to_s; end
+    def self.keys_under(_prefix); []; end
   end
-  module Ini; def self.read(_path); {}; end; def self.write(_path, _values); true; end; end
+  module Ini; def self.read(_path); {}; end; def self.load(_path, _quiet = false); {}; end; def self.write(_path, _values); true; end; end
   module Link
     Function = Struct.new(:name, :signature) do
       def call(*args)

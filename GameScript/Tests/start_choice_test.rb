@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-12: Expected the warning before a new player takes the creator's starting save, and none for the creator
+#                            - Stood in for Ini.load, which a world's folder reads world.ini through, and for the favourites in Player.ini
 #      Paulinchen  2026-10-11: Expected the created world's name followed by the screen's hint to confirm to enter it, and let the list stand-in take the world to put the cursor on
 #      Paulinchen  2026-10-09: Expected the longer call of mp_dir_create, which takes a Raid World's difficulty
 #                            - Expected Player's choice on the row Sharing companions takes in a Raid World's form, the call of mp_dir_create with
@@ -62,8 +63,8 @@ module MGQ_Multiplayer
   def self.outdated?; false; end
   def self.clean(text); text; end
   module Log; def self.write(_message); end; end
-  module Player; def self.share; end; def self.name; "Me"; end; end
-  module Ini; def self.read(_path); {}; end; end
+  module Player; def self.share; end; def self.name; "Me"; end; def self.keys_under(_prefix); []; end; end
+  module Ini; def self.read(_path); {}; end; def self.load(_path, _quiet = false); {}; end; end
   def self.path(name); name; end
   module Link
     Function = Struct.new(:name, :signature) do

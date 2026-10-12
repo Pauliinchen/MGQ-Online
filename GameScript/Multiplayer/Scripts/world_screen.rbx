@@ -5,6 +5,7 @@
 #      Paulinchen  2026-10-12: Asked before taking a world's starting save, which can run code, offering to start at the beginning instead,
 #                              unless the player created the world
 #                            - Opened the text screen of the description with its text broken over several lines
+#                            - Said that a world stays as it was when Player.ini, which keeps the favourites now, could not be read
 #      Paulinchen  2026-10-11: Dressed the screen's windows in the interface look and drew the worlds' scrollbar in its edge color
 #                            - Broke a description in the list box anew once the player resized the box, and fitted it to the box's width as it is now
 #                            - Moved the list box's fade on every frame, and measured a description with the shared style's text size and the box's lazy rectangle
@@ -800,7 +801,11 @@ class Scene_MpWorlds < Scene_MenuBase
   # Marks the chosen world as a favourite, or no longer.
   def on_favourite
     favourite = MGQ_MpWorld::Favourites.toggle(@entry.id)
-    say(favourite ? "#{@entry.name} is a favourite now." : "#{@entry.name} is no longer a favourite.")
+    if favourite.nil?
+      say("Player.ini could not be read, so #{@entry.name} stays as it was.")
+    else
+      say(favourite ? "#{@entry.name} is a favourite now." : "#{@entry.name} is no longer a favourite.")
+    end
     look_at_list
     back_to_list
   end

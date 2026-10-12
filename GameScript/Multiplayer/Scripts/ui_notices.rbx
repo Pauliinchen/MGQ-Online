@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-12: Moved the box at its default below the Leader HUD while it shows at the top left
+#                            - Told once a session that Player.ini could not be read and settings are not saved, once the box shows
 #      Paulinchen  2026-10-11: Made the box movable and resizable with the left Alt held, as "Notifications": its width gives the notifications room and its height the rows it shows, never below the first invite's keys beside a readable name and two rows
 #                            - Framed the box in the preset's colors, drawn anew once the preset changes
 #                            - Drew the box in the shared style, fading it in and out, a message that runs out and an invite just answered fading away where it stood
@@ -51,6 +52,12 @@ module MGQ_MpNotices
   # A slow inviter still shows the invite a while after the accept, so a shorter hold let a second
   # press accept it again.
   ACCEPT_HOLD_FRAMES = 600
+
+  # What the notice that Player.ini cannot be read is about.
+  PLAYER_INI_KEY = :player_ini
+
+  # Frames the notice that Player.ini cannot be read shows, ten seconds.
+  PLAYER_INI_FRAMES = 600
 
   @messages = []
   @answered = {}
@@ -127,6 +134,7 @@ module MGQ_MpNotices
     # Both asked every frame, so a press while the box is hidden never counts later.
     accept = MGQ_MpHotkeys.pressed?(:accept)
     decline = MGQ_MpHotkeys.pressed?(:decline)
+    post_player_ini_notice
     @messages.each { |entry| entry[:frames] -= 1 }
     gone = @messages.select { |entry| entry[:frames] <= 0 || (entry[:world] && !in_world) }
     gone.each { |entry| log("message #{entry[:frames] <= 0 ? 'ran out' : 'dropped, the world closed'}: #{MGQ_MpLog.short(entry[:text])}") }
@@ -146,6 +154,15 @@ module MGQ_MpNotices
     show(list)
   rescue => e
     log_once(:tick, "tick failed: #{e.class}: #{e.message}")
+  end
+
+  # Posts the notice that Player.ini cannot be read, once the box shows, so it never runs out unseen
+  # on the title screen.
+  def self.post_player_ini_notice
+    return unless shown?
+
+    text = MGQ_Multiplayer::Player.take_notice
+    message(PLAYER_INI_KEY, text, PLAYER_INI_FRAMES) if text
   end
 
   # Reports whether the box may show in the scene running: on the map while the World overview is

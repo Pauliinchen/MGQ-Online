@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-12: Followed the settings to their own group of the Mod Config, and checked that the dump leaves the hotkeys' group out too
+#                            - Stood in for Ini.load, which a world's folder reads world.ini through, and for the favourites and hidden worlds in Player.ini
 #      Paulinchen  2026-10-11: Stood in for the game's frame, whose update the shared boxes follow the layout after
 #      Paulinchen  2026-10-09: Loaded world_mods_parking.rbx, which the world screen calls, its DLL's stand-in finding no parked mods at the start
 #      Paulinchen  2026-10-08: Covered the marker and settings from before it, the row of Shared Mod Settings for the creator and another player, the creator's
@@ -159,8 +160,9 @@ module MGQ_Multiplayer
     def self.name; "Me"; end
     def self.setting(key); $ini[key]; end
     def self.store(key, value); $ini[key] = value.to_s; end
+    def self.keys_under(_prefix); []; end
   end
-  module Ini; def self.read(_path); {}; end; end
+  module Ini; def self.read(_path); {}; end; def self.load(_path, _quiet = false); {}; end; end
   module Link
     Function = Struct.new(:name, :signature) do
       def call(*args)

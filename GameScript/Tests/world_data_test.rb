@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-12: Checked that the text screen breaks the description over several lines
+#                            - Stood in for Ini.load, which a world's folder reads world.ini through
 #      Paulinchen  2026-10-11: Checked that a description in the list box breaks anew once the box is wider, and loaded ui_layout.rbx, which places the list box
 #                            - Read the list box's rows from its lazy rectangle, and gave the screen its size
 #                            - Expected the added world's name followed by the screen's hint to confirm to enter it, and let the list stand-in take the world to put the cursor on
@@ -83,7 +84,7 @@ module MGQ_Multiplayer
   def self.path(name); name; end
   module Log; def self.write(_message); end; end
   module Player; def self.share; end; def self.name; "Me"; end; def self.setting(_key); nil; end; end
-  module Ini; def self.read(_path); {}; end; end
+  module Ini; def self.read(_path); {}; end; def self.load(_path, _quiet = false); {}; end; end
   module Link
     Function = Struct.new(:name, :signature) do
       def call(*args); check_dll_call(name, args); $calls << [name, signature, args]; 1; end

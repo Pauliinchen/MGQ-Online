@@ -3,6 +3,9 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-12: Read the title screen's commands through MGQ_MpGame and left them alone when the title screen has none
+#                            - Kept the favourites and the hidden worlds added in Player.ini, moving the entries of Favourites.ini and
+#                              Added.ini into it once and deleting those files, never while one of the files cannot be read
+#                            - Left a world.ini that exists but could not be read as it is instead of making it anew
 #      Paulinchen  2026-10-11: Took the featured worlds' gold and the Raid Worlds' red from the shared style
 #                            - Told whether a world's password is known, which this PC's folder of it answers for the world screen's
 #                              entry and details
@@ -126,11 +129,16 @@ module MGQ_MpWorld
   # The folder the game loads its mods' scripts from.
   PATCH_DIR = "Patch"
 
-  # File of the worlds the player marked as favourites, inside the mod folder.
-  FAVOURITES_FILE = "Favourites.ini"
+  # What the settings of the favourite worlds in Player.ini start with, before a world's id.
+  FAVOURITE_SETTING = "favourite."
 
-  # File of the hidden worlds the player added to their list by their ids, inside the mod folder.
-  ADDED_FILE = "Added.ini"
+  # What the settings of the hidden worlds the player added to their list by their ids start with
+  # in Player.ini, before a world's id.
+  ADDED_SETTING = "added."
+
+  # The files in the mod folder that kept the favourites and the hidden worlds added before
+  # Player.ini did, with what their settings start with there.
+  OLD_LIST_FILES = { "Favourites.ini" => FAVOURITE_SETTING, "Added.ini" => ADDED_SETTING }
 
   # Players a new world seats at most unless the player chooses otherwise.
   DEFAULT_SEATS = 4
@@ -1308,8 +1316,74 @@ module MGQ_MpWorld
     name.to_s.downcase.sub(/\.rb\z/, "").gsub(/[\s_\-]/, "")
   end
 
+  # The favourites and hidden worlds added that the files before Player.ini kept, moved into it once.
+  module OldLists
+    # Moves the entries of OLD_LIST_FILES into Player.ini, a setting it holds already winning, then
+    # deletes the files; tried again at most every Player::RETRY_SECONDS until it worked.
+    #
+    # Nothing is moved or deleted while any of the files or Player.ini cannot be read, so no entry
+    # is lost.
+    def self.merge
+      return if @merged
+      return if @tried_at && Time.now - @tried_at < MGQ_Multiplayer::Player::RETRY_SECONDS
+
+      files = OLD_LIST_FILES.keys.select { |file| File.exist?(MGQ_Multiplayer.path(file)) }
+      if files.empty?
+        @merged = true
+        return
+      end
+
+      entries = entries_of(files)
+      return later("#{files.join(' or ')} could not be read") unless entries
+      return later("Player.ini could not be read") unless MGQ_Multiplayer::Player.readable?
+
+      fresh = entries.reject { |key, _| MGQ_Multiplayer::Player.setting(key) }
+      return later("Player.ini could not be written") unless MGQ_Multiplayer::Player.change(fresh)
+
+      @merged = true
+      MGQ_MpWorld.log("moved the #{entries.size} entries of #{files.join(' and ')} into Player.ini, #{entries.size - fresh.size} of which it held already")
+      files.each { |file| delete(file) }
+    rescue => e
+      later("#{e.class}: #{e.message}")
+    end
+
+    # Reads the old files' entries as Player.ini's settings.
+    #
+    # @param files [Array<String>] The files there are, of OLD_LIST_FILES.
+    # @return [Hash, nil] The values by setting, nil when a file could not be read.
+    def self.entries_of(files)
+      entries = {}
+      files.each do |file|
+        values = MGQ_Multiplayer::Ini.load(MGQ_Multiplayer.path(file), !@tried_at.nil?)
+        return nil unless values
+
+        values.each { |id, value| entries[OLD_LIST_FILES[file] + id] = value }
+      end
+      entries
+    end
+
+    # Notes that the move must wait, logged once until it worked.
+    #
+    # @param reason [String] Why it waits.
+    def self.later(reason)
+      MGQ_MpWorld.log("did not move the favourites and hidden worlds into Player.ini yet: #{reason}") unless @tried_at
+      @tried_at = Time.now
+      nil
+    end
+
+    # Deletes an old file whose entries Player.ini holds now.
+    #
+    # @param file [String] The file, of OLD_LIST_FILES.
+    def self.delete(file)
+      File.delete(MGQ_Multiplayer.path(file))
+      MGQ_MpWorld.log("deleted #{file}")
+    rescue => e
+      MGQ_MpWorld.log("could not delete #{file}, so the next start moves its entries again: #{e.class}: #{e.message}")
+    end
+  end
+
   # The hidden worlds the player added to their list by their ids, which the relay lists for
-  # whoever names them.
+  # whoever names them, kept in Player.ini.
   module Added
     # Most worlds kept, as many as the relay lists by their ids for one player.
     MAX = 50
@@ -1318,7 +1392,8 @@ module MGQ_MpWorld
     #
     # @return [Array<String>] Their directory ids, the one added last at the end.
     def self.all
-      MGQ_Multiplayer::Ini.read(MGQ_Multiplayer.path(ADDED_FILE)).keys
+      OldLists.merge
+      MGQ_Multiplayer::Player.keys_under(ADDED_SETTING)
     end
 
     # Adds a world, and forgets those added longest ago beyond MAX.
@@ -1328,12 +1403,13 @@ module MGQ_MpWorld
     #
     # @param id [String] The world's directory id.
     def self.add(id)
-      values = MGQ_Multiplayer::Ini.read(MGQ_Multiplayer.path(ADDED_FILE))
-      values.delete(id)
-      values[id] = "1"
-      dropped = []
-      dropped.push(values.shift[0]) while values.size > MAX
-      MGQ_Multiplayer::Ini.write(MGQ_Multiplayer.path(ADDED_FILE), values)
+      ids = all - [id] + [id]
+      dropped = ids.size > MAX ? ids[0, ids.size - MAX] : []
+      changes = {}
+      dropped.each { |old| changes[ADDED_SETTING + old] = nil }
+      changes[ADDED_SETTING + id] = "1"
+      return unless kept?(MGQ_Multiplayer::Player.change(changes), "add hidden world #{MGQ_MpWorld.short(id)} to the list")
+
       forgot = dropped.empty? ? "" : ", forgot the oldest: #{dropped.map { |old| MGQ_MpWorld.short(old) }.join(', ')}"
       MGQ_MpWorld.log("added hidden world #{MGQ_MpWorld.short(id)} to the list#{forgot}")
     end
@@ -1342,26 +1418,31 @@ module MGQ_MpWorld
     #
     # @param id [String] The world's directory id.
     def self.remove(id)
-      values = MGQ_Multiplayer::Ini.read(MGQ_Multiplayer.path(ADDED_FILE))
-      values.delete(id)
-      MGQ_Multiplayer::Ini.write(MGQ_Multiplayer.path(ADDED_FILE), values)
+      OldLists.merge
+      return unless kept?(MGQ_Multiplayer::Player.forget(ADDED_SETTING + id), "remove hidden world #{MGQ_MpWorld.short(id)} from the list")
+
       MGQ_MpWorld.log("removed hidden world #{MGQ_MpWorld.short(id)} from the list")
+    end
+
+    # Logs a change of the list that Player.ini did not take.
+    #
+    # @param written [Boolean] Whether Player.ini was written.
+    # @param what [String] The change, for the log.
+    # @return [Boolean] Whether it was written.
+    def self.kept?(written, what)
+      MGQ_MpWorld.log("could not #{what}: Player.ini was not written") unless written
+      written
     end
   end
 
-  # The worlds the player marked as favourites, in Patch/Multiplayer/Favourites.ini.
+  # The worlds the player marked as favourites, kept in Player.ini.
   module Favourites
-    # Lists the favourites, read from their file once until one changes, since the world screen
-    # asks every few frames.
+    # Lists the favourites.
     #
     # @return [Array<String>] The directory ids of the favourite worlds.
     def self.all
-      @all ||= MGQ_Multiplayer::Ini.read(MGQ_Multiplayer.path(FAVOURITES_FILE)).keys
-    end
-
-    # Forgets the favourites read, so the next look reads their file again.
-    def self.forget
-      @all = nil
+      OldLists.merge
+      MGQ_Multiplayer::Player.keys_under(FAVOURITE_SETTING)
     end
 
     # Marks a world as a favourite, if it is none yet.
@@ -1374,13 +1455,17 @@ module MGQ_MpWorld
     # Marks a world as a favourite, or no longer.
     #
     # @param id [String] The world's directory id.
-    # @return [Boolean] Whether it is a favourite now.
+    # @return [Boolean, nil] Whether it is a favourite now, nil when it stays as it was since Player.ini cannot be read.
     def self.toggle(id)
-      values = MGQ_Multiplayer::Ini.read(MGQ_Multiplayer.path(FAVOURITES_FILE))
-      favourite = !values.key?(id)
-      favourite ? values[id] = "1" : values.delete(id)
-      MGQ_Multiplayer::Ini.write(MGQ_Multiplayer.path(FAVOURITES_FILE), values)
-      forget
+      OldLists.merge
+      key = FAVOURITE_SETTING + id
+      favourite = MGQ_Multiplayer::Player.setting(key).nil?
+      MGQ_Multiplayer::Player.change(key => favourite ? "1" : nil)
+      if MGQ_Multiplayer::Player.setting(key).nil? == favourite
+        MGQ_MpWorld.log("world #{MGQ_MpWorld.short(id)} stays as it was: Player.ini cannot be read")
+        return nil
+      end
+
       MGQ_MpWorld.log("world #{MGQ_MpWorld.short(id)} #{favourite ? 'is a favourite now' : 'is no longer a favourite'}")
       favourite
     end
@@ -1426,7 +1511,15 @@ module MGQ_MpWorld
     # @param id [String] The folder's id.
     # @return [World, nil] The world, nil when its folder holds none.
     def self.read(id)
-      values = MGQ_Multiplayer::Ini.read("#{folder_of(id)}/#{FILE}")
+      of(id, MGQ_Multiplayer::Ini.read("#{folder_of(id)}/#{FILE}"))
+    end
+
+    # Builds a world from what its world.ini says.
+    #
+    # @param id [String] The folder's id.
+    # @param values [Hash] The values of its world.ini.
+    # @return [World, nil] The world, nil when they hold no world code of the folder.
+    def self.of(id, values)
       code = values["code"]
       code && Link.id_of(code) == id ? new(id, values) : nil
     end
@@ -1439,7 +1532,8 @@ module MGQ_MpWorld
     # @param type [String, nil] Its type, one of TYPES; nil to keep what world.ini says.
     # @param share [String, nil] How a Raid World shares companions, one of SHARING; nil to keep what world.ini says.
     # @param difficulty [Integer, nil] A Raid World's difficulty, one of DIFFICULTIES; nil to keep what world.ini says.
-    # @return [World, nil] The world, nil when the text is no world code or the folder could not be made.
+    # @return [World, nil] The world, nil when the text is no world code, the folder could not be
+    #   made or its world.ini exists but could not be read, which is then left as it is.
     def self.found(code, name, directory_id, type = nil, share = nil, difficulty = nil)
       id = Link.id_of(code)
       unless id
@@ -1448,7 +1542,13 @@ module MGQ_MpWorld
       end
 
       [WORLDS_DIR, folder_of(id)].each { |dir| Dir.mkdir(dir) unless File.directory?(dir) }
-      known = read(id)
+      values = MGQ_Multiplayer::Ini.load("#{folder_of(id)}/#{FILE}")
+      unless values
+        MGQ_MpWorld.log("left folder #{id} of world #{MGQ_MpWorld.short(directory_id)} as it is: its #{FILE} exists but could not be read")
+        return nil
+      end
+
+      known = of(id, values)
       world = known || new(id, "code" => code, "created" => Time.now.to_i)
       world.describe(name, directory_id, nil, type, share, difficulty)
       written = world.write

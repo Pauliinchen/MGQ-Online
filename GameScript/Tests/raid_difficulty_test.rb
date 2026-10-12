@@ -2,6 +2,7 @@
 #  raid_difficulty_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Stood in for Ini.load, which a world's folder reads world.ini through
 #      Paulinchen  2026-10-10: Checked a release's Raid World without a starting save, and a development build's with an optional shared save beside
 #                              the Difficulty, sent to the DLL and fetched by new players, never with the player's choice
 #      Paulinchen  2026-10-09: Expected the starting point hidden in a Raid World's form, its row shared with Sharing companions, Turn off other mods in
@@ -95,7 +96,7 @@ module MGQ_Multiplayer
   def self.path(name); name; end
   module Log; def self.write(message); puts "  log: #{message}"; end; end
   module Player; def self.share; end; def self.name; "Me"; end; end
-  module Ini; def self.read(path); ($ini[path] || {}).dup; end; def self.write(path, values); $ini[path] = values.dup; true; end; end
+  module Ini; def self.read(path); ($ini[path] || {}).dup; end; def self.load(path, _quiet = false); read(path); end; def self.write(path, values); $ini[path] = values.dup; true; end; end
   module Link
     Function = Struct.new(:name, :signature) do
       def call(*args); check_dll_call(name, args); $calls << [name, signature, args]; 1; end
