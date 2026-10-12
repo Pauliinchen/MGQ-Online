@@ -2,7 +2,8 @@
 #  coop_events_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Checked that a member stands free while the leader fights the story's battle, and still again once the story goes on
+#      Paulinchen  2026-10-12: Checked that a story event that runs by itself, left to the teller's game, fades in a dark screen once per arrival
+#                            - Checked that a member stands free while the leader fights the story's battle, and still again once the story goes on
 #                            - Checked that a page of the leader's story that fails to hold waits for the member as the game's own pages do
 #                            - Checked that a leader holding the game's skip tells one page every ten frames and the end only of the pages told, and the last page once the skip is let go, the event ended or a battle was called
 #                            - Checked that a party of four hears each page in one message, which a member who plays their own story ignores, saying so once
@@ -834,9 +835,34 @@ $game_map.setup_starting_map_event
 check("starting it again at once says nothing more", $notices, [])
 $game_map.events[12].start
 check("a talk runs in the member's own game", $game_map.setup_starting_map_event, $game_map.events[12])
+# The map's screen, faded out by the scene that brought the player, and when the player entered the map.
+class LateScreen
+  attr_accessor :brightness, :fadein
+  def initialize; @brightness = 0; end
+  def start_fadein(duration); @fadein = duration; @brightness = 1; end
+end
+class Game_Map; attr_accessor :screen; end
+module MGQ_MpOverworldSync; module Me; def self.map_since; $map_since; end; end; end
+$game_map.screen = LateScreen.new
+$map_since = 1000
 $sent.clear
 $game_map.events[13].start
 check("a story event that runs by itself is left to the leader's game", [$game_map.setup_starting_map_event, $sent.size], [nil, 0])
+check("which fades in the dark screen of a player who came in the middle of it", $game_map.screen.fadein, MGQ_MpCoopEvents::LATE_FADEIN_FRAMES)
+$game_map.screen = LateScreen.new
+$game_map.events[13].start
+$game_map.setup_starting_map_event
+check("only once per arrival, so the teller's own fade out stays", $game_map.screen.fadein, nil)
+$map_since = 2000
+$game_map.events[13].start
+$game_map.setup_starting_map_event
+check("but again on the next arrival", $game_map.screen.fadein, MGQ_MpCoopEvents::LATE_FADEIN_FRAMES)
+$game_map.screen = LateScreen.new
+$game_map.screen.brightness = 255
+$map_since = 3000
+$game_map.events[13].start
+$game_map.setup_starting_map_event
+check("and never on a screen that is not dark", $game_map.screen.fadein, nil)
 events = $game_map.events
 $game_map.events = { 13 => events[13], 12 => events[12] }
 $game_map.events[13].start

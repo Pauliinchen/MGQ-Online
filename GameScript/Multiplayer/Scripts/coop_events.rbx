@@ -2,7 +2,8 @@
 #  coop_events.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Let a page of the leader's story that fails to hold wait for the player as the game's own pages do instead of ending the game
+#      Paulinchen  2026-10-12: Faded the screen in once per arrival on a map whose story event that runs by itself another player's game runs, which left a player who came while its teller fought, as at Morrigan, on a black screen
+#                            - Let a page of the leader's story that fails to hold wait for the player as the game's own pages do instead of ending the game
 #                            - Told the viewers at most one page every ten frames while the teller holds the game's skip, always the last one, and that the teller moved past only the pages told, so a skipped dialogue no longer runs past the relay's limit and closes the connection
 #                            - Told a Classic party's members the story's pages in one message instead of one per member, and logged only once that a member who plays their own story ignores them
 #      Paulinchen  2026-10-11: Sorted a page with story behind a choice as no chest, so the story it moves on reaches the world's, as Amira's paid tip in Iliasburg, which a chest kept from it and so hid the rabbit in Pornof
@@ -148,6 +149,10 @@ module MGQ_MpCoopEvents
   # Frames in which a member hears only once that a story event they started is the leader's,
   # three seconds.
   REFUSE_FRAMES = 180
+
+  # Frames the screen takes to fade in for a player who came in the middle of another player's
+  # story, half a second, as the game's own fade.
+  LATE_FADEIN_FRAMES = 30
 
   # Frames after a Raid World's telling starts in which another player who started telling on the
   # same map at the same moment, and entered it first, stops it, three seconds of the state's lag.
@@ -1002,6 +1007,7 @@ module MGQ_MpCoopEvents
     if event.trigger == 3
       log_once([:autorun, $game_map.map_id, event.id, lead.state["id"].to_s],
                "kept event #{event.id} on map #{$game_map.map_id} that runs by itself from starting: it is story, which #{MGQ_MpOverworldSync.who(lead)}'s game runs")
+      fade_in_late(event, lead)
       return true
     end
 
@@ -1010,6 +1016,26 @@ module MGQ_MpCoopEvents
   rescue => e
     log("keeping a story event from starting failed: #{e.class}: #{e.message}")
     false
+  end
+
+  # Fades the screen in once per arrival on a map whose story event that runs by itself another
+  # player's game runs, while the screen is dark.
+  #
+  # The game's scenes fade out, move the player without a fade and fade in with that event, so a
+  # player who came while its teller fought, as at Morrigan, saw black until the teller's story ended.
+  #
+  # @param event [Game_Event] The story event kept from starting.
+  # @param lead [MGQ_MpOverworldSync::Peers::Peer] The teller whose game runs it.
+  def self.fade_in_late(event, lead)
+    screen = $game_map.screen
+    arrival = [$game_map.map_id, MGQ_MpOverworldSync::Me.map_since]
+    return if screen.brightness > 0 || @faded_in_arrival == arrival
+
+    @faded_in_arrival = arrival
+    screen.start_fadein(LATE_FADEIN_FRAMES)
+    log("faded the screen in on map #{$game_map.map_id}: the player came in the middle of #{MGQ_MpOverworldSync.who(lead)}'s story, whose event #{event.id} would have faded it in")
+  rescue => e
+    log("fading the screen in for a story under way failed: #{e.class}: #{e.message}")
   end
 
   # Reports whether the player's story is behind a Raid World's, which keeps their story events from
