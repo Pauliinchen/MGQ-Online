@@ -2,7 +2,8 @@
 //  gate.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-12: Refused a world room of a game too old with 400 and no X-MGQ-Refusal code, counted a request without X-MGQ-Version as 0.6.4, held the world directory's and the mod catalog's routes to the lowest version and passed only the 0.0.0-dev stamp as a development build
+//      Paulinchen  2026-10-12: Named the update code in X-MGQ-Refusal on the 400 of a world room refused to a game too old
+//                            - Refused a world room of a game too old with 400 and no X-MGQ-Refusal code, counted a request without X-MGQ-Version as 0.6.4, held the world directory's and the mod catalog's routes to the lowest version and passed only the 0.0.0-dev stamp as a development build
 //                            - Created
 //
 //----------------------------------------------------------------
@@ -19,7 +20,7 @@ import { storyRouteOf } from "./story.js";
 
 /**
  * The request header in which a game names its version, such as `0.6.5`, or DEVELOPMENT_VERSION
- * for a development build; released games up to 0.6.4 send none.
+ * for a development build and the World Admin tool; released games up to 0.6.4 send none.
  */
 export const VERSION_HEADER = "X-MGQ-Version";
 
@@ -29,7 +30,7 @@ export const VERSION_HEADER = "X-MGQ-Version";
 export const UNNAMED_VERSION = "0.6.4";
 
 /**
- * The stamp of a development build, which passes on every relay.
+ * The stamp of a development build and the World Admin tool, which passes on every relay.
  */
 export const DEVELOPMENT_VERSION = "0.0.0-dev";
 
@@ -44,12 +45,20 @@ export const DEFAULT_MIN_VERSION = "0.6.0";
 export const UPDATE_STATUS = 426;
 
 /**
- * The HTTP status of a game too old for a world room, sent without a REFUSAL_HEADER code.
+ * The HTTP status of a game too old for a world room, sent with WORLD_ROOM_UPDATE_CODE.
  *
  * Released games from 0.5.1 to 0.6.4 stop at a 400 and show their own "The relay turned the request
  * down. Update the mod.", while they would try a 426 again and again.
  */
 export const WORLD_ROOM_UPDATE_STATUS = 400;
+
+/**
+ * The code in REFUSAL_HEADER that names a world room's WORLD_ROOM_UPDATE_STATUS a refusal of a game
+ * too old for the relay.
+ *
+ * Released games from 0.5.1 to 0.6.4 read a 400 with a code they do not know as their generic refusal.
+ */
+export const WORLD_ROOM_UPDATE_CODE = "update";
 
 /**
  * What the relay tells a game too old for it, in the body and, for a PvP room, in REFUSAL_HEADER.
@@ -77,8 +86,8 @@ const VERSION_PATTERN = /^(\d+(?:\.\d+)*)(-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?
 /**
  * Tells what a route asks of a game's version.
  *
- * The world directory's and the mod catalog's other routes ask no X-MGQ-Features, since the World
- * Admin tool uses them without it.
+ * The world directory's and the mod catalog's other routes ask no X-MGQ-Features, since builds of the
+ * World Admin tool before it named `admin` use them without it.
  *
  * @param {URL} url The request's address.
  * @returns {string | null} GATE.features for the routes only games use and the world rooms; GATE.version for the PvP rooms, which released games open without X-MGQ-Features, and for the world directory's and the mod catalog's other routes, the Raid World admin routes included; null for every other route.
@@ -176,7 +185,7 @@ export function tooOld(gate, featuresHeader, versionHeader, minVersion) {
  * @param {string | null | undefined} featuresHeader The request's FEATURES_HEADER.
  * @param {string | null | undefined} versionHeader The request's VERSION_HEADER.
  * @param {string | null | undefined} [minVersion] The relay's MIN_VERSION setting.
- * @returns {{status: number, reason: string, socket: boolean, code: string | null} | null} The refusal, with whether the route is a PvP room's or a world room's, answered as a refused WebSocket, and the code to name in REFUSAL_HEADER, which only a PvP room's carries; null when the game may go on.
+ * @returns {{status: number, reason: string, socket: boolean, code: string | null} | null} The refusal, with whether the route is a PvP room's or a world room's, answered as a refused WebSocket, and the code to name in REFUSAL_HEADER, which only a PvP room's and a world room's carry; null when the game may go on.
  */
 export function updateRefusal(url, featuresHeader, versionHeader, minVersion) {
   if (!tooOld(gateOf(url), featuresHeader, versionHeader, minVersion)) {
@@ -184,7 +193,7 @@ export function updateRefusal(url, featuresHeader, versionHeader, minVersion) {
   }
 
   if (routeIs(url, "world")) {
-    return { status: WORLD_ROOM_UPDATE_STATUS, reason: UPDATE_NEEDED, socket: true, code: null };
+    return { status: WORLD_ROOM_UPDATE_STATUS, reason: UPDATE_NEEDED, socket: true, code: WORLD_ROOM_UPDATE_CODE };
   }
 
   const room = routeIs(url, "room");

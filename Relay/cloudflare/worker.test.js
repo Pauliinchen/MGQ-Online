@@ -2,7 +2,8 @@
 //  worker.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-12: Tested that the Worker turns a game without X-MGQ-Features or below MIN_VERSION away with 426 before routing it, a WebSocket with the reason in X-MGQ-Refusal and a body read to its end first
+//      Paulinchen  2026-10-12: Tested the update code on the 400 of a refused world room and the World Admin tool passing with 0.0.0-dev
+//                            - Tested that the Worker turns a game without X-MGQ-Features or below MIN_VERSION away with 426 before routing it, a WebSocket with the reason in X-MGQ-Refusal and a body read to its end first
 //                            - Tested a world room refused with 400 and no code, a request without X-MGQ-Version taken as 0.6.4 and the world directory and the mod catalog held to MIN_VERSION
 //                            - Tested that the reports object answers a report busy while it handles another, once it read the busy report body to its end
 //                            - Tested that a trade's sealed offers lie beside it, out of the list of trades, and go once it is cancelled
@@ -663,16 +664,16 @@ test("the Worker sends bug reports to an object of their own, never to the world
   assert.equal((await reports.fetch(new Request("https://relay.test/v1/reports"))).status, 404);
 });
 
-test("the Worker turns a game without X-MGQ-Features or below MIN_VERSION away before routing it, and lets the admin tool and released PvP games through", async () => {
+test("the Worker turns a game without X-MGQ-Features or below MIN_VERSION away before routing it, and lets the World Admin tool and released games through", async () => {
   const reached = [];
   const answering = (name) => namespace((id) => ({ fetch: async () => (reached.push(`${name}:${id}`), new Response("{}")) }));
   const env = { DIRECTORY: answering("directory"), REPORTS: answering("reports"), WORLDS: answering("world"), ROOMS: answering("room"), MIN_VERSION: "0.7.0" };
   const upgrade = { Upgrade: "websocket" };
 
   const world = await worker.fetch(new Request(`https://relay.test/v1/world/${WORLD}?name=Old&auth=${AUTH}`, { headers: { ...upgrade, [PLAYER_HEADER]: playerKey(1) } }), env);
-  assert.deepEqual([world.status, world.headers.get(REFUSAL_HEADER), await world.text()], [400, null, UPDATE_NEEDED], "released games stop at a 400 without a code");
+  assert.deepEqual([world.status, world.headers.get(REFUSAL_HEADER), await world.text()], [400, "update", UPDATE_NEEDED], "released games stop at a 400 with a code they do not know");
   const named = await worker.fetch(new Request(`https://relay.test/v1/world/${WORLD}?name=Old&auth=${AUTH}`, { headers: { ...upgrade, [PLAYER_HEADER]: playerKey(1), [FEATURES_HEADER]: "raid", [VERSION_HEADER]: "0.6.9" } }), env);
-  assert.deepEqual([named.status, named.headers.get(REFUSAL_HEADER)], [400, null]);
+  assert.deepEqual([named.status, named.headers.get(REFUSAL_HEADER)], [400, "update"]);
 
   const room = await worker.fetch(new Request(`https://relay.test/v1/room/${ROOM}?role=host`, { headers: { ...upgrade, [VERSION_HEADER]: "0.6.9" } }), env);
   assert.deepEqual([room.status, room.headers.get(REFUSAL_HEADER)], [426, UPDATE_NEEDED]);
@@ -697,7 +698,8 @@ test("the Worker turns a game without X-MGQ-Features or below MIN_VERSION away b
   await worker.fetch(new Request(`https://relay.test/v1/world/${WORLD}?name=New&auth=${AUTH}`, { headers: { ...upgrade, [PLAYER_HEADER]: playerKey(1), [FEATURES_HEADER]: "raid", [VERSION_HEADER]: "0.0.0-dev" } }), env);
   await worker.fetch(new Request("https://relay.test/v1/worlds", { headers: { [VERSION_HEADER]: "0.7.0" } }), env);
   await worker.fetch(new Request("https://relay.test/v1/mods", { headers: { [VERSION_HEADER]: "0.0.0-dev+abc" } }), env);
-  assert.deepEqual(reached, [`room:${ROOM}`, `world:${WORLD}`, "directory:directory", "directory:directory"]);
+  await worker.fetch(new Request("https://relay.test/v1/worlds", { headers: { [FEATURES_HEADER]: "admin", [VERSION_HEADER]: "0.0.0-dev" } }), env);
+  assert.deepEqual(reached, [`room:${ROOM}`, `world:${WORLD}`, "directory:directory", "directory:directory", "directory:directory"], "the World Admin tool names 0.0.0-dev");
 
   reached.length = 0;
   const released = { ...env, MIN_VERSION: "0.6.4" };
@@ -705,7 +707,7 @@ test("the Worker turns a game without X-MGQ-Features or below MIN_VERSION away b
   await worker.fetch(new Request(`https://relay.test/v1/world/${WORLD}?name=New&auth=${AUTH}`, { headers: { ...upgrade, [PLAYER_HEADER]: playerKey(1), [FEATURES_HEADER]: "raid" } }), released);
   await worker.fetch(new Request("https://relay.test/v1/worlds"), released);
   await worker.fetch(new Request("https://relay.test/v1/mods"), released);
-  assert.deepEqual(reached, [`room:${ROOM}`, `world:${WORLD}`, "directory:directory", "directory:directory"], "released games and the World Admin tool pass while the lowest is at most 0.6.4");
+  assert.deepEqual(reached, [`room:${ROOM}`, `world:${WORLD}`, "directory:directory", "directory:directory"], "released games and requests naming no version pass while the lowest is at most 0.6.4");
 });
 
 test("the reports object answers a report busy while it handles another, after reading its streamed body to the end", async () => {

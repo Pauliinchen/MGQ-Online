@@ -2,14 +2,15 @@
 //  gate.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-12: Tested 400 without a code for a world room, a request without X-MGQ-Version as 0.6.4, the version gate on the world directory's and the mod catalog's routes and only 0.0.0-dev as a development build
+//      Paulinchen  2026-10-12: Tested the update code on the 400 of a world room and the World Admin tool passing with 0.0.0-dev
+//                            - Tested 400 without a code for a world room, a request without X-MGQ-Version as 0.6.4, the version gate on the world directory's and the mod catalog's routes and only 0.0.0-dev as a development build
 //                            - Created
 //
 //----------------------------------------------------------------
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { GATE, UPDATE_NEEDED, UPDATE_STATUS, WORLD_ROOM_UPDATE_STATUS, compareVersions, gateOf, minVersionOf, parseVersion, tooOld, updateRefusal } from "./gate.js";
+import { GATE, UPDATE_NEEDED, UPDATE_STATUS, WORLD_ROOM_UPDATE_CODE, WORLD_ROOM_UPDATE_STATUS, compareVersions, gateOf, minVersionOf, parseVersion, tooOld, updateRefusal } from "./gate.js";
 
 /**
  * A world's id as games make them.
@@ -95,18 +96,20 @@ test("a game that names no version counts as 0.6.4, so it is turned away only on
   }
 
   assert.equal(tooOld(GATE.version, null, null, "0.6.5"), true, "a released game's PvP room");
-  assert.equal(tooOld(GATE.version, null, null), false, "the World Admin tool, which names no version, while the lowest stays at 0.6.0");
+  assert.equal(tooOld(GATE.version, null, null), false, "a request naming no version while the lowest stays at 0.6.0");
+  assert.equal(tooOld(GATE.version, "admin", "0.0.0-dev", "0.9.0"), false, "the World Admin tool names 0.0.0-dev");
 });
 
-test("a world room refuses with 400 and no code, a PvP room with 426 and the text as its code, any other route with 426", () => {
-  assert.deepEqual(updateRefusal(at(`/v1/world/${WORLD}`), null, null), { status: WORLD_ROOM_UPDATE_STATUS, reason: UPDATE_NEEDED, socket: true, code: null });
-  assert.equal(WORLD_ROOM_UPDATE_STATUS, 400, "released games stop at a 400 and show an update hint");
-  assert.deepEqual(updateRefusal(at(`/v1/world/${WORLD}`), "raid", "0.6.9", "0.7.0"), { status: 400, reason: UPDATE_NEEDED, socket: true, code: null });
+test("a world room refuses with 400 and the update code, a PvP room with 426 and the text as its code, any other route with 426", () => {
+  assert.deepEqual(updateRefusal(at(`/v1/world/${WORLD}`), null, null), { status: WORLD_ROOM_UPDATE_STATUS, reason: UPDATE_NEEDED, socket: true, code: WORLD_ROOM_UPDATE_CODE });
+  assert.deepEqual([WORLD_ROOM_UPDATE_STATUS, WORLD_ROOM_UPDATE_CODE], [400, "update"], "released games stop at a 400 with a code they do not know and show an update hint");
+  assert.deepEqual(updateRefusal(at(`/v1/world/${WORLD}`), "raid", "0.6.9", "0.7.0"), { status: 400, reason: UPDATE_NEEDED, socket: true, code: "update" });
   assert.deepEqual(updateRefusal(at(`/v1/room/${WORLD}`), null, "0.5.3"), { status: UPDATE_STATUS, reason: UPDATE_NEEDED, socket: true, code: UPDATE_NEEDED });
   assert.deepEqual(updateRefusal(at("/v1/trades"), null, null), { status: 426, reason: "Update MGQ Online to play online.", socket: false, code: null });
   assert.deepEqual(updateRefusal(at("/v1/worlds"), null, "0.5.3"), { status: 426, reason: UPDATE_NEEDED, socket: false, code: null });
   assert.deepEqual(updateRefusal(at("/v1/mods"), null, null, "0.7.0"), { status: 426, reason: UPDATE_NEEDED, socket: false, code: null });
   assert.equal(updateRefusal(at("/v1/trades"), "raid", null), null);
-  assert.equal(updateRefusal(at("/v1/worlds"), null, null), null, "the World Admin tool sends no features");
+  assert.equal(updateRefusal(at("/v1/worlds"), null, null), null, "the directory asks no features");
+  assert.equal(updateRefusal(at("/v1/mods"), "admin", "0.0.0-dev", "0.9.0"), null, "the World Admin tool");
   assert.equal(updateRefusal(at(`/v1/world/${WORLD}`), "raid", null, "0.6.4"), null, "a released 0.6.4 game");
 });
