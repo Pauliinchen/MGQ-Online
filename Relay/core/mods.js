@@ -5,6 +5,7 @@
 //      Paulinchen  2026-10-12: Stopped reading a release file from GitHub once it passes its size limit, instead of reading it in full first
 //                            - Read a mod again after its link was checked and kept only the check's result, so a change made meanwhile is no longer undone and a removed mod stays removed
 //                            - Kept a mod that a link replaces listed until the link was checked
+//                            - Refused a mod name with ':', whose key would share another mod's file pieces on Cloudflare
 //      Paulinchen  2026-10-09: Let admins mark any mod personal, which games never turn off, and add a mod by its name alone only to mark it personal
 //                            - Listed every personal mod for the games, checked or not, and left mods known by their name alone out of their list of mods
 //                            - Kept whether a mod is personal when it changes between a link, an upload and a name
@@ -124,6 +125,24 @@ export function modKey(name) {
 }
 
 /**
+ * Tells why a cleaned mod name may not name a mod.
+ *
+ * Cloudflare finds a mod's file pieces by its key followed by ':', so a key with ':' would share
+ * the pieces of another mod.
+ *
+ * @param {string} cleaned The name, cleaned.
+ * @param {string} [missing] The refusal for a name without a key.
+ * @returns {string | null} The refusal, or null for a name that may name a mod.
+ */
+function nameRefusal(cleaned, missing = "the mod needs a name") {
+  if (!cleaned || modKey(cleaned).length === 0) {
+    return missing;
+  }
+
+  return cleaned.includes(":") ? "a mod's name may not contain ':'" : null;
+}
+
+/**
  * Hashes a mod's file with SHA-256. A script is hashed without its carriage returns, so the same
  * script checked out on Windows and served by GitHub hashes the same.
  *
@@ -193,9 +212,10 @@ export class ModCatalog {
     }
 
     const cleaned = cleanText(name, this.limits.maxNameLength);
+    const nameProblem = nameRefusal(cleaned);
 
-    if (!cleaned || modKey(cleaned).length === 0) {
-      return badRequest("the mod needs a name");
+    if (nameProblem) {
+      return badRequest(nameProblem);
     }
 
     if (typeof link !== "string" || !link.startsWith(LINK_START)) {
@@ -279,8 +299,11 @@ export class ModCatalog {
     const cleaned = cleanText(name, this.limits.maxNameLength);
     const label = cleanText(version, this.limits.maxVersionLength);
 
-    if (!cleaned || modKey(cleaned).length === 0 || !label) {
-      return badRequest("the mod needs a name and a version");
+    const unlabeled = "the mod needs a name and a version";
+    const nameProblem = label ? nameRefusal(cleaned, unlabeled) : unlabeled;
+
+    if (nameProblem) {
+      return badRequest(nameProblem);
     }
 
     if (!body) {
@@ -364,9 +387,10 @@ export class ModCatalog {
     }
 
     const cleaned = cleanText(name, this.limits.maxNameLength);
+    const nameProblem = nameRefusal(cleaned);
 
-    if (!cleaned || modKey(cleaned).length === 0) {
-      return badRequest("the mod needs a name");
+    if (nameProblem) {
+      return badRequest(nameProblem);
     }
 
     if (modKey(cleaned) !== modKeyOf) {

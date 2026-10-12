@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-12: Covered changes made while a link is checked: a removal, a personal mark, options, another link and a full catalog, and an upload listed until the link that replaces it is checked
+//                            - Covered a mod name with ':' refused by a link, an upload and a name alone
 //      Paulinchen  2026-10-09: Covered personal mods: marked by admins only, kept through kind changes, listed for games checked or not, and mods known by their name alone
 //      Paulinchen  2026-10-08: Covered an older copy's options that do not replace a newer version's
 //      Paulinchen  2026-10-07: Covered the options of any version kept until the current version's arrive
@@ -699,4 +700,20 @@ test("a new mod whose link is checked while the catalog fills up is refused", as
 
   assert.equal((await linking).status, 503);
   assert.deepEqual((await catalog.list(ADMIN)).body.mods.map((mod) => mod.key), ["victoryscreen"]);
+});
+
+test("a mod name with ':' is refused by a link, an upload and a name alone, and nothing is stored", async () => {
+  const { catalog, files } = await newCatalog({ tag: "v1.4.0", script: "# cap" });
+  const { upload: body } = await packed([["Luka_Replacer.rb", "# one"]]);
+
+  for (const answer of [
+    await catalog.setLink(ADMIN, "Level:Cap", LATEST),
+    await catalog.upload(ADMIN, "Luka:Replacer", "1.0", body),
+    await catalog.setName(ADMIN, "victory:screen", "Victory:Screen"),
+  ]) {
+    assert.deepEqual([answer.status, answer.body.error], [400, "a mod's name may not contain ':'"]);
+  }
+
+  assert.deepEqual((await catalog.list(ADMIN)).body.mods, []);
+  assert.equal(files.size, 0);
 });

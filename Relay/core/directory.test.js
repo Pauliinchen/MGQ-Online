@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-12: Covered an edit with a presence, a removal with an edit, a starting save with a presence and two creates of one world, each made at once
+//                            - Covered featured, full and per-creator refusals of a new world costing its address no rate turn
 //      Paulinchen  2026-10-10: Covered a Raid World's starting save from a game that names the dev feature, made and uploaded, also through the public routes, and still refused a player's choice and every other game's starting save
 //                            - Covered the player's name member tells a world room
 //                            - Covered an edit that sends a Raid World's difficulty unchanged telling the world room nothing, and the first difficulty of a world made without one
@@ -671,6 +672,30 @@ test("a request the directory refuses anyway costs its address no rate turn", as
   assert.equal((await directory.putStart(WORLD, OTHER, Uint8Array.of(1), "1.2.3.4")).status, 403);
   assert.equal((await directory.putStart(WORLD, CREATOR, new Uint8Array(0), "1.2.3.4")).status, 413);
   assert.equal((await directory.putStart(WORLD, CREATOR, Uint8Array.of(1), "1.2.3.4")).status, 200);
+});
+
+test("a featured, full or per-creator refusal of a new world costs its address no rate turn either", async () => {
+  const { directory } = newDirectory({ ...DIRECTORY_LIMITS, maxWorldsPerCreator: 1 });
+  assert.equal((await directory.create(await newWorld(), "1.2.3.4")).status, 201);
+
+  for (let i = 1; i <= 6; i++) {
+    const answer = await directory.create(await newWorld({ id: String(i).repeat(32) }), "1.2.3.4");
+    assert.deepEqual([answer.status, answer.body.code], [429, undefined], `try ${i} names the creator limit, not the rate`);
+  }
+
+  assert.equal((await directory.create(await newWorld({ id: "7".repeat(32), player: OTHER, featured: true }), "1.2.3.4")).status, 403);
+  assert.equal((await directory.create(await newWorld({ id: "7".repeat(32), player: OTHER }), "1.2.3.4")).status, 201);
+
+  const full = newDirectory({ ...DIRECTORY_LIMITS, maxWorlds: 1 }).directory;
+  full.rates.creates = new RateLimiter({ burst: 2, refillMs: 3_600_000 });
+  assert.equal((await full.create(await newWorld(), "1.2.3.4")).status, 201);
+
+  for (let i = 1; i <= 3; i++) {
+    assert.equal((await full.create(await newWorld({ id: String(i).repeat(32), player: OTHER }), "1.2.3.4")).status, 503);
+  }
+
+  full.limits = { ...DIRECTORY_LIMITS, maxWorlds: 2 };
+  assert.equal((await full.create(await newWorld({ id: "4".repeat(32), player: OTHER }), "1.2.3.4")).status, 201);
 });
 
 test("a Raid World keeps how it shares companions, a Classic one shares none, and both stay as made", async () => {

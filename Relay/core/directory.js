@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-12: Worked out the asking player's id before reading a world, so an edit, a removal, a starting save or a new world no longer writes back an entry another request changed meanwhile
+//                            - Counted a new world against its address only after the featured, full and per-creator refusals too
 //      Paulinchen  2026-10-10: Let a game that names the dev feature give a Raid World a starting save, for testing, and read what a game names in X-MGQ-Features for every public route
 //                            - Told a world room the name of a player of its world too, which a Raid World's boss pool keeps for its defeat
 //                            - Told a world room a Raid World's difficulty after an edit only when it changed
@@ -295,11 +296,6 @@ export class Directory {
       return { status: 409, body: { error: "a world with this id exists" } };
     }
 
-    // Counted only now, so a request the relay refuses anyway costs its address no turn.
-    if (!this.rates.creates.take(address)) {
-      return tooMany();
-    }
-
     const admin = this.admins.has(creator);
     const worlds = await this.entries();
 
@@ -313,6 +309,11 @@ export class Directory {
 
     if (!admin && worlds.filter((entry) => entry.creator.id === creator).length >= this.limits.maxWorldsPerCreator) {
       return { status: 429, body: { error: `a player may make at most ${this.limits.maxWorldsPerCreator} worlds` } };
+    }
+
+    // Counted only after every refusal, so a request the relay refuses anyway costs its address no turn.
+    if (!this.rates.creates.take(address)) {
+      return tooMany();
     }
 
     const now = this.clock();
