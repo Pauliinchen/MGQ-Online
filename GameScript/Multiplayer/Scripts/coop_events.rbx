@@ -2,6 +2,7 @@
 #  coop_events.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Let a page of the leader's story that fails to hold wait for the player as the game's own pages do instead of ending the game
 #      Paulinchen  2026-10-11: Sorted a page with story behind a choice as no chest, so the story it moves on reaches the world's, as Amira's paid tip in Iliasburg, which a chest kept from it and so hid the rabbit in Pornof
 #                            - Kept a new game's opening from starting while its setup runs without its scene in a Raid World past it
 #                            - Told the party the dialogue of the common events the story calls, which the game runs in a child interpreter, such as the companions' lines
@@ -1360,10 +1361,14 @@ module MGQ_MpCoopEvents
 
   # Holds a page of the leader's story in the message window for the leader: the player can
   # neither move it on nor close it, nor skip it with the game's skip key, until the leader moved
-  # past it, see read?. A page too long for the window shows its rest after OVERFLOW_FRAMES.
+  # past it, see read?. A page too long for the window shows its rest after OVERFLOW_FRAMES. A page
+  # that fails to hold waits for the player as the game's own pages do.
+  #
+  # It runs inside the message window's wait, where an error would end the game.
   #
   # @param window [Window_Message] The message window.
-  def self.hold_page(window)
+  # @param original [Proc] The game's own wait for the player to move the page on.
+  def self.hold_page(window, original)
     page_end = @page_end
     window.pause = true
     frames = 0
@@ -1375,6 +1380,9 @@ module MGQ_MpCoopEvents
     rescue FiberError
       # A message window outside a fiber cannot wait, so the page moves on at once.
       log_once(:page_fiber, "could not hold a page of the leader's story: the message window runs outside a fiber, so it moves on at once")
+    rescue => e
+      log_once(:hold_page, "holding a page of the leader's story failed, the player moves it on instead: #{e.class}: #{e.message}")
+      original.call
     end
     window.pause = false
     page_ended if page_end
@@ -1816,7 +1824,7 @@ begin
   # The wait for the player to move the message on, but on a page of the leader's story for the
   # leader instead.
   MGQ_MpHooks.around(Window_Message, :input_pause, "coop_events") do |window, _args, original|
-    MGQ_MpCoopEvents.mirroring? ? MGQ_MpCoopEvents.hold_page(window) : original.call
+    MGQ_MpCoopEvents.mirroring? ? MGQ_MpCoopEvents.hold_page(window, original) : original.call
   end
 rescue => e
   MGQ_MpCoopEvents.log("message hooks FAILED: #{e.class}: #{e.message}")

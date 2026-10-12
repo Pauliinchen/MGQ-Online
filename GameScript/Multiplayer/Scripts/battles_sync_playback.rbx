@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-12: Left out a message of the battle's mode that fails and a line of the host's stream that fails to read, logged once, instead of ending the game
+#                            - Checked the host's picture and screen calls as the story's are checked in coop_scene.rbx, its picture names with dots included, and erased the picture's place instead of showing a cut-in this game lacks, either of which ended the guest's game
 #                            - Ended a time stop of the host whose character is no battler here, which the game would ask for its observer
 #      Paulinchen  2026-10-11: Named in the guest's waiting box the players the host still waits for, as the host tells them, with the seconds waited, the wait for the host worded as the waiting box words it
 #      Paulinchen  2026-10-08: Showed a message of the host without its face while this game lacks the face file
@@ -49,9 +50,6 @@ module MGQ_MpBattlesSync
 
     # Longest wait taken from the host, 10 seconds.
     MAX_WAIT = 600
-
-    # A picture the host may show: a file name, never a path.
-    PICTURE_NAME = /\A[\w\- ]+\z/
 
     # A sound or piece of music the host may play: a path inside the game's Audio folder, as the
     # game passes it, whose parts are plain names, so it never leads out of that folder.
@@ -258,7 +256,7 @@ module MGQ_MpBattlesSync
       when /\Apicture\./
         picture(method, args)
       when /\Ascreen\./
-        $game_troop.screen.send(method, *args) if recorded?(Hooks::SCREEN_METHODS, method)
+        screen(method, args)
       when /\Aaudio\./
         audio(method, args)
       when "animation"
@@ -544,20 +542,45 @@ module MGQ_MpBattlesSync
       value.nil? || (value.is_a?(Integer) && range.include?(value))
     end
 
-    # Changes a picture, such as a cut-in.
+    # Changes a picture, such as a cut-in, once its arguments are ones this game takes, as the
+    # story's pictures are checked in coop_scene.rbx. A picture this game lacks erases the picture's
+    # place instead.
     #
     # @param method [String] What the host did with it.
     # @param args [Array] The picture's number, then the method's arguments.
     def self.picture(method, args)
+      name = Hooks::PICTURE_METHODS.find { |known| known.to_s == method }
       number = args[0].to_i
-      unless recorded?(Hooks::PICTURE_METHODS, method) && number > 0 && number <= MGQ_MpCoopScene::MAX_PICTURE
+      unless name && number > 0 && number <= MGQ_MpCoopScene::MAX_PICTURE
         return MGQ_MpBattlesSync.log_once([:picture, method.to_s[0, 40]], "left out the host's picture call #{method.to_s[0, 40]} on picture #{number}")
       end
-      if method == "show" && args[1].to_s !~ PICTURE_NAME
-        return MGQ_MpBattlesSync.log_once([:picture_name, args[1].to_s[0, 40]], "left out the host's picture #{args[1].to_s[0, 40].inspect}, not a plain file name")
+      unless MGQ_MpCoopScene.args_fit?(MGQ_MpCoopScene::PICTURE_ARGS[name], args[1..-1])
+        return MGQ_MpBattlesSync.log_once([:picture_args, name], "left out the host's picture call #{method} with the arguments #{args.inspect[0, 80]}")
+      end
+      if name == :show && args[1] !~ MGQ_MpCoopScene::PICTURE_NAME
+        return MGQ_MpBattlesSync.log_once([:picture_name, args[1][0, 40]], "left out the host's picture #{args[1][0, 40].inspect}, not a plain file name")
+      end
+      if name == :show && !MGQ_MpCoopScene.map_graphics?([[:picture, args[1]]])
+        $game_troop.screen.pictures[number].erase
+        return MGQ_MpBattlesSync.log_once([:no_picture, args[1][0, 40]], "erased picture #{number} instead of the host's #{args[1][0, 40].inspect}, which this game lacks")
       end
 
-      $game_troop.screen.pictures[number].send(method, *args[1..-1])
+      $game_troop.screen.pictures[number].send(name, *args[1..-1])
+    end
+
+    # Changes the battle's screen as the host did, such as a flash, once its arguments are ones
+    # this game takes, see MGQ_MpCoopScene.args_fit?.
+    #
+    # @param method [String] What the host did with it.
+    # @param args [Array] The change's arguments.
+    def self.screen(method, args)
+      name = Hooks::SCREEN_METHODS.find { |known| known.to_s == method }
+      return unless name
+      unless MGQ_MpCoopScene.args_fit?(MGQ_MpCoopScene::SCREEN_ARGS[name], args)
+        return MGQ_MpBattlesSync.log_once([:screen_args, name], "left out the host's screen call #{method} with the arguments #{args.inspect[0, 80]}")
+      end
+
+      $game_troop.screen.send(name, *args)
     end
 
     # Starts an animation on the guest's battlers, unless the guest holds the skip key or has to

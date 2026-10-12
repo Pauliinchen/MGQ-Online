@@ -4,6 +4,7 @@
 #  Changelog:
 #      Paulinchen  2026-10-12: Checked that the wire reads hostile lines as nil or unknown values without raising or making a symbol, and only fields an action result has
 #                            - Checked that the host's names, a stream line or a mode's message that fail are left out, and that a time stop without a battler ends
+#                            - Checked that a host's cut-in whose name holds a dot plays, one this game lacks erases its place, and that picture and screen calls with arguments this game cannot take are left out
 #      Paulinchen  2026-10-11: Checked the waiting box in the layout: kept in Player.ini, its lines drawn anew at a new width and its least width
 #                            - Checked the waiting box: its lines, the names still waited for, the seconds drawn once a second, the leave offer, a battle's ending, a details that fails, the seat names and the playback's path
 #                            - Checked that the host's wait for the commands names who still chooses and tells the guests, and that a guest's box names them while the host's stream stalls
@@ -481,4 +482,42 @@ check("a battler's time stop is taken", [$game_party.od_turn, $game_party.od_use
 $log.clear
 playback.play(scene, ["time_stop", 0, nil])
 check("and its end, without a log line", [$game_party.od_turn, $game_party.od_user, $log.grep(/time stop/).size], [0, nil, 0])
+
+# The host's cut-ins and screen effects are checked as the story's are in coop_scene.rbx.
+Object.send(:remove_const, :MGQ_MpCoopScene)
+load_script "coop_scene"
+# A picture that notes what was done to it.
+class Game_Picture
+  attr_reader :done
+  def initialize; @done = []; end
+  def show(*args); @done << [:show, *args]; end
+  def move(*args); @done << [:move, *args]; end
+  def erase; @done << [:erase]; end
+end
+# A screen that notes its effects and makes its pictures as they are asked for.
+class Game_Screen
+  attr_reader :done, :pictures
+  def initialize; @done = []; @pictures = Hash.new { |all, number| all[number] = Game_Picture.new }; end
+  def start_flash(*args); @done << [:flash, *args]; end
+  def start_shake(*args); @done << [:shake, *args]; end
+end
+class Game_Troop; def screen; @screen ||= Game_Screen.new; end; end
+$log.clear
+playback.play(scene, ["picture.show", 3, "cutin_alice.v2", 0, 10, 20.5, 100, 100, 255, 0])
+playback.play(scene, ["picture.move", 3, 0, 10, 20, 100, 100, 0, 0, 30])
+check("a cut-in whose name holds a dot shows and moves", $game_troop.screen.pictures[3].done.map(&:first), [:show, :move])
+playback.play(scene, ["picture.show", 3, "MissingFace", 0, 10, 20, 100, 100, 255, 0])
+check("one this game lacks erases the picture's place instead", $game_troop.screen.pictures[3].done.last, [:erase])
+playback.play(scene, ["picture.show", 4, "cutin", 0, Float::INFINITY, 20, 100, 100, 255, 0])
+playback.play(scene, ["picture.move", 4, 0, 10, 20, 100, 100, 0, 0, -1])
+playback.play(scene, ["picture.show", 4, "../cutin", 0, 10, 20, 100, 100, 255, 0])
+check("a place past the limits, a negative duration or a path is left out", $game_troop.screen.pictures[4].done, [])
+playback.play(scene, ["screen.start_flash", Color.new(255, 255, 255, 170), 20])
+playback.play(scene, ["screen.start_flash", "white", 20])
+playback.play(scene, ["screen.start_shake", 5, 5, 10])
+playback.play(scene, ["screen.start_shake", 50, 5, 10])
+check("the screen takes a flash of a color and a shake within the editor's range alone",
+      $game_troop.screen.done.map(&:first), [:flash, :shake])
+check("and nothing raised, the calls left out logged once",
+      [$log.grep(/could not play/).size, $log.grep(/left out the host's (picture|screen) call/).size], [0, 4])
 sync.finish

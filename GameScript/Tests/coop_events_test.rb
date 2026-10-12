@@ -2,6 +2,7 @@
 #  coop_events_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Checked that a page of the leader's story that fails to hold waits for the member as the game's own pages do
 #      Paulinchen  2026-10-11: Checked that a chest turning on a chest flag stays a chest, in the game and in the generator, and stood in for the chest flags
 #                            - Stood in for the player's followers, which a move to another map shows
 #                            - Checked that a page with story behind a choice is no chest, as Amira's paid tip in Iliasburg
@@ -972,6 +973,17 @@ $frame_count += MGQ_MpCoopEvents.reading_frames(["Hello, \\N[1]!", "Leader choos
 check("then it ends", [pause.resume, window.pause], [:closed, false])
 Fiber.new { window.process_input }.resume
 check("then the member's own messages wait for their buttons again", $own_pause, true)
+MGQ_MpCoopEvents.take(leader, say.merge("page" => "s.0", "lines" => ["Broken page"].pack('m0'), "choices" => ""))
+$game_message.clear
+$game_map.update
+done = MGQ_MpCoopEvents.method(:page_done?)
+MGQ_MpCoopEvents.define_singleton_method(:page_done?) { raise ArgumentError, "broken page" }
+$own_pause = nil
+closed = Fiber.new { window.process_input; :closed }.resume
+MGQ_MpCoopEvents.define_singleton_method(:page_done?, done)
+check("a page of the leader's story that fails to hold waits for the member as the game's own pages do",
+      [$game_message.texts, closed, $own_pause, window.pause, MGQ_MpCoopEvents.mirroring?], [["Broken page"], :closed, true, false, false])
+$game_message.clear
 $game_message.clear
 $game_message.busy = true
 (1..5).each do |number|

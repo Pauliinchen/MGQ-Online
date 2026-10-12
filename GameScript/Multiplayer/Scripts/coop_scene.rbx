@@ -2,6 +2,7 @@
 #  coop_scene.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Left out the teller's picture and screen changes whose arguments this game cannot take, and erased the picture's place instead of showing a picture this game lacks, either of which ended the viewer's game
 #      Paulinchen  2026-10-11: Let the catch-up follow the teller's story values as a story laid over the viewer's, so a viewer gets what the watched scene gave and loses the key items it took
 #                            - Told the viewers the switches that only stay on while a scene runs, which are each player's own, and put them back once the viewer no longer sees the scene
 #                            - Let the teller's move routes skip a blocked step and ended the one the player's character walks once the viewer no longer sees the scene, so it never holds the player for good
@@ -48,6 +49,36 @@ module MGQ_MpCoopScene
 
   # The highest number of a picture the game's screens hold, which another game may name.
   MAX_PICTURE = 100
+
+  # The largest place, zoom, opacity or turning speed another game may name for a picture, either
+  # way; a larger one or Infinity raises in the game's sprites every frame.
+  MOST_AMOUNT = 100_000
+
+  # The longest change of a picture or the screen another game may name, in frames: ten minutes.
+  MOST_FRAMES = 36_000
+
+  # The strongest and fastest shake of the screen another game may name, the editor's own range.
+  MOST_SHAKE = 9
+
+  # The kind of each argument a picture's change takes, by the change, see arg_fits?.
+  PICTURE_ARGS = {
+    :show => [:name, :origin, :amount, :amount, :amount, :amount, :amount, :blend],
+    :move => [:origin, :amount, :amount, :amount, :amount, :amount, :blend, :frames],
+    :rotate => [:amount],
+    :start_tone_change => [:tone, :frames],
+    :erase => []
+  }
+
+  # The kind of each argument a change of the screen takes, by the change, see arg_fits?.
+  SCREEN_ARGS = {
+    :start_fadeout => [:frames],
+    :start_fadein => [:frames],
+    :start_tone_change => [:tone, :frames],
+    :start_flash => [:color, :frames],
+    :start_shake => [:shake, :shake, :frames],
+    :od_fadein => [],
+    :od_fadeout => []
+  }
 
   # Frames the member's screen takes to come back once the story ended.
   RESTORE_FRAMES = 30
@@ -442,6 +473,7 @@ module MGQ_MpCoopScene
     when "screen"
       name = SCREEN_METHODS.find { |known| known.to_s == method }
       return log_once([:unknown, kind], "ignored #{kind}: this game's screen has no such change") unless name && $game_map.screen.respond_to?(name)
+      return log_once([:screen_args, name], "ignored #{kind} #{describe(args)}: arguments this game cannot take") unless args_fit?(SCREEN_ARGS[name], args)
 
       unless @screen
         @screen = { :map => $game_map.map_id, :tone => copy_tone($game_map.screen.tone) }
@@ -473,7 +505,10 @@ module MGQ_MpCoopScene
     end
   end
 
-  # Changes a picture of the player's map screen as the leader's story did.
+  # Changes a picture of the player's map screen as the leader's story did. A picture this game
+  # lacks erases the picture's place instead, so an older one there is not moved in its stead.
+  #
+  # The game's sprites load the picture with no rescue, so one this game lacks would end the game.
   #
   # @param method [String] What happens to it, see PICTURE_METHODS.
   # @param args [Array] The picture's number, then the method's arguments.
@@ -481,11 +516,62 @@ module MGQ_MpCoopScene
     name = PICTURE_METHODS.find { |known| known.to_s == method }
     number = args[0].to_i
     return log("ignored picture.#{method} of picture #{number}: no such change or picture") unless name && number > 0 && number <= MAX_PICTURE
-    return log("ignored showing picture #{number}: '#{args[1].to_s[0, 40]}' is no picture's file name") if name == :show && args[1].to_s !~ PICTURE_NAME
+    return log_once([:picture_args, name], "ignored picture.#{method} #{describe(args)}: arguments this game cannot take") unless args_fit?(PICTURE_ARGS[name], args[1..-1])
+    return log("ignored showing picture #{number}: '#{args[1].to_s[0, 40]}' is no picture's file name") if name == :show && args[1] !~ PICTURE_NAME
 
     @pictures |= [number]
+    if name == :show && !map_graphics?([[:picture, args[1]]])
+      $game_map.screen.pictures[number].erase
+      return log_once([:no_picture, args[1][0, 40]], "erased picture #{number} instead of showing '#{args[1][0, 40]}': this game has no such picture")
+    end
     $game_map.screen.pictures[number].send(name, *args[1..-1])
     log("applied the leader's picture.#{method} #{describe(args)}")
+  end
+
+  # Reports whether the arguments another game sent for a change of a picture or the screen are
+  # ones this game takes: as many as the change takes, each of its kind and within the limits.
+  #
+  # The game keeps them and uses them each frame, where a wrong one ends the game outside every
+  # rescue of the mod.
+  #
+  # @param kinds [Array<Symbol>, nil] The kind of each argument, see PICTURE_ARGS and SCREEN_ARGS.
+  # @param args [Array] The arguments.
+  # @return [Boolean] Whether they are, never raising.
+  def self.args_fit?(kinds, args)
+    kinds.size == args.size && kinds.zip(args).all? { |kind, value| arg_fits?(kind, value) }
+  rescue
+    false
+  end
+
+  # Reports whether one argument another game sent is of its kind and within the limits: a finite
+  # amount up to MOST_AMOUNT either way, whole frames up to MOST_FRAMES, a whole origin, a blend
+  # type of 0 to 2, a tone, a color, a shake up to MOST_SHAKE, or a name.
+  #
+  # @param kind [Symbol] The argument's kind, as PICTURE_ARGS and SCREEN_ARGS name it.
+  # @param value [Object] The argument.
+  # @return [Boolean] Whether it is, never raising.
+  def self.arg_fits?(kind, value)
+    case kind
+    when :amount then number?(value) && value.abs <= MOST_AMOUNT
+    when :frames then number?(value) && value == value.floor && value >= 0 && value <= MOST_FRAMES
+    when :origin then value.is_a?(Integer)
+    when :blend then value.is_a?(Integer) && value >= 0 && value <= 2
+    when :tone then value.is_a?(Tone)
+    when :color then value.is_a?(Color)
+    when :shake then number?(value) && value >= 0 && value <= MOST_SHAKE
+    when :name then value.is_a?(String)
+    else false
+    end
+  rescue
+    false
+  end
+
+  # Reports whether a value is a whole or finite number.
+  #
+  # @param value [Object] The value.
+  # @return [Boolean] Whether it is.
+  def self.number?(value)
+    value.is_a?(Integer) || (value.is_a?(Float) && value.finite?)
   end
 
   # Lays the teller's story values over the player's while they watch, see story_value: what is

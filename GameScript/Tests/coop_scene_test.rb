@@ -2,6 +2,7 @@
 #  coop_scene_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Checked that a picture this game lacks erases its place, and that picture and screen changes with arguments of the wrong kind, too many or past the limits are left out
 #      Paulinchen  2026-10-11: Checked that a scene switch, though each player's own, reaches the viewers, is not taken as the world's and goes back once the viewer no longer sees the scene
 #                            - Checked that a viewer the story brought to another map keeps the character the story showed
 #                            - Checked that the viewer's character skips a blocked step of the teller's route and walks none of it once the viewer no longer sees the scene
@@ -220,6 +221,8 @@ $game_player.transparent = false
 $game_map.screen.start_tone_change(Tone.new(-34, -34, -34, 0), 0)
 $game_map.screen.done.clear
 wire = MGQ_MpBattlesSync::Wire
+# The pictures this game has.
+module MGQ_MpOverworld; def self.graphic?(folder, name); folder == :picture && %w(story_cg ev_aguni._hb1 ahead elsewhere).include?(name); end; end
 take = lambda { |kind, args, map = 7| $routes["pscene"].call(leader, { "pscene" => kind, "map" => map.to_s, "args" => wire.line(args) }) }
 take.call("picture.show", [3, "story_cg", 0, 0, 0, 100, 100, 255, 0])
 take.call("screen.start_fadeout", [30])
@@ -237,6 +240,27 @@ check("a path, a number past the pictures or an unknown method is left out",
       [[], [], [], 2])
 take.call("picture.show", [10, "ev_aguni._hb1", 0, 0, 0, 100, 100, 255, 0])
 check("a picture whose name holds a dot shows", $game_map.screen.pictures[10].done.size, 1)
+take.call("picture.show", [10, "mod_cg", 0, 0, 0, 100, 100, 255, 0])
+check("a picture this game lacks erases the picture's place instead of showing", $game_map.screen.pictures[10].done.last, [:erase])
+screen_done = $game_map.screen.done.size
+take.call("picture.start_tone_change", [10, "dark", 30])
+take.call("screen.start_tone_change", ["dark", 30])
+take.call("screen.start_flash", ["white", 20])
+take.call("screen.start_fadeout", [30, 1])
+check("a text in place of a tone or color, or an argument too many, is left out",
+      [$game_map.screen.pictures[10].done.size, $game_map.screen.done.size], [2, screen_done])
+$routes["pscene"].call(leader, { "pscene" => "picture.move", "map" => "7", "args" => wire.line([12, 0, 0.5, 0, 100, 100, 255, 0, 30]).sub("0.5", "1e400") })
+take.call("picture.move", [12, 0, 0, 0, 100, 100, 255, 0, -1])
+take.call("picture.move", [12, 0, 0, 0, 100, 100, 255, 0, 2.5])
+take.call("picture.rotate", [12, 1_000_000_000])
+take.call("screen.start_shake", [10, 5, 30])
+check("Infinity, a negative or broken duration, a turning speed past the limit or a shake past the editor's range is left out",
+      [$game_map.screen.pictures[12].done, $game_map.screen.done.size], [[], screen_done])
+take.call("picture.move", [12, 0, 10.5, -20, 100, 100, 255, 0, 30.0])
+take.call("picture.rotate", [12, -5])
+take.call("screen.start_shake", [5, 9, 30])
+check("but numbers within the limits are taken",
+      [$game_map.screen.pictures[12].done, $game_map.screen.done.last], [[[:move, 0, 10.5, -20, 100, 100, 255, 0, 30.0], [:rotate, -5]], [:shake, 5, 9, 30]])
 $follows = false
 take.call("picture.show", [11, "story_cg", 0, 0, 0, 100, 100, 255, 0])
 check("a member who plays their own story sees none of the leader's scene", [$game_map.screen.pictures[11].done, MGQ_MpCoopScene.watching?], [[], false])
