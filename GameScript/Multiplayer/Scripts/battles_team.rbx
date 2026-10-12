@@ -2,6 +2,7 @@
 #  battles_team.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Took who commands the characters of who left only as pairs of seats, dropping the rest, and left out the players of a side that do not read
 #      Paulinchen  2026-10-07: Named players and characters through battles_sync.rbx instead of the co-op battle's copies
 #                            - Logged the sides and their shares, the rebuilt opponents and who takes over the characters of a player who left
 #      Paulinchen  2026-10-04: Renamed from mp_battles_team.rbx
@@ -63,8 +64,8 @@ module MGQ_MpBattlesTeam
   # @param other [Array<MGQ_MpBattlesCoop::Player, Array>] The players of the other side.
   # @param same_side [Boolean] Whether this game's side is the host's.
   def self.prepare(own, other, same_side)
-    @own = own.map { |fields| MGQ_MpBattlesCoop::Player.read(fields) }
-    @other = other.map { |fields| MGQ_MpBattlesCoop::Player.read(fields) }
+    @own = MGQ_MpBattlesCoop::Player.read_all(own)
+    @other = MGQ_MpBattlesCoop::Player.read_all(other)
     @same_side = same_side
     @heirs = {}
     @opponents = {}
@@ -214,8 +215,11 @@ module MGQ_MpBattlesTeam
   #
   # @param body [String] Pairs of seats, see settle.
   def self.take_heirs(body)
-    pairs = Array(MGQ_MpBattlesSync::Wire.parse(body.to_s)[0])
-    @heirs = Hash[pairs.each_slice(2).select { |pair| pair.size == 2 }]
+    values = MGQ_MpBattlesSync::Wire.parse(body.to_s)
+    pairs = Array(values && values[0]).each_slice(2).select { |pair| pair.size == 2 }
+    seats, broken = pairs.partition { |pair| pair.all? { |seat| seat.is_a?(Integer) } }
+    log_once(:heirs, "dropped who commands the characters of who left where the host sent no pair of seats") if values.nil? || !broken.empty?
+    @heirs = Hash[seats]
     say { "took who commands the characters of who left: #{heirs_text}" }
   rescue => e
     log("taking who commands failed: #{e.class}: #{e.message}")

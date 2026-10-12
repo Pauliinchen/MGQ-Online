@@ -4,6 +4,7 @@
 #  Changelog:
 #      Paulinchen  2026-10-12: Took a joining player's party_member_max only as a number, 0 for anything else, instead of failing the battle's start
 #                            - Picked a defeat scene of the troop for a guest who takes the battle over, even when it kept one of a former battle
+#                            - Read a player another game sent only with numbers for its seat, party_member_max, places and shares and a list for its HP and MP, dropping a field of another kind, logged once, and the player whose seat is no number
 #      Paulinchen  2026-10-11: Left the party members who said no to starting a battle with the player out of its invites, and took the party members' offers and answers about a battle outside the party
 #                            - Stretched the steps to the next random encounter by half once another player who would fight it stands within NEARBY_TILES, a party member in a Classic world, instead of once per member or by half a draw per player on the map, and invited only the players that near to a Raid World's battle, so players across a large map no longer keep each other from meeting enemies or pull each other into fights
 #                            - Opened the player's command phase while their own Frontline is down but their Backline may swap in, so they can still change the formation
@@ -212,12 +213,48 @@ module MGQ_MpBattlesCoop
   # @!attribute front [Integer, nil] Their share of the Frontline, once arranged.
   # @!attribute bench [Integer, nil] Their share of the Backline, once arranged.
   Player = Struct.new(:seat, :name, :builds, :vitals, :max, :order, :front, :bench) do
-    # Reads a player from the fields a message carries.
+    # Reads a player from the fields a message carries, dropping a field of the wrong kind.
+    #
+    # Another game sends the fields, so any of them may be a list, a text or true.
     #
     # @param fields [Array, Player] The fields in the order of the attributes, or a player already read.
-    # @return [Player] The player.
+    # @return [Player, nil] The player, nil when its seat is no number.
     def self.read(fields)
-      fields.is_a?(self) ? fields : new(*Array(fields).first(members.size))
+      return fields if fields.is_a?(self)
+
+      seat, name, builds, vitals, max, order, front, bench = Array(fields).first(members.size)
+      return MGQ_MpBattlesCoop.dropped(:seat, seat) unless seat.is_a?(Integer)
+
+      vitals = MGQ_MpBattlesCoop.dropped(:vitals, vitals) || [] unless vitals.is_a?(Array)
+      new(seat, name.to_s, builds.to_s, vitals, count(:max, max), places(order), count(:front, front), count(:bench, bench))
+    end
+
+    # Reads a list of players, leaving out those that do not read.
+    #
+    # @param list [Array, nil] The players or their fields.
+    # @return [Array<Player>] The players.
+    def self.read_all(list)
+      Array(list).map { |fields| read(fields) }.compact
+    end
+
+    # Checks a count among a player's fields.
+    #
+    # @param field [Symbol] The field's name.
+    # @param value [Object] Its value.
+    # @return [Integer, nil] The count, nil when there was none or it is no number of 0 or more.
+    def self.count(field, value)
+      value.nil? || (value.is_a?(Integer) && value >= 0) ? value : MGQ_MpBattlesCoop.dropped(field, value)
+    end
+
+    # Checks the order of a player's places among their fields.
+    #
+    # @param order [Object] The order.
+    # @return [Array<Integer>, nil] The order, nil when there was none or it holds anything but
+    #   numbers of 0 or more.
+    def self.places(order)
+      return order if order.nil? || (order.is_a?(Array) && order.all? { |place| place.is_a?(Integer) && place >= 0 })
+
+      MGQ_MpBattlesCoop.dropped(:order, order)
     end
 
     # Lists the player's places on the battle's Frontline and on its Backline.
@@ -1609,7 +1646,7 @@ module MGQ_MpBattlesCoop
     end
 
     enemies, players, level, turn = MGQ_MpBattlesSync::Wire.parse(roster.to_s)
-    players = Array(players).map { |fields| Player.read(fields) }
+    players = Player.read_all(players)
     log("took the roster of battle #{MGQ_MpBattlesSync.battle_id} (#{roster.to_s.size} bytes): #{Array(enemies).size} enemies, #{players.size} players, level #{level.inspect}#{", turn #{turn}" if turn}")
     decline(@invite[:peer], @invite[:message], "the player's battle #{MGQ_MpBattlesSync.battle_id} began") if @invite
     return left_out("the host's party came without the player") unless players.any? { |player| player.seat == MGQ_MpOverworldSync::Me.seat }
@@ -1782,7 +1819,7 @@ module MGQ_MpBattlesCoop
   # @return [Array<Player>] The players in the party's order, each with the order of their places
   #   and their shares of the Frontline and of the Backline.
   def self.arrange(players, backline = true)
-    players = players.map { |fields| Player.read(fields) }
+    players = Player.read_all(players)
     hosted = backline && raid?
     first = lambda { |seat| hosted ? seat == MGQ_MpOverworldSync::Me.seat : leads?(seat) }
     ranked = MGQ_MpCoopSquad.ranked(players.map { |player| [player_id(player.seat), first.call(player.seat)] })
@@ -1824,6 +1861,16 @@ module MGQ_MpBattlesCoop
   # @return [Array<Integer>] The order, the characters' own order when there was none or it is broken.
   def self.valid_order(order, count)
     order.is_a?(Array) && order.sort == (0...count).to_a ? order.dup : (0...count).to_a
+  end
+
+  # Drops a field of a player another game sent that is of the wrong kind, logging it once per
+  # field and kind.
+  #
+  # @param field [Symbol] The field's name.
+  # @param value [Object] Its value.
+  # @return [nil] Nothing, which stands for the field.
+  def self.dropped(field, value)
+    log_once([:dropped, field, value.class.name], "dropped a player's #{field} another game sent as #{value.class}")
   end
 
   # Lists the battle's players, as form took them.
@@ -1886,7 +1933,7 @@ module MGQ_MpBattlesCoop
   # @param scene [Scene_Battle] The battle.
   # @param players [Array<Player, Array>] The players as arrange gives them, or their fields.
   def self.form(scene, players)
-    @players = players.map { |fields| Player.read(fields) }
+    @players = Player.read_all(players)
     @own_squad ||= MGQ_MpCoopSquad.own_order
     members = []
     @players.each do |player|
@@ -2204,7 +2251,7 @@ module MGQ_MpBattlesCoop
     player = own_player
     return false unless player && @own_squad
 
-    order = player.order
+    order = Array(player.order)
     front = player.front.to_i
     at = order.first(front).index { |place| @own_squad[place].equal?(actor) }
     to = front + bench_index

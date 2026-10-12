@@ -6,6 +6,7 @@
 #                            - Checked that the host keeps the actions there when a guest's commands name an id or a target too large or fail to apply
 #                            - Checked that a defeat scene id too large for the game or an enemy that is no id is replaced by one here
 #                            - Checked that a join whose party_member_max is no number still forms the party
+#                            - Checked that a player another game sends drops its fields of the wrong kind, logged once, and is left out when its seat is no number
 #                            - Checked that a guest leaving a story battle or taking a battle over picks a defeat scene of its enemies instead of none or a former battle's, that a host keeps its own, and that a battle without one is left as an escape
 #      Paulinchen  2026-10-11: Checked that leaving a story's battle without escape loses it for the player alone, and that any other battle is left as an escape
 #                            - Checked that the steps to the next random encounter stretch by half while another player stands near, in a party and in a Raid World, and that a Raid World's battle invites only the players near
@@ -1419,4 +1420,15 @@ check("a Raid World does", waiting_bid, "h1")
 MGQ_MpBattlesCoop.drop
 $raid = false
 $scene_now = scene
+
+# Players another game sends with fields of the wrong kind.
+player_class = MGQ_MpBattlesCoop::Player
+odd = player_class.read([2, "Pal", "1,2", true, [8], ["x"], "2", -1])
+check("a player's fields of the wrong kind are dropped", odd.to_a, [2, "Pal", "1,2", [], nil, nil, nil, nil])
+check("so their places on the Frontline and the Backline still read", odd.lines, [[], []])
+player_class.read([3, "Mate", "1", [], [8]])
+check("each dropped field is logged once", $log.grep(/dropped a player's max another game sent as Array/).size, 1)
+check("a player whose seat is no number is left out", player_class.read_all([["2", "Pal"], [3, "Mate", "1"], true, nil]).map(&:seat), [3])
+arranged = MGQ_MpBattlesCoop.arrange([[0, "Me", "1,2,3", [], [8]], [[2], "Pal", "4,5"]])
+check("arranging such players counts a party_member_max that is no number as none", arranged.map { |player| [player.seat, player.max, player.order] }, [[0, nil, [0, 1, 2]]])
 check("no hook failed", $log.grep(/FAILED/), [])

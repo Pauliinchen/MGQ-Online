@@ -2,6 +2,8 @@
 #  duel_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Checked that a ready answer whose party_member_max is no number counts it as 0 and that a team duel start whose sides do not read leaves the duel
+#                            - Read whole numbers of the stand-in wire back as numbers and gave it lines that do not read
 #      Paulinchen  2026-10-11: Checked the line above the player's head while challenging, waiting for an accepted duel, getting a team duel's sides ready and ready for one, each with its seconds left
 #      Paulinchen  2026-10-07: Gave the live battle stand-in who, which the duel names players by their seat with
 #                            - Checked that the log says why a duel's start was refused
@@ -52,10 +54,16 @@ module MGQ_MpBattlesPvp
   end
 end
 module MGQ_MpBattlesSync
-  # Plain values travel as tab-separated text, nested ones as hex of Marshal, so both can be read.
+  # Plain values travel as tab-separated text, whole numbers read back as numbers, nested ones as
+  # hex of Marshal, so both can be read. A text starting with "?" stands for a line that does not
+  # read, such as one too long.
   module Wire
     def self.line(values); values.all? { |v| v.is_a?(String) || v.is_a?(Numeric) } ? values.join("\t") : "M:" + Marshal.dump(values).unpack1("H*"); end
-    def self.parse(text); text.start_with?("M:") ? Marshal.load([text[2..-1]].pack("H*")) : text.split("\t"); end
+    def self.parse(text)
+      return nil if text.start_with?("?")
+
+      text.start_with?("M:") ? Marshal.load([text[2..-1]].pack("H*")) : text.split("\t").map { |token| token =~ /\A-?\d+\z/ ? token.to_i : token }
+    end
   end
   def self.role; $role; end
   def self.join_world(*args); $joined << args; end
@@ -66,6 +74,7 @@ module MGQ_MpOverworldSync::Me; def self.seat; 0; end; end
 module MGQ_MpBattlesCoop
   Player = Struct.new(:seat, :name, :builds, :vitals, :max, :order, :front, :bench) do
     def self.read(fields); fields.is_a?(self) ? fields : new(*fields); end
+    def self.read_all(list); Array(list).map { |fields| read(fields) }; end
   end
   def self.team_build; ["builds-me", 8]; end
   def self.arrange(players, backline = true); $arranged << backline; players.map { |fields| Player.read(fields) }; end
@@ -266,6 +275,10 @@ MGQ_MpOverworldSync.tick
 bid = duel_sent.find { |_, f| f["duel"] == "team" }[1]["bid"]
 $inbox << entry("message", 2, "duel=ready\nbid=#{bid}\n\ngame-1\tbuilds-friend\t8")
 MGQ_MpOverworldSync.tick
+2.times { $inbox << entry("message", 2, "duel=ready\nbid=#{bid}\n\n" + MGQ_MpBattlesSync::Wire.line(["game-1", "builds-friend", [8]])) }
+MGQ_MpOverworldSync.tick
+check("a ready answer whose party_member_max is no number counts it as 0, logged once",
+      [duel.instance_variable_get(:@gathering)[:ready][2], $duel_log.grep(/party_member_max sent as Array/).size], [["builds-friend", 0], 1])
 (MGQ_MpBattlesDuel::READY_FRAMES + 1).times { duel.tick(true) }
 check("after ten seconds it starts with those ready, and tells the others", duel_sent.select { |_, f| %w(start cancel).include?(f["duel"]) }.map { |seat, f| [seat, f["duel"], f["reason"]] },
       [[2, "start", nil], [3, "cancel", "late"]])
@@ -337,6 +350,16 @@ $inbox << entry("message", 2, "duel=start\nbid=g10\nteam=1\n\n" + MGQ_MpBattlesS
 MGQ_MpOverworldSync.tick
 check("a player busy since leaves at once, so their side takes their characters", $sent.map(&:last).grep(/battle=leave/).size, 1)
 $game_message.busy = false
+duel.accept(MGQ_MpOverworldSync::Peers.at(2))
+$inbox << entry("message", 2, "duel=team\nbid=g11\n\n")
+MGQ_MpOverworldSync.tick
+$sent.clear
+joined = $joined.size
+$inbox << entry("message", 2, "duel=start\nbid=g11\nteam=1\n\n?too long")
+MGQ_MpOverworldSync.tick
+frame
+check("a start whose sides do not read leaves the duel, so their side takes the player's characters",
+      [$sent.map(&:last).grep(/battle=leave/).size, $joined.size - joined, MGQ_MpOverworldSync::Status.lines.last], [1, 0, "The duel with Friend could not start."])
 
 # A duel the challenger already started is called off, never left waiting.
 # Lists the seats this game broke a live battle off with.

@@ -2,6 +2,7 @@
 #  team_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Checked that a guest takes who commands the characters of who left only as pairs of seats, and nobody from a line that does not read
 #      Paulinchen  2026-10-11: Let the stand-in of the waiting box take the names still waited for and their prefix
 #      Paulinchen  2026-10-06: Checked that the players of a team duel bring no share of the Backline
 #                            - Checked that a guest names no commands for the others' characters
@@ -144,3 +145,9 @@ $game_system = Struct.new(:conf).new({})
 def (MGQ_MpBattlesSync::Waiting).wait_for(scene, text, *rest); $answers << yield; :broken; end
 MGQ_MpBattlesSync::Live.host_start(scene)
 check("guests ready in an earlier wait do not count in the next", $answers, [nil])
+
+# Who commands the characters of who left, as a host that sends anything has it.
+team.take_heirs(wire.line([[6, "x", 7, 5, [8], 2]]))
+check("a guest keeps only the pairs of seats", [team.heir_of(6), team.heir_of(7), team.heir_of(2)], [nil, 5, nil])
+team.take_heirs("[\t[")
+check("and nobody from a line that does not read, logged once", [team.heir_of(7), $log.grep(/where the host sent no pair of seats/).size], [nil, 1])

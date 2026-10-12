@@ -2,6 +2,7 @@
 #  battles_duel.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Took a ready player's party_member_max only as a number, 0 for anything else, and left a team duel whose sides did not read, instead of failing on them
 #      Paulinchen  2026-10-11: Drew the challenge in the color every request and offer shares
 #                            - Named the wait for an accepted duel's start, the challenger's gathering of a team duel's sides and the called side's readiness in the line above the player's head, each with its seconds left, and gave the challenge its seconds left
 #                            - Stopped the player's own challenge once they accept another player's duel, so nobody accepts a challenge whose player waits for a duel already
@@ -304,7 +305,7 @@ module MGQ_MpBattlesDuel
 
     @pending = Pending.new(:guest, battle_id, peer, members)
     # The challenger hosts, so the rule their team brought holds.
-    @pending.backline = MGQ_MpBattlesPvp::Team.backline?(MGQ_MpBattlesSync::Wire.parse(body.to_s)[1])
+    @pending.backline = MGQ_MpBattlesPvp::Team.backline?(Array(MGQ_MpBattlesSync::Wire.parse(body.to_s))[1])
     log("duel #{battle_id} with #{MGQ_MpOverworldSync.who(peer)} waits to start from the map as guest, their team of #{members.size}#{', with the Backline' if @pending.backline}")
   end
 
@@ -462,9 +463,13 @@ module MGQ_MpBattlesDuel
     game, builds, max = MGQ_MpBattlesSync::Wire.parse(body.to_s)
     return decline(peer, "data") unless game.to_s == MGQ_MpBattlesPvp::Team.game
 
+    unless max.is_a?(Integer)
+      log_once([:ready_max, max.class.name], "took a party_member_max sent as #{max.class} by #{MGQ_MpOverworldSync.who(peer)} as 0")
+      max = 0
+    end
     named = @gathering[:sides].key?(peer.seat)
     answers = named ? @gathering[:ready] : @gathering[:early]
-    answers[peer.seat] = [builds.to_s, max.to_i]
+    answers[peer.seat] = [builds.to_s, max]
     log("#{MGQ_MpOverworldSync.who(peer)} is ready for team duel #{battle_id}#{named ? '' : ', kept until their leader names them'}")
   end
 
@@ -589,9 +594,14 @@ module MGQ_MpBattlesDuel
       return MGQ_MpOverworldSync.notice("The duel with #{peer.state['name']} started without you.")
     end
 
-    hosts, others = MGQ_MpBattlesSync::Wire.parse(body.to_s).first(2).map do |side|
-      Array(side).map { |fields| MGQ_MpBattlesCoop::Player.read(fields) }
+    sides = MGQ_MpBattlesSync::Wire.parse(body.to_s)
+    unless sides.is_a?(Array)
+      log("leaves team duel #{battle_id} at its start: its sides did not read (#{body.to_s.size} bytes), their side takes their characters")
+      MGQ_MpBattlesSync.tell(peer.seat, "leave", battle_id)
+      return MGQ_MpOverworldSync.notice("The duel with #{peer.state['name']} could not start.")
     end
+
+    hosts, others = [sides[0], sides[1]].map { |side| MGQ_MpBattlesCoop::Player.read_all(side) }
     same = hosts.any? { |player| player.seat == MGQ_MpOverworldSync::Me.seat }
     @pending = Pending.new(:team, battle_id, peer, nil, same ? hosts : others, same ? others : hosts, same)
     log("team duel #{battle_id} waits to start from the map as guest on the #{same ? 'host' : 'other'} side, #{@pending.own.size} players against #{@pending.other.size}")
