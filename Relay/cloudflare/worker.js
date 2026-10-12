@@ -2,7 +2,10 @@
 //  worker.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-12: Ignored what a game or peer the relay already closed sends while its connection closes, which reached a newcomer on its seat and the world's chat
+//      Paulinchen  2026-10-12: Read every request body only up to its route's limit, also one sent without a Content-Length
+//                            - Sent starting saves and uploaded mods piece by piece as they are read, at most three at once and one per address, a request waiting up to 30 seconds for its turn
+//                            - Deleted a stored file's pieces by their keys, without reading them, and a world's checkpoints and boss pools at most 128 keys at a time
+//                            - Ignored what a game or peer the relay already closed sends while its connection closes, which reached a newcomer on its seat and the world's chat
 //                            - Took the bug reports in a Durable Object of their own, so a large report can no longer reset the world directory
 //      Paulinchen  2026-10-11: Took the bug reports games send in the directory object and handed them to GitHub with the GITHUB_ISSUES_TOKEN and GITHUB_BUG_FILES_TOKEN secrets
 //      Paulinchen  2026-10-10: Passed what a game names in the X-MGQ-Features header on to the directory's public routes too, for a development build's Raid World starting save
@@ -47,11 +50,12 @@
 // never passes on from outside.
 
 import { DurableObject } from "cloudflare:workers";
+import { DownloadGate, piecesStream, readLimited } from "../core/bodies.js";
 import { BOSS_LIMITS, WorldBosses, bossRouteOf, bossText, handleBossRequest } from "../core/bosses.js";
-import { Directory as WorldDirectory, WORLD_TYPE, difficultyText, handleDirectoryRequest, modsRuleText, parseAdmins, playerIdOf, sha256Hex } from "../core/directory.js";
+import { DIRECTORY_LIMITS, Directory as WorldDirectory, WORLD_TYPE, difficultyText, handleDirectoryRequest, modsRuleText, parseAdmins, playerIdOf, sha256Hex } from "../core/directory.js";
 import { badRequest, notFound, routeIs } from "../core/http.js";
 import { isHash, isId } from "../core/ids.js";
-import { ModCatalog, handleModRequest } from "../core/mods.js";
+import { MOD_LIMITS, ModCatalog, handleModRequest } from "../core/mods.js";
 import { handleRaidAdminRequest, raidAdminRouteOf } from "../core/raid_admin.js";
 import { ReportDesk, handleReportRequest, reportSettingsOf } from "../core/reports.js";
 import { STORY_LIMITS, WorldStory, handleStoryRequest, noRaidWorld, storyRouteOf, storyText } from "../core/story.js";
@@ -59,7 +63,7 @@ import { TradeBook, handleTradeRequest } from "../core/trades.js";
 import {
   AUTH_HEADER, CHAT_SLOW, CLOSE, FEATURES_HEADER, IN, OUT, PAIRED, PING, PLAYER_HEADER, PONG, RATE_LIMITS, REFUSAL_HEADER, RateLimiter, admit, chatLineOf, chatText,
   newPeer, newWorldPeer, nextDeadline, nextWorldDeadline, overdue, parseFeatures, parseRoute, presenceOf, replacedBy, routeWorldMessage, seatChangeText, seatText,
-  takeChatLine, takeMessage, takeSeat, worldOverdue,
+  VERSION, takeChatLine, takeMessage, takeSeat, worldOverdue,
 } from "../core/relay.js";
 
 /**
@@ -233,10 +237,11 @@ async function internal(stub, path, body = {}) {
  *
  * @param {number} status The HTTP status.
  * @param {object} body The body.
+ * @param {object} [headers] More headers, such as Retry-After.
  * @returns {Response} The answer.
  */
-function json(status, body) {
-  return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+function json(status, body, headers = {}) {
+  return new Response(JSON.stringify(body), { status, headers: { ...headers, "Content-Type": "application/json" } });
 }
 
 /**
@@ -298,6 +303,28 @@ function modFilePrefix(key) {
 }
 
 /**
+ * Most keys storage takes in one write or delete.
+ */
+const STORAGE_BATCH = 128;
+
+/**
+ * Most pieces a stored file has, those of the largest mod upload.
+ */
+const MAX_PIECES = Math.ceil(Math.max(DIRECTORY_LIMITS.maxStartBytes, MOD_LIMITS.maxUploadBytes) / CHUNK_BYTES);
+
+/**
+ * Names the storage key of one piece of a stored file, padded so the keys list in the order of the
+ * pieces.
+ *
+ * @param {string} prefix The keys' common start.
+ * @param {number} index The piece's number, from 0.
+ * @returns {string} The key.
+ */
+function pieceKey(prefix, index) {
+  return `${prefix}${String(index).padStart(4, "0")}`;
+}
+
+/**
  * Writes bytes in pieces under a common start, replacing what was there.
  *
  * @param {DurableObjectStorage} storage The object's storage.
@@ -306,63 +333,63 @@ function modFilePrefix(key) {
  */
 async function putPieces(storage, prefix, bytes) {
   await deletePieces(storage, prefix);
-  const chunks = {};
+  const pieces = [];
 
   for (let offset = 0; offset < bytes.length; offset += CHUNK_BYTES) {
-    // Padded, so the keys list in the order of the pieces.
-    chunks[`${prefix}${String(offset / CHUNK_BYTES).padStart(4, "0")}`] = bytes.slice(offset, offset + CHUNK_BYTES);
+    pieces.push([pieceKey(prefix, offset / CHUNK_BYTES), bytes.slice(offset, offset + CHUNK_BYTES)]);
   }
 
-  // Storage takes at most 128 keys per write.
-  const keys = Object.keys(chunks);
-
-  for (let start = 0; start < keys.length; start += 128) {
-    await storage.put(Object.fromEntries(keys.slice(start, start + 128).map((key) => [key, chunks[key]])));
+  for (let start = 0; start < pieces.length; start += STORAGE_BATCH) {
+    await storage.put(Object.fromEntries(pieces.slice(start, start + STORAGE_BATCH)));
   }
 }
 
 /**
- * Reads bytes kept in pieces under a common start.
+ * Hands out bytes kept in pieces under a common start as a stream that reads one piece at a time.
  *
  * @param {DurableObjectStorage} storage The object's storage.
  * @param {string} prefix The keys' common start.
- * @returns {Promise<Uint8Array | undefined>} The bytes, undefined when there are none.
+ * @returns {Promise<ReadableStream<Uint8Array> | undefined>} The bytes, undefined when there are none.
  */
-async function getPieces(storage, prefix) {
-  const chunks = [...(await storage.list({ prefix })).values()];
-
-  if (chunks.length === 0) {
-    return undefined;
-  }
-
-  const bytes = new Uint8Array(chunks.reduce((size, chunk) => size + chunk.length, 0));
-  let offset = 0;
-
-  for (const chunk of chunks) {
-    bytes.set(chunk, offset);
-    offset += chunk.length;
-  }
-
-  return bytes;
+function streamPieces(storage, prefix) {
+  return piecesStream((index) => storage.get(pieceKey(prefix, index)));
 }
 
 /**
- * Deletes the pieces under a common start.
+ * Deletes the pieces under a common start by their keys, without reading them.
  *
  * @param {DurableObjectStorage} storage The object's storage.
  * @param {string} prefix The keys' common start.
  */
 async function deletePieces(storage, prefix) {
-  const keys = [...(await storage.list({ prefix })).keys()];
+  await deleteKeys(storage, Array.from({ length: MAX_PIECES }, (_, index) => pieceKey(prefix, index)));
+}
 
-  // Storage deletes at most 128 keys at once.
-  for (let start = 0; start < keys.length; start += 128) {
-    await storage.delete(keys.slice(start, start + 128));
+/**
+ * Deletes every key under a common start.
+ *
+ * @param {DurableObjectStorage} storage The object's storage.
+ * @param {string} prefix The keys' common start.
+ */
+async function deletePrefix(storage, prefix) {
+  await deleteKeys(storage, [...(await storage.list({ prefix })).keys()]);
+}
+
+/**
+ * Deletes keys, as many at a time as storage takes.
+ *
+ * @param {DurableObjectStorage} storage The object's storage.
+ * @param {string[]} keys The keys.
+ */
+async function deleteKeys(storage, keys) {
+  for (let start = 0; start < keys.length; start += STORAGE_BATCH) {
+    await storage.delete(keys.slice(start, start + STORAGE_BATCH));
   }
 }
 
 /**
- * Reads a request's body as bytes, unless it is longer than a limit.
+ * Reads a request's body as bytes, unless it is longer than a limit, reading no further than the
+ * limit.
  *
  * @param {Request} request The request.
  * @param {number} limit The most bytes it may have.
@@ -373,51 +400,46 @@ async function readBytes(request, limit) {
     return null;
   }
 
-  const bytes = new Uint8Array(await request.arrayBuffer());
-  return bytes.length > limit ? null : bytes;
+  return readLimited(request.body, limit);
 }
 
 /**
- * Reads a request's body as text, unless it is longer than MAX_TEXT_BYTES, which the routers then
- * answer with 413.
+ * Reads a request's body as text, unless it is longer than a limit, which the routers then answer
+ * with 413.
  *
  * @param {Request} request The request.
+ * @param {number} [limit] The most bytes the route takes.
  * @returns {Promise<string | null>} The body, or null when it is too long.
  */
-async function readText(request) {
-  const bytes = await readBytes(request, MAX_TEXT_BYTES);
-  return bytes ? new TextDecoder().decode(bytes) : null;
-}
-
-/**
- * Reads the body of a write to a world's story as text, unless it is longer than a write takes,
- * which the story's router then answers with 413.
- *
- * @param {Request} request The request.
- * @returns {Promise<string | null>} The body, or null when it is too long.
- */
-async function readStoryText(request) {
-  return readSmallText(request, STORY_LIMITS.maxBodyLength);
-}
-
-/**
- * Reads a request's body as text, unless it is longer than a route takes, which the route's
- * router then answers with 413.
- *
- * @param {Request} request The request.
- * @param {number} limit The most bytes the route takes.
- * @returns {Promise<string | null>} The body, or null when it is too long.
- */
-async function readSmallText(request, limit) {
+async function readText(request, limit = MAX_TEXT_BYTES) {
   const bytes = await readBytes(request, limit);
   return bytes ? new TextDecoder().decode(bytes) : null;
+}
+
+/**
+ * Tells a download of a starting save or an uploaded mod, which the directory sends only a few of
+ * at once.
+ *
+ * @param {string} method The HTTP method.
+ * @param {URL} url The request's address.
+ * @returns {boolean} Whether it is one.
+ */
+function isDownload(method, url) {
+  const parts = url.pathname.split("/").filter((part) => part.length > 0);
+
+  if (method !== "GET" || parts.length !== 4 || parts[0] !== VERSION) {
+    return false;
+  }
+
+  return (parts[1] === "worlds" && parts[3] === "start") || (parts[1] === "mods" && parts[3] === "file");
 }
 
 /**
  * The world directory: every world with its players, bans and locked token, one entry per world
  * in the object's storage, and each world's starting save in pieces beside it. It also keeps the
  * mod catalog, one entry per mod and each uploaded mod's zip in pieces, and the trades, one entry
- * per trade.
+ * per trade. It sends only a few starting saves and mod zips at once, each piece by piece, so
+ * downloads cannot fill its memory.
  */
 export class Directory extends DurableObject {
   /**
@@ -441,10 +463,12 @@ export class Directory extends DurableObject {
       },
       all: async () => [...(await storage.list({ prefix: "world:" })).values()],
       putStart: (id, bytes) => putPieces(storage, startPrefix(id), bytes),
-      getStart: (id) => getPieces(storage, startPrefix(id)),
+      getStart: (id) => streamPieces(storage, startPrefix(id)),
       putChat: (id, lines) => storage.put(chatKey(id), lines),
       getChat: (id) => storage.get(chatKey(id)),
     }, { admins });
+
+    this.downloads = new DownloadGate();
 
     this.mods = new ModCatalog({
       getMod: (key) => storage.get(`mod:${key}`),
@@ -455,7 +479,7 @@ export class Directory extends DurableObject {
       },
       allMods: async () => [...(await storage.list({ prefix: "mod:" })).values()],
       putModFile: (key, bytes) => putPieces(storage, modFilePrefix(key), bytes),
-      getModFile: (key) => getPieces(storage, modFilePrefix(key)),
+      getModFile: (key) => streamPieces(storage, modFilePrefix(key)),
     }, { admins });
 
     this.trades = new TradeBook({
@@ -480,8 +504,12 @@ export class Directory extends DurableObject {
       return json(200, { changed: await this.mods.checkAll() });
     }
 
+    if (isDownload(request.method, url)) {
+      return this.download(request, url);
+    }
+
     if (routeIs(url, "mods")) {
-      return respond(await handleModRequest(this.mods, request.method, url, () => readText(request), (limit) => readBytes(request, limit), request.headers.get(PLAYER_HEADER)));
+      return respond(await this.answerMods(request, url));
     }
 
     if (routeIs(url, "trades")) {
@@ -513,8 +541,7 @@ export class Directory extends DurableObject {
       return json(200, { line: await this.directory.say(id, { player, name }, text) });
     }
 
-    const client = { player: request.headers.get(PLAYER_HEADER), auth: request.headers.get(AUTH_HEADER), address: request.headers.get(ADDRESS_HEADER), features: parseFeatures(request.headers.get(FEATURES_HEADER)) };
-    const answer = await handleDirectoryRequest(this.directory, request.method, url, () => readText(request), (limit) => readBytes(request, limit), client);
+    const answer = await this.answerDirectory(request, url);
 
     if (answer.close) {
       await internal(worldOf(this.env, answer.id), "close");
@@ -537,6 +564,61 @@ export class Directory extends DurableObject {
     }
 
     return respond(answer);
+  }
+
+  /**
+   * Sends a starting save or an uploaded mod's zip once a download slot is free, and gives the slot
+   * back once the bytes are sent or the download ends otherwise.
+   *
+   * @param {Request} request The request.
+   * @param {URL} url The request's address.
+   * @returns {Promise<Response>} The bytes as a stream, why there are none, or that the relay is busy.
+   */
+  async download(request, url) {
+    const slot = await this.downloads.enter(request.headers.get(ADDRESS_HEADER));
+
+    if (slot.refusal) {
+      return respond(slot.refusal);
+    }
+
+    let answer;
+
+    try {
+      answer = routeIs(url, "mods") ? await this.answerMods(request, url) : await this.answerDirectory(request, url);
+    } catch (error) {
+      slot.release();
+      throw error;
+    }
+
+    if (answer.bytes instanceof ReadableStream) {
+      return respond({ ...answer, bytes: slot.hold(answer.bytes) });
+    }
+
+    slot.release();
+    return respond(answer);
+  }
+
+  /**
+   * Answers a request to the mod catalog's routes.
+   *
+   * @param {Request} request The request.
+   * @param {URL} url The request's address.
+   * @returns {Promise<{status: number, body: object, bytes?: ReadableStream<Uint8Array>}>} The catalog's answer.
+   */
+  answerMods(request, url) {
+    return handleModRequest(this.mods, request.method, url, () => readText(request), (limit) => readBytes(request, limit), request.headers.get(PLAYER_HEADER));
+  }
+
+  /**
+   * Answers a request to the directory's public routes.
+   *
+   * @param {Request} request The request.
+   * @param {URL} url The request's address.
+   * @returns {Promise<{status: number, body: object, bytes?: ReadableStream<Uint8Array>, close?: boolean, kick?: string, say?: object, difficulty?: number, modsRule?: object, id?: string}>} The directory's answer, see handleDirectoryRequest.
+   */
+  answerDirectory(request, url) {
+    const client = { player: request.headers.get(PLAYER_HEADER), auth: request.headers.get(AUTH_HEADER), address: request.headers.get(ADDRESS_HEADER), features: parseFeatures(request.headers.get(FEATURES_HEADER)) };
+    return handleDirectoryRequest(this.directory, request.method, url, () => readText(request), (limit) => readBytes(request, limit), client);
   }
 }
 
@@ -566,22 +648,22 @@ export class Reports extends DurableObject {
   async fetch(request) {
     const url = new URL(request.url);
     const client = { player: request.headers.get(PLAYER_HEADER), address: request.headers.get(ADDRESS_HEADER) };
-    return respond(await handleReportRequest(this.desk, request.method, url, () => readSmallText(request, this.desk.limits.maxBodyBytes), client));
+    return respond(await handleReportRequest(this.desk, request.method, url, () => readText(request, this.desk.limits.maxBodyBytes), client));
   }
 }
 
 /**
  * Answers with a directory or catalog answer: its bytes when it has any, else its JSON.
  *
- * @param {{status: number, body: object, bytes?: Uint8Array}} answer The answer.
+ * @param {{status: number, body: object, bytes?: Uint8Array | ReadableStream<Uint8Array>, headers?: object}} answer The answer, with more headers when it has any.
  * @returns {Response} The response.
  */
 function respond(answer) {
   if (answer.bytes) {
-    return new Response(answer.bytes, { status: answer.status, headers: { "Content-Type": "application/octet-stream" } });
+    return new Response(answer.bytes, { status: answer.status, headers: { ...answer.headers, "Content-Type": "application/octet-stream" } });
   }
 
-  return json(answer.status, answer.body);
+  return json(answer.status, answer.body, answer.headers);
 }
 
 /**
@@ -1058,7 +1140,7 @@ export class World extends DurableObject {
       return json(noRaidWorld().status, noRaidWorld().body);
     }
 
-    const answer = await handleStoryRequest(this.storyOf(), request.method, route.rest, () => readStoryText(request), access.player);
+    const answer = await handleStoryRequest(this.storyOf(), request.method, route.rest, () => readText(request, STORY_LIMITS.maxBodyLength), access.player);
     await this.tidyDeleted();
 
     if (answer.push) {
@@ -1087,7 +1169,7 @@ export class World extends DurableObject {
       return json(noRaidWorld().status, noRaidWorld().body);
     }
 
-    const answer = await handleBossRequest(this.bossesOf(), request.method, route.rest, () => readSmallText(request, BOSS_LIMITS.maxBodyLength), access.player, access.name);
+    const answer = await handleBossRequest(this.bossesOf(), request.method, route.rest, () => readText(request, BOSS_LIMITS.maxBodyLength), access.player, access.name);
     await this.tidyDeleted();
 
     if (answer.boss) {
@@ -1225,8 +1307,8 @@ export class World extends DurableObject {
       put: (story, checkpoint) => storage.put(checkpoint ? { [STORY_KEY]: story, [`${CHECKPOINT_PREFIX}${checkpoint.part}`]: checkpoint } : { [STORY_KEY]: story }),
       getCheckpoint: (part) => storage.get(`${CHECKPOINT_PREFIX}${part}`),
       remove: async () => {
-        const keys = [...(await storage.list({ prefix: CHECKPOINT_PREFIX })).keys(), STORY_KEY];
-        await storage.delete(keys);
+        await deletePrefix(storage, CHECKPOINT_PREFIX);
+        await storage.delete(STORY_KEY);
       },
     });
 
@@ -1246,14 +1328,7 @@ export class World extends DurableObject {
       put: (pool) => storage.put(`${BOSS_PREFIX}${pool.key}`, pool),
       all: async () => [...(await storage.list({ prefix: BOSS_PREFIX })).values()],
       remove: (key) => storage.delete(`${BOSS_PREFIX}${key}`),
-      removeAll: async () => {
-        const keys = [...(await storage.list({ prefix: BOSS_PREFIX })).keys()];
-
-        // Storage deletes at most 128 keys at once.
-        for (let start = 0; start < keys.length; start += 128) {
-          await storage.delete(keys.slice(start, start + 128));
-        }
-      },
+      removeAll: () => deletePrefix(storage, BOSS_PREFIX),
     });
 
     return this.bosses;

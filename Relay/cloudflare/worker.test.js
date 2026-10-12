@@ -2,7 +2,8 @@
 //  worker.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-12: Tested that a game or peer the relay closed passes nothing on while its connection closes
+//      Paulinchen  2026-10-12: Tested the directory's streamed downloads and their limit, a body without Content-Length read only up to its limit, and removals of more keys than storage deletes at once
+//                            - Tested that a game or peer the relay closed passes nothing on while its connection closes
 //                            - Created
 //
 //----------------------------------------------------------------
@@ -13,6 +14,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { registerHooks } from "node:module";
+import { DOWNLOAD_LIMITS, concatBytes } from "../core/bodies.js";
+import { sha256Hex } from "../core/directory.js";
 import { AUTH_HEADER, CHAT_LIMITS, CHAT_SLOW, CLOSE, EVERYONE, LIMITS, PAIRED, PLAYER_HEADER, REPLACED } from "../core/relay.js";
 import { STORY_LIMITS } from "../core/story.js";
 
@@ -135,7 +138,7 @@ globalThis.Response = class extends NodeResponse {
   }
 };
 
-const { default: worker, Reports, Room, World } = await import("./worker.js");
+const { default: worker, Directory, Reports, Room, World } = await import("./worker.js");
 
 /**
  * The auth key the tests' games make from their world's token.
@@ -178,7 +181,13 @@ function playerIdFor(key) {
 }
 
 /**
- * Makes a stand-in for a Durable Object's storage, which keeps copies of its values in memory.
+ * Most keys Cloudflare's storage takes in one write or delete.
+ */
+const STORAGE_BATCH = 128;
+
+/**
+ * Makes a stand-in for a Durable Object's storage, which keeps copies of its values in memory and
+ * refuses a write or delete of more keys than Cloudflare takes at once.
  *
  * @returns {object} The storage, with get, put, delete, list and the alarm's methods.
  */
@@ -192,12 +201,15 @@ function memoryStorage() {
       : structuredClone(values.get(key))),
     put: async (key, value) => {
       const entries = typeof key === "string" ? { [key]: value } : key;
+      assert.ok(Object.keys(entries).length <= STORAGE_BATCH, "storage writes at most 128 keys at once");
 
       for (const [each, entry] of Object.entries(entries)) {
         values.set(each, structuredClone(entry));
       }
     },
     delete: async (key) => {
+      assert.ok(!Array.isArray(key) || key.length <= STORAGE_BATCH, "storage deletes at most 128 keys at once");
+
       for (const each of Array.isArray(key) ? key : [key]) {
         values.delete(each);
       }
@@ -644,4 +656,139 @@ test("the Worker sends bug reports to an object of their own, never to the world
   const off = await reports.fetch(new Request("https://relay.test/v1/reports", { method: "POST", body: "{}", headers: { [PLAYER_HEADER]: playerKey(1) } }));
   assert.deepEqual([off.status, (await off.json()).code], [503, "off"], "the object reads its settings from the Worker's bindings");
   assert.equal((await reports.fetch(new Request("https://relay.test/v1/reports"))).status, 404);
+});
+
+/**
+ * The address of a test's download, one per game.
+ *
+ * @param {number} number A number unique to the game.
+ * @returns {string} The address, from a range kept for documentation.
+ */
+function addressOf(number) {
+  return `203.0.113.${number}`;
+}
+
+/**
+ * Lets every promise that can settle now settle.
+ */
+function settle() {
+  return new Promise((resolve) => setImmediate(resolve));
+}
+
+/**
+ * Reads a response's body as it streams.
+ *
+ * @param {Response} response The response.
+ * @returns {Promise<Uint8Array>} Its bytes.
+ */
+async function bytesOf(response) {
+  const chunks = [];
+
+  for await (const chunk of response.body) {
+    chunks.push(chunk);
+  }
+
+  return concatBytes(chunks);
+}
+
+/**
+ * Makes a directory object over stand-ins with an uploaded mod of one piece, ready to download.
+ *
+ * @returns {Promise<{directory: Directory, download: (number: number) => Promise<Response>}>} The directory, and how a game downloads the mod from an address of its own.
+ */
+async function directoryWithMod() {
+  const state = objectState();
+  await state.storage.put({ "mod:luka": { key: "luka", name: "Luka", kind: "upload" }, "modfile:luka:0000": new Uint8Array([1, 2, 3]) });
+  const directory = new Directory(state, {});
+  const download = (number) => directory.fetch(new Request("https://relay.test/v1/mods/luka/file", { headers: { "CF-Connecting-IP": addressOf(number) } }));
+  return { directory, download };
+}
+
+test("the directory sends a starting save of several pieces as it was uploaded, and frees the download slot once sent", async () => {
+  const state = objectState();
+  const directory = new Directory(state, {});
+  const headers = { [PLAYER_HEADER]: playerKey(1), "CF-Connecting-IP": addressOf(1) };
+  const world = { id: WORLD, name: "Iliasburg Crew", seats: 4, playerName: "Creator", authHash: await sha256Hex(AUTH), lock: { salt: "12".repeat(16), iterations: 200_000, box: "ab".repeat(60) }, start: true };
+  const created = await directory.fetch(new Request("https://relay.test/v1/worlds", { method: "POST", headers, body: JSON.stringify(world) }));
+  assert.equal(created.status, 201, await created.clone().text());
+
+  const save = Uint8Array.from({ length: 300 * 1024 }, (_, index) => index % 251);
+  const uploaded = await directory.fetch(new Request(`https://relay.test/v1/worlds/${WORLD}/start`, { method: "POST", headers, body: save }));
+  assert.equal(uploaded.status, 200, await uploaded.clone().text());
+  assert.deepEqual([...(await state.storage.list({ prefix: `start:${WORLD}:` })).keys()], [`start:${WORLD}:0000`, `start:${WORLD}:0001`, `start:${WORLD}:0002`]);
+
+  const fetched = await directory.fetch(new Request(`https://relay.test/v1/worlds/${WORLD}/start`, { headers: { ...headers, [AUTH_HEADER]: AUTH } }));
+  assert.equal(fetched.status, 200);
+  assert.equal(fetched.headers.get("Content-Type"), "application/octet-stream");
+  assert.equal(directory.downloads.active.size, 1, "the slot is held while the bytes are sent");
+  assert.deepEqual(await bytesOf(fetched), save);
+  assert.equal(directory.downloads.active.size, 0);
+
+  const missing = await directory.fetch(new Request(`https://relay.test/v1/worlds/${"0f".repeat(16)}/start`, { headers: { ...headers, [AUTH_HEADER]: AUTH } }));
+  assert.equal(missing.status, 404);
+  assert.equal(directory.downloads.active.size, 0, "a refused download gives its slot back at once");
+});
+
+test("a fourth download at once waits for a free slot, and is refused with Retry-After when none comes in time", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"], now: START });
+  const { download } = await directoryWithMod();
+  const running = [];
+
+  for (let number = 1; number <= DOWNLOAD_LIMITS.maxActive; number++) {
+    running.push(await download(number));
+  }
+
+  assert.ok(running.every((response) => response.status === 200));
+  let fourth = null;
+  download(4).then((response) => (fourth = response));
+  await settle();
+  assert.equal(fourth, null, "the fourth waits");
+
+  assert.deepEqual([...(await bytesOf(running[0]))], [1, 2, 3]);
+  await settle();
+  assert.equal(fourth?.status, 200, "an ended download hands its slot on");
+
+  let fifth = null;
+  download(5).then((response) => (fifth = response));
+  await settle();
+  t.mock.timers.tick(DOWNLOAD_LIMITS.maxWaitMs);
+  await settle();
+  assert.equal(fifth?.status, 503);
+  assert.equal(fifth.headers.get("Retry-After"), String(DOWNLOAD_LIMITS.retryAfterSeconds));
+  assert.deepEqual(await fifth.json(), { error: "the relay is sending other downloads, try again in a moment", code: "busy" });
+});
+
+test("the directory reads a body sent without Content-Length only up to its limit and answers 413", async () => {
+  const directory = new Directory(objectState(), {});
+  const chunk = 64 * 1024;
+  let pulled = 0;
+
+  const body = new ReadableStream({
+    pull: (controller) => {
+      pulled++;
+      controller.enqueue(new Uint8Array(chunk).fill(32));
+    },
+  }, { highWaterMark: 0 });
+
+  const response = await directory.fetch(new Request("https://relay.test/v1/worlds", { method: "POST", headers: { [PLAYER_HEADER]: playerKey(1) }, body, duplex: "half" }));
+  assert.equal(response.status, 413);
+  assert.ok(pulled <= (256 * 1024) / chunk + 2, `read ${pulled} chunks`);
+});
+
+test("removing a Raid World's story and boss pools deletes more keys than storage deletes at once", async () => {
+  const state = objectState();
+  const world = new World(state, {});
+  const many = [];
+
+  for (let index = 0; index < 200; index++) {
+    many.push([`checkpoint:${index}`, { part: index }], [`boss:${index}`, { key: String(index) }]);
+  }
+
+  for (let start = 0; start < many.length; start += STORAGE_BATCH) {
+    await state.storage.put(Object.fromEntries(many.slice(start, start + STORAGE_BATCH)));
+  }
+
+  await state.storage.put("story", { part: 1 });
+  await world.removeRaidData();
+  assert.deepEqual([...(await state.storage.list()).keys()], []);
 });

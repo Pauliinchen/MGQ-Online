@@ -2,6 +2,7 @@
 //  mods.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-12: Stopped reading a release file from GitHub once it passes its size limit, instead of reading it in full first
 //      Paulinchen  2026-10-09: Let admins mark any mod personal, which games never turn off, and add a mod by its name alone only to mark it personal
 //                            - Listed every personal mod for the games, checked or not, and left mods known by their name alone out of their list of mods
 //                            - Kept whether a mod is personal when it changes between a link, an upload and a name
@@ -35,6 +36,7 @@
 // Such a mod may also be known by its name alone, with nothing to download, for a mod the admins
 // do not hand out themselves.
 
+import { readLimited } from "./bodies.js";
 import { playerIdOf } from "./directory.js";
 import { badRequest, notFound, tooLarge, withJson } from "./http.js";
 import { HASH, cleanText, hexOf, isId } from "./ids.js";
@@ -134,7 +136,7 @@ export async function hashModFile(path, bytes) {
  * @property {(key: string) => Promise<void>} removeMod Deletes a mod's entry and its uploaded files.
  * @property {() => Promise<object[]>} allMods Reads every mod's entry.
  * @property {(key: string, bytes: Uint8Array) => Promise<void>} putModFile Writes an uploaded mod's zip.
- * @property {(key: string) => Promise<Uint8Array | undefined>} getModFile Reads an uploaded mod's zip.
+ * @property {(key: string) => Promise<Uint8Array | ReadableStream<Uint8Array> | undefined>} getModFile Reads an uploaded mod's zip, or hands it out as a stream.
  */
 
 /**
@@ -445,7 +447,7 @@ export class ModCatalog {
    * Hands out an uploaded mod's zip.
    *
    * @param {string} modKeyOf The mod's key.
-   * @returns {Promise<{status: number, body: object, bytes?: Uint8Array}>} The zip, or why there is none.
+   * @returns {Promise<{status: number, body: object, bytes?: Uint8Array | ReadableStream<Uint8Array>}>} The zip, or why there is none.
    */
   async file(modKeyOf) {
     const entry = await this.store.getMod(modKeyOf);
@@ -587,9 +589,13 @@ async function download(url, fetcher, limits, maxBytes) {
       throw new Error(`the release file is larger than ${maxBytes} bytes`);
     }
 
-    const bytes = new Uint8Array(await answer.arrayBuffer());
+    const bytes = await readLimited(answer.body, maxBytes);
 
-    if (bytes.length === 0 || bytes.length > maxBytes) {
+    if (!bytes) {
+      throw new Error(`the release file is larger than ${maxBytes} bytes`);
+    }
+
+    if (bytes.length === 0) {
       throw new Error(`the release file must be 1 to ${maxBytes} bytes`);
     }
 
@@ -978,7 +984,7 @@ export function cleanOptions(options, limits = MOD_LIMITS) {
  * @param {() => Promise<string | null>} readBody Reads the request's body as text, null when it is too large to read.
  * @param {(limit: number) => Promise<Uint8Array | null>} readBytes Reads the request's body as bytes, null when it is longer than the limit.
  * @param {string | null} [player] The X-MGQ-Player header of the request, which wins over the key in its body or address, which released games send.
- * @returns {Promise<{status: number, body: object, bytes?: Uint8Array}>} The answer, sent as the bytes when there are any.
+ * @returns {Promise<{status: number, body: object, bytes?: Uint8Array | ReadableStream<Uint8Array>}>} The answer, sent as the bytes when there are any.
  */
 export async function handleModRequest(catalog, method, url, readBody, readBytes, player = null) {
   const parts = url.pathname.split("/").filter((part) => part.length > 0);

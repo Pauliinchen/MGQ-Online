@@ -23,6 +23,8 @@ core/mods.test.js      tests of the mod catalog
 core/reports.js        the bug reports games send, committed to GitHub as private files with a public issue
 core/reports.test.js   tests of the bug reports, against a stand-in for GitHub
 core/http.js           the answers every router gives alike, and how each reads a JSON body
+core/bodies.js         reading a body up to its limit, sending a stored file piece by piece, and the limit on downloads at once
+core/bodies.test.js    tests of the bodies and the download limit
 core/ids.js            how ids, hashes and texts are read everywhere
 core/test_zip.js       the zips the tests feed the mod catalog
 cloudflare/worker.js   the relay on Cloudflare Workers, one Durable Object per room and per world room, one for the directory, one for the bug reports
@@ -60,7 +62,7 @@ Plain HTTP with JSON bodies of up to 32 KB in general, and 413 beyond the size a
 | `POST /v1/worlds/<id>/delete` | Deletes the world, if `player` is the creator's or an admin's key, and closes its world room. |
 | `POST /v1/worlds/<id>/ban` | Removes the player whose id is `target` and keeps them out, if `player` is the creator's key. A world keeps at most 500 removed players (429 beyond). |
 | `POST /v1/worlds/<id>/start?player=<key>` | Keeps the world's starting save, the body as bytes (at most 8 MB), if `player` is the creator's key and the world was made with `start: true`. Only once: 409 afterwards. 413 past 8 MB, 507 with `code` `storage` once all starting saves together would pass 1 GB, and 429 with `code` `rate` past 5 uploads at once and 10 an hour from one address. |
-| `GET /v1/worlds/<id>/start` | Hands out the starting save as bytes, to a game the world room would let in, with the player's key in `X-MGQ-Player` and the auth key in `X-MGQ-Auth` (released games send `?player=<key>&auth=<auth key>` instead). 404 when the world has none. |
+| `GET /v1/worlds/<id>/start` | Hands out the starting save as bytes, to a game the world room would let in, with the player's key in `X-MGQ-Player` and the auth key in `X-MGQ-Auth` (released games send `?player=<key>&auth=<auth key>` instead). 404 when the world has none. On Cloudflare it is one of the downloads the relay sends only a few of at once (see below). |
 | `GET /v1/worlds/<id>/chat?after=<n>` | Hands out the world's chat as the relay saw it, if `player` is the creator's or an admin's key: `lines`, oldest first, each with `n` (its number, counting up), `at`, `player` (the sender's id), `name`, `text` and `admin` (true for a line said over this route). With `after`, only the lines numbered beyond it. The relay keeps the last 200 lines of each world, 200 characters each at most; the games mirror every line of the world's chat into it (see world rooms below), the map, party and whisper chats stay between their players. |
 | `POST /v1/worlds/<id>/chat` | Says a line in the world's chat as an admin: `text` (1 to 200 characters) and `name` (the name the line carries, up to 32 characters; `Admin` when left out), if `player` is an admin's key (403 for everyone else, the creator included, who talks through the game). The line goes into the chat and to every game in the world room as a text frame. Answers the `line` as kept. |
 
@@ -110,7 +112,7 @@ The mods a world may require and games may download. Only admins add them: a sin
 | `POST /v1/mods/<key>/options` | Keeps the mod's Mod Config options, if `player` is an admin's key: `version`, the version the game's copy is (empty for a copy matching no version the catalog knows, kept as `?`), and `options`, at most 100, each with `key` (the option's symbol), `name`, `type` (`i`, `f`, `b`, `y` or `s`, as in a world's `settings`), `default` and `choices` (at most 64, each `value` and `name`). The newest version's options are kept, by the order of `versions`: the current version's for good, an older one's only until a newer one's arrive, and a copy of no known version's only until a known version's arrive; options older than those kept are answered with `kept` false and change nothing. Only a running game can read them, since mods build their options when they load; the World Admin tool lists them. The body may be up to 64 KB. |
 | `POST /v1/mods/<key>/personal` | Marks a mod personal or takes the mark off: `player` (an admin's key) and `personal` (`true` or `false`); 403 for everyone else, 404 for a mod the catalog lacks, 400 for anything but a boolean. Answers the `mod`. The mark stays when the mod's kind changes between `link`, `upload` and `name`. |
 | `POST /v1/mods/<key>/name` | Adds a mod by its name alone, of kind `name`, or renames one: `player` (an admin's key) and `name` (up to 32 characters, whose key must be `<key>`; 400 otherwise). Such an entry has no link and no files, is never checked and is personal when made; it exists for mods the catalog hands out no copy of, such as someone else's cosmetic mod. 409 when a `link` or `upload` mod has that key: mark that one personal instead. Answers the `mod`. A link or upload added under the same name later takes its place and keeps the mark. |
-| `GET /v1/mods/<key>/file` | Hands out an uploaded mod's zip as bytes; 404 for any other kind. |
+| `GET /v1/mods/<key>/file` | Hands out an uploaded mod's zip as bytes; 404 for any other kind. On Cloudflare it is one of the downloads the relay sends only a few of at once (see below). |
 | `POST /v1/mods/<key>/delete` | Removes a mod of any kind, if `player` is an admin's key. |
 
 ### Trades
@@ -205,6 +207,7 @@ The relay runs on the free Workers plan at `relay.mgqmp.workers.dev`. Past the f
 - **Try it locally:** `npm run dev:cloudflare` runs the Worker on this PC at `ws://127.0.0.1:8787`, without an account.
 - **Log in once:** `npx wrangler login` (in PowerShell `npx.cmd wrangler login` if scripts are blocked) opens the browser to allow wrangler on the Cloudflare account.
 - **Deploy:** `npm run deploy:cloudflare`.
+- **Downloads:** the directory sends starting saves and uploaded mods' zips piece by piece as it reads them, without a Content-Length, and at most 3 at once and 1 per address. A download that finds no free slot waits up to 30 seconds for one, at most 10 waiting in all; past that, and past 20 downloads at once and one more every 30 seconds from one address, it gets 503 with `code` `busy`, the error "the relay is sending other downloads, try again in a moment" and `Retry-After: 10`. A download still running after 5 minutes is ended and its slot given to the next. The Node relay sends both whole and has no such limit.
 - **Bug reports:** `npx wrangler secret put GITHUB_ISSUES_TOKEN --config cloudflare/wrangler.toml` and the same for `GITHUB_BUG_FILES_TOKEN` set the tokens once; the repositories and the branch are the `[vars]` in `wrangler.toml`.
 
 ## Moving to a rented server

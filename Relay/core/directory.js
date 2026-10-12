@@ -212,7 +212,7 @@ export function cleanName(name, limits = DIRECTORY_LIMITS) {
  * @property {(id: string) => Promise<void>} remove Deletes a world's entry, its starting save and its chat.
  * @property {() => Promise<object[]>} all Reads every world's entry.
  * @property {(id: string, bytes: Uint8Array) => Promise<void>} putStart Writes a world's starting save.
- * @property {(id: string) => Promise<Uint8Array | undefined>} getStart Reads a world's starting save.
+ * @property {(id: string) => Promise<Uint8Array | ReadableStream<Uint8Array> | undefined>} getStart Reads a world's starting save, or hands it out as a stream.
  * @property {(id: string, lines: object[]) => Promise<void>} putChat Writes a world's chat, every line kept.
  * @property {(id: string) => Promise<object[] | undefined>} getChat Reads a world's chat, undefined before its first line.
  */
@@ -618,7 +618,7 @@ export class Directory {
    * @param {string} id The world.
    * @param {unknown} key The player's key.
    * @param {unknown} auth The auth key the player's game made from the world's token.
-   * @returns {Promise<{status: number, body: object, bytes?: Uint8Array}>} The starting save, or why not.
+   * @returns {Promise<{status: number, body: object, bytes?: Uint8Array | ReadableStream<Uint8Array>}>} The starting save, or why not.
    */
   async getStart(id, key, auth) {
     const { entry, refusal } = await this.asPlayer(id, key, auth);
@@ -1052,7 +1052,7 @@ function cleanSettings(text) {
  * @param {() => Promise<string | null>} readBody Reads the request's body as text, null when it is too large to read.
  * @param {(limit: number) => Promise<Uint8Array | null>} readBytes Reads the request's body as bytes, null when it is longer than the limit.
  * @param {{player?: string | null, auth?: string | null, address?: string | null, features?: string[]}} [client] The PLAYER_HEADER and AUTH_HEADER of the request, which win over the key and auth key in its body or address, the address it came from and what it names in FEATURES_HEADER, see parseFeatures.
- * @returns {Promise<{status: number, body: object, bytes?: Uint8Array, close?: boolean, kick?: string, difficulty?: number, modsRule?: {off: boolean, mods: string}, id?: string}>} The answer, sent as the bytes when there are any, and what the platform layer must do beyond it for the world with that id.
+ * @returns {Promise<{status: number, body: object, bytes?: Uint8Array | ReadableStream<Uint8Array>, close?: boolean, kick?: string, difficulty?: number, modsRule?: {off: boolean, mods: string}, id?: string}>} The answer, sent as the bytes when there are any, and what the platform layer must do beyond it for the world with that id.
  */
 export async function handleDirectoryRequest(directory, method, url, readBody, readBytes, client = {}) {
   const parts = url.pathname.split("/").filter((part) => part.length > 0);

@@ -2,6 +2,7 @@
 //  relay.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-12: Added the rate limit per address for downloading starting saves and mod files
 //      Paulinchen  2026-10-10: Added the dev feature, which development builds name and which lets them give a Raid World a starting save
 //      Paulinchen  2026-10-08: Added the X-MGQ-Features header, in which a game names what it can play, such as Raid Worlds
 //                            - Limited each world room connection to 2 chat lines a second after a burst of 10, answering a dropped line with "slow chat"
@@ -183,6 +184,8 @@ export const RATE_LIMITS = Object.freeze({
   creates: Object.freeze({ burst: 5, refillMs: 6 * 60 * 1000 }),
   // Uploading starting saves, ten an hour.
   starts: Object.freeze({ burst: 5, refillMs: 6 * 60 * 1000 }),
+  // Downloading starting saves and mod files, 20 at once and then two a minute.
+  downloads: Object.freeze({ burst: 20, refillMs: 30 * 1000 }),
 });
 
 /**
