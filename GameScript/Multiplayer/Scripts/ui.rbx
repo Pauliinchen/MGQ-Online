@@ -2,7 +2,8 @@
 #  ui.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Added the scrollbar every scrolling box draws and its track color
+#      Paulinchen  2026-10-12: Gave the tabs not picked the edge's color, darkened
+#                            - Added the scrollbar every scrolling box draws and its track color
 #                            - Scrolled the list box with the mouse wheel and drew its scrollbar
 #                            - Added the mouse wheel and the scrollbar of the mod's list windows
 #                            - Cut a text to its width with far fewer measures
@@ -130,8 +131,8 @@ module MGQ_MpUi
     # Empty part of a gauge.
     WELL = Color.new(0, 0, 0, 220)
 
-    # Background of a tab that is not picked.
-    TAB = Color.new(0, 0, 0, 120)
+    # Background of a tab that is not picked, the edge's color darkened.
+    TAB = Color.new(64, 64, 64, 170)
 
     # Solid black outline of every text and gauge frame; the game's own outline is half see-through.
     OUTLINE = Color.new(0, 0, 0, 255)
