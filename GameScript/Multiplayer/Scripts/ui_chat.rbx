@@ -2,7 +2,8 @@
 #  ui_chat.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Put every chat tab back to the All tab with the global chat as the world closes, so lines no longer go to a chat the picked tab hides
+#      Paulinchen  2026-10-12: Showed the relay's own notices, such as a new release's, red between slashes in every tab instead of as an admin's line
+#                            - Put every chat tab back to the All tab with the global chat as the world closes, so lines no longer go to a chat the picked tab hides
 #                            - Logged a refused hotkey through MGQ_MpHotkeys.log_refusal, not while the player types
 #                            - Read the map's viewports through MGQ_MpGame
 #      Paulinchen  2026-10-11: Showed the dimmed tabs above the closed log only while it shows lines, so a chat's unread mark no longer leaves them on the screen for good
@@ -216,6 +217,10 @@ module MGQ_MpChat
   # What the log shows before a line an admin said from outside the game, through the relay.
   ADMIN_TAG = "[Admin] "
 
+  # The name the relay's own notices carry, such as a new release's, which the log shows as a
+  # notice rather than an admin's line.
+  NOTICE_NAME = "MGQ Online"
+
   # The setting in Player.ini that holds the log's size as width x rows, the size the layout starts
   # it at.
   #
@@ -230,9 +235,10 @@ module MGQ_MpChat
   # @!attribute name [String, nil] The sender's name, nil for a line of the game's own.
   # @!attribute text [String] The line.
   # @!attribute who [Symbol] Whose it is, which colors the name: :me, :member (of the player's
-  #   party), :other, :admin (said through the relay), :system or :help (a line of the help tab).
+  #   party), :other, :admin (said through the relay), :system, :notice (the relay's own) or :help
+  #   (a line of the help tab).
   # @!attribute channel [Symbol, nil] Its chat, one of CHANNELS, :help for a line of the help tab,
-  #   nil for a line of the game's own.
+  #   nil for a line of the game's own or the relay's notice.
   # @!attribute left [Integer] Frames it still shows while the chat box is closed.
   # @!attribute to [String, nil] Whom the player whispered it to, nil for any other line.
   # @!attribute id [String, nil] The sender's player id, for their menu; nil for the player's own
@@ -254,7 +260,7 @@ module MGQ_MpChat
     def head
       case who
       when :system then "* "
-      when :help then ""
+      when :help, :notice then ""
       else "#{tag}#{name}: "
       end
     end
@@ -1064,6 +1070,7 @@ module MGQ_MpChat
     text = text.to_s.gsub(LINE_BREAKERS, "").strip[0, MAX_LENGTH]
     sender = peer ? MGQ_MpOverworldSync.who(peer) : admin ? "the admin #{name} through the relay" : "#{name} (no state yet, no bubble)"
     return log("dropped an empty #{TAB_NAMES[channel]} line from #{sender}") if text.empty?
+    return notice(text) if admin && name.to_s == NOTICE_NAME
 
     @received += 1
     log("#{TAB_NAMES[channel]} line from #{sender} (line #{@received} received): #{shown_in_log(text, channel)}")
@@ -1121,6 +1128,15 @@ module MGQ_MpChat
   def self.system(text)
     log("game line: #{MGQ_MpLog.short(text)}")
     push(Line.new(nil, text, :system, nil))
+  end
+
+  # Adds a notice of the relay's own, such as a new release's, to every tab of the log, red between
+  # slashes.
+  #
+  # @param text [String] The notice.
+  def self.notice(text)
+    log("relay notice: #{text}")
+    push(Line.new(nil, "// #{text} //", :notice, nil))
   end
 
   # Adds a line to the log, forgetting the oldest beyond KEPT.
@@ -1455,6 +1471,9 @@ class Sprite_MpChatLog < Sprite
 
   # The chats whose text is in their color too, not only their tag.
   COLORED_TEXT = [:map, :whisper]
+
+  # The color of the relay's notices, such as a new release's.
+  NOTICE_COLOR = Color.new(255, 64, 64)
 
   # Background of a tab, the preset's. The picked one is filled with its chat's color instead, under
   # TAB_INK.
@@ -1878,7 +1897,18 @@ class Sprite_MpChatLog < Sprite
       @name_spots.push([line, start, x, y]) if line.id
       row = row[head.size..-1]
     end
-    draw_part(x, y, row, COLORED_TEXT.include?(line.channel) ? CHANNEL_COLORS[line.channel] : style::TEXT, ROW, left)
+    draw_part(x, y, row, text_color(line), ROW, left)
+  end
+
+  # Picks the color of a line's text: the relay's notice red, the chats in COLORED_TEXT in their
+  # color, any other plain.
+  #
+  # @param line [MGQ_MpChat::Line] The line.
+  # @return [Color] The color.
+  def text_color(line)
+    return NOTICE_COLOR if line.who == :notice
+
+    COLORED_TEXT.include?(line.channel) ? CHANNEL_COLORS[line.channel] : MGQ_MpUi::Style::TEXT
   end
 
   # Picks the color of a line's sender's name: NAME_COLORS by whose it is, plain text for anyone

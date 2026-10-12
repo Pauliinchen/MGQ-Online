@@ -2,7 +2,8 @@
 #  ui_chat_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Checked that every chat tab, the help's too, goes back to All with the global chat as the world closes, and that the player's own line shows after it
+#      Paulinchen  2026-10-12: Checked that the relay's notice shows red between slashes in every tab, while a player of its name or an admin of another stays as before
+#                            - Checked that every chat tab, the help's too, goes back to All with the global chat as the world closes, and that the player's own line shows after it
 #      Paulinchen  2026-10-11: Checked that the dimmed tabs go with the closed log's last line, though a chat holds unread lines
 #                            - Expected the chat to start in the global chat, and to return to it once the world closes
 #                            - Checked the chat log's places in the layout: its default from chat_size, a kept place honored, its least size, its rows from its height, the battle's box apart, and every hint and tab fitting the least width
@@ -517,3 +518,15 @@ MGQ_MpOverworldSync.tick
 layout.instance_variable_set(:@offers, [])
 map_log.update
 check("and not once it shows nothing", offered.call(:chat), nil)
+
+# The relay's notice, such as a new release's, which reaches the chat as an admin's line named
+# MGQ_MpChat::NOTICE_NAME.
+chat.take_line(nil, "MGQ Online 0.6.5 is out.", MGQ_MpChat::NOTICE_NAME, :global, true)
+notice = chat.instance_variable_get(:@log).last
+check("the relay's notice shows red between slashes, without a name or tag",
+      [notice.to_s, notice.who, map_log.text_color(notice)], ["// MGQ Online 0.6.5 is out. //", :notice, log_class::NOTICE_COLOR])
+check("in every tab", MGQ_MpChat::TABS.all? { |tab| notice.shown_in?(tab) }, true)
+chat.take_line(nil, "hello", MGQ_MpChat::NOTICE_NAME, :global, false)
+check("a player of that name says a plain line", [chat.instance_variable_get(:@log).last.who, map_log.text_color(chat.instance_variable_get(:@log).last)], [:other, MGQ_MpUi::Style::TEXT])
+chat.take_line(nil, "hi", "Global", :global, true)
+check("and an admin's line of another name stays an admin's", chat.instance_variable_get(:@log).last.to_s, "[Admin] Global: hi")
