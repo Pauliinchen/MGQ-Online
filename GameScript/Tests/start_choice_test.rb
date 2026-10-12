@@ -2,6 +2,7 @@
 #  start_choice_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Expected the warning before a new player takes the creator's starting save, and none for the creator
 #      Paulinchen  2026-10-11: Expected the created world's name followed by the screen's hint to confirm to enter it, and let the list stand-in take the world to put the cursor on
 #      Paulinchen  2026-10-09: Expected the longer call of mp_dir_create, which takes a Raid World's difficulty
 #                            - Expected Player's choice on the row Sharing companions takes in a Raid World's form, the call of mp_dir_create with
@@ -107,6 +108,11 @@ class FakeChoice
 
   # Closes.
   def finish; @choices = nil; @active = false; end
+
+  # Tells whether it is open.
+  #
+  # @return [Boolean] Whether it has commands.
+  def open?; !@choices.nil?; end
 
   # Takes input.
   def activate; @active = true; end
@@ -255,8 +261,12 @@ Dir.mktmpdir do |root|
     # From the creator's save.
     scene = new_scene
     scene.enter(world, "ready", true)
+    $calls.clear
     scene.on_from_creator
-    check("From the creator's save fetches it first", [scene.instance_variable_get(:@busy), $calls.last[0]], ["start", "mp_dir_fetch_start"])
+    check("From the creator's save warns first", [start_choices(scene), said(scene)], [[:take_start, :from_beginning, :cancel], Scene_MpWorlds::START_WARNING])
+    check("and fetches nothing yet", [scene.instance_variable_get(:@busy), $calls.map { |call| call[0] }.include?("mp_dir_fetch_start")], [nil, false])
+    scene.on_take_start
+    check("Take fetches it first", [scene.instance_variable_get(:@busy), $calls.last[0]], ["start", "mp_dir_fetch_start"])
     check("and closes the choice", start_choices(scene), nil)
 
     # From one of my saves, left without one.
@@ -320,5 +330,47 @@ Dir.mktmpdir do |root|
     MGQ_MpSaveDistribution.chosen = 4
     scene.take_start_save
     check("a save picked for a new world goes into the form", scene.instance_variable_get(:@forms)[:new_world][:save], 4)
+
+    # A world whose new players all start from the creator's save: the warning comes first.
+    check("the warning fits the two lines the message has, 120 characters at most", Scene_MpWorlds::START_WARNING.size <= 120, true)
+    started = $started.size
+    scene = new_scene
+    scene.instance_variable_get(:@list_window).activate
+    $calls.clear
+    scene.enter(world, "ready", false)
+    check("a new player is warned before the creator's save is taken", [start_choices(scene), said(scene)], [[:take_start, :from_beginning, :cancel], Scene_MpWorlds::START_WARNING])
+    check("and nothing is fetched or started yet", [$calls.map { |call| call[0] }.include?("mp_dir_fetch_start"), scene.instance_variable_get(:@busy), $started.size], [false, nil, started])
+    check("and only the choice takes input", [scene.instance_variable_get(:@list_window).active, scene.instance_variable_get(:@form_window).active], [false, false])
+    scene.on_take_start
+    check("Take fetches the creator's save", [scene.instance_variable_get(:@busy), $calls.last[0], start_choices(scene)], ["start", "mp_dir_fetch_start", nil])
+
+    scene = new_scene
+    $calls.clear
+    scene.enter(world, "ready", false)
+    scene.on_from_beginning
+    check("Start at the beginning enters without fetching", [$started.size, $started.last, scene.instance_variable_get(:@busy), $calls.map { |call| call[0] }.include?("mp_dir_fetch_start")], [started + 1, world, nil, false])
+
+    scene = new_scene
+    $calls.clear
+    scene.enter(world, "ready", false)
+    scene.on_back
+    check("Back fetches and starts nothing and goes back to the list",
+          [start_choices(scene), $calls.map { |call| call[0] }.include?("mp_dir_fetch_start"), $started.size, scene.instance_variable_get(:@list_window).active], [nil, false, started + 1, true])
+
+    # The creator, on a PC without a save of their own world.
+    own_listed = MGQ_MpWorld::Directory::ListedWorld.new("w", 4, 0, "mine", 0, "Me", "Free", "ready", [], false, false)
+    scene = new_scene
+    scene.instance_variable_set(:@me, "mine")
+    scene.instance_variable_set(:@entry, MGQ_MpWorld::Entry.new("w", "Free", own_listed, world, false, false))
+    scene.enter(world, "ready", false)
+    check("the creator takes their own save without the warning", [start_choices(scene), scene.instance_variable_get(:@busy), $calls.last[0]], [nil, "start", "mp_dir_fetch_start"])
+
+    own_listed.choose = true
+    scene = new_scene
+    scene.instance_variable_set(:@me, "mine")
+    scene.instance_variable_set(:@entry, MGQ_MpWorld::Entry.new("w", "Free", own_listed, world, false, false))
+    scene.enter(world, "ready", true)
+    scene.on_from_creator
+    check("and with Player's choice too", [start_choices(scene), scene.instance_variable_get(:@busy)], [nil, "start"])
   end
 end

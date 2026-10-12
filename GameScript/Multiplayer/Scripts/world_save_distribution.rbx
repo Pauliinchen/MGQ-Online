@@ -15,11 +15,12 @@
 #
 #----------------------------------------------------------------
 
-# A world's starting save: one of the creator's own saves, with their system save, which every new
-# player of the world starts from instead of the opening. The creator picks it when making the
+# A world's starting save: one of the creator's own saves, with their system save, which new
+# players of the world start from instead of the opening. The creator picks it when making the
 # world, and it can never be changed. The relay keeps it encrypted with a key from the world's
 # token; a new player's game fetches it into the world's folder before entering the world for the
-# first time, where it is the world's first save.
+# first time, where it is the world's first save. Since a save can run code, the world screen
+# fetches it only once the player agreed to take it, unless they created the world.
 #
 # A world made with Player's choice instead asks each new player where to start: at the beginning,
 # from one of their own saves, copied into the world's folder the same way, or from the starting

@@ -100,7 +100,7 @@ With the cursor on a world, the right side shows its details: who made it, its p
 Confirm on a world and pick *Enter the world*.
 
 - Type its password the first time, unless it has none; your game remembers it after that.
-- You continue from your latest save in that world. The first time, you start at the opening or from the creator's save, or choose where to start if the creator lets you.
+- You continue from your latest save in that world. The first time, you start at the opening or from the creator's save, or choose where to start if the creator lets you. A save can run code on your PC, so take a creator's save only from creators you trust: before taking it, the game warns you and offers *Take*, *Start at the beginning* or *Back*.
 - A world is only entered once the list has loaded, since the list tells what the world asks of your game.
 - **Through Discord** (with the Discord mod): while you play in a world, friends can be invited through the **+** in a Discord chat or ask to join from your profile. Accepting starts their game if it's closed and enters the world from the title screen, without its password; a friend in the middle of a game is told to go back to the title screen. Discord offers no invite while the party it shows is full.
 
@@ -402,7 +402,7 @@ Your games meet at the mod's **relay**, a small server that passes their data on
 
 - **Private:** everything your games send each other is encrypted with a key only the players have. The relay never gets it and passes on data it can't read.
 - **The Global chat is the exception:** every line of a world's Global chat also goes to the relay as plain text, which keeps the last 200 lines of each world for its creator and the relay's admins to read. The Map, Party and Whisper chats stay between the players.
-- **What the relay keeps:** the list of worlds, with each world's name, description, mods and shared mod settings, what tells its creator's game data from another's, its players' names and who is online; a Raid World's story progress and its raid bosses' HP; and a trade's encrypted offers until both games completed it. Hidden worlds are listed only for their players and for whoever names their id. A world's password never reaches the relay, and a starting save arrives encrypted.
+- **What the relay keeps:** the list of worlds, with each world's name, description, mods and shared mod settings, what tells its creator's game data from another's, its players' names and who is online; a Raid World's story progress and its raid bosses' HP; and a trade's encrypted offers until both games completed it. Hidden worlds are listed only for their players and for whoever names their id. A world's password never reaches the relay, and a starting save arrives encrypted, but encryption does not make it safe: a save can run code on your PC, so take a world's starting save only from creators you trust; the game asks before taking it.
 - **No addresses:** a join code holds a random token and the relay's name, so your friend's game never learns your IP address.
 
 ## Troubleshooting

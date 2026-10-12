@@ -94,6 +94,10 @@ QUICK START
    party"; they accept in their own wheel. You now play the leader's
    story together and fight co-op battles.
 
+A world may start its new players from its creator's save. A save can
+run code on your PC, so take it only from creators you trust. The game
+asks first and lets you start at the beginning instead.
+
 For a PvP battle without a world, press F11 on the map and host; your
 friend joins with the join code you send them.
 

@@ -16,7 +16,7 @@ What every world shares, such as the world screen, the chat, parties, co-op batt
 How a new player starts is the creator's choice in the create form (see [Creating a world](GUIDE.md#creating-a-world)):
 
 - **The opening**, when neither box below is ticked.
-- **Shared save:** from one of the creator's saves, with the creator's party, items, story and Library.
+- **Shared save:** from one of the creator's saves, with the creator's party, items, story and Library. A save can run code on your PC, so the game warns each new player before taking it, and they may start at the beginning instead; take it only from creators you trust.
 - **Player's choice:** each new player chooses when they first enter: the beginning, one of their own saves, or the creator's if *Shared save* is ticked. Their own save is copied into the world; the original stays untouched.
 
 Each player's difficulty is their own, as in single player.

@@ -2,6 +2,8 @@
 #  world_screen.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Asked before taking a world's starting save, which can run code, offering to start at the beginning instead,
+#                              unless the player created the world
 #      Paulinchen  2026-10-11: Dressed the screen's windows in the interface look and drew the worlds' scrollbar in its edge color
 #                            - Broke a description in the list box anew once the player resized the box, and fitted it to the box's width as it is now
 #                            - Moved the list box's fade on every frame, and measured a description with the shared style's text size and the box's lazy rectangle
@@ -149,6 +151,10 @@ class Scene_MpWorlds < Scene_MenuBase
   # What follows the name of a world just created or added, once the cursor is on it.
   ENTER_HINT = "Confirm to enter it."
 
+  # What the screen says before a new player takes a world's starting save; it fits the two lines
+  # the message has.
+  START_WARNING = "This world starts from its creator's save. A save can run code on your PC; take it only from creators you trust."
+
   # The forms of the chosen world, which no command of the list stands for.
   WORLD_FORMS = [:edit_world, :password]
 
@@ -218,7 +224,7 @@ class Scene_MpWorlds < Scene_MenuBase
     @confirm_window.set_handler(:show_mods, method(:on_show_mods))
     @confirm_window.set_handler(:cancel, method(:on_back))
     @start_window = Window_MpChoice.new
-    [:from_creator, :from_beginning, :from_own].each { |symbol| @start_window.set_handler(symbol, method(:"on_#{symbol}")) }
+    [:from_creator, :take_start, :from_beginning, :from_own].each { |symbol| @start_window.set_handler(symbol, method(:"on_#{symbol}")) }
     @start_window.set_handler(:cancel, method(:on_back))
     @list_box = Sprite_MpListBox.new
     @box = nil
@@ -1977,8 +1983,8 @@ class Scene_MpWorlds < Scene_MenuBase
     true
   end
 
-  # Enters a world, first asking where to start or fetching its starting save when this PC has no
-  # save of it yet, or says why it cannot.
+  # Enters a world, first asking where to start or whether to take its starting save when this PC
+  # has no save of it yet, or says why it cannot.
   #
   # @param world [MGQ_MpWorld::World] The world.
   # @param start [String, nil] How far it is with its starting save, nil when the list does not tell.
@@ -1987,7 +1993,9 @@ class Scene_MpWorlds < Scene_MenuBase
     return ask_start(world, start) if MGQ_MpSaveDistribution.ask_start?(world, choose)
 
     if MGQ_MpSaveDistribution.fetch?(world, start)
-      log_screen("first entry into #{world.name} (#{world.id}): fetching the creator's starting save")
+      return ask_take_start(world, start) unless own_entry?
+
+      log_screen("first entry into own world #{world.name} (#{world.id}): fetching its starting save")
       return fetch_start(world)
     end
 
@@ -2015,9 +2023,42 @@ class Scene_MpWorlds < Scene_MenuBase
     @start_window.start(choices)
   end
 
-  # Starts the world from its creator's save, fetching it first.
+  # Warns a new player that a world's starting save can run code on their PC before they take it,
+  # offering to start at the beginning instead.
+  #
+  # @param world [MGQ_MpWorld::World] The world.
+  # @param start [String] How far it is with its starting save.
+  def ask_take_start(world, start)
+    close_popups
+    @list_window.deactivate
+    @form_window.deactivate
+    @starting = world
+    @starting_from = start
+    choices = [["Take", :take_start], ["Start at the beginning", :from_beginning], ["Back", :cancel]]
+    log_screen("first entry into #{world.name} (#{world.id}): warning before taking the creator's starting save, offering #{choices.map { |choice| choice[1] }.join(', ')}")
+    say(START_WARNING)
+    @start_window.start(choices)
+  end
+
+  # Tells whether the player created the world being entered, whose starting save is no risk to them.
+  #
+  # @return [Boolean] Whether they did.
+  def own_entry?
+    listed = @entry && @entry.listed
+    listed && @me && listed.creator_id == @me ? true : false
+  end
+
+  # Starts the world from its creator's save, after the warning unless the player created the world.
   def on_from_creator
     log_screen("start chosen: the creator's save")
+    return ask_take_start(@starting, @starting_from) unless own_entry?
+
+    fetch_start(@starting)
+  end
+
+  # Takes the creator's starting save after the warning, fetching it first.
+  def on_take_start
+    log_screen("start chosen: taking the creator's save after the warning")
     fetch_start(@starting)
   end
 
