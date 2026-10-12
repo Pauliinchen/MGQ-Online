@@ -2,7 +2,9 @@
 #  world_catchup_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Checked that a vehicle no event of the story gave yet leaves its map, one the player rides once they got off, and that Galda stays past its event
+#      Paulinchen  2026-10-12: Checked that a cap of another mod brings no Makina nor waiting companion above the real level
+#                            - Checked that a player behind learns no skill of the world's story, and that a move on at a cap holds the story's skills and items until the real level
+#                            - Checked that a vehicle no event of the story gave yet leaves its map, one the player rides once they got off, and that Galda stays past its event
 #                            - Stood in for the map's vehicles and the one the player rides
 #                            - Checked that a world-wide chest turns on its chest flags with its items, and that the Randolphs found follow the Randolph switches
 #      Paulinchen  2026-10-11: Checked the list of what the catch-up hands out by level for the Levels page, and the level it counts
@@ -418,6 +420,45 @@ frames(40)
 check("a player capped below the gate is caught up once at their cap", calls_of("mp_raid_story_fetch").size, 2)
 $game_actors[1].cap = 9999
 
+# A player behind learns no skill of the world's story, and the story's skills and items a move on
+# at another mod's level cap carries them past wait for their real level, also over a load.
+tables(:REWARDS => [reward.new(:skill, 930, 1, "map:60:2:1", "2", 24, nil, [[:v, 1001, 24]], true),
+                    reward.new(:i, 600, 1, "map:60:3:1", "2", 24, nil, [[:v, 1001, 24]], true),
+                    reward.new(:skill, 937, 1, "map:61:1:1", "2", 28, nil, [[:v, 1001, 28]], true)])
+new_game({ 1001 => 9 }, [], 10)
+frames(1)
+relay({ "rev" => 50, "wrev" => 50, "p" => 26, "part" => "2", "checkpoints" => "1" }, packed({ 1001 => 26 }))
+frames(16)
+checkpoint("1", packed({ 1001 => 18 }))
+frames(70)
+check("a player behind learns no skill of the world's story", [story.mode, MGQ_MpStoryState.knows?($game_actors[1], 930)], [:behind, false])
+$game_actors[1].cap = 20
+$game_actors[1].level = 20
+frames(40)
+relay({ "rev" => 51, "wrev" => 51, "p" => 26, "part" => "2", "checkpoints" => "1" }, packed({ 1001 => 26 }))
+frames(40)
+MGQ_MpWorldCatchup.level_up
+frames(40)
+check("moved on at a cap below the gate, the skills and items the world's story carried them past wait",
+      [story.mode, MGQ_MpStoryState.knows?($game_actors[1], 930), $game_party.items[600].to_i], [:world, false, 0])
+story.pushed(MGQ_MpOverworldSync::STORY_FIELD => "52", :relay => true)
+frames(1)
+relay({ "rev" => 52, "wrev" => 52, "p" => 29, "part" => "2", "checkpoints" => "1" }, packed({ 1001 => 29 }))
+frames(40)
+check("but what the world's story carries them past later comes as usual", MGQ_MpStoryState.knows?($game_actors[1], 937), true)
+$game_actors[1].cap = 9999
+$game_actors[1].level = 25
+$messages.clear
+MGQ_MpWorldStory.loaded(:load)
+MGQ_MpWorldCatchup.loaded
+frames(1)
+relay({ "rev" => 53, "wrev" => 53, "p" => 29, "part" => "2", "checkpoints" => "1" }, packed({ 1001 => 29 }))
+frames(80)
+check("and come once a load finds the real level at the gate",
+      [MGQ_MpStoryState.knows?($game_actors[1], 930), $game_party.items[600].to_i, $messages.grep(/The story gave you/).size], [true, 1, 1])
+frames(40)
+check("once", [$game_party.items[600].to_i, $messages.grep(/The story gave you/).size], [1, 1])
+
 # Key items for everyone, and the chests that hold them, opened once for the world.
 tables(:KEY_ITEMS => [key_item.new(502, 1, "map:6:33:1", "1", 5, nil, [[:v, 1001, 6]]),
                       key_item.new(503, 1, "map:7:24:2", "2", 22, nil, [[:v, 1001, 22]]),
@@ -458,8 +499,10 @@ relay({ "rev" => 7, "wrev" => 7, "p" => 40, "r1143" => 21, "part" => "chaos", "r
 frames(40)
 check("a join the world's story carried the player past waits for its gate", [story.mode, roster.include?(525)], [:world, false])
 $game_actors[1].level = 299
+$game_actors[1].cap = 299
 frames(40)
-check("not at 299", roster.include?(525), false)
+check("not at 299, though another mod caps the player there", roster.include?(525), false)
+$game_actors[1].cap = 9999
 $game_actors[1].level = 300
 frames(40)
 check("at 300 Sonya joins in her Chaos persona at 300", [roster.include?(525), $game_actors[525].persona, $game_actors[525].base_level], [true, 842, 300])
@@ -908,6 +951,10 @@ check("a chest giving one held already leaves one", $game_party.items[700], 1)
 $game_party.lose_item($data_items[701], 1)
 frames(40)
 check("one above the player's level does not come", $game_party.items[701], 0)
+$game_actors[1].cap = 10
+frames(40)
+check("nor one above a cap of another mod the player is held at", $game_party.items[701], 0)
+$game_actors[1].cap = 9999
 
 # What the catch-up hands out by level that the world unlocked, for the World overview's Levels page.
 tables(:JOINS => [join.new(77, 77, "map:6:30:2", "1", 7, nil, [[:v, 1001, 7]], 7, :start, 1, true),

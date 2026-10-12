@@ -2,7 +2,10 @@
 #  world_catchup.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Took a vehicle off its map while no event that gives it is behind the player's story or the world's, as a new game whose setup never ran left the ship and Galda on the field
+#      Paulinchen  2026-10-12: Gave companions and Makina only once the player's real level reaches theirs, as a character at another mod's level cap got every Makina above it at once
+#                            - Held the story's skills and items a move on at another mod's level cap carried the player past until their real level reaches the gate
+#                            - Taught a player behind the world's story no skill of it before they move on
+#                            - Took a vehicle off its map while no event that gives it is behind the player's story or the world's, as a new game whose setup never ran left the ship and Galda on the field
 #                            - Turned on the chest flags of a world-wide chest with its items, so the Chaos forge works its ores for every player
 #                            - Kept the Randolphs found at the number of Randolph switches on, as two players finding one each at once counted one
 #      Paulinchen  2026-10-11: Listed what the catch-up hands out by level that the world already unlocked, for the World overview's Levels page
@@ -44,6 +47,13 @@
 # to play up to its amount. A player who then holds every orb of Part 2 plays the event that moves
 # the story on, which only an orb's own event calls. Every Makina comes once the player's level
 # reaches the area level of its easiest place, one of each.
+#
+# Companions, Makina and the story's skills and items go by the player's real level alone: a cap
+# of another mod lets the player move on in the story, and what that move carries them past waits
+# in the save until their real level reaches the gate. A player behind learns no skill of the
+# world's story past their part's checkpoint before moving on. Every look while the player is free
+# hands out what their level reached, so entering the world or loading a save brings everything
+# pending at once.
 #
 # A companion joins once the player's story is past the join and their highest base level reaches
 # the join's gate, and comes at least at that level unless it is a first join at the companion's
@@ -246,8 +256,9 @@ module MGQ_MpWorldCatchup
   end
 
   # Follows the catch-up for one frame: the relay's answers, the checkpoint and the orbs' event that
-  # wait, then every CHECK_FRAMES while the player is free the story's rows, the level gate, the
-  # shared companions, the orbs and the Makina. Called after the map's update.
+  # wait, then every CHECK_FRAMES while the player is free the rewards waiting for their gate, the
+  # story's rows, the level gate, the shared companions, the orbs and the Makina. Called after the
+  # map's update.
   def self.tick
     @clock += 1
     return close unless active?
@@ -267,6 +278,7 @@ module MGQ_MpWorldCatchup
     @audit_due = true if got_off_early?
     looking do
       audit(story_now) if @audit_due
+      give_waiting_rewards
       review(story_now, false)
       move_on if MGQ_MpWorldStory.mode == :behind && !@want && !@joins_world && gate_reached?
       note_roster
@@ -313,18 +325,21 @@ module MGQ_MpWorldCatchup
   # The notes the save keeps: the rows done ("done", a row's key to true, or to "c" or "o" for a
   # join waiting for its gate that a story carried the player past or that their own event held
   # back), the companions their own event held back whose join the story has not passed yet
-  # ("held"), the part whose checkpoint the player got ("checkpoint") and the side they chose
-  # before the Great Decision ("side"). Notes of another world start anew.
+  # ("held"), the part whose checkpoint the player got ("checkpoint"), the side they chose before
+  # the Great Decision ("side"), the gate of a move on a cap of another mod opened until its story
+  # is laid over theirs ("capped"), and the rewards that move carried them past, waiting for their
+  # gate ("waits", a row's key to its gate). Notes of another world start anew.
   #
   # @return [Hash] The notes.
   def self.ledger
     notes = $game_system.instance_variable_get(LEDGER)
     id = MGQ_MpWorldStory.world_id
     unless notes.is_a?(Hash) && notes["world"] == id && notes["done"].is_a?(Hash)
-      notes = { "world" => id, "done" => {}, "held" => {}, "checkpoint" => nil, "side" => nil }
+      notes = { "world" => id, "done" => {}, "held" => {}, "checkpoint" => nil, "side" => nil, "capped" => nil, "waits" => {} }
       $game_system.instance_variable_set(LEDGER, notes)
     end
     notes["held"] ||= {}
+    notes["waits"] ||= {}
     notes
   end
 
@@ -493,6 +508,7 @@ module MGQ_MpWorldCatchup
     log("took the checkpoint of #{part_name(ready[:part])} (revision #{ready[:wrev]}): #{MGQ_MpWorldStory.counters_text(own)} -> #{MGQ_MpWorldStory.counters_text(after)}; " \
         "kept #{kept.size} own changes, dropped #{dropped.size}")
     carried(local)
+    ledger["capped"] = nil
     MGQ_MpWorldStory.followed(own, after)
   rescue => e
     @want = ready[:part] if ready && ledger["checkpoint"] != ready[:part]
@@ -534,6 +550,7 @@ module MGQ_MpWorldCatchup
 
     @joins_world = false
     ledger["checkpoint"] = nil
+    ledger["capped"] = nil
     log("the player plays the world's story now")
   rescue => e
     log("following a story laid over the player's failed: #{e.class}: #{e.message}")
@@ -563,22 +580,37 @@ module MGQ_MpWorldCatchup
   #
   # @return [Boolean] Whether it does.
   def self.gate_reached?
-    reached?(gate_of(own_part))
+    gate_open?(gate_of(own_part))
   end
 
-  # Reports whether the player's highest base level among their characters reaches a level, or
-  # whether that character is at the highest level the game lets them reach (Game_Actor#max_level,
-  # which another mod may cap) below it, so a cap can never hold the player back.
+  # Reports whether a part's gate lets the player move on: their level reached it, or the character
+  # of their highest base level is at the highest level the game lets them reach (Game_Actor#max_level,
+  # which another mod may cap) below it.
+  #
+  # A cap that rises with the story's bosses would otherwise hold a player behind for good, as their
+  # story plays no boss while behind.
+  #
+  # @param level [Integer] The gate.
+  # @return [Boolean] Whether it does.
+  def self.gate_open?(level)
+    return true if reached?(level)
+
+    view = roster_view
+    cap = view[:cap]
+    view[:best] && cap.is_a?(Integer) && cap < level && view[:best] >= cap
+  rescue
+    false
+  end
+
+  # Reports whether the player's highest base level among their characters reaches a level, which
+  # every companion and Makina the catch-up hands out waits for, whatever cap another mod holds the
+  # player at.
   #
   # @param level [Integer] The level.
   # @return [Boolean] Whether it does.
   def self.reached?(level)
-    view = roster_view
-    return false unless view[:best]
-    return true if view[:best] >= level
-
-    cap = view[:cap]
-    cap.is_a?(Integer) && cap < level && view[:best] >= cap
+    best = roster_view[:best]
+    best ? best >= level : false
   rescue
     false
   end
@@ -633,8 +665,55 @@ module MGQ_MpWorldCatchup
     name = target == :world ? "the world's story" : part_name(target)
     log("level #{gate} reached in #{part_name(from)}: moving on to #{name}")
     notice(:gate, "Level #{gate} reached: catching up to #{name}.")
+    note_capped(gate)
     return_from_route(from, world)
     target == :world ? join_world : want(target, "moving on from #{part_name(from)}")
+  end
+
+  # Notes the gate the player moves on at while only a cap of another mod opened it, so the story's
+  # rewards the move carries them past wait for their real level (see rewards_wait?). The story the
+  # move lays over theirs clears it, see carried and take_checkpoint.
+  #
+  # @param gate [Integer] The gate.
+  def self.note_capped(gate)
+    notes = ledger
+    notes["capped"] = reached?(gate) ? nil : gate
+    log("moved on at a level cap below #{gate}: the story's rewards wait for level #{gate}") if notes["capped"]
+  end
+
+  # Reports whether the story's rewards a story laid over the player's carries them past wait: it is
+  # the move a cap of another mod opened (note_capped), and their real level has not reached that
+  # gate yet.
+  #
+  # @return [Boolean] Whether they do.
+  def self.rewards_wait?
+    gate = ledger["capped"]
+    gate.is_a?(Integer) && !reached?(gate)
+  end
+
+  # Gives the story's rewards that wait for a gate (rewards_wait?) once the player's real level
+  # reaches it.
+  def self.give_waiting_rewards
+    waits = ledger["waits"]
+    return if waits.empty?
+
+    gifts = DATA::REWARDS.map do |row|
+      key = key_of("g", row)
+      gate = waits[key]
+      next unless gate && reached?(gate)
+
+      waits.delete(key)
+      give(reward_kind(row), row.id, row.amount, key)
+    end
+    tell_gifts(gifts.compact)
+  end
+
+  # The kind give takes for a reward row.
+  #
+  # @param row [MGQ_MpWorldCatchupData::Reward] The row.
+  # @return [Symbol, String] :skill, or the item's kind.
+  def self.reward_kind(row)
+    row.kind == :skill ? :skill : row.kind.to_s
   end
 
   # Moves the player into the world's own story, which world_story.rbx fetches and lays over
@@ -859,7 +938,7 @@ module MGQ_MpWorldCatchup
     @audit_due = false
     told = @world_told
     done = ledger["done"]
-    gifts = missing_skills(story, told)
+    gifts = missing_skills(story, MGQ_MpWorldStory.mode == :world ? told : nil)
     gifts.concat(restock_key_items(story, told))
     missing_companions(story, told, done)
     companion_values
@@ -870,15 +949,19 @@ module MGQ_MpWorldCatchup
     tell_gifts(gifts.compact)
   end
 
-  # Teaches Luka the story's skills he lacks, of the rows the player's story or the world's is past.
+  # Teaches Luka the story's skills he lacks, of the rows the player's story or the world's is past,
+  # unless the row waits for its gate (rewards_wait?).
   #
   # @param story [Array] The player's story.
-  # @param told [Array, nil] The world's story, nil before it came.
+  # @param told [Array, nil] The world's story, nil before it came or while the player is behind it,
+  #   whose skills come as they move on.
   # @return [Array<String>] What was given, as shown.
   def self.missing_skills(story, told)
     hero = $game_actors[MGQ_MpStoryState::HERO]
+    waits = ledger["waits"]
     DATA::REWARDS.map do |row|
       next unless row.kind == :skill && carries?(row) && !MGQ_MpStoryState.knows?(hero, row.id)
+      next if waits[key_of("g", row)]
       next unless passed?(row, story) || (told && passed?(row, told, story))
 
       give(:skill, row.id, 1, key_of("g", row))
@@ -1018,8 +1101,9 @@ module MGQ_MpWorldCatchup
   end
 
   # Looks at every row of the tables against the player's story, see the module: rows the
-  # player's own game played are noted done, those a story carried them past give their rewards
-  # and take their companions, the world's key items and chests come to everyone, and companions
+  # player's own game played are noted done, those a story carried them past give their rewards,
+  # or note them waiting for their gate after a move a cap opened (rewards_wait?), and take their
+  # companions, the world's key items and chests come to everyone, and companions
   # whose gate the player reached join.
   #
   # @param story [Array] The player's story: switches, variables and self switches.
@@ -1029,12 +1113,19 @@ module MGQ_MpWorldCatchup
     note_side(story)
     done = ledger["done"]
     gifts = []
+    waits = carried && rewards_wait? ? ledger["waits"] : nil
     DATA::REWARDS.each do |row|
       key = key_of("g", row)
       next if done[key] || (carried && !carries?(row)) || !passed?(row, story)
 
       done[key] = true
-      gifts << give(row.kind == :skill ? :skill : row.kind.to_s, row.id, row.amount, key) if carried
+      next unless carried
+
+      if waits
+        waits[key] = ledger["capped"]
+      else
+        gifts << give(reward_kind(row), row.id, row.amount, key)
+      end
     end
     gifts.concat(world_items(story, carried, done))
     companions(story, carried, done)
@@ -1212,7 +1303,7 @@ module MGQ_MpWorldCatchup
     parts = order.take_while { |part| part != current }
     parts.select { |part| !MGQ_MpWorldStory::ROUTES.include?(part) || part == own }.map do |part|
       got = own_at.nil? || own_at > order.index(part)
-      Unlock.new(gate_of(part), :story, part_name(part), nil, got, !got && reached?(gate_of(part)))
+      Unlock.new(gate_of(part), :story, part_name(part), nil, got, !got && gate_open?(gate_of(part)))
     end
   end
 
