@@ -2,7 +2,8 @@
 //  worker.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-12: Read every request body only up to its route's limit, also one sent without a Content-Length
+//      Paulinchen  2026-10-12: Kept each trade's sealed offers under keys of their own beside the trade, which listing the trades never reads
+//                            - Read every request body only up to its route's limit, also one sent without a Content-Length
 //                            - Sent starting saves and uploaded mods piece by piece as they are read, at most three at once and one per address, a request waiting up to 30 seconds for its turn
 //                            - Deleted a stored file's pieces by their keys, without reading them, and a world's checkpoints and boss pools at most 128 keys at a time
 //                            - Ignored what a game or peer the relay already closed sends while its connection closes, which reached a newcomer on its seat and the world's chat
@@ -303,6 +304,50 @@ function modFilePrefix(key) {
 }
 
 /**
+ * Names the storage key of the offers a player of a trade sealed, which the listing of the trades'
+ * `trade:` keys leaves out.
+ *
+ * @param {string} id The trade.
+ * @param {string} player The player's id.
+ * @returns {string} The key.
+ */
+function tradeSealedKey(id, player) {
+  return `trade-sealed:${id}:${player}`;
+}
+
+/**
+ * Makes the trades' store over a Durable Object's storage: a `trade:` key per trade, and each
+ * player's sealed offers under a key beside it.
+ *
+ * @param {DurableObjectStorage} storage The storage.
+ * @returns {import("../core/trades.js").TradeStore} The store.
+ */
+function tradeStore(storage) {
+  return {
+    getTrade: (id) => storage.get(`trade:${id}`),
+    putTrade: async (record, { sealed = {}, drop = [] } = {}) => {
+      const entries = { [`trade:${record.id}`]: record };
+
+      for (const [player, text] of Object.entries(sealed)) {
+        entries[tradeSealedKey(record.id, player)] = text;
+      }
+
+      // Issued without an await between them, so storage commits the write and the delete as one.
+      const writes = [storage.put(entries)];
+
+      if (drop.length > 0) {
+        writes.push(storage.delete(drop.map((player) => tradeSealedKey(record.id, player))));
+      }
+
+      await Promise.all(writes);
+    },
+    getSealed: (id, player) => storage.get(tradeSealedKey(id, player)),
+    removeTrade: (id, players = []) => storage.delete([`trade:${id}`, ...players.map((player) => tradeSealedKey(id, player))]),
+    allTrades: async () => [...(await storage.list({ prefix: "trade:" })).values()],
+  };
+}
+
+/**
  * Most keys storage takes in one write or delete.
  */
 const STORAGE_BATCH = 128;
@@ -438,8 +483,8 @@ function isDownload(method, url) {
  * The world directory: every world with its players, bans and locked token, one entry per world
  * in the object's storage, and each world's starting save in pieces beside it. It also keeps the
  * mod catalog, one entry per mod and each uploaded mod's zip in pieces, and the trades, one entry
- * per trade. It sends only a few starting saves and mod zips at once, each piece by piece, so
- * downloads cannot fill its memory.
+ * per trade and its sealed offers beside it. It sends only a few starting saves and mod zips at
+ * once, each piece by piece, so downloads cannot fill its memory.
  */
 export class Directory extends DurableObject {
   /**
@@ -482,12 +527,7 @@ export class Directory extends DurableObject {
       getModFile: (key) => streamPieces(storage, modFilePrefix(key)),
     }, { admins });
 
-    this.trades = new TradeBook({
-      getTrade: (id) => storage.get(`trade:${id}`),
-      putTrade: (record) => storage.put(`trade:${record.id}`, record),
-      removeTrade: (id) => storage.delete(`trade:${id}`),
-      allTrades: async () => [...(await storage.list({ prefix: "trade:" })).values()],
-    }, (id) => storage.get(`world:${id}`));
+    this.trades = new TradeBook(tradeStore(storage), (id) => storage.get(`world:${id}`));
   }
 
   /**

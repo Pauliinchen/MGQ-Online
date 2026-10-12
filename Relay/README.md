@@ -121,13 +121,13 @@ Two players of a world swap items through their games, and the relay referees th
 
 | Request | What it does |
 |---|---|
-| `POST /v1/trades/<id>/commit` | Commits one side: `player` (the key), `world`, `partner` (the other player's id), `hash` (SHA-256 of the offers, hexadecimal) and `sealed` (the sealed offers in base64, at most 64 KB; 413 beyond). Both players must be players of the world, whom the directory lists as members and the creator has not removed (403 otherwise; the creator always is one). The first commit makes the trade `pending`; the partner's commit with the same hash makes it `committed`, a different hash `cancelled` with `reason` `differ`. The same commit again changes nothing; other offers from a player who committed already, or a commit naming another world or partner than the trade's, get 409. A player may open at most 20 trades that are pending or committed and not yet done (429). Answers `state` and, when cancelled, `reason`. |
+| `POST /v1/trades/<id>/commit` | Commits one side: `player` (the key), `world`, `partner` (the other player's id), `hash` (SHA-256 of the offers, hexadecimal) and `sealed` (the sealed offers in base64, at most 64 KB; 413 beyond). Both players must be players of the world, whom the directory lists as members and the creator has not removed (403 otherwise; the creator always is one). The first commit makes the trade `pending`; the partner's commit with the same hash makes it `committed`, a different hash `cancelled` with `reason` `differ`. The same commit again changes nothing; other offers from a player who committed already, or a commit naming another world or partner than the trade's, get 409. A player may open at most 20 trades that are pending or committed and not yet done, and at most 100 a day that end cancelled (429). Answers `state` and, when cancelled, `reason`. |
 | `POST /v1/trades/<id>/cancel` | Cancels a pending trade with `reason` `cancelled`, if `player` is the key of one of its two players. A committed trade stays committed. Answers `state` and `reason` as above. |
 | `GET /v1/trades/<id>?player=<key>` | Answers `state` and `reason` to one of the trade's two players, 404 to anyone else. A trade still pending 2 minutes after its first commit is cancelled with `reason` `expired`. |
 | `GET /v1/trades?player=<key>&world=<id>` | Lists the world's committed trades the player has not marked done: `trades`, each `id`, `hash` and `sealed`, the offers as the player's own game sealed them. |
 | `POST /v1/trades/<id>/done` | Marks a committed trade done for `player`, whose game applied and saved it (409 for a trade not committed). The trade is deleted once both players marked it done. |
 
-Committed trades nobody finished are dropped after 30 days, cancelled ones after a day.
+Committed trades nobody finished are dropped after 30 days, cancelled ones after a day. The relay keeps each player's sealed offers beside the trade, not in it, and drops them as soon as the trade is cancelled.
 
 ### Bug reports
 

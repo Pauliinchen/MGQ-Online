@@ -2,6 +2,7 @@
 //  server.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-12: Checked that the sweep drops the sealed offers of a trade it cancels
 //      Paulinchen  2026-10-11: Tested a bug report over HTTP: its unpacked files committed to GitHub in one commit, refused without a player key, too long or without a token
 //      Paulinchen  2026-10-10: Tested that only a game naming the dev feature in X-MGQ-Features makes a Raid World with a starting save and uploads it over HTTP
 //                            - Tested boss pools that keep the share of a raid max HP left over HTTP: turn reports, a kill named by its player, the frame every game hears and the admin view
@@ -936,6 +937,7 @@ test("the sweep deletes worlds whose starting save never came and trades kept lo
   await relay.sweep();
   assert.equal(await relay.directory.store.get(pending), undefined);
   assert.equal((await relay.trades.store.getTrade(trade)).state, "cancelled");
+  assert.equal(await relay.trades.store.getSealed(trade, await playerIdOf(playerKey(71))), undefined, "a cancelled trade keeps no offers");
 
   now += TRADE_LIMITS.keepCancelledMs;
   await relay.sweep();

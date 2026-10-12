@@ -2,6 +2,7 @@
 //  server.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-12: Kept each trade's sealed offers in memory beside the trade
 //      Paulinchen  2026-10-11: Took the bug reports games send and handed them to GitHub with the GITHUB_ISSUES_TOKEN and GITHUB_BUG_FILES_TOKEN environment variables
 //      Paulinchen  2026-10-10: Passed what a game names in the X-MGQ-Features header on to the directory's public routes too, for a development build's Raid World starting save
 //                            - Told every game of a Raid World a boss pool's share of HP left, raid max HP and defeat when a report or an admin changed it, and handed a boss report the reporting player's name
@@ -188,11 +189,29 @@ export function memoryModStore() {
  */
 export function memoryTradeStore() {
   const trades = new Map();
+  const sealed = new Map();
 
   return {
     getTrade: async (id) => (trades.has(id) ? structuredClone(trades.get(id)) : undefined),
-    putTrade: async (record) => void trades.set(record.id, structuredClone(record)),
-    removeTrade: async (id) => void trades.delete(id),
+    putTrade: async (record, { sealed: offers = {}, drop = [] } = {}) => {
+      trades.set(record.id, structuredClone(record));
+
+      for (const [player, text] of Object.entries(offers)) {
+        sealed.set(`${record.id}:${player}`, text);
+      }
+
+      for (const player of drop) {
+        sealed.delete(`${record.id}:${player}`);
+      }
+    },
+    getSealed: async (id, player) => sealed.get(`${id}:${player}`),
+    removeTrade: async (id, players = []) => {
+      trades.delete(id);
+
+      for (const player of players) {
+        sealed.delete(`${id}:${player}`);
+      }
+    },
     allTrades: async () => [...trades.values()].map((record) => structuredClone(record)),
   };
 }

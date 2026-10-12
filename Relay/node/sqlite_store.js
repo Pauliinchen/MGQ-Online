@@ -2,6 +2,7 @@
 //  sqlite_store.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-12: Kept each trade's sealed offers in a table of their own beside the trade, written and removed with it in one transaction
 //      Paulinchen  2026-10-09: Kept each Raid World's boss pools
 //      Paulinchen  2026-10-08: Kept each Raid World's story and its checkpoints
 //      Paulinchen  2026-10-07: Kept each world's chat, which goes with the world
@@ -12,7 +13,8 @@
 // The world directory's, the mod catalog's, the trades' and the Raid Worlds' stories' and boss
 // pools' stores over one SQLite database, for the Node relay on a rented machine, so worlds, mods,
 // trades, stories and pools outlast a restart. Entries, records, chats, stories and pools are kept
-// as JSON, starting saves and uploaded mods' zips as blobs.
+// as JSON, a trade's sealed offers in a table beside the trades, starting saves and uploaded mods'
+// zips as blobs.
 
 import { DatabaseSync } from "node:sqlite";
 
@@ -32,6 +34,7 @@ export function openSqliteStores(path) {
   const mods = jsonTable(db, "mods");
   const modFiles = blobTable(db, "mod_files");
   const trades = jsonTable(db, "trades");
+  const tradeSealed = jsonTable(db, "trade_sealed");
   const stories = jsonTable(db, "stories");
   const checkpoints = jsonTable(db, "story_checkpoints");
   const worldCheckpoints = db.prepare("DELETE FROM story_checkpoints WHERE id LIKE ?");
@@ -69,29 +72,37 @@ export function openSqliteStores(path) {
     },
     trades: {
       getTrade: async (id) => trades.get(id),
-      putTrade: async (record) => trades.put(record.id, record),
-      removeTrade: async (id) => trades.remove(id),
+      putTrade: async (record, { sealed = {}, drop = [] } = {}) => transaction(db, () => {
+        trades.put(record.id, record);
+
+        for (const [player, text] of Object.entries(sealed)) {
+          tradeSealed.put(`${record.id}:${player}`, text);
+        }
+
+        for (const player of drop) {
+          tradeSealed.remove(`${record.id}:${player}`);
+        }
+      }),
+      getSealed: async (id, player) => tradeSealed.get(`${id}:${player}`),
+      removeTrade: async (id, players = []) => transaction(db, () => {
+        trades.remove(id);
+
+        for (const player of players) {
+          tradeSealed.remove(`${id}:${player}`);
+        }
+      }),
       allTrades: async () => trades.all(),
     },
     stories: (id) => ({
       get: async () => stories.get(id),
-      put: async (story, checkpoint) => {
-        // One transaction, so a checkpoint is never kept without the story that moved past it.
-        db.exec("BEGIN");
+      // One transaction, so a checkpoint is never kept without the story that moved past it.
+      put: async (story, checkpoint) => transaction(db, () => {
+        stories.put(id, story);
 
-        try {
-          stories.put(id, story);
-
-          if (checkpoint) {
-            checkpoints.put(`${id}:${checkpoint.part}`, checkpoint);
-          }
-
-          db.exec("COMMIT");
-        } catch (error) {
-          db.exec("ROLLBACK");
-          throw error;
+        if (checkpoint) {
+          checkpoints.put(`${id}:${checkpoint.part}`, checkpoint);
         }
-      },
+      }),
       getCheckpoint: async (part) => checkpoints.get(`${id}:${part}`),
       remove: async () => {
         stories.remove(id);
@@ -107,6 +118,24 @@ export function openSqliteStores(path) {
     }),
     close: () => db.close(),
   };
+}
+
+/**
+ * Runs work in one transaction, which keeps nothing of it when it throws.
+ *
+ * @param {DatabaseSync} db The database.
+ * @param {() => void} work The work.
+ */
+function transaction(db, work) {
+  db.exec("BEGIN");
+
+  try {
+    work();
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
 }
 
 /**

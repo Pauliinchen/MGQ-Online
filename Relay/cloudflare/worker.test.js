@@ -2,7 +2,8 @@
 //  worker.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-12: Tested the directory's streamed downloads and their limit, a body without Content-Length read only up to its limit, and removals of more keys than storage deletes at once
+//      Paulinchen  2026-10-12: Tested that a trade's sealed offers lie beside it, out of the list of trades, and go once it is cancelled
+//                            - Tested the directory's streamed downloads and their limit, a body without Content-Length read only up to its limit, and removals of more keys than storage deletes at once
 //                            - Tested that a game or peer the relay closed passes nothing on while its connection closes
 //                            - Created
 //
@@ -15,7 +16,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { registerHooks } from "node:module";
 import { DOWNLOAD_LIMITS, concatBytes } from "../core/bodies.js";
-import { sha256Hex } from "../core/directory.js";
+import { playerIdOf, sha256Hex } from "../core/directory.js";
 import { AUTH_HEADER, CHAT_LIMITS, CHAT_SLOW, CLOSE, EVERYONE, LIMITS, PAIRED, PLAYER_HEADER, REPLACED } from "../core/relay.js";
 import { STORY_LIMITS } from "../core/story.js";
 
@@ -791,4 +792,27 @@ test("removing a Raid World's story and boss pools deletes more keys than storag
   await state.storage.put("story", { part: 1 });
   await world.removeRaidData();
   assert.deepEqual([...(await state.storage.list()).keys()], []);
+});
+
+test("the directory keeps a trade's sealed offers beside it, out of the list of trades, and drops them once it is cancelled", async () => {
+  const state = objectState();
+  const directory = new Directory(state, {});
+  const [alice, bob] = [playerKey(1), playerKey(2)];
+  const [aliceId, bobId] = [await playerIdOf(alice), await playerIdOf(bob)];
+  const trade = "7".repeat(32);
+  await state.storage.put(`world:${WORLD}`, { id: WORLD, members: { [aliceId]: {}, [bobId]: {} }, bans: [] });
+
+  const committed = await directory.fetch(new Request(`https://relay.test/v1/trades/${trade}/commit`, {
+    method: "POST",
+    headers: { [PLAYER_HEADER]: alice },
+    body: JSON.stringify({ world: WORLD, partner: bobId, hash: "ab".repeat(32), sealed: "QQ==" }),
+  }));
+  assert.deepEqual(await committed.json(), { state: "pending" });
+  assert.equal(await state.storage.get(`trade-sealed:${trade}:${aliceId}`), "QQ==");
+  assert.deepEqual(await directory.trades.store.allTrades(), [await state.storage.get(`trade:${trade}`)]);
+  assert.ok(!("sealed" in (await state.storage.get(`trade:${trade}`)).commits[aliceId]));
+
+  const cancelled = await directory.fetch(new Request(`https://relay.test/v1/trades/${trade}/cancel`, { method: "POST", headers: { [PLAYER_HEADER]: bob }, body: "{}" }));
+  assert.deepEqual(await cancelled.json(), { state: "cancelled", reason: "cancelled" });
+  assert.deepEqual([...(await state.storage.list({ prefix: "trade-sealed:" })).keys()], []);
 });

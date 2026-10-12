@@ -2,6 +2,8 @@
 //  trades.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-12: Kept the sealed offers beside each trade instead of in it, dropped them once a trade is cancelled, and moved those of older trades out as the trades are tidied
+//                            - Refused a player a new trade with 429 once 100 trades they opened ended cancelled within a day
 //      Paulinchen  2026-10-07: Answered an unknown sub-route with 404, and read ids, hashes and bodies through ids.js and http.js
 //      Paulinchen  2026-10-06: Took the player's key from the X-MGQ-Player header too
 //                            - Created
@@ -13,7 +15,8 @@
 // the other dropped before it did, items would be copied or lost. Each game commits a hash of the
 // offers both games agreed on, and the relay marks the trade committed once both hashes match, in
 // one write. The offers arrive sealed with a key from the world's token, so the relay only keeps
-// their bytes, for a game that crashed before it applied the trade to fetch again.
+// their bytes, for a game that crashed before it applied the trade to fetch again. They are kept
+// beside the trade, not in it, so reading every trade never reads them.
 
 import { playerIdOf } from "./directory.js";
 import { badRequest, notFound, withJson } from "./http.js";
@@ -27,6 +30,7 @@ export const TRADE_LIMITS = Object.freeze({
   maxSealedLength: 64 * 1024,
   maxBodyLength: 72 * 1024,
   maxOpenPerPlayer: 20,
+  maxCancelledPerPlayer: 100,
   maxTrades: 5000,
   pendingMs: 120 * 1000,
   keepCommittedMs: 30 * 24 * 60 * 60 * 1000,
@@ -49,11 +53,12 @@ export const CANCEL_REASON = Object.freeze({ cancelled: "cancelled", differ: "di
 const BASE64 = /^[A-Za-z0-9+/]+={0,2}$/;
 
 /**
- * @typedef {object} TradeStore Where the trades are kept, one record each.
+ * @typedef {object} TradeStore Where the trades are kept, one record each, and each player's sealed offers beside it.
  * @property {(id: string) => Promise<object | undefined>} getTrade Reads a trade's record.
- * @property {(record: object) => Promise<void>} putTrade Writes a trade's record.
- * @property {(id: string) => Promise<void>} removeTrade Deletes a trade's record.
- * @property {() => Promise<object[]>} allTrades Reads every trade's record.
+ * @property {(record: object, changes?: {sealed?: Record<string, string>, drop?: string[]}) => Promise<void>} putTrade Writes a trade's record, and in the same write the sealed offers of the players `sealed` names, and deletes those of the players `drop` names.
+ * @property {(id: string, player: string) => Promise<string | undefined>} getSealed Reads the offers a player of a trade sealed.
+ * @property {(id: string, players?: string[]) => Promise<void>} removeTrade Deletes a trade's record and the sealed offers of the players named.
+ * @property {() => Promise<object[]>} allTrades Reads every trade's record, without the offers kept beside it.
  */
 
 /**
@@ -112,37 +117,37 @@ export class TradeBook {
       const record = await this.current(id);
 
       if (!record) {
-        return this.open(id, world, player, partner, { hash, sealed });
+        return this.open(id, world, player, partner, hash, sealed);
       }
 
       if (record.world !== world || !record.players.includes(player) || otherOf(record, player) !== partner) {
         return { status: 409, body: { error: "the trade id belongs to another trade" } };
       }
 
-      const own = record.commits[player];
-      const same = own?.hash === hash && own?.sealed === sealed;
-
       if (record.state === TRADE_STATE.cancelled) {
         return { status: 200, body: answerOf(record) };
       }
 
+      const own = record.commits[player];
+
       if (own) {
+        const same = own.hash === hash && (await this.sealedOf(record, player)) === sealed;
         return same ? { status: 200, body: answerOf(record) } : { status: 409, body: { error: "the player committed other offers already" } };
       }
 
       const now = this.clock();
-      record.commits[player] = { hash, sealed };
+      record.commits[player] = { hash };
       record.updated = now;
 
       if (record.commits[partner].hash === hash) {
         record.state = TRADE_STATE.committed;
         record.committed = now;
+        await this.store.putTrade(record, { sealed: { [player]: sealed } });
       } else {
-        record.state = TRADE_STATE.cancelled;
-        record.reason = CANCEL_REASON.differ;
+        cancelRecord(record, CANCEL_REASON.differ, now);
+        await this.store.putTrade(record, { drop: record.players });
       }
 
-      await this.store.putTrade(record);
       return { status: 200, body: answerOf(record) };
     });
   }
@@ -169,10 +174,8 @@ export class TradeBook {
       }
 
       if (record.state === TRADE_STATE.pending) {
-        record.state = TRADE_STATE.cancelled;
-        record.reason = CANCEL_REASON.cancelled;
-        record.updated = this.clock();
-        await this.store.putTrade(record);
+        cancelRecord(record, CANCEL_REASON.cancelled, this.clock());
+        await this.store.putTrade(record, { drop: record.players });
       }
 
       return { status: 200, body: answerOf(record) };
@@ -214,10 +217,14 @@ export class TradeBook {
     }
 
     return this.exclusive(async () => {
-      const trades = (await this.tidy())
+      const records = (await this.tidy())
         .filter((record) => record.world === world && record.state === TRADE_STATE.committed && record.players.includes(player) && !record.done.includes(player))
-        .sort((a, b) => a.committed - b.committed)
-        .map((record) => ({ id: record.id, hash: record.commits[player].hash, sealed: record.commits[player].sealed }));
+        .sort((a, b) => a.committed - b.committed);
+      const trades = [];
+
+      for (const record of records) {
+        trades.push({ id: record.id, hash: record.commits[player].hash, sealed: (await this.sealedOf(record, player)) ?? "" });
+      }
 
       return { status: 200, body: { trades } };
     });
@@ -254,7 +261,7 @@ export class TradeBook {
       }
 
       if (record.players.every((each) => record.done.includes(each))) {
-        await this.store.removeTrade(record.id);
+        await this.store.removeTrade(record.id, record.players);
       } else {
         record.updated = this.clock();
         await this.store.putTrade(record);
@@ -265,17 +272,23 @@ export class TradeBook {
   }
 
   /**
-   * Makes a trade from its first commit, unless the player or the relay has too many open.
+   * Makes a trade from its first commit, unless the relay has too many trades, or the player too
+   * many open or too many opened within a day that ended cancelled.
+   *
+   * The cancelled ones count, since two players could otherwise fill the relay's trades by
+   * committing and cancelling in a loop.
    *
    * @param {string} id The trade.
    * @param {string} world The world.
    * @param {string} player The committing player's id.
    * @param {string} partner The other player's id.
-   * @param {{hash: string, sealed: string}} commit The commit.
+   * @param {string} hash The hash of the offers.
+   * @param {string} sealed The sealed offers.
    * @returns {Promise<{status: number, body: object}>} The pending state, or why not.
    */
-  async open(id, world, player, partner, commit) {
+  async open(id, world, player, partner, hash, sealed) {
     const records = await this.tidy();
+    const now = this.clock();
 
     if (records.length >= this.limits.maxTrades) {
       return { status: 503, body: { error: "the relay keeps as many trades as it may" } };
@@ -285,10 +298,25 @@ export class TradeBook {
       return { status: 429, body: { error: `a player may have at most ${this.limits.maxOpenPerPlayer} open trades` } };
     }
 
-    const now = this.clock();
-    const record = { id, world, players: [player, partner], commits: { [player]: commit }, state: TRADE_STATE.pending, created: now, updated: now, done: [] };
-    await this.store.putTrade(record);
+    if (records.filter((record) => isCancelledOpenedBy(record, player, now - this.limits.keepCancelledMs)).length >= this.limits.maxCancelledPerPlayer) {
+      return { status: 429, body: { error: `a player may open at most ${this.limits.maxCancelledPerPlayer} trades a day that end cancelled` } };
+    }
+
+    const record = { id, world, players: [player, partner], commits: { [player]: { hash } }, state: TRADE_STATE.pending, created: now, updated: now, done: [] };
+    await this.store.putTrade(record, { sealed: { [player]: sealed } });
     return { status: 200, body: answerOf(record) };
+  }
+
+  /**
+   * Reads the offers a player of a trade sealed, from the record itself for a trade kept before the
+   * offers were kept beside it.
+   *
+   * @param {object} record The trade.
+   * @param {string} player The player's id.
+   * @returns {Promise<string | undefined>} The sealed offers, undefined when none are kept.
+   */
+  async sealedOf(record, player) {
+    return record.commits[player]?.sealed ?? (await this.store.getSealed(record.id, player));
   }
 
   /**
@@ -301,14 +329,15 @@ export class TradeBook {
     const record = await this.store.getTrade(id);
 
     if (record && this.expire(record)) {
-      await this.store.putTrade(record);
+      await this.store.putTrade(record, { drop: record.players });
     }
 
     return record;
   }
 
   /**
-   * Reads every trade, cancelling those that stayed pending too long and dropping those kept long enough.
+   * Reads every trade without its offers, cancelling those that stayed pending too long, dropping
+   * those kept long enough, and moving the offers out of a trade kept while they were part of it.
    *
    * @returns {Promise<object[]>} The trades that stay.
    */
@@ -320,12 +349,18 @@ export class TradeBook {
       const ended = record.state === TRADE_STATE.committed ? record.committed + this.limits.keepCommittedMs : record.updated + this.limits.keepCancelledMs;
 
       if (record.state !== TRADE_STATE.pending && now >= ended) {
-        await this.store.removeTrade(record.id);
+        await this.store.removeTrade(record.id, record.players);
         continue;
       }
 
       if (this.expire(record)) {
-        await this.store.putTrade(record);
+        await this.store.putTrade(record, { drop: record.players });
+      } else {
+        const inline = takeInlineSealed(record);
+
+        if (inline) {
+          await this.store.putTrade(record, record.state === TRADE_STATE.cancelled ? { drop: record.players } : { sealed: inline });
+        }
       }
 
       kept.push(record);
@@ -347,9 +382,7 @@ export class TradeBook {
       return false;
     }
 
-    record.state = TRADE_STATE.cancelled;
-    record.reason = CANCEL_REASON.expired;
-    record.updated = now;
+    cancelRecord(record, CANCEL_REASON.expired, now);
     return true;
   }
 
@@ -417,6 +450,52 @@ function isMember(entry, player) {
  */
 function isOpenFor(record, player) {
   return record.players.includes(player) && (record.state === TRADE_STATE.pending || (record.state === TRADE_STATE.committed && !record.done.includes(player)));
+}
+
+/**
+ * Tells whether a player opened a trade that ended cancelled, opened since a moment.
+ *
+ * @param {object} record The trade.
+ * @param {string} player The player's id.
+ * @param {number} since The moment.
+ * @returns {boolean} Whether they did.
+ */
+function isCancelledOpenedBy(record, player, since) {
+  return record.state === TRADE_STATE.cancelled && record.players[0] === player && record.created >= since;
+}
+
+/**
+ * Cancels a trade, and takes the offers out of one kept while they were part of it.
+ *
+ * @param {object} record The trade, changed in place.
+ * @param {string} reason Why it is cancelled, one of CANCEL_REASON.
+ * @param {number} now The moment.
+ */
+function cancelRecord(record, reason, now) {
+  record.state = TRADE_STATE.cancelled;
+  record.reason = reason;
+  record.updated = now;
+  takeInlineSealed(record);
+}
+
+/**
+ * Takes the sealed offers out of the commits of a trade kept while they were part of it.
+ *
+ * @param {object} record The trade, changed in place.
+ * @returns {Record<string, string> | null} The offers taken, by player id, null when it held none.
+ */
+function takeInlineSealed(record) {
+  let taken = null;
+
+  for (const [player, commit] of Object.entries(record.commits)) {
+    if (commit.sealed !== undefined) {
+      taken ??= {};
+      taken[player] = commit.sealed;
+      delete commit.sealed;
+    }
+  }
+
+  return taken;
 }
 
 /**

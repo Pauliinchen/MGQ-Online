@@ -2,6 +2,7 @@
 //  sqlite_store.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-12: Covered a trade's sealed offers kept beside it over a restart, dropped and removed with it
 //      Paulinchen  2026-10-10: Covered boss pools that keep the share of a raid max HP left over a restart
 //      Paulinchen  2026-10-09: Covered a Raid World's boss pools kept over a restart and removed
 //      Paulinchen  2026-10-08: Covered a Raid World's story and its checkpoints kept over a restart and removed
@@ -198,5 +199,27 @@ test("a Raid World's boss pools outlast a restart, and each world keeps its own 
   assert.deepEqual((await reopened.list()).body.bosses.map((pool) => pool.key), ["Queen Harpy"]);
   await reopened.remove();
   assert.deepEqual((await reopened.list()).body.bosses, []);
+  second.close();
+});
+
+test("a trade's sealed offers outlast a restart beside it, never in the list of trades, and go with a drop or the trade", async () => {
+  const trade = "9".repeat(32);
+  const record = { id: trade, state: "committed", commits: { alice: { hash: "ab".repeat(32) }, bob: { hash: "ab".repeat(32) } } };
+  const first = openSqliteStores(path);
+  await first.trades.putTrade(record, { sealed: { alice: "QQ==", bob: "Qg==" } });
+  first.close();
+
+  const second = openSqliteStores(path);
+  assert.equal(await second.trades.getSealed(trade, "alice"), "QQ==");
+  assert.equal(await second.trades.getSealed(trade, "bob"), "Qg==");
+  assert.deepEqual(await second.trades.allTrades(), [record], "the list holds no offers");
+
+  await second.trades.putTrade({ ...record, state: "cancelled" }, { drop: ["alice"] });
+  assert.equal(await second.trades.getSealed(trade, "alice"), undefined);
+  assert.equal(await second.trades.getSealed(trade, "bob"), "Qg==");
+
+  await second.trades.removeTrade(trade, ["alice", "bob"]);
+  assert.equal(await second.trades.getTrade(trade), undefined);
+  assert.equal(await second.trades.getSealed(trade, "bob"), undefined);
   second.close();
 });

@@ -2,6 +2,8 @@
 //  trades.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-12: Covered the sealed offers kept beside each trade: dropped once cancelled, moved out of older trades, listed and removed with the trade
+//                            - Covered the limit on trades a player opened that ended cancelled within a day
 //      Paulinchen  2026-10-07: Expected 404 for an unknown sub-route and 413 for a body the platform could not read whole
 //      Paulinchen  2026-10-06: Covered the player's key in the X-MGQ-Player header
 //                            - Created
@@ -67,22 +69,65 @@ function tradeId(number) {
  * Makes trades over a store in memory, with one world whose players are Alice, Bob and Carol, and a clock the tests move.
  *
  * @param {object} [limits] The limits.
- * @returns {Promise<{trades: TradeBook, time: {now: number}, records: Map, ids: Record<string, string>}>} The trades, their clock, their records and the players' ids.
+ * @returns {Promise<{trades: TradeBook, time: {now: number}, records: Map, sealed: Map, ids: Record<string, string>}>} The trades, their clock, their records, the sealed offers kept beside them by `<trade>:<player id>` and the players' ids.
  */
 async function newTrades(limits = TRADE_LIMITS) {
   const records = new Map();
+  const sealed = new Map();
   const time = { now: 1_000_000 };
   const ids = { alice: await playerIdOf(ALICE), bob: await playerIdOf(BOB), carol: await playerIdOf(CAROL), stranger: await playerIdOf(STRANGER), banned: await playerIdOf(BANNED) };
   const world = { id: WORLD, members: { [ids.alice]: {}, [ids.bob]: {}, [ids.carol]: {} }, bans: [ids.banned] };
   const store = {
     getTrade: async (id) => (records.has(id) ? structuredClone(records.get(id)) : undefined),
-    putTrade: async (record) => void records.set(record.id, structuredClone(record)),
-    removeTrade: async (id) => void records.delete(id),
+    putTrade: async (record, { sealed: offers = {}, drop = [] } = {}) => {
+      records.set(record.id, structuredClone(record));
+      Object.entries(offers).forEach(([player, text]) => sealed.set(`${record.id}:${player}`, text));
+      drop.forEach((player) => sealed.delete(`${record.id}:${player}`));
+    },
+    getSealed: async (id, player) => sealed.get(`${id}:${player}`),
+    removeTrade: async (id, players = []) => {
+      records.delete(id);
+      players.forEach((player) => sealed.delete(`${id}:${player}`));
+    },
     allTrades: async () => [...records.values()].map((record) => structuredClone(record)),
   };
 
   const trades = new TradeBook(store, async (id) => (id === WORLD ? structuredClone(world) : undefined), { clock: () => time.now, limits });
-  return { trades, time, records, ids };
+  return { trades, time, records, sealed, ids };
+}
+
+/**
+ * Lists the sealed offers kept beside a trade.
+ *
+ * @param {Map} sealed The offers kept by `<trade>:<player id>`.
+ * @param {string} trade The trade.
+ * @returns {string[]} The keys of the trade's offers.
+ */
+function sealedKeysOf(sealed, trade) {
+  return [...sealed.keys()].filter((key) => key.startsWith(`${trade}:`));
+}
+
+/**
+ * Tells whether any trade record holds sealed offers in its commits.
+ *
+ * @param {Map} records The records.
+ * @returns {boolean} Whether one does.
+ */
+function anyInlineSealed(records) {
+  return [...records.values()].some((record) => Object.values(record.commits).some((commit) => "sealed" in commit));
+}
+
+/**
+ * Makes a trade record as the relay kept it while the offers were part of it.
+ *
+ * @param {string} id The trade.
+ * @param {Record<string, string>} ids The players' ids.
+ * @param {object} fields The fields that differ from a pending trade Alice opened with Bob now.
+ * @param {number} now The moment it was opened.
+ * @returns {object} The record.
+ */
+function oldStyleRecord(id, ids, fields, now) {
+  return { id, world: WORLD, players: [ids.alice, ids.bob], commits: { [ids.alice]: { hash: HASH, sealed: "b2xkQQ==" } }, state: "pending", created: now, updated: now, done: [], ...fields };
 }
 
 /**
@@ -243,6 +288,105 @@ test("committed trades nobody finished are dropped after 30 days, cancelled ones
   time.now += TRADE_LIMITS.keepCommittedMs;
   await trades.pending(ALICE, WORLD);
   assert.equal(records.size, 0);
+});
+
+test("the offers are kept beside the trade, and a trade cancelled, expired or whose hashes differ keeps none", async () => {
+  const { trades, time, ids, records, sealed } = await newTrades();
+
+  await trades.commit(tradeId(1), commitOf(ALICE, ids.bob));
+  assert.deepEqual(sealedKeysOf(sealed, tradeId(1)), [`${tradeId(1)}:${ids.alice}`]);
+  await trades.cancel(tradeId(1), BOB);
+  assert.deepEqual(sealedKeysOf(sealed, tradeId(1)), []);
+
+  await trades.commit(tradeId(2), commitOf(ALICE, ids.bob));
+  assert.deepEqual((await trades.commit(tradeId(2), commitOf(BOB, ids.alice, "22".repeat(32)))).body, { state: "cancelled", reason: "differ" });
+  assert.deepEqual(sealedKeysOf(sealed, tradeId(2)), [], "the second player's offers are never kept");
+
+  await trades.commit(tradeId(3), commitOf(ALICE, ids.bob));
+  time.now += TRADE_LIMITS.pendingMs;
+  assert.deepEqual((await trades.state(tradeId(3), ALICE)).body, { state: "cancelled", reason: "expired" });
+  assert.deepEqual(sealedKeysOf(sealed, tradeId(3)), []);
+
+  await trades.commit(tradeId(4), commitOf(ALICE, ids.bob));
+  time.now += TRADE_LIMITS.pendingMs;
+  await trades.pending(ALICE, WORLD);
+  assert.equal(records.get(tradeId(4)).reason, "expired");
+  assert.deepEqual(sealedKeysOf(sealed, tradeId(4)), [], "tidying an expired trade drops its offers too");
+  assert.ok(!anyInlineSealed(records), "no record holds offers");
+});
+
+test("the same commit again is answered as before, and other offers under the same hash are refused", async () => {
+  const { trades, ids, records } = await newTrades();
+
+  await trades.commit(TRADE, commitOf(ALICE, ids.bob, HASH, "YWxpY2U="));
+  assert.deepEqual(await trades.commit(TRADE, commitOf(ALICE, ids.bob, HASH, "YWxpY2U=")), { status: 200, body: { state: "pending" } });
+  assert.equal((await trades.commit(TRADE, commitOf(ALICE, ids.bob, HASH, "b3RoZXI="))).status, 409);
+
+  await trades.commit(TRADE, commitOf(BOB, ids.alice, HASH, "Ym9i"));
+  assert.deepEqual(await trades.commit(TRADE, commitOf(ALICE, ids.bob, HASH, "YWxpY2U=")), { status: 200, body: { state: "committed" } });
+  assert.deepEqual(await trades.commit(TRADE, commitOf(BOB, ids.alice, HASH, "Ym9i")), { status: 200, body: { state: "committed" } });
+  assert.equal((await trades.commit(TRADE, commitOf(BOB, ids.alice, HASH, "b3RoZXI="))).status, 409);
+  assert.ok(!anyInlineSealed(records));
+});
+
+test("a trade kept while its offers were part of it is still committed and listed, and tidying moves its offers out", async () => {
+  const { trades, time, ids, records, sealed } = await newTrades();
+
+  records.set(tradeId(1), oldStyleRecord(tradeId(1), ids, {}, time.now));
+  assert.deepEqual((await trades.commit(tradeId(1), commitOf(BOB, ids.alice, HASH, "Ym9i"))).body, { state: "committed" });
+  assert.equal(records.get(tradeId(1)).commits[ids.alice].sealed, "b2xkQQ==", "the first commit keeps its offers until a tidy");
+  assert.deepEqual(await trades.commit(tradeId(1), commitOf(ALICE, ids.bob, HASH, "b2xkQQ==")), { status: 200, body: { state: "committed" } });
+
+  const both = { [ids.alice]: { hash: HASH, sealed: "b2xkQQ==" }, [ids.bob]: { hash: HASH, sealed: "b2xkQg==" } };
+  records.set(tradeId(2), oldStyleRecord(tradeId(2), ids, { commits: both, state: "committed", committed: time.now + 1 }, time.now));
+  records.set(tradeId(3), oldStyleRecord(tradeId(3), ids, { state: "cancelled", reason: "cancelled" }, time.now));
+
+  assert.deepEqual((await trades.pending(ALICE, WORLD)).body, { trades: [{ id: tradeId(1), hash: HASH, sealed: "b2xkQQ==" }, { id: tradeId(2), hash: HASH, sealed: "b2xkQQ==" }] });
+  assert.deepEqual((await trades.pending(BOB, WORLD)).body, { trades: [{ id: tradeId(1), hash: HASH, sealed: "Ym9i" }, { id: tradeId(2), hash: HASH, sealed: "b2xkQg==" }] });
+  assert.ok(!anyInlineSealed(records), "the tidy moved every offer out of the records");
+  assert.equal(sealed.get(`${tradeId(2)}:${ids.alice}`), "b2xkQQ==");
+  assert.equal(sealed.get(`${tradeId(2)}:${ids.bob}`), "b2xkQg==");
+  assert.deepEqual(sealedKeysOf(sealed, tradeId(3)), [], "a cancelled trade's offers are dropped, not moved");
+
+  records.set(tradeId(4), oldStyleRecord(tradeId(4), ids, {}, time.now));
+  time.now += TRADE_LIMITS.pendingMs;
+  assert.deepEqual((await trades.state(tradeId(4), ALICE)).body, { state: "cancelled", reason: "expired" });
+  assert.ok(!("sealed" in records.get(tradeId(4)).commits[ids.alice]), "an expired trade loses its offers");
+});
+
+test("a trade both players marked done and a trade kept long enough take their offers with them", async () => {
+  const { trades, time, ids, records, sealed } = await newTrades();
+
+  await trades.commit(tradeId(1), commitOf(ALICE, ids.bob));
+  await trades.commit(tradeId(1), commitOf(BOB, ids.alice));
+  await trades.done(tradeId(1), ALICE);
+  assert.equal(sealedKeysOf(sealed, tradeId(1)).length, 2, "the offers stay until both are done");
+  await trades.done(tradeId(1), BOB);
+  assert.deepEqual(sealedKeysOf(sealed, tradeId(1)), []);
+
+  await trades.commit(tradeId(2), commitOf(ALICE, ids.bob));
+  await trades.commit(tradeId(2), commitOf(BOB, ids.alice));
+  time.now += TRADE_LIMITS.keepCommittedMs;
+  await trades.pending(ALICE, WORLD);
+  assert.equal(records.size, 0);
+  assert.equal(sealed.size, 0);
+});
+
+test("a player who opened so many trades within a day that ended cancelled opens no more until the day passed", async () => {
+  const { trades, time, ids } = await newTrades({ ...TRADE_LIMITS, maxCancelledPerPlayer: 2 });
+
+  await trades.commit(tradeId(1), commitOf(ALICE, ids.bob));
+  await trades.cancel(tradeId(1), ALICE);
+  await trades.commit(tradeId(2), commitOf(ALICE, ids.bob));
+  await trades.commit(tradeId(2), commitOf(BOB, ids.alice, "22".repeat(32)));
+
+  const refused = await trades.commit(tradeId(3), commitOf(ALICE, ids.carol));
+  assert.equal(refused.status, 429);
+  assert.match(refused.body.error, /at most 2 trades a day/);
+  assert.equal((await trades.commit(tradeId(4), commitOf(BOB, ids.alice))).status, 200, "the trades count against the player who opened them");
+
+  time.now += TRADE_LIMITS.keepCancelledMs;
+  assert.equal((await trades.commit(tradeId(3), commitOf(ALICE, ids.carol))).status, 200);
 });
 
 test("a player has at most so many open trades at once", async () => {
