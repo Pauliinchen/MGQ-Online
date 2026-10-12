@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-12: Kept the small and large medals handed in (55, 59) each player's own, so another player's exchanges no longer move the Medal Queen's prizes on
+#                            - Capped how far a story another game packed is unpacked, so a story that would unpack to far more than any story takes is refused as unreadable instead of running the game out of memory
 #      Paulinchen  2026-10-11: Kept the chest flags each player's own, such as the first Makina's (2045), so a Makina chest stays a chest instead of story the world's story opens and closes for everyone
 #                            - Kept the escape spell's ban (94) each player's own, so changing jobs at Ilias Temple no longer counts as story
 #                            - Kept the switches that only stay on while a scene runs each Raid World player's own, so a story written mid-scene no longer leaves the scene's characters standing for everyone
@@ -91,6 +92,16 @@ module MGQ_MpStoryState
 
   # Bytes a whole story takes at most in a message, below the 256 KB one carries.
   MAX_FULL_BYTES = 200_000
+
+  # Bytes of packed text a story another game wrote is read from at most, twice what a whole story
+  # takes, since a story too large for a message goes without what it turned off, unchecked.
+  MAX_PACKED_BYTES = MAX_FULL_BYTES * 2
+
+  # Bytes a packed story unpacks to at most, far beyond any real story's lists.
+  MAX_UNPACKED_BYTES = 8 * 1024 * 1024
+
+  # Bytes of packed text inflated per step, so one step unpacks a few MB at most.
+  INFLATE_SLICE = 4096
 
   extend MGQ_MpLog
 
@@ -351,13 +362,41 @@ module MGQ_MpStoryState
   #
   # @param text [String] The packed text.
   # @return [Hash{String => String}] The lists.
+  # @raise [ArgumentError] For a text longer than any story, or one that unpacks past
+  #   MAX_UNPACKED_BYTES.
   def self.unpack(text)
+    raise ArgumentError, "the packed story took #{text.bytesize} bytes, more than any story" if text.bytesize > MAX_PACKED_BYTES
+
     lists = {}
-    Zlib::Inflate.inflate(text.unpack("m0")[0].to_s).split("\n").each do |line|
+    inflated(text.unpack("m0")[0].to_s).split("\n").each do |line|
       name, list = line.split("=", 2)
       lists[name] = list.to_s
     end
     lists
+  end
+
+  # Inflates packed bytes a step at a time, stopping once they pass MAX_UNPACKED_BYTES.
+  #
+  # A deflated text unpacks to up to about a thousand times its size, and running out of memory
+  # raises an error no rescue of the callers catches.
+  #
+  # @param data [String] The deflated bytes.
+  # @return [String] The inflated bytes.
+  # @raise [ArgumentError] For bytes that unpack past MAX_UNPACKED_BYTES.
+  def self.inflated(data)
+    zstream = Zlib::Inflate.new
+    out = ""
+    offset = 0
+    while offset < data.size
+      out << zstream.inflate(data[offset, INFLATE_SLICE])
+      offset += INFLATE_SLICE
+      raise ArgumentError, "the packed story unpacked past #{MAX_UNPACKED_BYTES} bytes" if out.bytesize > MAX_UNPACKED_BYTES
+    end
+    out << zstream.finish
+    raise ArgumentError, "the packed story unpacked past #{MAX_UNPACKED_BYTES} bytes" if out.bytesize > MAX_UNPACKED_BYTES
+    out
+  ensure
+    zstream.close if zstream && !zstream.closed?
   end
 
   # Reads a whole story another game wrote.

@@ -2,13 +2,15 @@
 #  story_state_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Covered unpacking a packed story, which refuses a text longer than any story and one that unpacks too far
 #      Paulinchen  2026-10-10: Created
 #
 #----------------------------------------------------------------
 
 # Covers story_state.rbx with core_log.rbx: joining a story with the player's own chests, which
-# leaves out the chests the player never opened, and the skills and companions it grants, which
-# give nothing for a skip whatever writing the log returns.
+# leaves out the chests the player never opened, the skills and companions it grants, which give
+# nothing for a skip whatever writing the log returns, and unpacking a story another game packed,
+# which refuses a text no story takes.
 
 require_relative "support"
 
@@ -74,3 +76,23 @@ check("and the log tells why", $log.grep(/skipped/).size, 6)
 check("a skill Luka lacks is learned under its name", [state.learn(930), state.knows?($game_actors[1], 930)], ["Angel Dance", true])
 check("a companion joins the roster, or the party while it has room, under their name",
       [state.join(45), state.roster_ids], ["Tamamo", [1, 16, 45]])
+
+# Unpacking a story another game packed reads back what was packed, and refuses a text no story
+# takes before it runs the game out of memory.
+refusal = lambda do |&block|
+  begin
+    block.call
+    nil
+  rescue ArgumentError => e
+    e.message
+  end
+end
+check("a packed story unpacks to the lists that were packed",
+      state.unpack(state.pack("s" => "1,2,3", "v" => "5:n7")), { "s" => "1,2,3", "v" => "5:n7" })
+bomb = [Zlib::Deflate.deflate("s=" + "1," * 10_000_000)].pack("m0")
+check("a small text that unpacks far past any story is refused as it unpacks",
+      [bomb.bytesize < state::MAX_PACKED_BYTES, refusal.call { state.unpack(bomb) }.to_s[/unpacked past/]],
+      [true, "unpacked past"])
+check("and so is a whole story written with it", refusal.call { state.decode_full("z" => bomb) }.to_s[/unpacked past/], "unpacked past")
+check("a text longer than any story is refused before it is read",
+      refusal.call { state.unpack("A" * (state::MAX_PACKED_BYTES + 4)) }.to_s[/more than any story/], "more than any story")
