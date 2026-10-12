@@ -4,6 +4,7 @@
 #  Changelog:
 #      Paulinchen  2026-10-12: Checked that a host whose battle turned live has its skip settings back as the battle ends, before the victory autosave
 #                            - Checked that a guest drops an enemy of the host's troop whose fields are no numbers, logged once per field and kind, instead of failing
+#                            - Checked that the host's enemies keep their places in the changed troop when a place or mark is no number, and that an enemy whose id is no enemy of this game keeps the guest's own troop
 #      Paulinchen  2026-10-11: Checked the party members' offers about a battle outside the party, the battles that take nobody in, and that a host takes in as many players and enemies as it has room for
 #                            - Checked that an encounter joins no running battle whose host stands farther than NEARBY_TILES
 #                            - Checked that the host reads in the chat log who joined its battle, that it tells the guests whom it waits for as a command phase opens, and that a late guest's box tells how long the wait may last
@@ -497,11 +498,22 @@ $game_troop.members.push(Game_Enemy.new(3, 77))
 coop::Mode.take("coop_troop", scene, troop_body)
 check("a guest whose troop is longer than the host's takes the host's whole troop", $game_troop.members.map(&:enemy_id), [31, 50, 51])
 $log.clear
-odd_body = sync::Wire.line([[[31, 320, 300, 0], [50, "160", 300, 0], [50, 0, 300, 0], [51, 480, 300, [1]], :enemy, [51, 480, 300, 0], [52, 640, 300, 0]], nil])
+$game_troop.members[1].screen_x = 170
+odd_body = sync::Wire.line([[[31, 320, 300, 0], [60, "160", 300, 0], [51, 480, 300, [1]], [52, 640, nil, 0]], nil])
 2.times { coop::Mode.take("coop_troop", scene, odd_body) }
-check("a guest drops a host's enemy whose fields are no numbers and adds the others", $game_troop.members.map { |enemy| [enemy.enemy_id, enemy.hidden?] }, [[31, false], [50, false], [51, false], [52, false]])
+check("a guest keeps every host's enemy at its place when a place or mark is no number",
+      $game_troop.members.map { |enemy| [enemy.enemy_id, enemy.screen_x, enemy.screen_y, enemy.hidden?] }, [[31, 320, 300, false], [60, 170, 300, false], [51, 480, 300, false], [52, 640, 0, false]])
+check("so the host's stream names the same enemy by its place", sync::Playback.battler("e3").enemy_id, 52)
 check("logging each field and kind once", $log.grep(/dropped the host's enemy/).size, 3)
 check("instead of failing", $log.grep(/taking the host's troop failed/), [])
+kept = $game_troop.members.dup
+[[[31, 320, 300, 0], ["60", 0, 300, 0], [51, 480, 300, 0], [52, 640, 300, 0], [53, 0, 0, 0]],
+ [[31, 320, 300, 0], :enemy, [51, 480, 300, 0], [52, 640, 300, 0], [53, 0, 0, 0]],
+ [[31, 320, 300, 0], [60, 0, 300, 0], [51, 480, 300, 0], [52, 640, 300, 0], [500, 0, 0, 0]]].each do |entries|
+  coop::Mode.take("coop_troop", scene, sync::Wire.line([entries, nil]))
+  check("a host's enemy whose id is no enemy of this game keeps the guest's own troop: #{entries.inspect}", $game_troop.members, kept)
+end
+check("logged once per kind", $log.grep(/dropped the host's troop/).size, 2)
 reset
 
 # A late guest takes the battle's turn and waits for its next command phase.

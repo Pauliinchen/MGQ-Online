@@ -8,6 +8,7 @@
 #                            - Checked that a join whose party_member_max is no number still forms the party
 #                            - Checked that a player another game sends drops its fields of the wrong kind, logged once, and is left out when its seat is no number
 #                            - Checked that a guest drops an enemy of the host's troop whose fields are no numbers, logged once per field and kind, instead of failing
+#                            - Checked that the host's enemies keep their places in the troop when a place or mark is no number, and that an enemy whose id is no enemy of this game keeps the guest's own troop
 #                            - Checked that a guest leaving a story battle or taking a battle over picks a defeat scene of its enemies instead of none or a former battle's, that a host keeps its own, and that a battle without one is left as an escape
 #      Paulinchen  2026-10-11: Checked that leaving a story's battle without escape loses it for the player alone, and that any other battle is left as an escape
 #                            - Checked that the steps to the next random encounter stretch by half while another player stands near, in a party and in a Raid World, and that a Raid World's battle invites only the players near
@@ -321,15 +322,31 @@ $game_troop.members = own_enemies
 MGQ_MpBattlesCoop.take_troop(troop_scene, [[31, 0, 0, 0], [500, 0, 0, 0]])
 check("a host's enemy this game lacks keeps the guest's own troop", $game_troop.members.equal?(own_enemies), true)
 $log.clear
-odd_enemies = [[31, 100, 300, 0], [31, [200], 300, 0], "31", [32, 300, 300], [32, 400, 300, 1]]
+own_places = [Game_Enemy.new(0, 31), Game_Enemy.new(1, 32).tap { |enemy| enemy.screen_x, enemy.screen_y = 250, 310 }]
+$game_troop.members = own_places
+odd_enemies = [[31, 100, 300, 0], [31, [200], nil, 0], [32, 300, "300"], [32, 400, 300, 1]]
 2.times { MGQ_MpBattlesCoop.take_troop(troop_scene, odd_enemies) }
-check("a host's enemy whose fields are no numbers is dropped", $game_troop.members.map { |e| [e.enemy_id, e.screen_x, e.hidden?] }, [[31, 100, false], [32, 400, true]])
+check("a host's enemy whose place or mark is no number keeps its place in the troop", $game_troop.members.map { |e| [e.index, e.enemy_id, e.screen_x, e.screen_y, e.hidden?] },
+      [[0, 31, 100, 300, false], [1, 31, 250, 310, false], [2, 32, 300, 0, false], [3, 32, 400, 300, true]])
 check("logged once per field and kind", $log.grep(/dropped the host's enemy/),
-      ["co-op battle: dropped the host's enemy x another game sent as Array", "co-op battle: dropped the host's enemy another game sent as String",
+      ["co-op battle: dropped the host's enemy x another game sent as Array", "co-op battle: dropped the host's enemy y another game sent as NilClass",
+       "co-op battle: dropped the host's enemy y another game sent as String",
        "co-op battle: dropped the host's enemy mark another game sent as NilClass"])
 check("instead of failing", $log.grep(/taking the host's troop failed/), [])
-MGQ_MpBattlesCoop.take_troop(troop_scene, [["31", 0, 0, 0]])
-check("a troop of no enemy that reads keeps the guest's own", $game_troop.members.map(&:enemy_id), [31, 32])
+$log.clear
+$game_troop.members = own_places
+[[[31, 0, 0, 0], ["32", 0, 0, 0]], [[31, 0, 0, 0], "32"], [[31, 0, 0, 0], [-1, 0, 0, 0]], [[31, 0, 0, 0], [2**70, 0, 0, 0]], [["31", 0, 0, 0]]].each do |enemies|
+  MGQ_MpBattlesCoop.take_troop(troop_scene, enemies)
+  check("a host's enemy whose id is no enemy of this game keeps the guest's own troop: #{enemies.inspect}", $game_troop.members.equal?(own_places), true)
+end
+check("logged once per kind", $log.grep(/dropped the host's troop/),
+      ["co-op battle: dropped the host's troop for its enemy id another game sent as String", "co-op battle: dropped the host's troop for its enemy another game sent as String"])
+check("or naming the ids this game lacks", $log.grep(/lacks/), ["co-op battle: the host's troop holds enemies this game lacks (-1); it keeps its own",
+                                                                "co-op battle: the host's troop holds enemies this game lacks (#{2**70}); it keeps its own"])
+database = $data_enemies
+$data_enemies = [nil, Object.new]
+check("an id the database lacks, too large for an index among them, is no enemy of this game", [1, 2, -1, 2**70].map { |id| MGQ_MpBattlesCoop.known_enemy?(id) }, [true, false, false, false])
+$data_enemies = database
 $game_troop.members = own_enemies
 
 # A player with their window in the background.

@@ -6,6 +6,7 @@
 #                            - Picked a defeat scene of the troop for a guest who takes the battle over, even when it kept one of a former battle
 #                            - Read a player another game sent only with numbers for its seat, party_member_max, places and shares and a list for its HP and MP, dropping a field of another kind, logged once, and the player whose seat is no number
 #                            - Dropped an enemy of the host's troop whose id, place or mark is no number, logged once, instead of failing on every such troop
+#                            - Kept every enemy of the host's troop at its place, replacing a place or mark that is no number, and kept the player's own troop for an enemy whose id is no enemy of this game, since the host's stream names enemies by their place
 #      Paulinchen  2026-10-11: Left the party members who said no to starting a battle with the player out of its invites, and took the party members' offers and answers about a battle outside the party
 #                            - Stretched the steps to the next random encounter by half once another player who would fight it stands within NEARBY_TILES, a party member in a Classic world, instead of once per member or by half a draw per player on the map, and invited only the players that near to a Raid World's battle, so players across a large map no longer keep each other from meeting enemies or pull each other into fights
 #                            - Opened the player's command phase while their own Frontline is down but their Backline may swap in, so they can still change the formation
@@ -1734,33 +1735,62 @@ module MGQ_MpBattlesCoop
     log("telling the guests the troop failed: #{e.class}: #{e.message}")
   end
 
-  # Keeps the enemies the host named whose id, screen x and y and mark are numbers, dropping each
-  # other one, logged once per field and kind.
+  # Repairs the enemies the host named, each at its place, since the host's stream names an enemy
+  # by its place in the troop: a screen x or y that is no number becomes that of this game's enemy
+  # at the place, else 0, and a mark that is no number 0, each logged once per field and kind.
   #
   # @param enemies [Array] The host's enemies, see troop_entries.
-  # @return [Array<Array>] The enemies that read.
-  def self.valid_enemies(enemies)
-    Array(enemies).select do |entry|
-      next dropped(:enemy, entry, "the host's") || false unless entry.is_a?(Array)
+  # @return [Array<Array>, nil] The enemies, or nil when one of them is no enemy this game has,
+  #   which keeps this game's own troop.
+  def self.repaired_enemies(enemies)
+    own = $game_troop.members
+    repaired = Array(enemies).each_with_index.map do |entry, index|
+      return dropped(:enemy, entry, "the host's troop for its") unless entry.is_a?(Array)
+      return dropped(:id, entry[0], "the host's troop for its enemy") unless entry[0].is_a?(Integer)
 
-      field, value = ENEMY_FIELDS.zip(entry).find { |_, item| !item.is_a?(Integer) }
-      field ? dropped(field, value, "the host's enemy") || false : true
+      enemy = own[index]
+      [entry[0], enemy_field(entry, :x, enemy ? enemy.screen_x : 0), enemy_field(entry, :y, enemy ? enemy.screen_y : 0),
+       enemy_field(entry, :mark, 0)]
     end
+    missing = repaired.map(&:first).reject { |id| known_enemy?(id) }
+    return repaired if missing.empty?
+
+    log("the host's troop holds enemies this game lacks (#{missing.join(', ')}); it keeps its own")
+    nil
+  end
+
+  # Reads a field of an enemy the host named, see repaired_enemies.
+  #
+  # @param entry [Array] The enemy, see troop_entries.
+  # @param field [Symbol] The field, one of ENEMY_FIELDS.
+  # @param fallback [Integer] What stands for a field that is no number.
+  # @return [Integer] The field, else the fallback.
+  def self.enemy_field(entry, field, fallback)
+    value = entry[ENEMY_FIELDS.index(field)]
+    value.is_a?(Integer) ? value : dropped(field, value, "the host's enemy") || fallback
+  end
+
+  # Reports whether an enemy id the host named is one this game's database has.
+  #
+  # @param id [Integer] The id.
+  # @return [Boolean] Whether this game has the enemy.
+  def self.known_enemy?(id)
+    id > 0 && $data_enemies[id] ? true : false
+  rescue RangeError
+    # An id too large for an index raises instead of giving nil.
+    false
   end
 
   # As guest, fights the host's enemies in place of the player's own, which mods of either game
   # may have changed, such as one that doubles them: the host names every enemy by its place.
+  # Keeps the player's own when one of them is no enemy this game has (see repaired_enemies).
   #
   # @param scene [Scene_Battle] The battle.
   # @param enemies [Array<Array>] The host's enemies, see troop_entries.
   def self.take_troop(scene, enemies)
-    enemies = valid_enemies(enemies)
-    return if enemies.empty?
+    enemies = repaired_enemies(enemies)
+    return if enemies.nil? || enemies.empty?
     return log("the host's troop of #{enemies.size} enemies matches this game's own") if enemies == troop_entries
-    unless enemies.all? { |id, *| $data_enemies[id.to_i] }
-      missing = enemies.map { |id, *| id.to_i }.reject { |id| $data_enemies[id] }
-      return log("the host's troop holds enemies this game lacks (#{missing.join(', ')}); it keeps its own")
-    end
 
     rebuilt = enemies.each_with_index.map do |(id, x, y, hidden), index|
       enemy = Game_Enemy.new(index, id.to_i)
