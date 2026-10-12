@@ -2,6 +2,7 @@
 //  WorldSession.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-12: Paced the frames, chat texts and pings it sends to at most 50 a second after a burst of 200, below the relay's limit, and logged each spell of pacing and a close for sending too fast
 //      Paulinchen  2026-10-10: Handed the relay's word that a Raid World's boss pool changed to the game script as a boss entry with its key, the share left, the raid max HP and whether it is defeated, and to the boss pools the game script reads
 //      Paulinchen  2026-10-09: Handed the relay's word that a world changed whether it turns other mods off, or its mods, to the game script as a mods_rule entry with both
 //                            - Handed the relay's word that a Raid World's boss pool changed to the game script as a boss entry with its key and hit points
@@ -85,6 +86,22 @@ internal sealed class WorldSession
     /// How many chat lines the relay keeps at once after a quiet spell, as Relay/core/relay.js says.
     /// </summary>
     public const double ChatBurst = 10;
+
+    /// <summary>
+    /// How many messages a second the writer sends over time: frames, chat texts and pings, all of
+    /// which the Node relay counts.
+    /// </summary>
+    /// <remarks>
+    /// It stays below the 60 a second of LIMITS in Relay/core/relay.js, which closes a connection
+    /// that sends faster.
+    /// </remarks>
+    public const double MessagesPerSecond = 50;
+
+    /// <summary>
+    /// How many messages the writer sends at once after a quiet spell, below the burst of 240 of
+    /// LIMITS in Relay/core/relay.js.
+    /// </summary>
+    public const double MessageBurst = 200;
 
     /// <summary>
     /// Who said the line of a <see cref="ChatKind"/> entry.
@@ -277,6 +294,11 @@ internal sealed class WorldSession
     /// The close code of the connections of a world its creator deleted.
     /// </summary>
     private const int DeletedClose = 4010;
+
+    /// <summary>
+    /// The close code of a connection that sent more messages than the relay keeps.
+    /// </summary>
+    private const int TooFastClose = 4003;
 
     /// <summary>
     /// How many entries the inbox holds at most, so a game that stops reading cannot run out of memory.
@@ -697,6 +719,11 @@ internal sealed class WorldSession
                     Serve(generation, connection);
 
                     Log.Write($"world connection ended after {(DateTime.UtcNow - connectedAt).TotalSeconds.ToString("0", CultureInfo.InvariantCulture)} s, close code {channel.CloseCode?.ToString(CultureInfo.InvariantCulture) ?? "none"}, reason '{channel.CloseReason ?? string.Empty}'");
+
+                    if (channel.CloseCode == TooFastClose)
+                    {
+                        Log.Write("the relay closed the world connection: this game sent too fast");
+                    }
 
                     if (channel.CloseCode is RemovedClose or DeletedClose)
                     {
@@ -1298,11 +1325,12 @@ internal sealed class WorldSession
     /// <param name="Target">The frame's target seat, or <see cref="RelayWorldChannel.Everyone"/>.</param>
     /// <param name="Plain">The frame's text, not yet encrypted; <see langword="null"/> for a text frame.</param>
     /// <param name="Text">The text frame; <see langword="null"/> for a frame.</param>
-    private sealed record Outgoing(int Target, byte[]? Plain, string? Text);
+    /// <param name="QueuedAt">When it was queued, as a <see cref="Stopwatch"/> timestamp.</param>
+    private sealed record Outgoing(int Target, byte[]? Plain, string? Text, long QueuedAt);
 
     /// <summary>
     /// One connection to the world room: its channel, its cipher and the writer that sends the game
-    /// script's messages and keeps the connection alive.
+    /// script's messages, paced below the relay's limit, and keeps the connection alive.
     /// </summary>
     private sealed class Connection
     {
@@ -1311,6 +1339,15 @@ internal sealed class WorldSession
         /// frames for the relay itself.
         /// </summary>
         private readonly BlockingCollection<Outgoing> _outbox = new();
+
+        /// <summary>
+        /// Delays the writer's messages so the connection never sends more than the relay keeps.
+        /// </summary>
+        /// <remarks>
+        /// It starts full like the relay's allowance, which started earlier, as the upgrade went
+        /// through before this connection was made.
+        /// </remarks>
+        private readonly SendPace _pace = new(MessagesPerSecond, MessageBurst);
 
         /// <summary>
         /// How often the writer pings the relay.
@@ -1389,14 +1426,14 @@ internal sealed class WorldSession
         /// <param name="target">The target seat, or <see cref="RelayWorldChannel.Everyone"/>.</param>
         /// <param name="plain">The frame's text.</param>
         /// <returns><see langword="false"/> once the connection stopped.</returns>
-        public bool Queue(int target, byte[] plain) => Queue(new Outgoing(target, plain, null));
+        public bool Queue(int target, byte[] plain) => Queue(new Outgoing(target, plain, null, Stopwatch.GetTimestamp()));
 
         /// <summary>
         /// Queues a text frame for the writer, which the relay reads itself.
         /// </summary>
         /// <param name="text">The text.</param>
         /// <returns><see langword="false"/> once the connection stopped.</returns>
-        public bool QueueText(string text) => Queue(new Outgoing(0, null, text));
+        public bool QueueText(string text) => Queue(new Outgoing(0, null, text, Stopwatch.GetTimestamp()));
 
         /// <summary>
         /// Queues something for the writer.
@@ -1432,10 +1469,12 @@ internal sealed class WorldSession
         }
 
         /// <summary>
-        /// Sends the queued frames, and a ping at once and then every ping interval, until the connection stops.
+        /// Sends the queued frames, and a ping at once and then every ping interval, until the
+        /// connection stops, each once the pace lets it go out.
         /// </summary>
         /// <remarks>
-        /// Only this thread seals, so the frames go out in the order of their counters.
+        /// Only this thread seals, so the frames go out in the order of their counters. Pacing delays
+        /// a message and never drops one; a stop cuts the channel, so the next send throws and ends it.
         /// </remarks>
         private void WriteAll()
         {
@@ -1445,12 +1484,19 @@ internal sealed class WorldSession
 
                 while (!_outbox.IsCompleted)
                 {
+                    if (_outbox.Count == 0)
+                    {
+                        _pace.Drained();
+                    }
+
                     var wait = Stopwatch.GetElapsedTime(Stopwatch.GetTimestamp(), nextPing);
 
                     if (wait > TimeSpan.Zero)
                     {
                         if (_outbox.TryTake(out var outgoing, wait))
                         {
+                            _pace.Pace(_outbox.Count, outgoing.QueuedAt, Thread.Sleep);
+
                             if (outgoing.Text != null)
                             {
                                 Channel.SendText(outgoing.Text, SendTimeout);
@@ -1464,6 +1510,9 @@ internal sealed class WorldSession
                         continue;
                     }
 
+                    // Paced before its time is taken, so the round trip leaves out the wait.
+                    _pace.Pace(_outbox.Count, Stopwatch.GetTimestamp(), Thread.Sleep);
+
                     // A ping whose pong never came is given up, so the next one times anew.
                     Volatile.Write(ref _pingSent, Stopwatch.GetTimestamp());
                     Channel.SendPing(SendTimeout);
@@ -1475,6 +1524,10 @@ internal sealed class WorldSession
                 // The reader notices the cut connection and connects again.
                 Log.Write($"world writer stopped: {ex.GetBaseException().Message}");
                 Channel.Abort();
+            }
+            finally
+            {
+                _pace.Drained();
             }
         }
     }

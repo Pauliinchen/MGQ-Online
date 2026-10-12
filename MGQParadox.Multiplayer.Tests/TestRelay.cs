@@ -2,6 +2,7 @@
 //  TestRelay.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-12: Closed a peer that sends more than 60 messages a second after a burst of 240 with 4003, as the relay does, and counted those closes for the tests
 //      Paulinchen  2026-10-10: Refused a Raid World with a player's choice, and with a starting save unless the game names the dev feature, as the relay does
 //                            - Kept a Raid World's boss pools as the relay does now: the share of the raid max HP left, filled up by 3 % of it a minute, reports taken once per sequence number of a battle and the boss a kill or an emptying report defeats, telling every game of each change; and let tests drop the answers of reports the relay took
 //                            - Told a boss pool's change before answering, defeated a pool whose HP shows as 0 and left a report that takes nothing off unwritten, as the relay does, and let tests hold back the next boss answer or refuse the next reports as busy
@@ -63,7 +64,8 @@ namespace MGQParadox.Multiplayer.Tests;
 /// need: one host and one guest per room, <c>paired</c> once both are in, <c>ping</c> answered with
 /// <c>pong</c>, binary messages passed on, and the other side closed when one leaves; a world
 /// directory; trades between its players; and world rooms that seat the directory's players, tell who comes and goes, and pass
-/// messages on with the sender's seat in front.
+/// messages on with the sender's seat in front. A peer that sends more messages than the relay
+/// keeps is closed with 4003, as there.
 /// </summary>
 internal sealed class TestRelay : IDisposable
 {
@@ -81,6 +83,21 @@ internal sealed class TestRelay : IDisposable
     /// The close code of the players of a world its creator deleted.
     /// </summary>
     private const int Deleted = 4010;
+
+    /// <summary>
+    /// The close code of a peer that sent more messages than the relay keeps.
+    /// </summary>
+    private const int TooFast = 4003;
+
+    /// <summary>
+    /// How many messages a second a peer may send over time, as LIMITS in Relay/core/relay.js says.
+    /// </summary>
+    internal const double MessagesPerSecond = 60;
+
+    /// <summary>
+    /// How many messages a peer may send at once after a quiet spell, as LIMITS in Relay/core/relay.js says.
+    /// </summary>
+    internal const double Burst = 240;
 
     /// <summary>
     /// The target seat of a world message meant for every other game.
@@ -215,6 +232,25 @@ internal sealed class TestRelay : IDisposable
             lock (_gate)
             {
                 return _worlds.Values.Sum(seats => seats.Values.Count(peer => peer != null));
+            }
+        }
+    }
+
+    /// <summary>
+    /// How many peers the relay closed with 4003 for sending too many messages. Guarded by <see cref="_gate"/>.
+    /// </summary>
+    private int _tooFastCloses;
+
+    /// <summary>
+    /// How many peers the relay closed with 4003 for sending too many messages so far.
+    /// </summary>
+    public int TooFastCloses
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _tooFastCloses;
             }
         }
     }
@@ -450,6 +486,11 @@ internal sealed class TestRelay : IDisposable
         {
             while (await ReadAsync(peer.Socket) is { } message)
             {
+                if (!await TakeMessageAsync(peer))
+                {
+                    break;
+                }
+
                 if (message.Type == WebSocketMessageType.Text)
                 {
                     await peer.SendAsync("pong"u8.ToArray(), WebSocketMessageType.Text);
@@ -1338,6 +1379,11 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
         {
             while (await ReadAsync(peer.Socket) is { } message)
             {
+                if (!await TakeMessageAsync(peer))
+                {
+                    break;
+                }
+
                 if (message.Type == WebSocketMessageType.Text)
                 {
                     var text = Encoding.UTF8.GetString(message.Data);
@@ -1389,6 +1435,35 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
                 await other.Peer.SendAsync(Encoding.UTF8.GetBytes($"out {seat}"), WebSocketMessageType.Text);
             }
         }
+    }
+
+    /// <summary>
+    /// Takes one message from a peer's allowance, which refills over time, and closes the peer with
+    /// 4003 once it runs out, as takeMessage in Relay/core/relay.js does.
+    /// </summary>
+    /// <param name="peer">The peer that sent the message.</param>
+    /// <returns><see langword="false"/> when the peer sent too fast and was closed.</returns>
+    private async Task<bool> TakeMessageAsync(Peer peer)
+    {
+        var now = DateTime.UtcNow;
+        var refilled = Math.Min(Burst, peer.Allowance + Math.Max(0, (now - peer.RefilledAt).TotalSeconds) * MessagesPerSecond);
+        peer.RefilledAt = now;
+
+        if (refilled >= 1)
+        {
+            peer.Allowance = refilled - 1;
+            return true;
+        }
+
+        peer.Allowance = refilled;
+
+        lock (_gate)
+        {
+            _tooFastCloses++;
+        }
+
+        await peer.CloseAsync(TooFast, "too many messages");
+        return false;
     }
 
     /// <summary>
@@ -1543,6 +1618,16 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
         /// The id of the player a world room seated, empty in a room.
         /// </summary>
         public string PlayerId { get; init; } = string.Empty;
+
+        /// <summary>
+        /// How many messages the peer may still send, full at first. Only its read loop uses it.
+        /// </summary>
+        public double Allowance { get; set; } = Burst;
+
+        /// <summary>
+        /// When <see cref="Allowance"/> was refilled last.
+        /// </summary>
+        public DateTime RefilledAt { get; set; } = DateTime.UtcNow;
 
         /// <summary>
         /// Closes the peer's connection with a close code, taking its turn like a send.

@@ -2,6 +2,7 @@
 //  WorldSessionTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-12: Covered a burst of messages paced below the relay limit, and the test relay closing a connection that sends too fast
 //      Paulinchen  2026-10-09: Covered the relay's word that a world now turns other mods off handed to the game script with its mods, and a value that is neither 0 nor 1 ignored
 //                            - Covered the relay's word of a Raid World's new difficulty handed to the game script, and a value that is no difficulty ignored
 //      Paulinchen  2026-10-08: Covered entering a Raid World, which the relay lets in only games that name it in the features header
@@ -459,6 +460,80 @@ public sealed class WorldSessionTests
         Assert.Equal("open", Message.Decode(session.Describe())["state"]);
 
         session.Close();
+    }
+
+    /// <summary>
+    /// Asserts that a game queuing far more messages than the relay keeps at once sends them all, in
+    /// order, paced so the relay never closes its connection.
+    /// </summary>
+    [Fact]
+    public void Sending_IsPacedBelowTheRelayLimit()
+    {
+        const int Messages = 400;
+        using var relay = new TestRelay();
+        var code = MakeWorld(relay, 4);
+        var sender = NewSession(relay.Address);
+        var receiver = NewSession(relay.Address);
+
+        sender.Open(code);
+        AwaitState(sender, "open");
+        receiver.Open(code);
+        AwaitOthers(sender, "1");
+        AwaitOthers(receiver, "0");
+        Drain(sender, receiver);
+
+        var started = DateTime.UtcNow;
+
+        for (var message = 0; message < Messages; message++)
+        {
+            Assert.True(sender.Send(-1, $"step {message}"));
+        }
+
+        for (var message = 0; message < Messages; message++)
+        {
+            Assert.Equal(("0", $"step {message}"), Received(NextEntry(receiver)));
+        }
+
+        var took = (DateTime.UtcNow - started).TotalSeconds;
+        Assert.True(took >= (Messages - WorldSession.MessageBurst) / WorldSession.MessagesPerSecond - 0.5, $"{Messages} messages took only {took} s");
+        Assert.Equal(0, relay.TooFastCloses);
+        Assert.Equal("open", Message.Decode(sender.Describe())["state"]);
+        Assert.Null(sender.PeekMessage());
+
+        sender.Close();
+        receiver.Close();
+    }
+
+    /// <summary>
+    /// Asserts that the test relay closes a connection that sends past its limit with 4003, as the
+    /// relay does, so the paced test above proves the pacing.
+    /// </summary>
+    [Fact]
+    public void TestRelay_ClosesAConnectionThatSendsTooFast()
+    {
+        using var relay = new TestRelay();
+        var token = WorldCode.Parse(MakeWorld(relay, 4))!.Token;
+        using var channel = RelayWorldChannel.Connect(relay.Address, Relays.WorldRoomOf(token), WorldDirectoryTests.PlayerKey(7), "Flooder", WorldKeys.AuthKeyOf(token), Patience, out _, out _)!;
+        var frame = new byte[] { 1, 2, 3 };
+
+        try
+        {
+            for (var message = 0; message < TestRelay.Burst + 60; message++)
+            {
+                channel.Send(RelayWorldChannel.Everyone, frame, Patience);
+            }
+        }
+        catch (Exception)
+        {
+            // The relay may have closed the connection before the last frames went out.
+        }
+
+        while (channel.Receive(Patience) != null)
+        {
+        }
+
+        Assert.Equal(4003, channel.CloseCode);
+        Assert.Equal(1, relay.TooFastCloses);
     }
 
     /// <summary>
