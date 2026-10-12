@@ -2,7 +2,8 @@
 #  ui_bug_report.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Told the player in friendly words when the relay is busy with other bug reports
+#      Paulinchen  2026-10-12: Logged a refused hotkey through MGQ_MpHotkeys.log_refusal, not while the player types
+#                            - Told the player in friendly words when the relay is busy with other bug reports
 #      Paulinchen  2026-10-11: Created
 #
 #----------------------------------------------------------------
@@ -216,7 +217,8 @@ module MGQ_MpBugReport
   def self.refuse(via, refusal)
     reasons = { :no_dll => "the DLL is missing", :typing => "the player types", :open => "the form is open already",
                 :title => "the game shows the title or game over screen" }
-    log("no report by #{via}: #{refusal.is_a?(Symbol) ? reasons[refusal] : refusal}")
+    reason = refusal.is_a?(Symbol) ? reasons[refusal] : refusal
+    via == :hotkey ? MGQ_MpHotkeys.log_refusal(:bug_report, reason) : log("no report by #{via}: #{reason}")
     return if refusal.is_a?(Symbol)
 
     Sound.play_buzzer

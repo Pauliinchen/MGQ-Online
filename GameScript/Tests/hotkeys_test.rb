@@ -2,7 +2,8 @@
 #  hotkeys_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Checked the hotkey that makes the Leader HUD small, and the hotkeys' own group in the Mod Config
+#      Paulinchen  2026-10-12: Checked that a refused hotkey is logged with its key, name and reason, and not while the player types
+#                            - Checked the hotkey that makes the Leader HUD small, and the hotkeys' own group in the Mod Config
 #      Paulinchen  2026-10-11: Checked the hotkey that opens the bug report
 #                            - Checked that a hotkey pressed while a confirm box is open goes to the box
 #      Paulinchen  2026-10-10: Checked that every help says hotkey and keeps its lines short
@@ -90,3 +91,12 @@ check("every help calls its binding a hotkey", keys::BINDINGS.values.map { |bind
 check("no help line is longer than 120 characters",
       keys::BINDINGS.values.map { |binding| binding.help.split("\n") }.flatten.select { |line| line.size > 120 }, [])
 check("the Party Box Size help has two lines", keys::BINDINGS[:party_box].help.split("\n").size, 2)
+
+# A hotkey refused.
+$log.clear
+keys.log_refusal(:emotes, "the chat box is open")
+check("a refused hotkey is logged with its key, its name and why", $log, ["keys: hotkey E (Emote Wheel) ignored: the chat box is open"])
+$log.clear
+$mgq_text_input = true
+check("but not while the player types, whose letter it is", [keys.log_refusal(:emotes, "the chat box is open"), $log], [nil, []])
+$mgq_text_input = nil

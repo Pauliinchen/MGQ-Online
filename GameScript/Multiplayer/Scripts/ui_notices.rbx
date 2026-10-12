@@ -2,7 +2,8 @@
 #  ui_notices.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Moved the box at its default below the Leader HUD while it shows at the top left
+#      Paulinchen  2026-10-12: Logged a refused hotkey through MGQ_MpHotkeys.log_refusal, not while the player types, and a press while the box is hidden once instead of twice
+#                            - Moved the box at its default below the Leader HUD while it shows at the top left
 #                            - Told once a session that Player.ini could not be read and settings are not saved, once the box shows
 #      Paulinchen  2026-10-11: Made the box movable and resizable with the left Alt held, as "Notifications": its width gives the notifications room and its height the rows it shows, never below the first invite's keys beside a readable name and two rows
 #                            - Framed the box in the preset's colors, drawn anew once the preset changes
@@ -58,6 +59,9 @@ module MGQ_MpNotices
 
   # Frames the notice that Player.ini cannot be read shows, ten seconds.
   PLAYER_INI_FRAMES = 600
+
+  # The hotkey of each answer to the first invite.
+  ANSWER_HOTKEYS = { :take => :accept, :decline => :decline }
 
   @messages = []
   @answered = {}
@@ -149,8 +153,8 @@ module MGQ_MpNotices
     hidden = !shown?
     list = hidden ? [] : notices(in_world)
     answer = accept ? :take : decline ? :decline : nil
-    log("#{answer == :take ? 'accept' : 'decline'} key ignored: the box is hidden here") if answer && hidden
-    list = notices(in_world) if answer && answerable?(list, answer) && answer_first(list, answer)
+    MGQ_MpHotkeys.log_refusal(ANSWER_HOTKEYS[answer], "the box is hidden here") if answer && hidden
+    list = notices(in_world) if answer && !hidden && answerable?(list, answer) && answer_first(list, answer)
     show(list)
   rescue => e
     log_once(:tick, "tick failed: #{e.class}: #{e.message}")
@@ -187,7 +191,7 @@ module MGQ_MpNotices
   def self.answer_first(list, answer)
     invite = list.first
     unless invite && invite.decline && invite[answer]
-      log("#{answer == :take ? 'accept' : 'decline'} key ignored: #{invite.nil? ? 'the box is empty' : invite.decline.nil? ? 'the first line is a message' : 'the first invite cannot be accepted here'}")
+      MGQ_MpHotkeys.log_refusal(ANSWER_HOTKEYS[answer], invite.nil? ? 'the box is empty' : invite.decline.nil? ? 'the first line is a message' : 'the first invite cannot be accepted here')
       return false
     end
 
@@ -200,7 +204,7 @@ module MGQ_MpNotices
   end
 
   # Reports whether the box's keys may answer now: not while the player types or a screen of the
-  # mod holds the buttons, which the log then says.
+  # mod holds the buttons.
   #
   # @param list [Array<MGQ_MpActions::Notice>] The notifications shown.
   # @param answer [Symbol] :take or :decline.
@@ -208,7 +212,7 @@ module MGQ_MpNotices
   def self.answerable?(list, answer)
     return true unless $mgq_text_input || MGQ_Multiplayer::Capture.on?
 
-    log("#{answer == :take ? 'accept' : 'decline'} key ignored: #{$mgq_text_input ? 'the player types' : 'a screen of the mod holds the buttons'}") unless list.empty?
+    MGQ_MpHotkeys.log_refusal(ANSWER_HOTKEYS[answer], "a screen of the mod holds the buttons") unless list.empty?
     false
   end
 

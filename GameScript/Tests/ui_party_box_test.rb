@@ -2,6 +2,7 @@
 #  ui_party_box_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Checked that the size hotkey pressed while the player types changes nothing and stays out of the log
 #      Paulinchen  2026-10-12: Stood in for the parts of the world's story, which the overview reads as it loads
 #      Paulinchen  2026-10-11: Called the small box with the party and the others on the map apart
 #                            - Checked the box's place in the layout: its default below a strip at the top, a place the player left it in with the extra width for the names and places, its least width with every column, the small box at the right of its place, and drawing anew after a preset change
@@ -175,6 +176,16 @@ check("the log names each listed player's color and whether they lead or are awa
        "party box: party box lists #{long_name} (leader, dim, away), Me (own)",
        "party box: map box lists Me (own), #{long_name} (leader, member), Stranger (#{MGQ_MpUi::PlayerColor.label(stranger)})",
        "party box: party box hidden"])
+
+# The size hotkey while the player types.
+small_before = MGQ_MpPartyBox.small?
+MGQ_MpChat.start_typing
+$mgq_text_input = true
+$pressed = MGQ_MpHotkeys.code(:party_box)
+typed = logged_lines { MGQ_MpPartyBox.on_map }
+$mgq_text_input = nil
+MGQ_MpChat.stop_typing
+check("Tab typed into the chat box changes nothing and stays out of the log", [MGQ_MpPartyBox.small?, typed.grep(/ignored/)], [small_before, []])
 
 # The box on the map: drawn anew when a member goes away and comes back.
 MGQ_MpWorldOverview.define_singleton_method(:open?) { false }

@@ -2,7 +2,8 @@
 #  ui_raid_bar.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Read the map's viewports and character sprites through MGQ_MpGame
+#      Paulinchen  2026-10-12: Logged a refused hotkey through MGQ_MpHotkeys.log_refusal, not while the player types
+#                            - Read the map's viewports and character sprites through MGQ_MpGame
 #      Paulinchen  2026-10-11: Drew the gauges' edge, empty part and the title in the interface preset's colors, drawing anew once the preset changes
 #                            - Made the strip a box the player moves and resizes in width with Alt, never narrower than a boss of three enemies and its title line need
 #                            - Cropped the battle's strip to its gauges in small mode instead of sliding it up, so it stays where the player put it
@@ -173,7 +174,7 @@ module MGQ_MpRaidBar
   # battle every frame while its strip shows, so a press of the key is seen once.
   def self.on_battle
     return unless defined?(MGQ_MpHotkeys) && MGQ_MpHotkeys.pressed?(:party_box)
-    return log("boss bar size key ignored: the chat box is open") if defined?(MGQ_MpChat) && MGQ_MpChat.typing?
+    return MGQ_MpHotkeys.log_refusal(:party_box, "the chat box is open") if defined?(MGQ_MpChat) && MGQ_MpChat.typing?
 
     @small = !small?
     MGQ_Multiplayer::Player.store(SMALL_SETTING, @small ? 1 : 0)

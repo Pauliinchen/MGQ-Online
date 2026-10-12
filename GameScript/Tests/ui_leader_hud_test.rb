@@ -2,7 +2,8 @@
 #  ui_leader_hud_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Created
+#      Paulinchen  2026-10-12: Checked that the Small HUD stays at the edges of the screen and that a refused size hotkey is not logged while the player types
+#                            - Created
 #
 #----------------------------------------------------------------
 
@@ -24,7 +25,7 @@ class Bitmap
   def initialize(width = 1, height = 1); @width = width; @height = height; @font = Font.new; clear; end
   def disposed?; @disposed ? true : false; end
   def clear; @texts = []; @fills = []; @gradients = []; @faces = []; end
-  def fill_rect(x, y, width, height, color); @fills << [x, y, width, height, color]; end
+  def fill_rect(*args); @fills << (args.size == 2 ? args[0].to_a + [args[1]] : args); end
   def gradient_fill_rect(x, y, width, height, left, right); @gradients << [x, y, width, height, left, right]; end
   def text_size(text); Rect.new(0, 0, text.to_s.size * 8, 16); end
   def draw_text(x, y, width, _height, text, align = 0); @texts << Text.new(text, x, y, width, font.size, font.color, align); end
@@ -110,8 +111,8 @@ large = box_class.layout(hud::LARGE)
 small = box_class.layout(hud::SMALL)
 large_height = box_class.height(large)
 
-check("the box is movable as Leader HUD, never resized, as large as the Large size",
-      layout.instance_variable_get(:@boxes)[:leader_hud].to_a, ["Leader HUD", 240, large_height, :none])
+check("the box is movable as Leader HUD, never resized, at least as large as the Small size",
+      layout.instance_variable_get(:@boxes)[:leader_hud].to_a, ["Leader HUD", 170, box_class.height(small), :none])
 check("its rows in the Mod Config: on and off, then the size, both kept by the mod",
       NWConst::Config::MOD_CONTENTS.select { |row| row[:mod_stored] }.map { |row| [row[:key], row[:values].call] }.last(2),
       [[:mp_leader_hud, ["On", "Off"]], [:mp_leader_hud_size, ["Large", "Small"]]])
@@ -168,10 +169,12 @@ MGQ_MpChat.singleton_class.send(:alias_method, :leader_hud_test_typing?, :typing
 MGQ_MpChat.define_singleton_method(:typing?) { true }
 logged = []
 MGQ_Multiplayer::Log.define_singleton_method(:write) { |line| logged << line }
+$mgq_text_input = true
 $pressed = 0x48
 hud.on_map
+$mgq_text_input = nil
 MGQ_Multiplayer::Log.define_singleton_method(:write) { |line| puts "  log: #{line}" }
-check("while the chat box is open the key changes nothing and says why", [hud.size, logged.grep(/size key/)], ["Large", ["leader hud: size key ignored: the chat box is open"]])
+check("while the chat box is open the key changes nothing and the letter typed stays out of the log", [hud.size, logged], ["Large", []])
 MGQ_MpChat.singleton_class.send(:alias_method, :typing?, :leader_hud_test_typing?)
 
 # Drawing anew.
@@ -198,6 +201,13 @@ check("it shows again once the message is gone", box.instance_variable_get(:@mot
 hud.show(false)
 box.update
 check("turned off it hides, kept in Player.ini", [box.instance_variable_get(:@motion).shown?, $player_ini["leader_hud"], hud.room], [false, "0", 0])
+logged = []
+MGQ_Multiplayer::Log.define_singleton_method(:write) { |line| logged << line }
+$pressed = 0x48
+hud.on_map
+MGQ_Multiplayer::Log.define_singleton_method(:write) { |line| puts "  log: #{line}" }
+check("while it is off the key changes nothing and the log says why",
+      [hud.size, logged.grep(/ignored/)], ["Large", ["keys: hotkey H (Leader HUD Size) ignored: the HUD is off"]])
 hud.show(true)
 $leader = nil
 box.update
@@ -217,3 +227,24 @@ check("a place the player left it in holds whatever the strip, as large as its s
 $player_ini.delete("ui_leader_hud")
 stored.clear
 MGQ_MpUi.top_room = 0
+
+# Dragged into the bottom right corner in the Small size, under a preset of a thinner frame than at the start.
+hud.resize("Small")
+box.update
+$down = [layout::ALT_KEY, layout::LEFT_BUTTON]
+$mouse = [box.x + 10, box.y + 10]
+layout.tick
+$mouse = [2000, 2000]
+layout.tick
+$down = []
+layout.tick
+box.update
+small_height = box_class.height(small)
+check("the Small size dragged into the bottom right corner stays there, kept in Player.ini",
+      [offered.call, $player_ini["ui_leader_hud"]], [[640 - 170, 480 - small_height, 170, small_height], "470,#{480 - small_height},170,#{small_height}"])
+hud.resize("Large")
+box.update
+check("the Large size from there stays wholly on the screen", offered.call, [640 - 240, 480 - large_height, 240, large_height])
+$player_ini.delete("ui_leader_hud")
+stored.clear
+$mouse = nil

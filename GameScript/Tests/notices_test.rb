@@ -2,7 +2,8 @@
 #  notices_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Checked that the box at its default moves below the Leader HUD
+#      Paulinchen  2026-10-12: Checked that the accept key pressed while the player types stays out of the log, and that a refusal is logged under the hotkeys
+#                            - Checked that the box at its default moves below the Leader HUD
 #      Paulinchen  2026-10-11: Checked the box's place in the layout: its default below a strip at the top, a place the player left it in with its width and rows, its least size with the keys whole, and drawing anew after a preset change
 #                            - Checked the box fading in and out, an answered invite and a message that runs out fading away, the last row saying how many more wait, a long notification cut to its row and the three spaces between what the keys do
 #                            - Checked the keys drawn whole with a rebound key's longer name
@@ -166,16 +167,17 @@ MGQ_MpOverworldSync.tick
 # Where the box hides.
 $duel_answer = nil
 SceneManager.scene = Scene_Battle.new
-accept.call
+refused = logged_lines { accept.call }
 check("hidden in a battle, where the keys take nothing", [shown.call, $duel_answer], [[], nil])
+check("which the log says under the hotkeys", refused.grep(/ignored/), ["keys: hotkey Y (Accept Notification) ignored: the box is hidden here"])
 SceneManager.scene = Scene_Map.new
 $overview_open = true
 notices.tick(true)
 check("hidden on the map while the World overview is open", shown.call, [])
 $overview_open = false
 $mgq_text_input = true
-accept.call
-check("the keys type instead while the player types", $duel_answer, nil)
+typed = logged_lines { accept.call }
+check("the keys type instead while the player types, the letter left out of the log", [$duel_answer, typed.grep(/ignored/)], [nil, []])
 $mgq_text_input = false
 accept.call
 check("otherwise the accept key accepts the challenge on the map", $duel_answer, [:accept, "Cid"])

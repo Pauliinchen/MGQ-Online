@@ -2,7 +2,8 @@
 #  ui_party_box.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Read the map's viewport through MGQ_MpGame
+#      Paulinchen  2026-10-12: Logged a refused hotkey through MGQ_MpHotkeys.log_refusal, not while the player types
+#                            - Read the map's viewport through MGQ_MpGame
 #      Paulinchen  2026-10-11: Listed a Raid World's party in the box wherever its members are, as in a Classic world, and the other players on the map below it under the map's title, the map box alone only outside a party
 #                            - Made the box movable and widenable with the left Alt held, as "Party box", the map box too: the extra width goes to the names, levels and places, the ping stays at the right edge, the small box at the right of the box's place, never narrower than the full box's columns
 #                            - Framed the box in the preset's colors, drawn anew once the preset changes
@@ -76,7 +77,7 @@ module MGQ_MpPartyBox
     return unless pressed
 
     reason = busy_reason
-    return log("party box size key ignored: #{reason}") if reason
+    return MGQ_MpHotkeys.log_refusal(:party_box, reason) if reason
 
     toggle
   rescue => e

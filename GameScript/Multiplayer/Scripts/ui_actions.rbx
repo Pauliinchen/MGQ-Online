@@ -2,7 +2,8 @@
 #  ui_actions.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Read the map's viewports and character sprites through MGQ_MpGame
+#      Paulinchen  2026-10-12: Logged a refused hotkey through MGQ_MpHotkeys.log_refusal, not while the player types
+#                            - Read the map's viewports and character sprites through MGQ_MpGame
 #      Paulinchen  2026-10-11: Framed the wheel's boxes in the preset's colors, the picked one lit inside its frame, drawn anew once the preset changes
 #                            - Drew the wheel and the line above the player's own head in the shared style, fading them in and out, with the hint under the ring the wheels share, which names Esc, the numpad's 0 and the wheel's hotkey
 #                            - Made the line half the screen wide and cut it and a choice's text to their room, the line without its seconds once they make it too wide
@@ -330,12 +331,12 @@ module MGQ_MpActions
   def self.on_map
     wheel_key = MGQ_MpHotkeys.pressed?(:wheel)
     unless MGQ_MpOverworldSync.in_world? && MGQ_MpOverworldSync.map_quiet?
-      log("action wheel stays shut: #{MGQ_MpOverworldSync.in_world? ? 'an event runs or a message shows' : 'no world is open'}") if wheel_key
+      MGQ_MpHotkeys.log_refusal(:wheel, MGQ_MpOverworldSync.in_world? ? 'an event runs or a message shows' : 'no world is open') if wheel_key
       Wheel.close("an event started or a message shows")
       return
     end
     if @covers.any? { |open| open.call(wheel_key) }
-      log("the wheel key went to the screen over the map") if wheel_key
+      MGQ_MpHotkeys.log_refusal(:wheel, "it went to the screen over the map") if wheel_key
       return
     end
 

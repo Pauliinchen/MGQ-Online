@@ -2,7 +2,8 @@
 #  bug_report_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Checked the friendly words for a relay busy with other bug reports
+#      Paulinchen  2026-10-12: Checked that a refused bug report hotkey is logged under the hotkeys, and not while the player types
+#                            - Checked the friendly words for a relay busy with other bug reports
 #                            - Stood in for Ini.load, which a world's folder reads world.ini through
 #      Paulinchen  2026-10-11: Created
 #
@@ -369,14 +370,17 @@ check("a waiting report is forgotten once the game went to the title screen", [$
 reset
 
 # Refusals.
+$log.clear
 $pressed = 0x72
 frame
 check("the title screen opens no report", [$called, $calls, $sounds], [[], [], []])
+check("which the log says under the hotkeys", $log.grep(/ignored/), ["keys: hotkey F3 (Report a Bug) ignored: the game shows the title or game over screen"])
 SceneManager.scene = Scene_Map.new
 $mgq_text_input = true
+$log.clear
 $pressed = 0x72
 frame
-check("nor does a press while the player types", [$called, $calls], [[], []])
+check("nor does a press while the player types, which the log leaves out", [$called, $calls, $log.grep(/ignored|no report/)], [[], [], []])
 $mgq_text_input = false
 $share = false
 $pressed = 0x72

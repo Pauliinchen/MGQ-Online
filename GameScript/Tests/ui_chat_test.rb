@@ -2,6 +2,7 @@
 #  ui_chat_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Checked that every chat tab, the help's too, goes back to All with the global chat as the world closes, and that the player's own line shows after it
 #      Paulinchen  2026-10-11: Checked that the dimmed tabs go with the closed log's last line, though a chat holds unread lines
 #                            - Expected the chat to start in the global chat, and to return to it once the world closes
 #                            - Checked the chat log's places in the layout: its default from chat_size, a kept place honored, its least size, its rows from its height, the battle's box apart, and every hint and tab fitting the least width
@@ -280,6 +281,31 @@ $open = false
 MGQ_MpOverworldSync.tick
 check("closing the world forgets the lines sent and whom /r answers", [chat.history, chat.reply_to], [[], nil])
 check("and the Whisper tab with the whisper chat, for the global chat", [chat.whisper_tab?, chat.tabs.include?(:whisper), chat.channel, chat.tab], [false, false, :global, :all])
+$open = true
+$inbox << entry("message", friend_seat, told(friend))
+MGQ_MpOverworldSync.tick
+
+# A chat tab picked goes back to All with the global chat as the world closes, so the next world
+# shows the lines it sends.
+chat.start_typing
+chat.select_tab(:party, "in the test")
+chat.stop_typing
+$open = false
+MGQ_MpOverworldSync.tick
+check("the Party tab goes back to All as the world closes, with the global chat", [chat.tab, chat.channel], [:all, :global])
+$open = true
+$inbox << entry("message", friend_seat, told(friend))
+MGQ_MpOverworldSync.tick
+send_line("hello")
+check("the player's own global line shows in the closed log of the next world", chat.log_lines.include?("Me: hello"), true)
+chat.start_typing
+check("and in the open one", chat.log_lines.include?("Me: hello"), true)
+chat.select_tab(:map, "in the test")
+chat.open_help
+$open = false
+MGQ_MpOverworldSync.tick
+check("the help opened from the Map tab goes back to All too, forgetting the tab it came from",
+      [chat.tab, chat.channel, chat.instance_variable_get(:@before_help)], [:all, :global, nil])
 $open = true
 $inbox << entry("message", friend_seat, told(friend))
 MGQ_MpOverworldSync.tick

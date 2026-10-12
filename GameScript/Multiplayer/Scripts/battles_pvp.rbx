@@ -2,6 +2,7 @@
 #  battles_pvp.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Logged a refused hotkey through MGQ_MpHotkeys.log_refusal, not while the player types
 #      Paulinchen  2026-10-08: Left out the message of a skill hit that names its target once none is left in co-op and live battles too, not in PvP battles alone
 #                            - Fought a duel in a Raid World with each player's squad, one character on the Frontline and two on the Backline, never the fourth
 #                            - Showed a message as the game does whenever checking it for a target fails, such as with a plugin's display_use_item of other arguments
@@ -103,7 +104,7 @@ module MGQ_MpBattlesPvp
       return if $game_map.interpreter.running? || $game_player.moving?
 
       if pressed
-        log("the PvP battle screen stays closed: a newer release is out")
+        MGQ_MpHotkeys.log_refusal(:overview, "the PvP battle screen stays closed, a newer release is out")
         $game_message.add(MGQ_Multiplayer::UPDATE_MESSAGE)
       end
       return

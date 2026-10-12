@@ -2,6 +2,7 @@
 #  support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Collected the log lines a block writes, for the checks of what the log leaves out
 #      Paulinchen  2026-10-08: Stood in for watching keys, which ui.rbx does for the numpad's 0 as it loads
 #      Paulinchen  2026-10-07: Read each DLL export's signature from the table in Multiplayer.rb, as Link does, so a stand-in refuses an export the table lacks
 #      Paulinchen  2026-10-06: Refused a DLL call whose arguments differ from its signature, as RGSS does
@@ -94,6 +95,21 @@ def check_dll_call(name, args)
 
   check("#{name} gets the #{expected} argument(s) its signature #{signature} names", args.size, expected)
   raise "wrong number of parameters: expected #{expected}, got #{args.size}"
+end
+
+# Collects the log lines a block writes, then lets the log write as before.
+#
+# @return [Array<String>] The lines.
+def logged_lines
+  lines = []
+  writer = MGQ_Multiplayer::Log.method(:write)
+  MGQ_Multiplayer::Log.define_singleton_method(:write) { |line| lines << line }
+  begin
+    yield
+  ensure
+    MGQ_Multiplayer::Log.define_singleton_method(:write, writer)
+  end
+  lines
 end
 
 # Loads one of the mod's scripts as Multiplayer.rb does, from GameScript/Multiplayer/Scripts, after

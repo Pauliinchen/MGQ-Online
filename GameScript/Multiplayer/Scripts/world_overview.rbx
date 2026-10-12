@@ -2,7 +2,8 @@
 #  world_overview.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Counted Part 2 from progress 19 and Part 3 from 34, as the world's story and the relay do, instead of from 20 and 40
+#      Paulinchen  2026-10-12: Logged a refused hotkey through MGQ_MpHotkeys.log_refusal, not while the player types
+#                            - Counted Part 2 from progress 19 and Part 3 from 34, as the world's story and the relay do, instead of from 20 and 40
 #                            - Read the map's viewport through MGQ_MpGame
 #      Paulinchen  2026-10-11: Added the Levels page of a Raid World: the level the catch-up counts and, under a heading per level, what it hands out that the world already unlocked, moving on from a part, companions and Makina, each marked Done or Due
 #                            - Told the others the highest level of the player's formation, Luka included, instead of every companion's, keeping the last one read during a co-op battle
@@ -343,7 +344,7 @@ module MGQ_MpWorldOverview
       Sound.play_ok
       open("its hotkey")
     else
-      log("hotkey ignored: not on a quiet map in a world, or the chat or a wheel is open")
+      MGQ_MpHotkeys.log_refusal(:overview, "not on a quiet map in a world, or the chat or a wheel is open")
     end
   rescue => e
     log("overview failed: #{e.class}: #{e.message}")

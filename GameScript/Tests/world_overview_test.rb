@@ -2,7 +2,8 @@
 #  world_overview_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Checked that Part 2 starts at progress 19 and Part 3 at 34, with a route shown before the Great Decision
+#      Paulinchen  2026-10-12: Checked that a refused overview hotkey is logged under the hotkeys, and not while the player types
+#                            - Checked that Part 2 starts at progress 19 and Part 3 at 34, with a route shown before the Great Decision
 #      Paulinchen  2026-10-11: Checked the Levels page of a Raid World, its rows drawn and its absence in a Classic world, and counted its tab among the tabs
 #                            - Checked that the level told is the formation's highest, Luka included, and kept during a co-op battle
 #                            - Checked a Raid World's objective on the World page: Amira's first words in a branch, plain, past her network's branch, read every few seconds and wrapped
@@ -232,8 +233,15 @@ check("cancel closes the menu, then the overview", [overview.open?, MGQ_Multipla
 # The emote wheel and empty menus.
 MGQ_MpEmotes.define_singleton_method(:open?) { true }
 $pressed = 0x7A
-overview.on_map
+refused = logged_lines { overview.on_map }
 check("the overview stays shut while the emote wheel is open", overview.open?, false)
+check("which the log says under the hotkeys", refused.grep(/ignored/),
+      ["keys: hotkey F11 (World Overview) ignored: not on a quiet map in a world, or the chat or a wheel is open"])
+$mgq_text_input = true
+$pressed = 0x7A
+typed = logged_lines { overview.on_map }
+$mgq_text_input = nil
+check("but not while the player types, where a hotkey bound to a letter is what they typed", [overview.open?, typed.grep(/ignored/)], [false, []])
 MGQ_MpEmotes.define_singleton_method(:open?) { false }
 registered = MGQ_MpActions.offers.dup
 MGQ_MpActions.offers.clear

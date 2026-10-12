@@ -2,7 +2,9 @@
 #  ui_leader_hud.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Read the map's viewport through MGQ_MpGame
+#      Paulinchen  2026-10-12: Held the Small HUD to its own least size at the edges of the screen instead of the Large one's
+#                            - Logged a refused hotkey through MGQ_MpHotkeys.log_refusal, not while the player types
+#                            - Read the map's viewport through MGQ_MpGame
 #                            - Created
 #
 #----------------------------------------------------------------
@@ -97,7 +99,7 @@ module MGQ_MpLeaderHud
     return unless MGQ_MpHotkeys.pressed?(:leader_hud)
 
     reason = busy_reason
-    return log("size key ignored: #{reason}") if reason
+    return MGQ_MpHotkeys.log_refusal(:leader_hud, reason) if reason
 
     resize(size == LARGE ? SMALL : LARGE)
     Sound.play_cursor
@@ -269,6 +271,19 @@ class Sprite_MpLeaderHud < Sprite
     LAYOUTS[size] || LAYOUTS[MGQ_MpLeaderHud::SIZES.first]
   end
 
+  # Makes the box movable through MGQ_MpUi::Layout, at least as large as the Small size, so each
+  # size keeps its own place at the edges of the screen.
+  #
+  # The Small size's height follows the preset's frame, so the box registers anew once the preset
+  # changes.
+  def self.register_layout
+    return if @registered == MGQ_MpUi::Theme.serial
+
+    small = layout(MGQ_MpLeaderHud::SMALL)
+    MGQ_MpUi::Layout.register(LAYOUT, LAYOUT_NAME, small.width, height(small), :none)
+    @registered = MGQ_MpUi::Theme.serial
+  end
+
   # Finds the side of a layout's picture, as high as the name and both bars beside it.
   #
   # @param layout [Layout] The layout.
@@ -316,6 +331,7 @@ class Sprite_MpLeaderHud < Sprite
   # @param layout [Layout] The size's layout.
   # @return [Rect] The place, see MGQ_MpUi::Layout.rect.
   def layout_rect(layout)
+    Sprite_MpLeaderHud.register_layout
     default = Rect.new(MARGIN, MARGIN + MGQ_MpUi.top_room, layout.width, Sprite_MpLeaderHud.height(layout))
     rect = MGQ_MpUi::Layout.rect(LAYOUT, default)
     Rect.new(rect.x, rect.y, default.width, default.height)
@@ -530,8 +546,7 @@ end
 # the Mod Config rows.
 
 begin
-  large = Sprite_MpLeaderHud.layout(MGQ_MpLeaderHud::LARGE)
-  MGQ_MpUi::Layout.register(Sprite_MpLeaderHud::LAYOUT, Sprite_MpLeaderHud::LAYOUT_NAME, large.width, Sprite_MpLeaderHud.height(large), :none)
+  Sprite_MpLeaderHud.register_layout
   MGQ_MpLeaderHud.add_options
 rescue => e
   MGQ_MpLeaderHud.log("start FAILED: #{e.class}: #{e.message}")

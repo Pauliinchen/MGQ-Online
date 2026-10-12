@@ -2,6 +2,7 @@
 #  ui_raid_bar_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Checked that Tab pressed while the chat box is open changes nothing and goes to the hotkeys' refusal log
 #      Paulinchen  2026-10-11: Covered the strip as a box of the layout: its least width, a kept place, narrow with three enemies, small mode cropped where it lies, the room at the top and the game's bar only while it lies there
 #                            - Covered the gauges and the title drawn anew in another interface preset's colors
 #                            - Expected the battle's small strip cropped from its top instead of slid up, and stood in for what the presets and the layout read
@@ -91,11 +92,12 @@ module MGQ_MpWorldStory
   def self.world_id; "w1"; end
 end
 module MGQ_MpBattlesSync; def self.role; :guest; end; end
-# The party box's hotkey, held for one update by $tab_pressed and named Tab, Player.ini and the
-# cursor sound.
+# The party box's hotkey, held for one update by $tab_pressed and named Tab, its refusals kept in
+# $refusals, Player.ini and the cursor sound.
 module MGQ_MpHotkeys
   def self.pressed?(action); action == :party_box && $tab_pressed; end
   def self.label(_action); "Tab"; end
+  def self.log_refusal(action, reason); ($refusals ||= []) << [action, reason]; nil; end
 end
 module MGQ_Multiplayer
   module Player
@@ -312,6 +314,14 @@ $tab_pressed = false
 MGQ_MpUi::Style::SLIDE_FRAMES.times { spriteset.update }
 sprite.update_hp_bar
 check("Tab again shows it in full", [strip.y, strip.src_rect.to_a, sprite.instance_variable_get(:@hp_bar).y, $settings["raid_bar_small"]], [0, [0, 0, 640, 86], 74, "0"])
+module MGQ_MpChat; def self.typing?; $chat_typing; end; end
+$chat_typing = true
+$tab_pressed = true
+spriteset.update
+$tab_pressed = false
+$chat_typing = false
+check("Tab typed into the chat box changes nothing, its refusal left to the hotkeys, which log none while the player types",
+      [$settings["raid_bar_small"], $refusals], ["0", [[:party_box, "the chat box is open"]]])
 spriteset.dispose
 spriteset.update
 check("a new battle's sprites make a new strip", spriteset.instance_variable_get(:@mgq_mp_raid_bar).equal?(strip), false)

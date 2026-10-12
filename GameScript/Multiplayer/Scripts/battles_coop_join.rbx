@@ -2,7 +2,8 @@
 #  battles_coop_join.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Read the map's viewport and character sprites through MGQ_MpGame
+#      Paulinchen  2026-10-12: Logged a refused hotkey through MGQ_MpHotkeys.log_refusal, not while the player types
+#                            - Read the map's viewport and character sprites through MGQ_MpGame
 #      Paulinchen  2026-10-11: Asked the party members near along when the player asks to join a battle outside the party, unless they come along themselves
 #                            - Drew the prompt in the shared style's small font and solid outline, as the other labels, instead of the game's half-transparent one
 #                            - Drew the prompt in the color every request and offer shares
@@ -219,9 +220,8 @@ module MGQ_MpBattlesJoin
     found = @target
     return request(*found) if found
     return fight_alongside(*@side) if @side
-    return if $mgq_text_input
 
-    log("join battle hotkey ignored: #{busy_reason || 'nobody near the player fights a battle that takes players in'}")
+    MGQ_MpHotkeys.log_refusal(:join_battle, busy_reason || 'nobody near the player fights a battle that takes players in')
   rescue => e
     @target = nil
     @side = nil

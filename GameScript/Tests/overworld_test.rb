@@ -521,8 +521,11 @@ $typed = "\b"
 map_frame
 $pressed = true
 $typed = "hi thereX\b"
-map_frame
+$mgq_text_input = true
+typed_log = logged_lines { map_frame }
+$mgq_text_input = nil
 check("typing, backspace, and B types instead of opening the wheel", [chat.typed, MGQ_MpActions::Wheel.open?], ["hi there", false])
+check("the B typed stays out of the log", typed_log.grep(/ignored/), [])
 check("the cursor follows the typing", chat.cursor, 8)
 $buttons << :LEFT
 map_frame

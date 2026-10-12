@@ -2,6 +2,7 @@
 #  emotes_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Checked that the emote hotkey pressed while the player types stays out of the log, and that a refusal is logged under the hotkeys
 #      Paulinchen  2026-10-11: Checked each of the wheel's boxes in its frame, the picked one lit, and the wheel drawn anew after a preset change
 #                            - Checked the wheel's picture: its hint under the ring, the name of the emote pointed at and the fade in and out
 #                            - Checked the hint drawn whole with a rebound key's longer name
@@ -124,9 +125,11 @@ check("nor one the wheel has not", ghost.balloon_id, 0)
 
 # Not while the chat box is open.
 MGQ_MpChat.start_typing
+$mgq_text_input = true
 $pressed = MGQ_MpHotkeys.code(:emotes)
-emotes.on_map
-check("the chat box keeps the wheel shut", emotes.open?, false)
+typed = logged_lines { emotes.on_map }
+$mgq_text_input = nil
+check("the chat box keeps the wheel shut, the letter typed left out of the log", [emotes.open?, typed.grep(/ignored/)], [false, []])
 MGQ_MpChat.stop_typing
 
 # Not while the World overview is open, whose hold on the buttons stays.
@@ -134,8 +137,9 @@ module MGQ_MpWorldOverview; def self.open?; $overview_open; end; end
 $overview_open = true
 MGQ_Multiplayer::Capture.start(:overview)
 $pressed = MGQ_MpHotkeys.code(:emotes)
-emotes.on_map
+refused = logged_lines { emotes.on_map }
 check("the World overview keeps the wheel shut", [emotes.open?, MGQ_Multiplayer::Capture.on?], [false, true])
+check("which the log says under the hotkeys", refused.grep(/ignored/), ["keys: hotkey E (Emote Wheel) ignored: the World overview is open"])
 $overview_open = false
 emotes.on_map
 $pressed = MGQ_MpHotkeys.code(:emotes)

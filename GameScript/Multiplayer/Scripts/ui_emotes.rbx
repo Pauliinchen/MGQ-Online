@@ -2,7 +2,8 @@
 #  ui_emotes.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Read the map's viewport and character sprites through MGQ_MpGame
+#      Paulinchen  2026-10-12: Logged a refused hotkey through MGQ_MpHotkeys.log_refusal, not while the player types
+#                            - Read the map's viewport and character sprites through MGQ_MpGame
 #      Paulinchen  2026-10-11: Framed the wheel's boxes in the preset's colors, the picked one lit inside its frame, drawn anew once the preset changes
 #                            - Drew the wheel in the shared style, fading it in and out, with the hint under the ring the wheels share, which names Esc, the numpad's 0 and its hotkey
 #                            - Drew the hint whole through the shared style, so a rebound key's longer name never cuts it
@@ -103,7 +104,7 @@ module MGQ_MpEmotes
   def self.on_map
     key = MGQ_MpHotkeys.pressed?(:emotes)
     unless free?
-      log("emote wheel stays shut: #{busy_reason}") if key
+      MGQ_MpHotkeys.log_refusal(:emotes, busy_reason) if key
       return close(busy_reason)
     end
 

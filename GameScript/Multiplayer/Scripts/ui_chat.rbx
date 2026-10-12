@@ -2,7 +2,9 @@
 #  ui_chat.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Read the map's viewports through MGQ_MpGame
+#      Paulinchen  2026-10-12: Put every chat tab back to the All tab with the global chat as the world closes, so lines no longer go to a chat the picked tab hides
+#                            - Logged a refused hotkey through MGQ_MpHotkeys.log_refusal, not while the player types
+#                            - Read the map's viewports through MGQ_MpGame
 #      Paulinchen  2026-10-11: Showed the dimmed tabs above the closed log only while it shows lines, so a chat's unread mark no longer leaves them on the screen for good
 #                            - Started the chat in the global chat instead of the map chat, also in every world after the first
 #                            - Moved and resized the chat log with Alt and the mouse through MGQ_MpUi::Layout, the map's as Chat and the battle's as Battle chat, each starting where it lay before at the size chat_size keeps
@@ -1138,7 +1140,7 @@ module MGQ_MpChat
   end
 
   # Forgets the log and the bubbles and closes the box, as when the world closes. The Whisper tab
-  # goes too, and the next world starts in the global chat again.
+  # goes too, and the next world starts in the global chat on the All tab again.
   def self.reset
     stop_typing("no world is open")
     log("forgot #{@log.size} chat lines as the world closed (#{@sent} sent, #{@received} received)") unless @log.empty?
@@ -1151,7 +1153,8 @@ module MGQ_MpChat
     @reply_to = nil
     @whisper_tab = false
     @channel = :global
-    @tab = :all if @tab == :whisper
+    @tab = :all
+    @before_help = nil
     @sent = 0
     @received = 0
   end
@@ -1256,7 +1259,7 @@ module MGQ_MpChat
       Sound.play_ok
       start_typing(MGQ_MpHotkeys.code(:chat))
     elsif chat_key
-      log("chat box stays shut: #{!available? ? 'the keyboard cannot reach the game' : MGQ_MpActions::Wheel.open? ? 'the action wheel is open' : 'an event runs on the map'}")
+      MGQ_MpHotkeys.log_refusal(:chat, !available? ? 'the keyboard cannot reach the game' : MGQ_MpActions::Wheel.open? ? 'the action wheel is open' : 'an event runs on the map')
     end
   rescue => e
     log("chat failed: #{e.class}: #{e.message}")
@@ -1294,7 +1297,7 @@ module MGQ_MpChat
       Sound.play_ok
       start_typing(MGQ_MpHotkeys.code(:chat))
     elsif chat_key
-      log("chat box stays shut: the keyboard cannot reach the game")
+      MGQ_MpHotkeys.log_refusal(:chat, "the keyboard cannot reach the game")
     end
   rescue => e
     log("battle chat failed: #{e.class}: #{e.message}")
