@@ -2,6 +2,7 @@
 //  directory.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-12: Covered an edit with a presence, a removal with an edit, a starting save with a presence and two creates of one world, each made at once
 //      Paulinchen  2026-10-10: Covered a Raid World's starting save from a game that names the dev feature, made and uploaded, also through the public routes, and still refused a player's choice and every other game's starting save
 //                            - Covered the player's name member tells a world room
 //                            - Covered an edit that sends a Raid World's difficulty unchanged telling the world room nothing, and the first difficulty of a world made without one
@@ -919,4 +920,51 @@ test("parseFeatures reads the features a game names, separated by commas or whit
   assert.deepEqual(parseFeatures(""), []);
   assert.deepEqual(parseFeatures(null), []);
   assert.deepEqual(parseFeatures(undefined), []);
+});
+
+test("an edit and a presence at once keep the newcomer and the edit", async () => {
+  const { directory } = newDirectory();
+  await directory.create(await newWorld());
+  const other = await playerIdOf(OTHER);
+
+  await Promise.all([directory.edit(WORLD, CREATOR, { seats: 6, data: "x:1" }), directory.presence(WORLD, [{ player: other, name: "Guest" }])]);
+
+  const world = (await directory.list()).body.worlds[0];
+  assert.equal(world.seats, 6);
+  assert.deepEqual(world.members.map((member) => member.id), [await playerIdOf(CREATOR), other]);
+});
+
+test("a removal and an edit at once keep both", async () => {
+  const { directory } = newDirectory();
+  await directory.create(await newWorld());
+  const other = await playerIdOf(OTHER);
+  await directory.presence(WORLD, [{ player: other, name: "Guest" }]);
+
+  await Promise.all([directory.ban(WORLD, CREATOR, other), directory.edit(WORLD, CREATOR, { seats: 6 })]);
+
+  const world = (await directory.list()).body.worlds[0];
+  assert.equal(world.seats, 6);
+  assert.deepEqual(world.members.map((member) => member.id), [await playerIdOf(CREATOR)]);
+  assert.equal((await directory.admit(WORLD, OTHER, AUTH)).status, 403, "the removed player stays out");
+});
+
+test("a starting save and a presence at once keep both", async () => {
+  const { directory } = newDirectory();
+  await directory.create(await newWorld({ start: true }));
+  const other = await playerIdOf(OTHER);
+
+  await Promise.all([directory.putStart(WORLD, CREATOR, Uint8Array.of(7)), directory.presence(WORLD, [{ player: other, name: "Guest" }])]);
+
+  const world = (await directory.list()).body.worlds[0];
+  assert.equal(world.start, "ready");
+  assert.equal(world.members.some((member) => member.id === other), true);
+});
+
+test("two creates of the same world at once make it once", async () => {
+  const { directory } = newDirectory();
+
+  const answers = await Promise.all([directory.create(await newWorld()), directory.create(await newWorld({ player: OTHER }))]);
+
+  assert.deepEqual(answers.map((answer) => answer.status).sort(), [201, 409]);
+  assert.equal((await directory.list()).body.worlds.length, 1);
 });

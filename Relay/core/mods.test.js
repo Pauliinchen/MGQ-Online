@@ -2,6 +2,7 @@
 //  mods.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-12: Covered changes made while a link is checked: a removal, a personal mark, options, another link and a full catalog, and an upload listed until the link that replaces it is checked
 //      Paulinchen  2026-10-09: Covered personal mods: marked by admins only, kept through kind changes, listed for games checked or not, and mods known by their name alone
 //      Paulinchen  2026-10-08: Covered an older copy's options that do not replace a newer version's
 //      Paulinchen  2026-10-07: Covered the options of any version kept until the current version's arrive
@@ -67,6 +68,38 @@ function fakeGitHub(state) {
     }
 
     return new Response("not found", { status: 404 });
+  };
+}
+
+/**
+ * A fake GitHub that, once armed, holds the next download of a release's script until the test
+ * opens it, so the test can change the catalog while a link is checked.
+ *
+ * @param {{tag: string, script: string, host?: string, status?: number}} state The current release, changed by the tests.
+ * @returns {{fetch: typeof fetch, arm: () => {reached: Promise<void>, open: () => void}}} The fake fetch, and how to arm it: `reached` settles once a check waits, `open` lets it go on.
+ */
+function gatedGitHub(state) {
+  const github = fakeGitHub(state);
+  let gate = null;
+
+  return {
+    fetch: async (url, init) => {
+      if (gate && url.endsWith(`/file/${state.tag}`)) {
+        const held = gate;
+        gate = null;
+        held.reach();
+        await held.opened;
+      }
+
+      return github(url, init);
+    },
+    arm: () => {
+      const armed = {};
+      armed.reached = new Promise((resolve) => (armed.reach = resolve));
+      armed.opened = new Promise((resolve) => (armed.open = resolve));
+      gate = armed;
+      return armed;
+    },
   };
 }
 
@@ -543,4 +576,127 @@ test("handleModRequest routes marking a mod personal and adding one by name", as
   assert.equal((await handleModRequest(catalog, "POST", url("/v1/mods/victoryscreen/personal"), body({ player: ADMIN, personal: "no" }), none)).status, 400);
   assert.equal((await handleModRequest(catalog, "POST", url("/v1/mods/nomod/personal"), body({ player: ADMIN, personal: true }), none)).status, 404);
   assert.equal((await handleModRequest(catalog, "GET", url("/v1/mods/victoryscreen/personal"), body({}), none)).status, 404);
+});
+
+test("a mod removed during the schedule's check stays removed", async () => {
+  const state = { tag: "v1.3.5", script: "# cap" };
+  const github = gatedGitHub(state);
+  const { catalog } = await newCatalog(state, MOD_LIMITS, github.fetch);
+  await catalog.setLink(ADMIN, "Level Cap", LATEST);
+
+  state.tag = "v1.4.0";
+  const gate = github.arm();
+  const checking = catalog.checkAll();
+  await gate.reached;
+  assert.equal((await catalog.remove(ADMIN, "levelcap")).status, 200);
+  gate.open();
+
+  assert.equal(await checking, 0);
+  assert.deepEqual((await catalog.list(ADMIN)).body.mods, []);
+});
+
+test("a personal mark and options set during the schedule's check survive it, and the version moves on", async () => {
+  const state = { tag: "v1.3.5", script: "# one" };
+  const github = gatedGitHub(state);
+  const { catalog } = await newCatalog(state, MOD_LIMITS, github.fetch);
+  await catalog.setLink(ADMIN, "Level Cap", LATEST);
+  const options = [{ key: "mod_level_cap", name: "Level Cap", type: "i", default: "1", choices: [] }];
+
+  state.tag = "v1.4.0";
+  state.script = "# two";
+  const gate = github.arm();
+  const checking = catalog.checkAll();
+  await gate.reached;
+  await catalog.setPersonal(ADMIN, "levelcap", true);
+  await catalog.setOptions(ADMIN, "levelcap", "1.3.5", options);
+  gate.open();
+
+  assert.equal(await checking, 1);
+  const [mod] = (await catalog.list(ADMIN)).body.mods;
+  assert.deepEqual([mod.personal, mod.options, mod.optionsVersion, mod.version], [true, options, "1.3.5", "1.4.0"]);
+});
+
+test("a link changed during the schedule's check is not overwritten by the old link's result", async () => {
+  const state = { tag: "v1.3.5", script: "# cap" };
+  const github = gatedGitHub(state);
+  const { catalog } = await newCatalog(state, MOD_LIMITS, github.fetch);
+  await catalog.setLink(ADMIN, "Level Cap", LATEST);
+
+  const gate = github.arm();
+  const checking = catalog.checkAll();
+  await gate.reached;
+  assert.equal((await catalog.setLink(ADMIN, "Level Cap", releaseFile("v1.3.5"))).status, 200);
+  gate.open();
+
+  assert.equal(await checking, 0);
+  assert.equal((await catalog.list(ADMIN)).body.mods[0].link, releaseFile("v1.3.5"));
+});
+
+test("setLink keeps a personal mark set during its own check", async () => {
+  const state = { tag: "v1.3.5", script: "# one" };
+  const github = gatedGitHub(state);
+  const { catalog } = await newCatalog(state, MOD_LIMITS, github.fetch);
+  await catalog.setLink(ADMIN, "Level Cap", LATEST);
+
+  state.tag = "v1.4.0";
+  state.script = "# two";
+  const gate = github.arm();
+  const linking = catalog.setLink(ADMIN, "Level Cap", LATEST);
+  await gate.reached;
+  await catalog.setPersonal(ADMIN, "levelcap", true);
+  gate.open();
+
+  const answer = await linking;
+  assert.deepEqual([answer.status, answer.body.mod.personal, answer.body.mod.version], [200, true, "1.4.0"]);
+  assert.equal((await catalog.list(ADMIN)).body.mods[0].personal, true);
+});
+
+test("a mod removed while setLink checks its link stays removed", async () => {
+  const state = { tag: "v1.3.5", script: "# cap" };
+  const github = gatedGitHub(state);
+  const { catalog } = await newCatalog(state, MOD_LIMITS, github.fetch);
+  await catalog.setLink(ADMIN, "Level Cap", LATEST);
+
+  const gate = github.arm();
+  const linking = catalog.setLink(ADMIN, "Level Cap", LATEST);
+  await gate.reached;
+  await catalog.remove(ADMIN, "levelcap");
+  gate.open();
+
+  assert.deepEqual(await linking, { status: 409, body: { error: "the mod was removed while its link was checked" } });
+  assert.deepEqual((await catalog.list(ADMIN)).body.mods, []);
+});
+
+test("an upload replaced by a link stays listed, with its files, until the link is checked", async () => {
+  const state = { tag: "v1.3.5", script: "# cap" };
+  const github = gatedGitHub(state);
+  const { catalog, files } = await newCatalog(state, MOD_LIMITS, github.fetch);
+  await catalog.upload(ADMIN, "Level Cap", "1.0", (await packed([["Level_Cap.rb", "# one"]])).upload);
+  await catalog.setPersonal(ADMIN, "levelcap", true);
+
+  const gate = github.arm();
+  const linking = catalog.setLink(ADMIN, "Level Cap", LATEST);
+  await gate.reached;
+  assert.deepEqual((await catalog.list(OTHER)).body.mods.map((mod) => [mod.key, mod.kind]), [["levelcap", "upload"]]);
+  assert.equal(files.size, 1);
+  gate.open();
+
+  const answer = await linking;
+  assert.deepEqual([answer.status, answer.body.mod.kind, answer.body.mod.version, answer.body.mod.personal], [200, "link", "1.3.5", true]);
+  assert.equal(files.size, 0, "the upload's zip goes once the link replaced it");
+});
+
+test("a new mod whose link is checked while the catalog fills up is refused", async () => {
+  const state = { tag: "v1.3.5", script: "# cap" };
+  const github = gatedGitHub(state);
+  const { catalog } = await newCatalog(state, { ...MOD_LIMITS, maxMods: 1 }, github.fetch);
+
+  const gate = github.arm();
+  const linking = catalog.setLink(ADMIN, "Level Cap", LATEST);
+  await gate.reached;
+  assert.equal((await catalog.setName(ADMIN, "victoryscreen", "Victory_Screen")).status, 200);
+  gate.open();
+
+  assert.equal((await linking).status, 503);
+  assert.deepEqual((await catalog.list(ADMIN)).body.mods.map((mod) => mod.key), ["victoryscreen"]);
 });

@@ -3,6 +3,8 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-12: Stopped reading a release file from GitHub once it passes its size limit, instead of reading it in full first
+//                            - Read a mod again after its link was checked and kept only the check's result, so a change made meanwhile is no longer undone and a removed mod stays removed
+//                            - Kept a mod that a link replaces listed until the link was checked
 //      Paulinchen  2026-10-09: Let admins mark any mod personal, which games never turn off, and add a mod by its name alone only to mark it personal
 //                            - Listed every personal mod for the games, checked or not, and left mods known by their name alone out of their list of mods
 //                            - Kept whether a mod is personal when it changes between a link, an upload and a name
@@ -91,6 +93,11 @@ const RELEASE_FILE = /^https:\/\/github\.com\/Pauliinchen\/[A-Za-z0-9._-]+\/rele
 export const FILE_HOSTS = Object.freeze(["objects.githubusercontent.com", "release-assets.githubusercontent.com"]);
 
 /**
+ * The fields of a mod that checking its link sets.
+ */
+const CHECK_FIELDS = Object.freeze(["checked", "error", "version", "versions", "files", "fileUrl", "archive", "size"]);
+
+/**
  * A path inside the game's Patch folder: forward slashes, no step up, no drive, no start at the root.
  */
 const PATCH_PATH = /^(?!\/)(?!.*(?:^|\/)\.\.?(?:\/|$))[^\\:*?"<>|\u0000-\u001f]+$/;
@@ -172,7 +179,8 @@ export class ModCatalog {
   }
 
   /**
-   * Adds a mod by its download link, or changes a mod's link, and checks it at once.
+   * Adds a mod by its download link, or changes a mod's link, and checks it at once. A mod removed
+   * while its link was checked stays removed.
    *
    * @param {unknown} key The asking player's key.
    * @param {unknown} name The mod's name, as worlds write it.
@@ -203,14 +211,54 @@ export class ModCatalog {
     const existing = await this.store.getMod(modKey(cleaned));
     const entry = existing?.kind === "link" ? { ...existing, name: cleaned, link } : newEntry(modKey(cleaned), cleaned, "link", existing?.personal === true);
     entry.link = link;
+    await this.checkLink(entry);
 
-    if (existing && existing.kind !== "link") {
-      await this.store.removeMod(existing.key);
+    // GitHub lets other requests in, so the mod is read again and only the check's result is kept.
+    const fresh = await this.store.getMod(modKey(cleaned));
+
+    if (existing && !fresh) {
+      return { status: 409, body: { error: "the mod was removed while its link was checked" } };
     }
 
-    await this.checkLink(entry);
-    await this.store.putMod(entry);
-    return { status: 200, body: { mod: adminView(entry) } };
+    const result = await this.linkEntryOver(fresh, modKey(cleaned), cleaned, link);
+
+    if (result.refusal) {
+      return result.refusal;
+    }
+
+    copyCheck(result.entry, entry);
+    await this.store.putMod(result.entry);
+    return { status: 200, body: { mod: adminView(result.entry) } };
+  }
+
+  /**
+   * Makes the link mod that takes the place of a mod as it is now: a link mod keeps what it has,
+   * such as its personal mark and options, and an upload or a name alone is removed, files and all.
+   *
+   * @param {object | undefined} current The mod as it is now; undefined for none.
+   * @param {string} key The mod's key.
+   * @param {string} name The mod's name.
+   * @param {string} link The mod's link.
+   * @returns {Promise<{entry?: object, refusal?: {status: number, body: object}}>} The link mod, without the check's result yet, or why the catalog has no room for it.
+   */
+  async linkEntryOver(current, key, name, link) {
+    if (current?.kind === "link") {
+      return { entry: { ...current, name, link } };
+    }
+
+    if (current) {
+      await this.store.removeMod(current.key);
+    } else {
+      const refusal = await this.roomFor(key);
+
+      if (refusal) {
+        return { refusal };
+      }
+    }
+
+    const entry = newEntry(key, name, "link", current?.personal === true);
+    entry.link = link;
+    return { entry };
   }
 
   /**
@@ -418,7 +466,8 @@ export class ModCatalog {
   }
 
   /**
-   * Checks every link mod for a new release, as the schedule does.
+   * Checks every link mod for a new release, as the schedule does. A mod removed meanwhile, or no
+   * longer a link mod of the same link, is left as it is now.
    *
    * @returns {Promise<number>} How many mods have a new version.
    */
@@ -430,12 +479,21 @@ export class ModCatalog {
         continue;
       }
 
-      const version = entry.version;
-      const files = JSON.stringify(entry.files);
       await this.checkLink(entry);
-      await this.store.putMod(entry);
 
-      if (entry.version !== version || JSON.stringify(entry.files) !== files) {
+      // GitHub lets other requests in, so the mod is read again and only the check's result is kept.
+      const fresh = await this.store.getMod(entry.key);
+
+      if (!fresh || fresh.kind !== "link" || fresh.link !== entry.link) {
+        continue;
+      }
+
+      const version = fresh.version;
+      const files = JSON.stringify(fresh.files);
+      copyCheck(fresh, entry);
+      await this.store.putMod(fresh);
+
+      if (fresh.version !== version || JSON.stringify(fresh.files) !== files) {
         changed += 1;
       }
     }
@@ -831,6 +889,18 @@ function findBlankLine(body) {
   }
 
   return -1;
+}
+
+/**
+ * Copies the result of a link's check from one mod onto another, and nothing else.
+ *
+ * @param {object} target The mod as it is now, changed in place.
+ * @param {object} checked The mod as checked.
+ */
+function copyCheck(target, checked) {
+  for (const field of CHECK_FIELDS) {
+    target[field] = checked[field];
+  }
 }
 
 /**

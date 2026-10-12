@@ -2,6 +2,7 @@
 //  directory.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-12: Worked out the asking player's id before reading a world, so an edit, a removal, a starting save or a new world no longer writes back an entry another request changed meanwhile
 //      Paulinchen  2026-10-10: Let a game that names the dev feature give a Raid World a starting save, for testing, and read what a game names in X-MGQ-Features for every public route
 //                            - Told a world room the name of a player of its world too, which a Raid World's boss pool keeps for its defeat
 //                            - Told a world room a Raid World's difficulty after an edit only when it changed
@@ -287,6 +288,9 @@ export class Directory {
       return { status: 400, body: { error: "a Raid World starts from the beginning: it takes no player's choice, and a starting save only from a development build", code: REFUSAL.raidStart } };
     }
 
+    // Worked out before the worlds are read, since the digest lets another create in on Node.
+    const creator = await playerIdOf(request.player);
+
     if (await this.load(request.id)) {
       return { status: 409, body: { error: "a world with this id exists" } };
     }
@@ -296,7 +300,6 @@ export class Directory {
       return tooMany();
     }
 
-    const creator = await playerIdOf(request.player);
     const admin = this.admins.has(creator);
     const worlds = await this.entries();
 
@@ -378,7 +381,7 @@ export class Directory {
    * @returns {Promise<{status: number, body: object, difficulty?: number, modsRule?: {off: boolean, mods: string}}>} The answer, the difficulty every game in the world room must be told when it changed, and whether the world turns other mods off with its mods, which every game must be told when either changed.
    */
   async edit(id, key, changes) {
-    const { entry, refusal } = await this.asCreatorOrAdmin(id, key);
+    const { entry, player, refusal } = await this.asCreatorOrAdmin(id, key);
 
     if (refusal) {
       return refusal;
@@ -398,7 +401,7 @@ export class Directory {
       return badRequest(`the mod settings must be a text of at most ${this.limits.maxSettingsLength} characters`);
     }
 
-    if ((data !== undefined || modHashes !== undefined) && (await playerIdOf(key)) !== entry.creator.id) {
+    if ((data !== undefined || modHashes !== undefined) && player !== entry.creator.id) {
       return { status: 403, body: { error: "only the world's creator may replace its game data and mod hashes" } };
     }
 
@@ -856,7 +859,7 @@ export class Directory {
    *
    * @param {string} id The world.
    * @param {unknown} key The asking player's key.
-   * @returns {Promise<{entry?: object, refusal?: {status: number, body: object}}>} The world, or why the player may not act on it.
+   * @returns {Promise<{entry?: object, player?: string, refusal?: {status: number, body: object}}>} The world and the creator's id, or why the player may not act on it.
    */
   async asCreator(id, key) {
     const { entry, player, refusal } = await this.worldAndPlayer(id, key);
@@ -869,7 +872,7 @@ export class Directory {
       return { refusal: { status: 403, body: { error: "only the world's creator may do this" } } };
     }
 
-    return { entry };
+    return { entry, player };
   }
 
   /**
@@ -877,7 +880,7 @@ export class Directory {
    *
    * @param {string} id The world.
    * @param {unknown} key The asking player's key.
-   * @returns {Promise<{entry?: object, refusal?: {status: number, body: object}}>} The world, or why the player may not act on it.
+   * @returns {Promise<{entry?: object, player?: string, refusal?: {status: number, body: object}}>} The world and the asking player's id, or why the player may not act on it.
    */
   async asCreatorOrAdmin(id, key) {
     const { entry, player, refusal } = await this.worldAndPlayer(id, key);
@@ -890,7 +893,7 @@ export class Directory {
       return { refusal: { status: 403, body: { error: "only the world's creator or an admin may do this" } } };
     }
 
-    return { entry };
+    return { entry, player };
   }
 
   /**
@@ -901,13 +904,14 @@ export class Directory {
    * @returns {Promise<{entry?: object, player?: string | null, refusal?: {status: number, body: object}}>} The world and the player's id, null for a key that is no player key, or why there is no world.
    */
   async worldAndPlayer(id, key) {
+    // The digest lets other requests in on Node, so it comes before the world is read and changed.
+    const player = isId(key) ? await playerIdOf(key) : null;
     const entry = await this.load(id);
 
     if (!entry) {
       return { refusal: noWorld() };
     }
 
-    const player = isId(key) ? await playerIdOf(key) : null;
     return { entry, player };
   }
 
