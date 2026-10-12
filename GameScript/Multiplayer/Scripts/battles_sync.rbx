@@ -2,7 +2,8 @@
 #  battles_sync.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Told a player leaving the battle only when they are one of its players
+#      Paulinchen  2026-10-12: Told a player joining or leaving the battle in the battle's popup instead of the chat, so the line stays out of the chat after it
+#                            - Told a player leaving the battle only when they are one of its players
 #                            - Kept the computer's actions when a guest's commands fail to read or to apply, and took a command's skill or item only within its database and its target only as a place of the battle
 #                            - Showed the host's names unswapped when they fail to read
 #                            - Told whether a wait for the players is open, so the raid pool leaves a victory meanwhile to the wait
@@ -1017,12 +1018,17 @@ module MGQ_MpBattlesSync
     end
   end
 
-  # Tells the player at once when another player leaves the live battle, in the chat log, which
-  # shows in battle, and in the world's status line: the battle itself takes them out only at its
-  # next command phase. Tells the same way when a player joins the running battle.
+  # Tells the player at once when another player leaves the live battle, in the battle's popup at
+  # the top and in the world's status line: the battle itself takes them out only at its next
+  # command phase. Tells the same way when a player joins the running battle.
   module Departures
     # Battles and seats already told, at most this many kept.
     KEPT = 32
+
+    # What marks the popup of a join or a departure, with its kind and seat: the game shows one popup
+    # of a mark at a time, so the host's, which a guest's battle plays back, and the guest's own
+    # show once.
+    POPUP_MARK = :mgq_mp_departure
 
     @told = []
 
@@ -1066,10 +1072,22 @@ module MGQ_MpBattlesSync
       @told.push(key)
       @told.shift while @told.size > KEPT
       MGQ_MpBattlesSync.log("told the player: #{text}")
-      MGQ_MpChat.system(text)
+      popup(text, [POPUP_MARK, kind, peer.seat])
       MGQ_MpOverworldSync.notice(text)
     rescue => e
       MGQ_MpBattlesSync.log("telling of a departure failed: #{e.class}: #{e.message}")
+    end
+
+    # Shows a line in the battle's popup at the top, as the game shows a skill's name.
+    #
+    # @param text [String] The line.
+    # @param mark [Array] What marks it, see POPUP_MARK.
+    def self.popup(text, mark)
+      scene = SceneManager.scene
+      return unless scene.is_a?(Scene_Battle)
+
+      log = MGQ_MpGame.get(scene, :log_window)
+      log.popup.push(text, mark) if log && log.respond_to?(:popup)
     end
   end
 

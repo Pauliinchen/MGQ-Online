@@ -2,7 +2,8 @@
 #  battles_hotjoin_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Checked that a host whose battle turned live has its skip settings back as the battle ends, before the victory autosave
+#      Paulinchen  2026-10-12: Read who joined the battle from its popup instead of the chat
+#                            - Checked that a host whose battle turned live has its skip settings back as the battle ends, before the victory autosave
 #                            - Checked that a guest drops an enemy of the host's troop whose fields are no numbers, logged once per field and kind, instead of failing
 #                            - Checked that the host's enemies keep their places in the changed troop when a place or mark is no number, and that an enemy whose id is no enemy of this game keeps the guest's own troop
 #      Paulinchen  2026-10-11: Checked the party members' offers about a battle outside the party, the battles that take nobody in, and that a host takes in as many players and enemies as it has room for
@@ -438,13 +439,14 @@ $game_system.conf.replace(:bt_skip => true, :skip_skill_effect => 1)
 $sent.clear
 $chat = []
 $notices = []
+popups_on(scene)
 sync.take(asker, { "battle" => "join", "bid" => "own7", :payload => sync::Wire.line(["5,6,7", [[50, 5], [60, 6], [70, 7]], 4]) })
 open_phase(scene)
 check("the command phase still opens", $commands_phase, true)
-check("the host reads in the battle's chat log who joined, once", [$chat, $notices], [["P8 joined the battle."], ["P8 joined the battle."]])
+check("the host reads in the battle's popup who joined, once, and nothing in the chat", [$popups, $notices, $chat], [["P8 joined the battle."], ["P8 joined the battle."], []])
 sync::Departures.joined(asker)
 sync::Departures.left(asker)
-check("and still reads when they leave later", $chat, ["P8 joined the battle.", "P8 left the battle."])
+check("and still reads when they leave later", $popups, ["P8 joined the battle.", "P8 left the battle."])
 check("the battle turned live, the player hosting it", [sync.host?, sync.coop?, MGQ_MpBattles.kind, sync::Recorder.active?], [true, true, :coop, true])
 check("its skip settings off", $game_system.conf, { :bt_skip => false, :skip_skill_effect => false })
 check("with the player who joined as its guest", [sync.guests_in, sync.expected], [[8], [9]])

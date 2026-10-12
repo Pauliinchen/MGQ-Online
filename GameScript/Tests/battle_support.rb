@@ -2,7 +2,8 @@
 #  battle_support.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Stood in for a troop whose enemies all fell and for a battle that ended, as the game tells them
+#      Paulinchen  2026-10-12: Stood in for the battle log's popup
+#                            - Stood in for a troop whose enemies all fell and for a battle that ended, as the game tells them
 #                            - Stood in for the leader's call standing, the battle of its story and dropping it
 #      Paulinchen  2026-10-11: Stood in for whether a character stands and whether the party takes commands, as the game tells them
 #                            - Loaded ui_layout.rbx and stood in for Player.ini, the screen's update and a window's new width, which the waiting box follows
@@ -271,6 +272,27 @@ module SceneManager
   def self.call(scene); $called = scene; end
   def self.scene; $scene_now; end
 end
+# The battle log's popup at the top, keeping each line it shows in $popups; like the game's, it
+# shows one popup of a mark at a time.
+class StubPopups
+  def initialize; @marks = []; end
+  def push(text, mark = nil)
+    return if mark && @marks.include?(mark)
+
+    @marks << mark if mark
+    ($popups ||= []) << text
+  end
+end
+StubBattleLog = Struct.new(:popup)
+
+# Gives a battle a log whose popups land in $popups.
+#
+# @param scene [Scene_Battle] The battle.
+def popups_on(scene)
+  $popups = []
+  scene.instance_variable_set(:@log_window, StubBattleLog.new(StubPopups.new))
+end
+
 class Scene_Battle
   def terminate; end
   def refresh_status; $refreshed = true; end

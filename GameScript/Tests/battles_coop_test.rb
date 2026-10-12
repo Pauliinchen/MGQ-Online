@@ -2,7 +2,8 @@
 #  battles_coop_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Checked that the battle of the story that calls the player over is joined and drops the call, while another player's invite is turned down
+#      Paulinchen  2026-10-12: Read who joined the battle from its popup instead of the chat
+#                            - Checked that the battle of the story that calls the player over is joined and drops the call, while another player's invite is turned down
 #                            - Checked that a leave from a player outside the battle tells nothing
 #                            - Checked that the host keeps the actions there when a guest's commands name an id or a target too large or fail to apply
 #                            - Checked that a defeat scene id too large for the game or an enemy that is no id is replaced by one here
@@ -433,15 +434,16 @@ newcomer = MGQ_MpOverworldSync::Peers::Peer.new(4, { "id" => "id-new", "name" =>
 MGQ_MpOverworldSync::Peers.all.push(newcomer)
 $chat = []
 $notices = []
+popups_on(scene)
 MGQ_MpBattlesSync::Channel.receive(0, "coop_party", MGQ_MpBattlesSync::Wire.line([[[0, "Host", "4,5", [[80, 8], [90, 9]], 8, [0, 1], 2, 0], [2, "Me", "1,2,3", [], 8, [0, 1, 2], 2, 1], [4, "Newcomer", "12", [[70, 7]], 8, [0], 1, 0]]]))
 MGQ_MpBattlesSync::Channel.receive(0, "events", "")
 MGQ_MpBattlesSync::Playback.next_event(scene)
-check("a guest reads in the battle's chat log who joined the host's party", [$chat, $notices, $game_party.battle_members.map(&:name)],
-      [["Newcomer joined the battle."], ["Newcomer joined the battle."], ["Actor4 (Host)", "Actor5 (Host)", "Actor1", "Actor2", "Actor12 (Newcomer)"]])
+check("a guest reads in the battle's popup, not the chat, who joined the host's party", [$chat, $popups, $notices, $game_party.battle_members.map(&:name)],
+      [[], ["Newcomer joined the battle."], ["Newcomer joined the battle."], ["Actor4 (Host)", "Actor5 (Host)", "Actor1", "Actor2", "Actor12 (Newcomer)"]])
 MGQ_MpBattlesSync::Channel.receive(0, "coop_party", MGQ_MpBattlesSync::Wire.line([[[0, "Host", "4,5", [[80, 8], [90, 9]], 8, [0, 1], 2, 0], [2, "Me", "1,2,3", [], 8, [0, 1, 2], 2, 1]]]))
 MGQ_MpBattlesSync::Channel.receive(0, "events", "")
 MGQ_MpBattlesSync::Playback.next_event(scene)
-check("and nothing when a player leaves it, which the departure tells", [$chat.size, $game_party.battle_members.size], [1, 4])
+check("and nothing when a player leaves it, which the departure tells", [$popups.size, $game_party.battle_members.size], [1, 4])
 MGQ_MpOverworldSync::Peers.all.delete(newcomer)
 $game_party.battle_members[0].actions = [:hosts]
 $game_party.battle_members[2].actions = [:chosen]
