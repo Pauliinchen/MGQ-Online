@@ -2,7 +2,8 @@
 #  trade_ui_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Checked that a list's picture holds only the rows around those shown, also while it scrolls and after it shrinks
+#      Paulinchen  2026-10-12: Checked that a cut with few measures cuts where a letter at a time does
+#                            - Checked that a list's picture holds only the rows around those shown, also while it scrolls and after it shrinks
 #      Paulinchen  2026-10-11: Checked that the game's help window on the trade screen wears the interface look without the game's tint, loading ui_theme.rbx
 #                            - Checked the confirm box before cancelling the trade, with a stand-in that records the question and answers
 #                            - Checked that a no after the trade ended under the box leaves the disposed commands alone
@@ -83,6 +84,21 @@ narrow = Object.new
 narrow.define_singleton_method(:text_size) { |text| Rect.new(0, 0, text.size, 24) }
 check("a name cut to nothing still ends in dots", MGQ_MpUi.cut(narrow, "Tester", 0), "...")
 check("a name cut keeps what follows it whole", MGQ_MpUi.cut(narrow, "Tester", 8, " (1)"), "T... (1)")
+measures = 0
+counting = Object.new
+counting.define_singleton_method(:text_size) { |text| measures += 1; Rect.new(0, 0, text.size * 7 + text.count(" ") * 2, 24) }
+one_by_one = lambda do |text, width, tail|
+  next "#{text}#{tail}" if counting.text_size("#{text}#{tail}").width <= width
+
+  head = text
+  head = head[0...-1].rstrip while !head.empty? && counting.text_size("#{head}...#{tail}").width > width
+  "#{head}...#{tail}"
+end
+sentence = "Strange crying has been heard from the eastern side of Iliasville, where the poison marsh is."
+same = [0, 20, 90, 200, 400, 700].product(["", " (2)"]).all? { |width, tail| MGQ_MpUi.cut(counting, sentence, width, tail) == one_by_one.call(sentence, width, tail) }
+measures = 0
+MGQ_MpUi.cut(counting, sentence, 200)
+check("a long text is cut where cutting a letter at a time would cut it, with a handful of measures", [same, measures <= 9], [true, true])
 
 session = MGQ_MpTrade::Session.new("Tester A", false, :open, nil, nil)
 MGQ_MpTrade.note = "You cannot carry more High-Quality Herb."

@@ -2,7 +2,8 @@
 #  ui.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Listed the settings in their own group of the Mod Config, MGQ Online Settings, apart from the hotkeys
+#      Paulinchen  2026-10-12: Cut a text to its width with far fewer measures
+#                            - Listed the settings in their own group of the Mod Config, MGQ Online Settings, apart from the hotkeys
 #      Paulinchen  2026-10-11: Let the player move and resize the list box with Alt, and move the message box and the confirm box and change their width, each kept in Player.ini and never smaller than its title, columns, choices and whole hint need
 #                            - Drew the list box, the message box and the confirm box in their frame, anew once the interface look changes
 #                            - Dressed the lines across the top of a screen in the interface look
@@ -506,9 +507,14 @@ module MGQ_MpUi
     text = text.to_s
     return "#{text}#{tail}" if measure.text_size("#{text}#{tail}").width <= width
 
-    head = text
-    head = head[0...-1].rstrip while !head.empty? && measure.text_size("#{head}#{ELLIPSIS}#{tail}").width > width
-    "#{head}#{ELLIPSIS}#{tail}"
+    # Halving the length keeps the measures few, which are slow in the game.
+    fits = 0
+    over = text.size
+    while over - fits > 1
+      length = (fits + over) / 2
+      measure.text_size("#{text[0, length].rstrip}#{ELLIPSIS}#{tail}").width <= width ? fits = length : over = length
+    end
+    "#{text[0, fits].rstrip}#{ELLIPSIS}#{tail}"
   end
 
   # Breaks a text into lines that fit a width, at its spaces, and inside a word longer than the
