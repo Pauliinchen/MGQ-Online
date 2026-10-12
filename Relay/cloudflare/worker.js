@@ -2,6 +2,7 @@
 //  worker.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-12: Took the bug reports in a Durable Object of their own, so a large report can no longer reset the world directory
 //      Paulinchen  2026-10-11: Took the bug reports games send in the directory object and handed them to GitHub with the GITHUB_ISSUES_TOKEN and GITHUB_BUG_FILES_TOKEN secrets
 //      Paulinchen  2026-10-10: Passed what a game names in the X-MGQ-Features header on to the directory's public routes too, for a development build's Raid World starting save
 //                            - Refused a Raid World request whose Content-Length is above the longest body these routes take before reading its body
@@ -37,8 +38,9 @@
 //----------------------------------------------------------------
 
 // The relay on Cloudflare: a Worker that sends each room's requests to a Durable Object of its own,
-// which keeps the room's WebSockets, and the world directory's to the one directory object. The
-// rules come from the core, so the Node server keeps the same ones.
+// which keeps the room's WebSockets, the world directory's to the one directory object, and the
+// bug reports to the one report object. The rules come from the core, so the Node server keeps the
+// same ones.
 //
 // The directory and the world rooms also talk to each other under /internal, which the Worker
 // never passes on from outside.
@@ -63,6 +65,11 @@ import {
  * The name of the one directory object.
  */
 const DIRECTORY_NAME = "directory";
+
+/**
+ * The name of the one report object.
+ */
+const REPORTS_NAME = "reports";
 
 /**
  * The header Cloudflare names the address a request came from in.
@@ -123,7 +130,7 @@ export default {
    * Handles a request to the relay.
    *
    * @param {Request} request The request.
-   * @param {{ROOMS: DurableObjectNamespace, WORLDS: DurableObjectNamespace, DIRECTORY: DurableObjectNamespace}} env The Worker's bindings.
+   * @param {{ROOMS: DurableObjectNamespace, WORLDS: DurableObjectNamespace, DIRECTORY: DurableObjectNamespace, REPORTS: DurableObjectNamespace}} env The Worker's bindings.
    * @returns {Promise<Response>} The answer, or why the request is refused.
    */
   async fetch(request, env) {
@@ -136,7 +143,13 @@ export default {
       return forwardWhole(request, worldOf(env, world.id));
     }
 
-    if (["worlds", "mods", "trades", "reports"].some((route) => routeIs(url, route))) {
+    // A large bug report takes much of an object's memory, which the directory needs for every
+    // world's joins.
+    if (routeIs(url, "reports")) {
+      return reportsOf(env).fetch(request);
+    }
+
+    if (["worlds", "mods", "trades"].some((route) => routeIs(url, route))) {
       return directoryOf(env).fetch(request);
     }
 
@@ -178,6 +191,16 @@ export default {
  */
 function directoryOf(env) {
   return env.DIRECTORY.get(env.DIRECTORY.idFromName(DIRECTORY_NAME));
+}
+
+/**
+ * Finds the report object.
+ *
+ * @param {{REPORTS: DurableObjectNamespace}} env The bindings.
+ * @returns {DurableObjectStub} The report object.
+ */
+function reportsOf(env) {
+  return env.REPORTS.get(env.REPORTS.idFromName(REPORTS_NAME));
 }
 
 /**
@@ -393,16 +416,15 @@ async function readSmallText(request, limit) {
  * The world directory: every world with its players, bans and locked token, one entry per world
  * in the object's storage, and each world's starting save in pieces beside it. It also keeps the
  * mod catalog, one entry per mod and each uploaded mod's zip in pieces, and the trades, one entry
- * per trade, and takes the bug reports, whose rate limits it counts in memory.
+ * per trade.
  */
 export class Directory extends DurableObject {
   /**
    * Creates the directory, the mod catalog and the trades over the object's storage, with the
-   * admins the ADMINS secret names, and the bug report desk with the GITHUB_ISSUES_TOKEN and
-   * GITHUB_BUG_FILES_TOKEN secrets and the REPORT_* variables.
+   * admins the ADMINS secret names.
    *
    * @param {DurableObjectState} ctx The object's state.
-   * @param {{ADMINS?: string, GITHUB_ISSUES_TOKEN?: string, GITHUB_BUG_FILES_TOKEN?: string, REPORT_ISSUES_REPO?: string, REPORT_FILES_REPO?: string, REPORT_FILES_BRANCH?: string}} env The Worker's bindings.
+   * @param {{ADMINS?: string}} env The Worker's bindings.
    */
   constructor(ctx, env) {
     super(ctx, env);
@@ -441,13 +463,11 @@ export class Directory extends DurableObject {
       removeTrade: (id) => storage.delete(`trade:${id}`),
       allTrades: async () => [...(await storage.list({ prefix: "trade:" })).values()],
     }, (id) => storage.get(`world:${id}`));
-
-    this.reports = new ReportDesk(reportSettingsOf(env));
   }
 
   /**
-   * Answers the directory's, the mod catalog's, the trades' and the bug reports' routes, the world
-   * rooms' questions under /internal, and the schedule's check of the catalog's links.
+   * Answers the directory's, the mod catalog's and the trades' routes, the world rooms' questions
+   * under /internal, and the schedule's check of the catalog's links.
    *
    * @param {Request} request The request.
    * @returns {Promise<Response>} The answer.
@@ -465,11 +485,6 @@ export class Directory extends DurableObject {
 
     if (routeIs(url, "trades")) {
       return respond(await handleTradeRequest(this.trades, request.method, url, () => readText(request), request.headers.get(PLAYER_HEADER)));
-    }
-
-    if (routeIs(url, "reports")) {
-      const client = { player: request.headers.get(PLAYER_HEADER), address: request.headers.get(ADDRESS_HEADER) };
-      return respond(await handleReportRequest(this.reports, request.method, url, () => readSmallText(request, this.reports.limits.maxBodyBytes), client));
     }
 
     if (url.pathname === "/internal/admit") {
@@ -521,6 +536,36 @@ export class Directory extends DurableObject {
     }
 
     return respond(answer);
+  }
+}
+
+/**
+ * The bug report desk: takes the reports games send and hands them to GitHub, counting their rate
+ * limits in memory. It stores nothing.
+ */
+export class Reports extends DurableObject {
+  /**
+   * Creates the desk with the GITHUB_ISSUES_TOKEN and GITHUB_BUG_FILES_TOKEN secrets and the
+   * REPORT_* variables.
+   *
+   * @param {DurableObjectState} ctx The object's state.
+   * @param {{GITHUB_ISSUES_TOKEN?: string, GITHUB_BUG_FILES_TOKEN?: string, REPORT_ISSUES_REPO?: string, REPORT_FILES_REPO?: string, REPORT_FILES_BRANCH?: string}} env The Worker's bindings.
+   */
+  constructor(ctx, env) {
+    super(ctx, env);
+    this.desk = new ReportDesk(reportSettingsOf(env));
+  }
+
+  /**
+   * Answers the bug reports' routes.
+   *
+   * @param {Request} request The request.
+   * @returns {Promise<Response>} The answer.
+   */
+  async fetch(request) {
+    const url = new URL(request.url);
+    const client = { player: request.headers.get(PLAYER_HEADER), address: request.headers.get(ADDRESS_HEADER) };
+    return respond(await handleReportRequest(this.desk, request.method, url, () => readSmallText(request, this.desk.limits.maxBodyBytes), client));
   }
 }
 

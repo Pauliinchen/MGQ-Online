@@ -25,7 +25,7 @@ core/reports.test.js   tests of the bug reports, against a stand-in for GitHub
 core/http.js           the answers every router gives alike, and how each reads a JSON body
 core/ids.js            how ids, hashes and texts are read everywhere
 core/test_zip.js       the zips the tests feed the mod catalog
-cloudflare/worker.js   the relay on Cloudflare Workers, one Durable Object per room and per world room, one for the directory
+cloudflare/worker.js   the relay on Cloudflare Workers, one Durable Object per room and per world room, one for the directory, one for the bug reports
 cloudflare/wrangler.toml
 node/server.js         the relay as a plain Node server, for a rented machine
 node/server.test.js    tests of the Node server over real WebSockets
@@ -128,7 +128,7 @@ Committed trades nobody finished are dropped after 30 days, cancelled ones after
 
 ### Bug reports
 
-A player reports a bug from the game. The relay commits the report as a folder of plain files, `reports/<id>/` with `report.md` as its index, in one commit to the branch `REPORT_FILES_BRANCH` (default `main`) of the private `REPORT_FILES_REPO` (default `Pauliinchen/MGQ-Online-Bug-Reports`), so a report reads in the browser or after a `git pull`. Then it opens a public issue in `REPORT_ISSUES_REPO` (default `Pauliinchen/MGQ-Online`) with the player's title and text and a few public facts, linking `report.md` and the screenshot, which only the developer can open. It takes reports only with two GitHub tokens (secrets on Cloudflare): `GITHUB_ISSUES_TOKEN`, which may write issues in the issues repository, and `GITHUB_BUG_FILES_TOKEN`, which may write contents in the files repository alone, so no token of the relay can change the public repository the mod updates from. The relay keeps nothing of a report; it unpacks the text files and passes the screenshot's base64 to GitHub as sent.
+A player reports a bug from the game. The relay commits the report as a folder of plain files, `reports/<id>/` with `report.md` as its index, in one commit to the branch `REPORT_FILES_BRANCH` (default `main`) of the private `REPORT_FILES_REPO` (default `Pauliinchen/MGQ-Online-Bug-Reports`), so a report reads in the browser or after a `git pull`. Then it opens a public issue in `REPORT_ISSUES_REPO` (default `Pauliinchen/MGQ-Online`) with the player's title and text and a few public facts, linking `report.md` and the screenshot, which only the developer can open. It takes reports only with two GitHub tokens (secrets on Cloudflare): `GITHUB_ISSUES_TOKEN`, which may write issues in the issues repository, and `GITHUB_BUG_FILES_TOKEN`, which may write contents in the files repository alone, so no token of the relay can change the public repository the mod updates from. The relay keeps nothing of a report; it unpacks the text files and passes the screenshot's base64 to GitHub as sent. On Cloudflare the reports go to a Durable Object of their own, so a large report never takes the memory the world directory needs.
 
 | Request | What it does |
 |---|---|
