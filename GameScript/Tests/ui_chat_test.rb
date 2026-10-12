@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-12: Checked that the relay's notice shows red between slashes in every tab, while a player of its name or an admin of another stays as before
+#                            - Checked the open log scrolled with the mouse wheel and its scrollbar
 #                            - Checked that every chat tab, the help's too, goes back to All with the global chat as the world closes, and that the player's own line shows after it
 #      Paulinchen  2026-10-11: Checked that the dimmed tabs go with the closed log's last line, though a chat holds unread lines
 #                            - Expected the chat to start in the global chat, and to return to it once the world closes
@@ -268,6 +269,32 @@ log_sprite.update
 check("the open log fades nothing", parts.any? { |_, _, color| color.is_a?(Color) && color.alpha }, false)
 chat.stop_typing
 going.left = MGQ_MpChat::LOG_FRAMES
+
+# The open log scrolled with the mouse wheel, three rows a notch, and its scrollbar.
+(1..12).each { |n| chat.system("wheel line #{n}") }
+chat.start_typing
+log_sprite.update
+bars = lambda { events.select { |kind, args| kind == :fill && args[2] == MGQ_MpUi::Style::SCROLLBAR_WIDTH }.map { |_, args| args[0, 4] } }
+total = chat.log_entries.size
+thumb = 6 * 19 * 6 / total
+check("the open log draws a scrollbar right of its rows, its thumb at the newest",
+      bars.call, [[400 - 9, Sprite_MpChatLog::TAB_ROW, 4, 6 * 19], [400 - 9, Sprite_MpChatLog::TAB_ROW + 6 * 19 - thumb, 4, thumb]])
+$mouse = [100, 250]
+$wheel = 1
+log_sprite.update
+check("the wheel turned up over it scrolls three rows a notch", [chat.scroll, bars.call.last[1]], [3, Sprite_MpChatLog::TAB_ROW + (6 * 19 - thumb) * (total - 9) / (total - 6)])
+$wheel = -2
+log_sprite.update
+check("turned down it scrolls back no farther than the newest row", chat.scroll, 0)
+$wheel = 1
+$mouse = [620, 20]
+log_sprite.update
+check("nothing while the mouse points elsewhere", chat.scroll, 0)
+$wheel = nil
+$mouse = nil
+chat.stop_typing
+log_sprite.update
+check("the closed log draws no scrollbar", bars.call, [])
 
 # The hints and the help name the new controls.
 check("the empty box's hint points at Alt and fits the row, no longer than the Alt hint",

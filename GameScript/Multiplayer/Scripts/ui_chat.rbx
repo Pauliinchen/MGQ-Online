@@ -3,6 +3,8 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-12: Showed the relay's own notices, such as a new release's, red between slashes in every tab instead of as an admin's line
+#                            - Scrolled the open chat log with the mouse wheel, three rows a notch
+#                            - Drew a scrollbar beside the open log's rows in place of its arrows
 #                            - Put every chat tab back to the All tab with the global chat as the world closes, so lines no longer go to a chat the picked tab hides
 #                            - Logged a refused hotkey through MGQ_MpHotkeys.log_refusal, not while the player types
 #                            - Read the map's viewports through MGQ_MpGame
@@ -208,7 +210,7 @@ module MGQ_MpChat
           "Tabs: click one, or Alt with Left or Right. All shows every chat.",
           "Alt and a drag with the mouse move or resize the chat, Alt and a double click put it back.",
           "Alt with Up or Down brings back the lines you sent. Ctrl+V pastes.",
-          "Up, Down, Page Up and Page Down scroll. Enter sends, Esc or the numpad's 0 closes."]
+          "Up, Down, Page Up, Page Down and the mouse wheel scroll. Enter sends, Esc or the numpad's 0 closes."]
 
   # What the log shows before a line of a chat, the global chat showing none. A whisper the player
   # sent shows whom it went to instead.
@@ -1508,8 +1510,11 @@ class Sprite_MpChatLog < Sprite
   # What a player's menu says below its choices.
   MENU_HINT = MGQ_MpUi::Style.close_hint
 
-  # Room at the right of the rows for the arrows that show the log scrolls on.
-  ARROW_ROOM = 14
+  # Room at the right of the rows for the scrollbar.
+  SCROLLBAR_ROOM = 14
+
+  # Rows one notch of the mouse wheel scrolls the log.
+  WHEEL_ROWS = 3
 
   # Color of the thin outline of the tabs and of the open chat, the preset's.
   OUTLINE = MGQ_MpUi::Style::EDGE
@@ -1540,8 +1545,8 @@ class Sprite_MpChatLog < Sprite
   end
 
   # Draws the log and the chat box where the layout places them, if they changed: the rows the log
-  # is scrolled to, with an arrow at the top while older rows lie above and one at the bottom while
-  # newer ones lie below, a line of the closed log fading away over its last frames. Above the
+  # is scrolled to, with a scrollbar at their right while the open log has more rows than it shows,
+  # a line of the closed log fading away over its last frames. Above the
   # closed log the tabs show dimmed while one holds unread lines and the log shows lines, so its
   # glow is seen and goes with the last line. While it shows anything, it offers its place to the
   # layout.
@@ -1562,12 +1567,12 @@ class Sprite_MpChatLog < Sprite
     rows = lines.map { |line| rows_of(line).each_with_index.map { |row, index| [row, line, index == 0] } }.flatten(1)
     scroll = chat.limit_scroll(lines.size < entries.size ? chat.scroll : [rows.size - @rows, 0].max)
     shown = rows[0, rows.size - scroll].last(@rows)
-    older = lines.size < entries.size || rows.size - scroll > @rows
+    total = typing ? rows.size + entries[0, entries.size - lines.size].inject(0) { |sum, line| sum + rows_of(line).size } : 0
     alt = typing && MGQ_Multiplayer::Key.down?(MGQ_MpChat::ALT_KEY)
     # A line of the closed log fades over its last frames, so those count as a change.
     fades = shown.map { |_row, line, _first| typing ? nil : [line.left, MGQ_MpUi::Style::FADE_FRAMES].min }
     offer_place if typing || !shown.empty?
-    drawn = [shown.map { |row, line, first| [row, line.who, line.channel, first] }, fades, older, scroll, chat.typed, chat.cursor,
+    drawn = [shown.map { |row, line, first| [row, line.who, line.channel, first] }, fades, total, scroll, chat.typed, chat.cursor,
              typing && chat.cursor_shown?, chat.tab, chat.channel, chat.whisper_to, chat.suggestions, chat.pick, alt, @size, chat.unread_tabs, chat.tabs,
              MGQ_MpUi::Theme.serial]
     return if drawn == @shown
@@ -1582,8 +1587,7 @@ class Sprite_MpChatLog < Sprite
     end
     @name_spots = []
     shown.each_with_index { |(row, line, first), index| draw_row(row, line, first, TAB_ROW + (@rows - shown.size + index) * ROW, fades[index]) }
-    draw_arrow(TAB_ROW, true) if typing && older
-    draw_arrow(TAB_ROW + (@rows - 1) * ROW, false) if typing && scroll > 0
+    draw_scrollbar(total - scroll - shown.size, total) if typing
     draw_box(chat, alt) if typing
     draw_chat_frame(alt ? RESIZE_OUTLINE : OUTLINE) if typing
     draw_names(chat) if typing
@@ -1653,8 +1657,8 @@ class Sprite_MpChatLog < Sprite
     MGQ_MpUi::Layout.offer(@layout_id, x, y, bitmap.width, bitmap.height, viewport.z)
   end
 
-  # Follows the mouse while the chat box is open: a click on another player's name opens their
-  # menu, a click on a tab picks it.
+  # Follows the mouse while the chat box is open: the wheel scrolls the log it points at, a click
+  # on another player's name opens their menu, a click on a tab picks it.
   #
   # @param chat [Module] MGQ_MpChat.
   def follow_mouse(chat)
@@ -1663,6 +1667,8 @@ class Sprite_MpChatLog < Sprite
     went_down = held && !@held
     @held = held
     position = mouse.position
+    notches = mouse.wheel
+    chat.scroll_by(notches * WHEEL_ROWS) if notches != 0 && position && inside?(position)
     return follow_menu(chat, position, went_down) if chat.menu
     return unless went_down && position && inside?(position)
 
@@ -1761,7 +1767,7 @@ class Sprite_MpChatLog < Sprite
   # @return [Array<String>] Its rows.
   def rows_of(line)
     @wrapped.clear if @wrapped.size > WRAP_CACHE
-    @wrapped[line.to_s] ||= MGQ_MpUi.wrap(bitmap, line.to_s, @width - 8 - ARROW_ROOM)
+    @wrapped[line.to_s] ||= MGQ_MpUi.wrap(bitmap, line.to_s, @width - 8 - SCROLLBAR_ROOM)
   end
 
   # Keeps the rows shown where they are while lines come in with the log scrolled up, scrolling up
@@ -1836,16 +1842,13 @@ class Sprite_MpChatLog < Sprite
     end
   end
 
-  # Draws a small arrow at the right of a row: up for older rows above, down for newer ones below.
+  # Draws the scrollbar at the right of the rows, while the log has more rows than it shows.
   #
-  # @param y [Integer] The row's top.
-  # @param up [Boolean] Whether it points up.
-  def draw_arrow(y, up)
-    left = @width - ARROW_ROOM + 2
-    5.times do |step|
-      width = up ? step * 2 + 1 : (4 - step) * 2 + 1
-      bitmap.fill_rect(left + 4 - width / 2, y + ROW / 2 - 2 + step, width, 1, MGQ_MpUi::Style::DIM)
-    end
+  # @param first [Integer] The first row shown, counted from the oldest.
+  # @param total [Integer] The rows of every line the log shows in the picked tab.
+  def draw_scrollbar(first, total)
+    style = MGQ_MpUi::Style
+    style.draw_scrollbar(bitmap, @width - (SCROLLBAR_ROOM + style::SCROLLBAR_WIDTH) / 2, TAB_ROW, @rows * ROW, first, @rows, total)
   end
 
   # Draws a tab's frame in the preset's colors, closed at the bottom or open into the chat below.

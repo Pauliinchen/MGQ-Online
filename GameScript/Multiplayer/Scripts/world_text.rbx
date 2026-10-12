@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-12: Scrolled a text longer than its box, showing its end and the cursor with a dim "..." before it, instead of drawing it past the window
+#                            - Scrolled the description with the mouse wheel and drew its scrollbar
 #                            - Broke the description over four lines at words in a taller box, showing its last lines
 #                            - Drew the box once per frame and played one sound for what was typed in it, so a pasted text no longer stalls the game
 #      Paulinchen  2026-10-07: Logged the text screen opening, showing its letters for a gamepad, and how it was left, never the text
@@ -47,8 +48,9 @@ class Scene_MpText < Scene_MenuBase
     MGQ_MpWorld.log("text screen opened for #{@caption}, #{@input_window.visible ? 'with the letters for a gamepad' : 'typed on the keyboard'}")
   end
 
-  # Types what came from the keyboard, then lets the letters take a gamepad's buttons, showing
-  # them once a button is pressed that did not come from the keyboard.
+  # Types what came from the keyboard and scrolls the box with the mouse wheel, then lets the
+  # letters take a gamepad's buttons, showing them once a button is pressed that did not come from
+  # the keyboard.
   #
   # A key that types also moves the game's own buttons, such as Z for OK, so the letters ignore
   # the buttons in a frame the keyboard was used.
@@ -65,6 +67,7 @@ class Scene_MpText < Scene_MenuBase
     end
 
     type_text(text)
+    @edit_window.scroll_by_wheel unless scene_changing?
     super
   end
 
@@ -157,7 +160,7 @@ end
 # The text being typed, with its purpose where the game shows a character's face, as stars for a
 # password, taking only the characters it allows. A text longer than the box scrolls, showing its
 # end and the cursor with a dim "..." before it; a box of several lines, such as the description,
-# breaks the text at words and shows its last lines.
+# breaks the text at words and shows its last lines, which the mouse wheel scrolls back.
 class Window_MpTextEdit < Window_NameEdit
   # Stands in for the character whose name Window_NameEdit expects.
   Holder = Struct.new(:name)
@@ -174,6 +177,9 @@ class Window_MpTextEdit < Window_NameEdit
   # Top of the text's first line, where the game draws a name.
   TEXT_TOP = 36
 
+  # Lines of a box of several lines one notch of the mouse wheel scrolls.
+  WHEEL_LINES = 1
+
   # Creates the window, taller for a box of several lines, which keeps it in the middle of the
   # screen with the game's letters below it.
   #
@@ -185,6 +191,7 @@ class Window_MpTextEdit < Window_NameEdit
     @masked = options[:masked]
     @allowed = options[:allowed]
     @rows = options[:area] ? AREA_ROWS : 1
+    @scrolled_up = 0
     super(Holder.new(text.to_s), options[:max_chars])
     return unless area?
 
@@ -206,16 +213,46 @@ class Window_MpTextEdit < Window_NameEdit
     refresh if @stale
   end
 
-  # Draws the caption, the underlines, the characters in sight and the cursor, or only notes that
-  # it has to while the drawing is held.
+  # Draws the caption, the underlines, the characters in sight and the cursor while its line is in
+  # sight, or only notes that it has to while the drawing is held. A changed text shows the
+  # cursor's line again.
   def refresh
     return @stale = true if @held
 
     @stale = false
+    @scrolled_up = 0 unless @name == @scrolled_text
+    @scrolled_text = @name
     contents.clear
     draw_actor_face(@actor, 0, 0)
     area? ? draw_area : draw_line
-    cursor_rect.set(item_rect(@index))
+    row = cell_of(@index)[0]
+    row >= 0 && row < @rows ? cursor_rect.set(item_rect(@index)) : cursor_rect.empty
+  end
+
+  # Scrolls a box of several lines by the mouse wheel's notches while the mouse points at the
+  # window, from the lines that keep the cursor's line the last up to the first line.
+  #
+  # @return [Boolean] Whether it scrolled.
+  def scroll_by_wheel
+    return false unless area?
+
+    notches = MGQ_Multiplayer::Mouse.wheel
+    return false if notches == 0 || !pointed_at?
+
+    scrolled = [[@scrolled_up + notches * WHEEL_LINES, 0].max, following_top].min
+    return false if scrolled == @scrolled_up
+
+    @scrolled_up = scrolled
+    refresh
+    true
+  end
+
+  # Tells whether the mouse points at the window.
+  #
+  # @return [Boolean] Whether it does.
+  def pointed_at?
+    position = MGQ_Multiplayer::Mouse.position
+    position ? position[0] >= x && position[0] < x + width && position[1] >= y && position[1] < y + height : false
   end
 
   # Tells whether the text breaks over several lines.
@@ -279,10 +316,18 @@ class Window_MpTextEdit < Window_NameEdit
     end.flatten(1)
   end
 
-  # The first line a box of several lines shows: as late as keeps the cursor's line the last.
+  # The first line a box of several lines shows: as late as keeps the cursor's line the last, less
+  # the lines the wheel scrolled up.
   #
   # @return [Integer] The line.
   def top_line
+    [following_top - @scrolled_up, 0].max
+  end
+
+  # The first line that keeps the cursor's line the last of a box of several lines.
+  #
+  # @return [Integer] The line.
+  def following_top
     [MGQ_MpUi.span_of(lines, @index) - @rows + 1, 0].max
   end
 
@@ -354,7 +399,8 @@ class Window_MpTextEdit < Window_NameEdit
   end
 
   # Draws a box of several lines: MORE while lines above are out of sight, then every line it
-  # shows underlined and the characters of the text's lines in them.
+  # shows underlined and the characters of the text's lines in them, and a scrollbar at the right
+  # while the text has more lines than the box.
   def draw_area
     top = top_line
     draw_more if top > 0
@@ -364,6 +410,8 @@ class Window_MpTextEdit < Window_NameEdit
     lines[top, @rows].each do |start, length|
       (start...start + length).each { |index| draw_char(index) }
     end
+    style = MGQ_MpUi::Style
+    style.draw_scrollbar(contents, contents_width - style::SCROLLBAR_WIDTH, TEXT_TOP, @rows * line_height, top, @rows, lines.size)
   end
 
   # Draws MORE, dim, in the first cell of the first line.

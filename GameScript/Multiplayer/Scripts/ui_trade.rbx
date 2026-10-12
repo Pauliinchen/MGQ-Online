@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-12: Kept the bag's and the offers' pictures as tall as the rows they show, since a large bag asked for a picture too large to make
+#                            - Scrolled the offers and the bag with the mouse wheel and drew their scrollbars
 #      Paulinchen  2026-10-11: Dressed the trade screen's windows in the interface look, the game's help window too
 #                            - Asked through the confirm box before cancelling the trade, since both offers are lost
 #                            - Left the commands alone once the trade ended under the box, whose windows are disposed by then
@@ -166,6 +167,7 @@ end
 class Window_MpTradeOffer < Window_Selectable
   include MGQ_MpUi::Theme::Skinned
   include MGQ_MpTradeUi::VisibleRows
+  include MGQ_MpUi::ScrollingWindow
 
   # Creates the window, inactive.
   #
@@ -359,6 +361,7 @@ end
 class Window_MpTradeBag < Window_Selectable
   include MGQ_MpUi::Theme::Skinned
   include MGQ_MpTradeUi::VisibleRows
+  include MGQ_MpUi::ScrollingWindow
 
   # Creates the list, inactive.
   #

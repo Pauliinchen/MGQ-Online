@@ -2,6 +2,7 @@
 //  ExportsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-12: Covered mp_mouse_wheel, exported without arguments
 //      Paulinchen  2026-10-11: Covered the bug report exports, with their arguments
 //      Paulinchen  2026-10-10: Covered mp_dev_build, exported without arguments
 //      Paulinchen  2026-10-09: Covered the parked mods' exports and the world exports that take whether a world turns other mods off, with their arguments
@@ -126,5 +127,21 @@ public sealed unsafe class ExportsTests
         Assert.Equal(string.Empty, exported["mp_report_drop_snap"]);
         Assert.Equal("ppppl", exported["mp_report_send"]);
         Assert.Equal("pl", exported["mp_report_state"]);
+    }
+
+    /// <summary>
+    /// Asserts that mp_mouse_wheel is exported under the name the game script calls, without
+    /// arguments, as GameScript/Multiplayer.rb names it.
+    /// </summary>
+    [Fact]
+    public void MouseWheelExport_IsRegistered()
+    {
+        var exported = typeof(Exports).GetMethods(BindingFlags.Public | BindingFlags.Static)
+            .Select(method => (Method: method, Attribute: method.GetCustomAttribute<UnmanagedCallersOnlyAttribute>()))
+            .Where(export => export.Attribute?.EntryPoint != null)
+            .ToDictionary(export => export.Attribute!.EntryPoint!, export => export.Method);
+
+        Assert.Empty(exported["mp_mouse_wheel"].GetParameters());
+        Assert.Equal(typeof(int), exported["mp_mouse_wheel"].ReturnType);
     }
 }

@@ -2,6 +2,7 @@
 //  Exports.Input.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-12: Added mp_mouse_wheel, the mouse wheel's notches since the last call
 //      Paulinchen  2026-10-06: Kept what was typed when the game script's buffer was too small, for the call with a larger one
 //      Paulinchen  2026-09-30: Created
 //
@@ -16,10 +17,29 @@ using MGQParadox.Multiplayer.Windows;
 namespace MGQParadox.Multiplayer;
 
 /// <summary>
-/// The functions of what the player types and copies: the keyboard and the clipboard.
+/// The functions of what the player types, copies and turns: the keyboard, the clipboard and the
+/// mouse wheel.
 /// </summary>
 internal static unsafe partial class Exports
 {
+    /// <summary>
+    /// Hands out the mouse wheel's notches turned over the game's window since the last call.
+    /// </summary>
+    /// <returns>The notches, positive away from the player; 0 for none or when it failed.</returns>
+    [UnmanagedCallersOnly(EntryPoint = "mp_mouse_wheel", CallConvs = [typeof(CallConvStdcall)])]
+    public static int TakeWheel()
+    {
+        try
+        {
+            return GameWindow.Wheel.Take();
+        }
+        catch (Exception ex)
+        {
+            Log.Write($"mp_mouse_wheel failed: {ex}");
+            return 0;
+        }
+    }
+
     /// <summary>
     /// Puts a text on the clipboard, such as a hidden world's id for its creator to hand out.
     /// </summary>

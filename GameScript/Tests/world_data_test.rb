@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-12: Checked that the text screen breaks the description over several lines
+#                            - Checked the list box and a description being typed scrolled with the mouse wheel, and the description's scrollbar
 #                            - Stood in for Ini.load, which a world's folder reads world.ini through
 #      Paulinchen  2026-10-11: Checked that a description in the list box breaks anew once the box is wider, and loaded ui_layout.rbx, which places the list box
 #                            - Read the list box's rows from its lazy rectangle, and gave the screen its size
@@ -534,7 +535,7 @@ $background = true
 module MGQ_Multiplayer
   module Capture; def self.repeat?(button); $held.include?(button); end; def self.trigger?(button); Input.trigger?(button); end; end
   module Key; def self.pressed?(code); $key_down == code; end; def self.triggered?(code); pressed?(code); end; end
-  module Mouse; def self.position; $mouse; end; def self.clicked?; $click ? ($click = false; true) : false; end; end
+  module Mouse; def self.position; $mouse; end; def self.clicked?; $click ? ($click = false; true) : false; end; def self.wheel; $wheel.to_i; end; end
   module Background; def self.running?; $background; end; end
 end
 editor = MGQ_MpUi::TextEdit.new("hello", :max_chars => 8, :allowed => /\A[a-z ]\z/)
@@ -592,7 +593,11 @@ drawn = []
 cursors = []
 font = Struct.new(:size, :color).new(18, "normal_color")
 canvas = Struct.new(:font).new(font)
-canvas.define_singleton_method(:fill_rect) { |*args| cursors << args[0, 2] if args[2] == MGQ_MpUi::TextBox::CURSOR_WIDTH }
+bars = []
+canvas.define_singleton_method(:fill_rect) do |*args|
+  cursors << args[0, 2] if args[2] == MGQ_MpUi::TextBox::CURSOR_WIDTH
+  bars << args[0, 2] if args[2] == MGQ_MpUi::Style::SCROLLBAR_WIDTH
+end
 canvas.define_singleton_method(:text_size) { |text| Struct.new(:width).new(text.size * 9) }
 canvas.define_singleton_method(:draw_text) { |*args| drawn << args[4] }
 window.define_singleton_method(:contents) { canvas }
@@ -634,6 +639,21 @@ form.edit.move_to(0)
 drawn.clear
 window.draw_area(key.call(:description), description)
 check("and follows the cursor back to its start", [drawn.size, drawn.first[0, 9], form.edit.first_line(window.current_area_spans(form[:description]), 4)], [4, "word word", 0])
+check("a scrollbar right of its text tells it holds more lines, at its first ones",
+      bars.last(2), [[area.x + area.width - MGQ_MpUi::Style::SCROLLBAR_WIDTH, area.y + 1]] * 2)
+{ :x => 0, :y => 0, :padding => 12, :ox => 0, :oy => 0 }.each { |name, value| window.define_singleton_method(name) { value } }
+lines = window.current_area_spans(form[:description])
+$mouse = [12 + area.x + 5, 12 + area.y + 5]
+$wheel = -2
+check("the wheel turned down over it scrolls it as far as its last lines, the cursor moved along onto the first in sight",
+      [lines.size > 4, window.scroll_area_by_wheel(form.edit), form.edit.first_line(lines, 4), form.edit.cursor], [true, true, lines.size - 4, lines[lines.size - 4][0]])
+$wheel = 5
+check("turned up it scrolls back to the first line, the cursor staying while in sight",
+      [window.scroll_area_by_wheel(form.edit), form.edit.first_line(lines, 4), form.edit.cursor], [true, 0, lines[lines.size - 4][0]])
+$mouse = [600, 470]
+check("the wheel scrolls nothing while the mouse points elsewhere", window.scroll_area_by_wheel(form.edit), false)
+$wheel = nil
+$mouse = nil
 form.editing = nil
 form.edit = nil
 drawn.clear
@@ -819,6 +839,21 @@ check("it stops at the last item", [long.selected, long.scroll], [20, 7])
 check("back at the top the heading is in sight again", [long.selected, long.scroll], [1, 0])
 check("a point over a line finds it, outside the list none", [Sprite_MpListBox.line_at(100, 32 + 30 + 24 * 2 + 3, long), Sprite_MpListBox.line_at(100, 40, long), Sprite_MpListBox.line_at(10, 100, long)], [2, nil, nil])
 check("a list without items picks none and does not move", (empty = Sprite_MpListBox::View.of("W", nil, [[:head, "None"]]); empty.move(1); empty.selected), nil)
+check("scrolling takes the pick along onto the first item in sight once it left the top", [long.scroll_by(3, 14), long.scroll, long.selected], [true, 3, 3])
+long.scroll_by(-99, 14)
+check("back up the pick stays where it is in sight", [long.scroll, long.selected], [0, 3])
+check("down it stops at the last page, the pick on the first item in sight", [long.scroll_by(99, 14), long.scroll, long.selected], [true, 7, 7])
+check("and goes no farther", long.scroll_by(1, 14), false)
+$mouse = [100, 100]
+$wheel = 2
+check("the wheel turned up over the box scrolls the list a line a notch", [Sprite_MpListBox.scroll_by_wheel(long), long.scroll], [true, 5])
+$wheel = -1
+check("down by as many lines as asked", [Sprite_MpListBox.scroll_by_wheel(long, 3), long.scroll], [true, 7])
+$mouse = [5, 5]
+$wheel = 2
+check("nothing while the mouse points outside the box", [Sprite_MpListBox.scroll_by_wheel(long), long.scroll], [false, 7])
+$wheel = nil
+$mouse = nil
 
 # What the details open.
 detail, = new_detail(386, 336)
@@ -859,7 +894,7 @@ kept.delete(:list_box)
 
 # A window of the left side: keeps its rows, its cursor and whether it takes input.
 class FakeList
-  attr_accessor :index, :active, :boxed
+  attr_accessor :index, :active, :boxed, :pane
   attr_reader :rows
 
   # Creates the window.
@@ -1282,6 +1317,12 @@ class FakeForm < FakeChoice
   # @param _text [String] The text.
   # @return [nil] Nothing, as for a box of one line.
   def current_area_spans(_text); nil; end
+
+  # Scrolls nothing, as a box of one line.
+  #
+  # @param _editor [MGQ_MpUi::TextEdit] The box's editor.
+  # @return [Boolean] false.
+  def scroll_area_by_wheel(_editor); false; end
 end
 
 module MGQ_Multiplayer::Link; def self.player_id; "me"; end; end

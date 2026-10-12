@@ -4,6 +4,8 @@
 #  Changelog:
 #      Paulinchen  2026-10-12: Asked before taking a world's starting save, which can run code, offering to start at the beginning instead,
 #                              unless the player created the world
+#                            - Scrolled the worlds, the choices, the list box, the mod picker and a description being typed with the mouse wheel
+#                            - Drew the scrollbars of the worlds and the choices through the shared list windows
 #                            - Opened the text screen of the description with its text broken over several lines
 #                            - Said that a world stays as it was when Player.ini, which keeps the favourites now, could not be read
 #      Paulinchen  2026-10-11: Dressed the screen's windows in the interface look and drew the worlds' scrollbar in its edge color
@@ -178,6 +180,9 @@ class Scene_MpWorlds < Scene_MenuBase
     "mods" => "Downloading the mods . . .",
     "settings" => "Saving the mod settings . . .",
   }
+
+  # Lines of a world's description one notch of the mouse wheel scrolls in the list box.
+  DESCRIPTION_WHEEL_LINES = 3
 
   # What the bottom of the mod picker says.
   MOD_PICK_HINT = "Enter: list or unlist    →: ! required, ? essential    Esc or Numpad 0: done"
@@ -908,11 +913,13 @@ class Scene_MpWorlds < Scene_MenuBase
     @box.scroll = [@box.scroll, [@box.lines.size - 1, 0].max].min
   end
 
-  # Follows the arrows, cancel and the mouse while the list box is open, and the box's width.
+  # Follows the arrows, the mouse wheel, cancel and the mouse while the list box is open, and the
+  # box's width.
   def update_box
     rewrap_description
     @box.move(1) if Input.repeat?(:DOWN)
     @box.move(-1) if Input.repeat?(:UP)
+    Sprite_MpListBox.scroll_by_wheel(@box, @box_kind == :description ? DESCRIPTION_WHEEL_LINES : Sprite_MpListBox::WHEEL_LINES)
     position = mouse_position
     clicked = mouse_clicked?
 
@@ -1240,8 +1247,8 @@ class Scene_MpWorlds < Scene_MenuBase
   end
 
   # Takes what was typed into the text box and lets its editor follow the keys that move the
-  # cursor, or moves the typing to the text screen, whose letters a gamepad can pick, once a
-  # button is pressed that did not come from the keyboard.
+  # cursor and the mouse wheel, or moves the typing to the text screen, whose letters a gamepad
+  # can pick, once a button is pressed that did not come from the keyboard.
   def update_typing
     field = @form_window.field
     text, keys = MGQ_Multiplayer::Link.take_typed
@@ -1265,6 +1272,7 @@ class Scene_MpWorlds < Scene_MenuBase
 
     editor = form.edit
     moved = editor.update_keys(field.kind == :area ? @form_window.current_area_spans(editor.text) : nil)
+    moved = @form_window.scroll_area_by_wheel(editor) || moved
     form[field.key] = editor.text
     # The blinking cursor is drawn again as it shows and hides.
     return unless moved || editor.cursor_shown? != @cursor_shown
@@ -1440,7 +1448,8 @@ class Scene_MpWorlds < Scene_MenuBase
   end
 
   # Follows the arrows, confirm, cancel and the mouse while the mod picker is open: up and down
-  # pick a row, left and right a mod's buttons, confirm or a click acts on what is picked.
+  # pick a row, left and right a mod's buttons, the wheel scrolls, confirm or a click acts on what
+  # is picked.
   def update_mod_pick
     @list_box.show(@mod_view)
     return update_mod_typing if @mod_edit
@@ -1452,6 +1461,7 @@ class Scene_MpWorlds < Scene_MenuBase
       @mod_view.move(Input.repeat?(:DOWN) ? 1 : -1)
       @mod_view.column = 0 unless mod_buttons?
     end
+    @mod_view.column = 0 if Sprite_MpListBox.scroll_by_wheel(@mod_view) && !mod_buttons?
     move_mod_column(1) if Input.repeat?(:RIGHT)
     move_mod_column(-1) if Input.repeat?(:LEFT)
     remove_added_mod if MGQ_Multiplayer::Key.pressed?(MGQ_MpUi::TextEdit::DELETE_KEY)
@@ -2214,6 +2224,7 @@ class MpWorldListPane
   # @param commands [Window_MpWorldCommands] The commands below them.
   def initialize(worlds, commands)
     @worlds = worlds
+    @worlds.pane = self
     @commands = commands
     @focus = :commands
     @inside = false
@@ -2515,17 +2526,13 @@ class Window_MpWorldList < Window_Command
   # Width kept free at the right of a world's name for its players online and seats.
   COUNT_WIDTH = 52
 
-  # Width of the scrollbar.
-  BAR_WIDTH = 4
-
-  # Color of the scrollbar's track.
-  TRACK_COLOR = Color.new(0, 0, 0, 96)
-
-  # Color of the scrollbar's thumb, the edge of the interface look.
-  THUMB_COLOR = MGQ_MpUi::Style::EDGE
-
   include MGQ_MpBoxCursor
   include MGQ_MpUi::Theme::Skinned
+  include MGQ_MpUi::ScrollingWindow
+
+  # The pane the list belongs to, which tells whether the list may scroll while the cursor is
+  # around it.
+  attr_accessor :pane
 
   # Creates the list below the lines.
   #
@@ -2535,13 +2542,6 @@ class Window_MpWorldList < Window_Command
     @entries = []
     @height = height
     super(0, y)
-    @bar = Sprite.new
-    @bar.bitmap = Bitmap.new(BAR_WIDTH, height - standard_padding * 2)
-    @bar.x = WIDTH - BAR_WIDTH - 5
-    @bar.y = y + standard_padding
-    @bar.z = z + 1
-    @bar_drawn = nil
-    update_bar
   end
 
   # Returns the window's width.
@@ -2590,42 +2590,18 @@ class Window_MpWorldList < Window_Command
   def draw_item(index)
     entry = @list[index][:ext]
     rect = item_rect_for_text(index)
-    rect.width -= BAR_WIDTH + 2
     change_color(entry.raid? ? MGQ_MpWorld::RAID_COLOR : entry.featured? ? MGQ_MpWorld::FEATURED_COLOR : entry.favourite ? crisis_color : normal_color, !entry.gone)
     draw_text(rect, "#{entry.listed.online}/#{entry.listed.seats}", 2) if entry.listed
     rect.width -= COUNT_WIDTH if entry.listed
     draw_text(rect, entry.favourite ? "* #{entry.name}" : entry.name)
   end
 
-  # Keeps the scrollbar where the list stands.
-  def update
-    super
-    update_bar if @bar
-  end
-
-  # Draws the scrollbar if the list moved or changed its length, or the interface look changed: a
-  # thumb as long as the share of the worlds in sight, hidden while all of them fit.
-  def update_bar
-    rows = item_max
-    page = page_row_max
-    @bar.visible = visible && rows > page
-    state = [rows, page, top_row, MGQ_MpUi::Theme.serial]
-    return if state == @bar_drawn || !@bar.visible
-
-    @bar_drawn = state
-    track = @bar.bitmap.height
-    thumb = [track * page / rows, 8].max
-    top = (track - thumb) * top_row / [rows - page, 1].max
-    @bar.bitmap.clear
-    @bar.bitmap.fill_rect(0, 0, BAR_WIDTH, track, TRACK_COLOR)
-    @bar.bitmap.fill_rect(0, top, BAR_WIDTH, thumb, THUMB_COLOR)
-  end
-
-  # Frees the scrollbar with the window.
-  def dispose
-    @bar.bitmap.dispose
-    @bar.dispose
-    super
+  # Tells whether the list is free to scroll: while it takes the input, or while the player picks
+  # between it and the commands.
+  #
+  # @return [Boolean] Whether it is.
+  def takes_wheel?
+    active || (index < 0 && pane && pane.active ? true : false)
   end
 end
 
@@ -3181,6 +3157,7 @@ end
 # set as it opens.
 class Window_MpChoice < Window_Command
   include MGQ_MpUi::Theme::Skinned
+  include MGQ_MpUi::ScrollingWindow
 
   # Width of the window.
   WIDTH = 360
@@ -3254,8 +3231,12 @@ class Window_MpWorldForm < Window_Selectable
   # Height of the button that sends the form.
   BUTTON_HEIGHT = 20
 
-  # Room between a text box's edge and its text.
+  # Room between a text box's edge and its text, which right of a box of several lines holds its
+  # scrollbar.
   TEXT_INSET = 4
+
+  # Lines of a box of several lines one notch of the mouse wheel scrolls.
+  AREA_WHEEL_LINES = 1
 
   # The form shown, nil for none.
   attr_reader :form
@@ -3493,6 +3474,35 @@ class Window_MpWorldForm < Window_Selectable
   # @return [Array<Array<Integer>>] Each line's first character and length, see MGQ_MpUi.wrap_spans.
   def current_area_spans(text)
     area_spans(text, item_rect(index).width - TEXT_INSET * 2)
+  end
+
+  # Scrolls the box of several lines being typed into by the mouse wheel's notches while the mouse
+  # points at it.
+  #
+  # @param editor [MGQ_MpUi::TextEdit] The box's editor.
+  # @return [Boolean] Whether it scrolled.
+  def scroll_area_by_wheel(editor)
+    field = self.field
+    return false unless field && field.kind == :area && @form.editing == field.key
+
+    notches = MGQ_Multiplayer::Mouse.wheel
+    return false if notches == 0 || !pointed_at_item?(index)
+
+    editor.scroll_lines(current_area_spans(editor.text), field.lines, -notches * AREA_WHEEL_LINES)
+  end
+
+  # Tells whether the mouse points at a field.
+  #
+  # @param index [Integer] The field's index.
+  # @return [Boolean] Whether it does.
+  def pointed_at_item?(index)
+    position = MGQ_Multiplayer::Mouse.position
+    return false unless position
+
+    rect = item_rect(index)
+    left = x + padding + rect.x - ox
+    top = y + padding + rect.y - oy
+    position[0] >= left && position[0] < left + rect.width && position[1] >= top && position[1] < top + rect.height
   end
 
   # Draws the button that sends the form, on a darker box.

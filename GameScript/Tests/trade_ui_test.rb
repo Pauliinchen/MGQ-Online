@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-12: Checked that a cut with few measures cuts where a letter at a time does
+#                            - Checked the lists scrolled with the mouse wheel, the cursor drawn where its row lies
 #                            - Checked that a list's picture holds only the rows around those shown, also while it scrolls and after it shrinks
 #      Paulinchen  2026-10-11: Checked that the game's help window on the trade screen wears the interface look without the game's tint, loading ui_theme.rbx
 #                            - Checked the confirm box before cancelling the trade, with a stand-in that records the question and answers
@@ -207,3 +208,34 @@ check("a list that shrank under its first row goes back to the top", [list.top_r
 check("and shows no arrows", arrows(list), [false, false])
 empty = PagedList.new(0)
 check("an empty list still makes a picture of one row", empty.heights.last, 24)
+
+# The lists scrolled with the mouse wheel, the cursor drawn where its row lies in the new picture.
+module MGQ_Multiplayer; module Mouse; def self.position; $mouse; end; def self.wheel; $wheel.to_i; end; end; end
+class WheelList < ListStandIn
+  include MGQ_MpTradeUi::VisibleRows
+  include MGQ_MpUi::ScrollingWindow
+  attr_accessor :index, :active
+  attr_reader :cursor_top
+  def visible; true; end
+  def open?; true; end
+  def x; 0; end
+  def y; 0; end
+  def width; 640; end
+  def height; 264; end
+  def viewport; nil; end
+  def select(index); @index = index; update_cursor; end
+  def update_cursor; @cursor_top = item_rect(@index).y - oy; end
+end
+check("both trade lists scroll with the wheel and show a scrollbar",
+      [Window_MpTradeBag, Window_MpTradeOffer].map { |window| window.include?(MGQ_MpUi::ScrollingWindow) }, [true, true])
+list = WheelList.new(1000)
+list.index = 0
+list.active = true
+$mouse = [100, 100]
+$wheel = -3
+check("the wheel turned down scrolls three rows, the rows drawn anew, the cursor moved onto the first row in sight at the window's top",
+      [list.scroll_by_wheel, list.top_row, list.drawn.first, list.index, list.cursor_top], [true, 3, [3, 0], 3, 0])
+$wheel = 1
+check("turned up a row, the cursor drawn a row lower in the new picture", [list.scroll_by_wheel, list.top_row, list.index, list.cursor_top], [true, 2, 3, 24])
+$wheel = nil
+$mouse = nil

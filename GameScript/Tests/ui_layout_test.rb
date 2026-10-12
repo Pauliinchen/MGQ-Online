@@ -2,7 +2,8 @@
 #  ui_layout_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Followed the settings to their own group of the Mod Config
+#      Paulinchen  2026-10-12: Counted the scrollbar track among the colors every preset names
+#                            - Followed the settings to their own group of the Mod Config
 #      Paulinchen  2026-10-11: Created
 #
 #----------------------------------------------------------------
@@ -91,7 +92,7 @@ end
 # The presets.
 check("the presets, Monarch first", theme.names, ["Monarch", "Legacy"])
 check("every preset names each of the style's box colors", theme::PRESETS.map { |preset| preset.colors.keys.sort }.uniq,
-      [[:BACK, :EDGE, :FIELD, :HEADING, :PICKED, :PLATE, :RIM, :TAB, :TITLE, :WELL]])
+      [[:BACK, :EDGE, :FIELD, :HEADING, :PICKED, :PLATE, :RIM, :TAB, :TITLE, :TRACK, :WELL]])
 check("Monarch until the player picks another, logged as the default, its colors set in place", [theme.current.name, $log.grep(/interface look Monarch \(the default\)/).size, style::BACK.to_a],
       ["Monarch", 1, [36, 10, 14, 235]])
 back = style::BACK

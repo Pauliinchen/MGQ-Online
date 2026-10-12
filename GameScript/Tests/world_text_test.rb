@@ -2,7 +2,8 @@
 #  world_text_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Created
+#      Paulinchen  2026-10-12: Checked the description scrolled with the mouse wheel and its scrollbar
+#                            - Created
 #
 #----------------------------------------------------------------
 
@@ -16,6 +17,7 @@ require_relative "support"
 # Stand-ins for the game's pictures, windows and scenes.
 Rect = Struct.new(:x, :y, :width, :height) do
   def set(other); self.x, self.y, self.width, self.height = other.to_a; end
+  def empty; set([0, 0, 0, 0]); end
 end
 class Color
   attr_accessor :alpha
@@ -160,6 +162,15 @@ module MGQ_Multiplayer
     def self.take_typed; typed = $typed; $typed = ["", 0]; typed; end
   end
   module Background; def self.running?; true; end; end
+  module Mouse; def self.position; $mouse; end; def self.wheel; $wheel.to_i; end; end
+end
+# The scrollbar of ui.rbx, which records what it was asked to draw.
+$scrollbars = []
+module MGQ_MpUi
+  module Style
+    SCROLLBAR_WIDTH = 4
+    def self.draw_scrollbar(*args); $scrollbars << args[1..-1]; end
+  end
 end
 module MGQ_MpWorld
   class << self; attr_accessor :text_result; end
@@ -267,6 +278,29 @@ check("it shows the last four lines with the cursor after the text, all inside t
 check("the lines stay above the hint", area.contents.texts.all? { |_text, rect, _| rect.y == 0 || rect.y + rect.height <= area.contents_height - area.line_height }, true)
 long_word = Window_MpTextEdit.new("What the world is about", "x" * 50, :max_chars => 1000, :area => true)
 check("a word longer than a line breaks inside it", long_word.lines, [[0, 22], [22, 22], [44, 6]])
+
+# The description scrolled with the mouse wheel.
+count = area.lines.size
+area.refresh
+check("a scrollbar right of the lines tells where the last four of them lie",
+      $scrollbars.last, [area.contents_width - 4, 36, 4 * 24, count - 4, 4, count])
+$mouse = [area.x + 50, area.y + 50]
+$wheel = 2
+check("the wheel turned up over it scrolls two lines back, the cursor's line out of sight without its cursor",
+      [area.scroll_by_wheel, area.top_line, area.cursor_rect.to_a, more?(area), $scrollbars.last[3]], [true, count - 6, [0, 0, 0, 0], true, count - 6])
+$wheel = 999
+check("up to the first line, without the ...", [area.scroll_by_wheel, area.top_line, more?(area)], [true, 0, false])
+check("and no farther", area.scroll_by_wheel, false)
+$wheel = -1
+$mouse = [5, 5]
+check("nothing while the mouse points elsewhere", [area.scroll_by_wheel, area.top_line], [false, 0])
+area.back
+check("a change to the text shows the cursor's line again", [area.top_line, area.cursor_rect.y], [area.lines.size - 4, 36 + 3 * 24])
+$wheel = 1
+$mouse = [short.x + 10, short.y + 10]
+check("a box of one line takes no wheel", short.scroll_by_wheel, false)
+$wheel = nil
+$mouse = nil
 
 # Typing on the keyboard: what came in one frame is drawn once, with one sound.
 scene = Scene_MpText.new

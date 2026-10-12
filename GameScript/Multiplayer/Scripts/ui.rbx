@@ -2,7 +2,10 @@
 #  ui.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Cut a text to its width with far fewer measures
+#      Paulinchen  2026-10-12: Added the scrollbar every scrolling box draws and its track color
+#                            - Scrolled the list box with the mouse wheel and drew its scrollbar
+#                            - Added the mouse wheel and the scrollbar of the mod's list windows
+#                            - Cut a text to its width with far fewer measures
 #                            - Listed the settings in their own group of the Mod Config, MGQ Online Settings, apart from the hotkeys
 #      Paulinchen  2026-10-11: Let the player move and resize the list box with Alt, and move the message box and the confirm box and change their width, each kept in Player.ini and never smaller than its title, columns, choices and whole hint need
 #                            - Drew the list box, the message box and the confirm box in their frame, anew once the interface look changes
@@ -112,6 +115,10 @@ module MGQ_MpUi
 
     # Thin frame of every flat box, of the chat's tabs and of a gauge.
     EDGE = Color.new(140, 140, 140, 220)
+
+    # A scrollbar's track, a lane a shade lighter than the box under its thumb; as opaque as the box,
+    # since fill_rect replaces the pixels and a see-through track would cut a hole down to the map.
+    TRACK = Color.new(48, 48, 48, 200)
 
     # Line around the edge, see draw_frame; fully see-through for a preset whose frame is the edge
     # alone.
@@ -335,6 +342,31 @@ module MGQ_MpUi
       bitmap.fill_rect(x, y + height - 1, width, 1, color)
       bitmap.fill_rect(x, y + 1, 1, height - 2, color)
       bitmap.fill_rect(x + width - 1, y + 1, 1, height - 2, color)
+    end
+
+    # Width of a scrollbar.
+    SCROLLBAR_WIDTH = 4
+
+    # Least length of a scrollbar's thumb.
+    SCROLLBAR_THUMB = 8
+
+    # Draws a scrollbar: its track, and a thumb in the edge color as long as the share of the lines in
+    # sight and placed by the first of them; nothing while every line fits.
+    #
+    # @param bitmap [Bitmap] The picture.
+    # @param x [Integer] The bar's left.
+    # @param y [Integer] The bar's top.
+    # @param height [Integer] The bar's height.
+    # @param first [Integer] The first line in sight.
+    # @param shown [Integer] How many lines show at once.
+    # @param total [Integer] How many lines there are.
+    def self.draw_scrollbar(bitmap, x, y, height, first, shown, total)
+      return if total <= shown || height <= 0
+
+      thumb = [[height * shown / total, SCROLLBAR_THUMB].max, height].min
+      top = y + (height - thumb) * [[first, 0].max, total - shown].min / (total - shown)
+      bitmap.fill_rect(x, y, SCROLLBAR_WIDTH, height, TRACK)
+      bitmap.fill_rect(x, top, SCROLLBAR_WIDTH, thumb, EDGE)
     end
 
     # Draws a hint whole, centered in its box: a hint names its keys at its end, so it is never
@@ -949,6 +981,127 @@ module MGQ_MpUi
     module Skinned
     end
   end
+
+  # Lets a list window of the mod scroll with the mouse wheel while the mouse points at it, and
+  # shows a scrollbar in its right padding while its rows outgrow it. Included into a
+  # Window_Selectable.
+  module ScrollingWindow
+    # Rows one notch of the wheel scrolls.
+    WHEEL_ROWS = 1
+
+    # Updates the window as its class does, then scrolls it with the wheel and keeps the
+    # scrollbar where its rows stand.
+    def update
+      super
+      scroll_by_wheel
+      update_scrollbar
+    end
+
+    # Hides the scrollbar with the window, also when the window is not updated any more.
+    #
+    # @param visible [Boolean] Whether the window shows.
+    def visible=(visible)
+      super
+      @mgq_mp_scrollbar.visible = false if @mgq_mp_scrollbar && !visible
+    end
+
+    # Scrolls the rows by the wheel's notches while the mouse points at the window, moving the
+    # cursor along into sight.
+    #
+    # @return [Boolean] Whether it scrolled.
+    def scroll_by_wheel
+      notches = MGQ_Multiplayer::Mouse.wheel
+      return false if notches == 0 || !wheel_ready? || !pointed_at?
+
+      before = top_row
+      self.top_row = top_row - notches * WHEEL_ROWS
+      return false if top_row == before
+
+      keep_cursor_in_sight
+      true
+    end
+
+    # Tells whether the window takes the wheel: shown, open, with more rows than fit, and free to
+    # scroll.
+    #
+    # @return [Boolean] Whether it does.
+    def wheel_ready?
+      visible && open? && row_max > page_row_max && takes_wheel?
+    end
+
+    # Tells whether the window is free to scroll: while it takes the input, or has no cursor to
+    # keep in sight. A window may narrow it.
+    #
+    # @return [Boolean] Whether it is.
+    def takes_wheel?
+      active || index < 0
+    end
+
+    # Tells whether the mouse points at the window.
+    #
+    # @return [Boolean] Whether it does.
+    def pointed_at?
+      position = MGQ_Multiplayer::Mouse.position
+      return false unless position
+
+      left = x + (viewport ? viewport.rect.x - viewport.ox : 0)
+      top = y + (viewport ? viewport.rect.y - viewport.oy : 0)
+      position[0] >= left && position[0] < left + width && position[1] >= top && position[1] < top + height
+    end
+
+    # Moves the cursor onto the nearest row in sight once the rows scrolled it out of sight, and
+    # draws it where its row lies now.
+    def keep_cursor_in_sight
+      return update_cursor if index < 0
+
+      first = top_row * col_max
+      last = [(top_row + page_row_max) * col_max, item_max].min - 1
+      kept = [[index, first].max, last].min
+      kept == index ? update_cursor : select(kept)
+    end
+
+    # Draws the scrollbar if the rows moved or changed, the window's size or the interface look
+    # changed, and shows it beside the rows while the window shows, open, with more rows than fit.
+    def update_scrollbar
+      bar = scrollbar
+      shown = visible && open? && row_max > page_row_max
+      bar.visible = shown
+      return unless shown
+
+      height = self.height - padding - padding_bottom
+      bar.viewport = viewport unless bar.viewport == viewport
+      bar.x = x + width - (padding + Style::SCROLLBAR_WIDTH) / 2
+      bar.y = y + padding
+      bar.z = z + 1
+      drawn = [height, row_max, page_row_max, top_row, Theme.serial]
+      return if drawn == @mgq_mp_scrollbar_drawn
+
+      @mgq_mp_scrollbar_drawn = drawn
+      unless bar.bitmap && bar.bitmap.height == height
+        bar.bitmap.dispose if bar.bitmap
+        bar.bitmap = Bitmap.new(Style::SCROLLBAR_WIDTH, [height, 1].max)
+      end
+      bar.bitmap.clear
+      Style.draw_scrollbar(bar.bitmap, 0, 0, height, top_row, page_row_max, row_max)
+    end
+
+    # Returns the scrollbar's sprite, made at first ask.
+    #
+    # @return [Sprite] The sprite.
+    def scrollbar
+      @mgq_mp_scrollbar ||= Sprite.new(viewport)
+    end
+
+    # Frees the scrollbar with the window.
+    def dispose
+      if @mgq_mp_scrollbar
+        @mgq_mp_scrollbar.bitmap.dispose if @mgq_mp_scrollbar.bitmap
+        @mgq_mp_scrollbar.dispose
+        @mgq_mp_scrollbar = nil
+      end
+      super
+    end
+  end
 end
 
 # The lines across the top of a screen of the mod, such as the world screen's.
@@ -1042,6 +1195,12 @@ class Sprite_MpListBox < Sprite
 
   # Pixels the picked row's plate keeps from the box's side edges.
   PICK_INSET = 4
+
+  # Pixels the scrollbar keeps from the box's right edge.
+  SCROLLBAR_INSET = 4
+
+  # Lines one notch of the mouse wheel scrolls unless the list's owner says another.
+  WHEEL_LINES = 1
 
   # What the hint says unless the list says another.
   HINT = ["Up and down: move", MGQ_MpUi::Style.close_hint("a click outside")].join(MGQ_MpUi::Style::HINT_GAP)
@@ -1180,6 +1339,35 @@ class Sprite_MpListBox < Sprite
     def out_of_sight?(rows)
       !selected.nil? && (selected < scroll || selected >= scroll + rows)
     end
+
+    # Scrolls the lines, within the list, and moves the pick along onto the nearest item in sight
+    # once it left the lines in sight.
+    #
+    # @param step [Integer] Lines to scroll down, a negative number to scroll up.
+    # @param rows [Integer] The lines the box shows.
+    # @return [Boolean] Whether it scrolled.
+    def scroll_by(step, rows)
+      top = [[scroll + step, lines.size - rows].min, 0].max
+      return false if top == scroll
+
+      self.scroll = top
+      in_sight = items.select { |line| line >= top && line < top + rows }
+      self.selected = selected < top ? in_sight.first : in_sight.last if out_of_sight?(rows) && !in_sight.empty?
+      true
+    end
+  end
+
+  # Scrolls a list the box shows by the mouse wheel's notches while the mouse points at the box.
+  #
+  # @param view [View] What the box lists.
+  # @param step [Integer] Lines one notch scrolls.
+  # @return [Boolean] Whether it scrolled.
+  def self.scroll_by_wheel(view, step = WHEEL_LINES)
+    notches = MGQ_Multiplayer::Mouse.wheel
+    return false if notches == 0
+
+    position = MGQ_Multiplayer::Mouse.position
+    position && inside?(position[0], position[1]) ? view.scroll_by(-notches * step, list_rows) : false
   end
 
   # Creates the box, hidden, above every window, where it lies now.
@@ -1303,7 +1491,7 @@ class Sprite_MpListBox < Sprite
   end
 
   # Draws the whole box: its back in its frame, the title with its note at the right, the lines in
-  # sight, the hint.
+  # sight with a scrollbar at their right while not all fit, the hint.
   #
   # @param view [View] What the box lists.
   def draw(view)
@@ -1316,8 +1504,10 @@ class Sprite_MpListBox < Sprite
     bitmap.draw_text(EDGE, TITLE_INSET, width - 2 * EDGE, TITLE - 2 * TITLE_INSET, view.note, 2) if view.note
     style.use_font(bitmap, style::TITLE_SIZE, style::TEXT)
     bitmap.draw_text(EDGE, TITLE_INSET, width - 2 * EDGE, TITLE - 2 * TITLE_INSET, MGQ_MpUi.cut(bitmap, view.title, width - 2 * EDGE - note_width))
-    lines = view.lines[view.scroll, self.class.list_rows(bitmap.height)] || []
+    rows = self.class.list_rows(bitmap.height)
+    lines = view.lines[view.scroll, rows] || []
     lines.each_with_index { |line, index| draw_line(line, TITLE + index * ROW, view.scroll + index == view.selected, view.column.to_i) }
+    style.draw_scrollbar(bitmap, width - SCROLLBAR_INSET - style::SCROLLBAR_WIDTH, TITLE, rows * ROW, view.scroll, rows, view.lines.size)
     style.draw_hint(bitmap, EDGE, bitmap.height - HINT_HEIGHT, width - 2 * EDGE, HINT_HEIGHT, view.hint || HINT)
   end
 

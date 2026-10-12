@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-12: Stood in for the notice that Player.ini could not be read
+#                            - Told the mouse wheel's notches from $wheel
 #                            - Stood in for the title screen and told from $new_game_pending whether a world's new game waits there
 #      Paulinchen  2026-10-11: Loaded ui_theme.rbx and ui_layout.rbx after ui.rbx, as Multiplayer.rb does, which the boxes take their look and place from
 #                            - Kept a color's values, which an outlined text copies the font's color by
@@ -105,7 +106,7 @@ module MGQ_Multiplayer
     def self.down?(code); ($down || []).include?(code); end
     def self.triggered?(code); pressed?(code); end
   end
-  module Mouse; def self.held?; $mouse_held == true; end; def self.position; $mouse; end; end
+  module Mouse; def self.held?; $mouse_held == true; end; def self.position; $mouse; end; def self.wheel; $wheel.to_i; end; end
   module Log; def self.write(m); puts "  log: #{m}"; end; end
   module Capture
     @owners = []

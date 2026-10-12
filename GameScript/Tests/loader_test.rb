@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-12: Stood in for Ini.load, which Player reads Player.ini through
+#                            - Checked the mouse wheel's notches, read once a frame
 #      Paulinchen  2026-10-11: Checked that a log past MAX_BYTES keeps its newest lines from a whole line on, behind a line that says so
 #      Paulinchen  2026-10-10: Checked that a text read from the DLL that grew again between asking its size and copying it is asked for again, three more times at most
 #      Paulinchen  2026-10-09: Checked that story_state.rbx loads before the story scripts that build on it
@@ -284,6 +285,49 @@ key.next_frame
 key.next_frame
 $keys_down = [0x41]
 check("a key nobody asked about for frames reads as pressed again", key.pressed?(0x41), true)
+
+# The mouse wheel: the DLL's notches read once a frame, the same for every box that asks, dropped
+# after a frame nobody asked in, and none while the game is behind, the boxes are arranged or the
+# DLL lacks the export.
+MGQ_Multiplayer.module_eval(source[/  module Mouse\n.*?\n  end\n/m])
+module MGQ_MpUi; module Layout; def self.arranging?; $arranging == true; end; end; end
+$wheel_turned = []
+$wheel_reads = 0
+wheel_export = Object.new
+wheel_export.define_singleton_method(:call) do |*args|
+  check_dll_call("mp_mouse_wheel", args)
+  $wheel_reads += 1
+  $wheel_turned.shift || 0
+end
+module MGQ_Multiplayer; module Link; end; end
+MGQ_Multiplayer::Link.define_singleton_method(:function) { |name| name == "mp_mouse_wheel" ? wheel_export : raise("no #{name}") }
+mouse = MGQ_Multiplayer::Mouse
+key.next_frame
+mouse.wheel
+$wheel_turned = [2, -1, 3]
+key.next_frame
+check("the notches since the last frame, the same for every box that asks in it, read from the DLL once",
+      [mouse.wheel, mouse.wheel, $wheel_reads], [2, 2, 2])
+key.next_frame
+check("a turn towards the player is negative", mouse.wheel, -1)
+key.next_frame
+key.next_frame
+check("a turn gathered while nobody asked in the frame before is dropped", [mouse.wheel, $wheel_reads], [0, 4])
+$wheel_turned = [1, 1]
+key.next_frame
+$arranging = true
+check("none while the player arranges the boxes", mouse.wheel, 0)
+$arranging = false
+key.next_frame
+$front = false
+Input.update
+check("none while another window is in front", mouse.wheel, 0)
+$front = true
+Input.update
+MGQ_Multiplayer::Link.define_singleton_method(:function) { |name| raise "no #{name}" }
+key.next_frame
+lines = logged_lines { 3.times { key.next_frame; mouse.wheel } }
+check("none without the export, which the log tells once", [mouse.wheel, lines.size], [0, 1])
 
 # The log's last line: how the game closes.
 MGQ_Multiplayer.module_eval(source[/  def self\.closing_text\(error.*?\n  end\n/m])

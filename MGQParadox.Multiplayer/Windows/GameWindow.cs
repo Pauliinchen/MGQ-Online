@@ -2,6 +2,7 @@
 //  GameWindow.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-12: Gathered the mouse wheel's turns for the game script
 //      Paulinchen  2026-10-11: Told the Alt guard which character came with Alt, so Alt pressed alone never opens the window's menu
 //      Paulinchen  2026-10-08: Kept Alt from opening the window's menu while a text screen wants the keyboard, which stopped the game
 //                            - Kept the window's menu closed for an Alt press that began while a text screen wanted the keyboard, too
@@ -66,9 +67,19 @@ internal static unsafe partial class GameWindow
     private const nint KeyMenu = 0xF100;
 
     /// <summary>
+    /// WM_MOUSEWHEEL, the mouse wheel turned.
+    /// </summary>
+    private const uint MouseWheelTurned = 0x020A;
+
+    /// <summary>
     /// The window procedure that was in place before, which gets every message on.
     /// </summary>
     private static nint previousProcedure;
+
+    /// <summary>
+    /// The mouse wheel's turns over the window, which the game script takes.
+    /// </summary>
+    public static MouseWheel Wheel { get; } = new();
 
     /// <summary>
     /// Keeps Alt from opening the window's menu while the player types, and as Alt is released after.
@@ -141,7 +152,8 @@ internal static unsafe partial class GameWindow
 
     /// <summary>
     /// Hands every message on, telling the game its application is active whenever Windows says
-    /// either, and passing what is typed to <see cref="Keyboard"/> while it wants it.
+    /// either, passing what is typed to <see cref="Keyboard"/> while it wants it, and gathering the
+    /// mouse wheel's turns in <see cref="Wheel"/>.
     /// </summary>
     /// <remarks>
     /// Nothing may throw out of it, since an exception crossing into the game ends it, so a failure of its own work is logged once and the message handed on.
@@ -161,6 +173,11 @@ internal static unsafe partial class GameWindow
             if (message == SystemKeyDown)
             {
                 altMenu.SystemKeyDown(typing, (uint)wParam, lParam);
+            }
+
+            if (message == MouseWheelTurned)
+            {
+                Wheel.Turn((short)((uint)wParam >> 16));
             }
 
             if (message == ActivateApp)

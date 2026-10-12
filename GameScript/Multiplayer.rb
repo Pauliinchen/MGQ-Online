@@ -2,7 +2,8 @@
 #  Multiplayer.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Loaded world_catchup_exp.rbx after world_catchup.rbx
+#      Paulinchen  2026-10-12: Read the mouse wheel's notches once a frame through mp_mouse_wheel
+#                            - Loaded world_catchup_exp.rbx after world_catchup.rbx
 #                            - Loaded ui_leader_hud.rbx after ui_raid_bar.rbx, before the notification box that makes room for it
 #                            - Kept a Player.ini that exists but could not be read: no new player key and no settings written over it, read
 #                              again at most once a second, logged once and told once a session in the notification box
@@ -780,11 +781,12 @@ module MGQ_Multiplayer
       'mp_update_game' => 'v',
       'mp_dev_build' => 'v',
 
-      # The keyboard and the clipboard.
+      # The keyboard, the clipboard and the mouse wheel.
       'mp_typing' => 'l',
       'mp_take_typed' => READ_ARGUMENTS,
       'mp_copy_code' => 'v',
       'mp_copy_text' => 'p',
+      'mp_mouse_wheel' => 'v',
 
       # The PvP connection.
       'mp_host' => 'pp',
@@ -1296,6 +1298,14 @@ module MGQ_Multiplayer
       @frame += 1
     end
 
+    # Tells the frames counted by next_frame, which run on the title screen too, where the game's
+    # Graphics.frame_count raises.
+    #
+    # @return [Integer] The frames.
+    def self.frame
+      @frame
+    end
+
     # Reads the watched keys. Called before every Input.update.
     def self.read_watched
       @watched.each do |code, state|
@@ -1409,6 +1419,45 @@ module MGQ_Multiplayer
     def self.held?
       Key.down?(LEFT_BUTTON) && !arranging?
     end
+
+    # The DLL's export that hands out the wheel's notches.
+    WHEEL_EXPORT = 'mp_mouse_wheel'
+
+    # Tells how many notches the wheel turned since the last frame, read once a frame of
+    # Key.frame, so every box that asks in a frame gets the same; 0 while another window is in
+    # front, while the player arranges the mod's boxes, or without the export.
+    #
+    # Notches gathered while nobody asked in the frame before are dropped, so a box that opens
+    # never scrolls by an earlier turn.
+    #
+    # @return [Integer] The notches, positive up, away from the player, negative down.
+    def self.wheel
+      frame = Key.frame
+      unless frame == @wheel_frame
+        notches = take_wheel
+        notches = 0 unless @wheel_frame == frame - 1
+        @wheel_frame = frame
+        @wheel = notches
+      end
+      Background.in_front? && !arranging? ? @wheel : 0
+    rescue
+      0
+    end
+
+    # Takes the notches the DLL gathered since it was last asked, telling the log once when it
+    # cannot.
+    #
+    # @return [Integer] The notches, 0 without the export.
+    def self.take_wheel
+      return 0 if @wheel_missing
+
+      Link.function(WHEEL_EXPORT).call
+    rescue => e
+      @wheel_missing = true
+      Log.write("mouse wheel unavailable: #{e.class}: #{e.message}")
+      0
+    end
+    private_class_method :take_wheel
 
     # Tells whether the mouse moves and resizes the mod's boxes instead of clicking, see
     # ui_layout.rbx.

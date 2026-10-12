@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-12: Checked that what the notification box says waits while it hides, says after a battle that the form opens once the player is free, and is dropped once the form opens, the report is forgotten or the outcome comes
+#                            - Checked that the wheel scrolling the box being typed into draws it anew
 #                            - Checked that a refused bug report hotkey is logged under the hotkeys, and not while the player types
 #                            - Checked the friendly words for a relay busy with other bug reports
 #                            - Stood in for Ini.load, which a world's folder reads world.ini through
@@ -561,6 +562,8 @@ class FakeForm
   def refresh; end
   def redraw_current_item; @redrawn += 1; end
   def current_area_spans(_text); [[0, 0]]; end
+  def scroll_area_by_wheel(_editor); scrolls = @wheel_scrolls == true; @wheel_scrolls = false; scrolls; end
+  attr_writer :wheel_scrolls
 end
 class FakeInfo
   attr_reader :lines
@@ -606,6 +609,10 @@ check("Escape puts the text back as it was", [form[:title], form.editing], ["For
 scene.on_field
 $typed = "yy"
 scene.update
+redrawn = window.redrawn
+window.wheel_scrolls = true
+scene.update
+check("the wheel scrolling the box being typed into draws it anew", window.redrawn - redrawn, 1)
 $numpad = true
 scene.update
 $numpad = false

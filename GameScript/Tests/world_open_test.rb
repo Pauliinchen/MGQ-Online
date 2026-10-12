@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-12: Checked that the title screen's Multiplayer command gets its handler
+#                            - Checked when the worlds take the mouse wheel
 #                            - Checked the favourites kept in Player.ini, a world staying as it was while Player.ini cannot be read, and a
 #                              world.ini that cannot be read left as it is
 #      Paulinchen  2026-10-11: Checked the cursor moving onto the world just created or added once the list shows it, Enter sending the hidden world's id,
@@ -801,7 +802,7 @@ $dll["mp_dir_action"] = nil
 
 # A window of the left side of the world screen: keeps its rows, its cursor and whether it takes input.
 class PaneList
-  attr_accessor :index, :active, :boxed
+  attr_accessor :index, :active, :boxed, :pane
   attr_reader :rows
 
   # Creates the window with its rows, each [symbol, ext], the cursor on the first.
@@ -852,6 +853,22 @@ check("but not once the player moved on to a form, which takes the input", [pane
 pane.activate
 pane.entries = [Shown.new("w2"), Shown.new("w7")]
 check("and the ask is over then", pane.current_symbol, :new_world)
+
+# The worlds take the mouse wheel while they have the cursor, or have none while the pane takes the
+# input, never behind a form or a box.
+list = Window_MpWorldList.allocate
+state = { :active => false, :index => -1 }
+list.define_singleton_method(:active) { state[:active] }
+list.define_singleton_method(:index) { state[:index] }
+list.pane = pane
+taking = [pane.active, list.takes_wheel?]
+pane.deactivate
+behind = list.takes_wheel?
+state[:active] = true
+state[:index] = 0
+check("the worlds without a cursor scroll while the pane takes the input, not behind a form, and always with the cursor",
+      [worlds.pane.equal?(pane), taking, behind, list.takes_wheel?, Window_MpWorldList.include?(MGQ_MpUi::ScrollingWindow)], [true, [true, true], false, true, true])
+pane.activate
 
 # The ask is logged, a world asked for before and not shown yet named as the one giving way.
 logged = []

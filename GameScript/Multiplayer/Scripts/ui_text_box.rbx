@@ -2,6 +2,8 @@
 #  ui_text_box.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Scrolled a box of several lines with the cursor kept in sight
+#                            - Drew a scrollbar beside a box of several lines that holds more than it shows
 #      Paulinchen  2026-10-04: Split a long word into its characters the way Ruby 1.9 can count, which crashed the world screen
 #                            - Broke a word longer than a line of a box of several lines inside the word
 #                            - Created
@@ -152,6 +154,23 @@ module MGQ_MpUi
       line = MGQ_MpUi.span_of(spans, @cursor)
       @top = [[@top, line].min, line - rows + 1].max
     end
+
+    # Scrolls a box of several lines, within its lines, and moves the cursor along onto the nearest
+    # line in sight once it left them, as far into that line as it is into its own.
+    #
+    # @param spans [Array<Array<Integer>>] The lines, see MGQ_MpUi.wrap_spans.
+    # @param rows [Integer] The lines the box shows at once.
+    # @param step [Integer] Lines to scroll down, a negative number to scroll up.
+    # @return [Boolean] Whether it scrolled.
+    def scroll_lines(spans, rows, step)
+      top = [[first_line(spans, rows) + step, spans.size - rows].min, 0].max
+      return false if top == @top
+
+      @top = top
+      line = MGQ_MpUi.span_of(spans, @cursor)
+      move_line(spans, [[line, top].max, top + rows - 1].min - line)
+      true
+    end
   end
 
   # Draws a text box being typed into: the text around the cursor, and the cursor, in the font and
@@ -181,7 +200,8 @@ module MGQ_MpUi
       draw_cursor(bitmap, rect.x + bitmap.text_size(shown[0, before]).width, rect.y + CURSOR_INSET, rect.height - CURSOR_INSET * 2)
     end
 
-    # Draws a box of several lines.
+    # Draws a box of several lines, and a scrollbar right of the text while it has more lines than
+    # the box shows; whoever owns the box leaves Style::SCROLLBAR_WIDTH free there.
     #
     # @param bitmap [Bitmap] The picture drawn on.
     # @param rect [Rect] Where the text goes.
@@ -201,6 +221,7 @@ module MGQ_MpUi
         before = bitmap.text_size(editor.text[start, editor.cursor - start]).width
         draw_cursor(bitmap, rect.x + before, y + LINE_CURSOR_INSET, line_height - LINE_CURSOR_INSET * 2)
       end
+      Style.draw_scrollbar(bitmap, rect.x + rect.width, rect.y, rows * line_height, top, rows, spans.size)
     end
 
     # Draws the cursor, in the color of the text.

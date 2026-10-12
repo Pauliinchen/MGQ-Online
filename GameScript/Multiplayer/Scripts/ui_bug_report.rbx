@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-12: Kept what the notification box tells the player until it shows, dropped once the form opens, the report is forgotten or the outcome comes, and said after a battle that the form opens once the player is free on the map
+#                            - Scrolled the description being typed with the mouse wheel
 #                            - Logged a refused hotkey through MGQ_MpHotkeys.log_refusal, not while the player types
 #                            - Told the player in friendly words when the relay is busy with other bug reports
 #      Paulinchen  2026-10-11: Created
@@ -808,8 +809,8 @@ class Scene_MpBugReport < Scene_MenuBase
     MGQ_MpBugReport.log("typing into #{field.label}")
   end
 
-  # Takes what was typed and lets the editor follow the keys that move the cursor. The numpad's 0
-  # leaves the box, as Escape does.
+  # Takes what was typed and lets the editor follow the keys that move the cursor and the mouse
+  # wheel. The numpad's 0 leaves the box, as Escape does.
   def update_typing
     field = @form_window.field
     text, _keys = MGQ_Multiplayer::Link.take_typed
@@ -823,6 +824,7 @@ class Scene_MpBugReport < Scene_MenuBase
 
     editor = @form.edit
     moved = editor.update_keys(field.kind == :area ? @form_window.current_area_spans(editor.text) : nil)
+    moved = @form_window.scroll_area_by_wheel(editor) || moved
     @form[field.key] = editor.text
     return unless moved || editor.cursor_shown? != @cursor_shown
 

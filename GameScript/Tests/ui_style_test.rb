@@ -2,6 +2,7 @@
 #  ui_style_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Checked the scrollbar, the list box's scrollbar and the list windows' wheel and scrollbar
 #      Paulinchen  2026-10-11: Checked the list box, the message box and the confirm box in the layout: kept in Player.ini, their least sizes with every column and hint still drawn, their mouse tests, and their frames drawn anew in a new interface look
 #                            - Checked that an outlined text is drawn without the font's own outline, which doubled it
 #                            - Checked that an outlined text keeps its color, with a font that copies a color into its own as the game does, and that a player outside the party is plain white
@@ -13,7 +14,8 @@
 # motion of a sprite, the color of a player, the confirm box with its keys, its two ticks, its
 # guards and its hook, and the list box and the message box placed by the screen's size, cut to
 # their room but for their hints, which stay whole, the list box fading in and out; and the list,
-# message and confirm boxes in the layout, moved and resized but never below their least sizes.
+# message and confirm boxes in the layout, moved and resized but never below their least sizes;
+# and the scrollbar, and the list windows scrolled by the mouse wheel.
 
 require_relative "support"
 
@@ -413,6 +415,8 @@ check("and draws every column: the item cut before what its right end says, both
 view.selected = view.items.last
 box.show(view)
 check("a box too low for the item picked scrolls it into sight", [view.scroll, box.bitmap.texts.any? { |t| t[2].start_with?("Mod number 8") }], [6, true])
+check("and draws a scrollbar right of the lines, its thumb at their end",
+      box.bitmap.fills.select { |f| f[2] == style::SCROLLBAR_WIDTH }.map { |f| f[0, 4] }, [[460 - 4 - 4, 30, 4, 72], [460 - 4 - 4, 30 + 48, 4, 24]])
 place.call(:list_box, "0,0,640,300")
 view.pick(1)
 box.show(view)
@@ -465,3 +469,76 @@ check("a narrower one keeps the least width its labels and hint need", confirm.i
 confirm.close("test")
 confirm.tick
 place.call(:confirm_box, nil)
+
+# The scrollbar every scrolling box draws: a track and a thumb as long as the share in sight,
+# placed by the first line in sight, and nothing while every line fits.
+bitmap = Bitmap.new(50, 200)
+style.draw_scrollbar(bitmap, 10, 20, 100, 0, 10, 10)
+check("a scrollbar draws nothing while every line fits", bitmap.fills, [])
+style.draw_scrollbar(bitmap, 10, 20, 100, 0, 10, 40)
+style.draw_scrollbar(bitmap, 10, 20, 100, 30, 10, 40)
+check("its track in the track's color, its thumb in the edge color, at the top and at the end",
+      bitmap.fills.map { |f| f[0, 4] + [f[4].equal?(style::EDGE)] },
+      [[10, 20, 4, 100, false], [10, 20, 4, 25, true], [10, 20, 4, 100, false], [10, 95, 4, 25, true]])
+bitmap.clear
+style.draw_scrollbar(bitmap, 0, 0, 100, 0, 1, 1000)
+check("a thumb never gets shorter than SCROLLBAR_THUMB", bitmap.fills.last[3], style::SCROLLBAR_THUMB)
+
+# The list windows' wheel and scrollbar, on a stand-in for the game's Window_Selectable.
+class FakeListWindow
+  attr_accessor :x, :y, :width, :height, :z, :active, :index, :viewport
+  attr_reader :visible, :selected
+  def initialize(rows); @rows = rows; @top = 0; @x = 100; @y = 50; @width = 200; @height = 4 * 24 + 24; @z = 100; @visible = true; @active = true; @index = 0; @selected = []; end
+  def update; end
+  def dispose; @disposed = true; end
+  def visible=(visible); @visible = visible; end
+  def open?; true; end
+  def padding; 12; end
+  def padding_bottom; 12; end
+  def row_max; @rows; end
+  def item_max; @rows; end
+  def col_max; 1; end
+  def page_row_max; 4; end
+  def top_row; @top; end
+  def top_row=(row); @top = [[row, row_max - page_row_max].min, 0].max; end
+  def select(index); @index = index; @selected << index; end
+  def update_cursor; @cursor_updates = (@cursor_updates || 0) + 1; end
+end
+class ScrollingFakeList < FakeListWindow
+  include MGQ_MpUi::ScrollingWindow
+end
+MGQ_Multiplayer::Mouse.define_singleton_method(:position) { $mouse }
+MGQ_Multiplayer::Mouse.define_singleton_method(:wheel) { $wheel.to_i }
+window = ScrollingFakeList.new(10)
+$mouse = [150, 80]
+$wheel = 0
+window.update
+bar = window.scrollbar
+check("a list with more rows than fit shows its scrollbar in its right padding, above it, as high as its rows",
+      [bar.visible, bar.x, bar.y, bar.z, bar.bitmap.height, bar.bitmap.fills.map { |f| f[0, 4] }], [true, 100 + 200 - 8, 62, 101, 96, [[0, 0, 4, 96], [0, 0, 4, 38]]])
+$wheel = -2
+window.update
+check("the wheel turned down over it scrolls two rows, the cursor moved along onto the first in sight, the bar following",
+      [window.top_row, window.index, bar.bitmap.fills.last[1]], [2, 2, 58 * 2 / 6])
+$wheel = 1
+window.update
+check("turned up it scrolls back a row, the cursor staying while in sight", [window.top_row, window.index, window.selected], [1, 2, [2]])
+$mouse = [50, 80]
+window.update
+check("nothing while the mouse points elsewhere", window.top_row, 1)
+$mouse = [150, 80]
+window.active = false
+window.update
+check("nor while the window waits behind another with its cursor", window.top_row, 1)
+window.index = -1
+window.update
+check("but a window without a cursor scrolls", window.top_row, 0)
+fits = ScrollingFakeList.new(3)
+fits.update
+check("a list whose rows fit shows no scrollbar and does not scroll", [fits.scrollbar.visible, fits.top_row], [false, 0])
+window.visible = false
+check("hiding the window hides its scrollbar at once", bar.visible, false)
+window.dispose
+check("disposing the window frees its scrollbar", [bar.disposed?, bar.bitmap.disposed?], [true, true])
+$wheel = 0
+$mouse = nil
