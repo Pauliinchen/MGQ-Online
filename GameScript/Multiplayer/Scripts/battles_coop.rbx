@@ -5,6 +5,7 @@
 #      Paulinchen  2026-10-12: Took a joining player's party_member_max only as a number, 0 for anything else, instead of failing the battle's start
 #                            - Picked a defeat scene of the troop for a guest who takes the battle over, even when it kept one of a former battle
 #                            - Read a player another game sent only with numbers for its seat, party_member_max, places and shares and a list for its HP and MP, dropping a field of another kind, logged once, and the player whose seat is no number
+#                            - Dropped an enemy of the host's troop whose id, place or mark is no number, logged once, instead of failing on every such troop
 #      Paulinchen  2026-10-11: Left the party members who said no to starting a battle with the player out of its invites, and took the party members' offers and answers about a battle outside the party
 #                            - Stretched the steps to the next random encounter by half once another player who would fight it stands within NEARBY_TILES, a party member in a Classic world, instead of once per member or by half a draw per player on the map, and invited only the players that near to a Raid World's battle, so players across a large map no longer keep each other from meeting enemies or pull each other into fights
 #                            - Opened the player's command phase while their own Frontline is down but their Backline may swap in, so they can still change the formation
@@ -200,6 +201,10 @@ module MGQ_MpBattlesCoop
   # fight's own values or the Labyrinth of Chaos's level set. The rates of experience, job
   # experience and gold (46, 49, 47) stay each player's own rewards.
   RATE_VARIABLES = [41, 42, 43, 44, 45, 48]
+
+  # The fields of an enemy the host names, see troop_entries, as a log of one of the wrong kind
+  # names them.
+  ENEMY_FIELDS = [:id, :x, :y, :mark]
 
   # A player of a co-op battle, or of a side of a team duel. The battle's messages carry a player
   # as their fields in this order.
@@ -1729,12 +1734,27 @@ module MGQ_MpBattlesCoop
     log("telling the guests the troop failed: #{e.class}: #{e.message}")
   end
 
+  # Keeps the enemies the host named whose id, screen x and y and mark are numbers, dropping each
+  # other one, logged once per field and kind.
+  #
+  # @param enemies [Array] The host's enemies, see troop_entries.
+  # @return [Array<Array>] The enemies that read.
+  def self.valid_enemies(enemies)
+    Array(enemies).select do |entry|
+      next dropped(:enemy, entry, "the host's") || false unless entry.is_a?(Array)
+
+      field, value = ENEMY_FIELDS.zip(entry).find { |_, item| !item.is_a?(Integer) }
+      field ? dropped(field, value, "the host's enemy") || false : true
+    end
+  end
+
   # As guest, fights the host's enemies in place of the player's own, which mods of either game
   # may have changed, such as one that doubles them: the host names every enemy by its place.
   #
   # @param scene [Scene_Battle] The battle.
   # @param enemies [Array<Array>] The host's enemies, see troop_entries.
   def self.take_troop(scene, enemies)
+    enemies = valid_enemies(enemies)
     return if enemies.empty?
     return log("the host's troop of #{enemies.size} enemies matches this game's own") if enemies == troop_entries
     unless enemies.all? { |id, *| $data_enemies[id.to_i] }
@@ -1863,14 +1883,14 @@ module MGQ_MpBattlesCoop
     order.is_a?(Array) && order.sort == (0...count).to_a ? order.dup : (0...count).to_a
   end
 
-  # Drops a field of a player another game sent that is of the wrong kind, logging it once per
-  # field and kind.
+  # Drops a field another game sent that is of the wrong kind, logging it once per field and kind.
   #
   # @param field [Symbol] The field's name.
   # @param value [Object] Its value.
+  # @param owner [String] Whose field it is, as the log names it.
   # @return [nil] Nothing, which stands for the field.
-  def self.dropped(field, value)
-    log_once([:dropped, field, value.class.name], "dropped a player's #{field} another game sent as #{value.class}")
+  def self.dropped(field, value, owner = "a player's")
+    log_once([:dropped, field, value.class.name], "dropped #{owner} #{field} another game sent as #{value.class}")
   end
 
   # Lists the battle's players, as form took them.
