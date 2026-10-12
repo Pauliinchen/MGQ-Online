@@ -2,7 +2,7 @@
 #  world_overview_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Checked the catch-up experience on the Levels page
+#      Paulinchen  2026-10-12: Checked the Quests page and the catch-up experience on the Levels page
 #                            - Checked that a refused overview hotkey is logged under the hotkeys, and not while the player types
 #                            - Checked that Part 2 starts at progress 19 and Part 3 at 34, with a route shown before the Great Decision
 #      Paulinchen  2026-10-11: Checked the Levels page of a Raid World, its rows drawn and its absence in a Classic world, and counted its tab among the tabs
@@ -104,7 +104,7 @@ class Bitmap
   def text_size(text); Rect.new(0, 0, text.to_s.size * @font.size / 2, @font.size); end
   def draw_text(x, y, width, height, text, align = 0); @drawn << [:text, text, @font.color, x, width, align]; end
   def fill_rect(*args); @drawn << [:fill, args]; end
-  def stretch_blt(*_); end
+  def stretch_blt(*args); @drawn << [:blt, args]; end
   def clear; @drawn.clear; end
   def dispose; @disposed = true; end
   def disposed?; @disposed ? true : false; end
@@ -460,7 +460,12 @@ check("Right turns to the World page, which in a Classic world tells the world's
       [:world, :world, [[:info, "World", "Test World"], [:info, "Type", "Classic"], [:info, "Difficulty", "Per player"], [:info, "Players", "#{online} / 8"]]])
 $buttons << :RIGHT
 overview.on_map
+check("Right turns on to the Quests page, in a Classic world too", overview.page, :quests)
+$buttons << :RIGHT
+overview.on_map
 check("past the last page it comes round to the first", overview.page, :players)
+$buttons << :LEFT
+overview.on_map
 $buttons << :LEFT
 overview.on_map
 check("and Left turns back", overview.page, :world)
@@ -479,7 +484,9 @@ $unlocks = [unlock.new(25, :story, "Part 1", nil, true, false), unlock.new(25, :
 $counted_level = 30
 $buttons << :RIGHT
 overview.on_map
-check("in a Raid World Right turns on to the Levels page: the level the catch-up counts, then under a heading per level what it hands out",
+$buttons << :RIGHT
+overview.on_map
+check("in a Raid World Right turns on past the Quests page to the Levels page: the level the catch-up counts, then under a heading per level what it hands out",
       [overview.page, overview.view[:lines]],
       [:levels, [[:info, "Your level", "30"], [:place, "Catch-up EXP"], [:info, "", "Starts once the world's story raises the level cap."],
                  [:place, "Level 25"], [:unlock, $unlocks[0]], [:unlock, $unlocks[1]], [:place, "Level 40"], [:unlock, $unlocks[2]]]])
@@ -505,7 +512,7 @@ $game_party.all_members = members
 $world_story = $world_story.reject { |key, _| key == "caps" }
 $raid = false
 overview.on_map
-check("a Classic world has no Levels page, which turns back to the Players page", [overview.page, overview.pages.map(&:first)], [:players, [:players, :world]])
+check("a Classic world has no Levels page, which turns back to the Players page", [overview.page, overview.pages.map(&:first)], [:players, [:players, :world, :quests]])
 $raid = true
 overview.turn_to(:world, "the test")
 overview.on_map
@@ -583,6 +590,211 @@ objective.call(10)
 rows = overview.world_lines(1).select { |kind, label, _| kind == :info && (label == "Objective" || label == "") }
 check("a long one over several lines", [rows.size > 1, rows.map { |_, label, _| label }.uniq, rows.map(&:last).join(" ")],
       [true, ["Objective", ""], ("Cross " + "the eastern mountains " * 6).strip])
+
+# The Quests page: the main quest, Amira's side quests and the board's companion quests.
+mark = lambda { |indent| command.call(122, indent, overview::QUEST_COUNT, overview::QUEST_COUNT, 0, 0, 1) }
+main = message.call(0, "\\n<Amira>", "Let's see, your current primary objective is...") +
+       [command.call(111, 0, 1, 1001, 0, 10, 0)] + message.call(1, "\\n<Amira>Cross the mountains.") + message.call(1, "\\n<Amira>Buy golden equipment.") + [command.call(412, 0)] +
+       [command.call(111, 0, 1, 1143, 0, 20, 2), command.call(117, 1, 131), command.call(115, 1), command.call(412, 0)]
+sides = message.call(0, "\\n<Amira>I have some other information.") +
+        [command.call(111, 0, 0, 2018, 1), mark.call(1)] + message.call(1, "\\n<Amira>Strange crying near Iliasville.") + [command.call(412, 0)] +
+        [command.call(111, 0, 1, 1004, 0, 0, 0), mark.call(1)] + message.call(1, "\\n<Amira>A troublesome job.") +
+        [command.call(111, 1, 0, 6, 0)] + message.call(2, "\\n<Sonya>She sounds scary.") + [command.call(411, 1)] + message.call(2, "\\n<Luka>So she sells them.") + [command.call(412, 1)] +
+        message.call(1, "\\n<Amira>Go to the slums.") + [command.call(412, 0)] +
+        [command.call(111, 0, 8, 151), command.call(411, 0), mark.call(1)] + message.call(1, "\\n<Amira>Iron ore in the Pornof mines.") + [command.call(412, 0)] +
+        [command.call(111, 0, 1, 1009, 0, 3, 1), mark.call(1)] + message.call(1, "\\n<Amira>The engineer wants makina.") + [command.call(412, 0)] +
+        [command.call(111, 0, 0, 2040, 0), mark.call(1)] + message.call(1, "\\n<Amira>A door in a solid wall.") + [command.call(412, 0)]
+board = message.call(0, "It seems your companions have written a variety of messages on this bulletin board.") +
+        [command.call(111, 0, 0, 1056, 0), mark.call(1), command.call(111, 1, 1, 1041, 0, 0, 0)] + message.call(2, "\\n<Rami>Take me to Harpy Village♪") + [command.call(412, 1), command.call(412, 0)] +
+        [command.call(111, 0, 12, "actor_class_level_over?(1, 151, 10)"), mark.call(1)] + message.call(1, "\\n<Kamuro>Homework.") + [command.call(412, 0)] +
+        [command.call(111, 0, 12, "$game_switches[1] = true"), mark.call(1)] + message.call(1, "\\n<Gigi>Never.") + [command.call(412, 0)] +
+        [command.call(111, 0, 0, 1060, 0), mark.call(1)] + message.call(1, "【ポチ】", "犬に会いたい") + [command.call(412, 0)]
+BoardPage = Struct.new(:list)
+BoardEvent = Struct.new(:pages)
+BoardMap = Struct.new(:events)
+$board_loads = 0
+Object.send(:define_method, :load_data) do |path|
+  $board_loads += 1
+  raise "unexpected #{path}" unless path == "Data/Map228.rvdata2"
+
+  BoardMap.new({ overview::BOARD_EVENT => BoardEvent.new([BoardPage.new(board)]) })
+end
+class Game_Interpreter
+  def actor_class_level_over?(actor, job, level); $class_levels && [actor, job, level] == [1, 151, 10]; end
+end
+overview.instance_variable_set(:@board_list, nil)
+$data_items = []
+$data_items[151] = :iron_ore
+$held_items = []
+$class_levels = true
+def $game_party.has_item?(item); $held_items.include?(item); end
+$data_common_events = []
+$data_common_events[overview::OBJECTIVE_EVENT] = ObjectiveEvent.new(main)
+$data_common_events[131] = ObjectiveEvent.new(sides)
+$data_common_events[135] = ObjectiveEvent.new([mark.call(0)] + message.call(0, "\\n<Amira>Chaos errands."))
+$game_variables[1001] = 10
+$game_variables[1004] = 0
+$game_variables[1009] = 3
+$game_variables[1041] = 0
+$game_variables[1143] = 0
+[2018, 2040].each { |id| $game_switches[id] = false }
+[6, 1056, 1060].each { |id| $game_switches[id] = true }
+check("the main quest is every message of Amira's objective, her side quests left out",
+      overview.main_quest.to_a, [:main, "Amira", ["Cross the mountains.", "Buy golden equipment."], nil, nil])
+check("and the objective skips her side quests too, so a step without one of its own shows none",
+      [overview.first_message(main, 0), ($game_variables[1001] = 12; overview.first_message(main, 0))], ["Cross the mountains.", nil])
+$game_variables[1001] = 10
+texts = lambda { |quests| quests.map { |quest| quest.texts.join(" ") } }
+check("the side quests are the entries Amira tells now, each in her words alone, her network counting",
+      texts.call(overview.side_quests), ["Strange crying near Iliasville.", "A troublesome job. Go to the slums.", "Iron ore in the Pornof mines.", "The engineer wants makina."])
+check("each numbered, each message kept apart", overview.side_quests[1].to_a, [:side, "Amira", ["A troublesome job.", "Go to the slums."], 2, nil])
+$held_items = [:iron_ore]
+$game_variables[1009] = 2
+check("an item held or a network not yet grown leaves its entry out", texts.call(overview.side_quests), ["Strange crying near Iliasville.", "A troublesome job. Go to the slums."])
+$game_variables[1143] = 21
+check("from the Chaos route's step 21 Amira's second list counts", texts.call(overview.side_quests), ["Chaos errands."])
+$game_variables[1143] = 0
+check("the companion quests are the board's entries by their companion, a check of the game's own counting and any other script not",
+      overview.companion_quests.map { |quest| [quest.kind, quest.speaker, quest.texts, quest.number] },
+      [[:companion, "Rami", ["Take me to Harpy Village♪"], nil], [:companion, "Kamuro", ["Homework."], nil], [:companion, "ポチ", ["犬に会いたい"], nil]])
+overview.companion_quests
+check("the board's map is read once a session", $board_loads, 1)
+LooksActor = Struct.new(:id, :name, :character_name, :character_index, :face_name, :face_index)
+$data_actors = [nil, LooksActor.new(1, "Luka", "Main01_cip", 0, "luka_fc", 0), LooksActor.new(56, "Rami", "Evil01_cip", 5, "rami_fc", 1),
+                LooksActor.new(57, "Rami", "Evil02_cip", 2, "rami_fc", 2), LooksActor.new(103, "Kamuro", "", 0, "kamuro_fc", 0),
+                LooksActor.new(104, "Kamuro", "Beast03_cip", 7, "kamuro_fc", 3)]
+overview.instance_variable_set(:@looks_by_name, nil)
+party_members = $game_party.all_members
+$game_party.all_members = [LooksActor.new(57, "Rami", "Evil02_cip", 2, "rami_fc", 2)]
+check("a companion quest knows how its companion looks: the party's of that name first, else the first with a map sprite, none for a name without a character",
+      [overview.looks_of("Rami").to_a, overview.looks_of("Kamuro").to_a, overview.looks_of("ポチ"), overview.looks_of(nil)],
+      [["Evil02_cip", 2, "rami_fc", 2], ["Beast03_cip", 7, "kamuro_fc", 3], nil, nil])
+$game_party.all_members = []
+check("without one in the party the game's first of that name", overview.looks_of("Rami").to_a, ["Evil01_cip", 5, "rami_fc", 1])
+$game_party.all_members = party_members
+check("the side quests and the main quest have no portrait of their own", [overview.side_quests[0].looks, overview.main_quest.looks], [nil, nil])
+check("the portraits are sprites until the player picks faces, which Player.ini keeps",
+      [overview.portraits, (overview.choose_portraits("Faces"); overview.portraits), $player_ini["quest_portraits"], (overview.choose_portraits("Bogus"); overview.portraits)],
+      ["Sprites", "Faces", "Faces", "Sprites"])
+check("a quest shows its first sentence, past abbreviations, Japanese too, and the whole text without an end",
+      ["Head south. Then east.", "Climb Mt. Saint Amos. Then rest.", "Wait... what? No.", "犬に会いたい。猫も。", "No end here"].map { |text| overview.first_sentence(text) },
+      ["Head south.", "Climb Mt. Saint Amos.", "Wait...", "犬に会いたい。", "No end here"])
+check("the reading pane titles a quest with its kind and who tells it", [overview.main_quest.title, overview.side_quests[1].title, overview.companion_quests[0].title],
+      ["Main quest · Amira", "Side quest 2 · Amira", "Request · Rami"])
+$frame = $frame.to_i + overview::READ_FRAMES
+data = overview.quests
+check("the list heads the side and companion quests with how many each holds, the main quest first among those to pick",
+      [data[:rows].map { |kind, value| kind == :quest ? [kind, value.first] : [kind, value] }, data[:picks].map(&:first)],
+      [[[:head, "Side quests (2)"], [:quest, "Strange crying near Iliasville."], [:quest, "A troublesome job."],
+        [:head, "Companion quests (3)"], [:quest, "Take me to Harpy Village♪"], [:quest, "Homework."], [:quest, "犬に会いたい"]],
+       ["Cross the mountains.", "Strange crying near Iliasville.", "A troublesome job.", "Take me to Harpy Village♪", "Homework.", "犬に会いたい"]])
+check("a quest's row in the list, none for the main quest", [0, 1, 2, 3].map { |pick| Sprite_MpWorldOverview.quest_row(data, pick) }, [nil, 1, 2, 4])
+
+# Picking a quest and reading it.
+$raid = true
+overview.turn_to(:quests, "the test")
+overview.on_map
+check("the Quests page opens on the main quest", [overview.page, overview.view[:pick]], [:quests, 0])
+$buttons << :DOWN
+overview.on_map
+$buttons << :DOWN
+overview.on_map
+check("Down picks the next quest", overview.view[:pick], 2)
+$buttons << :UP
+overview.on_map
+$buttons << :UP
+overview.on_map
+$buttons << :UP
+overview.on_map
+check("and Up past the first comes round to the last", overview.view[:pick], 5)
+quest_box = Sprite_MpWorldOverview.box
+layout = Sprite_MpWorldOverview.quest_layout(quest_box.width, quest_box.height)
+$mouse = [quest_box.x + Sprite_MpWorldOverview::MARGIN + 20, quest_box.y + layout[:body_y] + 2 * Sprite_MpWorldOverview::ROW + 5]
+$click = true
+overview.on_map
+check("a click on a quest in the list picks it", overview.view[:pick], 2)
+$mouse = [quest_box.x + layout[:text_x] + 20, quest_box.y + layout[:head_y] + 10]
+$click = true
+overview.on_map
+check("and a click on the main quest at the top picks that", overview.view[:pick], 0)
+$mouse = nil
+quest_drawing = Sprite_MpWorldOverview.allocate
+quest_drawing.bitmap = Bitmap.new(quest_box.width, quest_box.height)
+quest_drawing.draw(overview.view)
+check("the page draws the main quest's first sentence at the top, the list's first sentences cut to their room, and the picked quest's whole text",
+      ["Main quest", "Cross the mountains.", "Side quests (2)", "Strange crying near Iliasville.", "Rami", "Take me to Harpy Village♪", "Main quest · Amira", "Buy golden equipment."]
+        .map { |text| quest_drawing.bitmap.texts.any? { |drawn| drawn.to_s.start_with?(text[0, 12]) } }, [true] * 8)
+$portraits_drawn = []
+$portrait_fills = []
+class Sprite_MpLeaderHud < Sprite
+  def self.draw_figure(_bitmap, name, index, x, y, side, fill); $portraits_drawn << [:sprite, name, index, x, y, side]; $portrait_fills << fill; end
+  def self.draw_face(_bitmap, name, index, x, y, side, fill); $portraits_drawn << [:face, name, index, x, y, side]; $portrait_fills << fill; end
+end
+$data_actors[540] = LooksActor.new(540, "Amira", "Civlian01_cip", 0, "amira_fc1", 0)
+$data_actors[56] = LooksActor.new(56, "Rami", "Evil01_cip", 5, "rami_fc", 1)
+overview.instance_variable_set(:@looks_by_name, nil)
+$frame = $frame.to_i + overview::READ_FRAMES
+overview.quests
+overview.pick_quest(3)
+quest_drawing.bitmap.clear
+quest_drawing.draw(overview.view)
+pane = Sprite_MpWorldOverview.quest_layout(quest_box.width, quest_box.height)
+check("Amira shows at the top left and the companion asking for help at the top of the reading pane, as sprites",
+      $portraits_drawn, [[:sprite, "Civlian01_cip", 0, Sprite_MpWorldOverview::MARGIN, pane[:head_y], Sprite_MpWorldOverview::PORTRAIT],
+                         [:sprite, "Evil01_cip", 5, pane[:pane_x], pane[:body_y], Sprite_MpWorldOverview::PANE_PORTRAIT]])
+check("the title stands beside the companion's portrait and the text starts under it",
+      [quest_drawing.bitmap.drawn.find { |kind, text| kind == :text && text == "Request · Rami" }[3], Sprite_MpWorldOverview.pane_head(overview.view[:quests][:picks][3])],
+      [pane[:pane_x] + Sprite_MpWorldOverview::PANE_PORTRAIT + Sprite_MpWorldOverview::QUEST_GAP, Sprite_MpWorldOverview::PANE_PORTRAIT + MGQ_MpUi::Style::GAP])
+overview.choose_portraits("Faces")
+$portraits_drawn.clear
+quest_drawing.draw(overview.view)
+check("with faces picked they show by their faces", $portraits_drawn.map { |kind, name, index, _| [kind, name, index] }, [[:face, "amira_fc1", 0], [:face, "rami_fc", 1]])
+check("every portrait stands on the box's background", $portrait_fills.all? { |fill| fill.equal?(MGQ_MpUi::Style::BACK) } && $portrait_fills.size == 4, true)
+overview.choose_portraits("Sprites")
+measured = 0
+quest_drawing.bitmap.define_singleton_method(:text_size) { |text| measured += 1; Rect.new(0, 0, text.to_s.size * font.size / 2, font.size) }
+Sprite_MpWorldOverview.instance_variable_set(:@fitted, nil)
+quest_drawing.draw(overview.view)
+first_draw = measured
+measured = 0
+quest_drawing.draw(overview.view)
+check("drawing the page again measures far less, as the fitted texts are kept", measured * 4 < first_draw, true)
+$frame = $frame.to_i + overview::READ_FRAMES
+kept = overview.quests
+$frame = $frame.to_i + overview::READ_FRAMES
+check("the same quests read again stay the same objects", overview.quests.equal?(kept), true)
+long = overview::Quest.new(:side, "Amira", ["Word " * 400], 9)
+overview.instance_variable_get(:@quests)[:picks] << long
+overview.pick_quest(6)
+$buttons << :R
+overview.on_map
+check("Page Down reads on in a long quest, and Page Up back", [overview.view[:pane_scroll] > 0, ($buttons << :L; overview.on_map; overview.view[:pane_scroll])], [true, 0])
+overview.instance_variable_get(:@quests)[:picks].pop
+overview.pick_quest(0)
+[1056, 1060].each { |id| $game_switches[id] = false }
+$game_variables[1001] = 12
+$game_variables[1004] = 1
+$game_switches[2018] = true
+$class_levels = false
+$frame = $frame.to_i + overview::READ_FRAMES
+data = overview.quests
+check("with nothing to tell the main quest is gone and each list says so",
+      [data[:main], data[:rows].select { |kind, _| kind == :none }.map(&:last), data[:picks]], [nil, ["None right now."] * 2, []])
+overview.turn_to(:world, "the test")
+quest_sprite = Sprite_MpWorldOverview.allocate
+quest_sprite.bitmap = Bitmap.new(560, 404)
+quest_sprite.draw_backdrop
+check("without Amira's Library picture the page draws none", quest_sprite.bitmap.drawn.none? { |kind, _| kind == :blt }, true)
+module NWConst; module Library; ACTOR_IMAGE = { 540 => ["Graphics/Pictures/", "80_amira_st01", 0, 0, -20, 0.9] }; end; end
+def Cache.load_bitmap(folder, name); $loaded_picture = [folder, name]; Bitmap.new(640, 480); end
+overview.instance_variable_set(:@backdrop_missing, nil)
+quest_sprite.draw_backdrop
+blt = quest_sprite.bitmap.drawn.find { |kind, _| kind == :blt }
+room = 404 - Sprite_MpWorldOverview::LIST_TOP - Sprite_MpWorldOverview::HINT_HEIGHT - Sprite_MpWorldOverview::MARGIN
+check("Amira's Library picture shows faintly behind the Quests page, as tall as the room under the tabs, at the right",
+      [$loaded_picture, blt && blt[1][0].height, blt && blt[1][0].x + blt[1][0].width, blt && blt[1][3]],
+      [["Graphics/Pictures/", "80_amira_st01"], room, 560 - Sprite_MpWorldOverview::MARGIN, overview::BACKDROP_OPACITY])
+$frame = $frame.to_i + overview::READ_FRAMES
 $data_common_events = nil
 objective.call(5)
 check("without Amira's event the page shows no objective", overview.world_lines(1).any? { |_, label, _| label == "Objective" }, false)
@@ -634,7 +846,7 @@ overview.on_map
 check("and a click on the World tab to the World page, where a cancel held with the click does not reach the page left", [overview.page, overview.open?], [:world, true])
 $buttons.clear
 check("the room between the tabs and the room past them is no tab",
-      [Sprite_MpWorldOverview.tab_at(box.x + Sprite_MpWorldOverview::MARGIN + Sprite_MpWorldOverview::TAB_WIDTH + 1, tab_y), Sprite_MpWorldOverview.tab_at(box.x + Sprite_MpWorldOverview::MARGIN + 3 * tab_step, tab_y)], [nil, nil])
+      [Sprite_MpWorldOverview.tab_at(box.x + Sprite_MpWorldOverview::MARGIN + Sprite_MpWorldOverview::TAB_WIDTH + 1, tab_y), Sprite_MpWorldOverview.tab_at(box.x + Sprite_MpWorldOverview::MARGIN + 4 * tab_step, tab_y)], [nil, nil])
 $mouse = nil
 
 # The picture: the title with the world's type and difficulty before the party, the tabs, the
@@ -685,7 +897,7 @@ end
 place_box.call(nil)
 check("the overview is a box the player moves and resizes both ways, never smaller than what its columns, tabs, lines and menu need",
       [layout.instance_variable_get(:@boxes)[:overview].to_a, [sprite_class::PLAYERS_WIDTH, sprite_class::WORLD_WIDTH, sprite_class::TABS_WIDTH]],
-      [["World overview", 560, 166, :both], [560, 560, 324]])
+      [["World overview", 560, 166, :both], [560, 560, 332]])
 check("it starts at the list box's place with its lines", [sprite_class.box.to_a, sprite_class.list_rows], [[40, 32, 560, 404], 13])
 place_box.call("20,150,600,300")
 check("a placement Player.ini keeps is honoured, the lines following its height", [sprite_class.box.to_a, sprite_class.list_rows], [[20, 150, 600, 300], 9])
@@ -754,7 +966,7 @@ fills = overview_sprite.bitmap.drawn.select { |kind, _| kind == :fill }.map { |_
 tab_fills = fills.select { |args| args[1] == sprite_class::TITLE && args[2] == sprite_class::TAB_WIDTH }.map { |args| args[4] }
 check("the box is framed in the preset's colors, the page shown on the picked tab and the others, the Levels page of a Raid World too, on the tab color",
       [fills.first, fills.count { |args| args[4].equal?(style::EDGE) } >= 4, fills.any? { |args| args[4].equal?(style::RIM) }, tab_fills.map { |color| [color.equal?(style::PICKED), color.equal?(style::TAB)] }],
-      [[0, 0, 610, 320, style::BACK], true, true, [[false, true], [true, false], [false, true]]])
+      [[0, 0, 610, 320, style::BACK], true, true, [[false, true], [true, false], [false, true], [false, true]]])
 check("the world's name in the title color", overview_sprite.bitmap.drawn.find { |kind, text, _| kind == :text && text.start_with?("Test World") }[2].equal?(style::TITLE), true)
 MGQ_MpUi::Theme.apply("Legacy", "the test")
 overview_sprite.dispose
@@ -782,7 +994,7 @@ overview.on_map
 narrow.draw(overview.view)
 check("narrowest, the World page draws the title, every tab, its first lines and the whole hint smaller",
       [narrow.bitmap.texts, narrow.bitmap.font.size, inside_box.call(narrow.bitmap)],
-      [["Party 2 / 4", "Test World | Raid | Hard", "Players", "World", "Levels", "World", "Test World", "Type", "Raid", "Difficulty", "Hard",
+      [["Party 2 / 4", "Test World | Raid | Hard", "Players", "World", "Quests", "Levels", "World", "Test World", "Type", "Raid", "Difficulty", "Hard",
         "Left or right: page   Up or down: scroll   Esc, Numpad 0 or F11: close"], style::TINY_SIZE, true])
 narrow.bitmap.clear
 narrow.draw_boss(boss_named.call("Queen Harpy"), 0)

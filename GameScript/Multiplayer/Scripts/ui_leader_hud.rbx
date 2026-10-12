@@ -2,7 +2,8 @@
 #  ui_leader_hud.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Held the Small HUD to its own least size at the edges of the screen instead of the Large one's
+#      Paulinchen  2026-10-12: Let other boxes draw a face or a map sprite as the HUD does
+#                            - Held the Small HUD to its own least size at the edges of the screen instead of the Large one's
 #                            - Logged a refused hotkey through MGQ_MpHotkeys.log_refusal, not while the player types
 #                            - Read the map's viewport through MGQ_MpGame
 #                            - Created
@@ -390,31 +391,55 @@ class Sprite_MpLeaderHud < Sprite
   # @param y [Integer] The square's top.
   # @param side [Integer] The square's side.
   def draw_face(actor, x, y, side)
-    bitmap.fill_rect(x, y, side, side, MGQ_MpUi::Style::FIELD)
-    unless actor.face_name.to_s.empty?
-      index = actor.face_index.to_i
+    Sprite_MpLeaderHud.draw_face(bitmap, actor.face_name.to_s, actor.face_index.to_i, x, y, side)
+  end
+
+  # Draws a face shrunk into a square, framed by the preset's edge.
+  #
+  # @param bitmap [Bitmap] Where it draws.
+  # @param name [String] The face sheet's file name; empty for none.
+  # @param index [Integer] The face's place in the sheet.
+  # @param x [Integer] The square's left.
+  # @param y [Integer] The square's top.
+  # @param side [Integer] The square's side.
+  # @param fill [Color] The square's background.
+  def self.draw_face(bitmap, name, index, x, y, side, fill = MGQ_MpUi::Style::FIELD)
+    bitmap.fill_rect(x, y, side, side, fill)
+    unless name.empty?
       source = Rect.new(index % FACES_PER_ROW * FACE_SIDE, index / FACES_PER_ROW * FACE_SIDE, FACE_SIDE, FACE_SIDE)
-      bitmap.stretch_blt(Rect.new(x, y, side, side), Cache.face(actor.face_name), source)
+      bitmap.stretch_blt(Rect.new(x, y, side, side), Cache.face(name), source)
     end
     MGQ_MpUi::Style.draw_line_box(bitmap, x, y, side, side, MGQ_MpUi::Style::EDGE)
   end
 
   # Draws a character's map sprite, standing and facing down, in a square framed by the preset's
-  # edge: the figure the frame draws, past the frame's empty room, grown by the largest whole
-  # multiple that fits so its pixels stay sharp, or shrunk when larger than the square, centered
-  # and standing on the square's bottom.
+  # edge (see Sprite_MpLeaderHud.draw_figure).
   #
   # @param actor [Game_Actor] The character.
   # @param x [Integer] The square's left.
   # @param y [Integer] The square's top.
   # @param side [Integer] The square's side.
   def draw_figure(actor, x, y, side)
-    bitmap.fill_rect(x, y, side, side, MGQ_MpUi::Style::FIELD)
-    name = actor.character_name.to_s
+    Sprite_MpLeaderHud.draw_figure(bitmap, actor.character_name.to_s, actor.character_index.to_i, x, y, side)
+  end
+
+  # Draws a map sprite, standing and facing down, in a square framed by the preset's edge: the
+  # figure the frame draws, past the frame's empty room, grown by the largest whole multiple that
+  # fits so its pixels stay sharp, or shrunk when larger than the square, centered and standing on
+  # the square's bottom.
+  #
+  # @param bitmap [Bitmap] Where it draws.
+  # @param name [String] The sprite sheet's file name; empty for none.
+  # @param index [Integer] The character's place in the sheet.
+  # @param x [Integer] The square's left.
+  # @param y [Integer] The square's top.
+  # @param side [Integer] The square's side.
+  # @param fill [Color] The square's background.
+  def self.draw_figure(bitmap, name, index, x, y, side, fill = MGQ_MpUi::Style::FIELD)
+    bitmap.fill_rect(x, y, side, side, fill)
     unless name.empty?
       sheet = Cache.character(name)
-      index = actor.character_index.to_i
-      figure = Sprite_MpLeaderHud.figure(sheet, frame_rect(sheet, name, index), [name, index])
+      figure = figure(sheet, frame_rect(sheet, name, index), [name, index])
       scale = [side.to_f / figure.width, side.to_f / figure.height].min
       scale = scale.floor if scale >= 1
       width = (figure.width * scale).round
@@ -430,7 +455,7 @@ class Sprite_MpLeaderHud < Sprite
   # @param name [String] Its file name, whose $ marks a sheet of one character.
   # @param index [Integer] The character's place in a sheet of eight.
   # @return [Rect] The frame.
-  def frame_rect(sheet, name, index)
+  def self.frame_rect(sheet, name, index)
     single = name[/\A[!$]./].to_s.include?("$")
     width = sheet.width / (single ? WALK_FRAMES : WALK_FRAMES * CHARACTERS_PER_ROW)
     height = sheet.height / (single ? DIRECTIONS : DIRECTIONS * 2)
