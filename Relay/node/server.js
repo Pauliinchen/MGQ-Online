@@ -2,7 +2,8 @@
 //  server.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-12: Dropped the body of a bug report refused before it is read, and cut a report body still arriving after 60 seconds
+//      Paulinchen  2026-10-12: Turned away games older than 0.6.0, which send no X-MGQ-Features header, and games whose X-MGQ-Version is older than the MIN_VERSION environment variable, with 426 before routing their requests
+//                            - Dropped the body of a bug report refused before it is read, and cut a report body still arriving after 60 seconds
 //                            - Kept each trade's sealed offers in memory beside the trade
 //      Paulinchen  2026-10-11: Took the bug reports games send and handed them to GitHub with the GITHUB_ISSUES_TOKEN and GITHUB_BUG_FILES_TOKEN environment variables
 //      Paulinchen  2026-10-10: Passed what a game names in the X-MGQ-Features header on to the directory's public routes too, for a development build's Raid World starting save
@@ -45,6 +46,7 @@ import { pathToFileURL } from "node:url";
 import { WebSocketServer } from "ws";
 import { BOSS_LIMITS, WorldBosses, bossRouteOf, bossText, handleBossRequest } from "../core/bosses.js";
 import { Directory, WORLD_TYPE, difficultyText, handleDirectoryRequest, modsRuleText, parseAdmins } from "../core/directory.js";
+import { DEFAULT_MIN_VERSION, DRAIN_LIMITS, VERSION_HEADER, updateRefusal } from "../core/gate.js";
 import { routeIs } from "../core/http.js";
 import { ModCatalog, handleModRequest } from "../core/mods.js";
 import { handleRaidAdminRequest, raidAdminRouteOf } from "../core/raid_admin.js";
@@ -422,13 +424,14 @@ function headerOf(request, name) {
 /**
  * Creates a relay server, not yet listening.
  *
- * @param {{limits?: typeof LIMITS, clock?: () => number, checkEveryMs?: number, sweepEveryMs?: number, directory?: Directory, mods?: ModCatalog, trades?: TradeBook, stories?: (id: string) => import("../core/story.js").StoryStore, storyLimits?: typeof STORY_LIMITS, bosses?: (id: string) => import("../core/bosses.js").BossStore, bossLimits?: typeof BOSS_LIMITS, log?: typeof consoleLog, reports?: ReportDesk}} [options] Limits, clock, check and sweep intervals, directory, mod catalog, trades, the Raid Worlds' story stores, the stories' limits, the Raid Worlds' boss pool stores, the pools' limits, log and the bug report desk, off unless given, which tests change.
+ * @param {{limits?: typeof LIMITS, clock?: () => number, checkEveryMs?: number, sweepEveryMs?: number, directory?: Directory, mods?: ModCatalog, trades?: TradeBook, stories?: (id: string) => import("../core/story.js").StoryStore, storyLimits?: typeof STORY_LIMITS, bosses?: (id: string) => import("../core/bosses.js").BossStore, bossLimits?: typeof BOSS_LIMITS, log?: typeof consoleLog, reports?: ReportDesk, minVersion?: string}} [options] Limits, clock, check and sweep intervals, directory, mod catalog, trades, the Raid Worlds' story stores, the stories' limits, the Raid Worlds' boss pool stores, the pools' limits, log, the bug report desk, off unless given, and the lowest game version served, DEFAULT_MIN_VERSION unless given, which tests change.
  * @returns {{server: http.Server, directory: Directory, mods: ModCatalog, trades: TradeBook, storyOf: (id: string) => WorldStory, bossesOf: (id: string) => WorldBosses, check: () => void, sweep: () => Promise<void>, stop: () => Promise<void>}} The HTTP server to listen with, what it serves, a world's story, a world's boss pools, a look at the deadlines, a sweep of what is kept too long, and a way to stop everything.
  */
 export function createRelay({
   limits = LIMITS, clock = Date.now, checkEveryMs = CHECK_EVERY_MS, sweepEveryMs = SWEEP_EVERY_MS, directory = new Directory(memoryStore(), { clock }),
   mods = new ModCatalog(memoryModStore(), { clock }), trades = new TradeBook(memoryTradeStore(), (id) => directory.store.get(id), { clock }), stories = memoryStoryStores(),
   storyLimits = STORY_LIMITS, bosses = memoryBossStores(), bossLimits = BOSS_LIMITS, log = consoleLog, reports = new ReportDesk(reportSettingsOf({}), { clock, log: stamped(log) }),
+  minVersion = DEFAULT_MIN_VERSION,
 } = {}) {
   /** @type {Map<string, WorldStory>} */
   const worldStories = new Map();
@@ -472,6 +475,13 @@ export function createRelay({
       logged(101);
       seat(webSocket);
     });
+    const outdated = updateRefusal(new URL(request.url, "http://relay"), headerOf(request, FEATURES_HEADER), headerOf(request, VERSION_HEADER), minVersion);
+
+    if (outdated) {
+      turnAway(outdated.status, outdated.reason, outdated.reason);
+      return;
+    }
+
     const route = parseRoute(new URL(request.url, "http://relay"), headerOf(request, PLAYER_HEADER), headerOf(request, AUTH_HEADER));
 
     if ("error" in route) {
@@ -528,6 +538,13 @@ export function createRelay({
    */
   async function answerDirectory(request, response) {
     const url = new URL(request.url, "http://relay");
+    const outdated = updateRefusal(url, headerOf(request, FEATURES_HEADER), headerOf(request, VERSION_HEADER), minVersion);
+
+    if (outdated) {
+      await refuseOutdated(request, response, outdated);
+      return;
+    }
+
     const storyRoute = storyRouteOf(url);
     const bossRoute = bossRouteOf(url);
     const adminRoute = raidAdminRouteOf(url);
@@ -596,6 +613,28 @@ export function createRelay({
 
     response.writeHead(answer.status, { "Content-Type": "application/json" });
     response.end(JSON.stringify(answer.body));
+  }
+
+  /**
+   * Turns a game too old for the relay away: a room's or a world room's path with the reason as
+   * text and in REFUSAL_HEADER, as a refused WebSocket, any other request with JSON once its body
+   * is read and dropped, so the refusal reaches a game still sending it.
+   *
+   * @param {http.IncomingMessage} request The request.
+   * @param {http.ServerResponse} response The response.
+   * @param {{status: number, reason: string, socket: boolean}} refusal The refusal, see updateRefusal.
+   * @returns {Promise<void>} Completes once answered.
+   */
+  async function refuseOutdated(request, response, refusal) {
+    if (refusal.socket) {
+      response.writeHead(refusal.status, { "Content-Type": "text/plain", [REFUSAL_HEADER]: refusal.reason });
+      response.end(refusal.reason);
+      return;
+    }
+
+    await drain(request, DRAIN_LIMITS.maxBytes, AbortSignal.timeout(DRAIN_LIMITS.readMs));
+    response.writeHead(refusal.status, { "Content-Type": "application/json" });
+    response.end(JSON.stringify({ error: refusal.reason }));
   }
 
   /**
@@ -1094,7 +1133,7 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   const mods = new ModCatalog(stores.mods, { admins });
   const trades = new TradeBook(stores.trades, (id) => directory.store.get(id));
   const reports = new ReportDesk(reportSettingsOf(process.env), { log: stamped(consoleLog) });
-  const relay = createRelay({ directory, mods, trades, stories: stores.stories, bosses: stores.bosses, reports });
+  const relay = createRelay({ directory, mods, trades, stories: stores.stories, bosses: stores.bosses, reports, minVersion: process.env.MIN_VERSION });
 
   relay.server.listen(port, host, () => console.log(`${new Date().toISOString()} relay listening on ${host}:${port}, ${database ? `database ${database}` : "everything in memory"}`));
 

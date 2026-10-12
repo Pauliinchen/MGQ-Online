@@ -2,7 +2,8 @@
 //  worker.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-12: Tested that the reports object answers a report busy while it handles another, once it read the busy report body to its end
+//      Paulinchen  2026-10-12: Tested that the Worker turns a game without X-MGQ-Features or below MIN_VERSION away with 426 before routing it, a WebSocket with the reason in X-MGQ-Refusal and a body read to its end first
+//                            - Tested that the reports object answers a report busy while it handles another, once it read the busy report body to its end
 //                            - Tested that a trade's sealed offers lie beside it, out of the list of trades, and go once it is cancelled
 //                            - Tested the directory's streamed downloads and their limit, a body without Content-Length read only up to its limit, and removals of more keys than storage deletes at once
 //                            - Tested that a game or peer the relay closed passes nothing on while its connection closes
@@ -18,7 +19,8 @@ import assert from "node:assert/strict";
 import { registerHooks } from "node:module";
 import { DOWNLOAD_LIMITS, concatBytes } from "../core/bodies.js";
 import { playerIdOf, sha256Hex } from "../core/directory.js";
-import { AUTH_HEADER, CHAT_LIMITS, CHAT_SLOW, CLOSE, EVERYONE, LIMITS, PAIRED, PLAYER_HEADER, REPLACED } from "../core/relay.js";
+import { UPDATE_NEEDED, VERSION_HEADER } from "../core/gate.js";
+import { AUTH_HEADER, CHAT_LIMITS, CHAT_SLOW, CLOSE, EVERYONE, FEATURES_HEADER, LIMITS, PAIRED, PLAYER_HEADER, REFUSAL_HEADER, REPLACED } from "../core/relay.js";
 import { STORY_LIMITS } from "../core/story.js";
 
 // The Worker's platform module exists on Cloudflare only.
@@ -636,10 +638,10 @@ test("the Worker refuses a story write whose Content-Length is too long before r
   let pulled = false;
   const unread = new ReadableStream({ pull: (controller) => ((pulled = true), controller.close()) }, { highWaterMark: 0 });
 
-  const declared = await worker.fetch(new Request(url, { method: "POST", headers: { "Content-Length": String(STORY_LIMITS.maxBodyLength + 1) }, body: unread, duplex: "half" }), env);
+  const declared = await worker.fetch(new Request(url, { method: "POST", headers: { [FEATURES_HEADER]: "raid", "Content-Length": String(STORY_LIMITS.maxBodyLength + 1) }, body: unread, duplex: "half" }), env);
   assert.deepEqual([declared.status, pulled, forwarded.length], [413, false, 0], "refused unread");
 
-  const chunked = (text) => new Request(url, { method: "POST", body: new ReadableStream({ start: (controller) => (controller.enqueue(new TextEncoder().encode(text)), controller.close()) }), duplex: "half" });
+  const chunked = (text) => new Request(url, { method: "POST", headers: { [FEATURES_HEADER]: "raid" }, body: new ReadableStream({ start: (controller) => (controller.enqueue(new TextEncoder().encode(text)), controller.close()) }), duplex: "half" });
   assert.equal((await worker.fetch(chunked("x".repeat(STORY_LIMITS.maxBodyLength + 1)), env)).status, 413, "a body without the header is read to tell");
   assert.equal((await worker.fetch(chunked("{}"), env)).status, 200);
   assert.deepEqual(forwarded, ["{}"], "a body short enough is forwarded whole");
@@ -650,7 +652,7 @@ test("the Worker sends bug reports to an object of their own, never to the world
   const answering = (name) => namespace((id) => ({ fetch: async () => (reached.push(`${name}:${id}`), new Response("{}")) }));
   const env = { DIRECTORY: answering("directory"), REPORTS: answering("reports") };
 
-  await worker.fetch(new Request("https://relay.test/v1/reports", { method: "POST", body: "{}" }), env);
+  await worker.fetch(new Request("https://relay.test/v1/reports", { method: "POST", headers: { [FEATURES_HEADER]: "raid" }, body: "{}" }), env);
   await worker.fetch(new Request("https://relay.test/v1/worlds"), env);
   assert.deepEqual(reached, ["reports:reports", "directory:directory"]);
 
@@ -658,6 +660,31 @@ test("the Worker sends bug reports to an object of their own, never to the world
   const off = await reports.fetch(new Request("https://relay.test/v1/reports", { method: "POST", body: "{}", headers: { [PLAYER_HEADER]: playerKey(1) } }));
   assert.deepEqual([off.status, (await off.json()).code], [503, "off"], "the object reads its settings from the Worker's bindings");
   assert.equal((await reports.fetch(new Request("https://relay.test/v1/reports"))).status, 404);
+});
+
+test("the Worker turns a game without X-MGQ-Features or below MIN_VERSION away before routing it, and lets the admin tool and released PvP games through", async () => {
+  const reached = [];
+  const answering = (name) => namespace((id) => ({ fetch: async () => (reached.push(`${name}:${id}`), new Response("{}")) }));
+  const env = { DIRECTORY: answering("directory"), REPORTS: answering("reports"), WORLDS: answering("world"), ROOMS: answering("room"), MIN_VERSION: "0.7.0" };
+  const upgrade = { Upgrade: "websocket" };
+
+  const world = await worker.fetch(new Request(`https://relay.test/v1/world/${WORLD}?name=Old&auth=${AUTH}`, { headers: { ...upgrade, [PLAYER_HEADER]: playerKey(1) } }), env);
+  assert.deepEqual([world.status, world.headers.get(REFUSAL_HEADER), await world.text()], [426, UPDATE_NEEDED, UPDATE_NEEDED]);
+
+  const room = await worker.fetch(new Request(`https://relay.test/v1/room/${ROOM}?role=host`, { headers: { ...upgrade, [VERSION_HEADER]: "0.6.9" } }), env);
+  assert.deepEqual([room.status, room.headers.get(REFUSAL_HEADER)], [426, UPDATE_NEEDED]);
+
+  let pulled = 0;
+  const streamed = new ReadableStream({ pull: (controller) => (++pulled > 3 ? controller.close() : controller.enqueue(new Uint8Array(1024))) }, { highWaterMark: 0 });
+  const report = await worker.fetch(new Request("https://relay.test/v1/reports", { method: "POST", headers: { [FEATURES_HEADER]: "raid", [VERSION_HEADER]: "0.6.9" }, body: streamed, duplex: "half" }), env);
+  assert.deepEqual([report.status, await report.json(), pulled], [426, { error: UPDATE_NEEDED }, 4], "the body is read to its end before the refusal");
+  assert.deepEqual(reached, [], "nothing too old reaches an object");
+
+  await worker.fetch(new Request(`https://relay.test/v1/room/${ROOM}?role=host`, { headers: upgrade }), env);
+  await worker.fetch(new Request(`https://relay.test/v1/world/${WORLD}?name=New&auth=${AUTH}`, { headers: { ...upgrade, [PLAYER_HEADER]: playerKey(1), [FEATURES_HEADER]: "raid", [VERSION_HEADER]: "0.0.0-dev" } }), env);
+  await worker.fetch(new Request("https://relay.test/v1/worlds"), env);
+  await worker.fetch(new Request("https://relay.test/v1/mods"), env);
+  assert.deepEqual(reached, [`room:${ROOM}`, `world:${WORLD}`, "directory:directory", "directory:directory"]);
 });
 
 test("the reports object answers a report busy while it handles another, after reading its streamed body to the end", async () => {

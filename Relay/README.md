@@ -23,6 +23,8 @@ core/mods.test.js      tests of the mod catalog
 core/reports.js        the bug reports games send, committed to GitHub as private files with a public issue
 core/reports.test.js   tests of the bug reports, against a stand-in for GitHub
 core/http.js           the answers every router gives alike, and how each reads a JSON body
+core/gate.js           which games the relay still serves, by X-MGQ-Features and X-MGQ-Version
+core/gate.test.js      tests of the version gate
 core/bodies.js         reading a body up to its limit, sending a stored file piece by piece, and the limit on downloads at once
 core/bodies.test.js    tests of the bodies and the download limit
 core/ids.js            how ids, hashes and texts are read everywhere
@@ -41,6 +43,15 @@ Both servers follow the same rules from `core/`, so the games cannot tell them a
 ## Protocol (v1)
 
 A **room** pairs two games for a PvP battle. A **world room** seats up to 32 games that play in the same world.
+
+### Versions
+
+Every game from 0.6.0 names its features in the header `X-MGQ-Features` on its directory requests and world rooms, and newer ones name their version in `X-MGQ-Version`, such as `0.6.5+<commit>` (`0.0.0-dev` for a development build). Before routing a request, the relay turns a game too old for it away with HTTP 426 and the error `Update MGQ Online to play online.`:
+- the trades, the bug reports, a Raid World's story and boss routes and the world rooms need `X-MGQ-Features`, so games before 0.6.0 cannot play online;
+- these routes and the rooms also hold a version named in `X-MGQ-Version` against the setting `MIN_VERSION` (`0.6.0` unless set): an older version or one that is no version is refused, a development version always passes, and a game that names none passes, as released games up to 0.6.4 do;
+- the world directory's and the mod catalog's routes, the Raid World admin routes included, ask nothing, since the World Admin tool sends neither header; a room needs no `X-MGQ-Features`, since released games open rooms without it.
+
+A refused WebSocket names the same text in the response header `X-MGQ-Refusal`; any other refused request gets it as `error` once its body is read and dropped, up to 15 MB or 60 seconds.
 
 ### Rooms
 
@@ -171,7 +182,7 @@ A Raid World's story bosses each have a pool whose HP the whole world shares, ke
 
 ### World rooms
 
-- **Connect:** `wss://<relay>/v1/world/<world id>?name=<name>`, with the player's key in the header `X-MGQ-Player` and the auth key in the header `X-MGQ-Auth` (released games send them as `player=<key>&auth=<auth key>` in the address instead, which is kept for them). The relay lets the game in only if the world is in the directory, the SHA-256 of the auth key is the world's `authHash`, and the creator has not removed the player: otherwise HTTP 404, 401 or 403 before the WebSocket opens, HTTP 409 while the creator is still uploading the starting save, and HTTP 400 when the world is a Raid World and the request's header `X-MGQ-Features` (features separated by commas) does not name `raid`, which released games never send and which they take as final, unlike a 409. A 400, 403 or 409 names why in the response header `X-MGQ-Refusal`, with the codes of the directory. Entering rooms and world rooms is limited per address, 30 at once and one more every 2 seconds (HTTP 429). When a player enters a world room again, the relay closes the player's earlier connection with 4009 and the reason `replaced`. The world's seats come from the directory; once every one is taken, the next game gets HTTP 409. After every change the room tells the directory who is in it.
+- **Connect:** `wss://<relay>/v1/world/<world id>?name=<name>`, with the player's key in the header `X-MGQ-Player` and the auth key in the header `X-MGQ-Auth` (released games send them as `player=<key>&auth=<auth key>` in the address instead, which is kept for them). The relay lets the game in only if the world is in the directory, the SHA-256 of the auth key is the world's `authHash`, and the creator has not removed the player: otherwise HTTP 404, 401 or 403 before the WebSocket opens, HTTP 409 while the creator is still uploading the starting save, and HTTP 400 when the world is a Raid World and the request's header `X-MGQ-Features` (features separated by commas) does not name `raid`, which games take as final, unlike a 409. A game without `X-MGQ-Features` gets HTTP 426 before any of these checks, see Versions. A 400, 403 or 409 names why in the response header `X-MGQ-Refusal`, with the codes of the directory. Entering rooms and world rooms is limited per address, 30 at once and one more every 2 seconds (HTTP 429). When a player enters a world room again, the relay closes the player's earlier connection with 4009 and the reason `replaced`. The world's seats come from the directory; once every one is taken, the next game gets HTTP 409. After every change the room tells the directory who is in it.
 - **Seats:** a game takes the lowest free seat, from 0. It is told `seat <own> <others…>`, the seats already taken in ascending order, such as `seat 2 0 1`. The others are told `in <seat>`, and `out <seat>` once it leaves.
 - **Messages:** a game sends a binary message as its target seat, or 255 for everyone, followed by the payload. The relay passes it on with the sender's seat in place of the target, so the receiver knows who sent it. A message for a free seat is dropped.
 - **Chat:** the games send each other their lines encrypted, as any message. The relay keeps a plain copy of the global chat for the admins:
@@ -208,6 +219,7 @@ The relay runs on the free Workers plan at `relay.mgqmp.workers.dev`. Past the f
 - **Log in once:** `npx wrangler login` (in PowerShell `npx.cmd wrangler login` if scripts are blocked) opens the browser to allow wrangler on the Cloudflare account.
 - **Deploy:** `npm run deploy:cloudflare`.
 - **Downloads:** the directory sends starting saves and uploaded mods' zips piece by piece as it reads them, without a Content-Length, and at most 3 at once and 1 per address. A download that finds no free slot waits up to 30 seconds for one, at most 10 waiting in all; past that, and past 20 downloads at once and one more every 30 seconds from one address, it gets 503 with `code` `busy`, the error "the relay is sending other downloads, try again in a moment" and `Retry-After: 10`. A download still running after 5 minutes is ended and its slot given to the next. The Node relay sends both whole and has no such limit.
+- **Lowest version:** `MIN_VERSION` in the `[vars]` of `wrangler.toml`, see Versions.
 - **Bug reports:** `npx wrangler secret put GITHUB_ISSUES_TOKEN --config cloudflare/wrangler.toml` and the same for `GITHUB_BUG_FILES_TOKEN` set the tokens once; the repositories and the branch are the `[vars]` in `wrangler.toml`.
 
 ## Moving to a rented server
@@ -218,6 +230,7 @@ The relay runs on the free Workers plan at `relay.mgqmp.workers.dev`. Past the f
    - `MGQ_RELAY_DB=/var/lib/mgq-relay/relay.sqlite`: the SQLite database the worlds, their starting saves, the mod catalog, its uploaded zips, the trades, the Raid Worlds' stories and their boss pools are kept in, made on the first start (with its `-wal` and `-shm` files beside it). Without it everything stays in memory and is gone with the process. Back the file up with `sqlite3 relay.sqlite ".backup copy.sqlite"`, never by copying it while the relay runs.
    - `ADMINS`: the admins' player ids, as above.
    - `GITHUB_ISSUES_TOKEN` and `GITHUB_BUG_FILES_TOKEN`, and `REPORT_ISSUES_REPO`, `REPORT_FILES_REPO` and `REPORT_FILES_BRANCH` unless the defaults fit: where the bug reports go, see above. Without both tokens the relay takes no reports.
+   - `MIN_VERSION`: the lowest version a game may name, `0.6.0` unless set, see Versions.
    - `HOST` and `PORT`: where it listens, `127.0.0.1:8080` unless set.
 4. The relay writes one line per request to stdout (`<time> <method> <path> <status> <ms> <address>`, the path without its query, so no key ever appears) and every error it catches to stderr, with its stack. Under systemd both go to the journal (`journalctl -u <service>`); the service file's `StandardOutput=append:/var/log/mgq-relay/relay.log` keeps them in a file instead. The rooms and the WebSockets live in memory, so a restart ends every connection; the games connect again on their own.
 5. On its own the relay closes rooms and connections whose time is up every minute, checks the mod catalog's links every half hour, and every ten minutes sweeps out worlds whose starting save never came and trades kept long enough, so the database does not grow with what nobody asks for again.

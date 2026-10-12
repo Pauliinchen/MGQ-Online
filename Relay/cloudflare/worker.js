@@ -2,7 +2,8 @@
 //  worker.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-12: Dropped the body of a bug report refused before it is read, reading it up to 15 MB or 60 seconds, and stopped reading a report body after 60 seconds
+//      Paulinchen  2026-10-12: Turned away games older than 0.6.0, which send no X-MGQ-Features header, and games whose X-MGQ-Version is older than the MIN_VERSION variable, with 426 before routing their requests
+//                            - Dropped the body of a bug report refused before it is read, reading it up to 15 MB or 60 seconds, and stopped reading a report body after 60 seconds
 //                            - Kept each trade's sealed offers under keys of their own beside the trade, which listing the trades never reads
 //                            - Read every request body only up to its route's limit, also one sent without a Content-Length
 //                            - Sent starting saves and uploaded mods piece by piece as they are read, at most three at once and one per address, a request waiting up to 30 seconds for its turn
@@ -55,6 +56,7 @@ import { DurableObject } from "cloudflare:workers";
 import { DownloadGate, drainLimited, piecesStream, readLimited } from "../core/bodies.js";
 import { BOSS_LIMITS, WorldBosses, bossRouteOf, bossText, handleBossRequest } from "../core/bosses.js";
 import { DIRECTORY_LIMITS, Directory as WorldDirectory, WORLD_TYPE, difficultyText, handleDirectoryRequest, modsRuleText, parseAdmins, playerIdOf, sha256Hex } from "../core/directory.js";
+import { DRAIN_LIMITS, VERSION_HEADER, updateRefusal } from "../core/gate.js";
 import { badRequest, notFound, routeIs } from "../core/http.js";
 import { isHash, isId } from "../core/ids.js";
 import { MOD_LIMITS, ModCatalog, handleModRequest } from "../core/mods.js";
@@ -137,11 +139,17 @@ export default {
    * Handles a request to the relay.
    *
    * @param {Request} request The request.
-   * @param {{ROOMS: DurableObjectNamespace, WORLDS: DurableObjectNamespace, DIRECTORY: DurableObjectNamespace, REPORTS: DurableObjectNamespace}} env The Worker's bindings.
+   * @param {{ROOMS: DurableObjectNamespace, WORLDS: DurableObjectNamespace, DIRECTORY: DurableObjectNamespace, REPORTS: DurableObjectNamespace, MIN_VERSION?: string}} env The Worker's bindings.
    * @returns {Promise<Response>} The answer, or why the request is refused.
    */
   async fetch(request, env) {
     const url = new URL(request.url);
+    const outdated = updateRefusal(url, request.headers.get(FEATURES_HEADER), request.headers.get(VERSION_HEADER), env.MIN_VERSION);
+
+    if (outdated) {
+      return refuseOutdated(request, outdated);
+    }
+
     const world = storyRouteOf(url) ?? bossRouteOf(url) ?? raidAdminRouteOf(url);
 
     // A world's story and boss pools stay with its world room's object, so the directory carries
@@ -189,6 +197,24 @@ export default {
     ctx.waitUntil(internal(directoryOf(env), "check-mods"));
   },
 };
+
+/**
+ * Turns a game too old for the relay away: a WebSocket with the reason in REFUSAL_HEADER, any other
+ * request with JSON once its body is read and dropped, since Cloudflare breaks a request answered
+ * before its body was read.
+ *
+ * @param {Request} request The request.
+ * @param {{status: number, reason: string, socket: boolean}} refusal The refusal, see updateRefusal.
+ * @returns {Promise<Response>} The answer.
+ */
+async function refuseOutdated(request, refusal) {
+  if (refusal.socket) {
+    return new Response(refusal.reason, { status: refusal.status, headers: { [REFUSAL_HEADER]: refusal.reason } });
+  }
+
+  await drainLimited(request.body, DRAIN_LIMITS.maxBytes, AbortSignal.timeout(DRAIN_LIMITS.readMs));
+  return json(refusal.status, { error: refusal.reason });
+}
 
 /**
  * Finds the directory object.
