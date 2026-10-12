@@ -2,6 +2,7 @@
 #  ui_trade.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Kept the bag's and the offers' pictures as tall as the rows they show, since a large bag asked for a picture too large to make
 #      Paulinchen  2026-10-11: Dressed the trade screen's windows in the interface look, the game's help window too
 #                            - Asked through the confirm box before cancelling the trade, since both offers are lost
 #                            - Left the commands alone once the trade ended under the box, whose windows are disposed by then
@@ -72,6 +73,91 @@ module MGQ_MpTradeUi
 
     "You confirmed. Waiting for #{session.name} . . ."
   end
+
+  # Keeps a list window's picture as tall as the rows it shows, plus a hidden row above and below
+  # that make the window show its scroll arrows, and draws the rows anew as the list scrolls.
+  #
+  # The game's lists hold all their rows in one picture, which for a large bag grew past what the
+  # game could make ("failed to create bitmap" on the trade screen).
+  module VisibleRows
+    # Returns the first row shown.
+    #
+    # @return [Integer] The row.
+    def top_row
+      @top_row || 0
+    end
+
+    # Scrolls to a row, kept within the list, and draws the rows shown from it.
+    #
+    # @param row [Integer] The row.
+    def top_row=(row)
+      row = [[row, last_top_row].min, 0].max
+      return if row == top_row
+
+      @top_row = row
+      create_contents
+      draw_all_items
+    end
+
+    # Makes the picture for the rows around the first row shown, which the list may have moved
+    # past, and scrolls it so the first row shown sits at the window's top.
+    def create_contents
+      @top_row = [[top_row, last_top_row].min, 0].max
+      super
+      self.oy = (top_row - first_row) * item_height
+    end
+
+    # Returns the picture's height: the rows shown and the hidden rows around them.
+    #
+    # @return [Integer] The height.
+    def contents_height
+      [last_row - first_row + 1, 1].max * item_height
+    end
+
+    # Places a row in the picture, which begins at the hidden row above the first row shown.
+    #
+    # @param index [Integer] The row's item.
+    # @return [Rect] Where it sits in the picture.
+    def item_rect(index)
+      rect = super
+      rect.y -= first_row * item_height
+      rect
+    end
+
+    # Draws the items of the rows shown.
+    def draw_all_items
+      first = top_row * col_max
+      [page_item_max, item_max - first].min.times { |offset| draw_item(first + offset) }
+    end
+
+    # Draws nothing: the game's lists draw newly scrolled rows here, which these lists draw when
+    # they scroll.
+    def draw_page
+    end
+
+    private
+
+    # Returns the picture's first row: the hidden row above the first row shown, if there is one.
+    #
+    # @return [Integer] The row.
+    def first_row
+      [top_row - 1, 0].max
+    end
+
+    # Returns the picture's last row: the hidden row below the rows shown, if there is one.
+    #
+    # @return [Integer] The row.
+    def last_row
+      [top_row + page_row_max, row_max - 1].min
+    end
+
+    # Returns the furthest the first row shown may go, where the list's last page is shown.
+    #
+    # @return [Integer] The row.
+    def last_top_row
+      [row_max - page_row_max, 0].max
+    end
+  end
 end
 
 # One side of the trade as a list: whose it is and whether they confirmed, the gold, then the
@@ -79,6 +165,7 @@ end
 # left and right switch to the other side.
 class Window_MpTradeOffer < Window_Selectable
   include MGQ_MpUi::Theme::Skinned
+  include MGQ_MpTradeUi::VisibleRows
 
   # Creates the window, inactive.
   #
@@ -271,6 +358,7 @@ end
 # left change the amount by one, R and L by ten, confirm offers all or none.
 class Window_MpTradeBag < Window_Selectable
   include MGQ_MpUi::Theme::Skinned
+  include MGQ_MpTradeUi::VisibleRows
 
   # Creates the list, inactive.
   #

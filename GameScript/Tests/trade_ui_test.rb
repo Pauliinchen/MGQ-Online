@@ -2,6 +2,7 @@
 #  trade_ui_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Checked that a list's picture holds only the rows around those shown, also while it scrolls and after it shrinks
 #      Paulinchen  2026-10-11: Checked that the game's help window on the trade screen wears the interface look without the game's tint, loading ui_theme.rbx
 #                            - Checked the confirm box before cancelling the trade, with a stand-in that records the question and answers
 #                            - Checked that a no after the trade ended under the box leaves the disposed commands alone
@@ -12,7 +13,7 @@
 
 # Covers the trade screen, ui_trade.rbx: an offer's first row, whose head never runs into whether
 # its player confirmed, the status line, which shows a message about the trade while it lasts,
-# and the confirm box before cancelling. The game's windows stand in, measuring each character at
+# the confirm box before cancelling, and the lists' pictures, which hold only the rows shown. The game's windows stand in, measuring each character at
 # four tenths of the font's size.
 
 require_relative "support"
@@ -144,3 +145,49 @@ check("and keeps no tint as it updates", help.tone.values, [0, 0, 0, 0])
 MGQ_MpUi::Theme.apply("Monarch", "a test")
 help.update
 check("a new look dresses it anew as it updates", help.back_opacity, 235)
+
+# A list laid out as the game's Window_Selectable lays it out: one column, rows of 24 pixels and a
+# page of 10 rows, recording the picture's height and the rows drawn into it.
+class ListStandIn
+  attr_accessor :oy, :item_max
+  attr_reader :heights, :drawn
+  def initialize(rows); @item_max = rows; @heights = []; create_contents; end
+  def col_max; 1; end
+  def item_height; 24; end
+  def page_row_max; 10; end
+  def page_item_max; page_row_max * col_max; end
+  def row_max; [(item_max + col_max - 1) / col_max, 1].max; end
+  def item_rect(index); Rect.new(0, index / col_max * item_height, 100, item_height); end
+  def create_contents; @heights << contents_height; @drawn = []; end
+  def draw_item(index); @drawn << [index, item_rect(index).y - oy]; end
+end
+class PagedList < ListStandIn; include MGQ_MpTradeUi::VisibleRows; end
+
+# Reports whether the window would show its up and its down scroll arrow.
+#
+# @param list [PagedList] The list.
+# @return [Array<Boolean>] Up, down.
+def arrows(list)
+  [list.oy > 0, list.heights.last - list.oy > list.page_row_max * list.item_height]
+end
+
+check("both trade lists keep only the rows shown in their picture",
+      [Window_MpTradeBag, Window_MpTradeOffer].map { |window| window.include?(MGQ_MpTradeUi::VisibleRows) }, [true, true])
+list = PagedList.new(1000)
+check("a bag of 1000 items makes a picture of 11 rows, not 1000", [list.heights.last, list.oy], [11 * 24, 0])
+list.draw_all_items
+check("it draws the first page from the window's top", [list.drawn.first, list.drawn.last, list.drawn.size], [[0, 0], [9, 216], 10])
+check("at the top only the down arrow shows", arrows(list), [false, true])
+list.top_row = 500
+check("scrolled into the middle, the picture holds the page and a hidden row on each side", [list.heights.last, list.oy], [12 * 24, 24])
+check("the rows shown are drawn from the window's top", [list.drawn.first, list.drawn.last, list.drawn.size], [[500, 0], [509, 216], 10])
+check("in the middle both arrows show", arrows(list), [true, true])
+list.top_row = 2000
+check("scrolling past the end stops at the last page", [list.top_row, list.drawn.last], [990, [999, 216]])
+check("at the end only the up arrow shows", arrows(list), [true, false])
+list.item_max = 5
+list.create_contents
+check("a list that shrank under its first row goes back to the top", [list.top_row, list.heights.last, list.oy], [0, 5 * 24, 0])
+check("and shows no arrows", arrows(list), [false, false])
+empty = PagedList.new(0)
+check("an empty list still makes a picture of one row", empty.heights.last, 24)
