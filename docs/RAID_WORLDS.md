@@ -56,6 +56,14 @@ When your story is in an earlier part than the world's (Part 1, Part 2, Part 3 o
 - **Your own changes stay:** side events and anything else you did while behind are kept when you move on; only what the world's story itself changed since then overrides them.
 - **Loading and entering again** while behind keeps you behind until your level reaches your part's gate.
 
+## Catch-up experience
+
+A character below the world's catch-up level gains more experience from battles, base, job and race experience alike: ten times as much in the lowest quarter of the levels up to it, then less with every level, falling evenly to the usual experience at that level. With a catch-up level of 40, a character at level 10 or below gains x10, at 20 x7, at 30 x4 and at 39 x1.3.
+
+- **The catch-up level** is the level cap the world's story unlocked before its latest one, by the [Level Cap](https://github.com/Pauliinchen/MGQ-Paradox-Mod-Collection/tree/main/Level_Cap) milestones. When the world's story has just raised the cap from 10 to 15, characters catch up to 10. Before the story raises the cap for the first time, there's no catch-up.
+- **Each character counts its own level,** so a companion who joined low catches up too, whoever else is in the party.
+- The experience other mods work out for each character, such as by difficulty, grows the same way.
+
 ## The Great Decision
 
 - **The first route chosen is the world's.** The first player to choose a route at the Great Decision chooses it for the whole world: from then on the choice offers only that route until the world finished it, and says "The whole world plays this route." A player who chose another route at the same moment reads "The world took the \<route> route first." and is taken to the story.
@@ -70,12 +78,13 @@ The [World overview](GUIDE.md#world-overview) shows more in a Raid World. Its ti
 **The World page** also shows:
 
 - **Where the world's story stands** ("Part 2: Alice side", *Not told yet* before anyone moved it).
-- **The objective:** what to do next, as Amira would tell you when you ask her for information, also before her information network is ready.
+- **The objective:** what to do next, as Amira would tell you when you ask her for information, also before her information network is ready. The [Quests page](GUIDE.md#world-overview) shows all she says about it, with the side and companion quests.
 - **The raid bosses,** grouped under a heading per part of the story in the order the story meets them: *Part 1*, *Part 2*, *Part 3*, *Angelic Dominion*, *Monster Realm*, *Chaos route* and *Chaos Domain*. Only the parts the world's story has reached show, and any part with a boss someone has fought already. Each boss shows its name, its tier, a thin gauge of the HP the world has left of it with the share ("68%"), *Defeated* once it fell, and who last hurt it. A boss nobody has fought yet is full. See [Every raid boss](#every-raid-boss) for the whole list.
 
 **The Levels page** shows what catching up gives you by level, and only what the world has unlocked already:
 
 - **Your level**, the highest base level among your characters, which catching up goes by.
+- **Catch-up EXP** under a heading with the level it holds up to ("Catch-up EXP until level 40"): each formation member's level and how much more experience it gains ("Level 30, x4 EXP"). See [Catch-up experience](#catch-up-experience).
 - Under a heading per level ("Level 25"): moving on from a part of the story the world is past (*Story*), the companions whose joins the world's story has got past or the world shares (*Companion*), and every Makina (*Makina*).
 - A row you already have is dimmed and says *Done*; one your level has reached says *Due* and comes within a moment. A *Story* row also says *Due* once another mod's level cap holds you below its level, as such a cap lets you move on. **Up** and **Down** scroll the page.
 

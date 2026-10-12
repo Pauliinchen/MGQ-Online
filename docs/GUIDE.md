@@ -266,7 +266,7 @@ Press **E** on the map for a ring of eight emotes around your character: a jump,
 
 ![The World overview](images/world-overview.png)
 
-Press **F11** or pick the middle of the action wheel; **F11**, **B**, cancel, numpad **0** or a click outside closes it. The world keeps running behind it. The title names the world, its type and a Raid World's difficulty ("World | Raid | Hard") and your party's size, and the tabs below it hold the pages **Players**, **World** and in a Raid World **Levels**: **Left** and **Right**, or a click on a tab, switch between them.
+Press **F11** or pick the middle of the action wheel; **F11**, **B**, cancel, numpad **0** or a click outside closes it. The world keeps running behind it. The title names the world, its type and a Raid World's difficulty ("World | Raid | Hard") and your party's size, and the tabs below it hold the pages **Players**, **World**, **Quests** and in a Raid World **Levels**: **Left** and **Right**, or a click on a tab, switch between them.
 
 **The Players page:**
 
@@ -280,6 +280,17 @@ Press **F11** or pick the middle of the action wheel; **F11**, **B**, cancel, nu
 - In a Raid World also where the world's story stands, what to do next and its raid bosses, see [World overview](RAID_WORLDS.md#world-overview) of the Raid World page.
 - While you look at the World page, a gold corner on the *Players* tab tells you an invite, challenge or trade offer waits there; **Y** and **N** answer it once you're back on the Players page or have closed the overview.
 - **Up** and **Down** scroll the page.
+
+**The Quests page** shows the quests under way in your game, in every world:
+
+![The Quests page](images/quests.png)
+
+- **Main quest**, at the top next to Amira: the first sentence of what she tells you to do next in the story.
+- **The list** at the left: the **side quests** Amira tips you about, numbered, and your **companion quests**, the requests on the bulletin board in the Pocket Castle, each with the companion's name. Each shows its first sentence.
+- **The reading pane** at the right: the whole text of the quest you picked, each message as its own paragraph, under a companion quest the companion asking for help.
+- *Mod Config → MGQ Online Settings → Quest Portraits* shows Amira and the companions by their map **Sprites** (the default) or their **Faces**. A companion whose name the translation hasn't reached yet has no portrait.
+
+**Up** and **Down** or a click pick a quest, the main quest included; **Page Up** and **Page Down** scroll a long text. The page shows the quests whether or not Amira's information network or the Pocket Castle is ready yet, and in the game's language, so parts the translation hasn't reached show in Japanese.
 
 **The Levels page** (Raid Worlds only) shows what catching up gives you by level, see [World overview](RAID_WORLDS.md#world-overview) of the Raid World page.
 

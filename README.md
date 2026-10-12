@@ -7,13 +7,14 @@
 Play Monster Girl Quest! Paradox RPG together with friends over the internet, with nothing to set up in your router.
 
 <p align="center">
-  <img src="docs/images/action-wheel.png" alt="Two players in a world, with the action wheel open" width="32%">
-  <img src="docs/images/chat.png" alt="The open chat, with its tabs and an unread Party tab glowing" width="32%">
-  <img src="docs/images/world-list.png" alt="The world screen, with the list of worlds and a world's details" width="32%">
+  <img src="docs/images/action-wheel.png" alt="Two players in a world, with the action wheel open" width="48%">
+  <img src="docs/images/chat.png" alt="The open chat, with its tabs and an unread Party tab glowing" width="48%">
+  <img src="docs/images/world-list.png" alt="The world screen, with the list of worlds and a world's details" width="48%">
+  <img src="docs/images/quests.png" alt="The World overview's Quests page, with the main quest next to Amira, the side and companion quests, and the picked quest's whole text" width="48%">
 </p>
 
-- **Worlds:** up to 32 players on the same maps, with emotes and an overview of everyone online. A world is *Classic*, where each party plays its own story, or a *Raid World*.
-- **Raid Worlds:** the whole world plays one story together, party or not. Everyone on a map watches its scenes, battles pull in the nearest players, and each story boss is one fight the whole world wears down. A player behind catches up as they level.
+- **Worlds:** up to 32 players on the same maps, with emotes and an overview of everyone online and of your quests under way: the main quest, Amira's side quests and your companions' requests. A world is *Classic*, where each party plays its own story, or a *Raid World*.
+- **Raid Worlds:** the whole world plays one story together, party or not. Everyone on a map watches its scenes, battles pull in the nearest players, and each story boss is one fight the whole world wears down. A player behind catches up as they level, with up to ten times the experience.
 - **Chat:** global, map, party and whisper chats in tabs, a glow on tabs with unread lines, and speech bubbles over the players on your map.
 - **Turn off other mods:** a world can be played with its own mods and nothing else. Entering it restarts the game with your other mods parked, and they come back when you leave the world or the game closes.
 - **Parties:** up to four players play the leader's story together and share one team's worth of companions. Teleport to any party member once they allow it, or to the leader at once.
