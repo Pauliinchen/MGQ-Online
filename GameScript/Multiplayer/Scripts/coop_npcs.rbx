@@ -2,6 +2,7 @@
 #  coop_npcs.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Sent a newcomer the whole map again every quarter second until it went out, and anew when they came onto the map again, instead of never once a send failed
 #      Paulinchen  2026-10-11: Started anew on every map the player enters, not only when their part changes, and moved no event before the Map Owner's whole map came, so a follower no longer puts the last map's places on the new map's events, as Hades' exit into a wall
 #      Paulinchen  2026-10-08: Shared the map through MGQ_MpCoop::Scope: with the party members on it in a Classic world, with everyone on it in a Raid World, who all block events there
 #                            - Found the members on this map through MGQ_MpOverworldSync::Peers.on_this_map?
@@ -49,7 +50,8 @@ module MGQ_MpCoopNpcs
   @role = nil
   @frames = 0
   @sent = {}
-  @present = []
+  @present = {}
+  @failed = {}
   @targets = {}
   @stuck = {}
   @blockers = []
@@ -120,7 +122,8 @@ module MGQ_MpCoopNpcs
     @map_id = $game_map.map_id
     @whole_map = nil
     @sent = {}
-    @present = []
+    @present = {}
+    @failed = {}
     @targets = {}
     @stuck = {}
     @frames = SEND_FRAMES
@@ -149,18 +152,25 @@ module MGQ_MpCoopNpcs
 
   # As Map Owner, sends newcomers the whole picture and everyone what changed.
   #
+  # A follower takes no part of the map before its whole, so a whole map that failed to go out is
+  # sent again until it does.
+  #
   # @param members [Array<MGQ_MpOverworldSync::Peers::Peer>] The others sharing the map.
   def self.lead(members)
-    seats = members.map(&:seat)
-    (seats - @present).each do |seat|
-      states = snapshot
-      sent = tell(seat, states, true)
-      log("sent seat #{seat} all #{states.size} event(s) of map #{$game_map.map_id}#{sent ? '' : ', which failed'}")
-    end
-    @present = seats
-
+    arrivals = {}
+    members.each { |peer| arrivals[peer.seat] = peer.state["since"].to_s }
+    @present.keep_if { |seat, _| arrivals.key?(seat) }
+    @failed.keep_if { |seat, _| arrivals.key?(seat) }
     @frames += 1
-    return if @frames < SEND_FRAMES
+    beat = @frames >= SEND_FRAMES
+    arrivals.each do |seat, since|
+      next if @present[seat] == since
+      # A failed send waits for the beat, so a connection that is down is not tried every frame.
+      next if @failed[seat] == since && !beat
+
+      send_whole(seat, since)
+    end
+    return unless beat
 
     @frames = 0
     now = snapshot
@@ -172,6 +182,22 @@ module MGQ_MpCoopNpcs
 
     @sent = now
     @updates = @updates.to_i + 1
+  end
+
+  # Sends a player who came onto the map every event of it, noting them as told once it went out.
+  #
+  # @param seat [Integer] The player's seat.
+  # @param since [String] When they came onto the map, which tells a later arrival apart.
+  def self.send_whole(seat, since)
+    states = snapshot
+    if tell(seat, states, true)
+      @present[seat] = since
+      @failed.delete(seat)
+      log("sent seat #{seat} all #{states.size} event(s) of map #{$game_map.map_id}")
+    else
+      @failed[seat] = since
+      log_once([:whole_failed, seat, since], "sending seat #{seat} all #{states.size} event(s) of map #{$game_map.map_id} failed, sent again every #{SEND_FRAMES} frames until it goes out")
+    end
   end
 
   # Logs the events whose page changed in the Map Owner's update, which means the story moved on.

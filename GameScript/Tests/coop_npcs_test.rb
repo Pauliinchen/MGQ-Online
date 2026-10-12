@@ -2,6 +2,7 @@
 #  coop_npcs_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Checked that a whole map that failed to reach a newcomer is sent again on the beat until it goes out, and anew when they come onto the map again
 #      Paulinchen  2026-10-11: Checked that a follower who comes onto another map forgets the last map's events and follows none before the Map Owner's whole map came
 #      Paulinchen  2026-10-09: Checked that the Map Owner sends the events to everyone on the map in one message
 #      Paulinchen  2026-10-08: Checked a Raid World: everyone on the map shares it, whoever entered first moves its events, every player there blocks them, and the Map Owner sends to the seats on the map alone
@@ -113,5 +114,32 @@ check("once the player came first, their game moves the events", MGQ_MpCoopNpcs.
 check("and sends them to the seats new on the map, then to everyone on it in one message, through the map's gate",
       $told.map { |seat, fields| [seat, fields["map_npcs"], fields["mmap"], fields.key?("npcs")] },
       [[2, 5, 5, false], [4, 5, 5, false], [-1, 5, 5, false]])
+
+# A whole map that fails to go out is sent again on the Map Owner's beat until it does.
+module MGQ_Multiplayer; module Log; def self.write(m); $npc_log << m; puts "  log: #{m}"; end; end; end
+module MGQ_MpOverworldSync; def self.tell(seat, fields); $told << [seat, fields]; !$tell_fails; end; end
+$npc_log = []
+newcomer = MGQ_MpOverworldSync::Peers::Peer.new(6, { "id" => "n", "name" => "Newcomer", "map" => "5", "since" => "9500" }, nil, false, nil)
+$peers << newcomer
+wholes = lambda { $told.count { |seat, fields| seat == 6 && fields["full"] == 1 } }
+$told.clear
+$tell_fails = true
+MGQ_MpCoopNpcs.instance_variable_set(:@frames, 0)
+MGQ_MpCoopNpcs.update
+check("a newcomer is sent the whole map at once", wholes.call, 1)
+(MGQ_MpCoopNpcs::SEND_FRAMES - 2).times { MGQ_MpCoopNpcs.update }
+check("which failed, so it is not sent again every frame", wholes.call, 1)
+MGQ_MpCoopNpcs.update
+check("but again on the next beat", wholes.call, 2)
+check("the failure logged once for the newcomer's arrival", $npc_log.grep(/seat 6 all .* failed/).size, 1)
+$tell_fails = false
+MGQ_MpCoopNpcs::SEND_FRAMES.times { MGQ_MpCoopNpcs.update }
+check("until it goes out", [wholes.call, $npc_log.grep(/sent seat 6 all/).size], [3, 1])
+MGQ_MpCoopNpcs::SEND_FRAMES.times { MGQ_MpCoopNpcs.update }
+check("and then no more", wholes.call, 3)
+newcomer.state["since"] = "9900"
+MGQ_MpCoopNpcs.update
+check("a player who came onto the map again gets it anew at once", wholes.call, 4)
+$peers.delete(newcomer)
 $raid = false
 check("in a Classic world again only the party shares the map", MGQ_MpCoopNpcs.peers_here, [connected])
