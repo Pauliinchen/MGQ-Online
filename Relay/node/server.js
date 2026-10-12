@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-12: Turned away games older than 0.6.0, which send no X-MGQ-Features header, and games whose X-MGQ-Version is older than the MIN_VERSION environment variable, with 426 before routing their requests
+//                            - Turned a game too old for a world room away with 400 and no X-MGQ-Refusal code, and passed on the gate's code of a PvP room
 //                            - Dropped the body of a bug report refused before it is read, and cut a report body still arriving after 60 seconds
 //                            - Kept each trade's sealed offers in memory beside the trade
 //      Paulinchen  2026-10-11: Took the bug reports games send and handed them to GitHub with the GITHUB_ISSUES_TOKEN and GITHUB_BUG_FILES_TOKEN environment variables
@@ -478,7 +479,7 @@ export function createRelay({
     const outdated = updateRefusal(new URL(request.url, "http://relay"), headerOf(request, FEATURES_HEADER), headerOf(request, VERSION_HEADER), minVersion);
 
     if (outdated) {
-      turnAway(outdated.status, outdated.reason, outdated.reason);
+      turnAway(outdated.status, outdated.reason, outdated.code);
       return;
     }
 
@@ -616,18 +617,18 @@ export function createRelay({
   }
 
   /**
-   * Turns a game too old for the relay away: a room's or a world room's path with the reason as
-   * text and in REFUSAL_HEADER, as a refused WebSocket, any other request with JSON once its body
-   * is read and dropped, so the refusal reaches a game still sending it.
+   * Turns a game too old for the relay away: a room's or a world room's path as a refused WebSocket,
+   * with the reason as text and its code in REFUSAL_HEADER when it has one, any other request with
+   * JSON once its body is read and dropped, so the refusal reaches a game still sending it.
    *
    * @param {http.IncomingMessage} request The request.
    * @param {http.ServerResponse} response The response.
-   * @param {{status: number, reason: string, socket: boolean}} refusal The refusal, see updateRefusal.
+   * @param {{status: number, reason: string, socket: boolean, code: string | null}} refusal The refusal, see updateRefusal.
    * @returns {Promise<void>} Completes once answered.
    */
   async function refuseOutdated(request, response, refusal) {
     if (refusal.socket) {
-      response.writeHead(refusal.status, { "Content-Type": "text/plain", [REFUSAL_HEADER]: refusal.reason });
+      response.writeHead(refusal.status, { "Content-Type": "text/plain", ...(refusal.code ? { [REFUSAL_HEADER]: refusal.code } : {}) });
       response.end(refusal.reason);
       return;
     }

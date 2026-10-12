@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-12: Sent X-MGQ-Features as released games do, and tested that games without it or with a version below the lowest are turned away with 426, PvP rooms without it still pair, and the admin routes need none
+//                            - Tested a world room refused with 400 and no code, a request without X-MGQ-Version taken as 0.6.4 on every gated route and the world directory and the mod catalog held to MIN_VERSION
 //                            - Tested that a bug report sent while another is handled is answered busy over HTTP, its body drained, and that the screenshot blob goes up before the branch is read
 //                            - Checked that the sweep drops the sealed offers of a trade it cancels
 //      Paulinchen  2026-10-11: Tested a bug report over HTTP: its unpacked files committed to GitHub in one commit, refused without a player key, too long or without a token
@@ -891,14 +892,15 @@ test("only a game that names the dev feature in X-MGQ-Features makes a Raid Worl
   assert.equal((await upload("RAID,DEV")).status, 200);
 });
 
-test("a game without X-MGQ-Features, or naming a version below the lowest, is turned away with 426, while PvP rooms and the admin routes need no features", async () => {
+test("a game without X-MGQ-Features, or naming a version below the lowest, is turned away, while PvP rooms and the admin routes need no features", async () => {
   const room = roomId(132);
   await makeWorld(room, 4);
   const world = (headers) => openWithHeaders(`${worldBase}${room}?name=Old&auth=${AUTH}`, { [PLAYER_HEADER]: playerKey(80), ...headers });
   const update = { status: 426, refusal: UPDATE_NEEDED };
+  const worldUpdate = { status: 400, refusal: undefined };
 
-  assert.deepEqual(await world({}), update, "a game before 0.6.0");
-  assert.deepEqual(await world({ ...GAME, [VERSION_HEADER]: "0.5.9+abc" }), update);
+  assert.deepEqual(await world({}), worldUpdate, "a game before 0.6.0 stops at a 400 without a code");
+  assert.deepEqual(await world({ ...GAME, [VERSION_HEADER]: "0.5.9+abc" }), worldUpdate);
   const current = await world({ ...GAME, [VERSION_HEADER]: "0.6.0+abc" });
   assert.equal(await current.first, "seat 0");
   current.socket.close();
@@ -920,19 +922,42 @@ test("a game without X-MGQ-Features, or naming a version below the lowest, is tu
   assert.equal((await fetch(`${directoryBase}/${room}/delete`, { method: "POST", body: JSON.stringify({ player: CREATOR }) })).status, 200);
 });
 
-test("the MIN_VERSION setting raises the lowest version a game may name, which development builds and games naming none pass", async () => {
+test("the MIN_VERSION setting raises the lowest version a game may name, which only the development stamp passes, and a game naming none counts as 0.6.4", async () => {
   const gated = createRelay({ clock: () => now, checkEveryMs: 3_600_000, log: LOG, minVersion: "0.7.0" });
   await new Promise((resolve) => gated.server.listen(0, "127.0.0.1", resolve));
-  const trades = `http://127.0.0.1:${gated.server.address().port}/v1/trades?player=${playerKey(81)}&world=${roomId(133)}`;
-  const status = async (headers) => (await fetch(trades, { headers: { ...GAME, ...headers } })).status;
+  const at = `127.0.0.1:${gated.server.address().port}`;
+  const trades = `http://${at}/v1/trades?player=${playerKey(81)}&world=${roomId(133)}`;
+  const status = async (address, headers) => (await fetch(address, { headers })).status;
 
   try {
     assert.deepEqual(
-      [await status({ [VERSION_HEADER]: "0.6.9" }), await status({ [VERSION_HEADER]: "no version" }), await status({ [VERSION_HEADER]: "0.7.0+abc" }), await status({ [VERSION_HEADER]: "0.0.0-dev" }), await status({})],
-      [426, 426, 200, 200, 200],
+      await Promise.all(["0.6.9", "no version", "0.6.9-dev", "0.7.0+abc", "0.7.0-beta", "0.0.0-dev", "0.0.0-dev+abc"].map((version) => status(trades, { ...GAME, [VERSION_HEADER]: version }))),
+      [426, 426, 426, 200, 200, 200, 200],
     );
+    assert.equal(await status(trades, GAME), 426, "a game naming no version counts as 0.6.4");
+    assert.deepEqual([await status(`http://${at}/v1/worlds`, {}), await status(`http://${at}/v1/mods`, {}), await status(`http://${at}/v1/worlds`, { [VERSION_HEADER]: "0.6.9" })], [426, 426, 426], "the World Admin tool's routes too");
+    assert.deepEqual([await status(`http://${at}/v1/worlds`, { [VERSION_HEADER]: "0.7.0" }), await status(`http://${at}/v1/mods`, { [VERSION_HEADER]: "0.7.1" })], [200, 200], "they ask no X-MGQ-Features");
+    assert.deepEqual(await openWithHeaders(`ws://${at}/v1/room/${roomId(134)}?role=host`, {}), { status: 426, refusal: UPDATE_NEEDED }, "a released game's PvP room");
+    assert.deepEqual(await openWithHeaders(`ws://${at}/v1/world/${roomId(133)}?name=Old&auth=${AUTH}`, { [PLAYER_HEADER]: playerKey(81), ...GAME }), { status: 400, refusal: undefined }, "a released game's world room");
   } finally {
     await gated.stop();
+  }
+
+  const released = createRelay({ clock: () => now, checkEveryMs: 3_600_000, log: LOG, minVersion: "0.6.4" });
+  await new Promise((resolve) => released.server.listen(0, "127.0.0.1", resolve));
+  const open = `127.0.0.1:${released.server.address().port}`;
+
+  try {
+    assert.deepEqual(
+      [await status(`http://${open}/v1/trades?player=${playerKey(81)}&world=${roomId(133)}`, GAME), await status(`http://${open}/v1/worlds`, {}), await status(`http://${open}/v1/mods`, {})],
+      [200, 200, 200],
+      "released games and the World Admin tool pass while the lowest is at most 0.6.4",
+    );
+    const host = await openWithHeaders(`ws://${open}/v1/room/${roomId(135)}?role=host`, {});
+    assert.ok(host.socket, "a released game's PvP room");
+    host.socket.close();
+  } finally {
+    await released.stop();
   }
 });
 

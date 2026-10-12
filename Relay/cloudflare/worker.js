@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-12: Turned away games older than 0.6.0, which send no X-MGQ-Features header, and games whose X-MGQ-Version is older than the MIN_VERSION variable, with 426 before routing their requests
+//                            - Turned a game too old for a world room away with 400 and no X-MGQ-Refusal code, and passed on the gate's code of a PvP room
 //                            - Dropped the body of a bug report refused before it is read, reading it up to 15 MB or 60 seconds, and stopped reading a report body after 60 seconds
 //                            - Kept each trade's sealed offers under keys of their own beside the trade, which listing the trades never reads
 //                            - Read every request body only up to its route's limit, also one sent without a Content-Length
@@ -199,17 +200,17 @@ export default {
 };
 
 /**
- * Turns a game too old for the relay away: a WebSocket with the reason in REFUSAL_HEADER, any other
- * request with JSON once its body is read and dropped, since Cloudflare breaks a request answered
- * before its body was read.
+ * Turns a game too old for the relay away: a WebSocket with the reason as text and its code in
+ * REFUSAL_HEADER when it has one, any other request with JSON once its body is read and dropped,
+ * since Cloudflare breaks a request answered before its body was read.
  *
  * @param {Request} request The request.
- * @param {{status: number, reason: string, socket: boolean}} refusal The refusal, see updateRefusal.
+ * @param {{status: number, reason: string, socket: boolean, code: string | null}} refusal The refusal, see updateRefusal.
  * @returns {Promise<Response>} The answer.
  */
 async function refuseOutdated(request, refusal) {
   if (refusal.socket) {
-    return new Response(refusal.reason, { status: refusal.status, headers: { [REFUSAL_HEADER]: refusal.reason } });
+    return new Response(refusal.reason, { status: refusal.status, headers: refusal.code ? { [REFUSAL_HEADER]: refusal.code } : {} });
   }
 
   await drainLimited(request.body, DRAIN_LIMITS.maxBytes, AbortSignal.timeout(DRAIN_LIMITS.readMs));

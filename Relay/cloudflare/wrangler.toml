@@ -31,8 +31,8 @@ crons = ["*/30 * * * *"]
 REPORT_ISSUES_REPO = "Pauliinchen/MGQ-Online"
 REPORT_FILES_REPO = "Pauliinchen/MGQ-Online-Bug-Reports"
 REPORT_FILES_BRANCH = "main"
-# The lowest version a game that names its version in X-MGQ-Version may have; development builds
-# always pass, and games before 0.6.0 are turned away whatever it says.
+# The lowest version a game may name in X-MGQ-Version; a game naming none counts as 0.6.4, only
+# 0.0.0-dev always passes, and games before 0.6.0 are turned away whatever it says.
 MIN_VERSION = "0.6.0"
 
 # One Durable Object per room and per world room, one for the world directory and one for the bug
