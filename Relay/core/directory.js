@@ -2,7 +2,8 @@
 //  directory.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-12: Worked out the asking player's id before reading a world, so an edit, a removal, a starting save or a new world no longer writes back an entry another request changed meanwhile
+//      Paulinchen  2026-10-12: Said a line of the relay's own, the update notice, in the chat of every world with players online
+//                            - Worked out the asking player's id before reading a world, so an edit, a removal, a starting save or a new world no longer writes back an entry another request changed meanwhile
 //                            - Counted a new world against its address only after the featured, full and per-creator refusals too
 //      Paulinchen  2026-10-10: Let a game that names the dev feature give a Raid World a starting save, for testing, and read what a game names in X-MGQ-Features for every public route
 //                            - Told a world room the name of a player of its world too, which a Raid World's boss pool keeps for its defeat
@@ -101,6 +102,11 @@ export const DIRECTORY_LIMITS = Object.freeze({
  * The name an admin's line of a world's chat carries when the request names none.
  */
 export const ADMIN_NAME = "Admin";
+
+/**
+ * The player id a line of the relay's own carries in a world's chat, which no player's id can be.
+ */
+export const RELAY_PLAYER = "relay";
 
 /**
  * The codes a refusal names why with, which games tell their players apart.
@@ -770,6 +776,32 @@ export class Directory {
     }
 
     return { status: 200, body: { line }, say: { name: line.name, text: line.text } };
+  }
+
+  /**
+   * Says a line of the relay's own, such as the update notice, in the chat of every world with
+   * players online, as an admin's line.
+   *
+   * @param {string} name The name the line carries.
+   * @param {string} text The line.
+   * @returns {Promise<{id: string, name: string, text: string}[]>} The lines as kept, with the world each world room must tell.
+   */
+  async announce(name, text) {
+    const said = [];
+
+    for (const entry of await this.entries()) {
+      if (entry.online.length === 0) {
+        continue;
+      }
+
+      const line = await this.say(entry.id, { player: RELAY_PLAYER, name }, text, true);
+
+      if (line) {
+        said.push({ id: entry.id, name: line.name, text: line.text });
+      }
+    }
+
+    return said;
   }
 
   /**

@@ -2,7 +2,8 @@
 //  directory.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-12: Covered an edit with a presence, a removal with an edit, a starting save with a presence and two creates of one world, each made at once
+//      Paulinchen  2026-10-12: Covered the relay's own line said in the chat of the worlds with players online only
+//                            - Covered an edit with a presence, a removal with an edit, a starting save with a presence and two creates of one world, each made at once
 //                            - Covered featured, full and per-creator refusals of a new world costing its address no rate turn
 //      Paulinchen  2026-10-10: Covered a Raid World's starting save from a game that names the dev feature, made and uploaded, also through the public routes, and still refused a player's choice and every other game's starting save
 //                            - Covered the player's name member tells a world room
@@ -42,7 +43,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { DIRECTORY_LIMITS, Directory, MODS_RULE_TEXT, cleanName, handleDirectoryRequest, modsRuleText, parseAdmins, playerIdOf, sha256Hex } from "./directory.js";
+import { DIRECTORY_LIMITS, Directory, MODS_RULE_TEXT, RELAY_PLAYER, cleanName, handleDirectoryRequest, modsRuleText, parseAdmins, playerIdOf, sha256Hex } from "./directory.js";
 import { FEATURE, RateLimiter, parseFeatures } from "./relay.js";
 
 /**
@@ -517,6 +518,20 @@ test("handleDirectoryRequest routes an admin's chat line and names the world it 
   assert.equal(said.status, 200);
   assert.deepEqual([said.id, said.say], [WORLD, { name: "Global", text: "hi all" }]);
   assert.deepEqual((await handleDirectoryRequest(directory, "GET", url(`/v1/worlds/${WORLD}/chat?after=0`), async () => null, null, { player: ADMIN })).body.lines.map((line) => line.text), ["hi all"]);
+});
+
+test("announce says the relay's line in the chat of every world with players online, and in no other", async () => {
+  const { directory } = newDirectory();
+  const quiet = "1".repeat(32);
+  await directory.create(await newWorld());
+  await directory.create(await newWorld({ id: quiet }));
+  await directory.presence(WORLD, [{ player: await playerIdOf(CREATOR), name: "Creator" }]);
+
+  const said = await directory.announce("MGQ Online", "MGQ Online 0.6.5 is out.");
+  assert.deepEqual(said, [{ id: WORLD, name: "MGQ Online", text: "MGQ Online 0.6.5 is out." }]);
+  const [line] = await directory.store.getChat(WORLD);
+  assert.deepEqual([line.player, line.name, line.text, line.admin], [RELAY_PLAYER, "MGQ Online", "MGQ Online 0.6.5 is out.", true]);
+  assert.equal(await directory.store.getChat(quiet), undefined);
 });
 
 test("a world whose starting save did not come in time is deleted, and no longer counts for its creator", async () => {

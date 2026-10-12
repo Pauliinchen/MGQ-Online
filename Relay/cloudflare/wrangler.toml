@@ -2,7 +2,8 @@
 #  wrangler.toml
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Added the lowest game version the relay serves
+#      Paulinchen  2026-10-12: Checked the mod's own releases every five minutes
+#                            - Added the lowest game version the relay serves
 #                            - Added the bug reports' Durable Object
 #      Paulinchen  2026-10-11: Added the repositories and the branch the bug reports go to
 #      Paulinchen  2026-10-06: Checked the mod catalog's links every half hour
@@ -19,9 +20,11 @@ compatibility_date = "2026-09-01"
 workers_dev = true
 preview_urls = false
 
-# Checks the mod catalog's links for new releases every half hour.
+# Checks the mod catalog's links for new releases every half hour, and the mod's own releases every
+# five minutes, whose update notice every world with players online is told. worker.js tells the
+# two apart by the first schedule.
 [triggers]
-crons = ["*/30 * * * *"]
+crons = ["*/30 * * * *", "*/5 * * * *"]
 
 # Where the bug reports go: a public issue in the issues repository, linking the report's files
 # committed to the private files repository's branch. The relay takes reports only once both

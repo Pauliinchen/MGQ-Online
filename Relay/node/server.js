@@ -2,7 +2,8 @@
 //  server.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-12: Turned away games older than 0.6.0, which send no X-MGQ-Features header, and games whose X-MGQ-Version is older than the MIN_VERSION environment variable, with 426 before routing their requests
+//      Paulinchen  2026-10-12: Watched the mod's own releases every five minutes, when given a watch, and told every world with players online of a new one in its chat
+//                            - Turned away games older than 0.6.0, which send no X-MGQ-Features header, and games whose X-MGQ-Version is older than the MIN_VERSION environment variable, with 426 before routing their requests
 //                            - Turned a game too old for a world room away with 400 and no X-MGQ-Refusal code, and passed on the gate's code of a PvP room
 //                            - Dropped the body of a bug report refused before it is read, and cut a report body still arriving after 60 seconds
 //                            - Kept each trade's sealed offers in memory beside the trade
@@ -51,6 +52,7 @@ import { DEFAULT_MIN_VERSION, DRAIN_LIMITS, VERSION_HEADER, updateRefusal } from
 import { routeIs } from "../core/http.js";
 import { ModCatalog, handleModRequest } from "../core/mods.js";
 import { handleRaidAdminRequest, raidAdminRouteOf } from "../core/raid_admin.js";
+import { RELEASE_REPO, ReleaseWatch, UPDATE_NAME, updateLine } from "../core/releases.js";
 import { ReportDesk, handleReportRequest, reportSettingsOf } from "../core/reports.js";
 import { STORY_LIMITS, WorldStory, handleStoryRequest, noRaidWorld, storyRouteOf, storyText } from "../core/story.js";
 import { TradeBook, handleTradeRequest } from "../core/trades.js";
@@ -68,6 +70,11 @@ const CHECK_EVERY_MS = 60 * 1000;
  * How often the server checks the mod catalog's links for new releases, half an hour.
  */
 const CHECK_MODS_EVERY_MS = 30 * 60 * 1000;
+
+/**
+ * How often the server checks the mod's own releases, five minutes.
+ */
+const CHECK_RELEASE_EVERY_MS = 5 * 60 * 1000;
 
 /**
  * How often the server sweeps out worlds whose starting save never came and trades kept long enough.
@@ -161,6 +168,22 @@ export function memoryStore() {
     getStart: async (id) => starts.get(id),
     putChat: async (id, lines) => void chats.set(id, structuredClone(lines)),
     getChat: async (id) => (chats.has(id) ? structuredClone(chats.get(id)) : undefined),
+  };
+}
+
+/**
+ * Keeps the newest release of the mod the relay has seen in memory, as the release watch's store.
+ *
+ * @returns {import("../core/releases.js").ReleaseStore} The store.
+ */
+export function memoryReleaseStore() {
+  let seen;
+
+  return {
+    getRelease: async () => seen,
+    putRelease: async (version) => {
+      seen = version;
+    },
   };
 }
 
@@ -273,10 +296,10 @@ export function memoryBossStores() {
 
 /**
  * Opens the stores the relay keeps its worlds, mods, trades and Raid Worlds' stories and boss
- * pools in: a SQLite database at a path, or memory without one.
+ * pools, and the newest release of the mod it has seen in: a SQLite database at a path, or memory without one.
  *
  * @param {string | undefined} path The database's path, as DATABASE_VARIABLE names it; empty or undefined for memory.
- * @returns {Promise<{directory: import("../core/directory.js").DirectoryStore, mods: import("../core/mods.js").ModStore, trades: import("../core/trades.js").TradeStore, stories: (id: string) => import("../core/story.js").StoryStore, bosses: (id: string) => import("../core/bosses.js").BossStore, close: () => void}>} The stores, and a way to close them.
+ * @returns {Promise<{directory: import("../core/directory.js").DirectoryStore, mods: import("../core/mods.js").ModStore, trades: import("../core/trades.js").TradeStore, stories: (id: string) => import("../core/story.js").StoryStore, bosses: (id: string) => import("../core/bosses.js").BossStore, releases: import("../core/releases.js").ReleaseStore, close: () => void}>} The stores, and a way to close them.
  */
 export async function openStores(path) {
   if (path) {
@@ -284,7 +307,7 @@ export async function openStores(path) {
     return openSqliteStores(path);
   }
 
-  return { directory: memoryStore(), mods: memoryModStore(), trades: memoryTradeStore(), stories: memoryStoryStores(), bosses: memoryBossStores(), close: () => {} };
+  return { directory: memoryStore(), mods: memoryModStore(), trades: memoryTradeStore(), stories: memoryStoryStores(), bosses: memoryBossStores(), releases: memoryReleaseStore(), close: () => {} };
 }
 
 /**
@@ -425,14 +448,14 @@ function headerOf(request, name) {
 /**
  * Creates a relay server, not yet listening.
  *
- * @param {{limits?: typeof LIMITS, clock?: () => number, checkEveryMs?: number, sweepEveryMs?: number, directory?: Directory, mods?: ModCatalog, trades?: TradeBook, stories?: (id: string) => import("../core/story.js").StoryStore, storyLimits?: typeof STORY_LIMITS, bosses?: (id: string) => import("../core/bosses.js").BossStore, bossLimits?: typeof BOSS_LIMITS, log?: typeof consoleLog, reports?: ReportDesk, minVersion?: string}} [options] Limits, clock, check and sweep intervals, directory, mod catalog, trades, the Raid Worlds' story stores, the stories' limits, the Raid Worlds' boss pool stores, the pools' limits, log, the bug report desk, off unless given, and the lowest game version served, DEFAULT_MIN_VERSION unless given, which tests change.
- * @returns {{server: http.Server, directory: Directory, mods: ModCatalog, trades: TradeBook, storyOf: (id: string) => WorldStory, bossesOf: (id: string) => WorldBosses, check: () => void, sweep: () => Promise<void>, stop: () => Promise<void>}} The HTTP server to listen with, what it serves, a world's story, a world's boss pools, a look at the deadlines, a sweep of what is kept too long, and a way to stop everything.
+ * @param {{limits?: typeof LIMITS, clock?: () => number, checkEveryMs?: number, sweepEveryMs?: number, directory?: Directory, mods?: ModCatalog, trades?: TradeBook, stories?: (id: string) => import("../core/story.js").StoryStore, storyLimits?: typeof STORY_LIMITS, bosses?: (id: string) => import("../core/bosses.js").BossStore, bossLimits?: typeof BOSS_LIMITS, log?: typeof consoleLog, reports?: ReportDesk, minVersion?: string, releases?: ReleaseWatch | null}} [options] Limits, clock, check and sweep intervals, directory, mod catalog, trades, the Raid Worlds' story stores, the stories' limits, the Raid Worlds' boss pool stores, the pools' limits, log, the bug report desk, off unless given, the lowest game version served, DEFAULT_MIN_VERSION unless given, which tests change, and the watch of the mod's releases, off unless given.
+ * @returns {{server: http.Server, directory: Directory, mods: ModCatalog, trades: TradeBook, storyOf: (id: string) => WorldStory, bossesOf: (id: string) => WorldBosses, check: () => void, sweep: () => Promise<void>, checkRelease: () => Promise<{version: string | null, worlds: number}>, stop: () => Promise<void>}} The HTTP server to listen with, what it serves, a world's story, a world's boss pools, a look at the deadlines, a sweep of what is kept too long, a check of the mod's releases, and a way to stop everything.
  */
 export function createRelay({
   limits = LIMITS, clock = Date.now, checkEveryMs = CHECK_EVERY_MS, sweepEveryMs = SWEEP_EVERY_MS, directory = new Directory(memoryStore(), { clock }),
   mods = new ModCatalog(memoryModStore(), { clock }), trades = new TradeBook(memoryTradeStore(), (id) => directory.store.get(id), { clock }), stories = memoryStoryStores(),
   storyLimits = STORY_LIMITS, bosses = memoryBossStores(), bossLimits = BOSS_LIMITS, log = consoleLog, reports = new ReportDesk(reportSettingsOf({}), { clock, log: stamped(log) }),
-  minVersion = DEFAULT_MIN_VERSION,
+  minVersion = DEFAULT_MIN_VERSION, releases = null,
 } = {}) {
   /** @type {Map<string, WorldStory>} */
   const worldStories = new Map();
@@ -1067,6 +1090,28 @@ export function createRelay({
   }
 
   /**
+   * Reads the mod's latest release and, once it is newer than the last one seen, says the update
+   * notice in the chat of every world with players online and tells their games.
+   *
+   * @returns {Promise<{version: string | null, worlds: number}>} The release announced, null for none or without a watch, and in how many worlds.
+   */
+  async function checkRelease() {
+    const version = releases ? await releases.check() : null;
+
+    if (!version) {
+      return { version: null, worlds: 0 };
+    }
+
+    const said = await directory.announce(UPDATE_NAME, updateLine(version));
+
+    for (const { id, name, text } of said) {
+      tellWorld(id, chatText(name, text));
+    }
+
+    return { version, worlds: said.length };
+  }
+
+  /**
    * Sweeps out the worlds whose starting save did not come in time and the trades kept long
    * enough, which the directory and the trades otherwise only do when a request reads them.
    *
@@ -1087,6 +1132,8 @@ export function createRelay({
   sweepTimer.unref();
   const modTimer = setInterval(() => mods.checkAll().catch((error) => log.error(errorLine(new Date(), "check of the mod catalog", error))), CHECK_MODS_EVERY_MS);
   modTimer.unref();
+  const releaseTimer = releases ? setInterval(() => checkRelease().catch((error) => log.error(errorLine(new Date(), "check of the mod's releases", error))), CHECK_RELEASE_EVERY_MS) : null;
+  releaseTimer?.unref();
 
   /**
    * Closes every connection and the server.
@@ -1097,6 +1144,7 @@ export function createRelay({
     clearInterval(timer);
     clearInterval(sweepTimer);
     clearInterval(modTimer);
+    clearInterval(releaseTimer);
 
     for (const socket of sockets.clients) {
       socket.terminate();
@@ -1105,7 +1153,7 @@ export function createRelay({
     return new Promise((resolve) => server.close(() => resolve()));
   }
 
-  return { server, directory, mods, trades, storyOf, bossesOf, check, sweep, stop };
+  return { server, directory, mods, trades, storyOf, bossesOf, check, sweep, checkRelease, stop };
 }
 
 /**
@@ -1134,7 +1182,8 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   const mods = new ModCatalog(stores.mods, { admins });
   const trades = new TradeBook(stores.trades, (id) => directory.store.get(id));
   const reports = new ReportDesk(reportSettingsOf(process.env), { log: stamped(consoleLog) });
-  const relay = createRelay({ directory, mods, trades, stories: stores.stories, bosses: stores.bosses, reports, minVersion: process.env.MIN_VERSION });
+  const releases = new ReleaseWatch(stores.releases, { repo: process.env.RELEASE_REPO || RELEASE_REPO });
+  const relay = createRelay({ directory, mods, trades, stories: stores.stories, bosses: stores.bosses, reports, minVersion: process.env.MIN_VERSION, releases });
 
   relay.server.listen(port, host, () => console.log(`${new Date().toISOString()} relay listening on ${host}:${port}, ${database ? `database ${database}` : "everything in memory"}`));
 

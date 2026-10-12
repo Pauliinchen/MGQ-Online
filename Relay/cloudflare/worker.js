@@ -2,7 +2,8 @@
 //  worker.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-12: Turned away games older than 0.6.0, which send no X-MGQ-Features header, and games whose X-MGQ-Version is older than the MIN_VERSION variable, with 426 before routing their requests
+//      Paulinchen  2026-10-12: Watched the mod's own releases every five minutes and told every world with players online of a new one in its chat
+//                            - Turned away games older than 0.6.0, which send no X-MGQ-Features header, and games whose X-MGQ-Version is older than the MIN_VERSION variable, with 426 before routing their requests
 //                            - Turned a game too old for a world room away with 400 and no X-MGQ-Refusal code, and passed on the gate's code of a PvP room
 //                            - Dropped the body of a bug report refused before it is read, reading it up to 15 MB or 60 seconds, and stopped reading a report body after 60 seconds
 //                            - Kept each trade's sealed offers under keys of their own beside the trade, which listing the trades never reads
@@ -62,6 +63,7 @@ import { badRequest, notFound, routeIs } from "../core/http.js";
 import { isHash, isId } from "../core/ids.js";
 import { MOD_LIMITS, ModCatalog, handleModRequest } from "../core/mods.js";
 import { handleRaidAdminRequest, raidAdminRouteOf } from "../core/raid_admin.js";
+import { RELEASE_REPO, ReleaseWatch, UPDATE_NAME, updateLine } from "../core/releases.js";
 import { ReportDesk, handleReportRequest, reportSettingsOf } from "../core/reports.js";
 import { STORY_LIMITS, WorldStory, handleStoryRequest, noRaidWorld, storyRouteOf, storyText } from "../core/story.js";
 import { TradeBook, handleTradeRequest } from "../core/trades.js";
@@ -80,6 +82,17 @@ const DIRECTORY_NAME = "directory";
  * The name of the one report object.
  */
 const REPORTS_NAME = "reports";
+
+/**
+ * The schedule of the mod catalog's link check, as wrangler.toml names it; any other schedule
+ * checks the mod's own releases.
+ */
+const CHECK_MODS_CRON = "*/30 * * * *";
+
+/**
+ * The storage key of the newest release of the mod the directory has seen.
+ */
+const RELEASE_KEY = "release";
 
 /**
  * The header Cloudflare names the address a request came from in.
@@ -188,14 +201,14 @@ export default {
   },
 
   /**
-   * Checks the mod catalog's links for new releases, on the schedule wrangler.toml sets.
+   * Checks the mod catalog's links or the mod's own releases, on the schedules wrangler.toml sets.
    *
-   * @param {ScheduledController} _controller The scheduled run.
+   * @param {ScheduledController} controller The scheduled run.
    * @param {{DIRECTORY: DurableObjectNamespace}} env The Worker's bindings.
    * @param {ExecutionContext} ctx The run's context.
    */
-  async scheduled(_controller, env, ctx) {
-    ctx.waitUntil(internal(directoryOf(env), "check-mods"));
+  async scheduled(controller, env, ctx) {
+    ctx.waitUntil(internal(directoryOf(env), controller.cron === CHECK_MODS_CRON ? "check-mods" : "check-release"));
   },
 };
 
@@ -518,11 +531,11 @@ function isDownload(method, url) {
  */
 export class Directory extends DurableObject {
   /**
-   * Creates the directory, the mod catalog and the trades over the object's storage, with the
-   * admins the ADMINS secret names.
+   * Creates the directory, the mod catalog, the trades and the watch of the mod's releases over the
+   * object's storage, with the admins the ADMINS secret names.
    *
    * @param {DurableObjectState} ctx The object's state.
-   * @param {{ADMINS?: string}} env The Worker's bindings.
+   * @param {{ADMINS?: string, RELEASE_REPO?: string}} env The Worker's bindings.
    */
   constructor(ctx, env) {
     super(ctx, env);
@@ -558,6 +571,11 @@ export class Directory extends DurableObject {
     }, { admins });
 
     this.trades = new TradeBook(tradeStore(storage), (id) => storage.get(`world:${id}`));
+
+    this.releases = new ReleaseWatch({
+      getRelease: () => storage.get(RELEASE_KEY),
+      putRelease: (version) => storage.put(RELEASE_KEY, version),
+    }, { repo: env.RELEASE_REPO || RELEASE_REPO });
   }
 
   /**
@@ -572,6 +590,10 @@ export class Directory extends DurableObject {
 
     if (url.pathname === "/internal/check-mods") {
       return json(200, { changed: await this.mods.checkAll() });
+    }
+
+    if (url.pathname === "/internal/check-release") {
+      return json(200, await this.checkRelease());
     }
 
     if (isDownload(request.method, url)) {
@@ -634,6 +656,28 @@ export class Directory extends DurableObject {
     }
 
     return respond(answer);
+  }
+
+  /**
+   * Reads the mod's latest release and, once it is newer than the last one seen, says the update
+   * notice in the chat of every world with players online and tells their world rooms.
+   *
+   * @returns {Promise<{version: string | null, worlds: number}>} The release announced, null for none, and in how many worlds.
+   */
+  async checkRelease() {
+    const version = await this.releases.check();
+
+    if (!version) {
+      return { version: null, worlds: 0 };
+    }
+
+    const said = await this.directory.announce(UPDATE_NAME, updateLine(version));
+
+    for (const { id, name, text } of said) {
+      await internal(worldOf(this.env, id), "say", { name, text });
+    }
+
+    return { version, worlds: said.length };
   }
 
   /**

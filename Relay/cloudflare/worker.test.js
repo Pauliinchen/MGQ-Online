@@ -2,7 +2,8 @@
 //  worker.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-12: Tested that the world directory, the mod catalog and the Raid World admin routes refuse a request without X-MGQ-Features
+//      Paulinchen  2026-10-12: Tested that the schedule checks the mod catalog every half hour and the mod releases otherwise, and that the directory tells only the world rooms with players online of a newer release, once
+//                            - Tested that the world directory, the mod catalog and the Raid World admin routes refuse a request without X-MGQ-Features
 //                            - Tested the update code on the 400 of a refused world room and the World Admin tool passing with 0.0.0-dev
 //                            - Tested that the Worker turns a game without X-MGQ-Features or below MIN_VERSION away with 426 before routing it, a WebSocket with the reason in X-MGQ-Refusal and a body read to its end first
 //                            - Tested a world room refused with 400 and no code, a request without X-MGQ-Version taken as 0.6.4 and the world directory and the mod catalog held to MIN_VERSION
@@ -663,6 +664,38 @@ test("the Worker sends bug reports to an object of their own, never to the world
   const off = await reports.fetch(new Request("https://relay.test/v1/reports", { method: "POST", body: "{}", headers: { [PLAYER_HEADER]: playerKey(1) } }));
   assert.deepEqual([off.status, (await off.json()).code], [503, "off"], "the object reads its settings from the Worker's bindings");
   assert.equal((await reports.fetch(new Request("https://relay.test/v1/reports"))).status, 404);
+});
+
+test("the schedule checks the mod catalog's links every half hour and the mod's own releases on the other schedule", async () => {
+  const reached = [];
+  const env = { DIRECTORY: namespace(() => ({ fetch: async (request) => (reached.push(new URL(request.url).pathname), new Response("{}")) })) };
+  const waited = [];
+  const ctx = { waitUntil: (promise) => waited.push(promise) };
+
+  await worker.scheduled({ cron: "*/30 * * * *" }, env, ctx);
+  await worker.scheduled({ cron: "*/5 * * * *" }, env, ctx);
+  await Promise.all(waited);
+  assert.deepEqual(reached, ["/internal/check-mods", "/internal/check-release"]);
+});
+
+test("the directory tells the world rooms with players online of a newer release, once, and keeps the first release it reads", async (t) => {
+  let tag = "v0.6.4";
+  const asked = [];
+  t.mock.method(globalThis, "fetch", async (url) => (asked.push(url), new Response(null, { status: 302, headers: { Location: `https://github.com/someone/fork/releases/tag/${tag}` } })));
+  const told = [];
+  const env = { RELEASE_REPO: "someone/fork", WORLDS: namespace((id) => ({ fetch: async (request) => (told.push([id, new URL(request.url).pathname, await request.json()]), new Response("{}")) })) };
+  const state = objectState();
+  const quiet = "1".repeat(32);
+  await state.storage.put({ [`world:${WORLD}`]: { id: WORLD, online: ["p1"], start: "none", created: 0 }, [`world:${quiet}`]: { id: quiet, online: [], start: "none", created: 0 } });
+  const directory = new Directory(state, env);
+  const check = async () => (await directory.fetch(new Request("https://relay/internal/check-release", { method: "POST", body: "{}" }))).json();
+
+  assert.deepEqual(await check(), { version: null, worlds: 0 });
+  tag = "v0.6.5";
+  assert.deepEqual(await check(), { version: "0.6.5", worlds: 1 });
+  assert.deepEqual(await check(), { version: null, worlds: 0 });
+  assert.deepEqual(told, [[WORLD, "/internal/say", { name: "MGQ Online", text: "MGQ Online 0.6.5 is out. Restart the game and pick Multiplayer to update." }]]);
+  assert.equal(asked[0], "https://github.com/someone/fork/releases/latest");
 });
 
 test("the Worker turns a game without X-MGQ-Features or below MIN_VERSION away before routing it, and lets the World Admin tool and released games through", async () => {

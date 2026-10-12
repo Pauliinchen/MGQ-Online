@@ -2,7 +2,8 @@
 //  server.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-12: Sent X-MGQ-Features on the world directory and mod catalog requests, and tested that they and the Raid World admin routes refuse a request without it
+//      Paulinchen  2026-10-12: Tested that a newer release of the mod reaches every game of a world with players online as the relay's chat line, once
+//                            - Sent X-MGQ-Features on the world directory and mod catalog requests, and tested that they and the Raid World admin routes refuse a request without it
 //                            - Tested the update code on the 400 of a refused world room and the World Admin tool passing with 0.0.0-dev
 //                            - Sent X-MGQ-Features as released games do, and tested that games without it or with a version below the lowest are turned away with 426, PvP rooms without it still pair, and the admin routes need none
 //                            - Tested a world room refused with 400 and no code, a request without X-MGQ-Version taken as 0.6.4 on every gated route and the world directory and the mod catalog held to MIN_VERSION
@@ -45,11 +46,12 @@ import { DIRECTORY_LIMITS, Directory, playerIdOf, sha256Hex } from "../core/dire
 import { UPDATE_NEEDED, VERSION_HEADER } from "../core/gate.js";
 import { ModCatalog, zipHashes } from "../core/mods.js";
 import { AUTH_HEADER, CHAT_LIMITS, CHAT_SLOW, CLOSE, EVERYONE, FEATURES_HEADER, LIMITS, PAIRED, PING, PLAYER_HEADER, PONG, REFUSAL_HEADER, REPLACED } from "../core/relay.js";
+import { RELEASE_REPO, ReleaseWatch } from "../core/releases.js";
 import { REPORT_LIMITS, ReportDesk } from "../core/reports.js";
 import { STORY_LIMITS } from "../core/story.js";
 import { TRADE_LIMITS } from "../core/trades.js";
 import { makeUpload, makeZip } from "../core/test_zip.js";
-import { addressOf, createRelay, errorLine, memoryModStore, memoryStore, requestLine } from "./server.js";
+import { addressOf, createRelay, errorLine, memoryModStore, memoryReleaseStore, memoryStore, requestLine } from "./server.js";
 
 /**
  * The auth key the tests' games make from their worlds' tokens.
@@ -119,6 +121,11 @@ function gameFetch(address, init = {}) {
 let now = 1_000_000;
 
 /**
+ * The tag GitHub's latest release page of the mod leads to, which tests change.
+ */
+let latestTag = "v0.6.4";
+
+/**
  * The relay under test.
  */
 let relay;
@@ -140,7 +147,9 @@ let directoryBase;
 
 before(async () => {
   const directory = new Directory(memoryStore(), { clock: () => now, limits: TEST_DIRECTORY_LIMITS, rates: TEST_RATES, admins: [await playerIdOf(ADMIN)] });
-  relay = createRelay({ limits: TEST_LIMITS, clock: () => now, checkEveryMs: 3_600_000, sweepEveryMs: 3_600_000, directory, log: LOG });
+  const latestPage = async () => new Response(null, { status: 302, headers: { Location: `https://github.com/${RELEASE_REPO}/releases/tag/${latestTag}` } });
+  const releases = new ReleaseWatch(memoryReleaseStore(), { fetch: latestPage });
+  relay = createRelay({ limits: TEST_LIMITS, clock: () => now, checkEveryMs: 3_600_000, sweepEveryMs: 3_600_000, directory, log: LOG, releases });
   await new Promise((resolve) => relay.server.listen(0, "127.0.0.1", resolve));
   base = `ws://127.0.0.1:${relay.server.address().port}/v1/room/`;
   worldBase = `ws://127.0.0.1:${relay.server.address().port}/v1/world/`;
@@ -478,6 +487,31 @@ test("a chat line a game sends as text is kept for the admins, an admin's line r
   second.socket.send("something else");
   assert.equal((await second.closed).code, CLOSE.badRequest);
   first.socket.close();
+});
+
+test("a newer release of the mod reaches every game of a world with players online as the relay's chat line, once", async () => {
+  await makeWorld(roomId(136), 4);
+  const first = await sit(roomId(136), 7);
+  const second = await sit(roomId(136), 8);
+  await first.next();
+  await second.next();
+  await first.next();
+
+  assert.deepEqual(await relay.checkRelease(), { version: null, worlds: 0 }, "the first release read is only kept");
+  latestTag = "v0.6.5";
+  const announced = await relay.checkRelease();
+  assert.equal(announced.version, "0.6.5");
+  const line = "chat MGQ Online	MGQ Online 0.6.5 is out. Restart the game and pick Multiplayer to update.";
+  assert.equal(await first.next(), line);
+  assert.equal(await second.next(), line);
+  const lines = (await (await gameFetch(`${directoryBase}/${roomId(136)}/chat`, { headers: { [PLAYER_HEADER]: ADMIN } })).json()).lines;
+  assert.deepEqual(lines.map((kept) => [kept.name, kept.admin]), [["MGQ Online", true]]);
+  assert.deepEqual(await relay.checkRelease(), { version: null, worlds: 0 }, "the same release is announced once");
+
+  // The world goes again, so it counts against neither the creator's worlds nor later tests.
+  assert.equal((await gameFetch(`${directoryBase}/${roomId(136)}/delete`, { method: "POST", body: JSON.stringify({ player: CREATOR }) })).status, 200);
+  await first.closed;
+  await second.closed;
 });
 
 test("a game's chat lines past the chat's rate limit are dropped and answered, and an empty one is ignored", async () => {

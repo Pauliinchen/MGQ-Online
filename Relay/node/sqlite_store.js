@@ -2,7 +2,8 @@
 //  sqlite_store.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-12: Kept each trade's sealed offers in a table of their own beside the trade, written and removed with it in one transaction
+//      Paulinchen  2026-10-12: Kept the newest release of the mod the relay has seen
+//                            - Kept each trade's sealed offers in a table of their own beside the trade, written and removed with it in one transaction
 //      Paulinchen  2026-10-09: Kept each Raid World's boss pools
 //      Paulinchen  2026-10-08: Kept each Raid World's story and its checkpoints
 //      Paulinchen  2026-10-07: Kept each world's chat, which goes with the world
@@ -22,7 +23,7 @@ import { DatabaseSync } from "node:sqlite";
  * Opens the stores over a SQLite database, making its tables when they are missing.
  *
  * @param {string} path The database file's path, made when it is missing.
- * @returns {{path: string, directory: import("../core/directory.js").DirectoryStore, mods: import("../core/mods.js").ModStore, trades: import("../core/trades.js").TradeStore, stories: (id: string) => import("../core/story.js").StoryStore, bosses: (id: string) => import("../core/bosses.js").BossStore, close: () => void}} The stores, and a way to close the database.
+ * @returns {{path: string, directory: import("../core/directory.js").DirectoryStore, mods: import("../core/mods.js").ModStore, trades: import("../core/trades.js").TradeStore, stories: (id: string) => import("../core/story.js").StoryStore, bosses: (id: string) => import("../core/bosses.js").BossStore, releases: import("../core/releases.js").ReleaseStore, close: () => void}} The stores, and a way to close the database.
  */
 export function openSqliteStores(path) {
   const db = new DatabaseSync(path);
@@ -42,6 +43,7 @@ export function openSqliteStores(path) {
   const pools = jsonTable(db, "boss_pools");
   const worldPools = db.prepare("SELECT json FROM boss_pools WHERE id LIKE ?");
   const worldPoolsRemove = db.prepare("DELETE FROM boss_pools WHERE id LIKE ?");
+  const releases = jsonTable(db, "releases");
 
   return {
     path,
@@ -116,6 +118,10 @@ export function openSqliteStores(path) {
       remove: async (key) => pools.remove(`${id}:${key}`),
       removeAll: async () => void worldPoolsRemove.run(`${id}:%`),
     }),
+    releases: {
+      getRelease: async () => releases.get("latest"),
+      putRelease: async (version) => releases.put("latest", version),
+    },
     close: () => db.close(),
   };
 }
