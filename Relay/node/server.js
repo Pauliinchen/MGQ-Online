@@ -2,7 +2,8 @@
 //  server.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-12: Kept each trade's sealed offers in memory beside the trade
+//      Paulinchen  2026-10-12: Dropped the body of a bug report refused before it is read, and cut a report body still arriving after 60 seconds
+//                            - Kept each trade's sealed offers in memory beside the trade
 //      Paulinchen  2026-10-11: Took the bug reports games send and handed them to GitHub with the GITHUB_ISSUES_TOKEN and GITHUB_BUG_FILES_TOKEN environment variables
 //      Paulinchen  2026-10-10: Passed what a game names in the X-MGQ-Features header on to the directory's public routes too, for a development build's Raid World starting save
 //                            - Told every game of a Raid World a boss pool's share of HP left, raid max HP and defeat when a report or an admin changed it, and handed a boss report the reporting player's name
@@ -289,13 +290,15 @@ export async function openStores(path) {
  *
  * @param {http.IncomingMessage} request The request.
  * @param {number} limit The most bytes it may have.
+ * @param {AbortSignal} [signal] Cuts the connection and fails the reading once it aborts, as at a deadline.
  * @returns {Promise<Buffer | null>} The body, or null when it is longer than the limit.
  */
-export function readBytes(request, limit) {
+export function readBytes(request, limit, signal) {
   return new Promise((resolve, reject) => {
     const parts = [];
     let size = 0;
     let tooLong = Number(request.headers["content-length"] ?? 0) > limit;
+    const finish = untilAborted(request, signal, reject);
 
     request.on("data", (part) => {
       size += part.length;
@@ -304,13 +307,73 @@ export function readBytes(request, limit) {
       if (!tooLong) {
         parts.push(part);
       } else if (size > limit + MAX_DRAINED_BYTES) {
+        finish();
         resolve(null);
         request.destroy();
       }
     });
-    request.on("end", () => resolve(tooLong ? null : Buffer.concat(parts)));
-    request.on("error", reject);
+    request.on("end", () => (finish(), resolve(tooLong ? null : Buffer.concat(parts))));
+    request.on("error", (error) => (finish(), reject(error)));
   });
+}
+
+/**
+ * Reads a request's body to its end and drops it, so a refusal answered before the body was read
+ * still reaches the client. Past the limit and MAX_DRAINED_BYTES, or once a signal aborts, the
+ * connection is cut instead. It never fails.
+ *
+ * @param {http.IncomingMessage} request The request.
+ * @param {number} limit The most bytes the route takes.
+ * @param {AbortSignal} [signal] Cuts the connection once it aborts, as at a deadline.
+ * @returns {Promise<void>} Completes once the body ended or the connection was cut.
+ */
+export function drain(request, limit, signal) {
+  return new Promise((resolve) => {
+    let size = 0;
+    const finish = untilAborted(request, signal, resolve);
+    const cut = () => {
+      finish();
+      resolve();
+      request.destroy();
+    };
+
+    request.on("data", (part) => {
+      size += part.length;
+
+      if (size > limit + MAX_DRAINED_BYTES) {
+        cut();
+      }
+    });
+    request.on("end", () => (finish(), resolve()));
+    request.on("error", () => (finish(), resolve()));
+  });
+}
+
+/**
+ * Cuts a request's connection and ends its reading once a signal aborts.
+ *
+ * @param {http.IncomingMessage} request The request.
+ * @param {AbortSignal | undefined} signal The signal, none for a reading without a deadline.
+ * @param {(reason: any) => void} stop Ends the reading with the signal's reason.
+ * @returns {() => void} Stops listening to the signal, once the reading ended.
+ */
+function untilAborted(request, signal, stop) {
+  if (!signal) {
+    return () => {};
+  }
+
+  const abort = () => {
+    stop(signal.reason);
+    request.destroy();
+  };
+
+  if (signal.aborted) {
+    abort();
+    return () => {};
+  }
+
+  signal.addEventListener("abort", abort, { once: true });
+  return () => signal.removeEventListener("abort", abort);
 }
 
 /**
@@ -318,10 +381,11 @@ export function readBytes(request, limit) {
  *
  * @param {http.IncomingMessage} request The request.
  * @param {number} [limit] The most bytes read, MAX_BODY_BYTES unless given.
+ * @param {AbortSignal} [signal] Cuts the connection and fails the reading once it aborts, as at a deadline.
  * @returns {Promise<string | null>} The body, or null when it is too large.
  */
-async function readText(request, limit = MAX_BODY_BYTES) {
-  return (await readBytes(request, limit))?.toString("utf8") ?? null;
+async function readText(request, limit = MAX_BODY_BYTES, signal) {
+  return (await readBytes(request, limit, signal))?.toString("utf8") ?? null;
 }
 
 /**
@@ -477,7 +541,8 @@ export function createRelay({
 
     if (routeIs(url, "reports")) {
       const client = { player: headerOf(request, PLAYER_HEADER), address: addressOf(request) };
-      const answer = await handleReportRequest(reports, request.method, url, () => readText(request, reports.limits.maxBodyBytes), client);
+      const limit = reports.limits.maxBodyBytes;
+      const answer = await handleReportRequest(reports, request.method, url, (signal) => readText(request, limit, signal), client, (signal) => drain(request, limit, signal));
       response.writeHead(answer.status, { "Content-Type": "application/json" });
       response.end(JSON.stringify(answer.body));
       return;

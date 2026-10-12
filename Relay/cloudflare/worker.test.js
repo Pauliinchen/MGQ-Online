@@ -2,7 +2,8 @@
 //  worker.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-12: Tested that a trade's sealed offers lie beside it, out of the list of trades, and go once it is cancelled
+//      Paulinchen  2026-10-12: Tested that the reports object answers a report busy while it handles another, once it read the busy report body to its end
+//                            - Tested that a trade's sealed offers lie beside it, out of the list of trades, and go once it is cancelled
 //                            - Tested the directory's streamed downloads and their limit, a body without Content-Length read only up to its limit, and removals of more keys than storage deletes at once
 //                            - Tested that a game or peer the relay closed passes nothing on while its connection closes
 //                            - Created
@@ -657,6 +658,37 @@ test("the Worker sends bug reports to an object of their own, never to the world
   const off = await reports.fetch(new Request("https://relay.test/v1/reports", { method: "POST", body: "{}", headers: { [PLAYER_HEADER]: playerKey(1) } }));
   assert.deepEqual([off.status, (await off.json()).code], [503, "off"], "the object reads its settings from the Worker's bindings");
   assert.equal((await reports.fetch(new Request("https://relay.test/v1/reports"))).status, 404);
+});
+
+test("the reports object answers a report busy while it handles another, after reading its streamed body to the end", async () => {
+  const reports = new Reports(objectState(), { GITHUB_ISSUES_TOKEN: "issues", GITHUB_BUG_FILES_TOKEN: "files" });
+  const held = new Promise(() => {});
+  reports.desk.fetch = () => held;
+  const header = { title: "Busy", text: "Sent twice.", version: "0.6.4", facts: [], files: [{ name: "report.md", length: 4 }] };
+  const report = (number, body) => new Request("https://relay.test/v1/reports", { method: "POST", body, duplex: "half", headers: { [PLAYER_HEADER]: playerKey(number) } });
+
+  reports.fetch(report(1, `${JSON.stringify(header)}\nAAAA`));
+
+  while (reports.desk.pending === 0) {
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+
+  let pulled = 0;
+  let cancelled = false;
+  const streamed = new ReadableStream({
+    pull(controller) {
+      if (++pulled > 5) {
+        controller.close();
+      } else {
+        controller.enqueue(new Uint8Array(64 * 1024));
+      }
+    },
+    cancel: () => void (cancelled = true),
+  }, { highWaterMark: 0 });
+
+  const busy = await reports.fetch(report(2, streamed));
+  assert.deepEqual([busy.status, await busy.json()], [503, { error: "the relay is handling other bug reports, try again in a minute", code: "busy" }]);
+  assert.deepEqual([pulled, cancelled], [6, false], "the body was read to its end, never cancelled");
 });
 
 /**

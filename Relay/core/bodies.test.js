@@ -2,13 +2,14 @@
 //  bodies.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-12: Created
+//      Paulinchen  2026-10-12: Tested a body read until a deadline and a body drained up to a limit
+//                            - Created
 //
 //----------------------------------------------------------------
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { DOWNLOAD_LIMITS, DownloadGate, concatBytes, downloadBusy, piecesStream, readLimited, releaseWhenDone } from "./bodies.js";
+import { DOWNLOAD_LIMITS, DownloadGate, concatBytes, downloadBusy, drainLimited, piecesStream, readLimited, releaseWhenDone } from "./bodies.js";
 import { RATE_LIMITS } from "./relay.js";
 
 /**
@@ -102,6 +103,39 @@ test("readLimited hands back a body at or under the limit as it is, and nothing 
   assert.equal(bytes.length, 300);
   assert.deepEqual([bytes[0], bytes[100], bytes[299]], [1, 2, 3]);
   assert.equal((await readLimited(null, 10)).length, 0);
+});
+
+test("readLimited fails a body still arriving when its signal aborts, and cancels the stream", async () => {
+  let cancelled = false;
+  const stalled = new ReadableStream({ start: (controller) => controller.enqueue(new Uint8Array(4)), cancel: () => void (cancelled = true) });
+  const deadline = new AbortController();
+  const reading = readLimited(stalled, 100, deadline.signal);
+
+  await settle();
+  deadline.abort(new Error("too slow"));
+  await assert.rejects(reading, /too slow/);
+  assert.equal(cancelled, true);
+  await assert.rejects(readLimited(countingStream(1, 1).stream, 100, AbortSignal.abort()), "a signal aborted already fails at once");
+  assert.equal((await readLimited(countingStream(2, 10).stream, 100, new AbortController().signal)).length, 20);
+});
+
+test("drainLimited reads a body to its end without keeping it, and stops past the limit or at the signal", async () => {
+  const whole = countingStream(5, 100);
+  await drainLimited(whole.stream, 500);
+  assert.deepEqual([whole.pulled(), whole.cancelled()], [5, false]);
+
+  const long = countingStream(10, 100);
+  await drainLimited(long.stream, 250);
+  assert.deepEqual([long.pulled(), long.cancelled()], [3, true]);
+
+  let cancelled = false;
+  const stalled = new ReadableStream({ cancel: () => void (cancelled = true) });
+  const deadline = new AbortController();
+  const draining = drainLimited(stalled, 100, deadline.signal);
+  deadline.abort();
+  assert.equal(await draining, undefined, "a drain never fails");
+  assert.equal(cancelled, true);
+  await drainLimited(null, 10);
 });
 
 test("piecesStream sends the pieces in order, reading each only when the reader wants it", async () => {

@@ -2,7 +2,11 @@
 //  reports.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-12: Counted a report against the rate limits before unpacking it, so reports sent at once no longer pass together, and handled at most two at a time
+//      Paulinchen  2026-10-12: Handled one report at a time and refused a busy, rate-limited or keyless report before reading its body, which it drains unkept
+//                            - Read a report's body for at most 60 seconds
+//                            - Uploaded each text file over 64 KB, and any past 1 MB of inline text in all, as a blob of its own instead of inline in the tree
+//                            - Checked every text file of a report before uploading any
+//                            - Counted a report against the rate limits before unpacking it, so reports sent at once no longer pass together, and handled at most two at a time
 //      Paulinchen  2026-10-11: Created
 //
 //----------------------------------------------------------------
@@ -38,9 +42,12 @@ export const REPORT_LIMITS = Object.freeze({
   maxScreenshotLength: 4 * 1024 * 1024,
   maxTextBytes: 8 * 1024 * 1024,
   maxTextBytesTotal: 24 * 1024 * 1024,
+  inlineTextBytes: 64 * 1024,
+  inlineTextTotal: 1024 * 1024,
   commitTries: 3,
   githubTimeoutMs: 60 * 1000,
-  maxPending: 2,
+  bodyReadMs: 60 * 1000,
+  maxPending: 1,
 });
 
 /**
@@ -403,41 +410,82 @@ function fileRefusal(file, seen, limits) {
 }
 
 /**
- * Unpacks a report's text files: base64, then gzip where flagged, then UTF-8 with replacement
- * characters for broken bytes. Unpacking stops as soon as a file passes its limit, so a small
+ * Unpacks one text file of a report: base64, then gzip where flagged, then UTF-8 with replacement
+ * characters for broken bytes. Unpacking stops as soon as the file passes its room, so a small
  * gzip stream cannot fill the memory.
+ *
+ * @param {{name: string, gzip: boolean, content: string}} file The file as parseReport read it.
+ * @param {number} room The most bytes it may unpack to.
+ * @param {typeof REPORT_LIMITS} [limits] The limits, which name the refusal's limit.
+ * @returns {Promise<{text: string, size: number} | {refusal: {status: number, body: object}}>} The text and the bytes it unpacked to, or why the report is refused.
+ */
+export async function unpackText({ name, gzip, content }, room, limits = REPORT_LIMITS) {
+  const bytes = gzip ? await gunzip(bytesOfBase64(content), room) : bytesOfBase64(content);
+
+  if (bytes === BROKEN) {
+    return refuse(`${name} does not unpack as gzip`);
+  }
+
+  if (bytes === null || bytes.length > room) {
+    const error = room < limits.maxTextBytes ? `the text files may have at most ${limits.maxTextBytesTotal} bytes together` : `a text file may have at most ${limits.maxTextBytes} bytes`;
+    return { refusal: { status: 413, body: { error: `${error}, unpacked` } } };
+  }
+
+  return { text: new TextDecoder().decode(bytes), size: bytes.length };
+}
+
+/**
+ * Checks that every text file of a report unpacks within its limits, keeping none of them, so a
+ * report is refused before any of its files reaches GitHub.
  *
  * @param {{name: string, gzip: boolean, content: string}[]} files The files as parseReport read them.
  * @param {typeof REPORT_LIMITS} [limits] The limits.
- * @returns {Promise<{files: ({name: string, text: string} | {name: string, content: string})[]} | {refusal: {status: number, body: object}}>} Each text file with its text and the screenshot with its base64 as sent, or why the report is refused.
+ * @returns {Promise<{status: number, body: object} | null>} Why the report is refused, or null.
  */
-export async function unpackFiles(files, limits = REPORT_LIMITS) {
-  const unpacked = [];
+export async function checkTexts(files, limits = REPORT_LIMITS) {
   let total = 0;
 
-  for (const { name, gzip, content } of files) {
-    if (name === REPORT_FILE.screenshot) {
-      unpacked.push({ name, content });
+  for (const file of files) {
+    if (file.name === REPORT_FILE.screenshot) {
       continue;
     }
 
-    const room = Math.min(limits.maxTextBytes, limits.maxTextBytesTotal - total);
-    const bytes = gzip ? await gunzip(bytesOfBase64(content), room) : bytesOfBase64(content);
+    const unpacked = await unpackText(file, Math.min(limits.maxTextBytes, limits.maxTextBytesTotal - total), limits);
 
-    if (bytes === BROKEN) {
-      return refuse(`${name} does not unpack as gzip`);
+    if (unpacked.refusal) {
+      return unpacked.refusal;
     }
 
-    if (bytes === null || bytes.length > room) {
-      const error = room < limits.maxTextBytes ? `the text files may have at most ${limits.maxTextBytesTotal} bytes together` : `a text file may have at most ${limits.maxTextBytes} bytes`;
-      return { refusal: { status: 413, body: { error: `${error}, unpacked` } } };
-    }
-
-    total += bytes.length;
-    unpacked.push({ name, text: new TextDecoder().decode(bytes) });
+    total += unpacked.size;
   }
 
-  return { files: unpacked };
+  return null;
+}
+
+/**
+ * Encodes bytes as base64.
+ *
+ * @param {Uint8Array} bytes The bytes.
+ * @returns {string} The base64.
+ */
+export function base64Of(bytes) {
+  if (typeof bytes.toBase64 === "function") {
+    return bytes.toBase64();
+  }
+
+  if (typeof Buffer === "function") {
+    return Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).toString("base64");
+  }
+
+  // A multiple of 3 bytes, so the pieces' base64 joins without padding between them.
+  const piece = 3 * 8192;
+  const parts = [];
+
+  for (let start = 0; start < bytes.length; start += piece) {
+    parts.push(btoa(String.fromCharCode(...bytes.subarray(start, start + piece))));
+  }
+
+  return parts.join("");
 }
 
 /**
@@ -600,59 +648,85 @@ export class ReportDesk {
   }
 
   /**
-   * Takes a report: checks it, counts it against the rate limits, unpacks its text files and hands
-   * it to GitHub, at most limits.maxPending at a time.
+   * Lets a report in before its body is read: checks that the relay takes reports, the player's
+   * key, the rate limits and that fewer than limits.maxPending reports are handled, then takes the
+   * report's turn and a place, which release gives back.
    *
    * @param {unknown} key The player's key.
    * @param {string | null} address The address the report came from, null when unknown.
-   * @param {string | null} body The body, null when it was too large to read.
-   * @returns {Promise<{status: number, body: object}>} The issue's number and address and the report's id, or why the report is refused.
+   * @returns {Promise<{counted: {player: string, address: string | null}} | {refusal: {status: number, body: object}}>} The player's id and the address the turn was taken for, or why the report is refused.
    */
-  async send(key, address, body) {
+  async admit(key, address) {
     if (!this.enabled) {
-      return { status: 503, body: { error: "bug reports are off on this relay", code: REPORT_REFUSAL.off } };
+      return { refusal: { status: 503, body: { error: "bug reports are off on this relay", code: REPORT_REFUSAL.off } } };
     }
 
     if (!isId(key)) {
-      return { status: 401, body: { error: "a player key is needed", code: REPORT_REFUSAL.player } };
-    }
-
-    if (body === null || body.length > this.limits.maxBodyBytes) {
-      return tooLarge(this.limits.maxBodyBytes, "bytes");
-    }
-
-    const parsed = parseReport(body, this.limits);
-
-    if (parsed.refusal) {
-      return parsed.refusal;
+      return { refusal: { status: 401, body: { error: "a player key is needed", code: REPORT_REFUSAL.player } } };
     }
 
     const counted = { player: await playerIdOf(key), address };
 
     if (!this.allows(counted)) {
-      return tooMany();
+      return { refusal: tooMany() };
     }
 
     if (this.pending >= this.limits.maxPending) {
-      return busy();
+      return { refusal: busy() };
     }
 
     // Taken with no await since the questions, so reports sent at once cannot all pass them.
     this.take(counted);
     this.pending++;
+    return { counted };
+  }
 
-    try {
-      const unpacked = await unpackFiles(parsed.report.files, this.limits);
+  /**
+   * Gives back the place admit took, once the report is answered.
+   */
+  release() {
+    this.pending--;
+  }
 
-      if (unpacked.refusal) {
-        this.giveBack(counted);
-        return unpacked.refusal;
-      }
+  /**
+   * Takes the body of a report admit let in: checks it and its text files, then hands it to
+   * GitHub. A report refused for its body gives its turn back.
+   *
+   * @param {{player: string, address: string | null}} counted The player's id and the address, as admit answered them.
+   * @param {string | null} body The body, null when it was too large to read.
+   * @returns {Promise<{status: number, body: object}>} The issue's number and address and the report's id, or why the report is refused.
+   */
+  async send(counted, body) {
+    const checked = await this.check(body);
 
-      return await this.deliver({ ...parsed.report, files: unpacked.files });
-    } finally {
-      this.pending--;
+    if (checked.refusal) {
+      this.giveBack(counted);
+      return checked.refusal;
     }
+
+    return this.deliver(checked.report);
+  }
+
+  /**
+   * Reads a report's body and checks that it is short enough, keeps every rule and that its text
+   * files unpack within their limits.
+   *
+   * @param {string | null} body The body, null when it was too large to read.
+   * @returns {Promise<{report: ReturnType<typeof parseReport>["report"]} | {refusal: {status: number, body: object}}>} The report as parseReport reads it, or why it is refused.
+   */
+  async check(body) {
+    if (body === null || body.length > this.limits.maxBodyBytes) {
+      return { refusal: tooLarge(this.limits.maxBodyBytes, "bytes") };
+    }
+
+    const parsed = parseReport(body, this.limits);
+
+    if (parsed.refusal) {
+      return parsed;
+    }
+
+    const refusal = await checkTexts(parsed.report.files, this.limits);
+    return refusal ? { refusal } : parsed;
   }
 
   /**
@@ -690,7 +764,7 @@ export class ReportDesk {
   /**
    * Commits a report's files to the files repository, then opens its issue.
    *
-   * @param {{title: string, text: string, version: string, facts: [string, string][], files: ({name: string, text: string} | {name: string, content: string})[]}} report The report, its text files unpacked.
+   * @param {{title: string, text: string, version: string, facts: [string, string][], files: {name: string, gzip: boolean, content: string}[]}} report The report as parseReport read it, its text files checked.
    * @returns {Promise<{status: number, body: object}>} The issue's number and address and the report's id, or 502 when GitHub refused or failed.
    */
   async deliver(report) {
@@ -727,19 +801,23 @@ export class ReportDesk {
 
   /**
    * Commits a report's files as one commit on the files branch through GitHub's Git Data API:
-   * the screenshot as a blob, the text files inline in a tree on top of the branch's head, then
+   * the files a tree does not carry inline as blobs first, then a tree on top of the branch's head,
    * the commit and the branch moved to it. A branch another report moved meanwhile is answered
-   * with 422, and the commit is made again on the new head, up to `commitTries` in all.
+   * with 422, and the commit is made again on the new head with the same blobs, up to
+   * `commitTries` in all.
    *
    * @param {string} id The report.
-   * @param {{title: string, files: ({name: string, text: string} | {name: string, content: string})[]}} report The report, its text files unpacked.
+   * @param {{title: string, files: {name: string, gzip: boolean, content: string}[]}} report The report as parseReport read it, its text files checked.
    * @returns {Promise<{status: number, body: object} | null>} Null once committed, or the refusal after a step GitHub refused.
    */
   async commit(id, report) {
     const { filesRepo, branch, filesToken } = this.settings;
     const git = (method, path, body) => this.github(method, `/repos/${filesRepo}/git/${path}`, body, filesToken);
-    const screenshot = report.files.find((file) => file.content !== undefined);
-    let blob = null;
+    const entries = await this.treeEntries(id, report.files, git);
+
+    if (entries.refusal) {
+      return entries.refusal;
+    }
 
     for (let tries = 1; ; tries++) {
       const ref = await git("GET", `ref/heads/${branch}`);
@@ -756,21 +834,7 @@ export class ReportDesk {
       }
 
       const baseTree = (await commit.json()).tree.sha;
-
-      if (screenshot && !blob) {
-        // The base64 goes in as sent: it holds no character JSON escapes, and stringifying
-        // megabytes would only copy them.
-        const made = await git("POST", "blobs", `{"content":"${screenshot.content}","encoding":"base64"}`);
-
-        if (!made.ok) {
-          return this.failed(id, `uploading ${screenshot.name}`, made);
-        }
-
-        blob = (await made.json()).sha;
-      }
-
-      const entries = report.files.map((file) => ({ path: `reports/${id}/${file.name}`, mode: "100644", type: "blob", ...(file.text !== undefined ? { content: file.text } : { sha: blob }) }));
-      const tree = await git("POST", "trees", JSON.stringify({ base_tree: baseTree, tree: entries }));
+      const tree = await git("POST", "trees", JSON.stringify({ base_tree: baseTree, tree: entries.tree }));
 
       if (!tree.ok) {
         return this.failed(id, "making the tree", tree);
@@ -794,6 +858,58 @@ export class ReportDesk {
 
       this.log.info(`report ${id}: the branch moved meanwhile, committing again`);
     }
+  }
+
+  /**
+   * Makes the tree entries of a report's files in the order it lists them. A text file of up to
+   * limits.inlineTextBytes goes inline while the inline texts stay within limits.inlineTextTotal;
+   * every other file, and the screenshot, is uploaded as a blob first, so the tree request stays
+   * small and no file's bytes are held longer than its upload.
+   *
+   * @param {string} id The report.
+   * @param {{name: string, gzip: boolean, content: string}[]} files The files as parseReport read them, their text files checked.
+   * @param {(method: string, path: string, body: string) => Promise<Response>} git Sends a request to the files repository's Git Data API.
+   * @returns {Promise<{tree: {path: string, mode: string, type: string, content?: string, sha?: string}[]} | {refusal: {status: number, body: object}}>} The entries, or the refusal after an upload GitHub refused.
+   */
+  async treeEntries(id, files, git) {
+    const tree = [];
+    let inline = 0;
+
+    for (const file of files) {
+      const entry = { path: `reports/${id}/${file.name}`, mode: "100644", type: "blob" };
+      let base64 = file.content;
+
+      if (file.name !== REPORT_FILE.screenshot) {
+        // checkTexts let every text file in, so it unpacks within the limit of a single file.
+        const unpacked = await unpackText(file, this.limits.maxTextBytes, this.limits);
+
+        if (unpacked.refusal) {
+          return unpacked;
+        }
+
+        const bytes = new TextEncoder().encode(unpacked.text);
+
+        if (bytes.length <= this.limits.inlineTextBytes && inline + bytes.length <= this.limits.inlineTextTotal) {
+          inline += bytes.length;
+          tree.push({ ...entry, content: unpacked.text });
+          continue;
+        }
+
+        base64 = base64Of(bytes);
+      }
+
+      // The base64 goes in as it is: it holds no character JSON escapes, and stringifying
+      // megabytes would only copy them.
+      const made = await git("POST", "blobs", `{"content":"${base64}","encoding":"base64"}`);
+
+      if (!made.ok) {
+        return { refusal: await this.failed(id, `uploading ${file.name}`, made) };
+      }
+
+      tree.push({ ...entry, sha: (await made.json()).sha });
+    }
+
+    return { tree };
   }
 
   /**
@@ -879,30 +995,44 @@ function githubFailed() {
 }
 
 /**
- * Answers a request to the report route. The body is read before any refusal, since Cloudflare
- * breaks a request whose object answers before it read the body.
+ * Answers a request to the report route. A report is let in before its body is read, so a busy
+ * relay keeps no body in memory; a refused report's body is still read and dropped, since
+ * Cloudflare breaks a request whose object answers before it read the body.
  *
  * @param {ReportDesk} desk The desk.
  * @param {string} method The HTTP method.
  * @param {URL} url The request's address.
- * @param {() => Promise<string | null>} readBody Reads the request's body as text, null when it is too large to read.
- * @param {{player?: string | null, address?: string | null}} [client] The PLAYER_HEADER of the request and the address it came from.
+ * @param {(signal: AbortSignal) => Promise<string | null>} readBody Reads the request's body as text, null when it is too large to read, failing once the signal aborts.
+ * @param {{player?: string | null, address?: string | null}} client The PLAYER_HEADER of the request and the address it came from.
+ * @param {(signal: AbortSignal) => Promise<void>} drainBody Reads the request's body up to the body limit and drops it, stopping once the signal aborts.
  * @returns {Promise<{status: number, body: object}>} The answer.
  */
-export async function handleReportRequest(desk, method, url, readBody, client = {}) {
+export async function handleReportRequest(desk, method, url, readBody, client, drainBody) {
   const parts = url.pathname.split("/").filter((part) => part.length > 0);
 
   if (parts[0] !== VERSION || parts[1] !== "reports" || parts.length !== 2 || method !== "POST") {
     return notFound("route");
   }
 
-  let body;
+  const admitted = await desk.admit(client.player ?? null, client.address ?? null);
 
-  try {
-    body = await readBody();
-  } catch {
-    return badRequest("the body could not be read");
+  if (admitted.refusal) {
+    await drainBody(AbortSignal.timeout(desk.limits.bodyReadMs)).catch(() => {});
+    return admitted.refusal;
   }
 
-  return desk.send(client.player ?? null, client.address ?? null, body);
+  try {
+    let body;
+
+    try {
+      body = await readBody(AbortSignal.timeout(desk.limits.bodyReadMs));
+    } catch {
+      desk.giveBack(admitted.counted);
+      return badRequest("the body could not be read");
+    }
+
+    return await desk.send(admitted.counted, body);
+  } finally {
+    desk.release();
+  }
 }

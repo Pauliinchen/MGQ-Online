@@ -2,7 +2,9 @@
 //  reports.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-12: Moved the test of the Worker sending bug reports to their own object to cloudflare/worker.test.js
+//      Paulinchen  2026-10-12: Checked that a busy, rate-limited or keyless report is refused before its body is read and its body drained, that one report is handled at a time and its place given back after every answer, and that a body still arriving at the deadline is refused
+//                            - Checked that text files over the inline limits go to GitHub as blobs before the tree, that no blob is uploaded twice and that a report with a broken text file uploads nothing
+//                            - Moved the test of the Worker sending bug reports to their own object to cloudflare/worker.test.js
 //                            - Checked that the Worker sends bug reports to an object of their own, never to the world directory
 //                            - Checked that a report past its rate limit is refused before it is unpacked, that at most two reports are handled at once, and that a report refused after its turn was taken gives it back
 //      Paulinchen  2026-10-11: Created
@@ -12,7 +14,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { gzipSync } from "node:zlib";
-import { REPORT_DEFAULTS, REPORT_LIMITS, ReportDesk, WindowLimiter, fileLink, handleReportRequest, issueMarkdown, parseReport, reportSettingsOf, unpackFiles } from "./reports.js";
+import { REPORT_DEFAULTS, REPORT_LIMITS, ReportDesk, WindowLimiter, base64Of, checkTexts, fileLink, handleReportRequest, issueMarkdown, parseReport, reportSettingsOf, unpackText } from "./reports.js";
 
 /**
  * The reporting player's key.
@@ -43,6 +45,11 @@ const SETTINGS = Object.freeze({ issuesToken: TOKEN, filesToken: FILES_TOKEN, is
  * The report route's address.
  */
 const ROUTE = new URL("https://relay/v1/reports");
+
+/**
+ * The answer while the relay handles another report.
+ */
+const BUSY = Object.freeze({ status: 503, body: { error: "the relay is handling other bug reports, try again in a minute", code: "busy" } });
 
 /**
  * The zero-width space the relay puts after every "@".
@@ -125,6 +132,7 @@ function fakeGitHub(answer = () => undefined) {
       const own = answer(url, init);
       const path = url.startsWith(files) ? url.slice(files.length) : url;
       const heads = requests.filter((request) => request.url.endsWith("git/ref/heads/main")).length;
+      const blobs = requests.filter((request) => request.url.endsWith("git/blobs")).length;
 
       if (own) {
         return own;
@@ -132,7 +140,7 @@ function fakeGitHub(answer = () => undefined) {
 
       if (path === "ref/heads/main") return Response.json({ object: { sha: `head${heads}` } });
       if (path.startsWith("commits/")) return Response.json({ tree: { sha: `tree-of-${path.slice(8)}` } });
-      if (path === "blobs") return Response.json({ sha: "blob1" }, { status: 201 });
+      if (path === "blobs") return Response.json({ sha: `blob${blobs}` }, { status: 201 });
       if (path === "trees") return Response.json({ sha: `tree${heads}` }, { status: 201 });
       if (path === "commits") return Response.json({ sha: `commit${heads}` }, { status: 201 });
       if (path === "refs/heads/main") return Response.json({ object: {} });
@@ -157,6 +165,22 @@ function newDesk({ answer, settings = SETTINGS, limits = REPORT_LIMITS } = {}) {
 }
 
 /**
+ * Sends a report to the route, counting how often the route reads and drains its body.
+ *
+ * @param {ReportDesk} desk The desk.
+ * @param {string | null} body The body.
+ * @param {{player?: string | null, address?: string | null}} [client] The player's key and address.
+ * @param {(signal: AbortSignal) => Promise<string | null>} [readBody] Reads the body, handing back `body` unless given.
+ * @returns {{answer: Promise<{status: number, body: object}>, reads: number, drains: number}} The answer and the counts so far.
+ */
+function sent(desk, body, client = { player: PLAYER, address: ADDRESS }, readBody = async () => body) {
+  const counts = { reads: 0, drains: 0 };
+  const read = (signal) => (counts.reads++, readBody(signal));
+  counts.answer = handleReportRequest(desk, "POST", ROUTE, read, client, async () => void counts.drains++);
+  return counts;
+}
+
+/**
  * Sends a report to the route.
  *
  * @param {ReportDesk} desk The desk.
@@ -165,7 +189,27 @@ function newDesk({ answer, settings = SETTINGS, limits = REPORT_LIMITS } = {}) {
  * @returns {Promise<{status: number, body: object}>} The answer.
  */
 function post(desk, body, client = { player: PLAYER, address: ADDRESS }) {
-  return handleReportRequest(desk, "POST", ROUTE, async () => body, client);
+  return sent(desk, body, client).answer;
+}
+
+/**
+ * Makes the keys of different players.
+ *
+ * @param {number} count How many.
+ * @returns {string[]} The keys.
+ */
+function playersOf(count) {
+  return Array.from({ length: count }, (_, index) => (index + 16).toString(16).repeat(16));
+}
+
+/**
+ * Reads the bytes of the blobs a desk uploaded, in order.
+ *
+ * @param {{url: string, body: string}[]} requests The requests the desk sent to GitHub.
+ * @returns {string[]} Each blob's bytes read as UTF-8.
+ */
+function blobTexts(requests) {
+  return requests.filter((request) => request.url.endsWith("/blobs")).map((request) => Buffer.from(JSON.parse(request.body).content, "base64").toString("utf8"));
 }
 
 /**
@@ -201,16 +245,16 @@ test("a report's files go to the files repository in one commit, then its issue 
 
   const git = "https://api.github.com/repos/Owner/Files/git";
   assert.deepEqual(github.requests.map((request) => [request.method, request.url]), [
+    ["POST", `${git}/blobs`],
     ["GET", `${git}/ref/heads/main`],
     ["GET", `${git}/commits/head1`],
-    ["POST", `${git}/blobs`],
     ["POST", `${git}/trees`],
     ["POST", `${git}/commits`],
     ["PATCH", `${git}/refs/heads/main`],
     ["POST", "https://api.github.com/repos/Owner/Issues/issues"],
   ]);
-  assert.equal(github.requests[0].body, undefined);
-  assert.deepEqual(JSON.parse(github.requests[2].body), { content: SCREENSHOT, encoding: "base64" });
+  assert.equal(github.requests[1].body, undefined);
+  assert.deepEqual(JSON.parse(github.requests[0].body), { content: SCREENSHOT, encoding: "base64" });
   assert.deepEqual(JSON.parse(github.requests[3].body), {
     base_tree: "tree-of-head1",
     tree: [
@@ -259,8 +303,11 @@ test("a branch another report moved meanwhile is committed on again, up to 3 tri
   assert.equal((await post(once.desk, bodyOf())).status, 201);
 
   const methods = once.github.requests.map((request) => `${request.method} ${request.url.split("/git/")[1] ?? "issue"}`);
-  assert.deepEqual(methods, ["GET ref/heads/main", "GET commits/head1", "POST blobs", "POST trees", "POST commits", "PATCH refs/heads/main", "GET ref/heads/main", "GET commits/head2", "POST trees", "POST commits", "PATCH refs/heads/main", "POST issue"]);
+  assert.deepEqual(methods, ["POST blobs", "GET ref/heads/main", "GET commits/head1", "POST trees", "POST commits", "PATCH refs/heads/main", "GET ref/heads/main", "GET commits/head2", "POST trees", "POST commits", "PATCH refs/heads/main", "POST issue"]);
   assert.deepEqual(JSON.parse(once.github.requests[9].body).parents, ["head2"], "the second commit builds on the new head");
+  const trees = [3, 8].map((index) => JSON.parse(once.github.requests[index].body));
+  assert.deepEqual(trees[1].tree, trees[0].tree, "the second tree takes the blob uploaded for the first");
+  assert.equal(trees[1].base_tree, "tree-of-head2");
   assert.deepEqual(once.logged.info[0], `report ${ID}: the branch moved meanwhile, committing again`);
 
   const never = newDesk({ answer: (url, init) => (init.method === "PATCH" ? Response.json({ message: "Update is not a fast forward" }, { status: 422 }) : undefined) });
@@ -350,9 +397,10 @@ test("an unreachable GitHub ends the report with 502", async () => {
 test("without both GitHub tokens the relay takes no reports", async () => {
   for (const settings of [{ ...SETTINGS, filesToken: null }, { ...SETTINGS, issuesToken: "" }]) {
     const { desk, github } = newDesk({ settings });
-    const answer = await post(desk, bodyOf());
+    const request = sent(desk, bodyOf());
 
-    assert.deepEqual(answer, { status: 503, body: { error: "bug reports are off on this relay", code: "off" } });
+    assert.deepEqual(await request.answer, { status: 503, body: { error: "bug reports are off on this relay", code: "off" } });
+    assert.deepEqual([request.reads, request.drains], [0, 1], "the body is drained, never read");
     assert.equal(github.requests.length, 0);
   }
 });
@@ -361,8 +409,9 @@ test("a report needs a player key", async () => {
   const { desk } = newDesk();
 
   for (const player of [null, "", "A1".repeat(16), "a1".repeat(15)]) {
-    const answer = await post(desk, bodyOf(), { player, address: ADDRESS });
-    assert.deepEqual([answer.status, answer.body.code], [401, "player"]);
+    const request = sent(desk, bodyOf(), { player, address: ADDRESS });
+    const answer = await request.answer;
+    assert.deepEqual([answer.status, answer.body.code, request.reads, request.drains], [401, "player", 0, 1]);
   }
 });
 
@@ -376,9 +425,11 @@ test("a body too large to read, or longer than the limit, is answered with 413",
 
 test("only POST /v1/reports is a route", async () => {
   const { desk } = newDesk();
-  assert.equal((await handleReportRequest(desk, "GET", ROUTE, async () => "")).status, 404);
-  assert.equal((await handleReportRequest(desk, "POST", new URL("https://relay/v1/reports/x"), async () => bodyOf())).status, 404);
-  assert.equal((await handleReportRequest(desk, "POST", new URL("https://relay/v1/report"), async () => bodyOf())).status, 404);
+  const untouched = async () => assert.fail("a request to no route leaves its body alone");
+  const client = { player: PLAYER, address: ADDRESS };
+  assert.equal((await handleReportRequest(desk, "GET", ROUTE, untouched, client, untouched)).status, 404);
+  assert.equal((await handleReportRequest(desk, "POST", new URL("https://relay/v1/reports/x"), untouched, client, untouched)).status, 404);
+  assert.equal((await handleReportRequest(desk, "POST", new URL("https://relay/v1/report"), untouched, client, untouched)).status, 404);
 });
 
 test("a player sends at most 3 reports an hour and 10 a day, and an address 6 an hour", async () => {
@@ -419,9 +470,17 @@ test("a player sends at most 3 reports an hour and 10 a day, and an address 6 an
 test("a refused report counts against no rate limit", async () => {
   const { desk } = newDesk();
 
+  const brokenThird = bodyOf({}, [FILES[0], FILES[1], { name: LOG_NAME, ...packed("plain", false), gzip: true }, FILES[3]]);
+  const unreadable = async () => {
+    throw new Error("connection reset");
+  };
+
   for (let count = 0; count < 5; count++) {
     assert.equal((await post(desk, bodyOf({ title: "" }))).status, 400);
     assert.equal((await post(desk, bodyOf({}, [{ name: "report.md", content: "AAAA", gzip: true }]))).status, 400);
+    assert.equal((await post(desk, brokenThird)).status, 400);
+    assert.equal((await post(desk, null)).status, 413);
+    assert.deepEqual(await sent(desk, bodyOf(), undefined, unreadable).answer, { status: 400, body: { error: "the body could not be read" } });
   }
 
   for (let count = 0; count < 3; count++) {
@@ -431,33 +490,132 @@ test("a refused report counts against no rate limit", async () => {
   assert.equal((await post(desk, bodyOf())).status, 429, "a gzip refused after the turn was taken gave it back");
 });
 
-test("a report past its rate limit is refused before its files are unpacked", async () => {
+test("a report past its rate limit is refused before its body is read, and its body drained", async () => {
   const { desk } = newDesk();
 
   for (let count = 0; count < 3; count++) {
     assert.equal((await post(desk, bodyOf())).status, 201);
   }
 
-  const broken = await post(desk, bodyOf({}, [{ name: "report.md", content: "AAAA", gzip: true }]));
-  assert.deepEqual([broken.status, broken.body.code], [429, "rate"]);
+  const broken = sent(desk, bodyOf({}, [{ name: "report.md", content: "AAAA", gzip: true }]));
+  const answer = await broken.answer;
+  assert.deepEqual([answer.status, answer.body.code, broken.reads, broken.drains], [429, "rate", 0, 1]);
 });
 
-test("at most two reports are handled at once, also when GitHub fails them", async () => {
+test("one report is handled at a time, and another is refused as busy before its body is read", async () => {
   const { desk } = newDesk();
   const held = holdGitHub(desk);
-  const players = Array.from({ length: 4 }, (_, index) => (index + 16).toString(16).repeat(16));
-  const first = [post(desk, bodyOf(), { player: players[0], address: null }), post(desk, bodyOf(), { player: players[1], address: null })];
+  const players = playersOf(3);
+  const first = post(desk, bodyOf(), { player: players[0], address: null });
 
-  const third = post(desk, bodyOf(), { player: players[2], address: null });
+  while (desk.pending === 0) {
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+
+  const second = sent(desk, bodyOf(), { player: players[1], address: null });
+  assert.deepEqual(await second.answer, BUSY);
+  assert.deepEqual([second.reads, second.drains], [0, 1], "the busy report is drained, never read");
+
   held.open();
-  assert.deepEqual(await third, { status: 503, body: { error: "the relay is handling other bug reports, try again in a minute", code: "busy" } });
-  assert.deepEqual((await Promise.all(first)).map((answer) => answer.status), [201, 201]);
-  assert.equal((await post(desk, bodyOf(), { player: players[3], address: null })).status, 201);
+  assert.equal((await first).status, 201);
+  assert.equal((await post(desk, bodyOf(), { player: players[1], address: null })).status, 201, "the busy report took no turn");
+  assert.equal((await post(desk, bodyOf(), { player: players[2], address: null })).status, 201);
+});
 
-  const failing = newDesk({ answer: () => new Response("", { status: 500 }) }).desk;
+test("the place of a report is given back after every answer, also a refusal or a GitHub failure", async () => {
+  let failing = false;
+  const { desk } = newDesk({ answer: () => (failing ? new Response("", { status: 500 }) : undefined) });
+  const clients = playersOf(6).map((player) => ({ player, address: null }));
+  const unreadable = async () => {
+    throw new Error("connection reset");
+  };
+  const statuses = [
+    (await post(desk, bodyOf({ title: "" }), clients[0])).status,
+    (await post(desk, null, clients[1])).status,
+    (await post(desk, bodyOf({}, [{ name: "report.md", ...packed("plain", false), gzip: true }]), clients[2])).status,
+    (await sent(desk, bodyOf(), clients[3], unreadable).answer).status,
+  ];
 
-  for (const player of players.slice(0, 3)) {
-    assert.equal((await post(failing, bodyOf(), { player, address: null })).status, 502);
+  failing = true;
+  statuses.push((await post(desk, bodyOf(), clients[4])).status);
+  failing = false;
+
+  assert.deepEqual(statuses, [400, 413, 400, 400, 502]);
+  assert.equal(desk.pending, 0);
+  assert.equal((await post(desk, bodyOf(), clients[5])).status, 201);
+});
+
+test("a body still arriving at the deadline is refused, and a refused report drains with a deadline", async () => {
+  const { desk } = newDesk({ limits: { ...REPORT_LIMITS, bodyReadMs: 10 } });
+  const stalled = (signal) => new Promise((_, reject) => signal.addEventListener("abort", () => reject(signal.reason)));
+
+  assert.deepEqual(await sent(desk, null, undefined, stalled).answer, { status: 400, body: { error: "the body could not be read" } });
+  assert.equal(desk.pending, 0);
+
+  const signals = [];
+  desk.pending = desk.limits.maxPending;
+  const busy = await handleReportRequest(desk, "POST", ROUTE, async () => assert.fail("never read"), { player: PLAYER, address: ADDRESS }, (signal) => (signals.push(signal), stalled(signal)));
+  desk.pending = 0;
+
+  assert.deepEqual(busy, BUSY, "a drain that fails still lets the refusal be answered");
+  assert.ok(signals[0] instanceof AbortSignal && signals[0].aborted);
+});
+
+test("text files over the inline limits go to GitHub as blobs of their own before the tree", async () => {
+  const limits = { ...REPORT_LIMITS, inlineTextBytes: 12, inlineTextTotal: 20 };
+  const { desk, github } = newDesk({ limits });
+  const files = [
+    { name: "report.md", ...packed("# Stuck\n") },
+    { name: "a.log", ...packed("0123456789") },
+    { name: "b.log", ...packed("abcde", false) },
+    { name: "c.txt", ...packed("xy") },
+    { name: "screenshot.png", content: SCREENSHOT, gzip: false },
+    { name: "long.log", ...packed("a line longer than twelve") },
+    { name: "broken.txt", ...packed(Uint8Array.of(0x61, 0xff, 0x62), false) },
+  ];
+
+  assert.equal((await post(desk, bodyOf({}, files))).status, 201);
+  assert.deepEqual(github.requests.slice(0, 5).map((request) => request.url.split("/git/")[1]), ["blobs", "blobs", "blobs", "blobs", "ref/heads/main"], "every blob before the branch is read");
+  assert.deepEqual(blobTexts(github.requests).filter((_, index) => index !== 1), ["abcde", "a line longer than twelve", "a�b"], "broken bytes become replacement characters");
+  assert.deepEqual(JSON.parse(github.requests[0].body), { content: Buffer.from("abcde").toString("base64"), encoding: "base64" });
+  assert.deepEqual(JSON.parse(github.requests[1].body), { content: SCREENSHOT, encoding: "base64" });
+
+  const tree = JSON.parse(github.requests.find((request) => request.url.endsWith("/trees")).body).tree;
+  assert.deepEqual(tree.map((entry) => [entry.path.slice(`reports/${ID}/`.length), entry.content ?? entry.sha]), [
+    ["report.md", "# Stuck\n"],
+    ["a.log", "0123456789"],
+    ["b.log", "blob1"],
+    ["c.txt", "xy"],
+    ["screenshot.png", "blob2"],
+    ["long.log", "blob3"],
+    ["broken.txt", "blob4"],
+  ], "small files stay inline while the inline texts stay within their total");
+});
+
+test("a report whose third file does not unpack sends nothing to GitHub", async () => {
+  const { desk, github } = newDesk();
+  const files = [FILES[0], FILES[1], { name: LOG_NAME, ...packed("plain", false), gzip: true }, FILES[3]];
+
+  assert.equal((await post(desk, bodyOf({}, files))).status, 400);
+  assert.equal(github.requests.length, 0, "no blob is left behind");
+});
+
+test("base64Of encodes as Buffer does, also without Buffer", () => {
+  const bytes = Uint8Array.from({ length: 50_000 }, (_, index) => (index * 7) % 256);
+
+  for (const length of [0, 1, 2, 3, 4, 24_576, 24_577, 50_000]) {
+    assert.equal(base64Of(bytes.subarray(0, length)), Buffer.from(bytes.subarray(0, length)).toString("base64"));
+  }
+
+  const buffer = globalThis.Buffer;
+  const plain = bytes.slice();
+  plain.toBase64 = undefined;
+
+  try {
+    globalThis.Buffer = undefined;
+    assert.equal(base64Of(plain), buffer.from(bytes).toString("base64"));
+  } finally {
+    globalThis.Buffer = buffer;
   }
 });
 
@@ -533,7 +691,7 @@ test("a report's fields are read trimmed, and its parts cut where the header say
   assert.deepEqual(report.files, FILES.map(({ name, content, gzip }) => ({ name, gzip, content })));
 });
 
-test("text files are unpacked to UTF-8 with replacement characters, the screenshot kept as sent", async () => {
+test("text files are unpacked to UTF-8 with replacement characters, and the screenshot is left packed", async () => {
   const files = [
     { name: "report.md", gzip: true, content: packed("Bericht äöü 日本").content },
     { name: "errors.txt", gzip: false, content: packed(Uint8Array.of(0x61, 0xff, 0x62), false).content },
@@ -541,14 +699,10 @@ test("text files are unpacked to UTF-8 with replacement characters, the screensh
     { name: "empty.log", gzip: true, content: packed("").content },
   ];
 
-  assert.deepEqual(await unpackFiles(files), {
-    files: [
-      { name: "report.md", text: "Bericht äöü 日本" },
-      { name: "errors.txt", text: "a�b" },
-      { name: "screenshot.png", content: SCREENSHOT },
-      { name: "empty.log", text: "" },
-    ],
-  });
+  assert.equal(await checkTexts(files), null, "the screenshot is no text file");
+  assert.deepEqual(await unpackText(files[0], 100), { text: "Bericht äöü 日本", size: 21 });
+  assert.deepEqual(await unpackText(files[1], 100), { text: "a�b", size: 3 });
+  assert.deepEqual(await unpackText(files[3], 100), { text: "", size: 0 });
 });
 
 test("a gzip stream that does not unpack is refused with 400", async () => {
@@ -556,8 +710,9 @@ test("a gzip stream that does not unpack is refused with 400", async () => {
   const cut = Buffer.from(whole, "base64").subarray(0, 30).toString("base64");
 
   for (const content of [packed("not gzip", false).content, cut]) {
-    const answer = await unpackFiles([{ name: "report.md", gzip: true, content }]);
+    const answer = await unpackText({ name: "report.md", gzip: true, content }, 100);
     assert.equal(answer.refusal.status, 400);
+    assert.equal((await checkTexts([{ name: "report.md", gzip: true, content }])).status, 400);
   }
 
   const { desk, github } = newDesk();
@@ -568,19 +723,19 @@ test("a gzip stream that does not unpack is refused with 400", async () => {
 test("a text file past 8 MiB unpacked, or all of them past 24 MiB together, is refused with 413", async () => {
   const bomb = packed(new Uint8Array(REPORT_LIMITS.maxTextBytes + 1)).content;
   assert.ok(bomb.length < 64 * 1024, "the bomb is small packed");
-  const answer = await unpackFiles([{ name: "report.md", gzip: true, content: bomb }]);
-  assert.equal(answer.refusal.status, 413);
-  assert.match(answer.refusal.body.error, /a text file may have at most 8388608 bytes/);
-  assert.ok((await unpackFiles([{ name: "report.md", gzip: true, content: packed(new Uint8Array(REPORT_LIMITS.maxTextBytes)).content }])).files, "8 MiB itself is taken");
+  const refusal = await checkTexts([{ name: "report.md", gzip: true, content: bomb }]);
+  assert.equal(refusal.status, 413);
+  assert.match(refusal.body.error, /a text file may have at most 8388608 bytes/);
+  assert.equal(await checkTexts([{ name: "report.md", gzip: true, content: packed(new Uint8Array(REPORT_LIMITS.maxTextBytes)).content }]), null, "8 MiB itself is taken");
 
   const limits = { ...REPORT_LIMITS, maxTextBytes: 100, maxTextBytesTotal: 150 };
   const file = (name, size, gzip = true) => ({ name, gzip, content: packed("x".repeat(size), gzip).content });
-  assert.ok((await unpackFiles([file("report.md", 100), file("a.log", 50, false)], limits)).files);
-  assert.equal((await unpackFiles([file("report.md", 101, false)], limits)).refusal.status, 413, "unzipped text counts too");
+  assert.equal(await checkTexts([file("report.md", 100), file("a.log", 50, false)], limits), null);
+  assert.equal((await checkTexts([file("report.md", 101, false)], limits)).status, 413, "unzipped text counts too");
 
-  const together = await unpackFiles([file("report.md", 100), file("a.log", 51)], limits);
-  assert.equal(together.refusal.status, 413);
-  assert.match(together.refusal.body.error, /together/);
+  const together = await checkTexts([file("report.md", 100), file("a.log", 51)], limits);
+  assert.equal(together.status, 413);
+  assert.match(together.body.error, /together/);
 
   const { desk, github } = newDesk({ limits });
   assert.equal((await post(desk, bodyOf({}, [file("report.md", 100), file("a.log", 51)]))).status, 413);

@@ -2,7 +2,8 @@
 //  server.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-12: Checked that the sweep drops the sealed offers of a trade it cancels
+//      Paulinchen  2026-10-12: Tested that a bug report sent while another is handled is answered busy over HTTP, its body drained, and that the screenshot blob goes up before the branch is read
+//                            - Checked that the sweep drops the sealed offers of a trade it cancels
 //      Paulinchen  2026-10-11: Tested a bug report over HTTP: its unpacked files committed to GitHub in one commit, refused without a player key, too long or without a token
 //      Paulinchen  2026-10-10: Tested that only a game naming the dev feature in X-MGQ-Features makes a Raid World with a starting save and uploads it over HTTP
 //                            - Tested boss pools that keep the share of a raid max HP left over HTTP: turn reports, a kill named by its player, the frame every game hears and the admin view
@@ -1132,15 +1133,15 @@ test("a game sends a bug report over HTTP, which the relay hands to GitHub, and 
   assert.equal(answer.issue, 7);
   assert.match(answer.id, /^\d{4}-\d\d-\d\d-[0-9a-f]{8}$/);
   assert.deepEqual(requests.map((request) => `${request.method} ${request.url.split("/repos/")[1]}`), [
+    "POST Owner/Files/git/blobs",
     "GET Owner/Files/git/ref/heads/main",
     "GET Owner/Files/git/commits/head",
-    "POST Owner/Files/git/blobs",
     "POST Owner/Files/git/trees",
     "POST Owner/Files/git/commits",
     "PATCH Owner/Files/git/refs/heads/main",
     "POST Owner/Issues/issues",
   ]);
-  assert.equal(JSON.parse(requests[2].body).content, "iVBORw0K");
+  assert.equal(JSON.parse(requests[0].body).content, "iVBORw0K");
   assert.deepEqual(JSON.parse(requests[3].body).tree.map((entry) => [entry.path, entry.content ?? entry.sha]), [[`reports/${answer.id}/report.md`, "# Stuck\n"], [`reports/${answer.id}/screenshot.png`, "made"]]);
 
   const keyless = await send({});
@@ -1151,4 +1152,45 @@ test("a game sends a bug report over HTTP, which the relay hands to GitHub, and 
 
   const off = await send({ [PLAYER_HEADER]: playerKey(70) }, body, directoryBase.replace("/worlds", "/reports"));
   assert.deepEqual([off.status, (await off.json()).code], [503, "off"]);
+});
+
+test("a bug report sent while the relay handles another is answered busy over HTTP once its body is drained", async () => {
+  let open;
+  const gate = new Promise((resolve) => (open = resolve));
+  const github = async (url) => {
+    await gate;
+    const path = url.split("/git/")[1];
+
+    if (path === "ref/heads/main") return Response.json({ object: { sha: "head" } });
+    if (path === "commits/head") return Response.json({ tree: { sha: "tree" } });
+    if (path === "refs/heads/main") return Response.json({});
+    return Response.json({ sha: "made", number: 8, html_url: "https://github.com/Owner/Issues/issues/8" }, { status: 201 });
+  };
+  const settings = { issuesToken: "token", filesToken: "token", issuesRepo: "Owner/Issues", filesRepo: "Owner/Files", branch: "main" };
+  const reports = new ReportDesk(settings, { clock: () => now, fetch: github, log: LOG });
+  const reportRelay = createRelay({ clock: () => now, checkEveryMs: 3_600_000, reports, log: LOG });
+  await new Promise((resolve) => reportRelay.server.listen(0, "127.0.0.1", resolve));
+  const reportsUrl = `http://127.0.0.1:${reportRelay.server.address().port}/v1/reports`;
+  const index = gzipSync(Buffer.from("# Busy\n")).toString("base64");
+  const header = { title: "Busy", text: "Sent twice.", version: "0.6.4", facts: [], files: [{ name: "report.md", length: index.length, gzip: true }] };
+  const body = `${JSON.stringify(header)}\n${index}`;
+  const send = (player, text) => fetch(reportsUrl, { method: "POST", headers: { [PLAYER_HEADER]: playerKey(player) }, body: text });
+
+  try {
+    const first = send(71, body);
+
+    while (reports.pending === 0) {
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+
+    const busy = await send(72, `${body}${" ".repeat(256 * 1024)}`);
+    assert.deepEqual([busy.status, await busy.json()], [503, { error: "the relay is handling other bug reports, try again in a minute", code: "busy" }]);
+
+    open();
+    assert.equal((await first).status, 201);
+    assert.equal((await send(72, body)).status, 201, "the busy report took no turn");
+  } finally {
+    open();
+    await reportRelay.stop();
+  }
 });

@@ -2,7 +2,8 @@
 //  bodies.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-12: Created
+//      Paulinchen  2026-10-12: Stopped reading a body at a deadline too, and drained a body up to a limit without keeping it
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -50,32 +51,75 @@ export function concatBytes(chunks) {
  *
  * @param {ReadableStream<Uint8Array> | null} stream The stream, null for an empty body.
  * @param {number} limit The most bytes it may have.
+ * @param {AbortSignal} [signal] Ends the reading with an error once it aborts, as at a deadline.
  * @returns {Promise<Uint8Array | null>} The bytes, or null when there are more than the limit.
  */
-export async function readLimited(stream, limit) {
+export async function readLimited(stream, limit, signal) {
+  const chunks = [];
+  return (await eachChunk(stream, limit, signal, (chunk) => chunks.push(chunk))) ? concatBytes(chunks) : null;
+}
+
+/**
+ * Reads a stream to its end and drops what it reads, stopping past a limit or once a signal
+ * aborts. It never fails.
+ *
+ * @param {ReadableStream<Uint8Array> | null} stream The stream, null for an empty body.
+ * @param {number} limit The most bytes read.
+ * @param {AbortSignal} [signal] Stops the reading once it aborts, as at a deadline.
+ * @returns {Promise<void>} Completes once the stream ended or the reading stopped.
+ */
+export async function drainLimited(stream, limit, signal) {
+  await eachChunk(stream, limit, signal, () => {}).catch(() => {});
+}
+
+/**
+ * Reads a stream chunk by chunk, cancelling it past a limit or once a signal aborts.
+ *
+ * @param {ReadableStream<Uint8Array> | null} stream The stream, null for an empty body.
+ * @param {number} limit The most bytes it may have.
+ * @param {AbortSignal | undefined} signal Ends the reading with its reason once it aborts.
+ * @param {(chunk: Uint8Array) => void} take Gets each chunk within the limit.
+ * @returns {Promise<boolean>} True once the stream ended within the limit, false past it.
+ */
+async function eachChunk(stream, limit, signal, take) {
+  signal?.throwIfAborted();
+
   if (!stream) {
-    return new Uint8Array(0);
+    return true;
   }
 
   const reader = stream.getReader();
-  const chunks = [];
-  let size = 0;
+  let stop = () => {};
+  // Raced against each read, since a read a cancel ends reports a plain end of the stream.
+  const aborted = signal ? new Promise((_, reject) => (stop = () => reject(signal.reason))) : null;
+  const read = () => (aborted ? Promise.race([reader.read(), aborted]) : reader.read());
+  const abort = () => {
+    stop();
+    reader.cancel(signal.reason).catch(() => {});
+  };
 
-  for (;;) {
-    const { done, value } = await reader.read();
+  aborted?.catch(() => {});
+  signal?.addEventListener("abort", abort, { once: true });
 
-    if (done) {
-      return concatBytes(chunks);
+  try {
+    for (let size = 0; ;) {
+      const { done, value } = await read();
+
+      if (done) {
+        return true;
+      }
+
+      size += value.byteLength;
+
+      if (size > limit) {
+        await reader.cancel();
+        return false;
+      }
+
+      take(value);
     }
-
-    size += value.byteLength;
-
-    if (size > limit) {
-      await reader.cancel();
-      return null;
-    }
-
-    chunks.push(value);
+  } finally {
+    signal?.removeEventListener("abort", abort);
   }
 }
 

@@ -2,7 +2,8 @@
 //  worker.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-12: Kept each trade's sealed offers under keys of their own beside the trade, which listing the trades never reads
+//      Paulinchen  2026-10-12: Dropped the body of a bug report refused before it is read, reading it up to 15 MB or 60 seconds, and stopped reading a report body after 60 seconds
+//                            - Kept each trade's sealed offers under keys of their own beside the trade, which listing the trades never reads
 //                            - Read every request body only up to its route's limit, also one sent without a Content-Length
 //                            - Sent starting saves and uploaded mods piece by piece as they are read, at most three at once and one per address, a request waiting up to 30 seconds for its turn
 //                            - Deleted a stored file's pieces by their keys, without reading them, and a world's checkpoints and boss pools at most 128 keys at a time
@@ -51,7 +52,7 @@
 // never passes on from outside.
 
 import { DurableObject } from "cloudflare:workers";
-import { DownloadGate, piecesStream, readLimited } from "../core/bodies.js";
+import { DownloadGate, drainLimited, piecesStream, readLimited } from "../core/bodies.js";
 import { BOSS_LIMITS, WorldBosses, bossRouteOf, bossText, handleBossRequest } from "../core/bosses.js";
 import { DIRECTORY_LIMITS, Directory as WorldDirectory, WORLD_TYPE, difficultyText, handleDirectoryRequest, modsRuleText, parseAdmins, playerIdOf, sha256Hex } from "../core/directory.js";
 import { badRequest, notFound, routeIs } from "../core/http.js";
@@ -438,14 +439,15 @@ async function deleteKeys(storage, keys) {
  *
  * @param {Request} request The request.
  * @param {number} limit The most bytes it may have.
+ * @param {AbortSignal} [signal] Ends the reading with an error once it aborts, as at a deadline.
  * @returns {Promise<Uint8Array | null>} The body, or null when it is too long.
  */
-async function readBytes(request, limit) {
+async function readBytes(request, limit, signal) {
   if (Number(request.headers.get("Content-Length") ?? 0) > limit) {
     return null;
   }
 
-  return readLimited(request.body, limit);
+  return readLimited(request.body, limit, signal);
 }
 
 /**
@@ -454,10 +456,11 @@ async function readBytes(request, limit) {
  *
  * @param {Request} request The request.
  * @param {number} [limit] The most bytes the route takes.
+ * @param {AbortSignal} [signal] Ends the reading with an error once it aborts, as at a deadline.
  * @returns {Promise<string | null>} The body, or null when it is too long.
  */
-async function readText(request, limit = MAX_TEXT_BYTES) {
-  const bytes = await readBytes(request, limit);
+async function readText(request, limit = MAX_TEXT_BYTES, signal) {
+  const bytes = await readBytes(request, limit, signal);
   return bytes ? new TextDecoder().decode(bytes) : null;
 }
 
@@ -688,7 +691,9 @@ export class Reports extends DurableObject {
   async fetch(request) {
     const url = new URL(request.url);
     const client = { player: request.headers.get(PLAYER_HEADER), address: request.headers.get(ADDRESS_HEADER) };
-    return respond(await handleReportRequest(this.desk, request.method, url, () => readText(request, this.desk.limits.maxBodyBytes), client));
+    const limit = this.desk.limits.maxBodyBytes;
+    const readBody = (signal) => readText(request, limit, signal);
+    return respond(await handleReportRequest(this.desk, request.method, url, readBody, client, (signal) => drainLimited(request.body, limit, signal)));
   }
 }
 
