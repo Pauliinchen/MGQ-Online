@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-12: Checked that a job or race item any player got comes to every other player, once
+#                            - Read the catch-up's gifts from its log, as it tells none
 #                            - Checked that only a page that applies now and sets the encounters the other way keeps them with the map
 #                            - Checked that a move on at a level cap whose checkpoint is dropped makes only the next story's rewards wait, and that a gate noted while the player plays the world's story holds nothing back
 #                            - Checked that Galda the story gave comes back to its start once a checkpoint or the world's story past its event is laid over, and that a vehicle on a map or one the player rides is never moved
@@ -45,7 +46,8 @@
 
 require_relative "support"
 
-module MGQ_Multiplayer; module Log; def self.write(m); puts "  log: #{m}"; end; end; end
+$logs = []
+module MGQ_Multiplayer; module Log; def self.write(m); $logs << m; puts "  log: #{m}"; end; end; end
 $calls = []
 $state = ""
 $checkpoint = ""
@@ -303,6 +305,7 @@ def new_game(variables = {}, switches = [], level = 10)
   $calls.clear
   $notices.clear
   $messages.clear
+  $logs.clear
   MGQ_MpCoopChoices.forget("next check")
   MGQ_MpWorldStory.loaded(:load)
   MGQ_MpWorldCatchup.loaded
@@ -463,15 +466,16 @@ check("but what the world's story carries them past later comes as usual", MGQ_M
 $game_actors[1].cap = 9999
 $game_actors[1].level = 25
 $messages.clear
+$logs.clear
 MGQ_MpWorldStory.loaded(:load)
 MGQ_MpWorldCatchup.loaded
 frames(1)
 relay({ "rev" => 53, "wrev" => 53, "p" => 29, "part" => "2", "checkpoints" => "1" }, packed({ 1001 => 29 }))
 frames(80)
 check("and come once a load finds the real level at the gate",
-      [MGQ_MpStoryState.knows?($game_actors[1], 930), $game_party.items[600].to_i, $messages.grep(/The story gave you/).size], [true, 1, 1])
+      [MGQ_MpStoryState.knows?($game_actors[1], 930), $game_party.items[600].to_i, $logs.grep(/the story gave the player/).size], [true, 1, 1])
 frames(40)
-check("once", [$game_party.items[600].to_i, $messages.grep(/The story gave you/).size], [1, 1])
+check("once", [$game_party.items[600].to_i, $logs.grep(/the story gave the player/).size], [1, 1])
 
 # A move on at a level cap whose checkpoint is dropped, as the player's story reached the world's part
 # before it came: the story laid over next still makes its rewards wait, later ones give as usual.
@@ -726,7 +730,7 @@ frames(1)
 relay({ "rev" => 19, "wrev" => 19, "p" => 24, "part" => "2" }, packed({ 1001 => 24 }))
 frames(40)
 MGQ_Multiplayer::Log.singleton_class.send(:alias_method, :write, :quiet_write)
-check("a skill Luka knows and an item the game lacks are no gifts", $messages.grep(/The story gave you/), [])
+check("a skill Luka knows and an item the game lacks are no gifts", $logs.grep(/the story gave the player/), [])
 
 # A key item whose event is only there to play, up to its amount, unless the story took it since.
 tables(:KEY_ITEMS => [key_item.new(505, 1, "map:29:35:2", "1", 7, nil, [[:v, 1001, 7]], false),
@@ -1059,13 +1063,13 @@ frames(40)
 check("the first player from the save starts the world's story with it, held by nothing",
       [story.mode, $game_variables[1001], catchup.holds_story?, calls_of("mp_raid_story_post").map { |args| args[2] }], [:world, 25, false, ["p=25;r1141=0;r1142=0;r1143=0;clear=\0"]])
 check("and the rows the save played give nothing, take nobody and bring nobody back",
-      [$game_party.items[600].to_i, roster, $messages.grep(/The story gave you/)], [0, [1, 77, 80], []])
+      [$game_party.items[600].to_i, roster, $logs.grep(/the story gave the player/)], [0, [1, 77, 80], []])
 from_save.call
 frames(1)
 relay({ "rev" => 1, "wrev" => 1, "p" => 25, "part" => "2" }, packed({ 1001 => 25 }, [4]))
 frames(40)
 check("the next player from the save plays the world's story at once, the save's rows still theirs",
-      [story.mode, catchup.holds_story?, $game_party.items[600].to_i, roster, $messages.grep(/The story gave you/)], [:world, false, 0, [1, 77, 80], []])
+      [story.mode, catchup.holds_story?, $game_party.items[600].to_i, roster, $logs.grep(/the story gave the player/)], [:world, false, 0, [1, 77, 80], []])
 
 # A telling the player watched takes the key items its scene took, which only the teller's game
 # ran, and one the player's own event took stays taken.
@@ -1096,8 +1100,8 @@ $game_party.gain_item($data_items[701], 3)
 frames(1)
 relay({ "rev" => 30, "wrev" => 30, "p" => 9, "part" => "1" }, packed({ 1001 => 9 }))
 frames(40)
-check("a Makina comes once the player's level reaches its area level, and copies beyond the first go",
-      [$game_party.items[700], $game_party.items[701], $messages.grep(/Makina/).last], [1, 1, "Your level brought you Makina: Auto Crossbow."])
+check("a Makina comes once the player's level reaches its area level, without a notice, and copies beyond the first go",
+      [$game_party.items[700], $game_party.items[701], $messages.grep(/Makina/)], [1, 1, []])
 $game_party.gain_item($data_items[700], 1)
 frames(40)
 check("a chest giving one held already leaves one", $game_party.items[700], 1)

@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-12: Gave every item unlocking a job or a race any player of the world got to every other player
+#                            - Logged what the catch-up gave instead of telling it, which the World overview's Unlocks page shows
 #                            - Listed what moving on from a part brings along, and each companion's and Makina's id
 #                            - Left the random encounters to a map only while a page of it that applies now sets them the other way
 #                            - Let the story's rewards wait after a move on at a level cap only for the first story laid over the player no longer behind, and never once they play the world's story, as a dropped checkpoint kept them waiting for every later story
@@ -1536,16 +1537,12 @@ module MGQ_MpWorldCatchup
   # back every copy of one beyond the first, which the game never uses: a Raid World gives Makina by
   # level, since a chest of one another player's story closed again gave it twice.
   def self.check_makina
-    gifts = DATA::MAKINA.map do |row|
+    DATA::MAKINA.each do |row|
       item = MGQ_MpGame.item("i", row.item)
       next unless item && !trim_copies(item)
 
-      $game_party.item_number(item) == 0 && reached?(row.level) ? give("i", row.item, 1, "makina:#{row.item} at level #{row.level}") : nil
-    end.compact
-    return if gifts.empty?
-
-    shown = gifts.first(4).join(", ")
-    notice(:makina, "Your level brought you Makina: #{shown}#{gifts.size > 4 ? " and #{gifts.size - 4} more" : ''}.")
+      give("i", row.item, 1, "makina:#{row.item} at level #{row.level}") if $game_party.item_number(item) == 0 && reached?(row.level)
+    end
   end
 
   # Takes back every copy of an item beyond the first, as a Makina or an item unlocking a job or a
@@ -1640,14 +1637,12 @@ module MGQ_MpWorldCatchup
     $game_map.need_refresh = true if $game_map
   end
 
-  # Tells the player what the story gave them.
+  # Logs what the story gave the player at once; the World overview's Unlocks page shows it rather
+  # than a notice, which listed too much at once.
   #
   # @param gifts [Array<String>] What was given, as shown.
   def self.tell_gifts(gifts)
-    return if gifts.empty?
-
-    shown = gifts.first(4).join(", ")
-    notice(:gifts, "The story gave you #{shown}#{gifts.size > 4 ? " and #{gifts.size - 4} more" : ''}.")
+    log("the story gave the player #{gifts.join(', ')}") unless gifts.empty?
   end
 
   # Notes that ORB_EVENT waits to play once the player holds every orb before the story moved on,
