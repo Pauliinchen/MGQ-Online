@@ -7,7 +7,7 @@
     "node": ">=24"
   },
   "scripts": {
-    "test": "node --test \"core/*.test.js\" \"node/*.test.js\"",
+    "test": "node --test \"core/*.test.js\" \"node/*.test.js\" \"cloudflare/*.test.js\"",
     "start": "node node/server.js",
     "dev:cloudflare": "wrangler dev --config cloudflare/wrangler.toml",
     "deploy:cloudflare": "wrangler deploy --config cloudflare/wrangler.toml"

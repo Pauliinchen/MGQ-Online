@@ -14,7 +14,7 @@ core/directory.test.js tests of the directory
 core/trades.js         the referee of trades between two players of a world
 core/trades.test.js    tests of the trades
 core/story.js          a Raid World's story: its counters, sealed story, checkpoints, route lock and shared companions
-core/story.test.js     tests of the story, and of the Worker refusing a story write too long to pass on
+core/story.test.js     tests of the story
 core/bosses.js         a Raid World's boss pools: the share of the raid HP left, the battles' reports, regeneration, the defeat
 core/bosses.test.js    tests of the boss pools and the admin routes
 core/raid_admin.js     what admins see and set right in a Raid World: counters, pools, the route lock
@@ -26,6 +26,7 @@ core/http.js           the answers every router gives alike, and how each reads 
 core/ids.js            how ids, hashes and texts are read everywhere
 core/test_zip.js       the zips the tests feed the mod catalog
 cloudflare/worker.js   the relay on Cloudflare Workers, one Durable Object per room and per world room, one for the directory, one for the bug reports
+cloudflare/worker.test.js tests of the Worker and the Durable Objects against stand-ins for Cloudflare's storage and WebSockets
 cloudflare/wrangler.toml
 node/server.js         the relay as a plain Node server, for a rented machine
 node/server.test.js    tests of the Node server over real WebSockets

@@ -2,6 +2,7 @@
 //  story.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-12: Moved the test of the Worker refusing a story write too long to cloudflare/worker.test.js
 //      Paulinchen  2026-10-11: Covered a world that finished every route choosing and playing a route again
 //      Paulinchen  2026-10-10: Covered taking back the route lock refused while the route is under way, and a route lock refused while the story is on another route
 //                            - Covered the Worker refusing a story write by its Content-Length before reading the body, and by its length read for a body without one
@@ -13,7 +14,6 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { registerHooks } from "node:module";
 import { PART, ROUTE, STORY_LIMITS, WorldStory, compareKeys, handleStoryRequest, partOf, readCounters, storyKey, storyRouteOf, storyText } from "./story.js";
 
 /**
@@ -465,23 +465,4 @@ test("the routes are read from the address, and the router answers each", async 
   assert.equal((await handleStoryRequest(story, "POST", [], async () => null, ALICE)).status, 413);
   assert.equal((await handleStoryRequest(story, "POST", [], async () => "x".repeat(STORY_LIMITS.maxBodyLength + 1), ALICE)).status, 413);
   assert.equal(ROUTE.none, "none");
-});
-
-test("the Worker refuses a story write whose Content-Length is too long before reading it, and reads one without the header to tell", async () => {
-  // The Worker's platform module exists on Cloudflare only.
-  registerHooks({ resolve: (specifier, context, next) => (specifier === "cloudflare:workers" ? { url: "data:text/javascript,export class DurableObject {}", shortCircuit: true } : next(specifier, context)) });
-  const { default: worker } = await import("../cloudflare/worker.js");
-  const forwarded = [];
-  const env = { WORLDS: { idFromName: (id) => id, get: () => ({ fetch: async (request) => (forwarded.push(await request.text()), new Response("{}")) }) } };
-  const url = `https://relay.test/v1/worlds/${"d4".repeat(16)}/story`;
-  let pulled = false;
-  const unread = new ReadableStream({ pull: (controller) => ((pulled = true), controller.close()) }, { highWaterMark: 0 });
-
-  const declared = await worker.fetch(new Request(url, { method: "POST", headers: { "Content-Length": String(STORY_LIMITS.maxBodyLength + 1) }, body: unread, duplex: "half" }), env);
-  assert.deepEqual([declared.status, pulled, forwarded.length], [413, false, 0], "refused unread");
-
-  const chunked = (text) => new Request(url, { method: "POST", body: new ReadableStream({ start: (controller) => (controller.enqueue(new TextEncoder().encode(text)), controller.close()) }), duplex: "half" });
-  assert.equal((await worker.fetch(chunked("x".repeat(STORY_LIMITS.maxBodyLength + 1)), env)).status, 413, "a body without the header is read to tell");
-  assert.equal((await worker.fetch(chunked("{}"), env)).status, 200);
-  assert.deepEqual(forwarded, ["{}"], "a body short enough is forwarded whole");
 });

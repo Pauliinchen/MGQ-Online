@@ -2,7 +2,8 @@
 //  reports.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-12: Checked that the Worker sends bug reports to an object of their own, never to the world directory
+//      Paulinchen  2026-10-12: Moved the test of the Worker sending bug reports to their own object to cloudflare/worker.test.js
+//                            - Checked that the Worker sends bug reports to an object of their own, never to the world directory
 //                            - Checked that a report past its rate limit is refused before it is unpacked, that at most two reports are handled at once, and that a report refused after its turn was taken gives it back
 //      Paulinchen  2026-10-11: Created
 //
@@ -10,7 +11,6 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { registerHooks } from "node:module";
 import { gzipSync } from "node:zlib";
 import { REPORT_DEFAULTS, REPORT_LIMITS, ReportDesk, WindowLimiter, fileLink, handleReportRequest, issueMarkdown, parseReport, reportSettingsOf, unpackFiles } from "./reports.js";
 
@@ -613,22 +613,4 @@ test("the settings fall back to the default repositories and branch", () => {
   assert.deepEqual(reportSettingsOf({}), { issuesToken: null, filesToken: null, ...REPORT_DEFAULTS });
   assert.deepEqual(reportSettingsOf({ GITHUB_ISSUES_TOKEN: " t ", GITHUB_BUG_FILES_TOKEN: "f", REPORT_ISSUES_REPO: "A/B", REPORT_FILES_REPO: "C/D", REPORT_FILES_BRANCH: "reports" }), { issuesToken: "t", filesToken: "f", issuesRepo: "A/B", filesRepo: "C/D", branch: "reports" });
   assert.deepEqual(reportSettingsOf({ REPORT_FILES_BRANCH: "" }).branch, "main");
-});
-
-test("the Worker sends bug reports to an object of their own, never to the world directory", async () => {
-  // The Worker's platform module exists on Cloudflare only.
-  registerHooks({ resolve: (specifier, context, next) => (specifier === "cloudflare:workers" ? { url: "data:text/javascript,export class DurableObject {}", shortCircuit: true } : next(specifier, context)) });
-  const { default: worker, Reports } = await import("../cloudflare/worker.js");
-  const reached = [];
-  const namespace = (name) => ({ idFromName: (id) => `${name}:${id}`, get: (id) => ({ fetch: async () => (reached.push(id), new Response("{}")) }) });
-  const env = { DIRECTORY: namespace("directory"), REPORTS: namespace("reports") };
-
-  await worker.fetch(new Request("https://relay.test/v1/reports", { method: "POST", body: bodyOf() }), env);
-  await worker.fetch(new Request("https://relay.test/v1/worlds"), env);
-  assert.deepEqual(reached, ["reports:reports", "directory:directory"]);
-
-  const reports = new Reports({ storage: {} }, {});
-  const off = await reports.fetch(new Request("https://relay.test/v1/reports", { method: "POST", body: bodyOf(), headers: { "X-MGQ-Player": PLAYER } }));
-  assert.deepEqual([off.status, (await off.json()).code], [503, "off"], "the object reads its settings from the Worker's bindings");
-  assert.equal((await reports.fetch(new Request("https://relay.test/v1/reports"))).status, 404);
 });
