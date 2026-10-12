@@ -393,7 +393,7 @@ So that no team falls to the first hit, PvP battles and duels change a few rules
 ## Rules of every multiplayer battle
 
 - Ero offers and Give Up are off.
-- Battle messages move on by themselves, so nobody waits for another player.
+- Battle messages move on by themselves, so nobody waits for another player. Hold the message skip to pass them at once; the victory results follow your Skip Battle Results setting.
 - The battle's *Party* command swaps your Backline in during co-op battles, PvP battles and duels. It is off only in team duels, and in PvP battles and duels whose host chose *Frontline Only*.
 
 ## Connection and privacy

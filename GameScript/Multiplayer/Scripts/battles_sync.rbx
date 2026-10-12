@@ -5,6 +5,7 @@
 #      Paulinchen  2026-10-12: Kept the computer's actions when a guest's commands fail to read or to apply, and took a command's skill or item only within its database and its target only as a place of the battle
 #                            - Showed the host's names unswapped when they fail to read
 #                            - Told whether a wait for the players is open, so the raid pool leaves a victory meanwhile to the wait
+#                            - Put the host's skip settings back as the battle ends, before the victory autosave, and logged a failure to put them back
 #      Paulinchen  2026-10-11: Let the player move the waiting box and change its width with Alt, kept in Player.ini and never narrower than its text and the leave offer need, and dressed it in the interface look
 #                            - Let the waiting box name the players still waited for and count the seconds, written as the line above the player's head writes them, drawn once a second, before the leave offer takes the last line
 #                            - Named the wait for a player once, which the live battle and the playback share
@@ -98,7 +99,8 @@ module MGQ_MpBattlesSync
   BEHIND_SENDS = 4
 
   # The host's settings that leave parts of a battle unshown. The host turns them off for a live
-  # battle, since the guest sees only what the host's battle shows; finish puts them back after it.
+  # battle, since the guest sees only what the host's battle shows, and puts them back as
+  # BattleManager.battle_end ends, before the victory autosave writes them.
   SKIP_SETTINGS = [:bt_skip, :bt_skip_cutin, :bt_skip_enemy_cutin, :bt_skip_chain_action_cutin,
                    :skip_battle_start_skill_effect, :skip_skill_effect]
 
@@ -402,7 +404,8 @@ module MGQ_MpBattlesSync
     recording
   end
 
-  # Ends the live battle and closes the link, stops a recording and puts the host's settings back.
+  # Ends the live battle and closes the link, stops a recording and puts the host's settings back
+  # when the battle's end has not, such as after a reset or an early end.
   # Called by the mode when it puts the game back, and after a reset.
   def self.finish
     Recorder.stop
@@ -488,7 +491,8 @@ module MGQ_MpBattlesSync
     log("turned the skip settings off for the live battle, kept to put back: #{settings_text(@kept_settings)}")
   end
 
-  # Puts back the settings show_everything turned off.
+  # Puts back the settings show_everything turned off, once: called as the battle ends and again
+  # by finish, which then finds nothing kept.
   def self.restore_settings
     kept = @kept_settings
     @kept_settings = nil
@@ -496,6 +500,8 @@ module MGQ_MpBattlesSync
 
     kept.each { |key, value| $game_system.conf[key] = value }
     log("put the skip settings back: #{settings_text(kept)}")
+  rescue => e
+    log("putting the skip settings back failed: #{e.class}: #{e.message}")
   end
 
   # Writes settings for Multiplayer InGame.log.

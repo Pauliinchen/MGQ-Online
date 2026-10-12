@@ -5,6 +5,8 @@
 #      Paulinchen  2026-10-12: Took the host's defeat scene only within this game's common events, and its enemy only as an id, else an enemy's here
 #                            - Won the battle at once when its enemies fall while the host waits for the commands, and never started a turn on a battle that ended meanwhile
 #                            - Picked a defeat scene of this battle's enemies for a guest who leaves a story's battle, and left it as an escape when none has one, instead of failing on a missing or former battle's scene
+#                            - Put the host's skip settings back as the battle ends, before the victory autosave
+#                            - Moved a battle message on at once while the message skip is held, the battle results as the game's Skip Battle Results setting says, and let a message that fails to hold move on
 #      Paulinchen  2026-10-11: Named in the waiting box the guests whose commands or ready word the host still waits for, with the seconds waited, the wait for a player worded as the waiting box words it
 #                            - Lost a story's battle without escape for the co-op player who leaves it, while the others fight on, since the abort let the story play on as won
 #                            - Told the guests whom the host still waits for, as that changes and as a command phase opens, so their own waiting boxes name them too
@@ -95,7 +97,7 @@ module MGQ_MpBattlesSync
       return if @installed
       @installed = true
 
-      installed = [:battle_log, :messages, :pictures, :audio, :battlers, :course, :live, :calls].select do |group|
+      installed = [:battle_log, :messages, :pictures, :audio, :battlers, :course, :ending, :live, :calls].select do |group|
         begin
           send(group)
           true
@@ -248,6 +250,15 @@ module MGQ_MpBattlesSync
       end
     end
 
+    # Puts the host's skip settings back as the battle ends, before the victory autosave writes
+    # them.
+    #
+    # An after-hook of its own: after-hooks are rescued one by one, and the course group stops at
+    # its first method the game lacks.
+    def self.ending
+      MGQ_MpHooks.after(BattleManager.singleton_class, :battle_end, "battles_sync_live ending") { |*_args| MGQ_MpBattlesSync.restore_settings }
+    end
+
     # The live battle's flow on both sides: the start both wait for, the host waiting for the
     # guest's commands, the guest playing the host's stream, forfeits and the end.
     def self.live
@@ -373,6 +384,14 @@ module MGQ_MpBattlesSync
     # What separates the seats in a WAITING_KIND message.
     WAITING_SEPARATOR = ","
 
+    # The game's message_skip_mode of the Instant skip, which passes a message at once while the
+    # skip is held.
+    INSTANT_SKIP = 3
+
+    # Frames a battle message waits before the window's message_pause_input counts, as the game's
+    # own message pause waits that long before it reads the buttons.
+    SKIP_WAIT_FRAMES = 10
+
     # As host, waits as Waiting.wait_for does, the box naming the players still waited for, and
     # tells the guests those players as they change, so their own boxes name them too (see
     # host_waits_for). Once the wait is answered the guests hear that nobody is waited for.
@@ -428,15 +447,20 @@ module MGQ_MpBattlesSync
       @host_waiting = nil
     end
 
-    # Moves a battle message on by itself after MESSAGE_FRAMES, or at a button, so neither player
-    # holds the battle up for the other.
+    # Moves a battle message on by itself after MESSAGE_FRAMES, at a button, or at once while the
+    # message skip is held, so neither player holds the battle up for the other.
+    #
+    # Returns without the pause and without Input.update while the skip is held, as the game's
+    # own message pause does.
     #
     # @param window [Window_Message] The message window.
     def self.pass_message(window)
+      return if skip_held?(window)
+
       window.pause = true
       frames = 0
       begin
-        until frames >= MESSAGE_FRAMES || Input.trigger?(:B) || Input.trigger?(:C)
+        until frames >= MESSAGE_FRAMES || skip_held?(window) || pause_input?(window, frames)
           Fiber.yield
           frames += 1
         end
@@ -446,6 +470,41 @@ module MGQ_MpBattlesSync
       end
       Input.update
       window.pause = false
+    rescue => e
+      MGQ_MpBattlesSync.log_once([:message_pause, e.class.name], "could not hold a battle message, it moves on: #{e.class}: #{e.message}")
+      window.pause = false
+    end
+
+    # The game's message skip button.
+    #
+    # @return [Symbol] MGQ_MpCoopEvents::SKIP_BUTTON, :X without coop_events.rbx.
+    def self.skip_button
+      defined?(MGQ_MpCoopEvents::SKIP_BUTTON) ? MGQ_MpCoopEvents::SKIP_BUTTON : :X
+    end
+
+    # Reports whether the held message skip passes a battle message at once: always, but during
+    # the victory's results only when the game's Skip Battle Results setting is Instant, as the
+    # window's message_skip_mode tells.
+    #
+    # @param window [Window_Message] The message window.
+    # @return [Boolean] Whether it does.
+    def self.skip_held?(window)
+      return false unless Input.press?(skip_button)
+
+      !window.respond_to?(:message_skip_mode) || window.message_skip_mode >= INSTANT_SKIP
+    end
+
+    # Reports whether the player's buttons move a battle message on: cancel or confirm at once, and
+    # from SKIP_WAIT_FRAMES on whatever the window's message_pause_input reads, such as the held
+    # skip in the Slow and Fast result skips or a press of it under No Skip.
+    #
+    # @param window [Window_Message] The message window.
+    # @param frames [Integer] The frames the message waited so far.
+    # @return [Boolean] Whether they do.
+    def self.pause_input?(window, frames)
+      return true if Input.trigger?(:B) || Input.trigger?(:C)
+
+      frames >= SKIP_WAIT_FRAMES && window.respond_to?(:message_pause_input) && window.message_pause_input ? true : false
     end
 
     # The host waits for the guest's battle, then streams its own. A host who became another

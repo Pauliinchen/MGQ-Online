@@ -6,6 +6,7 @@
 #                            - Checked that the host's names, a stream line or a mode's message that fail are left out, and that a time stop without a battler ends
 #                            - Checked that a host's cut-in whose name holds a dot plays, one this game lacks erases its place, and that picture and screen calls with arguments this game cannot take are left out
 #                            - Checked that enemies falling while the host waits for one or several guests' commands win the battle once without starting the turn, and that a turn whose battle ended is left out
+#                            - Checked that the host has its skip settings back as the battle ends, before the victory autosave, and that a held message skip passes a battle message at once, the victory results as the game's setting says
 #      Paulinchen  2026-10-11: Checked the waiting box in the layout: kept in Player.ini, its lines drawn anew at a new width and its least width
 #                            - Checked the waiting box: its lines, the names still waited for, the seconds drawn once a second, the leave offer, a battle's ending, a details that fails, the seat names and the playback's path
 #                            - Checked that the host's wait for the commands names who still chooses and tells the guests, and that a guest's box names them while the host's stream stalls
@@ -75,6 +76,20 @@ class Scene_Battle
   def command_escape; end
   def wait_for_message; end
 end
+# The held button, $held, and the message skip's Input.update.
+module Input
+  def self.press?(button); $held == button; end
+  def self.update; end
+end
+# A message window: the plain one, and the newer translation's with its result skip setting.
+class PlainMessageWindow; attr_accessor :pause; end
+class SkipMessageWindow < PlainMessageWindow
+  attr_accessor :message_skip_mode
+  def initialize(mode); @message_skip_mode = mode; end
+  def message_pause_input
+    Input.trigger?(:B) || Input.trigger?(:C) || (message_skip_mode >= 1 ? Input.press?(:X) : Input.trigger?(:X))
+  end
+end
 # A judgement ends the battle once every enemy fell, as the game's victory does.
 module BattleManager; def self.judge_win_loss; $judged = $judged.to_i + 1; $ending = true if $game_troop.all_dead?; true; end; end
 module Vocab
@@ -92,6 +107,49 @@ check("a live battle's host shows everything", $game_system.conf, { :bt_skip => 
 sync.show_everything
 sync.finish
 check("and gets its own settings back once the battle ends", $game_system.conf, { :bt_skip => true, :bt_skip_cutin => 1, :skip_skill_effect => false })
+sync::Hooks.ending
+sync.join_world(:host, "s1b", [2], "the party")
+sync.show_everything
+$log.clear
+$game_party.own = []
+BattleManager.battle_end(0)
+$game_party.own = nil
+check("the host has its own settings back as the battle ends, before the victory autosave writes them",
+      $game_system.conf, { :bt_skip => true, :bt_skip_cutin => 1, :skip_skill_effect => false })
+sync.finish
+check("which the end of the live battle puts back no second time", $log.grep(/put the skip settings back/).size, 1)
+
+# A held message skip passes a live battle's message.
+sync.join_world(:host, "s1c", [2], "the party")
+sync.battle_started
+# Waits out a message as the game's message window does.
+#
+# @param window [PlainMessageWindow] The message window.
+# @param frames [Integer] The frames to run at most.
+# @return [Array] The frames the message stayed, nil while it still waits, and whether it pauses.
+pass = lambda do |window, frames|
+  fiber = Fiber.new { sync::Live.pass_message(window) }
+  waited = (0..frames).find { fiber.resume; !fiber.alive? }
+  [waited, window.pause]
+end
+$held = :X
+check("a held message skip passes a battle message at once", pass.call(PlainMessageWindow.new, 0), [0, nil])
+check("during the victory results too when the result skip is Instant", pass.call(SkipMessageWindow.new(3), 0), [0, nil])
+check("after the game's 10 frames when it is Slow or Fast", [pass.call(SkipMessageWindow.new(1), 20), pass.call(SkipMessageWindow.new(2), 20)], [[10, false], [10, false]])
+check("and never while it is No Skip", pass.call(SkipMessageWindow.new(0), 20), [nil, true])
+$held = nil
+check("without the skip a message stays", pass.call(PlainMessageWindow.new, 20), [nil, true])
+check("until it moves on by itself", pass.call(PlainMessageWindow.new, sync::MESSAGE_FRAMES), [sync::MESSAGE_FRAMES, false])
+window = PlainMessageWindow.new
+fiber = Fiber.new { sync::Live.pass_message(window) }
+fiber.resume
+$held = :X
+fiber.resume
+check("or the skip is held while it waits", [fiber.alive?, window.pause], [false, false])
+broken = SkipMessageWindow.new(nil)
+check("a message whose window fails to tell its skip moves on", [pass.call(broken, 0), $log.grep(/could not hold a battle message, it moves on: NoMethodError/).size], [[0, false], 1])
+$held = nil
+sync.finish
 
 # A battle's messages go to its players alone.
 sync.join_world(:host, "s2", [2, 3], "the party")

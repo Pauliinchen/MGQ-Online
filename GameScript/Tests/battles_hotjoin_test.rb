@@ -2,6 +2,7 @@
 #  battles_hotjoin_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Checked that a host whose battle turned live has its skip settings back as the battle ends, before the victory autosave
 #      Paulinchen  2026-10-11: Checked the party members' offers about a battle outside the party, the battles that take nobody in, and that a host takes in as many players and enemies as it has room for
 #                            - Checked that an encounter joins no running battle whose host stands farther than NEARBY_TILES
 #                            - Checked that the host reads in the chat log who joined its battle, that it tells the guests whom it waits for as a command phase opens, and that a late guest's box tells how long the wait may last
@@ -430,6 +431,8 @@ check("an encounter with more enemies than the troop holds joins with those that
 hotjoin.take_off(latecomer, { "bid" => "own7" })
 
 # The command phase turns the battle live and takes in who joined.
+sync::Hooks.ending
+$game_system.conf.replace(:bt_skip => true, :skip_skill_effect => 1)
 $sent.clear
 $chat = []
 $notices = []
@@ -441,6 +444,7 @@ sync::Departures.joined(asker)
 sync::Departures.left(asker)
 check("and still reads when they leave later", $chat, ["P8 joined the battle.", "P8 left the battle."])
 check("the battle turned live, the player hosting it", [sync.host?, sync.coop?, MGQ_MpBattles.kind, sync::Recorder.active?], [true, true, :coop, true])
+check("its skip settings off", $game_system.conf, { :bt_skip => false, :skip_skill_effect => false })
 check("with the player who joined as its guest", [sync.guests_in, sync.expected], [[8], [9]])
 check("whose first character joins the party", $game_party.battle_members.map(&:name), ["Actor1", "Actor5 (P8)"])
 check("and the encounter's enemies the troop", $game_troop.members.map { |enemy| [enemy.enemy_id, enemy.screen_x, enemy.letter] }, [[31, 320, " A"], [50, 160, " A"]])
@@ -475,6 +479,9 @@ check("the player who turned the invite down is forgotten", [sync.expected, hotj
 
 # The guest takes the grown troop.
 troop_body = battle_sent("coop_troop").find { |seat, _| seat == 8 }[1][:payload]
+BattleManager.battle_end(0)
+check("the host has its skip settings back as the battle ends, before the victory autosave writes them", $game_system.conf, { :bt_skip => true, :skip_skill_effect => 1 })
+$game_system.conf.clear
 reset
 sync.join_world(:guest, "own7", [0], "Me")
 own_troop
