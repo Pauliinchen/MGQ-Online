@@ -2,7 +2,8 @@
 #  overworld_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Checked that the time the player entered their map is set anew once they left the world, loaded a save or started a new game, and kept across a reconnect
+#      Paulinchen  2026-10-12: Checked that the players already in a world the player enters come without a notice
+#                            - Checked that the time the player entered their map is set anew once they left the world, loaded a save or started a new game, and kept across a reconnect
 #                            - Checked that nobody is told a state on the title screen or while a world's new game waits there
 #      Paulinchen  2026-10-11: Chose the map chat before sending its line, since the chat starts in the global chat
 #                            - Checked the status line's place in the layout: its default at the bottom left, a place the player left it in with its notices broken to its width, and its least width
@@ -119,6 +120,15 @@ $sent.clear
 
 # The newcomer's state makes a peer, a notice and a ghost on the same map.
 friend = { "id" => "friend", "name" => "Friend", "sprite" => "Actor2", "index" => 3, "map" => 5, "x" => 10, "y" => 10, "d" => 4, "speed" => 4, "hidden" => 0, "scene" => "map" }
+peers = MGQ_MpOverworldSync::Peers
+peers.instance_variable_set(:@in_world, 0)
+$inbox << entry("message", 2, told(friend))
+MGQ_MpOverworldSync.tick
+check("a player already in the world the player enters comes without a notice", [MGQ_MpOverworldSync::Status.lines, !peers.at(2).nil?], [[], true])
+ghost = peers.at(2).ghost
+ghost.dispose if ghost && ghost.respond_to?(:dispose)
+peers.instance_variable_get(:@peers).delete(2)
+peers.instance_variable_set(:@in_world, peers::SETTLE_FRAMES + 1)
 $inbox << entry("message", 2, told(friend))
 MGQ_MpOverworldSync.tick
 check("joined notice", MGQ_MpOverworldSync::Status.lines, ["Friend joined the world."])

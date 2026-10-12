@@ -2,7 +2,8 @@
 #  overworld_sync.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Set the time the player entered their map anew once they left the world, loaded a save or started a new game, which let a returning player take Map Owner at once
+#      Paulinchen  2026-10-12: Announced only the players who join after the player, not those already in the world they enter
+#                            - Set the time the player entered their map anew once they left the world, loaded a save or started a new game, which let a returning player take Map Owner at once
 #                            - Told nobody a state while the player is on the title screen or a world's new game waits there, which told the previous game's map
 #      Paulinchen  2026-10-10: Handed on the share left, the max HP and whether a Raid World's boss pool is defeated with the relay's push of it, instead of its kills
 #      Paulinchen  2026-10-09: Handed the relay's push that a Raid World's boss pool changed to the script registered for it, marked as the relay's
@@ -293,6 +294,7 @@ module MGQ_MpOverworldSync
   def self.tick
     unless in_world?
       Peers.clear unless Peers.empty?
+      Peers.left_world
       Me.forget_seat
       Me.reset_map_since
       Status.look_closed
@@ -531,7 +533,12 @@ module MGQ_MpOverworldSync
     # @!attribute away [Integer, nil] The frames they are still kept for while their connection is down, nil while it stands.
     Peer = Struct.new(:seat, :state, :ghost, :member, :away)
 
+    # Frames after entering a world in which a game that tells its first state is one already
+    # there, as every game tells a newcomer at once, and joins without a notice.
+    SETTLE_FRAMES = 300
+
     @peers = {}
+    @in_world = 0
 
     # Takes what a game told. A player who tells from another seat, away or not, is the same player
     # as before.
@@ -552,8 +559,9 @@ module MGQ_MpOverworldSync
         peer.away = nil
       else
         peer = @peers[seat] = Peer.new(seat, state, nil, false, nil)
-        MGQ_MpOverworldSync.log("#{state['name']} joined the world on seat #{seat} (id #{state['id'].to_s[0, 8]}), on map #{state['map']}")
-        Status.notice("#{state['name']} joined the world.")
+        settled = @in_world > SETTLE_FRAMES
+        MGQ_MpOverworldSync.log("#{state['name']} #{settled ? 'joined' : 'is in'} the world on seat #{seat} (id #{state['id'].to_s[0, 8]}), on map #{state['map']}")
+        Status.notice("#{state['name']} joined the world.") if settled
       end
 
       MGQ_MpOverworldSync.ask(:observe, peer)
@@ -597,6 +605,7 @@ module MGQ_MpOverworldSync
 
     # Forgets the games that stayed away. Called every frame.
     def self.tick
+      @in_world += 1
       @peers.values.each do |peer|
         next unless peer.away
 
@@ -630,6 +639,11 @@ module MGQ_MpOverworldSync
     def self.clear
       MGQ_MpOverworldSync.log("no world open: forgot #{@peers.size} player(s)") unless @peers.empty?
       @peers.clear
+    end
+
+    # Notes that the player is in no world, so the next one they enter starts its settling anew.
+    def self.left_world
+      @in_world = 0
     end
 
     # Reports whether no other game is known.
