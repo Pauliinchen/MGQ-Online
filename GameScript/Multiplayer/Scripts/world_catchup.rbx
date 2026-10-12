@@ -2,7 +2,8 @@
 #  world_catchup.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Noted the items unlocking a job or a race a player holds on every look, so those got before the update reach the others too
+#      Paulinchen  2026-10-12: Brought a shared companion whose talk the player's story only walked past, and looked again once at those left out so
+#                            - Noted the items unlocking a job or a race a player holds on every look, so those got before the update reach the others too
 #                            - Gave every item unlocking a job or a race any player of the world got to every other player
 #                            - Logged what the catch-up gave instead of telling it, which the World overview's Unlocks page shows
 #                            - Listed what moving on from a part brings along, and each companion's and Makina's id
@@ -140,6 +141,10 @@ module MGQ_MpWorldCatchup
 
   # The parts before the Great Decision, whose sides the player chose themselves.
   SIDED_PARTS = %w(1 2 3)
+
+  # What the notes keep for a companion the world shares once it joined or never will: a value of its
+  # own, so the companions an earlier build left out after walking past their talk are looked at again.
+  SHARE_SETTLED = "settled"
 
   # The rule of a join whose gate is the companion's start level, which a companion new to the
   # player has anyway.
@@ -1944,10 +1949,10 @@ module MGQ_MpWorldCatchup
     lost = nil
     shared.each do |id|
       key = "s:#{id}"
-      next if id == HERO || done[key]
+      next if id == HERO || done[key] == SHARE_SETTLED
 
       lost ||= taken_for_good(done)
-      next done[key] = true if in_roster?(id) || lost[id] || joined?(id, done)
+      next done[key] = SHARE_SETTLED if in_roster?(id) || lost[id] || joined?(id, done)
 
       first = joins_of(id).first
       next unless first || sharing == :all
@@ -1955,20 +1960,21 @@ module MGQ_MpWorldCatchup
       gate = first ? first.gate : start_level(id)
       next unless reached?(gate)
 
-      done[key] = true
+      done[key] = SHARE_SETTLED
       bring_in(first ? first.persona : id, first && first.rule != START_RULE ? gate : nil, "shared by the world")
     end
   end
 
   # Reports whether the player's story got past a join of a companion, which gave them the companion
   # whether or not they are in the roster now: a temporary removal of the story or the player may have
-  # let them go since.
+  # let them go since. A join whose marks never tell that it ran, as a talk the player may decline,
+  # gave nothing by being walked past.
   #
   # @param id [Integer] The companion's main persona.
   # @param done [Hash] The rows done.
   # @return [Boolean] Whether it did.
   def self.joined?(id, done)
-    joins_of(id).any? { |row| done[key_of("j", row)] == true }
+    joins_of(id).any? { |row| carries?(row) && done[key_of("j", row)] == true }
   end
 
   # Lists the companions the player's story took away for good: past a removal that lasts, on a

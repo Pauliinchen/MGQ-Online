@@ -2,7 +2,8 @@
 #  world_catchup_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Checked that a job or race item the player held before is noted on entering
+#      Paulinchen  2026-10-12: Checked that a shared companion whose talk the player's story walked past still joins, also when an earlier build left them out
+#                            - Checked that a job or race item the player held before is noted on entering
 #                            - Checked that a job or race item any player got comes to every other player, once
 #                            - Read the catch-up's gifts from its log, as it tells none
 #                            - Checked that only a page that applies now and sets the encounters the other way keeps them with the map
@@ -616,6 +617,20 @@ check("and the player's own recruit goes to the world's list, once", calls_of("m
 relay({ "rev" => 10, "wrev" => 9, "p" => 40, "r1142" => 5, "part" => "mr", "route" => "mr", "comps" => "16,77,80", "companions" => "done" }, packed({ 1001 => 40, 1142 => 5 }))
 frames(700)
 check("which the next look sends nothing for", calls_of("mp_raid_companions_add").size, 1)
+# A talk join the player's story walked past gave them nothing, so the world's share still brings them.
+tables(:JOINS => [join.new(45, 45, "map:5:27:1", "1", 6, nil, [[:v, 1001, 6]], 8, :start, 1, false)])
+new_game({ 1001 => 9 }, [], 10)
+frames(1)
+relay({ "rev" => 12, "wrev" => 12, "p" => 9, "part" => "1", "comps" => "45" }, packed({ 1001 => 9 }))
+frames(40)
+check("a shared companion whose talk join the player's story only walked past, as its notes say, joins at its gate",
+      [MGQ_MpWorldCatchup.send(:ledger)["done"]["j:map:5:27:1:45"], roster.include?(45)], [true, true])
+new_game({ 1001 => 9 }, [], 10)
+MGQ_MpWorldCatchup.send(:ledger)["done"]["s:45"] = true
+frames(1)
+relay({ "rev" => 13, "wrev" => 13, "p" => 9, "part" => "1", "comps" => "45" }, packed({ 1001 => 9 }))
+frames(40)
+check("and one an earlier build left out so is looked at again", [roster.include?(45), MGQ_MpWorldCatchup.send(:ledger)["done"]["s:45"]], [true, "settled"])
 $sharing = :off
 new_game({ 1001 => 40, 1142 => 5 }, [], 90)
 frames(1)
