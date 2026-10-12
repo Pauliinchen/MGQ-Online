@@ -2,7 +2,8 @@
 #  battles_coop_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Checked that the host keeps the actions there when a guest's commands name an id or a target too large or fail to apply
+#      Paulinchen  2026-10-12: Checked that a leave from a player outside the battle tells nothing
+#                            - Checked that the host keeps the actions there when a guest's commands name an id or a target too large or fail to apply
 #                            - Checked that a defeat scene id too large for the game or an enemy that is no id is replaced by one here
 #                            - Checked that a join whose party_member_max is no number still forms the party
 #                            - Checked that a guest leaving a story battle or taking a battle over picks a defeat scene of its enemies instead of none or a former battle's, that a host keeps its own, and that a battle without one is left as an escape
@@ -356,6 +357,9 @@ three[2].hp = 12
 
 $notices = []
 MGQ_MpOverworldSync::Peers.all.concat([g1, g2])
+outsider = MGQ_MpOverworldSync::Peers::Peer.new(9, { "name" => "Stranger" }, nil, false)
+MGQ_MpBattlesSync.take(outsider, { "battle" => "leave", "bid" => bid3, :payload => "" })
+check("a leave with the battle's id from a player outside it tells nothing", [$notices, $game_party.battle_members.size], [[], 4])
 MGQ_MpBattlesSync.take(g2, { "battle" => "leave", "bid" => bid3, :payload => "" })
 check("a player who leaves is told of at once, before the next command phase", [$notices, $game_party.battle_members.size], [["Other left the battle."], 4])
 MGQ_MpBattlesSync.take(g2, { "battle" => "leave", "bid" => bid3, :payload => "" })

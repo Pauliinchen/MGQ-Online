@@ -2,7 +2,8 @@
 #  battles_sync.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Kept the computer's actions when a guest's commands fail to read or to apply, and took a command's skill or item only within its database and its target only as a place of the battle
+#      Paulinchen  2026-10-12: Told a player leaving the battle only when they are one of its players
+#                            - Kept the computer's actions when a guest's commands fail to read or to apply, and took a command's skill or item only within its database and its target only as a place of the battle
 #                            - Showed the host's names unswapped when they fail to read
 #                            - Told whether a wait for the players is open, so the raid pool leaves a victory meanwhile to the wait
 #                            - Put the host's skip settings back as the battle ends, before the victory autosave, and logged a failure to put them back
@@ -1025,10 +1026,13 @@ module MGQ_MpBattlesSync
 
     @told = []
 
-    # Tells that a player left the battle, as their "leave" says.
+    # Tells that a player of the battle left it, as their "leave" says; a "leave" of a player not in
+    # it tells nothing.
     #
     # @param peer [MGQ_MpOverworldSync::Peers::Peer] The player.
     def self.left(peer)
+      return unless MGQ_MpBattlesSync.player_seats.include?(peer.seat)
+
       tell(peer, "#{peer.state['name']} left the battle.")
     end
 
