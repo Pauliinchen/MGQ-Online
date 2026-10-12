@@ -2,6 +2,7 @@
 #  ui_party_box.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Read the map's viewport through MGQ_MpGame
 #      Paulinchen  2026-10-11: Listed a Raid World's party in the box wherever its members are, as in a Classic world, and the other players on the map below it under the map's title, the map box alone only outside a party
 #                            - Made the box movable and widenable with the left Alt held, as "Party box", the map box too: the extra width goes to the names, levels and places, the ping stays at the right edge, the small box at the right of the box's place, never narrower than the full box's columns
 #                            - Framed the box in the preset's colors, drawn anew once the preset changes
@@ -563,7 +564,7 @@ begin
   MGQ_MpHooks.after(Scene_Map, :update_scene, "ui_party_box") { MGQ_MpPartyBox.on_map unless scene_changing? }
 
   # After the map's sprites, the party's box.
-  MGQ_MpHooks.after(Spriteset_Map, :update, "ui_party_box") { (@mgq_mp_party_box ||= Sprite_MpPartyBox.new(@viewport3)).update }
+  MGQ_MpHooks.after(Spriteset_Map, :update, "ui_party_box") { (@mgq_mp_party_box ||= Sprite_MpPartyBox.new(MGQ_MpGame.get(self, :viewport3))).update }
 
   MGQ_MpHooks.before(Spriteset_Map, :dispose, "ui_party_box") do
     @mgq_mp_party_box.dispose if @mgq_mp_party_box

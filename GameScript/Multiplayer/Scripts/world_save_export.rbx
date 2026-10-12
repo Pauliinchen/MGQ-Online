@@ -2,6 +2,7 @@
 #  world_save_export.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Read the menu's commands through MGQ_MpGame and left them alone when the menu has none, instead of raising into the game
 #      Paulinchen  2026-10-08: Closed with the numpad's 0 through MGQ_MpUi.cancel?, also with Num Lock off
 #      Paulinchen  2026-10-07: Registered the menu's hooks through core_hooks.rbx instead of wraps of this script
 #                            - Took the notice's depth from MGQ_MpUi
@@ -110,7 +111,8 @@ module MGQ_MpSaveExport
     Window_MpSaveExportNotice.new(export_open_world)
   rescue => e
     log("menu export failed: #{e.class}: #{e.message}")
-    MGQ_MpGame.get(scene, :command_window).activate
+    commands = MGQ_MpGame.get(scene, :command_window)
+    commands.activate if commands
     nil
   end
 end
@@ -152,7 +154,8 @@ begin
 
   # After the menu's commands are made, Copy to my game gets its handler.
   MGQ_MpHooks.after(Scene_Menu, :create_command_window, "world_save_export") do
-    @command_window.set_handler(:mgq_mp_save_export, lambda { @mgq_mp_save_export_notice = MGQ_MpSaveExport.open_notice(self) })
+    commands = MGQ_MpGame.get(self, :command_window)
+    commands.set_handler(:mgq_mp_save_export, lambda { @mgq_mp_save_export_notice = MGQ_MpSaveExport.open_notice(self) }) if commands
   end
 
   # After the menu's update, the notice closes once the player pressed OK or Cancel.
@@ -160,7 +163,8 @@ begin
     if @mgq_mp_save_export_notice && @mgq_mp_save_export_notice.closed?
       @mgq_mp_save_export_notice.dispose
       @mgq_mp_save_export_notice = nil
-      @command_window.activate
+      commands = MGQ_MpGame.get(self, :command_window)
+      commands.activate if commands && !commands.disposed?
     end
   end
 

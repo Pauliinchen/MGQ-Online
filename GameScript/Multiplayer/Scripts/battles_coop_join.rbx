@@ -2,6 +2,7 @@
 #  battles_coop_join.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Read the map's viewport and character sprites through MGQ_MpGame
 #      Paulinchen  2026-10-11: Asked the party members near along when the player asks to join a battle outside the party, unless they come along themselves
 #                            - Drew the prompt in the shared style's small font and solid outline, as the other labels, instead of the game's half-transparent one
 #                            - Drew the prompt in the color every request and offer shares
@@ -484,8 +485,8 @@ begin
 
   # After the map's sprites, the prompt below the player's character.
   MGQ_MpHooks.after(Spriteset_Map, :update, "battles_coop_join") do
-    @mgq_mp_join_prompt ||= Sprite_MpJoinPrompt.new(@viewport1)
-    @mgq_mp_join_prompt.show(@character_sprites.find { |sprite| sprite.character.equal?($game_player) })
+    @mgq_mp_join_prompt ||= Sprite_MpJoinPrompt.new(MGQ_MpGame.get(self, :viewport1))
+    @mgq_mp_join_prompt.show(MGQ_MpGame.get(self, :character_sprites).find { |sprite| sprite.character.equal?($game_player) })
   end
 
   MGQ_MpHooks.before(Spriteset_Map, :dispose, "battles_coop_join") do

@@ -2,6 +2,7 @@
 #  ui_raid_bar.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Read the map's viewports and character sprites through MGQ_MpGame
 #      Paulinchen  2026-10-11: Drew the gauges' edge, empty part and the title in the interface preset's colors, drawing anew once the preset changes
 #                            - Made the strip a box the player moves and resizes in width with Alt, never narrower than a boss of three enemies and its title line need
 #                            - Cropped the battle's strip to its gauges in small mode instead of sliding it up, so it stays where the player put it
@@ -1001,7 +1002,8 @@ begin
 
   # After the map's sprites, the bosses' bars.
   MGQ_MpHooks.after(Spriteset_Map, :update, "ui_raid_bar") do
-    (@mgq_mp_raid_bars ||= MGQ_MpRaidBar::MapBars.new(@viewport1, @viewport3)).update(@character_sprites)
+    @mgq_mp_raid_bars ||= MGQ_MpRaidBar::MapBars.new(MGQ_MpGame.get(self, :viewport1), MGQ_MpGame.get(self, :viewport3))
+    @mgq_mp_raid_bars.update(MGQ_MpGame.get(self, :character_sprites))
   end
 
   MGQ_MpHooks.before(Spriteset_Map, :dispose, "ui_raid_bar") do

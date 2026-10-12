@@ -2,6 +2,7 @@
 #  world.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Read the title screen's commands through MGQ_MpGame and left them alone when the title screen has none
 #      Paulinchen  2026-10-11: Took the featured worlds' gold and the Raid Worlds' red from the shared style
 #                            - Told whether a world's password is known, which this PC's folder of it answers for the world screen's
 #                              entry and details
@@ -2355,7 +2356,8 @@ begin
   # The title screen's commands, Multiplayer below Continue, which opens the world screen.
   MGQ_MpHooks.after(Window_TitleCommand, :make_command_list, "world") { MGQ_MpWorld.add_title_command(self) }
   MGQ_MpHooks.after(Scene_Title, :create_command_window, "world") do
-    @command_window.set_handler(:mgq_mp_world, lambda { MGQ_MpWorld.open_world_screen(self) })
+    commands = MGQ_MpGame.get(self, :command_window)
+    commands.set_handler(:mgq_mp_world, lambda { MGQ_MpWorld.open_world_screen(self) }) if commands
   end
 
   # Before the title screen ends, the update offer goes off the screen.

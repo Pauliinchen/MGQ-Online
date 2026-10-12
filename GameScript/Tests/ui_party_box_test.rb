@@ -2,6 +2,7 @@
 #  ui_party_box_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Stood in for the parts of the world's story, which the overview reads as it loads
 #      Paulinchen  2026-10-11: Called the small box with the party and the others on the map apart
 #                            - Checked the box's place in the layout: its default below a strip at the top, a place the player left it in with the extra width for the names and places, its least width with every column, the small box at the right of its place, and drawing anew after a preset change
 #                            - Checked that a stranger is named in plain white
@@ -51,6 +52,10 @@ end
 module MGQ_MpWorld
   def self.world; Struct.new(:name).new("Test World"); end
   def self.raid?; $raid; end
+end
+module MGQ_MpWorldStory
+  PART_TWO = 19
+  PART_THREE = 34
 end
 module MGQ_MpBattlesDuel
   def self.peer_option(_peer); nil; end

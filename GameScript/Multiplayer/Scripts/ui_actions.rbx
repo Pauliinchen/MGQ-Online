@@ -2,6 +2,7 @@
 #  ui_actions.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Read the map's viewports and character sprites through MGQ_MpGame
 #      Paulinchen  2026-10-11: Framed the wheel's boxes in the preset's colors, the picked one lit inside its frame, drawn anew once the preset changes
 #                            - Drew the wheel and the line above the player's own head in the shared style, fading them in and out, with the hint under the ring the wheels share, which names Esc, the numpad's 0 and the wheel's hotkey
 #                            - Made the line half the screen wide and cut it and a choice's text to their room, the line without its seconds once they make it too wide
@@ -675,9 +676,9 @@ begin
 
   # After the map's sprites, the line above the player's own head and the action wheel around them.
   MGQ_MpHooks.after(Spriteset_Map, :update, "ui_actions") do
-    @mgq_mp_own_line ||= Sprite_MpOwnLine.new(@viewport1)
-    @mgq_mp_wheel ||= Sprite_MpActionWheel.new(@viewport3)
-    player = @character_sprites.find { |sprite| sprite.character.equal?($game_player) }
+    @mgq_mp_own_line ||= Sprite_MpOwnLine.new(MGQ_MpGame.get(self, :viewport1))
+    @mgq_mp_wheel ||= Sprite_MpActionWheel.new(MGQ_MpGame.get(self, :viewport3))
+    player = MGQ_MpGame.get(self, :character_sprites).find { |sprite| sprite.character.equal?($game_player) }
     @mgq_mp_own_line.show(player)
     @mgq_mp_wheel.show(player)
   end

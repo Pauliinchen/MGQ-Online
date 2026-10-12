@@ -2,6 +2,7 @@
 #  save_export_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Checked the menu's commands taking input again after the notice, and a menu without commands making no hook fail
 #      Paulinchen  2026-10-09: Loaded world_mods_parking.rbx, which the world screen calls
 #      Paulinchen  2026-10-07: Checked the menu's handler once its commands are made
 #      Paulinchen  2026-10-06: Loaded world_mods.rbx, which the world screen calls
@@ -121,6 +122,38 @@ menu_scene = Scene_Menu.new
 menu_scene.instance_variable_set(:@command_window, Struct.new(:handlers) { def set_handler(symbol, handler); handlers[symbol] = handler; end }.new(handlers))
 menu_scene.create_command_window
 check("the menu's handler is in place once its commands are made", handlers.keys, [:mgq_mp_save_export])
+
+# The menu's commands take input again once the notice closes, or once it could not open.
+class MenuCommands
+  attr_reader :active
+  def activate; @active = true; end
+  def disposed?; false; end
+end
+ClosedNotice = Struct.new(:disposed) do
+  def closed?; true; end
+  def dispose; self.disposed = true; end
+end
+commands = MenuCommands.new
+menu_scene.instance_variable_set(:@command_window, commands)
+menu_scene.instance_variable_set(:@mgq_mp_save_export_notice, closed = ClosedNotice.new(false))
+menu_scene.update
+check("a closed notice goes and the menu's commands take input again",
+      [closed.disposed, menu_scene.instance_variable_get(:@mgq_mp_save_export_notice), commands.active], [true, nil, true])
+logged = []
+MGQ_Multiplayer::Log.define_singleton_method(:write) { |line| logged << line }
+failing = Window_MpSaveExportNotice.method(:new)
+Window_MpSaveExportNotice.define_singleton_method(:new) { |*_| raise "no picture" }
+commands = MenuCommands.new
+menu_scene.instance_variable_set(:@command_window, commands)
+check("a notice that cannot open gives the menu's commands back", [MGQ_MpSaveExport.open_notice(menu_scene), commands.active], [nil, true])
+bare = Scene_Menu.new
+check("and a menu without commands gets nothing back, never an error", MGQ_MpSaveExport.open_notice(bare), nil)
+bare.create_command_window
+bare.instance_variable_set(:@mgq_mp_save_export_notice, ClosedNotice.new(false))
+bare.update
+check("a menu without commands makes its commands and closes the notice without a failing hook",
+      [logged.grep(/world_save_export failed/), logged.grep(/has no @command_window/).size, bare.instance_variable_get(:@mgq_mp_save_export_notice)], [[], 1, nil])
+Window_MpSaveExportNotice.define_singleton_method(:new, failing)
 
 # The notice ignores the press that opened it.
 module Input; def self.trigger?(button); button == :C; end; end

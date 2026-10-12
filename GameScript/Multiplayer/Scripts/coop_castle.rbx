@@ -2,6 +2,7 @@
 #  coop_castle.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Read the map's viewport through MGQ_MpGame
 #      Paulinchen  2026-10-09: Read which variables are the player's own from story_state.rbx instead of coop_story.rbx
 #      Paulinchen  2026-10-08: Left the castle's Map Owner to the map's sync host in a Raid World, where parties lead nothing
 #      Paulinchen  2026-10-07: Named events through coop.rbx instead of a copy of its helper
@@ -255,7 +256,7 @@ begin
     @mgq_mp_residents.keys.each do |ghost|
       @mgq_mp_residents.delete(ghost).dispose unless ghosts.any? { |shown| shown.equal?(ghost) }
     end
-    ghosts.each { |ghost| (@mgq_mp_residents[ghost] ||= Sprite_Character.new(@viewport1, ghost)).update }
+    ghosts.each { |ghost| (@mgq_mp_residents[ghost] ||= Sprite_Character.new(MGQ_MpGame.get(self, :viewport1), ghost)).update }
   end
 
   MGQ_MpHooks.before(Spriteset_Map, :dispose, "coop_castle") do

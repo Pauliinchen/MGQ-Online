@@ -2,6 +2,7 @@
 #  overworld.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Read the map's viewports and character sprites through MGQ_MpGame
 #      Paulinchen  2026-10-11: Made the line at the bottom left movable and widenable with the left Alt held, as "World status", its four rows kept, breaking the notices to its width and never narrower than two thirds of its default
 #                            - Drew the outline standing in for a follower in the shared style's member and text colors
 #                            - Named a ghost above its head in its player's color, through MGQ_MpUi::PlayerColor
@@ -811,9 +812,10 @@ begin
   MGQ_MpHooks.after(Spriteset_Map, :update, "overworld") do
     @mgq_mp_ghosts ||= {}
     @mgq_mp_followers ||= {}
-    @mgq_mp_status ||= Sprite_MpWorldStatus.new(@viewport3)
-    @mgq_mp_own_ping ||= Sprite_MpOwnPing.new(@viewport1)
-    @mgq_mp_own_ping.show(@character_sprites.find { |sprite| sprite.character.equal?($game_player) })
+    viewport = MGQ_MpGame.get(self, :viewport1)
+    @mgq_mp_status ||= Sprite_MpWorldStatus.new(MGQ_MpGame.get(self, :viewport3))
+    @mgq_mp_own_ping ||= Sprite_MpOwnPing.new(viewport)
+    @mgq_mp_own_ping.show(MGQ_MpGame.get(self, :character_sprites).find { |sprite| sprite.character.equal?($game_player) })
     peers = MGQ_MpOverworld.ghosts
 
     @mgq_mp_ghosts.keys.each do |ghost|
@@ -831,13 +833,13 @@ begin
 
     # Followers first, so a ghost's sprite and label draw over its followers on the same tile.
     followers.each do |follower|
-      (@mgq_mp_followers[follower] ||= Sprite_MpGhostFollower.new(@viewport1, follower)).update
+      (@mgq_mp_followers[follower] ||= Sprite_MpGhostFollower.new(viewport, follower)).update
     end
 
     # Labels on one tile stack upwards, above the player's own ping on the player's tile.
     taken = { [$game_player.x, $game_player.y] => Sprite_MpOwnPing::HEIGHT }
     peers.each do |peer|
-      @mgq_mp_ghosts[peer.ghost] ||= [Sprite_Character.new(@viewport1, peer.ghost), Sprite_MpGhostLabel.new(@viewport1)]
+      @mgq_mp_ghosts[peer.ghost] ||= [Sprite_Character.new(viewport, peer.ghost), Sprite_MpGhostLabel.new(viewport)]
       sprite, label = @mgq_mp_ghosts[peer.ghost]
       sprite.update
       tile = [peer.ghost.x, peer.ghost.y]

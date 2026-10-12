@@ -2,6 +2,9 @@
 #  world_text.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Scrolled a text longer than its box, showing its end and the cursor with a dim "..." before it, instead of drawing it past the window
+#                            - Broke the description over four lines at words in a taller box, showing its last lines
+#                            - Drew the box once per frame and played one sound for what was typed in it, so a pasted text no longer stalls the game
 #      Paulinchen  2026-10-07: Logged the text screen opening, showing its letters for a gamepad, and how it was left, never the text
 #      Paulinchen  2026-10-04: Renamed from mp_world_text.rbx
 #      Paulinchen  2026-10-03: Created
@@ -22,7 +25,8 @@ class Scene_MpText < Scene_MenuBase
   # @param caption [String] What the screen says it is for.
   # @param default [String] The text it starts with.
   # @param options [Hash] :max_chars, how long the text may be; and whichever of :masked (shown as
-  #   stars), :allowed (the characters it takes) and :letters (the letters shown at once) apply.
+  #   stars), :allowed (the characters it takes), :letters (the letters shown at once) and :area
+  #   (broken over several lines) apply.
   def prepare(kind, caption, default, options)
     @kind = kind
     @caption = caption
@@ -60,11 +64,23 @@ class Scene_MpText < Scene_MenuBase
       @input_window.keyboard_used = true
     end
 
-    text.each_char do |char|
-      type(char)
-      break if scene_changing?
-    end
+    type_text(text)
     super
+  end
+
+  # Types a frame's characters, drawing the box once and playing one sound for all of them, so a
+  # pasted text costs one drawing instead of one per character.
+  #
+  # @param text [String] The characters typed this frame.
+  def type_text(text)
+    sounds = []
+    @edit_window.hold_refresh do
+      text.each_char do |char|
+        sounds << type(char)
+        break if scene_changing?
+      end
+    end
+    play(sounds.include?(:buzzer) ? :buzzer : sounds.compact.last)
   end
 
   # Hides the letters and puts the box in the middle of the screen.
@@ -86,18 +102,34 @@ class Scene_MpText < Scene_MenuBase
   # Types one character: Enter confirms, Escape leaves, Backspace removes the last one.
   #
   # @param char [String] The character.
+  # @return [Symbol, nil] The sound it calls for: :cursor, :cancel or :buzzer, nil for none.
   def type(char)
     case char
     when "\r"
-      @edit_window.name.empty? ? Sound.play_buzzer : on_input_ok
+      return :buzzer if @edit_window.name.empty?
+
+      on_input_ok
+      nil
     when "\e"
       on_input_cancel
+      nil
     when "\b"
-      Sound.play_cancel if @edit_window.back
+      @edit_window.back ? :cancel : nil
     else
-      return if char =~ /[[:cntrl:]]/
+      return nil if char =~ /[[:cntrl:]]/
 
-      @edit_window.add(char) ? Sound.play_cursor : Sound.play_buzzer
+      @edit_window.add(char) ? :cursor : :buzzer
+    end
+  end
+
+  # Plays a sound typing called for.
+  #
+  # @param sound [Symbol, nil] :cursor, :cancel or :buzzer, nil for none.
+  def play(sound)
+    case sound
+    when :cursor then Sound.play_cursor
+    when :cancel then Sound.play_cancel
+    when :buzzer then Sound.play_buzzer
     end
   end
 
@@ -123,12 +155,27 @@ class Scene_MpText < Scene_MenuBase
 end
 
 # The text being typed, with its purpose where the game shows a character's face, as stars for a
-# password, taking only the characters it allows.
+# password, taking only the characters it allows. A text longer than the box scrolls, showing its
+# end and the cursor with a dim "..." before it; a box of several lines, such as the description,
+# breaks the text at words and shows its last lines.
 class Window_MpTextEdit < Window_NameEdit
   # Stands in for the character whose name Window_NameEdit expects.
   Holder = Struct.new(:name)
 
-  # Creates the window.
+  # Lines of text a box of several lines shows.
+  AREA_ROWS = 4
+
+  # Lines of the window besides the text's: the caption, the room below it and the hint.
+  FRAME_LINES = 3
+
+  # What shows before the text while its start is out of sight.
+  MORE = "..."
+
+  # Top of the text's first line, where the game draws a name.
+  TEXT_TOP = 36
+
+  # Creates the window, taller for a box of several lines, which keeps it in the middle of the
+  # screen with the game's letters below it.
   #
   # @param caption [String] What the text is for.
   # @param text [String] The text it starts with.
@@ -137,7 +184,193 @@ class Window_MpTextEdit < Window_NameEdit
     @caption = caption
     @masked = options[:masked]
     @allowed = options[:allowed]
+    @rows = options[:area] ? AREA_ROWS : 1
     super(Holder.new(text.to_s), options[:max_chars])
+    return unless area?
+
+    grown = fitting_height(@rows + FRAME_LINES) - height
+    self.height += grown
+    self.y -= grown / 2
+    create_contents
+    refresh
+  end
+
+  # Holds the drawing while a block types, then draws once if anything changed.
+  #
+  # @yield Types into the box.
+  def hold_refresh
+    @held = true
+    yield
+  ensure
+    @held = false
+    refresh if @stale
+  end
+
+  # Draws the caption, the underlines, the characters in sight and the cursor, or only notes that
+  # it has to while the drawing is held.
+  def refresh
+    return @stale = true if @held
+
+    @stale = false
+    contents.clear
+    draw_actor_face(@actor, 0, 0)
+    area? ? draw_area : draw_line
+    cursor_rect.set(item_rect(@index))
+  end
+
+  # Tells whether the text breaks over several lines.
+  #
+  # @return [Boolean] Whether it does.
+  def area?
+    @rows > 1
+  end
+
+  # The width of a character's cell, never 0.
+  #
+  # The box keeps one font, so the width is measured once instead of for every cell drawn.
+  #
+  # @return [Integer] The width.
+  def cell_width
+    @cell_width ||= [char_width, 1].max
+  end
+
+  # The characters' places a box of one line underlines: its most characters, or as many as fit
+  # with a cell left for the cursor.
+  #
+  # @return [Integer] The places.
+  def shown
+    [[@max_char, contents_width / cell_width - 1].min, 1].max
+  end
+
+  # Tells whether the start of the text in a box of one line is out of sight.
+  #
+  # @return [Boolean] Whether it is.
+  def scrolled?
+    !area? && @index > shown
+  end
+
+  # The first character a box of one line shows.
+  #
+  # @return [Integer] Its place in the text.
+  def first_shown
+    scrolled? ? @index - shown + 1 : 0
+  end
+
+  # The characters a line of a box of several lines takes, past the cell for MORE at its left and
+  # the cursor's cell at its right.
+  #
+  # @return [Integer] The characters.
+  def line_chars
+    [contents_width / cell_width - 2, 1].max
+  end
+
+  # The text broken into the lines of a box of several lines, at words, and inside a word or a run
+  # of spaces longer than a line.
+  #
+  # @return [Array<Array<Integer>>] Each line's first character and length, see MGQ_MpUi.wrap_spans.
+  def lines
+    return @lines if @lines && @lines_text == @name
+
+    width = line_chars
+    spans = MGQ_MpUi.wrap_spans(@name, width) { |part| part.length }
+    @lines_text = @name
+    @lines = spans.map do |start, length|
+      (0...[length, 1].max).step(width).map { |offset| [start + offset, [length - offset, width].min] }
+    end.flatten(1)
+  end
+
+  # The first line a box of several lines shows: as late as keeps the cursor's line the last.
+  #
+  # @return [Integer] The line.
+  def top_line
+    [MGQ_MpUi.span_of(lines, @index) - @rows + 1, 0].max
+  end
+
+  # Finds the line and the cell a character's place takes: in a box of one line its cell past the
+  # start out of sight and MORE, in a box of several lines its cell in its line past MORE.
+  #
+  # @param index [Integer] The place in the text.
+  # @return [Array<Integer>] The line, counted from the first shown, and the cell.
+  def cell_of(index)
+    return [0, index - first_shown + (scrolled? ? 1 : 0)] unless area?
+
+    line = MGQ_MpUi.span_of(lines, index)
+    [line - top_line, index - lines[line][0] + 1]
+  end
+
+  # Finds the rectangle of a cell.
+  #
+  # @param row [Integer] The line, counted from the first shown.
+  # @param cell [Integer] The cell in the line.
+  # @return [Rect] The rectangle.
+  def cell_rect(row, cell)
+    Rect.new(left + cell * cell_width, TEXT_TOP + row * line_height, cell_width, line_height)
+  end
+
+  # Puts the text and the cursor where the game puts a name of as many characters as the box
+  # shows, so a short text sits where the game puts it.
+  #
+  # @return [Integer] The left edge of the first cell.
+  def left
+    width = ((area? ? line_chars + 1 : shown) + 1) * cell_width
+    [(contents_width + face_width) / 2 - width / 2, contents_width - width].min
+  end
+
+  # Finds the rectangle a character's place is drawn in.
+  #
+  # @param index [Integer] The place in the text.
+  # @return [Rect] The rectangle.
+  def item_rect(index)
+    cell_rect(*cell_of(index))
+  end
+
+  # Finds the underline of a character's place.
+  #
+  # @param index [Integer] The place in the text.
+  # @return [Rect] The rectangle.
+  def underline_rect(index)
+    underline_of(item_rect(index))
+  end
+
+  # Turns a cell's rectangle into its underline, as the game draws one.
+  #
+  # @param rect [Rect] The cell's rectangle.
+  # @return [Rect] The underline.
+  def underline_of(rect)
+    rect.x += 1
+    rect.y += rect.height - 4
+    rect.width -= 2
+    rect.height = 2
+    rect
+  end
+
+  # Draws a box of one line: MORE while its start is out of sight, then the places in sight
+  # underlined and the characters in them.
+  def draw_line
+    first = first_shown
+    draw_more if scrolled?
+    (first...first + shown - (scrolled? ? 1 : 0)).each { |index| draw_underline(index) }
+    (first...@name.size).each { |index| draw_char(index) }
+  end
+
+  # Draws a box of several lines: MORE while lines above are out of sight, then every line it
+  # shows underlined and the characters of the text's lines in them.
+  def draw_area
+    top = top_line
+    draw_more if top > 0
+    @rows.times do |row|
+      (1..line_chars).each { |cell| contents.fill_rect(underline_of(cell_rect(row, cell)), underline_color) }
+    end
+    lines[top, @rows].each do |start, length|
+      (start...start + length).each { |index| draw_char(index) }
+    end
+  end
+
+  # Draws MORE, dim, in the first cell of the first line.
+  def draw_more
+    change_color(normal_color, false)
+    draw_text(cell_rect(0, 0), MORE, 1)
+    change_color(normal_color)
   end
 
   # Adds a character, if the text takes it and has room.

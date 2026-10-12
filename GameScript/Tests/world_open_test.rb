@@ -2,6 +2,7 @@
 #  world_open_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Checked that the title screen's Multiplayer command gets its handler
 #      Paulinchen  2026-10-11: Checked the cursor moving onto the world just created or added once the list shows it, Enter sending the hidden world's id,
 #                              a form with two text boxes kept from sending, and the details' Password row saying Known once this PC holds the world code
 #      Paulinchen  2026-10-10: Checked where a Raid World with a shared save starts in the details, by build, and a save's label drawn at its field's width
@@ -586,10 +587,14 @@ class TitleMenu
   attr_reader :active
   def disposed?; false; end
   def activate; @active = true; end
+  def set_handler(symbol, handler); handlers[symbol] = handler; end
+  def handlers; @handlers ||= {}; end
 end
 module SceneManager; def self.exit; $exited = true; end; end
 title_scene = Scene_Title.new
 title_scene.instance_variable_set(:@command_window, TitleMenu.new)
+title_scene.create_command_window
+check("the title screen's Multiplayer command gets its handler once the commands are made", title_scene.instance_variable_get(:@command_window).handlers.keys, [:mgq_mp_world])
 offer = MGQ_MpWorld::UpdateOffer
 $called = nil
 $calls.clear

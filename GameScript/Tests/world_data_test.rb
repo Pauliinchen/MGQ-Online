@@ -2,6 +2,7 @@
 #  world_data_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Checked that the text screen breaks the description over several lines
 #      Paulinchen  2026-10-11: Checked that a description in the list box breaks anew once the box is wider, and loaded ui_layout.rbx, which places the list box
 #                            - Read the list box's rows from its lazy rectangle, and gave the screen its size
 #                            - Expected the added world's name followed by the screen's hint to confirm to enter it, and let the list stand-in take the world to put the cursor on
@@ -278,6 +279,15 @@ MGQ_MpWorld.instance_variable_set(:@dev_build, false)
 form[:type] = 0
 check("a description is tidied", form.check(description, "  A slow run.  "), ["A slow run.", nil])
 check("and may be empty", form.check(description, "  "), ["", nil])
+prepared = []
+asking = new_scene
+asking.define_singleton_method(:form) { form }
+SceneManager.define_singleton_method(:scene) { Object.new.tap { |scene| scene.define_singleton_method(:prepare) { |*args| prepared << args } } }
+asking.ask_field(description, true)
+asking.ask_field(form.fields[0], true)
+check("the text screen breaks the description over several lines and a name not", prepared.map { |args| [args[0], args[3][:area]] }, [[[:field, :description], true], [[:field, :name], false]])
+SceneManager.define_singleton_method(:scene) { Object.new.tap { |scene| def scene.prepare(*); end } }
+$called = nil
 check("while a name may not", form.check(form.fields[0], " ")[1], "The world needs a name.")
 rename = MGQ_MpWorld::Form.rename("")
 module MGQ_Multiplayer; module Discord; def self.player_name; $discord_name; end; end; end

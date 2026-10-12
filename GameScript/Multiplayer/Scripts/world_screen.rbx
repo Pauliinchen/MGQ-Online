@@ -4,6 +4,7 @@
 #  Changelog:
 #      Paulinchen  2026-10-12: Asked before taking a world's starting save, which can run code, offering to start at the beginning instead,
 #                              unless the player created the world
+#                            - Opened the text screen of the description with its text broken over several lines
 #      Paulinchen  2026-10-11: Dressed the screen's windows in the interface look and drew the worlds' scrollbar in its edge color
 #                            - Broke a description in the list box anew once the player resized the box, and fitted it to the box's width as it is now
 #                            - Moved the list box's fade on every frame, and measured a description with the shared style's text size and the box's lazy rectangle
@@ -1323,12 +1324,12 @@ class Scene_MpWorlds < Scene_MenuBase
     @resume_form = true
   end
 
-  # Opens the text screen for a text box.
+  # Opens the text screen for a text box; a box of several lines breaks its text over lines there too.
   #
   # @param field [MGQ_MpWorld::Form::Field] The text box.
   # @param letters [Boolean] Whether to show the game's letters at once, for a gamepad.
   def ask_field(field, letters)
-    ask_text([:field, field.key], field.label, form[field.key], :masked => field.kind == :password, :max_chars => field.max_chars, :allowed => field.allowed, :letters => letters)
+    ask_text([:field, field.key], field.label, form[field.key], :masked => field.kind == :password, :max_chars => field.max_chars, :allowed => field.allowed, :letters => letters, :area => field.kind == :area)
   end
 
   # Fills in a text box from the text screen, if the text is valid.

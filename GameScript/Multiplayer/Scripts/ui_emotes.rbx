@@ -2,6 +2,7 @@
 #  ui_emotes.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Read the map's viewport and character sprites through MGQ_MpGame
 #      Paulinchen  2026-10-11: Framed the wheel's boxes in the preset's colors, the picked one lit inside its frame, drawn anew once the preset changes
 #                            - Drew the wheel in the shared style, fading it in and out, with the hint under the ring the wheels share, which names Esc, the numpad's 0 and its hotkey
 #                            - Drew the hint whole through the shared style, so a rebound key's longer name never cuts it
@@ -351,8 +352,8 @@ begin
 
   # After the map's sprites, the emote wheel around the player.
   MGQ_MpHooks.after(Spriteset_Map, :update, "ui_emotes") do
-    @mgq_mp_emotes ||= Sprite_MpEmoteWheel.new(@viewport3)
-    @mgq_mp_emotes.show(@character_sprites.find { |sprite| sprite.character.equal?($game_player) })
+    @mgq_mp_emotes ||= Sprite_MpEmoteWheel.new(MGQ_MpGame.get(self, :viewport3))
+    @mgq_mp_emotes.show(MGQ_MpGame.get(self, :character_sprites).find { |sprite| sprite.character.equal?($game_player) })
   end
 
   MGQ_MpHooks.before(Spriteset_Map, :dispose, "ui_emotes") do

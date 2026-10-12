@@ -2,6 +2,7 @@
 #  world_overview_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Checked that Part 2 starts at progress 19 and Part 3 at 34, with a route shown before the Great Decision
 #      Paulinchen  2026-10-11: Checked the Levels page of a Raid World, its rows drawn and its absence in a Classic world, and counted its tab among the tabs
 #                            - Checked that the level told is the formation's highest, Luka included, and kept during a co-op battle
 #                            - Checked a Raid World's objective on the World page: Amira's first words in a branch, plain, past her network's branch, read every few seconds and wrapped
@@ -62,6 +63,8 @@ module MGQ_MpWorld
 end
 module MGQ_MpWorldDifficulty; def self.value; $difficulty; end; end
 module MGQ_MpWorldStory
+  PART_TWO = 19
+  PART_THREE = 34
   ROUTES = %w(ad mr chaos)
   ROUTE_VARIABLES = [1141, 1142, 1143]
   def self.world; $world_story; end
@@ -142,6 +145,18 @@ $game_variables[1142] = 3
 check("Part 3 with a route", [overview.story_code, overview.story_text(overview.story_code)], ["3:destroyer", "Part 3: Destroyer route"])
 $data_system.variables[1001] = "総合イベント進行度"
 check("the untranslated game's names count too", overview.story_code, "3:destroyer")
+$data_system.variables[1001] = "Overall Events Progress"
+$game_variables[1142] = 0
+$game_variables[1001] = 18
+$game_switches[50] = false
+check("progress 18 is still Part 1", overview.story_code, "1")
+$game_switches[50] = true
+check("Part 2 starts at progress 19, with Tartarus Escape", [19, 33].map { |progress| $game_variables[1001] = progress; overview.story_code }, ["2:alice", "2:alice"])
+$game_variables[1001] = 34
+check("Part 3 starts at progress 34, with the Middle Chapter's epilogue", overview.story_code, "3:alice")
+$game_variables[1142] = 3
+$game_variables[1001] = 39
+check("before the Great Decision a route already shows", overview.story_code, "3:destroyer")
 check("an unknown place shows nothing", overview.story_text(""), "")
 logged = []
 write = MGQ_Multiplayer::Log.method(:write)

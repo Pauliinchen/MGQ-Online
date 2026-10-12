@@ -2,7 +2,8 @@
 #  ui_leader_hud.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Created
+#      Paulinchen  2026-10-12: Read the map's viewport through MGQ_MpGame
+#                            - Created
 #
 #----------------------------------------------------------------
 
@@ -545,7 +546,7 @@ begin
 
   # After the map's sprites, the HUD and the windows it moves below itself.
   MGQ_MpHooks.after(Spriteset_Map, :update, "ui_leader_hud") do
-    (@mgq_mp_leader_hud ||= Sprite_MpLeaderHud.new(@viewport3)).update
+    (@mgq_mp_leader_hud ||= Sprite_MpLeaderHud.new(MGQ_MpGame.get(self, :viewport3))).update
     MGQ_MpLeaderHud.lower_windows
   end
 

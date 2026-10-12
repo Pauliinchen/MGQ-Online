@@ -2,6 +2,7 @@
 #  ui_chat.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Read the map's viewports through MGQ_MpGame
 #      Paulinchen  2026-10-11: Showed the dimmed tabs above the closed log only while it shows lines, so a chat's unread mark no longer leaves them on the screen for good
 #                            - Started the chat in the global chat instead of the map chat, also in every world after the first
 #                            - Moved and resized the chat log with Alt and the mouse through MGQ_MpUi::Layout, the map's as Chat and the battle's as Battle chat, each starting where it lay before at the size chat_size keeps
@@ -2014,7 +2015,7 @@ begin
   # them while they are on this map.
   MGQ_MpHooks.after(Spriteset_Map, :update, "ui_chat") do
     # Just under the topmost viewport, whose wheels and World overview lie above the log.
-    @mgq_mp_chat_log ||= Sprite_MpChatLog.new(:chat, Sprite_MpChatLog::STATUS_ROOM, @viewport3.z - 1)
+    @mgq_mp_chat_log ||= Sprite_MpChatLog.new(:chat, Sprite_MpChatLog::STATUS_ROOM, MGQ_MpGame.get(self, :viewport3).z - 1)
     @mgq_mp_chat_log.update
     @mgq_mp_bubbles ||= {}
     chat = MGQ_MpChat
@@ -2022,7 +2023,7 @@ begin
     (@mgq_mp_bubbles.keys - senders).each { |sender| @mgq_mp_bubbles.delete(sender).dispose }
 
     senders.each do |sender|
-      bubble = @mgq_mp_bubbles[sender] ||= Sprite_MpChatBubble.new(@viewport1)
+      bubble = @mgq_mp_bubbles[sender] ||= Sprite_MpChatBubble.new(MGQ_MpGame.get(self, :viewport1))
       if sender == :me
         character, lift = $game_player, Sprite_MpChatBubble::OWN_LIFT
         lift += Sprite_MpChatBubble::LINE_LIFT if MGQ_MpActions.own_line

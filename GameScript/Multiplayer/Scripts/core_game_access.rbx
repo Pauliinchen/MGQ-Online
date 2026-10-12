@@ -2,7 +2,8 @@
 #  core_game_access.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Named the map scene's map name and medal windows, which the Leader HUD moves below itself
+#      Paulinchen  2026-10-12: Named the map's viewports and character sprites, which the map's sprites of the mod are made in and follow
+#                            - Named the map scene's map name and medal windows, which the Leader HUD moves below itself
 #                            - Named the map a vehicle stands on
 #      Paulinchen  2026-10-11: Named whether a forced move route moves a character
 #                            - Named the event's answer a battle ends with, which tells a story's battle
@@ -92,8 +93,15 @@ module MGQ_MpGame
     # Sprite_Battler: the game's HP bar of an enemy (Basic Enemy HP Bars Lite).
     :hp_bar => :@hp_bar,
 
-    # Scene_Title.
+    # Scene_Title and Scene_Menu: their commands.
     :command_window => :@command_window,
+
+    # Spriteset_Map: its viewports, of the map with its characters, of the weather and pictures, and
+    # the topmost; and the characters' sprites.
+    :viewport1 => :@viewport1,
+    :viewport2 => :@viewport2,
+    :viewport3 => :@viewport3,
+    :character_sprites => :@character_sprites,
 
     # $game_troop, $game_party and $game_temp.
     :enemies => :@enemies,

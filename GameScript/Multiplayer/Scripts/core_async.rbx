@@ -2,6 +2,7 @@
 #  core_async.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Read the live map's viewports through MGQ_MpGame
 #      Paulinchen  2026-10-07: Read an interpreter's event and map through MGQ_MpGame
 #                            - Logged when the world starts and stops running behind a screen, each event command held and let run, the map refreshes that wait, the instant switches and the live map shown
 #      Paulinchen  2026-10-06: Wrapped the screens, the screen's freeze and transition and the menus' backgrounds through core_hooks.rbx instead of wraps of its own
@@ -243,7 +244,7 @@ class Spriteset_MpLiveMap < Spriteset_Map
   # Creates the map's sprites and the dimming over them.
   def initialize
     super
-    @mgq_mp_dim = Sprite.new(@viewport3)
+    @mgq_mp_dim = Sprite.new(MGQ_MpGame.get(self, :viewport3))
     @mgq_mp_dim.bitmap = Bitmap.new(Graphics.width, Graphics.height)
     @mgq_mp_dim.bitmap.fill_rect(@mgq_mp_dim.bitmap.rect, DIM)
     @mgq_mp_dim.z = 10_000
@@ -252,7 +253,10 @@ class Spriteset_MpLiveMap < Spriteset_Map
   # Creates the map's viewports, below the menu.
   def create_viewports
     super
-    [@viewport1, @viewport2, @viewport3].zip(DEPTHS).each { |viewport, depth| viewport.z = depth }
+    [:viewport1, :viewport2, :viewport3].zip(DEPTHS).each do |field, depth|
+      viewport = MGQ_MpGame.get(self, field)
+      viewport.z = depth if viewport
+    end
   end
 
   # Frees the dimming, then the map's sprites.

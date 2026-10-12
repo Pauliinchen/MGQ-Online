@@ -2,6 +2,7 @@
 #  ui_edge_arrows.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Read the map's viewport through MGQ_MpGame
 #      Paulinchen  2026-10-11: Drew an arrow's plate anew once the preset changes
 #                            - Created
 #
@@ -485,7 +486,7 @@ end
 
 begin
   # After the map's sprites, the arrows toward the players off the screen.
-  MGQ_MpHooks.after(Spriteset_Map, :update, "ui_edge_arrows") { (@mgq_mp_edge_arrows ||= MGQ_MpEdgeArrows::Pool.new(@viewport3)).update }
+  MGQ_MpHooks.after(Spriteset_Map, :update, "ui_edge_arrows") { (@mgq_mp_edge_arrows ||= MGQ_MpEdgeArrows::Pool.new(MGQ_MpGame.get(self, :viewport3))).update }
 
   MGQ_MpHooks.before(Spriteset_Map, :dispose, "ui_edge_arrows") do
     @mgq_mp_edge_arrows.dispose if @mgq_mp_edge_arrows

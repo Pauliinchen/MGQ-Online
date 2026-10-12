@@ -2,6 +2,8 @@
 #  world_overview.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Counted Part 2 from progress 19 and Part 3 from 34, as the world's story and the relay do, instead of from 20 and 40
+#                            - Read the map's viewport through MGQ_MpGame
 #      Paulinchen  2026-10-11: Added the Levels page of a Raid World: the level the catch-up counts and, under a heading per level, what it hands out that the world already unlocked, moving on from a part, companions and Makina, each marked Done or Due
 #                            - Told the others the highest level of the player's formation, Luka included, instead of every companion's, keeping the last one read during a co-op battle
 #                            - Showed a Raid World's objective on the World page under the story, as Amira tells it asked for information, wrapped over as many lines as it needs
@@ -78,9 +80,10 @@ module MGQ_MpWorldOverview
   # The story's progress variable, by its name in the translation and in the untranslated game.
   PROGRESS = ["Overall Events Progress", "総合イベント進行度"]
 
-  # First progress of each part, latest first: the escape from Tartarus ends Part 1, the Great
-  # Decision ends Part 2.
-  PART_STARTS = [[3, 40], [2, 20], [1, 0]]
+  # First progress of each part, latest first, as MGQ_MpWorldStory.part_of and the relay count them:
+  # Part 2 from Tartarus Escape, Part 3 from the Middle Chapter's epilogue, so the Great Decision
+  # lies in Part 3.
+  PART_STARTS = [[3, MGQ_MpWorldStory::PART_THREE], [2, MGQ_MpWorldStory::PART_TWO], [1, 0]]
 
   # The side chosen, by the switch that records the choice, in the translation and in the
   # untranslated game.
@@ -1800,7 +1803,7 @@ begin
 
   # After the map's sprites, the overview's box.
   MGQ_MpHooks.after(Spriteset_Map, :update, "world_overview") do
-    (@mgq_mp_overview ||= Sprite_MpWorldOverview.new(@viewport3)).update
+    (@mgq_mp_overview ||= Sprite_MpWorldOverview.new(MGQ_MpGame.get(self, :viewport3))).update
   end
 
   MGQ_MpHooks.before(Spriteset_Map, :dispose, "world_overview") do
