@@ -3,6 +3,8 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-12: Checked that a move on at a level cap whose checkpoint is dropped makes only the next story's rewards wait, and that a gate noted while the player plays the world's story holds nothing back
+#                            - Checked that Galda the story gave comes back to its start once a checkpoint or the world's story past its event is laid over, and that a vehicle on a map or one the player rides is never moved
+#                            - Stood in for the vehicles' start positions and a vehicle's tile
 #                            - Checked that a cap of another mod brings no Makina nor waiting companion above the real level
 #                            - Checked that a player behind learns no skill of the world's story, and that a move on at a cap holds the story's skills and items until the real level
 #                            - Checked that a vehicle no event of the story gave yet leaves its map, one the player rides once they got off, and that Galda stays past its event
@@ -162,8 +164,11 @@ module RPG
   Skill = Struct.new(:id, :name)
 end
 ActorData = Struct.new(:id, :name, :initial_level)
-System = Struct.new(:switches, :variables)
-$data_system = System.new(Array.new(8000, ""), Array.new(4000, ""))
+System = Struct.new(:switches, :variables, :boat, :ship, :airship)
+# Where a new game parks a vehicle, as the game's data names it: the boat nowhere, the ship and
+# Galda on the field.
+VehicleStart = Struct.new(:start_map_id, :start_x, :start_y)
+$data_system = System.new(Array.new(8000, ""), Array.new(4000, ""), VehicleStart.new(0, 0, 0), VehicleStart.new(2, 306, 2), VehicleStart.new(2, 186, 1))
 $data_actors = Array.new(1000)
 [[1, "Luka", 1], [5, "Alice", 1], [16, "Granberia", 20], [45, "Tamamo", 12], [77, "Slime", 7], [80, "Harpy", 9], [525, "Sonya", 2], [841, "Sonya", 1], [842, "Sonya", 1]].each do |id, name, level|
   $data_actors[id] = ActorData.new(id, name, level)
@@ -223,10 +228,11 @@ class Game_Interpreter
   def execute_command; end
   def ssw(key); false; end
 end
-# A vehicle: the map it stands on, 0 for none.
+# A vehicle: the map it stands on, 0 for none, and its tile.
 class Game_Vehicle
   def initialize; @map_id = 0; end
-  def set_location(map_id, _x, _y); @map_id = map_id; end
+  def set_location(map_id, x, y); @map_id = map_id; @x = x; @y = y; end
+  def spot; [@map_id, @x, @y]; end
 end
 class Game_Map
   attr_accessor :map_id, :interpreter, :need_refresh
@@ -850,6 +856,46 @@ frames(1)
 relay({ "rev" => 61, "wrev" => 61, "p" => 37, "part" => "3", "checkpoints" => "1,2" }, packed({ 1001 => 37 }))
 frames(40)
 check("but leaves for a player behind whose own story has not given it", [story.mode, vehicle_map.call(:airship)], [:behind, 0])
+
+# A vehicle the story gave that stands on no map comes back where a new game parks it, once a
+# checkpoint or the world's story past its event is laid over; one on a map stays where it is.
+tables(:VEHICLES => [DATA::Vehicle.new(2, "map:645:33:1", "3", 37, nil, [[:v, 1001, 37]], true),
+                     DATA::Vehicle.new(0, "map:33:50:1", "2", 24, nil, [[:v, 1001, 24]], true)])
+new_game({ 1001 => 36 }, [], 40)
+$game_map.vehicle(:airship).set_location(2, 237, 239)
+frames(1)
+relay({ "rev" => 62, "wrev" => 62, "p" => 40, "r1141" => 10, "part" => "ad", "route" => "ad", "checkpoints" => "1,2,3" }, packed({ 1001 => 40, 1141 => 10 }))
+frames(16)
+frames(24)
+check("a player behind before the event that gives Galda loses the Galda parked on the field", [story.mode, vehicle_map.call(:airship)], [:behind, 0])
+checkpoint("3", packed({ 1001 => 39 }))
+frames(70)
+check("and once a checkpoint past its event is laid over, Galda is back at its start on the field, the boat without one stays off",
+      [story.mode, $game_variables[1001], $game_map.vehicle(:airship).spot, vehicle_map.call(:boat)], [:behind, 39, [2, 186, 1], 0])
+new_game({ 1001 => 34 }, [], 40)
+$game_map.vehicle(:airship).set_location(0, 0, 0)
+$game_map.vehicle(:ship).set_location(0, 0, 0)
+frames(1)
+relay({ "rev" => 63, "wrev" => 63, "p" => 37, "part" => "3" }, packed({ 1001 => 37 }))
+frames(40)
+check("the world's story past its event laid over brings Galda back to its start, not the ship no event gave",
+      [story.mode, $game_map.vehicle(:airship).spot, vehicle_map.call(:ship)], [:world, [2, 186, 1], 0])
+$game_map.vehicle(:airship).set_location(2, 237, 239)
+MGQ_MpWorldCatchup.level_up
+frames(40)
+check("a Galda on a map stays where it is", $game_map.vehicle(:airship).spot, [2, 237, 239])
+$game_map.vehicle(:airship).set_location(0, 0, 0)
+story.pushed(MGQ_MpOverworldSync::STORY_FIELD => "64", :relay => true)
+frames(1)
+relay({ "rev" => 64, "wrev" => 64, "p" => 37, "part" => "3" }, packed({ 1001 => 37, 1050 => 10 }))
+frames(40)
+check("a Galda gone while the player plays the world's story is back with the next story laid over", $game_map.vehicle(:airship).spot, [2, 186, 1])
+$game_map.vehicle(:airship).set_location(0, 0, 0)
+$game_player.vehicle = $game_map.vehicle(:airship)
+MGQ_MpWorldCatchup.level_up
+frames(40)
+check("and one the player rides is never moved", vehicle_map.call(:airship), 0)
+$game_player.vehicle = nil
 
 # A companion the world shared comes with the story values their own join stands for.
 $data_actors[540] = ActorData.new(540, "Amira", 6)

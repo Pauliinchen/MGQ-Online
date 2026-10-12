@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-12: Let the story's rewards wait after a move on at a level cap only for the first story laid over the player no longer behind, and never once they play the world's story, as a dropped checkpoint kept them waiting for every later story
+#                            - Put a vehicle the story gave that stands on no map back at the start the game names for it, on entering, after a load, a level up and every story laid over the player's, as a checkpoint or the world's story past Mt. Saint Amos left Galda nowhere
 #                            - Gave companions and Makina only once the player's real level reaches theirs, as a character at another mod's level cap got every Makina above it at once
 #                            - Held the story's skills and items a move on at another mod's level cap carried the player past until their real level reaches the gate
 #                            - Taught a player behind the world's story no skill of it before they move on
@@ -184,6 +185,7 @@ module MGQ_MpWorldCatchup
     @orbs_played = false
     @audit_due = true
     @riding_early = false
+    @vehicles_due = false
     @watched = nil
     @clock ||= 0
     @checked = @clock
@@ -261,8 +263,8 @@ module MGQ_MpWorldCatchup
 
   # Follows the catch-up for one frame: the relay's answers, the checkpoint and the orbs' event that
   # wait, then every CHECK_FRAMES while the player is free the rewards waiting for their gate, the
-  # story's rows, the level gate, the shared companions, the orbs and the Makina. Called after the
-  # map's update.
+  # story's rows, the level gate, the shared companions, the orbs and the Makina, and the vehicles
+  # after a story laid over the player's. Called after the map's update.
   def self.tick
     @clock += 1
     return close unless active?
@@ -281,7 +283,11 @@ module MGQ_MpWorldCatchup
     carry_watched
     @audit_due = true if got_off_early?
     looking do
-      audit(story_now) if @audit_due
+      if @audit_due
+        audit(story_now)
+      elsif @vehicles_due
+        check_vehicles(story_now, played_world_story)
+      end
       give_waiting_rewards
       review(story_now, false)
       move_on if MGQ_MpWorldStory.mode == :behind && !@want && !@joins_world && gate_reached?
@@ -535,8 +541,8 @@ module MGQ_MpWorldCatchup
   end
 
   # Follows a story laid over the player's: what their own game played before counts as theirs,
-  # then what the story carried them past gives what it gives. Called by world_story.rbx and after
-  # a checkpoint.
+  # then what the story carried them past gives what it gives, and the next check looks at the
+  # vehicles (check_vehicles). Called by world_story.rbx and after a checkpoint.
   #
   # The first story laid over a player no longer behind is the one a move on at a level cap led to,
   # even when its checkpoint was dropped, so its rewards still wait (see note_capped); later ones
@@ -551,6 +557,7 @@ module MGQ_MpWorldCatchup
     # over too, see watched.
     before = @watched || before
     @watched = nil
+    @vehicles_due = true
     looking do
       review(before, false)
       review(story_now, true)
@@ -965,7 +972,7 @@ module MGQ_MpWorldCatchup
   # entering the world, after a load and on a level up: the story's skills Luka lacks, the key
   # items (restock_key_items), the story's companions missing from the roster, who join at their
   # gate, the player's own values the story sets (settle), with a warp ban left where warping is
-  # free (lift_warp_ban), and the vehicles the story has not given yet (park_vehicles). The world's
+  # free (lift_warp_ban), and the vehicles by what the story gave (check_vehicles). The world's
   # story counts for the skills, the values and the vehicles only while the player plays it, never
   # while they are behind it.
   #
@@ -982,7 +989,7 @@ module MGQ_MpWorldCatchup
     companion_values
     settle(story, world)
     lift_warp_ban
-    park_vehicles(story, world)
+    check_vehicles(story, world)
     log("looked at everything the story owes the player once")
     tell_gifts(gifts.compact)
   end
@@ -1116,29 +1123,63 @@ module MGQ_MpWorldCatchup
     log("lifted the warp ban: map #{$game_map.map_id} lets the player warp")
   end
 
-  # Takes a vehicle off its map while no event that puts it there (DATA::VEHICLES) is behind the
-  # player's story or the world's. A new game whose setup never ran keeps the ship and Galda where
-  # the database parks them, on the field, and Galda flies anywhere. A vehicle the player rides
-  # stays until they got off (got_off_early?), since taking it away midair strands them.
+  # Keeps the vehicles to the story: one that no event that gives it (DATA::VEHICLES) is behind the
+  # player's story or the world's leaves its map (park_vehicle), one the story gave that stands on
+  # no map comes back to its start (return_vehicle).
   #
   # @param story [Array] The player's story.
   # @param told [Array, nil] The world's story, nil before it came or while the player is behind it.
-  def self.park_vehicles(story, told)
+  def self.check_vehicles(story, told)
+    @vehicles_due = false
     VEHICLE_TYPES.each_with_index do |type, id|
       vehicle = $game_map.vehicle(type)
-      map_id = vehicle ? MGQ_MpGame.get(vehicle, :map_id).to_i : 0
-      next if map_id == 0 || DATA::VEHICLES.any? { |row| row.vehicle == id && passed_any?(row, story, told) }
+      next unless vehicle
 
-      if $game_player.vehicle.equal?(vehicle)
-        @riding_early = true
-        next log_once([:riding_early, type], "left the #{type} the story has not given yet while the player rides it")
+      map_id = MGQ_MpGame.get(vehicle, :map_id).to_i
+      given = DATA::VEHICLES.any? { |row| row.vehicle == id && passed_any?(row, story, told) }
+      if given
+        return_vehicle(type, vehicle) if map_id == 0
+      elsif map_id != 0
+        park_vehicle(type, vehicle, map_id)
       end
-      vehicle.set_location(0, 0, 0)
-      log("took the #{type} off map #{map_id}: no event that gives it is behind the story")
     end
   end
 
-  # Reports whether the player got off a vehicle that park_vehicles left while they rode it, which
+  # Takes a vehicle the story has not given yet off its map. A new game whose setup never ran keeps
+  # the ship and Galda where the database parks them, on the field, and Galda flies anywhere. A
+  # vehicle the player rides stays until they got off (got_off_early?), since taking it away midair
+  # strands them.
+  #
+  # @param type [Symbol] The vehicle's type.
+  # @param vehicle [Game_Vehicle] The vehicle.
+  # @param map_id [Integer] The map it stands on.
+  def self.park_vehicle(type, vehicle, map_id)
+    if $game_player.vehicle.equal?(vehicle)
+      @riding_early = true
+      return log_once([:riding_early, type], "left the #{type} the story has not given yet while the player rides it")
+    end
+    vehicle.set_location(0, 0, 0)
+    log("took the #{type} off map #{map_id}: no event that gives it is behind the story")
+  end
+
+  # Puts a vehicle the story gave that stands on no map where a new game parks it, the start the
+  # database names for it, as a story laid over the player's gives Galda without the event that
+  # lands the player on it.
+  #
+  # @param type [Symbol] The vehicle's type.
+  # @param vehicle [Game_Vehicle] The vehicle.
+  def self.return_vehicle(type, vehicle)
+    return if $game_player.vehicle.equal?(vehicle)
+
+    start = $data_system.send(type)
+    map_id = start ? start.start_map_id.to_i : 0
+    return log_once([:no_start, type], "left the #{type} the story gave on no map: the game names no start for it") if map_id == 0
+
+    vehicle.set_location(map_id, start.start_x, start.start_y)
+    log("put the #{type} back at its start on map #{map_id} (#{start.start_x},#{start.start_y}): the story gave it and it stood on no map")
+  end
+
+  # Reports whether the player got off a vehicle that park_vehicle left while they rode it, which
   # it then takes away at the next look.
   #
   # @return [Boolean] Whether they did.
