@@ -38,8 +38,8 @@ This guide names the default hotkeys. To bind others, open *Mod Config → MGQ O
 
 **Look.** *Mod Config → MGQ Online Settings → Interface Look* sets the colors of every box, frame and window of the mod:
 
-- **Monarch** (the default): dark maroon with a gold edge in a black rim and gold titles, the look of the raid boss bar.
-- **Legacy**: black glass with a thin grey edge, the look the mod had before.
+- **Monarch** (the default): dark maroon with a gold edge in a black rim, gold titles and dark gold tabs, the look of the raid boss bar.
+- **Legacy**: black glass with a thin grey edge and grey tabs, the look the mod had before.
 
 The raid boss bar's red HP stays red in both.
 
@@ -357,7 +357,7 @@ When a battle starts for a party member, whether a random encounter, a wandering
 - **The waiting box** in a battle says what your game waits for, who is still to come ("Still choosing: \<name>, \<name>", "Not ready: \<name>") and how long you've waited ("12 s"). The host's game names them, and the guests' boxes show the same names. After 10 seconds the last line offers to leave the battle with cancel instead; leaving a story battle you can't escape from loses it for you alone, while the others fight on.
 - **Your squad fights:** your share of the Frontline fights and your share of the Backline waits. The companions past it stay out of the battle.
 - **Everyone commands their own characters** and can swap their own Backline in with *Party*, also once their own Frontline is down. The status window names each character in its player's color, yours in yellow, and another player's character by its own name; the battle's messages still add the player's name ("Alice (\<name>)"). When you swap out a character another player already chose a command for, such as a heal or a revive, that player chooses their commands again once everyone has chosen; their chat log tells them why. Their other characters' commands are cleared too, as the game's own *Party* does.
-- **Escaping:** each of you can try. Whoever gets away leaves the battle, and the others fight on without their characters. Everyone still in it reads "\<name> left the battle." in the chat log at once, as they read "\<name> joined the battle." for a player who joins a running one; the characters leave at the next round. The one left alone fights on with their own full team.
+- **Escaping:** each of you can try. Whoever gets away leaves the battle, and the others fight on without their characters. Everyone still in it reads "\<name> left the battle." at once in the battle's popup at the top, as they read "\<name> joined the battle." for a player who joins a running one; the characters leave at the next round. The one left alone fights on with their own full team.
 - **Rewards:** each of you gets the full EXP, gold and your own item drops, or your own defeat. After a lost battle, everyone sees the defeat scene of the same enemy, the one the game running the battle chose.
 
 ## Duels
