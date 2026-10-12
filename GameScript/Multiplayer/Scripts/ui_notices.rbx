@@ -2,7 +2,8 @@
 #  ui_notices.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Logged a refused hotkey through MGQ_MpHotkeys.log_refusal, not while the player types, and a press while the box is hidden once instead of twice
+#      Paulinchen  2026-10-12: Put the box at its default 4 pixels below the Leader HUD instead of 12
+#                            - Logged a refused hotkey through MGQ_MpHotkeys.log_refusal, not while the player types, and a press while the box is hidden once instead of twice
 #                            - Moved the box at its default below the Leader HUD while it shows at the top left
 #                            - Told once a session that Player.ini could not be read and settings are not saved, once the box shows
 #      Paulinchen  2026-10-11: Made the box movable and resizable with the left Alt held, as "Notifications": its width gives the notifications room and its height the rows it shows, never below the first invite's keys beside a readable name and two rows
@@ -283,9 +284,13 @@ class Sprite_MpNoticeBox < Sprite
   # Tells where the box draws: where the player left it, else at the top left below a strip of the
   # mod and the Leader HUD, as tall as MGQ_MpNotices::MAX_ROWS.
   #
+  # The HUD's room already holds its own margin and the gap below it, so MARGIN applies only
+  # without it.
+  #
   # @return [Rect] The place, see MGQ_MpUi::Layout.rect.
   def self.rect
-    default = Rect.new(MARGIN, MARGIN + MGQ_MpUi.top_room + MGQ_MpLeaderHud.room, WIDTH, ROW * MGQ_MpNotices::MAX_ROWS + 2 * SPACING)
+    hud = MGQ_MpLeaderHud.room
+    default = Rect.new(MARGIN, MGQ_MpUi.top_room + (hud > 0 ? hud : MARGIN), WIDTH, ROW * MGQ_MpNotices::MAX_ROWS + 2 * SPACING)
     MGQ_MpUi::Layout.rect(LAYOUT, default)
   end
 

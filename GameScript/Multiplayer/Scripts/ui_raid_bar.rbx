@@ -2,7 +2,8 @@
 #  ui_raid_bar.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Logged a refused hotkey through MGQ_MpHotkeys.log_refusal, not while the player types
+#      Paulinchen  2026-10-12: Kept the troops of a common event only when its walk missed none, so a cycle or a common event called twice no longer hides troops for the session
+#                            - Logged a refused hotkey through MGQ_MpHotkeys.log_refusal, not while the player types
 #                            - Read the map's viewports and character sprites through MGQ_MpGame
 #      Paulinchen  2026-10-11: Drew the gauges' edge, empty part and the title in the interface preset's colors, drawing anew once the preset changes
 #                            - Made the strip a box the player moves and resizes in width with Alt, never narrower than a boss of three enemies and its title line need
@@ -258,17 +259,27 @@ module MGQ_MpRaidBar
 
   # Lists the troops whose battles a common event starts, kept since the database never changes.
   #
+  # A walk that skipped a common event looked at but not kept yet lacks that event's troops, so
+  # only a list that skipped none is kept, or the walk's first, which gathers them all.
+  #
   # @param id [Integer] The common event.
-  # @param seen [Hash] See troops_in.
+  # @param seen [Hash] See troops_in; its :cut entry marks a walk that skipped such an event.
   # @return [Array<Integer>] The troops.
   def self.common_troops(id, seen)
     return @common_troops[id] if @common_troops.key?(id)
-    return [] if seen[id]
+    if seen[id]
+      seen[:cut] = true
+      return []
+    end
 
+    root = seen.empty?
+    outer = seen.delete(:cut)
     seen[id] = true
     common = $data_common_events[id]
     troops = common && common.list ? troops_in(common.list, seen) : []
-    @common_troops[id] = troops
+    @common_troops[id] = troops if root || !seen[:cut]
+    seen[:cut] = true if outer
+    troops
   end
 
   # Reports whether a troop's battle shows a bar: the last phase of a raid boss with pools whose

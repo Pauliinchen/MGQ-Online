@@ -2,7 +2,8 @@
 #  ui_raid_bar_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Checked that Tab pressed while the chat box is open changes nothing and goes to the hotkeys' refusal log
+#      Paulinchen  2026-10-12: Checked that common events calling each other, or one called twice in a walk, keep every troop for later events
+#                            - Checked that Tab pressed while the chat box is open changes nothing and goes to the hotkeys' refusal log
 #      Paulinchen  2026-10-11: Covered the strip as a box of the layout: its least width, a kept place, narrow with three enemies, small mode cropped where it lies, the room at the top and the game's bar only while it lies there
 #                            - Covered the gauges and the title drawn anew in another interface preset's colors
 #                            - Expected the battle's small strip cropped from its top instead of slid up, and stood in for what the presets and the layout read
@@ -425,6 +426,18 @@ gate = Game_Event.new([Command.new(117, [20])], "", 0, false, 255, 30, 4)
 $game_map.events = { 1 => harpy, 2 => gate, 3 => Game_Event.new(nil, "$Erased", 0, false, 255, 0, 0) }
 check("the events whose page starts a boss battle, through common events too, a beaten boss left out",
       bar.boss_events.map { |event, troop| [event.x, troop] }, [[10, 71], [30, 1599]])
+calls = lambda { |id| [Command.new(117, [id])] }
+$data_common_events[40] = CommonEvent.new([Command.new(117, [41]), battle(401)])
+$data_common_events[41] = CommonEvent.new([Command.new(117, [40]), battle(411)])
+check("common events that call each other: an event calling one finds the troops of both",
+      bar.troops_in(calls.call(40), {}).sort, [401, 411])
+check("and a later event calling the other alone still finds both", bar.troops_in(calls.call(41), {}).sort, [401, 411])
+$data_common_events[50] = CommonEvent.new([Command.new(117, [51]), Command.new(117, [52]), battle(501)])
+$data_common_events[51] = CommonEvent.new([Command.new(117, [53]), battle(511)])
+$data_common_events[52] = CommonEvent.new([Command.new(117, [53]), battle(521)])
+$data_common_events[53] = CommonEvent.new([Command.new(117, [50]), battle(531)])
+check("two common events calling one that calls back: the first finds every troop", bar.troops_in(calls.call(50), {}).sort, [501, 511, 521, 531])
+check("and the second, cut short in that walk, is not kept short", bar.troops_in(calls.call(52), {}).sort, [501, 511, 521, 531])
 check("the steps to a boss's event", [bar.distance_to_boss(71, 12, 13), bar.distance_to_boss(2016, 0, 0)], [3, MGQ_MpRaidBar::FAR])
 $game_map.map_id = MGQ_MpRaidPool::HADES_MAP
 $frame += MGQ_MpRaidBar::SCAN_FRAMES

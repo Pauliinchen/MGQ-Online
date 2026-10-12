@@ -2,7 +2,8 @@
 #  bug_report_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Checked that a refused bug report hotkey is logged under the hotkeys, and not while the player types
+#      Paulinchen  2026-10-12: Checked that what the notification box says waits while it hides, says after a battle that the form opens once the player is free, and is dropped once the form opens, the report is forgotten or the outcome comes
+#                            - Checked that a refused bug report hotkey is logged under the hotkeys, and not while the player types
 #                            - Checked the friendly words for a relay busy with other bug reports
 #                            - Stood in for Ini.load, which a world's folder reads world.ini through
 #      Paulinchen  2026-10-11: Created
@@ -350,6 +351,53 @@ report.forget("a test")
 check("forgetting a waiting report drops its screenshot", $calls.last.first, "mp_report_drop_snap")
 reset
 
+# Where the box hides, as in a battle outside a world, what it says waits until it shows.
+$in_world = false
+SceneManager.scene = Scene_Battle.new
+$shown = false
+$pressed = 0x72
+frame
+check("a battle's report outside a world says nothing while the box hides", [$notices, $chat], [[], []])
+SceneManager.scene = Scene_Map.new
+$map_free = false
+$shown = true
+frame
+check("back on a busy map the box says the form opens once the player is free", [$notices.map { |_, text| text }, $called], [[report::BUSY_TEXT], []])
+$map_free = true
+frame
+check("which it then does", $called, [Scene_MpBugReport])
+reset
+SceneManager.scene = Scene_Battle.new
+$shown = false
+$pressed = 0x72
+frame
+SceneManager.scene = Scene_Map.new
+$shown = true
+frame
+check("back on a free map the form opens with nothing said", [$notices, $called], [[], [Scene_MpBugReport]])
+reset
+SceneManager.scene = Scene_Battle.new
+$shown = false
+$pressed = 0x72
+frame
+SceneManager.scene = Scene_Map.new
+frame
+$shown = true
+frame
+check("what waited is dropped once the form opened while the box still hid", [$notices, $called], [[], [Scene_MpBugReport]])
+reset
+SceneManager.scene = Scene_Battle.new
+$shown = false
+$pressed = 0x72
+frame
+report.forget("a test")
+SceneManager.scene = Scene_Map.new
+$shown = true
+frame
+check("and once the report is forgotten", $notices, [])
+$in_world = true
+reset
+
 # The map busy at the press, and a menu that cannot be left.
 SceneManager.scene = Scene_Map.new
 $map_free = false
@@ -462,11 +510,17 @@ reset
 check("the state is read every half second", $notices, [])
 $state = "sent\t42\thttps://github.com/Pauliinchen/MGQ-Online/issues/42"
 $shown = false
+$in_world = false
+SceneManager.scene = Scene_Battle.new
+$pressed = 0x72
 report::POLL_FRAMES.times { frame }
 check("an outcome waits while the box hides, as in a battle", [$notices, report.sending?], [[], false])
+SceneManager.scene = Scene_Map.new
+$in_world = true
 $shown = true
 frame
-check("then the box thanks the player with the issue's number", $notices.last[1], "Bug report sent as issue #42. Thank you!")
+check("then the box thanks the player with the issue's number, the refusal kept in the battle dropped",
+      $notices.map { |_, text| text }, ["Bug report sent as issue #42. Thank you!"])
 report.instance_variable_set(:@sending, true)
 outcomes = [["rate", "too many"], ["off", "off"], ["busy", "busy"], ["http500", "GitHub refused the report"], ["unreachable", ""]].map do |code, reason|
   report.instance_variable_set(:@sending, true)

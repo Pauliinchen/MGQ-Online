@@ -2,7 +2,8 @@
 #  ui_bug_report.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Logged a refused hotkey through MGQ_MpHotkeys.log_refusal, not while the player types
+#      Paulinchen  2026-10-12: Kept what the notification box tells the player until it shows, dropped once the form opens, the report is forgotten or the outcome comes, and said after a battle that the form opens once the player is free on the map
+#                            - Logged a refused hotkey through MGQ_MpHotkeys.log_refusal, not while the player types
 #                            - Told the player in friendly words when the relay is busy with other bug reports
 #      Paulinchen  2026-10-11: Created
 #
@@ -120,6 +121,7 @@ module MGQ_MpBugReport
   @sending = false
   @poll_frames = 0
   @outcome = nil
+  @told = nil
 
   extend MGQ_MpLog
 
@@ -127,8 +129,9 @@ module MGQ_MpBugReport
   LOG_TAG = "bug report"
 
   # Reads the hotkey, takes the screenshot the wheel asked for, forgets a waiting report once the
-  # game left for the title screen and a form another scene took the place of, and follows the
-  # sending. Called by overworld_sync.rbx every frame in every scene.
+  # game left for the title screen and a form another scene took the place of, follows the sending
+  # and tells what waits for the notification box. Called by overworld_sync.rbx every frame in
+  # every scene.
   #
   # @param _in_world [Boolean] Whether a world is open.
   def self.tick(_in_world)
@@ -139,6 +142,7 @@ module MGQ_MpBugReport
     forget_on_leaving
     poll
     show_outcome
+    show_told
   rescue => e
     log_once(:tick, "tick failed: #{e.class}: #{e.message}")
   end
@@ -264,6 +268,7 @@ module MGQ_MpBugReport
     report = @pending
     @pending = nil
     @snap_in = nil
+    @told = nil
     return unless report
 
     drop_snap(report)
@@ -274,6 +279,7 @@ module MGQ_MpBugReport
   def self.open
     @opening = @pending
     @pending = nil
+    @told = nil
     log("opening the form#{@opening[:snapped] ? ' with the screenshot' : ' without a screenshot'}")
     SceneManager.call(Scene_MpBugReport)
   end
@@ -312,8 +318,11 @@ module MGQ_MpBugReport
     scene.is_a?(Scene_MenuBase) && !WAITING_MENUS.include?(scene.class.name)
   end
 
-  # Tells the player something: in the battle's chat log in a battle of a world, where the
-  # notification box hides, else in the notification box.
+  # Tells the player something: in the battle's chat log in a battle of a world, else in the
+  # notification box, or once it shows, see show_told.
+  #
+  # The box counts a message down while it hides, as in a battle outside a world or a Novel scene,
+  # so a message posted there would run out unseen.
   #
   # @param text [String] What to say.
   # @param scene [Scene_Base, nil] The scene in front.
@@ -321,8 +330,36 @@ module MGQ_MpBugReport
     if scene.is_a?(Scene_Battle) && defined?(MGQ_MpChat) && MGQ_MpOverworldSync.in_world?
       MGQ_MpChat.system(text)
     elsif defined?(MGQ_MpNotices)
+      return keep_told(text) unless MGQ_MpNotices.shown?
+
+      @told = nil
       MGQ_MpNotices.message(NOTICE_KEY, text)
     end
+  end
+
+  # Keeps what the player is told until the notification box shows, a later text taking its place.
+  #
+  # @param text [String] What to say.
+  def self.keep_told(text)
+    @told = text
+    log("kept for the notification box until it shows: #{text}")
+  end
+
+  # Tells what waits for the notification box once it shows. A text saying when the form opens is
+  # told only while the report still waits and not on a free map, where it opens at once, and as
+  # BUSY_TEXT, since the battle it waited for is over.
+  def self.show_told
+    return unless @told && defined?(MGQ_MpNotices) && MGQ_MpNotices.shown?
+
+    text = @told
+    @told = nil
+    if text == BATTLE_TEXT || text == BUSY_TEXT
+      return log("dropped what waited for the notification box, the report no longer waits: #{text}") unless @pending
+      return if SceneManager.scene.is_a?(Scene_Map) && map_ready?
+
+      text = BUSY_TEXT
+    end
+    MGQ_MpNotices.message(NOTICE_KEY, text)
   end
 
   # Builds the form: the title, the text, whether to attach the screenshot, when there is one, and
@@ -441,6 +478,7 @@ module MGQ_MpBugReport
   def self.finish(text, logged)
     @sending = false
     @outcome = text
+    @told = nil
     log("the report #{logged}")
   end
 
