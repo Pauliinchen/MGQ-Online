@@ -2,6 +2,7 @@
 #  battles_coop.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Took a joining player's party_member_max only as a number, 0 for anything else, instead of failing the battle's start
 #      Paulinchen  2026-10-11: Left the party members who said no to starting a battle with the player out of its invites, and took the party members' offers and answers about a battle outside the party
 #                            - Stretched the steps to the next random encounter by half once another player who would fight it stands within NEARBY_TILES, a party member in a Classic world, instead of once per member or by half a draw per player on the map, and invited only the players that near to a Raid World's battle, so players across a large map no longer keep each other from meeting enemies or pull each other into fights
 #                            - Opened the player's command phase while their own Frontline is down but their Backline may swap in, so they can still change the formation
@@ -959,7 +960,7 @@ module MGQ_MpBattlesCoop
       builds, vitals, max = MGQ_MpBattlesSync::Wire.parse(joined[seat].to_s)
       # A player who joined may have left the world since; their characters fight on all the same.
       peer = MGQ_MpOverworldSync::Peers.at(seat)
-      players << [seat, peer ? peer.state["name"].to_s : "?", builds.to_s, Array(vitals), max.to_i]
+      players << [seat, peer ? peer.state["name"].to_s : "?", builds.to_s, Array(vitals), max.is_a?(Integer) ? max : 0]
     end
     players = arrange(players)
     level = MGQ_MpCoopLevelSync.level_for(players)

@@ -2,6 +2,9 @@
 #  battles_coop_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Checked that the host keeps the actions there when a guest's commands name an id or a target too large or fail to apply
+#                            - Checked that a defeat scene id too large for the game or an enemy that is no id is replaced by one here
+#                            - Checked that a join whose party_member_max is no number still forms the party
 #      Paulinchen  2026-10-11: Checked that leaving a story's battle without escape loses it for the player alone, and that any other battle is left as an escape
 #                            - Checked that the steps to the next random encounter stretch by half while another player stands near, in a party and in a Raid World, and that a Raid World's battle invites only the players near
 #                            - Checked that the party takes commands while the player's Frontline is down and their Backline may swap in, and not once it may not
@@ -112,6 +115,18 @@ check("and is named as unknown", MGQ_MpBattlesSync::Wire.parse(roster[:payload])
 MGQ_MpOverworldSync::Peers.all.unshift(friend)
 MGQ_MpBattlesCoop.ended
 
+# Somebody joins with a party_member_max that is no number.
+BattleManager.setup(40, true, false)
+bid = MGQ_MpBattlesSync.battle_id
+$sent.clear
+$frames = 0
+$inject = lambda { |frame| MGQ_MpBattlesSync.take(friend, { "battle" => "join", "bid" => bid, :payload => MGQ_MpBattlesSync::Wire.line(["7,8,9", [[50, 5]], [1]]) }) if frame == 3 }
+check("a join whose party_member_max is no number still forms the party", MGQ_MpBattlesCoop.gather(scene), nil)
+$inject = nil
+roster = $sent.map { |seat, text| fields_of(text) }.find { |f| f["battle"] == "roster" }
+check("which counts it as 0", MGQ_MpBattlesSync::Wire.parse(roster[:payload])[1].map { |p| [p[0], p[4]] }, [[0, 8], [2, 0]])
+MGQ_MpBattlesCoop.ended
+
 # Somebody joins.
 BattleManager.setup(40, true, false)
 bid = MGQ_MpBattlesSync.battle_id
@@ -213,6 +228,21 @@ MGQ_MpBattlesSync::Commands.apply(MGQ_MpBattlesSync::Wire.line([[nil, nil, [["sk
 check("a guest's commands go no further than the actions the host gave the character", party[2].actions.map(&:item), [[:skill, 5]])
 MGQ_MpBattlesSync::Commands.apply(MGQ_MpBattlesSync::Wire.line([[nil, nil, [], nil]]), 2)
 check("and an empty list, as after a failed escape, takes its actions away", [party[2].actions, party[3].actions.map(&:item)], [[], [[:item, 3]]])
+MGQ_MpBattlesSync::Commands.apply(MGQ_MpBattlesSync::Wire.line([[nil, nil, [["skill", 5, 0]], nil]]), 2)
+$log.clear
+MGQ_MpBattlesSync::Commands.apply(MGQ_MpBattlesSync::Wire.line([[nil, nil, [["skill", 2**70, 0]], [["skill", 3, 2**70]]]]), 2)
+check("a skill id or a target too large for the game keeps the actions there, logged",
+      [party[2].actions.map(&:item), party[3].actions.map(&:item), $log.grep(/gave the commands of .*none it may give, the computer's actions kept/).size], [[[:skill, 5]], [[:item, 3]], 1])
+$log.clear
+MGQ_MpBattlesSync::Commands.apply(MGQ_MpBattlesSync::Wire.line([[nil, nil, [["skill", 3, 256]], [["skill", 3, -2]]]]), 2)
+check("as does a target outside the battle's places", [party[2].actions.map(&:item), party[3].actions.map(&:item)], [[[:skill, 5]], [[:item, 3]]])
+wire_parse = MGQ_MpBattlesSync::Wire.method(:parse)
+MGQ_MpBattlesSync::Wire.define_singleton_method(:parse) { |*| raise "broken" }
+$log.clear
+MGQ_MpBattlesSync::Commands.apply("anything", 2)
+MGQ_MpBattlesSync::Wire.define_singleton_method(:parse, wire_parse)
+check("commands that fail to apply keep the actions there, logged once",
+      [party[2].actions.map(&:item), party[3].actions.map(&:item), $log.grep(/could not give the commands of .*: RuntimeError: broken; the computer's kept/).size], [[[:skill, 5]], [[:item, 3]], 1])
 check("the host's own characters are commanded here", [party[0].is_a?(Game_MpAlly), party[2].inputable?], [false, false])
 
 # Playback and escape.
@@ -442,6 +472,10 @@ check("or one of its own enemies when this game lacks the host's", [6031, 6032].
 $game_temp.lose_event_id = nil
 MGQ_MpBattlesSync::Live.take_defeat_scene(["end", "process_defeat"])
 check("as when an older host names none", [6031, 6032].include?($game_temp.lose_event_id), true)
+MGQ_MpBattlesSync::Live.take_defeat_scene(["end", "process_defeat", 2**70, 40])
+check("or a scene id too large for the game", [6031, 6032].include?($game_temp.lose_event_id) && $game_temp.lose_event_enemy_id == $game_temp.lose_event_id - 6000, true)
+MGQ_MpBattlesSync::Live.take_defeat_scene(["end", "process_defeat", 6040, [40]])
+check("a defeat scene whose enemy is no id keeps the scene and takes an enemy here", [$game_temp.lose_event_id, [31, 32].include?($game_temp.lose_event_enemy_id)], [6040, true])
 $data_common_events = known_events
 
 # Swaps with the Backline: the host with five characters, a friend with four.

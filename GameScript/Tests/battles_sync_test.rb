@@ -2,6 +2,8 @@
 #  battles_sync_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Checked that the wire reads hostile lines as nil or unknown values without raising or making a symbol, and only fields an action result has
+#                            - Checked that the host's names, a stream line or a mode's message that fail are left out, and that a time stop without a battler ends
 #      Paulinchen  2026-10-11: Checked the waiting box in the layout: kept in Player.ini, its lines drawn anew at a new width and its least width
 #                            - Checked the waiting box: its lines, the names still waited for, the seconds drawn once a second, the leave offer, a battle's ending, a details that fails, the seat names and the playback's path
 #                            - Checked that the host's wait for the commands names who still chooses and tells the guests, and that a guest's box names them while the host's stream stalls
@@ -51,8 +53,9 @@ class Game_Party
 end
 class Game_ActionResult
   attr_accessor :hp_damage
-  def initialize(battler = nil); end
+  def initialize(battler = nil); @battler = battler; @hp_damage = 0; end
 end
+class Game_BaseItem; attr_accessor :object; end
 class Game_Message
   attr_accessor :face_name, :face_index, :background, :position
   def has_text?; !($game_message_texts || []).empty?; end
@@ -413,4 +416,69 @@ $inject = nil
 $leave = false
 check("the guest's box while the host's stream stalls names whom the host waits for, with the seconds",
       [outcome, seen, sync::Channel.pending("waiting")], [[:left], { 0 => "Waiting for Host...", 1 => "Still choosing: Host, Player B", 2 => "0 s" }, 0])
+sync.finish
+
+# A hostile line on the wire reads as nil or as unknown values, never raising or making a symbol.
+wire = sync::Wire
+check("an equipped item reads one skill, item, state, weapon or armor token, anything else as unknown",
+      [wire.parse("g+"), wire.parse("gi5"), wire.parse("gx"), wire.parse("ggk1")], [[nil], [nil], [nil], [nil]])
+equipped = wire.parse("gk3")[0]
+check("and wraps the skill it names", [equipped.class, equipped.object], [Game_BaseItem, $data_skills[3]])
+check("a long chain of item marks reads as unknown", wire.parse("g" * 10_000 + "k1"), [nil])
+odd = wire.parse("{\t:1x\ti1\t}")[0]
+check("an action result takes no field it lacks", [odd.class, odd.instance_variables.map(&:to_s).include?("@1x"), odd.hp_damage], [Game_ActionResult, false, 0])
+wire.parse(":hp_damage")
+symbols = Symbol.all_symbols.size
+check("a symbol this game lacks reads as unknown", wire.parse(":zzz_never_seen_symbol_123"), [nil])
+check("and is never made", [Symbol.all_symbols.size <= symbols, Symbol.all_symbols.map(&:to_s).include?("zzz_never_seen_symbol_123")], [true, false])
+check("a symbol this game has reads back", wire.parse(":hp_damage\txcount"), [:hp_damage, sync::Wire::ActionKind.new(:count)])
+check("a database id too large for the game reads as unknown", [wire.parse("k#{2**70}"), wire.parse("k200"), wire.parse("i#{2**70}")], [[nil], [nil], [2**70]])
+nest = lambda { |depth| (["["] * depth + ["i1"] + ["]"] * depth).join("\t") }
+check("a line nests at most 8 deep", [wire.parse(nest.call(8)), wire.parse(nest.call(9)), wire.parse(Array.new(1000, "[").join("\t"))],
+      [[[[[[[[[[1]]]]]]]]], nil, nil])
+check("a line longer than the relay delivers is not read", [wire.parse("s" + "x" * wire::MAX_LINE_BYTES), wire.parse("s" + "x" * 1000).size], [nil, 1])
+
+# The host's names that fail to read leave every name as it is.
+names = sync::Names
+names.instance_variable_set(:@swaps, { "x" => "y" })
+names.instance_variable_set(:@pattern, /x/)
+parse = wire.method(:parse)
+wire.define_singleton_method(:parse) { |*| raise "broken" }
+$log.clear
+names.setup("anything")
+wire.define_singleton_method(:parse, parse)
+check("the host's names that fail to read are shown unswapped, logged once",
+      [names.swap("x"), $log.grep(/could not read the host's names, showing them unswapped: RuntimeError: broken/).size], ["x", 1])
+
+# The guest leaves out a line of the host's stream or a message of the battle's mode that fails,
+# and plays on with the rest.
+$my_seat = 2
+sync.join_world(:guest, "h1", [0], "Host")
+sync.battle_started
+playback.reset
+playback.instance_variable_set(:@stats, Hash.new(0))
+wire.define_singleton_method(:parse) { |line, &block| line == "boom" ? raise("boom") : parse.call(line, &block) }
+coop_mode = sync.mode
+take = coop_mode.method(:take)
+coop_mode.define_singleton_method(:take) { |*| raise "bad party" }
+$log.clear
+sync::Channel.receive(0, "coop_party", "anything")
+sync::Channel.receive(0, "events", ["boom", nest.call(9), sync::Wire.line(["turn", 3])].join("\n"))
+event = playback.next_event(scene)
+wire.define_singleton_method(:parse, parse)
+coop_mode.define_singleton_method(:take, take)
+check("the guest plays the good line of a send with bad ones", [event, playback.instance_variable_get(:@stats)[:unreadable], playback.instance_variable_get(:@stats)[:events]], [["turn", 3], 2, 1])
+check("and leaves out a message of the mode that fails, logged once", $log.grep(/left out the host's coop_party, which failed: RuntimeError: bad party/).size, 1)
+
+# A time stop whose character is no battler here ends at once.
+$game_party.od_turn = 0
+$game_party.od_user = nil
+$log.clear
+playback.play(scene, ["time_stop", 5, "x"])
+check("a time stop without a battler ends, logged", [$game_party.od_turn, $game_party.od_user, $log.grep(/ended the host's time stop of 5 turns/).size], [0, nil, 1])
+playback.play(scene, ["time_stop", 5, hero])
+check("a battler's time stop is taken", [$game_party.od_turn, $game_party.od_user], [5, hero])
+$log.clear
+playback.play(scene, ["time_stop", 0, nil])
+check("and its end, without a log line", [$game_party.od_turn, $game_party.od_user, $log.grep(/time stop/).size], [0, nil, 0])
 sync.finish

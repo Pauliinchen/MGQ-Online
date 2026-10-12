@@ -2,6 +2,10 @@
 #  battles_sync_wire.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Read a line no longer than 512 KB and nested at most 8 deep, and gave nil for a line that fails to read instead of raising
+#                            - Read an item of the other game as exactly one skill, item, state, weapon or armor token, and a database id only within its table
+#                            - Took a symbol only as one this game already has, never making one of the other game's text
+#                            - Set only the fields an action result of this game has
 #      Paulinchen  2026-10-04: Renamed from mp_battles_sync_wire.rbx
 #      Paulinchen  2026-10-03: Created
 #
@@ -21,8 +25,18 @@ module MGQ_MpBattlesSync
     # The escapes turned back.
     UNESCAPES = ESCAPES.invert
 
-    # Longest symbol taken from the other game. Symbols are never freed.
+    # The text of a symbol taken from the other game: word characters, at most 40.
     SYMBOL_PATTERN = /\A\w{1,40}\z/
+
+    # Deepest nesting of lists and action results a line may have. The game's own lines nest 5 deep
+    # at most.
+    MAX_DEPTH = 8
+
+    # Longest line read, the most the relay delivers in one message.
+    MAX_LINE_BYTES = 512 * 1024
+
+    # The token kinds an item of the database takes: skill, item, state, weapon and armor.
+    ITEM_KINDS = %w(k t z w a)
 
     # What a decoded action offers: its kind, such as :count or :chain_action, which is all the
     # game's display code reads of it.
@@ -58,12 +72,17 @@ module MGQ_MpBattlesSync
     # @param line [String] The line.
     # @yieldparam ref [String] A battler's reference, such as "a0".
     # @yieldreturn [Game_Battler, nil] The battler it names.
-    # @return [Array, nil] The values, nil when the line is broken.
+    # @return [Array, nil] The values, nil when the line is broken, too long or too deep, or fails
+    #   to read.
     def self.parse(line, &battler)
+      return nil if line.to_s.bytesize > MAX_LINE_BYTES
+
       stack = [[]]
       line.split("\t").each do |token|
         case token
         when "[", "{"
+          return nil if stack.size > MAX_DEPTH
+
           stack.push([])
         when "]"
           return nil if stack.size < 2
@@ -80,6 +99,9 @@ module MGQ_MpBattlesSync
         end
       end
       stack.size == 1 ? stack[0] : nil
+    rescue StandardError, SystemStackError => e
+      MGQ_MpBattlesSync.log_once([:wire, e.class.name], "a line did not read: #{e.class}: #{e.message[0, 80]}")
+      nil
     end
 
     # Turns a value into tokens.
@@ -122,16 +144,52 @@ module MGQ_MpBattlesSync
       ["{"] + fields.flatten + ["}"]
     end
 
-    # Makes an action result of its fields.
+    # Makes an action result of its fields, leaving out names this game's results lack.
     #
     # @param fields [Array] Names and values, taking turns.
     # @return [Game_ActionResult] The result.
     def self.result(fields)
       result = Game_ActionResult.new(nil)
       fields.each_slice(2) do |name, field|
-        result.instance_variable_set(:"@#{name}", field) if name.is_a?(Symbol)
+        ivar = result_fields[name.to_s] if name.is_a?(Symbol)
+        result.instance_variable_set(ivar, field) if ivar
       end
       result
+    end
+
+    # Names the fields an action result of this game has, its battler among them, which the damage
+    # texts read.
+    #
+    # Listed at the first result read, since the game's scripts load after this one.
+    #
+    # @return [Hash{String => Symbol}] Each field's name without "@", and the field.
+    def self.result_fields
+      @result_fields ||= Game_ActionResult.new(nil).instance_variables.each_with_object({}) do |ivar, fields|
+        fields[ivar.to_s.delete("@")] = ivar
+      end
+    rescue => e
+      MGQ_MpBattlesSync.log_once(:result_fields, "could not list the fields of an action result, results arrive empty: #{e.class}: #{e.message}")
+      {}
+    end
+
+    # Finds a symbol this game already has by its text.
+    #
+    # Symbols are never freed, so the other game's text is only looked up, never made a symbol. Both
+    # games run the same scripts, so a symbol the other game sends exists here too.
+    #
+    # @param text [String] The symbol's text.
+    # @return [Symbol, nil] The symbol, nil for a text no symbol of this game has.
+    def self.symbol(text)
+      return nil unless text =~ SYMBOL_PATTERN
+
+      symbols[text]
+    end
+
+    # Lists the symbols this game has by their texts, once, at the first symbol read.
+    #
+    # @return [Hash{String => Symbol}] Each symbol by its text.
+    def self.symbols
+      @symbols ||= Symbol.all_symbols.each_with_object({}) { |symbol, all| all[symbol.to_s] = symbol }
     end
 
     # Reads a value back from a token.
@@ -146,11 +204,11 @@ module MGQ_MpBattlesSync
       when "-" then false
       when "i" then rest.to_i
       when "f" then rest.to_f
-      when ":" then (text = unescape(rest)) =~ SYMBOL_PATTERN ? text.to_sym : nil
+      when ":" then symbol(unescape(rest))
       when "s" then unescape(rest)
       when "@" then block_given? ? yield(rest) : nil
-      when "x" then ActionKind.new(rest =~ SYMBOL_PATTERN ? rest.to_sym : nil)
-      when "g" then base_item(value(rest[0, 1].to_s, rest[1..-1].to_s))
+      when "x" then ActionKind.new(symbol(rest))
+      when "g" then base_item(item(rest))
       when "k" then data($data_skills, rest)
       when "t" then data($data_items, rest)
       when "z" then data($data_states, rest)
@@ -163,12 +221,22 @@ module MGQ_MpBattlesSync
 
     # Finds an entry of the database.
     #
-    # @param table [Array] The database.
+    # @param table [Array, nil] The database.
     # @param rest [String] The entry's id.
     # @return [RPG::BaseItem, nil] The entry, nil for an id the database lacks.
     def self.data(table, rest)
       id = rest.to_i
-      id > 0 ? table[id] : nil
+      table && id > 0 && id < table.size ? table[id] : nil
+    end
+
+    # Reads the database entry an equipped or stolen item's token holds: one skill, item, state,
+    # weapon or armor token, never another kind.
+    #
+    # @param rest [String] The token after its "g".
+    # @return [RPG::BaseItem, nil] The entry, nil for anything else.
+    def self.item(rest)
+      kind = rest[0, 1]
+      ITEM_KINDS.include?(kind) ? value(kind, rest[1..-1].to_s) : nil
     end
 
     # Wraps a database entry the way the game keeps an equipped or stolen item.

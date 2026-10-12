@@ -2,6 +2,8 @@
 #  battles_sync.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Kept the computer's actions when a guest's commands fail to read or to apply, and took a command's skill or item only within its database and its target only as a place of the battle
+#                            - Showed the host's names unswapped when they fail to read
 #      Paulinchen  2026-10-11: Let the player move the waiting box and change its width with Alt, kept in Player.ini and never narrower than its text and the leave offer need, and dressed it in the interface look
 #                            - Let the waiting box name the players still waited for and count the seconds, written as the line above the player's head writes them, drawn once a second, before the leave offer takes the last line
 #                            - Named the wait for a player once, which the live battle and the playback share
@@ -751,6 +753,10 @@ module MGQ_MpBattlesSync
   # in a co-op battle every game has the same party in the same order. Either way a target's index
   # means the same battler on both sides.
   module Commands
+    # Highest target index a command may name, -1 being a random target. A larger number would
+    # fail the host's own turn, which reads it as a place.
+    MAX_TARGET_INDEX = 255
+
     # Writes the guest's commands: for every party member, its actions, an empty list when it has
     # none, such as after a failed escape, and nil for the other players' characters in a co-op
     # battle; then the order of the guest's places, which a swap with their Backline changed.
@@ -833,6 +839,8 @@ module MGQ_MpBattlesSync
       MGQ_MpBattlesSync.log("gave the commands of #{MGQ_MpBattlesSync.who(seat)} for turn #{MGQ_MpBattlesSync.turn + 1}: " \
                             "#{given.empty? ? 'none for their characters' : given.join('; ')}" +
                             (values[1] ? "; order #{Array(values[1]).join(', ')}" : ""))
+    rescue => e
+      MGQ_MpBattlesSync.log_once([:commands, e.class.name], "could not give the commands of #{MGQ_MpBattlesSync.who(seat)}: #{e.class}: #{e.message}; the computer's kept")
     end
 
     # Gives a character its owner's commands: an empty list takes its actions away, as its owner's
@@ -888,9 +896,10 @@ module MGQ_MpBattlesSync
     # @return [Game_Action, nil] The action, nil for a command it cannot read or the character may not give.
     def self.action(battler, command)
       kind, id, target = command
-      return nil unless command.is_a?(Array) && id.is_a?(Integer) && id > 0 && target.is_a?(Integer)
+      return nil unless command.is_a?(Array) && id.is_a?(Integer) && target.is_a?(Integer) && target.between?(-1, MAX_TARGET_INDEX)
 
-      item = { "skill" => $data_skills, "item" => $data_items }.fetch(kind, [])[id]
+      table = { "skill" => $data_skills, "item" => $data_items }.fetch(kind, [])
+      item = id > 0 && id < table.size ? table[id] : nil
       return nil unless item
       return refuse(battler, item) unless allowed?(battler, item)
 
@@ -956,6 +965,10 @@ module MGQ_MpBattlesSync
       @pattern = names.empty? ? nil : Regexp.union(names)
       MGQ_MpBattlesSync.log("the host names #{Array(party).size} party and #{Array(troop).size} troop characters; swapping " +
                             (@swaps.empty? ? "none" : @swaps.map { |from, to| "#{from} -> #{to}" }.join(", ")))
+    rescue => e
+      @swaps = {}
+      @pattern = nil
+      MGQ_MpBattlesSync.log_once(:names, "could not read the host's names, showing them unswapped: #{e.class}: #{e.message}")
     end
 
     # Swaps the names in a text.

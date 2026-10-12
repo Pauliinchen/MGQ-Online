@@ -2,6 +2,7 @@
 #  battles_sync_live.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Took the host's defeat scene only within this game's common events, and its enemy only as an id, else an enemy's here
 #      Paulinchen  2026-10-11: Named in the waiting box the guests whose commands or ready word the host still waits for, with the seconds waited, the wait for a player worded as the waiting box words it
 #                            - Lost a story's battle without escape for the co-op player who leaves it, while the others fight on, since the abort let the story play on as won
 #                            - Told the guests whom the host still waits for, as that changes and as a command phase opens, so their own waiting boxes name them too
@@ -586,7 +587,7 @@ module MGQ_MpBattlesSync
     end
 
     # Takes the defeat scene the host's battle chose, or one of an enemy here when the host's is
-    # unknown to this game.
+    # unknown to this game, and the host's enemy only as an id, else an enemy's here.
     #
     # The game picks the scene at the battle's start and with each enemy's action, both of which the
     # guest's battle leaves out, and a defeat without a scene raises.
@@ -595,14 +596,19 @@ module MGQ_MpBattlesSync
     #   and its enemy.
     def self.take_defeat_scene(event)
       scene_id, enemy_id = event[2], event[3]
-      unless scene_id.is_a?(Integer) && scene_id > 0 && $data_common_events[scene_id]
+      unless scene_id.is_a?(Integer) && scene_id > 0 && scene_id < $data_common_events.size && $data_common_events[scene_id]
         enemy = $game_troop.members.sample
         unless enemy
-          return MGQ_MpBattlesSync.log("no defeat scene: the host's (#{scene_id.inspect}) is unknown here and no enemy is left to pick one")
+          return MGQ_MpBattlesSync.log("no defeat scene: the host's (#{scene_id.inspect[0, 40]}) is unknown here and no enemy is left to pick one")
         end
 
-        MGQ_MpBattlesSync.log("the host's defeat scene #{scene_id.inspect} is unknown here, took #{MGQ_MpBattlesSync.named(enemy)}'s instead")
+        MGQ_MpBattlesSync.log("the host's defeat scene #{scene_id.inspect[0, 40]} is unknown here, took #{MGQ_MpBattlesSync.named(enemy)}'s instead")
         scene_id, enemy_id = enemy.lose_event_id, enemy.id
+      end
+      unless enemy_id.is_a?(Integer)
+        enemy = $game_troop.members.sample
+        MGQ_MpBattlesSync.log("the host's defeat scene names no enemy (#{enemy_id.inspect[0, 40]}), took #{enemy ? MGQ_MpBattlesSync.named(enemy) : 'none'}")
+        enemy_id = enemy && enemy.id
       end
       MGQ_MpBattlesSync.log("defeat scene: common event #{scene_id}, enemy #{enemy_id.inspect}")
       $game_temp.lose_event_id = scene_id

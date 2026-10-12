@@ -2,6 +2,8 @@
 #  battles_sync_playback.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Left out a message of the battle's mode that fails and a line of the host's stream that fails to read, logged once, instead of ending the game
+#                            - Ended a time stop of the host whose character is no battler here, which the game would ask for its observer
 #      Paulinchen  2026-10-11: Named in the guest's waiting box the players the host still waits for, as the host tells them, with the seconds waited, the wait for the host worded as the waiting box words it
 #      Paulinchen  2026-10-08: Showed a message of the host without its face while this game lacks the face file
 #      Paulinchen  2026-10-07: Gave the states the host adds the counters the game keeps per state, without which a turn's end on the map ended the game
@@ -183,13 +185,17 @@ module MGQ_MpBattlesSync
         # The battle's own messages come between two sends, so the next send's battlers are those
         # the message leaves, such as a co-op party's once a player left.
         if kind != "events"
-          mode.take(kind, scene, body)
+          take_message(mode, kind, scene, body)
           next
         end
 
         count(:sends)
         body.split("\n").each do |line|
-          event = Wire.parse(line) { |ref| battler(ref) }
+          event = begin
+            Wire.parse(line) { |ref| battler(ref) }
+          rescue
+            nil
+          end
           if event && event[0].is_a?(String)
             @events << event
             count(:events)
@@ -200,6 +206,18 @@ module MGQ_MpBattlesSync
         end
       end
       @events.shift
+    end
+
+    # Lets the battle's mode take one of its own messages, leaving out one that fails.
+    #
+    # @param mode [Module] The battle's mode.
+    # @param kind [String] The message's kind.
+    # @param scene [Scene_Battle] The battle.
+    # @param body [String] The message.
+    def self.take_message(mode, kind, scene, body)
+      mode.take(kind, scene, body)
+    rescue => e
+      MGQ_MpBattlesSync.log_once([:take, kind[0, 40]], "left out the host's #{kind[0, 40]}, which failed: #{e.class}: #{e.message}")
     end
 
     # Finds the guest's battler for a reference of the host's side.
@@ -257,8 +275,7 @@ module MGQ_MpBattlesSync
         values(*args)
         MGQ_MpGame.call(scene, :refresh_status)
       when "time_stop"
-        $game_party.od_turn = args[0].to_i
-        $game_party.od_user = args[1]
+        time_stop(args[0].to_i, args[1])
       when "turn"
         MGQ_MpGame.set($game_troop, :turn_count, args[0].to_i)
       else
@@ -267,6 +284,24 @@ module MGQ_MpBattlesSync
     rescue => e
       count(:failed)
       MGQ_MpBattlesSync.log_once([:play, kind], "could not play #{kind}: #{e.class}: #{e.message}")
+    end
+
+    # Takes the host's time stop: the turns it lasts and the character who stopped time. A time stop
+    # without a character to name ends at once.
+    #
+    # The game asks the character for its observer each turn while time stands still, which fails
+    # for anything but a battler.
+    #
+    # @param turns [Integer] The turns time stands still, 0 for none.
+    # @param user [Object] The host's character who stopped time, nil for none.
+    def self.time_stop(turns, user)
+      unless user.is_a?(Game_Battler) || (user.nil? && turns <= 0)
+        MGQ_MpBattlesSync.log_once(:time_stop, "ended the host's time stop of #{turns} turns: its character #{user.class} is none of this battle")
+        turns = 0
+        user = nil
+      end
+      $game_party.od_turn = turns
+      $game_party.od_user = user
     end
 
     # Reports whether the hooks record a method, which the guest then plays as the host called it.

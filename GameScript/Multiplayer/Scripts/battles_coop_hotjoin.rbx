@@ -2,6 +2,7 @@
 #  battles_coop_hotjoin.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-12: Took a joining player's party_member_max only as a number, 0 for anything else, instead of failing to take them in
 #      Paulinchen  2026-10-11: Asked the player's party members near along in the notification box when their encounter or their choice joins a battle outside the party: to join it with the player where it has room for them all, else to start a battle with the player instead
 #                            - Took an encounter in with as many of the players it brings and of its enemies as the battle has room for, instead of refusing it whole, and let those left out walk on
 #                            - Let a random encounter ask only a running battle that takes players in, bringing along no more players than it has room for
@@ -1179,7 +1180,7 @@ module MGQ_MpBattlesHotjoin
     joined.each do |seat, body|
       builds, vitals, max = sync::Wire.parse(body.to_s)
       peer = MGQ_MpOverworldSync::Peers.at(seat)
-      players << [seat, peer ? peer.state["name"].to_s : "?", builds.to_s, Array(vitals), max.to_i]
+      players << [seat, peer ? peer.state["name"].to_s : "?", builds.to_s, Array(vitals), max.is_a?(Integer) ? max : 0]
     end
     players = coop.arrange(players)
     coop.form(scene, players)
