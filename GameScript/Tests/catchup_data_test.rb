@@ -2,26 +2,28 @@
 #  catchup_data_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Checked that the chests of the job items Amira's side quests ask for are world chests
-#                            - Checked the vehicle rows, Galda's first at Mt. Saint Amos and none for the Escape spell
-#                            - Checked that every ore comes from a world-wide chest or a key item row, and the chest flags of the Chaos forge's ores
-#      Paulinchen  2026-10-11: Checked that a talk join counts once a story page that needs the companion in the party ran
-#                            - Read the generator from MGQ-Paradox-Event-Checker next to the repository, and left its rules unchecked without it
-#      Paulinchen  2026-10-10: Checked that no row needs a Library Flag and that an event only a Library Flag told ran is marked by the scene after it
+#      Paulinchen  2026-10-12: Checked the skills Rami's quest teaches her and that no forgotten skill is a lesson
+#                            - Checked that the chests of Amira's side quest job items are world chests
+#                            - Checked the vehicle rows and where Galda comes first
+#                            - Checked where every ore comes from and the Chaos forge's chest flags
+#      Paulinchen  2026-10-11: Checked when a talk join counts
+#                            - Read the generator from MGQ-Paradox-Event-Checker next to the repository
+#      Paulinchen  2026-10-10: Checked that no row needs a Library Flag
 #                            - Checked that the joins of Monte Carlo's evacuation count once it ended
-#      Paulinchen  2026-10-09: Checked that a story variable named after a temple is no scratch and that the Silver Orb comes to every player of the world
+#      Paulinchen  2026-10-09: Checked a temple's story variable and the Silver Orb for every player
 #                            - Created
 #
 #----------------------------------------------------------------
 
-# Covers world_catchup_data.rbx, which raid_data.rb of MGQ-Paradox-Event-Checker writes from the game's data: the
-# shape of its tables, the parts and their gates as the relay splits the story, and key rows such as
-# Sonya's and Nuruko's Chaos returns. Also covers the generator's rules that need no game data: the
-# order of places and the Level Cap's cap a given-back companion joins at.
+# Covers world_catchup_data.rbx, which raid_data.rb of MGQ-Paradox-Event-Checker writes from the
+# game's data: the shape of its tables, the parts and their gates as the relay splits the story, and
+# key rows such as Sonya's and Nuruko's Chaos returns. Also covers the generator's rules that need
+# no game data: the order of places and the Level Cap's cap a given-back companion joins at.
 
 require_relative "support"
 
 load File.join(SCRIPTS_DIR, "world_catchup_data.rbx")
+# The catch-up data under test.
 DATA = MGQ_MpWorldCatchupData
 
 # The marks a row may hold: a switch on, a variable at least, a self switch on.
@@ -90,6 +92,10 @@ check("every removal has its place", DATA::REMOVALS.all? { |removal| parts.inclu
 check("every join and removal names its command, and every row with a place whether its event ran",
       [DATA::JOINS.all? { |join| join.index.is_a?(Integer) && [true, false].include?(join.ran) }, DATA::REMOVALS.all? { |removal| removal.index.is_a?(Integer) },
        (DATA::KEY_ITEMS + DATA::REWARDS).all? { |row| [true, false].include?(row.ran) }], [true, true, true])
+rami = DATA::LESSONS.select { |row| row.actor == 56 }
+check("the skills Rami's flying quest teaches her are lessons placed at its steps, and no row of a skill an event takes away again",
+      [rami.map(&:skill).uniq.sort, rami.all? { |row| row.ran && marks_shaped?(row.marks) }, DATA::LESSONS.any? { |row| row.actor == 823 && row.skill == 5837 }],
+      [[544, 545, 592, 7751, 7766, 7778], true, false])
 check("a town's companion who joins on a talk only shows the event there to play, a story join that it ran",
       [joins_at(553, "map:140:25:1")[0].ran, sonya[0].ran, DATA::REWARDS.find { |row| row.id == 930 && row.site =~ /\Amap:406:/ }.ran], [false, true, true])
 check("a talk join counts once a story page after it that needs the companion in the party ran, as Lime's by Alice handing over the Pocket Castle, at her start level",

@@ -2,15 +2,17 @@
 #  story_state.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Kept the small and large medals handed in (55, 59) each player's own, so another player's exchanges no longer move the Medal Queen's prizes on
-#                            - Capped how far a story another game packed is unpacked, so a story that would unpack to far more than any story takes is refused as unreadable instead of running the game out of memory
-#      Paulinchen  2026-10-11: Kept the chest flags each player's own, such as the first Makina's (2045), so a Makina chest stays a chest instead of story the world's story opens and closes for everyone
-#                            - Kept the escape spell's ban (94) each player's own, so changing jobs at Ilias Temple no longer counts as story
-#                            - Kept the switches that only stay on while a scene runs each Raid World player's own, so a story written mid-scene no longer leaves the scene's characters standing for everyone
-#                            - Kept the flags the game toggles around its fights (22, 73, 97) each player's own, so a battle page no longer counts as story and the story's deltas no longer carry them
-#                            - Kept the variant of an event the game picks before calling it (129) each player's own, so a trader's talk no longer counts as story for it
-#      Paulinchen  2026-10-10: Joined the self switches of only the chests the player's own story holds, so a take no longer fills the save with empty keys
-#      Paulinchen  2026-10-09: Kept the difficulty, the enemy rates it sets and the values of the Labyrinth of Chaos, the Colosseum and the special bosses each Raid World player's own
+#      Paulinchen  2026-10-12: Gave characters the classes and races the story and its quests give
+#                            - Taught companions the skills the story and its quests teach them
+#                            - Kept the small and large medals handed in (55, 59) each player's own
+#                            - Capped how far a story another game packed is unpacked
+#      Paulinchen  2026-10-11: Kept the chest flags each player's own
+#                            - Kept the escape spell's ban (94) each player's own
+#                            - Kept the switches that only stay on during a scene each Raid World player's own
+#                            - Kept the flags the game toggles around its fights (22, 73, 97) each player's own
+#                            - Kept the event variant the game picks before calling it (129) each player's own
+#      Paulinchen  2026-10-10: Joined the self switches of only the chests the player's own story holds
+#      Paulinchen  2026-10-09: Kept the difficulty and the Labyrinth, Colosseum and boss values each Raid player's own
 #                            - Created
 #
 #----------------------------------------------------------------
@@ -28,7 +30,7 @@ module MGQ_MpStoryState
 
   # The switch that bans the escape spell ("Riremito OFF Switch"), which a few scenes turn on and
   # the Head Priest of Ilias Temple turns off as he changes jobs: like the warp ban, it tells of
-  # the player's place, and the job change counted as story for it.
+  # the player's place, not of the story.
   ESCAPE_BAN = 94
 
   # The switch that tells the player took Alice along.
@@ -41,11 +43,11 @@ module MGQ_MpStoryState
   # side anew with the route the party takes.
   SIDE_SWITCHES = [ALICE_CHOSEN, ILIAS_CHOSEN]
 
-  # Switches that are the player's own: the flags the game toggles around its fights (22
-  # "Seduction During Boss Decision", 73 "Chaos Enemy Pause", 97 "Hades Rematch", which every
-  # battle page clears and the Chaos cave's events set), configuration mirrored in switches (95,
-  # 445-447, 502), the warp and escape bans of the place they stand in, and the switches that tell
-  # whether a companion is in the party (1001-2000).
+  # Switches that are the player's own: the flags the game toggles around its fights (22, which the
+  # events turn on around a story boss battle, 73 "Chaos Enemy Pause", 97 "Hades Rematch", which
+  # every battle page clears and the Chaos cave's events set), configuration mirrored in switches
+  # (95, 445-447, 502), the warp and escape bans of the place they stand in, and the switches that
+  # tell whether a companion is in the party (1001-2000).
   PERSONAL_SWITCHES = [22, 73, ESCAPE_BAN, 95, 97, WARP_BAN, 445, 446, 447, 502, 1001..2000]
 
   # Switches that are each Raid World player's own, as the game sets them for the fights with values
@@ -105,11 +107,11 @@ module MGQ_MpStoryState
 
   extend MGQ_MpLog
 
-  # What starts this script's lines in Multiplayer InGame.log, those of coop_story.rbx, whose
-  # lines these were.
+  # What starts this script's lines in Multiplayer InGame.log, the same as coop_story.rbx's.
   LOG_TAG = "co-op story"
 
-  # Reads the story as the game keeps it, past the game's own handling of single switches and variables.
+  # Reads the story as the game keeps it, past the game's own handling of single switches and
+  # variables.
   #
   # @return [Array] Copies of the switches, variables and self switches.
   def self.raw_state
@@ -524,17 +526,18 @@ module MGQ_MpStoryState
     main || id
   end
 
-  # Reports whether Luka knows a skill or an ability, which the game keeps apart from his skills.
+  # Reports whether a character knows a skill or an ability, which the game keeps apart from their
+  # skills.
   #
-  # @param hero [Game_Actor] Luka.
+  # @param actor [Game_Actor] The character, such as Luka.
   # @param id [Integer] The skill.
-  # @return [Boolean] Whether he does.
-  def self.knows?(hero, id)
-    learned = MGQ_MpGame.get(hero, :skills)
-    known = learned ? learned.include?(id) : $data_skills[id] && hero.skill_learn?($data_skills[id])
+  # @return [Boolean] Whether they do.
+  def self.knows?(actor, id)
+    learned = MGQ_MpGame.get(actor, :skills)
+    known = learned ? learned.include?(id) : $data_skills[id] && actor.skill_learn?($data_skills[id])
     return true if known
 
-    abilities = MGQ_MpGame.get(hero, :abilities)
+    abilities = MGQ_MpGame.get(actor, :abilities)
     abilities.is_a?(Hash) && abilities.values.flatten.include?(id) ? true : false
   end
 
@@ -551,6 +554,50 @@ module MGQ_MpStoryState
     hero.learn_skill(id)
     log("Luka learned #{skill_label(id)}")
     skill.name
+  end
+
+  # Teaches a companion a skill the story or one of its quests teaches them, which they lack.
+  #
+  # @param actor_id [Integer] The companion's persona.
+  # @param id [Integer] The skill.
+  # @return [String, nil] The companion's and the skill's name, nil when they knew it or the game
+  #   lacks either.
+  def self.teach(actor_id, id)
+    skill = $data_skills[id]
+    actor = $game_actors[actor_id]
+    return log("skipped #{skill_label(id)} for #{actor_label(actor_id)}: not in the game") if skill.nil? || actor.nil?
+    return log("skipped #{skill_label(id)}: #{actor_label(actor_id)} knows it already") if knows?(actor, id)
+
+    actor.learn_skill(id)
+    log("#{actor_label(actor_id)} learned #{skill_label(id)}")
+    "#{actor.name}'s #{skill.name}"
+  end
+
+  # Reads the level a character has of a class or a race.
+  #
+  # @param actor [Game_Actor] The character.
+  # @param id [Integer] The class or race.
+  # @return [Integer] The level, 0 for one they never had.
+  def self.class_level(actor, id)
+    list = actor.respond_to?(:level_list) ? actor.level_list : nil
+    list ? list[id].to_i : 0
+  end
+
+  # Gives a character a class or a race at a level as the story's event does, keeping the class and
+  # race they play now.
+  #
+  # @param actor_id [Integer] The character.
+  # @param id [Integer] The class or race.
+  # @param level [Integer] The level, never lowered.
+  # @return [String, nil] The character's and the class's name, nil when the game lacks either.
+  def self.give_class(actor_id, id, level)
+    actor = $game_actors[actor_id]
+    klass = $data_classes[id]
+    return log("skipped class #{id} for #{actor_label(actor_id)}: not in the game") if actor.nil? || klass.nil?
+
+    Game_Interpreter.new.set_class_level(actor_id, id, level, false, false)
+    log("#{actor_label(actor_id)} got #{MGQ_MpLog.named($data_classes, id)} at level #{level}")
+    "#{actor.name}'s #{klass.name}"
   end
 
   # Brings a story companion the player lacks into the roster, waiting at the castle.

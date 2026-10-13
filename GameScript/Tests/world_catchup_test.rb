@@ -2,38 +2,40 @@
 #  world_catchup_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Checked that a shared companion whose talk the player's story walked past still joins, also when an earlier build left them out
-#                            - Checked that a job or race item the player held before is noted on entering
-#                            - Checked that a job or race item any player got comes to every other player, once
-#                            - Read the catch-up's gifts from its log, as it tells none
-#                            - Checked that only a page that applies now and sets the encounters the other way keeps them with the map
-#                            - Checked that a move on at a level cap whose checkpoint is dropped makes only the next story's rewards wait, and that a gate noted while the player plays the world's story holds nothing back
-#                            - Checked that Galda the story gave comes back to its start once a checkpoint or the world's story past its event is laid over, and that a vehicle on a map or one the player rides is never moved
+#      Paulinchen  2026-10-12: Checked that story and quest classes and races reach the roster
+#                            - Checked that story and quest skills reach the roster's companions
+#                            - Stood in for a companion's name
+#                            - Checked that a shared companion whose talk the player's story passed still joins
+#                            - Checked that a job or race item held before is noted on entering
+#                            - Checked that a job or race item any player got comes to every other player once
+#                            - Read the catch-up's gifts from its log
+#                            - Checked which pages keep the encounters with the map
+#                            - Checked a move on at a level cap whose checkpoint is dropped
+#                            - Checked Galda coming back to its start once a story is laid over
 #                            - Stood in for the vehicles' start positions and a vehicle's tile
-#                            - Checked that a cap of another mod brings no Makina nor waiting companion above the real level
-#                            - Checked that a player behind learns no skill of the world's story, and that a move on at a cap holds the story's skills and items until the real level
-#                            - Checked that a vehicle no event of the story gave yet leaves its map, one the player rides once they got off, and that Galda stays past its event
+#                            - Checked that another mod's cap brings no Makina or waiting companion
+#                            - Checked the story's skills and items held from a player behind or at a cap
+#                            - Checked that a vehicle no story event gave yet leaves its map
 #                            - Stood in for the map's vehicles and the one the player rides
-#                            - Checked that a world-wide chest turns on its chest flags with its items, and that the Randolphs found follow the Randolph switches
-#                            - Checked that the game over's return point follows the route under way, never a cleared route's rows, and that a player behind gets none of the world's later part
-#                            - Checked that a vehicle leaves for a player behind whose own story has not given it, and that Galda stays for a player in the world's part
-#                            - Checked that an audit reads the part of a story anew and keeps the parts by the story itself
-#      Paulinchen  2026-10-11: Checked the list of what the catch-up hands out by level for the Levels page, and the level it counts
-#                            - Checked that a Makina comes at its area level and that copies beyond the first go
-#                            - Checked that a telling the player watched takes the key items its scene took, and that a key item taken at the step that gave it does not come back
+#                            - Checked a world-wide chest's flags and the Randolphs found
+#                            - Checked the game over's return point and a player behind getting none of the world's later part
+#                            - Checked a vehicle leaving for a player behind and Galda staying
+#                            - Checked that an audit reads the story's part anew
+#      Paulinchen  2026-10-11: Checked the Levels page list of the catch-up and the level it counts
+#                            - Checked Makina at their area level, one each
+#                            - Checked that a watched telling takes its scene's key items
 #                            - Checked that Amira in the roster raises her information network to 2
-#                            - Checked one look at everything on entering and on a level up: the story's own values moved on from an earlier step's but not a player's own, encounters left to a map that sets them, the warp ban lifted where warping is free, a missing skill and a missing companion
-#                            - Stood in for whether random encounters are on and for the map's events
-#                            - Checked that a key item the story's place owes comes to a player who lacks it, also after the row was marked done, but not one taken since or of the other side
-#      Paulinchen  2026-10-10: Stood in for MGQ_MpCoopEvents.telling_or_moved?, which world_story.rbx asks now
-#                            - Checked that a shared save's own story counts as the player's in a Raid World started from it: no gifts, no companion
-#                              taken or brought, nothing held, also once the world's story from the same save is laid over it
-#                            - Checked that a save noting the player behind stays behind below the gate once it loaded again
-#                            - Checked that a player moves on past a finished route to the world's route and gets the finished route's rows
-#                            - Checked that what a player changes while behind stays under the checkpoint and the world's story
-#      Paulinchen  2026-10-09: Loaded story_state.rbx before coop_story.rbx and packed stories, read the roster and Luka's skills through MGQ_MpStoryState
-#                            - Checked that a key item whose event is only there to play comes up to its amount and that the catch-up giving the last orb plays the orbs' event
-#                            - Checked that a save that noted the player behind holds the story until the world's story came
+#                            - Checked one look at everything on entering and on a level up
+#                            - Stood in for random encounters and the map's events
+#                            - Checked a key item the story's place owes
+#      Paulinchen  2026-10-10: Stood in for MGQ_MpCoopEvents.telling_or_moved?
+#                            - Checked a shared save's own story counting as the player's in a Raid World started from it
+#                            - Checked a save noting the player behind staying behind once loaded again
+#                            - Checked a player moving on past a finished route to the world's route
+#                            - Checked that changes made while behind stay under the checkpoint
+#      Paulinchen  2026-10-09: Loaded story_state.rbx before coop_story.rbx and read the story through MGQ_MpStoryState
+#                            - Checked key items whose event only plays and the last orb's event
+#                            - Checked that a save noting the player behind holds the story until the world's came
 #                            - Checked that a shared companion whose join the player's story passed is not brought back
 #                            - Checked that a player behind in the world's part moves on to the world's story
 #                            - Created
@@ -41,14 +43,14 @@
 #----------------------------------------------------------------
 
 # Covers world_catchup.rbx with world_story.rbx, story_state.rbx, coop_story.rbx and
-# coop_choices.rbx: a player behind a Raid World's story on their part's checkpoint, their story
-# held, the level gate moving them on (a cap of another mod too), the rewards, removals, key items
-# and story chests a story laid over theirs carries, companions by their gates, the world's shared
-# companions, and never a companion twice.
+# coop_choices.rbx: a player behind a Raid World's story, held on their part's checkpoint until the
+# level gate moves them on, and what a story laid over the player's gives, takes and sets, from
+# rewards and companions to vehicles and Makina, each once.
 
 require_relative "support"
 
 $logs = []
+# Stands in for the mod's log: records each line in $logs and prints it.
 module MGQ_Multiplayer; module Log; def self.write(m); $logs << m; puts "  log: #{m}"; end; end; end
 $calls = []
 $state = ""
@@ -59,15 +61,21 @@ $raid = true
 $sharing = :off
 $telling = false
 
-# The DLL: each call is noted and starts, the story's state is what $state holds and the last
-# checkpoint's what $checkpoint holds.
+# Stands in for Multiplayer.rb around the DLL link.
 module MGQ_Multiplayer
+  # Stands in for the DLL link: each call is noted and starts, the story's state is what $state
+  # holds and the last checkpoint's what $checkpoint holds.
   module Link
     # The requests of the story's exports, whose header says busy once one starts, as the DLL's does.
     KINDS = { "mp_raid_story_fetch" => "fetch", "mp_raid_story_post" => "post", "mp_raid_route_lock" => "lock", "mp_raid_companions_add" => "companions" }
 
     # A function of the DLL, which notes its calls.
     Function = Struct.new(:name) do
+      # Notes the call, marks its request busy in $state or the checkpoint fetch in $checkpoint, and
+      # answers that it started.
+      #
+      # @param args [Array] The arguments of the call.
+      # @return [Integer] 1.
       def call(*args)
         check_dll_call(name, args)
         $calls << [name, args]
@@ -77,13 +85,23 @@ module MGQ_Multiplayer
         1
       end
     end
+    # Answers a function of the DLL that notes its calls.
     def self.function(name); Function.new(name); end
+    # Reads the story's state, its headers or the checkpoint's state, as the DLL hands them over.
+    #
+    # @param name [String] The export.
+    # @param size [Integer] The buffer's size.
+    # @return [String] The text, in binary.
     def self.read(name, size)
       check_dll_call(name, ["", size])
       head = $state.split("\n\n", 2)[0].to_s
       text = { "mp_raid_story_state" => $state, "mp_raid_story_headers" => head.empty? ? "" : head + "\n\n", "mp_raid_checkpoint_state" => $checkpoint }[name].to_s
       text.dup.force_encoding("ASCII-8BIT")
     end
+    # Reads a state the DLL describes, as Link.parse does.
+    #
+    # @param text [String] The description.
+    # @return [Hash] The values by key, the payload under :payload.
     def self.parse(text)
       head, payload = text.force_encoding("UTF-8").split("\n\n", 2)
       state = { :payload => payload.to_s }
@@ -92,84 +110,143 @@ module MGQ_Multiplayer
     end
   end
 end
+# Stands in for the overworld sync: the player is in a world with nobody else.
 module MGQ_MpOverworldSync
+  # The state field that carries the story's revision.
   STORY_FIELD = "story_rev"
+  # Stands in for the other players: nobody is present.
   module Peers; Peer = Struct.new(:seat, :state); def self.present; []; end; end
+  # Stands in for the player: their id is always "me".
   module Me; def self.id; "me"; end; end
+  # Answers that the player is in a world.
   def self.in_world?; true; end
+  # Records a notice's text in $notices.
   def self.notice(text, icon = nil); $notices << text; end
+  # Answers whether the map shows and runs no event.
   def self.map_free?; SceneManager.scene.is_a?(Scene_Map) && !$game_map.interpreter.running?; end
+  # Names a player for the log.
   def self.who(peer); peer == :me ? "the player" : peer.to_s; end
+  # Records a message route in $routes.
   def self.route(field, &block); ($routes ||= {})[field] = block; end
+  # Records a tick in $ticks.
   def self.on_tick(&block); ($ticks ||= []) << block; end
+  # Takes state fields and sends none.
   def self.state_fields(*); end
 end
+# Stands in for the notification box: records each message's text in $messages.
 module MGQ_MpNotices; def self.message(key, text, frames = 180); $messages << text; end; end
+# Stands in for co-op: no party, the world's kind from $raid, no teller.
 module MGQ_MpCoop
+  # Stands in for the party: it has no members and no leader.
   module Party; def self.members; []; end; def self.leader; nil; end; end
+  # Stands in for the scope: a Raid World while $raid holds, nobody telling, everyone watched.
   module Scope; def self.raid?; $raid; end; def self.teller; nil; end; def self.watches?(_peer); true; end; end
+  # Takes a message route.
   def self.route(*); end
+  # Answers that there is no party leader.
   def self.party_leader; nil; end
 end
+# Stands in for the shared events.
 module MGQ_MpCoopEvents
+  # Answers whether the player tells a story event, as $telling says.
   def self.telling?; $telling ? true : false; end
+  # Answers telling?.
   def self.telling_or_moved?; telling?; end
+  # Answers that no PvP battle runs.
   def self.pvp_running?; false; end
+  # Answers that no event is a chest.
   def self.chest_keys; []; end
+  # Answers that no key is a chest's.
   def self.chest_key?(_key); false; end
+  # Runs the block.
   def self.granting; yield; end
 end
+# Stands in for the gathering: joining the story does nothing.
 module MGQ_MpCoopGather; def self.join_story; end; end
+# Stands in for the story's reward tables, two chests and one chest flag in all.
 module MGQ_MpCoopStoryRewards
+  # The self switches of the chests.
   CHESTS = [[12, 3, "A"], [30, 4, "A"]]
+  # The switches only chests turn on.
   CHEST_FLAGS = [7102]
+  # The story's event groups, none.
   GROUPS = []
+  # The companions who join in events, none.
   ACTORS = []
+  # The skills and companions only the events where the sides differ give, none.
   SIDED = { :skills => [], :actors => [] }
+  # The skills and companions of SIDED the Final Chapter gives too, none.
   ROUTE = { :skills => [], :actors => [] }
 end
+# Stands in for the player's actions.
 module MGQ_MpActions
+  # The color of the player's own line.
   LINE_COLOR = :line_color
+  # Stands in for an option of a wheel.
   Option = Struct.new(:text, :run, :refusal, :icon, :leaves)
+  # Stands in for a notice of the notification box.
   Notice = Struct.new(:key, :text, :color, :action, :take, :decline, :mark)
+  # Takes an offer and shows nothing.
   def self.offer(*); end
 end
+# Stands in for the world screen: world w1, a Raid World while $raid holds.
 module MGQ_MpWorld
+  # Stands in for a world, with its id only.
   World = Struct.new(:directory_id)
   class << self; attr_accessor :world; end
+  # Answers whether the world is a Raid World, as $raid says.
   def self.raid?; $raid; end
+  # Answers the companion sharing $sharing names, off outside a Raid World.
   def self.companion_sharing; $raid ? $sharing : :off; end
   # The world screen's form, which the screen of choices draws with, stood in by its fields alone.
   class Form
+    # Stands in for a field of the form.
     Field = Struct.new(:key, :kind, :label, :row, :hint, :options) do
+      # Answers the field's choices, none when it names none.
       def choices; options[:choices] || []; end
     end
     attr_reader :title, :fields
+    # Takes the form's title, fields and values.
     def initialize(title, fields, values); @title = title; @fields = fields; @values = values; end
+    # Answers a field's value.
     def [](key); @values[key]; end
   end
 end
 MGQ_MpWorld.world = MGQ_MpWorld::World.new("w1")
+# Stands in for the window that draws a form.
 class Window_MpWorldForm; def initialize(*); end; end
+# Stands in for the base of menu screens.
 class Scene_MenuBase; end
+# Stands in for the map screen.
 class Scene_Map; end
+# Stands in for the scene manager, whose scene the test sets.
 module SceneManager
   class << self; attr_accessor :scene; end
+  # Records a scene called in $scenes.
   def self.call(scene); ($scenes ||= []) << scene; end
 end
+# Stands in for the graphics: the frame count stays 0.
 module Graphics; def self.frame_count; 0; end; end
+# Stands in for RPG's database classes.
 module RPG
+  # Stands in for an event command.
   EventCommand = Struct.new(:code, :indent, :parameters)
+  # Stands in for a common event.
   CommonEvent = Struct.new(:list)
   # An item of the database.
   class Item
     attr_reader :id, :name, :description
+    # Takes the item's id, name and description.
     def initialize(id, name, description = ""); @id = id; @name = name; @description = description; end
+    # Answers that the item is a key item.
     def key_item?; true; end
   end
+  # Stands in for a skill.
   Skill = Struct.new(:id, :name)
 end
+# Stands in for RPG::Actor, with the level a companion joins at.
 ActorData = Struct.new(:id, :name, :initial_level)
+# Stands in for RPG::System: the switches' and variables' names and each vehicle's start.
 System = Struct.new(:switches, :variables, :boat, :ship, :airship)
 # Where a new game parks a vehicle, as the game's data names it: the boat nowhere, the ship and
 # Galda on the field.
@@ -190,77 +267,131 @@ $data_skills[930] = RPG::Skill.new(930, "Angel Dance")
 $data_skills[937] = RPG::Skill.new(937, "Demon Decapitation")
 $data_common_events = Array.new(400)
 
+# Stands in for the game's switches, which start off.
 class Game_Switches; def initialize; @data = []; end; def [](id); @data[id] || false; end; def []=(id, value); @data[id] = value; end; end
+# Stands in for the game's variables, which start at 0.
 class Game_Variables; def initialize; @data = []; end; def [](id); @data[id] || 0; end; def []=(id, value); @data[id] = value; end; end
+# Stands in for the game's self switches, which start off.
 class Game_SelfSwitches; def initialize; @data = {}; end; def [](key); @data[key] == true; end; def []=(key, value); @data[key] = value; end; end
 # A companion with the levels the catch-up reads and raises.
 class Game_Actor
   attr_reader :id, :base_level, :persona
   attr_accessor :cap
+  # Starts the companion at their join level, with no skills and no level cap of another mod.
   def initialize(id); @id = id; @persona = id; @base_level = $data_actors[id].initial_level; @skills = []; @cap = 9999; end
+  # Answers the companion's name.
+  def name; $data_actors[@id].name; end
+  # Answers the levels of the companion's classes and races by id.
+  def level_list; @level_list ||= {}; end
+  # Answers the cap another mod holds the companion at.
   def max_level(_kind); @cap; end
+  # Changes the level, within 1 and the cap.
   def change_level(level, _show, _kind); @base_level = [[level, @cap].min, 1].max; end
+  # Sets the level past any cap.
   def level=(level); @base_level = level; end
+  # Recovers nothing.
   def recover_all; end
+  # Records a learned skill.
   def learn_skill(id); @skills |= [id]; end
+  # Records the persona.
   def persona_change(persona); @persona = persona; end
 end
 # The game's actors: every persona of a companion is the main persona's object.
 class Game_Actors
+  # The main persona of each other persona.
   PERSONAS = { 841 => 525, 842 => 525 }
+  # Starts with no actor made.
   def initialize; @data = {}; end
+  # Answers the main persona of a persona.
   def original_id(id); PERSONAS[id] || id; end
+  # Answers the main persona's actor, made on first use, or nil for one $data_actors lacks.
   def [](id); main = original_id(id); $data_actors[main] ? (@data[main] ||= Game_Actor.new(main)) : nil; end
 end
 # The party: every companion by their main persona, the team and the items.
 class Game_Party
   attr_accessor :in_battle
   attr_reader :items
+  # Starts the party with nobody and no items.
   def initialize; @include_actors = []; @actors = []; @items = Hash.new(0); end
+  # Adds a companion to the roster and the team.
   def add_actor(id); add_stand_actor(id); main = $game_actors.original_id(id); @actors << main unless @actors.include?(main); end
+  # Adds a companion to the roster only.
   def add_stand_actor(id); main = $game_actors.original_id(id); @include_actors << main unless @include_actors.include?(main); end
+  # Takes a companion from the roster and the team.
   def remove_actor(id); main = $game_actors.original_id(id); @include_actors.delete(main); @actors.delete(main); end
+  # Changes a companion's persona.
   def persona_change(persona); $game_actors[persona].persona_change(persona); end
+  # Answers that no story's temporary party plays.
   def temp_actors_use?; false; end
+  # Adds an item.
   def gain_item(item, amount); @items[item.id] += amount; end
+  # Takes an item, down to none.
   def lose_item(item, amount); @items[item.id] = [@items[item.id] - amount, 0].max; end
+  # Answers how many of an item the party holds.
   def item_number(item); @items[item.id]; end
+  # Answers the team's actors.
   def all_members; @actors.map { |id| $game_actors[id] }; end
 end
+# Stands in for the interpreter: it runs nothing and runs while busy is set.
 class Game_Interpreter
   attr_reader :list, :index
   attr_accessor :busy
+  # Takes a list and records it in $setups.
   def setup(list, event_id = 0); @list = list; @index = 0; ($setups ||= []) << list; end
+  # Answers whether busy is set.
   def running?; @busy ? true : false; end
+  # Runs nothing.
   def execute_command; end
+  # Answers that the self switch is off.
   def ssw(key); false; end
+  # Raises a class's or race's level, never lowering it.
+  def set_class_level(actor_id, id, level, _show, _change); levels = $game_actors[actor_id].level_list; levels[id] = [levels[id].to_i, level].max; end
 end
 # A vehicle: the map it stands on, 0 for none, and its tile.
 class Game_Vehicle
+  # Starts the vehicle on no map.
   def initialize; @map_id = 0; end
+  # Moves the vehicle.
   def set_location(map_id, x, y); @map_id = map_id; @x = x; @y = y; end
+  # Answers the map and the tile.
   def spot; [@map_id, @x, @y]; end
 end
+# Stands in for the map: map 3, its events and its vehicles.
 class Game_Map
   attr_accessor :map_id, :interpreter, :need_refresh
+  # Starts on map 3 with an interpreter.
   def initialize; @map_id = 3; @interpreter = Game_Interpreter.new; end
+  # Answers the map's events by id.
   def events; @events ||= {}; end
+  # Answers a vehicle by type, made on first use.
   def vehicle(type); (@vehicles ||= {})[type] ||= Game_Vehicle.new; end
+  # Updates nothing.
   def update(main = false); end
 end
+# Stands in for the player, at 1,1 with no transfer reserved.
 class Game_Player
   attr_reader :x, :y
   attr_accessor :vehicle
+  # Starts the player at 1,1.
   def initialize; @x = 1; @y = 1; end
+  # Answers that no transfer is reserved.
   def transfer?; false; end
+  # Transfers nowhere.
   def perform_transfer; end
 end
+# Stands in for the system, with whether random encounters are off only.
 class Game_System; attr_accessor :encounter_disabled; end
+# Stands in for the data manager, whose saving, loading and new game the scripts hook.
 module DataManager
+  # Answers empty save contents.
   def self.make_save_contents; {}; end
+  # Takes save contents.
   def self.extract_save_contents(contents); end
+  # Loads nothing.
   def self.load_game_without_rescue(index); end
+  # Makes nothing.
   def self.create_game_objects; end
+  # Sets nothing up.
   def self.setup_new_game; end
 end
 
@@ -272,15 +403,18 @@ load_script "world_story"
 load_script "world_catchup"
 story = MGQ_MpWorldStory
 catchup = MGQ_MpWorldCatchup
+# The catch-up's tables, which the tests replace with rows of their own.
 DATA = MGQ_MpWorldCatchupData
+# The generated joins, kept before the tests replace them.
 REAL_JOINS = DATA::JOINS
+# The generated settings, kept before the tests replace them.
 REAL_SETTINGS = DATA::SETTINGS
 
 # Puts tables of rows in place of the generated ones.
 #
 # @param tables [Hash{Symbol => Array}] The rows by table, the others empty.
 def tables(tables = {})
-  [:JOINS, :REMOVALS, :KEY_ITEMS, :CHESTS, :REWARDS, :SETTINGS, :VEHICLES, :WARP_FREE_MAPS, :MAKINA].each do |name|
+  [:JOINS, :REMOVALS, :KEY_ITEMS, :CHESTS, :REWARDS, :LESSONS, :CLASS_LEVELS, :SETTINGS, :VEHICLES, :WARP_FREE_MAPS, :MAKINA].each do |name|
     DATA.send(:remove_const, name)
     DATA.const_set(name, tables[name] || [])
   end
@@ -288,7 +422,8 @@ def tables(tables = {})
   MGQ_MpWorldStory.instance_variable_set(:@world_chests, nil)
 end
 
-# Starts a game: a new story with some values, a party of Luka at a level and the save's notes.
+# Starts a game: a new story with some values, a party of Luka at a level and the save's notes, with
+# nothing recorded yet.
 #
 # @param variables [Hash] Variables by id.
 # @param switches [Array<Integer>] Switches on.
@@ -350,7 +485,7 @@ end
 # @param count [Integer] How many.
 def frames(count); count.times { MGQ_MpWorldStory.tick; MGQ_MpWorldCatchup.tick }; end
 
-# The DLL calls of one export since the game started.
+# Lists the DLL calls of one export since the game started.
 #
 # @param name [String] The export.
 # @return [Array<Array>] Each call's arguments.
@@ -371,7 +506,7 @@ $game_map = Game_Map.new
 $game_player = Game_Player.new
 SceneManager.scene = Scene_Map.new
 
-# A player behind: their part's checkpoint, the world as it was right before that part's ending.
+# A player behind gets their part's checkpoint, the world as it was right before that part's ending.
 tables(:REWARDS => [reward.new(:skill, 937, 1, "map:406:7:2", "1", 8, :alice, [[:v, 1001, 8], [:s, 2023]]),
                     reward.new(:skill, 930, 1, "map:406:7:3", "1", 8, :ilias, [[:v, 1001, 8], [:s, 2023]]),
                     reward.new(:i, 600, 2, "map:36:17:1", "1", 6, nil, [[:v, 1001, 6]]),
@@ -403,7 +538,8 @@ check("a removal for good it carried them past takes the companion, a temporary 
 check("its companions join once the player's level reaches each join's gate", [roster.include?(77), roster.include?(80)], [true, false])
 check("the save notes the checkpoint taken", $game_system.instance_variable_get(:@mgq_mp_catchup)["checkpoint"], "1")
 
-# The level gate: the next part's checkpoint while the world is past it, else the world's story.
+# The level gate moves the player on to the next part's checkpoint while the world is past it,
+# else into the world's story.
 $game_actors[1].level = 20
 frames(40)
 check("at level 20 the waiting join of level 20 comes, raised to its level", [roster.include?(80), $game_actors[80].base_level], [true, 20])
@@ -418,7 +554,7 @@ frames(40)
 check("which is laid over theirs: they play it now, never the part's ending", [story.mode, $game_variables[1001], catchup.holds_story?], [:world, 26, false])
 check("the notes forget the checkpoint", $game_system.instance_variable_get(:@mgq_mp_catchup)["checkpoint"], nil)
 
-# Far behind: a part per gate, Part 2's checkpoint first.
+# A player far behind moves on a part per gate, Part 2's checkpoint first.
 tables
 new_game({ 1001 => 7 }, [], 30)
 frames(1)
@@ -479,11 +615,15 @@ check("and come once a load finds the real level at the gate",
 frames(40)
 check("once", [$game_party.items[600].to_i, $logs.grep(/the story gave the player/).size], [1, 1])
 
-# A move on at a level cap whose checkpoint is dropped, as the player's story reached the world's part
-# before it came: the story laid over next still makes its rewards wait, later ones give as usual.
+# A move on at a level cap whose checkpoint is dropped, as the player's story reached the world's
+# part before it came: the story laid over next still makes its rewards wait, later ones give as
+# usual.
 tables(:REWARDS => [reward.new(:i, 600, 1, "map:62:1:1", "1", 16, nil, [[:v, 1001, 16]], true),
                     reward.new(:i, 600, 2, "map:62:2:1", "1", 17, nil, [[:v, 1001, 17]], true),
                     reward.new(:i, 600, 4, "map:62:3:1", "1", 18, nil, [[:v, 1001, 18]], true)])
+# Answers the catch-up's notes in the save.
+#
+# @return [Hash] The notes.
 notes = lambda { $game_system.instance_variable_get(:@mgq_mp_catchup) }
 new_game({ 1001 => 9 }, [], 10)
 frames(1)
@@ -522,7 +662,7 @@ $game_actors[1].level = 25
 frames(40)
 check("what waited comes once the real level reaches the gate", [$game_party.items[600].to_i, notes.call["waits"].size], [7, 0])
 
-# Key items for everyone, and the chests that hold them, opened once for the world.
+# Key items are everyone's, and so are the chests that hold them, opened once for the world.
 tables(:KEY_ITEMS => [key_item.new(502, 1, "map:6:33:1", "1", 5, nil, [[:v, 1001, 6]]),
                       key_item.new(503, 1, "map:7:24:2", "2", 22, nil, [[:v, 1001, 22]]),
                       key_item.new(503, -1, "map:7:25:1", "2", 24, nil, [[:v, 1001, 24]]),
@@ -545,7 +685,7 @@ relay({ "rev" => 5, "wrev" => 5, "p" => 31, "part" => "2" }, packed({ 1001 => 31
 frames(40)
 check("each once, the next only as the world gives it", [$game_party.items[502], $game_party.items[501], $game_party.items[504]], [1, 1, 1])
 
-# Companions by their gates, Sonya's Chaos return at 300 among them.
+# Companions join by their gates, Sonya's Chaos return at 300 among them.
 sonya = REAL_JOINS.find { |row| row.persona == 842 && row.site == "map:1834:20:1" }
 check("Sonya's Chaos return joins as persona 842 at 300", [sonya.actor, sonya.gate, sonya.rule], [525, 300, :floor])
 tables(:JOINS => [sonya])
@@ -592,7 +732,7 @@ $game_actors[1].level = 60
 frames(40)
 check("at the gate the held companion joins at the join's level", [roster.include?(45), $game_actors[45].base_level], [true, 60])
 
-# The world's shared companions.
+# The world's shared companions join as far as the world shares them.
 tables(:JOINS => [join.new(16, 16, "map:70:1:1", "ad", 10, nil, [[:v, 1141, 10]], 50, :start)])
 $sharing = :story
 new_game({ 1001 => 40, 1142 => 5 }, [], 49)
@@ -617,7 +757,8 @@ check("and the player's own recruit goes to the world's list, once", calls_of("m
 relay({ "rev" => 10, "wrev" => 9, "p" => 40, "r1142" => 5, "part" => "mr", "route" => "mr", "comps" => "16,77,80", "companions" => "done" }, packed({ 1001 => 40, 1142 => 5 }))
 frames(700)
 check("which the next look sends nothing for", calls_of("mp_raid_companions_add").size, 1)
-# A talk join the player's story walked past gave them nothing, so the world's share still brings them.
+# A talk join the player's story walked past gave them nothing, so the world's share still brings
+# them.
 tables(:JOINS => [join.new(45, 45, "map:5:27:1", "1", 6, nil, [[:v, 1001, 6]], 8, :start, 1, false)])
 new_game({ 1001 => 9 }, [], 10)
 frames(1)
@@ -748,7 +889,8 @@ frames(40)
 MGQ_Multiplayer::Log.singleton_class.send(:alias_method, :write, :quiet_write)
 check("a skill Luka knows and an item the game lacks are no gifts", $logs.grep(/the story gave the player/), [])
 
-# A key item whose event is only there to play, up to its amount, unless the story took it since.
+# A key item whose event is only there to play comes up to its amount, unless the story took it
+# since.
 tables(:KEY_ITEMS => [key_item.new(505, 1, "map:29:35:2", "1", 7, nil, [[:v, 1001, 7]], false),
                       key_item.new(503, 1, "map:6:33:1", "1", 7, nil, [[:v, 1001, 7]], false),
                       key_item.new(503, -1, "map:7:25:1", "1", 9, nil, [[:v, 1001, 9]], true)])
@@ -779,8 +921,8 @@ relay({ "rev" => 24, "wrev" => 24, "p" => 9, "part" => "1" }, packed({ 1001 => 9
 frames(40)
 check("and gets it again once it is gone, its row long done", $game_party.items[501], 1)
 
-# One look at everything on entering and on a level up: the player's own values the story sets,
-# the warp ban, the story's skills and its companions.
+# The catch-up looks at everything on entering and on a level up: the player's own values the
+# story sets, the warp ban, the story's skills and its companions.
 setting = DATA::Setting
 tables(:SETTINGS => [setting.new(:encounters, 0, false, "map:545:1:1", "1", 0, nil, [[:v, 1001, 0]], true),
                      setting.new(:v, 1002, 1, "map:545:1:1", "1", 0, nil, [[:v, 1001, 0]], true),
@@ -800,7 +942,9 @@ check("and a story companion missing from the roster joins at their gate", $game
 $game_party.remove_actor(77)
 $game_variables[1002] = 9
 $game_system.encounter_disabled = true
+# Stands in for an event page.
 encounter_page = Struct.new(:list)
+# Stands in for a map event whose page that applies now is the one it holds.
 map_event = Struct.new(:proper) { def find_proper_page; proper; end }
 $game_map.events[1] = map_event.new(encounter_page.new([RPG::EventCommand.new(136, 0, [0])]))
 $game_switches[100] = true
@@ -822,6 +966,13 @@ $game_map.events.clear
 $game_map.map_id = 3
 
 # The game over's return point goes by the route under way, never a finished route's rows.
+
+# Starts a game, lets the catch-up settle its story and answers the return point.
+#
+# @param variables [Hash] Variables by id.
+# @param switches [Array<Integer>] Switches on.
+# @param told [Array, nil] The world's story, nil for none.
+# @return [Integer] The return point's variable.
 settled = lambda do |variables, switches, told = nil|
   new_game(variables, switches, 40)
   catchup.new_look
@@ -863,6 +1014,11 @@ check("and keeps the parts by the story itself", catchup.instance_variable_get(:
 
 # A vehicle no event of the story gave yet leaves its map, as Galda and the ship parked on the
 # field by a new game whose setup never ran; one the player rides stays until they got off.
+
+# Answers the map a vehicle stands on.
+#
+# @param type [Symbol] The vehicle.
+# @return [Integer] The map, 0 for none.
 vehicle_map = lambda { |type| $game_map.vehicle(type).instance_variable_get(:@map_id) }
 tables(:VEHICLES => [DATA::Vehicle.new(2, "map:645:33:1", "3", 37, nil, [[:v, 1001, 37]], true)])
 new_game({ 1001 => 9 }, [], 40)
@@ -946,7 +1102,8 @@ frames(40)
 check("and a quest further along stays", $game_variables[1009], 5)
 $game_party.remove_actor(540)
 
-# The catch-up completing the orbs plays the event that moves the story on, which only the orbs' events call.
+# The catch-up completing the orbs plays the event that moves the story on, which only the orbs'
+# events call.
 tables(:KEY_ITEMS => [key_item.new(542, 1, "map:149:107:1", "2", 30, nil, [[:v, 1001, 30], [:v, 1068, 3]], true)])
 new_game({ 1001 => 30 }, [], 40)
 [537, 538, 540, 541].each { |id| $game_party.gain_item($data_items[id], 1) }
@@ -1068,6 +1225,8 @@ tables(:REWARDS => [reward.new(:i, 600, 2, "map:36:17:1", "1", 6, nil, [[:v, 100
        :REMOVALS => [removal.new(16, 16, "map:50:1:1", "1", 14, nil, [[:v, 1001, 14]], true)],
        :JOINS => [join.new(77, 77, "map:20:1:1", "1", 9, nil, [[:v, 1001, 9]], 7, :start),
                   join.new(80, 80, "map:21:1:1", "2", 22, nil, [[:v, 1001, 22]], 20, :floor)])
+
+# Starts a game from the shared save: its story at 25, with the Slime and the Harpy in the party.
 from_save = lambda do
   new_game({ 1001 => 25 }, [4], 30)
   [77, 80].each { |id| $game_party.add_actor(id) }
@@ -1091,6 +1250,13 @@ check("the next player from the save plays the world's story at once, the save's
 # ran, and one the player's own event took stays taken.
 tables(:KEY_ITEMS => [key_item.new(600, 1, "map:340:23:1", "2", 29, nil, [[:v, 1001, 29], [:v, 1011, 2]], true),
                       key_item.new(600, -1, "map:88:4:1", "2", 29, nil, [[:v, 1001, 29], [:v, 1011, 4]], true)])
+
+# Starts a game holding the key item, lets the player's story take a teller's value as watched and
+# answers how many of the item the player holds then.
+#
+# @param value [Integer] The value of variable 1011 the teller's scene sets.
+# @param before [Proc, nil] What happens before the value comes.
+# @return [Integer] The items held.
 watch = lambda do |value, before = nil|
   new_game({ 1001 => 29, 1011 => 3 }, [], 40)
   $game_party.gain_item($data_items[600], 1)
@@ -1156,7 +1322,57 @@ relay({ "rev" => 32, "wrev" => 32, "p" => 9, "part" => "1" }, packed({ 1001 => 9
 frames(40)
 check("one the player held before, as from an earlier version, is noted for the world on entering", $game_self_switches[[0, 616, "F"]], true)
 
-# What the catch-up hands out by level that the world unlocked, for the World overview's Levels page.
+# The skills the story and its quests teach companions reach every player's companions.
+lesson = DATA::Lesson
+$data_skills[544] = RPG::Skill.new(544, "Defense +10%")
+$data_skills[545] = RPG::Skill.new(545, "Defense +20%")
+$data_skills[592] = RPG::Skill.new(592, "Flight")
+tables(:LESSONS => [lesson.new(16, 544, "map:12:64:1", "1", 12, nil, [[:v, 1001, 12], [:v, 1041, 2]], true),
+                    lesson.new(16, 545, "map:645:26:1", "1", 12, nil, [[:v, 1001, 12], [:v, 1041, 3]], true),
+                    lesson.new(16, 592, "map:1848:15:1", "1", 12, nil, [[:v, 1001, 12], [:v, 1041, 5]], true),
+                    lesson.new(45, 544, "map:12:64:1", "1", 12, nil, [[:v, 1001, 12], [:v, 1041, 2]], true)])
+new_game({ 1001 => 12 }, [], 40)
+$game_party.add_actor(16)
+frames(1)
+relay({ "rev" => 33, "wrev" => 33, "p" => 12, "part" => "1" }, packed({ 1001 => 12, 1041 => 3 }))
+frames(40)
+# Lists the skills a companion learned.
+#
+# @param id [Integer] The companion.
+# @return [Array<Integer>] The skills, sorted.
+taught = lambda { |id| $game_actors[id].instance_variable_get(:@skills).sort }
+check("a companion in the roster learns the skills of the quest steps the world passed before the player came, never those of a step ahead",
+      taught.call(16), [544, 545])
+check("one outside the roster learns nothing", taught.call(45), [])
+$game_party.add_actor(45)
+frames(40)
+check("and learns them once they join", taught.call(45), [544])
+
+# The classes and races the story and its quests give reach every player's characters.
+class_level = DATA::ClassLevel
+# Stands in for RPG::Class, a class or a race.
+ClassData = Struct.new(:id, :name)
+$data_classes = Array.new(400)
+$data_classes[362] = ClassData.new(362, "Lowly Angel")
+$data_classes[184] = ClassData.new(184, "Vampire")
+$data_classes[301] = ClassData.new(301, "Fighter")
+tables(:CLASS_LEVELS => [class_level.new(1, 362, 1, "map:128:59:1", "1", 17, nil, [[:v, 1001, 17]], true),
+                         class_level.new(1, 184, 1, "map:477:162:1", "1", 20, nil, [[:v, 1001, 20]], true),
+                         class_level.new(45, 301, 10, "map:835:6:1", "1", 13, nil, [[:v, 1001, 13]], true)])
+new_game({ 1001 => 17 }, [], 40)
+$game_actors[45].level_list[301] = 3
+frames(1)
+relay({ "rev" => 34, "wrev" => 34, "p" => 17, "part" => "1" }, packed({ 1001 => 17 }))
+frames(40)
+check("Luka gets the race of a story step the world passed before the player came, never one of a step ahead",
+      [$game_actors[1].level_list[362], $game_actors[1].level_list[184]], [1, nil])
+check("a companion outside the roster gets nothing", $game_actors[45].level_list[301], 3)
+$game_party.add_actor(45)
+frames(40)
+check("and gets the class at its level once they join", $game_actors[45].level_list[301], 10)
+
+# The World overview's Unlocks page lists what the catch-up hands out by level that the world
+# unlocked.
 tables(:JOINS => [join.new(77, 77, "map:6:30:2", "1", 7, nil, [[:v, 1001, 7]], 7, :start, 1, true),
                   join.new(16, 16, "map:9:1:1", "1", 15, nil, [[:v, 1001, 15]], 20, :floor, 1, true)],
        :MAKINA => [makina.new(700, 6, "map:215:23:1"), makina.new(701, 30, "map:218:21:1")])

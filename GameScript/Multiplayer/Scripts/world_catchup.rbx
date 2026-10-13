@@ -2,35 +2,37 @@
 #  world_catchup.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Brought a shared companion whose talk the player's story only walked past, and looked again once at those left out so
-#                            - Noted the items unlocking a job or a race a player holds on every look, so those got before the update reach the others too
-#                            - Gave every item unlocking a job or a race any player of the world got to every other player
-#                            - Logged what the catch-up gave instead of telling it, which the World overview's Unlocks page shows
+#      Paulinchen  2026-10-12: Gave every player's characters the classes and races the story and its quests give
+#                            - Taught every player's companions the skills the story and its quests teach them
+#                            - Brought a shared companion whose talk the player's story only walked past
+#                            - Noted the job and race unlock items a player holds on every look
+#                            - Gave every job and race unlock item any player of the world got to every other player
+#                            - Logged what the catch-up gave instead of telling it
 #                            - Listed what moving on from a part brings along, and each companion's and Makina's id
-#                            - Left the random encounters to a map only while a page of it that applies now sets them the other way
-#                            - Let the story's rewards wait after a move on at a level cap only for the first story laid over the player no longer behind, and never once they play the world's story, as a dropped checkpoint kept them waiting for every later story
-#                            - Put a vehicle the story gave that stands on no map back at the start the game names for it, on entering, after a load, a level up and every story laid over the player's, as a checkpoint or the world's story past Mt. Saint Amos left Galda nowhere
-#                            - Gave companions and Makina only once the player's real level reaches theirs, as a character at another mod's level cap got every Makina above it at once
-#                            - Held the story's skills and items a move on at another mod's level cap carried the player past until their real level reaches the gate
+#                            - Left the random encounters to a map only while its current page sets them the other way
+#                            - Let the story's rewards wait after a move on at a level cap only for the first story laid over the player
+#                            - Put a vehicle the story gave that stands on no map back at its start
+#                            - Gave companions and Makina only once the player's real level reaches theirs
+#                            - Held the story's skills and items past a move on at a level cap until the real level reaches the gate
 #                            - Taught a player behind the world's story no skill of it before they move on
-#                            - Took a vehicle off its map while no event that gives it is behind the player's story or the world's, as a new game whose setup never ran left the ship and Galda on the field
-#                            - Turned on the chest flags of a world-wide chest with its items, so the Chaos forge works its ores for every player
-#                            - Kept the Randolphs found at the number of Randolph switches on, as two players finding one each at once counted one
-#                            - Settled the game over's return point by the route under way, and by the world's story only while the player plays it, as a finished route's last return point and a later part's took over
+#                            - Took a vehicle off its map while no event that gives it is behind the player's story or the world's
+#                            - Turned on the chest flags of a world-wide chest with its items
+#                            - Kept the Randolphs found at the number of Randolph switches on
+#                            - Settled the game over's return point by the route under way and the world's story only while the player plays it
 #                            - Took a vehicle off its map for a player behind the world's story whose own story has not given it yet
 #                            - Kept the parts of one look by the story itself and looked anew at every audit
-#      Paulinchen  2026-10-11: Listed what the catch-up hands out by level that the world already unlocked, for the World overview's Levels page
-#                            - Gave every Makina once the player's level reaches the area level of its easiest place, and took back copies beyond the first, as a chest another player's story closed again gave one twice
-#                            - Followed the story values of a telling the player watched as a story laid over theirs once they are free, so a viewer gets what the scene gave and loses the key items it took
-#                            - Took a key item as taken since a row of the same step gave it when the taking row's marks lie further, so the Yggdrasil Fruit the Queen Harpy event took no longer comes back
-#                            - Raised Amira's information network to 2 for a player who has her, as a companion the world shares comes without it and her information stayed shut
-#                            - Checked everything once on entering the world, after a load and on every level up: the story's skills, key items and companions the player lacks, and the player's own values the story sets
-#                            - Moved the player's own values the story's events set, the game over's return point and the random encounters, on to the latest step their story passed where they still hold an earlier step's, and lifted a warp ban left on where the game lets the player warp
-#                            - Handed out every key item the story's place owes the player and they lack, whoever's game played its event, so a key item a newer table lists or a laid-over story skipped still comes
-#      Paulinchen  2026-10-10: Kept what a player behind changed when a checkpoint is laid over their story, and took the checkpoint as the story they stand on
-#                            - Moved a player behind past the routes the world finished on to the world's story instead of a finished route's checkpoint
-#      Paulinchen  2026-10-09: Read and wrote the story and granted its skills and companions through the state model of story_state.rbx instead of coop_story.rbx
-#                            - Gave a key item whose event is only there to play up to its amount once the world's story is past it, and played the orbs' event for a player the catch-up gave every orb
+#      Paulinchen  2026-10-11: Listed what the catch-up hands out by level for the World overview
+#                            - Gave every Makina by the area level of its easiest place and took back extra copies
+#                            - Followed the story values of a watched telling as a story laid over the player's once they are free
+#                            - Took a key item as taken when a row of the same step whose marks lie further takes it
+#                            - Raised Amira's information network to 2 for a player who has her
+#                            - Checked the story's skills, key items, companions and own values once on entering, after a load and on every level up
+#                            - Moved the player's own story values on to the latest step their story passed, and lifted a leftover warp ban
+#                            - Handed out every key item the story's place owes the player and they lack, whoever's game played its event
+#      Paulinchen  2026-10-10: Kept what a player behind changed under a checkpoint, and took it as the story they stand on
+#                            - Moved a player behind past the routes the world finished on to the world's story
+#      Paulinchen  2026-10-09: Read and wrote the story and granted its rewards through story_state.rbx instead of coop_story.rbx
+#                            - Gave a key item whose event is only there to play once the world's story is past it, and played the orbs' event
 #                            - Held the story from a save's load until the world's story came while the save notes the player behind in their part
 #                            - Kept a shared companion away whose join the player's story passed
 #                            - Moved a player behind in the world's part on to the world's story instead of a route it finished
@@ -91,6 +93,10 @@ module MGQ_MpWorldCatchup
   # Frames between two looks at the player's story, half a second.
   CHECK_FRAMES = 30
 
+  # Looks between two looks at the skills, classes and races the story gave the roster's
+  # characters (check_growth), five seconds, as the tables hold thousands of rows.
+  GROWTH_CHECKS = 10
+
   # Frames between two reads of the DLL's state while a request runs, a quarter of a second.
   STATE_FRAMES = 15
 
@@ -142,8 +148,10 @@ module MGQ_MpWorldCatchup
   # The parts before the Great Decision, whose sides the player chose themselves.
   SIDED_PARTS = %w(1 2 3)
 
-  # What the notes keep for a companion the world shares once it joined or never will: a value of its
-  # own, so the companions an earlier build left out after walking past their talk are looked at again.
+  # What the notes keep for a companion the world shares once it joined or never will.
+  #
+  # A value of its own rather than true, so a note of true that another build wrote is looked at
+  # again.
   SHARE_SETTLED = "settled"
 
   # The rule of a join whose gate is the companion's start level, which a companion new to the
@@ -206,6 +214,8 @@ module MGQ_MpWorldCatchup
     @joins_world = false
     @world_told = nil
     @known_roster = nil
+    @growth_count = 0
+    @growth_roster = nil
     @share_queue = []
     @adding = nil
     @share_at = 0
@@ -318,6 +328,7 @@ module MGQ_MpWorldCatchup
       end
       give_waiting_rewards
       review(story_now, false)
+      check_growth
       move_on if MGQ_MpWorldStory.mode == :behind && !@want && !@joins_world && gate_reached?
       note_roster
       check_orbs
@@ -446,8 +457,8 @@ module MGQ_MpWorldCatchup
     end
   end
 
-  # Notes the world's story laid over the player's, for the key items and chests it gave; the save
-  # no longer notes the player behind, see noted_behind?. Called by world_story.rbx.
+  # Notes the world's story laid over the player's, for the key items and chests it gave, and clears
+  # the save's note that the player is behind, see noted_behind?. Called by world_story.rbx.
   #
   # @param told [Array] The world's story.
   def self.world_told(told)
@@ -1050,6 +1061,60 @@ module MGQ_MpWorldCatchup
     end
   end
 
+  # Looks at the skills, classes and races the story and its quests gave the roster's characters
+  # every GROWTH_CHECKS looks, and at the next look after the roster changed, see missing_lessons
+  # and missing_class_levels.
+  def self.check_growth
+    ids = MGQ_MpStoryState.roster_ids
+    @growth_count += 1
+    return unless @growth_count >= GROWTH_CHECKS || ids != @growth_roster
+
+    @growth_count = 0
+    @growth_roster = ids.dup
+    story = story_now
+    told = played_world_story
+    tell_gifts((missing_lessons(story, told) + missing_class_levels(story, told)).compact)
+  end
+
+  # Teaches the companions of the player's roster the skills the story and its quests taught them,
+  # of the rows the player's story or the world's is past. It goes by what each companion knows, so
+  # a step passed before the world's last look, or a companion who joins after it, still counts.
+  #
+  # @param story [Array] The player's story.
+  # @param told [Array, nil] The world's story, nil before it came or while the player is behind it.
+  # @return [Array<String>] What was taught, as shown.
+  def self.missing_lessons(story, told)
+    DATA::LESSONS.map do |row|
+      next unless carries?(row) && in_roster?(row.actor)
+
+      actor = $game_actors[row.actor]
+      next if actor.nil? || MGQ_MpStoryState.knows?(actor, row.skill)
+      next unless passed_any?(row, story, told)
+
+      MGQ_MpStoryState.teach(row.actor, row.skill)
+    end
+  end
+
+  # Gives the characters of the player's roster the classes and races the story and its quests gave
+  # them, at their levels, of the rows the player's story or the world's is past, keeping the class
+  # and race each plays now. It goes by each character's levels, so a step passed before the
+  # world's last look, or a companion who joins after it, still counts.
+  #
+  # @param story [Array] The player's story.
+  # @param told [Array, nil] The world's story, nil before it came or while the player is behind it.
+  # @return [Array<String>] What was given, as shown.
+  def self.missing_class_levels(story, told)
+    DATA::CLASS_LEVELS.map do |row|
+      next unless carries?(row) && (row.actor == HERO || in_roster?(row.actor))
+
+      actor = $game_actors[row.actor]
+      next if actor.nil? || MGQ_MpStoryState.class_level(actor, row.class_id) >= row.level
+      next unless passed_any?(row, story, told)
+
+      MGQ_MpStoryState.give_class(row.actor, row.class_id, row.level)
+    end
+  end
+
   # Lets the story's companions the roster lacks join at their gate: of the joins the player's
   # story or the world's is past and whose event the rows tell ran, those no later removal of the
   # story took away, which the notes took as done.
@@ -1384,7 +1449,7 @@ module MGQ_MpWorldCatchup
   end
 
   # Lists what the catch-up hands out by level that the world already unlocked, for the World
-  # overview's Levels page: moving on from each part the world is past, the companions the world's
+  # overview's Unlocks page: moving on from each part the world is past, the companions the world's
   # story got past or the world shares, and every Makina, which only a level unlocks.
   #
   # @return [Array<Unlock>] By level, then kind and name; none outside a Raid World.
@@ -1566,10 +1631,15 @@ module MGQ_MpWorldCatchup
     true
   end
 
-  # The self switches that tell which items unlocking a job or a race a player of the world got,
-  # [FOUND_MAP, item, FOUND_LETTER]: no map has the id 0, so no event reads them, and they go with
-  # the world's story as any other self switch.
+  # The map of the self switches [FOUND_MAP, item, FOUND_LETTER] that tell which items unlocking a
+  # job or a race a player of the world got.
+  #
+  # No map has the id 0, so no event reads them, and they go with the world's story as any other
+  # self switch.
   FOUND_MAP = 0
+
+  # The letter of the self switches that tell which items unlocking a job or a race a player of the
+  # world got, see FOUND_MAP.
   FOUND_LETTER = "F"
 
   # Notes an item unlocking a job or a race the player gained as found for the world, so every other
@@ -1590,8 +1660,7 @@ module MGQ_MpWorldCatchup
   end
 
   # Notes every item unlocking a job or a race the player holds as found for the world, as gained
-  # does for one they get: one got before the world noted them, or in a version before, still
-  # reaches the other players.
+  # does for one they get, so one got before the world noted it still reaches the other players.
   def self.note_held_items
     @unlock_items ||= ($data_items || []).select { |item| unlock_item?(item) }
     @unlock_items.each { |item| gained(item, 1) if $game_party.item_number(item) > 0 }
@@ -1652,8 +1721,9 @@ module MGQ_MpWorldCatchup
     $game_map.need_refresh = true if $game_map
   end
 
-  # Logs what the story gave the player at once; the World overview's Unlocks page shows it rather
-  # than a notice, which listed too much at once.
+  # Logs what the story gave the player at once.
+  #
+  # No notice tells it, as one look can give more than a notice lists.
   #
   # @param gifts [Array<String>] What was given, as shown.
   def self.tell_gifts(gifts)
