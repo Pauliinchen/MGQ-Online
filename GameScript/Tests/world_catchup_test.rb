@@ -2,7 +2,8 @@
 #  world_catchup_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-13: Checked that a join the story takes back in the same step counts nowhere in the catch-up
+#      Paulinchen  2026-10-13: Checked that a Makina comes and shows only once a player of the world got or held it
+#                            - Checked that a join the story takes back in the same step counts nowhere in the catch-up
 #      Paulinchen  2026-10-12: Checked that story and quest classes and races reach the roster
 #                            - Checked that story and quest skills reach the roster's companions
 #                            - Stood in for a companion's name
@@ -421,7 +422,7 @@ def tables(tables = {})
     DATA.send(:remove_const, name)
     DATA.const_set(name, tables[name] || [])
   end
-  [:@joins_by_actor, :@story_joins, :@taking_back, :@visits].each { |name| MGQ_MpWorldCatchup.instance_variable_set(name, nil) }
+  [:@joins_by_actor, :@story_joins, :@taking_back, :@visits, :@makina_ids, :@unlock_items].each { |name| MGQ_MpWorldCatchup.instance_variable_set(name, nil) }
   MGQ_MpWorldStory.instance_variable_set(:@world_chests, nil)
 end
 
@@ -1277,7 +1278,7 @@ check("a telling the player watched takes the key item its scene took, once the 
 check("the player's own event taking it gets nothing back from the catch-up, though the same step gave it",
       watch.call(4, lambda { $game_party.lose_item($data_items[600], 1) }), 0)
 
-# Makina come by level, one of each, whatever chest gave them.
+# Makina come by level, one of each, whatever chest gave them, once a player of the world got them.
 makina = DATA::Makina
 tables(:MAKINA => [makina.new(700, 6, "map:215:23:1"), makina.new(701, 30, "map:218:21:1")])
 new_game({ 1001 => 9 }, [], 10)
@@ -1285,8 +1286,16 @@ $game_party.gain_item($data_items[701], 3)
 frames(1)
 relay({ "rev" => 30, "wrev" => 30, "p" => 9, "part" => "1" }, packed({ 1001 => 9 }))
 frames(40)
-check("a Makina comes once the player's level reaches its area level, without a notice, and copies beyond the first go",
-      [$game_party.items[700], $game_party.items[701], $messages.grep(/Makina/)], [1, 1, []])
+check("a Makina no player of the world got stays away, and copies beyond the first of one the player got go",
+      [$game_party.items[700], $game_party.items[701], $game_self_switches[[0, 701, "F"]], $messages.grep(/Makina/)], [0, 1, true, []])
+$game_self_switches[[0, 700, "F"]] = true
+frames(40)
+check("once another player got it, it comes as the player's level reaches its area level, without a notice", [$game_party.items[700], $messages.grep(/Makina/)], [1, []])
+$game_self_switches[[0, 701, "F"]] = nil
+$game_party.items[701] = 1
+catchup.instance_variable_set(:@audit_due, true)
+frames(40)
+check("a Makina the player held before the world noted it counts as found on the next look, as on entering or after a load", $game_self_switches[[0, 701, "F"]], true)
 $game_party.gain_item($data_items[700], 1)
 frames(40)
 check("a chest giving one held already leaves one", $game_party.items[700], 1)
@@ -1383,10 +1392,11 @@ $sharing = :all
 new_game({ 1001 => 9 }, [], 10)
 frames(1)
 relay({ "rev" => 31, "wrev" => 31, "p" => 9, "part" => "1", "comps" => "80" }, packed({ 1001 => 9 }))
+$game_self_switches[[0, 700, "F"]] = true
 frames(40)
-check("the Levels page lists by level the Makina, the companions of joins the world's story got past and those it shares, never a join it has not reached",
+check("the Levels page lists by level the Makina a player of the world got, the companions of joins the world's story got past and those it shares, never a join it has not reached",
       catchup.unlocks.map { |unlock| [unlock.level, unlock.kind, unlock.name, unlock.got, unlock.due] },
-      [[6, :makina, "Auto Crossbow", true, false], [7, :companion, "Slime", true, false], [9, :companion, "Harpy", true, false], [30, :makina, "Bio Blaster", false, false]])
+      [[6, :makina, "Auto Crossbow", true, false], [7, :companion, "Slime", true, false], [9, :companion, "Harpy", true, false]])
 check("with the level the catch-up counts", catchup.counted_level, 10)
 new_game({ 1001 => 9 }, [], 10)
 frames(1)

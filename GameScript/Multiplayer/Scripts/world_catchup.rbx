@@ -4,6 +4,7 @@
 #  Changelog:
 #      Paulinchen  2026-10-13: Left the joins the story takes back in the same step out of the catch-up
 #                            - Counted no companion on such a visit, nor a story's temporary party, toward the player's level
+#                            - Listed and gave a Makina only once a player of the world got or held it
 #      Paulinchen  2026-10-12: Gave every player's characters the classes and races the story and its quests give
 #                            - Taught every player's companions the skills the story and its quests teach them
 #                            - Brought a shared companion whose talk the player's story only walked past
@@ -1599,29 +1600,53 @@ module MGQ_MpWorldCatchup
     end
   end
 
-  # Lists every Makina at its level, see check_makina.
+  # Lists every Makina a player of the world got at its level, see check_makina.
   #
   # @return [Array<Unlock>] The unlocks.
   def self.makina_unlocks
     DATA::MAKINA.map do |row|
       item = MGQ_MpGame.item("i", row.item)
-      next unless item
+      next unless item && found?(row.item)
 
       got = $game_party.item_number(item) > 0
       Unlock.new(row.level, :makina, item.name, item.respond_to?(:icon_index) ? item.icon_index : nil, got, !got && reached?(row.level), row.item, [])
     end.compact
   end
 
-  # Hands out every Makina whose level the player reached and they lack (DATA::MAKINA), and takes
-  # back every copy of one beyond the first, which the game never uses: a Raid World gives Makina by
-  # level, since a chest of one another player's story closed again gave it twice.
+  # Hands out every Makina a player of the world got (see found?) whose level the player reached and
+  # they lack (DATA::MAKINA), and takes back every copy of one beyond the first, which the game never
+  # uses: a Raid World gives Makina by level, since a chest of one another player's story closed
+  # again gave it twice.
   def self.check_makina
     DATA::MAKINA.each do |row|
       item = MGQ_MpGame.item("i", row.item)
       next unless item && !trim_copies(item)
+      next unless $game_party.item_number(item) == 0 && found?(row.item) && reached?(row.level)
 
-      give("i", row.item, 1, "makina:#{row.item} at level #{row.level}") if $game_party.item_number(item) == 0 && reached?(row.level)
+      @handing_makina = true
+      begin
+        give("i", row.item, 1, "makina:#{row.item} at level #{row.level}")
+      ensure
+        @handing_makina = false
+      end
     end
+  end
+
+  # Reports whether a player of the world got an item, as gained notes it.
+  #
+  # @param id [Integer] The item.
+  # @return [Boolean] Whether one did.
+  def self.found?(id)
+    $game_self_switches[[FOUND_MAP, id, FOUND_LETTER]] ? true : false
+  end
+
+  # Reports whether an item is a Makina, see DATA::MAKINA.
+  #
+  # @param item [RPG::BaseItem, nil] The item.
+  # @return [Boolean] Whether it is.
+  def self.makina?(item)
+    @makina_ids ||= DATA::MAKINA.map { |row| row.item }
+    item.is_a?(RPG::Item) && @makina_ids.include?(item.id)
   end
 
   # Takes back every copy of an item beyond the first, as a Makina or an item unlocking a job or a
@@ -1639,7 +1664,7 @@ module MGQ_MpWorldCatchup
   end
 
   # The map of the self switches [FOUND_MAP, item, FOUND_LETTER] that tell which items unlocking a
-  # job or a race a player of the world got.
+  # job or a race, and which Makina, a player of the world got.
   #
   # No map has the id 0, so no event reads them, and they go with the world's story as any other
   # self switch.
@@ -1649,13 +1674,14 @@ module MGQ_MpWorldCatchup
   # world got, see FOUND_MAP.
   FOUND_LETTER = "F"
 
-  # Notes an item unlocking a job or a race the player gained as found for the world, so every other
-  # player gets it too.
+  # Notes an item unlocking a job or a race, or a Makina, the player gained as found for the world, so
+  # every other player gets it too; a Makina only by level, and not one the catch-up hands out
+  # itself.
   #
   # @param item [RPG::BaseItem, nil] The item.
   # @param amount [Integer] How many.
   def self.gained(item, amount)
-    return unless amount.to_i > 0 && active? && unlock_item?(item)
+    return unless amount.to_i > 0 && active? && (unlock_item?(item) || (makina?(item) && !@handing_makina))
 
     key = [FOUND_MAP, item.id, FOUND_LETTER]
     return if $game_self_switches[key]
@@ -1666,10 +1692,11 @@ module MGQ_MpWorldCatchup
     log_once(:found, "noting a found item failed: #{e.class}: #{e.message}")
   end
 
-  # Notes every item unlocking a job or a race the player holds as found for the world, as gained
-  # does for one they get, so one got before the world noted it still reaches the other players.
+  # Notes every item unlocking a job or a race and every Makina the player holds as found for the
+  # world, as gained does for one they get, so one got before the world noted it still reaches the
+  # other players.
   def self.note_held_items
-    @unlock_items ||= ($data_items || []).select { |item| unlock_item?(item) }
+    @unlock_items ||= ($data_items || []).select { |item| unlock_item?(item) || makina?(item) }
     @unlock_items.each { |item| gained(item, 1) if $game_party.item_number(item) > 0 }
   end
 
@@ -1688,7 +1715,7 @@ module MGQ_MpWorldCatchup
       next unless on && key[0] == FOUND_MAP && key[2] == FOUND_LETTER
 
       item = MGQ_MpGame.item("i", key[1])
-      next unless item && !trim_copies(item)
+      next unless item && !makina?(item) && !trim_copies(item)
 
       give("i", key[1], 1, "found:#{key[1]}") if $game_party.item_number(item) == 0
     end
