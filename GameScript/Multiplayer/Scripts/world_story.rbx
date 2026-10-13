@@ -2,29 +2,30 @@
 #  world_story.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Sent and read the level caps the world's story unlocked
-#      Paulinchen  2026-10-11: Left the random encounters to world_catchup.rbx, which moves every value of the player's own that the story sets on to the story's place
-#                            - Turned random encounters on again as the world's story is laid over, where it is past the talk that turns them on
-#                            - Turned off the scene switches left on while no scene runs as the world's story is laid over, which a story written mid-scene left on for everyone
-#                            - Laid the world's story over a new game only after its opening's setup ran without its scene, which put the story back to its start when it ran afterwards, and counted the player's own changes from the story it set up
-#                            - Took a route the player chose at the Great Decision the world stands at as further than the decision, which a world that finished every route ranked below it and so pulled the player back to the decision
-#                            - Opened every route at the Great Decision again once the world finished all of them, as the relay does
-#                            - Kept the player's story events waiting for the world's story for ten seconds at most after the world opened or a save loaded, so their own story no longer plays before the world's is laid over it
-#                            - Took the story values a teller's scene laid over the player's as the world's, so they are not written as the player's own
-#      Paulinchen  2026-10-10: Held the write between the story's events on another map while its next event may go on with the telling, so the viewers no longer take the scene's state half done and drop out of it
-#                            - Took the world's story as a return to the Great Decision only once it left the route the story this game built on was on, since a starting save that cleared every route names every route as done from the first write on
+#      Paulinchen  2026-10-12: Sent and read the companions' affection with the world's story
+#                            - Sent and read the level caps the world's story unlocked
+#      Paulinchen  2026-10-11: Left the random encounters to world_catchup.rbx
+#                            - Turned random encounters on again as the world's story is laid over past the talk that turns them on
+#                            - Turned off the scene switches left on while no scene runs as the world's story is laid over
+#                            - Laid the world's story over a new game only after its opening's setup ran, and counted own changes from that story
+#                            - Took a route the player chose at the world's Great Decision as further than the decision
+#                            - Opened every route at the Great Decision again once the world finished all of them
+#                            - Kept the player's story events waiting for the world's story for ten seconds at most after the world opened or a save loaded
+#                            - Took the story values a teller's scene laid over the player's as the world's
+#      Paulinchen  2026-10-10: Held the write between the story's events on another map while its next event may go on with the telling
+#                            - Took the world's story as a return to the Great Decision only once it left the route this game's story was on
 #                            - Kept the player's own writes from ending the wait for the story of a telling they watched
 #                            - Named the player whose telling the player's story events wait for
 #                            - Kept a player noted behind below their gate after a load or a new entry into the world, before the world's story came
-#                            - Kept the story a player stood on as they fell behind as the base of their own changes, so a checkpoint or the world's story keeps them
+#                            - Kept the story a player stood on as they fell behind as the base of their own changes
 #                            - Brought back the companions of the player's own Great Decision and told the world's route also when another player locked it before the world had a story
-#                            - Dropped the story a player behind stood on once their own story becomes the world's first, so later stories are compared with theirs again
-#      Paulinchen  2026-10-09: Read and wrote the story through the state model of story_state.rbx instead of coop_story.rbx
-#                            - Kept a player behind the world's story on the checkpoint of their part and moved them on by their level through world_catchup.rbx, instead of letting them play their own story
-#                            - Made the chests that hold the story's key items the whole world's, so each opens once for the world and stays open for a player who opened it
+#                            - Dropped the story a player behind stood on once their own story becomes the world's first
+#      Paulinchen  2026-10-09: Read and wrote the story through story_state.rbx instead of coop_story.rbx
+#                            - Kept a player behind the world's story on the checkpoint of their part and moved them on by their level through world_catchup.rbx
+#                            - Made the chests that hold the story's key items the whole world's
 #                            - Kept a player behind until their level moves them on, also once the world returns from a route to their part
 #                            - Read the world's shared companions and the parts it keeps checkpoints of from the relay's state
-#                            - Brought back the companions the player's own Great Decision took away, with the notice and the teleport to the story, also when the relay refuses their write because another route was locked first
+#                            - Brought back the companions the player's own Great Decision took away, also when the relay refuses their write
 #                            - Asked the choices a story carried the player past also when the same story takes them onto a route
 #      Paulinchen  2026-10-08: Created
 #
@@ -332,8 +333,6 @@ module MGQ_MpWorldStory
   # Reports whether a world finished every route, which opens each of them again (as everyRouteDone
   # in Relay/core/story.js).
   #
-  # A starting save that cleared every route names them all as finished from the first write on.
-  #
   # @param done [Array<String>] The routes the world finished.
   # @return [Boolean] Whether it finished all of them.
   def self.every_route_done?(done)
@@ -596,6 +595,8 @@ module MGQ_MpWorldStory
     pending = @pending
     state = pending[:state]
     world = counters_of(state)
+    # Raised before the player's story is read, so laying the world's over it keeps the raise.
+    MGQ_MpWorldAffection.take(pending[:text].to_s) if defined?(MGQ_MpWorldAffection) && !pending[:text].to_s.empty?
     local = MGQ_MpStoryState.raw_state
     own = local_counters(local)
     return if wait_for_return(own, world)
@@ -666,7 +667,8 @@ module MGQ_MpWorldStory
   # Gives the player the personal half of the world's return to the Great Decision before the
   # world's story is laid over theirs, when the world finished the route the player is on and left
   # it since the story this game built on (see returned); the world's story waits until it played.
-  # A route the player started themselves since that story is no return: a starting save that
+  #
+  # A route the player started themselves since that story is no return, as a starting save that
   # cleared every route makes done and clear name every route from the first write on.
   #
   # @param own [Hash] The player's counters.
@@ -815,8 +817,8 @@ module MGQ_MpWorldStory
   end
 
   # Turns off the scene switches (MGQ_MpStoryState.scene_switch?) still on while no scene runs, as a
-  # world's story written mid-scene left them before they were each player's own. Called while the
-  # player is quiet (quiet?), unless they watch a teller's scene, which shows them.
+  # world's story written mid-scene may carry them. Called while the player is quiet (quiet?), unless
+  # they watch a teller's scene, which shows them.
   def self.end_left_scenes
     return unless defined?(MGQ_MpWorldCatchupData::SCENE_SWITCHES)
     return if defined?(MGQ_MpCoopScene) && MGQ_MpCoopScene.pending?
@@ -1144,15 +1146,33 @@ module MGQ_MpWorldStory
   # @return [String, nil] The packed text, nil when it is too large even without what the story turned off.
   def self.story_text(story)
     shared = [story[0], story[1], story[2].reject { |key, _| chest?(key) }]
-    text = MGQ_MpStoryState.pack(MGQ_MpStoryState.story_lists(shared, true))
+    text = MGQ_MpStoryState.pack(with_affection(MGQ_MpStoryState.story_lists(shared, true)))
     return text if text.size <= MGQ_MpStoryState::MAX_FULL_BYTES
 
     log_once(:story_size, "the story took #{text.size} characters, so it leaves out what the story turned off")
-    text = MGQ_MpStoryState.pack(MGQ_MpStoryState.story_lists(shared, false))
+    text = MGQ_MpStoryState.pack(with_affection(MGQ_MpStoryState.story_lists(shared, false)))
     return text if text.size <= MGQ_MpStoryState::MAX_FULL_BYTES
 
     log_once(:story_too_large, "the story took #{text.size} characters even without what it turned off, more than the relay keeps: not written")
     nil
+  end
+
+  # Adds the companions' affection to a story's lists, see world_affection.rbx.
+  #
+  # @param lists [Hash{String => String}] The lists.
+  # @return [Hash{String => String}] The lists.
+  def self.with_affection(lists)
+    defined?(MGQ_MpWorldAffection) ? MGQ_MpWorldAffection.add(lists) : lists
+  end
+
+  # Asks for a write of the player's story soon, for a value its text carries beside the story,
+  # such as the companions' affection (see world_affection.rbx).
+  #
+  # @return [Boolean] Whether a write follows: false unless the player plays the world's story.
+  def self.request_post
+    return false unless @mode == :world && @base
+
+    @force_post = true
   end
 
   # Writes counters for the relay: the main story, the route under way alone, the routes cleared,

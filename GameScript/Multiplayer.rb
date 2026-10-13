@@ -2,67 +2,67 @@
 #  Multiplayer.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Loaded world_overview_pages.rbx after world_overview.rbx
+#      Paulinchen  2026-10-12: Loaded world_affection.rbx after world_catchup_exp.rbx
+#                            - Loaded world_overview_pages.rbx after world_overview.rbx
 #                            - Read the mouse wheel's notches once a frame through mp_mouse_wheel
 #                            - Loaded world_catchup_exp.rbx after world_catchup.rbx
-#                            - Loaded ui_leader_hud.rbx after ui_raid_bar.rbx, before the notification box that makes room for it
-#                            - Kept a Player.ini that exists but could not be read: no new player key and no settings written over it, read
-#                              again at most once a second, logged once and told once a session in the notification box
-#                            - Read an ini file with a byte order mark, saved as UTF-16 or with bytes that are no UTF-8, which counts as Latin-1
-#                            - Wrote an ini file to a file next to it first, put on the disk, which then replaces it in one step
-#                            - Kept and removed several settings of Player.ini in one write and listed the settings under a prefix
-#      Paulinchen  2026-10-11: Cut the session's log to its newest 2 MB once it passes 4 MB, so it never grows without end and a bug report still sends where the trouble is
-#                            - Loaded ui_bug_report.rbx last, the in-game bug report, and named the mp_report_* exports it calls
-#                            - Loaded world_opening.rbx after world_catchup.rbx, which runs a new game's opening setup without its scene in a Raid World past it
-#                            - Loaded ui_theme.rbx and ui_layout.rbx after ui.rbx, the interface presets and the boxes the player moves and resizes
-#                            - Kept the mouse's clicks from the mod's screens while the left Alt is held, which moves and resizes the boxes instead
-#                            - Loaded ui_edge_arrows.rbx, the arrows toward the players off the screen, after ui_party_box.rbx
-#      Paulinchen  2026-10-10: Named mp_dev_build, which tells a development build from a release
-#                            - Loaded ui_raid_bar.rbx, the raid bosses' HP bars, after ui_party_box.rbx
-#                            - Loaded coop_teleport.rbx after coop_gather.rbx, the teleports between a party's members
-#                            - Asked an export that reads a text again with a larger buffer up to three more times when the text grew again between asking its size and copying it, instead of giving none
-#      Paulinchen  2026-10-09: Named the mp_mods_park, mp_mods_restore, mp_mods_parked, mp_mods_scripts, mp_mods_restart_parked and mp_mods_recover exports of the parked mods, and mp_dir_create and mp_dir_edit with whether a world turns other mods off
-#                            - Loaded world_mods_parking.rbx after world_mods.rbx, which turns other mods off for a world that asks for it
-#                            - Loaded story_state.rbx before coop_story.rbx, the story's state model the party's story and a Raid World's story share
-#                            - Loaded world_difficulty.rbx after world_catchup.rbx, which plays every player of a Raid World on its difficulty
+#                            - Loaded ui_leader_hud.rbx after ui_raid_bar.rbx
+#                            - Kept a Player.ini that exists but could not be read
+#                            - Read ini files with a byte order mark, in UTF-16 or in Latin-1
+#                            - Wrote an ini file through a file next to it that replaces it in one step
+#                            - Kept and removed several settings of Player.ini in one write and listed settings by prefix
+#      Paulinchen  2026-10-11: Cut the session's log to its newest 2 MB once it passes 4 MB
+#                            - Loaded ui_bug_report.rbx last and named the mp_report_* exports
+#                            - Loaded world_opening.rbx after world_catchup.rbx
+#                            - Loaded ui_theme.rbx and ui_layout.rbx after ui.rbx
+#                            - Kept the mouse's clicks from the mod's screens while the left Alt is held
+#                            - Loaded ui_edge_arrows.rbx after ui_party_box.rbx
+#      Paulinchen  2026-10-10: Named mp_dev_build
+#                            - Loaded ui_raid_bar.rbx after ui_party_box.rbx
+#                            - Loaded coop_teleport.rbx after coop_gather.rbx
+#                            - Retried a text export with a larger buffer when the text grew meanwhile
+#      Paulinchen  2026-10-09: Named the mp_mods_* exports of parked mods and mp_dir_create and mp_dir_edit with mod parking
+#                            - Loaded world_mods_parking.rbx after world_mods.rbx
+#                            - Loaded story_state.rbx before coop_story.rbx
+#                            - Loaded world_difficulty.rbx after world_catchup.rbx
 #                            - Named mp_dir_create and mp_dir_edit with a Raid World's difficulty
-#                            - Named the mp_raid_boss* exports of a Raid World's boss pools at the relay
-#                            - Loaded battles_raid_pool.rbx after battles_coop_hotjoin.rbx, which counts a Raid World's won story boss battles against the bosses' pools
-#                            - Loaded world_catchup_data.rbx before world_story.rbx, the generated data of a Raid World's catch-up
-#                            - Loaded world_catchup.rbx after world_story.rbx, which carries a player behind a Raid World's story along by their level
-#                            - Loaded battles_coop_join.rbx after battles_coop_hotjoin.rbx, which lets a player in a Raid World join a battle near them by choice
-#      Paulinchen  2026-10-08: Loaded coop_scope.rbx after coop.rbx, which tells the party scripts whom the player shares the map and the story with
-#                            - Loaded world_story.rbx after coop_story.rbx and world.rbx, a Raid World's story at the relay, and named the mp_raid_* exports it calls
-#                            - Loaded battles_raid_bosses.rbx before battles_coop.rbx, and battles_coop_hotjoin.rbx after it, whose hook wraps the live battle's
-#                            - Named mp_dir_create with the world's type and how a Raid World shares companions
-#                            - Told whether a key or the left mouse button is held, for the chat log's tabs and its size
-#                            - Took a key nobody asked about in the frame before as let go, so the numpad's 0 that closed a screen closes the next one too
-#                            - Named mp_update_game, which starts the mod's updater, and told the player to pick Multiplayer to update
-#                            - Told a watched key's press frame by frame, ended by the Input.update of a game window's cancel
-#                            - Counted the frames for Key.pressed? at Graphics.update, since a game window's cancel calls Input.update twice in a frame, which made a held key read as a new press
-#                            - Counted the sessions kept by the scripts' logs alone, keeping a DLL's log named a moment before its session's
-#                            - Deleted no logs in a game started for the options dump, whose log no longer counts as a session
+#                            - Named the mp_raid_boss* exports
+#                            - Loaded battles_raid_pool.rbx after battles_coop_hotjoin.rbx
+#                            - Loaded world_catchup_data.rbx before world_story.rbx
+#                            - Loaded world_catchup.rbx after world_story.rbx
+#                            - Loaded battles_coop_join.rbx after battles_coop_hotjoin.rbx
+#      Paulinchen  2026-10-08: Loaded coop_scope.rbx after coop.rbx
+#                            - Loaded world_story.rbx after coop_story.rbx and world.rbx and named the mp_raid_* exports
+#                            - Loaded battles_raid_bosses.rbx before battles_coop.rbx and battles_coop_hotjoin.rbx after it
+#                            - Named mp_dir_create with the world's type and companion sharing
+#                            - Told whether a key or the left mouse button is held
+#                            - Took a key nobody asked about in the frame before as let go
+#                            - Named mp_update_game and told the player to pick Multiplayer to update
+#                            - Told a watched key's press frame by frame
+#                            - Counted the frames for Key.pressed? at Graphics.update
+#                            - Counted the sessions kept by the scripts' logs alone
+#                            - Deleted no logs in a game started for the options dump
 #                            - Counted only the old logs actually deleted, and logged those that could not be
-#      Paulinchen  2026-10-07: Named mp_world_say, which mirrors a chat line to the relay for the world's admins
-#                            - Kept the logs of the last five game sessions, deleting older ones as a session starts
-#                            - Logged the hooks as one line per script with its count, once the scripts loaded and once a frame
-#                            - Logged how the game closes and each F12 reset, so a log that just stops tells a crash
-#                            - Kept the press that closes a screen of the mod from reaching the game in the same frame, which left a PvP battle when Escape closed the chat box
-#                            - Gave the background wrap its script, as every around now names who registers
-#                            - Named every export of the DLL with its signature once in Link, so a call names the export alone
-#                            - Loaded coop_choices.rbx, the story's choices a member makes for themselves, after the world screen whose form it draws with
-#                            - Wrote the in-game log without a line or size limit into a file per game session, named after the time the game started
-#                            - Logged the start, the scripts loaded, the Discord mod found, the update gate, the buttons taken and given back, the player's name and the PvP link's steps
-#                            - Forgot the chosen name when the player clears it, so the name on Discord stands again instead of A friend
-#      Paulinchen  2026-10-06: Kept the buttons held while any screen of the mod holds them, so one closing never hands them to the game under another
-#                            - Guarded Input through core_hooks.rbx, asking Windows every frame whether the game is in front, also where the game pauses in the background
-#                            - Kept up to 3000 lines of the in-game log per session instead of 60, which ended it within minutes, counted a repeated line instead of writing it again, saying so while it repeats and when the game closes, and moved a log grown past 1 MB aside as the old log when a session starts
+#      Paulinchen  2026-10-07: Named mp_world_say
+#                            - Kept the logs of the last five game sessions
+#                            - Logged the hooks as one line per script
+#                            - Logged how the game closes and each F12 reset
+#                            - Kept the press that closes a screen of the mod from reaching the game
+#                            - Gave the background wrap its script
+#                            - Named every export of the DLL with its signature once in Link
+#                            - Loaded coop_choices.rbx after the world screen
+#                            - Wrote the in-game log into a file per game session
+#                            - Logged the start, scripts, Discord mod, update gate, buttons, name and PvP link steps
+#                            - Forgot the chosen name when the player clears it
+#      Paulinchen  2026-10-06: Kept the buttons held while any screen of the mod holds them
+#                            - Guarded Input through core_hooks.rbx
+#                            - Kept up to 3000 log lines per session, counted repeated lines and moved a large log aside
 #                            - Loaded coop_story_rewards.rbx before coop_story.rbx
 #                            - Handed a Discord invite into a world to world.rbx instead of the PvP connection
-#                            - Kept the last name Discord told, which stands in while Discord has not told one yet, as right after a restart
+#                            - Kept the last name Discord told
 #                            - Wrote the in-game log as Multiplayer InGame.log into the game folder's Logs folder
 #                            - Loaded trade.rbx and ui_trade.rbx after battles_team.rbx
-#                            - Told whether a button is held past the capture, for the wheels' arrows
+#                            - Told whether a button is held past the capture
 #                            - Loaded ui_wheel.rbx before ui_actions.rbx
 #                            - Loaded world_mods.rbx after world.rbx
 #      Paulinchen  2026-10-04: Loaded battles_coop_level_sync.rbx after battles_coop.rbx
@@ -70,7 +70,7 @@
 #                            - Loaded ui_emotes.rbx after ui_chat.rbx
 #                            - Loaded coop_scene.rbx after coop_gather.rbx
 #                            - Loaded coop_gather.rbx and coop_castle.rbx, split out of coop_events.rbx
-#                            - Loaded the scripts by their new names, which say what each belongs to instead of mp_
+#                            - Loaded the scripts by their new names
 #                            - Loaded ui_text_box.rbx after ui.rbx, and world_save_distribution.rbx after world.rbx
 #      Paulinchen  2026-10-03: Loaded battles_pvp_backline.rbx after battles_pvp.rbx
 #                            - Loaded battles_balance_pvp.rbx before battles_pvp.rbx
@@ -84,24 +84,24 @@
 #                            - Loaded core_hooks.rbx first and followed Graphics.update and SceneManager.run through it
 #      Paulinchen  2026-10-01: Loaded coop_squad.rbx after coop.rbx
 #                            - Loaded battles_duel.rbx and battles_team.rbx after the PvP battles, and world_overview.rbx last
-#                            - Added Mouse, where the mouse points on the game's screen and its left button
+#                            - Added Mouse
 #      Paulinchen  2026-09-30: Loaded the other scripts from Patch/Multiplayer/Scripts
 #                            - Loaded ui_chat.rbx after the action wheel
 #                            - Loaded coop.rbx before the party scripts that register with it
 #                            - Loaded overworld_sync.rbx before the scripts that register with it
-#                            - Moved the mod folder into Patch/Multiplayer and loaded the other scripts from there in a fixed order
+#                            - Moved the mod folder into Patch/Multiplayer and loaded the scripts in a fixed order
 #                            - Called the battle and party scripts by their new names
 #                            - Named the mod Monster Girl Quest! Online in the update message
-#                            - Asked GitHub for a newer release and told MGQ_MpWorld and MGQ_MpBattlesPvp to disable themselves once one is out
-#                            - Read held buttons past the capture too, which moves a text cursor
-#      Paulinchen  2026-09-29: Said in $mgq_text_input while the player types, so other mods' hotkeys stay quiet
-#                            - Added Capture, which takes the buttons away from the game while a screen of the mod reads them
-#                            - Told whether the game's window is hooked, which the keyboard needs
+#                            - Asked GitHub for a newer release and disabled worlds and PvP once one is out
+#                            - Read held buttons past the capture too
+#      Paulinchen  2026-09-29: Said in $mgq_text_input while the player types
+#                            - Added Capture
+#                            - Told whether the game's window is hooked
 #                            - Told the DLL the player's key and name for worlds, and read typing from the keyboard through it
-#                            - Added Player, the player's id and name, which PvP battles pass on when Discord knows no name
-#                            - Found the mod folder relative to the game's folder, which works in a folder named with characters outside ASCII
+#                            - Added Player, the player's id and name
+#                            - Found the mod folder relative to the game's folder
 #                            - Hosted without a port, since games meet at the relay
-#                            - Added Link.status, which leaves the friend's team out, for the frequent checks
+#                            - Added Link.status
 #      Paulinchen  2026-09-28: Created
 #
 #----------------------------------------------------------------
@@ -110,8 +110,6 @@
 # Patch/Multiplayer/Multiplayer.dll, the game running on while its window is in the background,
 # keys the game's own Input does not know, and the Discord mod, when it is installed. It also loads
 # the mod's other scripts, see SCRIPTS.
-#
-# It must never interrupt the game, so every entry point rescues.
 module MGQ_Multiplayer
   # Turns the mod off without uninstalling it.
   ENABLED = true
@@ -130,12 +128,13 @@ module MGQ_Multiplayer
   #
   # A script may use only what loaded before it while it loads, such as core_log.rbx, which gives
   # every script its log, core_actors.rbx's Game_MpActor, or core_hooks.rbx, overworld_sync.rbx and
-  # coop.rbx, which the scripts after them register with. The battle scripts install their battle hooks once the game runs, the last
-  # loaded first, so their order decides how those hooks wrap each other.
+  # coop.rbx, which the scripts after them register with. The battle scripts install their battle
+  # hooks once the game runs, the last loaded first, so their order decides how those hooks wrap
+  # each other.
   SCRIPTS = %w[
     core_log core_hooks core_game_access core_hotkeys ui ui_theme ui_layout ui_text_box core_actors core_async overworld_sync ui_wheel ui_actions ui_chat ui_emotes overworld
     coop coop_scope coop_squad coop_events coop_gather coop_teleport coop_scene coop_npcs coop_story_rewards story_state coop_story coop_castle
-    world world_mods world_mods_parking world_catchup_data world_story world_catchup world_catchup_exp world_opening world_difficulty world_save_distribution world_text world_screen world_save_export coop_choices
+    world world_mods world_mods_parking world_catchup_data world_story world_catchup world_catchup_exp world_affection world_opening world_difficulty world_save_distribution world_text world_screen world_save_export coop_choices
     battles battles_raid_bosses battles_coop battles_coop_hotjoin battles_coop_join battles_raid_pool battles_coop_level_sync
     battles_sync battles_sync_wire battles_sync_recorder battles_sync_playback battles_sync_live
     battles_balance_pvp battles_pvp battles_pvp_backline battles_pvp_mirror battles_pvp_lobby battles_duel battles_team
@@ -210,7 +209,7 @@ module MGQ_Multiplayer
     Log.write("F12 reset the game: its scenes start again from the title (run #{@runs}), the mod keeps its hooks and state") if @runs > 1
   end
 
-  # The newer release's version, once the check found one.
+  # Reads the newer release's version, once the check found one.
   #
   # @return [String, nil] The version, nil until one was found.
   def self.newer_version
@@ -219,10 +218,9 @@ module MGQ_Multiplayer
 
   # Builds the path of a file inside the mod folder, relative to the game's folder.
   #
-  # The game always runs in its own folder. An absolute path breaks in a folder named with
-  # characters outside ASCII, such as the untranslated game's: File takes it only as UTF-8,
-  # Win32API loads a DLL only from the system's code page. A relative one, with backslashes, works
-  # for both.
+  # An absolute path breaks in a folder named with characters outside ASCII, such as the
+  # untranslated game's, since File takes it only as UTF-8 and Win32API loads a DLL only from the
+  # system's code page; the game always runs in its own folder, so a relative one works for both.
   #
   # @param name [String] The file name, relative to the mod folder.
   # @return [String] The path.
@@ -321,9 +319,17 @@ module MGQ_Multiplayer
 
     # When this script loaded, which stands in for the game's start when Windows cannot tell it.
     @loaded = Time.now
+
+    # The last line written, whose repeats are only counted.
     @last = nil
+
+    # How often the last line repeated so far.
     @streak = 0
+
+    # The repeats of the last line the log already told of.
     @reported = 0
+
+    # The log's size in bytes, nil until the first line is appended.
     @size = nil
 
     # Appends a line, prefixed with the time. A line the same as the one before is only counted;
@@ -474,8 +480,10 @@ module MGQ_Multiplayer
     # Reads a file, telling one that could not be read from one that is missing.
     #
     # @param path [String] The file.
-    # @param quiet [Boolean] Whether a file that could not be read goes unlogged, as when it failed just before.
-    # @return [Hash, nil] The values by key, empty when the file is missing; nil when it exists but could not be read.
+    # @param quiet [Boolean] Whether a file that could not be read goes unlogged, as when it failed
+    #   just before.
+    # @return [Hash, nil] The values by key, empty when the file is missing; nil when it exists but
+    #   could not be read.
     def self.load(path, quiet = false)
       return {} unless File.exist?(path)
 
@@ -633,7 +641,8 @@ module MGQ_Multiplayer
     # Lists the settings whose keys start with a prefix, such as the favourite worlds.
     #
     # @param prefix [String] What their keys start with.
-    # @return [Array<String>] The rest of each key after the prefix, in the order Player.ini keeps them.
+    # @return [Array<String>] The rest of each key after the prefix, in the order Player.ini keeps
+    #   them.
     def self.keys_under(prefix)
       load.keys.select { |key| key.start_with?(prefix) }.map { |key| key[prefix.size..-1] }
     end
@@ -1038,8 +1047,8 @@ module MGQ_Multiplayer
       state
     end
 
-    # Calls an export that writes a text into a buffer, again with a larger buffer when asked for one,
-    # READ_TRIES times at most.
+    # Calls an export that writes a text into a buffer, again with a larger buffer when asked for
+    # one, READ_TRIES times at most.
     #
     # @param name [String] The export, one that takes READ_ARGUMENTS.
     # @param size [Integer] The buffer's size at first.
@@ -1070,12 +1079,13 @@ module MGQ_Multiplayer
   end
 
   # Asks GitHub for the latest release of the mod, once per game session, on a thread of the DLL's
-  # own, so two games speaking a protocol a refactor changed never meet.
+  # own, see MGQ_Multiplayer.outdated?.
   module UpdateCheck
     # Frames between two looks at the DLL, half a second at 60 frames per second.
     CHECK_FRAMES = 30
 
-    # Starts the check on the DLL's own thread, once per game session. A development build never asks.
+    # Starts the check on the DLL's own thread, once per game session. A development build never
+    # asks.
     def self.start
       return if @started
       @started = true
@@ -1103,7 +1113,7 @@ module MGQ_Multiplayer
       Log.write("update check failed: #{e.class}: #{e.message}")
     end
 
-    # The latest release's version, once the check found it newer than the installed one.
+    # Reads the latest release's version, once the check found it newer than the installed one.
     #
     # @return [String, nil] The version, nil while none was found.
     def self.version
@@ -1176,7 +1186,8 @@ module MGQ_Multiplayer
       @in_front = in_front
     end
 
-    # Reports whether the window in front belongs to this game, as Windows said at the last Input.update.
+    # Reports whether the window in front belongs to this game, as Windows said at the last
+    # Input.update.
     #
     # @return [Boolean] true before the input is guarded or while Windows cannot tell.
     def self.in_front?
@@ -1215,7 +1226,7 @@ module MGQ_Multiplayer
     # Reports whether the last screen gave the buttons back in this frame.
     #
     # The press that closed the screen, such as the Escape that closed the chat box, still reads
-    # as pressed until the next Input.update, and a battle's wait took it as leaving the battle.
+    # as pressed until the next Input.update, where a battle's wait would take it as leaving.
     #
     # @return [Boolean] Whether it did.
     def self.released?
@@ -1287,6 +1298,7 @@ module MGQ_Multiplayer
     # Set in a key state while the key is down.
     DOWN = 0x8000
 
+    # Frames counted by next_frame.
     @frame = 0
 
     # The keys told frame by frame, see triggered?: each code with whether it was down at the last
@@ -1325,8 +1337,10 @@ module MGQ_Multiplayer
 
     # Reports whether a key went down at the last Input.update, while the game window is in front,
     # as Input.trigger? tells the game's buttons: the same answer however often it is asked in that
-    # frame. The game's windows call Input.update again as they cancel, which ends the press, so a
-    # key that is also a button of the game never cancels twice.
+    # frame.
+    #
+    # The game's windows call Input.update again as they cancel, which ends the press, so a key that
+    # is also a button of the game never cancels twice.
     #
     # @param code [Integer] Windows' code of the key, watched from its first ask on.
     # @return [Boolean] Whether the key went down.
@@ -1493,9 +1507,9 @@ module MGQ_Multiplayer
     end
   end
 
-  # The Discord mod, when it is installed: it shows the connection on the player's profile, offers
-  # the invites, and hands over the ones the player accepted and the player's name. Everything here
-  # does nothing without it, and the join code on the clipboard still works.
+  # Hands the connection to the Discord mod through MGQ_Discord::Bridge when it is installed, and
+  # takes the invites the player accepted and the player's name from it. Everything here does
+  # nothing without it, and the join code on the clipboard still works.
   module Discord
     # The bridge version this script speaks, see MGQ_Discord::Bridge.
     BRIDGE_VERSION = 1
@@ -1508,7 +1522,8 @@ module MGQ_Multiplayer
     end
 
     # Hands the connection to the Discord mod when it changed, and takes an invite the player
-    # accepted in Discord: into a world, or to a PvP battle. Called every frame, acts every DISCORD_FRAMES.
+    # accepted in Discord: into a world, or to a PvP battle. Called every frame, acts every
+    # DISCORD_FRAMES.
     def self.tick
       @frames = (@frames || 0) + 1
       return if @frames < DISCORD_FRAMES
@@ -1610,9 +1625,9 @@ end
 # Game hooks, through core_hooks.rbx.
 
 begin
-  # After every frame, counts it for the keys, tells the Discord mod how the connection stands, polls for an update and
-  # logs the hooks registered since the last frame. Graphics.update runs every frame in every
-  # scene, so all happen wherever the player is.
+  # After every frame, counts it for the keys, tells the Discord mod how the connection stands,
+  # polls for an update and logs the hooks registered since the last frame. Graphics.update runs
+  # every frame in every scene, so all happen wherever the player is.
   MGQ_MpHooks.after(Graphics.singleton_class, :update, "Multiplayer") do
     MGQ_Multiplayer::Key.next_frame
     MGQ_Multiplayer::Discord.tick

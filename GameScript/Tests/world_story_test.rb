@@ -2,37 +2,38 @@
 #  world_story_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Asked no Amira choice of a player the world's story carries past Iliasburg
-#                            - Dropped the check of the opening's random encounters, which world_catchup.rbx settles now
+#      Paulinchen  2026-10-12: Checked the companions' affection coming and going with the stories
+#      Paulinchen  2026-10-11: Asked no Amira choice of a player carried past Iliasburg
+#                            - Dropped the check of the opening's random encounters
 #                            - Checked that a take lets the opening turn random encounters on again
-#                            - Checked that a scene switch is each Raid World player's own and that a take turns one left on off, unless the player watches a scene
-#                            - Checked that the world's story waits for a new game's opening setup and is laid over the story it made
-#      Paulinchen  2026-10-10: Checked that no write goes out between the story's events on another map while its next event may go on with the telling
+#                            - Checked that scene switches are each Raid World player's own
+#                            - Checked that the world's story waits for a new game's opening setup
+#      Paulinchen  2026-10-10: Checked that no write goes out between the story's events on another map
 #                            - Stood in for MGQ_MpCoopEvents.telling_or_moved?
-#                            - Checked that a world story before a route the player started themselves is no return to the Great Decision,
-#                              in a world whose starting save cleared every route
-#                            - Checked that the player's own write keeps their story events waiting for the teller's story
-#                            - Checked a Raid World started from a shared save, as a development build makes one: the save's story starts the
-#                              world's, the next player from the save plays it, a further one is taken, and a new game is behind
+#                            - Checked a world story before a route the player started themselves
+#                            - Checked that the player's own write keeps their story events waiting
+#                            - Checked a Raid World started from a shared save
 #                            - Checked that the player's story events name the teller they wait for
-#                            - Checked that a route lock refused before the world had a story brings back the player's companions with the world's first story
-#                            - Checked that a player behind whose own story becomes the world's leaves the story they stood on behind
-#      Paulinchen  2026-10-09: Took variable 152 as a story variable, since 151, the Labyrinth of Chaos's tier, is each Raid World player's own
-#                            - Loaded story_state.rbx before coop_story.rbx and packed stories and stood in for bringing companions through MGQ_MpStoryState
-#                            - Followed a player in an earlier part, who is behind the world's story now instead of playing their own
-#                            - Checked that a write refused for another route brings back the companions of the player's own decision
-#                            - Checked that one story asks the choices it passed and the route, and that a new game forgets them
+#                            - Checked a route lock refused before the world had a story
+#                            - Checked a player behind whose own story becomes the world's
+#      Paulinchen  2026-10-09: Took variable 152 as a story variable
+#                            - Loaded story_state.rbx before coop_story.rbx and stood in for MGQ_MpStoryState
+#                            - Followed a player in an earlier part as behind the world's story
+#                            - Checked a write refused for another route bringing back the companions
+#                            - Checked the choices and route one story asks, and a new game forgetting them
 #      Paulinchen  2026-10-08: Created
 #
 #----------------------------------------------------------------
 
-# Covers world_story.rbx with story_state.rbx, coop_story.rbx and coop_choices.rbx: a Raid World's
-# story fetched, laid over the player's own values or kept apart, written back with its counters,
-# refused writes and routes, the relay's push and the poll, the Great Decision's choice and the
-# world's return to it, and the choices each player keeps their own.
+# Covers world_story.rbx with story_state.rbx, coop_story.rbx, coop_choices.rbx and
+# world_affection.rbx: a Raid World's story fetched, laid over the player's own values or kept
+# apart, written back with its counters, refused writes and routes, the relay's push and the poll,
+# the Great Decision's choice and the world's return to it, the choices each player keeps their
+# own, and the companions' affection.
 
 require_relative "support"
 
+# Stands in for the mod's log: prints each line.
 module MGQ_Multiplayer; module Log; def self.write(m); puts "  log: #{m}"; end; end; end
 $calls = []
 $reads = []
@@ -40,14 +41,19 @@ $state = ""
 $notices = []
 $raid = true
 
-# The DLL: each call is noted and starts, and the story's state is what $state holds.
+# Stands in for the mod's base script with its DLL.
 module MGQ_Multiplayer
+  # The DLL: each call is noted and starts, and the story's state is what $state holds.
   module Link
     # The requests of the story's exports, whose header says busy once one starts, as the DLL's does.
     KINDS = { "mp_raid_story_fetch" => "fetch", "mp_raid_story_post" => "post", "mp_raid_route_lock" => "lock" }
 
     # A function of the DLL, which notes its calls.
     Function = Struct.new(:name) do
+      # Notes the call and marks a story request busy, as the DLL starts it.
+      #
+      # @param args [Array] The call's arguments.
+      # @return [Integer] 1, started.
       def call(*args)
         check_dll_call(name, args)
         $calls << [name, args]
@@ -56,8 +62,16 @@ module MGQ_Multiplayer
         1
       end
     end
+
+    # Gives the DLL function of a name, which notes its calls.
     def self.function(name); Function.new(name); end
-    # The headers leave the story's text out, as the DLL's do.
+
+    # Reads the story's state or its headers, which leave the story's text out, as the DLL's do,
+    # and notes the read in $reads.
+    #
+    # @param name [String] The export.
+    # @param size [Integer] The buffer's size.
+    # @return [String] The text, as bytes as the DLL hands it.
     def self.read(name, size)
       check_dll_call(name, ["", size])
       head = $state.split("\n\n", 2)[0].to_s
@@ -65,6 +79,11 @@ module MGQ_Multiplayer
       $reads << [name, text.size]
       text.dup.force_encoding("ASCII-8BIT")
     end
+
+    # Splits a DLL answer into its header fields and its payload.
+    #
+    # @param text [String] The answer.
+    # @return [Hash] The fields by name, the payload under :payload.
     def self.parse(text)
       head, payload = text.force_encoding("UTF-8").split("\n\n", 2)
       state = { :payload => payload.to_s }
@@ -73,73 +92,161 @@ module MGQ_Multiplayer
     end
   end
 end
+
+# Stands in for the overworld sync, whose world is always open.
 module MGQ_MpOverworldSync
+  # The state field the relay pushes the story's revision in.
   STORY_FIELD = "story_rev"
+
+  # Stands in for the players present, of whom there are none.
   module Peers; Peer = Struct.new(:seat, :state); def self.present; []; end; end
+
+  # Stands in for the player's own id, always me.
   module Me; def self.id; "me"; end; end
+
+  # Answers that the player is in a world.
   def self.in_world?; true; end
+
+  # Records a notice's text in $notices.
   def self.notice(text, icon = nil); $notices << text; end
+
+  # Answers whether the map is free: on the map with no event running.
   def self.map_free?; SceneManager.scene.is_a?(Scene_Map) && !$game_map.interpreter.running?; end
+
+  # Names a player for the log.
   def self.who(peer); peer == :me ? "the player" : peer.to_s; end
+
+  # Records the handler of a relay field in $routes.
   def self.route(field, &block); ($routes ||= {})[field] = block; end
+
+  # Records a handler run every frame in $ticks.
   def self.on_tick(&block); ($ticks ||= []) << block; end
+
+  # Takes the state fields a script shares, keeping none.
   def self.state_fields(*); end
 end
+
+# Stands in for co-op: no party, and the Raid World's scope from $raid and $teller.
 module MGQ_MpCoop
+  # Stands in for the party, which has no members and no leader.
   module Party; def self.members; []; end; def self.leader; nil; end; end
+
+  # Stands in for the scope: a Raid World while $raid, the teller watched from $teller, every player watched.
   module Scope; def self.raid?; $raid; end; def self.teller; $teller; end; def self.watches?(_peer); true; end; end
+
+  # Takes a relay field's handler, keeping none.
   def self.route(*); end
+
+  # Answers that there is no party leader.
   def self.party_leader; nil; end
 end
+
+# Stands in for the co-op events, whose telling follows $telling and $moved.
 module MGQ_MpCoopEvents
+  # Answers whether the player tells the story, from $telling.
   def self.telling?; $telling ? true : false; end
+
+  # Answers whether the player tells the story or its telling just moved them onto another map, from $moved.
   def self.telling_or_moved?; telling? || ($moved ? true : false); end
+
+  # Answers that no PvP battle runs.
   def self.pvp_running?; false; end
+
+  # Answers that the map has no chests.
   def self.chest_keys; []; end
+
+  # Answers that no self switch is a chest's.
   def self.chest_key?(_key); false; end
 end
+
+# Stands in for gathering: counts in $joined how often the player teleports to the story.
 module MGQ_MpCoopGather; def self.join_story; ($joined ||= 0); $joined += 1; end; end
-# The rewards table's chests, of which one is in the checks.
+
+# Stands in for the rewards table, of which only one chest is in the checks.
 module MGQ_MpCoopStoryRewards
+  # The chests' self switches: map, event and letter.
   CHESTS = [[12, 3, "A"]]
+  # The events where the sides get other rewards, none.
   GROUPS = []
+  # The companions who join in events, none.
   ACTORS = []
+  # The rewards only the events where the sides differ give, none.
   SIDED = { :skills => [], :actors => [] }
+  # The rewards of the Final Chapter, none.
   ROUTE = { :skills => [], :actors => [] }
 end
+
+# Stands in for the actions, which offer nothing.
 module MGQ_MpActions
+  # Color of the line above the player's own head.
   LINE_COLOR = :line_color
+  # An option of a wheel.
   Option = Struct.new(:text, :run, :refusal, :icon, :leaves)
+  # A notice of the notification box.
   Notice = Struct.new(:key, :text, :color, :action, :take, :decline, :mark)
+
+  # Takes an offer, keeping none.
   def self.offer(*); end
 end
+
+# Stands in for the world: the open world in world, a Raid World while $raid.
 module MGQ_MpWorld
+  # A world, known by its directory id alone.
   World = Struct.new(:directory_id)
+
+  # The open world, nil outside one.
   class << self; attr_accessor :world; end
+
+  # Answers whether the open world is a Raid World, from $raid.
   def self.raid?; $raid; end
+
   # The world screen's form, which the screen of choices draws with, stood in by its fields alone.
   class Form
+    # A field of the form.
     Field = Struct.new(:key, :kind, :label, :row, :hint, :options) do
+      # The outcomes of a switch, none for other fields.
       def choices; options[:choices] || []; end
     end
+
+    # The form's title and fields.
     attr_reader :title, :fields
+
+    # Makes a form with its title, fields and values.
     def initialize(title, fields, values); @title = title; @fields = fields; @values = values; end
+
+    # Gives a field's value.
     def [](key); @values[key]; end
   end
 end
 MGQ_MpWorld.world = MGQ_MpWorld::World.new("w1")
+
+# Stands in for the world screen's form window, which the screen of choices builds on.
 class Window_MpWorldForm; def initialize(*); end; end
+# Stands in for the game's menu scenes.
 class Scene_MenuBase; end
+# Stands in for the map scene.
 class Scene_Map; end
+
+# Stands in for the scene manager: the checks set the scene, and scenes called go into $scenes.
 module SceneManager
+  # The scene running.
   class << self; attr_accessor :scene; end
+
+  # Records a scene called in $scenes.
   def self.call(scene); ($scenes ||= []) << scene; end
 end
+
+# Stands in for the frame counter, which stays at 0.
 module Graphics; def self.frame_count; 0; end; end
+
+# Stands in for the game's data classes.
 module RPG
+  # An event command.
   EventCommand = Struct.new(:code, :indent, :parameters)
+  # A common event with its commands.
   CommonEvent = Struct.new(:list)
 end
+
 # Makes an event command.
 #
 # @param code [Integer] Its code.
@@ -147,47 +254,107 @@ end
 # @param indent [Integer] Its indent.
 # @return [RPG::EventCommand] The command.
 def c(code, params = [], indent = 0); RPG::EventCommand.new(code, indent, params); end
+
+# The game's system data, with the names of the switches and variables.
 System = Struct.new(:switches, :variables)
 $data_system = System.new(Array.new(8000, ""), Array.new(4000, ""))
 $data_actors = Array.new(600)
+# An actor of the database, whose persona kind tells world_affection.rbx a companion's main persona.
+AffectionActor = Struct.new(:id, :name, :persona_kind)
+$data_actors[56] = AffectionActor.new(56, "Rami", :main)
 $data_items = [nil]
 $data_common_events = Array.new(400)
 
+# Stands in for the game's switches, off unless set.
 class Game_Switches; def initialize; @data = []; end; def [](id); @data[id] || false; end; def []=(id, value); @data[id] = value; end; end
+# Stands in for the game's variables, 0 unless set.
 class Game_Variables; def initialize; @data = []; end; def [](id); @data[id] || 0; end; def []=(id, value); @data[id] = value; end; end
+# Stands in for the game's self switches, off unless set on.
 class Game_SelfSwitches; def initialize; @data = {}; end; def [](key); @data[key] == true; end; def []=(key, value); @data[key] = value; end; end
+
+# Stands in for the party, keeping the actors it includes.
 class Game_Party
+  # Whether a battle runs.
   attr_accessor :in_battle
+
+  # Starts without actors.
   def initialize; @include_actors = []; end
+
+  # Adds an actor.
   def add_stand_actor(id); @include_actors |= [id]; end
+
+  # Removes an actor.
   def remove_actor(id); @include_actors.delete(id); end
 end
+
+# Stands in for an actor, who learns skills without keeping them.
 class Game_Actor; def learn_skill(id); end; end
+
+# Stands in for the event interpreter, which runs nothing and keeps the commands it was given.
 class Game_Interpreter
+  # The commands it was given and the one it is at.
   attr_reader :list, :index
+  # Whether it runs an event.
   attr_accessor :busy
+
+  # Takes a list of commands at its start, noted in $setups.
   def setup(list, event_id = 0); @list = list; @index = 0; ($setups ||= []) << list; end
+
+  # Answers whether it runs an event.
   def running?; @busy ? true : false; end
+
+  # Runs nothing.
   def execute_command; end
+
+  # Reads a switch of the install's own from $game_system_switches.
   def ssw(key); $game_system_switches[key]; end
 end
+
+# Stands in for the map, map 3 at first, with its interpreter.
 class Game_Map
+  # The map's id, its interpreter and whether it needs a refresh.
   attr_accessor :map_id, :interpreter, :need_refresh
+
+  # Starts on map 3.
   def initialize; @map_id = 3; @interpreter = Game_Interpreter.new; end
+
+  # Moves to a map.
   def setup(map_id); @map_id = map_id; end
+
+  # Updates nothing.
   def update(main = false); end
 end
+
+# Stands in for the player on the map, at 1,1.
 class Game_Player
+  # Where the player stands.
   attr_reader :x, :y
+
+  # Stands at 1,1.
   def initialize; @x = 1; @y = 1; end
+
+  # Answers that no transfer waits.
   def transfer?; false; end
+
+  # Transfers nothing.
   def perform_transfer; end
 end
+
+# Stands in for the game's saving and loading, which the scripts hook.
 module DataManager
+  # Gives empty save contents.
   def self.make_save_contents; {}; end
+
+  # Takes save contents, keeping none.
   def self.extract_save_contents(contents); end
+
+  # Loads nothing.
   def self.load_game_without_rescue(index); end
+
+  # Makes nothing.
   def self.create_game_objects; end
+
+  # Sets nothing up.
   def self.setup_new_game; end
 end
 
@@ -197,6 +364,7 @@ load_script "story_state"
 load_script "coop_story"
 load_script "coop_choices"
 load_script "world_story"
+load_script "world_affection"
 story = MGQ_MpWorldStory
 choices = MGQ_MpCoopChoices
 
@@ -515,6 +683,7 @@ $game_variables[1001] = 40
 $game_variables[1141] = 1
 frames(80)
 check("a route the world has not taken is locked before the write", [calls_of("mp_raid_route_lock"), calls_of("mp_raid_story_post")], [[["w1\0", "ad\0"]], []])
+# Notes the companions brought back in $brought instead of bringing them.
 class << MGQ_MpStoryState; alias_method :bring_before_check, :bring; def bring(id); ($brought ||= []) << id; end; end
 story.instance_variable_set(:@decision_roster, [5, 45])
 $game_party.instance_variable_set(:@include_actors, [45])
@@ -523,6 +692,7 @@ $notices.clear
 frames(16)
 check("one another player took first gives the player the world's story back", [$game_variables[1001], $game_variables[1141]], [39, 0])
 check("and the companions their own decision took away", $brought, [5])
+# Brings companions back as story_state.rbx does.
 class << MGQ_MpStoryState; alias_method :bring, :bring_before_check; end
 check("and says so", $notices, ["The world took the Monster Realm route first."])
 story.pushed(MGQ_MpOverworldSync::STORY_FIELD => "22", :relay => true)
@@ -552,6 +722,7 @@ $game_variables[1001] = 40
 $game_variables[1141] = 1
 frames(80)
 check("a route the world locked already is not locked again, the story is written", [calls_of("mp_raid_route_lock"), calls_of("mp_raid_story_post").size], [[], 1])
+# Notes the companions brought back in $brought instead of bringing them.
 class << MGQ_MpStoryState; def bring(id); ($brought ||= []) << id; end; end
 $brought = []
 $notices.clear
@@ -559,6 +730,7 @@ relay({ "rev" => 25, "wrev" => 25, "p" => 39, "part" => "3", "route" => "mr", "p
 frames(16)
 check("the refused write gives the player the world's story and the companions their own decision took away",
       [$game_variables[1001], $game_variables[1141], $brought, $notices], [39, 0, [5], ["The world took the Monster Realm route first."]])
+# Brings companions back as story_state.rbx does.
 class << MGQ_MpStoryState; alias_method :bring, :bring_before_check; end
 
 # The Great Decision's choice in the game's own event offers only the routes the world may still take.
@@ -569,6 +741,7 @@ $data_common_events[380] = RPG::CommonEvent.new(decision)
 interpreter = Game_Interpreter.new
 # Shows the choice of a fresh Great Decision to the hook, as the world tells its routes.
 #
+# @param interpreter [Game_Interpreter] The interpreter that runs the decision.
 # @param world [Hash] The world's route and finished routes.
 # @return [Array<RPG::EventCommand>] The interpreter's commands afterwards.
 def offered(interpreter, world)
@@ -885,6 +1058,7 @@ frames(1)
 relay("rev" => 2, "fetch" => "done")
 frames(80)
 check("a player on a route in a world without a story locks it first", calls_of("mp_raid_route_lock"), [["w1\0", "ad\0"]])
+# Notes the companions brought back in $brought instead of bringing them.
 class << MGQ_MpStoryState; def bring(id); ($brought ||= []) << id; end; end
 story.instance_variable_set(:@decision_roster, [5, 45])
 $game_party.instance_variable_set(:@include_actors, [45])
@@ -899,6 +1073,7 @@ relay({ "rev" => 4, "wrev" => 4, "p" => 40, "r1142" => 1, "part" => "mr", "route
 frames(16)
 check("which gives the player the world's route and the companions their own decision took away, and says so",
       [story.mode, $game_variables[1141], $game_variables[1142], $brought, $notices.include?("The world took the Monster Realm route first.")], [:world, 0, 1, [5], true])
+# Brings companions back as story_state.rbx does.
 class << MGQ_MpStoryState; alias_method :bring, :bring_before_check; end
 
 # A player behind whose own story becomes the world's first leaves the story they stood on behind.
@@ -974,6 +1149,7 @@ check("a new game in a world started from a save is behind its story and writes 
 
 # A new game in a world past the opening: the world's story waits while the opening's setup runs
 # (world_opening.rbx), then is laid over the story the setup made.
+# Stands in for the opening's setup: each take before laying over gets the next answer of $opening.
 module MGQ_MpWorldOpening; def self.before_take(_world); $opening.shift; end; end
 $opening = [:wait, :wait, :opened]
 $calls.clear
@@ -991,8 +1167,9 @@ check("then it is laid over the story the setup made, whose values are no own ch
       [story.mode, $game_variables[1001], $game_variables[152], calls_of("mp_raid_story_post")], [:world, 7, 0, []])
 $opening = []
 
-# A scene switch a world's story written mid-scene left on is the player's own now, and a take turns
-# it off while no scene runs, but not while the player watches a teller's scene.
+# A scene switch a world's story written mid-scene left on is the player's own, and a take turns it
+# off while no scene runs, but not while the player watches a teller's scene.
+# Stands in for the co-op scene: something of a teller's scene waits to be put back while $scene_pending.
 module MGQ_MpCoopScene; def self.pending?; $scene_pending; end; end
 $scene_pending = true
 $game_switches[2029] = true
@@ -1007,5 +1184,18 @@ frames(1)
 relay({ "world" => "w2", "rev" => 7, "wrev" => 7, "p" => 7, "part" => "1", "fetch" => "done" }, packed({ 1001 => 7 }, [320, 2029]))
 frames(16)
 check("once no scene runs, the take turns it off, though the world's story has it on", [story.instance_variable_get(:@wrev), $game_switches[2029]], [7, false])
+
+# The companions' affection comes with the world's story and goes out with the player's.
+story.refetch(:test)
+frames(1)
+relay({ "world" => "w2", "rev" => 8, "wrev" => 8, "p" => 7, "part" => "1", "fetch" => "done" },
+      MGQ_MpStoryState.pack(MGQ_MpStoryState.unpack(packed({ 1001 => 7 }, [320])).merge("a" => "56:50")))
+frames(16)
+check("the world's affection raises the player's as the world's story is laid over", [story.instance_variable_get(:@wrev), $game_variables[3056]], [8, 50])
+$calls.clear
+$game_variables[3056] = 60
+story.request_post
+frames(5)
+check("a write the affection asked for carries the player's", calls_of("mp_raid_story_post").map { |args| lists_of(args[3])["a"] }, ["56:60"])
 MGQ_MpWorld.world = nil
 frames(1)
